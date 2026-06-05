@@ -1,0 +1,2 @@
+eval/longmemeval_s/longmemeval_s_cleaned.json filter=lfs diff=lfs merge=lfs -text
+eval/longmemeval_s/longmemeval_oracle.json filter=lfs diff=lfs merge=lfs -text

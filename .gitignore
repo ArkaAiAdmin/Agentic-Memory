@@ -1,0 +1,15 @@
+# Personal data — never commit
+*.db*
+*.pyc
+__pycache__/
+venv/
+memory/
+lessons/
+preferences/
+docs/
+.rebuild.lock
+BUG-FIX-REPORT.md
+E2E-TEST-REPORT.md
+
+# OS
+.DS_Store
