@@ -1797,7 +1797,7 @@ def _upsert_fact(
 
 
 def index_facts_for_memory(
-    conn: sqlite3.Connection, memory_id: str, content: str
+    conn: sqlite3.Connection, memory_id: str, content: str, force_regex: bool = False
 ) -> dict:
     # Use config system for feature flag
     if get_config is not None:
@@ -1832,6 +1832,14 @@ def index_facts_for_memory(
     #   MEMORY_LLM_HYBRID_THRESHOLD=0.5  — importance_score cutoff (default 0.5)
     #   MEMORY_LLM_HYBRID=0              — disable hybrid, never use LLM
     use_llm = _should_use_llm_for_memory(conn, memory_id)
+
+    # Backfill contexts (e.g. heartbeat drift recovery) can iterate over
+    # thousands of memories. Forcing regex there prevents loading the
+    # 3B LLM model and running inference per-memory, which would take
+    # hours and deadlock the loky worker pool. See git log for the
+    # 2026-06-26 heartbeat hang incident.
+    if force_regex:
+        use_llm = False
 
     facts = []
     if use_llm:

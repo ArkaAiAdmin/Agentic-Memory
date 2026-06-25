@@ -237,6 +237,11 @@ def _backfill_drifted_subsystems(conn: sqlite3.Connection, drifted: list[str]) -
             stats["fixed"]["kg_entities"] = f"error: {e}"
 
     # Backfill KG facts (index_facts_for_memory, NOT index_kg_for_memory)
+    # force_regex=True: the bulk heartbeat backfill iterates over every
+    # memory in the DB. Loading the LLM once and running inference per
+    # memory deadlocks the loky pool and freezes the machine for hours.
+    # Regex extraction is the safe path for backfill; LLM extraction
+    # still runs at save time for individual notes. (2026-06-26 fix)
     if "kg_facts" in drifted:
         try:
             from fact_extraction import ensure_facts_schema, index_facts_for_memory
@@ -245,7 +250,9 @@ def _backfill_drifted_subsystems(conn: sqlite3.Connection, drifted: list[str]) -
             count = 0
             for nid, content in note_contents.items():
                 if content:
-                    result = index_facts_for_memory(conn, nid, content)
+                    result = index_facts_for_memory(
+                        conn, nid, content, force_regex=True
+                    )
                     count += result.get("facts", 0)
             stats["fixed"]["kg_facts"] = count
         except Exception as e:
