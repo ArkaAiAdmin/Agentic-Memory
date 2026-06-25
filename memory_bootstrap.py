@@ -30,27 +30,46 @@ def _get_sessions_dir() -> Path:
 def _get_recent_compaction() -> str | None:
     """Return the full text of the most recent compaction note, if one
     happened within the last hour. Returns None if no recent compaction.
-    """
-    try:
-        state_file = _get_sessions_dir() / ".context_monitor_state.json"
-        if not state_file.exists():
-            return None
-        with open(state_file) as f:
-            state = json.load(f)
-        last_compaction = state.get("last_compaction_time", 0)
-        if (
-            not last_compaction
-            or (time.time() - last_compaction) > COMPACTION_WINDOW_SEC
-        ):
-            return None
 
-        ts = time.strftime("%Y-%m-%d_%H-%M-%S", time.gmtime(last_compaction))
-        path = _get_sessions_dir() / f"compaction-save-{ts}.md"
-        if path.exists():
-            return path.read_text()
-        return None
+    Two lookups: (1) state file timestamp, (2) glob over the sessions
+    directory for the most recently-modified compaction-save-*.md file.
+    The glob fallback handles cases where the state file's
+    last_compaction_time key was not yet persisted (e.g. the
+    track_tool_call → _save_state race that can wipe the key).
+    """
+    sessions_dir = _get_sessions_dir()
+    try:
+        state_file = sessions_dir / ".context_monitor_state.json"
+        if state_file.exists():
+            with open(state_file) as f:
+                state = json.load(f)
+            last_compaction = state.get("last_compaction_time", 0)
+            if (
+                last_compaction
+                and (time.time() - last_compaction) <= COMPACTION_WINDOW_SEC
+            ):
+                ts = time.strftime("%Y-%m-%d_%H-%M-%S", time.gmtime(last_compaction))
+                path = sessions_dir / f"compaction-save-{ts}.md"
+                if path.exists():
+                    return path.read_text()
     except Exception:
-        return None
+        pass
+
+    # Fallback: scan for the most recently-modified compaction-save-*.md
+    try:
+        candidates = sorted(
+            sessions_dir.glob("compaction-save-*.md"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for path in candidates:
+            age_sec = time.time() - path.stat().st_mtime
+            if age_sec <= COMPACTION_WINDOW_SEC:
+                return path.read_text()
+    except Exception:
+        pass
+
+    return None
 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

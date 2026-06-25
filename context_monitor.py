@@ -59,7 +59,8 @@ def _load_state() -> dict:
         "last_checkpoint_time": time.time(),
         "session_start_time": time.time(),
         "tools_since_checkpoint": 0,
-        "notable_tools": [],  # Recent tool calls worth remembering
+        "notable_tools": [],
+        "last_compaction_time": 0.0,
     }
 
 
@@ -582,18 +583,36 @@ def _build_activity_log(state: dict) -> str:
 
 
 def _build_autosave_section(autosaves: list) -> str:
-    """Format the last 100 auto-save records as a markdown bullet list.
-
-    Extracted from pre_compaction() (2026-06-22).
+    """Format auto-save records with content details for post-compaction
+    recovery. Shows the file, tool, and a content preview so the agent
+    can tell what actually changed.
     """
     lines = []
-    for a in autosaves[-100:]:
-        summary = a.get("content_preview", "")
-        if summary:
-            lines.append(f"- `{a['tool']}`: {summary}")
+    seen: set[str] = set()
+    for a in reversed(autosaves[-50:]):
+        tool = a.get("tool", "?")
+        fname = a.get("file", "?")
+        preview = a.get("content_preview", "")
+        dedup_key = f"{fname}:{tool}"
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        verb = {
+            "edit": "Edited",
+            "replace_file_content": "Edited",
+            "write": "Wrote",
+            "write_file": "Wrote",
+            "memory_save": "Saved",
+            "agentic-memory_memory_save": "Saved",
+        }.get(tool.split("_")[-1] if "_" in tool else tool, tool)
+        if preview:
+            first_line = preview.split("\n")[0].strip()[:120]
+            lines.append(f"- {verb} `{fname}`: {first_line}")
         else:
-            lines.append(f"- `{a['tool']}` ({a['file']})")
-    return "\n".join(lines) if lines else "- No auto-save notes found"
+            lines.append(f"- {verb} `{fname}`")
+    if not lines:
+        return "- No file changes recorded this session"
+    return "\n".join(lines)
 
 
 def _build_work_items(state: dict) -> str:
@@ -950,6 +969,9 @@ def pre_compaction(session_id: str = "", message_count: int = 0) -> dict:
     # Reset checkpoint counter so next session starts fresh
     state["tools_since_checkpoint"] = 0
     state["last_checkpoint_time"] = time.time()
+    # Preserve the compaction timestamp we wrote earlier (line 939); state
+    # was re-loaded from disk at line 941 and may not include it yet.
+    state["last_compaction_time"] = dedup_state.get("last_compaction_time", 0)
     _save_state(state)
 
     recent_conclusions = _extract_recent_conclusions(autosaves)
