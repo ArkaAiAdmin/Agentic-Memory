@@ -1241,7 +1241,7 @@ def _persist_via_saga_or_fallback(
     to double-acquire the same flock (which would block forever on a
     different fd for the same file).
     """
-    note_id = None
+    note_id: str = ""
     saga_ok = False
     if _is_saga_enabled():
         try:
@@ -1335,41 +1335,38 @@ def save_memory(
     _now_iso: str | None = None,
     importance: int = 3,
     _conn=None,
+    note_id: str = "",
+    context: str = "generic",
 ):
     """Write a memory note to disk and update the FTS5 index incrementally.
 
-    This is the core save function used by the MCP tool wrapper
-    ``memory_save`` (which keeps the MCP tool surface unchanged). The
-    ``safety_wiring`` kwarg controls whether the contradiction check
-    runs at save-time:
+    All normalization — content validation, frontmatter stripping,
+    category/title_slug derivation from note_id, and tag policy via
+    _resolve_tags — lives inside this function. Callers must pass raw
+    inputs and use the ``context`` kwarg so tag policy is applied
+    consistently. Do not reimplement any of this logic in callers.
 
-    * ``safety_wiring=True`` (default since 2026-06-07 BLK-1): runs
-      ``memory_contradiction_save.check_contradictions_on_save``
-      best-effort against the top-N most-recent notes. Findings are
-      logged to the audit table as a separate
-      ``memory_save_contradiction_check`` row (queryable via
-      ``memory_audit_query``) and surfaced as a structured warning in
-      the server log. The function still returns the canonical
-      ``note_id`` string so the MCP tool surface is unchanged.
-    * ``safety_wiring=False``: skips the contradiction check entirely.
-      The save is faster and lighter; callers that want to opt out
-      of safety wiring can pass this flag explicitly.
+    Args:
+        content: Raw note body.
+        category: Memory category (e.g. "lessons").
+        title_slug: URL-safe slug for the note.
+        tags: Optional list of tags (caller-supplied, always win).
+        pinned: Whether the note is pinned.
+        is_global: Write to global store vs local project store.
+        safety_wiring: Enable contradiction check at save time.
+        db_path: Override database path.
+        _now_iso: Override timestamp (testing).
+        importance: 1-5 importance score.
+        _conn: Reuse an existing DB connection (saga path).
+        note_id: Canonical note id ("category/slug"). When provided,
+            derives category and title_slug if those are empty.
+        context: Tag policy selector: "generic", "mcp", or "auto-save".
+            "mcp" auto-adds [category] for lessons/decisions when no
+            caller tags given. "auto-save" prepends hook tags.
 
     Returns:
-        The canonical ``note_id`` string (e.g. ``"lessons/foo"``) on a
-        successful save. On validation/persistence errors, an ``_err``
-        envelope string (``"Error [CODE]: message"``).
-
-        BLK-1 (2026-06-07): ``safety_wiring=True`` is now the default.
-        The contradiction check is run best-effort against the top-N
-        most-recent notes; any findings are logged to the audit table
-        as a separate ``memory_save_contradiction_check`` row (queryable
-        via ``memory_audit_query``) and surfaced as a structured warning
-        in the server log. The function still returns the canonical
-        note_id string so the MCP tool surface is unchanged — callers
-        that need the contradictions programmatically can read them
-        from the audit log or call ``memory_check_contradictions``
-        explicitly.
+        The canonical note_id string on success, or an _err envelope
+        string on failure.
     """
     from db import _local_state
 
@@ -1380,6 +1377,21 @@ def save_memory(
         if isinstance(result, str):
             return result
         tags_list, _tags_str = result
+        if note_id and "/" in note_id:
+            _derived_cat, _derived_slug = note_id.split("/", 1)
+            if not category:
+                category = _derived_cat
+            if not title_slug:
+                title_slug = _derived_slug
+        body = content
+        if content.startswith("---"):
+            _end = content.find("---", 3)
+            if _end != -1:
+                body = content[_end + 3 :].strip()
+        content = body
+        from memory_common import _resolve_tags
+
+        tags_list = _resolve_tags(category, tags_list, context=context)
         # H9: Prompt-injection scan — pure regex, no side effects, runs on every
         # path (MCP tool + hook) since both delegate to save_memory.
         inj_result = _scan_for_injection_or_skip(content, category, title_slug)

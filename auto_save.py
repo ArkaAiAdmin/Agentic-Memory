@@ -1108,19 +1108,24 @@ def _upsert_memory(
         parts = note_id.split("/", 1)
         category = parts[0] if len(parts) == 2 else "sessions"
         title_slug = parts[1] if len(parts) == 2 else note_id
-        tags_list = _resolve_tags(category, tags_json, context="generic")
-
-        # Strip existing frontmatter — save_memory builds its own
-        body = content
-        if content.startswith("---"):
-            _ = content.find("---", 3)
-            if _ != -1:
-                body = content[_ + 3 :].strip()
+        if tags_json is None:
+            tags_list = []
+        elif isinstance(tags_json, str):
+            try:
+                tags_list = json.loads(tags_json)
+            except json.JSONDecodeError:
+                tags_list = [
+                    t.strip() for t in re.split(r"[,; ]+", tags_json) if t.strip()
+                ]
+        elif isinstance(tags_json, list):
+            tags_list = [str(t).strip() for t in tags_json if t]
+        else:
+            tags_list = []
 
         from _lazy_imports import save_memory as _save_memory
 
         result = _save_memory(
-            content=body,
+            content=content,
             category=category,
             title_slug=title_slug,
             tags=tags_list,
@@ -1130,6 +1135,7 @@ def _upsert_memory(
             _now_iso=now_iso,
             importance=importance,
             _conn=conn,
+            note_id=note_id,
         )
         return isinstance(result, str) and not result.startswith("Error")
     except Exception as e:

@@ -34,7 +34,6 @@ from mcp_common import (
     _validate_slug,
     resolve_db_for_memory_id,
 )
-from memory_common import _resolve_tags
 from mcp_instance import mcp
 from save_pipeline import save_memory
 
@@ -64,17 +63,17 @@ def memory_save(
     if len(content) > 100_000:
         return f"Error: content exceeds 100,000 character limit ({len(content)} chars)"
 
-    resolved_tags = _resolve_tags(category, tags, context="mcp")
-
     result = save_memory(
         content=content,
         category=category,
         title_slug=title_slug,
-        tags=resolved_tags,
+        tags=tags,
         pinned=pinned,
         is_global=is_global,
         safety_wiring=True,
         importance=importance,
+        context="mcp",
+        note_id="",
     )
     if isinstance(result, str) and result.startswith("Error "):
         return result
