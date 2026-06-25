@@ -16,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import signal
 import sys
 import os
 import subprocess
@@ -30,7 +31,7 @@ def _run(script: str, args: list[str] | None = None) -> None:
     if not os.path.exists(script_path):
         script_path = os.path.join(SCRIPTS, "cron", script)
     cmd: list[str] = [PYTHON, script_path] + (args or [])
-    subprocess.run(cmd)
+    subprocess.run(cmd, timeout=300)
 
 
 def server_main() -> None:
@@ -71,7 +72,11 @@ def server_main() -> None:
     import mcp_tools  # noqa: F401
     import memory_mcp  # noqa: F401
 
-    mcp_instance.mcp.run()
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+    try:
+        mcp_instance.mcp.run()
+    except (BrokenPipeError, OSError, EOFError):
+        pass  # parent closed stdio — expected during restart
 
 
 def search_main() -> NoReturn:

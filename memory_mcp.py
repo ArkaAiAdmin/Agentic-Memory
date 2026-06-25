@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import _bootstrap_path  # noqa: E402
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -260,4 +261,8 @@ if __name__ == "__main__":
     except Exception as e:
         logger.info("sync server not started: %s", e)
 
-    mcp.run()
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+    try:
+        mcp.run()
+    except (BrokenPipeError, OSError, EOFError):
+        pass  # parent closed stdio — expected during restart

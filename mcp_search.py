@@ -144,34 +144,41 @@ def memory_search(
 
     local_results: dict[str, Any] = {"results": [], "count": 0, "output": ""}
     if local_db.exists():
-        local_results = search_memories(
-            local_db,
-            expanded_query,
-            limit,
-            include_global=False,
-            rerank=rerank,
-            boost_pinned=boost_pinned,
-            recency_weight=recency_weight,
-            include_invalid=include_invalid,
-            deep_rerank=deep_rerank,
-            include_facts=include_facts,
-            fact_limit=fact_limit,
-        )
+        try:
+            local_results = search_memories(
+                local_db,
+                expanded_query,
+                limit,
+                include_global=False,
+                rerank=rerank,
+                boost_pinned=boost_pinned,
+                recency_weight=recency_weight,
+                include_invalid=include_invalid,
+                deep_rerank=deep_rerank,
+                include_facts=include_facts,
+                fact_limit=fact_limit,
+            )
+        except Exception as exc:
+            logger.warning("Local search failed for query %r: %s", expanded_query, exc)
 
     if include_global and global_db.exists() and local_results["count"] < 3:
-        global_results: dict[str, Any] = search_memories(
-            global_db,
-            expanded_query,
-            limit,
-            include_global=False,
-            rerank=rerank,
-            boost_pinned=boost_pinned,
-            recency_weight=recency_weight,
-            include_invalid=include_invalid,
-            deep_rerank=deep_rerank,
-            include_facts=include_facts,
-            fact_limit=fact_limit,
-        )
+        try:
+            global_results: dict[str, Any] = search_memories(
+                global_db,
+                expanded_query,
+                limit,
+                include_global=False,
+                rerank=rerank,
+                boost_pinned=boost_pinned,
+                recency_weight=recency_weight,
+                include_invalid=include_invalid,
+                deep_rerank=deep_rerank,
+                include_facts=include_facts,
+                fact_limit=fact_limit,
+            )
+        except Exception as exc:
+            logger.warning("Global search failed for query %r: %s", expanded_query, exc)
+            global_results = {"results": [], "count": 0, "output": ""}
         if global_results["count"] > 0:
             sep = (
                 "\n\n---\nGLOBAL MEMORY RESULTS:\n"

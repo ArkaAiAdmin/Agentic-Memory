@@ -1,17 +1,15 @@
 """Agentic Memory — Local-first persistent memory for AI agents.
 
 This package is the canonical, pip-installable surface of the agentic-memory
-system. It re-exports the Mem0-compatible SDK (`Memory`, `AgentMemory`) and
-ships with a CLI entry point so the package can be used from any Python
-project after `pip install agentic-memory`.
+system.
 
 Quick start::
 
-    from agentic_memory import Memory
+    from agentic_memory import MemoryClient
 
-    m = Memory()
-    m.add("User prefers dark mode")
-    results = m.search("What does the user prefer?")
+    mc = MemoryClient()
+    mc.save("User prefers dark mode")
+    results = mc.search("What does the user prefer?")
 
     # With agent scoping:
     from agentic_memory import AgentMemory
@@ -20,58 +18,156 @@ Quick start::
     am.save("Frontend uses React with TypeScript")
     results = am.search("frontend")
 
-CLI usage (after `pip install -e .`)::
+CLI usage (after ``pip install -e .``)::
 
     agentic-memory search "user preferences"
     agentic-memory add "User prefers dark mode"
-    agentic-memory list
-    agentic-memory stats
+    agentic-memory kg stats
+    agentic-memory temporal contradictions
+    agentic-memory maintenance check
+    agentic-memory agent list
+    agentic-memory sync status
 
 Module usage::
 
     python -m agentic_memory search "user preferences"
 
 See Also:
-    - `sdk.py` — implementation of `Memory` / `AgentMemory`.
-    - `setup_memory.sh` — bootstraps a fresh project to use this package.
-    - `examples/` — runnable example scripts.
+    - ``agentic_memory.client`` — :class:`MemoryClient` (core SDK class).
+    - ``agentic_memory.models`` — typed dataclasses.
+    - ``agentic_memory.exceptions`` — typed exception hierarchy.
+    - ``examples/`` — runnable example scripts.
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 import os
 import sys
 from pathlib import Path
 
-# Make the repository root importable so `sdk.py` (which lives at the top
-# level and uses sibling modules like `_lazy_imports`, `memory_delete`,
-# `agent_context`) can find its dependencies. When the package is installed
-# via pip from a real distribution, the source layout is different and
-# this hack is unnecessary; in editable/dev mode where we run from the
-# repo root, this shim keeps things working.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-# Re-export the public API. We import from the top-level `sdk.py` module
-# (which already exists and is the source of truth) so the legacy
-# `from sdk import Memory` import path keeps working for existing tests
-# (eval/test_all_extended.py, eval/test_sdk.py, etc.).
-from sdk import Memory, AgentMemory  # noqa: E402,F401
+# New SDK (typed, feature-complete)
+from agentic_memory.client import MemoryClient  # noqa: E402,F401
+from agentic_memory.models import (  # noqa: E402,F401
+    MemoryResult,
+    SearchResults,
+    Entity,
+    Relation,
+    Fact,
+    Stats,
+    IntegrityReport,
+    AgentInfo,
+    MaintenanceResult,
+)
+from agentic_memory.exceptions import (  # noqa: E402,F401
+    AgenticMemoryError,
+    ConnectionError,
+    NotFoundError,
+    ValidationError,
+    IntegrityError,
+    MaintenanceError,
+    SyncError,
+    PermissionError,
+    CircuitBreakerOpen,
+    ConfigError,
+)
+from agentic_memory.kg import KnowledgeGraph  # noqa: E402,F401
+from agentic_memory.temporal import TemporalKG  # noqa: E402,F401
+from agentic_memory.maintenance import Maintenance  # noqa: E402,F401
+from agentic_memory.agent import AgentMemory  # noqa: E402,F401
+from agentic_memory.sync import SyncManager  # noqa: E402,F401
+from agentic_memory.admin import Admin  # noqa: E402,F401
+
+# Legacy backward-compat aliases
+from sdk import Memory  # noqa: E402,F401
 
 __all__ = [
-    "Memory",
+    # New SDK
+    "MemoryClient",
+    "MemoryResult",
+    "SearchResults",
+    "Entity",
+    "Relation",
+    "Fact",
+    "Stats",
+    "IntegrityReport",
+    "AgentInfo",
+    "MaintenanceResult",
+    # Exceptions
+    "AgenticMemoryError",
+    "ConnectionError",
+    "NotFoundError",
+    "ValidationError",
+    "IntegrityError",
+    "MaintenanceError",
+    "SyncError",
+    "PermissionError",
+    "CircuitBreakerOpen",
+    "ConfigError",
+    # P2 — Knowledge Graph
+    "KnowledgeGraph",
+    # P3 — Temporal KG
+    "TemporalKG",
+    # P4 — Maintenance
+    "Maintenance",
+    # P5 — Agent & Sync
     "AgentMemory",
+    "SyncManager",
+    # P4b — Admin
+    "Admin",
+    # Legacy backward-compat
+    "Memory",
     "main",
 ]
+
+
+def _json(obj: object) -> str:
+    """Compact JSON serialization with dataclass support."""
+    import dataclasses
+    import json
+
+    class _Encoder(json.JSONEncoder):
+        def default(self, o: object) -> object:
+            if dataclasses.is_dataclass(o) and not isinstance(o, type):
+                fields = getattr(o, "__dataclass_fields__", {})
+                return {n: getattr(o, n) for n in fields}
+            try:
+                return super().default(o)
+            except TypeError:
+                return str(o)
+
+    return json.dumps(obj, indent=2, cls=_Encoder)
+
+
+def _asdict(obj: object) -> dict:
+    """Serialize a dataclass to a dict (avoids  LSP noise)."""
+    if hasattr(obj, "__dataclass_fields__"):
+        fields = getattr(obj, "__dataclass_fields__", {})
+        return {n: getattr(obj, n) for n in fields}
+    if isinstance(obj, dict):
+        return obj
+    return {"_value": obj}
+
+
+def _init_mc() -> MemoryClient:
+    """Initialise a default MemoryClient, handling startup errors."""
+    try:
+        return MemoryClient()
+    except Exception as exc:
+        print(
+            f"agentic-memory: failed to initialise MemoryClient: {exc}", file=sys.stderr
+        )
+        raise SystemExit(2) from exc
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point.
 
     Provides a small CLI so the package is usable end-to-end without the
-    MCP server. Dispatches to the same operations exposed by the
-    `Memory` class.
+    MCP server. Dispatches to the typed SDK classes.
 
     Usage::
 
@@ -80,9 +176,15 @@ def main(argv: list[str] | None = None) -> int:
         agentic-memory list [--limit N]
         agentic-memory stats
         agentic-memory clear
+        agentic-memory demo [--query Q]
+
+        agentic-memory kg search <query>
+        agentic-memory temporal search <query>
+        agentic-memory maintenance check
+        agentic-memory agent list
+        agentic-memory sync status
     """
     import argparse
-    import json as _json
 
     if argv is None:
         argv = sys.argv[1:]
@@ -93,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
+    # ── Core commands ──────────────────────────────────────────────────
     p_add = sub.add_parser("add", help="Save a memory")
     p_add.add_argument("text", help="Memory text to save")
     p_add.add_argument("tags", nargs="*", help="Optional tags")
@@ -114,35 +217,407 @@ def main(argv: list[str] | None = None) -> int:
         help="Query to search for at the end of the demo",
     )
 
+    # ── Knowledge Graph ────────────────────────────────────────────────
+    p_kg = sub.add_parser("kg", help="Knowledge graph operations")
+    kg_sub = p_kg.add_subparsers(dest="kg_cmd", required=True)
+
+    kg_search = kg_sub.add_parser("search", help="Search KG entities")
+    kg_search.add_argument("query", help="Entity search query")
+    kg_search.add_argument("--limit", type=int, default=10)
+    kg_search.add_argument("--max-hops", type=int, default=2)
+
+    kg_facts = kg_sub.add_parser("facts", help="Search KG facts")
+    kg_facts.add_argument("query", help="Fact search query")
+    kg_facts.add_argument("--limit", type=int, default=10)
+
+    kg_path = kg_sub.add_parser("path", help="Shortest path between entities")
+    kg_path.add_argument("source", help="Source entity name")
+    kg_path.add_argument("target", help="Target entity name")
+    kg_path.add_argument("--max-hops", type=int, default=5)
+
+    kg_trav = kg_sub.add_parser("traverse", help="Traverse KG from a start entity")
+    kg_trav.add_argument("start", help="Starting entity")
+    kg_trav.add_argument("--max-hops", type=int, default=3)
+
+    kg_sub.add_parser("stats", help="KG statistics")
+
+    kg_lf = kg_sub.add_parser("list-facts", help="List all facts")
+    kg_lf.add_argument("--limit", type=int, default=50)
+    kg_lf.add_argument("--offset", type=int, default=0)
+
+    # ── Temporal KG ────────────────────────────────────────────────────
+    p_tmp = sub.add_parser("temporal", help="Temporal KG operations")
+    tmp_sub = p_tmp.add_subparsers(dest="temporal_cmd", required=True)
+
+    tmp_search = tmp_sub.add_parser("search", help="Search temporal facts")
+    tmp_search.add_argument("query", help="Fact text query")
+    tmp_search.add_argument("--limit", type=int, default=10)
+
+    tmp_contra = tmp_sub.add_parser("contradictions", help="List contradiction events")
+    tmp_contra.add_argument("--since", type=float, default=None)
+    tmp_contra.add_argument("--until", type=float, default=None)
+    tmp_contra.add_argument("--reason", type=str, default=None)
+    tmp_contra.add_argument("--limit", type=int, default=50)
+    tmp_contra.add_argument("--offset", type=int, default=0)
+
+    tmp_at = tmp_sub.add_parser("at-time", help="Facts valid at a given timestamp")
+    tmp_at.add_argument("timestamp", type=float, help="Epoch timestamp")
+    tmp_at.add_argument("--query", type=str, default=None)
+    tmp_at.add_argument("--limit", type=int, default=50)
+
+    tmp_cs = tmp_sub.add_parser("changed-since", help="Facts changed since a timestamp")
+    tmp_cs.add_argument("timestamp", type=float, help="Epoch timestamp")
+    tmp_cs.add_argument("--limit", type=int, default=100)
+
+    tmp_chain = tmp_sub.add_parser("chain", help="Walk supersession chain")
+    tmp_chain.add_argument("fact_id", type=int, help="Fact ID to walk from")
+
+    tmp_inv = tmp_sub.add_parser("invalidate", help="Manually invalidate a fact")
+    tmp_inv.add_argument("fact_id", type=int, help="Fact ID to invalidate")
+    tmp_inv.add_argument("--reason", type=str, default="manual")
+
+    # ── Maintenance ────────────────────────────────────────────────────
+    p_maint = sub.add_parser("maintenance", help="Maintenance operations")
+    maint_sub = p_maint.add_subparsers(dest="maint_cmd", required=True)
+
+    m_rebuild = maint_sub.add_parser("rebuild", help="Rebuild FTS5 index")
+    m_rebuild.add_argument(
+        "--scope", default="active", choices=("active", "local", "global")
+    )
+
+    m_compact = maint_sub.add_parser("compact", help="Run compaction pipeline")
+    m_compact.add_argument("--dry-run", action="store_true")
+
+    m_check = maint_sub.add_parser("check", help="Check DB integrity")
+    m_check.add_argument("--deep", action="store_true")
+
+    maint_sub.add_parser("audit", help="Audit memory system health")
+    maint_sub.add_parser("heartbeat", help="Run self-directed heartbeat")
+    maint_sub.add_parser("tier-stats", help="Show tier distribution")
+    maint_sub.add_parser("tier-migrate", help="Run tier migration")
+    maint_sub.add_parser("consolidate", help="Run fact consolidation")
+    maint_sub.add_parser("rewrite-links", help="Rewrite broken wiki links")
+
+    m_dc = maint_sub.add_parser(
+        "detect-contradictions", help="Run contradiction detector"
+    )
+    m_dc.add_argument(
+        "--min-confidence", default="low", choices=("low", "medium", "high")
+    )
+    m_dc.add_argument("--mode", default="both", choices=("phrase", "semantic", "both"))
+    m_dc.add_argument("--threshold", type=float, default=0.65)
+
+    m_run = maint_sub.add_parser("run", help="Run an arbitrary maintenance operation")
+    m_run.add_argument("operation", help="Operation name (e.g. heartbeat, duplicates)")
+    m_run.add_argument("args", nargs=argparse.REMAINDER, help="key=value arguments")
+
+    # ── Admin ─────────────────────────────────────────────────────────
+    p_adm = sub.add_parser("admin", help="Admin & system-health operations")
+    adm_sub = p_adm.add_subparsers(dest="admin_cmd", required=True)
+
+    adm_sub.add_parser("health", help="Per-table row counts and staleness")
+    adm_cb = adm_sub.add_parser("circuit-breaker", help="Circuit breaker event history")
+    adm_cb.add_argument("--limit", type=int, default=20)
+    adm_cb.add_argument("--since", type=float, default=None)
+
+    # ── Agent ──────────────────────────────────────────────────────────
+    p_agent = sub.add_parser("agent", help="Agent-scoped memory operations")
+    agent_sub = p_agent.add_subparsers(dest="agent_cmd", required=True)
+
+    agent_sub.add_parser("list", help="List registered agents")
+
+    agent_info = agent_sub.add_parser("info", help="Show agent info")
+    agent_info.add_argument("--agent-id", required=True, help="Agent identifier")
+
+    agent_save = agent_sub.add_parser("save", help="Save an agent-scoped memory")
+    agent_save.add_argument("--agent-id", required=True, help="Agent identifier")
+    agent_save.add_argument("text", help="Memory text to save")
+    agent_save.add_argument("--tags", nargs="*", default=[])
+    agent_save.add_argument("--category", default="agents")
+
+    agent_search = agent_sub.add_parser("search", help="Search agent-scoped memories")
+    agent_search.add_argument("--agent-id", required=True, help="Agent identifier")
+    agent_search.add_argument("query", help="Search query")
+    agent_search.add_argument("--limit", type=int, default=10)
+
+    agent_list = agent_sub.add_parser(
+        "list-memories", help="List agent-scoped memories"
+    )
+    agent_list.add_argument("--agent-id", required=True, help="Agent identifier")
+    agent_list.add_argument("--limit", type=int, default=50)
+
+    agent_clear = agent_sub.add_parser("clear", help="Clear agent-scoped memories")
+    agent_clear.add_argument("--agent-id", required=True, help="Agent identifier")
+
+    # ── Sync ───────────────────────────────────────────────────────────
+    p_sync = sub.add_parser("sync", help="Sync & sharing operations")
+    sync_sub = p_sync.add_subparsers(dest="sync_cmd", required=True)
+
+    sync_sub.add_parser("status", help="Show sync status")
+
+    sync_share = sync_sub.add_parser("share", help="Share a memory with an agent")
+    sync_share.add_argument("note_id", help="Note ID to share")
+    sync_share.add_argument("agent_id", help="Target agent identifier")
+
+    sync_ls = sync_sub.add_parser("list-shared", help="List shared memories")
+    sync_ls.add_argument("--agent-id", default="")
+    sync_ls.add_argument("--category", default="")
+    sync_ls.add_argument("--limit", type=int, default=50)
+
+    sync_import = sync_sub.add_parser("import", help="Import a shared memory")
+    sync_import.add_argument("shared_id", help="Shared memory ID")
+    sync_import.add_argument("target_agent_id", help="Agent to import into")
+
+    sync_as = sync_sub.add_parser("auto-share", help="Auto-share high-value memories")
+    sync_as.add_argument("--agent-id", default="")
+    sync_as.add_argument("--min-importance", type=int, default=0)
+    sync_as.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args(argv)
 
-    try:
-        m = Memory()
-    except Exception as exc:
-        print(f"agentic-memory: failed to initialize Memory: {exc}", file=sys.stderr)
-        return 2
+    # ── Dispatch ───────────────────────────────────────────────────────
 
-    if args.cmd == "add":
-        note_id = m.add(args.text, tags=args.tags)
-        print(_json.dumps({"note_id": note_id}))
-        return 0
-    if args.cmd == "search":
-        results = m.search(args.query, limit=args.limit)
-        print(_json.dumps(results, indent=2, default=str))
-        return 0
-    if args.cmd == "list":
-        notes = m.list(limit=args.limit)
-        print(_json.dumps({"count": len(notes), "notes": notes}, indent=2, default=str))
-        return 0
-    if args.cmd == "stats":
-        print(_json.dumps(m.stats(), indent=2))
-        return 0
-    if args.cmd == "clear":
-        n = m.clear()
-        print(_json.dumps({"cleared": n}))
-        return 0
-    if args.cmd == "demo":
-        return _run_demo(args.query)
+    # Core commands
+    if args.cmd in ("add", "search", "list", "stats", "clear", "demo"):
+        mc = _init_mc()
+        if args.cmd == "add":
+            note_id = mc.save(args.text, tags=args.tags)
+            print(_json({"note_id": note_id}))
+            return 0
+        if args.cmd == "search":
+            results = mc.search(args.query, limit=args.limit)
+            print(
+                _json(
+                    {
+                        "results": [r for r in results.results],
+                        "total": results.total,
+                        "synthesis": results.synthesis,
+                        "query": results.query,
+                    }
+                )
+            )
+            return 0
+        if args.cmd == "list":
+            notes = mc.list(limit=args.limit)
+            print(_json({"count": len(notes), "notes": [r for r in notes]}))
+            return 0
+        if args.cmd == "stats":
+            s = mc.stats()
+            print(_json(s))
+            return 0
+        if args.cmd == "clear":
+            n = mc.clear()
+            print(_json({"cleared": n}))
+            return 0
+        if args.cmd == "demo":
+            return _run_demo(args.query)
+
+    # KG
+    if args.cmd == "kg":
+        kg = KnowledgeGraph()
+        try:
+            if args.kg_cmd == "search":
+                ents = kg.search(args.query, limit=args.limit, max_hops=args.max_hops)
+                print(_json([e for e in ents]))
+            elif args.kg_cmd == "facts":
+                facts = kg.search_facts(args.query, limit=args.limit)
+                print(_json([f for f in facts]))
+            elif args.kg_cmd == "path":
+                path = kg.shortest_path(
+                    args.source, args.target, max_hops=args.max_hops
+                )
+                print(_json([r for r in path]))
+            elif args.kg_cmd == "traverse":
+                ents, rels = kg.traverse(args.start, max_hops=args.max_hops)
+                print(
+                    _json(
+                        {
+                            "entities": [e for e in ents],
+                            "relations": [r for r in rels],
+                        }
+                    )
+                )
+            elif args.kg_cmd == "stats":
+                print(_json(kg.stats()))
+            elif args.kg_cmd == "list-facts":
+                facts = kg.list_facts(limit=args.limit, offset=args.offset)
+                print(_json([f for f in facts]))
+            return 0
+        except Exception as exc:
+            print(f"kg {args.kg_cmd}: {exc}", file=sys.stderr)
+            return 1
+
+    # Temporal
+    if args.cmd == "temporal":
+        tk = TemporalKG()
+        try:
+            if args.temporal_cmd == "search":
+                facts = tk.search(args.query, limit=args.limit)
+                print(_json([f for f in facts]))
+            elif args.temporal_cmd == "contradictions":
+                events = tk.contradictions(
+                    since_ts=args.since,
+                    until_ts=args.until,
+                    reason=args.reason,
+                    limit=args.limit,
+                    offset=args.offset,
+                )
+                print(_json(events))
+            elif args.temporal_cmd == "at-time":
+                facts = tk.query_facts_at_time(
+                    args.timestamp,
+                    query=args.query,
+                    limit=args.limit,
+                )
+                print(_json([f for f in facts]))
+            elif args.temporal_cmd == "changed-since":
+                facts = tk.query_changed_since(args.timestamp, limit=args.limit)
+                print(_json([f for f in facts]))
+            elif args.temporal_cmd == "chain":
+                facts = tk.query_supersession_chain(args.fact_id)
+                print(_json([f for f in facts]))
+            elif args.temporal_cmd == "invalidate":
+                ok = tk.invalidate_fact(args.fact_id, reason=args.reason)
+                print(_json({"ok": ok, "fact_id": args.fact_id, "reason": args.reason}))
+            return 0
+        except Exception as exc:
+            print(f"temporal {args.temporal_cmd}: {exc}", file=sys.stderr)
+            return 1
+
+    # Maintenance
+    if args.cmd == "maintenance":
+        m = Maintenance()
+        try:
+            if args.maint_cmd == "rebuild":
+                result = m.rebuild(scope=args.scope)
+                print(_json(result if hasattr(result, "_asdict") else result))
+            elif args.maint_cmd == "compact":
+                result = m.compact(dry_run=args.dry_run)
+                print(_json(result if hasattr(result, "_asdict") else result))
+            elif args.maint_cmd == "check":
+                report = m.check_integrity(deep=args.deep)
+                print(_json(report if hasattr(report, "_asdict") else report))
+            elif args.maint_cmd == "audit":
+                print(_json(m.audit()))
+            elif args.maint_cmd == "heartbeat":
+                print(_json(m.heartbeat()))
+            elif args.maint_cmd == "tier-stats":
+                print(_json(m.tier_stats()))
+            elif args.maint_cmd == "tier-migrate":
+                print(_json({"result": m.run_tier_migration()}))
+            elif args.maint_cmd == "consolidate":
+                result = m.consolidate()
+                print(_json(result if hasattr(result, "_asdict") else result))
+            elif args.maint_cmd == "rewrite-links":
+                result = m.rewrite_links()
+                print(_json(result if hasattr(result, "_asdict") else result))
+            elif args.maint_cmd == "detect-contradictions":
+                result = m.detect_contradictions(
+                    min_confidence=args.min_confidence,
+                    mode=args.mode,
+                    semantic_threshold=args.threshold,
+                )
+                print(_json(result))
+            elif args.maint_cmd == "run":
+                kwargs = {}
+                for a in args.args:
+                    if "=" in a:
+                        k, v = a.split("=", 1)
+                        kwargs[k] = v
+                result = m.run(args.operation, **kwargs)
+                print(_json({"operation": args.operation, "result": result}))
+            return 0
+        except Exception as exc:
+            print(f"maintenance {args.maint_cmd}: {exc}", file=sys.stderr)
+            return 1
+
+    # Admin
+    if args.cmd == "admin":
+        adm = Admin()
+        try:
+            if args.admin_cmd == "health":
+                print(_json(adm.health()))
+            elif args.admin_cmd == "circuit-breaker":
+                print(
+                    _json(
+                        adm.circuit_breaker_status(
+                            limit=args.limit, since_ts=args.since
+                        )
+                    )
+                )
+            return 0
+        except Exception as exc:
+            print(f"admin {args.admin_cmd}: {exc}", file=sys.stderr)
+            return 1
+
+    # Agent
+    if args.cmd == "agent":
+        try:
+            if args.agent_cmd == "list":
+                agents = AgentMemory.list_agents()
+                print(_json([a for a in agents]))
+            elif args.agent_cmd == "info":
+                am = AgentMemory(agent_id=args.agent_id)
+                print(_json(am.info))
+            elif args.agent_cmd == "save":
+                am = AgentMemory(agent_id=args.agent_id)
+                note_id = am.save(args.text, category=args.category, tags=args.tags)
+                print(_json({"note_id": note_id}))
+            elif args.agent_cmd == "search":
+                am = AgentMemory(agent_id=args.agent_id)
+                results = am.search(args.query, limit=args.limit)
+                print(
+                    _json(
+                        {
+                            "results": [r for r in results.results],
+                            "total": results.total,
+                            "query": results.query,
+                        }
+                    )
+                )
+            elif args.agent_cmd == "list-memories":
+                am = AgentMemory(agent_id=args.agent_id)
+                notes = am.list(limit=args.limit)
+                print(_json({"count": len(notes), "notes": [r for r in notes]}))
+            elif args.agent_cmd == "clear":
+                am = AgentMemory(agent_id=args.agent_id)
+                n = am.clear()
+                print(_json({"cleared": n}))
+            return 0
+        except Exception as exc:
+            print(f"agent {args.agent_cmd}: {exc}", file=sys.stderr)
+            return 1
+
+    # Sync
+    if args.cmd == "sync":
+        sm = SyncManager()
+        try:
+            if args.sync_cmd == "status":
+                print(_json(sm.status()))
+            elif args.sync_cmd == "share":
+                ok = sm.share(args.note_id, args.agent_id)
+                print(_json({"ok": ok}))
+            elif args.sync_cmd == "list-shared":
+                items = sm.list_shared(
+                    agent_id=args.agent_id,
+                    category=args.category,
+                    limit=args.limit,
+                )
+                print(_json(items))
+            elif args.sync_cmd == "import":
+                ok = sm.import_shared(args.shared_id, args.target_agent_id)
+                print(_json({"ok": ok}))
+            elif args.sync_cmd == "auto-share":
+                result = sm.auto_share(
+                    agent_id=args.agent_id,
+                    min_importance=args.min_importance,
+                    dry_run=args.dry_run,
+                )
+                print(_json(result))
+            return 0
+        except Exception as exc:
+            print(f"sync {args.sync_cmd}: {exc}", file=sys.stderr)
+            return 1
 
     parser.print_help()
     return 1
@@ -154,9 +629,7 @@ def _run_demo(query: str) -> int:
     This is the canonical "hello world" for the SDK. It is the
     implementation backing the `memory_sdk_demo` MCP tool.
     """
-    import json as _json
-
-    m = Memory()
+    mc = _init_mc()
     samples = [
         ("User prefers dark mode in all editors.", ["preferences", "ui"]),
         ("User is learning Rust and building a CLI tool.", ["learning", "rust"]),
@@ -165,27 +638,30 @@ def _run_demo(query: str) -> int:
     saved = []
     for text, tags in samples:
         try:
-            note_id = m.add(text, tags=tags)
+            note_id = mc.save(text, tags=tags)
             saved.append({"text": text, "note_id": note_id})
         except Exception as exc:
             saved.append({"text": text, "error": str(exc)})
 
     try:
-        results = m.search(query, limit=5)
+        results = mc.search(query, limit=5)
     except Exception as exc:
-        results = [{"error": str(exc)}]
+        results = {"error": str(exc)}
 
     try:
-        stats = m.stats()
+        s = mc.stats()
+        stats = s if hasattr(s, "_asdict") else str(s)
     except Exception as exc:
         stats = {"error": str(exc)}
 
     out = {
         "saved": saved,
         "search_query": query,
-        "results": results,
+        "results": results if hasattr(results, "_asdict") else results,
         "stats": stats,
     }
+    import json as _json
+
     print(_json.dumps(out, indent=2, default=str))
     return 0
 
