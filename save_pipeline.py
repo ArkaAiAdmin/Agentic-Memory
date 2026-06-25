@@ -381,6 +381,15 @@ def _upsert_memory_row(
     """
     importance = max(1, min(5, int(importance)))
     repo_id = None if is_global else db_path.parent.parent.name
+    try:
+        json.loads(metadata_json)
+    except (json.JSONDecodeError, TypeError) as exc:
+        logger.warning(
+            "_upsert_memory_row: invalid metadata_json for %s: %s — defaulting to {}",
+            note_id,
+            exc,
+        )
+        metadata_json = "{}"
     if has_temporal:
         # 2026-06-22 (D5 fix): the previous ``ON CONFLICT`` clause had
         # ``metadata = COALESCE(memories.metadata, memories.metadata)``,
@@ -546,9 +555,27 @@ def upsert_row(
     if metadata is None:
         metadata_json = "{}"
     elif isinstance(metadata, str):
-        metadata_json = metadata
+        try:
+            json.loads(metadata)
+            metadata_json = metadata
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.warning(
+                "upsert_row: non-JSON-serializable string metadata for %s (%s): %s — defaulting to {}",
+                note_id,
+                metadata[:80] if len(metadata) > 80 else metadata,
+                exc,
+            )
+            metadata_json = "{}"
     else:
-        metadata_json = json.dumps(metadata)
+        try:
+            metadata_json = json.dumps(metadata)
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "upsert_row: non-JSON-serializable metadata for %s: %s — defaulting to {}",
+                note_id,
+                exc,
+            )
+            metadata_json = "{}"
 
     # Detect schema features (temporal columns + tier) by PRAGMA.
     # B5 fix: use the centralized helper instead of duplicating the

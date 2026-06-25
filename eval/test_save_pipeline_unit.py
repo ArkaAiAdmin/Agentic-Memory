@@ -1627,5 +1627,127 @@ class TestComputeFinalScoreFull(unittest.TestCase):
         self.assertIsInstance(score, float)
 
 
+class TestUpsertRowMetadataGuard(unittest.TestCase):
+    """upsert_row must not accept bad metadata without logging."""
+
+    COLUMNS = (
+        "id TEXT PRIMARY KEY,"
+        "source_file TEXT, content TEXT, tags TEXT,"
+        "created_at TEXT, updated_at TEXT, observed_at TEXT,"
+        "fitness_score REAL DEFAULT 0.5,"
+        "importance INTEGER DEFAULT 3,"
+        "importance_score REAL DEFAULT 0.5,"
+        "pinned INTEGER DEFAULT 0,"
+        "repo_id TEXT,"
+        "category TEXT,"
+        "tier TEXT DEFAULT 'warm',"
+        "valid_from TEXT, valid_to TEXT, superseded_by TEXT,"
+        "deleted_at TEXT,"
+        "metadata TEXT DEFAULT '{}'"
+    )
+
+    def _make_bare_db(self):
+        tmp = Path(tempfile.mktemp(suffix=".guard.db"))
+        tmp.write_bytes(b"")
+        conn = sqlite3.connect(str(tmp))
+        conn.execute(f"CREATE TABLE IF NOT EXISTS file_mtimes (path TEXT PRIMARY KEY, mtime REAL, content_hash TEXT);")
+        conn.execute(f"CREATE TABLE IF NOT EXISTS memories ({self.COLUMNS});")
+        conn.commit()
+        return tmp, conn
+
+    def test_string_metadata_invalid_json_logs_warning(self):
+        from save_pipeline import upsert_row
+
+        tmp, conn = self._make_bare_db()
+        try:
+            with patch("save_pipeline._detect_schema_features",
+                       return_value={"has_temporal": True, "has_tier": True}):
+                with patch("save_pipeline.logger") as mock_logger:
+                    upsert_row(
+                        conn=conn, note_id="test/x", content="body",
+                        source_file="test/x.md", tags=[], category="test",
+                        metadata="not valid json {{{ ",
+                        db_path=tmp,
+                    )
+            mock_logger.warning.assert_called()
+            args = mock_logger.warning.call_args[0]
+            self.assertIn("non-JSON-serializable", args[0])
+        finally:
+            conn.close()
+            tmp.unlink(missing_ok=True)
+
+    def test_dict_metadata_non_serializable_logs_warning(self):
+        from save_pipeline import upsert_row
+        import datetime
+
+        with patch("save_pipeline._detect_schema_features",
+                   return_value={"has_temporal": True, "has_tier": True}):
+            tmp, conn = self._make_bare_db()
+            try:
+                with patch("save_pipeline.logger") as mock_logger:
+                    upsert_row(
+                        conn=conn, note_id="test/x2", content="body",
+                        source_file="test/x2.md", tags=[], category="test",
+                        metadata={"ts": datetime.datetime.now()},
+                        db_path=tmp,
+                    )
+                mock_logger.warning.assert_called()
+            finally:
+                conn.close()
+                tmp.unlink(missing_ok=True)
+
+    def test_none_metadata_defaults_to_empty_object(self):
+        from save_pipeline import upsert_row
+
+        with patch("save_pipeline._detect_schema_features",
+                   return_value={"has_temporal": True, "has_tier": True}):
+            tmp, conn = self._make_bare_db()
+            try:
+                upsert_row(
+                    conn=conn, note_id="test/x3", content="body",
+                    source_file="test/x3.md", tags=[], category="test",
+                    metadata=None, db_path=tmp,
+                )
+                conn.commit()
+                row = conn.execute(
+                    "SELECT metadata FROM memories WHERE id=?", ("test/x3",)
+                ).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row[0], "{}")
+            finally:
+                conn.close()
+                tmp.unlink(missing_ok=True)
+
+    def test_valid_dict_metadata_saved_and_retrievable(self):
+        from save_pipeline import upsert_row
+        import json as _json
+
+        with patch("save_pipeline._detect_schema_features",
+                   return_value={"has_temporal": True, "has_tier": True}):
+            tmp, conn = self._make_bare_db()
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO file_mtimes (path, mtime) VALUES (?, 0)",
+                    ("test/x4.md",),
+                )
+                upsert_row(
+                    conn=conn, note_id="test/x4", content="body",
+                    source_file="test/x4.md", tags=[], category="test",
+                    metadata={"project": "am", "version": 1},
+                    db_path=tmp,
+                )
+                conn.commit()
+                row = conn.execute(
+                    "SELECT metadata FROM memories WHERE id=?", ("test/x4",)
+                ).fetchone()
+                self.assertIsNotNone(row)
+                parsed = _json.loads(row[0])
+                self.assertEqual(parsed["project"], "am")
+                self.assertEqual(parsed["version"], 1)
+            finally:
+                conn.close()
+                tmp.unlink(missing_ok=True)
+
+
 if __name__ == "__main__":
     unittest.main()

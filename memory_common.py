@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 import warnings
 from pathlib import Path
 from typing import Optional
@@ -567,3 +568,43 @@ def _resolve_tags(
     if context == "mcp" and not base and category in ("lessons", "decisions"):
         return [category]
     return base
+
+
+_STATE_DIR = Path.home() / ".config" / "agentic-memory"
+
+
+def _compliance_last_warn_path() -> Path:
+    return _STATE_DIR / "compliance_last_warn.json"
+
+
+def should_complain_about_score(
+    score: float, *, window_seconds: float = 86400.0, change_threshold: float = 10.0
+) -> bool:
+    state_path = _compliance_last_warn_path()
+    now = time.time()
+    try:
+        raw = state_path.read_text(encoding="utf-8")
+        prev = json.loads(raw)
+    except (OSError, json.JSONDecodeError, TypeError):
+        prev = {}
+    prev_score = prev.get("score")
+    prev_ts = prev.get("ts", 0)
+    if prev_score is None:
+        state_path.write_text(
+            json.dumps({"score": round(score, 2), "ts": round(now)}),
+            encoding="utf-8",
+        )
+        return True
+    if abs(float(prev_score) - score) >= change_threshold:
+        state_path.write_text(
+            json.dumps({"score": round(score, 2), "ts": round(now)}),
+            encoding="utf-8",
+        )
+        return True
+    if (now - float(prev_ts)) >= window_seconds:
+        state_path.write_text(
+            json.dumps({"score": round(score, 2), "ts": round(now)}),
+            encoding="utf-8",
+        )
+        return True
+    return False
