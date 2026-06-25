@@ -6,43 +6,30 @@
 -- queries ("what did we know on date X?") and automatic supersession
 -- (when a new fact contradicts an old one).
 --
--- The schema mirrors the already-present note-level temporal columns on
--- the ``memories`` table (valid_from, valid_to, superseded_by).  The
--- note-level machinery in temporal_resolver.py + crdt_merge.py keeps
--- working unchanged; this migration adds the missing fact-level layer
--- that the kg_facts table needs.
+-- --- Upgrade-only best-effort path ---
 --
--- New columns:
---   * event_time REAL                   -- when the fact was true in the world
---                                          (extracted from text: "as of March 2026",
---                                          "until 2024", etc.)
---   * event_time_granularity TEXT        -- precision: 'day' | 'month' | 'year' | 'unknown'
---   * transaction_time REAL              -- when WE learned it (default: now)
---   * valid_at REAL                      -- when the fact became true (event-time);
---                                          NULL = unknown (treat as 'always true')
---   * invalid_at REAL                    -- when it stopped being true; NULL = still valid
---   * superseded_by INTEGER               -- FK to kg_facts.id (the newer version)
---   * supersedes INTEGER                 -- FK to kg_facts.id (the older version)
---   * contradiction_score REAL           -- 0.0-1.0; how strongly the supersede was a contradiction
---   * invalidation_reason TEXT            -- 'superseded' | 'contradicted' | 'expired' | 'manual'
+-- This migration is a no-op on fresh databases.  Migration 019 creates
+-- the kg_facts table with all of these columns already present in the
+-- table definition, so on a fresh install 019 produces a complete schema
+-- and none of the ALTER TABLE statements below need to run.
 --
--- All new columns are NULL-able with NULL defaults so existing rows are
--- unaffected.  Backfill is trivial: no data movement needed.
+-- This migration only adds value when upgrading a database that already
+-- has kg_facts (created by an earlier path) but lacks the temporal
+-- columns.  In that case the ALTER TABLEs succeed and the backfill runs.
 --
--- New indexes (T1.5):
---   * idx_kg_facts_validity  -- (valid_at, invalid_at) for at-time queries
---   * idx_kg_facts_superseded_by            -- chain traversal
---   * idx_kg_facts_event_time               -- event-time ordering
+-- If kg_facts does not exist yet, the migration runner catches the
+-- "no such table" errors and continues — this is intentional.  Do NOT
+-- add a CREATE TABLE here; 019 owns the authoritative table definition.
 --
--- Note: SQLite ALTER TABLE ADD COLUMN is idempotent only at the Python
--- level (the parser tracks "column already exists" via the schema
--- introspection).  The migration runner sees the column is present
--- in the table_info and skips re-adding.  The CREATE INDEX statements
--- use IF NOT EXISTS so they're naturally idempotent.
+-- Reference schema (matching 019's CREATE TABLE):
+--   event_time, event_time_granularity, transaction_time,
+--   valid_at, invalid_at, superseded_by, supersedes,
+--   contradiction_score, invalidation_reason
 
--- ---------------------------------------------------------------------------
--- 1. Add the new columns
--- ---------------------------------------------------------------------------
+-- Only attempt column adds if kg_facts exists and the column is missing.
+-- SQLite has no ALTER TABLE IF NOT COLUMN EXISTS, so we rely on the
+-- migration runner's per-statement exception handling to swallow the
+-- "no such table" error on fresh DBs.
 
 ALTER TABLE kg_facts ADD COLUMN event_time REAL;
 ALTER TABLE kg_facts ADD COLUMN event_time_granularity TEXT;
@@ -56,20 +43,13 @@ ALTER TABLE kg_facts ADD COLUMN supersedes INTEGER
 ALTER TABLE kg_facts ADD COLUMN contradiction_score REAL DEFAULT 0.0;
 ALTER TABLE kg_facts ADD COLUMN invalidation_reason TEXT;
 
--- ---------------------------------------------------------------------------
--- 2. Backfill transaction_time for existing facts (we don't have
---    event_time, so leave it NULL = 'unknown')
--- ---------------------------------------------------------------------------
-
+-- Backfill transaction_time for existing facts (only runs if table exists).
 UPDATE kg_facts
 SET transaction_time = COALESCE(first_seen, last_seen, 0.0)
 WHERE transaction_time IS NULL
   AND (first_seen IS NOT NULL OR last_seen IS NOT NULL);
 
--- ---------------------------------------------------------------------------
--- 3. New indexes
--- ---------------------------------------------------------------------------
-
+-- Indexes — IF NOT EXISTS makes these naturally idempotent.
 CREATE INDEX IF NOT EXISTS idx_kg_facts_validity
     ON kg_facts(valid_at, invalid_at);
 CREATE INDEX IF NOT EXISTS idx_kg_facts_superseded_by

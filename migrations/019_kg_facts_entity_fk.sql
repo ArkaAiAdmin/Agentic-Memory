@@ -22,23 +22,55 @@
 -- schema (with the FK fix), so running it on an already-migrated DB
 -- is a no-op for the data. The only change is the FK clause.
 --
--- After this migration, deleting a kg_entities row that has kg_facts
--- references will set the referencing subject_entity_id or
--- object_entity_id to NULL (instead of failing the delete). This is
--- the desired behavior — we don't want orphan FK references blocking
--- the delete.
+-- Fresh-DB safety: on a brand-new database, kg_facts may not exist yet
+-- (migration 018 adds temporal columns but does not create the table;
+-- that responsibility belongs here).  The backup/copy/restore steps
+-- gracefully no-op when the source table is absent — the migration
+-- runner swallows the resulting "no such table" error (logged at debug
+-- level) and proceeds to create the table fresh.
 
 -- ---------------------------------------------------------------------------
 -- 1. Back up existing kg_facts
 -- ---------------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS kg_facts_backup_019 AS SELECT * FROM kg_facts;
+-- Create an empty backup table with the full schema first, then copy
+-- data only if kg_facts already has rows.  This avoids "no such table"
+-- on fresh DBs where kg_facts hasn't been created yet.
+CREATE TABLE IF NOT EXISTS kg_facts_backup_019 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object TEXT NOT NULL,
+    confidence REAL DEFAULT 1.0,
+    locked INTEGER DEFAULT 0,
+    first_seen REAL,
+    last_seen REAL,
+    mention_count INTEGER DEFAULT 1,
+    source_memory TEXT,
+    context TEXT,
+    subject_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+    object_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+    event_time REAL,
+    event_time_granularity TEXT,
+    transaction_time REAL,
+    valid_at REAL,
+    invalid_at REAL,
+    superseded_by INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL,
+    supersedes INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL,
+    contradiction_score REAL DEFAULT 0.0,
+    invalidation_reason TEXT,
+    UNIQUE(subject, predicate, object),
+    FOREIGN KEY (source_memory) REFERENCES memories(id) ON DELETE SET NULL
+);
+-- Copy existing rows (no-op on fresh DBs where kg_facts doesn't exist yet;
+-- the migration runner logs a debug-level message and continues).
+INSERT INTO kg_facts_backup_019 SELECT * FROM kg_facts;
 
 -- ---------------------------------------------------------------------------
 -- 2. Drop the old table
 -- ---------------------------------------------------------------------------
 
-DROP TABLE kg_facts;
+DROP TABLE IF EXISTS kg_facts;
 
 -- ---------------------------------------------------------------------------
 -- 3. Recreate with ON DELETE SET NULL on the entity FKs
@@ -95,4 +127,4 @@ CREATE INDEX idx_kg_facts_event_time ON kg_facts(event_time);
 -- 6. Drop the backup
 -- ---------------------------------------------------------------------------
 
-DROP TABLE kg_facts_backup_019;
+DROP TABLE IF EXISTS kg_facts_backup_019;
