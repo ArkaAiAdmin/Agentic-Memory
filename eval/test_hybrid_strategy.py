@@ -366,16 +366,26 @@ class TestBackfillCliHybridFlags(unittest.TestCase):
         self.assertIn("OK", result.stdout)
 
 
-class TestForceRegexBackfillGuard(unittest.TestCase):
-    """force_regex=True prevents LLM calls in bulk backfill contexts.
+class TestBulkFunctionLLMSafe(unittest.TestCase):
+    """The bulk function is structurally LLM-free.
 
     Regression for 2026-06-26 heartbeat hang: _backfill_drifted_subsystems
     iterated over 5,000+ memories and called index_facts_for_memory per
     row. With importance_score >= 0.5 on hundreds of notes, this loaded
     the 3B Qwen model onto MPS and tried to do inference per-memory,
     which deadlocked the loky worker pool and froze the machine for
-    hours. The fix: force_regex=True on the backfill call so regex is
-    used and the LLM is never loaded.
+    hours.
+
+    The fix has two layers:
+      1. The deny-by-exception flag (force_regex=True) was removed.
+      2. The bulk path now uses a dedicated function —
+         index_facts_for_memory_bulk — that physically cannot call LLM.
+         The function body does not import llm_extraction, and tests
+         assert that.
+
+    These tests verify both layers. If anyone reverts the per-save
+    function to use a force_regex flag, or moves the bulk call site
+    back to the per-save function, the regression tests fail.
     """
 
     def setUp(self):
@@ -441,8 +451,56 @@ class TestForceRegexBackfillGuard(unittest.TestCase):
 
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    def test_force_regex_skips_llm_for_pinned_memory(self):
-        """force_regex=True: LLM is NOT called even on pinned/high-value memories."""
+    def test_bulk_function_exists(self):
+        """index_facts_for_memory_bulk must exist as a separate function."""
+        fe = _load_module("fact_extraction")
+        self.assertTrue(
+            hasattr(fe, "index_facts_for_memory_bulk"),
+            "index_facts_for_memory_bulk must exist as a public function",
+        )
+        self.assertTrue(callable(fe.index_facts_for_memory_bulk))
+
+    def test_per_save_function_no_force_regex_param(self):
+        """The per-save index_facts_for_memory must NOT have a force_regex param.
+
+        The deny-by-exception flag was the root design smell. If anyone
+        re-adds it, this test fails — the fix must be the bulk function,
+        not a flag on the per-save one.
+        """
+        import inspect
+
+        fe = _load_module("fact_extraction")
+        sig = inspect.signature(fe.index_facts_for_memory)
+        self.assertNotIn(
+            "force_regex",
+            sig.parameters,
+            "index_facts_for_memory must not accept force_regex — "
+            "use index_facts_for_memory_bulk for bulk paths",
+        )
+
+    def test_bulk_function_source_does_not_reference_llm(self):
+        """Source-inspect the bulk function: it must not import or call llm_extraction.
+
+        This is the structural guarantee. The function body is regex
+        only; the LLM call is physically unreachable from this path.
+        """
+        import inspect
+
+        fe = _load_module("fact_extraction")
+        source = inspect.getsource(fe.index_facts_for_memory_bulk)
+        self.assertNotIn(
+            "llm_extraction",
+            source,
+            "index_facts_for_memory_bulk must not reference llm_extraction",
+        )
+        self.assertNotIn(
+            "extract_facts_via_llm",
+            source,
+            "index_facts_for_memory_bulk must not call extract_facts_via_llm",
+        )
+
+    def test_bulk_function_runtime_does_not_call_llm(self):
+        """Run the bulk function and confirm LLM is not invoked at runtime."""
         fe = _load_module("fact_extraction")
         called = {"llm": 0}
 
@@ -454,17 +512,16 @@ class TestForceRegexBackfillGuard(unittest.TestCase):
             patch("llm_extraction.is_llm_extraction_available", return_value=True),
             patch("llm_extraction.extract_facts_via_llm", side_effect=fake_llm_extract),
         ):
-            result = fe.index_facts_for_memory(
+            result = fe.index_facts_for_memory_bulk(
                 self.conn,
                 "pinned_note",
                 "**Topic:** some content with entities",
-                force_regex=True,
             )
-        self.assertEqual(called["llm"], 0, "force_regex=True must prevent LLM call")
+        self.assertEqual(called["llm"], 0, "bulk function must not call LLM")
         self.assertIn("facts", result)
 
-    def test_force_regex_false_preserves_llm_path(self):
-        """force_regex=False (default): LLM IS called for pinned memory."""
+    def test_per_save_function_still_allows_llm(self):
+        """Regression: per-save function must still allow LLM extraction."""
         fe = _load_module("fact_extraction")
         called = {"llm": 0}
 
@@ -480,29 +537,53 @@ class TestForceRegexBackfillGuard(unittest.TestCase):
                 self.conn,
                 "pinned_note",
                 "**Topic:** some content with entities",
-                force_regex=False,
             )
-        self.assertEqual(called["llm"], 1, "force_regex=False must allow LLM call")
+        self.assertEqual(called["llm"], 1, "per-save function must allow LLM")
 
-    def test_self_directed_backfill_passes_force_regex_true(self):
+    def test_self_directed_backfill_uses_bulk_function(self):
         """Regression: self_directed._backfill_drifted_subsystems must call
-        index_facts_for_memory with force_regex=True for kg_facts drift.
-
-        This is the exact path that caused the 2026-06-26 hang. If the
-        force_regex kwarg is removed, this test fails — the regression
-        guard for the fix.
+        index_facts_for_memory_bulk (NOT the per-save variant) for the
+        kg_facts branch. This is the exact path that caused the 2026-06-26
+        hang. If anyone reverts this, the test fails.
         """
         import inspect
+        import re
 
         from self_directed import _backfill_drifted_subsystems
 
         source = inspect.getsource(_backfill_drifted_subsystems)
-        # The kg_facts backfill block must pass force_regex=True
+        # The kg_facts backfill must use the bulk function
         self.assertIn(
-            "force_regex=True",
+            "index_facts_for_memory_bulk",
             source,
-            "_backfill_drifted_subsystems must pass force_regex=True to "
-            "index_facts_for_memory in the kg_facts backfill branch",
+            "_backfill_drifted_subsystems must use "
+            "index_facts_for_memory_bulk in the kg_facts backfill branch",
+        )
+        # The fact_extraction import block must include the bulk
+        # function. Use a regex to handle multi-line parenthesised
+        # imports correctly.
+        match = re.search(r"from\s+fact_extraction\s+import\s+\(([^)]+)\)", source)
+        self.assertIsNotNone(
+            match,
+            "self_directed must import from fact_extraction (parenthesised) "
+            "for the backfill to work",
+        )
+        assert match is not None
+        import_block = match.group(1)
+        self.assertIn(
+            "index_facts_for_memory_bulk",
+            import_block,
+            "The fact_extraction import block must include index_facts_for_memory_bulk",
+        )
+        # And the per-save function must NOT be in the import block —
+        # self_directed's only need in the backfill is the bulk variant.
+        # Use a word-boundary regex so "index_facts_for_memory_bulk"
+        # doesn't match the substring "index_facts_for_memory".
+        self.assertNotRegex(
+            import_block,
+            r"\bindex_facts_for_memory\b(?!_bulk)",
+            "self_directed's fact_extraction import must NOT include the "
+            "per-save index_facts_for_memory (would re-introduce the hang)",
         )
 
 

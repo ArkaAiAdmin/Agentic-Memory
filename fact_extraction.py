@@ -1796,8 +1796,41 @@ def _upsert_fact(
         return int(row[0])
 
 
+def _extract_facts_via_llm(
+    conn: sqlite3.Connection, memory_id: str, content: str
+) -> list[tuple[str, str, str, float]]:
+    """Run the hybrid LLM-extraction path. Returns the extracted facts.
+
+    Encapsulates the P3.3 hybrid decision (``_should_use_llm_for_memory``)
+    plus the ``try/except`` around ``extract_facts_via_llm``. Returns
+    an empty list when LLM is disabled, the memory doesn't qualify,
+    or the LLM call fails — the caller falls back to regex.
+
+    This helper exists so that ``index_facts_for_memory`` (per-save,
+    may-use-LLM) and ``index_facts_for_memory_bulk`` (backfill,
+    regex-only) can share the LLM call shape without sharing the
+    decision to use LLM. The bulk variant simply never calls this
+    helper, which is structurally easier to audit than a ``force_regex``
+    flag inside the per-save function.
+    """
+    if not _should_use_llm_for_memory(conn, memory_id):
+        return []
+    try:
+        from llm_extraction import extract_facts_via_llm
+
+        llm_facts = extract_facts_via_llm(content)
+        if llm_facts:
+            return llm_facts
+    except Exception:
+        logger.warning(
+            "LLM fact extraction failed for memory %s, falling back to regex",
+            memory_id,
+        )
+    return []
+
+
 def index_facts_for_memory(
-    conn: sqlite3.Connection, memory_id: str, content: str, force_regex: bool = False
+    conn: sqlite3.Connection, memory_id: str, content: str
 ) -> dict:
     # Use config system for feature flag
     if get_config is not None:
@@ -1829,33 +1862,20 @@ def index_facts_for_memory(
     #
     # Env vars:
     #   MEMORY_LLM_FORCE=1               — always use LLM (override hybrid)
+    # P3.3 (2026-06-19): hybrid strategy — LLM only for high-value
+    # memories (pinned OR importance_score >= threshold). The LLM
+    # call is encapsulated in _extract_facts_via_llm so the per-save
+    # path (this function) and the bulk path
+    # (index_facts_for_memory_bulk) can share the shape without
+    # sharing the decision. The bulk variant simply doesn't call
+    # the helper, which is structurally easier to audit than a
+    # force_regex override.
+    #
+    # Env vars:
+    #   MEMORY_LLM_FORCE=1               — always use LLM (override hybrid)
     #   MEMORY_LLM_HYBRID_THRESHOLD=0.5  — importance_score cutoff (default 0.5)
     #   MEMORY_LLM_HYBRID=0              — disable hybrid, never use LLM
-    use_llm = _should_use_llm_for_memory(conn, memory_id)
-
-    # Backfill contexts (e.g. heartbeat drift recovery) can iterate over
-    # thousands of memories. Forcing regex there prevents loading the
-    # 3B LLM model and running inference per-memory, which would take
-    # hours and deadlock the loky worker pool. See git log for the
-    # 2026-06-26 heartbeat hang incident.
-    if force_regex:
-        use_llm = False
-
-    facts = []
-    if use_llm:
-        try:
-            from llm_extraction import extract_facts_via_llm
-
-            llm_facts = extract_facts_via_llm(content)
-            if llm_facts:
-                facts = llm_facts
-        except Exception:
-            logger.warning(
-                "LLM fact extraction failed for memory %s, falling back to regex",
-                memory_id,
-            )
-            pass
-
+    facts = _extract_facts_via_llm(conn, memory_id, content)
     if not facts:
         facts = extract_facts(content)
 
@@ -1961,6 +1981,152 @@ def index_facts_for_memory(
         except Exception:
             # T5 is best-effort: a failure here must not break the
             # save path.
+            logger.warning(
+                "fact_temporal: invalidation failed for memory %s; continuing",
+                memory_id,
+            )
+    return {"facts": len(facts)}
+
+
+def index_facts_for_memory_bulk(
+    conn: sqlite3.Connection, memory_id: str, content: str
+) -> dict:
+    """Bulk fact indexing — regex-only by design.
+
+    Use this for any context that iterates over many memories: heartbeat
+    drift recovery, manual backfills, migration scripts, etc. The
+    function NEVER calls the LLM extractor — no model load, no inference
+    per-memory, no loky-worker deadlock. For per-save LLM extraction,
+    use ``index_facts_for_memory`` instead.
+
+    Background: 2026-06-26 cron_heartbeat.py hung at 66% CPU after
+    loading the Qwen 3B LLM. The hang was caused by a per-memory LLM
+    call inside a bulk backfill loop (5,000+ memories, hundreds above
+    the 0.5 importance threshold). The 2026-06-26 fix added
+    ``force_regex=True`` to ``index_facts_for_memory``; this bulk
+    variant makes the deny-by-exception unnecessary by making the
+    LLM path physically unreachable from a backfill call site.
+
+    Same skip/feature-flag/temporal-kg contract as
+    ``index_facts_for_memory`` — only the LLM call is omitted.
+    """
+    # Use config system for feature flag
+    if get_config is not None:
+        if not get_config().knowledge_graph:
+            return {"facts": 0}
+        if os.environ.get("MEMORY_KNOWLEDGE_GRAPH") == "0":
+            return {"facts": 0}
+    # Skip operational categories (sessions/auto-*, sessions/audit-*,
+    # sessions/compaction-*, sessions/idle-*, sessions/end-*). These
+    # are tool transcripts and audit events with no natural language
+    # content — extracting facts produces only boilerplate noise.
+    # Override via MEMORY_FACT_EXTRACTION_INCLUDE_OPERATIONAL=1.
+    if _should_skip_category(memory_id):
+        return {"facts": 0}
+    # Skip auto-save tool-log notes — they are ephemeral tool transcripts
+    # that produce only boilerplate facts ("tool has_description ...",
+    # "time before compaction has_value ..."). Daily-digest rolled-up
+    # notes do NOT have this marker and are processed normally.
+    if memory_id and "auto_save" in (content[:200] if content else ""):
+        return {"facts": 0}
+    if content and "*Auto-generated by auto_save.py*" in content[:500]:
+        return {"facts": 0}
+    now = time.time()
+
+    # Bulk path: regex only. The LLM extractor is never called here.
+    # This is the structural fix for the 2026-06-26 hang — the
+    # previous ``force_regex=True`` flag was a deny-by-exception
+    # workaround; this function makes the LLM path physically
+    # unreachable by not calling it.
+    facts = extract_facts(content)
+
+    # T8 (temporal-kg plan): gate the entire temporal subsystem
+    # (event_time extraction, contradiction reconciliation, edit
+    # invalidation, audit log) behind a feature flag.  Default ON
+    # (see memory.toml [features] feature_temporal_kg = true).  When
+    # disabled, fact extraction still works but no event_time is
+    # stored and no supersession/invalidation logic runs.
+    temporal_kg_enabled = True
+    if get_config is not None:
+        try:
+            temporal_kg_enabled = bool(get_config().feature_temporal_kg)
+        except Exception:
+            logger.warning("feature_temporal_kg read failed; defaulting to ON")
+    if os.environ.get("MEMORY_TEMPORAL_KG") == "0":
+        temporal_kg_enabled = False
+
+    if temporal_kg_enabled:
+        # T2.5: extract event_time once per memory and apply it to
+        # every fact.  The memory-level time is the best signal we
+        # have without per-fact LLM reasoning; per-fact time from the
+        # LLM (T2.3-T2.4) is captured in the prompt and parsed out,
+        # but for now we apply the same memory-level time to all facts.
+        event_time, event_time_granularity = extract_event_time(content)
+    else:
+        event_time, event_time_granularity = None, None
+
+    if temporal_kg_enabled:
+        from fact_temporal import (
+            audit_fact_temporal_event,
+            invalidate_stale_facts,
+            reconcile_fact_supersession,
+        )
+
+    new_fact_keys: set[tuple[str, str, str]] = {
+        (s.lower(), p, o.lower()) for s, p, o, _ in facts
+    }
+
+    for subj, pred, obj, conf in facts:
+        fact_id = _upsert_fact(
+            conn,
+            subj,
+            pred,
+            obj,
+            conf,
+            now,
+            memory_id,
+            content[:200],
+            event_time=event_time,
+            event_time_granularity=event_time_granularity,
+        )
+        if fact_id is not None and temporal_kg_enabled:
+            try:
+                reconcile_fact_supersession(conn, fact_id)
+            except Exception:
+                logger.warning(
+                    "fact_temporal: reconciliation failed for fact %d "
+                    "(memory %s); continuing",
+                    fact_id,
+                    memory_id,
+                )
+
+    if temporal_kg_enabled and new_fact_keys:
+        try:
+            invalidated = invalidate_stale_facts(conn, memory_id, new_fact_keys)
+            for fid in invalidated:
+                row = conn.execute(
+                    "SELECT subject, predicate, object FROM kg_facts WHERE id = ?",
+                    (fid,),
+                ).fetchone()
+                if row is not None:
+                    try:
+                        audit_fact_temporal_event(
+                            conn,
+                            event="invalidate",
+                            fact_id=fid,
+                            reason="manual",
+                            subject=row[0],
+                            predicate=row[1],
+                            obj=row[2],
+                            memory_id=memory_id,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "fact_temporal: audit log failed for fact %d (memory %s)",
+                            fid,
+                            memory_id,
+                        )
+        except Exception:
             logger.warning(
                 "fact_temporal: invalidation failed for memory %s; continuing",
                 memory_id,
