@@ -51,8 +51,27 @@ Query
 └──────┬───────┘
        │
        ▼
-  Results (top-k)
+   Results (top-k)
 ```
+
+## Save Pipeline
+
+The canonical write path (`_update_memory_index_incremental` +
+`_run_post_save_hooks`) runs the following 13 steps in order:
+
+1. Lock acquire
+2. Compute tier + PRAGMA setup
+3. Upsert memory row (DB + tier inline)
+4. CRDT version bump
+5. Index backlinks (wiki-style)
+6. Index chunks
+7. Index embedding
+8. Index KG (entities + edges)
+9. Index facts (SPO triples)
+10. Auto semantic backlinks (FTS overlap)
+11. Auto FTS backlinks
+12. Adaptive retention index
+13. Enrich context + commit + post-hooks (fitness recalc + background tasks)
 
 ## Module Map
 
@@ -65,7 +84,7 @@ agentic-memory/                    # Repo root — 102 production modules, 42,37
 │   └── __main__.py                 # python -m agentic_memory
 ├── cli.py                          # 11 CLI entry points
 ├── memory_mcp.py                   # MCP server (thin orchestrator)
-├── save_pipeline.py                # Write path (1,359 LOC, re-export shim → save/)
+├── save_pipeline.py                # Write path (~1,623 LOC, re-export shim → save/)
 ├── save/                           # Write path subpackage (2026-06-20)
 │   ├── __init__.py                 # Public API, re-exports
 │   ├── crdt_helpers.py             # CRDT snapshot extraction
@@ -87,7 +106,7 @@ agentic-memory/                    # Repo root — 102 production modules, 42,37
 │   ├── __init__.py                 # Public API, re-exports
 │   ├── index_backfills.py          # FTS, embedding, chunk, backlink, vec
 │   └── kg_backfills.py             # KG facts, KG graph, entity filter
-├── auto_save.py                    # Tool-call auto-save + async daemon (1,700 LOC)
+├── auto_save.py                    # Tool-call auto-save + async daemon (2,469 LOC)
 ├── knowledge_graph.py              # Entity extraction
 ├── fact_extraction.py              # SPO triple extraction
 ├── kg_dedup.py                     # Exact + semantic dedup
@@ -98,16 +117,16 @@ agentic-memory/                    # Repo root — 102 production modules, 42,37
 ├── memory_injection.py             # Prompt injection detection
 ├── memory_common.py                # Shared utilities
 ├── db.py                           # Connection pool with re-entrancy guard
-├── migration_runner.py             # Schema migrations (current v20, 20 migrations)
+├── migration_runner.py             # Schema migrations (current v21, 21 migrations)
 ├── ... (102 modules total)
 ```
 
 | Module | Layer | Purpose |
 |--------|-------|---------|
-| `save_pipeline.py` + `save/` | Write | Orchestrates markdown → index writes (1,359 LOC shim + 5 submodules, 1,251 LOC; 24+11=35 functions) |
-| `search_pipeline.py` + `search/` | Read | BM25 + vector + KG hybrid search (shim + 8 submodules, 4,223 LOC; `search/orchestrator.py` 1,811 LOC with 28 functions) |
+| `save_pipeline.py` + `save/` | Write | Orchestrates markdown → index writes (~1,623 LOC shim + 5 submodules, ~1,400 LOC; 24+11=35 functions) |
+| `search_pipeline.py` + `search/` | Read | BM25 + vector + KG hybrid search (shim + 8 submodules, ~4,500 LOC; `search/orchestrator.py` 1,811 LOC with 28 functions) |
 | `backfill_all.py` + `backfill/` | Maintenance | Audit pipeline for index rebuilds |
-| `auto_save.py` | Hook | Tool-call auto-save + async/background-batch daemon (1,700 LOC, 44 functions) |
+| `auto_save.py` | Hook | Tool-call auto-save + async/background-batch daemon (2,469 LOC, 44 functions) |
 | `knowledge_graph.py` | Write | Pattern-based NER, entity storage |
 | `fact_extraction.py` | Write | Regex-based SPO triple extraction |
 | `kg_dedup.py` | Maintenance | Exact + semantic entity deduplication |
@@ -127,7 +146,7 @@ The three god modules (`save_pipeline.py`, `search_pipeline.py`,
 2026-06-20 refactor. The original files now contain only re-export
 shims — all logic lives in the submodules.
 
-**`save/`** (write path, 1,251 LOC total):
+**`save/`** (write path, ~1,400 LOC total):
 - `crdt_helpers.py` — extract CRDT snapshots for field-level sync
 - `indexers.py` — FTS5, embedding, chunk index writes
 - `backlinks.py` — auto-backlink computation and graph update
@@ -136,7 +155,7 @@ shims — all logic lives in the submodules.
   a single 113-line `_run_post_save_hooks` into 7 named hook
   helpers + a 40-line orchestrator.
 
-**`search/`** (read path, 4,223 LOC total):
+**`search/`** (read path, ~4,500 LOC total):
 - `query_parser.py` — query type detection, expansion, FTS search
 - `rerankers.py` — cross-encoder scoring, late interaction
 - `scoring.py` — RRF fusion, temporal decay, neural forget curve,
@@ -145,9 +164,13 @@ shims — all logic lives in the submodules.
   (`_BB2_TURNS` lives here)
 - `chunk_index.py` — chunk-based search, Graph-RAG expansion
 - `instrumentation.py` — timing, logging, observability
-- `orchestrator.py` (1,811 LOC) — `search_memories` was a 551-line
-  god-function with 12 phases; decomposed 2026-06-22 into 11 named
-  helpers + a 244-line orchestrator (56% reduction).
+- `orchestrator.py` (1,811 LOC) — `search_memories` has 16 Phase
+  comments in `search/orchestrator.py`: parse → skill-first → cache
+  → FTS5 → KG facts → embedding fallback → hybrid fusion → temporal
+  filter → chunk enhance → rerank → output build → safety demoting
+  → quality gates → user profile boost → record access (CTR +
+  cache); decomposed 2026-06-22 from a 551-line god-function into
+  11 named helpers + a 244-line orchestrator (56% reduction).
 
 **`backfill/`** (audit pipeline):
 - `index_backfills.py` — FTS, embedding, chunk, backlink, vec
@@ -190,8 +213,8 @@ to `search.scoring` so test patterns that reset via direct
 assignment still work.
 ## Database Schema
 
-Schema version **20** (defined in `migration_runner.py`). 20
-migrations applied, 47 tables total. Recent deltas:
+Schema version **21** (defined in `migration_runner.py`). 21
+migrations applied, ~51 tables total (~31 user-visible: 28 domain + 3 FTS virtual). Recent deltas:
 - v13: `memory_field_crdt` table for per-field LWWES
 - v14: `arc_ghosts` + `arc_stats` tables for ARC eviction
 - v15: `drift_alarms` table + `memory_embeddings.ssm_state` column
@@ -222,6 +245,8 @@ migrations applied, 47 tables total. Recent deltas:
   tables (`memories`, `memory_chunks`, `kg_entities`) which all
   had FTS5. Enables ranked search via `MATCH` (O(log n) vs O(n)
   for the previous `LIKE %query%` query in `facts_search()`).
+- v21: `kg_entity_crdt` + `kg_edge_crdt` tables for CRDT-based
+  multi-agent KG merge support (2P-Set entity ops, LWW edge ops).
 
 ### Core Tables
 
@@ -230,8 +255,8 @@ migrations applied, 47 tables total. Recent deltas:
 - **memory_embeddings** — Vector embeddings for semantic search (now with `ssm_state` v15)
 - **task_queue** — Background task queue (pending/processing/completed/failed)
 - **kg_entities** — Extracted entities (name, type, mention count)
-- **knowledge_graph_edges** — Entity relationships (source, target, relation, weight)
-- **kg_facts** — Extracted SPO triples with confidence scores (v18 temporal cols, v19 entity FKs with ON DELETE SET NULL, v20 FTS5)
+- **kg_edges** — Entity relationships (source_id, target_id, relation, weight)
+- **kg_facts** — Extracted SPO triples with confidence scores (v18 temporal cols, v19 entity FKs with ON DELETE SET NULL, v20 FTS5, v21 kg_crdt)
 - **memory_audit_log** — Audit trail for observability
 - **memory_field_crdt** (v13) — per-field LWWES CRDT state
 - **arc_ghosts** (v14) — Adaptive Replacement Cache ghost lists
@@ -243,7 +268,7 @@ migrations applied, 47 tables total. Recent deltas:
 
 - FTS5 virtual tables for full-text search (BM25 ranking). 4 tables
   have FTS5: `memories` (v7), `memory_chunks` (v10), `kg_entities`
-  (v15), `kg_facts` (v20). Each has 3 sync triggers (ai, ad, au)
+  (v15), `kg_facts` (v21). Each has 3 sync triggers (ai, ad, au)
   that keep the FTS in lockstep with the source table.
 - B-tree indexes on status, category, tier, timestamps
 - Composite indexes for common query patterns
@@ -344,7 +369,7 @@ the opencode process.  Documented in AGENTS.md hard rule 13.
 
 ## Surface: cron jobs, MCP tools, hooks (2026-06-22)
 
-- **79 MCP tools** (15 CORE + 64 ADMIN). Single source of truth: `tool_registry.py`.
+- **85 MCP tools** (15 CORE + 70 ADMIN). Single source of truth: `tool_registry.py`.
 - **26 cron scripts** in `cron/` (up from 19): 7 new — `cron_embedding_recompute.py`,
   `cron_tier_migration.py`, `cron_auto_share.py`, `cron_sync.py`,
   `cron_crdt_sync.py`, `cron_heartbeat.py`, `cron_*` (others).

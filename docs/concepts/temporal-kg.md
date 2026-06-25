@@ -45,24 +45,45 @@ The schema uses **two time axes** (same approach as Graphiti/Zep):
 The MVP defaults event_time = transaction_time for simplicity. Future
 work may separate them more clearly.
 
-## Schema (v18, 2026-06-23)
+## Schema (v21, cumulative)
 
-Migration 018 added the following columns to `kg_facts`:
+The temporal KG spans four incremental migrations (018–021), each
+adding columns or tables to `kg_facts`:
 
 ```sql
-ALTER TABLE kg_facts ADD COLUMN event_time REAL;            -- epoch seconds
-ALTER TABLE kg_facts ADD COLUMN event_time_granularity TEXT;  -- 'day' | 'month' | 'year' | 'unknown'
-ALTER TABLE kg_facts ADD COLUMN transaction_time REAL;     -- epoch seconds, set on INSERT
+-- Migration history
+
+-- 018_fact_temporal: bi-temporal columns + indexes
+ALTER TABLE kg_facts ADD COLUMN event_time REAL;
+ALTER TABLE kg_facts ADD COLUMN event_time_granularity TEXT;
+ALTER TABLE kg_facts ADD COLUMN transaction_time REAL;
 ALTER TABLE kg_facts ADD COLUMN valid_at REAL;
 ALTER TABLE kg_facts ADD COLUMN invalid_at REAL;
 ALTER TABLE kg_facts ADD COLUMN superseded_by INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL;
 ALTER TABLE kg_facts ADD COLUMN supersedes INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL;
 ALTER TABLE kg_facts ADD COLUMN contradiction_score REAL DEFAULT 0.0;
-ALTER TABLE kg_facts ADD COLUMN invalidation_reason TEXT;   -- 'manual' | 'contradicted' | 'expired'
+ALTER TABLE kg_facts ADD COLUMN invalidation_reason TEXT;
 
 CREATE INDEX idx_kg_facts_validity      ON kg_facts(valid_at, invalid_at);
 CREATE INDEX idx_kg_facts_superseded_by ON kg_facts(superseded_by);
 CREATE INDEX idx_kg_facts_event_time    ON kg_facts(event_time);
+
+-- 019_kg_facts_entity_fk: ON DELETE SET NULL on entity FKs
+-- Recreates kg_facts so subject_entity_id / object_entity_id
+-- FKs use ON DELETE SET NULL (prevents FK failures when
+-- merged entities are deleted by kg_dedup).
+
+-- 020_kg_facts_fts: full-text search on facts
+CREATE VIRTUAL TABLE kg_facts_fts USING fts5(
+    subject, predicate, object, context,
+    content='kg_facts', content_rowid='id',
+    tokenize='porter unicode61'
+);
+-- plus 3 sync triggers (ai / ad / au) keeping FTS in lockstep
+
+-- 021_kg_crdt: CRDT tables for peer-to-peer KG replication
+CREATE TABLE kg_entity_crdt ( ... );  -- 2P-Set Ops for entities
+CREATE TABLE kg_edge_crdt   ( ... );  -- LWW edges with stable edge_id hash
 ```
 
 All columns are NULL-able so pre-v18 DBs upgrade without data
@@ -247,7 +268,7 @@ memory_audit_query(tool_name="kg_fact_temporal", since_ts=..., limit=...)
 
 ## Performance
 
-On the live prod DB (v18):
+On the live prod DB (v21):
 - `index_facts_for_memory` adds ~10ms per fact (event_time extraction +
   reconciliation)
 - `invalidate_stale_facts` is O(old_facts) — one query, one row check per old fact

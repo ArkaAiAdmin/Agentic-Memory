@@ -15,11 +15,11 @@ Local-first semantic memory for AI agents. All data at `~/.config/agentic-memory
 | SQLite DB | `memory/memory.db` |
 | Memory notes | `memory/<category>/<slug>.md` |
 | Config (TOML) | `memory.toml` (env var overridable via `config.py`) |
-| Tool registry | `tool_registry.py` — 15 CORE + 64 ADMIN (single source of truth) |
+| Tool registry | `tool_registry.py` — 15 CORE + 70 ADMIN (single source of truth) |
 | Python env | `venv/` |
-| MCP entry | `memory_mcp.py` — delegates to 25 mcp_*.py modules (79 total tools) |
+| MCP entry | `memory_mcp.py` — delegates to 26 mcp_*.py modules (85 total tools) |
 
-### Database Tables (43 total, 29 user-visible: 26 domain + 3 FTS virtual; 14 FTS internals)
+### Database Tables (~51 tables total, ~31 user-visible: 28 domain + 3 FTS virtual; ~20 FTS internals)
 
 | Table | Purpose |
 |-------|---------|
@@ -44,7 +44,7 @@ Local-first semantic memory for AI agents. All data at `~/.config/agentic-memory
 | `task_queue` | Async task queue |
 | `arc_ghosts` / `arc_stats` | ARC eviction cache (v14) |
 | `file_mtimes` | Incremental index tracking |
-| `schema_version` | Schema migrations (current: 20) |
+| `schema_version` | Schema migrations (current: 21) |
 | `memory_field_crdt` | Per-field CRDT state (v13) |
 
 ---
@@ -54,32 +54,61 @@ Local-first semantic memory for AI agents. All data at `~/.config/agentic-memory
 ### Save Pipeline (write path)
 
 Save steps run in order within a single transaction:
-1. Markdown file write → 2. DB upsert → 3. FTS5 indexing → 4. Chunking → 5. Embedding → 6. KG extraction → 7. Fact extraction → 8. Backlinks → 9. Tier assignment → 10. Enrichment
+1. Lock acquire + PRAGMA setup
+2. Compute tier
+3. Upsert memory row (inline tier assignment)
+4. CRDT version bump (memory_field_crdt)
+5. Index wiki-style backlinks
+6. Index chunks
+7. Index embedding vectors
+8. Index KG entities and edges
+9. Index facts (SPO triples)
+10. Auto semantic backlinks (FTS overlap)
+11. Auto FTS backlinks
+12. Adaptive retention index
+13. Enrich context → commit → post-hooks (fitness recalc + background task enqueue)
 
 ### Search Pipeline (read path)
 
-1. FTS5 BM25 → 2. Embedding similarity → 3. KG facts → 4. RRF fusion (k=60) → 5. Quality gates → 6. Reranking → 7. Output with fitness scores
+search_memories() has 16 Phase comments in search/orchestrator.py:
+0. Cache check
+1. Query parse (type detection)
+1b. Skill-first lookup
+2. Cache check
+3. DB setup
+4. FTS5 BM25 search
+4b. KG fact search (T10)
+5. Embedding fallback
+6. Hybrid RRF fusion
+7. Temporal filter
+8. Chunk enhancement
+9. Rerank (cross-encoder + late-interaction + temporal decay)
+10. Build output items
+11. Safety demoting (BLK-1 injection demotion)
+11b. Quality gates
+11c. User profile boost
+12. Record access + CTR feedback + cache store
+13. Envelope build with Related Facts append
 
 ### Hook System
 
-All hooks fire as background subprocesses via OpenCode plugin:
+Actual user-facing hooks:
 
-| Hook | Trigger | Action |
-|------|---------|--------|
-| auto-save | After every tool call | `auto_save.py tool-complete` (async path, ~2-5ms) |
-| session-recall | Session start | `context_monitor.py compact` (the compact subcommand is the closest match to "load context for a fresh session") |
-| idle-checkpoint | Agent stops responding | `context_monitor.py idle` |
-| pre-compaction | Before context compaction | `context_monitor.py compact` (the only subcommand that actually runs at pre-compaction time) |
-| session-end | Session deleted | `context_monitor.py end` |
+| Hook | Location | Trigger | Notes |
+|------|----------|---------|-------|
+| memory-proactive-context.py | hooks/ | PreToolUse | Searches memory before every tool call |
+| memory-session-start.py | hooks/ | SessionStart | Bootstrap + proactive search on session start |
+| memory-search-on-demand.py | hooks/ | CLI helper | NOT a lifecycle hook |
+| memory-recall-session.py | hooks/ | On-demand | Calls recall.session_recap() |
 
-The auto-save hook uses the async/background-batch path by default
-since 2026-06-22. Each call enqueues a tiny JSONL line to
-`<memory>/.auto_save_inbox.jsonl` and returns
-`{"saved": "queued"}`; a long-running `auto_save.py daemon` tails
-the inbox and flushes in batches (default: 50 entries or 500ms).
-Set `MEMORY_ASYNC_AUTOSAVE=0` to opt out and force the legacy
-inline path. See `AGENTS.md` "Async Auto-Save" section for the
-full architecture.
+Shared modules (not lifecycle hooks):
+
+| Module | Location | Purpose |
+|--------|----------|---------|
+| _log_error.py | hooks/ | Shared logging module |
+| auto_save.py on_tool_complete | auto_save.py | Wired via opencode.jsonc (not settings.json) |
+
+> **Note:** `context_monitor.py` is a standalone CLI tool, NOT a lifecycle hook.
 
 Context monitor state at `memory/sessions/.context_monitor_state.json`.
 
@@ -181,7 +210,7 @@ File: `memory.toml`. All features **on by default**. Set any flag to `false` to 
 
 ## Automated Maintenance
 
-26 scheduled jobs (23 `cron/cron_*.py` scripts plus the `background_worker.py`, `auto_save.py daily-digest`, and `backfill_all.py --incremental` entries in the crontab). Install: `bash cron/install_crontab.sh` (idempotent, marker-delimited).
+~27 cron schedule entries (25 cron_*.py scripts + background_worker.py + auto_save.py daily-digest + backfill_all.py --incremental). Install: `bash cron/install_crontab.sh` (idempotent, marker-delimited).
 
 | Component | Schedule | What it does |
 |-----------|----------|--------------|

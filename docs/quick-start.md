@@ -186,6 +186,6 @@ Then use the `memory_save` and `memory_search` tools from your agent.
 ## What's Next?
 
 - [Architecture](architecture.md) — How the system works
-- [MCP Tools](reference/mcp-tools.md) — All 79 tools explained (15 CORE + 64 ADMIN)
+- [MCP Tools](reference/mcp-tools.md) — All 85 tools explained (15 CORE + 70 ADMIN)
 - [Configuration](reference/configuration.md) — Environment variables and options
 - [Self-Hosting](self-hosting.md) — Docker and deployment

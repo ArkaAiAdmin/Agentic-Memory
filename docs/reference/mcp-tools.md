@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Agentic Memory exposes **15 CORE MCP tools + 64 ADMIN tools**
+Agentic Memory exposes **15 CORE MCP tools + 70 ADMIN tools**
 (routed through `memory_maintenance`) for agent integration. The
 single source of truth for the tool surface is `tool_registry.py`
 (`CORE_TOOLS` and `ADMIN_TOOLS` lists).
@@ -217,7 +217,7 @@ memory_profile_access(note_id="lessons/sqlite-wal-mode", source="search")
 
 ---
 
-## Admin Tools (64)
+## Admin Tools (70)
 
 All admin operations go through the `memory_maintenance` grouped
 tool, dispatched by `operation=`. The full list (single source of

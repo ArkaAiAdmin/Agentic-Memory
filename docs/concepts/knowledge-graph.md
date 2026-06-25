@@ -67,15 +67,16 @@ CREATE TABLE kg_entities (
 );
 
 -- Relationships (edges)
-CREATE TABLE knowledge_graph_edges (
-    source_name TEXT,
-    source_type TEXT,
-    target_name TEXT,
-    target_type TEXT,
-    relation TEXT,
+CREATE TABLE kg_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+    target_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+    relation TEXT NOT NULL DEFAULT 'related_to',
     weight REAL DEFAULT 1.0,
-    memory_ids TEXT,  -- JSON array of evidence memories
-    UNIQUE(source_name, source_type, target_name, target_type, relation)
+    created_at TEXT,
+    valid_at TEXT,
+    invalid_at TEXT,
+    UNIQUE(source_id, target_id, relation)
 );
 
 -- Facts (SPO triples)
@@ -88,7 +89,47 @@ CREATE TABLE kg_facts (
     source_memory_id TEXT,
     created_at TEXT
 );
+
+### 3a. CRDT Tables (v21)
+
+Migration 021 (`migrations/021_kg_crdt.sql`) added two tables that enable conflict-free merges when multiple agents write to the same knowledge graph concurrently (e.g., laptop + desktop in a multi-peer sync setup):
+
+```sql
+-- Per-peer add/remove operations for entities (2P-Set semantics)
+CREATE TABLE kg_entity_crdt (
+    entity_id      INTEGER PRIMARY KEY,
+    agent_id       TEXT    NOT NULL,
+    op             TEXT    NOT NULL CHECK (op IN ('add', 'remove')),
+    version_vector TEXT    NOT NULL,
+    name           TEXT,
+    entity_type    TEXT,
+    description    TEXT,
+    timestamp      REAL    NOT NULL
+);
+
+-- Per-peer add operations for edges (LWW, add-only)
+CREATE TABLE kg_edge_crdt (
+    edge_id        INTEGER PRIMARY KEY,
+    source_id      INTEGER NOT NULL,
+    target_id      INTEGER NOT NULL,
+    relation       TEXT    NOT NULL,
+    weight         REAL    NOT NULL DEFAULT 1.0,
+    valid_at       TEXT,
+    agent_id       TEXT    NOT NULL,
+    version_vector TEXT    NOT NULL,
+    timestamp      REAL    NOT NULL
+);
 ```
+
+**How they work:**
+- `version_vector` tracks causal ordering per agent — two vectors can be compared to detect concurrency or dominance.
+- `kg_entity_crdt` uses **2P-Set semantics**: an `add` wins on concurrent add/remove, so entities are never silently lost.
+- `kg_edge_crdt` is **add-only** — deletion is represented by setting `invalid_at` on the canonical `kg_edges` row, not by removing the CRDT entry.
+- The `edge_id` is a stable hash of `(source_id, target_id, relation)`, so all peers agree on edge identity even when they discover edges independently.
+
+These tables are additive — the base `kg_entities` and `kg_edges` tables are untouched. The sync server populates the CRDT tables on first run via `record_entity_add` / `record_edge_add`.
+
+**Feature flag:** Controlled by `feature_crdt` in `memory.toml` (default `true`). Set to `false` to disable CRDT recording — the base tables continue to work normally.
 
 ### 4. Deduplication
 

@@ -1,9 +1,10 @@
 # Database Schema
 
-Agentic Memory uses SQLite with FTS5 for full-text search. Schema version **20** (defined in `migration_runner.py`; 20 migrations, 47 tables total).
+Agentic Memory uses SQLite with FTS5 for full-text search. Schema version **21** (defined in `migration_runner.py`; 21 migrations, 49 tables total).
 
 Migration history (most recent first):
 - v20: `kg_facts_fts` FTS5 virtual table + 3 sync triggers (ai, ad, au). Brings kg_facts in line with the other 3 text-searchable tables (memories, memory_chunks, kg_entities) which all have FTS5. The new FTS table is contentless (backed by kg_facts) — no storage duplication.
+- v21: `kg_entity_crdt` + `kg_edge_crdt` tables for CRDT multi-agent merge support. Enables conflict-free entity/edge sync across peers.
 - v19: `kg_facts.subject_entity_id` and `object_entity_id` FKs now have `ON DELETE SET NULL`. Pre-existing bug fix: `kg_dedup.merge_entities()` was failing with "FOREIGN KEY constraint failed" when a fact referenced the merged entity. Fixes a bug that had been failing the background worker every 5 minutes.
 - v18: Fact-level temporal KG (T1 of the temporal-kg plan). Adds 9 columns to `kg_facts` (event_time, event_time_granularity, transaction_time, valid_at, invalid_at, superseded_by, supersedes, contradiction_score, invalidation_reason) + 3 indexes. Enables bi-temporal validity and time-travel queries. See [Temporal KG concept doc](../concepts/temporal-kg.md).
 - v17: `kg_edges.kg_entities` and `backlinks.memories` FK constraints added (B-3 fix). `kg_edges` uses `ON DELETE SET NULL` (entities are shared across notes); `backlinks` uses `ON DELETE CASCADE`. `kg_entities` is left without a FK (shared); orphans cleaned by `memory_integrity.repair_kg_orphans`.
@@ -249,7 +250,8 @@ CREATE TABLE kg_edges (
 ### `kg_facts`
 
 Extracted SPO triples. Current schema includes v18 temporal columns,
-v19 entity FKs (ON DELETE SET NULL), and v20 FTS5 triggers.
+v19 entity FKs (ON DELETE SET NULL), v20 FTS5 triggers, and v21 kg_crdt
+tables (`kg_entity_crdt`, `kg_edge_crdt`) for CRDT merge support.
 
 ```sql
 CREATE TABLE kg_facts (
@@ -286,10 +288,12 @@ CREATE TABLE kg_facts (
 - `idx_kg_facts_superseded_by`
 - `idx_kg_facts_event_time`
 
-### `kg_facts_fts` (v20)
+### `kg_facts_fts` (v20) and KG CRDT (v21)
 
 FTS5 virtual table for ranked fact search. Contentless (backed by
-`kg_facts`); 3 sync triggers keep it current.
+`kg_facts`); 3 sync triggers keep it current. v21 adds `kg_entity_crdt`
+and `kg_edge_crdt` tables for CRDT-based conflict-free entity/edge
+merge across multi-agent peers.
 
 ```sql
 CREATE VIRTUAL TABLE kg_facts_fts USING fts5(
@@ -529,3 +533,4 @@ CREATE TABLE schema_version (
 | 18 | `018_fact_temporal.sql` | 9 columns + 3 indexes on kg_facts for bi-temporal validity (event_time, valid_at, invalid_at, superseded_by, etc.). See [Temporal KG concept doc](../concepts/temporal-kg.md). |
 | 19 | `019_kg_facts_entity_fk.sql` | kg_facts.subject/object_entity_id FKs get ON DELETE SET NULL. Pre-existing bug fix for entity dedup. |
 | 20 | `020_kg_facts_fts.sql` | kg_facts FTS5 virtual table + 3 sync triggers (ai, ad, au). Brings kg_facts in line with the other 3 text-searchable tables. |
+| 21 | `021_kg_crdt.sql` | kg_entity_crdt + kg_edge_crdt tables for CRDT multi-agent merge support. Enables conflict-free entity/edge sync across peers. |

@@ -141,17 +141,17 @@ agentic-memory/                    # Repo root — 102 production modules, 42,37
 ├── memory_injection.py             # Prompt injection detection
 ├── memory_common.py                # Shared utilities
 ├── db.py                           # Connection pool with re-entrancy guard
-├── migration_runner.py             # Schema migrations (current v20, 20 migrations)
+├── migration_runner.py             # Schema migrations (current v21, 21 migrations)
 ├── sync_server.py                  # HTTP sync server (native TLS + mTLS)
 ├── sync_client.py                  # HTTP sync client
 ├── memory_sharing.py               # In-DB memory sharing pool (was multi_agent.py)
 ├── adaptive_retention.py           # Psi-formula half-life + audit_hits cache
 ├── cron/                           # 26 background jobs (cron_*.py + install_crontab.sh)
-├── mcp_*.py (25 modules)           # Domain-split MCP tools (79 total: 15 CORE + 64 ADMIN)
+├── mcp_*.py (26 modules)           # Domain-split MCP tools (85 total: 15 CORE + 70 ADMIN)
 └── ...
 ```
 
-**Top-level scale (2026-06-23):** 102 Python modules, 46,247 root-level LOC (56,799 including all subpackage files). Test suite: 156+ test files, 2,856+ test functions, focused regression suite (fact_extraction + event_time + temporal + KG dedup + FTS) is 255 passing. 47-table SQLite schema at version 20 (added v18 fact-level temporal KG, v19 entity FK fix, v20 kg_facts FTS5 index).
+**Top-level scale (2026-06-23):** 102 Python modules, 46,247 root-level LOC (56,799 including all subpackage files). Test suite: 156+ test files, 2,856+ test functions, focused regression suite (fact_extraction + event_time + temporal + KG dedup + FTS) is 255 passing. ~51-table SQLite schema at version 21 (added v18 fact-level temporal KG, v19 entity FK fix, v20 kg_facts FTS5 index, v21 kg_crdt tables).
 
 ### Per-project layout
 

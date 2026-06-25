@@ -172,7 +172,7 @@ exists, the existing id is returned (dedup).
 ## MCP Tools
 
 See [MCP Tools Reference](reference/mcp-tools.md) for the full list
-of 79 MCP tools (15 CORE + 64 ADMIN).
+of 85 MCP tools (15 CORE + 70 ADMIN).
 
 ## CLI
 

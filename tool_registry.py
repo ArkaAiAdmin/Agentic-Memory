@@ -1,15 +1,15 @@
 """Tool registry: defines tool visibility tiers for the MCP server.
 
 This list is the source of truth for what the agent sees in its
-tool surface. The mcp_*.py modules define 79 actual @mcp.tool
-functions (15 CORE + 64 ADMIN); the tool_registry must stay in
+tool surface. The mcp_*.py modules define **85** actual @mcp.tool
+functions (15 CORE + 70 ADMIN); the tool_registry must stay in
 lockstep with that definition. Run `scripts/tool_drift_check.py`
 to detect any drift (exits non-zero on mismatch).
 
 CORE_TOOLS (15): always exposed. High-value, day-to-day memory
 operations that the agent needs without extra context-budget cost.
 
-ADMIN_TOOLS (64): grouped under `memory_maintenance` so the agent
+ADMIN_TOOLS (70): grouped under `memory_maintenance` so the agent
 sees a single router tool. The agent calls them via
 `memory_maintenance(operation="...")`. This keeps the visible tool
 count low (~20 instead of 80), which reduces model context overhead
