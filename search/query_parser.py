@@ -449,9 +449,15 @@ def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
 
         if not KG_ENABLED:
             return []
+        try:
+            from _lazy_imports import get_config
+
+            _min_occ_q = int(get_config().entity_min_occurrences)
+        except Exception:
+            _min_occ_q = 2
     except ImportError:
         return []
-    query_entities = extract_entities(query)
+    query_entities = extract_entities(query, min_occurrences=_min_occ_q)
     if not query_entities:
         return []
     try:

@@ -333,6 +333,7 @@ class MemoryConfig:
         0.5  # P3.3 hybrid: use LLM if importance_score >= this
     )
     llm_extraction_force: bool = False  # P3.3: if True, always use LLM
+    idle_unload_seconds: int = 1800  # LLM model idle unload timer (seconds; 0 = disabled). Frees ~8 GB GPU+CPU.
 
     # semantic / kg dedup thresholds
     max_claims_semantic: int = 10000
@@ -340,8 +341,8 @@ class MemoryConfig:
     kg_dedup_threshold: float = 0.92
 
     # hybrid fusion weights (P2-18)
-    hybrid_fts_weight: float = 0.5
-    hybrid_semantic_weight: float = 0.3
+    hybrid_fts_weight: float = 1.0
+    hybrid_semantic_weight: float = 1.0
     hybrid_rrf_k: int = 60
     hybrid_semantic_overfetch: int = 3
     hybrid_rank_proxy_scale: float = 30.0
@@ -607,7 +608,7 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         vec_rebuild_threshold=_b(
             "MEMORY_VEC_REBUILD_THRESHOLD",
             "search.vec_rebuild_threshold",
-            5,
+            15,
             int,
             toml_data,
         ),
@@ -738,7 +739,7 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "MEMORY_CRDT_ENABLED", "features.crdt_enabled", True, bool, toml_data
         ),
         llm_extraction=_b(
-            "MEMORY_LLM_EXTRACTION", "features.llm_extraction", False, bool, toml_data
+            "MEMORY_LLM_EXTRACTION", "features.llm_extraction", True, bool, toml_data
         ),
         feature_temporal_kg=_b(
             "MEMORY_TEMPORAL_KG", "features.feature_temporal_kg", True, bool, toml_data
@@ -865,6 +866,13 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         llm_extraction_force=_b(
             "MEMORY_LLM_FORCE", "llm_extraction.force", False, bool, toml_data
         ),
+        idle_unload_seconds=_b(
+            "MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS",
+            "llm_extraction.idle_unload_seconds",
+            1800,
+            int,
+            toml_data,
+        ),
         # --- semantic / kg dedup ---
         max_claims_semantic=_b(
             "MEMORY_MAX_CLAIMS_SEMANTIC",
@@ -885,12 +893,12 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         # --- hybrid fusion weights ---
         hybrid_fts_weight=_b(
-            "MEMORY_HYBRID_FTS_WEIGHT", "hybrid.fts_weight", 0.5, float, toml_data
+            "MEMORY_HYBRID_FTS_WEIGHT", "hybrid.fts_weight", 1.0, float, toml_data
         ),
         hybrid_semantic_weight=_b(
             "MEMORY_HYBRID_SEMANTIC_WEIGHT",
             "hybrid.semantic_weight",
-            0.3,
+            1.0,
             float,
             toml_data,
         ),

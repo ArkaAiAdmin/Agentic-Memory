@@ -364,4 +364,12 @@ def __getattr__(name: str):
         from _lazy_imports import get_config
 
         return get_config().graph_rag_expansions
+    if name == "_RERANK_HALF_LIFE_DAYS":
+        from _lazy_imports import get_config
+
+        return float(get_config().rerank_half_life_days)
+    if name == "_TEMPORAL_DECAY_WEIGHT":
+        from _lazy_imports import get_config
+
+        return float(get_config().temporal_decay_weight)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

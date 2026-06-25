@@ -60,8 +60,9 @@ def _get_rerank_weights() -> dict:
     return _RERANK_WEIGHTS
 
 
-_RERANK_HALF_LIFE_DAYS = 180
 _RERANK_TOKEN_RE = re.compile("\\b[A-Za-z][A-Za-z\\-_/]{2,}\\b")
+
+
 _STRONG_BM25_THRESHOLD = 0.95  # bm25_score = 1/(1+exp(rank))
 
 _CTR_WEIGHTS_CACHE: Optional[tuple[float, Optional[dict], bool]] = None
@@ -81,8 +82,23 @@ def _sp_lazy(name: str, default: object = None) -> object:
     return getattr(sp, name, default)
 
 
-def _reciprocal_rank_fusion(ranked_lists, k: int = _RRF_K) -> dict:
-    """BB3: combine multiple ranked result lists via RRF.
+_RERANK_HALF_LIFE_DAYS = _sp_lazy("_RERANK_HALF_LIFE_DAYS", 180)
+
+
+def _get_rerank_half_life_days() -> float:
+    """Resolve rerank_half_life_days from config; falls back to 180.0."""
+    try:
+        from _lazy_imports import get_config
+
+        return float(get_config().rerank_half_life_days)
+    except Exception:
+        return 180.0
+
+
+def _reciprocal_rank_fusion(
+    ranked_lists, k: int = _RRF_K, weights: Optional[list[float]] = None
+) -> dict:
+    """BB3: combine multiple ranked result lists via reciprocal rank fusion.
 
     Args:
         ranked_lists: iterable of lists. Each inner list is a sequence of
@@ -90,19 +106,25 @@ def _reciprocal_rank_fusion(ranked_lists, k: int = _RRF_K) -> dict:
             relevance.  Ties are broken by list order.
         k: dampening constant (default 60). Larger k reduces the influence
             of top ranks; smaller k amplifies them.
+        weights: optional per-channel weight multipliers. Must be the same
+            length as ``ranked_lists``.  ``None`` or all-1.0 gives equal
+            weight (identical to pre-W1 behavior).
 
     Returns:
         dict mapping doc_id → float rrf score. Documents that appear in
-        multiple lists get summed scores.
+        multiple lists get summed weighted scores.
     """
+    lists = list(ranked_lists)
+    if weights is None:
+        weights = [1.0] * len(lists)
     fused: dict = {}
-    for lst in ranked_lists:
+    for lst, w in zip(lists, weights):
         for rank, item in enumerate(lst):
             if isinstance(item, tuple):
                 doc_id = item[0]
             else:
                 doc_id = item
-            fused[doc_id] = fused.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
+            fused[doc_id] = fused.get(doc_id, 0.0) + w / (k + rank + 1)
     return fused
 
 
@@ -256,7 +278,15 @@ def _apply_temporal_decay(scored_results: list, decay_weight: float = 0.15) -> l
     This boosts recent notes and gently penalizes old ones without
     overriding the relevance-based ranking entirely.
     When MEMORY_FORGETTING_CURVE=1, uses last_accessed for Ebbinghaus-style decay.
+    decay_weight is read from config (temporal_decay_weight) when not explicitly passed.
     """
+    if decay_weight == 0.15:
+        try:
+            from _lazy_imports import get_config
+
+            decay_weight = float(get_config().temporal_decay_weight)
+        except Exception:
+            pass
     if _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential") == "off" or decay_weight <= 0:
         return scored_results
     now_ts = time.time()
@@ -362,7 +392,7 @@ def _compute_final_score(ctx) -> float:
         try:
             c_ts = datetime.fromisoformat(ctx.created).timestamp()
             age_days = max(0.0, (now_ts - c_ts) / 86400.0)
-            recency_factor = 0.5 ** (age_days / _RERANK_HALF_LIFE_DAYS)
+            recency_factor = 0.5 ** (age_days / _get_rerank_half_life_days())
         except (ValueError, TypeError):
             recency_factor = 0.0
     recency_factor *= ctx.recency_weight
