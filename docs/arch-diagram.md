@@ -896,7 +896,7 @@ agentic-memory/                              ← repo root
 ├── background_worker.py                      ← also a cron entry
 │
 ├── EVAL ─────────────────────────────────────────────────────────────────────
-├── eval/                                     ← 167 test files, 3,117 test functions
+├── eval/                                     ← 183 test files, 3,494 test functions
 │
 └── DOCS ─────────────────────────────────────────────────────────────────────
     ├── docs/architecture.md

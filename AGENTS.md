@@ -51,7 +51,7 @@ agentic-memory/
 ├── docs/                        ← user-facing docs (architecture, how-to, concepts, explanation, reference)
 ├── hooks/                       ← 4 user-facing hooks + 1 log helper module
 ├── memory/                      ← live store (gitignored)
-├── eval/                        ← 167 test files, 3,117 test functions
+├── eval/                        ← 183 test files, 3,494 test functions
 ├── cron/                        ← 25 background jobs + install_crontab.sh
 ├── save_pipeline.py + save/     ← write path (save_pipeline: ~1,623 LOC shim; save/: ~1,400 LOC, 5 submodules)
 ├── search_pipeline.py + search/ ← read path (search_pipeline: shim; search/orchestrator.py: 1,995 LOC; search/: ~4,500 LOC, 8 submodules)

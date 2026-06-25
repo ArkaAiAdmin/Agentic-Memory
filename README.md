@@ -151,7 +151,7 @@ agentic-memory/                    # Repo root — 102 production modules, 42,37
 └── ...
 ```
 
-**Top-level scale (2026-06-23):** 102 Python modules, 46,247 root-level LOC (56,799 including all subpackage files). Test suite: 156+ test files, 2,856+ test functions, focused regression suite (fact_extraction + event_time + temporal + KG dedup + FTS) is 255 passing. ~51-table SQLite schema at version 21 (added v18 fact-level temporal KG, v19 entity FK fix, v20 kg_facts FTS5 index, v21 kg_crdt tables).
+**Top-level scale (2026-06-23):** 102 Python modules, 46,247 root-level LOC (56,799 including all subpackage files). Test suite: 183 test files, 3,494 test functions, all passing (10 skipped for speed), 0 warnings. ~51-table SQLite schema at version 21 (added v18 fact-level temporal KG, v19 entity FK fix, v20 kg_facts FTS5 index, v21 kg_crdt tables).
 
 ### Per-project layout
 
