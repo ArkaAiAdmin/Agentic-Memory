@@ -2268,7 +2268,10 @@ def status() -> dict:
     last_7d = 0
     per_day: dict[str, int] = {}
     for path in autos:
-        m = re.match(r"auto-(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})-", path.name)
+        m = re.match(
+            r"auto-(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})([+-]\d{2}-\d{2})?-",
+            path.name,
+        )
         if not m:
             continue
         d = datetime.datetime.fromisoformat(

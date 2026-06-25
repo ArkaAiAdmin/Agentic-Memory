@@ -12,6 +12,7 @@ Called from OpenCode plugin hooks:
   - compacting          → pre_compaction (save before context is lost)
 """
 
+import fcntl
 import json
 import logging
 import os
@@ -29,6 +30,12 @@ MEMORY_DIR = Path(
 )
 SESSIONS_DIR = MEMORY_DIR / "sessions"
 STATE_FILE = SESSIONS_DIR / ".context_monitor_state.json"
+
+# Module-level keep-alive for the state lock FD. fcntl.flock releases
+# when the FD is closed; a local variable in _save_state would go out
+# of scope after the function returns between consecutive calls.
+_STATE_LOCK_FD = None
+_STATE_LOCK_PATH = SESSIONS_DIR / ".context_monitor_state.json.flock"
 
 # Configuration
 CHECKPOINT_INTERVAL = 10  # Save checkpoint every N tool calls
@@ -65,9 +72,36 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict):
-    """Persist state to disk."""
+    """Persist state to disk.
+
+    Uses an exclusive flock on a sibling .flock file so concurrent
+    writers (track_tool_call, session_idle, pre_compaction) cannot
+    clobber each other. The actual write uses atomic_write (temp + os.replace)
+    so a crash mid-write never produces a truncated file.
+    """
+    global _STATE_LOCK_FD
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+
+    # Acquire exclusive flock; re-open FD each call so we don't hold
+    # it between calls (the hook model is short-lived subprocesses,
+    # not long-lived daemons).
+    try:
+        lock_fd = open(_STATE_LOCK_PATH, "w", encoding="utf-8")
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
+    except OSError:
+        lock_fd = None  # best-effort: proceed without lock
+
+    try:
+        from memory_common import atomic_write
+
+        atomic_write(STATE_FILE, json.dumps(state, indent=2) + "\n")
+    finally:
+        if lock_fd is not None:
+            try:
+                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+                lock_fd.close()
+            except OSError:
+                pass
 
 
 def _today_str() -> str:
@@ -360,15 +394,17 @@ This is the final session summary. The agent should add:
         logger.warning("Failed to save memory in session_end")
         pass
 
-    # Reset state for next session
+    # Reset state for next session (preserve cumulative total_tool_calls)
     _save_state(
         {
             "tool_call_count": 0,
+            "total_tool_calls": state["total_tool_calls"],
             "last_checkpoint_tool_count": 0,
             "last_checkpoint_time": time.time(),
             "session_start_time": time.time(),
             "tools_since_checkpoint": 0,
             "notable_tools": [],
+            "last_compaction_time": state.get("last_compaction_time", 0),
         }
     )
 
@@ -954,10 +990,14 @@ def pre_compaction(session_id: str = "", message_count: int = 0) -> dict:
     if time.time() - last_compaction < 45:
         return {"deduped": True, "last_compaction": last_compaction}
 
-    dedup_state["last_compaction_time"] = time.time()
-    _save_state(dedup_state)
-
+    # Single save: set compaction timestamp and reset checkpoint counter
+    # together so no interleaving writer can clobber either field.
     state = _load_state()
+    state["last_compaction_time"] = time.time()
+    state["tools_since_checkpoint"] = 0
+    state["last_checkpoint_time"] = time.time()
+    _save_state(state)
+
     elapsed_min = (time.time() - state["session_start_time"]) / 60
 
     activity_section = _build_activity_log(state)

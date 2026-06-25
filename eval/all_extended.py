@@ -195,7 +195,7 @@ with sqlite3.connect(DB) as con:
     con.execute("PRAGMA foreign_keys=OFF")
     # Delete test memories
     cur = con.execute(
-        "DELETE FROM memories WHERE id LIKE 'test/%' OR id LIKE 'tests/%'"
+        "DELETE FROM memories WHERE id LIKE 'test/%' OR id LIKE 'tests/%' OR id LIKE 'lessons/test%'"
     )
     print(f"  cleaned {cur.rowcount} test memories")
     # Also clean orphan rows pointing to non-existent memories
