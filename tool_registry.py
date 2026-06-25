@@ -108,4 +108,10 @@ ADMIN_TOOLS = [
     "memory_list_skills",  # mcp_maintenance.py — list cached skills
     "memory_sdk_demo",  # mcp_sdk.py — SDK demo / quickstart
     "memory_auto_share",  # mcp_sharing.py — auto-publish opt-in memories
+    # 2026-06-25: 5 tools were exposed via @mcp.tool() but not in registry (drift fix)
+    "memory_graph_shortest_path",  # mcp_memory_server.py — KG shortest path
+    "memory_graph_traverse",  # mcp_memory_server.py — KG edge traversal
+    "memory_circuit_breaker_status",  # mcp_maintenance.py — CB open/close history
+    "memory_temporal_contradictions",  # mcp_maintenance.py — fact supersession events
+    "memory_temporal_query",  # mcp_maintenance.py — time-aware KG queries
 ]
