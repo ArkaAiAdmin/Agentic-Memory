@@ -211,12 +211,24 @@ def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) 
         entities = cached
     else:
         # P2c.1 — Stage 1: regex extraction
-        regex_entities = extract_entities(content)
+        try:
+            from _lazy_imports import get_config
+
+            _min_occ = int(get_config().entity_min_occurrences)
+        except Exception:
+            _min_occ = 2
+        regex_entities = extract_entities(content, min_occurrences=_min_occ)
         stats["regex_count"] = len(regex_entities)
         entities = list(regex_entities)
 
-        # P2c.2 — Stage 2: LLM fallback when regex returned 0 or 1
-        if len(entities) < 2:
+        # P2c.2 — Stage 2: LLM fallback when regex returned too few entities
+        try:
+            from _lazy_imports import get_config
+
+            _fallback_threshold = int(get_config().kg_llm_fallback_min_entities)
+        except Exception:
+            _fallback_threshold = 2
+        if len(entities) < _fallback_threshold:
             try:
                 from llm_extraction import extract_entities_via_llm
 

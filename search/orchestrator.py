@@ -833,15 +833,22 @@ def _hybrid_fusion(
 ) -> list:
     """Merge FTS and semantic results using reciprocal rank fusion."""
     try:
-        from _lazy_imports import get_embedding_search
+        from _lazy_imports import get_config, get_embedding_search
 
         _es = get_embedding_search()
-        _es_results = _es.search(normalized_query, db_path, limit=limit * 3)
+        _overfetch = int(getattr(get_config(), "hybrid_semantic_overfetch", 3))
+        _rrf_k = int(getattr(get_config(), "hybrid_rrf_k", 60))
+        _rank_scale = float(getattr(get_config(), "hybrid_rank_proxy_scale", 30.0))
+        _fts_w = float(getattr(get_config(), "hybrid_fts_weight", 1.0))
+        _sem_w = float(getattr(get_config(), "hybrid_semantic_weight", 1.0))
+        _es_results = _es.search(normalized_query, db_path, limit=limit * _overfetch)
         if not isinstance(_es_results, list) or not _es_results:
             return results
         fts_ranked = [r[0] for r in results]
         sem_ranked = [h.get("id") for h in _es_results if h.get("id")]
-        rrf = _reciprocal_rank_fusion([fts_ranked, sem_ranked])
+        rrf = _reciprocal_rank_fusion(
+            [fts_ranked, sem_ranked], k=_rrf_k, weights=[_fts_w, _sem_w]
+        )
         existing_ids = {r[0]: i for i, r in enumerate(results)}
         new_hit_ids = [
             h.get("id")
@@ -869,7 +876,7 @@ def _hybrid_fusion(
             ) = row[:8]
             last_accessed = row[8] if len(row) > 8 else None
             metadata_json = row[9] if len(row) > 9 else None
-            rank_proxy = -rrf.get(hit_id, 0.0) * 30
+            rank_proxy = -rrf.get(hit_id, 0.0) * _rank_scale
             semantic_only.append(
                 (
                     mid,
@@ -892,7 +899,7 @@ def _hybrid_fusion(
             hit_id = r[0]
             rrf_score = rrf.get(hit_id, 0.0)
             # Replace index 5 (FTS rank) with RRF-based rank_proxy
-            merged.append(r[:5] + (-rrf_score * 30,) + r[6:])
+            merged.append(r[:5] + (-rrf_score * _rank_scale,) + r[6:])
         merged.extend(semantic_only)
         merged.sort(key=lambda x: x[5])  # sort by rank_proxy (index 5)
         return merged
@@ -1399,12 +1406,10 @@ def _build_empty_result_with_hint(
             et = fact.get("event_time")
             et_str = ""
             if et is not None:
-                from datetime import datetime as _dt
+                from datetime import datetime as _dt, timezone as _tz
 
                 try:
-                    et_str = (
-                        f" [event_time={_dt.utcfromtimestamp(et).strftime('%Y-%m-%d')}]"
-                    )
+                    et_str = f" [event_time={_dt.fromtimestamp(et, tz=_tz.utc).strftime('%Y-%m-%d')}]"
                 except Exception:
                     pass
             conf = fact.get("confidence", 0.0) or 0.0
@@ -1488,12 +1493,10 @@ def _build_search_result_envelope(
             et = fact.get("event_time")
             et_str = ""
             if et is not None:
-                from datetime import datetime as _dt
+                from datetime import datetime as _dt, timezone as _tz
 
                 try:
-                    et_str = (
-                        f" [event_time={_dt.utcfromtimestamp(et).strftime('%Y-%m-%d')}]"
-                    )
+                    et_str = f" [event_time={_dt.fromtimestamp(et, tz=_tz.utc).strftime('%Y-%m-%d')}]"
                 except Exception:
                     pass
             conf = fact.get("confidence", 0.0) or 0.0

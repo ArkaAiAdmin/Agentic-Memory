@@ -207,10 +207,13 @@ def _apply_cross_encoder_rerank(
     ce_scores: list = []
     if deep_rerank:
         try:
+            from _lazy_imports import get_config
             from reranker import get_reranker, normalize_rerank_score
 
             reranker = get_reranker()
-            raw = reranker.score(query, docs)
+            raw = reranker.score(
+                query, docs, timeout=float(get_config().deep_rerank_timeout)
+            )
             if raw is not None:
                 backend = reranker.backend()
                 ce_scores = [normalize_rerank_score(s, backend=backend) for s in raw]

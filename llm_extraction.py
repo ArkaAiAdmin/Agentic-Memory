@@ -313,9 +313,14 @@ class LLMExtractor:
         self._load_attempted = False
         self._load_error: Optional[str] = None
         self.last_used: float = 0.0
-        self._idle_unload_s = int(
-            os.environ.get("MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS", "1800")
-        )
+        try:
+            from _lazy_imports import get_config
+
+            self._idle_unload_s = int(get_config().idle_unload_seconds)
+        except Exception:
+            self._idle_unload_s = int(
+                os.environ.get("MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS", "1800")
+            )
         _start_idle_unload_monitor_if_needed()
 
     @property
@@ -594,9 +599,15 @@ def _start_idle_unload_monitor_if_needed() -> None:
     with _idle_monitor_lock:
         if _idle_monitor_started:
             return
-        check_interval = int(
-            os.environ.get("MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS", "1800")
-        )
+        check_interval = 1800
+        try:
+            from _lazy_imports import get_config
+
+            check_interval = int(get_config().idle_unload_seconds)
+        except Exception:
+            check_interval = int(
+                os.environ.get("MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS", "1800")
+            )
         if check_interval <= 0:
             _idle_monitor_started = True
             return

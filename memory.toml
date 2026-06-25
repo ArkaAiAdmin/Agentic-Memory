@@ -105,9 +105,11 @@ semantic_threshold = 0.65            # MEMORY_SEMANTIC_THRESHOLD
 threshold = 0.92                     # MEMORY_KG_DEDUP_THRESHOLD
 
 [hybrid]
-# FTS vs semantic channel weights in _hybrid_fusion.
-fts_weight = 0.5                     # MEMORY_HYBRID_FTS_WEIGHT
-semantic_weight = 0.3                # MEMORY_HYBRID_SEMANTIC_WEIGHT
+# Reciprocal rank fusion parameters in _hybrid_fusion.
+# Channel weights — multiply per-channel RRF contribution.
+# Default 1.0 = equal weight (same as no weight multiplier).
+fts_weight = 1.0                     # MEMORY_HYBRID_FTS_WEIGHT
+semantic_weight = 1.0                # MEMORY_HYBRID_SEMANTIC_WEIGHT
 rrf_k = 60                           # MEMORY_HYBRID_RRF_K
 semantic_overfetch = 3               # MEMORY_HYBRID_SEMANTIC_OVERFETCH
 rank_proxy_scale = 30.0              # MEMORY_HYBRID_RANK_PROXY_SCALE
