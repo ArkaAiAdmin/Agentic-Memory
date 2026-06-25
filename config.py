@@ -21,10 +21,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-print(
-    f"IMPORT config.py: MEMORY_LLM_EXTRACTION={os.environ.get('MEMORY_LLM_EXTRACTION')}",
-    file=sys.stderr,
-)
+# The MEMORY_LLM_EXTRACTION resolution log is emitted after _resolve
+# is defined (see _log_llm_extraction_resolution below) so it can show
+# the env var, the TOML value, and the effective resolved value.
 
 # ---------------------------------------------------------------------------
 # TOML parsing — tomllib (3.11+) with tomli fallback
@@ -230,6 +229,44 @@ def _resolve(
         return toml_val
 
     return default
+
+
+# 2026-06-26: the original import-time log at line 24-27 only printed
+# the raw env var (e.g. "MEMORY_LLM_EXTRACTION=None"), which misled
+# operators into thinking LLM extraction was disabled — when in fact
+# the TOML config (features.llm_extraction = true) was the actual
+# source of truth and LLM was still enabled. Replace that log with
+# one that shows all three: env var, TOML value, and the resolved
+# effective value. This runs once at import time after _resolve is
+# defined.
+def _log_llm_extraction_resolution() -> None:
+    raw_env = os.environ.get("MEMORY_LLM_EXTRACTION")
+    try:
+        with open(_TOML_PATH, "rb") as fh:
+            toml_data = tomllib.load(fh) if tomllib else {}
+    except (OSError, ValueError, KeyError, TypeError):
+        toml_data = {}
+    toml_val = None
+    try:
+        features = toml_data.get("features", {}) if isinstance(toml_data, dict) else {}
+        toml_val = features.get("llm_extraction")
+    except (AttributeError, TypeError):
+        toml_val = None
+    effective = _resolve(
+        "MEMORY_LLM_EXTRACTION",
+        "features.llm_extraction",
+        True,
+        toml_data,
+        parser=_parse_bool,
+    )
+    print(
+        f"IMPORT config.py: MEMORY_LLM_EXTRACTION env={raw_env!r} "
+        f"toml[features.llm_extraction]={toml_val!r} effective={effective}",
+        file=sys.stderr,
+    )
+
+
+_log_llm_extraction_resolution()
 
 
 # ---------------------------------------------------------------------------

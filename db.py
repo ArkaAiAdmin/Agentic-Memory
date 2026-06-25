@@ -22,6 +22,7 @@ Migration helpers (``_migrate_ensure_columns``, ``_migrate_ensure_indexes``,
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import threading
 
@@ -63,8 +64,43 @@ class _ConnectionPool:
         self._depth: dict[tuple[str, int], int] = {}
         self._migration_locks: dict[str, threading.Lock] = {}
         self._migration_locks_lock = threading.Lock()
+        # 2026-06-26 fix: track the inode each connection was opened
+        # against. If memory.db is replaced (e.g. rebuild_index.py
+        # os.replace()s the tmp db into place), connections in long-
+        # lived daemons would otherwise keep pointing at the old
+        # inode forever. get() compares the stored inode against the
+        # current st_ino and evicts + reopens on mismatch.
+        self._inodes: dict[tuple[str, int], int] = {}
         # Intra-process serialization is handled by per-thread connection
         # keys in the pool; inter-process serialization uses flock files.
+
+    @staticmethod
+    def _inode_of(path: str) -> int:
+        """Return the current inode of *path*, or 0 if it can't be determined.
+
+        Returning 0 (a value no real inode will match) means "inode
+        tracking is unavailable" — callers should treat that as a
+        no-op rather than a forced reopen.
+        """
+        try:
+            return os.stat(path).st_ino
+        except OSError:
+            return 0
+
+    def _inode_mismatch(self, key: tuple[str, int], conn: sqlite3.Connection) -> bool:
+        """True if *conn*'s stored inode no longer matches the current file.
+
+        A mismatch means the on-disk file was replaced (e.g. via
+        os.replace by rebuild_index.py). The old conn is still valid
+        for the old inode but is stale relative to the live data.
+        """
+        stored = self._inodes.get(key)
+        if stored is None:
+            return False
+        current = self._inode_of(key[0])
+        if current == 0:
+            return False  # can't stat — don't churn
+        return stored != current
 
     def _evict_lru(self) -> None:
         """Close the least recently used connection to make room.
@@ -243,7 +279,6 @@ class _ConnectionPool:
                 self._lru.append(key)
                 try:
                     conn.execute("SELECT 1")
-                    return conn
                 except Exception:
                     logger.warning("Stale connection detected during pool get, closing")
                     try:
@@ -256,6 +291,29 @@ class _ConnectionPool:
                     self._pooled_ids.discard(conn_id)
                     self._pool.pop(key, None)
                     self._depth.pop(key, None)
+                    self._inodes.pop(key, None)
+                else:
+                    # 2026-06-26: also evict if the on-disk inode changed
+                    # (e.g. rebuild_index.py os.replace()'d the db file).
+                    # The old conn is still valid for the old inode, but
+                    # it's stale relative to the live data — writes
+                    # through it would never reach the new file.
+                    if self._inode_mismatch(key, conn):
+                        logger.warning(
+                            "memory.db inode changed under pooled connection "
+                            "(%s) — reopening against new file",
+                            path,
+                        )
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        self._pooled_ids.discard(conn_id)
+                        self._pool.pop(key, None)
+                        self._depth.pop(key, None)
+                        self._inodes.pop(key, None)
+                    else:
+                        return conn
             # Close any orphaned connection from another thread holding the same path
             for other_key in list(self._pool):
                 if other_key[0] == path and self._depth.get(other_key, 0) == 0:
@@ -263,6 +321,7 @@ class _ConnectionPool:
                     orphan_id = id(orphan)
                     self._pooled_ids.discard(orphan_id)
                     self._depth.pop(other_key, None)
+                    self._inodes.pop(other_key, None)
                     try:
                         orphan.close()
                     except Exception:
@@ -296,6 +355,7 @@ class _ConnectionPool:
                     )
             self._pool[key] = conn
             self._depth[key] = 1
+            self._inodes[key] = self._inode_of(path)
             conn_id = id(conn)
             self._pooled_ids.add(conn_id)
             # B17 fix: remove any prior occurrence of this key to keep
@@ -348,6 +408,7 @@ class _ConnectionPool:
                     if v is conn:
                         self._pool.pop(k, None)
                         self._depth.pop(k, None)
+                        self._inodes.pop(k, None)
                         break
 
     def close(self, path: str) -> None:
@@ -360,6 +421,7 @@ class _ConnectionPool:
                     self._pooled_ids.discard(conn_id)
                     self._migrated.discard(conn_id)
                     self._depth.pop(key, None)
+                    self._inodes.pop(key, None)
                     try:
                         conn.close()
                     except Exception:
@@ -386,6 +448,7 @@ class _ConnectionPool:
             self._lru.clear()
             self._migrated.clear()
             self._depth.clear()
+            self._inodes.clear()
 
     def get_depth(self, conn: AnyConnection) -> int:
         """Return current checkout depth for a connection."""
