@@ -761,6 +761,41 @@ def _build_rich_context_sections(
     }
 
 
+COMPACTION_PIN_LIMIT = 10
+
+
+def _enforce_compaction_pin_limit():
+    """Unpin all but the most recent COMPACTION_PIN_LIMIT compaction-save
+    notes so pinned state doesn't grow without bound.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        import sqlite3
+        from memory_common import get_memory_paths
+
+        _, local_mem, _ = get_memory_paths()
+        db_path = local_mem / "memory.db"
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(
+            "SELECT id FROM memories "
+            "WHERE category='sessions' AND pinned=1 AND id LIKE 'sessions/compaction-save-%' "
+            "ORDER BY created_at DESC"
+        ).fetchall()
+        to_unpin = [r[0] for r in rows[COMPACTION_PIN_LIMIT:]]
+        if to_unpin:
+            conn.executemany(
+                "UPDATE memories SET pinned=0 WHERE id=?", [(i,) for i in to_unpin]
+            )
+            conn.commit()
+            logger.info(
+                "compaction pin limit: unpinned %d old compaction saves, kept %d",
+                len(to_unpin),
+                min(COMPACTION_PIN_LIMIT, len(rows)),
+            )
+    except Exception as exc:
+        logger.warning("compaction pin limit enforcement failed: %s", exc)
+
+
 def _write_compaction_note(
     content: str, autosaves: list, state: dict, elapsed_min: float, message_count: int
 ) -> dict:
@@ -794,6 +829,7 @@ def _write_compaction_note(
             pinned=True,
             safety_wiring=False,
         )
+        _enforce_compaction_pin_limit()
     except Exception:
         logger.warning(
             "Failed to save compaction memory to DB, file-based save already succeeded"
