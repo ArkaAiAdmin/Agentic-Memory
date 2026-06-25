@@ -2240,7 +2240,7 @@ def purge_auto_saves(dry_run: bool = False) -> dict:
         for sf in source_files:
             if not sf:
                 continue
-            src = sessions_dir / sf
+            src = sessions_dir / Path(sf).name
             if src.exists():
                 shutil.move(str(src), str(archive_dir / src.name))
                 moved += 1

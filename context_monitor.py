@@ -70,7 +70,7 @@ def _save_state(state: dict):
 
 
 def _today_str() -> str:
-    return time.strftime("%Y-%m-%d")
+    return time.strftime("%Y-%m-%d", time.gmtime())
 
 
 def _now_str() -> str:
@@ -264,7 +264,7 @@ with a manual summary of decisions, progress, and next steps.
 
     # Save to session file
     date_str = _today_str()
-    ts_str = time.strftime("%H-%M-%S", time.localtime())
+    ts_str = time.strftime("%H-%M-%S", time.gmtime())
     note_id = f"sessions/idle-{date_str}_{ts_str}"
     note_path = MEMORY_DIR / f"{note_id}.md"
 
@@ -335,7 +335,7 @@ This is the final session summary. The agent should add:
 """
 
     date_str = _today_str()
-    ts_str = time.strftime("%H-%M-%S", time.localtime())
+    ts_str = time.strftime("%H-%M-%S", time.gmtime())
     note_id = f"sessions/end-{date_str}_{ts_str}"
     note_path = MEMORY_DIR / f"{note_id}.md"
 
@@ -875,7 +875,7 @@ def _write_compaction_note(
     Extracted from pre_compaction() (2026-06-22).
     """
     date_str = _today_str()
-    ts_str = time.strftime("%H-%M-%S", time.localtime())
+    ts_str = time.strftime("%H-%M-%S", time.gmtime())
     note_id = f"sessions/compaction-save-{date_str}_{ts_str}"
     note_path = MEMORY_DIR / f"{note_id}.md"
 
