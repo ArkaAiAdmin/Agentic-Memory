@@ -73,6 +73,7 @@ from memory_common import (
     atomic_write,
     safe_close_db,
     connection_pool,
+    _resolve_tags,
 )
 
 # H1 fix: hook path now invalidates the search cache so the canonical-path
@@ -1107,20 +1108,7 @@ def _upsert_memory(
         parts = note_id.split("/", 1)
         category = parts[0] if len(parts) == 2 else "sessions"
         title_slug = parts[1] if len(parts) == 2 else note_id
-        # Normalize tags: accept list, JSON string, or None
-        if tags_json is None:
-            tags_list = []
-        elif isinstance(tags_json, str):
-            try:
-                tags_list = json.loads(tags_json)
-            except json.JSONDecodeError:
-                tags_list = [
-                    t.strip() for t in re.split(r"[,; ]+", tags_json) if t.strip()
-                ]
-        elif isinstance(tags_json, list):
-            tags_list = [str(t).strip() for t in tags_json if t]
-        else:
-            tags_list = []
+        tags_list = _resolve_tags(category, tags_json, context="generic")
 
         # Strip existing frontmatter — save_memory builds its own
         body = content
@@ -1758,7 +1746,7 @@ superseded_by: null
 """
     atomic_write(file_path, markdown, encoding="utf-8")
 
-    tags = ["auto-save", "hook", "tool-log", tool_slug]
+    tags = _resolve_tags("sessions", None, context="auto-save", tool_slug=tool_slug)
     saved = _upsert_memory(
         note_id,
         f"sessions/{file_path.name}",

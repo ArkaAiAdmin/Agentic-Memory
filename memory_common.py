@@ -20,7 +20,9 @@ Migration helpers and ``run_db_migrations`` now live in ``db_migrations.py``
 from __future__ import annotations
 
 import functools
+import json
 import os
+import re
 import sqlite3
 import warnings
 from pathlib import Path
@@ -528,3 +530,40 @@ def reset_all_lazy_config_attrs() -> None:
             continue
         for attr in config_fields:
             mod.__dict__.pop(attr, None)
+
+
+def _resolve_tags(
+    category: str,
+    caller_tags: list[str] | str | None,
+    *,
+    context: str = "generic",
+    tool_slug: str = "",
+) -> list[str]:
+    """Centralise all tag-policy decisions so callers cannot diverge.
+
+    Policy
+    ------
+    1. Caller-supplied tags always win — never overwrite.
+    2. Auto-save hook: always prepend [auto-save, hook, tool-log, <slug>].
+    3. MCP memory_save: when caller passes nothing and category is
+       lessons or decisions, default to [category].
+    4. All inputs are normalised (None → [], str → split, list → strip).
+    """
+    if caller_tags is None:
+        base: list[str] = []
+    elif isinstance(caller_tags, str):
+        try:
+            base = json.loads(caller_tags)
+        except json.JSONDecodeError:
+            base = [t.strip() for t in re.split(r"[,; ]+", caller_tags) if t.strip()]
+    elif isinstance(caller_tags, list):
+        base = [str(t).strip() for t in caller_tags if t]
+    else:
+        base = []
+
+    if context == "auto-save":
+        slug = tool_slug.strip() if tool_slug else "unknown"
+        return ["auto-save", "hook", "tool-log", slug] + base
+    if context == "mcp" and not base and category in ("lessons", "decisions"):
+        return [category]
+    return base

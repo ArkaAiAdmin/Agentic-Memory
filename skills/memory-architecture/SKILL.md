@@ -99,7 +99,7 @@ A one-page mental model of the agentic-memory system, sized for someone about to
 
 ## Three rules of thumb
 
-1. **If you change `save_pipeline.save_memory`, mirror it in `auto_save._upsert_memory` and `auto_save.tool_complete`.** The hook path and the canonical path diverge (H1 in the audit). They share a saga in theory, not in code. **Most dangerous bug class in the system.**
+1. **Tag policy lives in `memory_common._resolve_tags()`.** Both `mcp_memory.py` and `auto_save._upsert_memory` route through it — don't add tag logic locally. If you need a new tag rule, add it there and both paths pick it up automatically.
 
 2. **The 6-factor hybrid fusion weights are in `search_pipeline._RERANK_WEIGHTS`.** bm25=0.4, fitness=0.2, importance=0.15, pinned=0.1, recency=0.1, tag_match=0.05. Tunable by CTR feedback if `MEMORY_CTR_TUNING=1`. **Don't tune these without a benchmark.**
 
