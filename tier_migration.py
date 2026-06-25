@@ -185,7 +185,8 @@ def archive_cold_files(memory_dir: Path, dry_run: bool = False):
                         stats["skipped"] += 1
                         stats["skip_reasons"]["binary"] += 1
                         continue
-            except OSError:
+            except OSError as exc:
+                logger.debug("tier_migration: cannot stat %s: %s", md_file, exc)
                 stats["skipped"] += 1
                 continue
             try:

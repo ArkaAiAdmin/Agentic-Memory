@@ -513,9 +513,8 @@ def _enqueue_to_inbox(entry: dict) -> bool:
         if inbox.exists():
             try:
                 current_size = inbox.stat().st_size
-            except OSError:
-                # If we can't stat, allow the write and let the write
-                # fail naturally if there's a deeper filesystem issue.
+            except OSError as exc:
+                logger.debug("auto-save daemon: cannot stat inbox %s: %s", inbox, exc)
                 current_size = 0
         if current_size + len(line.encode("utf-8")) > max_bytes:
             logger.warning(
@@ -629,14 +628,8 @@ def _is_daemon_lock_held() -> bool:
     lock_fd = None
     try:
         lock_fd = open(lock_path, "w", encoding="utf-8")
-    except OSError:
-        if lock_fd is not None:
-            try:
-                lock_fd.close()
-            except Exception:
-                logger.warning(
-                    "Failed to close lock fd during _is_daemon_running cleanup"
-                )
+    except OSError as exc:
+        logger.warning("auto-save daemon: cannot open lock file %s: %s", lock_path, exc)
         return False
     try:
         from file_lock import acquire_flock_with_retry, release_flock
@@ -2326,8 +2319,8 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
             mtime = path.stat().st_mtime
             if now - mtime <= window:
                 recent_autos += 1
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("auto-save daemon: cannot stat session %s: %s", path, exc)
 
     # Check DB writability with read-only PRAGMA quick_check
     db_writable = False
@@ -2358,8 +2351,8 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
     if state_file_exists:
         try:
             state_file_age = now - state_file.stat().st_mtime
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("auto-save daemon: cannot stat state file: %s", exc)
 
     # Last compaction age
     last_compaction = None
@@ -2367,8 +2360,10 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
         try:
             last_compaction = now - path.stat().st_mtime
             break
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug(
+                "auto-save daemon: cannot stat compaction file %s: %s", path, exc
+            )
 
     # Hook failure count from error log
     hook_failure_count = 0
@@ -2376,8 +2371,8 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
     if error_log.exists():
         try:
             hook_failure_count = sum(1 for _ in error_log.open())
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("auto-save daemon: cannot count hook-errors.jsonl: %s", exc)
         # P0-12 fix (2026-06-23): rotate hook-errors.jsonl if it
         # exceeds 10 MB. Without rotation, the file grows unbounded
         # and can hit inode limits. Rotation: rename to .1, .2, etc.

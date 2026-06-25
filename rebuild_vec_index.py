@@ -128,8 +128,8 @@ def _try_acquire_lock(lock_path, *, force: bool = False):
             lock_file = None
             try:
                 lock_path.unlink()
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("rebuild_vec_index: cannot unlink lock %s: %s", lock_path, exc)
             try:
                 lock_file = open(lock_path, "w")
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -348,8 +348,8 @@ def rebuild_vec_index(db_path, *, force: bool = False) -> dict:
             lock_file.close()
             try:
                 lock_path.unlink()
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("rebuild_vec_index: cannot unlink lock %s: %s", lock_path, exc)
 
 
 def main() -> int:

@@ -82,8 +82,8 @@ def do_backup(backup_dir: Path | None = None) -> dict:
         try:
             if stale.exists():
                 stale.unlink()
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("cron_backup: cannot unlink stale WAL file: %s", exc)
     last_err: Exception | None = None
     for attempt in range(3):
         try:
@@ -152,8 +152,8 @@ def do_backup(backup_dir: Path | None = None) -> dict:
         try:
             old.unlink()
             removed += 1
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("cron_backup: cannot unlink old backup %s: %s", old, exc)
 
     # Also create a symlink without date for "latest" reference
     latest_path = backup_dir / "memory-latest.db.gz"
@@ -161,9 +161,8 @@ def do_backup(backup_dir: Path | None = None) -> dict:
         if latest_path.exists():
             latest_path.unlink()
         latest_path.symlink_to(gz_path.name)
-    except OSError:
-        pass
-
+    except OSError as exc:
+        logger.debug("cron_backup: cannot update latest symlink: %s", exc)
     return {
         "backup_path": str(gz_path),
         "backup_size": backup_size,
@@ -302,7 +301,7 @@ def main() -> int:
         print(f"Cron: {result['status']}")
         if "cron_line" in result:
             print(f"  {result['cron_line']}")
-        return
+        return 0
 
     if "--uninstall-cron" in args:
         result = uninstall_cron()
@@ -310,7 +309,7 @@ def main() -> int:
             print(f"ERROR: {result['error']}", file=sys.stderr)
             sys.exit(1)
         print(f"Cron: {result['status']}")
-        return
+        return 0
 
     if "--cron-status" in args:
         result = cron_status()
@@ -319,7 +318,7 @@ def main() -> int:
             print(f"  Schedule: {result['schedule']}")
         if "reason" in result:
             print(f"  Reason: {result['reason']}")
-        return
+        return 0
 
     backup_dir = None
     if args:
@@ -334,6 +333,7 @@ def main() -> int:
     print(f"  Size: {stats['backup_size']:,} bytes")
     print(f"  Removed: {stats['removed']} old backups")
     print(f"  Total backups: {stats['total_backups']}")
+    return 0
 
 
 if __name__ == "__main__":

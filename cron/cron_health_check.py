@@ -197,8 +197,8 @@ def main() -> int:
     status_path = GLOBAL_MEM_DIR / ".health_status.json"
     try:
         status_path.write_text(json.dumps(report, indent=2))
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.warning("cron_health_check: cannot write health status file: %s", exc)
 
     # Print summary
     print(f"Health check: {'HEALTHY' if report['overall_healthy'] else 'UNHEALTHY'}")

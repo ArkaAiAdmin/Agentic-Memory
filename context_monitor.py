@@ -88,7 +88,8 @@ def _save_state(state: dict):
     try:
         lock_fd = open(_STATE_LOCK_PATH, "w", encoding="utf-8")
         fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
-    except OSError:
+    except OSError as exc:
+        logger.debug("context_monitor: cannot acquire state lock: %s", exc)
         lock_fd = None  # best-effort: proceed without lock
 
     try:
@@ -100,8 +101,8 @@ def _save_state(state: dict):
             try:
                 fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
                 lock_fd.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("context_monitor: cannot release state lock: %s", exc)
 
 
 def _today_str() -> str:

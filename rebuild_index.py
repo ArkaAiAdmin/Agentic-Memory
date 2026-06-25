@@ -435,7 +435,8 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
             file_mtime_date = datetime.date.fromtimestamp(
                 path.stat().st_mtime
             ).isoformat()
-        except OSError:
+        except OSError as exc:
+            logger.debug("rebuild_index: cannot stat %s: %s", path, exc)
             file_mtime_date = today_date.isoformat()
         created = metadata.get("created", file_mtime_date)
         updated = metadata.get("updated", created)
@@ -823,8 +824,8 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
             if tmp_db_path.exists():
                 try:
                     tmp_db_path.unlink()
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.debug("rebuild_index: cannot unlink tmp db: %s", exc)
             raise
         # Update file_mtimes table
         import time
@@ -957,8 +958,8 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
         if tmp_db_path.exists():
             try:
                 tmp_db_path.unlink()
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("rebuild_index: cannot unlink tmp db: %s", exc)
         # C3 fix: lock release handled by outer try/finally.
         raise
 

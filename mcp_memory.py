@@ -299,8 +299,8 @@ def memory_auto_save_daemon_metrics() -> str:
     if inbox_path and inbox_path.exists():
         try:
             inbox_size = inbox_path.stat().st_size
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("mcp_memory: cannot stat inbox %s: %s", inbox_path, exc)
 
     import json
 

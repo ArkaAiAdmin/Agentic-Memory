@@ -61,8 +61,8 @@ def _save_marker(marker: dict) -> None:
     try:
         _MARKER_FILE.parent.mkdir(parents=True, exist_ok=True)
         _MARKER_FILE.write_text(json.dumps(marker, indent=2))
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug("memory-session-end: cannot write marker file: %s", exc)
 
 
 def _update_tool_count(tool_name: str = "") -> dict:

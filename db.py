@@ -480,7 +480,8 @@ def wal_checkpoint_idle(db_path: Path, wal_size_threshold_mb: float = 10.0) -> d
     if wal_path.exists():
         try:
             wal_size_mb = wal_path.stat().st_size / (1024 * 1024)
-        except OSError:
+        except OSError as exc:
+            logger.debug("db: cannot stat WAL %s: %s", wal_path, exc)
             wal_size_mb = 0.0
     if wal_size_mb < wal_size_threshold_mb:
         return {
