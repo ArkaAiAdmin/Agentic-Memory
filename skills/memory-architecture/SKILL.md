@@ -105,6 +105,8 @@ A one-page mental model of the agentic-memory system, sized for someone about to
 
 3. **Schema changes go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **v21** (v13 `memory_field_crdt`, v14 `arc_ghosts`/`arc_stats`, v15 `drift_alarms` + `memory_embeddings.ssm_state`, v16 `concept_drift`, v17 `kg_cascade`, v18 `fact_temporal`, v19 kg_facts entity FKs, v20 kg_facts FTS5, v21 `kg_crdt`). **Never edit the live DB schema by hand.**
 
+4. **All writes go through `save_pipeline.save_memory(note_id=..., context=..., ...)`.** `save_memory` is the single normalization site: it derives `category`/`title_slug` from `note_id`, strips frontmatter, resolves tags via `_resolve_tags(context, ...)`, and validates content length. Callers pass raw inputs; `save_memory` does the rest. Don't re-implement any of these steps in a caller — the H1 divergence bug (2026-06-26) showed what happens when two callers each maintain their own copy.
+
 ## How to read the code
 
 ```bash

@@ -1,4 +1,3 @@
-# mypy: ignore-errors
 """Flock helper for cron scripts.
 
 Wraps ``acquire_flock_with_retry`` from ``file_lock.py`` so each cron
@@ -30,7 +29,6 @@ Usage:
         acquire_lock_or_exit("cron_consolidate")
         # ... rest of main ...
 """
-# mypy: ignore-errors
 
 from __future__ import annotations
 

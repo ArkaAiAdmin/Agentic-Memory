@@ -137,12 +137,11 @@ warn_unused_ignores = true
 warn_return_any = true
 ignore_missing_imports = true
 # Exclude tests and the live store from mypy runs.
-exclude = [
+ exclude = [
     "eval/.*",
     "memory/.*",
     "venv/.*",
     "\\.venv/.*",
-    "cron/_flock.py",  # dual-import causes mypy duplicate-module
 ]
 
 [tool.pytest.ini_options]

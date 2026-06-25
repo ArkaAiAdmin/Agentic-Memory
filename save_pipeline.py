@@ -1384,11 +1384,6 @@ def save_memory(
             if not title_slug:
                 title_slug = _derived_slug
         body = content
-        if content.startswith("---"):
-            _end = content.find("---", 3)
-            if _end != -1:
-                body = content[_end + 3 :].strip()
-        content = body
         from memory_common import _resolve_tags
 
         tags_list = _resolve_tags(category, tags_list, context=context)

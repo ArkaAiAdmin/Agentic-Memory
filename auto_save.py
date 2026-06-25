@@ -58,7 +58,7 @@ import sqlite3
 import subprocess
 import threading
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Any, Protocol
 
 # H9 fix (2026-06-22): serialize `daily-digest` against a manual
 # invocation of the same subcommand. The other subcommands
@@ -85,6 +85,21 @@ except ImportError:  # cache module is optional in some test contexts
 
 configure_logging()
 logger = logging.getLogger(__name__)
+
+
+# Typed wrappers for Linux-only inotify syscalls (absent from macOS stubs).
+# Single point of suppression: the getattr call itself. Call sites below
+# are clean — mypy sees them as normal function calls.
+class _InotifyInit(Protocol):
+    def __call__(self) -> int: ...
+
+
+class _InotifyAddWatch(Protocol):
+    def __call__(self, fd: int, pathname: str, mask: int) -> int: ...
+
+
+_inotify_init: _InotifyInit | None = getattr(os, "inotify_init", None)
+_inotify_add_watch: _InotifyAddWatch | None = getattr(os, "inotify_add_watch", None)
 
 
 # Structured logging helper for observability
@@ -790,8 +805,8 @@ def _wait_for_file_modification(file_path: Path, timeout: float) -> None:
                             fflags=_select.KQ_NOTE_WRITE | _select.KQ_NOTE_EXTEND,
                         )
                     )
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.debug("auto-save daemon: kqueue fd open failed: %s", exc)
             try:
                 kq.control(kevents, len(kevents), timeout)
             finally:
@@ -805,16 +820,20 @@ def _wait_for_file_modification(file_path: Path, timeout: float) -> None:
 
     # 2. Try inotify (Linux)
     try:
-        fd = os.inotify_init()  # type: ignore[attr-defined]
+        assert _inotify_init is not None
+        fd = _inotify_init()
         # masks: IN_CREATE=0x100, IN_DELETE=0x200, IN_MOVED_TO=0x80, IN_MODIFY=0x2
         mask_dir = 0x100 | 0x200 | 0x80
-        wd_dir = os.inotify_add_watch(fd, str(file_path.parent), mask_dir)  # type: ignore[attr-defined]
+        assert _inotify_add_watch is not None
+        wd_dir = _inotify_add_watch(fd, str(file_path.parent), mask_dir)
         wd_file = None
         if file_path.exists():
             try:
-                wd_file = os.inotify_add_watch(fd, str(file_path), 0x2)  # type: ignore[attr-defined]
-            except OSError:
-                pass
+                wd_file = _inotify_add_watch(fd, str(file_path), 0x2)
+            except OSError as exc:
+                logger.debug(
+                    "auto-save daemon: inotify add-watch (file) failed: %s", exc
+                )
         try:
             import select as _select
 
