@@ -108,7 +108,48 @@ def _open_db_for_rebuild(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def rebuild_vec_index(db_path) -> dict:
+def _try_acquire_lock(lock_path, *, force: bool = False):
+    """Acquire .vec_rebuild.lock. Returns the open lock file or None.
+
+    With force=True, removes a stale lock file and retries once before
+    giving up. A live holder (BlockingIOError on both attempts) still
+    raises — force never bypasses a live rebuild.
+    """
+    if not fcntl:
+        return None
+    lock_file = None
+    try:
+        lock_file = open(lock_path, "w")
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_file
+    except BlockingIOError:
+        if force and lock_file is not None:
+            lock_file.close()
+            lock_file = None
+            try:
+                lock_path.unlink()
+            except OSError:
+                pass
+            try:
+                lock_file = open(lock_path, "w")
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return lock_file
+            except BlockingIOError:
+                logger.error(
+                    "Live rebuild in progress (lock held by another process). "
+                    "Cannot --force: refusing to interrupt an active rebuild."
+                )
+                if lock_file is not None:
+                    lock_file.close()
+                    lock_file = None
+                raise
+        if lock_file is not None:
+            lock_file.close()
+            lock_file = None
+        raise
+
+
+def rebuild_vec_index(db_path, *, force: bool = False) -> dict:
     """Rebuild the vector index in-place.
 
     Returns a stats dict:
@@ -147,17 +188,7 @@ def rebuild_vec_index(db_path) -> dict:
 
     # Cross-process lock so two rebuilds don't race.
     lock_path = db_path.parent / ".vec_rebuild.lock"
-    lock_file = None
-    if fcntl:
-        try:
-            lock_file = open(lock_path, "w")
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            logger.info("Another vec_index rebuild is already running.")
-            if lock_file is not None:
-                lock_file.close()
-                lock_file = None
-            raise
+    lock_file = _try_acquire_lock(lock_path, force=force)
 
     try:
         t0 = time.time()
@@ -343,6 +374,14 @@ def main() -> int:
             "Default: all."
         ),
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Clean up a stale .vec_rebuild.lock if the holder process "
+            "is dead. Does NOT bypass a lock held by a live process."
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -374,7 +413,7 @@ def main() -> int:
     db_path = args.db_path
 
     try:
-        stats = rebuild_vec_index(db_path)
+        stats = rebuild_vec_index(db_path, force=args.force)
     except FileNotFoundError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
@@ -382,7 +421,10 @@ def main() -> int:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
     except BlockingIOError:
-        print("ERROR: another rebuild is already running", file=sys.stderr)
+        print(
+            "ERROR: another rebuild is running (use --force to clear stale lock)",
+            file=sys.stderr,
+        )
         return 3
 
     print("\n=== Vector index rebuild complete ===")

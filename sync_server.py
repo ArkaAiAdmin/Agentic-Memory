@@ -40,7 +40,10 @@ import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from mdns_discovery import MDNSAdvertiser, MDNSBrowser
 from urllib.parse import urlparse, parse_qs
 
 logger = logging.getLogger(__name__)
@@ -872,10 +875,10 @@ class SyncServer:
         self.discover = discover
         self._server: Optional[HTTPServer] = None
         self._thread: Optional[threading.Thread] = None
-        self.advertiser = None
-        self.browser = None
-        self.gossip_thread = None
-        self.gossip_stop_event = None
+        self.advertiser: Optional[MDNSAdvertiser] = None
+        self.browser: Optional[MDNSBrowser] = None
+        self.gossip_thread: Optional[threading.Thread] = None
+        self.gossip_stop_event: Optional[threading.Event] = None
 
     def start(self) -> bool:
         """Start the sync server in a daemon thread. Returns True on success."""
@@ -1005,6 +1008,7 @@ class SyncServer:
     def _gossip_loop(self) -> None:
         from pex_protocol import peer_directory, send_gossip
 
+        assert self.gossip_stop_event is not None
         while not self.gossip_stop_event.is_set():
             if self.gossip_stop_event.wait(5.0):
                 break

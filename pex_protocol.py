@@ -10,7 +10,7 @@ import logging
 import urllib.request
 import urllib.error
 import time
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,6 @@ class PeerDirectory:
     """Thread-safe directory of discovered and gossiped peers."""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock() if "threading" in globals() else None
-        # We'll import threading lazily if needed, but it's safe to use stdlib threading
         import threading
         self._lock = threading.Lock()
         # map: agent_id -> {url, ip, port, last_seen, source}
@@ -99,7 +97,7 @@ def send_gossip(target_url: str, local_agent_id: str, peers: List[Dict[str, Any]
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             body = resp.read().decode("utf-8")
-            return json.loads(body)
+            return dict(json.loads(body))
     except Exception as e:
         logger.debug("Failed to send PEX gossip to %s: %s", url, e)
         return None

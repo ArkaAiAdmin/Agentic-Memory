@@ -142,6 +142,7 @@ exclude = [
     "memory/.*",
     "venv/.*",
     "\\.venv/.*",
+    "cron/_flock.py",  # dual-import causes mypy duplicate-module
 ]
 
 [tool.pytest.ini_options]

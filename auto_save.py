@@ -65,7 +65,7 @@ from typing import Optional, Any
 # (tool-complete, status, health-check) are read-only or
 # write-once-per-call and don't need the lock.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "cron"))
-from _flock import acquire_lock_or_exit  # noqa: E402
+from _flock import acquire_lock_or_exit  # noqa: E402  # type: ignore[import]
 
 # H1 fix: configure root logging (idempotent).
 from memory_common import (

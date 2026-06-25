@@ -11,7 +11,7 @@ import struct
 import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ def get_local_ip() -> str:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
+        ip: str = s.getsockname()[0]
         s.close()
         return ip
     except Exception:
@@ -100,6 +100,7 @@ class MDNSAdvertiser:
     def _run_loop(self) -> None:
         while not self.stop_event.is_set():
             try:
+                assert self.sock is not None
                 self.sock.settimeout(1.0)
                 data, addr = self.sock.recvfrom(2048)
                 self._handle_packet(data, addr)
@@ -239,6 +240,7 @@ class MDNSBrowser:
                 last_query = now
 
             try:
+                assert self.sock is not None
                 self.sock.settimeout(1.0)
                 data, addr = self.sock.recvfrom(2048)
                 self._handle_packet(data)

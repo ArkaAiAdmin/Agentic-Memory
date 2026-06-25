@@ -252,7 +252,7 @@ def _get_embedding_score_threshold() -> float:
     try:
         from _lazy_imports import get_config
 
-        return get_config().embedding_score_threshold
+        return float(get_config().embedding_score_threshold)
     except Exception:
         return 0.25
 

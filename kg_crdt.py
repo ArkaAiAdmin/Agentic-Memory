@@ -214,14 +214,16 @@ def merge_entity_ops(ops: Iterable[EntityOp]) -> dict[int, dict[str, Any]]:
             field_ops = [o for o in adds if getattr(o, field_name, "")]
             if not field_ops:
                 return ""
-            return max(
-                field_ops,
-                key=lambda o: (
-                    sum(o.version_vector.values()),
-                    o.timestamp,
-                    o.agent_id,
-                ),
-            ).__dict__[field_name]
+            return str(
+                max(
+                    field_ops,
+                    key=lambda o: (
+                        sum(o.version_vector.values()),
+                        o.timestamp,
+                        o.agent_id,
+                    ),
+                ).__dict__[field_name]
+            )
 
         result[entity_id] = {
             "tombstone": False,
@@ -668,14 +670,14 @@ def project_crdt_to_entities(
     """
     entity_state = compute_entity_crdt_state(conn)
     dedup = entity_dedup_via_crdt(entity_state)
-    merged_entities = dedup["merged_state"]  # type: ignore[index]
-    redirects = dedup["redirects"]  # type: ignore[index]
+    merged_entities = dedup["merged_state"]
+    redirects = dedup["redirects"]
 
-    n_entities = apply_entity_crdt_to_db(conn, merged_entities)  # type: ignore[arg-type]
+    n_entities = apply_entity_crdt_to_db(conn, merged_entities)
 
     edge_state = compute_edge_crdt_state(conn)
     if redirects:
-        edge_state = redirect_edge_ids(edge_state, redirects)  # type: ignore[arg-type]
+        edge_state = redirect_edge_ids(edge_state, redirects)
     n_edges = apply_edge_crdt_to_db(conn, edge_state)
 
-    return n_entities, n_edges, redirects  # type: ignore[return-value]
+    return n_entities, n_edges, redirects

@@ -110,7 +110,7 @@ See `memory.toml` for all 17 feature flags.
 
 ## Emergency
 
-1. Most issues: stale lock (`rm memory/.rebuild.lock`), orphaned vec_keys (`rebuild_vec_index.py`), or schema drift (`migration_runner`).
+1. **Stale lock — diagnose first.** Both `.rebuild.lock` and `.vec_rebuild.lock` use `fcntl.flock`, which auto-releases when the holding process dies. An empty lock file on disk alone is not a real contention — the actual protection is the OS-level flock held by an open FD. Before removing anything: run `ps aux | grep python` and try a non-blocking acquire yourself (the next legitimate writer will succeed automatically if no live process holds it). If a live process IS holding the lock, find it with `lsof | grep rebuild.lock` and decide whether to wait or kill it. **Never `rm` a lock that a live process is holding** — it will corrupt the write it's mid-way through. If the holder is dead (no matching PID), the empty file is safe to remove: `rm memory/.rebuild.lock`.
 2. Check audit log: search for `error`, `crash`, `orphan`, `drift`.
 3. Check cron logs: `memory/worker.log`, `memory/heartbeat.log`, `memory/integrity.log`.
 4. Run integrity check: `venv/bin/python memory_integrity.py memory/memory.db`. 0 critical = OK.
