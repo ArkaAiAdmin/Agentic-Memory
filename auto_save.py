@@ -805,24 +805,23 @@ def _wait_for_file_modification(file_path: Path, timeout: float) -> None:
 
     # 2. Try inotify (Linux)
     try:
-        if hasattr(os, "inotify_init"):
-            fd = os.inotify_init()  # type: ignore[attr-defined]
-            # masks: IN_CREATE=0x100, IN_DELETE=0x200, IN_MOVED_TO=0x80, IN_MODIFY=0x2
-            mask_dir = 0x100 | 0x200 | 0x80
-            wd_dir = os.inotify_add_watch(fd, str(file_path.parent), mask_dir)  # type: ignore[attr-defined]
-            wd_file = None
-            if file_path.exists():
-                try:
-                    wd_file = os.inotify_add_watch(fd, str(file_path), 0x2)  # type: ignore[attr-defined]
-                except OSError:
-                    pass
+        fd = os.inotify_init()  # type: ignore[attr-defined]
+        # masks: IN_CREATE=0x100, IN_DELETE=0x200, IN_MOVED_TO=0x80, IN_MODIFY=0x2
+        mask_dir = 0x100 | 0x200 | 0x80
+        wd_dir = os.inotify_add_watch(fd, str(file_path.parent), mask_dir)  # type: ignore[attr-defined]
+        wd_file = None
+        if file_path.exists():
             try:
-                import select as _select
+                wd_file = os.inotify_add_watch(fd, str(file_path), 0x2)  # type: ignore[attr-defined]
+            except OSError:
+                pass
+        try:
+            import select as _select
 
-                _select.select([fd], [], [], timeout)
-            finally:
-                os.close(fd)
-            return
+            _select.select([fd], [], [], timeout)
+        finally:
+            os.close(fd)
+        return
     except Exception as e:
         logger.debug("auto-save daemon: inotify watch failed: %s", e)
 
