@@ -26,3 +26,6 @@ docs/docker_README.md
 
 # opencode session logs
 .opencode/sessions/
+
+# Coverage data (contains absolute source paths)
+.coverage
