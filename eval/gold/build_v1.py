@@ -12,6 +12,7 @@ Idempotent: re-running produces byte-identical outputs.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 from collections import Counter
@@ -19,20 +20,31 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
-GOLD_DIR = ROOT / "eval" / "gold"
+GOLD_DIR = ROOT / "gold"
 OUT_JSONL = GOLD_DIR / "v1.jsonl"
 OUT_VALIDATION = GOLD_DIR / "validation-v1.json"
 
+
+def _project_db_from_env(corpus_key: str) -> str:
+    """Resolve project DB path from env var; empty string if unset."""
+    return os.environ.get(f"MEMORY_GOLD_{corpus_key.upper()}_DB", "")
+
+
 CORPORA = {
-    "lmeval": "/Users/arka/.config/agentic-memory/memory.db",
-    "lrdevplugin": "/Users/arka/Desktop/ai-agent.lrdevplugin/memory/memory.db",
-    "taskmanager": "/Users/arka/Assets/TaskManager/memory/memory.db",
-    "antinote": "/Users/arka/Assets/AntiNote/memory/memory.db",
-    "periodtracker": "/Users/arka/Assets/PeriodTracker/memory/memory.db",
+    "lmeval": str(ROOT.parent / "memory" / "memory.db"),
+    "lrdevplugin": _project_db_from_env("lrdevplugin"),
+    "taskmanager": _project_db_from_env("taskmanager"),
+    "antinote": _project_db_from_env("antinote"),
+    "periodtracker": _project_db_from_env("periodtracker"),
 }
 
 
-def load_ids(corpus_path: str) -> set[str]:
+def load_ids(corpus_path: str, corpus_name: str) -> set[str]:
+    if not corpus_path or not Path(corpus_path).exists():
+        print(
+            f"WARN: corpus '{corpus_name}' DB not found at {corpus_path!r}; using empty id set"
+        )
+        return set()
     db = sqlite3.connect(corpus_path)
     return {r[0] for r in db.execute("SELECT id FROM memories").fetchall()}
 
@@ -998,7 +1010,7 @@ def main() -> int:
 
     assert len(QUERIES) == 100, f"Expected exactly 100 queries, got {len(QUERIES)}"
 
-    corpus_ids: dict[str, set[str]] = {k: load_ids(v) for k, v in CORPORA.items()}
+    corpus_ids: dict[str, set[str]] = {k: load_ids(v, k) for k, v in CORPORA.items()}
 
     # Build entries + validate
     entries: list[dict[str, Any]] = []
@@ -1042,7 +1054,7 @@ def main() -> int:
         entry = {
             "id": f"q{i:03d}",
             "query": query,
-            "corpus": CORPORA[corpus],
+            "corpus": corpus,
             "gold_ids": list(golds),
             "relevance": list(relevance),
             "provenance": provenance,
@@ -1050,7 +1062,7 @@ def main() -> int:
         }
         entries.append(entry)
         type_counter[qtype] += 1
-        by_corpus[CORPORA[corpus]] += 1
+        by_corpus[corpus] += 1
         by_provenance[provenance] += 1
 
     # Distribution minimums check
@@ -1072,9 +1084,9 @@ def main() -> int:
             return 1
 
     # Corpus distribution check (~70 lmeval, 7-8 per project DB)
-    lmeval_count = by_corpus.get(CORPORA["lmeval"], 0)
+    lmeval_count = by_corpus.get("lmeval", 0)
     project_counts = [
-        by_corpus.get(CORPORA[k], 0)
+        by_corpus.get(k, 0)
         for k in ("lrdevplugin", "taskmanager", "antinote", "periodtracker")
     ]
     if not (65 <= lmeval_count <= 75):

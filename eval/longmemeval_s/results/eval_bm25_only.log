@@ -1,4 +1,4 @@
-Loading /Users/arka/.config/agentic-memory/eval/longmemeval_s/longmemeval_s_cleaned.json ...
+Loading eval/longmemeval_s/longmemeval_s_cleaned.json ...
 Loaded 500 questions, 470 evaluable.
   [1/470] e47becba (single-session-user) recall@10=1.00 ndcg@10=1.00 latency=0.005s
   [50/470] 8a137a7f (single-session-user) recall@10=1.00 ndcg@10=1.00 latency=0.004s
@@ -12,7 +12,7 @@ Loaded 500 questions, 470 evaluable.
   [450/470] 352ab8bd (single-session-assistant) recall@10=1.00 ndcg@10=1.00 latency=0.004s
   [470/470] 778164c6 (single-session-assistant) recall@10=1.00 ndcg@10=1.00 latency=0.004s
 
-Wrote /Users/arka/.config/agentic-memory/eval/longmemeval_s/results/eval_bm25_only.json
+Wrote eval/longmemeval_s/results/eval_bm25_only.json
 Total wall time: 2.2s
 Macro (BM25 only):
   recall_all@5: 0.8340

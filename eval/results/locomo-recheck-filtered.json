@@ -166,7 +166,7 @@
   "n_sessions_corpus": 5882,
   "n_dia_mappings": 5882,
   "config": {
-    "data": "/Users/arka/.config/agentic-memory/eval/datasets/locomo10.json",
+    "data": "eval/datasets/locomo10.json",
     "memory_dir": "/tmp/locomo-recheck",
     "k_values": [
       1,

@@ -172,7 +172,7 @@ examples:
   python eval/retrieval_check.py --gold eval/gold/v1.jsonl
 
   # Run only against the lmeval DB (skip the project DBs)
-  python eval/retrieval_check.py --gold eval/gold/v1.jsonl --corpus /Users/arka/.config/agentic-memory/memory.db
+  python eval/retrieval_check.py --gold eval/gold/v1.jsonl --corpus memory/memory.db
 
   # Compare against the saved baseline
   python eval/retrieval_check.py --gold eval/gold/v1.jsonl --baseline eval/results/retrieval-baseline.json

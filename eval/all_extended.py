@@ -39,7 +39,7 @@ with sqlite3.connect(DB) as con:
 # ----
 section("B", "Existing: H1 vector rebuild + H9 schema singleton")
 r = sp.run(
-    [sys.executable, "/Users/arka/.config/agentic-memory/rebuild_vec_index.py", DB],
+    [sys.executable, f"{INSTALL_ROOT}/rebuild_vec_index.py", DB],
     capture_output=True,
     text=True,
 )
@@ -216,13 +216,13 @@ with sqlite3.connect(DB) as con:
 r = sp.run(
     [
         sys.executable,
-        "/Users/arka/.config/agentic-memory/memory_integrity.py",
+        f"{INSTALL_ROOT}/memory_integrity.py",
         DB,
         "--deep",
     ],
     capture_output=True,
     text=True,
-    cwd="/Users/arka/.config/agentic-memory",
+    cwd=INSTALL_ROOT,
 )
 assert "0 critical" in r.stdout, f"integrity check failed:\n{r.stdout[:500]}"
 ok()

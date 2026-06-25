@@ -11,7 +11,7 @@ Demonstrates the minimal Mem0-compatible API:
 
 Usage::
 
-    /Users/arka/.config/agentic-memory/venv/bin/python examples/basic_save_search.py
+    python examples/basic_save_search.py
 
 The script isolates itself with a per-run temp DB so it doesn't pollute
 the global memory store. Pass --keep-db to retain the DB after exit.

@@ -83,7 +83,7 @@ Log output: `memory/kg-backfill-cron.log` (one JSON line per run).
 0 2 * * * agentic-memory-compact
 
 # Backup database daily at 3 AM
-0 3 * * * cd /Users/arka/.config/agentic-memory && venv/bin/python cron/cron_backup.py
+0 3 * * * cd /path/to/agentic-memory && venv/bin/python cron/cron_backup.py
 
 # Health check daily at 4 AM
 0 4 * * * agentic-memory-integrity

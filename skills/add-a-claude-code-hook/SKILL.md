@@ -165,7 +165,7 @@ For Claude Code, the config is at `~/.claude/settings.json`:
 }
 ```
 
-For opencode, the hooks are wired in `ecc-hooks.ts` (the opencode plugin). The `ecc-hooks.ts` is in `/Users/arka/.opencode/`. Add your hook to the appropriate event handler.
+For opencode, the hooks are wired in `ecc-hooks.ts` (the opencode plugin). The `ecc-hooks.ts` is in `~/.opencode/`. Add your hook to the appropriate event handler.
 
 For the opencode harness, the pattern is:
 
@@ -193,7 +193,7 @@ echo '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command"
 # Example: if it saves a memory, search for it:
 echo '{"query":"your test query"}' | python3 -c "
 import json, sys
-sys.path.insert(0, '/Users/arka/.config/agentic-memory')
+sys.path.insert(0, '/path/to/agentic-memory')
 from memory_mcp import search_memories
 print(search_memories('your test query'))
 "
@@ -259,7 +259,7 @@ In the "Hook System" section, add a row:
 
 - All 4 existing hooks: `hooks/memory-proactive-context.py`, `hooks/memory-search-on-demand.py`, `hooks/memory-session-start.py`, `hooks/_log_error.py`
 - Hook config in Claude Code: `~/.claude/settings.json`
-- Hook config in opencode: `/Users/arka/.opencode/ecc-hooks.ts`
+- Hook config in opencode: `~/.opencode/ecc-hooks.ts`
 - Auto-save hook: `auto_save.py:285` (the `tool_complete` function)
 - Hook architecture: `memory_workflow.md` (Hook System section)
 - Stdout-vs-stderr bug history: see `agentic-memory-features-on-wiring-fixed` memory note (2026-06-15)

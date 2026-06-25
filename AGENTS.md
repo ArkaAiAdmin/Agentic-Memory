@@ -1,6 +1,6 @@
 # AGENTS.md — Agentic Memory System (Maintainer Edition)
 
-You are an agent working on the **agentic-memory** codebase at `/Users/arka/.config/agentic-memory/`. This file is your operating contract.
+You are an agent working on the **agentic-memory** codebase at the repo root. This file is your operating contract.
 
 > If you are an agent that *uses* this memory system (working in another project with agentic-memory installed), you want the user-facing skill instead:
 > `~/.opencode/skills/agentic-memory/SKILL.md`

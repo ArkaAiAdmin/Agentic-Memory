@@ -1033,7 +1033,9 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
         import sys
         import time
 
-        script = "/Users/arka/.config/agentic-memory/auto_save.py"
+        script = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "auto_save.py"
+        )
         env = {**os.environ}
         proc = subprocess.Popen(
             [sys.executable, script, "daemon"],

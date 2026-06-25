@@ -26,7 +26,7 @@ from metrics import recall_all_at_k, recall_any_at_k, ndcg_any_at_k  # noqa: E40
 from retrieval import retrieve_for_question  # noqa: E402
 
 
-CORPUS_PATH = "/Users/arka/.config/agentic-memory/eval/longmemeval_s/longmemeval_s_cleaned.json"
+CORPUS_PATH = os.path.join(HERE, "longmemeval_s_cleaned.json")
 N_TEST = 5
 KS = (5, 10, 30, 50)
 
@@ -37,7 +37,10 @@ def main() -> None:
         corpus = json.load(f)
     evaluable = [q for q in corpus if not q["question_id"].endswith("_abs")]
     sample = evaluable[:N_TEST]
-    print(f"Total questions: {len(corpus)} | evaluable: {len(evaluable)} | testing: {N_TEST}", flush=True)
+    print(
+        f"Total questions: {len(corpus)} | evaluable: {len(evaluable)} | testing: {N_TEST}",
+        flush=True,
+    )
     print(f"Sampling qids: {[q['question_id'] for q in sample]}", flush=True)
     print()
 
@@ -70,8 +73,10 @@ def main() -> None:
         print(f"  top-10 retrieved: {top10}")
         print(f"  gold-in-top-5:  {gold_in_top5}")
         print(f"  gold-in-top-30: {gold_in_top30}")
-        print(f"  bm25_hits={dbg['bm25_hits']}  ce_scored={dbg['ce_scored']}  "
-              f"elapsed={dbg['elapsed_s']}s")
+        print(
+            f"  bm25_hits={dbg['bm25_hits']}  ce_scored={dbg['ce_scored']}  "
+            f"elapsed={dbg['elapsed_s']}s"
+        )
 
         per_q = {}
         for k in KS:
@@ -81,21 +86,29 @@ def main() -> None:
         per_q["latency_s"] = dbg["elapsed_s"]
         metrics_per_q.append(per_q)
 
-        line = (f"  Q{idx} ({qtype}): "
-                f"recall@5={per_q['recall_any@5']:.2f} "
-                f"recall@10={per_q['recall_any@10']:.2f} "
-                f"recall@30={per_q['recall_any@30']:.2f} "
-                f"ndcg@10={per_q['ndcg_any@10']:.2f} "
-                f"(latency {per_q['latency_s']}s)")
+        line = (
+            f"  Q{idx} ({qtype}): "
+            f"recall@5={per_q['recall_any@5']:.2f} "
+            f"recall@10={per_q['recall_any@10']:.2f} "
+            f"recall@30={per_q['recall_any@30']:.2f} "
+            f"ndcg@10={per_q['ndcg_any@10']:.2f} "
+            f"(latency {per_q['latency_s']}s)"
+        )
         print(line)
         print()
 
     print("=== Average across 5 ===")
     avg: dict[str, float] = {}
     for k in KS:
-        avg[f"recall_all@{k}"] = statistics.mean(m[f"recall_all@{k}"] for m in metrics_per_q)
-        avg[f"recall_any@{k}"] = statistics.mean(m[f"recall_any@{k}"] for m in metrics_per_q)
-        avg[f"ndcg_any@{k}"] = statistics.mean(m[f"ndcg_any@{k}"] for m in metrics_per_q)
+        avg[f"recall_all@{k}"] = statistics.mean(
+            m[f"recall_all@{k}"] for m in metrics_per_q
+        )
+        avg[f"recall_any@{k}"] = statistics.mean(
+            m[f"recall_any@{k}"] for m in metrics_per_q
+        )
+        avg[f"ndcg_any@{k}"] = statistics.mean(
+            m[f"ndcg_any@{k}"] for m in metrics_per_q
+        )
     avg["latency_s"] = statistics.mean(m["latency_s"] for m in metrics_per_q)
     for k, v in avg.items():
         print(f"  {k}: {v:.4f}")

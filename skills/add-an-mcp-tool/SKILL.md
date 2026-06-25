@@ -132,7 +132,7 @@ If the test hits the production DB, use the `_ProdDBGuarded` mixin from `eval/te
 ## Step 5: verify with tool drift check
 
 ```bash
-venv/bin/python /Users/arka/.opencode/scripts/tool_drift_check.py
+venv/bin/python ~/.opencode/scripts/tool_drift_check.py
 ```
 
 This catches:
@@ -180,7 +180,7 @@ Reference the audit item if it addresses one: `[mcp-tool] add memory_your_op for
 
 - All 70 existing tools: `mcp_tools.py` (re-exports) + `mcp_*.py` (definitions)
 - Tool registry: `tool_registry.py` (CORE_TOOLS, ADMIN_TOOLS)
-- Drift check: `/Users/arka/.opencode/scripts/tool_drift_check.py`
+- Drift check: `~/.opencode/scripts/tool_drift_check.py`
 - Test patterns: `eval/test_*.py` (142 files)
 - MCP server: `memory_mcp.py`
 - FastMCP docs: https://github.com/jlowin/fastmcp

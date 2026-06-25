@@ -15,31 +15,31 @@
   "latency_p50_ms": 43.668,
   "latency_p95_ms": 87.3,
   "by_corpus": {
-    "/Users/arka/.config/agentic-memory/memory.db": {
+    "memory/memory.db": {
       "ndcg_at_5": 0.5592941730589434,
       "mrr": 0.5147058823529411,
       "zero_result_rate": 0.0,
       "count": 68
     },
-    "/Users/arka/Desktop/ai-agent.lrdevplugin/memory/memory.db": {
+    "lrdevplugin": {
       "ndcg_at_5": 0.873688539322892,
       "mrr": 0.875,
       "zero_result_rate": 0.0,
       "count": 8
     },
-    "/Users/arka/Assets/TaskManager/memory/memory.db": {
+    "taskmanager": {
       "ndcg_at_5": 0.6923916168122454,
       "mrr": 0.65625,
       "zero_result_rate": 0.0,
       "count": 8
     },
-    "/Users/arka/Assets/AntiNote/memory/memory.db": {
+    "antinote": {
       "ndcg_at_5": 0.8772228201007499,
       "mrr": 0.8375,
       "zero_result_rate": 0.0,
       "count": 8
     },
-    "/Users/arka/Assets/PeriodTracker/memory/memory.db": {
+    "periodtracker": {
       "ndcg_at_5": 0.7894560565599393,
       "mrr": 0.7916666666666666,
       "zero_result_rate": 0.0,

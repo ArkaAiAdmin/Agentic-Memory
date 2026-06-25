@@ -68,7 +68,7 @@ if __name__ == "__main__":
 
 ## Conventions (must follow)
 
-1. **Use `sys.executable` (or `MEMORY_PYTHON` env var override), never hardcode venv paths.** This is the M8 fix. The hardcoded `/Users/arka/.config/agentic-memory/venv/bin/python` breaks for any other user.
+1. **Use `sys.executable` (or `MEMORY_PYTHON` env var override), never hardcode venv paths.** This is the M8 fix. The hardcoded venv path breaks for any other user.
    ```python
    # WRONG (pre-M8):
    PYTHON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "venv", "bin", "python")
@@ -157,12 +157,12 @@ class TestCronYourOp:
 
 ## Step 4: update CI drift check (optional but recommended)
 
-The script `/Users/arka/.opencode/scripts/cron_wirings_check.py` verifies that cron scripts reference real modules. If you add a new cron, add its expected references to that script's allowlist (or ensure it's caught by the generic check).
+The script `~/.opencode/scripts/cron_wirings_check.py` verifies that cron scripts reference real modules. If you add a new cron, add its expected references to that script's allowlist (or ensure it's caught by the generic check).
 
 Run it:
 
 ```bash
-venv/bin/python /Users/arka/.opencode/scripts/cron_wirings_check.py
+venv/bin/python ~/.opencode/scripts/cron_wirings_check.py
 ```
 
 ## Step 5: update memory_workflow.md
@@ -193,7 +193,7 @@ print(tier_stats())
 
 ## Common pitfalls
 
-- **Don't hardcode `sys.executable = /Users/arka/...`.** Use the env-var pattern.
+- **Don't hardcode `sys.executable` to an absolute path.** Use the env-var pattern.
 - **Don't bypass feature flag env vars.** If your op needs `MEMORY_KNOWLEDGE_GRAPH=1`, set it at the top of the script.
 - **Don't run two crons that conflict on the same lock file.** `memory/.rebuild.lock` is shared; only one rebuild-flavored cron at a time.
 - **Don't write huge output to stdout.** Crontab captures stdout; if it's 10 MB, it eats disk. Use a log file.
@@ -232,7 +232,7 @@ print(tier_stats())
 - All 23 crons: `cron/cron_*.py` in the `cron/` subdirectory
 - Crontab installer: `cron/install_crontab.sh` (idempotent block installer)
 - Cron setup how-to: `docs/how-to/cron-setup.md`
-- Drift check: `/Users/arka/.opencode/scripts/cron_wirings_check.py`
+- Drift check: `~/.opencode/scripts/cron_wirings_check.py`
 - Lock file pattern: `rebuild_index.py:98`
 - M8 / M9 fixes: `CONTRIBUTING.md` (top section)
 

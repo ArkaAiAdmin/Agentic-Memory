@@ -12,7 +12,7 @@ For real high-throughput scenarios, prefer `save_memory` with
 
 Usage::
 
-    /Users/arka/.config/agentic-memory/venv/bin/python examples/streaming_ingest.py
+    python examples/streaming_ingest.py
 """
 
 from __future__ import annotations

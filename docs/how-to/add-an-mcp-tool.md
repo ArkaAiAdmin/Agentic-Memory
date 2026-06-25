@@ -80,7 +80,7 @@ def memory_your_op(arg1: str, arg2: int = 5, db_path: str = "") -> str:
 
 ```bash
 # 1. Drift check
-venv/bin/python /Users/arka/.opencode/scripts/tool_drift_check.py
+venv/bin/python ~/.opencode/scripts/tool_drift_check.py
 
 # 2. Full test
 venv/bin/python -m pytest eval/ -q
@@ -90,5 +90,5 @@ venv/bin/python -m pytest eval/ -q
 
 - All 56 tools: `mcp_tools.py`
 - Tool registry: `tool_registry.py`
-- Drift check: `/Users/arka/.opencode/scripts/tool_drift_check.py`
+- Drift check: `~/.opencode/scripts/tool_drift_check.py`
 - Skill (deeper version): `skills/add-an-mcp-tool/SKILL.md`

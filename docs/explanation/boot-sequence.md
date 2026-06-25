@@ -6,7 +6,7 @@ What actually happens when you open a new terminal, type `opencode`, and create 
 
 You open a terminal. You type `opencode`. The Node.js process boots, loads 36 hook commands across 7 lifecycle events, registers MCP servers, auto-discovers 87 skills, then fires `SessionStart` — which kicks off the agentic-memory bootstrap that loads your last-session context into the new session before you type a single character. By the time you finish typing your first prompt, the agent already has your pinned notes, recent decisions, and high-importance lessons injected as system context.
 
-That's the magic. Everything below is how it actually happens, traced from `/Users/arka/.opencode/hooks/hooks.json`.
+That's the magic. Everything below is how it actually happens, traced from `~/.opencode/hooks/hooks.json`.
 
 ---
 
@@ -32,7 +32,7 @@ opencode:
 2. Loads `package.json` plugins → loads `ecc-universal@1.10.0` (the ECC plugin)
 3. ECC plugin loads its own 36 hook commands from `hooks/hooks.json`
 4. Loads MCP servers from `~/.opencode/mcp-configs/mcp-servers.json`:
-   - `agentic-memory` → `python3 /Users/arka/.config/agentic-memory/memory_mcp.py` (FastMCP, 56 tools)
+   - `agentic-memory` → `python3 ~/.config/agentic-memory/memory_mcp.py` (FastMCP, 56 tools)
    - others
 5. Auto-discovers skills from `~/.opencode/skills/` (87 skills) and any project `./skills/`
 6. Reads `~/.opencode/instructions/INSTRUCTIONS.md` (379 lines) — loaded as system prompt context
@@ -52,7 +52,7 @@ Two hooks run (sequential, in declared order):
 - Time: ~1s
 
 **Hook 2 — `session:memorybootstrap` (agentic-memory)**
-- Command: `MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_SELF_DIRECTED=1 /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/hooks/memory-session-start.py`
+- Command: `MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_SELF_DIRECTED=1 ~/.config/agentic-memory/venv/bin/python ~/.config/agentic-memory/hooks/memory-session-start.py`
 - Timeout: 15s
 - What it does:
   1. Calls `recall.py:session_recap()` which queries the live DB
@@ -73,7 +73,7 @@ You type, e.g., "show me the recent changes to the FTS5 cache". opencode sends t
 When the LLM decides to call a tool (e.g., `Bash` with `git diff`), the **PreToolUse** event fires. opencode runs 12 hook commands. The agentic-memory one is:
 
 **`pre:memory-proactive-context`**
-- Command: `MEMORY_KNOWLEDGE_GRAPH=1 /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/hooks/memory-proactive-context.py`
+- Command: `MEMORY_KNOWLEDGE_GRAPH=1 ~/.config/agentic-memory/venv/bin/python ~/.config/agentic-memory/hooks/memory-proactive-context.py`
 - Timeout: 3s
 - What it does:
   1. Reads JSON from stdin (tool_name, tool_input)
@@ -184,8 +184,8 @@ The agentic-memory cron jobs (`background_worker.py` runs every 15 min) continue
 │       │                                                                      │
 │       └── HOOK 2: session:memorybootstrap (agentic-memory)                   │
 │             MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_SELF_DIRECTED=1                  │
-│             /Users/arka/.config/agentic-memory/venv/bin/python                │
-│             /Users/arka/.config/agentic-memory/hooks/memory-session-start.py  │
+│             ~/.config/agentic-memory/venv/bin/python                │
+│             ~/.config/agentic-memory/hooks/memory-session-start.py  │
 │             │                                                                │
 │             ├──▶ recall.session_recap()                                       │
 │             │     │                                                          │
@@ -231,8 +231,8 @@ The agentic-memory cron jobs (`background_worker.py` runs every 15 min) continue
 │       │                                                                      │
 │       └── pre:memory-proactive-context (agentic-memory)                       │
 │             MEMORY_KNOWLEDGE_GRAPH=1                                          │
-│             /Users/arka/.config/agentic-memory/venv/bin/python                │
-│             /Users/arka/.config/agentic-memory/hooks/                         │
+│             ~/.config/agentic-memory/venv/bin/python                │
+│             ~/.config/agentic-memory/hooks/                         │
 │             memory-proactive-context.py                                        │
 │             │                                                                │
 │             ├──▶ read JSON from stdin (tool_name, tool_input)                │
@@ -433,14 +433,14 @@ The 5s is hidden inside the tool execution wall time (LLM round-trip is usually 
 
 ## Where to look for these in code
 
-- Hook config: `/Users/arka/.opencode/hooks/hooks.json`
-- Plugin entry: `/Users/arka/.opencode/dist/plugins/ecc-hooks.js`
-- Agentic-memory hook scripts: `/Users/arka/.config/agentic-memory/hooks/`
-- Agentic-memory MCP server: `/Users/arka/.config/agentic-memory/memory_mcp.py`
-- Session bootstrap: `/Users/arka/.config/agentic-memory/hooks/memory-session-start.py`
-- Proactive context: `/Users/arka/.config/agentic-memory/hooks/memory-proactive-context.py`
-- Auto-save: `/Users/arka/.config/agentic-memory/scripts/hooks/memory-auto-save.cjs` (opencode plugin) AND `/Users/arka/.config/agentic-memory/auto_save.py` (canonical hook path)
-- System reference: `/Users/arka/.config/agentic-memory/memory_workflow.md`
+- Hook config: `~/.opencode/hooks/hooks.json`
+- Plugin entry: `~/.opencode/dist/plugins/ecc-hooks.js`
+- Agentic-memory hook scripts: `~/.config/agentic-memory/hooks/`
+- Agentic-memory MCP server: `~/.config/agentic-memory/memory_mcp.py`
+- Session bootstrap: `~/.config/agentic-memory/hooks/memory-session-start.py`
+- Proactive context: `~/.config/agentic-memory/hooks/memory-proactive-context.py`
+- Auto-save: `~/.config/agentic-memory/scripts/hooks/memory-auto-save.cjs` (opencode plugin) AND `~/.config/agentic-memory/auto_save.py` (canonical hook path)
+- System reference: `~/.config/agentic-memory/memory_workflow.md`
 
 ---
 

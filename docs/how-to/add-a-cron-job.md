@@ -67,7 +67,7 @@ This is the **maintainer** version. For the high-level skill, see `skills/add-a-
 
 5. **Update `memory_workflow.md`** (Automated Maintenance table + File Locations) with a row for your cron.
 
-6. **Add to CI drift check** (optional): `/Users/arka/.opencode/scripts/cron_wirings_check.py` verifies that cron scripts reference real modules. Run it to confirm.
+6. **Add to CI drift check** (optional): `~/.opencode/scripts/cron_wirings_check.py` verifies that cron scripts reference real modules. Run it to confirm.
 
 7. **Install + test manually:**
    ```bash
@@ -119,5 +119,5 @@ All scripts live under `cron/`.
 - All 23 existing crons: `cron/cron_*.py` in the `cron/` subdirectory
 - Crontab installer: `cron/install_crontab.sh` (idempotent block installer)
 - Cron setup how-to: `docs/how-to/cron-setup.md` (user-facing reference)
-- Drift check: `/Users/arka/.opencode/scripts/cron_wirings_check.py`
+- Drift check: `~/.opencode/scripts/cron_wirings_check.py`
 - Skill (deeper version): `skills/add-a-cron-job/SKILL.md`

@@ -8,7 +8,7 @@ saved by ``AgentMemory(agent_id="A")`` are not visible to
 
 Usage::
 
-    /Users/arka/.config/agentic-memory/venv/bin/python examples/agent_memory.py
+    python examples/agent_memory.py
 """
 
 from __future__ import annotations

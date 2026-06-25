@@ -221,7 +221,7 @@ with sqlite3.connect(DB) as con:
 # J
 section("J", "Cron backup")
 r = os.system(
-    "cd ~/.config/agentic-memory && MEMORY_DB_PATH=/Users/arka/.config/agentic-memory/memory/memory.db ./venv/bin/python cron/cron_backup.py >/dev/null 2>&1"
+    f"cd {INSTALL_ROOT} && MEMORY_DB_PATH={DB} ./venv/bin/python cron/cron_backup.py >/dev/null 2>&1"
 )
 assert r == 0
 ok()
@@ -244,13 +244,13 @@ with sqlite3.connect(DB) as con:
 r = sp.run(
     [
         sys.executable,
-        "/Users/arka/.config/agentic-memory/memory_integrity.py",
+        f"{INSTALL_ROOT}/memory_integrity.py",
         DB,
         "--deep",
     ],
     capture_output=True,
     text=True,
-    cwd="/Users/arka/.config/agentic-memory",
+    cwd=INSTALL_ROOT,
 )
 # Exit 0 means no issues at all; exit 1 with "0 critical" means warnings-only (by-design).
 assert "0 critical" in r.stdout, f"CRITICAL findings: {r.stdout}"

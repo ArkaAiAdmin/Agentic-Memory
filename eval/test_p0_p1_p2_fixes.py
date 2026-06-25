@@ -601,11 +601,11 @@ class TestBackfillCronPath(unittest.TestCase):
                     line,
                     f"backfill path should include .config/agentic-memory, got: {line!r}",
                 )
-                # Should NOT be the broken /Users/arka/agentic-memory/ path
-                self.assertNotIn(
-                    "/Users/arka/agentic-memory/backfill",
+                # Should NOT be the broken /Users/.../agentic-memory/ path
+                self.assertNotRegex(
                     line,
-                    f"backfill path uses broken /Users/arka/agentic-memory/, got: {line!r}",
+                    r"/Users/\w+/agentic-memory/backfill",
+                    f"backfill path uses broken /Users/.../agentic-memory/, got: {line!r}",
                 )
                 return
         self.skipTest("backfill_all.py line not found in crontab")

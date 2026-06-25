@@ -322,7 +322,7 @@ If the audit reveals a real multi-process write scenario, the fix is:
 
 Before implementing, run:
 ```bash
-grep -rn "connection_pool.get" /Users/arka/.config/agentic-memory --include="*.py" | grep -v eval
+grep -rn "connection_pool.get" . --include="*.py" | grep -v eval
 ```
 and confirm all callers are either in a single-process context or
 already have a flock.

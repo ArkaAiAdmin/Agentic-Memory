@@ -90,7 +90,7 @@ Plus a 5th file (`_log_error.py`) that is a shared error logger, not a lifecycle
    }
    ```
 
-   For opencode, add to `ecc-hooks.ts` (`/Users/arka/.opencode/ecc-hooks.ts`):
+   For opencode, add to `ecc-hooks.ts` (`~/.opencode/ecc-hooks.ts`):
 
    ```typescript
    {
@@ -123,5 +123,5 @@ Plus a 5th file (`_log_error.py`) that is a shared error logger, not a lifecycle
 - All 3 existing hooks: `hooks/memory-*.py`
 - Auto-save hook: `auto_save.py:285` (`tool_complete` function)
 - Claude Code config: `~/.claude/settings.json`
-- OpenCode config: `/Users/arka/.opencode/ecc-hooks.ts`
+- OpenCode config: `~/.opencode/ecc-hooks.ts`
 - Skill (deeper version): `skills/add-a-claude-code-hook/SKILL.md`

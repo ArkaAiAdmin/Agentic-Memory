@@ -1,8 +1,8 @@
 {
   "timestamp": "2026-06-06T19:10:14.845816+00:00",
   "host": "macOS",
-  "venv_python": "/Users/arka/.config/agentic-memory/venv/bin/python",
-  "perf_root": "/tmp/perf_envelope_test",
+  "venv_python": "./venv/bin/python",
+  "perf_root": "/tmp/perf_env_test",
   "sizes": [
     1000,
     10000,

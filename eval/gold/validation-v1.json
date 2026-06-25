@@ -1,11 +1,11 @@
 {
   "all_golds_exist": true,
   "by_corpus": {
-    "/Users/arka/.config/agentic-memory/memory.db": 68,
-    "/Users/arka/Assets/AntiNote/memory/memory.db": 8,
-    "/Users/arka/Assets/PeriodTracker/memory/memory.db": 8,
-    "/Users/arka/Assets/TaskManager/memory/memory.db": 8,
-    "/Users/arka/Desktop/ai-agent.lrdevplugin/memory/memory.db": 8
+    "antinote": 8,
+    "lmeval": 68,
+    "lrdevplugin": 8,
+    "periodtracker": 8,
+    "taskmanager": 8
   },
   "by_provenance": {
     "lmeval": 68,
