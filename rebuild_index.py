@@ -292,11 +292,19 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
                     continue
                 try:
                     is_directory = entry.is_dir()
-                except OSError:
+                except OSError as exc:
+                    logger.debug(
+                        "rebuild_index: cannot check is_dir for %s: %s", entry.path, exc
+                    )
                     is_directory = False
                 try:
                     is_file = entry.is_file()
-                except OSError:
+                except OSError as exc:
+                    logger.debug(
+                        "rebuild_index: cannot check is_file for %s: %s",
+                        entry.path,
+                        exc,
+                    )
                     is_file = False
                 if is_directory:
                     # Skip global symlink directory to avoid indexing global memories during local rebuild
@@ -351,8 +359,10 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
                             # File hasn't changed, skip processing and preserve cached note
                             cached_notes_to_keep[rel_path] = cached_notes_map[rel_path]
                             continue
-                    except OSError:
-                        pass
+                    except OSError as exc:
+                        logger.debug(
+                            "rebuild_index: cannot stat %s: %s", entry_path, exc
+                        )
                     # Safe size check (limit to 10MB)
                     try:
                         file_size = entry_path.stat().st_size

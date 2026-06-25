@@ -2393,8 +2393,10 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
                     if src.exists():
                         src.rename(dst)
                 error_log.rename(error_log.with_suffix(".jsonl.1"))
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.warning(
+                "auto-save daemon: hook-errors.jsonl rotation failed: %s", exc
+            )
 
     return {
         "healthy": db_writable and recent_autos > 0,

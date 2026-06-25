@@ -972,7 +972,9 @@ def _resolve_save_paths(category, title_slug, is_global, db_path):
     return target_base, file_path, category_dir, project_root
 
 
-def _build_memory_file(content, category, title_slug, tags_list, pinned, now_iso=None):
+def _build_memory_file(
+    content, category, title_slug, tags_list, pinned, now_iso=None, note_id=None
+):
     import datetime
 
     if now_iso is None:
@@ -1005,7 +1007,17 @@ def _build_memory_file(content, category, title_slug, tags_list, pinned, now_iso
         "observed_at",
     ):
         fm_metadata.pop(k, None)
-    metadata_json = json.dumps(fm_metadata) if fm_metadata else "{}"
+    try:
+        metadata_json = json.dumps(fm_metadata) if fm_metadata else "{}"
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "save_memory: non-JSON-serializable metadata for %s/%s (%s): %s — defaulting to {}",
+            category,
+            title_slug,
+            note_id or "unknown",
+            exc,
+        )
+        metadata_json = "{}"
     return markdown_content, fm_metadata, now_iso, metadata_json
 
 
@@ -1397,7 +1409,13 @@ def save_memory(
             return result
         target_base, file_path, _category_dir, _project_root = result
         _markdown, _fm_meta, now_iso, metadata_json = _build_memory_file(
-            content, category, title_slug, tags_list, pinned, now_iso=_now_iso
+            content,
+            category,
+            title_slug,
+            tags_list,
+            pinned,
+            now_iso=_now_iso,
+            note_id=note_id,
         )
         db_path_obj = (
             Path(db_path) if db_path is not None else target_base / "memory.db"

@@ -33,6 +33,7 @@ from save_pipeline import (
     save_memory,
     _recalculate_fitness_scores,
     _auto_backlink_multi_part,
+    _build_memory_file,
 )
 
 PROD_DB = Path(os.environ.get("MEMORY_DB_PATH", str(GLOBAL_MEM_DIR / "memory.db")))
@@ -216,6 +217,28 @@ class TestSaveMemoryReturnValues(unittest.TestCase):
         nid = f"lessons/{slug}"
         self._cleanup.append(nid)
         self.assertIsInstance(result, str)
+
+    def test_build_memory_file_falls_back_on_non_json_metadata(self):
+        """Non-JSON-serializable metadata in frontmatter must not crash the save.
+
+        _build_memory_file extracts metadata: from frontmatter via
+        parse_frontmatter. If the extracted value contains something
+        json.dumps cannot handle (e.g. a datetime), the function must
+        fall back to '{}' and log a warning rather than raising.
+        """
+        import logging
+
+        content = "---\ncategory: lessons\ntitle_slug: foo\ntags: [t]\nmetadata: bad\n---\n\nBody."
+        with patch(
+            "save_pipeline.parse_frontmatter",
+            return_value=({"metadata": datetime.now()}, ""),
+        ):
+            with self.assertLogs("save_pipeline", level="WARNING") as cm:
+                md, _fm_meta, _ts, meta_json = _build_memory_file(
+                    content, "lessons", "foo", ["t"], False, note_id="lessons/foo"
+                )
+        self.assertEqual(meta_json, "{}")
+        self.assertTrue(any("non-JSON-serializable" in msg for msg in cm.output))
 
 
 class _TempDbTestMixin:
