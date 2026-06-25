@@ -21,8 +21,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-anyio mcp mypy
-          pip install model2vec numpy usearch 2>/dev/null || echo "embeddings optional"
+          pip install pytest pytest-anyio
+          pip install -r requirements.txt
 
       - name: Get test count
         id: count
