@@ -1,6 +1,6 @@
 # Agentic Memory
 
-**Local-first persistent memory for AI agents.**
+[![Tests](https://img.shields.io/badge/tests-3228%20passed-brightgreen)](#testing)
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
