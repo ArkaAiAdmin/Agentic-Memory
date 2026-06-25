@@ -23,3 +23,6 @@ docs/docker_README.md
 .DS_Store
 
 .devfleet-worktrees/
+
+# opencode session logs
+.opencode/sessions/
