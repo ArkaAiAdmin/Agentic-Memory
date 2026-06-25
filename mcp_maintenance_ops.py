@@ -48,6 +48,7 @@ def _get_local_tools() -> dict:
             memory_circuit_breaker_status,
             memory_temporal_contradictions,
             memory_temporal_query,
+            memory_compliance_check,
         )
         from mcp_crdt import (
             memory_crdt_sync,
@@ -106,6 +107,7 @@ def _get_local_tools() -> dict:
             "memory_backfill_all": memory_backfill_all,
             "memory_crdt_sync": memory_crdt_sync,
             "memory_crdt_status": memory_crdt_status,
+            "memory_compliance_check": memory_compliance_check,
         }
     return _local_tools
 
@@ -231,16 +233,16 @@ def _get_handlers() -> dict:
         _maintenance_op_cls = MaintenanceOp
         t = _tools()
         _MAINTENANCE_HANDLERS = {
-            MaintenanceOp.HEARTBEAT: lambda *, dry_run=False, **_: t["memory_heartbeat"](
-                dry_run=dry_run
-            ),
+            MaintenanceOp.HEARTBEAT: lambda *, dry_run=False, **_: t[
+                "memory_heartbeat"
+            ](dry_run=dry_run),
             MaintenanceOp.TIER_STATS: lambda **_: t["memory_tier_stats"](),
             MaintenanceOp.TIER_MIGRATION: lambda *, dry_run=False, **_: t[
                 "memory_run_tier_migration"
             ](dry_run=dry_run),
-            MaintenanceOp.EMBEDDING_MODEL_CHECK: lambda *, force=False, dry_run=False, **_: t[
-                "memory_check_embedding_model"
-            ](force=force, dry_run=dry_run),
+            MaintenanceOp.EMBEDDING_MODEL_CHECK: lambda *, force=False, dry_run=False, **_: (
+                t["memory_check_embedding_model"](force=force, dry_run=dry_run)
+            ),
             MaintenanceOp.INCREMENTAL_UPDATE: lambda *, memory_id, new_content, old_state=None, **_: (
                 t["memory_incremental_update"](
                     memory_id=memory_id, new_content=new_content, old_state=old_state
@@ -249,9 +251,9 @@ def _get_handlers() -> dict:
             MaintenanceOp.MERGE_EMBEDDINGS: lambda *, memory_ids=None, **_: t[
                 "memory_merge_embeddings"
             ](memory_ids=memory_ids),
-            MaintenanceOp.DUPLICATES: lambda *, threshold=0.85, **_: t["memory_duplicates"](
-                threshold=threshold
-            ),
+            MaintenanceOp.DUPLICATES: lambda *, threshold=0.85, **_: t[
+                "memory_duplicates"
+            ](threshold=threshold),
             MaintenanceOp.MERGE_SUGGESTIONS: lambda *, threshold=0.90, **_: t[
                 "memory_merge_suggestions"
             ](threshold=threshold),
@@ -298,9 +300,9 @@ def _get_handlers() -> dict:
                     secondary_triggers=secondary_triggers,
                 )
             ),
-            MaintenanceOp.BACKFILL_ALL: lambda *, backfill_mode="health", source="", **_: t[
-                "memory_backfill_all"
-            ](mode=backfill_mode, source=source),
+            MaintenanceOp.BACKFILL_ALL: lambda *, backfill_mode="health", source="", **_: (
+                t["memory_backfill_all"](mode=backfill_mode, source=source)
+            ),
             MaintenanceOp.CRDT_SYNC: lambda *, agent_id, remote_notes_json, **_: t[
                 "memory_crdt_sync"
             ](agent_id=agent_id, remote_notes_json=remote_notes_json),
@@ -323,9 +325,9 @@ def _get_handlers() -> dict:
             MaintenanceOp.REINFORCE: lambda *, memory_ids, success, **_: t[
                 "memory_reinforce"
             ](memory_ids=memory_ids, success=success),
-            MaintenanceOp.TRASH: lambda *, include_expired=False, **_: t["memory_trash"](
-                include_expired=include_expired
-            ),
+            MaintenanceOp.TRASH: lambda *, include_expired=False, **_: t[
+                "memory_trash"
+            ](include_expired=include_expired),
             MaintenanceOp.PURGE_EXPIRED: lambda **_: t["memory_purge_expired"](),
             MaintenanceOp.AUTO_SAVE_HOOK: lambda *, auto_save_tool, auto_save_params_json, auto_save_result_preview, **_: (
                 t["memory_auto_save_hook"](
@@ -355,16 +357,19 @@ def _get_handlers() -> dict:
                     as_of=as_of,
                     fact_id=fact_id,
                     since_ts=since_ts,
-                    query=query or None,  # str="" -> None for the tool
+                    query=query or None,
                     limit=limit,
                 )
             ),
+            MaintenanceOp.COMPLIANCE_CHECK: lambda *, session_id="", **_: t[
+                "memory_compliance_check"
+            ](session_id=session_id),
             MaintenanceOp.PURGE_AUTO_SAVES: lambda *, dry_run=False, **_: t[
                 "memory_purge_auto_saves"
             ](dry_run=dry_run),
-            MaintenanceOp.DAILY_DIGEST: lambda *, date="", **_: t["memory_daily_digest"](
-                date=date
-            ),
+            MaintenanceOp.DAILY_DIGEST: lambda *, date="", **_: t[
+                "memory_daily_digest"
+            ](date=date),
             MaintenanceOp.SHARE: lambda *, share_note_id, share_agent_id, **_: t[
                 "memory_share"
             ](note_id=share_note_id, share_agent_id=share_agent_id),
@@ -407,9 +412,9 @@ def _get_handlers() -> dict:
             MaintenanceOp.SUMMARIZE: lambda *, note_id, **_: t["memory_summarize"](
                 note_id=note_id
             ),
-            MaintenanceOp.AUTO_SUMMARIZE: lambda *, min_length=500, dry_run=False, **_: t[
-                "memory_auto_summarize"
-            ](min_length=min_length, dry_run=dry_run),
+            MaintenanceOp.AUTO_SUMMARIZE: lambda *, min_length=500, dry_run=False, **_: (
+                t["memory_auto_summarize"](min_length=min_length, dry_run=dry_run)
+            ),
             MaintenanceOp.SUMMARIZATION_STATS: lambda **_: t[
                 "memory_summarization_stats"
             ](),
@@ -427,23 +432,23 @@ def _get_handlers() -> dict:
                 "memory_adaptive_retention"
             ](dry_run=dry_run),
             MaintenanceOp.RETENTION_STATS: lambda **_: t["memory_retention_stats"](),
-            MaintenanceOp.INGEST_FILE: lambda *, file_path, category="sessions", tags="", **_: t[
-                "memory_ingest_file"
-            ](
-                file_path=file_path,
-                category=category,
-                tags=tags,
+            MaintenanceOp.INGEST_FILE: lambda *, file_path, category="sessions", tags="", **_: (
+                t["memory_ingest_file"](
+                    file_path=file_path,
+                    category=category,
+                    tags=tags,
+                )
             ),
-            MaintenanceOp.INGEST_URL: lambda *, url, category="sessions", tags="", **_: t[
-                "memory_ingest_url"
-            ](
-                url=url,
-                category=category,
-                tags=tags,
+            MaintenanceOp.INGEST_URL: lambda *, url, category="sessions", tags="", **_: (
+                t["memory_ingest_url"](
+                    url=url,
+                    category=category,
+                    tags=tags,
+                )
             ),
-            MaintenanceOp.DASHBOARD: lambda *, action="status", port=8501, **_: t["memory_dashboard"](
-                action=action, port=port if port != 9464 else 8501
-            ),
+            MaintenanceOp.DASHBOARD: lambda *, action="status", port=8501, **_: t[
+                "memory_dashboard"
+            ](action=action, port=port if port != 9464 else 8501),
             MaintenanceOp.METRICS_SERVER: lambda *, action="status", port=9464, **_: t[
                 "memory_metrics_server"
             ](action=action, port=port),

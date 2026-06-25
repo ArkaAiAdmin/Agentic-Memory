@@ -1,6 +1,6 @@
 # Agentic Memory — Complete Architecture
 
-> Schema v21 · 85 MCP tools (15 CORE + 70 ADMIN) · ~51 SQLite tables (~31 user-visible) · ~27 cron schedule entries · 4 hooks · 102 production modules · ~56,799 LOC production + ~69,155 LOC tests
+> Schema v21 · 85 MCP tools (15 CORE + 70 ADMIN) · ~51 SQLite tables (~31 user-visible) · ~27 cron schedule entries · 5 hooks · 102 production modules · ~56,799 LOC production + ~69,155 LOC tests
 
 ---
 
@@ -441,6 +441,7 @@
 |-----------|-------|---------|-------|
 | `memory-session-start.py` | SessionStart | Cold-start context load | 5 results (MEMORY_HOOK_RESULT_LIMIT) |
 | `memory-proactive-context.py` | PreToolUse | Search before each tool | 3 results (MEMORY_HOOK_RESULT_LIMIT) |
+| `memory-session-end.py` | Stop/PostToolUse | Auto-save session memory if agent forgot (Rule #7) | writes `.last_session_save.json` |
 | `auto_save.py tool-complete` | ToolComplete (opencode.jsonc) | Save every tool invocation | Async daemon |
 | `context_monitor.py` | PreCompaction + SessionEnd | Session persistence | — |
 | `memory-search-on-demand.py` | Manual CLI | Search helper | — |
@@ -845,6 +846,7 @@ agentic-memory/                              ← repo root
 ├── hooks/
 │   ├── memory-proactive-context.py          ← PreToolUse hook
 │   ├── memory-session-start.py              ← SessionStart hook
+│   ├── memory-session-end.py                ← Stop/PostToolUse hook (Rule #7)
 │   ├── memory-search-on-demand.py           ← CLI search helper
 │   ├── memory-recall-session.py             ← manual recall trigger
 │   └── _log_error.py                        ← shared logging module

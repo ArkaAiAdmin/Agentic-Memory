@@ -31,6 +31,7 @@ from pathlib import Path
 # native libraries (torch, scipy, sklearn) each bundle conflicting
 # copies of libomp. Must be set before torch is ever imported.
 import faulthandler
+
 faulthandler.enable()
 faulthandler.dump_traceback_later(15, repeat=True)
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
@@ -130,6 +131,52 @@ def pytest_configure(config):
     )
 
 
+# Phase 2 (Rule #4): pytest plugin that auto-saves a flaky-test
+# memory when a session finishes with xpass (or other flaky) tests.
+# Best-effort: never blocks test completion.
+_flaky_items: list[tuple[str, str]] = []
+
+
+def pytest_runtest_makereport(item, call):
+    """Collect xpass tests as flaky indicators."""
+    try:
+        report = call.get_result()
+    except AttributeError:
+        return
+    if report.outcome == "passed" and item.get_closest_marker("xfail"):
+        when = call.when
+        _flaky_items.append((item.nodeid, when))
+
+
+def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
+    """Auto-save a pinned lessons memory for any flaky tests found."""
+    if not _flaky_items:
+        return
+    try:
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent
+        sys_path = str(root)
+        if sys_path not in sys.path:
+            sys.path.insert(0, sys_path)
+        from save_pipeline import save_memory  # noqa: E402
+
+        lines = [f"- {nodeid} ({when})" for nodeid, when in _flaky_items]
+        content = "Flaky tests detected in pytest session:\n" + "\n".join(lines)
+        db_path = root / "memory" / "memory.db"
+        if db_path.exists():
+            save_memory(
+                content=content,
+                category="lessons",
+                title_slug="flaky-tests-detected",
+                tags=["flaky"],
+                pinned=True,
+                db_path=str(db_path),
+            )
+    except Exception:
+        pass
+
+
 @pytest.fixture(autouse=True)
 def clear_pool_between_tests():
     """Autouse fixture to clear the connection pool before and after every test.
@@ -140,13 +187,14 @@ def clear_pool_between_tests():
     """
     try:
         from db import connection_pool
+
         connection_pool.clear()
     except Exception:
         pass
     yield
     try:
         from db import connection_pool
+
         connection_pool.clear()
     except Exception:
         pass
-

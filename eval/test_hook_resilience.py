@@ -172,5 +172,31 @@ class TestMcpModuleBootstrap(unittest.TestCase):
         self.assertIn("_bootstrap_path", text)
 
 
+class TestSessionEndHook(unittest.TestCase):
+    """P1: memory-session-end hook must never crash and must exit 0."""
+
+    def _run_hook_session_end(self, stdin: str = "", timeout: float = 15.0):
+        return _run_hook("memory-session-end.py", stdin, timeout=timeout)
+
+    def test_session_end_hook_imports_cleanly(self):
+        rc, out, err = self._run_hook_session_end("{}")
+        self.assertNotIn("ModuleNotFoundError", err)
+        self.assertEqual(rc, 0, f"hook exited {rc}: stderr={err!r}")
+
+    def test_session_end_hook_with_garbage_input(self):
+        rc, out, err = self._run_hook_session_end("this is not json {{{")
+        self.assertEqual(rc, 0, f"hook exited {rc}: stderr={err!r}")
+
+    def test_session_end_hook_with_stop_event(self):
+        stdin = json.dumps({"session_id": "test-session-123", "tool_name": ""})
+        rc, out, err = self._run_hook_session_end(stdin)
+        self.assertEqual(rc, 0, f"hook exited {rc}: stderr={err!r}")
+
+    def test_session_end_hook_updates_tool_count(self):
+        stdin = json.dumps({"session_id": "test-session-456", "tool_name": "bash"})
+        rc, out, err = self._run_hook_session_end(stdin)
+        self.assertEqual(rc, 0, f"hook exited {rc}: stderr={err!r}")
+
+
 if __name__ == "__main__":
     unittest.main()

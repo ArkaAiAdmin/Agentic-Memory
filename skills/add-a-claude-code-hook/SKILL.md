@@ -5,7 +5,7 @@ description: Maintainer procedure for adding a new Claude Code lifecycle hook to
 
 # Add a Claude Code Hook
 
-How to add a new lifecycle hook to the agentic-memory system. There are 4 hooks today (3 user-facing + 1 log redirect); this is how to add a 5th.
+How to add a new lifecycle hook to the agentic-memory system. There are 4 lifecycle hooks today (PreToolUse, SessionStart, Stop/PostToolUse, plus a 5th log redirect helper); this is how to add a 6th.
 
 ## The 60-second version
 
@@ -27,7 +27,7 @@ Total: ~30 minutes for a read-only hook, ~2 hours for one that mutates state.
 | `Stop` | Agent stops responding | session_id, last_user_message, last_assistant_message | Save snapshot, ping user |
 | `SessionEnd` | Session deleted | session_id, reason, duration_seconds | Final save, cleanup |
 
-The current 4 hooks: `memory-proactive-context.py` (PreToolUse), `memory-search-on-demand.py`, `memory-session-start.py` (SessionStart), and `_log_error.py` (log redirect). The auto-save flow runs on PostToolUse via `auto_save.py`.
+The current lifecycle hooks: `memory-proactive-context.py` (PreToolUse), `memory-session-start.py` (SessionStart), `memory-session-end.py` (Stop/PostToolUse, enforces Rule #7), and the log redirect `_log_error.py`. The auto-save flow runs on PostToolUse via `auto_save.py`.
 
 ## Step 1: write the hook
 

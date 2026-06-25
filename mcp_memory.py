@@ -62,11 +62,20 @@ def memory_save(
     """
     if len(content) > 100_000:
         return f"Error: content exceeds 100,000 character limit ({len(content)} chars)"
+
+    # Phase 2 (Rule #3 auto-tagging): when no tags were provided,
+    # derive a default tag from the category so lessons/ and decisions/
+    # notes are surfaceable by tag search without the caller having
+    # to remember to add it.  The caller's tags always take priority.
+    resolved_tags = tags
+    if not resolved_tags and category in ("lessons", "decisions"):
+        resolved_tags = [category]
+
     result = save_memory(
         content=content,
         category=category,
         title_slug=title_slug,
-        tags=tags,
+        tags=resolved_tags,
         pinned=pinned,
         is_global=is_global,
         safety_wiring=True,
