@@ -1,0 +1,247 @@
+"""Surprise-based forgetting curve.
+
+Replaces the aspirational ONNX MLP (never trained) with a practical
+data-driven formula.  Retention for each memory is computed from:
+
+1. **Query surprise**: how unexpected the memory content is relative
+   to the current search query (Jaccard distance).
+2. **Historical surprise**: how different the memory is from queries
+   the user has made recently (from audit_log).
+3. **Access frequency**: how often the memory has been accessed
+   (from user_access_log).
+4. **Recency**: days since last access.
+5. **Importance / fitness**: the memory's existing quality signals.
+
+Formula (sigmoid-weighted):
+
+    retention = sigmoid(w_acc * access_signal + w_surp * surprise +
+                        w_imp * importance_norm + w_fit * fitness -
+                        w_rec * recency_penalty - bias)
+
+Scaled to [0,1] — 1 = retain forever, 0 = forget immediately.
+
+Wired into ``search_pipeline._apply_neural_forget_curve()`` and replaces
+``adaptive_retention.batch_update_retention()`` when the feature is on.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+import sqlite3
+import time
+from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+# Surprise-based forgetting curve weights
+_W_ACCESS = 2.0  # access frequency weight
+_W_SURPRISE = 1.5  # surprise weight
+_W_IMPORTANCE = 1.0  # importance weight
+_W_FITNESS = 0.5  # fitness weight
+_W_RECENCY = 2.0  # recency penalty weight
+_BIAS = 1.5  # sigmoid bias (higher = more retention overall)
+
+_ACCESS_CAP = 20  # access count beyond which signal saturates
+_RECENCY_CAP = 365  # days beyond which recency penalty saturates
+_QUERY_HISTORY = 50  # recent audit_log entries to consider
+
+
+def surprise_score(content: str, reference: str) -> float:
+    """Jaccard-distance between content and reference.
+
+    Returns 0.0 (identical) to 1.0 (completely disjoint).
+    """
+    if not content or not reference:
+        return 0.5
+    c_words = set(content.lower().split())
+    r_words = set(reference.lower().split())
+    if not c_words or not r_words:
+        return 0.5
+    intersect = c_words & r_words
+    union = c_words | r_words
+    return 1.0 - len(intersect) / len(union)
+
+
+def _sigmoid(x: float) -> float:
+    """Logistic sigmoid."""
+    try:
+        return 1.0 / (1.0 + math.exp(-x))
+    except OverflowError:
+        return 0.0 if x < 0 else 1.0
+
+
+def compute_retention_rate(
+    content: str,
+    access_count: int,
+    recency_days: float,
+    fitness: float,
+    importance: int,
+    query_surprise: float = 0.5,
+) -> float:
+    """Compute retention rate in [0, 1].
+
+    Args:
+        content: Memory content text.
+        access_count: Number of times this memory was accessed.
+        recency_days: Days since last access.
+        fitness: Existing fitness score [0, 1].
+        importance: Importance level (1-5).
+        query_surprise: Surprise relative to current query [0, 1].
+
+    Returns:
+        Retention rate where 1.0 = keep, 0.0 = forget.
+    """
+    access_signal = min(access_count / _ACCESS_CAP, 1.0)
+    recency_penalty = min(recency_days / _RECENCY_CAP, 1.0)
+    importance_norm = importance / 5.0
+
+    raw = (
+        _W_ACCESS * access_signal
+        + _W_SURPRISE * query_surprise
+        + _W_IMPORTANCE * importance_norm
+        + _W_FITNESS * fitness
+        - _W_RECENCY * recency_penalty
+        - _BIAS
+    )
+    return _sigmoid(raw)
+
+
+def _recent_queries(db: sqlite3.Connection, limit: int = _QUERY_HISTORY) -> list[str]:
+    """Return the text of recent search queries from audit_log."""
+    queries: list[str] = []
+    try:
+        rows = db.execute(
+            "SELECT params FROM audit_log "
+            "WHERE tool_name = 'memory_search' AND params IS NOT NULL "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        for (params_json,) in rows:
+            try:
+                params = json.loads(params_json)
+                q = params.get("query", "") if isinstance(params, dict) else ""
+                if q:
+                    queries.append(q)
+            except (json.JSONDecodeError, TypeError):
+                continue
+    except sqlite3.OperationalError:
+        pass
+    return queries
+
+
+def compute_forgetting_rate(
+    note_id: str,
+    db_path: str | Path,
+    content: Optional[str] = None,
+    recent_memories: Optional[list[str]] = None,
+) -> float:
+    """Compute retention rate for a single note.
+
+    Args:
+        note_id: Memory note ID.
+        db_path: Path to memory.db.
+        content: Pre-loaded content (avoids second DB query).
+        recent_memories: Ignored (kept for API compat).
+
+    Returns:
+        Retention rate [0, 1].
+    """
+    from _lazy_imports import open_db
+
+    with open_db(Path(db_path)) as conn:
+        row = conn.execute(
+            "SELECT content, fitness_score, importance, access_count, "
+            "       last_accessed "
+            "FROM memories WHERE id=?",
+            (note_id,),
+        ).fetchone()
+        if row is None:
+            return 0.5
+
+        body: str = row[0] or ""
+        fitness = float(row[1] or 0.5)
+        importance = int(row[2] or 3)
+        access_count = int(row[3] or 1)
+        last_accessed = row[4] or ""
+
+    recency_days = 0.0
+    if last_accessed:
+        try:
+            ts = (
+                __import__("datetime").datetime.fromisoformat(last_accessed).timestamp()
+            )
+            recency_days = max(0.0, (time.time() - ts) / 86400.0)
+        except (ValueError, TypeError):
+            pass
+
+    return compute_retention_rate(body, access_count, recency_days, fitness, importance)
+
+
+def compute_query_surprise(
+    content: str, query: str, db: Optional[sqlite3.Connection] = None
+) -> float:
+    """Surprise of a memory relative to the current query and recent history.
+
+    Combines query-level surprise (content vs current query) and
+    historical surprise (content vs recent audit_log queries).
+
+    Returns value in [0, 1] where higher = more surprising.
+    """
+    query_surp = surprise_score(content, query)
+
+    if db is None:
+        return query_surp
+
+    recent = _recent_queries(db)
+    if not recent:
+        return query_surp
+
+    hist_surp = max(surprise_score(content, q) for q in recent)
+    return max(query_surp, hist_surp)
+
+
+def batch_update_retention(db_path: str | Path, limit: int = 500) -> dict:
+    """Batch update retention rates for all active memories.
+
+    Stores the result in the ``score`` column.
+
+    Args:
+        db_path: Path to memory.db.
+        limit: Max memories to process.
+
+    Returns:
+        Dict with counts.
+    """
+    from _lazy_imports import open_db
+
+    db_path = Path(db_path)
+    updated = 0
+    failed = 0
+
+    with open_db(db_path, timeout=30.0) as conn:
+        rows = conn.execute(
+            f"SELECT id, content FROM memories WHERE deleted_at IS NULL LIMIT {limit}"
+        ).fetchall()
+
+        for note_id, content in rows:
+            try:
+                rate = compute_forgetting_rate(note_id, db_path, content=content)
+                conn.execute(
+                    "UPDATE memories SET score=? WHERE id=?",
+                    (round(rate, 4), note_id),
+                )
+                updated += 1
+            except Exception:
+                failed += 1
+
+        conn.commit()
+
+    return {"updated": updated, "failed": failed}
+
+
+def is_available() -> bool:
+    """Always available — no external model needed."""
+    return True

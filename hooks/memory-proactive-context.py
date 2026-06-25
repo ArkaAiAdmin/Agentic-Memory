@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Proactive context hook — searches memory before tool execution.
+
+Usage: Called as PreToolUse hook. Extracts query from tool input,
+searches memory, prints relevant context to stdout for agent consumption.
+
+Input: JSON from stdin with tool_name, tool_input
+Output: Relevant memory context to stdout
+
+Hooks that do the same thing: the on-demand and session-start hooks also call ``search_memories``. Querying is performed directly on every hook execution as SQLite query execution is fast.
+"""
+
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Any, Set
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import _bootstrap_path  # noqa: E402
+
+import json
+
+# Make the sibling _log_error.py importable (same dir as this hook)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from _log_error import log_error
+except Exception:
+
+    def log_error(exc: BaseException, context: str = "") -> None:  # type: ignore[misc]
+        import sys
+
+        print(f"logger error: {exc} context={context}", file=sys.stderr)
+
+
+# I10 fix (2026-06-22): import directly from search.orchestrator
+# (the canonical source) instead of going through search_pipeline's
+# re-export chain. The chain silently hid signature changes
+# (see B1 in the contradiction report).
+try:
+    from search.orchestrator import search_memories  # noqa: E402
+    from memory_common import get_memory_paths  # noqa: E402
+except Exception as import_err:
+    log_error(import_err, context="memory-proactive-context.imports")
+
+    # Define stubs so python can still compile and run main() without crashing
+    def search_memories(*args: Any, **kwargs: Any) -> dict:  # type: ignore[misc]
+        return {}
+
+    def get_memory_paths(*args: Any, **kwargs: Any) -> tuple[Path, Path, Path]:  # type: ignore[misc]
+        cwd = Path.cwd()
+        return cwd, cwd / "memory", cwd / "memory"
+
+
+# 2026-06-23: Removed ineffective in-memory _SEARCH_CACHE. CLI hooks
+# are run as transient, separate Python subprocesses, meaning
+# process-local caches do not persist across hook invocations.
+# SQLite querying is direct and fast.
+
+
+def extract_query_from_tool_input(tool_name: str, tool_input: Any) -> str:
+    """Extract searchable query from various tool inputs.
+
+    For read/write tools: uses filePath or pattern as context signal.
+    For bash: uses the command string.
+    For grep/glob: uses the pattern.
+    """
+    if not isinstance(tool_input, dict):
+        if isinstance(tool_input, str) and len(tool_input) > 3:
+            return tool_input[:300]
+        return ""
+
+    # Common fields across all tools
+    for field in [
+        "query",
+        "prompt",
+        "task",
+        "description",
+        "message",
+        "content",
+        "search",
+        "question",
+        "goal",
+        "objective",
+        "brief",
+    ]:
+        val = tool_input.get(field)
+        if isinstance(val, str) and len(val) > 3:
+            return val[:300]
+
+    # Support for parameters used by Antigravity and Gemini-based agents
+    for path_field in ["TargetFile", "AbsolutePath", "SearchPath", "filePath", "path"]:
+        fp = tool_input.get(path_field)
+        if isinstance(fp, str) and len(fp) > 3:
+            return f"memory about {fp}"[:300]
+
+    # Bash / Command line
+    cmd = tool_input.get("CommandLine") or tool_input.get("command") or ""
+    if isinstance(cmd, str) and len(cmd) > 3:
+        return cmd[:300]
+
+    # Grep/Glob: use pattern
+    pat = tool_input.get("pattern") or ""
+    if isinstance(pat, str) and len(pat) > 3:
+        return pat[:300]
+
+    return ""
+
+
+def main(db_path: Path | None = None):
+    try:
+        if db_path is None:
+            _, local_mem, _ = get_memory_paths()
+            db_path = local_mem / "memory.db"
+
+        # Read hook input from stdin, or fall back to CLI args
+        hook_data = {}
+        # I9 fix (2026-06-22): narrow the except clause so
+        # SystemExit / KeyboardInterrupt aren't swallowed.
+        try:
+            stdin_data = sys.stdin.read()
+            if stdin_data.strip():
+                hook_data = json.loads(stdin_data)
+        except (json.JSONDecodeError, ValueError, OSError):
+            hook_data = {}
+        if not hook_data:
+            hook_data = {
+                "tool_name": os.environ.get("MEMORY_TOOL_NAME", ""),
+                "tool_input": {},
+            }
+        tool_name = hook_data.get("tool_name", "")
+        tool_input = hook_data.get("tool_input", {})
+
+        # I3 fix (2026-06-22): populate skip_tools from env so
+        # operators can suppress the hook for noisy tools without
+        # editing the source. Default is the empty set — AGENTS.md
+        # says the hook fires for ALL tools intentionally. Use
+        # MEMORY_HOOK_SKIP_TOOLS="mcp_ListMcpResourcesTool,TodoWrite"
+        # to opt out of specific tools (comma-separated).
+        skip_tools: Set[str] = set(
+            t.strip()
+            for t in os.environ.get("MEMORY_HOOK_SKIP_TOOLS", "").split(",")
+            if t.strip()
+        )
+        if tool_name in skip_tools:
+            return
+
+        # Extract query
+        query = extract_query_from_tool_input(tool_name, tool_input)
+        if not query or len(query) < 3:
+            return
+
+        # Search memory
+        if not db_path.exists():
+            return
+
+        # I7 fix (2026-06-22): read result limit from
+        # MEMORY_HOOK_RESULT_LIMIT env var (default 3, matching
+        # the previous hardcoded value).
+        try:
+            limit = int(os.environ.get("MEMORY_HOOK_RESULT_LIMIT", "3"))
+        except ValueError:
+            limit = 3
+        results = search_memories(
+            db_path=db_path, query=query, limit=limit, include_global=True
+        )
+        items = results.get("results", [])
+        if not isinstance(items, list):
+            items = []
+
+        # Output relevant context
+        if items:
+            # Write to STDOUT so the agent's tool-execution context
+            # receives the proactive context. Writing to stderr was
+            # a bug — stderr is for diagnostics, the agent reads stdout.
+            print("=== PROACTIVE MEMORY CONTEXT ===")
+            for i, r in enumerate(items, 1):
+                content = r.get("content", "")[:300]
+                score = r.get("final_score", 0)
+                print(f"[{i}] {r.get('id')} (score: {score:.2f})")
+                print(f"    {content}...")
+            print("=== END CONTEXT ===")
+
+    except Exception as e:
+        # Never block tool execution, but record the failure so ops
+        # can see it (see lessons/hook-silent-failures-design-debt-2026-06-16)
+        log_error(e, context="memory-proactive-context.main()")
+
+
+if __name__ == "__main__":
+    # 2026-06-19 resilience: wrap the entire main() in a top-level
+    # try/except so a failure in main() (including import errors that
+    # slipped past the local sys.path fix) does NOT propagate as a
+    # non-zero exit code. The hook is best-effort: a failure must
+    # NEVER block tool execution, so we swallow and log.
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException as _hook_e:  # noqa: BLE001 — belt-and-suspenders
+        try:
+            from _log_error import log_error as _le
+
+            _le(_hook_e, context="memory-proactive-context.top_level")
+        except Exception:
+            # No logger available; print to stderr and exit 0.
+            import sys as _sys
+
+            print(f"hook fatal: {_hook_e}", file=_sys.stderr)
+        # Force exit 0 so the harness doesn't see this as a hook failure.
+        import sys as _sys
+
+        _sys.exit(0)

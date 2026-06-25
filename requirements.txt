@@ -1,0 +1,14 @@
+# Core dependencies (required)
+mcp>=1.0.0
+
+# Optional: embedding & semantic search (install for full feature set)
+model2vec>=0.8.0
+numpy>=2.0.0
+usearch>=2.0.0
+
+# Optional: cross-encoder reranker & advanced embeddings
+torch>=2.0.0
+transformers>=4.0.0
+
+# Dev: type checking & linting
+mypy>=1.0

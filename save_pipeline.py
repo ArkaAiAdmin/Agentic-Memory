@@ -1,0 +1,1623 @@
+"""Save-related functions extracted from memory_mcp.py.
+
+Contains _update_memory_index_incremental, _recalculate_fitness_scores,
+_auto_backlink_multi_part, and save_memory.
+"""
+
+__all__ = [
+    "save_memory",
+    "upsert_row",
+    "memory_supersede_db",
+    "reinforce_memories_db",
+    "_update_memory_index_incremental",
+    "_recalculate_fitness_scores",
+    "_auto_backlink_multi_part",
+    "clear_pragma_cache",
+    # Re-exports from the save/ subpackage (preserved for callers that
+    # import these from save_pipeline directly).
+    "_crdt_agent_id",
+    "_is_crdt_enabled",
+    "_crdt_bump_version",
+]
+import hashlib
+import json
+import logging
+import os
+import re
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+from memory_common import (
+    open_db,
+    count_rows,
+    safe_call,
+    connection_pool,
+    safe_close_db,
+    acquire_flock_with_retry,
+    release_flock,
+    atomic_write,
+    get_memory_paths,
+    parse_frontmatter,
+)
+from infrastructure import (
+    _err,
+    ErrorCode,
+    resolve_active_memory_dir,
+    GLOBAL_MEM_DIR,
+)
+import audit
+from self_directed import _assign_tier as assign_tier
+from backfill_all import auto_backfill
+
+
+def _md5_to_uint64(memory_id: str) -> int:
+    """Derive a stable uint64 key from a memory id.
+
+    md5 first 8 bytes -> unsigned int, masked to signed int64 range
+    (0..2^63-1) so the value fits in SQLite's INTEGER column. usearch
+    accepts uint64 keys, but Python's sqlite3 module refuses values
+    that exceed signed int64 — masking the high bit is the simplest
+    way to make the key round-trip through both.
+
+    Collision probability for 1M items: ~2.7e-7.
+    """
+    digest = hashlib.md5(memory_id.encode("utf-8")).digest()
+    raw = int.from_bytes(digest[:8], "big", signed=False)
+    return raw & ((1 << 63) - 1)
+
+
+def _write_vec_key(db, note_id: str) -> int:
+    """Write the memory_vec_keys mapping for a note.
+
+    Returns the generated key for saga rollback tracking.
+    """
+    key = _md5_to_uint64(note_id)
+    db.execute(
+        "INSERT OR REPLACE INTO memory_vec_keys (key, memory_id) VALUES (?, ?)",
+        (key, note_id),
+    )
+    return key
+
+
+try:
+    from crdt_merge import parse_version_vector
+except ImportError:  # FLAVOR_A: optional dependency guard
+    parse_version_vector = None  # type: ignore[assignment]
+
+logger = logging.getLogger(__name__)
+
+# Try to import saga coordinator; fall back gracefully if unavailable.
+try:
+    from saga import saga_save_memory as _saga_save_memory
+except ImportError:  # FLAVOR_A: optional dependency guard
+    _saga_save_memory = None  # type: ignore[assignment]
+
+try:
+    from config import get_config as _get_config
+except ImportError:  # FLAVOR_A: optional dependency guard
+    _get_config = None  # type: ignore[assignment]
+
+# Cache for PRAGMA table_info results (per db_path)
+_pragma_cache: dict[str, set] = {}
+_pragma_cache_lock = threading.Lock()
+
+# Schema feature sets (B5 consolidation: one source of truth for what
+# the schema *can* do, not six copies of the same PRAGMA walk).
+#
+# 2026-06-22 (D5 fix): the feature set now includes every column that
+# a future migration might add to ``memories``.  Previously the check
+# only covered the temporal trio (``valid_from``, ``valid_to``,
+# ``superseded_by``), which meant that columns added by later
+# migrations (e.g. ``success_score``, ``tier``, ``fitness_score``) were
+# silently absent from the upsert path — the row would be inserted
+# with the column default and never written through ``_upsert_memory_row``.
+# The single source of truth below is what the B5 fix replaced six
+# inline copies of, and is the only place to update when a new column
+# is added to the ``memories`` table.
+_TEMPORAL_COLS = frozenset({"valid_from", "valid_to", "superseded_by"})
+# Core columns: always in the upsert SQL or managed by a non-upsert
+# write path (search index, vector index, tier updates).  Collected
+# here so the drift check in _detect_schema_features can distinguish
+# between "deliberately unmanaged (core)" and "forgotten by a migration".
+_CORE_COLS = frozenset(
+    {
+        "id",
+        "content",
+        "embedding",
+        "vec_key",
+        "category",
+        "created_at",
+        "updated_at",
+        "access_count",
+        "search_score",
+        # Always in the upsert INSERT + ON CONFLICT UPDATE SET.
+        "source_file",
+        "tags",
+        "observed_at",
+        "pinned",
+        "importance",
+        "repo_id",
+    }
+)
+# Optional columns that the upsert conditionally includes based on
+# runtime schema detection (PRAGMA table_info results).  A column
+# present in the live schema but absent from _CORE_COLS, _MANAGED_COLS,
+# and _LEGACY_COLS will trigger a drift warning — it's likely a
+# migration that forgot to wire the new column into the write path.
+_MANAGED_COLS = frozenset(
+    {
+        "valid_from",
+        "valid_to",
+        "superseded_by",
+        "tier",
+        "success_score",
+        "fitness_score",
+        "importance_score",
+        "metadata",
+        "deleted_at",
+    }
+)
+# Columns that exist in the schema for historical/legacy reasons
+# but are no longer written by any active code path.  Safe to ignore.
+_LEGACY_COLS = frozenset(
+    {
+        "decay",
+        "score",
+        "supersedes",
+        "conflict_policy",
+        "version_vector",
+        "logical_clock",
+        "consolidation_state",
+        "last_accessed",
+        "deleted_by",
+        "context_prefix",
+    }
+)
+
+
+def _detect_schema_features(db_path, conn=None) -> dict:
+    """Return a dict of schema features for the memories table.
+
+    Centralizes the ``PRAGMA table_info(memories)`` walk that used to be
+    duplicated across ``upsert_row`` (line 321-328), the saga/CRDT
+    upsert path in ``_update_memory_index_incremental`` (line 441-447),
+    and ``memory_supersede_db`` (line 978-980).  Caches the column set
+    per ``db_path`` so the cost is paid once per process per DB file.
+
+    Returns:
+        dict with keys:
+            - ``has_temporal``: True iff {valid_from, valid_to, superseded_by} are present
+            - ``has_tier``:     True iff the ``tier`` column is present
+            - ``has_metadata``: True iff the ``metadata`` column is present
+            - ``cols``:         the full set of column names (for downstream checks)
+
+    Args:
+        db_path: Path-like. Used as the cache key.  Required (not optional)
+            so the cache is bounded by the set of actually-opened DBs.
+        conn: Optional open sqlite3.Connection. If None, opens a short-lived
+            connection from ``connection_pool`` using ``str(db_path)``.
+    """
+    cache_key = str(db_path)
+    cols: set[str] = set()
+    with _pragma_cache_lock:
+        if cache_key in _pragma_cache:
+            cols = _pragma_cache[cache_key]
+        else:
+            if conn is not None:
+                cols = {
+                    row[1]
+                    for row in conn.execute("PRAGMA table_info(memories)").fetchall()
+                }
+                _pragma_cache[cache_key] = cols
+            else:
+                # Need to release the lock while we open a connection
+                # so we don't deadlock if the pool blocks. Open outside
+                # the lock, then re-check the cache and populate.
+                pass
+    if cache_key not in _pragma_cache:
+        # Cache miss: open a short-lived pooled connection.
+        pool_conn = connection_pool.get(str(db_path), timeout=5.0)
+        try:
+            try:
+                pool_conn.execute("PRAGMA busy_timeout = 5000;")
+            except Exception:
+                logger.warning("PRAGMA busy_timeout failed for %s", db_path)
+            try:
+                cols = {
+                    row[1]
+                    for row in pool_conn.execute(
+                        "PRAGMA table_info(memories)"
+                    ).fetchall()
+                }
+            except Exception:
+                logger.warning("PRAGMA table_info failed for %s", db_path)
+                cols = set()
+        finally:
+            safe_close_db(pool_conn)
+        with _pragma_cache_lock:
+            # Another caller may have populated the cache while we were
+            # blocked on the pool; their value is fine, just keep theirs.
+            _pragma_cache.setdefault(cache_key, cols)
+            cols = _pragma_cache[cache_key]
+    # Warn if any live schema column is unmanaged (not in any known
+    # set) — such columns are silently dropped on every save.
+    unmanaged = cols - _MANAGED_COLS - _CORE_COLS - _LEGACY_COLS
+    if unmanaged:
+        logger.warning(
+            "Schema drift: columns %s exist in memories table but are not in "
+            "_CORE_COLS, _MANAGED_COLS, or _LEGACY_COLS. They will be "
+            "silently dropped on save.",
+            sorted(unmanaged),
+        )
+    return {
+        "has_temporal": _TEMPORAL_COLS.issubset(cols),
+        "has_tier": "tier" in cols,
+        "has_metadata": "metadata" in cols,
+        "has_success_score": "success_score" in cols,
+        "has_fitness_score": "fitness_score" in cols,
+        "has_importance_score": "importance_score" in cols,
+        "has_deleted_at": "deleted_at" in cols,
+        "managed_cols": _MANAGED_COLS,
+        "legacy_cols": _LEGACY_COLS,
+        "cols": cols,
+    }
+
+
+def clear_pragma_cache():
+    """Clear the PRAGMA table_info cache. Call when DB file is replaced."""
+    with _pragma_cache_lock:
+        _pragma_cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# CRDT version vector helpers
+#
+# Extracted to save.crdt_helpers (2026-06-20). Re-exported here so
+# existing callers using ``from save_pipeline import _crdt_agent_id``
+# keep working without modification.
+# ---------------------------------------------------------------------------
+from save.crdt_helpers import (  # noqa: E402, F401
+    _crdt_agent_id,
+    _is_crdt_enabled,
+    _crdt_bump_version,
+)
+
+
+def _ensure_db_exists(db_path: Path):
+    """Create the DB and run migrations if it doesn't exist yet."""
+    if not db_path.exists():
+        try:
+            db = connection_pool.get(str(db_path), timeout=30.0)
+            safe_close_db(db)
+        except Exception:
+            return False
+    # Invalidate PRAGMA cache after migration (M1 fix)
+    clear_pragma_cache()
+    return True
+
+
+def _acquire_lock(db_path: Path):
+    """Acquire a flock for the write path. Returns lock_file or None.
+
+    P1-15 fix: write-path callers must not silently proceed without
+    the lock — the vec_keys drift we saw in the worker log is the
+    exact signature of two concurrent saves both running. Pass
+    ``strict=True`` so a held lock surfaces as ``FileLockError`` at
+    the call site rather than a silent race. The lock_file handle is
+    only returned on success; on failure the temp file is closed.
+
+    P0-5 fix (2026-06-22): the previous version caught
+    ``FileLockError`` and returned ``None`` here, which silently
+    defeated the strict-mode contract.  The docstring has always
+    said FileLockError must surface, but the implementation
+    swallowed it.  Now FileLockError propagates so the caller can
+    decide whether to retry, fall back, or surface the error.
+    Non-lock-related exceptions (e.g. ``OSError`` opening the lock
+    file) still return ``None`` because they're not contention
+    errors — they're infrastructure errors that the caller can't
+    usefully handle.
+    """
+    lock_path = db_path.parent / ".rebuild.lock"
+    try:
+        lock_file = open(lock_path, "w")
+    except Exception as e:
+        logger.warning("Could not open lock file for incremental update: %s", e)
+        return None
+    # FileLockError propagates (strict=True contract).  Other
+    # exceptions (e.g. OSError from a stale lock file) are caught
+    # and converted to None so the caller can proceed without a
+    # lock in the case of an infrastructure error, not contention.
+    try:
+        acquire_flock_with_retry(
+            lock_file, max_attempts=5, initial_backoff=0.05, strict=True
+        )
+        return lock_file
+    except Exception as e:
+        from _lazy_imports import FileLockError
+
+        if isinstance(e, FileLockError):
+            # Don't catch — let it propagate per the strict contract.
+            try:
+                lock_file.close()
+            except Exception:
+                pass
+            raise
+        try:
+            lock_file.close()
+        except Exception:
+            pass
+        logger.warning("Could not open lock file for incremental update: %s", e)
+        return None
+
+
+def _upsert_memory_row(
+    db,
+    note_id: str,
+    source_file: str,
+    content: str,
+    tags_json: str,
+    now_iso: str,
+    pinned: bool,
+    is_global: bool,
+    db_path: Path,
+    category: str,
+    has_temporal: bool,
+    metadata_json: str = "{}",
+    importance: int = 3,
+    tier: str = "warm",
+):
+    """Insert or update the memory row (and file_mtimes).
+
+    2026-06-19 fix: ``importance`` is now a real parameter. Previously
+    the INSERT statement hardcoded ``importance=3`` regardless of
+    caller intent — user-supplied importance values were silently
+    dropped, and the MCP ``memory_save`` tool had no way to set
+    importance at all. The default is 3 (preserves the prior
+    behavior for callers that don't pass importance explicitly).
+    Values are clamped to [1, 5] so a misbehaving caller can't
+    produce rows outside the documented scale.
+    """
+    importance = max(1, min(5, int(importance)))
+    repo_id = None if is_global else db_path.parent.parent.name
+    if has_temporal:
+        # 2026-06-22 (D5 fix): the previous ``ON CONFLICT`` clause had
+        # ``metadata = COALESCE(memories.metadata, memories.metadata)``,
+        # which is a tautology — both arguments are the *same* column,
+        # so the COALESCE always returns ``memories.metadata`` and the
+        # incoming ``excluded.metadata`` is silently dropped on update.
+        # The correct pattern (used in the no-temporal branch) is
+        # ``COALESCE(excluded.metadata, memories.metadata)`` — prefer
+        # the new value, fall back to the existing one if the new one
+        # is NULL.  Same fix in both branches.
+        db.execute(
+            "INSERT INTO memories (id, source_file, content, tags, created_at, updated_at, observed_at, fitness_score, importance, importance_score, pinned, repo_id, valid_from, valid_to, superseded_by, category, tier, metadata)\n               VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ? )\n               ON CONFLICT(id) DO UPDATE SET\n                   content = excluded.content,\n                   tags = excluded.tags,\n                   updated_at = excluded.updated_at,\n                   observed_at = excluded.observed_at,\n                   pinned = excluded.pinned,\n                   fitness_score = excluded.fitness_score,\n                   importance = excluded.importance,\n                   importance_score = excluded.importance_score,\n                   valid_from = COALESCE(memories.valid_from, excluded.valid_from),\n                   deleted_at = NULL,\n                   category = excluded.category,\n                   tier = excluded.tier,\n                   metadata = COALESCE(excluded.metadata, memories.metadata)",
+            (
+                note_id,
+                source_file,
+                content,
+                tags_json,
+                now_iso,
+                now_iso,
+                now_iso,
+                importance,
+                float(importance),
+                1 if pinned else 0,
+                repo_id,
+                now_iso,
+                category,
+                tier,
+                metadata_json,
+            ),
+        )
+    else:
+        db.execute(
+            "INSERT INTO memories (id, source_file, content, tags, created_at, updated_at, observed_at, fitness_score, importance, importance_score, pinned, repo_id, category, tier, metadata)\n               VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, ?, ?, ?, ?, ?, ?, ? )\n               ON CONFLICT(id) DO UPDATE SET\n                   content = excluded.content,\n                   tags = excluded.tags,\n                   updated_at = excluded.updated_at,\n                   observed_at = excluded.observed_at,\n                   pinned = excluded.pinned,\n                   fitness_score = excluded.fitness_score,\n                   importance = excluded.importance,\n                   importance_score = excluded.importance_score,\n                   deleted_at = NULL,\n                   category = excluded.category,\n                   tier = excluded.tier,\n                   metadata = COALESCE(excluded.metadata, memories.metadata)",
+            (
+                note_id,
+                source_file,
+                content,
+                tags_json,
+                now_iso,
+                now_iso,
+                now_iso,
+                importance,
+                float(importance),
+                1 if pinned else 0,
+                repo_id,
+                category,
+                tier,
+                metadata_json,
+            ),
+        )
+    try:
+        fm_cols = {
+            row[1] for row in db.execute("PRAGMA table_info(file_mtimes)").fetchall()
+        }
+        fm_path_col = (
+            "path"
+            if "path" in fm_cols
+            else "file_path"
+            if "file_path" in fm_cols
+            else None
+        )
+        if fm_path_col:
+            db.execute(
+                f"INSERT INTO file_mtimes ({fm_path_col}, mtime, content_hash) VALUES (?, strftime('%s', 'now'), '') ON CONFLICT({fm_path_col}) DO UPDATE SET mtime = excluded.mtime",
+                (source_file,),
+            )
+    except Exception:
+        pass
+
+
+def upsert_row(
+    conn,
+    note_id: str,
+    content: str,
+    source_file: str,
+    tags,
+    category: str,
+    pinned: bool = False,
+    tier: str = "warm",
+    metadata=None,
+    db_path=None,
+    is_global: bool = False,
+    importance: int = 3,
+) -> None:
+    """Public upsert: insert or update a single memory row.
+
+    Thin public wrapper around the private ``_upsert_memory_row`` so the
+    few code paths that need to manage their own transaction (e.g.
+    ``crdt_merge`` conflict resolution, ``cross_session_learn`` cron
+    job, ``multi_agent`` import) can still go through the schema-aware
+    save pipeline.
+
+    B4 docstring fix (2026-06-22): actual callers (verified via grep):
+      * ``crdt_field.py:601`` — ``crdt_field_save`` field-level path
+        (writes field updates through this function so the row stays
+        in sync with the field CRDT table).
+      * ``crdt_field.py:806`` — ``_seed_note_into_field_crdt`` backfill
+        path used when a note appears in ``memory_field_crdt`` but
+        somehow has no row in ``memories``.
+      * ``crdt_merge.py:290`` — legacy note-level LWW merge, kept
+        after the v13 field-CRDT refactor for pre-v13 peers.
+      * ``crdt_merge.py:335`` — second note-level merge site (the
+        ``supersede`` policy).
+      * ``cross_session_learn.py:183`` — cron job that imports
+        previously-cross-session lessons back into the active DB.
+      * ``memory_sharing.py:404`` — shared memory pool import (in-DB
+        shared pool, not a network import).
+
+    New callers should route through ``save_memory`` instead unless
+    they need to manage their own transaction (in which case
+    ``upsert_row`` is the supported public entry point).
+
+    P0-5 fix (2026-06-19): the four callers that previously did raw
+    ``INSERT INTO memories`` now route through this function instead
+    of bypassing the save pipeline.  Routing through the public API
+    keeps the row schema (fitness_score, importance, repo_id,
+    valid_from, valid_to, metadata, file_mtimes) consistent with the
+    canonical ``save_memory`` path, and gives the saga transaction /
+    audit pipeline / safety wiring a single choke point.
+
+    Transaction control is the caller's responsibility: this function
+    does NOT commit and does NOT run any of the post-insert indexers
+    (chunks, embedding, KG, facts, semantic/FTS backlinks, adaptive
+    retention, CRDT version bump, contextual enrichment).  Callers
+    that need the full save-pipeline behavior should call
+    ``save_memory`` instead; ``upsert_row`` is for code paths that
+    either already manage their own transaction or want a custom
+    subset of indexers.
+
+    Args:
+        conn: An open ``sqlite3.Connection``.  The caller controls the
+            transaction; this function will not commit or rollback.
+        note_id: Canonical note id (e.g. ``"lessons/foo"``).
+        content: The note's text content.
+        source_file: The path the note is "from" (markdown file path).
+        tags: A list of tag strings, or ``None`` / empty for no tags.
+        category: The note's category (e.g. ``"lessons"``).
+        pinned: Whether the note should be pinned.
+        tier: The note's tier (``"warm"``, ``"untrusted"``, etc.).
+            Default ``"warm"``.  Applied as a separate UPDATE so the
+            private ``_upsert_memory_row`` keeps its existing
+            signature.
+        metadata: Optional dict to store in the ``metadata`` column.
+            ``None`` stores an empty JSON object.
+        db_path: Path to the memory DB.  Defaults to
+            ``Path.cwd() / "memory" / "memory.db"`` if not given.
+        is_global: Whether this is a global (cross-project) memory.
+            Default ``False``.
+    """
+    if db_path is None:
+        db_path = Path.cwd() / "memory" / "memory.db"
+
+    # Normalize tags: accept list, comma/semicolon string, or None.
+    if tags is None:
+        tags_list: list = []
+    elif isinstance(tags, str):
+        tags_list = [t.strip() for t in re.split("[,; ]+", tags) if t.strip()]
+    else:
+        tags_list = [str(t).strip() for t in tags if t]
+    tags_json = json.dumps(tags_list)
+
+    # Normalize metadata: dict -> JSON, None -> empty object.
+    if metadata is None:
+        metadata_json = "{}"
+    elif isinstance(metadata, str):
+        metadata_json = metadata
+    else:
+        metadata_json = json.dumps(metadata)
+
+    # Detect schema features (temporal columns + tier) by PRAGMA.
+    # B5 fix: use the centralized helper instead of duplicating the
+    # PRAGMA walk + subset check at every save entry point.
+    features = _detect_schema_features(db_path, conn=conn)
+    has_temporal = features["has_temporal"]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    _upsert_memory_row(
+        conn,
+        note_id,
+        source_file,
+        content,
+        tags_json,
+        now_iso,
+        pinned,
+        is_global,
+        db_path,
+        category,
+        has_temporal,
+        metadata_json,
+        importance,
+        tier,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-signal indexer functions
+#
+# Extracted to save.indexers (2026-06-20). Re-exported here so existing
+# callers using ``from save_pipeline import _index_chunks`` etc. keep
+# working without modification.
+# ---------------------------------------------------------------------------
+from save.indexers import (  # noqa: E402, F401
+    _index_backlinks,
+    _index_chunks,
+    _index_embedding,
+    _index_kg,
+    _index_facts,
+    _index_adaptive_retention,
+)
+
+
+# ---------------------------------------------------------------------------
+# Backlink generation functions
+#
+# Extracted to save.backlinks (2026-06-20). Re-exported here so existing
+# callers using ``from save_pipeline import _auto_fts_backlinks`` etc.
+# keep working without modification.
+# ---------------------------------------------------------------------------
+from save.backlinks import (  # noqa: E402, F401
+    _auto_fts_backlinks,
+    _auto_semantic_backlinks,
+    _auto_backlink_multi_part,
+)
+
+
+# ---------------------------------------------------------------------------
+# Post-save hook functions
+#
+# Extracted to save.post_save_hooks (2026-06-20). Re-exported here so
+# existing callers using ``from save_pipeline import _enrich_context``
+# etc. keep working without modification.
+# ---------------------------------------------------------------------------
+from save.post_save_hooks import (  # noqa: E402, F401
+    _enrich_context,
+    _recalculate_fitness_scores,
+    _run_post_save_hooks,
+    _enqueue_background_tasks,
+)
+
+
+def _update_memory_index_incremental(
+    db_path: Path,
+    category: str,
+    title_slug: str,
+    content: str,
+    tags: list,
+    pinned: bool,
+    now_iso: str,
+    is_global: bool,
+    metadata_json: str = "{}",
+    db=None,
+    importance: int = 3,
+    tier: str = "warm",
+):
+    """Update memory index incrementally.
+
+    If ``db`` is provided, use that connection (caller manages commit and close).
+    When using an external ``db``, exceptions propagate upward so the caller
+    can rollback the transaction. When ``db`` is None (default), manage our
+    own connection, commit on success, and swallow exceptions on failure.
+    """
+    external_db = db is not None
+    if not external_db:
+        if not _ensure_db_exists(db_path):
+            return
+    source_file = f"{category}/{title_slug}.md"
+    note_id = f"{category}/{title_slug}"
+    tags_json = json.dumps(tags)
+    # P0-5 fix (2026-06-22): _acquire_lock now re-raises FileLockError
+    # on contention.  Catch it here so a contended lock doesn't crash
+    # the caller — log and proceed without the lock.  The pool's
+    # per-thread connection keys still serialise intra-process writes
+    # on the same path, so this is a defence-in-depth fallback rather
+    # than a primary correctness mechanism.
+    from _lazy_imports import FileLockError
+
+    if external_db:
+        lock_file = None
+    else:
+        # C2 fix (2026-06-24): retry lock acquisition with backoff instead of
+        # proceeding lockless. Cross-process writes must serialize via flock.
+        # Intra-process writes are already serialized by pool's per-thread keys.
+        max_attempts = 3
+        base_backoff = 0.1
+        for attempt in range(max_attempts):
+            try:
+                lock_file = _acquire_lock(db_path)
+                break
+            except FileLockError as _fle:
+                if attempt == max_attempts - 1:
+                    logger.error(
+                        "incremental update: write lock contended for %s after %d attempts, failing: %s",
+                        db_path,
+                        max_attempts,
+                        _fle,
+                    )
+                    raise
+                wait_time = base_backoff * (2**attempt)
+                logger.warning(
+                    "incremental update: write lock contended for %s (attempt %d/%d), retrying in %.2fs: %s",
+                    db_path,
+                    attempt + 1,
+                    max_attempts,
+                    wait_time,
+                    _fle,
+                )
+                time.sleep(wait_time)
+    local_db = None
+    try:
+        if external_db:
+            conn = db
+        else:
+            conn = connection_pool.get(str(db_path), timeout=30.0)
+            conn.execute("PRAGMA busy_timeout = 30000;")
+            local_db = conn
+        # B5 fix: use the centralized helper instead of duplicating the
+        # PRAGMA walk + subset check that lived here.
+        features = _detect_schema_features(db_path, conn=conn)
+        has_temporal = features["has_temporal"]
+        cols = features["cols"]
+        # Compute tier early so it can be written atomically in the upsert.
+        if _get_config is not None:
+            cfg = _get_config()
+            if getattr(cfg, "temporal_tiers", False):
+                tier = assign_tier(importance=float(importance))
+        _upsert_memory_row(
+            conn,
+            note_id,
+            source_file,
+            content,
+            tags_json,
+            now_iso,
+            pinned,
+            is_global,
+            db_path,
+            category,
+            has_temporal,
+            metadata_json,
+            importance,
+            tier,
+        )
+        if _is_crdt_enabled():
+            _crdt_bump_version(conn, note_id, cols)
+        _index_backlinks(conn, note_id, content)
+        _index_chunks(conn, note_id, content)
+        _index_embedding(conn, note_id, content, category, tags, source_file)
+        _index_kg(conn, note_id, content)
+        _index_facts(conn, note_id, content)
+        _auto_semantic_backlinks(conn, note_id, content, db_path=str(db_path))
+        _auto_fts_backlinks(conn, note_id, content)
+        _index_adaptive_retention(conn, note_id, db_path=str(db_path))
+        _enrich_context(conn, note_id, content, category, tags)
+    except Exception as e:
+        if external_db:
+            raise
+        logger.error("Error in incremental update: %s", e)
+    else:
+        if not external_db:
+            conn.commit()
+            try:
+                auto_backfill(db_path)
+            except Exception as _e:
+                logger.warning("Auto-backfill skipped: %s", _e)
+    finally:
+        if lock_file:
+            release_flock(lock_file)
+        if local_db is not None:
+            safe_close_db(local_db)
+
+
+def _validate_save_params(content, category, title_slug, tags):
+    if not isinstance(content, str):
+        return _err(ErrorCode.INVALID_PARAMS, "content must be a string.")
+    from _lazy_imports import get_config
+
+    max_content = get_config().save_max_content_bytes
+    if len(content) > max_content:
+        return _err(
+            ErrorCode.CONTENT_TOO_LARGE,
+            f"Content too large ({len(content)} bytes). Maximum is {max_content // 1024}KB.",
+        )
+    if (
+        not category
+        or category.strip() in (".", "..")
+        or "/" in category
+        or ("\\" in category)
+        or category.startswith("~")
+    ):
+        return _err(
+            ErrorCode.INVALID_CATEGORY,
+            "Invalid category. Must be a non-empty single segment like 'lessons' or 'decisions'.",
+        )
+    from _lazy_imports import get_config
+
+    cfg = get_config()
+    max_slug = cfg.save_max_slug_len
+    max_category = cfg.save_max_category_len
+    max_tags = cfg.save_max_tags
+
+    if (
+        not title_slug
+        or "/" in title_slug
+        or "\\" in title_slug
+        or (len(title_slug) > max_slug)
+    ):
+        return _err(
+            ErrorCode.INVALID_SLUG,
+            f"Invalid title_slug. Must be a non-empty single segment up to {max_slug} chars (no slashes).",
+        )
+    if len(category) > max_category:
+        return _err(
+            ErrorCode.INVALID_CATEGORY,
+            f"Invalid category. Must be up to {max_category} chars.",
+        )
+    if tags is not None and (not isinstance(tags, (str, list))):
+        return _err(
+            ErrorCode.INVALID_PARAMS, "tags must be a string or a list of strings."
+        )
+    if isinstance(tags, str):
+        tags_list = [t.strip() for t in re.split("[,; ]+", tags) if t.strip()]
+    elif isinstance(tags, list):
+        tags_list = [str(t).strip() for t in tags if t]
+    else:
+        tags_list = []
+    if len(tags_list) > max_tags:
+        return _err(
+            ErrorCode.INVALID_PARAMS,
+            f"Too many tags ({len(tags_list)}). Maximum is {max_tags}.",
+        )
+    return tags_list, ", ".join(tags_list)
+
+
+def _scan_for_injection_or_skip(
+    content: str, category: str, title_slug: str
+) -> Optional[str]:
+    """Run the prompt-injection scan. Return an error string if the
+    save should be rejected (high-risk content); return ``None`` if
+    the save is allowed to proceed (clean content OR a scan failure).
+
+    Extracted from save_memory() (2026-06-22) so the orchestrator
+    stays readable. H9: runs on every save path since both the MCP
+    tool and the auto-save hook delegate to save_memory.
+    """
+    try:
+        from _lazy_imports import scan_for_injection
+
+        inj = scan_for_injection(content)
+        if inj["is_suspicious"] and inj["risk_score"] >= 0.5:
+            logger.warning(
+                "save_memory: rejecting injection-suspicious content for %s/%s "
+                "(risk_score=%.2f, category=%s, matches=%s)",
+                category,
+                title_slug,
+                inj["risk_score"],
+                inj["category"],
+                inj["matches"],
+            )
+            return _err(
+                ErrorCode.INJECTION_DETECTED,
+                f"Content rejected: injection risk score {inj['risk_score']:.2f} "
+                f"(category: {inj['category']}). "
+                f"If this is legitimate, rephrase the content to avoid instruction-like patterns.",
+            )
+        elif inj["is_suspicious"]:
+            logger.info(
+                "save_memory: low-risk injection patterns in %s/%s "
+                "(risk_score=%.2f, matches=%s) — allowing save",
+                category,
+                title_slug,
+                inj["risk_score"],
+                inj["matches"],
+            )
+    except Exception as _ie:
+        logger.debug("save_memory: injection scan failed (benign): %s", _ie)
+    return None
+
+
+def _acquire_db_connection(db_path_obj, category, title_slug, start_time):
+    """Acquire a SQLite connection from the pool. Returns the
+    connection on success, or a string error message if acquisition
+    failed (the message is already audit-logged).
+
+    Extracted from save_memory() (2026-06-22) so the orchestrator
+    stays readable.
+    """
+    try:
+        conn = connection_pool.get(str(db_path_obj), timeout=30.0)
+        conn.execute("PRAGMA busy_timeout = 30000;")
+        return conn
+    except Exception as e:
+        try:
+            audit.enqueue_audit(
+                db_path=str(db_path_obj),
+                tool="memory_save",
+                args={
+                    "category": category,
+                    "title_slug": title_slug,
+                    "error": str(e)[:200],
+                },
+                results_count=0,
+                top1_id=None,
+                latency_ms=(time.time() - start_time) * 1000.0,
+                error=str(e)[:500],
+            )
+        except Exception:
+            pass
+        return _err(ErrorCode.DB_ERROR, f"saving memory: {e}")
+
+
+def _resolve_save_paths(category, title_slug, is_global, db_path):
+    if db_path is not None:
+        mem_dir = Path(db_path).parent
+        project_root = mem_dir.parent
+        global_mem = Path(GLOBAL_MEM_DIR)
+    else:
+        project_root, _, global_mem = get_memory_paths()
+    if is_global:
+        env_path = os.environ.get("MEMORY_DB_PATH")
+        target_base = Path(env_path).parent if env_path else global_mem
+    else:
+        target_base = resolve_active_memory_dir(
+            base_dir=Path(db_path).parent if db_path else None
+        )
+    if not target_base.exists():
+        if is_global:
+            return _err(
+                ErrorCode.NOT_FOUND,
+                f"Target memory directory {target_base} does not exist.",
+            )
+        has_project_marker = any(
+            (
+                (project_root / m).exists() or (project_root / m).is_dir()
+                for m in (
+                    ".git",
+                    ".agents",
+                    "AGENTS.md",
+                    "CLAUDE.md",
+                    "package.json",
+                    "pyproject.toml",
+                )
+            )
+        )
+        if not has_project_marker and (not (project_root / "memory").exists()):
+            return _err(
+                ErrorCode.NOT_FOUND,
+                f"No project context found at {project_root}. Run from inside a project (with .git, .agents, AGENTS.md, CLAUDE.md, package.json, or pyproject.toml) or pass is_global=True. To bootstrap a new project, run setup_memory.sh first.",
+            )
+        try:
+            target_base.mkdir(parents=True, exist_ok=True)
+            memory_md = target_base / "MEMORY.md"
+            if not memory_md.exists():
+                atomic_write(
+                    memory_md,
+                    "# Agentic Memory Index\n\n## Active Projects\n\n## Architecture Decisions (ADRs)\n\n## Hard-Won Lessons\n\n## User Preferences\n",
+                    encoding="utf-8",
+                )
+        except Exception as e:
+            return _err(
+                ErrorCode.DB_ERROR,
+                f"Target memory directory {target_base} does not exist and could not be created: {e}",
+            )
+    try:
+        target_base_resolved = target_base.resolve()
+        category_dir = (target_base_resolved / category).resolve()
+        # Note: is_relative_to returns True for self, so the second clause
+        # below is the one that catches an empty/identity category. Split the
+        # two conditions into distinct error messages for debuggability.
+        if not category_dir.is_relative_to(target_base_resolved):
+            return _err(
+                ErrorCode.TRAVERSAL,
+                f"Category path '{category}' escapes the target base directory.",
+            )
+        if category_dir == target_base_resolved:
+            return _err(
+                ErrorCode.TRAVERSAL,
+                "Category resolves to the target base itself; an empty or "
+                "identity category is not allowed.",
+            )
+        file_path = (category_dir / f"{title_slug}.md").resolve()
+        if not file_path.is_relative_to(category_dir):
+            return _err(
+                ErrorCode.TRAVERSAL,
+                f"Title slug '{title_slug}' escapes the category directory.",
+            )
+    except Exception as e:
+        return _err(ErrorCode.INVALID_PARAMS, f"validating paths: {e}")
+    category_dir.mkdir(parents=True, exist_ok=True)
+    return target_base, file_path, category_dir, project_root
+
+
+def _build_memory_file(content, category, title_slug, tags_list, pinned, now_iso=None):
+    import datetime
+
+    if now_iso is None:
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    tags_str = ", ".join(tags_list)
+    pinned_str = "true" if pinned else "false"
+    markdown_content = f"---\ncreated: {now_iso}\nupdated: {now_iso}\nobserved_at: {now_iso}\ntags: [{tags_str}]\npinned: {pinned_str}\nrelated: []\nvalid_from: {now_iso}\nvalid_to: null\nsuperseded_by: null\n\n# {title_slug.replace('-', ' ').title()}\n\n{content.strip()}\n"
+    fm_metadata, _ = parse_frontmatter(content)
+    raw_meta = fm_metadata.get("metadata")
+    if isinstance(raw_meta, str) and raw_meta.startswith("{"):
+        try:
+            fm_metadata = json.loads(raw_meta)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    elif raw_meta is not None and not isinstance(raw_meta, dict):
+        fm_metadata = {"value": raw_meta}
+    else:
+        fm_metadata = fm_metadata if isinstance(fm_metadata, dict) else {}
+    for k in (
+        "category",
+        "title_slug",
+        "tags",
+        "valid_from",
+        "valid_to",
+        "superseded_by",
+        "pinned",
+        "related",
+        "created",
+        "updated",
+        "observed_at",
+    ):
+        fm_metadata.pop(k, None)
+    metadata_json = json.dumps(fm_metadata) if fm_metadata else "{}"
+    return markdown_content, fm_metadata, now_iso, metadata_json
+
+
+def _persist_to_db(
+    conn,
+    db_path_obj,
+    category,
+    title_slug,
+    content,
+    tags_list,
+    pinned,
+    now_iso,
+    is_global,
+    metadata_json,
+    file_path,
+    markdown_content,
+    importance: int = 3,
+    _conn_is_shared: bool = False,
+):
+    try:
+        _update_memory_index_incremental(
+            db_path_obj,
+            category,
+            title_slug,
+            content,
+            tags_list,
+            pinned,
+            now_iso,
+            is_global,
+            metadata_json=metadata_json,
+            db=conn,
+            importance=importance,
+        )
+        try:
+            atomic_write(file_path, markdown_content, encoding="utf-8")
+        except Exception as file_err:
+            if not _conn_is_shared:
+                conn.rollback()
+                safe_close_db(conn)
+            logger.error("save_memory: file write failed after DB insert: %s", file_err)
+            return _err(
+                ErrorCode.DB_ERROR, f"file write failed after DB insert: {file_err}"
+            )
+        if not _conn_is_shared:
+            conn.commit()
+            safe_close_db(conn)
+        return f"{category}/{title_slug}"
+    except Exception as e:
+        if not _conn_is_shared:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            safe_close_db(conn)
+        return _err(ErrorCode.DB_ERROR, f"saving memory: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Saga persistence helpers (extracted 2026-06-22 from save_memory)
+#
+# The save-memory orchestrator used to contain a 112-line inline block
+# that (1) tried the saga path, (2) decided whether to fall back based
+# on MEMORY_SAGA_FALLBACK, and (3) called the legacy _persist_to_db on
+# fallback. That block mixed three concerns — saga call wiring, the
+# fallback policy decision, and the legacy persist — and made the
+# orchestrator hard to read.
+#
+# The helpers below split those concerns apart. The orchestrator now
+# reads as a single call to _persist_via_saga_or_fallback() plus a
+# single call to _audit_save_failure() on the error path.
+# ---------------------------------------------------------------------------
+
+
+def _is_saga_enabled() -> bool:
+    """Return True if the saga-wrapped save path should be used.
+
+    Saga is enabled when (a) the saga module is importable, and (b) the
+    config singleton reports ``saga_enabled=True``.  Any config-load
+    failure is swallowed and treated as "saga enabled" — the saga path
+    is the documented default since 2026-06-22 BLK-1, so a missing or
+    broken config should not silently disable it.
+    """
+    if _saga_save_memory is None:
+        return False
+    if _get_config is None:
+        return True
+    try:
+        return bool(_get_config().saga_enabled)
+    except Exception:
+        return True
+
+
+def _try_saga_persist(
+    *,
+    conn,
+    db_path_obj,
+    category,
+    title_slug,
+    content,
+    tags_list,
+    pinned,
+    now_iso,
+    is_global,
+    metadata_json,
+    file_path,
+    markdown_content,
+    importance,
+    lock_already_held: bool = False,
+):
+    """Wrap the upsert + write + vec-key triple-store steps in a saga.
+
+    Builds the three closure functions that ``_saga_save_memory``
+    expects and forwards to it.      Returns the note_id on success.
+    Propagates whatever exception the saga raises — the caller decides
+    whether to fall back or to surface the error.
+
+    ``lock_already_held`` (P0-2 fix, 2026-06-22): when True, the saga
+    skips its internal file-lock acquisition.  See _persist_via_saga_or_fallback.
+    """
+    # Caller checks _is_saga_enabled() first, which guards against the
+    # saga module being unavailable.  Re-assert here so type checkers
+    # know _saga_save_memory is callable inside this function.
+    assert _saga_save_memory is not None, "caller must check _is_saga_enabled() first"
+
+    def _do_upsert_db():
+        _update_memory_index_incremental(
+            db_path_obj,
+            category,
+            title_slug,
+            content,
+            tags_list,
+            pinned,
+            now_iso,
+            is_global,
+            metadata_json=metadata_json,
+            db=conn,
+            importance=importance,
+        )
+
+    def _do_write_vec_key():
+        return _write_vec_key(conn, f"{category}/{title_slug}")
+
+    def _do_write_file():
+        atomic_write(file_path, markdown_content, encoding="utf-8")
+
+    return _saga_save_memory(
+        conn=conn,
+        note_id=f"{category}/{title_slug}",
+        file_path=file_path,
+        markdown_content=markdown_content,
+        db_path=db_path_obj,
+        do_upsert_db=_do_upsert_db,
+        do_write_vec_key=_do_write_vec_key,
+        do_write_file=_do_write_file,
+        lock_already_held=lock_already_held,
+    )
+
+
+def _apply_saga_fallback_policy(category, title_slug):
+    """Decide what to do when the saga path raises.
+
+    Saga-failure policy (C3 fix, 2026-06-22): the saga path is the
+    crash-consistent default.  A failed saga raises ``RuntimeError``
+    by default rather than silently dropping the write.  Operators can
+    opt into the legacy best-effort fallback by setting
+    ``MEMORY_SAGA_FALLBACK=allow``.
+
+    On the default (raise) path, this function:
+      1. Increments ``_saga_fallback_counter`` for telemetry, if available.
+      2. Raises ``RuntimeError`` with a message that tells the operator
+         how to switch to the legacy path.
+
+    On the allow path, this function returns silently — the caller then
+    routes through ``_persist_to_db``.
+    """
+    import os
+
+    if os.environ.get("MEMORY_SAGA_FALLBACK", "raise") == "allow":
+        return
+    # S2 fix: counter for telemetry.  Even when fallback is allowed,
+    # the operator should know it happened.
+    try:
+        from saga import _saga_fallback_counter
+
+        _saga_fallback_counter.inc()
+    except Exception:
+        pass
+    raise RuntimeError(
+        f"saga_save_memory failed for {category}/{title_slug}; "
+        f"refusing to fall back silently.  Set "
+        f"MEMORY_SAGA_FALLBACK=allow to opt into the legacy "
+        f"non-saga path.  Original error: see logs."
+    ) from None
+
+
+def _persist_via_saga_or_fallback(
+    *,
+    conn,
+    db_path_obj,
+    category,
+    title_slug,
+    content,
+    tags_list,
+    pinned,
+    now_iso,
+    is_global,
+    metadata_json,
+    file_path,
+    markdown_content,
+    importance,
+    lock_already_held: bool = False,
+    _conn_is_shared: bool = False,
+):
+    """Persist a memory via the saga path, with policy-driven fallback.
+
+    Tries the saga-wrapped path first.  If the saga raises, the failure
+    is logged and the policy in ``_apply_saga_fallback_policy`` decides
+    whether to fall back to ``_persist_to_db`` (legacy) or to raise.
+
+    Returns a ``(note_id, conn_after)`` tuple:
+
+    * ``note_id`` is the canonical note id on success, or an ``_err``
+      envelope string on legacy-path failure.
+    * ``conn_after`` is the connection the caller should pass into
+      ``_run_post_save_hooks`` — ``None`` when the saga path committed
+      (the saga owns commit/close) or the legacy ``_persist_to_db``
+      closed the connection (B7: post-hooks re-acquire if they need
+      the conn).
+
+    ``lock_already_held`` (P0-2 fix, 2026-06-22): when True, the saga
+    skips its internal file-lock acquisition.  save_memory acquires the
+    file lock before the conn and passes True so the saga doesn't try
+    to double-acquire the same flock (which would block forever on a
+    different fd for the same file).
+    """
+    note_id = None
+    saga_ok = False
+    if _is_saga_enabled():
+        try:
+            note_id = _try_saga_persist(
+                conn=conn,
+                db_path_obj=db_path_obj,
+                category=category,
+                title_slug=title_slug,
+                content=content,
+                tags_list=tags_list,
+                pinned=pinned,
+                now_iso=now_iso,
+                is_global=is_global,
+                metadata_json=metadata_json,
+                file_path=file_path,
+                markdown_content=markdown_content,
+                importance=importance,
+                lock_already_held=lock_already_held,
+            )
+            saga_ok = True
+        except Exception as saga_exc:
+            logger.warning(
+                "saga_save_memory failed for %s/%s, considering fallback: %s",
+                category,
+                title_slug,
+                saga_exc,
+            )
+
+    if not saga_ok:
+        # Saga raised or was disabled.  Decide whether to fall back.
+        _apply_saga_fallback_policy(category, title_slug)
+        note_id = _persist_to_db(
+            conn,
+            db_path_obj,
+            category,
+            title_slug,
+            content,
+            tags_list,
+            pinned,
+            now_iso,
+            is_global,
+            metadata_json,
+            file_path,
+            markdown_content,
+            importance,
+            _conn_is_shared=_conn_is_shared,
+        )
+        if not _conn_is_shared:
+            conn = (
+                None  # B7: _persist_to_db closed conn; post-hooks re-acquire if needed
+            )
+    return note_id, conn
+
+
+def _audit_save_failure(db_path_obj, note_id, category, title_slug, _start_time):
+    """Best-effort audit log of a save that returned an ``_err`` envelope.
+
+    Called when ``save_memory`` produced a failure envelope (validation
+    error, DB error, etc.) so the failure shows up in the audit table
+    with the right ``tool="memory_save"`` row.  All exceptions are
+    swallowed — this is the very last thing the save path does, and
+    audit failures must not become save failures.
+    """
+    try:
+        audit.enqueue_audit(
+            db_path=str(db_path_obj),
+            tool="memory_save",
+            args={
+                "category": category,
+                "title_slug": title_slug,
+                "error": note_id[:200] if isinstance(note_id, str) else "",
+            },
+            results_count=0,
+            top1_id=None,
+            latency_ms=(time.time() - _start_time) * 1000.0,
+            error=note_id[:500] if isinstance(note_id, str) else "",
+        )
+    except Exception:
+        pass
+
+
+def save_memory(
+    content: str,
+    category: str,
+    title_slug: str,
+    tags: Optional[list] = None,
+    pinned: bool = False,
+    is_global: bool = False,
+    safety_wiring: bool = True,
+    db_path: str | None = None,
+    _now_iso: str | None = None,
+    importance: int = 3,
+    _conn=None,
+):
+    """Write a memory note to disk and update the FTS5 index incrementally.
+
+    This is the core save function used by the MCP tool wrapper
+    ``memory_save`` (which keeps the MCP tool surface unchanged). The
+    ``safety_wiring`` kwarg controls whether the contradiction check
+    runs at save-time:
+
+    * ``safety_wiring=True`` (default since 2026-06-07 BLK-1): runs
+      ``memory_contradiction_save.check_contradictions_on_save``
+      best-effort against the top-N most-recent notes. Findings are
+      logged to the audit table as a separate
+      ``memory_save_contradiction_check`` row (queryable via
+      ``memory_audit_query``) and surfaced as a structured warning in
+      the server log. The function still returns the canonical
+      ``note_id`` string so the MCP tool surface is unchanged.
+    * ``safety_wiring=False``: skips the contradiction check entirely.
+      The save is faster and lighter; callers that want to opt out
+      of safety wiring can pass this flag explicitly.
+
+    Returns:
+        The canonical ``note_id`` string (e.g. ``"lessons/foo"``) on a
+        successful save. On validation/persistence errors, an ``_err``
+        envelope string (``"Error [CODE]: message"``).
+
+        BLK-1 (2026-06-07): ``safety_wiring=True`` is now the default.
+        The contradiction check is run best-effort against the top-N
+        most-recent notes; any findings are logged to the audit table
+        as a separate ``memory_save_contradiction_check`` row (queryable
+        via ``memory_audit_query``) and surfaced as a structured warning
+        in the server log. The function still returns the canonical
+        note_id string so the MCP tool surface is unchanged — callers
+        that need the contradictions programmatically can read them
+        from the audit log or call ``memory_check_contradictions``
+        explicitly.
+    """
+    from db import _local_state
+
+    _local_state.in_save_pipeline = True
+    try:
+        _start_time = time.time()
+        result = _validate_save_params(content, category, title_slug, tags)
+        if isinstance(result, str):
+            return result
+        tags_list, _tags_str = result
+        # H9: Prompt-injection scan — pure regex, no side effects, runs on every
+        # path (MCP tool + hook) since both delegate to save_memory.
+        inj_result = _scan_for_injection_or_skip(content, category, title_slug)
+        if inj_result is not None:
+            return inj_result
+        result = _resolve_save_paths(category, title_slug, is_global, db_path)
+        if isinstance(result, str):
+            return result
+        target_base, file_path, _category_dir, _project_root = result
+        _markdown, _fm_meta, now_iso, metadata_json = _build_memory_file(
+            content, category, title_slug, tags_list, pinned, now_iso=_now_iso
+        )
+        db_path_obj = (
+            Path(db_path) if db_path is not None else target_base / "memory.db"
+        )
+        # Scenario 5 fix (2026-06-22): invalidate the per-db-path pragma
+        # cache on every save.  Without this, an in-flight save that
+        # started before a migration could write to a column the
+        # migration had just added, using the stale column list.  The
+        # cache lookup is cheap (one dict-pop), and the next call to
+        # ``_detect_schema_features`` re-queries ``PRAGMA table_info``
+        # to refresh.
+        with _pragma_cache_lock:
+            _pragma_cache.pop(str(db_path_obj), None)
+        # P0-2 fix (2026-06-22): acquire the file lock BEFORE the conn so
+        # the save_memory path matches the incremental path's lock order
+        # (file lock -> DB conn, in _update_memory_index_incremental).  The
+        # previous order (conn -> file lock) was a lock-order inversion that
+        # could deadlock if the conn ever became process-wide.  We pass
+        # ``lock_already_held=True`` to the saga so it skips its internal
+        # file-lock acquisition — double-acquiring the same flock from the
+        # same process on a different fd would block forever.
+        #
+        # P0-5 fix (2026-06-22): _acquire_lock now re-raises FileLockError
+        # (per its strict=True contract).  We catch it here and proceed
+        # without the lock so a contended lock doesn't fail the save —
+        # the pool's per-thread conn still gives intra-process isolation,
+        # and intra-process callers using the same path from different
+        # threads are already serialized via the pool's per-thread keys.
+        from _lazy_imports import FileLockError
+
+        try:
+            lock_file = _acquire_lock(db_path_obj)
+        except FileLockError as _fle:
+            logger.warning(
+                "save_memory: write lock contended for %s, proceeding without it: %s",
+                db_path_obj,
+                _fle,
+            )
+            lock_file = None
+        if _conn is not None:
+            conn = _conn
+        else:
+            conn = _acquire_db_connection(
+                db_path_obj, category, title_slug, _start_time
+            )
+            if isinstance(conn, str):
+                if lock_file is not None:
+                    try:
+                        release_flock(lock_file)
+                    except Exception as _rfl_err:
+                        logger.debug(
+                            "save_memory: release_flock in early return: %s", _rfl_err
+                        )
+                return conn
+        # P0-1 fix (2026-06-22): the previous version of this function never
+        # called safe_close_db on the saga-path conn, so the pool's depth
+        # counter grew unbounded and the pool eventually exhausted in a
+        # long-running daemon.  The try/finally below ensures the conn is
+        # always returned to the pool — saga path returns the same conn
+        # (caller owns close), legacy fallback path returns None
+        # (_persist_to_db already closed it; close is a no-op in that case).
+        # P0-3 fix (2026-06-22): track exception state so we don't commit
+        # a transaction after an error — safe_close_db(should_commit=False)
+        # will rollback instead.
+        _save_errored = False
+        try:
+            # Persist via the saga path.  _persist_via_saga_or_fallback() handles
+            # both the saga call and the MEMORY_SAGA_FALLBACK policy; on the
+            # default policy, a saga failure raises (C3 fix 2026-06-22) and we
+            # never silently lose a write.  The auto-save hook
+            # (auto_save._upsert_memory) catches the raise, logs it, and
+            # returns False so the Claude Code tool-complete event continues
+            # normally — the two surfaces are intentionally decoupled.
+            note_id, conn = _persist_via_saga_or_fallback(
+                conn=conn,
+                db_path_obj=db_path_obj,
+                category=category,
+                title_slug=title_slug,
+                content=content,
+                tags_list=tags_list,
+                pinned=pinned,
+                now_iso=now_iso,
+                is_global=is_global,
+                metadata_json=metadata_json,
+                file_path=file_path,
+                markdown_content=_markdown,
+                importance=importance,
+                lock_already_held=(lock_file is not None),
+                _conn_is_shared=(_conn is not None),
+            )
+
+            if isinstance(note_id, str) and not note_id.startswith("Error ["):
+                _run_post_save_hooks(
+                    target_base,
+                    db_path_obj,
+                    note_id,
+                    category,
+                    title_slug,
+                    content,
+                    tags,
+                    pinned,
+                    is_global,
+                    safety_wiring,
+                    _start_time,
+                    conn=conn,
+                )
+                _enqueue_background_tasks(db_path_obj, note_id)
+            else:
+                _audit_save_failure(
+                    db_path_obj, note_id, category, title_slug, _start_time
+                )
+            return note_id
+        except Exception:
+            _save_errored = True
+            raise
+        finally:
+            if lock_file is not None:
+                try:
+                    release_flock(lock_file)
+                except Exception as _rfl_err2:
+                    logger.debug(
+                        "save_memory: release_flock in finally failed: %s", _rfl_err2
+                    )
+            if conn is not None and _conn is None:
+                try:
+                    safe_close_db(conn, should_commit=not _save_errored)
+                except Exception as _close_err:
+                    logger.debug(
+                        "save_memory: safe_close_db in finally failed: %s", _close_err
+                    )
+    finally:
+        _local_state.in_save_pipeline = False
+
+
+def memory_supersede_db(
+    db_path: Path, old_id: str, new_id: str, valid_to: Optional[str] = None
+) -> tuple[bool, Optional[str]]:
+    """Mark a memory as superseded by another memory.
+
+    Extracted from mcp_memory.py (2026-06-21) to keep all save-path
+    DB operations co-located in save_pipeline.
+
+    Returns:
+        (True, None) on success.
+        (False, error_msg) on error. The error message contains:
+          - "temporal columns" if schema is missing valid_from/valid_to/superseded_by
+          - "not found" if either old_id or new_id is missing
+          - other error string for unexpected failures
+    """
+    if valid_to is None:
+        valid_to = datetime.now(timezone.utc).isoformat()
+    if not db_path.exists():
+        return (False, f"memory.db not found at {db_path}")
+    db = None
+    try:
+        db = connection_pool.get(str(db_path), timeout=30.0)
+        db.execute("PRAGMA busy_timeout = 30000;")
+        # B5 fix: use the centralized schema detection helper.
+        features = _detect_schema_features(db_path, conn=db)
+        if not features["has_temporal"]:
+            return (False, "memory schema does not have temporal columns")
+        old_row = db.execute(
+            "SELECT id FROM memories WHERE id = ?", (old_id,)
+        ).fetchone()
+        if not old_row:
+            return (False, f"old_id '{old_id}' not found")
+        new_row = db.execute(
+            "SELECT id FROM memories WHERE id = ?", (new_id,)
+        ).fetchone()
+        if not new_row:
+            return (False, f"new_id '{new_id}' not found")
+        db.execute(
+            """UPDATE memories
+               SET valid_to = ?, superseded_by = ?, updated_at = ?
+               WHERE id = ?""",
+            (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
+        )
+        db.commit()
+        return (True, None)
+    except Exception as e:
+        return (False, str(e))
+    finally:
+        if db is not None:
+            safe_close_db(db)
+
+
+def reinforce_memories_db(db_path: Path, ids: list[str], delta: float) -> int:
+    """Apply +delta/-delta to success_score for each memory, then recalc fitness.
+
+    Extracted from mcp_memory.py (2026-06-21). success_score is clamped
+    to [-3.0, 5.0] so a single reinforce call cannot drive the score
+    out of the documented scale.
+
+    Returns:
+        Number of memory rows actually updated (skips unknown ids).
+    """
+    if not ids:
+        return 0
+    if not db_path.exists():
+        return 0
+    db = None
+    hits = 0
+    try:
+        db = connection_pool.get(str(db_path), timeout=30.0)
+        db.execute("PRAGMA busy_timeout = 30000;")
+        for mid in ids:
+            row = db.execute(
+                "SELECT success_score FROM memories WHERE id=?", (mid,)
+            ).fetchone()
+            if row:
+                old_score = row[0] or 0.0
+                new_score = max(-3.0, min(5.0, old_score + delta))
+                db.execute(
+                    "UPDATE memories SET success_score = ? WHERE id = ?",
+                    (new_score, mid),
+                )
+                hits += 1
+        db.commit()
+    except Exception as e:
+        logger.warning("reinforce_memories_db: %s", e)
+    finally:
+        if db is not None:
+            safe_close_db(db)
+    # Recalculate fitness scores for the touched ids
+    if hits:
+        try:
+            _recalculate_fitness_scores(db_path, ids)
+        except Exception as e:
+            logger.warning("reinforce_memories_db: fitness recalc failed: %s", e)
+    return hits

@@ -14,18 +14,28 @@ if [ ! -d "$GLOBAL_DIR" ]; then
     exit 1
 fi
 
-# 2. Create Local Directory Structure
+# 2. Install the package via pip if the CLI commands aren't available
+if ! command -v agentic-memory-server &>/dev/null; then
+    echo "agentic-memory CLI not found. Installing via pip..."
+    if command -v pip3 &>/dev/null; then
+        pip3 install --quiet agentic-memory
+    elif command -v pip &>/dev/null; then
+        pip install --quiet agentic-memory
+    else
+        echo "WARNING: pip not found. CLI commands will not be available."
+        echo "  Install manually: pip install agentic-memory"
+    fi
+fi
+
+# 3. Create Local Directory Structure
 echo "Creating local memory folders..."
 mkdir -p "$LOCAL_DIR"/{projects,lessons,preferences,sessions}
 
-# 3. Create the Symbolic Link to Global Memory
-if [ -L "$LOCAL_DIR/global" ] || [ -e "$LOCAL_DIR/global" ]; then
-    rm -rf "$LOCAL_DIR/global"
-fi
-ln -s "$GLOBAL_DIR" "$LOCAL_DIR/global"
+# 4. Create the Symbolic Link to Global Memory
+ln -sf "$GLOBAL_DIR" "$LOCAL_DIR/global"
 echo "Created symbolic link: $LOCAL_DIR/global -> $GLOBAL_DIR"
 
-# 4. Create the Local Memory Index (MEMORY.md)
+# 5. Create the Local Memory Index (MEMORY.md)
 cat << 'EOF' > "$LOCAL_DIR/MEMORY.md"
 ---
 created: 2026-01-01T00:00:00
@@ -49,8 +59,9 @@ related: []
 ## User Preferences
 EOF
 
-# 5. Write Default Topic Files
-cat << 'EOF' > "$LOCAL_DIR/preferences/workflow.md"
+# 6. Write Default Topic Files (only create if missing)
+if [ ! -f "$LOCAL_DIR/preferences/workflow.md" ]; then
+    cat << 'EOF' > "$LOCAL_DIR/preferences/workflow.md"
 ---
 created: 2026-01-01T00:00:00
 updated: 2026-01-01T00:00:00
@@ -73,11 +84,14 @@ related: []
 - **Durable Memory**: Always update the local and global memory indexes when new conventions or learnings arise.
 - **Compact Often**: When requested to "compact the memory", distill the current session events into a clean, permanent summary to keep context window efficient.
 EOF
+else
+    echo "  Skipping preferences/workflow.md (already exists, preserving user content)."
+fi
 
-# 6. Create skills directory if it doesn't exist
+# 7. Create skills directory if it doesn't exist
 mkdir -p "$HOME/.agents/skills"
 
-# 7. Append Agent Briefing to AGENTS.md (idempotent)
+# 8. Append Agent Briefing to AGENTS.md (idempotent)
 MARKER_START="# >>> Agentic Memory System >>>"
 MARKER_END="# <<< Agentic Memory System <<<"
 echo "Writing agent instructions to AGENTS.md..."
@@ -97,11 +111,14 @@ This project uses the **Agentic Memory System** for persistent, cross-session co
 Global config: $GLOBAL_DIR
 Local memory: $LOCAL_DIR/
 
+## Setup
+Run \`pip install agentic-memory\`.
+
 ## Bootstrapping — MANDATORY memory search at session start
 At session start, agents MUST:
 1. Read $LOCAL_DIR/MEMORY.md (the index)
 2. Read $LOCAL_DIR/preferences/tools.md (tool preferences)
-3. Search relevant memories using: python3 $GLOBAL_DIR/search_memory.py <query>
+3. Search relevant memories using: agentic-memory-search <query>
 
 ## MANDATORY Memory Save Rules
 You are REQUIRED to save memories. This is not optional. After ANY of these events:
@@ -115,23 +132,23 @@ You are REQUIRED to save memories. This is not optional. After ANY of these even
 - You discovered how a library/API works → save the knowledge
 
 ### Save at Session End (before yielding):
-- Run: python3 $GLOBAL_DIR/session_reflect.py "$LOCAL_DIR"
+- Run: python3 -m agentic_memory.session_reflect "$LOCAL_DIR"
 - This prompts you to save anything you learned during the session
 - If the script finds unsaved context, YOU MUST save it before finishing
 
 ### How to Save:
 Use the MCP tool: memory_save(content, category, title_slug, tags, pinned, is_global)
-Or CLI: python3 $GLOBAL_DIR/memory_mcp.py memory_save --content "..." --category lessons --title-slug "my-lesson" --tags '["tag1"]'
+Or CLI: agentic-memory-search <query>
 
 ### Global vs Local:
 - Lessons, pitfalls, preferences → is_global=true (shared across all projects)
 - Project-specific decisions, context → is_global=false (local to this project)
 
 ## Memory Upkeep
-- **Search**: python3 $GLOBAL_DIR/search_memory.py <query>
-- **Rebuild index**: python3 $GLOBAL_DIR/rebuild_index.py $LOCAL_DIR $LOCAL_DIR/memory.db
-- **Compact**: python3 $GLOBAL_DIR/consolidate_facts.py
-- **Session reflect**: python3 $GLOBAL_DIR/session_reflect.py $LOCAL_DIR
+- **Search**: agentic-memory-search <query>
+- **Rebuild index**: agentic-memory-rebuild $LOCAL_DIR $LOCAL_DIR/memory.db
+- **Compact**: agentic-memory-compact
+- **Session reflect**: python3 -m agentic_memory.session_reflect $LOCAL_DIR
 
 ## Cross-Project Knowledge
 - Global memories (in $GLOBAL_DIR) are symlinked at $LOCAL_DIR/global/
@@ -141,7 +158,7 @@ Or CLI: python3 $GLOBAL_DIR/memory_mcp.py memory_save --content "..." --category
 $MARKER_END
 EOF
 
-# 8. Append Instructions to CLAUDE.md (idempotent)
+# 9. Append Instructions to CLAUDE.md (idempotent)
 MARKER_START="# >>> Agentic Memory System >>>"
 MARKER_END="# <<< Agentic Memory System <<<"
 echo "Writing agent instructions to CLAUDE.md..."
@@ -157,13 +174,13 @@ $MARKER_START
 # Agentic Memory System
 
 ## Setup
-Run \`bash $GLOBAL_DIR/setup_memory.sh\` from project root to bootstrap.
+Run \`pip install agentic-memory\`.
 
 ## Agent Workflow
 At session start — MANDATORY memory search:
   Before answering ANY question, search for relevant memories:
   \`\`\`bash
-  python3 $GLOBAL_DIR/search_memory.py "topic keywords"
+  agentic-memory-search "topic keywords"
   \`\`\`
   This takes <100ms and gives you context from past sessions.
 
@@ -175,16 +192,23 @@ During work — MANDATORY memory saves:
 
 At session end — REQUIRED reflection:
   \`\`\`bash
-  python3 $GLOBAL_DIR/session_reflect.py $LOCAL_DIR
+  python3 -m agentic_memory.session_reflect $LOCAL_DIR
   \`\`\`
   Save any unsaved learnings before yielding.
 
 Maintenance (weekly):
-  - memory_compact() - Full tier migration + consolidation + rebuild
-  - memory_audit()   - Health check report
+  - agentic-memory-compact - Full tier migration + consolidation + rebuild
+  - memory_audit()         - Health check report
   - Review compaction-proposal.md in memory/sessions/
 
 $MARKER_END
 EOF
 
 echo "=== Agentic Memory Initialized Successfully ==="
+echo ""
+echo "CLI commands available after install:"
+echo "  agentic-memory-server    — Run the MCP server"
+echo "  agentic-memory-search    — Search memories"
+echo "  agentic-memory-rebuild   — Rebuild indexes"
+echo "  agentic-memory-compact   — Full compaction"
+echo "  agentic-memory-bootstrap — Bootstrap a project"

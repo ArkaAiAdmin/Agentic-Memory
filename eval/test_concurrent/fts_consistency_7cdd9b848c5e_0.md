@@ -1,0 +1,14 @@
+---
+created: 2026-06-16T02:32:51.176875
+updated: 2026-06-16T02:32:51.176875
+observed_at: 2026-06-16T02:32:51.176875
+tags: [fts_consistency_7cdd9b848c5e_0]
+pinned: false
+related: []
+valid_from: 2026-06-16T02:32:51.176875
+valid_to: null
+superseded_by: null
+
+# Fts_Consistency_7Cdd9B848C5E_0
+
+FTS consistency check uniquephrase 0

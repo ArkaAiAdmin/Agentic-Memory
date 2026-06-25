@@ -1,0 +1,138 @@
+{
+  "n_questions_total": 50,
+  "n_adversarial": 0,
+  "latency_ms": {
+    "mean": 0.26,
+    "p50": 0.21,
+    "p95": 0.48,
+    "max": 0.69
+  },
+  "metrics": {
+    "k=1": {
+      "multi-hop": {
+        "total": 24,
+        "session_hits": 7,
+        "session_recall_at_k": 0.2917,
+        "substring_hits": 0,
+        "substring_recall_at_k": 0.0
+      },
+      "single-hop": {
+        "total": 19,
+        "session_hits": 2,
+        "session_recall_at_k": 0.1053,
+        "substring_hits": 1,
+        "substring_recall_at_k": 0.0526
+      },
+      "temporal": {
+        "total": 7,
+        "session_hits": 0,
+        "session_recall_at_k": 0.0,
+        "substring_hits": 0,
+        "substring_recall_at_k": 0.0
+      },
+      "__overall__": {
+        "total": 50,
+        "session_hits": 9,
+        "session_recall_at_k": 0.18,
+        "substring_hits": 1,
+        "substring_recall_at_k": 0.02
+      },
+      "__conv_dependent__": {
+        "total": 50,
+        "session_hits": 9,
+        "session_recall_at_k": 0.18,
+        "substring_hits": 1,
+        "substring_recall_at_k": 0.02
+      }
+    },
+    "k=5": {
+      "multi-hop": {
+        "total": 24,
+        "session_hits": 7,
+        "session_recall_at_k": 0.2917,
+        "substring_hits": 0,
+        "substring_recall_at_k": 0.0
+      },
+      "single-hop": {
+        "total": 19,
+        "session_hits": 2,
+        "session_recall_at_k": 0.1053,
+        "substring_hits": 1,
+        "substring_recall_at_k": 0.0526
+      },
+      "temporal": {
+        "total": 7,
+        "session_hits": 0,
+        "session_recall_at_k": 0.0,
+        "substring_hits": 0,
+        "substring_recall_at_k": 0.0
+      },
+      "__overall__": {
+        "total": 50,
+        "session_hits": 9,
+        "session_recall_at_k": 0.18,
+        "substring_hits": 1,
+        "substring_recall_at_k": 0.02
+      },
+      "__conv_dependent__": {
+        "total": 50,
+        "session_hits": 9,
+        "session_recall_at_k": 0.18,
+        "substring_hits": 1,
+        "substring_recall_at_k": 0.02
+      }
+    },
+    "k=10": {
+      "multi-hop": {
+        "total": 24,
+        "session_hits": 7,
+        "session_recall_at_k": 0.2917,
+        "substring_hits": 0,
+        "substring_recall_at_k": 0.0
+      },
+      "single-hop": {
+        "total": 19,
+        "session_hits": 3,
+        "session_recall_at_k": 0.1579,
+        "substring_hits": 1,
+        "substring_recall_at_k": 0.0526
+      },
+      "temporal": {
+        "total": 7,
+        "session_hits": 0,
+        "session_recall_at_k": 0.0,
+        "substring_hits": 0,
+        "substring_recall_at_k": 0.0
+      },
+      "__overall__": {
+        "total": 50,
+        "session_hits": 10,
+        "session_recall_at_k": 0.2,
+        "substring_hits": 1,
+        "substring_recall_at_k": 0.02
+      },
+      "__conv_dependent__": {
+        "total": 50,
+        "session_hits": 10,
+        "session_recall_at_k": 0.2,
+        "substring_hits": 1,
+        "substring_recall_at_k": 0.02
+      }
+    }
+  },
+  "wall_time_seconds": 0.01,
+  "n_sessions_corpus": 5882,
+  "n_dia_mappings": 5882,
+  "config": {
+    "data": "/Users/arka/.config/agentic-memory/eval/datasets/locomo10.json",
+    "memory_dir": "/tmp/locomo-smoke",
+    "k_values": [
+      1,
+      5,
+      10
+    ],
+    "max_questions": 50,
+    "categories_filter": null,
+    "include_invalid": true
+  }
+}

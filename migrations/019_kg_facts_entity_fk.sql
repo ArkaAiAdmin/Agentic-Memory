@@ -1,0 +1,98 @@
+-- Migration 019: kg_facts ON DELETE SET NULL for entity FKs
+--
+-- 2026-06-23 (pre-existing bug fix): kg_facts.subject_entity_id and
+-- kg_facts.object_entity_id are FKs to kg_entities(id) but have no
+-- ON DELETE clause. When kg_dedup.merge_entities() tries to delete a
+-- merged entity, the FK constraint fails (sqlite returns
+-- "FOREIGN KEY constraint failed"). This bug was latent for a long
+-- time — it was masked by the rare intersection of:
+--   1. The dedup actually tries to DELETE the entity
+--   2. There's a kg_facts row referencing it via subject/object_entity_id
+--
+-- Background worker was failing every 5 minutes with this error
+-- (24 occurrences in worker.log) until the fix.
+--
+-- Fix: add ON DELETE SET NULL to both FKs. SQLite requires recreating
+-- the table to change FK clauses (per the SQLite docs on ALTER TABLE,
+-- which silently ignores attempts to add FK clauses), so we use the
+-- standard 12-step recreation pattern (backup, drop, recreate,
+-- copy).
+--
+-- This migration is idempotent: the recreation uses the same final
+-- schema (with the FK fix), so running it on an already-migrated DB
+-- is a no-op for the data. The only change is the FK clause.
+--
+-- After this migration, deleting a kg_entities row that has kg_facts
+-- references will set the referencing subject_entity_id or
+-- object_entity_id to NULL (instead of failing the delete). This is
+-- the desired behavior — we don't want orphan FK references blocking
+-- the delete.
+
+-- ---------------------------------------------------------------------------
+-- 1. Back up existing kg_facts
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS kg_facts_backup_019 AS SELECT * FROM kg_facts;
+
+-- ---------------------------------------------------------------------------
+-- 2. Drop the old table
+-- ---------------------------------------------------------------------------
+
+DROP TABLE kg_facts;
+
+-- ---------------------------------------------------------------------------
+-- 3. Recreate with ON DELETE SET NULL on the entity FKs
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE kg_facts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object TEXT NOT NULL,
+    confidence REAL DEFAULT 1.0,
+    locked INTEGER DEFAULT 0,
+    first_seen REAL,
+    last_seen REAL,
+    mention_count INTEGER DEFAULT 1,
+    source_memory TEXT,
+    context TEXT,
+    subject_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+    object_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+    event_time REAL,
+    event_time_granularity TEXT,
+    transaction_time REAL,
+    valid_at REAL,
+    invalid_at REAL,
+    superseded_by INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL,
+    supersedes INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL,
+    contradiction_score REAL DEFAULT 0.0,
+    invalidation_reason TEXT,
+    UNIQUE(subject, predicate, object),
+    FOREIGN KEY (source_memory) REFERENCES memories(id) ON DELETE SET NULL
+);
+
+-- ---------------------------------------------------------------------------
+-- 4. Restore the data
+-- ---------------------------------------------------------------------------
+
+INSERT INTO kg_facts SELECT * FROM kg_facts_backup_019;
+
+-- ---------------------------------------------------------------------------
+-- 5. Recreate the indexes (autoindex 1 covers the UNIQUE constraint)
+-- ---------------------------------------------------------------------------
+
+CREATE INDEX idx_kg_facts_subject ON kg_facts(subject);
+CREATE INDEX idx_kg_facts_predicate ON kg_facts(predicate);
+CREATE INDEX idx_kg_facts_object ON kg_facts(object);
+CREATE INDEX idx_kg_facts_spo ON kg_facts(subject, predicate, object);
+CREATE INDEX idx_kg_facts_subject_entity ON kg_facts(subject_entity_id);
+CREATE INDEX idx_kg_facts_object_entity ON kg_facts(object_entity_id);
+CREATE INDEX idx_kg_facts_validity ON kg_facts(valid_at, invalid_at);
+CREATE INDEX idx_kg_facts_superseded_by ON kg_facts(superseded_by);
+CREATE INDEX idx_kg_facts_event_time ON kg_facts(event_time);
+
+-- ---------------------------------------------------------------------------
+-- 6. Drop the backup
+-- ---------------------------------------------------------------------------
+
+DROP TABLE kg_facts_backup_019;

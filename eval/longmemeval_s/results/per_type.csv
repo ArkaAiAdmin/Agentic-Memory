@@ -1,0 +1,13 @@
+system,type,n,recall_all@5,recall_all@10,recall_all@30,recall_all@50,ndcg_any@10
+bm25+ce,single-session-assistant,56,1.0,1.0,1.0,1.0,1.0
+bm25+ce,single-session-user,64,0.9844,1.0,1.0,1.0,0.8499
+bm25+ce,knowledge-update,72,0.9722,0.9861,1.0,1.0,0.9665
+bm25+ce,single-session-preference,30,0.8667,0.9667,1.0,1.0,0.8056
+bm25+ce,multi-session,121,0.843,0.9256,0.9752,0.9835,0.9488
+bm25+ce,temporal-reasoning,127,0.8425,0.9134,0.9528,0.9685,0.9018
+bm25_only,single-session-assistant,56,1.0,1.0,1.0,1.0,1.0
+bm25_only,single-session-user,64,1.0,1.0,1.0,1.0,0.9826
+bm25_only,knowledge-update,72,0.9722,0.9861,1.0,1.0,0.9792
+bm25_only,single-session-preference,30,0.8667,0.9667,1.0,1.0,0.744
+bm25_only,temporal-reasoning,127,0.7402,0.8661,0.9606,0.9685,0.8786
+bm25_only,multi-session,121,0.6777,0.8017,0.9421,0.9835,0.8642

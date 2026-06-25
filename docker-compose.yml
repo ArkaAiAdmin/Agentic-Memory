@@ -1,0 +1,119 @@
+# docker-compose.yml — 3 services sharing a single agentic-memory image.
+#
+# Usage:
+#     docker compose build           # build the image
+#     docker compose up -d mcp       # start only the MCP server
+#     docker compose up -d sync      # start only the sync server
+#     docker compose up -d cron      # start only the cron scheduler
+#     docker compose --profile all up  # start all 3
+#
+# The 3 services share a /data volume (the SQLite WAL means even
+# the cron service can write while the MCP server is serving
+# reads). The mcp and sync services stay up indefinitely; the
+# cron service is a long-lived loop too (it sleeps 5s between
+# scheduling checks).
+#
+# Important: the SQLite WAL only allows ONE writer at a time.
+# The agentic-memory saga uses flock for cross-process safety
+# (see save/saga.py and the install_crontab.sh H-fix from
+# 2026-06-22). The flock files live in /data/locks.
+
+version: "3.9"
+
+# Named volumes so the data persists across `docker compose down`.
+# We keep the lock directory inside the same volume so the flock
+# is visible to all 3 services.
+volumes:
+  memory-data:
+
+services:
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-memory:latest
+    container_name: agentic-memory-mcp
+    restart: unless-stopped
+    environment:
+      SERVICE: mcp
+      MEMORY_DB_PATH: /data/memory.db
+      MEMORY_LOCAL_DIR: /data
+      # Override these in production or via .env file.
+      MEMORY_SELF_DIRECTED: "1"
+      MEMORY_KNOWLEDGE_GRAPH: "1"
+      MEMORY_TEMPORAL_TIERS: "1"
+    volumes:
+      - memory-data:/data
+    # MCP server uses stdio (no network port). opencode / claude
+    # code attach via `docker exec` or via a stdio proxy.
+    # If you need a network MCP, add -p 9878:9878 and run
+    # `python -m mcp.server.stdio` instead.
+    stdin_open: true
+    tty: true
+    networks:
+      - agentic-mem
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /data/memory.db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  sync:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-memory:latest
+    container_name: agentic-memory-sync
+    restart: unless-stopped
+    environment:
+      SERVICE: sync
+      MEMORY_DB_PATH: /data/memory.db
+      MEMORY_LOCAL_DIR: /data
+      # Sync server security — see AGENTS.md "Sync Server Security Model".
+      # MEMORY_SYNC_TOKEN must be set in production.
+      MEMORY_SYNC_TOKEN: "${MEMORY_SYNC_TOKEN:-}"
+      MEMORY_SYNC_HMAC_SECRET: "${MEMORY_SYNC_HMAC_SECRET:-}"
+      MEMORY_SYNC_TLS_CERT: "${MEMORY_SYNC_TLS_CERT:-}"
+      MEMORY_SYNC_TLS_KEY: "${MEMORY_SYNC_TLS_KEY:-}"
+      MEMORY_SYNC_CORS_ORIGINS: "${MEMORY_SYNC_CORS_ORIGINS:-}"
+    volumes:
+      - memory-data:/data
+    ports:
+      - "9877:9877"
+    networks:
+      - agentic-mem
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /data/memory.db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-memory:latest
+    container_name: agentic-memory-cron
+    restart: unless-stopped
+    environment:
+      SERVICE: cron
+      MEMORY_DB_PATH: /data/memory.db
+      MEMORY_LOCAL_DIR: /data
+      LOG_LEVEL: INFO
+    volumes:
+      - memory-data:/data
+    networks:
+      - agentic-mem
+    # Cron is a long-lived loop. No port exposure.
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /data/memory.db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  agentic-mem:
+    driver: bridge

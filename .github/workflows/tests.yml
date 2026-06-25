@@ -1,0 +1,82 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install pytest pytest-anyio mcp mypy
+          pip install model2vec numpy usearch 2>/dev/null || echo "embeddings optional"
+      - name: Drift checks (tool registry + cron wirings)
+        run: |
+          . venv/bin/activate
+          python scripts/tool_drift_check.py
+          python scripts/cron_wirings_check.py
+      - name: Run full test suite
+        env:
+          # MEMORY_RERANKER_DISABLED=1 prevents the search pipeline from
+          # invoking the real Qwen3-Reranker-0.6B model in CI. The model
+          # is 600MB+ and the load is 3-5s. The unit tests of the reranker
+          # module work with or without this flag (they mock get_reranker).
+          # The e2e test_adversarial_e2e.py::test_3_3_cross_encoder_reranking
+          # uses deep_rerank=True and falls back to the weak CE when disabled.
+          # To run the real model in CI, set RUN_SLOW_TESTS=1 and remove this.
+          MEMORY_RERANKER_DISABLED: "1"
+          # MEMORY_CTR_TUNING=0 disables CTR-tuned ranking weights so
+          # search ranking tests are deterministic.
+          MEMORY_CTR_TUNING: "0"
+        run: |
+          . venv/bin/activate
+          pytest eval/ -q --no-header -p no:cacheprovider \
+            --ignore=eval/test_all_extended.py \
+            --ignore=eval/test_all_regression.py
+      - name: Collect coverage (Python 3.12+)
+        if: matrix.python-version == '3.12'
+        run: |
+          . venv/bin/activate
+          pip install coverage
+          coverage run -m pytest eval/ -q --no-header -p no:cacheprovider \
+            --ignore=eval/test_all_extended.py \
+            --ignore=eval/test_all_regression.py
+          coverage report --skip-empty --fail-under=60
+          coverage xml -o coverage.xml
+      - uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.12'
+        with:
+          name: coverage-report
+          path: coverage.xml
+      - name: Type-check core modules (mypy)
+        # 2026-06-20: mypy gate for the 5 core write/read/sync modules.
+        # Baseline is 0 (all 141 errors fixed across 28 files).
+        # CI fails on any new mypy error.
+        if: matrix.python-version == '3.12'
+        env:
+          BASELINE: "0"
+        run: |
+          . venv/bin/activate
+          errors=$(venv/bin/mypy 2>&1 | grep -cE '^[^/].*error' || true)
+          echo "mypy errors: $errors (baseline: $BASELINE)"
+          if [ "$errors" -gt "$BASELINE" ]; then
+            echo "::error::mypy error count ($errors) exceeds baseline ($BASELINE). Fix new errors before merging."
+            exit 1
+          fi
+

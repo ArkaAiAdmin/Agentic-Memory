@@ -1,0 +1,5 @@
+[mutmut]
+source_paths = memory_common.py,save_pipeline.py,search_pipeline.py,embedding_search.py,audit.py
+tests_dir = eval/
+runner = python -m pytest eval/test_adversarial_e2e.py eval/test_concurrent.py -x -q --tb=no
+timeout = 60

@@ -6,10 +6,20 @@ venv/
 memory/
 lessons/
 preferences/
-docs/
 .rebuild.lock
 BUG-FIX-REPORT.md
 E2E-TEST-REPORT.md
 
+# Documentation is committed (M2 fix). The docs/ tree contains
+# handbook pages and should travel with the source.
+# But the rendered mkdocs output (site/) is build-only and ignored.
+site/
+
+# Build hook output (created by docs/_hooks/copy_docker_readme.py
+# during `mkdocs build` and removed on_post_build).
+docs/docker_README.md
+
 # OS
 .DS_Store
+
+.devfleet-worktrees/

@@ -1,0 +1,748 @@
+{
+  "n_failures": 22,
+  "by_type": {
+    "multi-session": 9,
+    "single-session-preference": 1,
+    "temporal-reasoning": 11,
+    "knowledge-update": 1
+  },
+  "by_label": {
+    "NO_TIME_EXPR": 18,
+    "MULTI_HOP": 20,
+    "TEMPORAL(in <month>)": 1,
+    "SINGLE_GOLD": 2,
+    "TEMPORAL(past \\1,during the past)": 1,
+    "TEMPORAL(\\1 days ago)": 2
+  },
+  "failures": [
+    {
+      "qid": "6d550036",
+      "type": "multi-session",
+      "question": "How many projects have I led or am currently leading?",
+      "question_date": "2023/05/30 (Tue) 23:32",
+      "answer": 2,
+      "n_gold": 4,
+      "gold_session_ids": [
+        "answer_ec904b3c_2",
+        "answer_ec904b3c_3",
+        "answer_ec904b3c_4",
+        "answer_ec904b3c_1"
+      ],
+      "gold_dates": [
+        "2023/05/21 (Sun) 19:38",
+        "2023/05/24 (Wed) 15:24",
+        "2023/05/25 (Thu) 18:44",
+        "2023/05/29 (Mon) 09:25"
+      ],
+      "top10": [
+        "2e4430d8_2",
+        "answer_ec904b3c_1",
+        "dae3906e_2",
+        "sharegpt_zciCXP1_12",
+        "sharegpt_J7ZAFLd_0",
+        "a9981dc6_3",
+        "f6246b5f",
+        "sharegpt_UbMVpdp_93",
+        "0bab76de",
+        "eb682e52_2"
+      ],
+      "hits_in_top10": [
+        "answer_ec904b3c_1"
+      ]
+    },
+    {
+      "qid": "gpt4_15e38248",
+      "type": "multi-session",
+      "question": "How many pieces of furniture did I buy, assemble, sell, or fix in the past few months?",
+      "question_date": "2023/05/30 (Tue) 15:31",
+      "answer": "4",
+      "n_gold": 4,
+      "gold_session_ids": [
+        "answer_8858d9dc_2",
+        "answer_8858d9dc_1",
+        "answer_8858d9dc_3",
+        "answer_8858d9dc_4"
+      ],
+      "gold_dates": [
+        "2023/05/21 (Sun) 03:13",
+        "2023/05/26 (Fri) 03:20",
+        "2023/05/26 (Fri) 17:21",
+        "2023/05/29 (Mon) 09:49"
+      ],
+      "top10": [
+        "answer_8858d9dc_2",
+        "answer_8858d9dc_4",
+        "sharegpt_mm9tc5g_0",
+        "7784236e_2",
+        "d4ab49f1",
+        "530742d1",
+        "answer_8858d9dc_1",
+        "263efe64_1",
+        "1e7f3172_5",
+        "sharegpt_5Lp66E9_0"
+      ],
+      "hits_in_top10": [
+        "answer_8858d9dc_2",
+        "answer_8858d9dc_1",
+        "answer_8858d9dc_4"
+      ]
+    },
+    {
+      "qid": "10d9b85a",
+      "type": "multi-session",
+      "question": "How many days did I spend attending workshops, lectures, and conferences in April?",
+      "question_date": "2023/05/01 (Mon) 23:15",
+      "answer": "3 days",
+      "n_gold": 2,
+      "gold_session_ids": [
+        "answer_e0585cb5_2",
+        "answer_e0585cb5_1"
+      ],
+      "gold_dates": [
+        "2023/05/01 (Mon) 16:19",
+        "2023/05/01 (Mon) 20:24"
+      ],
+      "top10": [
+        "answer_e0585cb5_2",
+        "c51583cd_3",
+        "84889496_1",
+        "5cbfaf3e_4",
+        "cbd1fe79_2",
+        "ultrachat_103852",
+        "faac3c60",
+        "8dd2fca2",
+        "d576152e_1",
+        "868d75a8"
+      ],
+      "hits_in_top10": [
+        "answer_e0585cb5_2"
+      ]
+    },
+    {
+      "qid": "1a8a66a6",
+      "type": "multi-session",
+      "question": "How many magazine subscriptions do I currently have?",
+      "question_date": "2023/04/01 (Sat) 23:49",
+      "answer": 2,
+      "n_gold": 4,
+      "gold_session_ids": [
+        "answer_2bd23659_4",
+        "answer_2bd23659_1",
+        "answer_2bd23659_3",
+        "answer_2bd23659_2"
+      ],
+      "gold_dates": [
+        "2023/04/01 (Sat) 00:37",
+        "2023/04/01 (Sat) 04:47",
+        "2023/04/01 (Sat) 04:52",
+        "2023/04/01 (Sat) 19:02"
+      ],
+      "top10": [
+        "answer_2bd23659_3",
+        "answer_2bd23659_1",
+        "54aa4875",
+        "ultrachat_456324",
+        "answer_2bd23659_2",
+        "02042eab_2",
+        "22eebf8a_2",
+        "1e91a236_1",
+        "b01aafcb_2",
+        "ultrachat_287097"
+      ],
+      "hits_in_top10": [
+        "answer_2bd23659_1",
+        "answer_2bd23659_3",
+        "answer_2bd23659_2"
+      ]
+    },
+    {
+      "qid": "gpt4_372c3eed",
+      "type": "multi-session",
+      "question": "How many years in total did I spend in formal education from high school to the completion of my Bachelor's degree?",
+      "question_date": "2021/08/20 (Fri) 23:34",
+      "answer": "10 years",
+      "n_gold": 3,
+      "gold_session_ids": [
+        "answer_35c5419d_1",
+        "answer_35c5419d_3",
+        "answer_35c5419d_2"
+      ],
+      "gold_dates": [
+        "2021/08/20 (Fri) 04:09",
+        "2021/08/20 (Fri) 14:38",
+        "2021/08/20 (Fri) 21:27"
+      ],
+      "top10": [
+        "answer_35c5419d_3",
+        "answer_35c5419d_1",
+        "sharegpt_6VqlSoL_25",
+        "4d04b866",
+        "0d396995_1",
+        "ultrachat_290513",
+        "10647770",
+        "sharegpt_jSnesqJ_15",
+        "ultrachat_424492",
+        "sharegpt_2hMUduQ_1"
+      ],
+      "hits_in_top10": [
+        "answer_35c5419d_1",
+        "answer_35c5419d_3"
+      ]
+    },
+    {
+      "qid": "81507db6",
+      "type": "multi-session",
+      "question": "How many graduation ceremonies have I attended in the past three months?",
+      "question_date": "2023/07/21 (Fri) 23:33",
+      "answer": 3,
+      "n_gold": 5,
+      "gold_session_ids": [
+        "answer_da3c1266_2",
+        "answer_da3c1266_1",
+        "answer_da3c1266_4",
+        "answer_da3c1266_3",
+        "answer_da3c1266_5"
+      ],
+      "gold_dates": [
+        "2023/07/21 (Fri) 02:52",
+        "2023/07/21 (Fri) 06:56",
+        "2023/07/21 (Fri) 09:29",
+        "2023/07/21 (Fri) 13:23",
+        "2023/07/21 (Fri) 14:52"
+      ],
+      "top10": [
+        "answer_da3c1266_2",
+        "answer_da3c1266_1",
+        "answer_da3c1266_4",
+        "answer_da3c1266_5",
+        "9071ba70_3",
+        "42fa05d3",
+        "5c2f41a0_1",
+        "ultrachat_162129",
+        "ultrachat_254248",
+        "ultrachat_229430"
+      ],
+      "hits_in_top10": [
+        "answer_da3c1266_2",
+        "answer_da3c1266_5",
+        "answer_da3c1266_4",
+        "answer_da3c1266_1"
+      ]
+    },
+    {
+      "qid": "d6233ab6",
+      "type": "single-session-preference",
+      "question": "I've been feeling nostalgic lately. Do you think it would be a good idea to attend my high school reunion?",
+      "question_date": "2023/05/30 (Tue) 01:29",
+      "answer": "The user would prefer responses that draw upon their personal experiences and memories, specifically their positive high school experiences such as being part of the debate team and taking advanced placement courses. They would prefer suggestions that highlight the potential benefits of attending the reunion, such as reconnecting with old friends and revisiting favorite subjects like history and economics. The user might not prefer generic or vague responses that do not take into account their individual experiences and interests.",
+      "n_gold": 1,
+      "gold_session_ids": [
+        "answer_b0fac439"
+      ],
+      "gold_dates": [
+        "2023/05/23 (Tue) 16:25"
+      ],
+      "top10": [
+        "e419b7c3_4",
+        "87cfeb28_2",
+        "94bc18df_3",
+        "0e726047",
+        "ultrachat_457634",
+        "ebb84f5b",
+        "ecfd2047_1",
+        "ultrachat_499691",
+        "e6c3a50a",
+        "sharegpt_xni9yYO_6"
+      ],
+      "hits_in_top10": []
+    },
+    {
+      "qid": "ba358f49",
+      "type": "multi-session",
+      "question": "How many years will I be when my friend Rachel gets married?",
+      "question_date": "2022/09/01 (Thu) 23:52",
+      "answer": "33",
+      "n_gold": 2,
+      "gold_session_ids": [
+        "answer_cbd08e3c_2",
+        "answer_cbd08e3c_1"
+      ],
+      "gold_dates": [
+        "2022/09/01 (Thu) 03:06",
+        "2022/09/01 (Thu) 16:14"
+      ],
+      "top10": [
+        "answer_cbd08e3c_1",
+        "4f838497_2",
+        "9cc709cb",
+        "762d288d_1",
+        "385683f0_2",
+        "ultrachat_465468",
+        "9a584663_2",
+        "ultrachat_317048",
+        "648d9cda",
+        "fb117eb0_2"
+      ],
+      "hits_in_top10": [
+        "answer_cbd08e3c_1"
+      ]
+    },
+    {
+      "qid": "c18a7dc8",
+      "type": "multi-session",
+      "question": "How many years older am I than when I graduated from college?",
+      "question_date": "2023/05/30 (Tue) 23:37",
+      "answer": "7",
+      "n_gold": 2,
+      "gold_session_ids": [
+        "answer_2e2085fa_1",
+        "answer_2e2085fa_2"
+      ],
+      "gold_dates": [
+        "2023/05/25 (Thu) 17:24",
+        "2023/05/26 (Fri) 19:08"
+      ],
+      "top10": [
+        "answer_2e2085fa_1",
+        "9d5a389d",
+        "5022812c",
+        "f716720c_3",
+        "sharegpt_YPC6Oll_18",
+        "ultrachat_463016",
+        "ultrachat_284130",
+        "37141183",
+        "fc6c3985",
+        "ultrachat_353377"
+      ],
+      "hits_in_top10": [
+        "answer_2e2085fa_1"
+      ]
+    },
+    {
+      "qid": "8e91e7d9",
+      "type": "multi-session",
+      "question": "What is the total number of siblings I have?",
+      "question_date": "2023/05/30 (Tue) 09:50",
+      "answer": "4",
+      "n_gold": 2,
+      "gold_session_ids": [
+        "answer_477ae455_2",
+        "answer_477ae455_1"
+      ],
+      "gold_dates": [
+        "2023/05/24 (Wed) 08:18",
+        "2023/05/25 (Thu) 00:16"
+      ],
+      "top10": [
+        "answer_477ae455_2",
+        "sharegpt_PZrBCF2_0",
+        "ultrachat_147574",
+        "2f980ae0_2",
+        "sharegpt_8lpX5R7_19",
+        "4e3da326_1",
+        "c3023a45_4",
+        "sharegpt_Z35PJ8x_2",
+        "65698aa9_5",
+        "c2381e1a_2"
+      ],
+      "hits_in_top10": [
+        "answer_477ae455_2"
+      ]
+    },
+    {
+      "qid": "gpt4_7f6b06db",
+      "type": "temporal-reasoning",
+      "question": "What is the order of the three trips I took in the past three months, from earliest to latest?",
+      "question_date": "2023/06/01 (Thu) 03:56",
+      "answer": "I went on a day hike to Muir Woods National Monument with my family, then I went on a road trip with friends to Big Sur and Monterey, and finally I started my solo camping trip to Yosemite National Park.",
+      "n_gold": 3,
+      "gold_session_ids": [
+        "answer_5d8c99d3_3",
+        "answer_5d8c99d3_2",
+        "answer_5d8c99d3_1"
+      ],
+      "gold_dates": [
+        "2023/03/10 (Fri) 23:32",
+        "2023/04/20 (Thu) 04:17",
+        "2023/05/15 (Mon) 09:54"
+      ],
+      "top10": [
+        "4bf66c38_2",
+        "39c1bf6a",
+        "d9ca4aca",
+        "answer_5d8c99d3_2",
+        "ultrachat_31232",
+        "ultrachat_127849",
+        "answer_5d8c99d3_1",
+        "da42526b_1",
+        "sharegpt_t5P7b1R_17",
+        "6f051087_2"
+      ],
+      "hits_in_top10": [
+        "answer_5d8c99d3_2",
+        "answer_5d8c99d3_1"
+      ]
+    },
+    {
+      "qid": "gpt4_7abb270c",
+      "type": "temporal-reasoning",
+      "question": "What is the order of the six museums I visited from earliest to latest?",
+      "question_date": "2023/03/10 (Fri) 08:15",
+      "answer": "Science Museum, Museum of Contemporary Art, Metropolitan Museum of Art, Museum of History, Modern Art Museum, Natural History Museum",
+      "n_gold": 6,
+      "gold_session_ids": [
+        "answer_7093d898_3",
+        "answer_7093d898_5",
+        "answer_7093d898_4",
+        "answer_7093d898_6",
+        "answer_7093d898_1",
+        "answer_7093d898_2"
+      ],
+      "gold_dates": [
+        "2023/01/15 (Sun) 16:31",
+        "2023/01/22 (Sun) 20:21",
+        "2023/02/10 (Fri) 22:26",
+        "2023/02/15 (Wed) 12:20",
+        "2023/02/20 (Mon) 22:50",
+        "2023/03/04 (Sat) 19:42"
+      ],
+      "top10": [
+        "answer_7093d898_1",
+        "answer_7093d898_6",
+        "answer_7093d898_5",
+        "answer_7093d898_2",
+        "ultrachat_560932",
+        "5808284e",
+        "answer_7093d898_3",
+        "087d2b0a_2",
+        "sharegpt_W6t3Ck0_0",
+        "ultrachat_544684"
+      ],
+      "hits_in_top10": [
+        "answer_7093d898_3",
+        "answer_7093d898_5",
+        "answer_7093d898_6",
+        "answer_7093d898_1",
+        "answer_7093d898_2"
+      ]
+    },
+    {
+      "qid": "gpt4_e061b84f",
+      "type": "temporal-reasoning",
+      "question": "What is the order of the three sports events I participated in during the past month, from earliest to latest?",
+      "question_date": "2023/07/01 (Sat) 20:43",
+      "answer": "I first completed the Spring Sprint Triathlon, then took part in the Midsummer 5K Run, and finally participated in the company's annual charity soccer tournament.",
+      "n_gold": 3,
+      "gold_session_ids": [
+        "answer_8c64ce25_1",
+        "answer_8c64ce25_3",
+        "answer_8c64ce25_2"
+      ],
+      "gold_dates": [
+        "2023/06/02 (Fri) 15:29",
+        "2023/06/10 (Sat) 15:00",
+        "2023/06/17 (Sat) 11:09"
+      ],
+      "top10": [
+        "ultrachat_129606",
+        "9345f7dc_4",
+        "0a6bf5e4_1",
+        "answer_8c64ce25_3",
+        "73bc3176_2",
+        "78d28576_2",
+        "sharegpt_8ns7j9U_0",
+        "ultrachat_436674",
+        "539c2346_3",
+        "ultrachat_308277"
+      ],
+      "hits_in_top10": [
+        "answer_8c64ce25_3"
+      ]
+    },
+    {
+      "qid": "gpt4_d6585ce8",
+      "type": "temporal-reasoning",
+      "question": "What is the order of the concerts and musical events I attended in the past two months, starting from the earliest?",
+      "question_date": "2023/04/22 (Sat) 19:31",
+      "answer": "The order of the concerts I attended is: 1. Billie Eilish concert at the Wells Fargo Center in Philly, 2. Free outdoor concert series in the park, 3. Music festival in Brooklyn, 4. Jazz night at a local bar, 5. Queen + Adam Lambert concert at the Prudential Center in Newark, NJ.",
+      "n_gold": 5,
+      "gold_session_ids": [
+        "answer_f999b05b_1",
+        "answer_f999b05b_4",
+        "answer_f999b05b_3",
+        "answer_f999b05b_5",
+        "answer_f999b05b_2"
+      ],
+      "gold_dates": [
+        "2023/03/18 (Sat) 00:23",
+        "2023/03/25 (Sat) 09:47",
+        "2023/04/01 (Sat) 09:07",
+        "2023/04/08 (Sat) 11:13",
+        "2023/04/15 (Sat) 02:29"
+      ],
+      "top10": [
+        "answer_f999b05b_4",
+        "answer_f999b05b_5",
+        "answer_f999b05b_3",
+        "51c82c8e_2",
+        "answer_f999b05b_2",
+        "dc0802a9_1",
+        "ultrachat_159656",
+        "ultrachat_225491",
+        "c1e598cd_3",
+        "sharegpt_s8fhi1t_0"
+      ],
+      "hits_in_top10": [
+        "answer_f999b05b_5",
+        "answer_f999b05b_4",
+        "answer_f999b05b_3",
+        "answer_f999b05b_2"
+      ]
+    },
+    {
+      "qid": "gpt4_e061b84g",
+      "type": "temporal-reasoning",
+      "question": "I mentioned participating in a sports event two weeks ago. What was the event?",
+      "question_date": "2023/07/01 (Sat) 13:38",
+      "answer": "The company's annual charity soccer tournament.",
+      "n_gold": 3,
+      "gold_session_ids": [
+        "answer_8c64ce26_1",
+        "answer_8c64ce26_3",
+        "answer_8c64ce26_2"
+      ],
+      "gold_dates": [
+        "2023/06/02 (Fri) 00:46",
+        "2023/06/10 (Sat) 16:13",
+        "2023/06/17 (Sat) 15:20"
+      ],
+      "top10": [
+        "ae15e8b6_1",
+        "9dac9e37_1",
+        "answer_8c64ce26_3",
+        "68705467_1",
+        "3929e6cc_1",
+        "ce584ba0",
+        "ultrachat_231231",
+        "sharegpt_783Lb5V_0",
+        "ultrachat_246504",
+        "0e3d8491_1"
+      ],
+      "hits_in_top10": [
+        "answer_8c64ce26_3"
+      ]
+    },
+    {
+      "qid": "gpt4_4929293b",
+      "type": "temporal-reasoning",
+      "question": "What was the the life event of one of my relatives that I participated in a week ago?",
+      "question_date": "2023/06/22 (Thu) 18:33",
+      "answer": "my cousin's wedding",
+      "n_gold": 2,
+      "gold_session_ids": [
+        "answer_add9b013_1",
+        "answer_add9b013_2"
+      ],
+      "gold_dates": [
+        "2023/05/06 (Sat) 18:10",
+        "2023/06/15 (Thu) 10:02"
+      ],
+      "top10": [
+        "ultrachat_326769",
+        "ultrachat_511609",
+        "7fa98614_1",
+        "sharegpt_KFhIUCO_0",
+        "c0dbabb8",
+        "sharegpt_rqvR1Ep_0",
+        "b4ed7223_3",
+        "da3c1266_4",
+        "ultrachat_380843",
+        "ultrachat_342539"
+      ],
+      "hits_in_top10": []
+    },
+    {
+      "qid": "eac54add",
+      "type": "temporal-reasoning",
+      "question": "What was the significant buisiness milestone I mentioned four weeks ago?",
+      "question_date": "2023/03/28 (Tue) 20:35",
+      "answer": "I signed a contract with my first client.",
+      "n_gold": 2,
+      "gold_session_ids": [
+        "answer_0d4d0348_1",
+        "answer_0d4d0348_2"
+      ],
+      "gold_dates": [
+        "2023/02/10 (Fri) 02:03",
+        "2023/03/01 (Wed) 02:43"
+      ],
+      "top10": [
+        "sharegpt_5YtukCb_0",
+        "2ea6fda4_1",
+        "7966888b_2",
+        "7bb01253",
+        "c3023a45_5",
+        "773aebbd_3",
+        "ultrachat_91693",
+        "577da76d_2",
+        "ultrachat_133409",
+        "28269633_2"
+      ],
+      "hits_in_top10": []
+    },
+    {
+      "qid": "4dfccbf8",
+      "type": "temporal-reasoning",
+      "question": "What did I do with Rachel on the Wednesday two months ago?",
+      "question_date": "2023/04/01 (Sat) 16:08",
+      "answer": "I started taking ukulele lessons with Rachel.",
+      "n_gold": 2,
+      "gold_session_ids": [
+        "answer_4bebc783_2",
+        "answer_4bebc783_1"
+      ],
+      "gold_dates": [
+        "2023/02/01 (Wed) 14:38",
+        "2023/02/25 (Sat) 13:22"
+      ],
+      "top10": [
+        "sharegpt_3D3oQC0_213",
+        "b4f63a70_3",
+        "7db28e68_1",
+        "answer_4bebc783_1",
+        "1c177942_4",
+        "6c16c3ec_2",
+        "58d4154d_1",
+        "edd89480_1",
+        "0943dee1",
+        "a63ad8e3_3"
+      ],
+      "hits_in_top10": [
+        "answer_4bebc783_1"
+      ]
+    },
+    {
+      "qid": "gpt4_8279ba03",
+      "type": "temporal-reasoning",
+      "question": "What kitchen appliance did I buy 10 days ago?",
+      "question_date": "2023/03/25 (Sat) 18:26",
+      "answer": "a smoker",
+      "n_gold": 1,
+      "gold_session_ids": [
+        "answer_56521e66_1"
+      ],
+      "gold_dates": [
+        "2023/03/15 (Wed) 11:56"
+      ],
+      "top10": [
+        "50d66391_4",
+        "bb107057_2",
+        "49b78a55_1",
+        "570fe405",
+        "2ef55f49_3",
+        "d1a1b9ea_1",
+        "b357fb8b_2",
+        "ba9f938b_1",
+        "864a563d_5",
+        "518d26d3_4"
+      ],
+      "hits_in_top10": []
+    },
+    {
+      "qid": "gpt4_68e94288",
+      "type": "temporal-reasoning",
+      "question": "What was the social media activity I participated 5 days ago?",
+      "question_date": "2023/03/20 (Mon) 11:50",
+      "answer": "You participated in a social media challenge called #PlankChallenge.",
+      "n_gold": 2,
+      "gold_session_ids": [
+        "answer_9793daa4_2",
+        "answer_9793daa4_1"
+      ],
+      "gold_dates": [
+        "2023/03/10 (Fri) 01:55",
+        "2023/03/15 (Wed) 09:07"
+      ],
+      "top10": [
+        "answer_9793daa4_1",
+        "4c49e37f",
+        "ultrachat_396489",
+        "c99dcd81",
+        "128f4e4d_2",
+        "cff08ec1_1",
+        "813ebecd_1",
+        "d8454317_7",
+        "6551be60_1",
+        "9d2fdc71"
+      ],
+      "hits_in_top10": [
+        "answer_9793daa4_1"
+      ]
+    },
+    {
+      "qid": "6613b389",
+      "type": "temporal-reasoning",
+      "question": "How many months before my anniversary did Rachel get engaged?",
+      "question_date": "2023/07/07 (Fri) 13:04",
+      "answer": "2",
+      "n_gold": 3,
+      "gold_session_ids": [
+        "answer_aaf71ce2_1",
+        "answer_aaf71ce2_2",
+        "answer_aaf71ce2_3"
+      ],
+      "gold_dates": [
+        "2023/07/07 (Fri) 19:55",
+        "2023/07/07 (Fri) 04:44",
+        "2023/07/07 (Fri) 11:28"
+      ],
+      "top10": [
+        "answer_aaf71ce2_2",
+        "answer_aaf71ce2_3",
+        "f1cc1ddb_1",
+        "e3d8da67",
+        "55bc2e1e",
+        "20d6c376_1",
+        "e87aa998_1",
+        "5eef2132",
+        "1a65880d",
+        "df8a7455"
+      ],
+      "hits_in_top10": [
+        "answer_aaf71ce2_2",
+        "answer_aaf71ce2_3"
+      ]
+    },
+    {
+      "qid": "0977f2af",
+      "type": "knowledge-update",
+      "question": "What new kitchen gadget did I invest in before getting the Air Fryer?",
+      "question_date": "2023/05/31 (Wed) 07:54",
+      "answer": "Instant Pot",
+      "n_gold": 2,
+      "gold_session_ids": [
+        "answer_3bf5b73b_1",
+        "answer_3bf5b73b_2"
+      ],
+      "gold_dates": [
+        "2023/05/21 (Sun) 05:48",
+        "2023/05/21 (Sun) 22:54"
+      ],
+      "top10": [
+        "f115a3db_1",
+        "answer_3bf5b73b_2",
+        "c6a93cd9_2",
+        "ultrachat_554962",
+        "b3642bd9_3",
+        "9b083158_1",
+        "b1d9eb66_4",
+        "809cbce9_3",
+        "b24eddd9_1",
+        "sharegpt_FqOC5e9_45"
+      ],
+      "hits_in_top10": [
+        "answer_3bf5b73b_2"
+      ]
+    }
+  ]
+}

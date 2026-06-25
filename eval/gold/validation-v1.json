@@ -1,0 +1,29 @@
+{
+  "all_golds_exist": true,
+  "by_corpus": {
+    "/Users/arka/.config/agentic-memory/memory.db": 68,
+    "/Users/arka/Assets/AntiNote/memory/memory.db": 8,
+    "/Users/arka/Assets/PeriodTracker/memory/memory.db": 8,
+    "/Users/arka/Assets/TaskManager/memory/memory.db": 8,
+    "/Users/arka/Desktop/ai-agent.lrdevplugin/memory/memory.db": 8
+  },
+  "by_provenance": {
+    "lmeval": 68,
+    "project_synth": 32
+  },
+  "by_query_type": {
+    "exact_phrase": 7,
+    "multi_word_technical": 34,
+    "natural_language": 11,
+    "pinned": 4,
+    "single_keyword": 10,
+    "tagged": 10,
+    "temporal": 5,
+    "vague": 14,
+    "zero_result": 5
+  },
+  "duplicates": 0,
+  "mean_gold_per_query": 1.09,
+  "mean_query_words": 4.32,
+  "total": 100
+}

@@ -1,0 +1,194 @@
+[
+  {
+    "name": "background_worker.py",
+    "interval_minutes": 15,
+    "args": ["--drain", "--max-tasks=50"],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 120
+  },
+  {
+    "name": "cron_integrity_check.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
+    "enabled": true,
+    "timeout_seconds": 300
+  },
+  {
+    "name": "cron_backup.py",
+    "interval_minutes": 1440,
+    "args": [],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 600
+  },
+  {
+    "name": "cron_compact.py",
+    "interval_minutes": 43200,
+    "args": [],
+    "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
+    "enabled": true,
+    "timeout_seconds": 1800
+  },
+  {
+    "name": "cron_rebuild_fts.py",
+    "interval_minutes": 1440,
+    "args": [],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 600
+  },
+  {
+    "name": "cron_heartbeat.py",
+    "interval_minutes": 1440,
+    "args": [],
+    "env": {"MEMORY_SELF_DIRECTED": "1", "MEMORY_KNOWLEDGE_GRAPH": "1"},
+    "enabled": true,
+    "timeout_seconds": 600
+  },
+  {
+    "name": "cron_tier_migration.py",
+    "interval_minutes": 10080,
+    "args": ["--once"],
+    "env": {"MEMORY_TEMPORAL_TIERS": "1"},
+    "enabled": true,
+    "timeout_seconds": 1800
+  },
+  {
+    "name": "cron_kg_backfill.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 1800
+  },
+  {
+    "name": "cron_skill_extraction.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 1800
+  },
+  {
+    "name": "cron_cross_session_learn.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 1800
+  },
+  {
+    "name": "cron_kg_backfill_monitor.py",
+    "interval_minutes": 1440,
+    "args": [],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 300
+  },
+  {
+    "name": "cron_embedding_recompute.py",
+    "interval_minutes": 1440,
+    "args": ["--once"],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 1800
+  },
+  {
+    "name": "cron_consolidate.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
+    "enabled": true,
+    "timeout_seconds": 3600
+  },
+  {
+    "name": "cron_detect_vec_drift.py",
+    "interval_minutes": 1440,
+    "args": [],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 300
+  },
+  {
+    "name": "cron_rewrite_links.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
+    "enabled": true,
+    "timeout_seconds": 600
+  },
+  {
+    "name": "cron_pinned_decay.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
+    "enabled": true,
+    "timeout_seconds": 600
+  },
+  {
+    "name": "cron_concept_drift.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 1800
+  },
+  {
+    "name": "cron_purge_expired.py",
+    "interval_minutes": 43200,
+    "args": [],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 600
+  },
+  {
+    "name": "cron_quality_filter.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {"MEMORY_QUALITY_GATES": "1"},
+    "enabled": true,
+    "timeout_seconds": 1800
+  },
+  {
+    "name": "cron_auto_summarize.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {"MEMORY_SUMMARIZATION": "1"},
+    "enabled": true,
+    "timeout_seconds": 1800
+  },
+  {
+    "name": "cron_retention_stats.py",
+    "interval_minutes": 10080,
+    "args": [],
+    "env": {"MEMORY_ADAPTIVE_RETENTION": "1"},
+    "enabled": true,
+    "timeout_seconds": 300
+  },
+  {
+    "name": "cron_auto_share.py",
+    "interval_minutes": 1440,
+    "args": [],
+    "env": {"MEMORY_MULTI_AGENT": "1"},
+    "enabled": true,
+    "timeout_seconds": 600
+  },
+  {
+    "name": "cron_sync.py",
+    "interval_minutes": 60,
+    "args": [],
+    "env": {},
+    "enabled": true,
+    "timeout_seconds": 600
+  },
+  {
+    "name": "cron_crdt_sync.py",
+    "interval_minutes": 60,
+    "args": [],
+    "env": {"MEMORY_MULTI_AGENT": "1", "MEMORY_CRDT_ENABLED": "1"},
+    "enabled": true,
+    "timeout_seconds": 600
+  }
+]

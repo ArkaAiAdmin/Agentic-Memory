@@ -1,0 +1,76 @@
+# .dockerignore — exclude files that bloat the build context.
+#
+# The image only needs the source code. We exclude:
+#   * venv/ — installed in the image via `pip install -e .`
+#   * memory/ — runtime data, lives in a mounted volume
+#   * eval/ — tests, only used in CI not runtime
+#   * .git/ — version control, not needed
+#   * __pycache__/ — Python bytecode, regenerated at install time
+#   * *.db, *.log, *.pid, *.lock — runtime state
+#   * .coverage, .pytest_cache/ — test artifacts
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# Virtual env (rebuilt inside the image)
+venv/
+.venv/
+env/
+
+# Runtime data (mounted as volume, never baked into image)
+memory/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+*.pid
+*.lock
+.memory_*
+
+# Test artifacts
+eval/
+test_*.py
+conftest.py
+.pytest_cache/
+
+# Git / IDE / OS
+.git/
+.gitignore
+.gitattributes
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# Docs source (mkdocs builds its own)
+docs/_build/
+docs/site/
+
+# CI
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# Build outputs
+dist/
+build/
+*.whl
+*.tar.gz

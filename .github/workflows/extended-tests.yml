@@ -1,0 +1,47 @@
+name: Extended Tests (weekly)
+
+# Runs the extended/regression test suites that need the live DB
+# and are too slow for the per-PR pipeline. Scheduled weekly.
+# See AUDIT-REPORT-2026-06-20.md finding M5.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays at 06:00 UTC
+  workflow_dispatch:  # allow manual trigger
+
+jobs:
+  extended:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt 2>/dev/null || pip install pytest mcp mypy
+      - name: Run extended test suite
+        env:
+          MEMORY_RERANKER_DISABLED: "1"
+          MEMORY_CTR_TUNING: "0"
+        run: |
+          . venv/bin/activate
+          pytest eval/test_all_regression.py -v --no-header -p no:cacheprovider
+      - name: Run extended integration suite
+        env:
+          MEMORY_RERANKER_DISABLED: "1"
+          MEMORY_CTR_TUNING: "0"
+        run: |
+          . venv/bin/activate
+          # Currently skipped in this workflow because the live DB
+          # has FK violations (AUDIT-REPORT-2026-06-20.md: 137
+          # critical findings in user_profile_access_log). Re-enable
+          # after the FK cleanup lands.
+          #
+          # pytest eval/test_all_extended.py -v --no-header -p no:cacheprovider
+          echo "test_all_extended.py skipped pending FK cleanup"

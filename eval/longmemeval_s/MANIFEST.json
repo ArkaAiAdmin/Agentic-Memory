@@ -1,0 +1,63 @@
+{
+  "files": {
+    "longmemeval_s_cleaned.json": {
+      "size_bytes": 277383467,
+      "md5": "9b009af4084c6207e9d41aa0dcb6506c",
+      "role": "primary corpus \u2014 500 questions w/ full haystack"
+    },
+    "longmemeval_oracle.json": {
+      "size_bytes": 15388478,
+      "md5": "4c2b4c8c936cf26968f4d0fdc93ca31c",
+      "role": "oracle subset \u2014 only gold evidence sessions per question"
+    }
+  },
+  "schema": {
+    "top_level": "JSON array of question objects",
+    "fields_per_question": [
+      "answer",
+      "answer_session_ids",
+      "haystack_dates",
+      "haystack_session_ids",
+      "haystack_sessions",
+      "question",
+      "question_date",
+      "question_id",
+      "question_type"
+    ],
+    "turn_shape": {
+      "role": "user|assistant",
+      "content": "str",
+      "has_answer": "bool (only on gold turns in evaluable Qs)"
+    },
+    "question_id_format": "8-char hex; abstention ids have '_abs' suffix"
+  },
+  "cleaned_stats": {
+    "total_questions": 500,
+    "abstention_questions": 30,
+    "evaluable_questions": 470,
+    "question_types": {
+      "single-session-user": 70,
+      "multi-session": 133,
+      "single-session-preference": 30,
+      "temporal-reasoning": 133,
+      "knowledge-update": 78,
+      "single-session-assistant": 56
+    },
+    "avg_sessions_per_question": 47.734,
+    "avg_turns_per_session": 10.3385,
+    "total_sessions": 23867,
+    "total_turns": 246750,
+    "evaluable_with_has_answer_turn": 470,
+    "answer_session_ids_in_haystack": "948/948"
+  },
+  "oracle_stats": {
+    "total_questions": 500,
+    "avg_sessions_per_question": 1.896,
+    "qid_overlap_with_cleaned": "500/500"
+  },
+  "license": "MIT",
+  "source": "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned",
+  "paper": "arXiv:2410.10813 (ICLR 2025)",
+  "downloaded_at_utc": "2026-06-07T09:12:02.380378Z",
+  "downloaded_by": "Agent Q"
+}

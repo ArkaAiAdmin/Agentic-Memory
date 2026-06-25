@@ -1,0 +1,139 @@
+# Agentic Memory configuration
+# Every field here can be overridden by the corresponding MEMORY_* env var.
+# Env var precedence: MEMORY_<FIELD> > memory.toml > code defaults.
+
+[general]
+db_path = "memory/memory.db"          # MEMORY_DB_PATH
+wal_checkpoint_startup = true          # MEMORY_WAL_CHECKPOINT_STARTUP — run a WAL checkpoint on startup to keep memory.db-wal small
+wal_checkpoint_interval_s = 300         # MEMORY_WAL_CHECKPOINT_INTERVAL_S — periodic debounced WAL checkpoint inside background_worker (S4.5, 2026-06-23). 0 to disable.
+mmap_size = 268435456                  # MEMORY_SQLITE_MMAP_SIZE — SQLite mmap_size in BYTES (S4.1, 2026-06-23). Default 256 MiB. Set to 0 to disable mmap. See docs/perf.md for tradeoffs.
+unindexed_safety_net_limit = 1000     # MEMORY_UNINDEXED_SAFETY_NET_LIMIT
+agent_id = ""                          # MEMORY_AGENT_ID — CRDT agent identifier (auto-detected from hostname if empty)
+
+[search]
+temporal_half_life = 180              # MEMORY_TEMPORAL_HALF_LIFE
+temporal_decay_mode = "exponential"   # MEMORY_TEMPORAL_DECAY_MODE
+late_interaction = true               # MEMORY_LATE_INTERACTION
+knowledge_graph = true                # MEMORY_KNOWLEDGE_GRAPH
+graph_rag_hops = 3                    # MEMORY_GRAPH_RAG_HOPS
+graph_rag_expansions = 5              # MEMORY_GRAPH_RAG_EXPANSIONS
+query_cache = true                    # MEMORY_QUERY_CACHE
+reranker_disabled = false             # MEMORY_RERANKER_DISABLED — Qwen3-0.6B primary, BGE-m3 fallback (both MPS-safe, verified 2026-06-15). Set to true to disable.
+deep_rerank_timeout = 30              # MEMORY_DEEP_RERANK_TIMEOUT — wall-clock seconds before the deep reranker subprocess is killed (2026-06-19 MPS hang insurance). Set to 0 to disable the timeout (run in-process, fast but no kill switch on hang).
+contextual_retrieval = true           # MEMORY_CONTEXTUAL_RETRIEVAL — prepend category+tags context to embeddings
+contextual_enrichment = true          # MEMORY_CONTEXTUAL_ENRICHMENT
+forgetting_curve = true               # MEMORY_FORGETTING_CURVE — Ebbinghaus decay boosts recent notes
+forgetting_curve_half_life = 30       # MEMORY_FORGETTING_CURVE_HALF_LIFE — Ebbinghaus half-life in DAYS (float, e.g. 30 or 7.5). Used by neural_forget.py and the search scoring pipeline.
+vec_rebuild_threshold = 15           # MEMORY_VEC_REBUILD_THRESHOLD — count of drift rows (vec_keys/embeddings mismatch) that triggers an automatic vec index rebuild. Default 15 (was 5, raised 2026-06-23) tolerates single-row drift without forcing a rebuild. Set to 0 to disable auto-rebuild, or 100+ to make it very lazy (drift will accumulate).
+concept_drift_threshold = 0.15       # MEMORY_CONCEPT_DRIFT_THRESHOLD — cosine drift threshold for concept drift cron
+entity_min_occurrences = 2           # MEMORY_ENTITY_MIN_OCCURRENCES — min occurrences for regex entity extraction (tight=2, legacy=1)
+ctr_data_window_days = 90            # MEMORY_CTR_DATA_WINDOW_DAYS — CTR feedback lookback window
+
+# Rerank / blend / threshold tunables (P3-32)
+rerank_half_life_days = 180          # MEMORY_RERANK_HALF_LIFE_DAYS
+cross_encoder_blend = 0.6            # MEMORY_CROSS_ENCODER_BLEND
+late_interaction_blend = 0.3         # MEMORY_LATE_INTERACTION_BLEND
+topic_similarity_threshold = 0.15    # MEMORY_TOPIC_SIMILARITY_THRESHOLD
+temporal_decay_weight = 0.15         # MEMORY_TEMPORAL_DECAY_WEIGHT
+
+[features]
+# All features on by default so the agent gets the richest possible
+# context automatically. Set any to false to opt out.
+multi_agent = true                    # MEMORY_MULTI_AGENT — cross-agent memory sharing via shared_memories table
+summarization = true                  # MEMORY_SUMMARIZATION — auto-summarize long notes via TF-IDF
+user_profile = true                   # MEMORY_USER_PROFILE — personalize recall ranking from access history
+self_directed = true                  # MEMORY_SELF_DIRECTED — self-healing: heartbeat, tier assignment, archive
+adaptive_retention = true             # MEMORY_ADAPTIVE_RETENTION — psi formula + spaced repetition
+consolidation = true                  # MEMORY_CONSOLIDATION — SHA-256 + n-gram Jaccard dedup, contradiction scan
+quality_gates = true                  # MEMORY_QUALITY_GATES — filter results below relevance threshold
+saga_enabled = true                   # MEMORY_SAGA_ENABLED — transactional save (DB + vec + file)
+temporal_tiers = true                 # MEMORY_TEMPORAL_TIERS — hot/warm/cold tier system on `tier` column. Source of truth: this TOML key (read via get_config().temporal_tiers). The legacy bare env var MEMORY_TEMPORAL_TIERS=1 is no longer consulted by save_pipeline.py as of 2026-06-22.
+crdt_enabled = true                   # MEMORY_CRDT_ENABLED — version vector tracking + conflict resolution on every save
+llm_extraction = true                # MEMORY_LLM_EXTRACTION — use local LLM for fact/entity extraction (hook subprocesses are excluded automatically)
+feature_temporal_kg = true            # MEMORY_TEMPORAL_KG (T8, 2026-06-23) — fact-level temporal KG: event_time extraction, contradiction detection, supersession, edit invalidation. Default ON. Set to false to disable the entire temporal subsystem (reverts to plain fact extraction with no temporal logic).
+
+[cache]
+fts5_cache = true                     # MEMORY_FTS5_CACHE — LRU result cache for search
+fts5_cache_ttl = 30                   # MEMORY_FTS5_CACHE_TTL — seconds
+vec_cache_max = 20                    # MEMORY_VEC_CACHE_MAX — LRU size for vector search cache
+vec_cache_ttl_s = 30.0                # MEMORY_VEC_CACHE_TTL_S — vector search cache TTL (seconds)
+
+[quality_gates]
+min_content_length = 20               # MEMORY_QUALITY_MIN_CONTENT_LENGTH — min content chars for a note to pass gates
+max_duplicate_similarity = 0.90       # MEMORY_QUALITY_MAX_DUPLICATE_SIMILARITY — Jaccard threshold above which a note is a duplicate
+min_relevance_score = 0.1             # MEMORY_QUALITY_MIN_RELEVANCE_SCORE — min relevance score for search results to be shown
+
+[multi_agent]
+shared_pool_ttl_days = 30             # MEMORY_SHARED_POOL_TTL_DAYS — how long shared memories live
+
+[user_profile]
+window_days = 90                      # MEMORY_USER_PROFILE_WINDOW_DAYS — access log lookback
+max_size = 50                         # MEMORY_USER_PROFILE_MAX_SIZE — top-N categories/tags/notes
+recency_half_life_days = 30           # MEMORY_USER_PROFILE_RECENCY_HALF_LIFE_DAYS — exponential decay constant
+
+[llm_extraction]
+# feature flag is at features.llm_extraction above — the `enabled` field here
+# would be redundant and is deliberately omitted to avoid config ambiguity (H5)
+model_id = "Qwen/Qwen2.5-3B-Instruct"  # MEMORY_LLM_EXTRACTION_MODEL_ID — T6 (2026-06-23): bumped from 1.5B-Instruct. 3B is ~4.6x faster (1.18s vs 5.43s avg) and more precise (skips operational/recipe content), but extracts fewer facts (0.5 vs 1.5 avg per memory). Revert to 1.5B if recall matters more than precision. ~4-5 GB RAM (fits in 25 GB available). First load is ~10s; downloads ~5.5 GB on first use.
+max_tokens = 256                        # MEMORY_LLM_EXTRACTION_MAX_TOKENS — max new tokens per LLM call (was 1024, 2026-06-19 cut to 256 for ~4x speedup)
+hybrid_threshold = 0.5                  # MEMORY_LLM_HYBRID_THRESHOLD — importance_score cutoff for LLM extraction; memories below this use regex only
+force = false                           # MEMORY_LLM_FORCE — if true, always use LLM regardless of importance (overrides hybrid)
+idle_unload_seconds = 1800              # MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS — unload model after N seconds idle (0 = disable). Frees ~8 GB GPU+CPU.
+
+[sync]
+# Auto multi-agent sync via HTTP. Off by default.
+enable_server = false                 # MEMORY_SYNC_ENABLE_SERVER — start HTTP sync server
+listen_host = "127.0.0.1"            # MEMORY_SYNC_LISTEN_HOST
+listen_port = 9877                    # MEMORY_SYNC_LISTEN_PORT
+
+[[sync.peers]]                        # MEMORY_SYNC_PEERS_<N>_URL, ..._AGENT_ID
+# name = "peer-1"
+# url = "http://127.0.0.1:9877"
+# agent_id = "peer-1"
+
+[sync.schedule]
+interval_minutes = 5                  # MEMORY_SYNC_INTERVAL_MINUTES
+
+[semantic]
+# Cap on claims fed into the semantic contradiction detector.
+max_claims_semantic = 10000          # MEMORY_MAX_CLAIMS_SEMANTIC
+# Cosine threshold above which two claims are "same topic".
+semantic_threshold = 0.65            # MEMORY_SEMANTIC_THRESHOLD
+
+[kg_dedup]
+# Cosine similarity threshold for merging near-duplicate KG entities.
+threshold = 0.92                     # MEMORY_KG_DEDUP_THRESHOLD
+
+[hybrid]
+# FTS vs semantic channel weights in _hybrid_fusion.
+fts_weight = 0.5                     # MEMORY_HYBRID_FTS_WEIGHT
+semantic_weight = 0.3                # MEMORY_HYBRID_SEMANTIC_WEIGHT
+rrf_k = 60                           # MEMORY_HYBRID_RRF_K
+semantic_overfetch = 3               # MEMORY_HYBRID_SEMANTIC_OVERFETCH
+rank_proxy_scale = 30.0              # MEMORY_HYBRID_RANK_PROXY_SCALE
+
+[auto_save]
+# Backoff + circuit breaker for the on_tool_complete hook.
+# On a save failure, retry up to `max_retries` times with exponential
+# backoff (base * 2^attempt, capped at `backoff_cap_seconds`). If more
+# than `max_retries` failures occur within `failure_window_seconds`,
+# open the circuit for `circuit_breaker_seconds` (skips saves).
+max_retries = 3                      # MEMORY_AUTO_SAVE_MAX_RETRIES
+backoff_base_seconds = 1.0           # MEMORY_AUTO_SAVE_BACKOFF_BASE_SECONDS
+backoff_cap_seconds = 30.0           # MEMORY_AUTO_SAVE_BACKOFF_CAP_SECONDS
+circuit_breaker_seconds = 300.0      # MEMORY_AUTO_SAVE_CIRCUIT_BREAKER_SECONDS
+failure_window_seconds = 60.0        # MEMORY_AUTO_SAVE_FAILURE_WINDOW_SECONDS
+
+# Tool allowlist/denylist for auto-save hook.
+# Only tools on allowlist get auto-saved (denylist is fallback when allowlist="*").
+# Override via env: AUTO_SAVE_TOOL_ALLOWLIST / AUTO_SAVE_TOOL_DENYLIST
+# Format: comma-separated tool names (e.g., "memory_save,write,edit,task")
+allowlist = "memory_save,memory_supersede,memory_delete,todowrite,task,question,write,edit"
+denylist = "filesystem_list_allowed_directories,filesystem_list_directory,filesystem_directory_tree,filesystem_read_multiple_files,filesystem_search_files,filesystem_get_file_info,filesystem_list_directory_with_sizes,memory_session_start,memory_user_profile,memory_recall_context,memory_profile_access,memory_record_ctr_feedback,memory_check_concept_drift,todo,process,read_terminal"
+
+# Async/batch auto-save daemon settings
+batch_interval_seconds = 0.5         # AUTO_SAVE_BATCH_INTERVAL
+batch_size = 50                       # AUTO_SAVE_BATCH_SIZE
+daemon_idle_seconds = 3600           # AUTO_SAVE_DAEMON_IDLE_S
+async_enabled = true                 # MEMORY_ASYNC_AUTOSAVE (1=enabled, 0=disabled)
+inbox_max_bytes = 104857600          # AUTO_SAVE_INBOX_MAX_BYTES (100 MB)
