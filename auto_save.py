@@ -186,15 +186,32 @@ DEFAULT_TOOL_ALLOWLIST = frozenset(
         "memory_save",
         "memory_supersede",
         "memory_delete",
+        "memory_reinforce",
         # Task tracking
         "todowrite",
         # Subagent task results
         "task",
-        # User decisions
+        # User decisions / questions
         "question",
         # File writes (code/content creation)
         "write",
         "edit",
+        # Commands / shell actions (git commits, pytest runs, etc.)
+        "bash",
+        "run_command",
+        # KG tools (repo-native + Omega skill)
+        "memory_graph_search",
+        "memory_graph_stats",
+        "memory_graph_shortest_path",
+        "memory_graph_traverse",
+        "memory_temporal_query",
+        "memory_temporal_contradictions",
+        "memory_create_entities",
+        "memory_add_observations",
+        "memory_search_nodes",
+        "memory_open_nodes",
+        "memory_create_relations",
+        "memory_delete_relations",
     }
 )
 

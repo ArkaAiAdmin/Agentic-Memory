@@ -17,9 +17,6 @@ import os, sys, json, time, sqlite3, argparse
 from pathlib import Path
 
 
-COMPACTION_WINDOW_SEC = 3600  # Treat compaction as "recent" if within last hour
-
-
 def _get_sessions_dir() -> Path:
     from memory_common import get_memory_paths
 
@@ -28,14 +25,11 @@ def _get_sessions_dir() -> Path:
 
 
 def _get_recent_compaction() -> str | None:
-    """Return the full text of the most recent compaction note, if one
-    happened within the last hour. Returns None if no recent compaction.
+    """Return the full text of the most recent compaction note.
 
-    Two lookups: (1) state file timestamp, (2) glob over the sessions
-    directory for the most recently-modified compaction-save-*.md file.
-    The glob fallback handles cases where the state file's
-    last_compaction_time key was not yet persisted (e.g. the
-    track_tool_call → _save_state race that can wipe the key).
+    No age limit — the most recent compaction is always worth surfacing
+    after a context reset. Previously capped at COMPACTION_WINDOW_SEC (1h)
+    which silently dropped valid recovery content from older compactions.
     """
     sessions_dir = _get_sessions_dir()
     try:
@@ -44,10 +38,7 @@ def _get_recent_compaction() -> str | None:
             with open(state_file) as f:
                 state = json.load(f)
             last_compaction = state.get("last_compaction_time", 0)
-            if (
-                last_compaction
-                and (time.time() - last_compaction) <= COMPACTION_WINDOW_SEC
-            ):
+            if last_compaction:
                 ts = time.strftime("%Y-%m-%d_%H-%M-%S", time.gmtime(last_compaction))
                 path = sessions_dir / f"compaction-save-{ts}.md"
                 if path.exists():
@@ -62,10 +53,8 @@ def _get_recent_compaction() -> str | None:
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
-        for path in candidates:
-            age_sec = time.time() - path.stat().st_mtime
-            if age_sec <= COMPACTION_WINDOW_SEC:
-                return path.read_text()
+        if candidates:
+            return candidates[0].read_text()
     except Exception:
         pass
 
@@ -301,7 +290,13 @@ def get_stats(conn):
 
 
 def format_summary(
-    pinned, high_importance, recent, stats, preferences=None, sessions=None
+    pinned,
+    high_importance,
+    recent,
+    stats,
+    preferences=None,
+    sessions=None,
+    session_notes=None,
 ):
     lines = []
     lines.append(
@@ -318,6 +313,14 @@ def format_summary(
             lines.append(
                 f"- **{s['id'][:12]}** [{s['status']}] started {s['started_at'][:16]}"
                 f" — ended: {ended[:16]}{parent_ref}"
+            )
+
+    if session_notes:
+        lines.append("\n## Pinned Session Notes")
+        for n in session_notes:
+            tags = f" [{n['tags']}]" if n["tags"] else ""
+            lines.append(
+                f"- **{n['id']}** ({n['category'] or 'uncategorized'}{tags}): {n['content']}"
             )
 
     if preferences:
@@ -346,7 +349,13 @@ def format_summary(
         for n in recent:
             lines.append(f"- **{n['id']}**: {n['content']}")
 
-    if not preferences and not pinned and not high_importance and not recent:
+    if (
+        not preferences
+        and not pinned
+        and not high_importance
+        and not recent
+        and not session_notes
+    ):
         lines.append(
             "\nNo preferences, pinned, high-importance, or recent notes found."
         )
@@ -382,11 +391,37 @@ def get_bootstrap_summary(db_path: str | None = None) -> str:
         sessions = _get_recent_sessions(
             conn, project_root=str(project_root) if project_root else "", limit=3
         )
+        session_notes = []
+        try:
+            session_notes = [
+                {
+                    "id": r[0],
+                    "content": r[1][:300],
+                    "category": r[2],
+                    "importance": r[3],
+                    "tags": r[4],
+                }
+                for r in conn.execute(
+                    "SELECT id, content, category, importance_score, tags "
+                    "FROM memories WHERE category='sessions' AND pinned=1 "
+                    "AND deleted_at IS NULL "
+                    "ORDER BY created_at DESC LIMIT 5"
+                ).fetchall()
+            ]
+        except Exception:
+            pass
         summary = format_summary(
-            pinned, high_importance, recent, stats, preferences, sessions=sessions
+            pinned,
+            high_importance,
+            recent,
+            stats,
+            preferences,
+            sessions=sessions,
+            session_notes=session_notes,
         )
 
         compaction = _get_recent_compaction()
+
         if compaction:
             header = (
                 "\n\n"

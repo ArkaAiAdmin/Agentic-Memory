@@ -212,7 +212,9 @@ def track_tool_call(
 
     # Track notable tools (not routine reads/searches, but including all important developer actions)
     notable = {
+        # Direct action / developer tools — bare and namespaced forms
         "bash",
+        "agentic-memory_bash",
         "write",
         "edit",
         "write_file",
@@ -236,12 +238,50 @@ def track_tool_call(
         "search_web",
         "web_search",
         "todowrite",
+        "agentic-memory_todowrite",
         "task",
+        "question",
+        "agentic-memory_question",
+        # Memory / KG tools (repo-native + Omega skill)
         "memory_save",
+        "agentic-memory_memory_save",
         "memory_delete",
+        "agentic-memory_memory_delete",
         "memory_reinforce",
+        "memory_graph_search",
+        "memory_graph_stats",
+        "memory_graph_shortest_path",
+        "memory_graph_traverse",
+        "memory_temporal_query",
+        "memory_temporal_contradictions",
+        "memory_create_entities",
+        "agentic-memory_memory_create_entities",
+        "memory_add_observations",
+        "agentic-memory_memory_add_observations",
+        "memory_search_nodes",
+        "agentic-memory_memory_search_nodes",
+        "memory_open_nodes",
+        "agentic-memory_memory_open_nodes",
+        "memory_delete_entities",
+        "agentic-memory_memory_delete_entities",
+        "memory_delete_observations",
+        "agentic-memory_memory_delete_observations",
+        "memory_create_relations",
+        "agentic-memory_memory_create_relations",
+        "memory_delete_relations",
+        "agentic-memory_memory_delete_relations",
     }
-    if tool_name in notable or state["tools_since_checkpoint"] <= 3:
+
+    def _tool_matches(name: str, candidates: set[str]) -> bool:
+        if name in candidates:
+            return True
+        if "_" in name:
+            unprefixed = name.split("_", 1)[1]
+            if unprefixed in candidates:
+                return True
+        return False
+
+    if _tool_matches(tool_name, notable) or state["tools_since_checkpoint"] <= 3:
         state["notable_tools"].append(
             {
                 "tool": tool_name,
@@ -729,10 +769,207 @@ def _build_work_items(state: dict) -> str:
             work_items.append(f"- Task: {preview[:60]}")
         elif "todowrite" in tool:
             work_items.append(f"- Updated todos: {preview[:60]}")
+        elif "memory_graph" in tool or "memory_temporal" in tool:
+            work_items.append(f"- KG query: {preview[:80]}")
+        elif "memory_create_entities" in tool or "memory_add_observations" in tool:
+            work_items.append(f"- KG write: {preview[:80]}")
+        elif "memory_search_nodes" in tool or "memory_open_nodes" in tool:
+            work_items.append(f"- KG search: {preview[:80]}")
 
     return (
         "\n".join(work_items) if work_items else "- No file edits or commands detected"
     )
+
+
+def _synthesize_session_summary(
+    autosaves: list[dict], notable_tools: list[dict], state: dict
+) -> dict[str, str]:
+    """Derive structured session sections from tool activity, so compaction
+    produces useful content even when the agent never called memory_save.
+
+    Produces four sections:
+      conclusions: deduplicated high-signal autosave entries (edit/write/task/
+        question/memory_save summaries) trimmed to unique actions.
+      insights:    short sentences parsed from git commits, test results, and
+        explicit memory_save content containing decision/lesson keywords.
+      todos:       the most recent todowrite preview, fallback to statements
+        containing "need to" or "should" from recent bash/edit activity.
+      next_steps:  sentences containing "next", "blocker", or "TODO" from
+        recent memory_save and bash command previews.
+
+    This is the structural fix for empty compaction sections: instead of
+    depending only on explicit memory_save calls, we derive meaning from
+    the tool activity that was always being captured.
+    """
+    recent_notable = notable_tools[-80:] if notable_tools else []
+    recent_autos = autosaves[-60:] if autosaves else []
+
+    # --- Conclusions: meaningful file edits, writes, tasks, questions, saves ---
+    seen_conclusions: set[str] = set()
+    conclusions: list[str] = []
+    for a in reversed(recent_autos):
+        tool = a.get("tool", "")
+        preview = a.get("content_preview", "").strip()
+        if not preview:
+            continue
+        if tool not in {
+            "edit",
+            "write",
+            "write_file",
+            "write_to_file",
+            "replace_file_content",
+            "multi_replace_file_content",
+            "memory_save",
+            "agentic-memory_memory_save",
+            "task",
+            "question",
+            "agentic-memory_question",
+            "todowrite",
+            "agentic-memory_todowrite",
+        }:
+            continue
+        # Normalise and dedupe
+        normalised = preview[:180]
+        if normalised not in seen_conclusions:
+            seen_conclusions.add(normalised)
+            conclusions.append(normalised)
+        if len(conclusions) >= 6:
+            break
+    conclusions_section = (
+        "\n".join(f"- {c}" for c in conclusions)
+        if conclusions
+        else "- No conclusions derived from tool activity this session"
+    )
+
+    # --- Insights: decision/lesson keywords in memory_save content and git commits ---
+    insights: list[str] = []
+    for a in reversed(recent_autos):
+        tool = a.get("tool", "")
+        preview = a.get("content_preview", "").lower()
+        if tool in ("memory_save", "agentic-memory_memory_save") and any(
+            k in preview
+            for k in (
+                "decision",
+                "lesson",
+                "conclusion",
+                "resolved",
+                "fixed",
+                "changed",
+            )
+        ):
+            raw = a.get("content_preview", "").strip()
+            if raw and raw not in insights:
+                insights.append(raw[:200])
+        if len(insights) >= 4:
+            break
+    # Also pull from git commits in bash activity
+    for t in reversed(recent_notable):
+        tool = t.get("tool", "")
+        preview = t.get("preview", "")
+        if tool in ("bash", "agentic-memory_bash") and "git commit" in preview.lower():
+            msg = preview.lower().split("git commit", 1)[-1].strip().strip("-").strip()
+            if msg and msg not in insights:
+                insights.append(f"Git commit: {msg[:120]}")
+        if len(insights) >= 4:
+            break
+    insights_section = (
+        "\n".join(f"- {i}" for i in insights[:3])
+        if insights
+        else "- No insights derived from tool activity this session"
+    )
+
+    # --- Todos: most recent todowrite preview ---
+    todos: list[str] = []
+    for t in reversed(recent_notable):
+        tool = t.get("tool", "")
+        if tool in ("todowrite", "agentic-memory_todowrite"):
+            preview = t.get("preview", "").strip()
+            if preview and len(preview) > 5:
+                todos.append(preview[:200])
+                break
+    todos_section = (
+        f"- {todos[0]}"
+        if todos
+        else "- No todo list derived from tool activity this session"
+    )
+
+    # --- Next steps: sentences with forward-looking keywords ---
+    next_steps: list[str] = []
+    for a in reversed(recent_autos):
+        tool = a.get("tool", "")
+        preview = a.get("content_preview", "")
+        if tool not in (
+            "memory_save",
+            "agentic-memory_memory_save",
+            "bash",
+            "agentic-memory_bash",
+        ):
+            continue
+        text = (
+            preview
+            if tool in ("memory_save", "agentic-memory_memory_save")
+            else preview
+        )
+        for sentence in re.split(r"(?<=[.!?])\s+", text):
+            s = sentence.strip()
+            if len(s) < 10:
+                continue
+            if any(
+                k in s.lower()
+                for k in ("next", "blocker", "todo", "need to", "should", "remaining")
+            ):
+                if s not in next_steps:
+                    next_steps.append(s[:200])
+        if len(next_steps) >= 3:
+            break
+    # Fallback: scan notable_tools previews if autosaves yielded nothing
+    if not next_steps:
+        for t in reversed(recent_notable):
+            tool = t.get("tool", "")
+            preview = t.get("preview", "")
+            if tool not in (
+                "bash",
+                "agentic-memory_bash",
+                "memory_save",
+                "agentic-memory_memory_save",
+                "task",
+                "question",
+                "agentic-memory_question",
+                "todowrite",
+                "agentic-memory_todowrite",
+            ):
+                continue
+            for sentence in re.split(r"(?<=[.!?])\s+", preview):
+                s = sentence.strip()
+                if len(s) < 10:
+                    continue
+                if any(
+                    k in s.lower()
+                    for k in (
+                        "next",
+                        "blocker",
+                        "todo",
+                        "need to",
+                        "should",
+                        "remaining",
+                    )
+                ):
+                    if s not in next_steps:
+                        next_steps.append(s[:200])
+            if len(next_steps) >= 3:
+                break
+    next_steps_section = (
+        "\n".join(f"- {s}" for s in next_steps[:3])
+        if next_steps
+        else "- No next steps derived from tool activity this session"
+    )
+
+    return {
+        "conclusions": conclusions_section,
+        "insights": insights_section,
+        "todos": todos_section,
+        "next_steps": next_steps_section,
+    }
 
 
 def _extract_recent_conclusions(autosaves: list, max_count: int = 5) -> list[str]:
@@ -920,7 +1157,12 @@ def _enforce_compaction_pin_limit():
 
 
 def _write_compaction_note(
-    content: str, autosaves: list, state: dict, elapsed_min: float, message_count: int
+    content: str,
+    autosaves: list,
+    state: dict,
+    elapsed_min: float,
+    message_count: int,
+    rich_summary: dict | None = None,
 ) -> dict:
     """Write the compaction note to both the markdown filesystem AND
     the live memory DB via save_pipeline. The filesystem path is
@@ -958,6 +1200,36 @@ def _write_compaction_note(
             "Failed to save compaction memory to DB, file-based save already succeeded"
         )
 
+    if rich_summary:
+        try:
+            sys.path.insert(0, str(Path(__file__).parent))
+            from _lazy_imports import save_memory as _save_mem2
+
+            derived_tags = ["compaction", "session-summary", "derived", "auto"]
+            if rich_summary.get("todos", "").startswith("- No todo"):
+                derived_tags.append("no-todos")
+            else:
+                derived_tags.append("has-todos")
+            _save_mem2(
+                content=(
+                    f"## Session Summary (auto-derived at compaction)\n\n"
+                    f"**Session duration:** {elapsed_min:.0f} minutes\n"
+                    f"**Tool calls:** {state.get('tool_call_count', 0)}\n\n"
+                    f"### Conclusions\n{rich_summary.get('conclusions', '')}\n\n"
+                    f"### Insights\n{rich_summary.get('insights', '')}\n\n"
+                    f"### Todos\n{rich_summary.get('todos', '')}\n\n"
+                    f"### Next Steps\n{rich_summary.get('next_steps', '')}\n"
+                ),
+                category="sessions",
+                title_slug=f"session-summary-{_today_str()}-{time.strftime('%H-%M', time.gmtime())}",
+                tags=derived_tags,
+                pinned=True,
+                importance=0.9,
+                safety_wiring=False,
+            )
+        except Exception:
+            logger.warning("Failed to save derived session summary to DB")
+
     return {
         "saved": True,
         "note_id": note_id,
@@ -975,13 +1247,13 @@ def pre_compaction(session_id: str = "", message_count: int = 0) -> dict:
     This is the most critical function. It saves context that would
     otherwise be lost during compaction. Reads accumulated auto-save
     notes to build a richer context snapshot.
-
     Decomposed 2026-06-22 — orchestrator below delegates to:
+
       * _build_activity_log
       * _build_autosave_section
       * _build_work_items
-      * _extract_recent_conclusions
-      * _build_rich_context_sections
+      * _synthesize_session_summary   ← now derives conclusions/insights/todos/next_steps
+                                         from tool activity so sections are never empty
       * _write_compaction_note
     """
     # Dedup: OpenCode fires compacting hook multiple times per compaction.
@@ -1015,8 +1287,10 @@ def pre_compaction(session_id: str = "", message_count: int = 0) -> dict:
     state["last_compaction_time"] = dedup_state.get("last_compaction_time", 0)
     _save_state(state)
 
-    recent_conclusions = _extract_recent_conclusions(autosaves)
-    rich = _build_rich_context_sections(state, autosaves, recent_conclusions)
+    recent_conclusions = _synthesize_session_summary(
+        autosaves, state.get("notable_tools", []), state
+    )
+    rich = recent_conclusions
 
     content = f"""## Pre-Compaction Context Save
 
@@ -1065,7 +1339,7 @@ post-compaction continuity — the agent *already decided* what mattered.
 """
 
     result = _write_compaction_note(
-        content, autosaves, state, elapsed_min, message_count
+        content, autosaves, state, elapsed_min, message_count, rich_summary=rich
     )
 
     # Sprint 3: log compaction to the session entity via SessionManager
