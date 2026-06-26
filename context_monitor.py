@@ -1282,9 +1282,8 @@ def pre_compaction(session_id: str = "", message_count: int = 0) -> dict:
     # Reset checkpoint counter so next session starts fresh
     state["tools_since_checkpoint"] = 0
     state["last_checkpoint_time"] = time.time()
-    # Preserve the compaction timestamp we wrote earlier (line 939); state
-    # was re-loaded from disk at line 941 and may not include it yet.
-    state["last_compaction_time"] = dedup_state.get("last_compaction_time", 0)
+    # last_compaction_time was already written at line 1269 and saved at line 1272.
+    # Do NOT overwrite it with dedup_state (holds the stale pre-save value).
     _save_state(state)
 
     recent_conclusions = _synthesize_session_summary(
