@@ -442,6 +442,10 @@ class MemoryConfig:
     session_decision_llm: bool = False
 
 
+# Categories in which decision-thread extraction is attempted (read by save/decision_extraction.py)
+DECISION_CATEGORIES = frozenset({"decisions", "lessons", "projects", "architecture"})
+
+
 # ---------------------------------------------------------------------------
 # Singleton
 # ---------------------------------------------------------------------------

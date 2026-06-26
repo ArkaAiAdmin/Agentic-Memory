@@ -699,7 +699,7 @@ class SessionManager:
         return threads
 
     def _load_recent_events(
-        self, session_id: str, limit: int = 10
+        self, session_id: str, per_thread: int = 3
     ) -> dict[str, list["ThreadEvent"]]:
         if not _is_enabled():
             return {}
@@ -708,14 +708,19 @@ class SessionManager:
             conn = self._conn()
             try:
                 rows = conn.execute(
-                    "SELECT te.id, te.thread_id, te.session_id, te.seq, te.event_type, "
-                    "te.content, te.content_summary, te.memory_id, te.confidence, "
-                    "te.created_at, te.version_vector "
-                    "FROM thread_events te "
-                    "JOIN decision_threads dt ON te.thread_id = dt.id "
-                    "WHERE dt.session_id=? "
-                    "ORDER BY te.thread_id, te.seq DESC LIMIT ?",
-                    (session_id, limit),
+                    "WITH ranked AS ("
+                    "  SELECT te.id, te.thread_id, te.session_id, te.seq, te.event_type, "
+                    "         te.content, te.content_summary, te.memory_id, te.confidence, "
+                    "         te.created_at, te.version_vector, "
+                    "         ROW_NUMBER() OVER (PARTITION BY te.thread_id ORDER BY te.seq DESC) AS rn "
+                    "  FROM thread_events te "
+                    "  JOIN decision_threads dt ON te.thread_id = dt.id "
+                    f" WHERE dt.session_id=? AND dt.status='open'"
+                    ") SELECT id, thread_id, session_id, seq, event_type, "
+                    "  content, content_summary, memory_id, confidence, "
+                    "  created_at, version_vector "
+                    "FROM ranked WHERE rn <= ? ORDER BY thread_id, seq DESC",
+                    (session_id, per_thread),
                 ).fetchall()
             finally:
                 from db import safe_close_db

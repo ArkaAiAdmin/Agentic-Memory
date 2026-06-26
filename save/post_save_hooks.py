@@ -344,6 +344,115 @@ def _hook_auto_backlink_with_flush(db_path_obj, note_id, category, title_slug, c
         logger.debug("save_memory: auto-backlink failed: %s", _abe)
 
 
+def _hook_track_decisions(db_path_obj, note_id, content, category):
+    """Sprint 4: extract heuristic decision candidates and record them
+    as thread events via SessionManager.
+
+    Runs only when ``session_memory`` is enabled and *category* is one
+    of the decision-relevant categories.  Errors are contained — a
+    failure here never blocks the save.
+    """
+    try:
+        from config import DECISION_CATEGORIES
+    except ImportError:
+        return
+    if category not in DECISION_CATEGORIES:
+        return
+    try:
+        from decision_extraction import _extract_decision_candidates
+        from session_manager import SessionManager
+
+        candidates = _extract_decision_candidates(content, category)
+        if not candidates:
+            return
+
+        mgr = SessionManager()
+        # Resolve the active session for this project; best-effort.
+        try:
+            from memory_common import get_memory_paths
+
+            _, local_mem, _ = get_memory_paths()
+            conn = mgr._conn()
+            try:
+                row = conn.execute(
+                    "SELECT id, project_root FROM sessions "
+                    "WHERE status='active' ORDER BY started_at DESC LIMIT 1"
+                ).fetchone()
+            finally:
+                from db import safe_close_db
+
+                safe_close_db(conn)
+        except Exception:
+            row = None
+
+        if not row:
+            return
+
+        session_id, _ = row
+
+        # Build a map of existing open threads for this session keyed by slug.
+        try:
+            conn = mgr._conn()
+            try:
+                existing = conn.execute(
+                    "SELECT id, title, status FROM decision_threads "
+                    "WHERE session_id=? AND status='open'",
+                    (session_id,),
+                ).fetchall()
+            finally:
+                from db import safe_close_db
+
+                safe_close_db(conn)
+        except Exception:
+            existing = []
+
+        open_threads: dict[str, tuple[str, str]] = {}
+        for tid, title, status in existing:
+            open_threads[_slugify(title)] = (tid, title)
+
+        for cand in candidates:
+            if cand.thread_slug in open_threads:
+                tid, title = open_threads[cand.thread_slug]
+                mgr.record_event(
+                    session_id=session_id,
+                    thread_id=tid,
+                    event_type=cand.event_type,
+                    content=cand.claim,
+                    confidence=cand.confidence,
+                )
+            else:
+                tid = f"thread_{cand.thread_slug[:20]}"
+                from session_manager import _save_system_record
+
+                _save_system_record(
+                    "decision_threads",
+                    {
+                        "id": tid,
+                        "session_id": session_id,
+                        "title": cand.title,
+                        "status": "open",
+                        "created_at": mgr._now(),
+                        "version_vector": "{}",
+                    },
+                )
+                open_threads[cand.thread_slug] = (tid, cand.title)
+                mgr.record_event(
+                    session_id=session_id,
+                    thread_id=tid,
+                    event_type=cand.event_type,
+                    content=cand.claim,
+                    confidence=cand.confidence,
+                )
+    except ImportError:
+        pass
+    except Exception as _e:
+        logger.debug("save_memory: decision tracking failed: %s", _e)
+
+
+def _slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60]
+
+
 def _hook_extract_skill(conn, note_id, content, category):
     """Try to extract a skill tag for the just-saved note.
 
@@ -444,6 +553,7 @@ def _run_post_save_hooks(
         contradictions = _hook_run_contradiction_check(db_path_obj, content, note_id)
         _hook_audit_contradictions(db_path_obj, content, note_id, contradictions)
     _hook_auto_backlink_with_flush(db_path_obj, note_id, category, title_slug, conn)
+    _hook_track_decisions(db_path_obj, note_id, content, category)
     _hook_extract_skill(conn, note_id, content, category)
     _hook_audit_save_success(
         db_path_obj,
