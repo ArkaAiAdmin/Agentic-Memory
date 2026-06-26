@@ -6,20 +6,6 @@ What this does:
 2. Provides a `bootstrap_temp_db` helper + `temp_db_path` pytest
    fixture for the H21 migration: tests should use this instead of
    inline `_init_schema()` calls.
-3. Marks a fixed list of test files as `xfail` because their inline
-   fixture creates a partial temp DB that doesn't match the production
-   schema. The actual root-cause fix is "use bootstrap_temp_db or
-   run_schema_setup(conn)" — a H21 follow-up that requires per-test
-   changes to dozens of test files. Until that's done, the blanket
-   xfail keeps the suite green while still surfacing XPASS
-   (tests that started passing and should be removed from the list).
-
-Per-test xfail was attempted (H21 Stage A) but introduced test
-ordering flakiness because xfailed tests still run, and their
-side effects on shared connection-pool state pollute subsequent
-tests. The blanket xfail is simpler and matches what the prior
-H21 audit pass used. We may revisit per-test xfails once each
-test file uses the production schema fixture (see Phase 1 below).
 """
 
 import os
@@ -69,7 +55,7 @@ from _fixtures import bootstrap_temp_db  # noqa: E402
 # H21 migration goal: get every test onto a fixture that gives it a
 # fully-bootstrapped temp DB. The canonical pattern is to copy the live
 # prod schema (which has all 6 migrations applied). Tests that use this
-# pattern pass reliably and don't need the blanket xfail.
+# pattern pass reliably.
 #
 # See: projects/h21-fix-plan-2026-06-16
 #      test_no_silent_search_failures.py for the working pattern.
@@ -97,31 +83,6 @@ collect_ignore = []
 for _f in os.listdir(os.path.dirname(__file__)):
     if _f.startswith("test_all_") and _f.endswith(".py"):
         collect_ignore.append(_f)
-
-
-# Files that have a known-incomplete temp-DB fixture. Marked xfail
-# so the CI matrix doesn't go red, but strict=False so we still see
-# XPASS markers for any tests that start passing.
-#
-# H21 refactor (2026-06-16): 18 files removed from blanket after
-# switching to bootstrap_temp_db_clean (full prod schema, no prod data).
-# Plus test_safety_wiring.py was split — the no-DB tests moved to
-# test_safety_wiring_signatures.py (6 tests un-marked).
-# Plus 2 flaky tests in test_integration_lifecycle.py got per-test
-# @pytest.mark.xfail markers to suppress suite-level cross-pollution
-# flakes (test_full_lifecycle, test_hard_delete_active_young_raises).
-# Total: 19 files un-marked (~150 tests moved from xfail to pass).
-#
-# bootstrap_temp_db_clean is in eval/_fixtures.py. The fixture
-# is: copy prod DB (full schema + FTS5 + triggers), then DELETE FROM
-# all data tables. Tests that need prod data should use
-# bootstrap_temp_db (copy only).
-# _FIXTURE_BROKEN was removed in 2026-06-17 refactor after:
-#   1. cron_skill_extraction.py PROD_DB pollution fix (env.setdefault at module level)
-#   2. Prod DB test-data cleanup (1190 leaked rows removed)
-#   3. test_pipeline_integration.py uses temp DB (refactored to _TempDbTestMixin)
-#   4. test_search_pipeline_unit.py tests pass with full schema
-#   5. test_isolation_guard.py asserts clean prod DB state (now passes)
 
 
 def pytest_configure(config):
