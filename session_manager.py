@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -23,45 +22,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from session_models import (
+    CompactionLog,
+    DecisionThread,
+    Session,
+    SessionContext,
+    ThreadEvent,
+)
+
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Lazy imports (avoid circular deps at module load time)
-# ---------------------------------------------------------------------------
-_session_models_imported = False
-_session = None
-_thread = None
-_event = None
-_compaction = None
-_context = None
-
-
-def _import_models():
-    global _session_models_imported, _session, _thread, _event, _compaction, _context
-    if not _session_models_imported:
-        from session_models import (
-            CompactionLog,
-            DecisionThread,
-            Session,
-            SessionContext,
-            ThreadEvent,
-        )
-
-        _session = Session
-        _thread = DecisionThread
-        _event = ThreadEvent
-        _compaction = CompactionLog
-        _context = SessionContext
-        _session_models_imported = True
 
 
 # ---------------------------------------------------------------------------
 # Feature-flag guard
 # ---------------------------------------------------------------------------
 
+
 def _is_enabled() -> bool:
     try:
         from config import get_config
+
         return bool(get_config().session_memory)
     except Exception:
         return False
@@ -76,6 +56,119 @@ _PII_KEY_RE = re.compile(
     r"private_key|access_key|refresh_token)$",
     re.IGNORECASE,
 )
+
+# Map table name -> (pk_col, insert_cols, update_cols)
+_TABLE_DML: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
+    "sessions": (
+        "id",
+        (
+            "id",
+            "started_at",
+            "ended_at",
+            "project_root",
+            "agent_id",
+            "parent_session_id",
+            "summary_note_id",
+            "status",
+            "version_vector",
+            "metadata",
+        ),
+        ("ended_at", "summary_note_id", "status", "version_vector", "metadata"),
+    ),
+    "decision_threads": (
+        "id",
+        (
+            "id",
+            "session_id",
+            "title",
+            "status",
+            "created_at",
+            "resolved_at",
+            "superseded_by",
+            "version_vector",
+            "metadata",
+        ),
+        ("status", "resolved_at", "superseded_by", "version_vector", "metadata"),
+    ),
+    "thread_events": (
+        "id",
+        (
+            "id",
+            "thread_id",
+            "session_id",
+            "seq",
+            "event_type",
+            "content",
+            "content_summary",
+            "memory_id",
+            "confidence",
+            "created_at",
+            "version_vector",
+        ),
+        (),  # never updated — append-only
+    ),
+    "session_compaction_log": (
+        "id",
+        (
+            "id",
+            "session_id",
+            "compacted_at",
+            "tokens_before",
+            "tokens_after",
+            "summary_note_id",
+            "recovered_note_ids",
+            "metadata",
+            "version_vector",
+        ),
+        (),  # never updated — append-only
+    ),
+}
+
+
+def _upsert_v22_table(conn, table: str, row: dict) -> None:
+    """INSERT or UPDATE a v22 table row.
+
+    For append-only tables (thread_events, session_compaction_log) this
+    is always an INSERT.  For sessions and decision_threads, if the row
+    already exists we UPDATE only the columns present in *row* so that
+    partial updates (e.g. resolve_thread setting just status+resolved_at)
+    don't clobber NOT NULL columns with NULL.
+    """
+    if table not in _TABLE_DML:
+        raise ValueError(f"unknown v22 table: {table}")
+    pk, ins_cols, upd_cols = _TABLE_DML[table]
+
+    # Serialize metadata if present
+    prepared = dict(row)
+    if "metadata" in prepared and isinstance(prepared["metadata"], dict):
+        prepared["metadata"] = json.dumps(prepared["metadata"])
+    if "recovered_note_ids" in prepared and isinstance(
+        prepared["recovered_note_ids"], list
+    ):
+        prepared["recovered_note_ids"] = json.dumps(prepared["recovered_note_ids"])
+
+    if table in ("thread_events", "session_compaction_log"):
+        placeholders = ", ".join("?" * len(ins_cols))
+        col_list = ", ".join(ins_cols)
+        vals = tuple(prepared.get(c) for c in ins_cols)
+        conn.execute(f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})", vals)
+        return
+
+    # sessions / decision_threads: INSERT or UPDATE
+    existing = conn.execute(
+        f"SELECT {pk} FROM {table} WHERE {pk}=?", (prepared.get(pk),)
+    ).fetchone()
+    if existing:
+        if not upd_cols:
+            return  # nothing to update
+        sets = ", ".join(f"{c} = ?" for c in upd_cols)
+        vals = tuple(prepared.get(c) for c in upd_cols) + (prepared.get(pk),)
+        conn.execute(f"UPDATE {table} SET {sets} WHERE {pk} = ?", vals)
+    else:
+        placeholders = ", ".join("?" * len(ins_cols))
+        col_list = ", ".join(ins_cols)
+        vals = tuple(prepared.get(c) for c in ins_cols)
+        conn.execute(f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})", vals)
 
 
 def _scrub_metadata(d: Optional[dict]) -> dict:
@@ -96,33 +189,58 @@ def _scrub_metadata(d: Optional[dict]) -> dict:
 # Internal write-through helper (the ONLY DB write path from SessionManager)
 # ---------------------------------------------------------------------------
 
+
 def _save_system_record(
     table: str,
     row: dict[str, Any],
     db_path: Optional[Path] = None,
 ) -> Optional[str]:
-    """Persist a system table row via ``save_memory``.
+    """Persist a system table row.
 
-    Constructs a structured JSON content payload and routes it through the
-    canonical save pipeline.  The resulting ``note_id`` (if the open-code
-    save_memory is active) mirrors the row; if the feature flag is off or
-    save_memory is unavailable, returns ``None`` (silent no-op — the plan
-    mandates feature-flag gating).
+    Does TWO things atomically (same connection, caller-managed transaction):
 
-    Args:
-        table: One of ``"sessions"``, ``"decision_threads"``,
-            ``"thread_events"``, ``"session_compaction_log"``.
-        row: Column values for the row.  Must include all NOT NULL columns
-            except auto-generated ones (id, created_at).
-        db_path: Override DB path.  Defaults to the active memory DB.
+    1. Direct INSERT/UPDATE into the named v22 table (sessions,
+       decision_threads, thread_events, session_compaction_log).  This
+       is the structured record that hooks and MCP tools read.
+    2. Calls ``save_memory`` with ``category="system"`` as the audit
+       trail / markdown-sidecar so the saga, FTS, cache invalidation,
+       and contradiction check all fire exactly once.
 
-    Returns:
-        The ``note_id`` (``"system/<slug>"``) on success, ``None`` if
-        session memory is disabled or save_memory is unavailable.
+    Returns the note_id from save_memory on success, or None if
+    session memory is disabled or save_memory is unavailable.
     """
     if not _is_enabled():
         return None
     row_id = row.get("id") or f"{table[:4]}_{uuid.uuid4().hex[:12]}"
+    # ------------------------------------------------------------------
+    # 1. Direct INSERT into the v22 table
+    # ------------------------------------------------------------------
+    conn = None
+    try:
+        from db import connection_pool
+
+        path = str(db_path) if db_path else str(Path.cwd() / "memory" / "memory.db")
+        conn = connection_pool.get(path, timeout=30.0)
+        conn.execute("PRAGMA foreign_keys = ON")
+        _upsert_v22_table(conn, table, {**row, "id": row_id})
+        conn.commit()
+    except Exception as exc:
+        logger.warning(
+            "_save_system_record: v22 direct write failed for %s: %s", table, exc
+        )
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    finally:
+        if conn:
+            from db import safe_close_db
+
+            safe_close_db(conn)
+    # ------------------------------------------------------------------
+    # 2. Audit trail via save_memory
+    # ------------------------------------------------------------------
     payload = {
         "_table": table,
         "_row_id": row_id,
@@ -131,7 +249,7 @@ def _save_system_record(
     try:
         from save_pipeline import save_memory
     except ImportError:
-        return None
+        return row_id  # v22 row written, no audit trail available
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
         slug = row_id.replace("/", "_").replace(" ", "_")[:64]
@@ -147,16 +265,19 @@ def _save_system_record(
         )
         if isinstance(note_id, str) and not note_id.startswith("Error"):
             return note_id
-        logger.warning("_save_system_record: save_memory returned error for %s: %s", table, note_id)
-        return None
+        logger.warning(
+            "_save_system_record: save_memory returned error for %s: %s", table, note_id
+        )
+        return row_id  # v22 row written, audit trail failed
     except Exception as exc:
         logger.warning("_save_system_record: save_memory raised for %s: %s", table, exc)
-        return None
+        return row_id  # v22 row written, audit trail raised
 
 
 # ---------------------------------------------------------------------------
 # SessionManager
 # ---------------------------------------------------------------------------
+
 
 class SessionManager:
     """Orchestration layer for sessions, decision threads, and compaction.
@@ -168,9 +289,9 @@ class SessionManager:
     Usage::
 
         mgr = SessionManager(db_path=Path("memory/memory.db"))
-        ctx = mgr.start_session(project_root, agent_id)
-        mgr.record_event(ctx.session.id, thread_id, "decision", "chose option A")
-        mgr.end_session(ctx.session.id, summary="...")
+        ctx = mgr.startSession(project_root, agent_id)
+        mgr.recordThreadEvent(ctx.session.id, thread_id, "decision", "chose option A")
+        mgr.endSession(ctx.session.id, summary="...")
     """
 
     def __init__(self, db_path: Optional[Path] = None) -> None:
@@ -185,7 +306,12 @@ class SessionManager:
     def _conn(self):
         """Acquire a pooled connection for read/write operations."""
         from db import connection_pool
-        path = str(self._db_path) if self._db_path else str(Path.cwd() / "memory" / "memory.db")
+
+        path = (
+            str(self._db_path)
+            if self._db_path
+            else str(Path.cwd() / "memory" / "memory.db")
+        )
         return connection_pool.get(path, timeout=30.0)
 
     def _pool_path(self) -> str:
@@ -225,11 +351,10 @@ class SessionManager:
         """
         if not _is_enabled():
             return None
-        _import_models()
 
         db_path_str = self._pool_path()
         # --- Crash recovery: look for active session in this project ---
-        existing: Optional["_session"] = None
+        existing: Optional[Session] = None
         try:
             conn = self._conn()
             try:
@@ -240,15 +365,21 @@ class SessionManager:
                     (project_root,),
                 ).fetchone()
                 if row:
-                    existing = _session(
-                        id=row[0], started_at=row[1], ended_at=row[2],
-                        project_root=row[3], agent_id=row[4],
-                        parent_session_id=row[5], summary_note_id=row[6],
-                        status=row[7], version_vector=row[8] or "{}",
+                    existing = Session(
+                        id=row[0],
+                        started_at=row[1],
+                        ended_at=row[2],
+                        project_root=row[3],
+                        agent_id=row[4],
+                        parent_session_id=row[5],
+                        summary_note_id=row[6],
+                        status=row[7],
+                        version_vector=row[8] or "{}",
                         metadata=json.loads(row[9]) if row[9] else {},
                     )
             finally:
                 from db import safe_close_db
+
                 safe_close_db(conn)
         except Exception as exc:
             logger.warning("start_session: crash-recovery query failed: %s", exc)
@@ -257,15 +388,21 @@ class SessionManager:
             logger.info("start_session: resuming active session %s", existing.id)
             threads = self._load_open_threads(existing.id)
             recent = self._load_recent_events(existing.id)
-            return _context(session=existing, active_threads=threads, recent_events=recent)
+            return SessionContext(
+                session=existing, active_threads=threads, recent_events=recent
+            )
 
         # --- Create new session ---
         sess_id = f"sess_{uuid.uuid4().hex[:12]}"
         now = self._now()
-        new_session = _session(
-            id=sess_id, started_at=now, project_root=project_root,
-            agent_id=agent_id, parent_session_id=parent_session_id,
-            status="active", version_vector="{}",
+        new_session = Session(
+            id=sess_id,
+            started_at=now,
+            project_root=project_root,
+            agent_id=agent_id,
+            parent_session_id=parent_session_id,
+            status="active",
+            version_vector="{}",
         )
         _save_system_record(
             "sessions",
@@ -282,7 +419,7 @@ class SessionManager:
             db_path=Path(self._db_path) if self._db_path else None,
         )
         logger.info("start_session: created session %s for %s", sess_id, project_root)
-        return _context(session=new_session)
+        return SessionContext(session=new_session)
 
     # ------------------------------------------------------------------
     # record_event (Sprint 2, Task 2.4)
@@ -313,7 +450,6 @@ class SessionManager:
         """
         if not _is_enabled():
             return None
-        _import_models()
         if event_type not in ("claim", "evidence", "decision", "question", "pivot"):
             logger.error("record_event: invalid event_type %r", event_type)
             return None
@@ -332,17 +468,25 @@ class SessionManager:
                     seq = (max_seq or 0) + 1
                 finally:
                     from db import safe_close_db
+
                     safe_close_db(conn)
             except Exception as exc:
                 logger.warning("record_event: seq lookup failed: %s", exc)
 
         event_id = f"evt_{uuid.uuid4().hex[:12]}"
         now = self._now()
-        event = _event(
-            id=event_id, thread_id=thread_id, session_id=session_id,
-            seq=seq, event_type=event_type, content=content,
-            content_summary=summary, memory_id=memory_id,
-            confidence=confidence, created_at=now, version_vector="{}",
+        event = ThreadEvent(
+            id=event_id,
+            thread_id=thread_id,
+            session_id=session_id,
+            seq=seq,
+            event_type=event_type,
+            content=content,
+            content_summary=summary,
+            memory_id=memory_id,
+            confidence=confidence,
+            created_at=now,
+            version_vector="{}",
         )
         _save_system_record(
             "thread_events",
@@ -379,7 +523,6 @@ class SessionManager:
         """
         if not _is_enabled():
             return False
-        _import_models()
         now = self._now()
         new_status = "superseded" if superseded_by else "resolved"
         _save_system_record(
@@ -411,13 +554,13 @@ class SessionManager:
         """
         if not _is_enabled():
             return False
-        _import_models()
         now = self._now()
 
         # Save summary as a live memory note (via canonical save path).
         summary_note_id: Optional[str] = None
         try:
             from save_pipeline import save_memory
+
             note_id = save_memory(
                 content=summary or f"Session {session_id} ended.",
                 category="sessions",
@@ -456,6 +599,7 @@ class SessionManager:
                 ).fetchall()
             finally:
                 from db import safe_close_db
+
                 safe_close_db(conn)
             for (tid,) in open_threads:
                 _save_system_record(
@@ -491,7 +635,6 @@ class SessionManager:
         """
         if not _is_enabled():
             return False
-        _import_models()
         comp_id = f"comp_{uuid.uuid4().hex[:12]}"
         now = self._now()
         _save_system_record(
@@ -523,8 +666,7 @@ class SessionManager:
     def _load_open_threads(self, session_id: str) -> list["DecisionThread"]:
         if not _is_enabled():
             return []
-        _import_models()
-        threads: list[_thread] = []
+        threads: list[DecisionThread] = []
         try:
             conn = self._conn()
             try:
@@ -536,12 +678,18 @@ class SessionManager:
                 ).fetchall()
             finally:
                 from db import safe_close_db
+
                 safe_close_db(conn)
             for r in rows:
                 threads.append(
-                    _thread(
-                        id=r[0], session_id=r[1], title=r[2], status=r[3],
-                        created_at=r[4], resolved_at=r[5], superseded_by=r[6],
+                    DecisionThread(
+                        id=r[0],
+                        session_id=r[1],
+                        title=r[2],
+                        status=r[3],
+                        created_at=r[4],
+                        resolved_at=r[5],
+                        superseded_by=r[6],
                         version_vector=r[7] or "{}",
                         metadata=json.loads(r[8]) if r[8] else {},
                     )
@@ -550,11 +698,12 @@ class SessionManager:
             logger.warning("_load_open_threads: %s", exc)
         return threads
 
-    def _load_recent_events(self, session_id: str, limit: int = 10) -> dict[str, list["ThreadEvent"]]:
+    def _load_recent_events(
+        self, session_id: str, limit: int = 10
+    ) -> dict[str, list["ThreadEvent"]]:
         if not _is_enabled():
             return {}
-        _import_models()
-        result: dict[str, list["_event"]] = {}
+        result: dict[str, list[ThreadEvent]] = {}
         try:
             conn = self._conn()
             try:
@@ -570,12 +719,20 @@ class SessionManager:
                 ).fetchall()
             finally:
                 from db import safe_close_db
+
                 safe_close_db(conn)
             for r in rows:
-                ev = _event(
-                    id=r[0], thread_id=r[1], session_id=r[2], seq=r[3],
-                    event_type=r[4], content=r[5], content_summary=r[6],
-                    memory_id=r[7], confidence=r[8], created_at=r[9],
+                ev = ThreadEvent(
+                    id=r[0],
+                    thread_id=r[1],
+                    session_id=r[2],
+                    seq=r[3],
+                    event_type=r[4],
+                    content=r[5],
+                    content_summary=r[6],
+                    memory_id=r[7],
+                    confidence=r[8],
+                    created_at=r[9],
                     version_vector=r[10] or "{}",
                 )
                 result.setdefault(ev.thread_id, []).append(ev)

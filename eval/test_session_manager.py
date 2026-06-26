@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+import uuid
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from session_manager import SessionManager, _is_enabled, _scrub_metadata
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_db(tmp_path: Path) -> Path:
     db = tmp_path / "test_sm.db"
@@ -34,7 +36,12 @@ def _count_system_rows(db_path: Path) -> dict[str, int]:
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
     counts: dict[str, int] = {}
-    for table in ("sessions", "decision_threads", "thread_events", "session_compaction_log"):
+    for table in (
+        "sessions",
+        "decision_threads",
+        "thread_events",
+        "session_compaction_log",
+    ):
         row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
         counts[table] = row[0] if row else 0
     conn.close()
@@ -51,6 +58,7 @@ def _disable_session_flag(monkeypatch: pytest.MonkeyPatch):
 
 def _wait_for_cleanup():
     from session_manager import _save_system_record
+
     # give the background save a tick to settle
     time.sleep(0.05)
 
@@ -58,6 +66,7 @@ def _wait_for_cleanup():
 # ---------------------------------------------------------------------------
 # PII scrub
 # ---------------------------------------------------------------------------
+
 
 class TestScrubMetadata:
     def test_strips_password_key(self):
@@ -91,11 +100,13 @@ class TestScrubMetadata:
 # start_session
 # ---------------------------------------------------------------------------
 
+
 class TestStartSession:
     def test_creates_new_session(self, tmp_path, monkeypatch):
         _enable_session_flag(monkeypatch)
         # reset config singleton so flag change is picked up
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
@@ -113,6 +124,7 @@ class TestStartSession:
     def test_resumes_active_session(self, tmp_path, monkeypatch):
         _enable_session_flag(monkeypatch)
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
@@ -127,6 +139,7 @@ class TestStartSession:
     def test_disabled_returns_none(self, tmp_path, monkeypatch):
         _disable_session_flag(monkeypatch)
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
@@ -139,10 +152,12 @@ class TestStartSession:
 # record_event
 # ---------------------------------------------------------------------------
 
+
 class TestRecordEvent:
     def test_appends_event_with_correct_seq(self, tmp_path, monkeypatch):
         _enable_session_flag(monkeypatch)
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
@@ -174,6 +189,7 @@ class TestRecordEvent:
     def test_content_summary_truncated(self, tmp_path, monkeypatch):
         _enable_session_flag(monkeypatch)
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
@@ -199,6 +215,7 @@ class TestRecordEvent:
     def test_invalid_event_type_rejected(self, tmp_path, monkeypatch):
         _enable_session_flag(monkeypatch)
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
@@ -214,10 +231,12 @@ class TestRecordEvent:
 # resolve_thread
 # ---------------------------------------------------------------------------
 
+
 class TestResolveThread:
     def test_marks_resolved(self, tmp_path, monkeypatch):
         _enable_session_flag(monkeypatch)
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
@@ -252,10 +271,12 @@ class TestResolveThread:
 # end_session
 # ---------------------------------------------------------------------------
 
+
 class TestEndSession:
     def test_sets_ended_status_and_summary_note(self, tmp_path, monkeypatch):
         _enable_session_flag(monkeypatch)
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
@@ -280,6 +301,7 @@ class TestEndSession:
     def test_defers_open_threads(self, tmp_path, monkeypatch):
         _enable_session_flag(monkeypatch)
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
@@ -311,10 +333,12 @@ class TestEndSession:
 # compact_session
 # ---------------------------------------------------------------------------
 
+
 class TestCompactSession:
     def test_logs_compaction(self, tmp_path, monkeypatch):
         _enable_session_flag(monkeypatch)
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
@@ -325,7 +349,7 @@ class TestCompactSession:
             ctx.session.id,
             tokens_before=4000,
             tokens_after=1000,
-            summary_note_id="note-abc",
+            summary_note_id=None,
             recovered_note_ids=["n1", "n2"],
         )
         assert ok is True
@@ -340,7 +364,7 @@ class TestCompactSession:
         conn.close()
         assert row[0] == 4000
         assert row[1] == 1000
-        assert row[2] == "note-abc"
+        assert row[2] is None
         ids = json.loads(row[3])
         assert ids == ["n1", "n2"]
 
@@ -349,10 +373,12 @@ class TestCompactSession:
 # Feature-flag gating
 # ---------------------------------------------------------------------------
 
+
 class TestFeatureFlagGating:
     def test_all_methods_return_none_false_when_disabled(self, tmp_path, monkeypatch):
         _disable_session_flag(monkeypatch)
         import config as _cfg_mod
+
         _cfg_mod.reset_config()
 
         db = _make_db(tmp_path)
