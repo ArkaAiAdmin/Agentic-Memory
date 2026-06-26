@@ -138,7 +138,7 @@ def _write_ssm_state(db, note_id: str, content: str) -> None:
         # as a delta and extend the previous state. Otherwise encode
         # from scratch.
         prev = db.execute(
-            "SELECT ssm_state FROM memory_embeddings WHERE note_id = ?",
+            "SELECT ssm_state FROM memory_embeddings WHERE memory_id = ?",
             (note_id,),
         ).fetchone()
         old_state = None
@@ -152,7 +152,7 @@ def _write_ssm_state(db, note_id: str, content: str) -> None:
 
         new_state = incremental_embed_update(note_id, content, old_state=old_state)
         db.execute(
-            "UPDATE memory_embeddings SET ssm_state = ? WHERE note_id = ?",
+            "UPDATE memory_embeddings SET ssm_state = ? WHERE memory_id = ?",
             (_json.dumps(new_state), note_id),
         )
     except Exception as se:
