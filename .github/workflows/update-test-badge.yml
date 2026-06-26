@@ -27,7 +27,7 @@ jobs:
       - name: Get test count
         id: count
         run: |
-          count=$(python -m pytest eval/ --collect-only -q 2>&1 | tail -1 | awk '{print $1}')
+          count=$(python -m pytest eval/ --collect-only -q 2>&1 | tail -1 | awk '{print $1}' || true)
           echo "count=$count" >> "$GITHUB_OUTPUT"
 
       - name: Update README badge
