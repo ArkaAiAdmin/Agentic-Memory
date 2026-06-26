@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-3542%20passed-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-3570%20passed-brightgreen)](#testing)
 [![SQLite](https://img.shields.io/badge/sqlite-FTS5-orange.svg)](https://www.sqlite.org/fts5.html)
 
 [Quick Start](#quick-start) | [Documentation](docs/index.md) | [Architecture](#architecture) | [MCP Server](#mcp-server) | [Self-Host](#self-hosting) | [Contributing](CONTRIBUTING.md)
