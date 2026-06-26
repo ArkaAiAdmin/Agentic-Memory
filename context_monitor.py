@@ -1064,7 +1064,48 @@ post-compaction continuity — the agent *already decided* what mattered.
 **Related:** [[projects/agentic-memory-audit-complete]]
 """
 
-    return _write_compaction_note(content, autosaves, state, elapsed_min, message_count)
+    result = _write_compaction_note(
+        content, autosaves, state, elapsed_min, message_count
+    )
+
+    # Sprint 3: log compaction to the session entity via SessionManager
+    try:
+        from session_manager import SessionManager
+
+        mgr = SessionManager()
+        cs_path = SESSIONS_DIR / ".current_session.json"
+        cs = {}
+        if cs_path.exists():
+            try:
+                cs = json.loads(cs_path.read_text())
+            except Exception:
+                pass
+        entity_session_id = cs.get("session_id", "")
+        if entity_session_id:
+            summary_note_id = result.get("note_id", "")
+            tokens_before = message_count * 200
+            recovered_ids = []
+            for a in autosaves:
+                try:
+                    ac = a.get("content_preview", "")
+                    m = re.search(r"note_id[:\s]+([\w-]+)", ac)
+                    if m:
+                        recovered_ids.append(m.group(1))
+                except Exception:
+                    pass
+            mgr.compact_session(
+                session_id=entity_session_id,
+                tokens_before=tokens_before,
+                tokens_after=len(content) // 4,
+                summary_note_id=summary_note_id,
+                recovered_note_ids=recovered_ids,
+            )
+    except ImportError:
+        pass
+    except Exception as _e:
+        logger.warning("pre_compaction: SessionManager.compact_session failed: %s", _e)
+
+    return result
 
 
 def get_status() -> dict:

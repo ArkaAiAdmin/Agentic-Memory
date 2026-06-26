@@ -72,6 +72,33 @@ def _get_recent_compaction() -> str | None:
     return None
 
 
+def _get_recent_sessions(conn, project_root: str = "", limit: int = 3) -> list[dict]:
+    """Return the most recent sessions for a project (read-only, direct SQL)."""
+    try:
+        query = (
+            "SELECT id, started_at, ended_at, status, parent_session_id FROM sessions "
+        )
+        params: tuple = ()
+        if project_root:
+            query += "WHERE project_root = ? "
+            params = (project_root,)
+        query += "ORDER BY started_at DESC LIMIT ?"
+        params = params + (limit,)
+        rows = conn.execute(query, params).fetchall()
+        return [
+            {
+                "id": r[0],
+                "started_at": r[1],
+                "ended_at": r[2],
+                "status": r[3],
+                "parent_session_id": r[4],
+            }
+            for r in rows
+        ]
+    except Exception:
+        return []
+
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # 2026-06-22 (C4 fix): these setdefault calls are redundant. The config
 # singleton in `config.py` already defaults these features to True (see
@@ -273,12 +300,25 @@ def get_stats(conn):
     }
 
 
-def format_summary(pinned, high_importance, recent, stats, preferences=None):
+def format_summary(
+    pinned, high_importance, recent, stats, preferences=None, sessions=None
+):
     lines = []
     lines.append(
         f"Memory System: {stats['total_notes']} notes, {stats['pinned']} pinned, "
         f"{stats['kg_entities']} KG entities, {stats['kg_facts']} facts"
     )
+
+    if sessions:
+        lines.append("\n## Recent Sessions")
+        for s in sessions:
+            pid = s.get("parent_session_id", "")
+            parent_ref = f" (parent: {pid[:12]})" if pid else ""
+            ended = s.get("ended_at") or "active"
+            lines.append(
+                f"- **{s['id'][:12]}** [{s['status']}] started {s['started_at'][:16]}"
+                f" — ended: {ended[:16]}{parent_ref}"
+            )
 
     if preferences:
         lines.append("\n## ⚑ Preferences")
@@ -328,13 +368,23 @@ def get_bootstrap_summary(db_path: str | None = None) -> str:
 
     conn = connection_pool.get(str(resolved), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
+    project_root = hook_data = None
+    try:
+        project_root = Path.cwd()
+    except Exception:
+        pass
     try:
         pinned = get_pinned_notes(conn)
         high_importance = get_high_importance(conn)
         recent = get_recent_notes(conn)
         stats = get_stats(conn)
         preferences = get_preferences(conn)
-        summary = format_summary(pinned, high_importance, recent, stats, preferences)
+        sessions = _get_recent_sessions(
+            conn, project_root=str(project_root) if project_root else "", limit=3
+        )
+        summary = format_summary(
+            pinned, high_importance, recent, stats, preferences, sessions=sessions
+        )
 
         compaction = _get_recent_compaction()
         if compaction:

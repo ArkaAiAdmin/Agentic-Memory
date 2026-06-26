@@ -25,6 +25,8 @@ I1 fix (2026-06-22): participates in the per-process search
 dedup cache shared with the other two hooks.
 """
 
+import fcntl
+import json
 import os
 import sys
 import time
@@ -32,9 +34,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _bootstrap_path  # noqa: E402
-
-import json
-import subprocess
 
 # Make the sibling _log_error.py importable (same dir as this hook)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -124,6 +123,62 @@ def _cache_put(query: str, results: list[dict]) -> None:
     while len(_SEARCH_CACHE) > _SEARCH_CACHE_MAX:
         oldest = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k][0])
         _SEARCH_CACHE.pop(oldest, None)
+
+
+# ---------------------------------------------------------------------------
+# Sprint 3: Per-session state file (flock-protected)
+# ---------------------------------------------------------------------------
+
+
+def _get_sessions_dir() -> Path:
+    try:
+        from memory_common import get_memory_paths
+
+        _, local_mem, _ = get_memory_paths()
+        return local_mem / "sessions"
+    except Exception:
+        return Path(__file__).resolve().parent.parent / "memory" / "sessions"
+
+
+_CURRENT_SESSION_FILE = _get_sessions_dir() / ".current_session.json"
+_CURRENT_SESSION_LOCK = _get_sessions_dir() / ".current_session.json.flock"
+
+
+def _read_current_session() -> dict:
+    if not _CURRENT_SESSION_FILE.exists():
+        return {}
+    try:
+        return json.loads(_CURRENT_SESSION_FILE.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _write_current_session(data: dict) -> None:
+    _get_sessions_dir().mkdir(parents=True, exist_ok=True)
+    _CURRENT_SESSION_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = _CURRENT_SESSION_LOCK.open("w")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            _CURRENT_SESSION_FILE.write_text(json.dumps(data, indent=2))
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            fd.close()
+    except OSError:
+        # Fallback: write without flock if flock fails
+        _CURRENT_SESSION_FILE.write_text(json.dumps(data, indent=2))
+
+
+def _format_thread_context(threads: list[dict]) -> str:
+    if not threads:
+        return ""
+    lines = ["\n## Open Decision Threads (carried forward)"]
+    for t in threads:
+        title = t.get("title", "Untitled")
+        tid = t.get("id", "?")[:8]
+        status = t.get("status", "open")
+        lines.append(f"  • [{tid}] {title} (status: {status})")
+    return "\n".join(lines)
 
 
 def extract_session_query(hook_data: dict) -> str:
@@ -217,6 +272,49 @@ def main():
             except json.JSONDecodeError:
                 pass
 
+        project_root = (
+            hook_data.get("cwd")
+            or hook_data.get("project_dir")
+            or hook_data.get("workspace")
+            or str(Path.cwd())
+        )
+        agent_id = hook_data.get("session_id", "")
+
+        # Phase 0: Session entity (Sprint 3)
+        session_thread_output = ""
+        current_session = _read_current_session()
+        try:
+            from session_manager import SessionManager
+
+            mgr = SessionManager()
+            ctx = mgr.start_session(project_root=project_root, agent_id=agent_id)
+            if ctx is not None:
+                _write_current_session(
+                    {
+                        "session_id": ctx.session.id,
+                        "project_root": project_root,
+                        "started_at": ctx.session.started_at,
+                        "active_threads": [
+                            {"id": t.id, "title": t.title, "status": t.status}
+                            for t in ctx.active_threads
+                        ],
+                    }
+                )
+                if ctx.active_threads:
+                    session_thread_output = _format_thread_context(
+                        [
+                            {"id": t.id, "title": t.title, "status": t.status}
+                            for t in ctx.active_threads
+                        ]
+                    )
+                elif current_session.get("session_id"):
+                    session_thread_output = (
+                        f"\n## Session\nResumed session `{ctx.session.id[:12]}`"
+                        f" (status: {ctx.session.status})"
+                    )
+        except Exception as _e:
+            log_error(_e, context="memory-session-start.session_init")
+
         # Phase 1: Bootstrap (pinned, high-importance, recent)
         bootstrap_output = ""
         try:
@@ -234,8 +332,6 @@ def main():
             proactive_output = proactive_search(query)
 
         # Phase 4 (2026-06-25): inject Rules #2 and #6 reminders
-        # directly into the session-start briefing so the agent sees
-        # them before designing features or editing write-path code.
         rules_reminder = (
             "\n\n## Reliability Rules\n"
             "- **Rule #2** — Before designing a new feature: search for "
@@ -244,12 +340,13 @@ def main():
             '"save_pipeline saga transaction safety"\n'
         )
 
-        # Combine outputs
         parts = []
         if bootstrap_output:
             parts.append(bootstrap_output)
         if proactive_output:
             parts.append(proactive_output)
+        if session_thread_output:
+            parts.append(session_thread_output)
         if rules_reminder.strip():
             parts.append(rules_reminder)
 

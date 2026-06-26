@@ -389,3 +389,65 @@ class TestFeatureFlagGating:
         assert mgr.resolve_thread("t1") is False
         assert mgr.end_session("s1") is False
         assert mgr.compact_session("s1") is False
+
+
+# ---------------------------------------------------------------------------
+# Sprint 3 integration test: full lifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestFullLifecycle:
+    def test_start_to_end_creates_ended_session_with_summary(
+        self, tmp_path, monkeypatch
+    ):
+        _enable_session_flag(monkeypatch)
+        import config as _cfg_mod
+
+        _cfg_mod.reset_config()
+
+        db = _make_db(tmp_path)
+        mgr = SessionManager(db_path=db)
+
+        # Start
+        ctx = mgr.start_session("/tmp/proj", agent_id="a1")
+        assert ctx is not None
+        assert ctx.session.status == "active"
+        session_id = ctx.session.id
+
+        # Create a thread via raw SQL (simulates Sprint 4 extraction)
+        tid = f"thread_{uuid.uuid4().hex[:8]}"
+        conn = sqlite3.connect(db)
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute(
+            "INSERT INTO decision_threads "
+            "(id, session_id, title, status, created_at, version_vector) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (tid, session_id, "Integration thread", "open", mgr._now(), "{}"),
+        )
+        conn.commit()
+        conn.close()
+
+        # End
+        ok = mgr.end_session(session_id, summary="integration summary")
+        assert ok is True
+
+        # Verify session row
+        conn = sqlite3.connect(db)
+        conn.execute("PRAGMA foreign_keys=ON")
+        row = conn.execute(
+            "SELECT status, summary_note_id FROM sessions WHERE id=?",
+            (session_id,),
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "ended"
+        assert row[1] is not None  # summary_note_id set
+
+        # Verify thread was deferred
+        conn = sqlite3.connect(db)
+        conn.execute("PRAGMA foreign_keys=ON")
+        row = conn.execute(
+            "SELECT status FROM decision_threads WHERE id=?", (tid,)
+        ).fetchone()
+        conn.close()
+        assert row[0] == "deferred"

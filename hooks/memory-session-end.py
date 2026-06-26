@@ -21,11 +21,15 @@ If the Stop event fires and saved_at is missing or older than the
 session start, the hook auto-saves a session memory via the MCP tool.
 """
 
+import fcntl
 import json
+import logging
 import os
 import sys
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _bootstrap_path  # noqa: E402
@@ -46,6 +50,61 @@ from memory_config import GLOBAL_MEM_DIR
 _MARKER_FILE = GLOBAL_MEM_DIR / ".last_session_save.json"
 _SESSION_SAVE_CATEGORY = "sessions"
 _TOOL_THRESHOLD = 5  # auto-save if >= this many tool calls without a save
+
+SESSIONS_DIR = GLOBAL_MEM_DIR / "sessions"
+_CURRENT_SESSION_FILE = SESSIONS_DIR / ".current_session.json"
+_CURRENT_SESSION_LOCK = SESSIONS_DIR / ".current_session.json.flock"
+
+
+def _read_current_session() -> dict:
+    if not _CURRENT_SESSION_FILE.exists():
+        return {}
+    try:
+        return json.loads(_CURRENT_SESSION_FILE.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _clear_current_session() -> None:
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = _CURRENT_SESSION_LOCK.open("w")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            _CURRENT_SESSION_FILE.write_text("{}")
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            fd.close()
+    except OSError:
+        _CURRENT_SESSION_FILE.write_text("{}")
+
+
+def _end_session_via_manager(session_id: str, marker: dict) -> dict:
+    """Call SessionManager.end_session() to close the session entity."""
+    try:
+        from session_manager import SessionManager
+
+        mgr = SessionManager()
+
+        # Build lightweight summary from marker — no LLM call
+        tool_count = marker.get("tool_count", 0)
+        summary = (
+            f"Session {session_id[:12]} ended.\n"
+            f"Tool calls: {tool_count}\n"
+            f"Ended via memory-session-end hook (Rule #7 enforcement)."
+        )
+        result = mgr.end_session(session_id, summary=summary)
+        _clear_current_session()
+        return {
+            "ended": True,
+            "session_id": session_id,
+            "summary_note_id": getattr(result, "summary_note_id", None)
+            if result
+            else None,
+        }
+    except Exception as e:
+        log_error(e, context="memory-session-end.end_session")
+        return {"ended": False, "error": str(e)}
 
 
 def _load_marker() -> dict:
@@ -171,28 +230,26 @@ def main():
         hook_event = os.environ.get("MEMORY_HOOK_EVENT", "")
 
         if hook_event == "stop" or not tool_name:
-            # Stop event: check if we need to auto-save
+            # Stop event: end session entity via SessionManager
+            session_end_result = {}
+            cs = _read_current_session()
+            entity_session_id = cs.get("session_id", "")
+            if entity_session_id:
+                session_end_result = _end_session_via_manager(entity_session_id, marker)
+
+            # Auto-save session memory if not already saved
             result = _maybe_auto_save()
-            # Phase 5: pre-stop compliance gate — emit compliance score
-            # as a non-blocking hint for the agent (Rule #7 enforcement
-            # already covered above; this is the broader audit gate).
+            # Phase 5: pre-stop compliance gate
             compliance = _compliance_gate()
+            combined = {
+                "session_end": session_end_result,
+                "auto_saved": result.get("saved", False),
+                "reason": result.get("reason", ""),
+                "compliance": compliance,
+            }
             if result.get("saved"):
-                print(
-                    json.dumps(
-                        {"auto_saved": True, "detail": result, "compliance": compliance}
-                    )
-                )
-            else:
-                print(
-                    json.dumps(
-                        {
-                            "auto_saved": False,
-                            "reason": result.get("reason", ""),
-                            "compliance": compliance,
-                        }
-                    )
-                )
+                combined["detail"] = result
+            print(json.dumps(combined))
         else:
             # PostToolUse (or any other event): just update tool count
             marker = _update_tool_count(tool_name)
