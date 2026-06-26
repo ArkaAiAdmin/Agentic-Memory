@@ -4,6 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-3643%20passed-brightgreen)](#testing)
 [![SQLite](https://img.shields.io/badge/sqlite-FTS5-orange.svg)](https://www.sqlite.org/fts5.html)
+[![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
 
 [Quick Start](#quick-start) | [Documentation](docs/index.md) | [Architecture](#architecture) | [MCP Server](#mcp-server) | [Self-Host](#self-hosting) | [Contributing](CONTRIBUTING.md)
 
@@ -41,7 +42,12 @@ brew install agentic-memory
 **pip (all platforms):**
 
 ```bash
-pip install agentic-memory
+pip install agentic-memory              # Core + SDK + MCP server
+pip install agentic-memory[embeddings]  # + semantic search
+pip install agentic-memory[reranker]    # + cross-encoder reranker
+pip install agentic-memory[langchain]   # + LangChain adapters
+pip install agentic-memory[crewai]      # + CrewAI adapters (Python 3.11–3.13)
+pip install agentic-memory[all]         # Everything
 ```
 
 **From source:**
@@ -106,6 +112,9 @@ Add to your MCP config (`~/.opencode/mcp-servers.json` or Claude Code settings):
 | **MCP integration** | 15 core tools + `memory_maintenance` grouped tool (64 admin ops) for Claude Code, OpenCode, and any MCP-compatible agent |
 | **Native TLS** | Optional `MEMORY_SYNC_TLS_CERT` + `MEMORY_SYNC_TLS_KEY` (mTLS via `MEMORY_SYNC_TLS_CLIENT_CA`) for the sync server — no reverse proxy required |
 | **Zero dependencies** | Core system works with just Python stdlib + SQLite — no cloud, no API keys |
+| **Typed Python SDK** | 7 public classes (`MemoryClient`, `AgentMemory`, `KnowledgeGraph`, `TemporalKG`, `Maintenance`, `SyncManager`, `Admin`), 8 dataclasses, 9 exception types — `pip install agentic-memory` |
+| **LangChain adapters** | `AgenticMemoryRetriever`, `AgenticMemoryChatHistory`, structured tools, callback handler — `pip install agentic-memory[langchain]` |
+| **CrewAI adapters** | `AgenticMemorySearchTool`, `AgenticMemorySaveTool`, crew memory slot adapter — `pip install agentic-memory[crewai]` (Python 3.11–3.13) |
 
 ## Documentation
 
@@ -121,37 +130,43 @@ Full documentation at [docs/index.md](docs/index.md):
 ## Architecture
 
 ```
-agentic-memory/                    # Repo root — 102 production modules, 42,373 LOC
-├── agentic_memory/                # Python package (pip installable; 2 files)
-│   ├── __init__.py                 # Re-exports Memory, AgentMemory, main
-│   └── __main__.py                 # python -m agentic_memory
-├── cli.py                          # 11 CLI entry points (server, search, rebuild, …)
-├── save_pipeline.py                # Write path (1,359 LOC, shim → save/)
-├── save/                           # Write path subpackage (5 modules, 1,251 LOC)
-├── search_pipeline.py              # Read path (shim → search/)
-├── search/                         # Read path subpackage (8 modules, 4,223 LOC)
-├── backfill_all.py                 # Audit pipeline (shim → backfill/)
-├── backfill/                       # Audit pipeline subpackage
-├── auto_save.py                    # Tool-call auto-save hook + async daemon (1,700 LOC, 44 functions)
-├── background_queue.py             # SQLite-backed task queue
-├── background_worker.py            # Task queue worker (flock-protected, 120s timeout)
-├── knowledge_graph.py              # Entity extraction
-├── kg_dedup.py                     # Exact + semantic dedup
-├── embedding_search.py             # Semantic search via model2vec
-├── memory_injection.py             # Prompt injection detection
-├── memory_common.py                # Shared utilities
-├── db.py                           # Connection pool with re-entrancy guard
-├── migration_runner.py             # Schema migrations (current v21, 21 migrations)
-├── sync_server.py                  # HTTP sync server (native TLS + mTLS)
-├── sync_client.py                  # HTTP sync client
-├── memory_sharing.py               # In-DB memory sharing pool (was multi_agent.py)
-├── adaptive_retention.py           # Psi-formula half-life + audit_hits cache
-├── cron/                           # 26 background jobs (cron_*.py + install_crontab.sh)
-├── mcp_*.py (26 modules)           # Domain-split MCP tools (85 total: 15 CORE + 70 ADMIN)
+agentic-memory/                          # Repo root — production + tests + integrations
+├── agentic_memory/                      # Python package (pip installable)
+│   ├── __init__.py                       # Re-exports all SDK classes + models
+│   ├── client.py                         # MemoryClient (core save/search/CRUD)
+│   ├── kg.py                             # KnowledgeGraph (entity/fact/path ops)
+│   ├── temporal.py                       # TemporalKG (time-aware queries, contradictions)
+│   ├── maintenance.py                    # Maintenance (rebuild, compact, audit, health)
+│   ├── agent.py                          # AgentMemory (namespace-isolated saves)
+│   ├── sync.py                           # SyncManager (CRDT sync + cross-agent sharing)
+│   ├── admin.py                          # Admin (health, circuit breaker)
+│   ├── models.py                         # 8 typed dataclasses (MemoryResult, Fact, …)
+│   ├── exceptions.py                     # 9-class exception hierarchy
+│   ├── utils.py                          # DB path, connection pool, result parsing
+│   └── integrations/                     # Ecosystem adapters (lazy-guarded)
+│       ├── langchain/
+│       │   ├── retriever.py              # AgenticMemoryRetriever (BaseRetriever)
+│       │   ├── history.py                # AgenticMemoryChatHistory (BaseChatMessageHistory)
+│       │   ├── tool.py                   # search_tool + save_tool (StructuredTool)
+│       │   └── callback.py               # AgenticMemoryCallbackHandler
+│       └── crewai/
+│           ├── tool.py                   # AgenticMemorySearchTool + SaveTool (BaseTool)
+│           └── memory.py                 # AgenticMemoryMemory (crew memory slot)
+├── save_pipeline.py                     # Write path shim → save/
+├── save/                                # Write path subpackage (5 modules)
+├── search_pipeline.py                   # Read path shim → search/
+├── search/                              # Read path subpackage (8 modules)
+├── mcp_*.py (26 modules)                # Domain-split MCP tools (85 total)
+├── auto_save.py                         # Tool-call auto-save hook + async daemon
+├── background_queue.py                  # SQLite-backed task queue
+├── background_worker.py                 # Task queue worker (flock-protected)
+├── sync_server.py                       # HTTP sync server (native TLS + mTLS)
+├── db.py                                # Connection pool with re-entrancy guard
+├── migration_runner.py                  # Schema migrations (v21, 21 migrations)
 └── ...
 ```
 
-**Top-level scale (2026-06-23):** 102 Python modules, 46,247 root-level LOC (56,799 including all subpackage files). Test suite: 183 test files, 3,494 test functions, all passing (10 skipped for speed), 0 warnings. ~51-table SQLite schema at version 21 (added v18 fact-level temporal KG, v19 entity FK fix, v20 kg_facts FTS5 index, v21 kg_crdt tables).
+**Key stats (2026-06-26):** 102 production modules at repo root. Typed SDK: 11 modules, ~2,800 LOC. Test suite: 196 test files, 3,623 passing, 0 failures, 20 skipped. ~51-table SQLite schema at version 21 (added v18 fact-level temporal KG, v19 entity FK fix, v20 kg_facts FTS5 index, v21 kg_crdt tables).
 
 ### Per-project layout
 
@@ -207,11 +222,13 @@ See [docs/self-hosting.md](docs/self-hosting.md) for detailed instructions.
 ### Install extras
 
 ```bash
-pip install agentic-memory              # Core only (MCP server)
-pip install agentic-memory[embeddings]  # + semantic search
-pip install agentic-memory[reranker]    # + cross-encoder reranker
+pip install agentic-memory              # Core only (MCP server + typed SDK)
+pip install agentic-memory[embeddings]  # + semantic search (model2vec + usearch)
+pip install agentic-memory[reranker]    # + cross-encoder reranker (torch + transformers)
+pip install agentic-memory[langchain]   # + LangChain adapters (retriever, history, tools, callback)
+pip install agentic-memory[crewai]      # + CrewAI adapters (tools, memory slot; Python 3.11–3.13)
 pip install agentic-memory[dev]         # + pytest, ruff, mypy
-pip install agentic-memory[all]         # Everything
+pip install agentic-memory[all]         # Everything except crewai on Python 3.14+
 ```
 
 ### Environment variables
@@ -245,16 +262,37 @@ agentic-memory-worker                # Process pending background tasks
 
 ## Roadmap
 
+### v1.0.0 — Ecosystem Integration Layer (shipped 2026-06-26)
+
 - [x] Core memory system (markdown + SQLite FTS5)
 - [x] Knowledge graph with entity extraction
-- [x] Background task queue
+- [x] Background task queue + cron workers
 - [x] Semantic entity resolution
-- [x] pip package (`pip install agentic-memory`)
-- [x] Homebrew tap for macOS
+- [x] Typed Python SDK (`pip install agentic-memory` — 7 classes, 8 dataclasses)
+- [x] LangChain adapters (`pip install agentic-memory[langchain]`)
+  - `AgenticMemoryRetriever` — drops into any `BaseRetriever` / `RetrievalQA` chain
+  - `AgenticMemoryChatHistory` — `BaseChatMessageHistory` with role tagging
+  - `search_tool` + `save_tool` — `StructuredTool` instances for ReAct agents
+  - `AgenticMemoryCallbackHandler` — auto-persist every LLM turn
+- [x] CrewAI adapters (`pip install agentic-memory[crewai]`, Python 3.11–3.13)
+  - `AgenticMemorySearchTool` + `AgenticMemorySaveTool` — `BaseTool` subclasses
+  - `AgenticMemoryMemory` — drop-in crew `memory` slot adapter
+- [x] MCP server (15 core tools + 64 admin ops via `memory_maintenance`)
+- [x] 3,603 passing tests, 0 failures across 196 test files
+
+### v1.1.0 — Pipeline Correctness (shipped 2026-06-26)
+
+- [x] Fix: search API now returns `content` (was always `""` in `result_items`)
+- [x] Confirmed: blanket xfail list fully removed (2026-06-16/17 H21 refactor)
+- [x] Documented: Python 3.14 / CrewAI limitation (upstream `tiktoken` wheel gap)
+
+### Planned
+
 - [ ] Web API server (FastAPI)
-- [ ] Python SDK
-- [ ] LangChain / CrewAI integrations
+- [ ] LlamaIndex adapter (`pip install agentic-memory[llamaindex]`)
+- [ ] Haystack document store connector
 - [ ] Managed cloud service
+- [ ] PyPI publication with download counter and docs site
 
 ## Contributing
 

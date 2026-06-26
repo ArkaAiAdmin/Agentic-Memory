@@ -1282,6 +1282,7 @@ def _build_result_items(*, db, results_to_display, query, rerank):
         result_items.append(
             {
                 "id": note_id,
+                "content": content,
                 "source_file": source_file,
                 "tags": tags,
                 "created": created,

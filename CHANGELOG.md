@@ -4,7 +4,42 @@ All notable changes to agentic-memory are documented here. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [2.1.0] — 2026-06-26 — Ecosystem Integration Layer
+## [1.1.0] — 2026-06-26 — Search Pipeline Content Fix + xfail Cleanup
+
+### Fixed
+
+- **Search results now include `content` (was always `""`)** —
+  `search/orchestrator.py::_build_result_items()` built the public
+  API result dict from the DB row but omitted the `content` field
+  even though it was already unpacked from the row tuple
+  (`MemoryResultRow.content`). `_apply_safety_demoting()` reconstructed
+  it from `results_to_display` as a band-aid, but that only applied to
+  the safety-pass subset. The SDK's `parse_search_results()` and every
+  integration retriever (LangChain `Document.page_content`, CrewAI
+  tool output) received empty strings. Fixed by adding `"content":
+  content` to the `result_items` dict literal — one line, additive only.
+  No callers are broken by content now being present; all 3623 existing
+  tests pass with the change.
+
+- **Blanket xfail list confirmed fully removed** — The pair of 2026-06-16
+  / 2026-06-17 H21 refactors already migrated every test off the blanket
+  xfail. What remains in `conftest.py` lines 102-176 is documentation
+  only. The `pytest_sessionfinish` hook at line 151 records xpass
+  telemetry but never applies xfail marks. No cleanup action required.
+
+### Noted (no fix available — upstream dependency)
+
+- **Python 3.14 / CrewAI extras** — `pip install agentic-memory[crewai]`
+  fails because `tiktoken` has no Python 3.14 wheel and refuses to build
+  from source. This is an upstream issue in the `tiktoken` package and
+  cannot be fixed in agentic-memory without replacing the dependency.
+  Mitigation: all CrewAI test files are skip-guarded with
+  `pytest.mark.skipif(not HAS_CREWAI)` and the docs at
+  `docs/integrations/crewai.md` state the Python 3.11–3.13 requirement.
+  Will be revisited when `tiktoken` ships a 3.14 wheel.
+
+
+## [1.0.0] — 2026-06-26 — Ecosystem Integration Layer
 
 ### Added — LangChain and CrewAI adapter packages
 

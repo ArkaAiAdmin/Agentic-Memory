@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 # authoritative source.
 [project]
 name = "agentic-memory"
-version = "2.1.0"
+version = "1.1.0"
 description = "Local-first persistent memory for AI agents — Mem0-compatible SDK, MCP server, and 79 MCP tools"
 readme = "README.md"
 requires-python = ">=3.11"
