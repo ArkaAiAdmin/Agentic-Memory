@@ -283,7 +283,6 @@ agentic-memory-worker                # Process pending background tasks
 ### v1.1.0 — Pipeline Correctness (shipped 2026-06-26)
 
 - [x] Fix: search API now returns `content` (was always `""` in `result_items`)
-- [x] Confirmed: blanket xfail list fully removed (2026-06-16/17 H21 refactor)
 - [x] Documented: Python 3.14 / CrewAI limitation (upstream `tiktoken` wheel gap)
 
 ### Planned

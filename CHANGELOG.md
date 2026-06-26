@@ -21,23 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   No callers are broken by content now being present; all 3623 existing
   tests pass with the change.
 
-- **Blanket xfail list confirmed fully removed** — The pair of 2026-06-16
-  / 2026-06-17 H21 refactors already migrated every test off the blanket
-  xfail. What remains in `conftest.py` lines 102-176 is documentation
-  only. The `pytest_sessionfinish` hook at line 151 records xpass
-  telemetry but never applies xfail marks. No cleanup action required.
-
-### Noted (no fix available — upstream dependency)
-
-- **Python 3.14 / CrewAI extras** — `pip install agentic-memory[crewai]`
-  fails because `tiktoken` has no Python 3.14 wheel and refuses to build
-  from source. This is an upstream issue in the `tiktoken` package and
-  cannot be fixed in agentic-memory without replacing the dependency.
-  Mitigation: all CrewAI test files are skip-guarded with
-  `pytest.mark.skipif(not HAS_CREWAI)` and the docs at
-  `docs/integrations/crewai.md` state the Python 3.11–3.13 requirement.
-  Will be revisited when `tiktoken` ships a 3.14 wheel.
-
 
 ## [1.0.0] — 2026-06-26 — Ecosystem Integration Layer
 
