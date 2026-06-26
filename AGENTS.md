@@ -104,6 +104,12 @@ See `memory.toml` for all 17 feature flags.
 
 ---
 
+## Test Execution Rules
+
+14. **Full suite must use subprocess.** Always run tests via `cd <repo> && nohup ./venv/bin/python -m pytest eval/ -q > /tmp/full_suite.log 2>&1 &` (or `run_full_suite.py`). Direct `pytest eval/` in the same shell blocks the agent and can deadlock the session. Poll the log file for results.
+
+---
+
 ## Emergency
 
 1. **Stale lock — diagnose first.** Both `.rebuild.lock` and `.vec_rebuild.lock` use `fcntl.flock`, which auto-releases when the holding process dies. An empty lock file on disk alone is not a real contention — the actual protection is the OS-level flock held by an open FD. Before removing anything: run `ps aux | grep python` and try a non-blocking acquire yourself (the next legitimate writer will succeed automatically if no live process holds it). If a live process IS holding the lock, find it with `lsof | grep rebuild.lock` and decide whether to wait or kill it. **Never `rm` a lock that a live process is holding** — it will corrupt the write it's mid-way through. If the holder is dead (no matching PID), the empty file is safe to remove: `rm memory/.rebuild.lock`.
