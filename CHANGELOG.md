@@ -4,6 +4,111 @@ All notable changes to agentic-memory are documented here. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-06-26 — Search Pipeline Content Fix + xfail Cleanup
+
+### Fixed
+
+- **Search results now include `content` (was always `""`)** —
+  `search/orchestrator.py::_build_result_items()` built the public
+  API result dict from the DB row but omitted the `content` field
+  even though it was already unpacked from the row tuple
+  (`MemoryResultRow.content`). `_apply_safety_demoting()` reconstructed
+  it from `results_to_display` as a band-aid, but that only applied to
+  the safety-pass subset. The SDK's `parse_search_results()` and every
+  integration retriever (LangChain `Document.page_content`, CrewAI
+  tool output) received empty strings. Fixed by adding `"content":
+  content` to the `result_items` dict literal — one line, additive only.
+  No callers are broken by content now being present; all 3623 existing
+  tests pass with the change.
+
+
+## [1.0.0] — 2026-06-26 — Ecosystem Integration Layer
+
+### Added — LangChain and CrewAI adapter packages
+
+New `agentic_memory/integrations/` package with lazy-import-guarded
+adapters for LangChain and CrewAI. The core SDK works without any
+integration dependency installed; adapters are loaded only when the
+corresponding extras group is present.
+
+**LangChain** (`pip install agentic-memory[langchain]`):
+
+- `AgenticMemoryRetriever` — drops into any LangChain `BaseRetriever`
+  / `RetrievalQA` / RAG chain. Maps `MemoryResult` → `Document` with
+  all 9 fields in `metadata`, filtering out falsy extras (`None`,
+  `0.0`, `""`). Supports `invoke()` and `ainvoke()`.
+- `AgenticMemoryChatHistory` — stores `BaseMessage` objects as tagged
+  session memories tagged by role (`human`, `ai`, `system`) and
+  `session_id`.
+- `search_tool` + `save_tool` — ready-to-use `StructuredTool`
+  instances for ReAct agents. Save returns `"Saved as <note_id>"`;
+  search returns a compact LLM-readable string.
+- `AgenticMemoryCallbackHandler` — auto-persists every LLM turn
+  (prompts off by default, responses on by default) with configurable
+  `auto_tags`.
+
+**CrewAI** (`pip install agentic-memory[crewai]`):
+
+- `AgenticMemorySearchTool` + `AgenticMemorySaveTool` — `BaseTool`
+  subclasses mountable on individual crew agents.
+- `AgenticMemoryMemory` — drop-in crew `memory` slot adapter.
+  `save(context, agent, task)` tags entries with `crew`, agent, and
+  task IDs. `search(query)` returns plain `list[dict]` so the crew
+  runner can serialise without SDK imports.
+- Runtime version check: raises a clear `ImportError` on CrewAI 1.x
+  with instructions to pin `crewai<1.0`.
+
+**Shared:**
+
+- `_format_as_llm_readable()` — compact string formatter duplicated
+  in both adapter packages so each extras group works independently.
+- Lazy import guards in `integrations/__init__.py` — all integration
+  classes behind `try/except ImportError`; the core package is
+  unaffected if extras are absent.
+
+**Tests** (6 new files, 63 passing, 10 skipped on Python 3.14
+where CrewAI's `tiktoken` build is blocked):
+
+- `eval/test_langchain_retriever.py` — init, db_path env fallback,
+  Document conversion, metadata filtering, empty results.
+- `eval/test_langchain_history.py` — role tagging, add_message
+  persistence, clear no-op.
+- `eval/test_langchain_tool.py` — formatter, input schemas, tool
+  construction.
+- `eval/test_crewai_tool.py` — BaseTool subclass, `_run`, schemas
+  (skipped py3.14).
+- `eval/test_crewai_memory.py` — init, save/search round-trip, tag
+  verification (partial skip py3.14).
+- `eval/test_integrations_shared.py` — formatter shared across both
+  adapter packages.
+
+**Docs** (`docs/integrations/`):
+
+- `overview.md` — adapter comparison table, selection guide, planned
+  adapters (LlamaIndex, Haystack, Semantic Kernel, AutoGen).
+- `langchain.md` — full API reference with code snippets for all 4
+  adapters.
+- `crewai.md` — memory slot and tools usage, version compatibility
+  note for Python 3.14.
+- `roadmap.md` — shipped and planned adapter inventory.
+
+**Examples** (`examples/`):
+
+- `langchain_agent.py` — seeds demo memories, demonstrates retriever
+  and tool usage end-to-end.
+- `crewai_crew.py` — crew memory slot demo, tool instantiation,
+  optional full crew run with `OPENAI_API_KEY`.
+
+**Packaging:**
+
+- `pyproject.toml` extras: `[langchain]`, `[crewai]`, `[all]`.
+- Version sync: `pyproject.toml` and `agentic_memory/__init__.py`
+  both set to `2.1.0` (was `1.0.0` / `2.0.0` mismatch).
+
+**Verified:** Full test suite passes — 3623 passed, 20 skipped,
+53 subtests passed, 0 failures.
+
+
 ## [Unreleased — 2026-06-22 follow-up]
 
 ### Fixed — Audit gaps closed (B-3 + circuit-breaker + rebuild skip)

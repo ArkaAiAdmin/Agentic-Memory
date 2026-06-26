@@ -657,3 +657,149 @@ def memory_temporal_query(
     except Exception as e:
         logger.exception("memory_temporal_query failed")
         return _err(ErrorCode.DB_ERROR, f"temporal_query failed: {e}")
+
+
+@mcp.tool()
+@with_audit("memory_compliance_check")
+def memory_compliance_check(session_id: str = "") -> str:
+    """Check whether AGENTS.md workflow rules were followed in this session.
+
+    Reads the session marker file and auto-save logs to determine if
+    key steps were performed. This is a non-blocking audit — it reports
+    compliance but does not enforce anything.
+
+    Checks:
+      - Was a session-start save performed? (Rule #1)
+      - Were there tool calls without a session-end save? (Rule #7)
+      - Does the health_status.json exist and pass? (Rules #5, #9-11)
+
+    Args:
+        session_id: optional session identifier to scope the check.
+
+    Returns:
+        JSON with compliance_score (0-1), checks list, and skipped items.
+    """
+    try:
+        from pathlib import Path as _P
+
+        mem_dir = GLOBAL_MEM_DIR
+        marker_file = mem_dir / ".last_session_save.json"
+        health_file = mem_dir / ".health_status.json"
+
+        checks = []
+        skipped = []
+        score = 1.0
+
+        # Rule #7: session-end save
+        if marker_file.exists():
+            try:
+                marker = json.loads(marker_file.read_text())
+                saved_at = marker.get("saved_at", 0)
+                tool_count = marker.get("tool_count", 0)
+                if saved_at > 0:
+                    checks.append(
+                        {
+                            "rule": "#7",
+                            "name": "session_end_save",
+                            "status": "ok",
+                            "detail": f"saved_at={saved_at}, tools={tool_count}",
+                        }
+                    )
+                elif tool_count > 0:
+                    checks.append(
+                        {
+                            "rule": "#7",
+                            "name": "session_end_save",
+                            "status": "skipped",
+                            "detail": f"{tool_count} tool calls without session-end save",
+                        }
+                    )
+                    skipped.append("Rule #7: session-end memory_save not performed")
+                    score -= 0.2
+                else:
+                    checks.append(
+                        {
+                            "rule": "#7",
+                            "name": "session_end_save",
+                            "status": "no_activity",
+                            "detail": "no tool calls recorded",
+                        }
+                    )
+            except (json.JSONDecodeError, OSError) as e:
+                checks.append(
+                    {
+                        "rule": "#7",
+                        "name": "session_end_save",
+                        "status": "error",
+                        "detail": str(e),
+                    }
+                )
+        else:
+            checks.append(
+                {
+                    "rule": "#7",
+                    "name": "session_end_save",
+                    "status": "no_marker",
+                    "detail": "marker file not found",
+                }
+            )
+
+        # Rules #5, #9-11: health_status.json
+        if health_file.exists():
+            try:
+                health = json.loads(health_file.read_text())
+                overall = health.get("overall_healthy", True)
+                alerts = health.get("alerts", [])
+                ts = health.get("timestamp", "unknown")
+                checks.append(
+                    {
+                        "rule": "#5,#9-11",
+                        "name": "system_health",
+                        "status": "ok" if overall else "unhealthy",
+                        "detail": f"timestamp={ts}, alerts={len(alerts)}, healthy={overall}",
+                        "alerts": alerts[:5],
+                    }
+                )
+                if not overall:
+                    score -= 0.15
+                    skipped.append(
+                        f"System health check found {len(alerts)} alerts — see .health_status.json"
+                    )
+            except (json.JSONDecodeError, OSError) as e:
+                checks.append(
+                    {
+                        "rule": "#5,#9-11",
+                        "name": "system_health",
+                        "status": "error",
+                        "detail": str(e),
+                    }
+                )
+        else:
+            checks.append(
+                {
+                    "rule": "#5,#9-11",
+                    "name": "system_health",
+                    "status": "no_file",
+                    "detail": ".health_status.json not found — cron_health_check may not have run yet",
+                }
+            )
+
+        score = max(0.0, min(1.0, score))
+
+        return json.dumps(
+            {
+                "ok": True,
+                "compliance_score": round(score, 2),
+                "checks": checks,
+                "skipped": skipped,
+                "recommendation": (
+                    "Run memory_save(category='sessions') before ending session"
+                    if any(c.get("status") == "skipped" for c in checks)
+                    else "All checked rules are satisfied."
+                ),
+            },
+            indent=2,
+        )
+    except Exception as e:
+        logger.exception("memory_compliance_check failed")
+        return _err(ErrorCode.DB_ERROR, f"compliance_check failed: {e}")

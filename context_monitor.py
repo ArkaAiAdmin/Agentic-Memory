@@ -12,6 +12,7 @@ Called from OpenCode plugin hooks:
   - compacting          → pre_compaction (save before context is lost)
 """
 
+import fcntl
 import json
 import logging
 import os
@@ -29,6 +30,12 @@ MEMORY_DIR = Path(
 )
 SESSIONS_DIR = MEMORY_DIR / "sessions"
 STATE_FILE = SESSIONS_DIR / ".context_monitor_state.json"
+
+# Module-level keep-alive for the state lock FD. fcntl.flock releases
+# when the FD is closed; a local variable in _save_state would go out
+# of scope after the function returns between consecutive calls.
+_STATE_LOCK_FD = None
+_STATE_LOCK_PATH = SESSIONS_DIR / ".context_monitor_state.json.flock"
 
 # Configuration
 CHECKPOINT_INTERVAL = 10  # Save checkpoint every N tool calls
@@ -59,18 +66,47 @@ def _load_state() -> dict:
         "last_checkpoint_time": time.time(),
         "session_start_time": time.time(),
         "tools_since_checkpoint": 0,
-        "notable_tools": [],  # Recent tool calls worth remembering
+        "notable_tools": [],
+        "last_compaction_time": 0.0,
     }
 
 
 def _save_state(state: dict):
-    """Persist state to disk."""
+    """Persist state to disk.
+
+    Uses an exclusive flock on a sibling .flock file so concurrent
+    writers (track_tool_call, session_idle, pre_compaction) cannot
+    clobber each other. The actual write uses atomic_write (temp + os.replace)
+    so a crash mid-write never produces a truncated file.
+    """
+    global _STATE_LOCK_FD
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+
+    # Acquire exclusive flock; re-open FD each call so we don't hold
+    # it between calls (the hook model is short-lived subprocesses,
+    # not long-lived daemons).
+    try:
+        lock_fd = open(_STATE_LOCK_PATH, "w", encoding="utf-8")
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
+    except OSError as exc:
+        logger.debug("context_monitor: cannot acquire state lock: %s", exc)
+        lock_fd = None  # best-effort: proceed without lock
+
+    try:
+        from memory_common import atomic_write
+
+        atomic_write(STATE_FILE, json.dumps(state, indent=2) + "\n")
+    finally:
+        if lock_fd is not None:
+            try:
+                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+                lock_fd.close()
+            except OSError as exc:
+                logger.debug("context_monitor: cannot release state lock: %s", exc)
 
 
 def _today_str() -> str:
-    return time.strftime("%Y-%m-%d")
+    return time.strftime("%Y-%m-%d", time.gmtime())
 
 
 def _now_str() -> str:
@@ -264,7 +300,7 @@ with a manual summary of decisions, progress, and next steps.
 
     # Save to session file
     date_str = _today_str()
-    ts_str = time.strftime("%H-%M-%S", time.localtime())
+    ts_str = time.strftime("%H-%M-%S", time.gmtime())
     note_id = f"sessions/idle-{date_str}_{ts_str}"
     note_path = MEMORY_DIR / f"{note_id}.md"
 
@@ -335,7 +371,7 @@ This is the final session summary. The agent should add:
 """
 
     date_str = _today_str()
-    ts_str = time.strftime("%H-%M-%S", time.localtime())
+    ts_str = time.strftime("%H-%M-%S", time.gmtime())
     note_id = f"sessions/end-{date_str}_{ts_str}"
     note_path = MEMORY_DIR / f"{note_id}.md"
 
@@ -359,15 +395,17 @@ This is the final session summary. The agent should add:
         logger.warning("Failed to save memory in session_end")
         pass
 
-    # Reset state for next session
+    # Reset state for next session (preserve cumulative total_tool_calls)
     _save_state(
         {
             "tool_call_count": 0,
+            "total_tool_calls": state["total_tool_calls"],
             "last_checkpoint_tool_count": 0,
             "last_checkpoint_time": time.time(),
             "session_start_time": time.time(),
             "tools_since_checkpoint": 0,
             "notable_tools": [],
+            "last_compaction_time": state.get("last_compaction_time", 0),
         }
     )
 
@@ -582,18 +620,36 @@ def _build_activity_log(state: dict) -> str:
 
 
 def _build_autosave_section(autosaves: list) -> str:
-    """Format the last 100 auto-save records as a markdown bullet list.
-
-    Extracted from pre_compaction() (2026-06-22).
+    """Format auto-save records with content details for post-compaction
+    recovery. Shows the file, tool, and a content preview so the agent
+    can tell what actually changed.
     """
     lines = []
-    for a in autosaves[-100:]:
-        summary = a.get("content_preview", "")
-        if summary:
-            lines.append(f"- `{a['tool']}`: {summary}")
+    seen: set[str] = set()
+    for a in reversed(autosaves[-50:]):
+        tool = a.get("tool", "?")
+        fname = a.get("file", "?")
+        preview = a.get("content_preview", "")
+        dedup_key = f"{fname}:{tool}"
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        verb = {
+            "edit": "Edited",
+            "replace_file_content": "Edited",
+            "write": "Wrote",
+            "write_file": "Wrote",
+            "memory_save": "Saved",
+            "agentic-memory_memory_save": "Saved",
+        }.get(tool.split("_")[-1] if "_" in tool else tool, tool)
+        if preview:
+            first_line = preview.split("\n")[0].strip()[:120]
+            lines.append(f"- {verb} `{fname}`: {first_line}")
         else:
-            lines.append(f"- `{a['tool']}` ({a['file']})")
-    return "\n".join(lines) if lines else "- No auto-save notes found"
+            lines.append(f"- {verb} `{fname}`")
+    if not lines:
+        return "- No file changes recorded this session"
+    return "\n".join(lines)
 
 
 def _build_work_items(state: dict) -> str:
@@ -761,6 +817,108 @@ def _build_rich_context_sections(
     }
 
 
+COMPACTION_PIN_LIMIT = 10
+COMPACTION_RETENTION_DAYS = 3
+
+
+def _compaction_note_age_days(note_id: str) -> float | None:
+    """Extract timestamp from a compaction note ID like
+    'sessions/compaction-save-2026-06-25_18-55-02'.
+    Returns age in days, or None if parse fails.
+    """
+    try:
+        slug = note_id.rsplit("/", 1)[-1]  # compaction-save-2026-06-25_18-55-02
+        date_time = slug.replace("compaction-save-", "")  # 2026-06-25_18-55-02
+        ts = time.strptime(date_time, "%Y-%m-%d_%H-%M-%S")
+        epoch = time.mktime(ts)
+        return (time.time() - epoch) / 86400
+    except Exception:
+        return None
+
+
+def _enforce_compaction_pin_limit():
+    """Cap pinned compaction notes at COMPACTION_PIN_LIMIT and delete
+    compaction notes older than COMPACTION_RETENTION_DAYS from both
+    the DB and the filesystem.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        import sqlite3
+        from memory_common import get_memory_paths
+
+        _, local_mem, _ = get_memory_paths()
+        db_path = local_mem / "memory.db"
+        conn = sqlite3.connect(db_path)
+        # note_id already carries 'sessions/compaction-save-...' so use
+        # MEMORY_DIR directly — appending another 'sessions/' creates a
+        # double-nested path that never matches the real .md file.
+        sessions_dir = MEMORY_DIR
+
+        rows = conn.execute(
+            "SELECT id FROM memories "
+            "WHERE category='sessions' AND pinned=1 AND id LIKE 'sessions/compaction-save-%' "
+            "ORDER BY created_at DESC"
+        ).fetchall()
+        to_unpin = [r[0] for r in rows[COMPACTION_PIN_LIMIT:]]
+        if to_unpin:
+            conn.executemany(
+                "UPDATE memories SET pinned=0 WHERE id=?", [(i,) for i in to_unpin]
+            )
+            conn.commit()
+            logger.info(
+                "compaction pin limit: unpinned %d old compaction saves, kept %d",
+                len(to_unpin),
+                min(COMPACTION_PIN_LIMIT, len(rows)),
+            )
+
+        # Delete compaction notes older than COMPACTION_RETENTION_DAYS
+        all_rows = conn.execute(
+            "SELECT id FROM memories "
+            "WHERE category='sessions' AND id LIKE 'sessions/compaction-save-%'"
+        ).fetchall()
+        to_delete = []
+        for (note_id,) in all_rows:
+            age = _compaction_note_age_days(note_id)
+            if age is not None and age > COMPACTION_RETENTION_DAYS:
+                to_delete.append(note_id)
+
+        if to_delete:
+            for note_id in to_delete:
+                md = sessions_dir / f"{note_id}.md"
+                if md.exists():
+                    md.unlink()
+                conn.execute("DELETE FROM memories WHERE id=?", (note_id,))
+            conn.commit()
+            logger.info(
+                "compaction retention: deleted %d notes older than %d days",
+                len(to_delete),
+                COMPACTION_RETENTION_DAYS,
+            )
+
+        # Sweep orphaned .md files whose DB row was already deleted by
+        # a previous run (or manually) so the filesystem doesn't drift.
+        valid_ids = set()
+        for (nid,) in conn.execute(
+            "SELECT id FROM memories WHERE id LIKE 'sessions/compaction-save-%'"
+        ).fetchall():
+            valid_ids.add(nid)
+        orphan_count = 0
+        for md in sessions_dir.glob("compaction-save-*.md"):
+            note_id = "sessions/" + md.stem
+            if note_id not in valid_ids:
+                try:
+                    md.unlink()
+                    orphan_count += 1
+                except Exception:
+                    pass
+        if orphan_count:
+            logger.info(
+                "compaction retention: removed %d orphaned .md files", orphan_count
+            )
+    except Exception as exc:
+        logger.warning("compaction retention enforcement failed: %s", exc)
+
+
 def _write_compaction_note(
     content: str, autosaves: list, state: dict, elapsed_min: float, message_count: int
 ) -> dict:
@@ -773,7 +931,7 @@ def _write_compaction_note(
     Extracted from pre_compaction() (2026-06-22).
     """
     date_str = _today_str()
-    ts_str = time.strftime("%H-%M-%S", time.localtime())
+    ts_str = time.strftime("%H-%M-%S", time.gmtime())
     note_id = f"sessions/compaction-save-{date_str}_{ts_str}"
     note_path = MEMORY_DIR / f"{note_id}.md"
 
@@ -794,6 +952,7 @@ def _write_compaction_note(
             pinned=True,
             safety_wiring=False,
         )
+        _enforce_compaction_pin_limit()
     except Exception:
         logger.warning(
             "Failed to save compaction memory to DB, file-based save already succeeded"
@@ -832,10 +991,14 @@ def pre_compaction(session_id: str = "", message_count: int = 0) -> dict:
     if time.time() - last_compaction < 45:
         return {"deduped": True, "last_compaction": last_compaction}
 
-    dedup_state["last_compaction_time"] = time.time()
-    _save_state(dedup_state)
-
+    # Single save: set compaction timestamp and reset checkpoint counter
+    # together so no interleaving writer can clobber either field.
     state = _load_state()
+    state["last_compaction_time"] = time.time()
+    state["tools_since_checkpoint"] = 0
+    state["last_checkpoint_time"] = time.time()
+    _save_state(state)
+
     elapsed_min = (time.time() - state["session_start_time"]) / 60
 
     activity_section = _build_activity_log(state)
@@ -847,6 +1010,9 @@ def pre_compaction(session_id: str = "", message_count: int = 0) -> dict:
     # Reset checkpoint counter so next session starts fresh
     state["tools_since_checkpoint"] = 0
     state["last_checkpoint_time"] = time.time()
+    # Preserve the compaction timestamp we wrote earlier (line 939); state
+    # was re-loaded from disk at line 941 and may not include it yet.
+    state["last_compaction_time"] = dedup_state.get("last_compaction_time", 0)
     _save_state(state)
 
     recent_conclusions = _extract_recent_conclusions(autosaves)

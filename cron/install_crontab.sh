@@ -109,6 +109,11 @@ $BLOCK_BEGIN
 # 50 keeps wall time under 30s for normal backlogs).
 */15 *  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/background_worker.py --drain --max-tasks=50 >> $LOG_DIR/worker.log 2>&1
 
+# Health check — FTS drift, KG orphans, circuit breaker, auto-save health
+# (every 15 min, staggered 5 min after background_worker).
+# Writes .health_status.json for the proactive-context hook to read.
+*/15 *  *   *   *    MEMORY_KNOWLEDGE_GRAPH=1 $VENV_PY $ROOT/cron/cron_health_check.py >> $LOG_DIR/health-check.log 2>&1
+
 # Daily digest — rolls auto-saves into one note per day
 0  0  *   *   *    $VENV_PY $ROOT/auto_save.py daily-digest >> $LOG_DIR/digest.log 2>&1
 

@@ -72,9 +72,10 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, cast
 
 from memory_common import open_db
+from db import AnyConnection
 
 __all__ = [
     "RESTORE_WINDOW_SECONDS",
@@ -141,7 +142,7 @@ def _now_dt() -> _dt.datetime:
     return _dt.datetime.now(_dt.timezone.utc)
 
 
-def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+def _has_column(conn: AnyConnection, table: str, column: str) -> bool:
     """Return True if ``table`` has a column named ``column``.
 
     Uses ``PRAGMA table_info`` so it picks up columns added by ALTER
@@ -151,7 +152,7 @@ def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(row[1] == column for row in cur.fetchall())
 
 
-def _has_trigger(conn: sqlite3.Connection, trigger_name: str) -> bool:
+def _has_trigger(conn: AnyConnection, trigger_name: str) -> bool:
     """Return True if a trigger named ``trigger_name`` exists."""
     cur = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name=?",
@@ -160,7 +161,7 @@ def _has_trigger(conn: sqlite3.Connection, trigger_name: str) -> bool:
     return cur.fetchone() is not None
 
 
-def _ensure_columns(conn: sqlite3.Connection) -> None:
+def _ensure_columns(conn: AnyConnection) -> None:
     """Add ``deleted_at`` and ``deleted_by`` columns to ``memories`` if missing.
 
     Idempotent: re-running is a no-op. Both columns live next to the
@@ -210,7 +211,7 @@ def ensure_deleted_at_column(db_path) -> None:
         logger.warning("ensure_deleted_at_column failed for %s: %s", db_path, e)
 
 
-def _invalidate_edges_for_note(conn: sqlite3.Connection, note_id: str) -> None:
+def _invalidate_edges_for_note(conn: AnyConnection, note_id: str) -> None:
     """Invalidate edges tied to entities that appear only in this note.
 
     Called by soft_delete_note to mark edges as stale when the note
@@ -233,7 +234,7 @@ def _invalidate_edges_for_note(conn: sqlite3.Connection, note_id: str) -> None:
         edge_rows = conn.execute(
             f"""SELECT id FROM kg_edges
                 WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})""",
-            entity_ids + entity_ids,
+            tuple(entity_ids + entity_ids),
         ).fetchall()
         for (edge_id,) in edge_rows:
             conn.execute(
@@ -245,7 +246,7 @@ def _invalidate_edges_for_note(conn: sqlite3.Connection, note_id: str) -> None:
         pass
 
 
-def _restore_edges_for_note(conn: sqlite3.Connection, note_id: str) -> None:
+def _restore_edges_for_note(conn: AnyConnection, note_id: str) -> None:
     """Re-validate edges that were invalidated when this note was soft-deleted.
 
     Called by restore_note to clear the invalid_at flag when a note
@@ -269,7 +270,7 @@ def _restore_edges_for_note(conn: sqlite3.Connection, note_id: str) -> None:
             f"""UPDATE kg_edges SET invalid_at = NULL
                 WHERE (source_id IN ({placeholders}) OR target_id IN ({placeholders}))
                 AND invalid_at IS NOT NULL""",
-            entity_ids + entity_ids,
+            tuple(entity_ids + entity_ids),
         )
     except sqlite3.OperationalError:
         # kg_edges or kg_entities may not exist yet — ignore
@@ -375,7 +376,7 @@ def restore_note(db_path, note_id: str) -> bool:
         return False
 
 
-def _table_exists(conn, table_name: str) -> bool:
+def _table_exists(conn: AnyConnection, table_name: str) -> bool:
     """Return True if the named table exists in the schema.
 
     Used by hard_delete_note() to gate cascading deletes on table
@@ -391,7 +392,7 @@ def _table_exists(conn, table_name: str) -> bool:
     )
 
 
-def _cascading_delete_relations(conn, note_id: str) -> None:
+def _cascading_delete_relations(conn: AnyConnection, note_id: str) -> None:
     """Step 1 of the hard-delete cascade: backlinks.
 
     Delete by full note_id AND by slug (forward-references may store
@@ -406,7 +407,7 @@ def _cascading_delete_relations(conn, note_id: str) -> None:
     )
 
 
-def _remove_from_indices(conn, note_id: str) -> None:
+def _remove_from_indices(conn: AnyConnection, note_id: str) -> None:
     """Steps 2-5 of the hard-delete cascade: chunks, embeddings,
     vec_keys, kg_facts. Each is gated on the table existing (older
     databases may not have all of these). Extracted 2026-06-22.
@@ -421,7 +422,7 @@ def _remove_from_indices(conn, note_id: str) -> None:
         conn.execute("DELETE FROM kg_facts WHERE source_memory = ?", (note_id,))
 
 
-def _purge_orphaned_kg(conn) -> None:
+def _purge_orphaned_kg(conn: AnyConnection) -> None:
     """Steps 6-7 of the hard-delete cascade: remove KG edges and
     entities that became orphaned (no remaining facts or edges
     referencing them). Wrapped in try/except OperationalError so a
@@ -460,7 +461,7 @@ def _purge_orphaned_kg(conn) -> None:
             logger.warning("kg_entities cleanup in hard_delete_note: %s", e)
 
 
-def _purge_fts5_if_no_trigger(conn, note_id: str) -> None:
+def _purge_fts5_if_no_trigger(conn: AnyConnection, note_id: str) -> None:
     """Step 8: if the ``memories_ad`` trigger doesn't exist (legacy
     / partially-migrated DB), delete the FTS5 row manually. If the
     trigger exists, the FTS5 cleanup happens automatically when
@@ -499,7 +500,7 @@ def _purge_markdown_file(note_id: str) -> None:
         logger.warning("hard_delete_note(%s): .md cleanup failed: %s", note_id, md_exc)
 
 
-def _check_active_age(conn, note_id: str, row) -> None:
+def _check_active_age(conn: AnyConnection, note_id: str, row) -> None:
     """If the note is active (not soft-deleted), enforce the 30-day
     safety net. Raises ValueError if too young. Extracted 2026-06-22.
     """
@@ -605,7 +606,7 @@ def hard_delete_note(db_path, note_id: str) -> bool:
             # the duplicate _cascading_delete_relations.
             from save.cleanup import cleanup_memory_relations
 
-            cleanup_memory_relations(conn, note_id)
+            cleanup_memory_relations(cast(sqlite3.Connection, conn), note_id)
             _purge_fts5_if_no_trigger(conn, note_id)
             conn.execute("DELETE FROM memories WHERE id = ?", (note_id,))
             conn.commit()
@@ -717,7 +718,7 @@ def purge_expired(db_path) -> int:
             # ── 1. Backlinks ───────────────────────────────────
             conn.execute(
                 f"DELETE FROM backlinks WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})",
-                expired_ids + expired_ids,
+                tuple(expired_ids + expired_ids),
             )
 
             # ── 2. Chunks (memory_chunks_ad trigger cleans FTS5) ─
@@ -730,7 +731,7 @@ def purge_expired(db_path) -> int:
             ):
                 conn.execute(
                     f"DELETE FROM memory_chunks WHERE parent_id IN ({placeholders})",
-                    expired_ids,
+                    tuple(expired_ids),
                 )
 
             # ── 3. Embeddings ──────────────────────────────────
@@ -743,7 +744,7 @@ def purge_expired(db_path) -> int:
             ):
                 conn.execute(
                     f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders})",
-                    expired_ids,
+                    tuple(expired_ids),
                 )
 
             # ── 4. Vec index keys ──────────────────────────────
@@ -756,7 +757,7 @@ def purge_expired(db_path) -> int:
             ):
                 conn.execute(
                     f"DELETE FROM memory_vec_keys WHERE memory_id IN ({placeholders})",
-                    expired_ids,
+                    tuple(expired_ids),
                 )
 
             # ── 5. KG facts ────────────────────────────────────
@@ -769,7 +770,7 @@ def purge_expired(db_path) -> int:
             ):
                 conn.execute(
                     f"DELETE FROM kg_facts WHERE source_memory IN ({placeholders})",
-                    expired_ids,
+                    tuple(expired_ids),
                 )
 
             # ── 6. KG edges referencing orphaned entities ───────
@@ -850,7 +851,7 @@ def purge_expired(db_path) -> int:
             # ── 9. Memories row ────────────────────────────────
             conn.execute(
                 f"DELETE FROM memories WHERE id IN ({placeholders})",
-                expired_ids,
+                tuple(expired_ids),
             )
 
             conn.commit()
@@ -955,13 +956,15 @@ def delete_active_where(
             # rowcount can be -1 if the driver doesn't track it; fall
             # back to a SELECT COUNT.
             if changed < 0:
-                changed = conn.execute(
+                row = conn.execute(
                     f"""
                     SELECT COUNT(*) FROM memories
                      WHERE deleted_at = ? AND ({clause})
                     """,
                     (now,) + tuple(params),
-                ).fetchone()[0]
+                ).fetchone()
+                if row is not None:
+                    changed = row[0]
             # ── Invalidate edges for bulk-deleted notes ──────
             if changed > 0:
                 deleted_ids = [

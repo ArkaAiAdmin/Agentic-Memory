@@ -1,6 +1,6 @@
 # How to Add a Claude Code Hook
 
-Add a new lifecycle hook to the agentic-memory system. There are 4 hooks today (`memory-proactive-context`, `memory-search-on-demand`, `memory-session-start`, `memory-recall-session`) + 1 log helper; this is how to add a 5th.
+Add a new lifecycle hook to the agentic-memory system. There are 4 lifecycle hooks today (`memory-proactive-context`, `memory-session-start`, `memory-session-end`, plus the log helper `_log_error.py` is not a lifecycle hook); this is how to add a 5th.
 
 This is the **maintainer** version. For the high-level skill, see `skills/add-a-claude-code-hook/SKILL.md`.
 
@@ -25,13 +25,14 @@ This is the **maintainer** version. For the high-level skill, see `skills/add-a-
 | `Stop` | Agent stops responding | Save snapshot, ping user |
 | `SessionEnd` | Session deleted | Final save, cleanup |
 
-The current 4 hooks cover:
+The current 5 hooks cover:
 - `PreToolUse` — `memory-proactive-context` (proactive context injection)
 - `PostToolUse` — `memory-search-on-demand` (auto-save on tool complete)
 - `SessionStart` — `memory-session-start` (load context for a fresh session)
+- `Stop` — `memory-session-end` (auto-save session memory, enforces Rule #7)
 - `UserPromptSubmit` — `memory-recall-session` (recall on user prompt)
 
-Plus a 5th file (`_log_error.py`) that is a shared error logger, not a lifecycle hook.
+Plus a 6th file (`_log_error.py`) that is a shared error logger, not a lifecycle hook.
 
 ## Steps
 

@@ -109,7 +109,7 @@ def _get_cross_encoder_blend() -> float:
     try:
         from _lazy_imports import get_config
 
-        return get_config().cross_encoder_blend
+        return float(get_config().cross_encoder_blend)
     except Exception:
         return _CROSS_ENCODER_BLEND
 
@@ -118,7 +118,7 @@ def _get_late_interaction_blend() -> float:
     try:
         from _lazy_imports import get_config
 
-        return get_config().late_interaction_blend
+        return float(get_config().late_interaction_blend)
     except Exception:
         return _LATE_INTERACTION_BLEND
 

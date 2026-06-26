@@ -413,7 +413,8 @@ def _maybe_run_wal_checkpoint(conn: sqlite3.Connection, db_path: Path) -> None:
         try:
             size_mb = wal_path.stat().st_size / (1024 * 1024)
             wal_too_big = size_mb >= threshold_mb
-        except OSError:
+        except OSError as exc:
+            logger.debug("background_worker: cannot stat WAL %s: %s", wal_path, exc)
             wal_too_big = False
     time_elapsed = now - _last_wal_checkpoint_at >= interval_s
     if not (wal_too_big or time_elapsed):

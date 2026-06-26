@@ -36,7 +36,7 @@ def _get_topic_similarity_threshold() -> float:
     try:
         from _lazy_imports import get_config
 
-        return get_config().topic_similarity_threshold
+        return float(get_config().topic_similarity_threshold)
     except Exception:
         return _QW5_TOPIC_SIMILARITY_THRESHOLD
 

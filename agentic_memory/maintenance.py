@@ -189,8 +189,8 @@ class Maintenance:
                                     os.replace(str(f), str(dst))
                                 else:
                                     shutil.move(str(f), str(dst))
-                            except OSError:
-                                pass
+                            except OSError as exc:
+                                logger.warning("maintenance: cannot archive session %s: %s", f, exc)
                             archived += 1
                     if archived:
                         parts.append(f"Archived {archived} sessions.")

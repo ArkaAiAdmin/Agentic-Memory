@@ -62,6 +62,7 @@ def memory_save(
     """
     if len(content) > 100_000:
         return f"Error: content exceeds 100,000 character limit ({len(content)} chars)"
+
     result = save_memory(
         content=content,
         category=category,
@@ -71,6 +72,8 @@ def memory_save(
         is_global=is_global,
         safety_wiring=True,
         importance=importance,
+        context="mcp",
+        note_id="",
     )
     if isinstance(result, str) and result.startswith("Error "):
         return result
@@ -296,8 +299,8 @@ def memory_auto_save_daemon_metrics() -> str:
     if inbox_path and inbox_path.exists():
         try:
             inbox_size = inbox_path.stat().st_size
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("mcp_memory: cannot stat inbox %s: %s", inbox_path, exc)
 
     import json
 

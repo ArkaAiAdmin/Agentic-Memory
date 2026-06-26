@@ -22,6 +22,7 @@ Migration helpers (``_migrate_ensure_columns``, ``_migrate_ensure_indexes``,
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import threading
 
@@ -63,8 +64,43 @@ class _ConnectionPool:
         self._depth: dict[tuple[str, int], int] = {}
         self._migration_locks: dict[str, threading.Lock] = {}
         self._migration_locks_lock = threading.Lock()
+        # 2026-06-26 fix: track the inode each connection was opened
+        # against. If memory.db is replaced (e.g. rebuild_index.py
+        # os.replace()s the tmp db into place), connections in long-
+        # lived daemons would otherwise keep pointing at the old
+        # inode forever. get() compares the stored inode against the
+        # current st_ino and evicts + reopens on mismatch.
+        self._inodes: dict[tuple[str, int], int] = {}
         # Intra-process serialization is handled by per-thread connection
         # keys in the pool; inter-process serialization uses flock files.
+
+    @staticmethod
+    def _inode_of(path: str) -> int:
+        """Return the current inode of *path*, or 0 if it can't be determined.
+
+        Returning 0 (a value no real inode will match) means "inode
+        tracking is unavailable" — callers should treat that as a
+        no-op rather than a forced reopen.
+        """
+        try:
+            return os.stat(path).st_ino
+        except OSError:
+            return 0
+
+    def _inode_mismatch(self, key: tuple[str, int], conn: sqlite3.Connection) -> bool:
+        """True if *conn*'s stored inode no longer matches the current file.
+
+        A mismatch means the on-disk file was replaced (e.g. via
+        os.replace by rebuild_index.py). The old conn is still valid
+        for the old inode but is stale relative to the live data.
+        """
+        stored = self._inodes.get(key)
+        if stored is None:
+            return False
+        current = self._inode_of(key[0])
+        if current == 0:
+            return False  # can't stat — don't churn
+        return stored != current
 
     def _evict_lru(self) -> None:
         """Close the least recently used connection to make room.
@@ -116,7 +152,7 @@ class _ConnectionPool:
             try:
                 conn.close()
             except Exception:
-                logger.warning("Failed to close connection during LRU eviction")
+                logger.warning("db: connection close_failed during LRU eviction")
                 pass
             evicted += 1
             scanned += 1
@@ -138,7 +174,7 @@ class _ConnectionPool:
                 try:
                     conn.close()
                 except Exception:
-                    logger.warning("Failed to close connection during clear()")
+                    logger.warning("db: connection close_failed during clear()")
                     pass
             self._pool.clear()
             self._pooled_ids.clear()
@@ -166,7 +202,7 @@ class _ConnectionPool:
         try:
             db_path = conn.execute("PRAGMA database_list").fetchone()[2]
         except Exception:
-            logger.warning("Failed to resolve db_path from PRAGMA database_list")
+            logger.warning("db: db_path resolve_failed from PRAGMA database_list")
             db_path = ""
 
         # Resolve or create the per-path migration lock. We hold
@@ -215,7 +251,7 @@ class _ConnectionPool:
                 run_schema_setup(conn)
                 self._migrated.add(conn_id)
             except Exception as exc:
-                logger.warning("_ensure_full_schema failed: %s", exc)
+                logger.warning("db: schema ensure_failed: %s", exc)
 
     def get(self, path: str, timeout: float = 30.0) -> sqlite3.Connection:
         """Return a live connection for *path*, creating one if needed.
@@ -243,19 +279,43 @@ class _ConnectionPool:
                 self._lru.append(key)
                 try:
                     conn.execute("SELECT 1")
-                    return conn
                 except Exception:
-                    logger.warning("Stale connection detected during pool get, closing")
+                    logger.warning(
+                        "db: connection stale_detected during pool get, closing"
+                    )
                     try:
                         conn.close()
                     except Exception:
                         logger.warning(
-                            "Failed to close stale connection during pool get"
+                            "db: connection stale_close_failed during pool get"
                         )
                         pass
                     self._pooled_ids.discard(conn_id)
                     self._pool.pop(key, None)
                     self._depth.pop(key, None)
+                    self._inodes.pop(key, None)
+                else:
+                    # 2026-06-26: also evict if the on-disk inode changed
+                    # (e.g. rebuild_index.py os.replace()'d the db file).
+                    # The old conn is still valid for the old inode, but
+                    # it's stale relative to the live data — writes
+                    # through it would never reach the new file.
+                    if self._inode_mismatch(key, conn):
+                        logger.warning(
+                            "memory.db inode changed under pooled connection "
+                            "(%s) — reopening against new file",
+                            path,
+                        )
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        self._pooled_ids.discard(conn_id)
+                        self._pool.pop(key, None)
+                        self._depth.pop(key, None)
+                        self._inodes.pop(key, None)
+                    else:
+                        return conn
             # Close any orphaned connection from another thread holding the same path
             for other_key in list(self._pool):
                 if other_key[0] == path and self._depth.get(other_key, 0) == 0:
@@ -263,6 +323,7 @@ class _ConnectionPool:
                     orphan_id = id(orphan)
                     self._pooled_ids.discard(orphan_id)
                     self._depth.pop(other_key, None)
+                    self._inodes.pop(other_key, None)
                     try:
                         orphan.close()
                     except Exception:
@@ -296,6 +357,7 @@ class _ConnectionPool:
                     )
             self._pool[key] = conn
             self._depth[key] = 1
+            self._inodes[key] = self._inode_of(path)
             conn_id = id(conn)
             self._pooled_ids.add(conn_id)
             # B17 fix: remove any prior occurrence of this key to keep
@@ -329,18 +391,18 @@ class _ConnectionPool:
                 try:
                     conn.close()
                 except Exception:
-                    logger.warning("Failed to close non-pooled connection during put")
+                    logger.warning("db: connection non_pooled_close_failed during put")
                     pass
                 self._migrated.discard(conn_id)
                 return
             try:
                 conn.execute("SELECT 1")
             except Exception:
-                logger.warning("Stale connection detected during pool put, closing")
+                logger.warning("db: connection stale_detected during pool put, closing")
                 try:
                     conn.close()
                 except Exception:
-                    logger.warning("Failed to close stale connection during pool put")
+                    logger.warning("db: connection stale_close_failed during pool put")
                     pass
                 self._pooled_ids.discard(conn_id)
                 self._migrated.discard(conn_id)
@@ -348,6 +410,7 @@ class _ConnectionPool:
                     if v is conn:
                         self._pool.pop(k, None)
                         self._depth.pop(k, None)
+                        self._inodes.pop(k, None)
                         break
 
     def close(self, path: str) -> None:
@@ -360,11 +423,12 @@ class _ConnectionPool:
                     self._pooled_ids.discard(conn_id)
                     self._migrated.discard(conn_id)
                     self._depth.pop(key, None)
+                    self._inodes.pop(key, None)
                     try:
                         conn.close()
                     except Exception:
                         logger.warning(
-                            "Failed to close connection during clear_by_path"
+                            "db: connection close_failed during clear_by_path"
                         )
                         pass
                     try:
@@ -379,13 +443,14 @@ class _ConnectionPool:
                 try:
                     conn.close()
                 except Exception:
-                    logger.warning("Failed to close connection during close_all()")
+                    logger.warning("db: connection close_failed during close_all()")
                     pass
             self._pool.clear()
             self._pooled_ids.clear()
             self._lru.clear()
             self._migrated.clear()
             self._depth.clear()
+            self._inodes.clear()
 
     def get_depth(self, conn: AnyConnection) -> int:
         """Return current checkout depth for a connection."""
@@ -480,7 +545,8 @@ def wal_checkpoint_idle(db_path: Path, wal_size_threshold_mb: float = 10.0) -> d
     if wal_path.exists():
         try:
             wal_size_mb = wal_path.stat().st_size / (1024 * 1024)
-        except OSError:
+        except OSError as exc:
+            logger.debug("db: wal stat_failed %s: %s", wal_path, exc)
             wal_size_mb = 0.0
     if wal_size_mb < wal_size_threshold_mb:
         return {
@@ -560,7 +626,7 @@ def _maybe_checkpoint_on_startup(path: Path) -> None:
         if result.get("status") != "skipped":
             logging.getLogger(__name__).info("startup WAL checkpoint: %s", result)
     except Exception:
-        logger.warning("Startup WAL checkpoint failed")
+        logger.warning("db: wal checkpoint_startup_failed")
         pass
 
 
@@ -586,11 +652,11 @@ def safe_close_db(conn: AnyConnection, *, should_commit: bool = True) -> None:
                 else:
                     conn.rollback()
             except Exception:
-                logger.warning("Failed to commit/rollback in safe_close_db")
+                logger.warning("db: commit_or_rollback_failed in safe_close_db")
                 pass
         connection_pool.put(conn)
     except Exception:
-        logger.warning("Failed to return connection to pool in safe_close_db")
+        logger.warning("db: pool_return_failed in safe_close_db")
         pass
 
 
@@ -714,7 +780,7 @@ def count_rows(db_dir: Path) -> int:
             n = row[0] if row is not None else 0
             return n
     except Exception:
-        logger.warning("Failed to count rows in %s", db)
+        logger.warning("db: row_count_failed in %s", db)
         return -1
 
 

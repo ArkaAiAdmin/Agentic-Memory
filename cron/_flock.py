@@ -66,7 +66,7 @@ _OPEN_LOCKS: dict[str, Any] = {}
 # control (e.g. ``strict=True``) can use them directly without adding
 # a second import line.
 try:
-    from file_lock import (  # type: ignore[import-not-found]
+    from file_lock import (
         FileLockError,
         acquire_flock_with_retry,
         release_flock,
@@ -74,10 +74,10 @@ try:
 except ImportError:  # pragma: no cover
     FileLockError = None  # type: ignore[assignment,misc]
 
-    def acquire_flock_with_retry(*_args: Any, **_kwargs: Any) -> bool:
+    def acquire_flock_with_retry(*_args: Any, **_kwargs: Any) -> bool:  # type: ignore[misc]
         return False
 
-    def release_flock(*_args: Any, **_kwargs: Any) -> bool:
+    def release_flock(*_args: Any, **_kwargs: Any) -> bool:  # type: ignore[misc]
         return False
 
 

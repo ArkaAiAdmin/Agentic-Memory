@@ -114,4 +114,5 @@ ADMIN_TOOLS = [
     "memory_circuit_breaker_status",  # mcp_maintenance.py — CB open/close history
     "memory_temporal_contradictions",  # mcp_maintenance.py — fact supersession events
     "memory_temporal_query",  # mcp_maintenance.py — time-aware KG queries
+    "memory_compliance_check",  # mcp_audit.py — AGENTS.md rule compliance audit
 ]

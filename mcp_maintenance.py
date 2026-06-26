@@ -797,6 +797,7 @@ class MaintenanceOp(str, Enum):
         "temporal_contradictions"  # T3.6: list fact-level supersession events
     )
     TEMPORAL_QUERY = "temporal_query"  # T4.5: at_time / chain / changed_since
+    COMPLIANCE_CHECK = "compliance_check"  # P1: AGENTS.md rule compliance audit
 
     @classmethod
     def all_values(cls) -> list[str]:

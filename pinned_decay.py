@@ -205,6 +205,17 @@ def main():
         sys.exit(2)  # applied auto-decay
     if report.get("summary", {}).get("unpinned"):
         sys.exit(1)  # candidates exist (dry-run with findings)
+
+    try:
+        from context_monitor import _enforce_compaction_pin_limit
+
+        _enforce_compaction_pin_limit()
+    except Exception as exc:
+        print(
+            f"compaction pin limit enforcement in pinned_decay failed: {exc}",
+            file=sys.stderr,
+        )
+
     sys.exit(0)
 
 

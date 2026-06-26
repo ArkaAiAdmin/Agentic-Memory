@@ -135,28 +135,37 @@ def _find_call_insertion_point(text: str, entry_point: str) -> int | None:
         pos += blank.end()
         rest = text[pos:]
 
-    # Find the end of the first "logical block" of statements at the
-    # top of the function. The block ends at the first blank line
-    # that follows non-blank content. This handles the common
-    # pattern of:
+    # Determine where to insert the lock call.
     #
-    #   def main():
-    #       <import x>     <- pos starts here
-    #       <os.environ.setdefault(...)>
-    #       <blank line>
-    #       <real work>
-    end = pos
-    saw_nonblank = False
-    for stmt in re.finditer(r"^[ \t]*[^\n#]*\n", rest, re.MULTILINE):
-        line = stmt.group(0)
+    # Strategy: the leading block is all consecutive import/setup lines
+    # at the top of the function body. The lock call goes AFTER that
+    # block (so imports still run first) but BEFORE the first blank
+    # line that follows.
+    #
+    # If the body does NOT start with an import/setup line (e.g. a
+    # minimal `def main(): print(...)`), the leading block is empty
+    # and the lock call is inserted at the very start of the body —
+    # it becomes the first statement and can never be unreachable.
+    setup_re = re.compile(r"^[ \t]*(?:import |from )\S.*\n", re.MULTILINE)
+    first_setup = setup_re.search(rest)
+    if first_setup is None:
+        # Body starts with real work → insert at start of first stmt.
+        return pos
+
+    # Body starts with an import or from-import. Scan consecutive setup
+    # lines. The block ends at the first blank line OR the first line
+    # that isn't an import/from-import (i.e. real work has begun).
+    block_end = pos + first_setup.end()
+    scan_start = first_setup.end()
+    for line_match in re.finditer(r"^[ \t]*[^\n#]*\n", rest[scan_start:], re.MULTILINE):
+        line = line_match.group(0)
         if line.strip() == "":
-            if saw_nonblank:
-                # End of the leading import/setup block.
-                break
-            continue
-        saw_nonblank = True
-        end = pos + stmt.end()
-    return end
+            break
+        stripped = line.lstrip()
+        if not (stripped.startswith("import ") or stripped.startswith("from ")):
+            break
+        block_end = pos + scan_start + line_match.end()
+    return block_end
 
 
 def patch_file(path: Path) -> tuple[bool, str]:

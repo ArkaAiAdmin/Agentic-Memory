@@ -24,7 +24,7 @@ def _get_graph_cache_max() -> int:
     try:
         from _lazy_imports import get_config
 
-        return get_config().graph_cache_max
+        return int(get_config().graph_cache_max)
     except Exception:
         return 50
 
@@ -33,7 +33,7 @@ def _get_graph_cache_ttl_s() -> float:
     try:
         from _lazy_imports import get_config
 
-        return get_config().graph_cache_ttl_s
+        return float(get_config().graph_cache_ttl_s)
     except Exception:
         return 60.0
 

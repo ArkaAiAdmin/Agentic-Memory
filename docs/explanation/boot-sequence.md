@@ -129,7 +129,7 @@ The cycle from Phase 3 onward repeats. Each new prompt:
 
 ### Phase 9: session ends (SessionEnd event)
 
-When you close opencode (or the session is killed), `SessionEnd` fires once: `session:end:marker` (async, 10s timeout). This writes the final session marker to the store.
+When you close opencode (or the session is killed), `SessionEnd` fires once: `session:end:marker` (async, 10s timeout). This writes the final session marker to the store. The `memory-session-end.py` hook also runs at this point and auto-saves a session memory if the agent forgot (Rule #7 enforcement).
 
 ### Phase 10: background cron continues
 

@@ -221,6 +221,7 @@ def main():
         bootstrap_output = ""
         try:
             from memory_bootstrap import get_bootstrap_summary
+
             os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
             bootstrap_output = get_bootstrap_summary()
         except Exception as e:
@@ -232,12 +233,25 @@ def main():
         if query:
             proactive_output = proactive_search(query)
 
+        # Phase 4 (2026-06-25): inject Rules #2 and #6 reminders
+        # directly into the session-start briefing so the agent sees
+        # them before designing features or editing write-path code.
+        rules_reminder = (
+            "\n\n## Reliability Rules\n"
+            "- **Rule #2** — Before designing a new feature: search for "
+            '"<feature> <subsystem> design rationale"\n'
+            "- **Rule #6** — Before pushing write-path code: search for "
+            '"save_pipeline saga transaction safety"\n'
+        )
+
         # Combine outputs
         parts = []
         if bootstrap_output:
             parts.append(bootstrap_output)
         if proactive_output:
             parts.append(proactive_output)
+        if rules_reminder.strip():
+            parts.append(rules_reminder)
 
         if parts:
             print("\n\n".join(parts))

@@ -37,14 +37,14 @@ class TestWalMode(unittest.TestCase):
         connection_pool.clear()
 
     def tearDown(self):
-        # Clean up WAL sidecars explicitly — they live next to the
-        # db file and shutil.rmtree will catch them, but be explicit
-        # for clarity.
         for suffix in ("", "-wal", "-shm"):
             p = self.db_path.with_name(self.db_path.name + suffix)
-            if p.exists():
+            try:
                 p.unlink()
-        # tmpdir cleanup is best-effort
+            except FileNotFoundError:
+                pass
+            except PermissionError:
+                pass
         import shutil
 
         shutil.rmtree(self.tmpdir, ignore_errors=True)

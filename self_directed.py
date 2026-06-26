@@ -236,16 +236,27 @@ def _backfill_drifted_subsystems(conn: sqlite3.Connection, drifted: list[str]) -
         except Exception as e:
             stats["fixed"]["kg_entities"] = f"error: {e}"
 
-    # Backfill KG facts (index_facts_for_memory, NOT index_kg_for_memory)
+    # Backfill KG facts (index_facts_for_memory_bulk, NOT
+    # index_facts_for_memory). The bulk variant is regex-only by
+    # design — it never loads the 3B LLM or runs per-memory
+    # inference. Using the per-save variant here would deadlock
+    # the loky worker pool and freeze the machine for hours on
+    # databases with thousands of high-importance memories. LLM
+    # extraction still runs at save time for individual notes.
+    # (2026-06-26 fix; refactored 2026-06-26 to use the dedicated
+    # bulk function instead of a force_regex flag.)
     if "kg_facts" in drifted:
         try:
-            from fact_extraction import ensure_facts_schema, index_facts_for_memory
+            from fact_extraction import (
+                ensure_facts_schema,
+                index_facts_for_memory_bulk,
+            )
 
             ensure_facts_schema(conn)
             count = 0
             for nid, content in note_contents.items():
                 if content:
-                    result = index_facts_for_memory(conn, nid, content)
+                    result = index_facts_for_memory_bulk(conn, nid, content)
                     count += result.get("facts", 0)
             stats["fixed"]["kg_facts"] = count
         except Exception as e:

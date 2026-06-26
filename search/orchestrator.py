@@ -252,7 +252,7 @@ def _get_embedding_score_threshold() -> float:
     try:
         from _lazy_imports import get_config
 
-        return get_config().embedding_score_threshold
+        return float(get_config().embedding_score_threshold)
     except Exception:
         return 0.25
 
@@ -1282,6 +1282,7 @@ def _build_result_items(*, db, results_to_display, query, rerank):
         result_items.append(
             {
                 "id": note_id,
+                "content": content,
                 "source_file": source_file,
                 "tags": tags,
                 "created": created,

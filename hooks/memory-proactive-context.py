@@ -58,6 +58,86 @@ except Exception as import_err:
 # SQLite querying is direct and fast.
 
 
+def _temporal_kg_alert() -> None:
+    """Phase 4 heuristic: surface temporal-KG misbehavior warning.
+
+    If ``MEMORY_TEMPORAL_KG`` is enabled and the DB has a large number
+    of invalidated/superseded ``kg_facts`` (relative to total facts),
+    the agent should consider setting ``MEMORY_TEMPORAL_KG=0`` as the
+    escape hatch (see AGENTS.md Rule #12).
+
+    No-op if the DB doesn't exist, lacks ``kg_facts``, or the
+    invalidated ratio looks sane.
+    """
+    try:
+        if os.environ.get("MEMORY_TEMPORAL_KG", "1") == "0":
+            return
+        _, local_mem, _ = get_memory_paths()
+        db_path = local_mem / "memory.db"
+        if not db_path.exists():
+            return
+
+        import sqlite3
+
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            total = conn.execute("SELECT COUNT(*) FROM kg_facts").fetchone()[0]
+            invalid = conn.execute(
+                "SELECT COUNT(*) FROM kg_facts WHERE valid_to IS NOT NULL "
+                "OR superseded_by IS NOT NULL"
+            ).fetchone()[0]
+
+        if total >= 50 and invalid / max(total, 1) > 0.5:
+            print("=== TEMPORAL-KG WARNING ===")
+            print(
+                f"  {invalid}/{total} kg_facts ({invalid * 100 // max(total, 1)}%)"
+                " are invalidated or superseded. This may indicate"
+                " overly-aggressive contradiction detection or edit"
+                " invalidation. Consider setting MEMORY_TEMPORAL_KG=0."
+            )
+            print("=== END TEMPORAL-KG WARNING ===")
+    except Exception:
+        pass
+
+
+def _health_alerts() -> None:
+    """Surface health alerts from cron_health_check.py (Rules #9-11).
+
+    Reads ``.health_status.json`` written by the cron job and prints
+    any active alerts to STDOUT so the agent sees them as context.
+    No-op if the file doesn't exist or is unreadable.
+    """
+    try:
+        from memory_config import GLOBAL_MEM_DIR
+
+        health_file = GLOBAL_MEM_DIR / ".health_status.json"
+        if not health_file.exists():
+            return
+        try:
+            data = json.loads(health_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            return
+
+        alerts = data.get("alerts", [])
+        if not alerts:
+            return
+
+        ts = data.get("timestamp", "unknown")
+        print(f"=== HEALTH ALERTS (as of {ts}) ===")
+        for a in alerts[:5]:
+            print(f"  ! {a}")
+        if len(alerts) > 5:
+            print(f"  ... and {len(alerts) - 5} more (see .health_status.json)")
+        print("=== END HEALTH ALERTS ===")
+    except Exception:
+        # Never block the hook — health alerts are best-effort
+        pass
+
+    # Phase 4 temporal-KG heuristic (outside the health-file try block
+    # so one failure doesn't suppress the other).
+    _temporal_kg_alert()
+
+
 def extract_query_from_tool_input(tool_name: str, tool_input: Any) -> str:
     """Extract searchable query from various tool inputs.
 
@@ -180,6 +260,11 @@ def main(db_path: Path | None = None):
                 print(f"[{i}] {r.get('id')} (score: {score:.2f})")
                 print(f"    {content}...")
             print("=== END CONTEXT ===")
+
+        # Phase 4 (2026-06-25): surface health alerts from cron_health_check
+        # so the agent sees FTS drift / KG orphan / circuit breaker alerts
+        # without having to investigate first (Rules #9-11).
+        _health_alerts()
 
     except Exception as e:
         # Never block tool execution, but record the failure so ops

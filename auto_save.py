@@ -58,14 +58,14 @@ import sqlite3
 import subprocess
 import threading
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Any, Protocol
 
 # H9 fix (2026-06-22): serialize `daily-digest` against a manual
 # invocation of the same subcommand. The other subcommands
 # (tool-complete, status, health-check) are read-only or
 # write-once-per-call and don't need the lock.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "cron"))
-from _flock import acquire_lock_or_exit  # noqa: E402
+from _flock import acquire_lock_or_exit  # noqa: E402  # type: ignore[import]
 
 # H1 fix: configure root logging (idempotent).
 from memory_common import (
@@ -73,6 +73,7 @@ from memory_common import (
     atomic_write,
     safe_close_db,
     connection_pool,
+    _resolve_tags,
 )
 
 # H1 fix: hook path now invalidates the search cache so the canonical-path
@@ -84,6 +85,21 @@ except ImportError:  # cache module is optional in some test contexts
 
 configure_logging()
 logger = logging.getLogger(__name__)
+
+
+# Typed wrappers for Linux-only inotify syscalls (absent from macOS stubs).
+# Single point of suppression: the getattr call itself. Call sites below
+# are clean — mypy sees them as normal function calls.
+class _InotifyInit(Protocol):
+    def __call__(self) -> int: ...
+
+
+class _InotifyAddWatch(Protocol):
+    def __call__(self, fd: int, pathname: str, mask: int) -> int: ...
+
+
+_inotify_init: _InotifyInit | None = getattr(os, "inotify_init", None)
+_inotify_add_watch: _InotifyAddWatch | None = getattr(os, "inotify_add_watch", None)
 
 
 # Structured logging helper for observability
@@ -497,9 +513,8 @@ def _enqueue_to_inbox(entry: dict) -> bool:
         if inbox.exists():
             try:
                 current_size = inbox.stat().st_size
-            except OSError:
-                # If we can't stat, allow the write and let the write
-                # fail naturally if there's a deeper filesystem issue.
+            except OSError as exc:
+                logger.debug("auto-save daemon: cannot stat inbox %s: %s", inbox, exc)
                 current_size = 0
         if current_size + len(line.encode("utf-8")) > max_bytes:
             logger.warning(
@@ -613,14 +628,8 @@ def _is_daemon_lock_held() -> bool:
     lock_fd = None
     try:
         lock_fd = open(lock_path, "w", encoding="utf-8")
-    except OSError:
-        if lock_fd is not None:
-            try:
-                lock_fd.close()
-            except Exception:
-                logger.warning(
-                    "Failed to close lock fd during _is_daemon_running cleanup"
-                )
+    except OSError as exc:
+        logger.warning("auto-save daemon: cannot open lock file %s: %s", lock_path, exc)
         return False
     try:
         from file_lock import acquire_flock_with_retry, release_flock
@@ -789,8 +798,8 @@ def _wait_for_file_modification(file_path: Path, timeout: float) -> None:
                             fflags=_select.KQ_NOTE_WRITE | _select.KQ_NOTE_EXTEND,
                         )
                     )
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.debug("auto-save daemon: kqueue fd open failed: %s", exc)
             try:
                 kq.control(kevents, len(kevents), timeout)
             finally:
@@ -804,24 +813,27 @@ def _wait_for_file_modification(file_path: Path, timeout: float) -> None:
 
     # 2. Try inotify (Linux)
     try:
-        if hasattr(os, "inotify_init"):
-            fd = os.inotify_init()  # type: ignore[attr-defined]
-            # masks: IN_CREATE=0x100, IN_DELETE=0x200, IN_MOVED_TO=0x80, IN_MODIFY=0x2
-            mask_dir = 0x100 | 0x200 | 0x80
-            wd_dir = os.inotify_add_watch(fd, str(file_path.parent), mask_dir)  # type: ignore[attr-defined]
-            wd_file = None
-            if file_path.exists():
-                try:
-                    wd_file = os.inotify_add_watch(fd, str(file_path), 0x2)  # type: ignore[attr-defined]
-                except OSError:
-                    pass
+        assert _inotify_init is not None
+        fd = _inotify_init()
+        # masks: IN_CREATE=0x100, IN_DELETE=0x200, IN_MOVED_TO=0x80, IN_MODIFY=0x2
+        mask_dir = 0x100 | 0x200 | 0x80
+        assert _inotify_add_watch is not None
+        wd_dir = _inotify_add_watch(fd, str(file_path.parent), mask_dir)
+        wd_file = None
+        if file_path.exists():
             try:
-                import select as _select
+                wd_file = _inotify_add_watch(fd, str(file_path), 0x2)
+            except OSError as exc:
+                logger.debug(
+                    "auto-save daemon: inotify add-watch (file) failed: %s", exc
+                )
+        try:
+            import select as _select
 
-                _select.select([fd], [], [], timeout)
-            finally:
-                os.close(fd)
-            return
+            _select.select([fd], [], [], timeout)
+        finally:
+            os.close(fd)
+        return
     except Exception as e:
         logger.debug("auto-save daemon: inotify watch failed: %s", e)
 
@@ -1107,7 +1119,6 @@ def _upsert_memory(
         parts = note_id.split("/", 1)
         category = parts[0] if len(parts) == 2 else "sessions"
         title_slug = parts[1] if len(parts) == 2 else note_id
-        # Normalize tags: accept list, JSON string, or None
         if tags_json is None:
             tags_list = []
         elif isinstance(tags_json, str):
@@ -1122,17 +1133,10 @@ def _upsert_memory(
         else:
             tags_list = []
 
-        # Strip existing frontmatter — save_memory builds its own
-        body = content
-        if content.startswith("---"):
-            _ = content.find("---", 3)
-            if _ != -1:
-                body = content[_ + 3 :].strip()
-
         from _lazy_imports import save_memory as _save_memory
 
         result = _save_memory(
-            content=body,
+            content=content,
             category=category,
             title_slug=title_slug,
             tags=tags_list,
@@ -1142,6 +1146,7 @@ def _upsert_memory(
             _now_iso=now_iso,
             importance=importance,
             _conn=conn,
+            note_id=note_id,
         )
         return isinstance(result, str) and not result.startswith("Error")
     except Exception as e:
@@ -1758,7 +1763,7 @@ superseded_by: null
 """
     atomic_write(file_path, markdown, encoding="utf-8")
 
-    tags = ["auto-save", "hook", "tool-log", tool_slug]
+    tags = _resolve_tags("sessions", None, context="auto-save", tool_slug=tool_slug)
     saved = _upsert_memory(
         note_id,
         f"sessions/{file_path.name}",
@@ -2240,7 +2245,7 @@ def purge_auto_saves(dry_run: bool = False) -> dict:
         for sf in source_files:
             if not sf:
                 continue
-            src = sessions_dir / sf
+            src = sessions_dir / Path(sf).name
             if src.exists():
                 shutil.move(str(src), str(archive_dir / src.name))
                 moved += 1
@@ -2268,7 +2273,10 @@ def status() -> dict:
     last_7d = 0
     per_day: dict[str, int] = {}
     for path in autos:
-        m = re.match(r"auto-(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})-", path.name)
+        m = re.match(
+            r"auto-(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})([+-]\d{2}-\d{2})?-",
+            path.name,
+        )
         if not m:
             continue
         d = datetime.datetime.fromisoformat(
@@ -2311,8 +2319,8 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
             mtime = path.stat().st_mtime
             if now - mtime <= window:
                 recent_autos += 1
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("auto-save daemon: cannot stat session %s: %s", path, exc)
 
     # Check DB writability with read-only PRAGMA quick_check
     db_writable = False
@@ -2343,8 +2351,8 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
     if state_file_exists:
         try:
             state_file_age = now - state_file.stat().st_mtime
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("auto-save daemon: cannot stat state file: %s", exc)
 
     # Last compaction age
     last_compaction = None
@@ -2352,8 +2360,10 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
         try:
             last_compaction = now - path.stat().st_mtime
             break
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug(
+                "auto-save daemon: cannot stat compaction file %s: %s", path, exc
+            )
 
     # Hook failure count from error log
     hook_failure_count = 0
@@ -2361,8 +2371,8 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
     if error_log.exists():
         try:
             hook_failure_count = sum(1 for _ in error_log.open())
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("auto-save daemon: cannot count hook-errors.jsonl: %s", exc)
         # P0-12 fix (2026-06-23): rotate hook-errors.jsonl if it
         # exceeds 10 MB. Without rotation, the file grows unbounded
         # and can hit inode limits. Rotation: rename to .1, .2, etc.
@@ -2378,8 +2388,10 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
                     if src.exists():
                         src.rename(dst)
                 error_log.rename(error_log.with_suffix(".jsonl.1"))
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.warning(
+                "auto-save daemon: hook-errors.jsonl rotation failed: %s", exc
+            )
 
     return {
         "healthy": db_writable and recent_autos > 0,

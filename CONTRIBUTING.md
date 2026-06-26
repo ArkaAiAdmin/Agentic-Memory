@@ -22,7 +22,7 @@ welcome.
   pipeline functions.
 - `memory_common.py` — re-exports + `atomic_write` + `RateLimiter`.
 - `db.py` — connection pool with WAL mode, busy_timeout, FK enforcement.
-- `db_migrations.py` — schema migrations (currently v20; v18 added fact-level temporal KG, v19 fixed pre-existing kg_facts entity FKs, v20 added kg_facts FTS5 index).
+- `db_migrations.py` — schema migrations (currently v21; v18 added fact-level temporal KG, v19 fixed pre-existing kg_facts entity FKs, v20 added kg_facts FTS5 index, v21 added kg_crdt tables).
 
 For the full schema, see `docs/reference/schema.md`.
 For operational patterns, see `memory_workflow.md`.
