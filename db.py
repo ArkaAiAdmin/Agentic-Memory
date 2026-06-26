@@ -152,7 +152,7 @@ class _ConnectionPool:
             try:
                 conn.close()
             except Exception:
-                logger.warning("Failed to close connection during LRU eviction")
+                logger.warning("db: connection close_failed during LRU eviction")
                 pass
             evicted += 1
             scanned += 1
@@ -174,7 +174,7 @@ class _ConnectionPool:
                 try:
                     conn.close()
                 except Exception:
-                    logger.warning("Failed to close connection during clear()")
+                    logger.warning("db: connection close_failed during clear()")
                     pass
             self._pool.clear()
             self._pooled_ids.clear()
@@ -202,7 +202,7 @@ class _ConnectionPool:
         try:
             db_path = conn.execute("PRAGMA database_list").fetchone()[2]
         except Exception:
-            logger.warning("Failed to resolve db_path from PRAGMA database_list")
+            logger.warning("db: db_path resolve_failed from PRAGMA database_list")
             db_path = ""
 
         # Resolve or create the per-path migration lock. We hold
@@ -251,7 +251,7 @@ class _ConnectionPool:
                 run_schema_setup(conn)
                 self._migrated.add(conn_id)
             except Exception as exc:
-                logger.warning("_ensure_full_schema failed: %s", exc)
+                logger.warning("db: schema ensure_failed: %s", exc)
 
     def get(self, path: str, timeout: float = 30.0) -> sqlite3.Connection:
         """Return a live connection for *path*, creating one if needed.
@@ -280,12 +280,14 @@ class _ConnectionPool:
                 try:
                     conn.execute("SELECT 1")
                 except Exception:
-                    logger.warning("Stale connection detected during pool get, closing")
+                    logger.warning(
+                        "db: connection stale_detected during pool get, closing"
+                    )
                     try:
                         conn.close()
                     except Exception:
                         logger.warning(
-                            "Failed to close stale connection during pool get"
+                            "db: connection stale_close_failed during pool get"
                         )
                         pass
                     self._pooled_ids.discard(conn_id)
@@ -389,18 +391,18 @@ class _ConnectionPool:
                 try:
                     conn.close()
                 except Exception:
-                    logger.warning("Failed to close non-pooled connection during put")
+                    logger.warning("db: connection non_pooled_close_failed during put")
                     pass
                 self._migrated.discard(conn_id)
                 return
             try:
                 conn.execute("SELECT 1")
             except Exception:
-                logger.warning("Stale connection detected during pool put, closing")
+                logger.warning("db: connection stale_detected during pool put, closing")
                 try:
                     conn.close()
                 except Exception:
-                    logger.warning("Failed to close stale connection during pool put")
+                    logger.warning("db: connection stale_close_failed during pool put")
                     pass
                 self._pooled_ids.discard(conn_id)
                 self._migrated.discard(conn_id)
@@ -426,7 +428,7 @@ class _ConnectionPool:
                         conn.close()
                     except Exception:
                         logger.warning(
-                            "Failed to close connection during clear_by_path"
+                            "db: connection close_failed during clear_by_path"
                         )
                         pass
                     try:
@@ -441,7 +443,7 @@ class _ConnectionPool:
                 try:
                     conn.close()
                 except Exception:
-                    logger.warning("Failed to close connection during close_all()")
+                    logger.warning("db: connection close_failed during close_all()")
                     pass
             self._pool.clear()
             self._pooled_ids.clear()
@@ -544,7 +546,7 @@ def wal_checkpoint_idle(db_path: Path, wal_size_threshold_mb: float = 10.0) -> d
         try:
             wal_size_mb = wal_path.stat().st_size / (1024 * 1024)
         except OSError as exc:
-            logger.debug("db: cannot stat WAL %s: %s", wal_path, exc)
+            logger.debug("db: wal stat_failed %s: %s", wal_path, exc)
             wal_size_mb = 0.0
     if wal_size_mb < wal_size_threshold_mb:
         return {
@@ -624,7 +626,7 @@ def _maybe_checkpoint_on_startup(path: Path) -> None:
         if result.get("status") != "skipped":
             logging.getLogger(__name__).info("startup WAL checkpoint: %s", result)
     except Exception:
-        logger.warning("Startup WAL checkpoint failed")
+        logger.warning("db: wal checkpoint_startup_failed")
         pass
 
 
@@ -650,11 +652,11 @@ def safe_close_db(conn: AnyConnection, *, should_commit: bool = True) -> None:
                 else:
                     conn.rollback()
             except Exception:
-                logger.warning("Failed to commit/rollback in safe_close_db")
+                logger.warning("db: commit_or_rollback_failed in safe_close_db")
                 pass
         connection_pool.put(conn)
     except Exception:
-        logger.warning("Failed to return connection to pool in safe_close_db")
+        logger.warning("db: pool_return_failed in safe_close_db")
         pass
 
 
@@ -778,7 +780,7 @@ def count_rows(db_dir: Path) -> int:
             n = row[0] if row is not None else 0
             return n
     except Exception:
-        logger.warning("Failed to count rows in %s", db)
+        logger.warning("db: row_count_failed in %s", db)
         return -1
 
 
