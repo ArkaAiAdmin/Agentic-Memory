@@ -452,6 +452,17 @@ def _get_handlers() -> dict:
             MaintenanceOp.METRICS_SERVER: lambda *, action="status", port=9464, **_: t[
                 "memory_metrics_server"
             ](action=action, port=port),
+            MaintenanceOp.SESSION_STATS: lambda **_: _op_session_stats(),
+            MaintenanceOp.THREAD_STATS: lambda **_: _op_thread_stats(),
+            MaintenanceOp.COMPACTION_STATS: lambda **_: _op_compaction_stats(),
+            MaintenanceOp.LIST_ACTIVE_THREADS: lambda *, project_root="", status="", limit=20, **_: (
+                _op_list_active_threads(
+                    project_root=project_root, status=status, limit=limit
+                )
+            ),
+            MaintenanceOp.RECOVER_SESSION: lambda *, session_id, **_: (
+                _op_recover_session(session_id=session_id)
+            ),
         }
     return _MAINTENANCE_HANDLERS
 
@@ -482,6 +493,181 @@ class _MaintenanceHandlersProxy:
 
     def items(self):
         return _get_handlers().items()
+
+
+# ---------------------------------------------------------------------------
+# Sprint 7: Session/thread admin helpers
+import json as _json
+
+# ---------------------------------------------------------------------------
+
+
+def _op_session_stats() -> str:
+    try:
+        from pathlib import Path
+        from session_manager import SessionManager
+        from db import safe_close_db
+
+        db_path = os.environ.get("MEMORY_DB_PATH")
+        mgr = SessionManager(db_path=Path(db_path)) if db_path else SessionManager()
+        conn = mgr._conn()
+        try:
+            rows = conn.execute(
+                "SELECT status, COUNT(*) FROM sessions GROUP BY status"
+            ).fetchall()
+            total = sum(r[1] for r in rows)
+            return _json.dumps(
+                {
+                    "total": total,
+                    "by_status": {r[0]: r[1] for r in rows},
+                }
+            )
+        finally:
+            safe_close_db(conn)
+    except Exception as e:
+        return _json.dumps({"error": str(e)})
+
+
+def _op_thread_stats() -> str:
+    try:
+        from pathlib import Path
+        from session_manager import SessionManager
+        from db import safe_close_db
+
+        db_path = os.environ.get("MEMORY_DB_PATH")
+        mgr = SessionManager(db_path=Path(db_path)) if db_path else SessionManager()
+        conn = mgr._conn()
+        try:
+            rows = conn.execute(
+                "SELECT status, COUNT(*) FROM decision_threads GROUP BY status"
+            ).fetchall()
+            return _json.dumps({"by_status": {r[0]: r[1] for r in rows}})
+        finally:
+            safe_close_db(conn)
+    except Exception as e:
+        return _json.dumps({"error": str(e)})
+
+
+def _op_compaction_stats() -> str:
+    try:
+        from pathlib import Path
+        from session_manager import SessionManager
+        from db import safe_close_db
+
+        db_path = os.environ.get("MEMORY_DB_PATH")
+        mgr = SessionManager(db_path=Path(db_path)) if db_path else SessionManager()
+        conn = mgr._conn()
+        try:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM session_compaction_log"
+            ).fetchone()[0]
+            avg_delta = conn.execute(
+                "SELECT AVG(COALESCE(tokens_before,0) - COALESCE(tokens_after,0)) "
+                "FROM session_compaction_log"
+            ).fetchone()[0]
+            zombies = conn.execute(
+                "SELECT COUNT(*) FROM sessions s "
+                "WHERE s.status='active' AND s.started_at < datetime('now', '-24 hours') "
+                "AND NOT EXISTS (SELECT 1 FROM session_compaction_log c WHERE c.session_id=s.id)"
+            ).fetchone()[0]
+            return _json.dumps(
+                {
+                    "total_compactions": total,
+                    "avg_token_delta": round(avg_delta or 0, 1),
+                    "zombie_sessions": zombies,
+                }
+            )
+        finally:
+            safe_close_db(conn)
+    except Exception as e:
+        return _json.dumps({"error": str(e)})
+
+
+def _op_list_active_threads(
+    project_root: str = "", status: str = "", limit: int = 20
+) -> str:
+    try:
+        import json as _json
+        from pathlib import Path
+        from session_manager import SessionManager
+        from db import safe_close_db
+
+        db_path = os.environ.get("MEMORY_DB_PATH")
+        mgr = SessionManager(db_path=Path(db_path)) if db_path else SessionManager()
+        conn = mgr._conn()
+        try:
+            if status:
+                rows = conn.execute(
+                    "SELECT id, session_id, title, status, created_at, metadata "
+                    "FROM decision_threads WHERE status=? ORDER BY created_at DESC",
+                    (status,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, session_id, title, status, created_at, metadata "
+                    "FROM decision_threads ORDER BY created_at DESC"
+                ).fetchall()
+            threads = []
+            for r in rows:
+                metadata = _json.loads(r[5]) if r[5] else {}
+                if project_root:
+                    if project_root not in metadata.get("project_root", ""):
+                        continue
+                threads.append(
+                    {
+                        "id": r[0],
+                        "title": r[2],
+                        "status": r[3],
+                        "session_id": r[1],
+                        "created_at": r[4],
+                    }
+                )
+            threads = threads[:limit]
+            return _json.dumps({"threads": threads})
+        finally:
+            safe_close_db(conn)
+    except Exception as e:
+        return _json.dumps({"error": str(e)})
+
+
+def _op_recover_session(session_id: str) -> str:
+    try:
+        from pathlib import Path
+        from session_manager import SessionManager
+
+        db_path = os.environ.get("MEMORY_DB_PATH")
+        mgr = SessionManager(db_path=Path(db_path)) if db_path else SessionManager()
+        chain: list[dict] = []
+        current = session_id
+        visited = set()
+        while current and current not in visited:
+            visited.add(current)
+            conn = mgr._conn()
+            try:
+                row = conn.execute(
+                    "SELECT id, parent_session_id, summary_note_id, status, started_at "
+                    "FROM sessions WHERE id=?",
+                    (current,),
+                ).fetchone()
+            finally:
+                from db import safe_close_db
+
+                safe_close_db(conn)
+            if not row:
+                break
+            chain.append(
+                {
+                    "session_id": row[0],
+                    "parent_session_id": row[1],
+                    "summary_note_id": row[2],
+                    "status": row[3],
+                    "started_at": row[4],
+                }
+            )
+            current = row[1] or ""
+        return _json.dumps({"chain": chain})
+    except Exception as e:
+        return _json.dumps({"error": str(e)})
 
 
 MAINTENANCE_HANDLERS = _MaintenanceHandlersProxy()

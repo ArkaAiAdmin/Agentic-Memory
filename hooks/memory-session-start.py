@@ -169,7 +169,9 @@ def _write_current_session(data: dict) -> None:
         _CURRENT_SESSION_FILE.write_text(json.dumps(data, indent=2))
 
 
-def _format_thread_context(threads: list[dict]) -> str:
+def _format_thread_context(
+    threads: list[dict], recent_events: dict | None = None
+) -> str:
     if not threads:
         return ""
     lines = ["\n## Open Decision Threads (carried forward)"]
@@ -178,6 +180,12 @@ def _format_thread_context(threads: list[dict]) -> str:
         tid = t.get("id", "?")[:8]
         status = t.get("status", "open")
         lines.append(f"  • [{tid}] {title} (status: {status})")
+        if recent_events and tid in recent_events:
+            evts = recent_events[tid]
+            if evts:
+                last = evts[0]
+                preview = (last.content_summary or last.content)[:120]
+                lines.append(f"    last: {preview}")
     return "\n".join(lines)
 
 
@@ -305,7 +313,11 @@ def main():
                         [
                             {"id": t.id, "title": t.title, "status": t.status}
                             for t in ctx.active_threads
-                        ]
+                        ],
+                        recent_events={
+                            tid: [e for e in evts]
+                            for tid, evts in ctx.recent_events.items()
+                        },
                     )
                 elif current_session.get("session_id"):
                     session_thread_output = (

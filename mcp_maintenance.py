@@ -798,6 +798,11 @@ class MaintenanceOp(str, Enum):
     )
     TEMPORAL_QUERY = "temporal_query"  # T4.5: at_time / chain / changed_since
     COMPLIANCE_CHECK = "compliance_check"  # P1: AGENTS.md rule compliance audit
+    SESSION_STATS = "session_stats"  # Sprint 7
+    THREAD_STATS = "thread_stats"  # Sprint 7
+    COMPACTION_STATS = "compaction_stats"  # Sprint 7
+    LIST_ACTIVE_THREADS = "list_active_threads"  # Sprint 7
+    RECOVER_SESSION = "recover_session"  # Sprint 7
 
     @classmethod
     def all_values(cls) -> list[str]:

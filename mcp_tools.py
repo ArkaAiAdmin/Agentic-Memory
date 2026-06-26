@@ -46,6 +46,11 @@ from mcp_crdt import (  # noqa: F401
     memory_crdt_sync,
     memory_crdt_status,
 )
+from mcp_session import (  # noqa: F401
+    memory_thread_context,
+    memory_list_threads,
+    memory_resolve_thread,
+)
 from mcp_maintenance import (  # noqa: F401
     memory_heartbeat,
     memory_tier_stats,
