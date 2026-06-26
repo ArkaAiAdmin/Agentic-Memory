@@ -76,7 +76,9 @@ MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 # au) that keep the FTS table in lockstep with kg_facts, plus a
 # backfill of existing facts.  See migrations/020_kg_facts_fts.sql.
 # 2026-06-23 (follow-up): bumped to 21 for Graph CRDTs (kg_crdt).
-SCHEMA_VERSION = 21
+# 2026-06-26: bumped to 22 for Session Memory System (sessions,
+# decision_threads, thread_events, session_compaction_log).
+SCHEMA_VERSION = 22
 
 
 def _parse_sql_file(path: Path) -> list[str]:

@@ -68,8 +68,8 @@ class TestMemoryConfigDefaults:
         # 2026-06-23 auto_save_allowlist and auto_save_denylist added to memory.toml → 80.
         # 2026-06-25 further field additions brought total to 103.
         # 2026-06-25 idle_unload_seconds added to MemoryConfig → 104.
-        assert len(fields) == 104, (
-            f"Expected 104 fields, got {len(fields)}: {[f.name for f in fields]}"
+        assert len(fields) == 106, (
+            f"Expected 106 fields, got {len(fields)}: {[f.name for f in fields]}"
         )
 
     def test_default_db_path(self):

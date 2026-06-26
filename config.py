@@ -437,6 +437,10 @@ class MemoryConfig:
     auto_save_params_max: int = 2000
     auto_save_health_check_minutes: int = 5
 
+    # session memory (v22)
+    session_memory: bool = False
+    session_decision_llm: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Singleton
@@ -1113,6 +1117,21 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "auto_save.health_check_minutes",
             5,
             int,
+            toml_data,
+        ),
+        # --- session_memory ---
+        session_memory=_b(
+            "MEMORY_SESSION_MEMORY",
+            "session_memory.enabled",
+            False,
+            bool,
+            toml_data,
+        ),
+        session_decision_llm=_b(
+            "MEMORY_SESSION_DECISION_LLM",
+            "session_memory.decision_llm",
+            False,
+            bool,
             toml_data,
         ),
     )

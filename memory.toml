@@ -139,3 +139,7 @@ batch_size = 50                       # AUTO_SAVE_BATCH_SIZE
 daemon_idle_seconds = 3600           # AUTO_SAVE_DAEMON_IDLE_S
 async_enabled = true                 # MEMORY_ASYNC_AUTOSAVE (1=enabled, 0=disabled)
 inbox_max_bytes = 104857600          # AUTO_SAVE_INBOX_MAX_BYTES (100 MB)
+
+[session_memory]
+enabled = false                         # MEMORY_SESSION_MEMORY — enable session/thread/compaction tracking (v22). Off by default.
+decision_llm = false                    # MEMORY_SESSION_DECISION_LLM — use LLM to enrich decision candidates (Sprint 6 opt-in). Adds ~100-200ms per save in decisions/lessons/projects/architecture categories.
