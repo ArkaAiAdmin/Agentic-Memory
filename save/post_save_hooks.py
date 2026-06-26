@@ -366,6 +366,14 @@ def _hook_track_decisions(db_path_obj, note_id, content, category):
         if not candidates:
             return
 
+        # Sprint 6: optionally enrich candidates via LLM (best-effort).
+        try:
+            from decision_extraction import _enrich_candidates_with_llm
+
+            candidates = _enrich_candidates_with_llm(candidates, content)
+        except ImportError:
+            pass
+
         mgr = SessionManager()
         # Resolve the active session for this project; best-effort.
         try:

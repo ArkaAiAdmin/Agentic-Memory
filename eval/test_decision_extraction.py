@@ -200,3 +200,55 @@ class TestDecisionCategories:
     def test_non_decision_categories_not_in_set(self):
         for cat in ("preferences", "todos", "journal", "daily"):
             assert cat not in DECISION_CATEGORIES
+
+
+# ---------------------------------------------------------------------------
+# Sprint 6: LLM enrichment (opt-in)
+# ---------------------------------------------------------------------------
+
+import os as _os
+
+_SKIP_LLM = _os.environ.get("MEMORY_SESSION_DECISION_LLM") != "1"
+
+
+@pytest.mark.skipif(
+    _SKIP_LLM,
+    reason="LLM extraction disabled (MEMORY_SESSION_DECISION_LLM=1 to enable)",
+)
+class TestLLMEnrichment:
+    def test_enrich_returns_candidates(self):
+        from decision_extraction import _enrich_candidates_with_llm, DecisionCandidate
+
+        cands = [
+            DecisionCandidate(
+                title="Heuristic",
+                claim="We chose X.",
+                event_type="decision",
+                confidence=0.7,
+            )
+        ]
+        result = _enrich_candidates_with_llm(
+            cands, "We decided to use PostgreSQL for the main database."
+        )
+        assert len(result) >= 1
+        assert any(c.title for c in result)
+
+    def test_enrich_does_not_fail_on_missing_llm(self):
+        from decision_extraction import _enrich_candidates_with_llm, DecisionCandidate
+
+        cands = [
+            DecisionCandidate(
+                title="Test",
+                claim="chose option A",
+                event_type="decision",
+                confidence=0.5,
+            )
+        ]
+        result = _enrich_candidates_with_llm(cands, "some content")
+        assert isinstance(result, list)
+
+    def test_enrich_empty_candidates_returns_empty(self):
+        from decision_extraction import _enrich_candidates_with_llm
+
+        result = _enrich_candidates_with_llm([], "some content")
+        assert result == []

@@ -180,3 +180,86 @@ def _extract_decision_candidates(
         if c.thread_slug not in seen:
             seen[c.thread_slug] = c
     return list(seen.values())
+
+
+# ---------------------------------------------------------------------------
+# Sprint 6: LLM enrichment (opt-in, gated by session_decision_llm flag)
+# ---------------------------------------------------------------------------
+
+
+def _enrich_candidates_with_llm(
+    candidates: list[DecisionCandidate],
+    content: str,
+) -> list[DecisionCandidate]:
+    """Optionally enrich heuristic candidates via LLM.
+
+    Gated by ``session_decision_llm`` config flag (default: off).
+    On any failure (flag off, LLM unavailable, timeout, parse error)
+    the original *candidates* list is returned unchanged.
+
+    Time budget: ~5s. Token budget: 200 output tokens.
+    """
+    if not candidates:
+        return candidates
+    try:
+        from config import get_config
+
+        if not get_config().session_decision_llm:
+            return candidates
+    except Exception:
+        return candidates
+
+    try:
+        from llm_extraction import is_llm_extraction_available, _get_extractor
+    except ImportError:
+        return candidates
+
+    if not is_llm_extraction_available():
+        return candidates
+
+    try:
+        extractor = _get_extractor()
+        if not extractor.is_loaded:
+            return candidates
+
+        prompt = (
+            "From the following note, extract structured decisions as JSON. "
+            "Each decision has: title (short string), claim (1-2 sentences), "
+            "alternatives (list of strings, may be empty), confidence (0-1).\n\n"
+            f"Note:\n{content[:4000]}\n\n"
+            "Return JSON array only, no explanation."
+        )
+        result = extractor.extract(prompt, max_tokens=200)
+        llm_decisions = result.get("decisions") or result.get("facts") or []
+        if not llm_decisions:
+            return candidates
+
+        for d in llm_decisions[:3]:
+            if isinstance(d, dict):
+                title = str(d.get("title", ""))[:120]
+                claim = str(d.get("claim", ""))[:500]
+                alts = d.get("alternatives", [])
+                if isinstance(alts, list):
+                    alts = [str(a) for a in alts][:5]
+                else:
+                    alts = []
+                try:
+                    conf = float(d.get("confidence", 0.5))
+                except (TypeError, ValueError):
+                    conf = 0.5
+                if title or claim:
+                    slug = _slugify(title) if title else _slugify(claim[:40])
+                    candidates.append(
+                        DecisionCandidate(
+                            title=title or claim[:120],
+                            claim=claim,
+                            event_type="decision",
+                            confidence=max(0.0, min(1.0, conf)),
+                            thread_slug=slug,
+                            alternatives=alts,
+                        )
+                    )
+    except Exception:
+        pass
+
+    return candidates
