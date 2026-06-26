@@ -29,3 +29,4 @@ docs/docker_README.md
 
 # Coverage data (contains absolute source paths)
 .coverage
+paper_pipeline/
