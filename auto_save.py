@@ -193,12 +193,25 @@ DEFAULT_TOOL_ALLOWLIST = frozenset(
         "task",
         # User decisions / questions
         "question",
+        # File reads (content-bearing — must be saved)
+        "read",
+        "filesystem_read_file",
+        "filesystem_read_text_file",
+        "filesystem_read_multiple_files",
         # File writes (code/content creation)
         "write",
         "edit",
+        # File discovery (content-bearing results)
+        "glob",
+        "grep",
+        "search_files",
+        "filesystem_search_files",
         # Commands / shell actions (git commits, pytest runs, etc.)
         "bash",
         "run_command",
+        # Memory search and retrieval
+        "memory_search",
+        "memory_read_graph",
         # KG tools (repo-native + Omega skill)
         "memory_graph_search",
         "memory_graph_stats",

@@ -1,0 +1,276 @@
+/**
+ * agentic-memory OpenCode plugin — pure implementation
+ *
+ * This module contains the actual hook logic — what happens when
+ * OpenCode fires a tool call, session start, compaction, etc.
+ *
+ * It knows NOTHING about OpenCode's plugin system. It exports plain
+ * functions with plain arguments. The OpenCode-facing adapter lives
+ * in index.ts and is the ONLY file that imports from @opencode-ai/plugin.
+ *
+ * This separation means:
+ * - OpenCode API changes only require rewriting index.ts
+ * - Hook behavior is versioned, tested, and reviewed independently
+ * - This file can be reused by other harnesses (Claude Code, etc.)
+ */
+
+import * as fs from "fs"
+import * as path from "path"
+import { spawn } from "child_process"
+
+// ── Path resolution ──────────────────────────────────────────────────────────
+
+const AGENTIC_MEMORY_DIR = process.env.AGENTIC_MEMORY_DIR || path.join(
+  process.env.HOME || "/Users/arka",
+  ".config",
+  "agentic-memory"
+)
+
+function resolveVenvPython(): string {
+  for (const sub of ["venv", ".venv"]) {
+    const candidate = path.join(AGENTIC_MEMORY_DIR, sub, "bin", "python")
+    if (fs.existsSync(candidate)) return candidate
+  }
+  return process.execPath
+}
+
+const VENV = resolveVenvPython()
+const CONTEXT_MONITOR = path.join(AGENTIC_MEMORY_DIR, "context_monitor.py")
+const AUTO_SAVE = path.join(AGENTIC_MEMORY_DIR, "auto_save.py")
+const MEMORY_SESSION_START = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-session-start.py")
+const MEMORY_RECALL = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-recall-session.py")
+const PROACTIVE_CONTEXT = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-proactive-context.py")
+const STATE_FILE = path.join(AGENTIC_MEMORY_DIR, "memory", "sessions", ".context_monitor_state.json")
+const ERROR_LOG = path.join(AGENTIC_MEMORY_DIR, "memory", "hook-errors.jsonl")
+
+// ── Circuit breaker ──────────────────────────────────────────────────────────
+
+const CIRCUIT_THRESHOLD = 10
+const COOL_DOWN_MS = 5 * 60 * 1000
+const failureCounts = new Map<string, number>()
+const circuitOpenTimes = new Map<string, number>()
+
+function isCircuitOpen(label: string): boolean {
+  const failures = failureCounts.get(label) || 0
+  if (failures < CIRCUIT_THRESHOLD) return false
+  const openTime = circuitOpenTimes.get(label) || 0
+  return Date.now() - openTime < COOL_DOWN_MS
+}
+
+function recordSuccess(label: string): void {
+  const existing = failureCounts.get(label)
+  if (existing) {
+    failureCounts.set(label, 0)
+    circuitOpenTimes.delete(label)
+  }
+}
+
+function recordFailure(log: (msg: string) => void, label: string, err: unknown, extra?: Record<string, unknown>): void {
+  const count = (failureCounts.get(label) || 0) + 1
+  failureCounts.set(label, count)
+  if (count === CIRCUIT_THRESHOLD) {
+    circuitOpenTimes.set(label, Date.now())
+    log(`[agentic-memory] Circuit breaker OPENED for ${label} after ${count} consecutive failures`)
+  } else if (count > CIRCUIT_THRESHOLD) {
+    log(`[agentic-memory] ${label} failed (${count}/${CIRCUIT_THRESHOLD}): ${err instanceof Error ? err.message : String(err)}`)
+  }
+  try {
+    fs.appendFileSync(ERROR_LOG, JSON.stringify({ ts: Date.now(), label, error: err instanceof Error ? err.message : String(err), failureCount: count, ...extra }) + "\n")
+  } catch { /* ignore */ }
+}
+
+// ── Subprocess helpers ───────────────────────────────────────────────────────
+
+async function captureOutput(
+  args: string[],
+  stdinData?: string,
+  label = "unknown",
+  log: (msg: string) => void
+): Promise<string> {
+  if (isCircuitOpen(label)) {
+    log(`[agentic-memory] Circuit OPEN for ${label} — skipping`)
+    return ""
+  }
+  return await new Promise<string>((resolve) => {
+    const child = spawn(VENV, args, { stdio: ["pipe", "pipe", "pipe"] })
+    let stdout = ""
+    child.stdout?.on("data", (d: Buffer) => { stdout += d })
+    if (stdinData) {
+      child.stdin?.write(stdinData)
+      child.stdin?.end()
+    }
+    child.on("close", (code) => {
+      if (code === 0) { recordSuccess(label); resolve(stdout) }
+      else { recordFailure(log, label, `Exit code ${code}`, { code }); resolve("") }
+    })
+    child.on("error", (err) => { recordFailure(log, label, err); resolve("") })
+  })
+}
+
+function fireAndForget(args: string[], label = "unknown", log: (msg: string) => void): void {
+  if (isCircuitOpen(label)) {
+    log(`[agentic-memory] Circuit OPEN for ${label} — skipping`)
+    return
+  }
+  try {
+    const child = spawn(VENV, args, { stdio: ["ignore", "ignore", "pipe"], detached: true })
+    child.on("error", (err) => recordFailure(log, label, err))
+    child.on("close", (code) => {
+      if (code === 0) recordSuccess(label)
+      else recordFailure(log, label, `Exit code ${code}`, { code })
+    })
+    child.unref()
+  } catch (err) {
+    recordFailure(log, label, err)
+  }
+}
+
+// ── MCP prefix handling ──────────────────────────────────────────────────────
+
+function stripMcpPrefix(tool: string): string {
+  const PREFIX = "agentic-memory_"
+  return tool.startsWith(PREFIX) ? tool.slice(PREFIX.length) : tool
+}
+
+// ── Feature flags ────────────────────────────────────────────────────────────
+
+const DISABLED_HOOKS = new Set(
+  (process.env.ECC_DISABLED_HOOKS || "")
+    .split(",").map((s) => s.trim()).filter(Boolean)
+)
+
+const profileOrder: Record<string, number> = { minimal: 0, standard: 1, strict: 2 }
+const ECC_HOOK_PROFILE = process.env.ECC_HOOK_PROFILE || "standard"
+
+function hookEnabled(id: string, required: string | string[] = "standard"): boolean {
+  if (DISABLED_HOOKS.has(id)) return false
+  const req = Array.isArray(required) ? required : [required]
+  return req.some((r) => (profileOrder[r] || 0) <= (profileOrder[ECC_HOOK_PROFILE] || 0))
+}
+
+function isAutoSaveAllowed(tool: string): boolean {
+  const DENIED = new Set(["ls", "cd", "pwd", "echo", "which", "type", "clear", "env", "printenv", "date", "sleep", "source", "."])
+  return !DENIED.has(stripMcpPrefix(tool))
+}
+
+// ── Shared mutable state ─────────────────────────────────────────────────────
+// Written by startSession(), read + cleared by injectSystemPrompt() on the
+// first LLM call after session start.
+
+export const state = {
+  sessionContext: "",
+  proactiveContext: "",
+}
+
+// ── Hook implementations ─────────────────────────────────────────────────────
+// Each function is a self-contained unit: plain args, plain return value,
+// no framework dependencies. Callable from any harness.
+
+export function startSession(log: (msg: string) => void): Promise<void> {
+  return runSessionStart(log)
+}
+
+async function runSessionStart(log: (msg: string) => void): Promise<void> {
+  if (!hookEnabled("session:start", ["minimal", "standard", "strict"])) return
+
+  const contexts: Promise<string>[] = []
+
+  if (hookEnabled("session:start:memory-recall", ["minimal"])) {
+    contexts.push(captureOutput([MEMORY_RECALL], undefined, "recall", log))
+  }
+  if (hookEnabled("session:start:memory-bootstrap", ["minimal"])) {
+    contexts.push(captureOutput([MEMORY_SESSION_START], undefined, "memory-session-start", log))
+  }
+
+  if (contexts.length > 0) {
+    state.sessionContext = (await Promise.all(contexts)).filter(Boolean).join("\n\n")
+  }
+}
+
+export function onToolAfter(tool: string, args: Record<string, unknown> | undefined, output: unknown, log: (msg: string) => void): void {
+  if (!hookEnabled("post:memory:auto-save", ["minimal"])) return
+  if (!isAutoSaveAllowed(tool)) return
+
+  const paramsJson = JSON.stringify(args ?? {}).slice(0, 2000)
+  const preview = typeof output === "string" ? output.slice(0, 200) : ""
+
+  fireAndForget([CONTEXT_MONITOR, "track", "--tool", tool, "--params", paramsJson, "--result-preview", preview], "track", log)
+  fireAndForget([AUTO_SAVE, "tool-complete", "--tool", tool, "--params", paramsJson, "--result-preview", preview], "auto-save", log)
+}
+
+export function beforeTool(tool: string, args: Record<string, unknown> | undefined, log: (msg: string) => void): Promise<void> {
+  return captureOutput([PROACTIVE_CONTEXT], JSON.stringify({ tool_name: tool, tool_input: args ?? {} }), "memory-proactive-context", log).then((out) => {
+    if (out.trim()) state.proactiveContext = out.trim()
+  })
+}
+
+export function onIdle(log: (msg: string) => void): void {
+  if (!hookEnabled("session:idle:memory-checkpoint", ["minimal"])) return
+  try { fireAndForget([CONTEXT_MONITOR, "idle"], "idle", log) } catch { /* ignore */ }
+}
+
+export function endSession(sessionId: string, log: (msg: string) => void): Promise<void> {
+  if (!hookEnabled("session:end:memory-summary", ["minimal"])) return Promise.resolve()
+
+  log("[agentic-memory] Flushing final session summary (blocking)...")
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(VENV, [CONTEXT_MONITOR, "end", "--session-id", sessionId || "unknown"], { stdio: ["ignore", "pipe", "ignore"] })
+    let stdout = ""
+    child.stdout?.on("data", (d: Buffer) => { stdout += d })
+    child.on("close", (code) => {
+      if (code === 0) { log(`[agentic-memory] Session end summary saved: ${stdout.trim()}`); resolve() }
+      else reject(new Error(`Exit code ${code}: ${stdout}`))
+    })
+    child.on("error", reject)
+  }).catch((e) => log(`[agentic-memory] Session end save failed: ${e}`))
+}
+
+export function injectSystemPrompt(system: string[]): void {
+  if (state.sessionContext) {
+    system.push(state.sessionContext)
+    state.sessionContext = ""
+  }
+  if (state.proactiveContext) {
+    system.push(state.proactiveContext)
+    state.proactiveContext = ""
+  }
+}
+
+export async function onCompacting(sessionId: string, output: { context: string[]; prompt?: string }, log: (msg: string) => void): Promise<void> {
+  if (!hookEnabled("session:compacting:memory-save", ["minimal"])) return
+
+  let lastCompactionTime = 0
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const stateContent = fs.readFileSync(STATE_FILE, "utf8")
+      const state = JSON.parse(stateContent)
+      lastCompactionTime = state.last_compaction_time || 0
+    }
+  } catch { /* state file may not exist yet */ }
+
+  const now = Date.now() / 1000
+  const isThrottled = now - lastCompactionTime < 45
+
+  if (isThrottled) {
+    log("[agentic-memory] Skipping pre-compaction context save (throttled)")
+    output.context.push("\n\n⚠️ COMPACTION SURVIVAL: A pre-compaction context note was saved. After compaction, search for 'pre-compaction context save' to recover what was happening before this compaction event.")
+  } else {
+    log("[agentic-memory] Context compaction detected — saving pre-compaction context")
+
+    let messageCount = "0"
+    try {
+      if (fs.existsSync(STATE_FILE)) {
+        const stateContent = fs.readFileSync(STATE_FILE, "utf8")
+        const state = JSON.parse(stateContent)
+        messageCount = String(state.total_tool_calls || state.tool_call_count || 0)
+      }
+    } catch { /* state file may not exist yet */ }
+
+    const result = await captureOutput([CONTEXT_MONITOR, "compact", "--session-id", sessionId || "unknown", "--message-count", messageCount], undefined, "compact", log)
+    log(`[agentic-memory] Pre-compaction context saved: ${result.trim()}`)
+
+    output.context.push("\n\n⚠️ COMPACTION SURVIVAL: A pre-compaction context note was saved. After compaction, search for 'pre-compaction context save' to recover what was happening before this compaction event.")
+  }
+
+  output.prompt = "Focus on preserving: 1) Current task status and progress, 2) Key decisions made, 3) Files created/modified, 4) Remaining work items, 5) Any security concerns flagged. Discard: verbose tool outputs, intermediate exploration, redundant file listings."
+}

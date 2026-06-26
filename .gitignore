@@ -1,7 +1,10 @@
 # Personal data — never commit
 *.db*
+# Build artifacts
 *.pyc
 __pycache__/
+agentic_memory.egg-info/
+uv.lock
 venv/
 memory/
 lessons/

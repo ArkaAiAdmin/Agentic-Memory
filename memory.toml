@@ -130,7 +130,7 @@ failure_window_seconds = 60.0        # MEMORY_AUTO_SAVE_FAILURE_WINDOW_SECONDS
 # Only tools on allowlist get auto-saved (denylist is fallback when allowlist="*").
 # Override via env: AUTO_SAVE_TOOL_ALLOWLIST / AUTO_SAVE_TOOL_DENYLIST
 # Format: comma-separated tool names (e.g., "memory_save,write,edit,task")
-allowlist = "memory_save,memory_supersede,memory_delete,todowrite,task,question,write,edit"
+allowlist = "memory_save,memory_supersede,memory_delete,todowrite,task,question,write,edit,read,filesystem_read_file,filesystem_read_text_file,filesystem_read_multiple_files,glob,grep,search_files,filesystem_search_files,bash,run_command,memory_search,memory_read_graph,memory_graph_search,memory_graph_stats,memory_graph_shortest_path,memory_graph_traverse,memory_temporal_query,memory_temporal_contradictions,memory_create_entities,memory_add_observations,memory_search_nodes,memory_open_nodes,memory_create_relations,memory_delete_relations"
 denylist = "filesystem_list_allowed_directories,filesystem_list_directory,filesystem_directory_tree,filesystem_read_multiple_files,filesystem_search_files,filesystem_get_file_info,filesystem_list_directory_with_sizes,memory_session_start,memory_user_profile,memory_recall_context,memory_profile_access,memory_record_ctr_feedback,memory_check_concept_drift,todo,process,read_terminal"
 
 # Async/batch auto-save daemon settings
