@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 # authoritative source.
 [project]
 name = "agentic-memory"
-version = "1.0.0"
+version = "2.1.0"
 description = "Local-first persistent memory for AI agents — Mem0-compatible SDK, MCP server, and 79 MCP tools"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -47,6 +47,17 @@ dev = [
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.0.0",
+]
+langchain = [
+    "langchain-core>=1.1.0",
+    "langchain-community>=0.4.0",
+]
+crewai = [
+    "crewai>=0.80,<1.0",
+    "langchain-core>=0.2.0",
+]
+all = [
+    "agentic-memory[langchain,crewai]",
 ]
 
 # Console scripts — installed by `pip install -e .`
