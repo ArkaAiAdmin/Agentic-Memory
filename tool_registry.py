@@ -24,6 +24,9 @@ CORE_TOOLS = [
     "memory_facts_search",
     "memory_graph_search",
     "memory_recall_context",
+    "memory_thread_context",  # Sprint 5
+    "memory_list_threads",  # Sprint 5
+    "memory_resolve_thread",  # Sprint 5
     "memory_session_start",
     "memory_user_profile",
     "memory_delete",
