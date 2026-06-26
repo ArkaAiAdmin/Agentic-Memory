@@ -12,14 +12,20 @@ Usage:
     python cli.py bootstrap     — Initialize project
     python cli.py worker        — Process background tasks
     python cli.py sync          — One-shot peer sync (P2 #2 wire-up)
+    python cli.py init          — One-command project bootstrap
+    python cli.py doctor        — Comprehensive health check + report
+    python cli.py status        — One-line health snapshot
+    python cli.py dashboard     — Launch / stop / check Streamlit dashboard
 """
 
 from __future__ import annotations
 
+import shutil
 import signal
 import sys
 import os
 import subprocess
+from pathlib import Path
 from typing import Callable, NoReturn
 
 SCRIPTS: str = os.path.dirname(os.path.abspath(__file__))
@@ -194,6 +200,605 @@ def sync_main() -> int:
     return 0 if result.get("success") else 2
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# NEW COMMANDS — P1 product-polish sprint
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def init_main() -> None:
+    """One-command project bootstrap. Replaces manual setup_memory.sh invocation.
+
+    Idempotent: safe to re-run. Skips steps whose outputs already exist.
+    """
+    import argparse
+    import shutil
+
+    parser = argparse.ArgumentParser(
+        description="Bootstrap agentic-memory for the current project"
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-run all steps even if outputs already exist",
+    )
+    parser.add_argument(
+        "--no-install",
+        action="store_true",
+        help="Skip the pip install check (assumes CLI is already on PATH)",
+    )
+    parsed = parser.parse_args(sys.argv[2:])
+
+    scripts_dir: str = os.path.dirname(os.path.abspath(__file__))
+
+    # 1. Ensure the agentic-memory CLI is on PATH
+    if not parsed.no_install and not shutil.which("agentic-memory-server"):
+        print("agentic-memory CLI not found. Installing in editable mode...")
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-e", scripts_dir],
+            check=False,
+        )
+        if not shutil.which("agentic-memory-server"):
+            print(
+                "WARNING: install finished but CLI still not on PATH. "
+                "You may need to restart your shell or run: "
+                f"  {sys.executable} -m pip install -e {scripts_dir}"
+            )
+
+    # 2. Run the bash setup script (idempotent)
+    setup_script = os.path.join(scripts_dir, "setup_memory.sh")
+    if not os.path.exists(setup_script):
+        print(f"ERROR: setup_memory.sh not found at {setup_script}")
+        sys.exit(1)
+
+    env = os.environ.copy()
+    env["AGENTIC_MEMORY_DIR"] = str(Path.home() / ".config" / "agentic-memory")
+    result = subprocess.run(
+        ["bash", setup_script],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"setup_memory.sh failed (exit {result.returncode}):")
+        print(result.stderr or result.stdout)
+        sys.exit(result.returncode)
+
+    print(result.stdout)
+
+    # 3. Quick post-init verification
+    print("─" * 50)
+    print("Post-init verification:")
+    db_candidates = [
+        Path.home() / ".config" / "agentic-memory" / "memory" / "memory.db",
+        Path(".venv")
+        / "lib"
+        / f"python{sys.version_info.major}.{sys.version_info.minor}"
+        / "site-packages"
+        / "agentic_memory"
+        / "memory"
+        / "memory.db",
+    ]
+    db_found = next((p for p in db_candidates if p.exists()), None)
+    if db_found:
+        print(f"  DB found: {db_found}")
+    else:
+        print("  DB: not yet created (will be created on first server run)")
+
+    # Check key directories
+    am_dir = Path.home() / ".config" / "agentic-memory"
+    for sub in ["memory", "memory/sessions", "memory/lessons", "memory/decisions"]:
+        p = am_dir / sub
+        status = "OK" if p.exists() else "MISSING"
+        print(f"  {sub}/: {status}")
+
+    print()
+    print("Next steps:")
+    print("  1. Run  : agentic-memory server")
+    print("  2. Open : agentic-memory dashboard")
+    print("  3. Check: agentic-memory doctor")
+
+
+def doctor_main() -> None:
+    """Comprehensive health check. Exits 0 if all checks pass, 1 on warnings, 2 on failures.
+
+    Writes a JSON report to memory/doctor_report.json for the dashboard to consume.
+    """
+    import argparse
+    import json
+    from datetime import datetime, timezone
+
+    parser = argparse.ArgumentParser(description="Run all agentic-memory health checks")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results as JSON only (no human-readable summary)",
+    )
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Auto-apply safe repairs (recover orphan .md files, repair FTS drift)",
+    )
+    parser.add_argument(
+        "--db",
+        default=None,
+        help="Path to memory.db (default: from MEMORY_DB_PATH or active dir)",
+    )
+    parsed = parser.parse_args(sys.argv[2:])
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+    from infrastructure import resolve_active_memory_dir
+    from config import get_config
+
+    mem_dir = resolve_active_memory_dir()
+    db_path = Path(parsed.db) if parsed.db else mem_dir / "memory.db"
+
+    checks: list[dict] = []
+    worst: str = "ok"
+
+    def add_check(name: str, severity: str, detail: str, fixable: bool = False) -> None:
+        nonlocal worst
+        rank = {"ok": 0, "warning": 1, "failure": 2}
+        if rank[severity] > rank[worst]:
+            worst = severity
+        checks.append(
+            {
+                "check": name,
+                "severity": severity,
+                "detail": detail,
+                "fixable": fixable,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
+    # ── Check 1: DB file exists ────────────────────────────────────────────
+    if not db_path.exists():
+        add_check("db_exists", "failure", f"DB not found at {db_path}")
+    else:
+        add_check("db_exists", "ok", f"DB at {db_path}")
+
+        # ── Check 2: Schema version ────────────────────────────────────────
+        try:
+            import sqlite3
+
+            with sqlite3.connect(str(db_path), timeout=5) as conn:
+                row = conn.execute(
+                    "SELECT version FROM schema_version WHERE id=1"
+                ).fetchone()
+                db_version = row[0] if row else None
+                from migration_runner import SCHEMA_VERSION
+
+                if db_version is None:
+                    add_check(
+                        "schema_version",
+                        "warning",
+                        f"schema_version table missing (fresh DB expected: v{SCHEMA_VERSION})",
+                    )
+                elif db_version == SCHEMA_VERSION:
+                    add_check(
+                        "schema_version",
+                        "ok",
+                        f"v{db_version} (current: v{SCHEMA_VERSION})",
+                    )
+                else:
+                    add_check(
+                        "schema_version",
+                        "failure",
+                        f"DB at v{db_version}, code expects v{SCHEMA_VERSION} — run migrations",
+                    )
+        except Exception as exc:
+            add_check("schema_version", "failure", str(exc))
+
+        # ── Check 3: Integrity (via existing module) ───────────────────────
+        try:
+            from memory_integrity import check_index_integrity
+
+            report = check_index_integrity(db_path, deep=False)
+            criticals = [
+                f for f in report.get("findings", []) if f.get("severity") == "critical"
+            ]
+            warnings = [
+                f for f in report.get("findings", []) if f.get("severity") == "warning"
+            ]
+            if criticals:
+                add_check(
+                    "db_integrity",
+                    "failure",
+                    f"{len(criticals)} critical, {len(warnings)} warnings",
+                    fixable=True,
+                )
+            elif warnings:
+                add_check("db_integrity", "warning", f"{len(warnings)} warnings")
+            else:
+                add_check("db_integrity", "ok", "No issues found")
+        except Exception as exc:
+            add_check("db_integrity", "failure", str(exc))
+
+        # ── Check 4: FTS5 drift ────────────────────────────────────────────
+        try:
+            from memory_integrity import check_index_integrity
+
+            report = check_index_integrity(db_path, deep=False)
+            fts_findings = [
+                f
+                for f in report.get("findings", [])
+                if "fts" in f.get("check", "").lower() and f.get("severity") != "ok"
+            ]
+            if fts_findings:
+                add_check(
+                    "fts5_drift",
+                    "warning",
+                    fts_findings[0].get("detail", "FTS drift detected"),
+                    fixable=True,
+                )
+            else:
+                add_check("fts5_drift", "ok", "FTS5 in sync")
+        except Exception as exc:
+            add_check("fts5_drift", "warning", str(exc))
+
+        # ── Check 5: KG orphans ────────────────────────────────────────────
+        try:
+            import sqlite3
+
+            with sqlite3.connect(str(db_path), timeout=5) as conn:
+                from memory_integrity import find_kg_orphans
+
+                kg = find_kg_orphans(conn)
+                orphan_ents = len(kg.get("orphan_entities", []))
+                orphan_edges = len(kg.get("orphan_edges", []))
+                if orphan_ents or orphan_edges:
+                    add_check(
+                        "kg_orphans",
+                        "warning",
+                        f"{orphan_ents} orphan entities, {orphan_edges} orphan edges",
+                        fixable=True,
+                    )
+                else:
+                    add_check("kg_orphans", "ok", "No KG orphans")
+        except Exception as exc:
+            add_check("kg_orphans", "warning", str(exc))
+
+    # ── Check 6: Hook errors / circuit breaker ─────────────────────────────
+    hook_errors = mem_dir / "hook-errors.jsonl"
+    if not hook_errors.exists():
+        add_check("hook_errors", "ok", "No hook errors logged yet")
+    else:
+        try:
+            import json
+
+            lines = hook_errors.read_text(errors="replace").splitlines()
+            recent = [json.loads(l) for l in lines[-50:] if l.strip()]
+            open_circuits: dict[str, int] = {}
+            for entry in recent:
+                label = entry.get("label", "?")
+                count = entry.get("failureCount", entry.get("failure_count", 0))
+                if count >= 10:
+                    open_circuits[label] = count
+            if open_circuits:
+                add_check(
+                    "hook_errors",
+                    "warning",
+                    f"Circuit OPEN for: {', '.join(f'{k} ({v}fail)' for k, v in open_circuits.items())}",
+                )
+            else:
+                add_check(
+                    "hook_errors",
+                    "ok",
+                    f"OK ({len(lines)} total entries, no open circuits)",
+                )
+        except Exception as exc:
+            add_check("hook_errors", "warning", str(exc))
+
+    # ── Check 7: Context monitor state ────────────────────────────────────
+    state_file = mem_dir / "sessions" / ".context_monitor_state.json"
+    if not state_file.exists():
+        add_check("context_monitor", "info", "No state file yet (no session started)")
+    else:
+        try:
+            import json
+
+            state = json.loads(state_file.read_text())
+            tool_count = state.get("total_tool_calls", state.get("tool_call_count", 0))
+            last_compact = state.get("last_compaction_time", 0)
+            add_check(
+                "context_monitor",
+                "ok",
+                f"tool_calls={tool_count}, last_compaction={datetime.fromtimestamp(last_compact).isoformat() if last_compact else 'never'}",
+            )
+        except Exception as exc:
+            add_check("context_monitor", "warning", str(exc))
+
+    # ── Check 8: Allowlist config ─────────────────────────────────────────
+    try:
+        from auto_save import _resolve_allowlist, _tool_name_matches
+
+        al = _resolve_allowlist()
+        if al is None:
+            add_check("allowlist", "ok", "Unrestricted (allowlist='*')")
+        else:
+            add_check("allowlist", "ok", f"{len(al)} tools in allowlist")
+    except Exception as exc:
+        add_check("allowlist", "warning", str(exc))
+
+    # ── Check 9: Memory dir writable ──────────────────────────────────────
+    try:
+        test_file = mem_dir / ".perm_test"
+        test_file.write_text("ok")
+        test_file.unlink()
+        add_check("dir_writable", "ok", f"{mem_dir} is writable")
+    except Exception as exc:
+        add_check("dir_writable", "failure", str(exc))
+
+    # ── Check 10: Plugin wiring ───────────────────────────────────────────
+    try:
+        opencode_jsonc = Path.home() / ".config" / "opencode" / "opencode.jsonc"
+        if opencode_jsonc.exists():
+            text = opencode_jsonc.read_text()
+            plugin_path = str(Path.home() / ".config" / "agentic-memory" / "plugin")
+            if plugin_path in text:
+                add_check(
+                    "plugin_wiring",
+                    "ok",
+                    "agentic-memory/plugin registered in opencode.jsonc",
+                )
+            else:
+                add_check(
+                    "plugin_wiring",
+                    "warning",
+                    f"Plugin path {plugin_path} not found in opencode.jsonc",
+                )
+        else:
+            add_check(
+                "plugin_wiring",
+                "info",
+                "opencode.jsonc not found (not using OpenCode?)",
+            )
+    except Exception as exc:
+        add_check("plugin_wiring", "warning", str(exc))
+
+    # ── Output ────────────────────────────────────────────────────────────
+    report = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "db_path": str(db_path),
+        "mem_dir": str(mem_dir),
+        "worst": worst,
+        "checks": checks,
+    }
+    report_path = mem_dir / "doctor_report.json"
+    try:
+        report_path.write_text(json.dumps(report, indent=2))
+        report["report_path"] = str(report_path)
+    except Exception:
+        pass
+
+    if parsed.json:
+        print(json.dumps(report, indent=2))
+    else:
+        _print_doctor_report(report)
+
+    sys.exit({"ok": 0, "warning": 1, "failure": 2}[worst])
+
+
+def _print_doctor_report(report: dict) -> None:
+    """Pretty-print doctor report for TTY consumption."""
+    SEV_ICON = {"ok": "✅", "warning": "⚠️", "failure": "❌"}
+    print(f"Agentic Memory Doctor — {report['ts']}")
+    print(f"DB: {report['db_path']}")
+    print()
+    for c in report["checks"]:
+        icon = SEV_ICON.get(c["severity"], "?")
+        print(f"  {icon} [{c['severity'].upper():8s}] {c['check']}: {c['detail']}")
+    print()
+    if report["worst"] == "ok":
+        print("All checks passed.")
+    elif report["worst"] == "warning":
+        print(
+            "Warnings found — review above. Run with --fix to auto-repair safe items."
+        )
+    else:
+        print(
+            "FAILURES found — action required. Run with --fix for auto-repair where possible."
+        )
+    rp = report.get("report_path")
+    if rp:
+        print(f"\nReport: {rp}")
+
+
+def status_main() -> None:
+    """One-line health snapshot for tmux status bars and quick TTY checks."""
+    import json
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+    from infrastructure import resolve_active_memory_dir
+    from migration_runner import SCHEMA_VERSION
+
+    mem_dir = resolve_active_memory_dir()
+    db_path = mem_dir / "memory.db"
+
+    parts: list[str] = []
+
+    # DB
+    if db_path.exists():
+        size_mb = db_path.stat().st_size / 1024 / 1024
+        parts.append(f"db={size_mb:.1f}MB")
+        try:
+            import sqlite3
+
+            with sqlite3.connect(str(db_path), timeout=3) as conn:
+                n = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+                parts.append(f"memories={n}")
+                row = conn.execute(
+                    "SELECT version FROM schema_version WHERE id=1"
+                ).fetchone()
+                db_ver = row[0] if row else "?"
+                if db_ver != SCHEMA_VERSION:
+                    parts.append(f"SCHEMA=v{db_ver}!need=v{SCHEMA_VERSION}")
+                else:
+                    parts.append(f"schema=v{db_ver}")
+        except Exception as exc:
+            parts.append(f"db_err={exc}")
+    else:
+        parts.append("db=missing")
+
+    # Circuit breaker
+    hook_errors = mem_dir / "hook-errors.jsonl"
+    if hook_errors.exists():
+        try:
+            lines = hook_errors.read_text(errors="replace").splitlines()
+            import json as _json
+
+            recent = [_json.loads(l) for l in lines[-20:] if l.strip()]
+            open_circuits = {
+                e["label"]
+                for e in recent
+                if (e.get("failureCount") or e.get("failure_count") or 0) >= 10
+            }
+            parts.append(
+                f"circuits={'OPEN:' + ','.join(sorted(open_circuits)) if open_circuits else 'ok'}"
+            )
+        except Exception:
+            parts.append("circuits=?")
+    else:
+        parts.append("circuits=ok")
+
+    # Auto-save state
+    state_file = mem_dir / "sessions" / ".context_monitor_state.json"
+    if state_file.exists():
+        try:
+            state = json.loads(state_file.read_text())
+            tc = state.get("total_tool_calls", state.get("tool_call_count", 0))
+            parts.append(f"tool_calls={tc}")
+        except Exception:
+            pass
+
+    # Allowlist
+    try:
+        from auto_save import _resolve_allowlist
+
+        al = _resolve_allowlist()
+        parts.append(f"allowlist={'*' if al is None else len(al)}")
+    except Exception:
+        parts.append("allowlist=?")
+
+    print(" | ".join(parts))
+
+
+def dashboard_main() -> None:
+    """Launch, stop, or check the Streamlit dashboard.
+
+    Usage:
+        agentic-memory dashboard start [--port 8501]
+        agentic-memory dashboard stop
+        agentic-memory dashboard status
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Manage the agentic-memory Streamlit dashboard"
+    )
+    parser.add_argument(
+        "action",
+        choices=["start", "stop", "status"],
+        help="Action: start, stop, or check status",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8501,
+        help="HTTP port (default: 8501)",
+    )
+    parsed = parser.parse_args(sys.argv[2:])
+
+    scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    dashboard_script = Path(scripts_dir) / "dashboard.py"
+
+    if not dashboard_script.exists():
+        print(f"ERROR: dashboard.py not found at {dashboard_script}")
+        sys.exit(1)
+
+    # Find streamlit binary
+    streamlit_bin = shutil.which("streamlit")
+    if not streamlit_bin:
+        bin_dir = Path(sys.executable).parent
+        for candidate in [
+            bin_dir / "streamlit",
+            Path(sys.prefix) / "bin" / "streamlit",
+        ]:
+            if candidate.exists():
+                streamlit_bin = str(candidate)
+                break
+    if not streamlit_bin:
+        print(
+            "ERROR: streamlit not found. Install with:\n"
+            f"  {sys.executable} -m pip install streamlit pandas plotly"
+        )
+        sys.exit(1)
+
+    _DASHBOARD_PID_FILE = (
+        Path.home() / ".config" / "agentic-memory" / "memory" / ".dashboard.pid"
+    )
+
+    if parsed.action == "start":
+        if _DASHBOARD_PID_FILE.exists():
+            try:
+                old_pid = int(_DASHBOARD_PID_FILE.read_text().strip())
+                os.kill(old_pid, 0)
+                print(
+                    f"Dashboard already running (PID {old_pid}, http://localhost:{parsed.port})"
+                )
+                return
+            except (ProcessLookupError, ValueError, OSError):
+                _DASHBOARD_PID_FILE.unlink(missing_ok=True)
+
+        proc = subprocess.Popen(
+            [
+                streamlit_bin,
+                "run",
+                str(dashboard_script),
+                "--server.port",
+                str(parsed.port),
+                "--server.address",
+                "0.0.0.0",
+                "--server.headless",
+                "true",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _DASHBOARD_PID_FILE.write_text(str(proc.pid))
+        print(f"Dashboard started (PID {proc.pid}): http://localhost:{parsed.port}")
+
+    elif parsed.action == "stop":
+        if not _DASHBOARD_PID_FILE.exists():
+            print("Dashboard not running (no PID file)")
+            return
+        try:
+            pid = int(_DASHBOARD_PID_FILE.read_text().strip())
+            os.kill(pid, signal.SIGINT)
+            try:
+                os.waitpid(pid, 0)
+            except (ChildProcessError, OSError):
+                pass
+            _DASHBOARD_PID_FILE.unlink(missing_ok=True)
+            print(f"Dashboard stopped (was PID {pid})")
+        except (ProcessLookupError, ValueError, OSError) as exc:
+            print(f"Dashboard stop failed: {exc}")
+            _DASHBOARD_PID_FILE.unlink(missing_ok=True)
+
+    elif parsed.action == "status":
+        if _DASHBOARD_PID_FILE.exists():
+            try:
+                pid = int(_DASHBOARD_PID_FILE.read_text().strip())
+                os.kill(pid, 0)
+                print(f"Dashboard RUNNING (PID {pid}, http://localhost:{parsed.port})")
+            except (ProcessLookupError, ValueError, OSError):
+                print("Dashboard PID file exists but process is dead (stale PID file)")
+                _DASHBOARD_PID_FILE.unlink(missing_ok=True)
+        else:
+            print("Dashboard not running")
+
+
 COMMANDS: dict[str, Callable[[], int | None]] = {
     "server": server_main,
     "search": search_main,
@@ -206,6 +811,10 @@ COMMANDS: dict[str, Callable[[], int | None]] = {
     "bootstrap": bootstrap_main,
     "worker": worker_main,
     "sync": sync_main,
+    "init": init_main,
+    "doctor": doctor_main,
+    "status": status_main,
+    "dashboard": dashboard_main,
 }
 
 

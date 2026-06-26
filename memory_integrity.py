@@ -218,8 +218,8 @@ def _get_orphaned_notes(
         {
             "id": f"orphan-note-{r[0]}",
             "check": "orphan_notes",
-            "severity": "warning",
-            "message": f"Memory {r[0]!r} has no backlinks",
+            "severity": "info",
+            "message": f"Memory {r[0]!r} has no backlinks (most notes are unlinked — this is normal)",
         }
         for r in rows
     ]

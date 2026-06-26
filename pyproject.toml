@@ -77,6 +77,10 @@ agentic-memory-compact = "cli:compact_main"
 agentic-memory-bootstrap = "cli:bootstrap_main"
 agentic-memory-worker = "cli:worker_main"
 agentic-memory-sync = "cli:sync_main"
+agentic-memory-init = "cli:init_main"
+agentic-memory-doctor = "cli:doctor_main"
+agentic-memory-status = "cli:status_main"
+agentic-memory-dashboard = "cli:dashboard_main"
 
 [project.urls]
 Homepage = "https://github.com/ArkaAiAdmin/Agentic-Memory"
