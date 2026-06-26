@@ -216,8 +216,8 @@ class TestCheckIndexIntegrity(unittest.TestCase):
 
     def test_summary_singular_warning(self) -> None:
         db_path = _make_test_db(self.tmp_dir)
-        # Create source file for the lonely memory so we don't get
-        # an extra missing_md_file warning.
+        # Insert a memory but deliberately remove the .md source file
+        # so the integrity checker reports exactly one real warning (missing_md_file).
         test_dir = self.tmp_dir / "test"
         test_dir.mkdir(exist_ok=True)
         (test_dir / "a.md").write_text("---\nid: lonely\n---\nno links")
@@ -228,6 +228,8 @@ class TestCheckIndexIntegrity(unittest.TestCase):
                 ("lonely", "no links", "", "test/a.md"),
             )
             raw.commit()
+        # Now delete the source file to trigger exactly one missing_md_file warning
+        (test_dir / "a.md").unlink(missing_ok=True)
         result = check_index_integrity(db_path)
         # Summary should use singular "warning" (not "warnings")
         self.assertIn("1 warning ", result["summary"] + " ")

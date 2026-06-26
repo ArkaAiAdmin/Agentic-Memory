@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Agentic Memory Dashboard — state-of-the-art local observability.
+"""Agentic Memory Dashboard — full operational surface.
 
 Run:
     cd ~/.config/agentic-memory
     venv/bin/streamlit run dashboard.py
+
+Or via CLI:
+    agentic-memory dashboard start
 """
 
 import json
 import os
-import sys
 import sqlite3
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from collections import Counter
 from datetime import datetime, timezone
@@ -60,6 +65,15 @@ st.markdown(
         color: #6b7280;
         font-size: 0.7rem;
     }
+    .nav-section {
+        color: #6b7280;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-top: 0.8rem;
+        margin-bottom: 0.2rem;
+        padding-left: 0.5rem;
+    }
     .stTabs [data-baseweb="tab-list"] { gap: 0; }
     .stTabs [data-baseweb="tab"] {
         background: #1a1d23;
@@ -82,10 +96,8 @@ st.markdown(
         background: #1a1d23;
         border-radius: 0 8px 8px 0;
     }
-    /* Fix dark input fields */
     .stTextInput input { background: #1a1d23; color: #f0f2f6; border: 1px solid #2d3139; }
     .stSelectbox div[data-baseweb="select"] { background: #1a1d23; }
-    .stSlider [data-baseweb="slider"] { margin-top: 0.5rem; }
     div[data-testid="stDataFrame"] { background: #1a1d23; }
     div[data-testid="stDataFrame"] td { color: #d1d5db; }
 </style>
@@ -103,7 +115,7 @@ DARK = dict(
 )
 
 
-# ── DB resolution ───────────────────────────────────────────────────────
+# ── DB resolution ────────────────────────────────────────────────────────
 @st.cache_resource
 def resolve_db() -> Path:
     from infrastructure import resolve_active_memory_dir
@@ -119,7 +131,6 @@ if not DB.exists():
 
 @st.cache_resource
 def get_conn():
-    """Open a read‑only ephemeral connection. Never migrates the schema."""
     c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=30)
     c.execute("PRAGMA foreign_keys=ON")
     return c
@@ -128,7 +139,7 @@ def get_conn():
 def query(sql: str, params=()) -> pd.DataFrame | None:
     try:
         return pd.read_sql_query(sql, get_conn(), params=params)
-    except Exception as exc:
+    except Exception:
         return None
 
 
@@ -146,6 +157,10 @@ def table(name: str) -> bool:
         return False
 
 
+def get_mem_dir() -> Path:
+    return DB.parent
+
+
 # ── Sidebar ─────────────────────────────────────────────────────────────
 st.sidebar.markdown(
     "<h2 style='margin-bottom:0'> Agentic Memory</h2>", unsafe_allow_html=True
@@ -160,47 +175,71 @@ with st.sidebar:
     n_ent = r[0]
     r = get_conn().execute("SELECT COUNT(*) FROM kg_edges").fetchone()
     n_edg = r[0]
+    r = get_conn().execute("SELECT COUNT(*) FROM memory_audit_log").fetchone()
+    n_audit = r[0]
 
     c1, c2 = st.columns(2)
     c1.metric("Memories", n_mem)
     c2.metric("Entities", n_ent)
     c1.metric("Edges", n_edg)
-    r = get_conn().execute("SELECT COUNT(*) FROM memory_audit_log").fetchone()
-    c2.metric("Audit Events", r[0])
+    c2.metric("Audit", n_audit)
 
     st.divider()
-    if st.button("Refresh", use_container_width=True):
-        st.rerun()
 
-# ── Tab helpers ─────────────────────────────────────────────────────────
-TABS = [
-    "Overview",
-    "Knowledge Graph",
-    "Embeddings",
-    "Concept Drift",
-    "CTR Feedback",
-    "Audit Log",
-    "Explorer",
-]
-overview_tab, kg_tab, embed_tab, drift_tab, ctr_tab, audit_tab, search_tab = st.tabs(
-    TABS
-)
+    # ── Quick actions ────────────────────────────────────────────────────
+    st.markdown('<div class="nav-section">Quick Actions</div>', unsafe_allow_html=True)
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("Refresh", use_container_width=True):
+            st.rerun()
+    with col_b:
+        if st.button("Doctor", use_container_width=True):
+            st.session_state["_nav"] = "Health"
+
+    # ── Navigation ───────────────────────────────────────────────────────
+    st.markdown('<div class="nav-section">Analytics</div>', unsafe_allow_html=True)
+    nav = st.radio(
+        "Analytics",
+        ["Overview", "Knowledge Graph", "Embeddings", "Drift", "CTR"],
+        label_visibility="collapsed",
+        key="_nav_analytics",
+    )
+
+    st.markdown('<div class="nav-section">Manage</div>', unsafe_allow_html=True)
+    nav2 = st.radio(
+        "Manage",
+        ["Memories", "Entities", "Explorer"],
+        label_visibility="collapsed",
+        key="_nav_manage",
+    )
+
+    st.markdown('<div class="nav-section">System</div>', unsafe_allow_html=True)
+    nav3 = st.radio(
+        "System",
+        ["Audit Log", "Health", "Hooks"],
+        label_visibility="collapsed",
+        key="_nav_system",
+    )
+
+page = st.session_state.get("_nav", nav)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # OVERVIEW
 # ═══════════════════════════════════════════════════════════════════════════
-with overview_tab:
+if page == "Overview":
     st.subheader("Overview")
 
-    # ── Metric cards row ──
     r = get_conn().execute("SELECT COUNT(*) FROM memories WHERE pinned=1").fetchone()
     n_pin = r[0]
-    r = (
-        get_conn()
-        .execute("SELECT COUNT(DISTINCT parent_id) FROM memory_chunks")
-        .fetchone()
-    )
-    n_chk = r[0] or 0
+    try:
+        r = (
+            get_conn()
+            .execute("SELECT COUNT(DISTINCT parent_id) FROM memory_chunks")
+            .fetchone()
+        )
+        n_chk = r[0] or 0
+    except sqlite3.OperationalError:
+        n_chk = 0
     r = get_conn().execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()
     n_emb = r[0]
     r = get_conn().execute("SELECT COUNT(*) FROM memory_ctr_feedback").fetchone()
@@ -230,7 +269,6 @@ with overview_tab:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Category pie + Tier bar ──
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("#### Notes by Category")
@@ -262,19 +300,8 @@ with overview_tab:
             "FROM memories GROUP BY tier ORDER BY cnt DESC"
         )
         if df is not None and not df.empty:
-            cmap = {
-                "hot": "#ef4444",
-                "warm": "#f59e0b",
-                "cold": "#3b82f6",
-                "unassigned": "#4b5563",
-            }
             fig = px.bar(
-                df,
-                x="tier",
-                y="cnt",
-                color="tier",
-                color_discrete_map=cmap,
-                text_auto=True,
+                df, x="tier", y="cnt", color="cnt", color_continuous_scale="Viridis"
             )
             fig.update_layout(
                 **DARK,
@@ -283,12 +310,10 @@ with overview_tab:
                 yaxis_title="Count",
                 margin=dict(t=10, b=10, l=10, r=10),
             )
-            fig.update_traces(textposition="outside")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No tier data")
 
-    # ── Creation timeline (smooth) ──
     st.markdown("#### Daily Note Creation")
     df = query(
         "SELECT DATE(created_at) day, COUNT(*) cnt "
@@ -308,13 +333,12 @@ with overview_tab:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # ── Tags + Fitness ──
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("#### Top Tags")
         df = query("SELECT tags FROM memories WHERE tags != '[]' LIMIT 1000")
         if df is not None and not df.empty:
-            c: Counter[str] = Counter()
+            c: Counter = Counter()
             for row in df["tags"]:
                 try:
                     c.update(json.loads(row))
@@ -359,8 +383,7 @@ with overview_tab:
         else:
             st.info("No fitness scores")
 
-    # ── Activity timeline ──
-    st.markdown("#### MCP Activity")
+    st.markdown("#### MCP Tool Activity")
     df = query(
         "SELECT DATE(ts,'unixepoch') day, tool, COUNT(*) calls "
         "FROM memory_audit_log GROUP BY day, tool ORDER BY day"
@@ -380,320 +403,426 @@ with overview_tab:
     else:
         st.info("No audit log data yet — make some MCP tool calls first")
 
-# ═══════════════════════════════════════════════════════════════════════════
-# KNOWLEDGE GRAPH
-# ═══════════════════════════════════════════════════════════════════════════
-with kg_tab:
-    st.subheader("Knowledge Graph")
-    import networkx as nx
 
-    max_n = st.slider("Entity count", 10, 200, 80, key="kg_n")
+# ═══════════════════════════════════════════════════════════════════════════
+# MEMORIES — CRUD + detail sheet
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "Memories":
+    st.subheader("Memories")
 
+    # Filters
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        search = st.text_input("Search content", placeholder="keyword...")
+    with col2:
+        cat_filter = st.text_input("Category", placeholder="e.g. lessons")
+    with col3:
+        tier_filter = st.selectbox(
+            "Tier", ["All", "hot", "warm", "cold", "unassigned"], index=0
+        )
+
+    sql = "SELECT id, substr(content,1,200) preview, category, created_at, pinned, fitness_score, tier FROM memories WHERE 1=1"
+    params = []
+    if search:
+        sql += " AND content LIKE ?"
+        params.append(f"%{search}%")
+    if cat_filter:
+        sql += " AND category = ?"
+        params.append(cat_filter)
+    if tier_filter != "All":
+        sql += " AND COALESCE(tier,'unassigned') = ?"
+        params.append(tier_filter)
+    sql += " ORDER BY created_at DESC LIMIT 1000"
+
+    df = query(sql, tuple(params))
+    if df is None or df.empty:
+        st.info("No memories match")
+    else:
+        st.caption(f"{len(df)} result(s)")
+        for _, r in df.iterrows():
+            pin = "📌 " if r.get("pinned") else ""
+            cat = r.get("category") or "—"
+            tier = r.get("tier") or "—"
+            fs = (
+                f"fitness={r['fitness_score']:.2f}"
+                if pd.notna(r.get("fitness_score"))
+                else ""
+            )
+            label = f"{pin}{r['id'][:40]}"
+            with st.expander(f"`{cat}` · tier={tier} · {fs} — {r['created_at'][:10]}"):
+                st.markdown(f"**ID:** `{r['id']}`")
+                st.markdown(f"**Category:** `{cat}`  ·  **Tier:** `{tier}`")
+                st.markdown(
+                    f"**Pinned:** {bool(r.get('pinned'))}  ·  **Fitness:** {r.get('fitness_score', '?')}"
+                )
+                full = query("SELECT content FROM memories WHERE id=?", (r["id"],))
+                if full is not None and not full.empty:
+                    st.text_area(
+                        "Content",
+                        full["content"].iloc[0],
+                        height=200,
+                        key=f"mem-{r['id'][:20]}",
+                    )
+                tags_row = query("SELECT tags FROM memories WHERE id=?", (r["id"],))
+                if tags_row is not None and not tags_row.empty:
+                    try:
+                        tags = json.loads(tags_row["tags"].iloc[0])
+                        st.caption("Tags: " + ", ".join(f"`{t}`" for t in tags))
+                    except Exception:
+                        pass
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("Pin/Unpin", key=f"pin-{r['id'][:20]}"):
+                        try:
+                            with sqlite3.connect(str(DB), timeout=5) as c2:
+                                c2.execute(
+                                    "UPDATE memories SET pinned=NOT pinned WHERE id=?",
+                                    (r["id"],),
+                                )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(exc)
+                with c2:
+                    tier_opts = ["hot", "warm", "cold", "unassigned"]
+                    new_tier = st.selectbox(
+                        "Set tier",
+                        tier_opts,
+                        index=tier_opts.index(tier) if tier in tier_opts else 3,
+                        key=f"tier-{r['id'][:20]}",
+                    )
+                    if new_tier != tier:
+                        try:
+                            with sqlite3.connect(str(DB), timeout=5) as c2:
+                                c2.execute(
+                                    "UPDATE memories SET tier=? WHERE id=?",
+                                    (new_tier, r["id"]),
+                                )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(exc)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ENTITIES
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "Entities":
+    st.subheader("Knowledge Graph Entities")
+
+    max_n = st.slider("Show top N", 10, 300, 80)
     ent = query(
-        "SELECT id, name, entity_type, mentions FROM kg_entities "
-        "ORDER BY mentions DESC LIMIT ?",
+        "SELECT id, name, entity_type, mentions, description "
+        "FROM kg_entities ORDER BY mentions DESC LIMIT ?",
         (max_n,),
     )
     if ent is None or ent.empty:
-        st.info("No entities")
+        st.info("No entities yet")
     else:
-        edges = query(
-            "SELECT source_id, target_id, relation, weight FROM kg_edges "
-            "WHERE source_id IN (SELECT id FROM kg_entities) "
-            "AND target_id IN (SELECT id FROM kg_entities) "
-            "ORDER BY weight DESC LIMIT 1000"
-        )
-        if edges is not None and not edges.empty:
-            G = nx.Graph()
-            eid = set(ent["id"].values)
-            for _, r in edges.iterrows():
-                if r["source_id"] in eid and r["target_id"] in eid:
-                    G.add_edge(
-                        r["source_id"],
-                        r["target_id"],
-                        relation=r.get("relation", ""),
-                        weight=float(r.get("weight", 1)),
-                    )
-
-            if G.number_of_nodes() == 0:
-                st.info("No connected entities")
-            else:
-                pos = nx.spring_layout(G, k=0.3, seed=42, iterations=60)
-                name_map = dict(zip(ent["id"], ent["name"]))
-                type_map = dict(zip(ent["id"], ent["entity_type"]))
-                ment_map = dict(zip(ent["id"], ent["mentions"]))
-
-                type_colors = {
-                    "tool": "#ef4444",
-                    "library": "#10b981",
-                    "project": "#3b82f6",
-                    "concept": "#f59e0b",
-                    "person": "#8b5cf6",
-                    "framework": "#ec4899",
-                    "language": "#06b6d4",
-                }
-
-                edge_traces = []
-                for u, v, d in G.edges(data=True):
-                    x0, y0 = pos[u]
-                    x1, y1 = pos[v]
-                    w = d.get("weight", 1) * 0.4 + 0.2
-                    edge_traces.append(
-                        go.Scatter(
-                            x=(x0, x1, None),
-                            y=(y0, y1, None),
-                            mode="lines",
-                            line=dict(width=w, color="#374151"),
-                            hoverinfo="none",
+        st.caption(f"{len(ent)} entities")
+        for _, r in ent.iterrows():
+            with st.expander(
+                f"`{r['entity_type']}` · {r['name']} (mentions: {r['mentions']})"
+            ):
+                st.markdown(f"**ID:** `{r['id']}`  ·  **Type:** `{r['entity_type']}`")
+                desc = r.get("description") or ""
+                if desc:
+                    st.markdown(f"_{desc[:300]}_")
+                edges = query(
+                    "SELECT e.target_id, e.relation, n.name "
+                    "FROM kg_edges e LEFT JOIN kg_entities n ON n.id=e.target_id "
+                    "WHERE e.source_id=? LIMIT 20",
+                    (r["id"],),
+                )
+                if edges is not None and not edges.empty:
+                    st.markdown("**Outgoing edges:**")
+                    for _, e in edges.iterrows():
+                        st.caption(
+                            f"  → `{e['relation']}` → {e.get('name', e['target_id'])}"
                         )
-                    )
 
-                node_x = [pos[n][0] for n in G.nodes()]
-                node_y = [pos[n][1] for n in G.nodes()]
-                node_labels = [name_map.get(n, str(n))[:28] for n in G.nodes()]
-                node_types = [type_map.get(n, "other") for n in G.nodes()]
-                node_m = [ment_map.get(n, 1) for n in G.nodes()]
-
-                colors = [type_colors.get(t, "#6b7280") for t in node_types]
-                sizes = [min(28, 6 + m * 1.8) for m in node_m]
-
-                node_trace = go.Scatter(
-                    x=node_x,
-                    y=node_y,
-                    mode="markers+text",
-                    text=node_labels,
-                    textposition="top center",
-                    textfont=dict(size=9, color="#d1d5db"),
-                    marker=dict(
-                        size=sizes, color=colors, line=dict(width=1, color="#1f2937")
-                    ),
-                    hovertext=[
-                        f"<b>{name}</b><br>type: {typ}<br>mentions: {m}"
-                        for name, typ, m in zip(node_labels, node_types, node_m)
-                    ],
-                    hoverinfo="text",
-                )
-
-                fig = go.Figure(data=edge_traces + [node_trace])
-                fig.update_layout(
-                    title="Knowledge Graph (force-directed)",
-                    **DARK,
-                    showlegend=False,
-                    hovermode="closest",
-                    xaxis=dict(visible=False),
-                    yaxis=dict(visible=False),
-                    height=700,
-                    margin=dict(t=30, b=10, l=10, r=10),
-                )
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No edges found")
 
 # ═══════════════════════════════════════════════════════════════════════════
-# EMBEDDINGS
+# WEBHOOKS
 # ═══════════════════════════════════════════════════════════════════════════
-with embed_tab:
-    st.subheader("Embedding Space")
-
-    n_emb = get_conn().execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()[0]
-    if n_emb == 0:
-        st.info("No embeddings")
-    else:
-        st.caption(f"{n_emb} total embeddings")
-        lim = st.slider("Sample", 50, min(1000, n_emb), min(400, n_emb), key="emb_n")
-
-        df = query(
-            "SELECT e.memory_id, e.embedding, e.dim, m.category "
-            "FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id "
-            f"LIMIT {lim}"
+elif page == "Webhooks":
+    st.subheader("Webhooks")
+    if not table("memory_webhooks"):
+        st.info(
+            "No webhooks table yet. Populate from MCP tools when memory_sharing is enabled."
         )
-        if df is not None and not df.empty:
-            dim = int(df["dim"].iloc[0])
-            vecs, cats, mids = [], [], []
-            for _, r in df.iterrows():
+    else:
+        wh = query(
+            "SELECT id, url, event_types, active, last_triggered_at, created_at FROM memory_webhooks ORDER BY created_at DESC"
+        )
+        if wh is not None and not wh.empty:
+            st.markdown(f"**{len(wh)} registered webhook(s)**")
+            for _, r in wh.iterrows():
+                with st.expander(
+                    f"{'🟢' if r.get('active') else '🔴'} `{str(r.get('url', ''))[:70]}`"
+                ):
+                    st.markdown(
+                        f"**ID:** `{r['id']}`  ·  **Active:** {bool(r.get('active'))}"
+                    )
+                    try:
+                        events = json.loads(r.get("event_types") or "[]")
+                        st.caption("Events: " + ", ".join(f"`{e}`" for e in events))
+                    except Exception:
+                        st.caption(f"Events: {r.get('event_types')}")
+                    last = r.get("last_triggered_at")
+                    st.caption(
+                        f"Last triggered: {datetime.fromtimestamp(last).isoformat()[:19] if last else 'never'}"
+                    )
+                    st.caption(f"Created: {r.get('created_at', '?')}")
+                    if st.button("Delete", key=f"delwh-{str(r['id'])[:30]}"):
+                        try:
+                            with sqlite3.connect(str(DB), timeout=5) as conn:
+                                conn.execute(
+                                    "DELETE FROM memory_webhooks WHERE id=?",
+                                    (str(r["id"]),),
+                                )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(exc)
+        else:
+            st.info("No webhooks registered")
+
+        st.divider()
+        st.markdown("#### Register new webhook")
+        with st.form("new_webhook"):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                wh_url = st.text_input(
+                    "Webhook URL", placeholder="https://example.com/memory-hook"
+                )
+            with col2:
+                wh_active = st.checkbox("Active", value=True)
+            wh_events = st.multiselect(
+                "Events",
+                [
+                    "memory.created",
+                    "memory.updated",
+                    "memory.deleted",
+                    "entity.created",
+                    "compaction.done",
+                    "error.spike",
+                ],
+                default=["memory.created", "memory.updated"],
+            )
+            if st.form_submit_button("Register") and wh_url.strip():
                 try:
-                    v = np.frombuffer(r["embedding"], dtype=np.float32)
-                    if len(v) == dim:
-                        vecs.append(v)
-                        cats.append(r.get("category", "?") or "?")
-                        mids.append(r["memory_id"])
-                except Exception:
-                    pass
+                    wid = f"wh-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+                    with sqlite3.connect(str(DB), timeout=5) as conn:
+                        conn.execute(
+                            "INSERT INTO memory_webhooks (id, url, event_types, active, created_at) VALUES (?, ?, ?, ?, CAST(strftime('%s','now') AS INTEGER))",
+                            (
+                                wid,
+                                wh_url.strip(),
+                                json.dumps(wh_events),
+                                int(wh_active),
+                            ),
+                        )
+                    st.success("Webhook registered")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(exc)
 
-            if len(vecs) >= 3:
-                with st.spinner("Computing PCA ..."):
-                    mat = np.stack(vecs)
-                    mc = mat - mat.mean(axis=0)
-                    _, S, Vt = np.linalg.svd(mc, full_matrices=False)
-                    p = mc @ Vt[:2].T
 
-                pdf = pd.DataFrame(
+# ═══════════════════════════════════════════════════════════════════════════
+# HEALTH / SYSTEM
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+elif page == "Health":
+    st.subheader("System Health")
+
+    # Try loading doctor report
+    doctor_path = get_mem_dir() / "doctor_report.json"
+    if doctor_path.exists():
+        try:
+            report = json.loads(doctor_path.read_text())
+            worst = report.get("worst", "ok")
+            if worst == "ok":
+                st.success(f"All checks passed · {report['ts'][:19]}")
+            elif worst == "warning":
+                st.warning(f"Warnings found · {report['ts'][:19]}")
+            else:
+                st.error(f"Failures found · {report['ts'][:19]}")
+
+            for chk in report.get("checks", []):
+                sev = str(chk.get("severity", "?"))
+                icon = {"ok": "✅", "warning": "⚠️", "failure": "❌", "info": "ℹ️"}.get(
+                    sev, "?"
+                )
+                with st.expander(
+                    f"{icon} [{sev.upper()}] {chk['check']}: {chk['detail']}"
+                ):
+                    st.caption(f"Checked at {str(chk.get('ts', '?'))[:19]}")
+                    if chk.get("fixable"):
+                        st.caption(
+                            "🔧 Auto-repairable with: `agentic-memory doctor --fix`"
+                        )
+            st.caption(f"Report: {doctor_path}")
+        except Exception as exc:
+            st.warning(f"Could not read report: {exc}")
+    else:
+        st.info(f"No doctor report yet. Run: `agentic-memory doctor`")
+
+    st.divider()
+
+    # Live stats
+    c1, c2, c3, c4 = st.columns(4)
+    db_size_mb = DB.stat().st_size / 1024 / 1024
+    c1.metric("DB Size", f"{db_size_mb:.1f} MB")
+    c2.metric("Total Memories", n_mem)
+    c3.metric(
+        "Pinned",
+        int(
+            get_conn()
+            .execute("SELECT COUNT(*) FROM memories WHERE pinned=1")
+            .fetchone()[0]
+        ),
+    )
+    c4.metric("Schema", "v22")
+
+    try:
+        from migration_runner import SCHEMA_VERSION
+        import sqlite3 as sq
+
+        with sq.connect(str(DB), timeout=3) as conn:
+            row = conn.execute(
+                "SELECT version FROM schema_version WHERE id=1"
+            ).fetchone()
+            db_ver = row[0] if row else "?"
+            match = "✅" if db_ver == SCHEMA_VERSION else "❌"
+            st.caption(f"Schema: {match} DB=v{db_ver}, code=v{SCHEMA_VERSION}")
+    except Exception as exc:
+        st.caption(f"Schema check failed: {exc}")
+
+    st.divider()
+    st.markdown("#### Auto-save Queue")
+    for f in sorted((get_mem_dir() / "sessions").glob("auto-*.md"))[-10:]:
+        st.caption(f"`{f.name}`  ({f.stat().st_size:,} bytes)")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HOOKS
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "Hooks":
+    st.subheader("Hook Events & Circuit Breakers")
+
+    hook_errors = get_mem_dir() / "hook-errors.jsonl"
+    if not hook_errors.exists():
+        st.info("No hook errors logged yet")
+    else:
+        try:
+            lines = hook_errors.read_text(errors="replace").splitlines()
+            entries = [json.loads(l) for l in lines[-200:] if l.strip()]
+
+            # Circuit breaker summary
+            circuit_counts: dict[str, dict] = {}
+            for e in entries:
+                label = e.get("label", "?")
+                count = e.get("failureCount", e.get("failure_count", 0))
+                if label not in circuit_counts:
+                    circuit_counts[label] = {
+                        "failures": 0,
+                        "max_failures": 0,
+                        "entries": 0,
+                    }
+                circuit_counts[label]["failures"] = count
+                circuit_counts[label]["max_failures"] = max(
+                    circuit_counts[label]["max_failures"], count
+                )
+                circuit_counts[label]["entries"] += 1
+
+            st.markdown("#### Circuit Breaker Status")
+            cb_data = []
+            for label, info in sorted(circuit_counts.items()):
+                is_open = info["max_failures"] >= 10
+                cb_data.append(
                     {
-                        "x": p[:, 0],
-                        "y": p[:, 1],
-                        "category": cats,
-                        "memory_id": mids,
+                        "Label": label,
+                        "Current Failures": info["failures"],
+                        "Peak": info["max_failures"],
+                        "Open?": "🔴 OPEN" if is_open else "🟢 closed",
+                        "Log Entries": info["entries"],
                     }
                 )
-                fig = px.scatter(
-                    pdf,
-                    x="x",
-                    y="y",
-                    color="category",
-                    hover_name="memory_id",
-                    opacity=0.7,
-                    color_discrete_sequence=px.colors.qualitative.Set2,
+            if cb_data:
+                st.dataframe(
+                    pd.DataFrame(cb_data), use_container_width=True, hide_index=True
                 )
-                fig.update_traces(
-                    marker=dict(size=5, line=dict(width=0.5, color="#333"))
+
+            # Error timeline
+            st.markdown("#### Recent Errors (last 200)")
+            errs = [
+                e for e in entries if e.get("error") or e.get("failureCount", 0) >= 3
+            ]
+            if errs:
+                edf = pd.DataFrame(
+                    [
+                        {
+                            "ts": datetime.fromtimestamp(e["ts"] / 1000).isoformat()[
+                                :19
+                            ],
+                            "label": e.get("label", "?"),
+                            "exit": e.get("code") or e.get("exit_code", "?"),
+                            "error": str(e.get("error", ""))[:120],
+                            "failures": e.get(
+                                "failureCount", e.get("failure_count", 0)
+                            ),
+                        }
+                        for e in reversed(errs[-50:])
+                    ]
                 )
-                fig.update_layout(
-                    title=f"PCA ({len(vecs)} pts, {dim}D → 2D)",
-                    **DARK,
-                    height=650,
-                    margin=dict(t=30, b=10, l=10, r=10),
-                )
-                var = (S[:2] ** 2) / (S**2).sum() * 100
-                fig.add_annotation(
-                    xref="paper",
-                    yref="paper",
-                    x=0,
-                    y=1.08,
-                    text=f"PC1: {var[0]:.0f}% &nbsp; PC2: {var[1]:.0f}%",
-                    showarrow=False,
-                    font=dict(size=11, color="#9ca3af"),
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(edf, use_container_width=True, hide_index=True)
             else:
-                st.info(f"Need ≥3 vectors, got {len(vecs)}")
+                st.success("No recent errors")
+        except Exception as exc:
+            st.error(f"Could not parse hook-errors.jsonl: {exc}")
 
-# ═══════════════════════════════════════════════════════════════════════════
-# CONCEPT DRIFT
-# ═══════════════════════════════════════════════════════════════════════════
-with drift_tab:
-    st.subheader("Concept Drift")
-
-    if not table("concept_drift"):
-        st.info(
-            "Table `concept_drift` not yet created. Call `memory_check_concept_drift()` to start."
-        )
-    else:
-        df = query(
-            "SELECT id, drift_metric, drifted_dimensions, triggered_at, acknowledged "
-            "FROM concept_drift ORDER BY triggered_at DESC LIMIT 200"
-        )
-        if df is None or df.empty:
-            st.info(
-                "No drift events recorded. Run `memory_check_concept_drift()` first."
-            )
-        else:
-            df["ts"] = pd.to_datetime(df["triggered_at"], unit="s", errors="coerce")
-            df = df.dropna(subset=["ts"]).sort_values("ts")
-
+    st.divider()
+    st.markdown("#### Context Monitor State")
+    state_file = get_mem_dir() / "sessions" / ".context_monitor_state.json"
+    if state_file.exists():
+        try:
+            state = json.loads(state_file.read_text())
             c1, c2, c3 = st.columns(3)
-            c1.metric("Events", len(df))
-            latest = df["drift_metric"].iloc[-1]
-            c2.metric("Latest Drift", f"{latest:.3f}")
-            c3.metric("Above Threshold", sum(df["drift_metric"] > 0.15))
-
-            fig = px.line(
-                df, x="ts", y="drift_metric", markers=True, line_shape="spline"
+            c1.metric(
+                "Total Tool Calls",
+                state.get("total_tool_calls", state.get("tool_call_count", 0)),
             )
-            fig.update_traces(
-                line=dict(width=3, color="#ef4444", shape="spline", smoothing=1.3),
-                marker=dict(size=6, color="#ef4444"),
-            )
-            fig.add_hline(
-                y=0.15,
-                line_dash="dash",
-                line_color="#f59e0b",
-                annotation_text="threshold (0.15)",
-            )
-            fig.update_layout(
-                **DARK,
-                xaxis_title=None,
-                yaxis_title="Drift Metric",
-                margin=dict(t=10, b=10, l=10, r=10),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-            with st.expander("Drift Events Detail"):
-                disp = df[["id", "ts", "drift_metric", "acknowledged"]].copy()
-                disp.columns = ["ID", "Timestamp", "Drift", "Acknowledged"]
-                st.dataframe(disp, use_container_width=True, hide_index=True)
-
-# ═══════════════════════════════════════════════════════════════════════════
-# CTR FEEDBACK
-# ═══════════════════════════════════════════════════════════════════════════
-with ctr_tab:
-    st.subheader("CTR Feedback Loop")
-
-    if not table("memory_ctr_feedback"):
-        st.info(
-            "Table `memory_ctr_feedback` not yet created. Call `memory_record_ctr_feedback()` to start."
-        )
+            c2.metric("Since Checkpoint", state.get("tools_since_checkpoint", "?"))
+            checkpoint_due = state.get("checkpoint_due", False)
+            c3.metric("Checkpoint Due", "Yes" if checkpoint_due else "No")
+            lc = state.get("last_compaction_time", 0)
+            if lc:
+                st.caption(
+                    f"Last compaction: {datetime.fromtimestamp(lc).isoformat()[:19]}"
+                )
+        except Exception as exc:
+            st.warning(exc)
     else:
-        df = query(
-            "SELECT id, query_id, returned_at, clicked_at, dismissed_at, source "
-            "FROM memory_ctr_feedback ORDER BY returned_at DESC LIMIT 500"
-        )
-        if df is None or df.empty:
-            st.info("No CTR data yet.")
+        st.info("No state file (no session started)")
+
+    st.divider()
+    st.markdown("#### Auto-save Allowlist")
+    try:
+        from auto_save import _resolve_allowlist, _tool_name_matches
+
+        al = _resolve_allowlist()
+        if al is None:
+            st.success("Unrestricted (`allowlist=*`) — all tools allowed")
         else:
-            total = len(df)
-            clk = df["clicked_at"].notna().sum()
-            dsm = df["dismissed_at"].notna().sum()
-            ctr = clk / total * 100 if total > 0 else 0
+            st.caption(f"{len(al)} tools in allowlist:")
+            st.code("\n".join(sorted(al)), language="text")
+    except Exception as exc:
+        st.warning(str(exc))
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Results Returned", total)
-            c2.metric("Clicked", clk)
-            c3.metric("Dismissed", dsm)
-            c4.metric("CTR", f"{ctr:.1f}%")
-
-            fd = pd.DataFrame(
-                {
-                    "stage": ["Returned", "Clicked", "Dismissed"],
-                    "count": [total, clk, dsm],
-                }
-            )
-            fig = px.funnel(
-                fd,
-                x="count",
-                y="stage",
-                color_discrete_sequence=["#6366f1", "#10b981", "#ef4444"],
-            )
-            fig.update_layout(**DARK, margin=dict(t=10, b=10, l=10, r=10))
-            st.plotly_chart(fig, use_container_width=True)
-
-            src = query(
-                "SELECT COALESCE(source,'unknown') src, COUNT(*) total, "
-                "SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) clicks, "
-                "SUM(CASE WHEN dismissed_at IS NOT NULL THEN 1 ELSE 0 END) dismissals "
-                "FROM memory_ctr_feedback GROUP BY src"
-            )
-            if src is not None and not src.empty:
-                src["ctr"] = (src["clicks"] / src["total"] * 100).round(1)
-                fig = px.bar(
-                    src,
-                    x="src",
-                    y=["total", "clicks", "dismissals"],
-                    barmode="group",
-                    title="By Source",
-                    color_discrete_sequence=["#6366f1", "#10b981", "#ef4444"],
-                )
-                fig.update_layout(
-                    **DARK,
-                    margin=dict(t=30, b=10, l=10, r=10),
-                    xaxis_title=None,
-                    yaxis_title="Count",
-                )
-                st.plotly_chart(fig, use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # AUDIT LOG
 # ═══════════════════════════════════════════════════════════════════════════
-with audit_tab:
+elif page == "Audit Log":
     st.subheader("Audit Log")
 
     df = query(
@@ -764,12 +893,311 @@ with audit_tab:
                 hide_index=True,
             )
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# KNOWLEDGE GRAPH
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "Knowledge Graph":
+    st.subheader("Knowledge Graph")
+    import networkx as nx
+
+    max_n = st.slider("Entity count", 10, 200, 80, key="kg_n")
+    ent = query(
+        "SELECT id, name, entity_type, mentions FROM kg_entities "
+        "ORDER BY mentions DESC LIMIT ?",
+        (max_n,),
+    )
+    if ent is None or ent.empty:
+        st.info("No entities")
+    else:
+        edges = query(
+            "SELECT source_id, target_id, relation, weight FROM kg_edges "
+            "WHERE source_id IN (SELECT id FROM kg_entities) "
+            "AND target_id IN (SELECT id FROM kg_entities) "
+            "ORDER BY weight DESC LIMIT 1000"
+        )
+        if edges is not None and not edges.empty:
+            G = nx.Graph()
+            eid = set(ent["id"].values)
+            for _, r in edges.iterrows():
+                if r["source_id"] in eid and r["target_id"] in eid:
+                    G.add_edge(
+                        r["source_id"],
+                        r["target_id"],
+                        relation=r.get("relation", ""),
+                        weight=float(r.get("weight", 1)),
+                    )
+
+            if G.number_of_nodes() == 0:
+                st.info("No connected entities")
+            else:
+                pos = nx.spring_layout(G, k=0.3, seed=42, iterations=60)
+                name_map = dict(zip(ent["id"], ent["name"]))
+                type_map = dict(zip(ent["id"], ent["entity_type"]))
+                ment_map = dict(zip(ent["id"], ent["mentions"]))
+
+                type_colors = {
+                    "tool": "#ef4444",
+                    "library": "#10b981",
+                    "project": "#3b82f6",
+                    "concept": "#f59e0b",
+                    "person": "#8b5cf6",
+                    "framework": "#ec4899",
+                    "language": "#06b6d4",
+                }
+
+                edge_traces = []
+                for u, v, d in G.edges(data=True):
+                    x0, y0 = pos[u]
+                    x1, y1 = pos[v]
+                    w = d.get("weight", 1) * 0.4 + 0.2
+                    edge_traces.append(
+                        go.Scatter(
+                            x=(x0, x1, None),
+                            y=(y0, y1, None),
+                            mode="lines",
+                            line=dict(width=w, color="#374151"),
+                            hoverinfo="none",
+                        )
+                    )
+
+                node_x = [pos[n][0] for n in G.nodes()]
+                node_y = [pos[n][1] for n in G.nodes()]
+                node_labels = [name_map.get(n, str(n))[:28] for n in G.nodes()]
+                node_types = [type_map.get(n, "other") for n in G.nodes()]
+                node_m = [ment_map.get(n, 1) for n in G.nodes()]
+                colors = [type_colors.get(t, "#6b7280") for t in node_types]
+                sizes = [min(28, 6 + m * 1.8) for m in node_m]
+
+                node_trace = go.Scatter(
+                    x=node_x,
+                    y=node_y,
+                    mode="markers+text",
+                    text=node_labels,
+                    textposition="top center",
+                    textfont=dict(size=9, color="#d1d5db"),
+                    marker=dict(
+                        size=sizes, color=colors, line=dict(width=1, color="#1f2937")
+                    ),
+                    hovertext=[
+                        f"<b>{n}</b><br>type: {t}<br>mentions: {m}"
+                        for n, t, m in zip(node_labels, node_types, node_m)
+                    ],
+                    hoverinfo="text",
+                )
+                fig = go.Figure(data=edge_traces + [node_trace])
+                fig.update_layout(
+                    title="Knowledge Graph (force-directed)",
+                    **DARK,
+                    showlegend=False,
+                    hovermode="closest",
+                    xaxis=dict(visible=False),
+                    yaxis=dict(visible=False),
+                    height=700,
+                    margin=dict(t=30, b=10, l=10, r=10),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No edges found")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EMBEDDINGS
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "Embeddings":
+    st.subheader("Embedding Space")
+
+    n_emb = get_conn().execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()[0]
+    if n_emb == 0:
+        st.info("No embeddings")
+    else:
+        st.caption(f"{n_emb} total embeddings")
+        lim = st.slider("Sample", 50, min(1000, n_emb), min(400, n_emb), key="emb_n")
+        df = query(
+            "SELECT e.memory_id, e.embedding, e.dim, m.category "
+            "FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id "
+            f"LIMIT {lim}"
+        )
+        if df is not None and not df.empty:
+            dim = int(df["dim"].iloc[0])
+            vecs, cats, mids = [], [], []
+            for _, r in df.iterrows():
+                try:
+                    v = np.frombuffer(r["embedding"], dtype=np.float32)
+                    if len(v) == dim:
+                        vecs.append(v)
+                        cats.append(r.get("category", "?") or "?")
+                        mids.append(r["memory_id"])
+                except Exception:
+                    pass
+
+            if len(vecs) >= 3:
+                with st.spinner("Computing PCA..."):
+                    mat = np.stack(vecs)
+                    mc = mat - mat.mean(axis=0)
+                    _, S, Vt = np.linalg.svd(mc, full_matrices=False)
+                    p = mc @ Vt[:2].T
+
+                pdf = pd.DataFrame(
+                    {"x": p[:, 0], "y": p[:, 1], "category": cats, "memory_id": mids}
+                )
+                fig = px.scatter(
+                    pdf,
+                    x="x",
+                    y="y",
+                    color="category",
+                    hover_name="memory_id",
+                    opacity=0.7,
+                    color_discrete_sequence=px.colors.qualitative.Set2,
+                )
+                fig.update_traces(
+                    marker=dict(size=5, line=dict(width=0.5, color="#333"))
+                )
+                fig.update_layout(
+                    title=f"PCA ({len(vecs)} pts, {dim}D → 2D)",
+                    **DARK,
+                    height=650,
+                    margin=dict(t=30, b=10, l=10, r=10),
+                )
+                var = (S[:2] ** 2) / (S**2).sum() * 100
+                fig.add_annotation(
+                    xref="paper",
+                    yref="paper",
+                    x=0,
+                    y=1.08,
+                    text=f"PC1: {var[0]:.0f}%  PC2: {var[1]:.0f}%",
+                    showarrow=False,
+                    font=dict(size=11, color="#9ca3af"),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info(f"Need ≥3 vectors, got {len(vecs)}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DRIFT
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "Drift":
+    st.subheader("Concept Drift")
+    if not table("concept_drift"):
+        st.info(
+            "Table `concept_drift` not yet created. Call `memory_check_concept_drift()` first."
+        )
+    else:
+        df = query(
+            "SELECT id, drift_metric, drifted_dimensions, triggered_at, acknowledged "
+            "FROM concept_drift ORDER BY triggered_at DESC LIMIT 200"
+        )
+        if df is None or df.empty:
+            st.info("No drift events recorded.")
+        else:
+            df["ts"] = pd.to_datetime(df["triggered_at"], unit="s", errors="coerce")
+            df = df.dropna(subset=["ts"]).sort_values("ts")
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Events", len(df))
+            latest = df["drift_metric"].iloc[-1]
+            c2.metric("Latest Drift", f"{latest:.3f}")
+            c3.metric("Above Threshold", sum(df["drift_metric"] > 0.15))
+
+            fig = px.line(
+                df, x="ts", y="drift_metric", markers=True, line_shape="spline"
+            )
+            fig.update_traces(
+                line=dict(width=3, color="#ef4444", shape="spline", smoothing=1.3),
+                marker=dict(size=6, color="#ef4444"),
+            )
+            fig.add_hline(
+                y=0.15,
+                line_dash="dash",
+                line_color="#f59e0b",
+                annotation_text="threshold (0.15)",
+            )
+            fig.update_layout(
+                **DARK,
+                xaxis_title=None,
+                yaxis_title="Drift Metric",
+                margin=dict(t=10, b=10, l=10, r=10),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            with st.expander("Drift Events Detail"):
+                disp = df[["id", "ts", "drift_metric", "acknowledged"]].copy()
+                disp.columns = ["ID", "Timestamp", "Drift", "Acknowledged"]
+                st.dataframe(disp, use_container_width=True, hide_index=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CTR FEEDBACK
+# ═══════════════════════════════════════════════════════════════════════════
+elif page == "CTR":
+    st.subheader("CTR Feedback Loop")
+    if not table("memory_ctr_feedback"):
+        st.info("Table `memory_ctr_feedback` not yet created.")
+    else:
+        df = query(
+            "SELECT id, query_id, returned_at, clicked_at, dismissed_at, source "
+            "FROM memory_ctr_feedback ORDER BY returned_at DESC LIMIT 500"
+        )
+        if df is None or df.empty:
+            st.info("No CTR data yet.")
+        else:
+            total = len(df)
+            clk = df["clicked_at"].notna().sum()
+            dsm = df["dismissed_at"].notna().sum()
+            ctr = clk / total * 100 if total > 0 else 0
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Results Returned", total)
+            c2.metric("Clicked", clk)
+            c3.metric("Dismissed", dsm)
+            c4.metric("CTR", f"{ctr:.1f}%")
+
+            fd = pd.DataFrame(
+                {
+                    "stage": ["Returned", "Clicked", "Dismissed"],
+                    "count": [total, clk, dsm],
+                }
+            )
+            fig = px.funnel(
+                fd,
+                x="count",
+                y="stage",
+                color_discrete_sequence=["#6366f1", "#10b981", "#ef4444"],
+            )
+            fig.update_layout(**DARK, margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig, use_container_width=True)
+
+            src = query(
+                "SELECT COALESCE(source,'unknown') src, COUNT(*) total, "
+                "SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) clicks, "
+                "SUM(CASE WHEN dismissed_at IS NOT NULL THEN 1 ELSE 0 END) dismissals "
+                "FROM memory_ctr_feedback GROUP BY src"
+            )
+            if src is not None and not src.empty:
+                src["ctr"] = (src["clicks"] / src["total"] * 100).round(1)
+                fig = px.bar(
+                    src,
+                    x="src",
+                    y=["total", "clicks", "dismissals"],
+                    barmode="group",
+                    title="By Source",
+                    color_discrete_sequence=["#6366f1", "#10b981", "#ef4444"],
+                )
+                fig.update_layout(
+                    **DARK,
+                    margin=dict(t=30, b=10, l=10, r=10),
+                    xaxis_title=None,
+                    yaxis_title="Count",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # EXPLORER
 # ═══════════════════════════════════════════════════════════════════════════
-with search_tab:
+elif page == "Explorer":
     st.subheader("Memory Explorer")
-
     q_text = st.text_input(
         "Search (LIKE %term%)", placeholder="e.g. memory, agent, config"
     )
@@ -786,7 +1214,7 @@ with search_tab:
         else:
             st.caption(f"{len(df)} results")
             for _, r in df.iterrows():
-                pin = "" if not r.get("pinned") else ""
+                pin = "📌 " if r.get("pinned") else ""
                 cat = r.get("category") or "—"
                 tier = r.get("tier") or "—"
                 fs = (
@@ -795,13 +1223,12 @@ with search_tab:
                     else ""
                 )
                 st.markdown(
-                    f"**{pin}{r['id'][:50]}** &nbsp;·&nbsp; `{cat}` &nbsp;·&nbsp; tier={tier} &nbsp;·&nbsp; {fs}  \n"
+                    f"**{pin}{r['id'][:50]}** · `{cat}` · tier={tier} · {fs}  \n"
                     f"_{r['created_at']}_  \n"
                     f"{r['preview']}...  "
                 )
                 st.divider()
     else:
-        # Show recent notes as default
         df = query(
             "SELECT id, substr(content,1,200) preview, category, "
             "created_at, pinned, fitness_score, tier "
@@ -810,7 +1237,7 @@ with search_tab:
         if df is not None and not df.empty:
             st.caption(f"Recent {len(df)} notes (enter a search term above)")
             for _, r in df.iterrows():
-                pin = "" if not r.get("pinned") else ""
+                pin = "📌 " if r.get("pinned") else ""
                 cat = r.get("category") or "—"
                 tier = r.get("tier") or "—"
                 fs = (
@@ -819,7 +1246,7 @@ with search_tab:
                     else ""
                 )
                 st.markdown(
-                    f"**{pin}{r['id'][:50]}** &nbsp;·&nbsp; `{cat}` &nbsp;·&nbsp; tier={tier} &nbsp;·&nbsp; {fs}  \n"
+                    f"**{pin}{r['id'][:50]}** · `{cat}` · tier={tier} · {fs}  \n"
                     f"_{r['created_at']}_  \n"
                     f"{r['preview']}...  "
                 )

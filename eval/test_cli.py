@@ -28,6 +28,10 @@ class TestCliCommands(unittest.TestCase):
             "bootstrap",
             "worker",
             "sync",
+            "init",
+            "doctor",
+            "status",
+            "dashboard",
         }
         self.assertEqual(set(COMMANDS), expected)
 
