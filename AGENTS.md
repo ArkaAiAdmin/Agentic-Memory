@@ -11,6 +11,10 @@ You are an agent working on the **agentic-memory** codebase at the repo root. Th
 
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
+- **Surface**: 85 MCP tools (15 CORE + 70 ADMIN) + 4 lifecycle hooks + 25 cron scripts / 26 scheduled jobs + 11 CLI commands
+- **Schema**: v21, ~51 tables (~31 user-visible)
+- **Code**: 71k LOC production + 75k LOC test; see `docs/architecture.md`
+
 ---
 
 ## Reliability Rules
@@ -26,12 +30,12 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.confi
 | 7 | Before ending session | `agentic-memory_memory_save(category="sessions")` |
 | 8 | After large file ops | `token-optimizer_optimize_session` |
 | 9 | .md/DB drift | `python memory_integrity.py <db> --recover-orphan-files` |
-| 10 | KG/backlinks orphans | `python memory_integrity.py <db> --repair-kg-orphans` |
+| 10 | KG/backlinks orphans | `python memory_integr️.py <db> --repair-kg-orphans` |
 | 11 | Auto-save history | `agentic-memory_memory_circuit_breaker_status()` |
 | 12 | Temporal KG misbehaving | Set `MEMORY_TEMPORAL_KG=0` |
-| 17 | Dashboard metric shows `—` | `python -c "import sqlite3; c=sqlite3.connect('memory/memory.db'); print(c.execute('SELECT name FROM sqlite_master WHERE type=\\'table\\'').fetchall())"` — check the table gotchas section |
+| 13 | Every significant milestone or decision | `memory_save` a **context-rich periodic note** — captures goal, approach, rationale, improvements, semantic relationships. Not a timestamped log line: it should carry enough context to be useful weeks later. Category: `projects`. Tags: include decision/subsystem context. Importance: 4. |
 
-Minimum: do #1 and #7. Run #8 opportunistically. Use `memory_maintenance(operation="compliance_check")` to audit.
+Minimum: do #1, #7, and #13. Run #8 opportunistically. Use `memory_maintenance(operation="compliance_check")` to audit.
 
 ---
 
@@ -42,12 +46,12 @@ agentic-memory/
 ├── save_pipeline.py + save/    ← write path (saga, FTS5, embeddings, KG, audit)
 ├── search_pipeline.py + search/ ← read path (FTS5 + usearch + KG fusion)
 ├── mcp_maintenance.py           ← admin tools + memory_maintenance router
-├── tool_registry.py             ← 18 CORE + 71 ADMIN (89 total; single source of truth)
-├── hooks/                       ← 4 lifecycle hooks + 2 helpers
-├── cron/                        ← 27 background jobs
-├── mcp_*.py (27 modules)        ← domain-split MCP tools
+├── tool_registry.py             ← 15 CORE + 70 ADMIN (single source of truth)
+├── hooks/                       ← 4 lifecycle hooks + log helper
+├── cron/                        ← 25 background jobs + install_crontab.sh
+├── mcp_*.py (26 modules)        ← domain-split MCP tools
 ├── memory/                      ← live store (gitignored)
-└── eval/                        ← 200 test files, 3,710 test functions
+└── eval/                        ← 183 test files, 3,498 test functions
 ```
 
 ---
@@ -57,9 +61,9 @@ agentic-memory/
 1. **All writes go through `save_memory`** (`save_pipeline.save_memory`). Hooks and auto-save delegate to it. Don't re-implement.
 2. **Connection pool is per-DB-path.** `connection_pool.get(str(db_path))` returns stale connections if the path doesn't exist. Active connections cannot be evicted.
 3. **Vec keys/index drift after warm-up.** Run `rebuild_vec_index.py` after warm-up chains, not before.
-4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **22**. Never edit live DB schema by hand.
+4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **21**. Never edit live DB schema by hand.
 5. **Default search is `include_global=True`** with blended RRF. Don't override "for safety."
-6. **18 CORE tools are user-facing**; 71 ADMIN under `memory_maintenance(operation=...)`. Don't add CORE tools without checking.
+6. **15 CORE tools are user-facing**; 70 ADMIN under `memory_maintenance(operation=...)`. Don't add CORE tools without checking.
 7. **Use `--incremental` / `--full` with backfill.** Bare args create 22 MB garbage DBs at repo root.
 8. **Tests hitting prod DB must use `_ProdDBGuarded` mixin.** See `eval/test_safety_wiring.py:60-109`.
 9. **Lock order: file lock first, then conn.** Both `save_memory` and `_update_memory_index_incremental` follow this order.
@@ -105,29 +109,6 @@ See `memory.toml` for all 17 feature flags.
 
 ---
 
-## Test Execution Rules
-
-14. **Full suite MUST use the subprocess runner.** Direct `pytest eval/` in a single process hangs or segfaults on Apple Silicon (MPS / OMP thread conflict). Always use one of:
-    - **`make test`** (preferred — calls `eval/run_full_suite.py`)
-    - `./venv/bin/python eval/run_full_suite.py` (direct)
-    - `nohup ./venv/bin/python eval/run_full_suite.py > /tmp/full_suite.log 2>&1 &` + `tail -f /tmp/full_suite.log` (background + poll)
-    - `tail -f /tmp/full_suite_runner.log` to follow progress; summary line at end: `SUMMARY: <pass>p <fail>f <skip>s <xfail>xf <xpass>xp <err>e`
-
-    `eval/run_full_suite.py` enforces:
-    - One fresh Python process per test file (no MPS/OMP state bleed)
-    - `KMP_DUPLICATE_LIB_OK=TRUE` + `OMP_NUM_THREADS=1` (prevents torch + libomp conflict)
-    - 600s per-file timeout
-    - JUnit XML parsing for stable counts
-    - Segfault detection via stderr scan
-
-15. **Single-test invocations are fine in-process.** `pytest eval/test_foo.py::test_bar` in the agent's own shell is safe — only the *full* suite needs isolation.
-
-16. **If a test file segfaults, it counts as 1 failure.** The runner catches `signal 11` / `Segmentation fault` / `Fatal Python error` and marks the file as `SEGFAULT` even if pytest returns 0. Check `eval/results/full_suite_results.txt` for the canonical report.
-
-17. **Never delete `eval/test_all_*.py` files.** They re-run the whole suite as a single test file and are explicitly skipped by `run_full_suite.py` to avoid infinite recursion. Direct `pytest eval/` will still execute them.
-
----
-
 ## Emergency
 
 1. **Stale lock — diagnose first.** Both `.rebuild.lock` and `.vec_rebuild.lock` use `fcntl.flock`, which auto-releases when the holding process dies. An empty lock file on disk alone is not a real contention — the actual protection is the OS-level flock held by an open FD. Before removing anything: run `ps aux | grep python` and try a non-blocking acquire yourself (the next legitimate writer will succeed automatically if no live process holds it). If a live process IS holding the lock, find it with `lsof | grep rebuild.lock` and decide whether to wait or kill it. **Never `rm` a lock that a live process is holding** — it will corrupt the write it's mid-way through. If the holder is dead (no matching PID), the empty file is safe to remove: `rm memory/.rebuild.lock`.
@@ -138,22 +119,13 @@ See `memory.toml` for all 17 feature flags.
 
 ---
 
-## Database Table Gotchas
+## Current Status (2026-06-27)
 
-| Old / Mythical Name | Real Source |
-|---|---|
-| `auto_save_events` | `memory_audit_log WHERE tool='auto_save'` |
-| `memory_injection_log` | `memory_audit_log WHERE error LIKE '%inject%'` |
-| `crdt_operations` | `kg_entity_crdt` + `kg_edge_crdt` |
-| `crdt_state` | `memory_field_crdt` |
-| `arc_cache` | `arc_stats` (current) + `arc_ghosts` (evicted) |
-| `memory_pinned` | `memories WHERE pinned=1` (column, not a table) |
-| `tool_routing_decisions` | Removed — was never materialized |
-
-Many of these names come from early design docs or deprecated schema
-versions. If a dashboard metric shows `—` or 0, check the real source
-above before creating a new table.
-
----
-
-
+- **Schema v21**: kg_crdt tables added. Temporal KG ON by default.
+- **Circuit-breaker fixed**: 5 handler lambda signatures corrected.
+- **Rule enforcement**: `memory-session-end.py` (Rule #7), `cron_health_check.py` (Rules #5, #9-11), `memory_compliance_check` MCP tool.
+- **Cron**: 27 scheduled jobs. `background_worker` every 15 min with flock protection.
+- **Auto-save**: Async inbox+daemon (2-5ms enqueue). Default since 2026-06-22.
+- **Deferred indexing**: MCP `memory_save` defers embedding/KG/facts to background worker — returns <200ms, never times out.
+- **Mypy**: 0 errors. **Coverage**: 70% gate.
+- **Test command**: `./venv/bin/python -m pytest eval/ -v --tb=short`
