@@ -189,25 +189,40 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
+    WELCOME = (
+        "\033[1;36magentic-memory\033[0m — "
+        "local-first persistent memory for AI agents\n"
+        "  \033[90mdocs:\033[0m https://github.com/ArkaAiAdmin/Agentic-Memory\n"
+        "  \033[90mrun:\033[0m   agentic-memory --help\n"
+    )
+
+    def _print_welcome() -> None:
+        if sys.stdout.isatty():
+            print(WELCOME, end="")
+
+    if not argv or argv[0] in ("--help", "-h", "help"):
+        _print_welcome()
+
     parser = argparse.ArgumentParser(
         prog="agentic-memory",
-        description="Agentic Memory CLI — quick search/save via the SDK",
+        description="Agentic Memory — local-first persistent memory for AI agents",
+        epilog="Run 'agentic-memory <subcommand> --help' for more info.",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     # ── Core commands ──────────────────────────────────────────────────
-    p_add = sub.add_parser("add", help="Save a memory")
+    p_add = sub.add_parser("add", help="Save a new memory to the store")
     p_add.add_argument("text", help="Memory text to save")
     p_add.add_argument("tags", nargs="*", help="Optional tags")
 
-    p_search = sub.add_parser("search", help="Search memories")
+    p_search = sub.add_parser("search", help="Full-text search across memories")
     p_search.add_argument("query", help="Query string")
     p_search.add_argument("--limit", type=int, default=5, help="Result limit")
 
     p_list = sub.add_parser("list", help="List recent memories")
     p_list.add_argument("--limit", type=int, default=10, help="How many to list")
 
-    sub.add_parser("stats", help="Print DB stats")
+    sub.add_parser("stats", help="Print database statistics")
     sub.add_parser("clear", help="Clear all SDK-created memories")
 
     p_demo = sub.add_parser("demo", help="Run a quick end-to-end demo")
@@ -218,38 +233,42 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # ── Knowledge Graph ────────────────────────────────────────────────
-    p_kg = sub.add_parser("kg", help="Knowledge graph operations")
+    p_kg = sub.add_parser("kg", help="Knowledge graph: entities, relations, facts")
     kg_sub = p_kg.add_subparsers(dest="kg_cmd", required=True)
 
-    kg_search = kg_sub.add_parser("search", help="Search KG entities")
+    kg_search = kg_sub.add_parser("search", help="Search KG entities by name or text")
     kg_search.add_argument("query", help="Entity search query")
     kg_search.add_argument("--limit", type=int, default=10)
     kg_search.add_argument("--max-hops", type=int, default=2)
 
-    kg_facts = kg_sub.add_parser("facts", help="Search KG facts")
+    kg_facts = kg_sub.add_parser("facts", help="Search KG facts by text")
     kg_facts.add_argument("query", help="Fact search query")
     kg_facts.add_argument("--limit", type=int, default=10)
 
-    kg_path = kg_sub.add_parser("path", help="Shortest path between entities")
+    kg_path = kg_sub.add_parser("path", help="Shortest path between two entities")
     kg_path.add_argument("source", help="Source entity name")
     kg_path.add_argument("target", help="Target entity name")
     kg_path.add_argument("--max-hops", type=int, default=5)
 
-    kg_trav = kg_sub.add_parser("traverse", help="Traverse KG from a start entity")
+    kg_trav = kg_sub.add_parser(
+        "traverse", help="Traverse KG edges from a start entity"
+    )
     kg_trav.add_argument("start", help="Starting entity")
     kg_trav.add_argument("--max-hops", type=int, default=3)
 
-    kg_sub.add_parser("stats", help="KG statistics")
+    kg_sub.add_parser("stats", help="KG statistics: entity/edge/fact counts")
 
-    kg_lf = kg_sub.add_parser("list-facts", help="List all facts")
+    kg_lf = kg_sub.add_parser("list-facts", help="List all facts (paginated)")
     kg_lf.add_argument("--limit", type=int, default=50)
     kg_lf.add_argument("--offset", type=int, default=0)
 
     # ── Temporal KG ────────────────────────────────────────────────────
-    p_tmp = sub.add_parser("temporal", help="Temporal KG operations")
+    p_tmp = sub.add_parser(
+        "temporal", help="Temporal KG: event-time facts and contradictions"
+    )
     tmp_sub = p_tmp.add_subparsers(dest="temporal_cmd", required=True)
 
-    tmp_search = tmp_sub.add_parser("search", help="Search temporal facts")
+    tmp_search = tmp_sub.add_parser("search", help="Search temporal facts by text")
     tmp_search.add_argument("query", help="Fact text query")
     tmp_search.add_argument("--limit", type=int, default=10)
 
@@ -260,7 +279,9 @@ def main(argv: list[str] | None = None) -> int:
     tmp_contra.add_argument("--limit", type=int, default=50)
     tmp_contra.add_argument("--offset", type=int, default=0)
 
-    tmp_at = tmp_sub.add_parser("at-time", help="Facts valid at a given timestamp")
+    tmp_at = tmp_sub.add_parser(
+        "at-time", help="Facts valid at a given epoch timestamp"
+    )
     tmp_at.add_argument("timestamp", type=float, help="Epoch timestamp")
     tmp_at.add_argument("--query", type=str, default=None)
     tmp_at.add_argument("--limit", type=int, default=50)
@@ -269,37 +290,41 @@ def main(argv: list[str] | None = None) -> int:
     tmp_cs.add_argument("timestamp", type=float, help="Epoch timestamp")
     tmp_cs.add_argument("--limit", type=int, default=100)
 
-    tmp_chain = tmp_sub.add_parser("chain", help="Walk supersession chain")
+    tmp_chain = tmp_sub.add_parser("chain", help="Walk supersession chain from a fact")
     tmp_chain.add_argument("fact_id", type=int, help="Fact ID to walk from")
 
-    tmp_inv = tmp_sub.add_parser("invalidate", help="Manually invalidate a fact")
+    tmp_inv = tmp_sub.add_parser(
+        "invalidate", help="Manually invalidate (supersede) a fact"
+    )
     tmp_inv.add_argument("fact_id", type=int, help="Fact ID to invalidate")
     tmp_inv.add_argument("--reason", type=str, default="manual")
 
     # ── Maintenance ────────────────────────────────────────────────────
-    p_maint = sub.add_parser("maintenance", help="Maintenance operations")
+    p_maint = sub.add_parser(
+        "maintenance", help="Maintenance: rebuild, compact, integrity checks"
+    )
     maint_sub = p_maint.add_subparsers(dest="maint_cmd", required=True)
 
-    m_rebuild = maint_sub.add_parser("rebuild", help="Rebuild FTS5 index")
+    m_rebuild = maint_sub.add_parser("rebuild", help="Rebuild FTS5 + vector index")
     m_rebuild.add_argument(
         "--scope", default="active", choices=("active", "local", "global")
     )
 
-    m_compact = maint_sub.add_parser("compact", help="Run compaction pipeline")
+    m_compact = maint_sub.add_parser("compact", help="Run full compaction pipeline")
     m_compact.add_argument("--dry-run", action="store_true")
 
-    m_check = maint_sub.add_parser("check", help="Check DB integrity")
+    m_check = maint_sub.add_parser("check", help="Check DB integrity (FTS5 + schema)")
     m_check.add_argument("--deep", action="store_true")
 
-    maint_sub.add_parser("audit", help="Audit memory system health")
-    maint_sub.add_parser("heartbeat", help="Run self-directed heartbeat")
-    maint_sub.add_parser("tier-stats", help="Show tier distribution")
-    maint_sub.add_parser("tier-migrate", help="Run tier migration")
-    maint_sub.add_parser("consolidate", help="Run fact consolidation")
-    maint_sub.add_parser("rewrite-links", help="Rewrite broken wiki links")
+    maint_sub.add_parser("audit", help="Audit full memory system health")
+    maint_sub.add_parser("heartbeat", help="Run self-directed heartbeat check")
+    maint_sub.add_parser("tier-stats", help="Show tier distribution across memories")
+    maint_sub.add_parser("tier-migrate", help="Run tier migration pass")
+    maint_sub.add_parser("consolidate", help="Run fact consolidation and dedup")
+    maint_sub.add_parser("rewrite-links", help="Rewrite broken markdown wiki-links")
 
     m_dc = maint_sub.add_parser(
-        "detect-contradictions", help="Run contradiction detector"
+        "detect-contradictions", help="Run contradiction detector across facts"
     )
     m_dc.add_argument(
         "--min-confidence", default="low", choices=("low", "medium", "high")
@@ -307,15 +332,19 @@ def main(argv: list[str] | None = None) -> int:
     m_dc.add_argument("--mode", default="both", choices=("phrase", "semantic", "both"))
     m_dc.add_argument("--threshold", type=float, default=0.65)
 
-    m_run = maint_sub.add_parser("run", help="Run an arbitrary maintenance operation")
+    m_run = maint_sub.add_parser(
+        "run", help="Run an arbitrary named maintenance operation"
+    )
     m_run.add_argument("operation", help="Operation name (e.g. heartbeat, duplicates)")
     m_run.add_argument("args", nargs=argparse.REMAINDER, help="key=value arguments")
 
     # ── Admin ─────────────────────────────────────────────────────────
-    p_adm = sub.add_parser("admin", help="Admin & system-health operations")
+    p_adm = sub.add_parser(
+        "admin", help="Admin operations: health, circuit breaker, sync"
+    )
     adm_sub = p_adm.add_subparsers(dest="admin_cmd", required=True)
 
-    adm_sub.add_parser("health", help="Per-table row counts and staleness")
+    adm_sub.add_parser("health", help="Per-table row counts and staleness report")
     adm_cb = adm_sub.add_parser("circuit-breaker", help="Circuit breaker event history")
     adm_cb.add_argument("--limit", type=int, default=20)
     adm_cb.add_argument("--since", type=float, default=None)
@@ -326,10 +355,10 @@ def main(argv: list[str] | None = None) -> int:
 
     agent_sub.add_parser("list", help="List registered agents")
 
-    agent_info = agent_sub.add_parser("info", help="Show agent info")
+    agent_info = agent_sub.add_parser("info", help="Show agent metadata")
     agent_info.add_argument("--agent-id", required=True, help="Agent identifier")
 
-    agent_save = agent_sub.add_parser("save", help="Save an agent-scoped memory")
+    agent_save = agent_sub.add_parser("save", help="Save a memory scoped to an agent")
     agent_save.add_argument("--agent-id", required=True, help="Agent identifier")
     agent_save.add_argument("text", help="Memory text to save")
     agent_save.add_argument("--tags", nargs="*", default=[])
@@ -346,16 +375,16 @@ def main(argv: list[str] | None = None) -> int:
     agent_list.add_argument("--agent-id", required=True, help="Agent identifier")
     agent_list.add_argument("--limit", type=int, default=50)
 
-    agent_clear = agent_sub.add_parser("clear", help="Clear agent-scoped memories")
+    agent_clear = agent_sub.add_parser("clear", help="Clear all memories for an agent")
     agent_clear.add_argument("--agent-id", required=True, help="Agent identifier")
 
     # ── Sync ───────────────────────────────────────────────────────────
     p_sync = sub.add_parser("sync", help="Sync & sharing operations")
     sync_sub = p_sync.add_subparsers(dest="sync_cmd", required=True)
 
-    sync_sub.add_parser("status", help="Show sync status")
+    sync_sub.add_parser("status", help="Show sync status for all peers")
 
-    sync_share = sync_sub.add_parser("share", help="Share a memory with an agent")
+    sync_share = sync_sub.add_parser("share", help="Share a memory with another agent")
     sync_share.add_argument("note_id", help="Note ID to share")
     sync_share.add_argument("agent_id", help="Target agent identifier")
 
@@ -364,11 +393,13 @@ def main(argv: list[str] | None = None) -> int:
     sync_ls.add_argument("--category", default="")
     sync_ls.add_argument("--limit", type=int, default=50)
 
-    sync_import = sync_sub.add_parser("import", help="Import a shared memory")
+    sync_import = sync_sub.add_parser("import", help="Import a memory shared with you")
     sync_import.add_argument("shared_id", help="Shared memory ID")
     sync_import.add_argument("target_agent_id", help="Agent to import into")
 
-    sync_as = sync_sub.add_parser("auto-share", help="Auto-share high-value memories")
+    sync_as = sync_sub.add_parser(
+        "auto-share", help="Auto-share high-importance memories"
+    )
     sync_as.add_argument("--agent-id", default="")
     sync_as.add_argument("--min-importance", type=int, default=0)
     sync_as.add_argument("--dry-run", action="store_true")
@@ -620,6 +651,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     parser.print_help()
+    _print_welcome()
     return 1
 
 

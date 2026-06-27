@@ -21,6 +21,11 @@ import sys
 import time
 from pathlib import Path
 
+# C15 fix (2026-06-27): prevent MPS kernel crash when concurrent subprocesses
+# load sentence-transformers on Apple Silicon. Must be set before any torch import.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 logger = logging.getLogger(__name__)
 
 MEMORY_DIR = Path(

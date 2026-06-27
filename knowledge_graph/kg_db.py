@@ -158,7 +158,12 @@ def get_active_edges_for_entity(
     ]
 
 
-def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) -> dict:
+def index_kg_for_memory(
+    conn: sqlite3.Connection,
+    memory_id: str,
+    content: str,
+    force_regex_only: bool = False,
+) -> dict:
     """Extract and index entities/relations from a memory note.
 
     Returns stats: {"entities": N, "relations": N, "regex_count": R,
@@ -171,6 +176,11 @@ def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) 
       when regex returned 0 or 1 valid candidates.  This keeps the
       LLM cost bounded to memories the regex can't handle, while
       still letting the LLM rescue the long tail of messy notes.
+
+    When *force_regex_only* is True, Stage 2 is skipped entirely so
+    no LLM model is loaded.  Used by cron/heartbeat backfill to avoid
+    accidentally pulling Qwen2.5-3B into memory during a routine drift
+    check.
 
     Extraction results are cached in-process by content hash (P2c.3)
     so a re-save of the same content doesn't re-pay extraction.
@@ -222,13 +232,14 @@ def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) 
         entities = list(regex_entities)
 
         # P2c.2 — Stage 2: LLM fallback when regex returned too few entities
-        try:
-            from _lazy_imports import get_config
+        if not force_regex_only:
+            try:
+                from _lazy_imports import get_config
 
-            _fallback_threshold = int(get_config().kg_llm_fallback_min_entities)
-        except Exception:
-            _fallback_threshold = 2
-        if len(entities) < _fallback_threshold:
+                _fallback_threshold = int(get_config().kg_llm_fallback_min_entities)
+            except Exception:
+                _fallback_threshold = 2
+        if not force_regex_only and len(entities) < _fallback_threshold:
             try:
                 from llm_extraction import extract_entities_via_llm
 

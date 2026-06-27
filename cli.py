@@ -576,6 +576,53 @@ def doctor_main() -> None:
     else:
         _print_doctor_report(report)
 
+    if parsed.fix and worst != "ok":
+        print()
+        print("─" * 50)
+        print("Auto-repair (--fix):")
+        fix_applied = False
+
+        fixable_checks = [c for c in checks if c.get("fixable")]
+        if not fixable_checks:
+            print("  No auto-fixable issues found.")
+        for c in fixable_checks:
+            label = c["check"]
+            print(f"  Repairing: {label} ...", end=" ", flush=True)
+            try:
+                if label == "kg_orphans":
+                    import sqlite3
+
+                    with sqlite3.connect(str(db_path), timeout=10) as conn:
+                        from memory_integrity import repair_kg_orphans
+
+                        repair_kg_orphans(conn)
+                    print("done")
+                    fix_applied = True
+                elif label == "fts5_drift":
+                    from infrastructure import resolve_active_memory_dir
+
+                    mem_dir = resolve_active_memory_dir()
+                    _run("rebuild_index.py", [str(mem_dir), str(mem_dir / "memory.db")])
+                    print("done (FTS5 rebuilt)")
+                    fix_applied = True
+                elif label == "db_integrity":
+                    from infrastructure import resolve_active_memory_dir
+
+                    mem_dir = resolve_active_memory_dir()
+                    _run(
+                        "memory_integrity.py",
+                        [str(mem_dir / "memory.db"), "--recover-orphan-files"],
+                    )
+                    print("done")
+                    fix_applied = True
+                else:
+                    print("skipped (no handler)")
+            except Exception as exc:
+                print(f"FAILED: {exc}")
+
+        if fix_applied:
+            print("Repairs applied. Re-run 'agentic-memory doctor' to verify.")
+
     sys.exit({"ok": 0, "warning": 1, "failure": 2}[worst])
 
 
@@ -616,12 +663,22 @@ def status_main() -> None:
     mem_dir = resolve_active_memory_dir()
     db_path = mem_dir / "memory.db"
 
+    ok_color = "\033[32m"
+    warn_color = "\033[33m"
+    fail_color = "\033[31m"
+    reset = "\033[0m"
+    use_color = sys.stdout.isatty()
+
+    def _c(text: str, color: str) -> str:
+        return f"{color}{text}{reset}" if use_color else text
+
     parts: list[str] = []
 
     # DB
     if db_path.exists():
         size_mb = db_path.stat().st_size / 1024 / 1024
         parts.append(f"db={size_mb:.1f}MB")
+        schema_ok = True
         try:
             import sqlite3
 
@@ -633,13 +690,16 @@ def status_main() -> None:
                 ).fetchone()
                 db_ver = row[0] if row else "?"
                 if db_ver != SCHEMA_VERSION:
-                    parts.append(f"SCHEMA=v{db_ver}!need=v{SCHEMA_VERSION}")
+                    parts.append(
+                        _c(f"SCHEMA=v{db_ver}!need=v{SCHEMA_VERSION}", fail_color)
+                    )
+                    schema_ok = False
                 else:
-                    parts.append(f"schema=v{db_ver}")
+                    parts.append(_c(f"schema=v{db_ver}", ok_color))
         except Exception as exc:
-            parts.append(f"db_err={exc}")
+            parts.append(_c(f"db_err={exc}", fail_color))
     else:
-        parts.append("db=missing")
+        parts.append(_c("db=missing", fail_color))
 
     # Circuit breaker
     hook_errors = mem_dir / "hook-errors.jsonl"
@@ -654,20 +714,23 @@ def status_main() -> None:
                 for e in recent
                 if (e.get("failureCount") or e.get("failure_count") or 0) >= 10
             }
-            parts.append(
-                f"circuits={'OPEN:' + ','.join(sorted(open_circuits)) if open_circuits else 'ok'}"
-            )
+            if open_circuits:
+                parts.append(
+                    _c(f"circuits=OPEN:{','.join(sorted(open_circuits))}", fail_color)
+                )
+            else:
+                parts.append(_c("circuits=ok", ok_color))
         except Exception:
-            parts.append("circuits=?")
+            parts.append(_c("circuits=?", warn_color))
     else:
-        parts.append("circuits=ok")
+        parts.append(_c("circuits=ok", ok_color))
 
     # Auto-save state
     state_file = mem_dir / "sessions" / ".context_monitor_state.json"
     if state_file.exists():
         try:
             state = json.loads(state_file.read_text())
-            tc = state.get("total_tool_calls", state.get("tool_call_count", 0))
+            tc = state.get("tool_calls", state.get("total_tool_calls", 0))
             parts.append(f"tool_calls={tc}")
         except Exception:
             pass

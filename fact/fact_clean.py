@@ -25,21 +25,27 @@ except ImportError:
 _FRONTMATTER = re.compile(r"^---[\s\S]*?---\s*", re.MULTILINE)
 _CODE_BLOCK = re.compile(r"```[\s\S]*?```")
 _INLINE_CODE = re.compile(r"`([^`]+)`")
+_HTML_TAG = re.compile(r"<[^>]+>")
+_HRULE = re.compile(r"^[-*_]{3,}\s*$", re.M)
+_LINK = re.compile(r"\[([^\]]*)\]\([^)]+\)")
 
 
 def _preprocess(text: str) -> str:
-    """Strip YAML frontmatter, code blocks, and inline code spans
-    from *text* before fact extraction.
+    """Strip YAML frontmatter, code blocks, inline code, HTML tags,
+    horizontal rules, and markdown link syntax from *text* before
+    fact extraction.
 
-    Why: frontmatter contains key=value pairs that look like facts
-    ("status: active" -> subject="status", predicate=has_value,
-    object="active") but they're metadata, not content. Code blocks
-    can contain function signatures that look like code-reference
-    facts. Stripping these reduces noise.
+    Why: frontmatter contains key=value pairs that look like facts;
+    code blocks contain signatures that match code-reference patterns;
+    HTML tags and horizontal rules introduce noise; markdown links
+    inject URL text that gets extracted as fact content.
     """
     text = _FRONTMATTER.sub("", text)
     text = _CODE_BLOCK.sub("", text)
     text = _INLINE_CODE.sub(r"\1", text)
+    text = _HTML_TAG.sub("", text)
+    text = _HRULE.sub("", text)
+    text = _LINK.sub(r"\1", text)
     return text
 
 
@@ -1077,6 +1083,12 @@ def _is_valid(subj: str, obj: str) -> bool:
     if len(subj) < 2 or len(obj) < 2:
         return False
     if subj.lower() == obj.lower():
+        return False
+    if re.match(r"^[\d\s\-:/.,]+$", subj):
+        return False
+    if re.match(r"^'[^']{1,4}'$", obj):
+        return False
+    if len(obj) <= 2 and obj.islower() and obj.isalpha():
         return False
     return True
 

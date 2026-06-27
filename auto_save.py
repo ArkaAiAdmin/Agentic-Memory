@@ -60,6 +60,12 @@ import threading
 from pathlib import Path
 from typing import Optional, Any, Protocol
 
+# C15 fix (2026-06-27): set OMP env vars early to prevent MPS kernel crashes
+# when multiple subprocesses load sentence-transformers concurrently on Apple
+# Silicon. These must be set before any module that loads OpenMP/torch.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 # H9 fix (2026-06-22): serialize `daily-digest` against a manual
 # invocation of the same subcommand. The other subcommands
 # (tool-complete, status, health-check) are read-only or

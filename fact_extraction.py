@@ -1233,6 +1233,12 @@ def _is_valid(subj: str, obj: str) -> bool:
         return False
     if subj.lower() == obj.lower():
         return False
+    if re.match(r"^[\d\s\-:/.,]+$", subj):
+        return False
+    if re.match(r"^'[^']{1,4}'$", obj):
+        return False
+    if len(obj) <= 2 and obj.islower() and obj.isalpha():
+        return False
     return True
 
 

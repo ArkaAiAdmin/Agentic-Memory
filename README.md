@@ -32,15 +32,6 @@ Agents save lessons, decisions, and patterns to **markdown files** (the source o
 
 ### Install
 
-**macOS (Homebrew):**
-
-```bash
-brew tap ArkaAiAdmin/agentic-memory https://github.com/ArkaAiAdmin/Agentic-Memory.git
-brew install agentic-memory
-```
-
-**pip (all platforms):**
-
 ```bash
 pip install agentic-memory              # Core + SDK + MCP server
 pip install agentic-memory[embeddings]  # + semantic search
@@ -61,25 +52,22 @@ pip install -e .
 ### Bootstrap a project
 
 ```bash
-cd ~/Assets/MyProject
-bash ~/.config/agentic-memory/setup_memory.sh
+agentic-memory init
 ```
 
 ### Use CLI Commands
 
-After installation, 11 CLI commands are available (`cli.py` defines 11; `pyproject.toml [project.scripts]` currently exposes 10 — `agentic-memory-sync` was added 2026-06-22 but the package must be reinstalled for the script to be on `$PATH`):
-
 ```bash
-agentic-memory-server         # Start MCP server
-agentic-memory-search "query" # Search memories
-agentic-memory-rebuild        # Rebuild search index
-agentic-memory-backfill       # Rebuild all indexes
-agentic-memory-consolidate    # Deduplicate and merge
-agentic-memory-integrity      # Database health check
-agentic-memory-tier           # Tier migration
-agentic-memory-compact        # Run consolidation pipeline
-agentic-memory-bootstrap      # Initialize a project
-agentic-memory-worker         # Process background tasks
+agentic-memory server         # Start MCP server
+agentic-memory search "query" # Search memories
+agentic-memory rebuild        # Rebuild search index
+agentic-memory backfill       # Rebuild all indexes
+agentic-memory consolidate    # Deduplicate and merge
+agentic-memory integrity      # Database health check
+agentic-memory doctor         # Full health check report
+agentic-memory init           # (Re)bootstrap a project
+agentic-memory dashboard      # Launch web dashboard
+agentic-memory status         # One-line health snapshot
 ```
 
 ### Use as MCP Server

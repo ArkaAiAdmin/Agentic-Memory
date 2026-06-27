@@ -29,6 +29,7 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.confi
 | 10 | KG/backlinks orphans | `python memory_integrity.py <db> --repair-kg-orphans` |
 | 11 | Auto-save history | `agentic-memory_memory_circuit_breaker_status()` |
 | 12 | Temporal KG misbehaving | Set `MEMORY_TEMPORAL_KG=0` |
+| 17 | Dashboard metric shows `—` | `python -c "import sqlite3; c=sqlite3.connect('memory/memory.db'); print(c.execute('SELECT name FROM sqlite_master WHERE type=\\'table\\'').fetchall())"` — check the table gotchas section |
 
 Minimum: do #1 and #7. Run #8 opportunistically. Use `memory_maintenance(operation="compliance_check")` to audit.
 
@@ -106,7 +107,24 @@ See `memory.toml` for all 17 feature flags.
 
 ## Test Execution Rules
 
-14. **Full suite must use subprocess.** Always run tests via `cd <repo> && nohup ./venv/bin/python -m pytest eval/ -q > /tmp/full_suite.log 2>&1 &` (or `run_full_suite.py`). Direct `pytest eval/` in the same shell blocks the agent and can deadlock the session. Poll the log file for results.
+14. **Full suite MUST use the subprocess runner.** Direct `pytest eval/` in a single process hangs or segfaults on Apple Silicon (MPS / OMP thread conflict). Always use one of:
+    - **`make test`** (preferred — calls `eval/run_full_suite.py`)
+    - `./venv/bin/python eval/run_full_suite.py` (direct)
+    - `nohup ./venv/bin/python eval/run_full_suite.py > /tmp/full_suite.log 2>&1 &` + `tail -f /tmp/full_suite.log` (background + poll)
+    - `tail -f /tmp/full_suite_runner.log` to follow progress; summary line at end: `SUMMARY: <pass>p <fail>f <skip>s <xfail>xf <xpass>xp <err>e`
+
+    `eval/run_full_suite.py` enforces:
+    - One fresh Python process per test file (no MPS/OMP state bleed)
+    - `KMP_DUPLICATE_LIB_OK=TRUE` + `OMP_NUM_THREADS=1` (prevents torch + libomp conflict)
+    - 600s per-file timeout
+    - JUnit XML parsing for stable counts
+    - Segfault detection via stderr scan
+
+15. **Single-test invocations are fine in-process.** `pytest eval/test_foo.py::test_bar` in the agent's own shell is safe — only the *full* suite needs isolation.
+
+16. **If a test file segfaults, it counts as 1 failure.** The runner catches `signal 11` / `Segmentation fault` / `Fatal Python error` and marks the file as `SEGFAULT` even if pytest returns 0. Check `eval/results/full_suite_results.txt` for the canonical report.
+
+17. **Never delete `eval/test_all_*.py` files.** They re-run the whole suite as a single test file and are explicitly skipped by `run_full_suite.py` to avoid infinite recursion. Direct `pytest eval/` will still execute them.
 
 ---
 
@@ -117,6 +135,24 @@ See `memory.toml` for all 17 feature flags.
 3. Check cron logs: `memory/worker.log`, `memory/heartbeat.log`, `memory/integrity.log`.
 4. Run integrity check: `venv/bin/python memory_integrity.py memory/memory.db`. 0 critical = OK.
 5. Stuck? Read `eval/test_*.py` for the regression net.
+
+---
+
+## Database Table Gotchas
+
+| Old / Mythical Name | Real Source |
+|---|---|
+| `auto_save_events` | `memory_audit_log WHERE tool='auto_save'` |
+| `memory_injection_log` | `memory_audit_log WHERE error LIKE '%inject%'` |
+| `crdt_operations` | `kg_entity_crdt` + `kg_edge_crdt` |
+| `crdt_state` | `memory_field_crdt` |
+| `arc_cache` | `arc_stats` (current) + `arc_ghosts` (evicted) |
+| `memory_pinned` | `memories WHERE pinned=1` (column, not a table) |
+| `tool_routing_decisions` | Removed — was never materialized |
+
+Many of these names come from early design docs or deprecated schema
+versions. If a dashboard metric shows `—` or 0, check the real source
+above before creating a new table.
 
 ---
 

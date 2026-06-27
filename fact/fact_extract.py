@@ -310,6 +310,9 @@ def _layer5c_plain_dash_bullets(text: str, add_fn) -> None:
     """Layer 5c: ``- just a phrase`` lines (no em-dash separator).
 
     Whole line is the value; subject is first 1-3 words. Confidence 0.5.
+
+    Conservative: rejects subjects whose first word is a known verb
+    (prevents ``- Implements the feature`` → subject="Implements").
     """
     plain_dash = re.compile(
         r"(?:^|\n)[ \t]*[-*][ \t]+"
@@ -362,6 +365,14 @@ def _layer5c_plain_dash_bullets(text: str, add_fn) -> None:
             continue
         if not _is_valid(subj, text_line):
             continue
+        # Reject subjects whose first word is a known verb — prevents
+        # "Implements", "Uses", "Creates" from becoming fact subjects.
+        first_subj_word = bullet_subj[0].lower().rstrip(":")
+        if first_subj_word in _VERB_MAP:
+            continue
+        # Reject single-word all-lowercase subjects (generic, not a proper noun)
+        if len(bullet_subj) == 1 and not bullet_subj[0][0].isupper():
+            continue
         add_fn(subj, "has_description", text_line[:120], 0.5)
 
 
@@ -391,6 +402,8 @@ def _layer5d_subject_verb_object(text: str, add_fn) -> None:
         if subj.lower() in _WEAK_SUBJECTS or len(subj) < 3:
             continue
         if len(obj) < 2 or re.match(r"^[\d\s\-:/.,]+$", obj):
+            continue
+        if not any(c.isalpha() for c in obj):
             continue
         pred = _VERB_MAP.get(verb, verb)
         if subj.lower().rstrip(":") in _META_LABELS:

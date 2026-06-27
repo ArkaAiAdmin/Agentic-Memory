@@ -288,6 +288,29 @@ def main():
         )
         agent_id = hook_data.get("session_id", "")
 
+        # Surface prior compaction snapshots (before recall query)
+        MEM_ROOT = Path(
+            os.environ.get("MEMORY_ROOT", Path(__file__).resolve().parent.parent)
+        )
+        SESSIONS_DIR = MEM_ROOT / "memory" / "sessions"
+        recovery_text = ""
+        if SESSIONS_DIR.exists():
+            recovery_chunks = []
+            for comp_dir in sorted(SESSIONS_DIR.glob("compaction-save-*")):
+                surfaced_marker = comp_dir / ".surfaced"
+                if surfaced_marker.exists():
+                    continue
+                task_file = comp_dir / "task.md"
+                if task_file.exists():
+                    content = task_file.read_text().strip()
+                    if content:
+                        recovery_chunks.append(
+                            f"\n\n## Recovered from prior compaction\n\n"
+                            f"Previous task context: {content}\n"
+                        )
+                surfaced_marker.write_text("")
+            recovery_text = "".join(recovery_chunks)
+
         # Phase 0: Session entity (Sprint 3)
         session_thread_output = ""
         current_session = _read_current_session()
@@ -359,6 +382,8 @@ def main():
             parts.append(proactive_output)
         if session_thread_output:
             parts.append(session_thread_output)
+        if recovery_text:
+            parts.append(recovery_text)
         if rules_reminder.strip():
             parts.append(rules_reminder)
 

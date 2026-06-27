@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 from collections import Counter
 from datetime import datetime, timezone
+from typing import Callable
 
 import streamlit as st
 import pandas as pd
@@ -128,10 +129,28 @@ if not DB.exists():
     st.error(f"Database not found: {DB}")
     st.stop()
 
+_NAV_DEFAULTS: dict[str, str] = {
+    "_nav_analytics": "Overview",
+    "_nav_manage": "Memories",
+    "_nav_system": "Audit Log",
+}
+_SECTION_KEYS = ("_nav_analytics", "_nav_manage", "_nav_system")
+
+
+def _make_nav_handler(clicked_key: str):
+    def handler() -> None:
+        for k in _SECTION_KEYS:
+            if k != clicked_key:
+                st.session_state.pop(k, None)
+
+    return handler
+
 
 @st.cache_resource
 def get_conn():
-    c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=30)
+    c = sqlite3.connect(
+        f"file:{DB}?mode=ro", uri=True, timeout=30, check_same_thread=False
+    )
     c.execute("PRAGMA foreign_keys=ON")
     return c
 
@@ -157,9 +176,24 @@ def table(name: str) -> bool:
         return False
 
 
+def try_count(table: str, where: str | None = None) -> int:
+    try:
+        sql = f"SELECT COUNT(*) FROM {table}"
+        if where:
+            sql += f" WHERE {where}"
+        r = get_conn().execute(sql).fetchone()
+        return r[0] if r else 0
+    except Exception:
+        return 0
+
+
 def get_mem_dir() -> Path:
     return DB.parent
 
+
+_analytics_handler = _make_nav_handler("_nav_analytics")
+_manage_handler = _make_nav_handler("_nav_manage")
+_system_handler = _make_nav_handler("_nav_system")
 
 # ── Sidebar ─────────────────────────────────────────────────────────────
 st.sidebar.markdown(
@@ -173,15 +207,15 @@ with st.sidebar:
     n_mem = r[0]
     r = get_conn().execute("SELECT COUNT(*) FROM kg_entities").fetchone()
     n_ent = r[0]
-    r = get_conn().execute("SELECT COUNT(*) FROM kg_edges").fetchone()
-    n_edg = r[0]
+    r = get_conn().execute("SELECT COUNT(*) FROM kg_facts").fetchone()
+    n_facts = r[0]
     r = get_conn().execute("SELECT COUNT(*) FROM memory_audit_log").fetchone()
     n_audit = r[0]
 
     c1, c2 = st.columns(2)
     c1.metric("Memories", n_mem)
     c2.metric("Entities", n_ent)
-    c1.metric("Edges", n_edg)
+    c1.metric("Facts", n_facts)
     c2.metric("Audit", n_audit)
 
     st.divider()
@@ -198,30 +232,51 @@ with st.sidebar:
 
     # ── Navigation ───────────────────────────────────────────────────────
     st.markdown('<div class="nav-section">Analytics</div>', unsafe_allow_html=True)
-    nav = st.radio(
-        "Analytics",
-        ["Overview", "Knowledge Graph", "Embeddings", "Drift", "CTR"],
-        label_visibility="collapsed",
-        key="_nav_analytics",
-    )
+    analytics_items = ["Overview", "Knowledge Graph", "Embeddings", "Drift", "CTR"]
+    for item in analytics_items:
+        active = st.session_state.get("_nav_analytics", "Overview") == item
+        label = f"**◆ {item}**" if active else item
+        if st.button(label, key=f"nav_a_{item}", use_container_width=True):
+            st.session_state["_nav_analytics"] = item
+            for k in ("_nav_manage", "_nav_system"):
+                st.session_state.pop(k, None)
+            st.rerun()
 
     st.markdown('<div class="nav-section">Manage</div>', unsafe_allow_html=True)
-    nav2 = st.radio(
-        "Manage",
-        ["Memories", "Entities", "Explorer"],
-        label_visibility="collapsed",
-        key="_nav_manage",
-    )
+    manage_items = ["Memories", "Entities", "Explorer"]
+    for item in manage_items:
+        active = st.session_state.get("_nav_manage", "Memories") == item
+        label = f"**◆ {item}**" if active else item
+        if st.button(label, key=f"nav_m_{item}", use_container_width=True):
+            st.session_state["_nav_manage"] = item
+            for k in ("_nav_analytics", "_nav_system"):
+                st.session_state.pop(k, None)
+            st.rerun()
 
     st.markdown('<div class="nav-section">System</div>', unsafe_allow_html=True)
-    nav3 = st.radio(
-        "System",
-        ["Audit Log", "Health", "Hooks"],
-        label_visibility="collapsed",
-        key="_nav_system",
-    )
+    system_items = ["Audit Log", "Health", "Hooks"]
+    for item in system_items:
+        active = st.session_state.get("_nav_system", "Audit Log") == item
+        label = f"**◆ {item}**" if active else item
+        if st.button(label, key=f"nav_s_{item}", use_container_width=True):
+            st.session_state["_nav_system"] = item
+            for k in ("_nav_analytics", "_nav_manage"):
+                st.session_state.pop(k, None)
+            st.rerun()
 
-page = st.session_state.get("_nav", nav)
+    _saved_nav = st.session_state.pop("_nav", None)
+    nav = st.session_state.get("_nav_analytics", "Overview")
+    nav2 = st.session_state.get("_nav_manage", "Memories")
+    nav3 = st.session_state.get("_nav_system", "Audit Log")
+
+    if _saved_nav:
+        page = _saved_nav
+    elif nav2 != "Memories":
+        page = nav2
+    elif nav3 != "Audit Log":
+        page = nav3
+    else:
+        page = nav
 
 # ═══════════════════════════════════════════════════════════════════════════
 # OVERVIEW
@@ -254,8 +309,8 @@ if page == "Overview":
             ("Pinned", n_pin, "hot memory"),
             ("Chunked", n_chk, "split notes"),
             ("Embeddings", n_emb, "vectorized"),
-            ("CTR Events", n_ctr, "feedback loop"),
-            ("Drift Events", n_dft, "concept shifts"),
+            ("Audit Events", try_count("memory_audit_log"), "audit trail"),
+            ("Facts", try_count("kg_facts"), "knowledge graph"),
         ]
     ):
         cols[i].markdown(
@@ -266,6 +321,11 @@ if page == "Overview":
             f"</div>",
             unsafe_allow_html=True,
         )
+
+    st.caption(
+        f"ARC: {try_count('arc_stats')} entries, {try_count('arc_ghosts')} evictions  ·  "
+        f"Sync: {try_count('kg_entity_crdt') + try_count('kg_edge_crdt') + try_count('memory_field_crdt')} pending CRDT ops"
+    )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -510,7 +570,7 @@ elif page == "Entities":
 
     max_n = st.slider("Show top N", 10, 300, 80)
     ent = query(
-        "SELECT id, name, entity_type, mentions, description "
+        "SELECT id, name, entity_type, mentions "
         "FROM kg_entities ORDER BY mentions DESC LIMIT ?",
         (max_n,),
     )
@@ -523,20 +583,20 @@ elif page == "Entities":
                 f"`{r['entity_type']}` · {r['name']} (mentions: {r['mentions']})"
             ):
                 st.markdown(f"**ID:** `{r['id']}`  ·  **Type:** `{r['entity_type']}`")
-                desc = r.get("description") or ""
-                if desc:
-                    st.markdown(f"_{desc[:300]}_")
-                edges = query(
-                    "SELECT e.target_id, e.relation, n.name "
-                    "FROM kg_edges e LEFT JOIN kg_entities n ON n.id=e.target_id "
-                    "WHERE e.source_id=? LIMIT 20",
-                    (r["id"],),
+                efacts = query(
+                    "SELECT f.predicate, f.object, f.confidence "
+                    "FROM kg_facts f "
+                    "WHERE f.subject_entity_id = ? OR "
+                    "  (f.subject = ? AND f.subject_entity_id IS NULL) "
+                    "ORDER BY f.confidence DESC LIMIT 20",
+                    (r["id"], r["name"]),
                 )
-                if edges is not None and not edges.empty:
-                    st.markdown("**Outgoing edges:**")
-                    for _, e in edges.iterrows():
+                if efacts is not None and not efacts.empty:
+                    st.markdown("**Facts (as subject):**")
+                    for _, e in efacts.iterrows():
                         st.caption(
-                            f"  → `{e['relation']}` → {e.get('name', e['target_id'])}"
+                            f"  `{e['predicate']}` → {e['object']}  "
+                            f"(conf: {e['confidence']:.2f})"
                         )
 
 
@@ -545,14 +605,22 @@ elif page == "Entities":
 # ═══════════════════════════════════════════════════════════════════════════
 elif page == "Webhooks":
     st.subheader("Webhooks")
-    if not table("memory_webhooks"):
+    try:
+        table_ok = table("memory_webhooks")
+    except Exception as exc:
+        table_ok = False
+    if not table_ok:
         st.info(
             "No webhooks table yet. Populate from MCP tools when memory_sharing is enabled."
         )
     else:
-        wh = query(
-            "SELECT id, url, event_types, active, last_triggered_at, created_at FROM memory_webhooks ORDER BY created_at DESC"
-        )
+        try:
+            wh = query(
+                "SELECT id, url, event_types, active, last_triggered_at, created_at FROM memory_webhooks ORDER BY created_at DESC"
+            )
+        except Exception as exc:
+            st.warning(f"Could not read webhooks table: {exc}")
+            wh = None
         if wh is not None and not wh.empty:
             st.markdown(f"**{len(wh)} registered webhook(s)**")
             for _, r in wh.iterrows():
@@ -580,8 +648,8 @@ elif page == "Webhooks":
                                     (str(r["id"]),),
                                 )
                             st.rerun()
-                        except Exception as exc:
-                            st.error(exc)
+                        except Exception as exc2:
+                            st.error(exc2)
         else:
             st.info("No webhooks registered")
 
@@ -901,104 +969,109 @@ elif page == "Knowledge Graph":
     st.subheader("Knowledge Graph")
     import networkx as nx
 
-    max_n = st.slider("Entity count", 10, 200, 80, key="kg_n")
-    ent = query(
-        "SELECT id, name, entity_type, mentions FROM kg_entities "
-        "ORDER BY mentions DESC LIMIT ?",
+    max_n = st.slider("Fact count", 50, 500, 200, key="kg_n")
+    facts = query(
+        "SELECT f.subject, f.predicate, f.object, f.confidence, "
+        "  f.subject_entity_id, f.object_entity_id, "
+        "  e1.name AS subj_entity_name, e1.entity_type AS subj_entity_type, "
+        "  e2.name AS obj_entity_name, e2.entity_type AS obj_entity_type "
+        "FROM kg_facts f "
+        "LEFT JOIN kg_entities e1 ON e1.id = f.subject_entity_id "
+        "LEFT JOIN kg_entities e2 ON e2.id = f.object_entity_id "
+        "ORDER BY f.confidence DESC, f.last_seen DESC LIMIT ?",
         (max_n,),
     )
-    if ent is None or ent.empty:
-        st.info("No entities")
+    if facts is None or facts.empty:
+        st.info("No facts")
     else:
-        edges = query(
-            "SELECT source_id, target_id, relation, weight FROM kg_edges "
-            "WHERE source_id IN (SELECT id FROM kg_entities) "
-            "AND target_id IN (SELECT id FROM kg_entities) "
-            "ORDER BY weight DESC LIMIT 1000"
-        )
-        if edges is not None and not edges.empty:
-            G = nx.Graph()
-            eid = set(ent["id"].values)
-            for _, r in edges.iterrows():
-                if r["source_id"] in eid and r["target_id"] in eid:
-                    G.add_edge(
-                        r["source_id"],
-                        r["target_id"],
-                        relation=r.get("relation", ""),
-                        weight=float(r.get("weight", 1)),
-                    )
+        G = nx.Graph()
+        node_types: dict[str, str] = {}
+        node_counts: Counter = Counter()
+        for _, r in facts.iterrows():
+            s = r["subj_entity_name"] or r["subject"]
+            o = r["obj_entity_name"] or r["object"]
+            p = r["predicate"]
+            G.add_edge(s, o, relation=p, confidence=r["confidence"])
+            node_counts[s] += 1
+            node_counts[o] += 1
+            if s not in node_types:
+                node_types[s] = r["subj_entity_type"] or "concept"
+            if o not in node_types:
+                node_types[o] = r["obj_entity_type"] or "concept"
 
-            if G.number_of_nodes() == 0:
-                st.info("No connected entities")
-            else:
-                pos = nx.spring_layout(G, k=0.3, seed=42, iterations=60)
-                name_map = dict(zip(ent["id"], ent["name"]))
-                type_map = dict(zip(ent["id"], ent["entity_type"]))
-                ment_map = dict(zip(ent["id"], ent["mentions"]))
-
-                type_colors = {
-                    "tool": "#ef4444",
-                    "library": "#10b981",
-                    "project": "#3b82f6",
-                    "concept": "#f59e0b",
-                    "person": "#8b5cf6",
-                    "framework": "#ec4899",
-                    "language": "#06b6d4",
-                }
-
-                edge_traces = []
-                for u, v, d in G.edges(data=True):
-                    x0, y0 = pos[u]
-                    x1, y1 = pos[v]
-                    w = d.get("weight", 1) * 0.4 + 0.2
-                    edge_traces.append(
-                        go.Scatter(
-                            x=(x0, x1, None),
-                            y=(y0, y1, None),
-                            mode="lines",
-                            line=dict(width=w, color="#374151"),
-                            hoverinfo="none",
-                        )
-                    )
-
-                node_x = [pos[n][0] for n in G.nodes()]
-                node_y = [pos[n][1] for n in G.nodes()]
-                node_labels = [name_map.get(n, str(n))[:28] for n in G.nodes()]
-                node_types = [type_map.get(n, "other") for n in G.nodes()]
-                node_m = [ment_map.get(n, 1) for n in G.nodes()]
-                colors = [type_colors.get(t, "#6b7280") for t in node_types]
-                sizes = [min(28, 6 + m * 1.8) for m in node_m]
-
-                node_trace = go.Scatter(
-                    x=node_x,
-                    y=node_y,
-                    mode="markers+text",
-                    text=node_labels,
-                    textposition="top center",
-                    textfont=dict(size=9, color="#d1d5db"),
-                    marker=dict(
-                        size=sizes, color=colors, line=dict(width=1, color="#1f2937")
-                    ),
-                    hovertext=[
-                        f"<b>{n}</b><br>type: {t}<br>mentions: {m}"
-                        for n, t, m in zip(node_labels, node_types, node_m)
-                    ],
-                    hoverinfo="text",
-                )
-                fig = go.Figure(data=edge_traces + [node_trace])
-                fig.update_layout(
-                    title="Knowledge Graph (force-directed)",
-                    **DARK,
-                    showlegend=False,
-                    hovermode="closest",
-                    xaxis=dict(visible=False),
-                    yaxis=dict(visible=False),
-                    height=700,
-                    margin=dict(t=30, b=10, l=10, r=10),
-                )
-                st.plotly_chart(fig, use_container_width=True)
+        if G.number_of_nodes() == 0:
+            st.info("No connected facts")
         else:
-            st.info("No edges found")
+            pos = nx.spring_layout(G, k=0.3, seed=42, iterations=60)
+
+            type_colors = {
+                "tool": "#ef4444",
+                "library": "#10b981",
+                "project": "#3b82f6",
+                "concept": "#f59e0b",
+                "person": "#8b5cf6",
+                "framework": "#ec4899",
+                "language": "#06b6d4",
+                "memory": "#6366f1",
+                "organization": "#14b8a6",
+            }
+
+            edge_traces = []
+            for u, v, d in G.edges(data=True):
+                x0, y0 = pos[u]
+                x1, y1 = pos[v]
+                edge_traces.append(
+                    go.Scatter(
+                        x=(x0, x1, None),
+                        y=(y0, y1, None),
+                        mode="lines",
+                        line=dict(width=1, color="#374151"),
+                        hoverinfo="none",
+                    )
+                )
+
+            node_x = [pos[n][0] for n in G.nodes()]
+            node_y = [pos[n][1] for n in G.nodes()]
+            node_labels = [n[:28] for n in G.nodes()]
+            node_type_list = [node_types.get(n, "concept") for n in G.nodes()]
+            node_deg = [node_counts.get(n, 1) for n in G.nodes()]
+            colors = [type_colors.get(t, "#6b7280") for t in node_type_list]
+            sizes = [min(32, 6 + d * 2.5) for d in node_deg]
+
+            node_trace = go.Scatter(
+                x=node_x,
+                y=node_y,
+                mode="markers+text",
+                text=node_labels,
+                textposition="top center",
+                textfont=dict(size=9, color="#d1d5db"),
+                marker=dict(
+                    size=sizes, color=colors, line=dict(width=1, color="#1f2937")
+                ),
+                hovertext=[
+                    f"<b>{n}</b><br>type: {t}<br>connections: {d}"
+                    for n, t, d in zip(node_labels, node_type_list, node_deg)
+                ],
+                hoverinfo="text",
+            )
+            fig = go.Figure(data=edge_traces + [node_trace])
+            fig.update_layout(
+                title="Knowledge Graph (facts → force-directed)",
+                **DARK,
+                showlegend=False,
+                hovermode="closest",
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False),
+                height=700,
+                margin=dict(t=30, b=10, l=10, r=10),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            with st.expander("Fact list"):
+                st.dataframe(
+                    facts[["subject", "predicate", "object", "confidence"]],
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
