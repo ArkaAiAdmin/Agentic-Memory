@@ -662,6 +662,7 @@ def _update_memory_index_incremental(
     db=None,
     importance: int = 3,
     tier: str = "warm",
+    defer_expensive: bool = False,
 ):
     """Update memory index incrementally.
 
@@ -669,6 +670,10 @@ def _update_memory_index_incremental(
     When using an external ``db``, exceptions propagate upward so the caller
     can rollback the transaction. When ``db`` is None (default), manage our
     own connection, commit on success, and swallow exceptions on failure.
+
+    When ``defer_expensive`` is True, skip embedding, KG, fact extraction, and
+    context enrichment — these are enqueued as background tasks by the caller
+    so the synchronous path stays fast.
     """
     external_db = db is not None
     if not external_db:
@@ -754,13 +759,16 @@ def _update_memory_index_incremental(
             _crdt_bump_version(conn, note_id, cols)
         _index_backlinks(conn, note_id, content)
         _index_chunks(conn, note_id, content)
-        _index_embedding(conn, note_id, content, category, tags, source_file)
-        _index_kg(conn, note_id, content)
-        _index_facts(conn, note_id, content)
+        if not defer_expensive:
+            _index_embedding(conn, note_id, content, category, tags, source_file)
+            _index_kg(conn, note_id, content)
+            _index_facts(conn, note_id, content)
+            _enrich_context(conn, note_id, content, category, tags)
         _auto_semantic_backlinks(conn, note_id, content, db_path=str(db_path))
         _auto_fts_backlinks(conn, note_id, content)
         _index_adaptive_retention(conn, note_id, db_path=str(db_path))
-        _enrich_context(conn, note_id, content, category, tags)
+        if defer_expensive:
+            _defer_indexing_background_tasks(db_path, note_id, content, source_file)
     except Exception as e:
         if external_db:
             raise
@@ -777,6 +785,35 @@ def _update_memory_index_incremental(
             release_flock(lock_file)
         if local_db is not None:
             safe_close_db(local_db)
+
+
+def _defer_indexing_background_tasks(
+    db_path: Path, note_id: str, content: str, source_file: str
+) -> None:
+    """Enqueue expensive indexing operations as background tasks.
+
+    Called when ``defer_expensive=True`` in the save path.  The background
+    worker processes these asynchronously so the MCP tool returns fast.
+    """
+    try:
+        from background_queue import init_task_queue, enqueue_task
+        from db import connection_pool
+
+        bq_conn = connection_pool.get(str(db_path), timeout=5.0)
+        init_task_queue(bq_conn)
+        enqueue_task(
+            bq_conn,
+            "embedding_index",
+            {"memory_id": note_id, "content": content, "source_file": source_file},
+        )
+        enqueue_task(
+            bq_conn,
+            "kg_and_fact_index",
+            {"memory_id": note_id, "content": content},
+        )
+        safe_close_db(bq_conn)
+    except Exception as _bqe:
+        logger.debug("save_memory: defer background indexing failed: %s", _bqe)
 
 
 def _validate_save_params(content, category, title_slug, tags):
@@ -1063,6 +1100,7 @@ def _persist_to_db(
     markdown_content,
     importance: int = 3,
     _conn_is_shared: bool = False,
+    defer_expensive: bool = False,
 ):
     try:
         _update_memory_index_incremental(
@@ -1077,6 +1115,7 @@ def _persist_to_db(
             metadata_json=metadata_json,
             db=conn,
             importance=importance,
+            defer_expensive=defer_expensive,
         )
         try:
             atomic_write(file_path, markdown_content, encoding="utf-8")
@@ -1153,6 +1192,7 @@ def _try_saga_persist(
     markdown_content,
     importance,
     lock_already_held: bool = False,
+    defer_expensive: bool = False,
 ):
     """Wrap the upsert + write + vec-key triple-store steps in a saga.
 
@@ -1182,6 +1222,7 @@ def _try_saga_persist(
             metadata_json=metadata_json,
             db=conn,
             importance=importance,
+            defer_expensive=defer_expensive,
         )
 
     def _do_write_vec_key():
@@ -1257,6 +1298,7 @@ def _persist_via_saga_or_fallback(
     importance,
     lock_already_held: bool = False,
     _conn_is_shared: bool = False,
+    defer_expensive: bool = False,
 ):
     """Persist a memory via the saga path, with policy-driven fallback.
 
@@ -1299,6 +1341,7 @@ def _persist_via_saga_or_fallback(
                 markdown_content=markdown_content,
                 importance=importance,
                 lock_already_held=lock_already_held,
+                defer_expensive=defer_expensive,
             )
             saga_ok = True
         except Exception as saga_exc:
@@ -1327,6 +1370,7 @@ def _persist_via_saga_or_fallback(
             markdown_content,
             importance,
             _conn_is_shared=_conn_is_shared,
+            defer_expensive=defer_expensive,
         )
         if not _conn_is_shared:
             conn = (
@@ -1376,6 +1420,7 @@ def save_memory(
     _conn=None,
     note_id: str = "",
     context: str = "generic",
+    defer_expensive: bool = False,
 ):
     """Write a memory note to disk and update the FTS5 index incrementally.
 
@@ -1402,6 +1447,12 @@ def save_memory(
         context: Tag policy selector: "generic", "mcp", or "auto-save".
             "mcp" auto-adds [category] for lessons/decisions when no
             caller tags given. "auto-save" prepends hook tags.
+        defer_expensive: When True, skip embedding, KG indexing, fact
+            extraction, context enrichment, and contradiction check
+            inside the synchronous save path.  These are enqueued as
+            background tasks for the worker to process asynchronously.
+            Use this for MCP tool calls and any path where fast
+            response time matters more than immediate indexing.
 
     Returns:
         The canonical note_id string on success, or an _err envelope
@@ -1532,6 +1583,7 @@ def save_memory(
                 importance=importance,
                 lock_already_held=(lock_file is not None),
                 _conn_is_shared=(_conn is not None),
+                defer_expensive=defer_expensive,
             )
 
             if isinstance(note_id, str) and not note_id.startswith("Error ["):
@@ -1545,7 +1597,7 @@ def save_memory(
                     tags,
                     pinned,
                     is_global,
-                    safety_wiring,
+                    (safety_wiring and not defer_expensive),
                     _start_time,
                     conn=conn,
                 )

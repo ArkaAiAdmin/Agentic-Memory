@@ -199,6 +199,48 @@ def handle_wal_checkpoint(
         raise RuntimeError(f"wal_checkpoint failed: {e}") from e
 
 
+def handle_embedding_index(
+    payload: dict, conn: sqlite3.Connection, db_path: Path
+) -> str:
+    """Compute and store embedding for a memory note (deferred from save)."""
+    try:
+        from save.indexers import _index_embedding
+
+        memory_id = payload.get("memory_id", "")
+        content = payload.get("content", "")
+        source_file = payload.get("source_file", "")
+        if not memory_id or not content:
+            return "skipped: no memory_id or content in payload"
+        category = memory_id.split("/")[0] if "/" in memory_id else "general"
+        _index_embedding(conn, memory_id, content, category, [], source_file)
+        conn.commit()
+        return f"embedding indexed for {memory_id}"
+    except Exception as e:
+        raise RuntimeError(f"embedding_index failed: {e}") from e
+
+
+def handle_kg_and_fact_index(
+    payload: dict, conn: sqlite3.Connection, db_path: Path
+) -> str:
+    """Extract KG entities, facts, and enrich context for a memory (deferred)."""
+    try:
+        from save.indexers import _index_kg, _index_facts
+        from save.post_save_hooks import _enrich_context
+
+        memory_id = payload.get("memory_id", "")
+        content = payload.get("content", "")
+        if not memory_id or not content:
+            return "skipped: no memory_id or content in payload"
+        category = memory_id.split("/")[0] if "/" in memory_id else "general"
+        _index_kg(conn, memory_id, content)
+        _index_facts(conn, memory_id, content)
+        _enrich_context(conn, memory_id, content, category, [])
+        conn.commit()
+        return f"KG+facts+context indexed for {memory_id}"
+    except Exception as e:
+        raise RuntimeError(f"kg_and_fact_index failed: {e}") from e
+
+
 def handle_vec_index_rebuild(
     payload: dict, conn: sqlite3.Connection, db_path: Path
 ) -> str:
@@ -280,6 +322,8 @@ HANDLERS = {
     "contradiction_check": handle_contradiction_check,
     "cross_session_learn": handle_cross_session_learn,
     "duplicate_detection": handle_duplicate_detection,
+    "embedding_index": handle_embedding_index,
+    "kg_and_fact_index": handle_kg_and_fact_index,
     "vec_index_rebuild": handle_vec_index_rebuild,
     "wal_checkpoint": handle_wal_checkpoint,
 }

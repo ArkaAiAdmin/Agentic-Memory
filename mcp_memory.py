@@ -59,6 +59,15 @@ def memory_save(
     is intentionally NOT exposed on this MCP tool — only direct Python
     callers can opt in to the contradiction-checked save. Existing MCP
     callers see the same success / error envelope as before, bit-for-bit.
+
+    .. note::
+
+       Expensive operations (embedding, KG entity extraction, fact
+       extraction, context enrichment, contradiction check) are
+       **deferred** to the background worker when called through the
+       MCP tool.  The background worker processes them asynchronously,
+       so the MCP call returns in <200ms and never times out.
+       The main DB row and .md file are written synchronously.
     """
     if len(content) > 100_000:
         return f"Error: content exceeds 100,000 character limit ({len(content)} chars)"
@@ -74,6 +83,7 @@ def memory_save(
         importance=importance,
         context="mcp",
         note_id="",
+        defer_expensive=True,
     )
     if isinstance(result, str) and result.startswith("Error "):
         return result

@@ -33,8 +33,9 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.confi
 | 10 | KG/backlinks orphans | `python memory_integr️.py <db> --repair-kg-orphans` |
 | 11 | Auto-save history | `agentic-memory_memory_circuit_breaker_status()` |
 | 12 | Temporal KG misbehaving | Set `MEMORY_TEMPORAL_KG=0` |
+| 13 | Every significant milestone or decision | `memory_save` a **context-rich periodic note** — captures goal, approach, rationale, improvements, semantic relationships. Not a timestamped log line: it should carry enough context to be useful weeks later. Category: `projects`. Tags: include decision/subsystem context. Importance: 4. |
 
-Minimum: do #1 and #7. Run #8 opportunistically. Use `memory_maintenance(operation="compliance_check")` to audit.
+Minimum: do #1, #7, and #13. Run #8 opportunistically. Use `memory_maintenance(operation="compliance_check")` to audit.
 
 ---
 
@@ -118,12 +119,13 @@ See `memory.toml` for all 17 feature flags.
 
 ---
 
-## Current Status (2026-06-25)
+## Current Status (2026-06-27)
 
 - **Schema v21**: kg_crdt tables added. Temporal KG ON by default.
 - **Circuit-breaker fixed**: 5 handler lambda signatures corrected.
 - **Rule enforcement**: `memory-session-end.py` (Rule #7), `cron_health_check.py` (Rules #5, #9-11), `memory_compliance_check` MCP tool.
 - **Cron**: 27 scheduled jobs. `background_worker` every 15 min with flock protection.
 - **Auto-save**: Async inbox+daemon (2-5ms enqueue). Default since 2026-06-22.
+- **Deferred indexing**: MCP `memory_save` defers embedding/KG/facts to background worker — returns <200ms, never times out.
 - **Mypy**: 0 errors. **Coverage**: 70% gate.
 - **Test command**: `./venv/bin/python -m pytest eval/ -v --tb=short`

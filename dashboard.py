@@ -8,24 +8,24 @@ Run:
 
 import json
 import os
-import sys
 import sqlite3
-from pathlib import Path
+import sys
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 
-import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 # ── Page config ──────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Agentic Memory",
-    page_icon="",
+    page_icon="\U0001fa84",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -36,14 +36,24 @@ st.markdown(
 <style>
     .main > div { padding: 0 1rem; }
     .stApp { background: #0e1117; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0e1117; }
+    ::-webkit-scrollbar-thumb { background: #2d3139; border-radius: 3px; }
+
     h1, h2, h3 { color: #f0f2f6 !important; font-weight: 600 !important; }
+
+    /* Metric cards */
     .metric-card {
         background: #1a1d23;
         border: 1px solid #2d3139;
         border-radius: 12px;
         padding: 1.2rem;
         text-align: center;
+        transition: border-color 0.2s;
     }
+    .metric-card:hover { border-color: #4b5563; }
     .metric-card .label {
         color: #8b8fa3;
         font-size: 0.75rem;
@@ -60,34 +70,84 @@ st.markdown(
         color: #6b7280;
         font-size: 0.7rem;
     }
-    .stTabs [data-baseweb="tab-list"] { gap: 0; }
+
+    /* Status badges */
+    .badge-ok {
+        display: inline-block;
+        background: #064e3b;
+        color: #6ee7b7;
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .badge-warn {
+        display: inline-block;
+        background: #5c3d00;
+        color: #fbbf24;
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .badge-err {
+        display: inline-block;
+        background: #4c0519;
+        color: #fca5a5;
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    /* Status dot for cron */
+    .dot-green { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; margin-right: 6px; }
+    .dot-red { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ef4444; margin-right: 6px; }
+    .dot-yellow { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; margin-right: 6px; }
+    .dot-gray { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4b5563; margin-right: 6px; }
+
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] { gap: 0; overflow-x: auto; flex-wrap: nowrap; }
     .stTabs [data-baseweb="tab"] {
         background: #1a1d23;
         border: 1px solid #2d3139;
         border-bottom: none;
         border-radius: 8px 8px 0 0;
-        padding: 0.5rem 1.2rem;
+        padding: 0.4rem 0.9rem;
         color: #8b8fa3;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         font-weight: 500;
+        white-space: nowrap;
     }
     .stTabs [aria-selected="true"] {
         background: #0e1117;
         color: #f0f2f6;
         border-bottom: 2px solid #6b7280;
     }
+
     blockquote {
         border-left: 3px solid #2d3139;
         padding: 0.5rem 1rem;
         background: #1a1d23;
         border-radius: 0 8px 8px 0;
     }
-    /* Fix dark input fields */
+
+    /* Dark inputs */
     .stTextInput input { background: #1a1d23; color: #f0f2f6; border: 1px solid #2d3139; }
     .stSelectbox div[data-baseweb="select"] { background: #1a1d23; }
     .stSlider [data-baseweb="slider"] { margin-top: 0.5rem; }
     div[data-testid="stDataFrame"] { background: #1a1d23; }
     div[data-testid="stDataFrame"] td { color: #d1d5db; }
+
+    /* Sidebar */
+    [data-testid="stSidebarNavItems"] { padding-top: 0; }
+    section[data-testid="stSidebar"] { width: 260px !important; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -116,12 +176,15 @@ if not DB.exists():
     st.error(f"Database not found: {DB}")
     st.stop()
 
+MEM_DIR = DB.parent
+
 
 @st.cache_resource
 def get_conn():
     """Open a read‑only ephemeral connection. Never migrates the schema."""
     c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=30)
     c.execute("PRAGMA foreign_keys=ON")
+    c.row_factory = sqlite3.Row
     return c
 
 
@@ -146,45 +209,124 @@ def table(name: str) -> bool:
         return False
 
 
+def try_count(table_name: str, where: str | None = None) -> int:
+    try:
+        sql = f"SELECT COUNT(*) FROM {table_name}"
+        if where:
+            sql += f" WHERE {where}"
+        r = get_conn().execute(sql).fetchone()
+        return r[0] if r else 0
+    except Exception:
+        return 0
+
+
+def _read_doctor() -> dict | None:
+    p = MEM_DIR / "doctor_report.json"
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except Exception:
+            return None
+    return None
+
+
+def _get_cron_logs() -> list[Path]:
+    return sorted(MEM_DIR.glob("*.log"))
+
+
+def _badge_html(severity: str, text: str) -> str:
+    cls = {"ok": "badge-ok", "warning": "badge-warn", "failure": "badge-err", "error": "badge-err"}.get(
+        severity, "badge-warn"
+    )
+    return f'<span class="{cls}">{text}</span>'
+
+
 # ── Sidebar ─────────────────────────────────────────────────────────────
 st.sidebar.markdown(
-    "<h2 style='margin-bottom:0'> Agentic Memory</h2>", unsafe_allow_html=True
+    "<h2 style='margin-bottom:0'>\U0001fa84 Agentic Memory</h2>", unsafe_allow_html=True
 )
-st.sidebar.caption(f"`{DB.parent.name}/{DB.name}`")
+st.sidebar.caption(f"`{DB.parent.name}/{DB.name}`  &nbsp;·&nbsp; {DB.stat().st_size / 1024 / 1024:.0f} MB")
 
 with st.sidebar:
     st.divider()
-    r = get_conn().execute("SELECT COUNT(*) FROM memories").fetchone()
-    n_mem = r[0]
-    r = get_conn().execute("SELECT COUNT(*) FROM kg_entities").fetchone()
-    n_ent = r[0]
-    r = get_conn().execute("SELECT COUNT(*) FROM kg_edges").fetchone()
-    n_edg = r[0]
+
+    n_mem = try_count("memories")
+    n_ent = try_count("kg_entities")
+    n_edg = try_count("kg_edges")
+    n_audit = try_count("memory_audit_log")
+    n_pin = try_count("memories", "pinned=1")
+    n_err = try_count("memory_audit_log", "error IS NOT NULL")
+    n_facts = try_count("kg_facts")
 
     c1, c2 = st.columns(2)
     c1.metric("Memories", n_mem)
     c2.metric("Entities", n_ent)
-    c1.metric("Edges", n_edg)
-    r = get_conn().execute("SELECT COUNT(*) FROM memory_audit_log").fetchone()
-    c2.metric("Audit Events", r[0])
+    c1.metric("Facts", n_facts)
+    c2.metric("Edges", n_edg)
 
     st.divider()
-    if st.button("Refresh", use_container_width=True):
+
+    # ── Notifications row ──
+    alerts = []
+    if n_err > 0:
+        alerts.append(("error", f"{n_err} errors"))
+    doctor = _read_doctor()
+    if doctor and doctor.get("worst") == "failure":
+        alerts.append(("failure", "doctor failures"))
+    elif doctor and doctor.get("worst") == "warning":
+        alerts.append(("warning", "doctor warnings"))
+
+    cc = st.columns(max(len(alerts), 1))
+    for i, (sev, label) in enumerate(alerts):
+        cc[i].markdown(_badge_html(sev, label), unsafe_allow_html=True)
+    if not alerts:
+        st.caption("\U0001f7e2 All clear")
+
+    c1, c2 = st.columns(2)
+    c1.metric("Pinned", n_pin)
+    c2.metric("Audit", n_audit)
+
+    st.divider()
+    if st.button("\U0001f504 Refresh", use_container_width=True):
         st.rerun()
 
-# ── Tab helpers ─────────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────
+MEM_DIR
+
+def _auto_refresh(interval_secs: int = 30) -> None:
+    if st.button("\U0001f504 Refresh", key="top_refresh", use_container_width=True):
+        st.rerun()
+
+
+# ── Tabs ─────────────────────────────────────────────────────────────────
 TABS = [
     "Overview",
+    "Memories",
+    "Sessions",
     "Knowledge Graph",
     "Embeddings",
     "Concept Drift",
     "CTR Feedback",
+    "Cron",
+    "Health",
+    "Backups",
     "Audit Log",
     "Explorer",
 ]
-overview_tab, kg_tab, embed_tab, drift_tab, ctr_tab, audit_tab, search_tab = st.tabs(
-    TABS
-)
+(
+    overview_tab,
+    memories_tab,
+    sessions_tab,
+    kg_tab,
+    embed_tab,
+    drift_tab,
+    ctr_tab,
+    cron_tab,
+    health_tab,
+    backups_tab,
+    audit_tab,
+    search_tab,
+) = st.tabs(TABS)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # OVERVIEW
@@ -192,21 +334,13 @@ overview_tab, kg_tab, embed_tab, drift_tab, ctr_tab, audit_tab, search_tab = st.
 with overview_tab:
     st.subheader("Overview")
 
-    # ── Metric cards row ──
-    r = get_conn().execute("SELECT COUNT(*) FROM memories WHERE pinned=1").fetchone()
-    n_pin = r[0]
-    r = (
-        get_conn()
-        .execute("SELECT COUNT(DISTINCT parent_id) FROM memory_chunks")
-        .fetchone()
-    )
-    n_chk = r[0] or 0
-    r = get_conn().execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()
-    n_emb = r[0]
-    r = get_conn().execute("SELECT COUNT(*) FROM memory_ctr_feedback").fetchone()
-    n_ctr = r[0] if r else 0
-    r = get_conn().execute("SELECT COUNT(*) FROM concept_drift").fetchone()
-    n_dft = r[0] if r else 0
+    _auto_refresh()
+
+    n_pin = try_count("memories", "pinned=1")
+    n_chk = try_count("memory_chunks", "parent_id IS NOT NULL")
+    n_emb = try_count("memory_embeddings")
+    n_ctr = try_count("memory_ctr_feedback")
+    n_dft = try_count("concept_drift")
 
     cols = st.columns(6)
     for i, (label, val, sub) in enumerate(
@@ -288,7 +422,7 @@ with overview_tab:
         else:
             st.info("No tier data")
 
-    # ── Creation timeline (smooth) ──
+    # ── Creation timeline ──
     st.markdown("#### Daily Note Creation")
     df = query(
         "SELECT DATE(created_at) day, COUNT(*) cnt "
@@ -379,6 +513,94 @@ with overview_tab:
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No audit log data yet — make some MCP tool calls first")
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MEMORIES (table)
+# ═══════════════════════════════════════════════════════════════════════════
+with memories_tab:
+    st.subheader("Memories")
+    m_search = st.text_input("\U0001f50d Filter memories", placeholder="content LIKE ...", key="mem_search")
+    m_min_fit = st.slider("Min fitness", 0.0, 1.0, 0.0, 0.05, key="mem_fit")
+    m_cat_filter = st.selectbox(
+        "Category",
+        ["all"] + sorted([r[0] for r in get_conn().execute("SELECT DISTINCT category FROM memories WHERE category IS NOT NULL").fetchall() if r[0]]),
+        key="mem_cat",
+    )
+
+    where_clauses = []
+    params = []
+    if m_search:
+        where_clauses.append("content LIKE ?")
+        params.append(f"%{m_search}%")
+    if m_min_fit > 0:
+        where_clauses.append("COALESCE(fitness_score,0) >= ?")
+        params.append(m_min_fit)
+    if m_cat_filter and m_cat_filter != "all":
+        where_clauses.append("category = ?")
+        params.append(m_cat_filter)
+
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1"
+    m_df = query(
+        f"SELECT id, substr(content,1,250) preview, category, created_at, pinned, fitness_score, tier, importance "
+        f"FROM memories WHERE {where_sql} ORDER BY created_at DESC LIMIT 200",
+        params,
+    )
+    if m_df is not None and not m_df.empty:
+        st.caption(f"{len(m_df)} memories")
+        for _, r in m_df.iterrows():
+            pin_icon = "\U000f04d3 " if r.get("pinned") else ""
+            cat_tag = f"`{r.get('category','—')}`" if r.get("category") else ""
+            tier_tag = f"tier={r.get('tier','—')}" if r.get("tier") else ""
+            fit_tag = f"f={r['fitness_score']:.2f}" if pd.notna(r.get("fitness_score")) else ""
+            imp_tag = f"imp={r['importance']}" if pd.notna(r.get("importance")) else ""
+            tags = " &nbsp;·&nbsp; ".join(t for t in [cat_tag, tier_tag, fit_tag, imp_tag] if t)
+            st.markdown(
+                f"**{pin_icon}{r['id'][:48]}**  \n"
+                f"_{r['created_at']}_ &nbsp;·&nbsp; {tags}  \n"
+                f"{r['preview']}..."
+            )
+            st.divider()
+    else:
+        st.info("No memories match the filters")
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SESSIONS
+# ═══════════════════════════════════════════════════════════════════════════
+with sessions_tab:
+    st.subheader("Sessions")
+    if table("memory_sessions"):
+        s_df = query(
+            "SELECT id, agent_id, started_at, ended_at, context_query, note_count, status "
+            "FROM memory_sessions ORDER BY started_at DESC LIMIT 100"
+        )
+        if s_df is not None and not s_df.empty:
+            s_df["started"] = pd.to_datetime(s_df["started_at"], unit="s", errors="coerce")
+            s_df["duration"] = "—"
+            for i, r in s_df.iterrows():
+                if pd.notna(r.get("ended_at")):
+                    dur = r["ended_at"] - r["started_at"]
+                    if dur > 3600:
+                        s_df.at[i, "duration"] = f"{dur/3600:.1f}h"
+                    elif dur > 60:
+                        s_df.at[i, "duration"] = f"{dur/60:.0f}m"
+                    else:
+                        s_df.at[i, "duration"] = f"{dur:.0f}s"
+                else:
+                    s_df.at[i, "duration"] = "active"
+
+            s_disp = s_df[["id", "agent_id", "started", "duration", "context_query", "note_count", "status"]].copy()
+            s_disp.columns = ["ID", "Agent", "Started", "Duration", "Query", "Notes", "Status"]
+            st.dataframe(s_disp, use_container_width=True, hide_index=True)
+
+            active = (s_df["status"] == "active").sum()
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Sessions", len(s_df))
+            c2.metric("Active", active)
+            c3.metric("Total Notes", int(s_df["note_count"].sum()))
+        else:
+            st.info("No sessions recorded")
+    else:
+        st.info("Table `memory_sessions` not available yet")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # KNOWLEDGE GRAPH
@@ -689,6 +911,99 @@ with ctr_tab:
                     yaxis_title="Count",
                 )
                 st.plotly_chart(fig, use_container_width=True)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CRON
+# ═══════════════════════════════════════════════════════════════════════════
+with cron_tab:
+    st.subheader("Cron / Background Jobs")
+    logs = _get_cron_logs()
+    if logs:
+        selected = st.selectbox("Log file", [p.name for p in logs], key="cron_file")
+        if selected:
+            log_path = MEM_DIR / selected
+            log_text = log_path.read_text(errors="replace")
+            lines = log_text.strip().split("\n")
+            tail_lines = st.slider("Tail (last N lines)", 10, min(500, len(lines)), 50, key="cron_tail")
+            shown = lines[-tail_lines:] if tail_lines > 0 else lines
+            st.code("\n".join(shown), language="text")
+    else:
+        st.info("No log files found in memory directory")
+
+    st.divider()
+    st.markdown("#### Cron-Style Status Overview")
+    jobs_info = [
+        ("heartbeat", "heartbeat.log", "Check daemon liveness"),
+        ("integrity", "integrity.log", "Data integrity checks"),
+        ("worker", "worker.log", "Background worker"),
+        ("rebuild", ".rebuild.lock", "Index rebuild lock"),
+        ("vec_rebuild", ".vec_rebuild.lock", "Vector rebuild lock"),
+    ]
+    for name, filename, desc in jobs_info:
+        fp = MEM_DIR / filename
+        exists = fp.exists()
+        status = "ok" if exists else "gray"
+        label = "file present" if exists else "not found"
+        size_hint = f" ({fp.stat().st_size / 1024:.1f} KB)" if exists and filename.endswith(".log") else ""
+        st.markdown(
+            f"<span class='dot-{status}'></span>"
+            f"<strong>{name}</strong> &nbsp;–&nbsp; {desc}{size_hint}",
+            unsafe_allow_html=True,
+        )
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HEALTH
+# ═══════════════════════════════════════════════════════════════════════════
+with health_tab:
+    st.subheader("Health & Integrity")
+    doctor = _read_doctor()
+    if doctor:
+        sev = doctor.get("worst", "unknown")
+        st.markdown(
+            f"**Doctor Report** &nbsp;·&nbsp; "
+            f"{_badge_html(sev, sev.upper())} ",
+            unsafe_allow_html=True,
+        )
+        sections = doctor.get("sections", {})
+        for sec_name, sec_data in sections.items():
+            with st.expander(f"{sec_name}", expanded=sec_data.get("severity") == "failure"):
+                st.json(sec_data)
+    else:
+        st.info("No doctor report available — run `python memory_integrity.py memory/memory.db`")
+
+    st.divider()
+    st.markdown("#### Disk Usage")
+    db_size = DB.stat().st_size
+    st.metric("Database size", f"{db_size / 1024 / 1024:.1f} MB")
+    mem_dir_size = sum(f.stat().st_size for f in MEM_DIR.rglob("*") if f.is_file())
+    st.metric("Memory directory size", f"{mem_dir_size / 1024 / 1024:.1f} MB")
+    st.metric("DB file path", str(DB))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BACKUPS
+# ═══════════════════════════════════════════════════════════════════════════
+with backups_tab:
+    st.subheader("Backups")
+    backup_dir = MEM_DIR / "backups"
+    if backup_dir.exists():
+        backups = sorted(backup_dir.glob("*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if backups:
+            st.caption(f"{len(backups)} backup(s)")
+            rows = []
+            for bp in backups:
+                mtime = datetime.fromtimestamp(bp.stat().st_mtime, tz=timezone.utc)
+                rows.append(
+                    {
+                        "name": bp.name,
+                        "size": f"{bp.stat().st_size / 1024 / 1024:.1f} MB",
+                        "modified": mtime.strftime("%Y-%m-%d %H:%M UTC"),
+                    }
+                )
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("No backups found in memory/backups/")
+    else:
+        st.info("No backups directory — backups not enabled or none taken yet")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # AUDIT LOG
