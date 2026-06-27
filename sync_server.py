@@ -154,8 +154,9 @@ class _SyncHandler(BaseHTTPRequestHandler):
         (the default ``127.0.0.1:9877``) is allowed without a token so
         local development workflows keep working out of the box.
         """
+        peer = getattr(self, "host", None) or getattr(self, "client_address", ("127.0.0.1",))[0]
         if not SYNC_AUTH_TOKEN:
-            if not _is_loopback(self.host):
+            if not _is_loopback(peer):
                 self._error(
                     "Auth required: set MEMORY_SYNC_TOKEN or bind to 127.0.0.1",
                     401,

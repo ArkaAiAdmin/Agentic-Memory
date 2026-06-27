@@ -440,6 +440,7 @@ TABS = [
     "Concept Drift",
     "CTR Feedback",
     "Cron",
+    "Multi-Agent",
     "Health",
     "Backups",
     "Audit Log",
@@ -454,6 +455,7 @@ TABS = [
     drift_tab,
     ctr_tab,
     cron_tab,
+    multi_agent_tab,
     health_tab,
     backups_tab,
     audit_tab,
@@ -1398,6 +1400,99 @@ with cron_tab:
             st.code("\n".join(shown), language="text")
         else:
             st.info(f"`{filename}` not found in {MEM_DIR.name}/")
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MULTI-AGENT SYNC
+# ═══════════════════════════════════════════════════════════════════════════
+with multi_agent_tab:
+    from _lazy_imports import get_config as _cfg
+
+    st.subheader("Multi-Agent Sync")
+
+    shared_total = try_count("shared_memories")
+    _peers = list(_cfg().sync_peers) if _cfg().sync_enable_server else []
+    cols = st.columns(3)
+    cols[0].metric("Shared memories", shared_total)
+    cols[1].metric("Sync peers (config)", len(_peers))
+    cols[2].metric("CRDT enabled", "Yes" if _cfg().crdt_enabled else "No")
+
+    st.divider()
+
+    if table("sync_log"):
+        df = query(
+            "SELECT id, peer_name, peer_agent_id, direction, started_at, "
+            "completed_at, success, changes_pushed, changes_pulled, "
+            "error_message, duration_ms "
+            "FROM sync_log ORDER BY started_at DESC LIMIT 200"
+        )
+        if df is not None and not df.empty:
+            st.markdown("#### Recent sync cycles")
+            df["started_at"] = pd.to_datetime(df["started_at"], unit="s")
+            df["completed_at"] = pd.to_datetime(df["completed_at"], unit="s", errors="coerce")
+            df["status"] = df["success"].apply(lambda s: "✅" if s else "❌")
+            df["changes"] = df["changes_pushed"].fillna(0) + df["changes_pulled"].fillna(0)
+            display = df[[
+                "id", "peer_name", "peer_agent_id", "direction",
+                "status", "started_at", "completed_at",
+                "changes_pushed", "changes_pulled", "duration_ms",
+            ]].copy()
+            display.columns = [
+                "ID", "Peer", "Agent", "Dir",
+                "Status", "Started", "Completed",
+                "Pushed", "Pulled", "Duration ms",
+            ]
+            st.dataframe(display, use_container_width=True, hide_index=True)
+
+            st.divider()
+            st.markdown("#### Direction breakdown (last 200 cycles)")
+            dir_counts = df["direction"].value_counts().reset_index()
+            dir_counts.columns = ["Direction", "Count"]
+            fig = px.bar(
+                dir_counts,
+                x="Direction",
+                y="Count",
+                color="Direction",
+                color_discrete_sequence=["#3b82f6", "#10b981", "#f59e0b"],
+            )
+            fig.update_layout(**DARK, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, height=300)
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.divider()
+            st.markdown("#### Peer success rate (last 200 cycles)")
+            peer_status = df.groupby("peer_name")["success"].agg(["mean", "count"]).reset_index()
+            peer_status.columns = ["Peer", "Success rate", "Cycles"]
+            peer_status["Success rate"] = (peer_status["Success rate"] * 100).round(1)
+            peer_status = peer_status.sort_values("Success rate", ascending=True)
+            fig2 = px.barh(
+                peer_status,
+                x="Success rate",
+                y="Peer",
+                color="Success rate",
+                color_continuous_scale="RdYlGn",
+                range_color=[0, 100],
+            )
+            fig2.update_layout(**DARK, margin=dict(t=10, b=10, l=10, r=10), height=max(200, len(peer_status) * 40))
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("No sync cycles recorded. Configure `[[sync.peers]]` in `memory.toml` to get started.")
+    else:
+        st.info("Table `sync_log` not yet created. Run `memory_check_integrity()` to bootstrap.")
+
+    st.divider()
+    st.markdown("#### Shared memory pool")
+    if table("shared_memories"):
+        df_shared = query(
+            "SELECT source_note_id, agent_id, category, created_at, valid_until "
+            "FROM shared_memories ORDER BY created_at DESC LIMIT 50"
+        )
+        if df_shared is not None and not df_shared.empty:
+            st.caption(f"Showing {len(df_shared)} most recent shared entries")
+            st.dataframe(df_shared, use_container_width=True, hide_index=True)
+        else:
+            st.info("Shared pool is empty. Call `memory_maintenance(operation='share', share_note_id=...)` to publish.")
+    else:
+        st.info("Table `shared_memories` not yet created.")
+
 # ═══════════════════════════════════════════════════════════════════════════
 # HEALTH
 # ═══════════════════════════════════════════════════════════════════════════

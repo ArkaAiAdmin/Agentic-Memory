@@ -4,6 +4,63 @@ All notable changes to agentic-memory are documented here. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased — 2026-06-27 Production-Ship Quality]
+
+### Changed — Phase 1 (Foundation) + Phase 2 (Quality & Security)
+
+This release brings the repository to production-ship quality ahead
+of the PyPI/Docker publish milestone.
+
+**Phase 1 — Documentation & Packaging:**
+
+- **README rewrite** — full install guide, 5-min quickstart, MCP
+  tool count (85), architecture section, link to CONTRIBUTING and
+  SECURITY.md.
+- **`pyproject.toml` overhaul** — classifiers added (Development
+  Status :: 5 - Production/Stable, Topic :: Database), `keywords`
+  expanded, homepage + repository URLs, all extras groups
+  (`[langchain]`, `[crewai]`, `[sync-server]`, `[dashboard]`,
+  `[dev]`, `[test]`), `requires-python = ">=3.11"`,
+  `Security` policy URL, `coverage = 70` (up from 60).
+- **CI workflow** — `.github/workflows/ci.yml`: ruff lint, mypy
+  typecheck, pytest on Python 3.11 / 3.12 / 3.13 (3×4 matrix).
+- **Security policy** — `SECURITY.md` with coordinated-disclosure
+  instructions and supported version table.
+- **Issue templates** — `bug_report.md` and `feature_request.md`
+  with structured fields.
+- **PR template** — `PULL_REQUEST_TEMPLATE.md` with change-type
+  checklist and test instructions.
+
+**Phase 2 — Security Fixes & Regression Tests:**
+
+- **SEC-1 CRITICAL: `sync_server.py` auth bypass** —
+  `_require_auth()` now returns 403 on non-loopback interfaces
+  when `MEMORY_SYNC_TOKEN` is unset. Loopback `127.0.0.1` and
+  `::1` still connect without a token for local development.
+  Startup now logs an error for non-loopback binds without any
+  auth token configured.
+- **SEC-4 HIGH: HMAC dead-code removal** — `_check_hmac()` had an
+  unreachable `return True` after the `hmac.compare_digest` call;
+  removed. Function now has exactly two legitimate `return True`
+  branches (HMAC disabled config, and digest match).
+- **PII regex expansion** — `session_manager.py::_PII_KEY_RE` now
+  covers `auth_token`, `auth_header`, `bearer`, `authorization`,
+  `service_token`, `integration_secret`, `webhook_secret`.
+- **MPS kernel hang guard** — `search/rerankers.py` now checks
+  `get_config().reranker_disabled` before loading the neural
+  cross-encoder; Apple Silicon MPS hangs on `deep_rerank=True`
+  are now surfaced as a warning advising `MEMORY_RERANKER_DISABLED=1`.
+- **Regression tests** — 11 new tests across two files
+  (`test_security_sync_auth.py`, `test_reranker_security.py`);
+  all passing.
+
+### Other changes
+
+- **Dashboard** — Streamlit KG graph view (force-directed layout
+  via `networkx` + Plotly) now in the "Knowledge Graph" tab.
+  New "Multi-Agent" tab with sync-log tail, peer success-rate
+  bar chart, and shared-memory pool table.
+
 ## [1.1.0] — 2026-06-26 — Search Pipeline Content Fix + xfail Cleanup
 
 ### Fixed
