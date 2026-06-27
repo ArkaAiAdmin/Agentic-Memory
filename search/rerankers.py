@@ -198,6 +198,10 @@ def _apply_cross_encoder_rerank(
     and Apache 2.0 / MIT licensed. On any load/score failure, falls back
     to the weak CE so a missing model never breaks a search.
     """
+    from _lazy_imports import get_config
+
+    if get_config().reranker_disabled:
+        return scored_results
     if not scored_results or not query:
         return scored_results
     head = scored_results[:top_k]
@@ -206,6 +210,17 @@ def _apply_cross_encoder_rerank(
     docs = [r[1] or "" for r in head]
     ce_scores: list = []
     if deep_rerank:
+        try:
+            import torch
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                logger.warning(
+                    "reranker: MPS (Apple Silicon) detected. Deep reranker may hang. "
+                    "Set MEMORY_RERANKER_DISABLED=1 to skip, or ensure "
+                    "deep_rerank_timeout is set (current: %ss).",
+                    get_config().deep_rerank_timeout,
+                )
+        except ImportError:
+            pass
         try:
             from _lazy_imports import get_config
             from reranker import get_reranker, normalize_rerank_score

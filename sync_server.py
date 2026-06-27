@@ -147,8 +147,20 @@ class _SyncHandler(BaseHTTPRequestHandler):
         logger.debug("sync_server: " + format, *args)
 
     def _require_auth(self) -> bool:
-        """B8 fix: Bearer token check for mutating endpoints."""
+        """Bearer token check for mutating endpoints.
+
+        SEC-1 fix: when ``MEMORY_SYNC_TOKEN`` is unset, deny access on
+        non-loopback interfaces (prevents accidental exposure).  Loopback
+        (the default ``127.0.0.1:9877``) is allowed without a token so
+        local development workflows keep working out of the box.
+        """
         if not SYNC_AUTH_TOKEN:
+            if not _is_loopback(self.host):
+                self._error(
+                    "Auth required: set MEMORY_SYNC_TOKEN or bind to 127.0.0.1",
+                    401,
+                )
+                return False
             return True
         auth = self.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
@@ -210,7 +222,6 @@ class _SyncHandler(BaseHTTPRequestHandler):
         if not hmac.compare_digest(expected, got):
             self._error("Invalid signature", 403)
             return False
-        return True
         return True
 
     # ------------------------------------------------------------------
@@ -961,6 +972,13 @@ class SyncServer:
                 "MEMORY_SYNC_TLS_CERT and MEMORY_SYNC_TLS_KEY to enable "
                 "HTTPS (see sync_server.py:457 for the full set of "
                 "TLS env vars).",
+                self.host,
+            )
+        if not SYNC_AUTH_TOKEN and not _is_loopback(self.host):
+            logger.error(
+                "sync_server: MEMORY_SYNC_TOKEN is required when bound to "
+                "non-loopback %s. All mutating endpoints are open. Set the "
+                "env var or bind to 127.0.0.1.",
                 self.host,
             )
         # SEC-1 fix (2026-06-22): if no CORS origins are configured

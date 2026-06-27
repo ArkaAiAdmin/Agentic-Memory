@@ -52,8 +52,9 @@ def _is_enabled() -> bool:
 # ---------------------------------------------------------------------------
 
 _PII_KEY_RE = re.compile(
-    r"^(password|token|secret|api_key|apikey|auth|credential|"
-    r"private_key|access_key|refresh_token)$",
+    r"^(password|token|secret|api_key|apikey|auth_token|auth_header|"
+    r"credential|private_key|access_key|refresh_token|service_token|"
+    r"integration_secret|webhook_secret|bearer|authorization)$",
     re.IGNORECASE,
 )
 
