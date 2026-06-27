@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: no-direct-pytest-eval
+        name: no-direct-pytest-eval
+        description: Reject `pytest eval/` unless run via eval/run_full_suite.py (MPS safety)
+        entry: python scripts/check_pytest_runner.py
+        language: system
+        pass_filenames: false
+        always_run: true
