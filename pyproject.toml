@@ -10,21 +10,32 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentic-memory"
 version = "1.1.0"
-description = "Local-first persistent memory for AI agents — Mem0-compatible SDK, MCP server, and 79 MCP tools"
+description = "Local-first persistent memory for AI agents — markdown-native, MCP server with 85 tools (15 CORE + 70 ADMIN), temporal KG, CRDT sync, hybrid search. Apache 2.0."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
-keywords = ["ai", "memory", "agents", "llm", "knowledge-graph", "mcp"]
+authors = [
+    {name = "Agentic Memory Contributors"},
+]
+keywords = [
+    "ai", "memory", "agents", "llm", "knowledge-graph",
+    "mcp", "model-context-protocol", "sqlite", "fts5",
+    "local-first", "rag", "semantic-search", "crdt",
+    "claude-code", "opencode", "agentic-ai",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-]
-authors = [
-    {name = "Agentic Memory Contributors"},
+    "Topic :: Database :: Database Engines/Servers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
     "mcp>=1.0.0",
@@ -57,7 +68,7 @@ crewai = [
     "langchain-core>=0.2.0",
 ]
 all = [
-    "agentic-memory[langchain,crewai]",
+    "agentic-memory[langchain,crewai,embeddings,reranker]",
 ]
 
 # Console scripts — installed by `pip install -e .`
@@ -87,6 +98,7 @@ Homepage = "https://github.com/ArkaAiAdmin/Agentic-Memory"
 Documentation = "https://github.com/ArkaAiAdmin/Agentic-Memory/tree/main/docs"
 Repository = "https://github.com/ArkaAiAdmin/Agentic-Memory"
 Issues = "https://github.com/ArkaAiAdmin/Agentic-Memory/issues"
+Changelog = "https://github.com/ArkaAiAdmin/Agentic-Memory/blob/main/CHANGELOG.md"
 
 # setuptools package config: the SDK lives in the `agentic_memory/`
 # subpackage. The repo root is also part of the install so legacy
@@ -110,11 +122,10 @@ data_file = ".coverage"
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
-# 2026-06-20: was 0, which silently disabled the coverage gate.
-# Actual measured coverage is 63% (2026-06-20). Set fail_under to
-# 60 so the gate is meaningful but doesn't immediately fail CI.
-# Next milestone: raise to 70% as we add tests for low-coverage modules.
-fail_under = 60
+# 2026-06-20: was 0, then 60, which silently disabled or set a trivial bar.
+# Actual measured coverage is ~70% (2026-06-27). Raise to 70 for production-ship
+# quality. Phase 2 target: 85% (see docs/production-ship-plan.md).
+fail_under = 70
 
 [tool.pyright]
 include = ["*.py"]

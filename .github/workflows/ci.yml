@@ -1,0 +1,131 @@
+name: CI
+
+# Runs on every push to main/development and every PR.
+# Checks: ruff lint, mypy typecheck, pytest, coverage gate.
+# Extended/integration tests run weekly (see extended-tests.yml).
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+
+jobs:
+  lint:
+    name: Ruff Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install ruff
+        run: pip install ruff
+      - name: Lint
+        run: ruff check .
+
+  typecheck:
+    name: Mypy Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install mypy + deps
+        run: |
+          pip install mypy --quiet
+          pip install -e ".[dev]" --quiet 2>/dev/null || pip install pytest mcp
+      - name: Typecheck
+        run: mypy
+        env:
+          MYPYPATH: .
+
+  test:
+    name: pytest ${{ matrix.python }} (cov)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install -e ".[dev]" --quiet 2>/dev/null || pip install pytest pytest-cov mcp
+      - name: Run tests with coverage
+        env:
+          MEMORY_RERANKER_DISABLED: "1"
+          MEMORY_CTR_TUNING: "0"
+          MEMORY_KNOWLEDGE_GRAPH: "0"
+          MEMORY_EMBEDDINGS: "0"
+        run: |
+          . venv/bin/activate
+          python -m pytest eval/ \
+            --tb=short -q \
+            --cov \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            -p no:cacheprovider
+        timeout-minutes: 30
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-py${{ matrix.python }}
+          path: |
+            coverage.xml
+            .coverage
+          retention-days: 14
+
+  test-no-extras:
+    name: pytest (no optional extras)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install core only
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install -e . --quiet 2>/dev/null || pip install mcp pytest
+      - name: Run tests
+        env:
+          MEMORY_RERANKER_DISABLED: "1"
+          MEMORY_CTR_TUNING: "0"
+          MEMORY_KNOWLEDGE_GRAPH: "0"
+          MEMORY_EMBEDDINGS: "0"
+        run: |
+          . venv/bin/activate
+          python -m pytest eval/ --tb=short -q -p no:cacheprovider
+        timeout-minutes: 30
+
+  build-wheel:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build package
+        run: |
+          pip install build --quiet
+          python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
