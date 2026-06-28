@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Phase 4 debt fixes validation tests — TD-20 (Jaccard dedup bug)."""
 import os, sys
-os.environ["MEMORY_QUALITY_GATES"] = "1"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from quality_gates import filter_results, _jaccard, _tokenize

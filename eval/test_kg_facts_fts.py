@@ -11,7 +11,6 @@ Verifies:
 
 import os, sys, sqlite3, tempfile
 
-os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
 from fact_extraction import ensure_facts_schema

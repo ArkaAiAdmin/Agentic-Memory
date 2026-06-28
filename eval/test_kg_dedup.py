@@ -7,7 +7,6 @@ whitespace, edge redirection, dry-run mode, empty tables, stats.
 import os, sys, sqlite3, tempfile
 from pathlib import Path
 
-os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
 from kg_dedup import dedup_entities

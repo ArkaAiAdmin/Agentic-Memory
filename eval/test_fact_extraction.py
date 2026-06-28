@@ -2,7 +2,6 @@
 
 import os, sys, sqlite3
 
-os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
 sys.path.insert(
     0,
     str(

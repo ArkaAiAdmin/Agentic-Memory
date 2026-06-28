@@ -23,6 +23,12 @@ faulthandler.dump_traceback_later(15, repeat=True)
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ["MEMORY_LLM_EXTRACTION"] = "0"
+# Session-wide test env: set once here instead of each file doing
+# os.environ["X"] = "1" at module top level (causes cross-test pollution).
+os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
+os.environ.setdefault("MEMORY_ADAPTIVE_RETENTION", "1")
+os.environ.setdefault("MEMORY_LLM_HYBRID", "0")
+os.environ.setdefault("MEMORY_QUALITY_GATES", "1")
 
 # 2026-06-20: MEMORY_DB_PATH is intentionally NOT set here. The
 # 14 production-DB tests in test_p0_p1_p2_fixes.py skip when

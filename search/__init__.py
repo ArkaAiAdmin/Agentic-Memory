@@ -143,4 +143,33 @@ def __getattr__(name: str):
         from search.orchestrator import search_memories
 
         return search_memories
+    if name in _SEARCH_LAZY_CONFIG_KEYS:
+        from _lazy_imports import get_config
+
+        spec = _SEARCH_LAZY_CONFIG_KEYS[name]
+        if isinstance(spec, tuple):
+            attr_name, transform = spec
+            value = getattr(get_config(), attr_name)
+            if callable(transform):
+                value = transform(value)
+        else:
+            value = getattr(get_config(), spec)
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# Config keys lazily resolved by this module's __getattr__.
+# Paired with _lazy_config_attr_names in search_pipeline.py so that
+# reset_all_lazy_config_attrs() finds and clears both modules.
+_SEARCH_LAZY_CONFIG_KEYS: dict = {
+    "_LATE_INTERACTION_ENABLED": "late_interaction",
+    "_TEMPORAL_DECAY_HALF_LIFE": ("temporal_half_life", float),
+    "_TEMPORAL_DECAY_MODE": "temporal_decay_mode",
+    "_FORGETTING_CURVE_ENABLED": "forgetting_curve",
+    "_FORGETTING_CURVE_HALF_LIFE": ("forgetting_curve_half_life", float),
+    "_GRAPH_RAG_ENABLED": "knowledge_graph",
+    "_GRAPH_RAG_MAX_HOPS": "graph_rag_hops",
+    "_GRAPH_RAG_MAX_EXPANSIONS": "graph_rag_expansions",
+    "_RERANK_HALF_LIFE_DAYS": ("rerank_half_life_days", float),
+    "_TEMPORAL_DECAY_WEIGHT": ("temporal_decay_weight", float),
+}

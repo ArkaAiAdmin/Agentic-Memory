@@ -18,7 +18,6 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-os.environ["MEMORY_RERANKER_DISABLED"] = "1"
 
 from search_pipeline import (
     _tokenize_for_ce,

@@ -27,7 +27,6 @@ from unittest.mock import patch, MagicMock
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-os.environ["MEMORY_WAL_CHECKPOINT_STARTUP"] = "0"
 
 from memory_common import (
     _ConnectionPool,

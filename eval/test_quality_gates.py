@@ -6,7 +6,6 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-os.environ["MEMORY_QUALITY_GATES"] = "1"
 
 from quality_gates import (
     validate_result,
@@ -195,7 +194,6 @@ class TestFilterResultsDisabled(unittest.TestCase):
             self.assertEqual(len(filtered), 1)
             self.assertFalse(stats["enabled"])
         finally:
-            os.environ["MEMORY_QUALITY_GATES"] = "1"
             quality_gates.QUALITY_GATES_ENABLED = True
 
 

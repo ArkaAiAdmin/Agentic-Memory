@@ -20,7 +20,6 @@ dates, ambiguous inputs, ordering of preference.
 
 import os, sys, calendar, time
 
-os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
 sys.path.insert(
     0,
     str(

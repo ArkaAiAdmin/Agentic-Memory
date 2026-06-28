@@ -2,7 +2,6 @@
 
 import os, sys, sqlite3, json, time
 
-os.environ["MEMORY_CONSOLIDATION"] = "1"
 sys.path.insert(
     0,
     str(

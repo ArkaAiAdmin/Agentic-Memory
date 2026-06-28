@@ -7,7 +7,6 @@ import os, sys, sqlite3, tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
 from kg_dedup import (

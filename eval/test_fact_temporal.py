@@ -11,8 +11,6 @@ Covers:
 
 import os, sys, sqlite3, time, calendar
 
-os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
-os.environ["MEMORY_LLM_HYBRID"] = "0"  # Force regex path
 sys.path.insert(
     0,
     str(

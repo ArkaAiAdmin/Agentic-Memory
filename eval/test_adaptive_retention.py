@@ -23,7 +23,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 # Ensure feature is on (earlier tests in the suite may set this off).
-os.environ["MEMORY_ADAPTIVE_RETENTION"] = "1"
 
 INSTALL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL))

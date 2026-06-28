@@ -32,8 +32,6 @@ from unittest.mock import patch, MagicMock
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-os.environ["MEMORY_RERANKER_DISABLED"] = "1"
-os.environ["MEMORY_ADAPTIVE_RETENTION"] = "1"
 
 from memory_common import (
     open_db,

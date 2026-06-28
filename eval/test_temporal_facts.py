@@ -10,8 +10,6 @@ and regex paths, this gives a memory-level event_time on every fact.
 
 import os, sys, sqlite3, tempfile, time
 
-os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
-os.environ["MEMORY_LLM_HYBRID"] = "0"  # Force regex path for deterministic tests
 sys.path.insert(
     0,
     str(

@@ -22,7 +22,6 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
-os.environ["MEMORY_RERANKER_DISABLED"] = "1"
 
 import _fixtures
 import sqlite3

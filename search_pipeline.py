@@ -36,6 +36,14 @@ Graph-RAG expansion, and the main search_memories orchestrator.
 # they never conflict. Do not remove either hook without adding a
 # comment explaining why the other one is not affected.
 # ---------------------------------------------------------------------------
+# Canonical __getattr__ lives in search/__init__.py (single source of
+# truth for both the search_memories proxy and config lazy keys).
+from search import __getattr__ as _search_getattr  # noqa: E402
+
+# Proxy class + _install_proxies: forward writes to _CTR_WEIGHTS_CACHE
+# (and similar shared state) to the canonical submodule. This is what
+# lets tests do `search_pipeline._CTR_WEIGHTS_CACHE = None` and have
+# it actually clear the live cache in search.scoring.
 import sys as _sys
 import types as _types
 
@@ -70,6 +78,12 @@ class _ProxyModule(_types.ModuleType):
 
 _module = _sys.modules[__name__]
 _module.__class__ = _ProxyModule
+
+
+# Install the canonical __getattr__ on this module so that
+# ``from search_pipeline import _TEMPORAL_DECAY_HALF_LIFE`` etc. still
+# resolves through the same code path as ``from search import ...``.
+_module.__getattr__ = _search_getattr
 
 
 __all__ = [
@@ -331,48 +345,8 @@ from search.orchestrator import (
 )
 
 
-def __getattr__(name: str):
-    if name == "_LATE_INTERACTION_ENABLED":
-        from _lazy_imports import get_config
-
-        return get_config().late_interaction
-    if name == "_TEMPORAL_DECAY_HALF_LIFE":
-        from _lazy_imports import get_config
-
-        return get_config().temporal_half_life
-    if name == "_TEMPORAL_DECAY_MODE":
-        from _lazy_imports import get_config
-
-        return get_config().temporal_decay_mode
-    if name == "_FORGETTING_CURVE_ENABLED":
-        from _lazy_imports import get_config
-
-        return get_config().forgetting_curve
-    if name == "_FORGETTING_CURVE_HALF_LIFE":
-        from _lazy_imports import get_config
-
-        return get_config().forgetting_curve_half_life
-    if name == "_GRAPH_RAG_ENABLED":
-        from _lazy_imports import get_config
-
-        return get_config().knowledge_graph
-    if name == "_GRAPH_RAG_MAX_HOPS":
-        from _lazy_imports import get_config
-
-        return get_config().graph_rag_hops
-    if name == "_GRAPH_RAG_MAX_EXPANSIONS":
-        from _lazy_imports import get_config
-
-        return get_config().graph_rag_expansions
-    if name == "_RERANK_HALF_LIFE_DAYS":
-        from _lazy_imports import get_config
-
-        return float(get_config().rerank_half_life_days)
-    if name == "_TEMPORAL_DECAY_WEIGHT":
-        from _lazy_imports import get_config
-
-        return float(get_config().temporal_decay_weight)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+# (Moved to search/__init__.py — canonical location.)
+# Marker remains for reset_all_lazy_config_attrs().
 
 
 # Marker for reset_all_lazy_config_attrs(): this module uses a hand-rolled

@@ -20,7 +20,6 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 # Suppress reranker / embedding side effects during unit tests
-os.environ["MEMORY_RERANKER_DISABLED"] = "1"
 
 import search_memory  # noqa: E402
 

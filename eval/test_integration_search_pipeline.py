@@ -45,7 +45,6 @@ import pytest
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-os.environ["MEMORY_FTS5_CACHE"] = "0"
 
 from memory_common import open_db, connection_pool, run_db_migrations, safe_close_db
 from save_pipeline import save_memory

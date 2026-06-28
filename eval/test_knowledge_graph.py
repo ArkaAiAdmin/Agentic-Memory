@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
 import knowledge_graph as kg
