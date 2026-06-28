@@ -28,7 +28,7 @@ class TestSyncServerAuthBypassFix(unittest.TestCase):
         with patch.dict(os.environ, {token_env: ""}, clear=False):
             # Force reimport to pick up patched env
             for mod in list(sys.modules):
-                if mod == "sync_server" or mod.startswith("sync_server."):
+                if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):
                     del sys.modules[mod]
             from sync_server import _SyncHandler
 
@@ -63,7 +63,7 @@ class TestSyncServerAuthBypassFix(unittest.TestCase):
     def test_non_loopback_with_token_allows(self):
         with patch.dict(os.environ, {"MEMORY_SYNC_TOKEN": "secret123"}, clear=False):
             for mod in list(sys.modules):
-                if mod == "sync_server" or mod.startswith("sync_server."):
+                if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):
                     del sys.modules[mod]
             from sync_server import _SyncHandler
 
@@ -77,7 +77,7 @@ class TestSyncServerAuthBypassFix(unittest.TestCase):
     def test_bearer_token_mismatch_denies(self):
         with patch.dict(os.environ, {"MEMORY_SYNC_TOKEN": "correct_token"}, clear=False):
             for mod in list(sys.modules):
-                if mod == "sync_server" or mod.startswith("sync_server."):
+                if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):
                     del sys.modules[mod]
             from sync_server import _SyncHandler
 
@@ -91,7 +91,7 @@ class TestSyncServerAuthBypassFix(unittest.TestCase):
     def test_missing_bearer_header_denies(self):
         with patch.dict(os.environ, {"MEMORY_SYNC_TOKEN": "secret123"}, clear=False):
             for mod in list(sys.modules):
-                if mod == "sync_server" or mod.startswith("sync_server."):
+                if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):
                     del sys.modules[mod]
             from sync_server import _SyncHandler
 
@@ -120,7 +120,7 @@ class TestSyncServerHmacDeadCode(unittest.TestCase):
 
         with patch.dict(os.environ, {"MEMORY_SYNC_TOKEN": "tok"}, clear=False):
             for mod in list(sys.modules):
-                if mod == "sync_server" or mod.startswith("sync_server."):
+                if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):
                     del sys.modules[mod]
             from sync_server import _SyncHandler
 

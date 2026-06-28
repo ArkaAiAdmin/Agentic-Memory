@@ -883,27 +883,27 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
         """By default (env unset), async is on — opt-out is the path."""
         os.environ.pop("MEMORY_ASYNC_AUTOSAVE", None)
         import importlib
-        import auto_save
+        import background.auto_save as _as
 
-        importlib.reload(auto_save)
+        importlib.reload(_as)
         try:
-            self.assertTrue(auto_save._async_autosave_enabled())
+            self.assertTrue(_as._async_autosave_enabled())
         finally:
             os.environ["MEMORY_ASYNC_AUTOSAVE"] = "1"
-            importlib.reload(auto_save)
+            importlib.reload(_as)
 
     def test_async_autosave_disabled_via_env(self):
         """MEMORY_ASYNC_AUTOSAVE=0 → async is off."""
         os.environ["MEMORY_ASYNC_AUTOSAVE"] = "0"
         import importlib
-        import auto_save
+        import background.auto_save as _as
 
-        importlib.reload(auto_save)
+        importlib.reload(_as)
         try:
-            self.assertFalse(auto_save._async_autosave_enabled())
+            self.assertFalse(_as._async_autosave_enabled())
         finally:
             os.environ["MEMORY_ASYNC_AUTOSAVE"] = "1"
-            importlib.reload(auto_save)
+            importlib.reload(_as)
 
     def test_enqueue_to_inbox_writes_one_line(self):
         """A successful enqueue appends one valid JSONL line."""
@@ -1011,12 +1011,12 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
     def test_async_path_skipped_via_env(self):
         """MEMORY_ASYNC_AUTOSAVE=0 forces the sync path."""
         import importlib
-        import auto_save
+        import background.auto_save as _as
 
         os.environ["MEMORY_ASYNC_AUTOSAVE"] = "0"
-        importlib.reload(auto_save)
+        importlib.reload(_as)
         try:
-            result = auto_save.tool_complete(
+            result = _as.tool_complete(
                 "memory_save", '{"sync":true}', "sync preview"
             )
             self.assertIn("saved", result)
@@ -1025,7 +1025,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
             self.assertNotEqual(result["saved"], "queued")
         finally:
             os.environ["MEMORY_ASYNC_AUTOSAVE"] = "1"
-            importlib.reload(auto_save)
+            importlib.reload(_as)
 
     def test_daemon_can_be_spawned_and_dies_on_sigterm(self):
         """Spawn the real daemon, wait, kill it, verify it exits cleanly."""
@@ -1034,9 +1034,11 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
         import time
 
         script = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "auto_save.py"
+            os.path.dirname(os.path.abspath(__file__)), "..", "background", "auto_save.py"
         )
-        env = {**os.environ}
+        root = os.path.dirname(os.path.abspath(__file__)) + "/.."
+        cron = root + "/cron"
+        env = {**os.environ, "PYTHONPATH": cron + ":" + root}
         proc = subprocess.Popen(
             [sys.executable, script, "daemon"],
             stdin=subprocess.DEVNULL,

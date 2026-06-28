@@ -1,103 +1,31 @@
-"""Peer Exchange (PEX) Gossip Protocol for Agentic Memory.
+# backward compat - real implementation is in infra/pex_protocol
+import sys
+import types
+import infra.pex_protocol as _real
 
-Maintains a thread-safe registry of known sync peers and implements gossip routing.
-"""
+def __getattr__(name):
+    return getattr(_real, name)
 
-from __future__ import annotations
+def __dir__():
+    return sorted(set(object.__dir__(_real)) | set(dir(_real)))
 
-import json
-import logging
-import urllib.request
-import urllib.error
-import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+class _ShimModule(types.ModuleType):
+    _real = None
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+    def __setattr__(self, name, value):
+        if name in ('_real', '__class__'):
+            super().__setattr__(name, value)
+        else:
+            setattr(self._real, name, value)
+    def __delattr__(self, name):
+        if name == '_real':
+            raise AttributeError("_real is protected")
+        delattr(self._real, name)
+    def __dir__(self):
+        return sorted(set(super().__dir__()) | set(dir(self._real)))
 
-logger = logging.getLogger(__name__)
-
-
-class PeerDirectory:
-    """Thread-safe directory of discovered and gossiped peers."""
-
-    def __init__(self) -> None:
-        import threading
-        self._lock = threading.Lock()
-        # map: agent_id -> {url, ip, port, last_seen, source}
-        self.peers: Dict[str, Dict[str, Any]] = {}
-
-    def register_peer(
-        self,
-        agent_id: str,
-        url: str,
-        ip: str,
-        port: int,
-        source: str = "mdns",
-    ) -> bool:
-        """Register or update a peer. Returns True if it is a new peer."""
-        with self._lock:
-            is_new = agent_id not in self.peers
-            self.peers[agent_id] = {
-                "agent_id": agent_id,
-                "url": url.rstrip("/"),
-                "ip": ip,
-                "port": port,
-                "last_seen": time.time(),
-                "source": source,
-            }
-            return is_new
-
-    def merge_peers(self, peer_list: List[Dict[str, Any]], source: str = "gossip") -> int:
-        """Merge a list of peers. Returns number of newly registered peers."""
-        added = 0
-        for p in peer_list:
-            aid = p.get("agent_id")
-            url = p.get("url")
-            ip = p.get("ip") or "127.0.0.1"
-            port = p.get("port")
-            if aid and url and port:
-                if self.register_peer(aid, url, ip, int(port), source=source):
-                    added += 1
-        return added
-
-    def get_active_peers(self, max_age_s: float = 60.0) -> List[Dict[str, Any]]:
-        """Return list of peers seen within the max_age threshold."""
-        now = time.time()
-        active = []
-        with self._lock:
-            for aid, p in list(self.peers.items()):
-                if now - p["last_seen"] < max_age_s:
-                    active.append({
-                        "agent_id": aid,
-                        "url": p["url"],
-                        "ip": p["ip"],
-                        "port": p["port"],
-                    })
-                else:
-                    self.peers.pop(aid, None)
-        return active
-
-
-# Global singleton peer directory
-peer_directory = PeerDirectory()
-
-
-def send_gossip(target_url: str, local_agent_id: str, peers: List[Dict[str, Any]]) -> Optional[dict]:
-    """POST local peer list to target peer's gossip endpoint."""
-    url = f"{target_url.rstrip('/')}/sync/peers/gossip"
-    payload = {
-        "agent_id": local_agent_id,
-        "peers": peers,
-    }
-    try:
-        body_bytes = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=body_bytes,
-            method="POST",
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            body = resp.read().decode("utf-8")
-            return dict(json.loads(body))
-    except Exception as e:
-        logger.debug("Failed to send PEX gossip to %s: %s", url, e)
-        return None
+if __name__ in sys.modules:
+    _shim = sys.modules[__name__]
+    _shim.__class__ = _ShimModule
+    object.__setattr__(_shim, '_real', _real)

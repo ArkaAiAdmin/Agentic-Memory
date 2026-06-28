@@ -6,6 +6,9 @@ What this does:
 2. Provides a `bootstrap_temp_db` helper + `temp_db_path` pytest
    fixture for the H21 migration: tests should use this instead of
    inline `_init_schema()` calls.
+3. Cleans up any stale auto-save daemon at session start to prevent
+   lock contention with test DBs (the daemon holds a flock on the
+   production memory dir that can interfere with test DB operations).
 """
 
 import os
@@ -41,6 +44,37 @@ os.environ.setdefault("MEMORY_QUALITY_GATES", "1")
 # (separate work item).
 
 import pytest
+
+
+# ---------------------------------------------------------------------------
+# Session-level daemon cleanup: before any test runs, kill the auto-save
+# daemon for the default memory dir if it's running.  Tests use isolated
+# temp DBs and don't need the daemon; a leftover daemon from a previous
+# session can interfere with flcok-based test DB operations.
+# ---------------------------------------------------------------------------
+def _cleanup_auto_save_daemon() -> None:
+    """Best-effort: stop the auto-save daemon for the default memory dir."""
+    try:
+        manifest_path = (
+            Path(os.environ.get("MEMORY_CONFIG_DIR", Path.home() / ".config" / "agentic-memory"))
+            / ".auto_save_daemon_manifest.json"
+        )
+        if manifest_path.exists():
+            import json
+            manifest = json.loads(manifest_path.read_text())
+            for key, info in list(manifest.items()):
+                pid = info.get("pid", 0)
+                if pid > 0:
+                    try:
+                        os.kill(pid, 0)
+                        os.kill(pid, 15)
+                    except (OSError, ProcessLookupError):
+                        pass
+            manifest_path.write_text("{}")
+    except Exception:
+        pass
+
+_cleanup_auto_save_daemon()
 
 # Make sibling modules (eval/_fixtures.py) importable when this conftest
 # is loaded. Pytest doesn't add the conftest's directory to sys.path

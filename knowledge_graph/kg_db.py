@@ -276,10 +276,27 @@ def index_kg_for_memory(
     now = time.time()
     entity_ids = {}
     entity_count = 0
+    crdt_agent = None
+    crdt_vv = None
     for name, etype in entities:
         eid = _upsert_entity(conn, name, etype, now)
         entity_ids[name.lower().strip()] = eid
         entity_count += 1
+    # Record CRDT entity ops for peer-to-peer sync (best-effort)
+    if entity_count:
+        try:
+            from save.crdt_helpers import _crdt_agent_id
+            from kg_crdt import ensure_kg_crdt_schema, record_entity_add
+
+            crdt_agent = _crdt_agent_id()
+            crdt_vv = {crdt_agent: 1}
+            ensure_kg_crdt_schema(conn)
+            for name, etype in entities:
+                eid = entity_ids.get(name.lower().strip())
+                if eid is not None:
+                    record_entity_add(conn, eid, crdt_agent, crdt_vv, name, etype)
+        except Exception as _crdt_e:
+            logger.debug("KG CRDT entity recording skipped: %s", _crdt_e)
     stats["entities"] = entity_count
 
     # Co-occurrence relations: two extracted entities in the same sentence
@@ -327,6 +344,18 @@ def index_kg_for_memory(
                 "INSERT INTO kg_edges (source_id, target_id, relation, created_at, valid_at) VALUES (?, ?, 'co_occurs', ?, ?)",
                 [(p[0], p[1], now_ts, now_ts) for p in new_pairs],
             )
+            # Record CRDT edge ops for peer-to-peer sync (best-effort)
+            if crdt_agent and crdt_vv:
+                try:
+                    from kg_crdt import record_edge_add
+
+                    for src, tgt, _ctx in new_pairs:
+                        record_edge_add(
+                            conn, src, tgt, "co_occurs", 1.0,
+                            crdt_agent, crdt_vv,
+                        )
+                except Exception as _crdt_edge_e:
+                    logger.debug("KG CRDT edge recording skipped: %s", _crdt_edge_e)
             relation_count += len(new_pairs)
         # Update weight for existing pairs
         update_pairs = [p for p in all_pairs if (p[0], p[1]) in existing_pairs]

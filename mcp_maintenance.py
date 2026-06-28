@@ -803,6 +803,14 @@ class MaintenanceOp(str, Enum):
     COMPACTION_STATS = "compaction_stats"  # Sprint 7
     LIST_ACTIVE_THREADS = "list_active_threads"  # Sprint 7
     RECOVER_SESSION = "recover_session"  # Sprint 7
+    AGENT_INIT = "agent_init"
+    AGENT_CLEAR = "agent_clear"
+    AGENT_LIST = "agent_list"
+    EXTRACT_SKILLS = "extract_skills"
+    LIST_SKILLS = "list_skills"
+    AUTO_SHARE = "auto_share"
+    GRAPH_SHORTEST_PATH = "graph_shortest_path"
+    GRAPH_TRAVERSE = "graph_traverse"
 
     @classmethod
     def all_values(cls) -> list[str]:
@@ -873,6 +881,24 @@ def memory_maintenance(
         ``embedding_model_check``  force, dry_run
         ``incremental_update`` memory_id, new_content, old_state
         ``merge_embeddings``   memory_ids
+        ``llm_unload``         (no extra params)
+        ``circuit_breaker_status``  limit, since_ts
+        ``temporal_contradictions``  since_ts, until_ts, reason, limit, offset
+        ``temporal_query``     as_of, fact_id, since_ts, query, limit
+        ``compliance_check``   session_id
+        ``session_stats``      (no extra params)
+        ``thread_stats``       (no extra params)
+        ``compaction_stats``   (no extra params)
+        ``list_active_threads``  project_root, status, limit
+        ``recover_session``    session_id
+        ``agent_init``         agent_id, display_name, parent_agent, namespace
+        ``agent_clear``        (no extra params)
+        ``agent_list``         (no extra params)
+        ``extract_skills``     memory_id, dry_run
+        ``list_skills``        limit
+        ``auto_share``         agent_id, min_importance, min_fitness, limit, dry_run
+        ``graph_shortest_path``  source, target, max_depth
+        ``graph_traverse``     start, edge_patterns
 
     Per-operation validation is delegated to the handler — each
     operation extracts only the kwargs it needs.  Unknown kwargs are

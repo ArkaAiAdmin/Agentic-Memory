@@ -3,10 +3,6 @@ Memory CRUD MCP tools — save, superseede, delete, restore, trash, purge, auto_
 """
 
 import _bootstrap_path  # noqa: E402
-import os
-import sys
-from pathlib import Path
-
 
 import json
 import os

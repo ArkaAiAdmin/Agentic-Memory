@@ -160,6 +160,10 @@ def _get_domain_tools() -> dict:
             memory_facts_stats,
             memory_graph_stats,
         )
+        from mcp_kg_traversal import (
+            memory_graph_shortest_path,
+            memory_graph_traverse,
+        )
         from mcp_profile import memory_profile_stats
         from mcp_multi_modal import memory_ingest_file, memory_ingest_url
         from mcp_dashboard import memory_dashboard
@@ -169,6 +173,8 @@ def _get_domain_tools() -> dict:
             "memory_agent_init": memory_agent_init,
             "memory_agent_clear": memory_agent_clear,
             "memory_agent_list": memory_agent_list,
+            "memory_graph_shortest_path": memory_graph_shortest_path,
+            "memory_graph_traverse": memory_graph_traverse,
             "memory_sdk_demo": memory_sdk_demo,
             "memory_auto_share": memory_auto_share,
             "memory_share": memory_share,
@@ -463,6 +469,26 @@ def _get_handlers() -> dict:
             MaintenanceOp.RECOVER_SESSION: lambda *, session_id, **_: (
                 _op_recover_session(session_id=session_id)
             ),
+            MaintenanceOp.AGENT_INIT: lambda *, agent_id, display_name="", parent_agent="", namespace="", **_: t["memory_agent_init"](
+                agent_id=agent_id, display_name=display_name, parent_agent=parent_agent, namespace=namespace,
+            ),
+            MaintenanceOp.AGENT_CLEAR: lambda **_: t["memory_agent_clear"](),
+            MaintenanceOp.AGENT_LIST: lambda **_: t["memory_agent_list"](),
+            MaintenanceOp.EXTRACT_SKILLS: lambda *, memory_id="", dry_run=False, **_: (
+                _op_extract_skills(memory_id=memory_id, dry_run=dry_run)
+            ),
+            MaintenanceOp.LIST_SKILLS: lambda *, limit=50, **_: (
+                _op_list_skills(limit=limit)
+            ),
+            MaintenanceOp.AUTO_SHARE: lambda *, agent_id="", min_importance=0, min_fitness=0.0, limit=0, dry_run=False, **_: t["memory_auto_share"](
+                agent_id=agent_id, min_importance=min_importance, min_fitness=min_fitness, limit=limit, dry_run=dry_run,
+            ),
+            MaintenanceOp.GRAPH_SHORTEST_PATH: lambda *, source, target, max_depth=5, **_: t["memory_graph_shortest_path"](
+                source=source, target=target, max_depth=max_depth,
+            ),
+            MaintenanceOp.GRAPH_TRAVERSE: lambda *, start, edge_patterns, **_: t["memory_graph_traverse"](
+                start=start, edge_patterns=edge_patterns,
+            ),
         }
     return _MAINTENANCE_HANDLERS
 
@@ -628,6 +654,42 @@ def _op_list_active_threads(
             safe_close_db(conn)
     except Exception as e:
         return _json.dumps({"error": str(e)})
+
+
+def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
+    """Wrapper for memory_extract_skills (needs conn injection)."""
+    try:
+        from db import open_db
+        from pathlib import Path
+        target_base = Path(os.environ.get("MEMORY_DB_PATH", ""))
+        if not target_base.exists():
+            from memory_common import get_memory_paths
+            _, local_mem, _ = get_memory_paths()
+            target_base = local_mem
+        db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
+        with open_db(db_path, write=False) as conn:
+            from mcp_maintenance import memory_extract_skills
+            return memory_extract_skills(conn, memory_id=memory_id, dry_run=dry_run)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def _op_list_skills(limit: int = 50) -> str:
+    """Wrapper for memory_list_skills (needs conn injection)."""
+    try:
+        from db import open_db
+        from pathlib import Path
+        target_base = Path(os.environ.get("MEMORY_DB_PATH", ""))
+        if not target_base.exists():
+            from memory_common import get_memory_paths
+            _, local_mem, _ = get_memory_paths()
+            target_base = local_mem
+        db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
+        with open_db(db_path, write=False) as conn:
+            from mcp_maintenance import memory_list_skills
+            return memory_list_skills(conn, limit=limit)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 
 def _op_recover_session(session_id: str) -> str:

@@ -156,11 +156,26 @@ run("B1: save extracts KG entities", test_B1_save_indexes_entities, ["A1"])
 
 
 def test_B2_kg_search():
+    # Ensure B1's SpaceX memory is present (tests may run out of order)
+    miss = False
     with mc.open_db(TEST_DB) as conn:
         entities = conn.execute(
             "SELECT name FROM kg_entities WHERE name LIKE '%SpaceX%'"
         ).fetchall()
-        assert len(entities) >= 1, "SpaceX entity not in kg_entities"
+        if len(entities) < 1:
+            miss = True
+    if miss:
+        sp.save_memory(
+            content="Elon Musk founded SpaceX in 2002. SpaceX launches rockets.",
+            title_slug="test-spacex",
+            category="test",
+            db_path=TEST_DB,
+        )
+        with mc.open_db(TEST_DB) as conn:
+            entities = conn.execute(
+                "SELECT name FROM kg_entities WHERE name LIKE '%SpaceX%'"
+            ).fetchall()
+            assert len(entities) >= 1, "SpaceX entity not in kg_entities after retry"
 
 
 run("B2: KG entity searchable by name", test_B2_kg_search, ["B1"])

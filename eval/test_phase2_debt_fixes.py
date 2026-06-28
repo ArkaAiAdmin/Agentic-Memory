@@ -29,9 +29,9 @@ class TestSilentErrorFix:
 
     def test_archive_db_delete_failure_logged(self):
         """The except block at auto_save.py:329 should now log instead of pass."""
-        import auto_save
+        import background.auto_save as auto_save_impl
 
-        src = pathlib.Path(auto_save.__file__).read_text()
+        src = pathlib.Path(auto_save_impl.__file__).read_text()
         # The old pattern was `except Exception: pass`
         assert "except Exception:\n                pass" not in src, (
             "auto_save.py still has bare 'except Exception: pass'"

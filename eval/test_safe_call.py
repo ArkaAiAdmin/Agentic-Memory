@@ -66,7 +66,7 @@ class TestSafeCall(unittest.TestCase):
             def emit(self, record):
                 messages.append(record.levelno)
 
-        logger = logging.getLogger("safe_call")
+        logger = logging.getLogger("infra.safe_call")
         logger.addHandler(CaptureHandler())
         logger.setLevel(logging.DEBUG)
 
@@ -83,7 +83,7 @@ class TestSafeCall(unittest.TestCase):
             def emit(self, record):
                 messages.append(record.getMessage())
 
-        logger = logging.getLogger("safe_call")
+        logger = logging.getLogger("infra.safe_call")
         logger.addHandler(CaptureHandler())
         logger.setLevel(logging.WARNING)
 

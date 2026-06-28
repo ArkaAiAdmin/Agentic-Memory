@@ -605,9 +605,12 @@ class TestAdaptiveRetention(unittest.TestCase):
             # AGENTS.md: make_lazy_getattr caches resolved values in
             # the module's __dict__ on first access. Clear the cache
             # so the patched config is honored.
-            for _attr in ("ADAPTIVE_RETENTION_ENABLED",):
-                if _attr in adaptive_retention.__dict__:
-                    del adaptive_retention.__dict__[_attr]
+            for _mod in (
+                adaptive_retention,
+                getattr(adaptive_retention, "_real", adaptive_retention),
+            ):
+                for _attr in ("ADAPTIVE_RETENTION_ENABLED",):
+                    _mod.__dict__.pop(_attr, None)
             adaptive_retention.record_access(self.conn, "no-access", "search")
             try:
                 count = self.conn.execute(

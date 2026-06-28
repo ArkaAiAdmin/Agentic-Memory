@@ -40,6 +40,8 @@ const AUTO_SAVE = path.join(AGENTIC_MEMORY_DIR, "auto_save.py")
 const MEMORY_SESSION_START = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-session-start.py")
 const MEMORY_RECALL = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-recall-session.py")
 const PROACTIVE_CONTEXT = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-proactive-context.py")
+const MEMORY_SESSION_END = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-session-end.py")
+const MEMORY_PRECOMPACT_SNAPSHOT = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-precompact-snapshot.py")
 const STATE_FILE = path.join(AGENTIC_MEMORY_DIR, "memory", "sessions", ".context_monitor_state.json")
 const ERROR_LOG = path.join(AGENTIC_MEMORY_DIR, "memory", "hook-errors.jsonl")
 
@@ -222,6 +224,17 @@ export function endSession(sessionId: string, log: (msg: string) => void): Promi
       else reject(new Error(`Exit code ${code}: ${stdout}`))
     })
     child.on("error", reject)
+  }).then(() => {
+    // Fire-and-forget: save session memory note (Rule #7 compliance).
+    // Script reads session_id from stdin JSON and MEMORY_HOOK_EVENT env.
+    const sessionChild = spawn(VENV, [MEMORY_SESSION_END], {
+      stdio: ["pipe", "ignore", "pipe"],
+      detached: true,
+      env: { ...process.env, MEMORY_HOOK_EVENT: "stop" },
+    })
+    sessionChild.stdin?.write(JSON.stringify({ session_id: sessionId || "unknown" }))
+    sessionChild.stdin?.end()
+    sessionChild.unref()
   }).catch((e) => log(`[agentic-memory] Session end save failed: ${e}`))
 }
 
@@ -265,6 +278,13 @@ export async function onCompacting(sessionId: string, output: { context: string[
         messageCount = String(state.total_tool_calls || state.tool_call_count || 0)
       }
     } catch { /* state file may not exist yet */ }
+
+    // Fire-and-forget: snapshot raw events.jsonl before compaction destroys it
+    // (script reads session_id from stdin JSON)
+    const precompactChild = spawn(VENV, [MEMORY_PRECOMPACT_SNAPSHOT], { stdio: ["pipe", "ignore", "pipe"], detached: true })
+    precompactChild.stdin?.write(JSON.stringify({ session_id: sessionId || "unknown" }))
+    precompactChild.stdin?.end()
+    precompactChild.unref()
 
     const result = await captureOutput([CONTEXT_MONITOR, "compact", "--session-id", sessionId || "unknown", "--message-count", messageCount], undefined, "compact", log)
     log(`[agentic-memory] Pre-compaction context saved: ${result.trim()}`)

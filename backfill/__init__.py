@@ -26,6 +26,14 @@ from backfill.kg_backfills import (  # noqa: F401
     _ENTITY_STOPWORDS,
 )
 
+from backfill.orchestrator import (  # noqa: F401
+    health_check,
+    backfill_incremental,
+    backfill_full,
+    auto_backfill,
+    backfill_all,
+)
+
 __all__ = [
     # index_backfills
     "_backfill_memories_from_markdown",
@@ -43,4 +51,10 @@ __all__ = [
     "_backfill_kg_facts",
     "_backfill_kg_graph",
     "_ENTITY_STOPWORDS",
+    # orchestrator
+    "health_check",
+    "backfill_incremental",
+    "backfill_full",
+    "auto_backfill",
+    "backfill_all",
 ]

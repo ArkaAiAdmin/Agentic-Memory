@@ -534,6 +534,47 @@ def _hook_record_recent_save(db_path_obj, note_id):
         logger.warning("Failed to record recent-save hint for %s", note_id)
 
 
+def _hook_resolve_contradictions(db_path_obj, note_id, contradictions):
+    """Close the time window on notes that contradict the new note.
+
+    For each contradictory old note discovered by
+    ``check_contradictions_on_save``, this hook marks it as superseded
+    by the new note (sets ``valid_to`` and ``superseded_by``). This
+    turns contradictions from warnings into structured temporal data:
+    the old knowledge is preserved but timestamped.
+
+    Best-effort — never raises. Individual failures are logged.
+    """
+    if not contradictions:
+        return
+
+    from save_pipeline import memory_supersede_db
+
+    old_ids = list(dict.fromkeys(
+        c.get("existing_note_id", "") for c in contradictions
+    ))
+    old_ids = [oid for oid in old_ids if oid and oid != note_id]
+
+    for old_id in old_ids:
+        try:
+            ok, err = memory_supersede_db(db_path_obj, old_id, note_id)
+            if ok:
+                logger.info(
+                    "save_memory: resolved contradiction — closed %s (superseded by %s)",
+                    old_id, note_id,
+                )
+            else:
+                logger.warning(
+                    "save_memory: contradiction resolution failed for %s: %s",
+                    old_id, err,
+                )
+        except Exception as e:
+            logger.warning(
+                "save_memory: contradiction resolution error for %s: %s",
+                old_id, e,
+            )
+
+
 def _run_post_save_hooks(
     target_base,
     db_path_obj,
@@ -560,6 +601,7 @@ def _run_post_save_hooks(
     if safety_wiring:
         contradictions = _hook_run_contradiction_check(db_path_obj, content, note_id)
         _hook_audit_contradictions(db_path_obj, content, note_id, contradictions)
+        _hook_resolve_contradictions(db_path_obj, note_id, contradictions)
     _hook_auto_backlink_with_flush(db_path_obj, note_id, category, title_slug, conn)
     _hook_track_decisions(db_path_obj, note_id, content, category)
     _hook_extract_skill(conn, note_id, content, category)

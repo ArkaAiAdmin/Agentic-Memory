@@ -117,14 +117,24 @@ $BLOCK_BEGIN
 # Daily digest — rolls auto-saves into one note per day
 0  0  *   *   *    $VENV_PY $ROOT/auto_save.py daily-digest >> $LOG_DIR/digest.log 2>&1
 
+# Purge auto-save inbox — clean stale pending auto-saves (daily 00:30)
+30 0  *   *   *    $VENV_PY $ROOT/cron/cron_purge_auto_saves.py >> $LOG_DIR/purge-auto-saves.log 2>&1
+
 # Integrity check — DB health, FTS consistency (Sunday 01:00)
 0  1  *   *   0    MEMORY_KNOWLEDGE_GRAPH=1 $VENV_PY $ROOT/cron/cron_integrity_check.py >> $LOG_DIR/integrity.log 2>&1
+
+# Log retention — rotate/archive old cron logs (daily 01:00, same slot as
+# integrity on Sundays; per-cron flocks serialize against each other)
+0  1  *   *   *    $VENV_PY $ROOT/cron/cron_log_retention.py >> $LOG_DIR/log-retention.log 2>&1
 
 # Incremental backfill — rebuild stale indexes daily (daily 01:30)
 30 1  *   *   *    MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/backfill_all.py --incremental >> $LOG_DIR/backfill.log 2>&1
 
 # Backup — daily SQLite backup (keeps 7 daily)
 0  2  *   *   *    $VENV_PY $ROOT/cron/cron_backup.py >> $LOG_DIR/backup.log 2>&1
+
+# Backup validation — verify backup integrity (daily 02:15, after backup)
+15 2  *   *   *    $VENV_PY $ROOT/cron/cron_backup_validate.py >> $LOG_DIR/backup-validate.log 2>&1
 
 # Compact — monthly tier migration + consolidation + rebuild + archive
 # (H4: shifted from 02:00 to 02:30 on the 1st to avoid racing
@@ -203,6 +213,10 @@ $BLOCK_BEGIN
 # CRDT sync — multi-peer two-way sync (15 min past every hour).
 # Staggered 10 min after cron_sync so both never run at the same time.
 15 *  *   *   *    MEMORY_MULTI_AGENT=1 MEMORY_CRDT_ENABLED=1 $VENV_PY $ROOT/cron/cron_crdt_sync.py >> $LOG_DIR/crdt-sync.log 2>&1
+
+# Watchdog — periodic health assertion and daemon uptime check
+# (Staggered at :25 and :55 to avoid overlapping background_worker at :00/:15/:30/:45)
+25,55 *  *   *   *    $VENV_PY $ROOT/cron/cron_watchdog.py >> $LOG_DIR/watchdog.log 2>&1
 $BLOCK_END
 EOF
 }

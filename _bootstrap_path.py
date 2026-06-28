@@ -1,22 +1,31 @@
-"""Bootstrap sys.path so project modules are importable.
-
-Run this BEFORE any ``from memory_*``, ``from mcp_*``,
-``from search_pipeline``, ``from save_pipeline``, ``from config``,
-etc. import.  Idempotent: if memory_common is already importable,
-the ``sys.path.insert`` is a no-op.
-
-Usage in every entry-point module::
-
-    import _bootstrap_path  # noqa: E402
-"""
-
-import os
+# backward compat - real implementation is in infra/_bootstrap_path
 import sys
-from pathlib import Path
+import types
+import infra._bootstrap_path as _real
 
-INSTALL_ROOT = Path(
-    os.environ.get("MEMORY_INSTALL_ROOT") or str(Path(__file__).resolve().parent)
-).resolve()
-if not (INSTALL_ROOT / "memory_config.py").exists():
-    INSTALL_ROOT = Path.home() / ".config" / "agentic-memory"
-sys.path.insert(0, str(INSTALL_ROOT))
+def __getattr__(name):
+    return getattr(_real, name)
+
+def __dir__():
+    return sorted(set(object.__dir__(_real)) | set(dir(_real)))
+
+class _ShimModule(types.ModuleType):
+    _real = None
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+    def __setattr__(self, name, value):
+        if name in ('_real', '__class__'):
+            super().__setattr__(name, value)
+        else:
+            setattr(self._real, name, value)
+    def __delattr__(self, name):
+        if name == '_real':
+            raise AttributeError("_real is protected")
+        delattr(self._real, name)
+    def __dir__(self):
+        return sorted(set(super().__dir__()) | set(dir(self._real)))
+
+if __name__ in sys.modules:
+    _shim = sys.modules[__name__]
+    _shim.__class__ = _ShimModule
+    object.__setattr__(_shim, '_real', _real)

@@ -176,7 +176,7 @@ class TestQuirk8ConsolidationGuard(unittest.TestCase):
         import inspect
 
         # Read the source of consolidate_facts.py
-        cf_path = INSTALL_DIR / "consolidate_facts.py"
+        cf_path = INSTALL_DIR / "fact" / "consolidate_facts.py"
         source = cf_path.read_text()
 
         # Verify the guard exists
@@ -185,7 +185,7 @@ class TestQuirk8ConsolidationGuard(unittest.TestCase):
 
     def test_guard_imports_safe_close_db(self):
         """consolidate_facts.py must import safe_close_db for the early return."""
-        cf_path = INSTALL_DIR / "consolidate_facts.py"
+        cf_path = INSTALL_DIR / "fact" / "consolidate_facts.py"
         source = cf_path.read_text()
         self.assertIn("safe_close_db", source, "safe_close_db must be imported")
 
@@ -195,7 +195,7 @@ class TestDocumentationAccuracy(unittest.TestCase):
 
     def test_quirk7_returns_error_string(self):
         """Quirk 7: embedding model failure returns error string, not empty."""
-        es_path = INSTALL_DIR / "embedding_search.py"
+        es_path = INSTALL_DIR / "infra" / "embedding_search.py"
         source = es_path.read_text()
         # The search() method should return an error string when model is None
         self.assertIn("Embedding search unavailable", source,
@@ -203,7 +203,7 @@ class TestDocumentationAccuracy(unittest.TestCase):
 
     def test_quirk11_pool_is_per_path(self):
         """Quirk 11: pool maps (path, thread_ident)->connection, not thread-local."""
-        db_path = INSTALL_DIR / "db.py"
+        db_path = INSTALL_DIR / "infra" / "db.py"
         source = db_path.read_text()
         # The pool should use a dict with tuple keys, not threading.local
         self.assertIn("dict[tuple[str, int], sqlite3.Connection]", source,

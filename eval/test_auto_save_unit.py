@@ -291,7 +291,9 @@ class TestBackoffAndCircuitBreaker(unittest.TestCase):
         def boom(*a, **kw):
             raise RuntimeError("simulated DB locked")
 
-        self.auto_save._tool_complete_inner = boom
+        import background.auto_save as _as_backend
+
+        _as_backend._tool_complete_inner = boom
         import os as _os
 
         saved_env = _os.environ.get("MEMORY_ASYNC_AUTOSAVE")
@@ -571,7 +573,7 @@ class TestDaemonSignalHandler(unittest.TestCase):
 
         from pathlib import Path as _P
 
-        script = _P(__file__).resolve().parent.parent / "auto_save.py"
+        script = _P(__file__).resolve().parent.parent / "background" / "auto_save.py"
         if not script.exists():
             self.skipTest(f"auto_save.py not found at {script}")
 

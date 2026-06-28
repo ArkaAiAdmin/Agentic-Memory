@@ -285,6 +285,8 @@ class TestCorsAllowlist(unittest.TestCase):
         os.environ.pop("MEMORY_SYNC_CORS_ORIGINS", None)
         if "sync_server" in sys.modules:
             del sys.modules["sync_server"]
+        if "infra.sync_server" in sys.modules:
+            del sys.modules["infra.sync_server"]
         from sync_server import _SyncHandler, SYNC_CORS_ORIGINS
 
         self.assertEqual(SYNC_CORS_ORIGINS, frozenset())
@@ -323,6 +325,8 @@ class TestCorsAllowlist(unittest.TestCase):
         """_is_loopback correctly identifies loopback addresses."""
         if "sync_server" in sys.modules:
             del sys.modules["sync_server"]
+        if "infra.sync_server" in sys.modules:
+            del sys.modules["infra.sync_server"]
         from sync_server import _is_loopback
 
         for loopback in ("127.0.0.1", "localhost", "::1"):
@@ -369,11 +373,13 @@ class TestPlaintextWarning(unittest.TestCase):
 
         if "sync_server" in sys.modules:
             del sys.modules["sync_server"]
+        if "infra.sync_server" in sys.modules:
+            del sys.modules["infra.sync_server"]
         import sync_server
         from sync_server import SyncServer
 
         # Capture log messages.
-        with self.assertLogs("sync_server", level="WARNING") as cm:
+        with self.assertLogs("infra.sync_server", level="WARNING") as cm:
             server = SyncServer(
                 db_path="/tmp/does_not_matter.db",
                 agent_id="sec4-test",
@@ -405,6 +411,8 @@ class TestPlaintextWarning(unittest.TestCase):
 
         if "sync_server" in sys.modules:
             del sys.modules["sync_server"]
+        if "infra.sync_server" in sys.modules:
+            del sys.modules["infra.sync_server"]
         import sync_server
         from sync_server import SyncServer
 
@@ -412,7 +420,7 @@ class TestPlaintextWarning(unittest.TestCase):
         # for the plaintext path.
         import logging
 
-        logger = logging.getLogger("sync_server")
+        logger = logging.getLogger("infra.sync_server")
         # We can't use assertLogs(level=INFO) because it would
         # include the regular "listening on" INFO log.  Instead,
         # use a custom handler.

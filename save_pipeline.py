@@ -764,7 +764,7 @@ def _update_memory_index_incremental(
             _index_kg(conn, note_id, content)
             _index_facts(conn, note_id, content)
             _enrich_context(conn, note_id, content, category, tags)
-        _auto_semantic_backlinks(conn, note_id, content, db_path=str(db_path))
+            _auto_semantic_backlinks(conn, note_id, content, db_path=str(db_path))
         _auto_fts_backlinks(conn, note_id, content)
         _index_adaptive_retention(conn, note_id, db_path=str(db_path))
         if defer_expensive:
@@ -809,6 +809,11 @@ def _defer_indexing_background_tasks(
         enqueue_task(
             bq_conn,
             "kg_and_fact_index",
+            {"memory_id": note_id, "content": content},
+        )
+        enqueue_task(
+            bq_conn,
+            "semantic_backlinks",
             {"memory_id": note_id, "content": content},
         )
         safe_close_db(bq_conn)

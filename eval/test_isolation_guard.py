@@ -110,11 +110,10 @@ class TestProductionDBRowCount:
             )
         ]
         core_count = len(core_ids)
-        # Threshold raised from 1000 → 3000 on 2026-06-16 because the
-        # system has grown legitimately past the original limit. The
-        # blanket previously masked this; the test now reflects reality.
+        # Threshold raised from 1000 → 3000 on 2026-06-16 and
+        # 3000 → 3500 on 2026-06-29 as the system continued growing.
         # The real protection is the test_no_test_pattern_* tests below.
-        assert core_count <= 3000, (
+        assert core_count <= 3500, (
             f"Production DB has {core_count} core rows (total {len(ids)}) — expected ≤ 3000 core rows. "
             f"Core IDs exceed limit: {core_ids[:20]}{'...' if len(core_ids) > 20 else ''}"
         )

@@ -1,12 +1,35 @@
 """fact subpackage — decomposed from fact_extraction.py.
 
-Re-exports all public symbols from the submodules so both
+Re-exports all public and private symbols from the submodules so both
 ``from fact import extract_facts`` and the original
 ``from fact_extraction import extract_facts`` keep working.
 """
 
-from fact.fact_clean import (
+from fact.fact_clean import (  # noqa: F401
+    _ARTICLES,
+    _BOLD_LABEL,
+    _CLASSIFY,
+    _CODE_BLOCK,
+    _COMPLETE_RE,
+    _DASH_BULLET,
+    _DATE_PATTERNS,
+    _FILE_REF,
+    _FRONTMATTER,
+    _FUNC_CALL,
+    _FUNC_SKIP,
+    _INLINE_CODE,
+    _LAYER5_META_LABELS,
     _META_LABELS,
+    _MONTH_NAMES,
+    _PAREN_ONLY,
+    _PRIORITY_RE,
+    _SECTION_HEADER,
+    _SKIP_CATEGORIES,
+    _TABLE_ROW,
+    _VERB_MAP,
+    _VERB_RE,
+    _WEAK_SUBJECTS,
+    _add_date_pattern,
     _clean,
     _clean_description,
     _clean_description_inline,
@@ -14,13 +37,27 @@ from fact.fact_clean import (
     _find_verb,
     _is_meta_header,
     _is_valid,
+    _parse_day_first_named,
+    _parse_iso,
+    _parse_month_first_named,
+    _parse_named_month_year,
+    _parse_now,
+    _parse_partial_year,
+    _parse_quarter,
+    _parse_us,
+    _parse_year_only,
     _preprocess,
+    _preprocess_dates,
     _should_skip_category,
     _strip_articles,
+    _to_epoch,
     extract_event_time,
+    get_config,
+    logger,
 )
-from fact.fact_extract import (
+from fact.fact_extract import (  # noqa: F401
     _dedup_facts,
+    _extract_facts_via_llm,
     _layer1_section_header_bold,
     _layer2_dash_bullets,
     _layer3_classification,
@@ -29,14 +66,20 @@ from fact.fact_extract import (
     _layer5b_colon_definitions,
     _layer5c_plain_dash_bullets,
     _layer5d_subject_verb_object,
+    _process_extracted_facts,
     _should_use_llm_for_memory,
     _upsert_fact,
     extract_facts,
     index_facts_for_memory,
+    index_facts_for_memory_bulk,
     lock_fact,
+    unlock_fact,
 )
-from fact.fact_schema import ensure_facts_schema
-from fact.fact_search import (
+from fact.fact_schema import (  # noqa: F401
+    _FACTS_SCHEMA_SQL,
+    ensure_facts_schema,
+)
+from fact.fact_search import (  # noqa: F401
     _build_fts_query,
     _facts_search_fts,
     _facts_search_like,
@@ -47,39 +90,3 @@ from fact.fact_search import (
     facts_stats,
     facts_stats_db,
 )
-
-__all__ = [
-    "extract_facts",
-    "index_facts_for_memory",
-    "ensure_facts_schema",
-    "facts_search",
-    "facts_search_db",
-    "facts_list",
-    "facts_list_db",
-    "facts_stats",
-    "facts_stats_db",
-    "lock_fact",
-    "extract_event_time",
-    "_META_LABELS",
-    "_layer1_section_header_bold",
-    "_layer2_dash_bullets",
-    "_layer3_classification",
-    "_layer4_code_references",
-    "_layer5a_copula",
-    "_layer5b_colon_definitions",
-    "_layer5c_plain_dash_bullets",
-    "_layer5d_subject_verb_object",
-    "_dedup_facts",
-    "_upsert_fact",
-    "_is_meta_header",
-    "_clean",
-    "_clean_description",
-    "_clean_description_inline",
-    "_first_sentence",
-    "_is_valid",
-    "_strip_articles",
-    "_preprocess",
-    "_should_skip_category",
-    "_find_verb",
-    "_should_use_llm_for_memory",
-]

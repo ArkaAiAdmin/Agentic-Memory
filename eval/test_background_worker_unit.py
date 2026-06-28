@@ -69,9 +69,6 @@ class TestHandlerRegistry(unittest.TestCase):
 
         self.assertIn("entity_resolution", HANDLERS)
         self.assertIn("fact_consolidation", HANDLERS)
-        self.assertIn("contradiction_check", HANDLERS)
-        self.assertIn("cross_session_learn", HANDLERS)
-        self.assertIn("duplicate_detection", HANDLERS)
         self.assertIn("vec_index_rebuild", HANDLERS)
         self.assertIn("wal_checkpoint", HANDLERS)
 

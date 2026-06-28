@@ -78,13 +78,13 @@ class TestM4CommentRemoved:
     """arc_cache.py must not contain the stale M4 fix comment."""
 
     def test_m4_comment_removed(self):
-        src_path = pathlib.Path(__file__).resolve().parent.parent / "arc_cache.py"
+        src_path = pathlib.Path(__file__).resolve().parent.parent / "infra" / "arc_cache.py"
         src = src_path.read_text()
         assert "M4 fix" not in src, "arc_cache.py still contains stale 'M4 fix' comment"
 
     def test_find_project_root_import_preserved(self):
         """The actual import must still be there — only the comment was removed."""
-        src_path = pathlib.Path(__file__).resolve().parent.parent / "arc_cache.py"
+        src_path = pathlib.Path(__file__).resolve().parent.parent / "infra" / "arc_cache.py"
         src = src_path.read_text()
         assert "from memory_common import find_project_root" in src
 
@@ -97,7 +97,7 @@ class TestLoggingStandardization:
     """All modules should use 'logger' as the logging variable name."""
 
     def test_reranker_uses_logger(self):
-        src_path = pathlib.Path(__file__).resolve().parent.parent / "reranker.py"
+        src_path = pathlib.Path(__file__).resolve().parent.parent / "infra" / "reranker.py"
         src = src_path.read_text()
         assert "logger = logging.getLogger(__name__)" in src
         # Ensure no 'log = logging.getLogger' remains
@@ -111,7 +111,7 @@ class TestLoggingStandardization:
             )
 
     def test_audit_uses_logger(self):
-        src_path = pathlib.Path(__file__).resolve().parent.parent / "audit.py"
+        src_path = pathlib.Path(__file__).resolve().parent.parent / "infra" / "audit.py"
         src = src_path.read_text()
         assert "logger = logging.getLogger(__name__)" in src
         # Ensure no _AUDIT_LOGGER remains
@@ -121,10 +121,10 @@ class TestLoggingStandardization:
         """Verify reranker module can be imported and logger is accessible."""
         import reranker
         assert hasattr(reranker, "logger")
-        assert reranker.logger.name == "reranker"
+        assert reranker.logger.name == "infra.reranker"
 
     def test_audit_logger_references_work(self):
         """Verify audit module can be imported and logger is accessible."""
         import audit
         assert hasattr(audit, "logger")
-        assert audit.logger.name == "audit"
+        assert audit.logger.name == "infra.audit"
