@@ -373,3 +373,21 @@ def __getattr__(name: str):
 
         return float(get_config().temporal_decay_weight)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# Marker for reset_all_lazy_config_attrs(): this module uses a hand-rolled
+# __getattr__ with underscore-prefixed lazy config keys.
+_lazy_config_attr_names = frozenset(
+    {
+        "_LATE_INTERACTION_ENABLED",
+        "_TEMPORAL_DECAY_HALF_LIFE",
+        "_TEMPORAL_DECAY_MODE",
+        "_FORGETTING_CURVE_ENABLED",
+        "_FORGETTING_CURVE_HALF_LIFE",
+        "_GRAPH_RAG_ENABLED",
+        "_GRAPH_RAG_MAX_HOPS",
+        "_GRAPH_RAG_MAX_EXPANSIONS",
+        "_RERANK_HALF_LIFE_DAYS",
+        "_TEMPORAL_DECAY_WEIGHT",
+    }
+)

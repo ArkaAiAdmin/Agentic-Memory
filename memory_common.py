@@ -488,6 +488,10 @@ def make_lazy_getattr(
     # module's namespace.
     _target_globals = globals()
 
+    # Mark this module so reset_all_lazy_config_attrs() can find it
+    # without sweeping every module in sys.modules.
+    _target_globals["_lazy_config_attr_names"] = frozenset(name_to_attr.keys())
+
     def __getattr__(name):
         if name in name_to_attr:
             spec = name_to_attr[name]
@@ -515,21 +519,19 @@ def make_lazy_getattr(
 def reset_all_lazy_config_attrs() -> None:
     """Clear the lazy-config-attr cache in every module that uses one.
 
-    Each module that calls make_lazy_getattr caches the resolved value
-    in its own __dict__ under the attribute name. This helper walks
-    sys.modules and removes any cached entries, so a subsequent access
-    will re-read the config. Call after changing memory.toml.
+    Only touches modules that carry the ``_lazy_config_attr_names``
+    marker set by :func:`make_lazy_getattr` (or added manually for
+    hand-rolled ``__getattr__`` sites like ``search_pipeline``).
+    All other modules — including test modules that import a lazy
+    module as a local name — are left untouched.
     """
-    import dataclasses
     import sys
 
-    from config import MemoryConfig
-
-    config_fields = {f.name for f in dataclasses.fields(MemoryConfig)}
-    for mod_name, mod in list(sys.modules.items()):
-        if mod_name.startswith("_"):
+    for _mod_name, mod in list(sys.modules.items()):
+        cached_names = mod.__dict__.get("_lazy_config_attr_names")
+        if not cached_names:
             continue
-        for attr in config_fields:
+        for attr in cached_names:
             mod.__dict__.pop(attr, None)
 
 

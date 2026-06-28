@@ -159,3 +159,36 @@ def clear_pool_between_tests():
         connection_pool.clear()
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def reset_lazy_config_cache():
+    """Autouse fixture: clear lazy-getattr cache and unset test-only env vars.
+
+    Clears only modules that carry the ``_lazy_config_attr_names`` marker
+    (set by make_lazy_getattr or manually for hand-rolled __getattr__
+    sites). Test modules that import lazy modules as local names are
+    intentionally left untouched.
+
+    Also unsets MEMORY_RERANKER_DISABLED which some test files set at
+    module top level (a session-wide leak — each test that needs it
+    should use patch.dict for per-test scope).
+    """
+    import os
+
+    saved_reranker_disabled = os.environ.pop("MEMORY_RERANKER_DISABLED", None)
+    try:
+        from memory_common import reset_all_lazy_config_attrs
+
+        reset_all_lazy_config_attrs()
+    except Exception:
+        pass
+    yield
+    try:
+        from memory_common import reset_all_lazy_config_attrs
+
+        reset_all_lazy_config_attrs()
+    except Exception:
+        pass
+    if saved_reranker_disabled is not None:
+        os.environ["MEMORY_RERANKER_DISABLED"] = saved_reranker_disabled

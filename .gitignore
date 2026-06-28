@@ -12,6 +12,7 @@ preferences/
 .rebuild.lock
 BUG-FIX-REPORT.md
 E2E-TEST-REPORT.md
+auto_save.py.backup.*
 
 # Documentation is committed (M2 fix). The docs/ tree contains
 # handbook pages and should travel with the source.
