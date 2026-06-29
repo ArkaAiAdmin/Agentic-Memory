@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 try:
     from config import get_config
 except ImportError:
-    get_config = None  # type: ignore[assignment]
+    get_config = None
 
 __all__ = [
     "ensure_facts_schema",
@@ -914,7 +914,7 @@ def _extract_facts_via_llm(
         from llm_extraction import extract_facts_via_llm
         llm_facts = extract_facts_via_llm(content)
         if llm_facts:
-            return llm_facts
+            return llm_facts  # type: ignore[no-any-return]
     except Exception:
         logger.warning(
             "LLM fact extraction failed for memory %s, falling back to regex",

@@ -38,3 +38,5 @@ paper_pipeline/
 # Runtime artifacts (daemon PID, test debris)
 .auto_save_daemon_manifest.json
 cron/MagicMock/
+*.MagicMock*
+"<MagicMock*"

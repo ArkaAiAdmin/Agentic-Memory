@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 try:
     from config import get_config as _get_config
 except ImportError:  # FLAVOR_A: optional dependency guard
-    _get_config = None  # type: ignore[assignment]
+    _get_config = None
 
 
 def _enrich_context(db, note_id: str, content: str, category: str, tags: list):

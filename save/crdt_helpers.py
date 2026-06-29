@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 try:
     from crdt_merge import parse_version_vector
 except ImportError:  # FLAVOR_A: optional dependency guard
-    parse_version_vector = None  # type: ignore[assignment]
+    parse_version_vector = None
 
 try:
     from _lazy_imports import get_config as _get_config

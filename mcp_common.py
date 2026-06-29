@@ -44,7 +44,7 @@ from memory_common import (
     atomic_write,
     find_project_root,
 )
-from infrastructure import (
+from infra.infrastructure import (
     _normalize_unicode,
     _resolve_active_db_path,
     _try_extract_result_meta,

@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from infra.infrastructure import _err, ErrorCode
 from mcp_common import (
     _resolve_memory_dir,
     _run_subprocess_output,
@@ -22,8 +23,6 @@ from mcp_common import (
     GLOBAL_MEM_DIR,
     get_memory_paths,
     logger,
-    _err,
-    ErrorCode,
     with_audit,
     atomic_write,
     parse_frontmatter,

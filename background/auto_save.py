@@ -88,7 +88,7 @@ from memory_common import (
 try:
     from cache import _search_cache
 except ImportError:  # cache module is optional in some test contexts
-    _search_cache = None  # type: ignore[assignment]
+    _search_cache = None
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -332,7 +332,7 @@ def get_db_path() -> Path:
     env = os.environ.get("MEMORY_DB_PATH")
     if env:
         return Path(env)
-    from infrastructure import resolve_active_memory_dir
+    from infra.infrastructure import resolve_active_memory_dir
 
     return resolve_active_memory_dir() / "memory.db"
 
@@ -1448,7 +1448,7 @@ def _auto_save_circuit_open() -> bool:
                     # in-process state.
                     result = state.is_circuit_open()
                     if result is not None:
-                        return result
+                        return result  # type: ignore[no-any-return]
                 finally:
                     state.detach()
         except Exception:

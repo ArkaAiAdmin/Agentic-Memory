@@ -41,7 +41,7 @@ from memory_common import (
     get_memory_paths,
     parse_frontmatter,
 )
-from infrastructure import (
+from infra.infrastructure import (
     _err,
     ErrorCode,
     resolve_active_memory_dir,
@@ -84,7 +84,7 @@ def _write_vec_key(db, note_id: str) -> int:
 try:
     from crdt_merge import parse_version_vector
 except ImportError:  # FLAVOR_A: optional dependency guard
-    parse_version_vector = None  # type: ignore[assignment]
+    parse_version_vector = None
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +92,12 @@ logger = logging.getLogger(__name__)
 try:
     from saga import saga_save_memory as _saga_save_memory
 except ImportError:  # FLAVOR_A: optional dependency guard
-    _saga_save_memory = None  # type: ignore[assignment]
+    _saga_save_memory = None
 
 try:
     from config import get_config as _get_config
 except ImportError:  # FLAVOR_A: optional dependency guard
-    _get_config = None  # type: ignore[assignment]
+    _get_config = None
 
 # Cache for PRAGMA table_info results (per db_path)
 _pragma_cache: dict[str, set] = {}

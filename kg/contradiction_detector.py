@@ -38,7 +38,7 @@ try:
     from config import get_config
 except Exception:
     logging.getLogger(__name__).warning("Failed to import get_config")
-    get_config = None  # type: ignore[assignment]
+    get_config = None
 
 # M4 fix: import the canonical find_project_root. The 5-line copy that
 # used to live here checked only (memory, .git, CLAUDE.md) — the
