@@ -27,7 +27,7 @@ from infrastructure import resolve_active_memory_dir
 try:
     from config import get_config
 except Exception:
-    get_config = None  # type: ignore[assignment]
+    get_config = None
 
 
 # ---------------------------------------------------------------------------

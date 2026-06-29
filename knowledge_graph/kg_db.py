@@ -292,7 +292,7 @@ def index_kg_for_memory(
             crdt_vv = {crdt_agent: 1}
             ensure_kg_crdt_schema(conn)
             for name, etype in entities:
-                eid = entity_ids.get(name.lower().strip())
+                eid = entity_ids.get(name.lower().strip())  # type: ignore[assignment]
                 if eid is not None:
                     record_entity_add(conn, eid, crdt_agent, crdt_vv, name, etype)
         except Exception as _crdt_e:

@@ -343,8 +343,8 @@ def traverse_graph(
             path.append(ent)
             col_idx += 3
             if i < num_joins:
-                rel = {"relation": row[col_idx]}
-                path.append(rel)
+                rel_dict = {"relation": row[col_idx]}
+                path.append(rel_dict)
                 col_idx += 1
         paths.append(path)
 

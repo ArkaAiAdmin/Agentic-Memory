@@ -20,6 +20,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional
+from _flock import acquire_lock_or_exit
 
 import numpy as np
 
@@ -51,18 +52,21 @@ def _db_path() -> Path:
     return Path(cfg.db_path)
 
 
-def _load_examples(db_path: Path):
+def _load_examples(conn):
     cutoff = time.time() - _DAYS * 86400
-    rows = db_path.execute(
-        """SELECT cf.note_id, cf.clicked_at, cf.dismissed_at, cf.returned_at,
-                  m.content, m.fitness_score, m.importance, m.access_count, m.last_accessed
-           FROM memory_ctr_feedback cf
-           JOIN memories m ON m.id = cf.note_id
-           WHERE cf.returned_at > ?
-           AND (cf.clicked_at IS NOT NULL OR cf.dismissed_at IS NOT NULL)
-           """,
-        (cutoff,),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            """SELECT cf.note_id, cf.clicked_at, cf.dismissed_at, cf.returned_at,
+                      m.content, m.fitness_score, m.importance, m.access_count, m.last_accessed
+               FROM memory_ctr_feedback cf
+               JOIN memories m ON m.id = cf.note_id
+               WHERE cf.returned_at > ?
+               AND (cf.clicked_at IS NOT NULL OR cf.dismissed_at IS NOT NULL)
+               """,
+            (cutoff,),
+        ).fetchall()
+    except Exception:
+        return []
     examples = []
     for row in rows:
         note_id, clicked_at, dismissed_at, returned_at, content, fitness, importance, access_count, last_accessed = row
@@ -82,7 +86,7 @@ def _load_examples(db_path: Path):
 
         # Surprise uses Jaccard vs most recent query at the time (approximated
         # by current query — most recent search is the best proxy we have).
-        recent = db_path.execute(
+        recent = conn.execute(
             "SELECT params FROM audit_log WHERE tool_name = 'memory_search' "
             "AND params IS NOT NULL ORDER BY id DESC LIMIT 1"
         ).fetchone()
@@ -129,13 +133,16 @@ def _sgd_train(X: np.ndarray, y: np.ndarray, epochs: int = _EPOCHS, lr: float = 
 def main() -> int:
     os.chdir(str(Path(__file__).resolve().parent.parent))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    acquire_lock_or_exit("cron_train_forget_model")
 
     db_path = _db_path()
     if not db_path.exists():
         logger.info("cron_train_forget_model: db not found at %s", db_path)
         return 0
 
-    examples = _load_examples(db_path)
+    import sqlite3
+    conn = sqlite3.connect(str(db_path))
+    examples = _load_examples(conn)
     if len(examples) < _MIN_EXAMPLES:
         logger.info("cron_train_forget_model: only %d examples (need >=%d), skipping",
                      len(examples), _MIN_EXAMPLES)

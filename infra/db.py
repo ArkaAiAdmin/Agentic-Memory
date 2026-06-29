@@ -689,7 +689,7 @@ def open_db(
         try:
             if row_factory is not None:
                 conn.row_factory = row_factory
-            run_schema_setup(conn)  # type: ignore[arg-type]
+            run_schema_setup(conn)
             yield conn
         except BaseException as exc:
             exc_info = exc

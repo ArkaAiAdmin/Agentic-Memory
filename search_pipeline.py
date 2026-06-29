@@ -83,7 +83,7 @@ _module.__class__ = _ProxyModule
 # Install the canonical __getattr__ on this module so that
 # ``from search_pipeline import _TEMPORAL_DECAY_HALF_LIFE`` etc. still
 # resolves through the same code path as ``from search import ...``.
-_module.__getattr__ = _search_getattr
+_module.__getattr__ = _search_getattr  # type: ignore[method-assign]
 
 
 __all__ = [
@@ -189,7 +189,7 @@ from memory_common import (
     get_memory_paths,
     parse_frontmatter,
 )
-from infrastructure import (
+from infra.infrastructure import (
     _normalize_unicode,
     _resolve_active_db_path,
     _try_extract_result_meta,

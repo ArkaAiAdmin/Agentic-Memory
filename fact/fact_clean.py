@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 try:
     from config import get_config
 except ImportError:
-    get_config = None  # type: ignore[assignment]
+    get_config = None
 
 # ---------------------------------------------------------------------------
 # Preprocessing

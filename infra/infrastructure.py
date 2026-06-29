@@ -121,9 +121,9 @@ def resolve_active_memory_dir(base_dir: Path | None = None) -> Path:
     # Local DB exists → use it (even if empty). This is the local-first
     # contract: each project owns its own memory folder.
     if (local_mem / "memory.db").exists():
-        return local_mem
+        return local_mem  # type: ignore[no-any-return]
 
-    return global_mem
+    return global_mem  # type: ignore[no-any-return]
 
 
 def resolve_db_for_memory_id(

@@ -106,7 +106,7 @@ def _open_server_db(db_path: str) -> sqlite3.Connection:
         conn.close()
         conn = sqlite3.connect(str(db_path), timeout=30.0)
         conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    return conn  # type: ignore[no-any-return]
 
 
 class _SyncHandler(BaseHTTPRequestHandler):
