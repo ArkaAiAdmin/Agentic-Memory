@@ -34,3 +34,7 @@ docs/docker_README.md
 # Coverage data (contains absolute source paths)
 .coverage
 paper_pipeline/
+
+# Runtime artifacts (daemon PID, test debris)
+.auto_save_daemon_manifest.json
+cron/MagicMock/

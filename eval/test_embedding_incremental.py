@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Unit tests for embedding_incremental.py — SsmEncoder, incremental_embed_update, merge_embeddings.
 
-Run with:
-    ~/.config/agentic-memory/venv/bin/python eval/test_embedding_incremental.py
+SKIPPED (2026-06-29): SSM v1 removed as a dead end. The new Temporal SSM
+lives in search/scoring.py. These tests are kept as a reminder of what
+was removed.
 """
 
 import sys
@@ -12,14 +13,21 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from embedding_incremental import (  # noqa: E402
-    SsmEncoder,
-    clear_ssm_cache,
-    get_default_encoder,
-    incremental_embed_update,
-    merge_embeddings,
-    reset_default_encoder,
-)
+import pytest
+
+pytestmark = pytest.mark.skip(reason="SSM v1 removed; v2 in search/scoring.py")
+
+try:
+    from embedding_incremental import (  # noqa: E402
+        SsmEncoder,
+        clear_ssm_cache,
+        get_default_encoder,
+        incremental_embed_update,
+        merge_embeddings,
+        reset_default_encoder,
+    )
+except ImportError:
+    pass
 
 
 class TestSsmEncoderBasic(unittest.TestCase):

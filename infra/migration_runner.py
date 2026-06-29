@@ -78,7 +78,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-06-23 (follow-up): bumped to 21 for Graph CRDTs (kg_crdt).
 # 2026-06-26: bumped to 22 for Session Memory System (sessions,
 # decision_threads, thread_events, session_compaction_log).
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 
 def _parse_sql_file(path: Path) -> list[str]:

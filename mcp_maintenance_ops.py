@@ -60,7 +60,6 @@ def _get_local_tools() -> dict:
             memory_run_tier_migration,
             memory_check_embedding_model,
             memory_incremental_update,
-            memory_merge_embeddings,
             memory_duplicates,
             memory_merge_suggestions,
             memory_consolidate,
@@ -82,7 +81,6 @@ def _get_local_tools() -> dict:
             "memory_run_tier_migration": memory_run_tier_migration,
             "memory_check_embedding_model": memory_check_embedding_model,
             "memory_incremental_update": memory_incremental_update,
-            "memory_merge_embeddings": memory_merge_embeddings,
             "memory_duplicates": memory_duplicates,
             "memory_merge_suggestions": memory_merge_suggestions,
             "memory_rebuild": memory_rebuild,
@@ -238,6 +236,8 @@ def _get_handlers() -> dict:
 
         _maintenance_op_cls = MaintenanceOp
         t = _tools()
+        from session_manager import reconcile_audit as _reconcile_audit
+        from cron.cron_train_forget_model import main as _train_forget_model
         _MAINTENANCE_HANDLERS = {
             MaintenanceOp.HEARTBEAT: lambda *, dry_run=False, **_: t[
                 "memory_heartbeat"
@@ -254,9 +254,6 @@ def _get_handlers() -> dict:
                     memory_id=memory_id, new_content=new_content, old_state=old_state
                 )
             ),
-            MaintenanceOp.MERGE_EMBEDDINGS: lambda *, memory_ids=None, **_: t[
-                "memory_merge_embeddings"
-            ](memory_ids=memory_ids),
             MaintenanceOp.DUPLICATES: lambda *, threshold=0.85, **_: t[
                 "memory_duplicates"
             ](threshold=threshold),
@@ -488,6 +485,12 @@ def _get_handlers() -> dict:
             ),
             MaintenanceOp.GRAPH_TRAVERSE: lambda *, start, edge_patterns, **_: t["memory_graph_traverse"](
                 start=start, edge_patterns=edge_patterns,
+            ),
+            MaintenanceOp.RECONCILE_AUDIT: lambda *, db_path=None, **_: (
+                _reconcile_audit(db_path=Path(db_path) if db_path else None)
+            ),
+            MaintenanceOp.TRAIN_FORGET_MODEL: lambda **_: (
+                _train_forget_model()
             ),
         }
     return _MAINTENANCE_HANDLERS

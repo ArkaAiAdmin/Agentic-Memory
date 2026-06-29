@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""
-File-system lifecycle management for agentic-memory.
+"""File-system lifecycle management for agentic-memory."""
+import logging
 
-P0-9 fix (2026-06-23): renamed the file-system tier categories from
-"hot/warm/cold" to "fresh/consolidated/archived" to disambiguate
-from the DB-column tier model (hot/warm/cold) in ``assign_tier``.
-The two systems operate on different artifacts (DB row vs .md file)
-with different goals (search ranking vs storage cost) and previously
-shared names that caused confusion for maintainers.
+logger = logging.getLogger(__name__)
 
-File-system stages:
-  Fresh        (<7 days):    Full-content files in sessions/, indexed at full resolution.
-  Consolidated  (7-90 days): Session logs consolidated into lessons/ summaries.
-  Archived     (>90 days):   Archived to archive/ as compressed bundles, excluded from FTS5.
-
-Pinned files (pinned: true in frontmatter) are never migrated or archived.
-"""
+# P0-9 fix (2026-06-23): renamed the file-system tier categories from
+# "hot/warm/cold" to "fresh/consolidated/archived" to disambiguate
+# from the DB-column tier model (hot/warm/cold) in ``assign_tier``.
+# The two systems operate on different artifacts (DB row vs .md file)
+# with different goals (search ranking vs storage cost) and previously
+# shared names that caused confusion for maintainers.
+#
+# File-system stages:
+#   Fresh        (<7 days):    Full-content files in sessions/, indexed at full resolution.
+#   Consolidated  (7-90 days): Session logs consolidated into lessons/ summaries.
+#   Archived     (>90 days):   Archived to archive/ as compressed bundles, excluded from FTS5.
+# Pinned files (pinned: true in frontmatter) are never migrated or archived.
 
 import os
 import re

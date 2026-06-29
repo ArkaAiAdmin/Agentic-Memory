@@ -33,6 +33,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, cast
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 _RRF_K = 60
@@ -525,3 +527,126 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
         logger.warning("Failed to compute CTR weights from feedback")
         _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
         return None
+
+
+# ---------------------------------------------------------------------------
+# TemporalAttentionModel — SSM over per-memory access sequences (P2)
+# ---------------------------------------------------------------------------
+# Replaces the old "SSM encoder" (infra/embedding_incremental.py) which
+# produced 128-dim content-delta vectors that were never consumed by any
+# search path.  This version models the *access pattern* for each memory
+# rather than its content, and adds a temporal activity signal to the
+# final retrieval score.
+#
+# Design:
+#   - Hidden state per memory_id: np.ndarray shape (8,) initialized to zeros
+#   - observe()  — update the hidden state when a memory is clicked,
+#                  dismissed, or surfaced without interaction
+#   - score()    — sigmoid(readout · hidden_state) → [0, 1] temporal boost
+#   - prune()    — drop hidden states for memories not accessed recently
+#
+# Weights are learned offline by cron_train_temporal_ssm.py and stored
+# as CSV in config.temporal_ssm_weights.  Cold-start: weights=None uses
+# a no-op model (score always returns 0.5, blend factor zeroed out).
+# ---------------------------------------------------------------------------
+
+_HIDDEN_DIM = 8
+_INPUT_DIM = 6       # 5 from query_embedding[:5] + 1 for click/dismiss signal
+_DECAY_LAMBDA = 0.92   # hourly decay factor
+_PRUNE_HOURS = 720.0   # 30 days
+
+
+class TemporalAttentionModel:
+    """SSM over per-memory access sequences for temporal retrieval boost."""
+
+    # Expected weight count: W_readout(HIDDEN_DIM) + b_readout(1)
+    #                        + W_input(HIDDEN_DIM * INPUT_DIM) + b_input(1)
+    _EXPECTED_WEIGHTS = 2 * _HIDDEN_DIM + _INPUT_DIM + 2
+
+    def __init__(self, weights: np.ndarray | None = None) -> None:
+        self._hidden: dict[str, np.ndarray] = {}
+        self._last_access_ts: dict[str, float] = {}
+        if weights is not None and weights.shape == (self._EXPECTED_WEIGHTS,):
+            offset = _HIDDEN_DIM + 1
+            self.W_readout = weights[:_HIDDEN_DIM].astype(float)
+            self.b_readout = float(weights[_HIDDEN_DIM])
+            flat_w = weights[offset : offset + _HIDDEN_DIM * _INPUT_DIM]
+            self.W_input = flat_w.reshape((_HIDDEN_DIM, _INPUT_DIM))
+            self.b_input = float(weights[offset + _HIDDEN_DIM * _INPUT_DIM])
+            self._loaded = True
+        else:
+            # Cold start: uniform weights produce a near-zero signal.
+            # The blend factor in search_pipeline is also zeroed when
+            # no loaded weights are detected, so this is a safe no-op.
+            self.W_readout = np.zeros(_HIDDEN_DIM, dtype=float)
+            self.b_readout = 0.0
+            self.W_input = np.zeros((_HIDDEN_DIM, _INPUT_DIM), dtype=float)
+            self.b_input = 0.0
+            self._loaded = False
+
+    @property
+    def has_learned_weights(self) -> bool:
+        return self._loaded and (
+            self.W_readout.sum() != 0.0 or self.W_input.sum() != 0.0
+        )
+
+    def observe(
+        self,
+        memory_id: str,
+        query_embedding_first5: np.ndarray,
+        clicked: bool = False,
+        dismissed: bool = False,
+        hours_since_access: float = 0.0,
+    ) -> None:
+        """Update hidden state after one access event for *memory_id*."""
+        sig = 1.0 if clicked else (-1.0 if dismissed else 0.0)
+        feat = np.append(query_embedding_first5, sig)  # shape (6,)
+        h_prev = self._hidden.get(memory_id, np.zeros(_HIDDEN_DIM))
+        decay = _DECAY_LAMBDA ** max(0.0, hours_since_access)
+        h_new = np.tanh(np.dot(feat, self.W_input.T) + self.b_input) * decay
+        self._hidden[memory_id] = h_new
+        self._last_access_ts[memory_id] = time.time()
+
+    def score(self, memory_id: str) -> float:
+        """Return temporal activity score [0, 1] for *memory_id*."""
+        h = self._hidden.get(memory_id, np.zeros(_HIDDEN_DIM))
+        raw = float(np.dot(h, self.W_readout) + self.b_readout)
+        return 1.0 / (1.0 + math.exp(-np.clip(raw, -88.0, 88.0)))
+
+    def prune(self, older_than_hours: float = _PRUNE_HOURS) -> int:
+        """Drop hidden states not accessed within the window. Returns count."""
+        cutoff = time.time() - older_than_hours * 3600
+        stale = [
+            mid
+            for mid, ts in self._last_access_ts.items()
+            if ts < cutoff and mid in self._hidden
+        ]
+        for mid in stale:
+            del self._hidden[mid]
+            del self._last_access_ts[mid]
+        return len(stale)
+
+    @classmethod
+    def from_config(cls) -> "TemporalAttentionModel":
+        raw = ""
+        try:
+            from _lazy_imports import get_config
+            raw = getattr(get_config(), "temporal_ssm_weights", "")
+        except Exception:
+            pass
+        if not raw:
+            return cls(weights=None)
+        try:
+            parts = [float(x) for x in raw.split(",")]
+            arr = np.array(parts)
+            expected = 2 * _HIDDEN_DIM + 2  # W_readout + b_readout + W_input + b_input
+            if arr.shape == (expected,):
+                return cls(arr)
+        except Exception:
+            pass
+        return cls(weights=None)
+
+    def to_config_str(self) -> str:
+        parts = list(self.W_readout) + [self.b_readout]
+        parts += list(self.W_input.flatten()) + [self.b_input]
+        return ",".join(f"{v:.6f}" for v in parts)

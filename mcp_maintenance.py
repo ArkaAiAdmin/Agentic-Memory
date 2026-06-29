@@ -116,30 +116,7 @@ def memory_incremental_update(
         return _err(ErrorCode.DB_ERROR, f"in memory_incremental_update: {e}")
 
 
-@mcp.tool()
-@with_audit("memory_merge_embeddings")
-def memory_merge_embeddings(memory_ids: Optional[list] = None) -> str:
-    """Merge SSM states for a list of memories into a single 128-dim vector.
 
-    Useful for batch operations: e.g. when saving a thread of related
-    memories, the save pipeline can merge their SSM states into a
-    thread-summary embedding. Returns a zero vector if no states are
-    available for the given IDs.
-    """
-    try:
-        from embedding_incremental import merge_embeddings
-
-        state = merge_embeddings(memory_ids or [])
-        return json.dumps(
-            {
-                "n_inputs": len(memory_ids) if memory_ids else 0,
-                "dim": len(state),
-                "state": [round(float(x), 6) for x in state[:8]] + ["..."],
-            }
-        )
-    except Exception as e:
-        logger.exception("in memory_merge_embeddings")
-        return _err(ErrorCode.DB_ERROR, f"in memory_merge_embeddings: {e}")
 
 
 @mcp.tool()
@@ -740,7 +717,6 @@ class MaintenanceOp(str, Enum):
     TIER_MIGRATION = "tier_migration"
     EMBEDDING_MODEL_CHECK = "embedding_model_check"
     INCREMENTAL_UPDATE = "incremental_update"
-    MERGE_EMBEDDINGS = "merge_embeddings"
     DUPLICATES = "duplicates"
     MERGE_SUGGESTIONS = "merge_suggestions"
     REBUILD = "rebuild"
@@ -811,6 +787,8 @@ class MaintenanceOp(str, Enum):
     AUTO_SHARE = "auto_share"
     GRAPH_SHORTEST_PATH = "graph_shortest_path"
     GRAPH_TRAVERSE = "graph_traverse"
+    RECONCILE_AUDIT = "reconcile_audit"
+    TRAIN_FORGET_MODEL = "train_forget_model"
 
     @classmethod
     def all_values(cls) -> list[str]:
@@ -880,7 +858,6 @@ def memory_maintenance(
         ``tier_migration``    dry_run
         ``embedding_model_check``  force, dry_run
         ``incremental_update`` memory_id, new_content, old_state
-        ``merge_embeddings``   memory_ids
         ``llm_unload``         (no extra params)
         ``circuit_breaker_status``  limit, since_ts
         ``temporal_contradictions``  since_ts, until_ts, reason, limit, offset

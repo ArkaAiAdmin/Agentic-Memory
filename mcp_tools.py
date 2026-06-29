@@ -57,7 +57,6 @@ from mcp_maintenance import (  # noqa: F401
     memory_run_tier_migration,
     memory_check_embedding_model,
     memory_incremental_update,
-    memory_merge_embeddings,
     memory_duplicates,
     memory_merge_suggestions,
     memory_consolidate,
@@ -180,7 +179,6 @@ __all__ = [
     "memory_run_tier_migration",
     "memory_check_embedding_model",
     "memory_incremental_update",
-    "memory_merge_embeddings",
     "memory_duplicates",
     "memory_merge_suggestions",
     # Maintenance & system

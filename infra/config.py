@@ -331,6 +331,10 @@ class MemoryConfig:
     user_profile: bool = True
     self_directed: bool = True
     adaptive_retention: bool = True
+    neural_forget_mode: str = "formula"  # "formula" | "learned" | "hybrid"
+    neural_forget_weights: str = ""      # CSV: w1,w2,w3,w4,w5,b  (filled by cron)
+    temporal_ssm_enabled: bool = False
+    temporal_ssm_weights: str = ""
     consolidation: bool = True
     quality_gates: bool = True
     saga_enabled: bool = True
@@ -766,6 +770,34 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "features.adaptive_retention",
             True,
             bool,
+            toml_data,
+        ),
+        neural_forget_mode=_b(
+            "MEMORY_NEURAL_FORGET_MODE",
+            "features.neural_forget_mode",
+            "formula",
+            str,
+            toml_data,
+        ),
+        neural_forget_weights=_b(
+            "MEMORY_NEURAL_FORGET_WEIGHTS",
+            "features.neural_forget_weights",
+            "",
+            str,
+            toml_data,
+        ),
+        temporal_ssm_enabled=_b(
+            "MEMORY_TEMPORAL_SSM_ENABLED",
+            "features.temporal_ssm_enabled",
+            False,
+            bool,
+            toml_data,
+        ),
+        temporal_ssm_weights=_b(
+            "MEMORY_TEMPORAL_SSM_WEIGHTS",
+            "features.temporal_ssm_weights",
+            "",
+            str,
             toml_data,
         ),
         consolidation=_b(

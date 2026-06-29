@@ -34,9 +34,12 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
-# Surprise-based forgetting curve weights
+# Surprise-based forgetting curve weights (used as fallback when no
+# learned model is available)
 _W_ACCESS = 2.0  # access frequency weight
 _W_SURPRISE = 1.5  # surprise weight
 _W_IMPORTANCE = 1.0  # importance weight
@@ -47,6 +50,74 @@ _BIAS = 1.5  # sigmoid bias (higher = more retention overall)
 _ACCESS_CAP = 20  # access count beyond which signal saturates
 _RECENCY_CAP = 365  # days beyond which recency penalty saturates
 _QUERY_HISTORY = 50  # recent audit_log entries to consider
+
+_FEATURE_NAMES = [
+    "access_signal",
+    "surprise",
+    "importance_norm",
+    "fitness",
+    "recency_penalty",
+]
+
+
+class NeuralForgetModel:
+    """Learned logistic-retention model over 5 memory features.
+
+    Weights are trained offline from ``memory_ctr_feedback`` (clicked_at
+    = positive, dismissed_at = negative) and stored as a CSV string in
+    ``config.neural_forget_weights``.  When no weights are present (first
+    run, training has not yet run, or config says "formula") the
+    hard-coded _W_* / _BIAS constants are used as the model parameters —
+    this is not a fallback stub, it is the deterministic formula that
+    has been running in production unchanged.
+
+    Inference cost is one dot-product + sigmoid.  No external model
+    loading, no GPU, no torch dependency.
+    """
+
+    def __init__(self, weights: np.ndarray | None = None) -> None:
+        if weights is not None and weights.shape == (6,):
+            self.W = weights[:5].astype(float)
+            self.b = float(weights[5])
+        else:
+            # Matches the production formula constants exactly.
+            self.W = np.array([_W_ACCESS, _W_SURPRISE, _W_IMPORTANCE, _W_FITNESS, -_W_RECENCY], dtype=float)
+            self.b = -_BIAS
+
+    def predict(self, features: np.ndarray) -> float:
+        raw = float(np.dot(features, self.W) + self.b)
+        return 1.0 / (1.0 + math.exp(-np.clip(raw, -88.0, 88.0)))
+
+    @classmethod
+    def from_config(cls) -> "NeuralForgetModel":
+        try:
+            from _lazy_imports import get_config
+            raw = get_config().neural_forget_weights
+        except Exception:
+            raw = ""
+        if not raw:
+            return cls(weights=None)
+        try:
+            parts = [float(x) for x in raw.split(",")]
+            arr = np.array(parts)
+            if arr.shape == (6,):
+                return cls(arr)
+        except Exception:
+            pass
+        return cls(weights=None)
+
+    def to_config_str(self) -> str:
+        return ",".join(f"{v:.6f}" for v in list(self.W) + [self.b])
+
+    @staticmethod
+    def features(
+        access_signal: float,
+        query_surprise: float,
+        importance_norm: float,
+        fitness: float,
+        recency_penalty: float,
+    ) -> np.ndarray:
+        return np.array([access_signal, query_surprise, importance_norm, fitness, recency_penalty], dtype=float)
 
 
 def surprise_score(content: str, reference: str) -> float:
@@ -98,7 +169,35 @@ def compute_retention_rate(
     recency_penalty = min(recency_days / _RECENCY_CAP, 1.0)
     importance_norm = importance / 5.0
 
-    raw = (
+    features = NeuralForgetModel.features(
+        access_signal, query_surprise, importance_norm, fitness, recency_penalty
+    )
+
+    try:
+        from _lazy_imports import get_config
+
+        mode = getattr(get_config(), "neural_forget_mode", "formula")
+    except Exception:
+        mode = "formula"
+
+    if mode == "learned":
+        return NeuralForgetModel.from_config().predict(features)
+    if mode == "hybrid":
+        model = NeuralForgetModel.from_config()
+        learned = model.predict(features)
+        formula = _sigmoid(
+            _W_ACCESS * access_signal
+            + _W_SURPRISE * query_surprise
+            + _W_IMPORTANCE * importance_norm
+            + _W_FITNESS * fitness
+            - _W_RECENCY * recency_penalty
+            - _BIAS
+        )
+        if model.W.sum() != 0.0 and not (model.W == np.array([_W_ACCESS, _W_SURPRISE, _W_IMPORTANCE, _W_FITNESS, -_W_RECENCY])).all():
+            return learned * 0.85 + formula * 0.15
+        return formula
+
+    return _sigmoid(
         _W_ACCESS * access_signal
         + _W_SURPRISE * query_surprise
         + _W_IMPORTANCE * importance_norm
@@ -106,7 +205,6 @@ def compute_retention_rate(
         - _W_RECENCY * recency_penalty
         - _BIAS
     )
-    return _sigmoid(raw)
 
 
 def _recent_queries(db: sqlite3.Connection, limit: int = _QUERY_HISTORY) -> list[str]:

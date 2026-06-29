@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import sqlite3
 import subprocess
 import sys
@@ -90,6 +91,13 @@ def memory_dashboard(action: str = "status", port: int = 8501) -> str:
             if not streamlit_bin.exists():
                 streamlit_bin = Path("streamlit")
 
+            _bind_host = os.environ.get("MEMORY_DASHBOARD_HOST", "127.0.0.1")
+            if _bind_host not in ("127.0.0.1", "localhost"):
+                logger.warning(
+                    "Dashboard bound to %s — set MEMORY_DASHBOARD_TLS_CERT / "
+                    "MEMORY_DASHBOARD_TLS_KEY for remote use.",
+                    _bind_host,
+                )
             _DASHBOARD_PROCESS = subprocess.Popen(
                 [
                     str(streamlit_bin),
@@ -98,7 +106,7 @@ def memory_dashboard(action: str = "status", port: int = 8501) -> str:
                     "--server.port",
                     str(port),
                     "--server.address",
-                    "0.0.0.0",
+                    _bind_host,
                     "--server.headless",
                     "true",
                 ],

@@ -53,7 +53,7 @@ from memory_common import GLOBAL_MEM_DIR, safe_close_db
 from infrastructure import resolve_active_memory_dir
 
 BACKUP_DIR_NAME = "backups"
-CURRENT_SCHEMA_VERSION = 22
+CURRENT_SCHEMA_VERSION = 23
 CRON_MARKER = "# agentic-memory-backup-validate"
 CRON_SCHEDULE = "0 3 * * *"
 

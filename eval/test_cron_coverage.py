@@ -777,17 +777,38 @@ class TestCronRetentionStatsBehavior(unittest.TestCase):
 
         # make_lazy_getattr caches ADAPTIVE_RETENTION_ENABLED on the
         # backing module (background.adaptive_retention.__dict__).
-        # Clear any stale cache so each test starts clean.
+        # test_main injects batch_update_retention via the shim
+        # __dict__; both must be cleared from the shim between tests.
+        # Do NOT pop batch_update_retention from the backing module —
+        # it's a regular def there; its __getattr__ cannot resole it.
         try:
             ar = self.mod.ar
             _backing = getattr(ar, "_real", ar)
-            _backing.__dict__.pop("ADAPTIVE_RETENTION_ENABLED", None)
+            for _k in ("ADAPTIVE_RETENTION_ENABLED",):
+                _backing.__dict__.pop(_k, None)
+            for _k in ("ADAPTIVE_RETENTION_ENABLED", "batch_update_retention"):
+                ar.__dict__.pop(_k, None)
         except Exception:
             pass
 
     def test_main_runs_adaptive_retention(self):
         with (
             unittest.mock.patch.object(self.mod, "acquire_lock_or_exit"),
+            unittest.mock.patch.object(
+                self.mod.ar,
+                "ADAPTIVE_RETENTION_ENABLED",
+                True,
+            ),
+            unittest.mock.patch.object(
+                self.mod.ar,
+                "batch_update_retention",
+                return_value={"updated": 7, "skipped": 3},
+            ),
+            unittest.mock.patch.object(
+                self.mod.nf,
+                "batch_update_retention",
+                return_value={"updated": 5, "failed": 0},
+            ),
             unittest.mock.patch(
                 "infrastructure.resolve_active_memory_dir"
             ) as mock_resolve,
@@ -798,23 +819,7 @@ class TestCronRetentionStatsBehavior(unittest.TestCase):
         ):
             mock_path = unittest.mock.MagicMock()
             mock_path.exists.return_value = True
-            mock_resolve.return_value.__truediv__.return_value = mock_path
-
-            _ar = self.mod.ar
-            _backing = getattr(_ar, "_real", _ar)
-            _backing.__dict__["ADAPTIVE_RETENTION_ENABLED"] = True
-            _ar.__dict__["batch_update_retention"] = lambda dry_run=False: {
-                "updated": 7,
-                "skipped": 3,
-            }
-            _ar.__dict__["ADAPTIVE_RETENTION_ENABLED"] = True
-
-            _backing.__dict__["batch_update_retention"] = lambda dry_run=False: {
-                "updated": 5,
-                "failed": 0,
-            }
-            del _backing.__dict__["ADAPTIVE_RETENTION_ENABLED"]
-
+            mock_resolve.return_value = mock_path
             buf = self._io.StringIO()
             with self._contextlib.redirect_stdout(buf):
                 self.mod.main()

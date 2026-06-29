@@ -24,6 +24,7 @@ This file focuses on the **wrapper contract**.
 
 import json
 import os
+import pytest
 import sqlite3
 import sys
 import tempfile
@@ -242,6 +243,7 @@ class TestIndexEmbeddingWrapper(unittest.TestCase):
 # =============================================================================
 
 
+@pytest.mark.skip(reason="SSM v1 removed; _write_ssm_state no longer exists")
 class TestWriteSSMState(unittest.TestCase):
     """Tests for _write_ssm_state — incremental SSM side-channel.
 

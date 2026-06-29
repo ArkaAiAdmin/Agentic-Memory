@@ -93,7 +93,6 @@ ADMIN_TOOLS = [
     "memory_run_tier_migration",
     "memory_check_embedding_model",
     "memory_incremental_update",
-    "memory_merge_embeddings",
     "memory_duplicates",
     "memory_merge_suggestions",
     "memory_llm_unload",

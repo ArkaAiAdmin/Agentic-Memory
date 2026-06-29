@@ -187,6 +187,83 @@ def _scrub_metadata(d: Optional[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Audit reconciliation helpers (P0.2 — split-brain fix)
+# ---------------------------------------------------------------------------
+
+
+def _mark_audit_pending(
+    db_path: Optional[Path],
+    table: str,
+    row_id: str,
+) -> None:
+    """Stamp a v22 row with audit_status='pending' after save_memory fails.
+
+    Uses a short-lived connection so the call is safe from inside the
+    _save_system_record error handler (which has already closed its
+    own connection).
+    """
+    if table not in _TABLE_DML:
+        return
+    pk = _TABLE_DML[table][0]
+    path = str(db_path) if db_path else str(Path.cwd() / "memory" / "memory.db")
+    conn = None
+    try:
+        from db import connection_pool
+
+        conn = connection_pool.get(path, timeout=10.0)
+        conn.execute(
+            f"UPDATE {table} SET audit_status='pending' WHERE {pk}=?",
+            (row_id,),
+        )
+        conn.commit()
+    except Exception:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    finally:
+        if conn:
+            from db import safe_close_db
+
+            safe_close_db(conn)
+
+
+def reconcile_audit(db_path: Optional[Path] = None) -> str:
+    """Find v22 rows whose audit trail (save_memory) is missing.
+
+    Returns a JSON report of pending rows.
+    """
+    path = str(db_path) if db_path else str(Path.cwd() / "memory" / "memory.db")
+    conn = None
+    pending: dict[str, list[str]] = {}
+    try:
+        from db import connection_pool
+
+        conn = connection_pool.get(path, timeout=30.0)
+        for table in _TABLE_DML:
+            pk = _TABLE_DML[table][0]
+            try:
+                rows = conn.execute(
+                    f"SELECT {pk} FROM {table} WHERE audit_status='pending'"
+                ).fetchall()
+                if rows:
+                    pending[table] = [r[0] for r in rows]
+            except sqlite3.OperationalError:
+                pass  # audit_status column not yet migrated
+        return json.dumps(
+            {"ok": True, "pending": pending, "total": sum(len(v) for v in pending.values())}
+        )
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": str(exc)})
+    finally:
+        if conn:
+            from db import safe_close_db
+
+            safe_close_db(conn)
+
+
+# ---------------------------------------------------------------------------
 # Internal write-through helper (the ONLY DB write path from SessionManager)
 # ---------------------------------------------------------------------------
 
@@ -217,6 +294,7 @@ def _save_system_record(
     # 1. Direct INSERT into the v22 table
     # ------------------------------------------------------------------
     conn = None
+    saved = False
     try:
         from db import connection_pool
 
@@ -225,6 +303,7 @@ def _save_system_record(
         conn.execute("PRAGMA foreign_keys = ON")
         _upsert_v22_table(conn, table, {**row, "id": row_id})
         conn.commit()
+        saved = True
     except Exception as exc:
         logger.warning(
             "_save_system_record: v22 direct write failed for %s: %s", table, exc
@@ -239,6 +318,8 @@ def _save_system_record(
             from db import safe_close_db
 
             safe_close_db(conn)
+    if not saved:
+        return None  # v22 write failed entirely — nothing to reconcile
     # ------------------------------------------------------------------
     # 2. Audit trail via save_memory
     # ------------------------------------------------------------------
@@ -269,9 +350,11 @@ def _save_system_record(
         logger.warning(
             "_save_system_record: save_memory returned error for %s: %s", table, note_id
         )
+        _mark_audit_pending(db_path, table, row_id)
         return row_id  # v22 row written, audit trail failed
     except Exception as exc:
         logger.warning("_save_system_record: save_memory raised for %s: %s", table, exc)
+        _mark_audit_pending(db_path, table, row_id)
         return row_id  # v22 row written, audit trail raised
 
 

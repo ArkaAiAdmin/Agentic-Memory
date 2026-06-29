@@ -87,19 +87,9 @@ def _index_embedding(
 ):
     """Refresh the embedding cache for a single row.
 
-    Two embeddings are produced for each save:
-
-    1. The main model2vec / sentence-transformers embedding (full
-       document, 256-dim) — produced by ``embedding_search`` and
-       stored in the ``embedding`` BLOB column. This is what search
-       uses for cosine similarity.
-
-    2. An SSM side-channel state (128-dim) — produced by
-       ``embedding_incremental.SsmEncoder`` and stored in the
-       ``ssm_state`` TEXT column (if it exists). This is the fast
-       path for incremental updates: when a memory is updated, the
-       new SSM state is the previous state extended with the new
-       text, avoiding a full re-encoding of the document.
+    Produces the main model2vec / sentence-transformers embedding
+    (full document, 256-dim) and stores it in the ``embedding`` BLOB
+    column.  This is what search uses for cosine similarity.
     """
     try:
         from _lazy_imports import get_embedding_search
@@ -109,54 +99,6 @@ def _index_embedding(
         )
     except Exception as ee:
         logger.debug("Embedding cache write skipped for %s: %s", note_id, ee)
-
-    # SSM side-channel: produce a 128-dim state alongside the main
-    # embedding so future updates can use encode_update() instead
-    # of re-encoding the full document. Best-effort: a missing SSM
-    # module or column must not break the main embedding write.
-    _write_ssm_state(db, note_id, content)
-
-
-def _write_ssm_state(db, note_id: str, content: str) -> None:
-    """Compute the SSM state for a memory and write it to memory_embeddings.
-
-    Best-effort: a missing SSM column (older DBs) or any other error
-    is silently logged. The main embedding write is not affected.
-    """
-    try:
-        import json as _json
-
-        from embedding_incremental import incremental_embed_update
-
-        # Check if the ssm_state column exists (it may not on older
-        # DBs that haven't been migrated). Fast-fail if missing.
-        cols = {row[1] for row in db.execute("PRAGMA table_info(memory_embeddings)")}
-        if "ssm_state" not in cols:
-            return
-
-        # If the row already has an SSM state, treat the new content
-        # as a delta and extend the previous state. Otherwise encode
-        # from scratch.
-        prev = db.execute(
-            "SELECT ssm_state FROM memory_embeddings WHERE memory_id = ?",
-            (note_id,),
-        ).fetchone()
-        old_state = None
-        if prev and prev[0]:
-            try:
-                old_state = _json.loads(prev[0])
-                if not isinstance(old_state, list):
-                    old_state = None
-            except (ValueError, TypeError):
-                old_state = None
-
-        new_state = incremental_embed_update(note_id, content, old_state=old_state)
-        db.execute(
-            "UPDATE memory_embeddings SET ssm_state = ? WHERE memory_id = ?",
-            (_json.dumps(new_state), note_id),
-        )
-    except Exception as se:
-        logger.debug("SSM state write skipped for %s: %s", note_id, se)
 
 
 def _index_kg(db, note_id: str, content: str):

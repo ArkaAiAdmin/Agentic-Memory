@@ -156,14 +156,9 @@ assert ".md" in SUPPORTED_FORMATS
 assert ".pdf" in SUPPORTED_FORMATS
 ok("multi-modal ingestion API works")
 
-# ----
-section("K", "R5: Incremental embedding stub")
-from embedding_incremental import SsmEncoder
-
-se = SsmEncoder()
-vec = se.encode("test memory content")
-assert len(vec) == 128
-ok(f"SSM encoder produces 128-dim vector")
+ # ----
+section("K", "R5: Incremental embedding stub (removed: SSM v1 dead end)")
+print("  skipped — SSM v1 removed; v2 TemporalAttentionModel in search/scoring.py")
 
 # ----
 section("L", "SDK: Memory class")

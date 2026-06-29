@@ -1,31 +1,20 @@
-# backward compat - real implementation is in infra/embedding_incremental
-import sys
-import types
-import infra.embedding_incremental as _real
+"""embeddings.py — embedding utilities (removed SSM v1).
 
-def __getattr__(name):
-    return getattr(_real, name)
+The old `embedding_incremental.py` (SsmEncoder, merge_embeddings,
+_write_ssm_state) was removed in 2026-06-29.  The new Temporal SSM
+lives in search/scoring.py and is wired into the read path.
 
-def __dir__():
-    return sorted(set(object.__dir__(_real)) | set(dir(_real)))
+This stub exists solely so that any third-party code that still does
+``import embedding_incremental`` gets a clear DeprecationWarning at
+import time, rather than an opaque ImportError.
+"""
 
-class _ShimModule(types.ModuleType):
-    _real = None
-    def __getattr__(self, name):
-        return getattr(self._real, name)
-    def __setattr__(self, name, value):
-        if name in ('_real', '__class__'):
-            super().__setattr__(name, value)
-        else:
-            setattr(self._real, name, value)
-    def __delattr__(self, name):
-        if name == '_real':
-            raise AttributeError("_real is protected")
-        delattr(self._real, name)
-    def __dir__(self):
-        return sorted(set(super().__dir__()) | set(dir(self._real)))
+import warnings
 
-if __name__ in sys.modules:
-    _shim = sys.modules[__name__]
-    _shim.__class__ = _ShimModule
-    object.__setattr__(_shim, '_real', _real)
+warnings.warn(
+    "embedding_incremental was removed (SSM v1 dead end). "
+    "The new Temporal SSM is in search/scoring.py. "
+    "Remove all imports of embedding_incremental.",
+    DeprecationWarning,
+    stacklevel=2,
+)
