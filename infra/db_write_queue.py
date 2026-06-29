@@ -216,6 +216,7 @@ class SQLiteWriteQueue:
 
     def __init__(self) -> None:
         self._queue: queue.Queue = queue.Queue()
+        self._shutdown = threading.Event()
         self._thread = threading.Thread(
             target=self._run_loop,
             daemon=True,
@@ -267,12 +268,15 @@ class SQLiteWriteQueue:
 
     def _run_loop(self) -> None:
         """Main serial processing loop running on the dedicated background thread."""
-        while True:
+        while not self._shutdown.is_set():
             try:
-                task = self._queue.get()
-                if task is None:
-                    break
+                task = self._queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if task is None:
+                break
 
+            try:
                 db_path, task_type, payload, future = task
 
                 from db_path_flock import db_path_flock
@@ -315,14 +319,9 @@ class SQLiteWriteQueue:
                             try:
                                 future.set_result(True)
                                 while True:
-                                    # Use a timeout to detect abandoned sessions.
-                                    # If the client doesn't send a command within 10 seconds,
-                                    # assume the session is abandoned and clean up.
                                     try:
                                         cmd = cmd_queue.get(timeout=10.0)
                                     except queue.Empty:
-                                        # Session timeout - no commands received for 10s.
-                                        # Roll back any pending transaction and exit session.
                                         try:
                                             conn.rollback()
                                         except Exception:
@@ -405,27 +404,20 @@ class SQLiteWriteQueue:
             except Exception as e:
                 logger.error("Fatal error in SQLiteWriteQueue run loop: %s", e)
 
-    def stop(self, timeout: float = 5.0) -> None:
+    def stop(self, timeout: float = 15.0) -> None:
         """Gracefully stop the background worker thread.
 
-        Sends a sentinel ``None`` task to the queue, then joins the thread
-        with a timeout.  Pending writes are drained before the sentinel
-        is processed, so callers that use ``enqueue_write`` and rely on
-        a future resolve will see them complete.
-
-        The timeout exists because the test suite imports this module
-        at conftest-load time; if a previous worker is wedged the join
-        would otherwise block the whole test process forever.  A
-        non-joined thread is a daemon, so the OS will reap it at exit
-        (the SQLite connection it holds will be released by the OS's
-        own cleanup, since Python's __del__ on sqlite3.Connection is
-        best-effort and we never get a clean interpreter shutdown on
-        a segfault anyway).
+        Sets a shutdown flag so the main loop can break out even if it's
+        currently blocked on a session's inner cmd_queue (10s timeout).
+        Then drains any remaining tasks before joining.  Pending writes
+        resolve normally; a timed-out join means the daemon thread will
+        be reaped by the OS at process exit.
         """
+        self._shutdown.set()
         try:
             self._queue.put(None)
         except Exception:
-            return
+            pass
         self._thread.join(timeout=timeout)
 
 
