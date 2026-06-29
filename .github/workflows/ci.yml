@@ -78,7 +78,6 @@ jobs:
             --dist=loadfile \
             --cov \
             --cov-report=xml \
-            --cov-report=term-missing \
             -p no:cacheprovider
         timeout-minutes: 45
       - name: Upload coverage
