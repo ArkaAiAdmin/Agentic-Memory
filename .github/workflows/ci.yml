@@ -66,8 +66,13 @@ jobs:
           MEMORY_EMBEDDINGS: "0"
         run: |
           . venv/bin/activate
+          # ubuntu-latest has 2 cores; avoid OOM-killed xdist workers.
+          # ``-n auto`` scales to CPU count. ``--dist=loadfile`` keeps
+          # tests from the same file on the same worker to reduce races.
           python -m pytest eval/ \
             --tb=short -q \
+            -n auto \
+            --dist=loadfile \
             -p no:cacheprovider
         timeout-minutes: 45
 
