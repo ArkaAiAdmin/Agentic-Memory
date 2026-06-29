@@ -34,7 +34,9 @@ _DEFAULT_VENV_PY = str(install_root() / "venv" / "bin" / "python")
 if not os.path.exists(_DEFAULT_VENV_PY):
     _DEFAULT_VENV_PY = str(install_root() / ".venv" / "bin" / "python")
 PYTHON = os.environ.get("MEMORY_PYTHON") or (
-    sys.executable if Path(sys.executable).parents[1] == SCRIPTS else _DEFAULT_VENV_PY
+    sys.executable
+    if Path(sys.executable).parents[2] == install_root()
+    else _DEFAULT_VENV_PY
 )
 
 
