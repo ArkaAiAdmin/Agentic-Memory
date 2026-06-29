@@ -31,7 +31,7 @@ jobs:
           MEMORY_CTR_TUNING: "0"
         run: |
           . venv/bin/activate
-          pytest eval/test_all_regression.py -v --no-header -p no:cacheprovider
+          python -m pytest eval/test_all_regression.py -v --no-header -p no:cacheprovider
       - name: Run extended integration suite
         env:
           MEMORY_RERANKER_DISABLED: "1"
