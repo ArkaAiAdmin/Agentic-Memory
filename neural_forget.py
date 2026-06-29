@@ -34,7 +34,12 @@ import time
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    np = None  # type: ignore
+    _HAS_NUMPY = False
 
 logger = logging.getLogger(__name__)
 
@@ -75,18 +80,33 @@ class NeuralForgetModel:
     loading, no GPU, no torch dependency.
     """
 
-    def __init__(self, weights: np.ndarray | None = None) -> None:
-        if weights is not None and weights.shape == (6,):
-            self.W = weights[:5].astype(float)
-            self.b = float(weights[5])
-        else:
-            # Matches the production formula constants exactly.
+    def __init__(self, weights: np.ndarray | list[float] | None = None) -> None:
+        if _HAS_NUMPY:
+            if weights is not None:
+                if isinstance(weights, list):
+                    weights = np.array(weights)
+                if weights.shape == (6,):
+                    self.W = weights[:5].astype(float)
+                    self.b = float(weights[5])
+                    return
             self.W = np.array([_W_ACCESS, _W_SURPRISE, _W_IMPORTANCE, _W_FITNESS, -_W_RECENCY], dtype=float)
             self.b = -_BIAS
+        else:
+            if weights is not None and len(weights) == 6:
+                self.W = [float(x) for x in weights[:5]]
+                self.b = float(weights[5])
+            else:
+                self.W = [_W_ACCESS, _W_SURPRISE, _W_IMPORTANCE, _W_FITNESS, -_W_RECENCY]
+                self.b = -_BIAS
 
-    def predict(self, features: np.ndarray) -> float:
-        raw = float(np.dot(features, self.W) + self.b)
-        return 1.0 / (1.0 + math.exp(-np.clip(raw, -88.0, 88.0)))
+    def predict(self, features: np.ndarray | list[float]) -> float:
+        if _HAS_NUMPY:
+            raw = float(np.dot(features, self.W) + self.b)
+            return 1.0 / (1.0 + math.exp(-np.clip(raw, -88.0, 88.0)))
+        else:
+            raw = sum(f * w for f, w in zip(features, self.W)) + self.b
+            clipped = max(-88.0, min(88.0, raw))
+            return 1.0 / (1.0 + math.exp(-clipped))
 
     @classmethod
     def from_config(cls) -> "NeuralForgetModel":
@@ -99,9 +119,13 @@ class NeuralForgetModel:
             return cls(weights=None)
         try:
             parts = [float(x) for x in raw.split(",")]
-            arr = np.array(parts)
-            if arr.shape == (6,):
-                return cls(arr)
+            if _HAS_NUMPY:
+                arr = np.array(parts)
+                if arr.shape == (6,):
+                    return cls(arr)
+            else:
+                if len(parts) == 6:
+                    return cls(parts)
         except Exception:
             pass
         return cls(weights=None)
@@ -116,8 +140,11 @@ class NeuralForgetModel:
         importance_norm: float,
         fitness: float,
         recency_penalty: float,
-    ) -> np.ndarray:
-        return np.array([access_signal, query_surprise, importance_norm, fitness, recency_penalty], dtype=float)
+    ) -> np.ndarray | list[float]:
+        if _HAS_NUMPY:
+            return np.array([access_signal, query_surprise, importance_norm, fitness, recency_penalty], dtype=float)
+        else:
+            return [access_signal, query_surprise, importance_norm, fitness, recency_penalty]
 
 
 def surprise_score(content: str, reference: str) -> float:
@@ -193,7 +220,13 @@ def compute_retention_rate(
             - _W_RECENCY * recency_penalty
             - _BIAS
         )
-        if model.W.sum() != 0.0 and not (model.W == np.array([_W_ACCESS, _W_SURPRISE, _W_IMPORTANCE, _W_FITNESS, -_W_RECENCY])).all():
+        W_sum = np.sum(model.W) if _HAS_NUMPY else sum(model.W)
+        is_fallback = False
+        if _HAS_NUMPY:
+            is_fallback = (model.W == np.array([_W_ACCESS, _W_SURPRISE, _W_IMPORTANCE, _W_FITNESS, -_W_RECENCY])).all()
+        else:
+            is_fallback = (model.W == [_W_ACCESS, _W_SURPRISE, _W_IMPORTANCE, _W_FITNESS, -_W_RECENCY])
+        if W_sum != 0.0 and not is_fallback:
             return learned * 0.85 + formula * 0.15
         return formula
 

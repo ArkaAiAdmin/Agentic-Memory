@@ -5,6 +5,8 @@ Note: Requires model2vec + numpy installed in the agentic-memory venv.
 Run with: ~/.config/agentic-memory/venv/bin/python embedding_search.py <query>
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import logging

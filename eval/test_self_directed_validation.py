@@ -33,242 +33,248 @@ def _create_test_db(tmpdir: str) -> Path:
     migrations to bring the schema up to SCHEMA_VERSION.
     """
     db_path = Path(tmpdir) / "memory.db"
-    with open_db(db_path) as conn:
-        # --- Base memories table (required by all subsystems) ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS memories (
-                id                  TEXT PRIMARY KEY,
-                content             TEXT NOT NULL,
-                source_file         TEXT,
-                tags                TEXT DEFAULT '[]',
-                created_at          REAL,
-                updated_at          REAL,
-                pinned              INTEGER DEFAULT 0,
-                repo_id             TEXT,
-                consolidation_state TEXT,
-                observed_at         REAL,
-                fitness_score       REAL,
-                backlinks           TEXT,
-                category            TEXT,
-                context_prefix      TEXT,
-                deleted_by          TEXT,
-                superseded_by       TEXT,
-                valid_from          TEXT,
-                valid_to            TEXT,
-                last_accessed       TEXT,
-                deleted_at          TEXT,
-                tier                TEXT,
-                importance          REAL,
-                importance_score    REAL,
-                metadata            TEXT,
-                access_count        INTEGER DEFAULT 0,
-                success_score       REAL DEFAULT 0.0
-            )
-        """)
-        # --- schema_version ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS schema_version (
-                id      INTEGER PRIMARY KEY CHECK (id = 1),
-                version INTEGER NOT NULL
-            )
-        """)
-        conn.execute(
-            "INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)",
-            (SCHEMA_VERSION,),
-        )
-        # --- backlinks ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS backlinks (
-                source_id   TEXT NOT NULL,
-                target_id   TEXT NOT NULL,
-                source_file TEXT,
-                UNIQUE(source_id, target_id)
-            )
-        """)
-        # --- memory_chunks ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS memory_chunks (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                parent_id     TEXT NOT NULL,
-                chunk_idx     INTEGER NOT NULL,
-                start_offset  INTEGER NOT NULL,
-                end_offset    INTEGER NOT NULL,
-                content       TEXT NOT NULL,
-                created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-                UNIQUE(parent_id, chunk_idx)
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memory_chunks_parent_id "
-            "ON memory_chunks(parent_id)"
-        )
-        # --- memory_embeddings ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS memory_embeddings (
-                memory_id       TEXT PRIMARY KEY,
-                content_hash    TEXT NOT NULL,
-                embedding       BLOB NOT NULL,
-                model_revision  TEXT NOT NULL,
-                dim             INTEGER NOT NULL,
-                updated_at      REAL NOT NULL,
-                FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memory_embeddings_hash "
-            "ON memory_embeddings(content_hash)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memory_embeddings_revision "
-            "ON memory_embeddings(model_revision)"
-        )
-        # --- user_access_log (adaptive retention) ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_access_log (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                note_id    TEXT NOT NULL,
-                access_ts  REAL NOT NULL,
-                source     TEXT NOT NULL DEFAULT 'search'
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_user_access_log_note_id "
-            "ON user_access_log(note_id)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_user_access_log_ts "
-            "ON user_access_log(access_ts)"
-        )
-        # --- kg_entities ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS kg_entities (
-                id          TEXT PRIMARY KEY,
-                name        TEXT NOT NULL,
-                entity_type TEXT NOT NULL DEFAULT 'concept',
-                created_at  TEXT DEFAULT (datetime('now')),
-                updated_at  TEXT DEFAULT (datetime('now'))
-            )
-        """)
-        # --- kg_edges ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS kg_edges (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_id   TEXT NOT NULL,
-                target_id   TEXT NOT NULL,
-                relation    TEXT NOT NULL DEFAULT 'related_to',
-                weight      REAL DEFAULT 1.0,
-                created_at  TEXT DEFAULT (datetime('now')),
-                FOREIGN KEY (source_id) REFERENCES kg_entities(id) ON DELETE CASCADE,
-                FOREIGN KEY (target_id) REFERENCES kg_entities(id) ON DELETE CASCADE
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_kg_edges_source ON kg_edges(source_id)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_kg_edges_target ON kg_edges(target_id)"
-        )
-        # --- kg_facts ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS kg_facts (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_memory   TEXT NOT NULL,
-                subject         TEXT NOT NULL,
-                predicate       TEXT NOT NULL,
-                object_value    TEXT NOT NULL,
-                confidence      REAL DEFAULT 1.0,
-                created_at      TEXT DEFAULT (datetime('now')),
-                FOREIGN KEY (source_memory) REFERENCES memories(id) ON DELETE CASCADE
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_kg_facts_source ON kg_facts(source_memory)"
-        )
-        # --- memory_vec_idx ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS memory_vec_idx (
-                id                INTEGER PRIMARY KEY CHECK (id = 1),
-                n_vectors         INTEGER NOT NULL,
-                dim               INTEGER NOT NULL,
-                metric            TEXT NOT NULL,
-                quantization      TEXT NOT NULL,
-                connectivity      INTEGER NOT NULL,
-                expansion_add     INTEGER NOT NULL,
-                expansion_search  INTEGER NOT NULL,
-                built_at          REAL NOT NULL,
-                index_blob        BLOB NOT NULL,
-                key_count         INTEGER NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS memory_vec_keys (
-                key         INTEGER PRIMARY KEY,
-                memory_id   TEXT NOT NULL UNIQUE REFERENCES memories(id) ON DELETE CASCADE
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_vec_keys_memory_id "
-            "ON memory_vec_keys(memory_id)"
-        )
-        # --- memory_audit_log ---
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS memory_audit_log (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts              REAL NOT NULL,
-                tool            TEXT NOT NULL,
-                args            TEXT,
-                results_count   INTEGER,
-                top1_id         TEXT,
-                latency_ms      REAL NOT NULL,
-                error           TEXT,
-                request_id      TEXT
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_audit_log_tool_ts "
-            "ON memory_audit_log(tool, ts)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON memory_audit_log(ts)"
-        )
-        # --- FTS5 ---
-        try:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        from db_migrations import run_schema_setup
+        run_schema_setup(conn)
+        with conn:
+            # --- Base memories table (required by all subsystems) ---
             conn.execute("""
-                CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-                    content, tags,
-                    tokenize='porter unicode61'
+                CREATE TABLE IF NOT EXISTS memories (
+                    id                  TEXT PRIMARY KEY,
+                    content             TEXT NOT NULL,
+                    source_file         TEXT,
+                    tags                TEXT DEFAULT '[]',
+                    created_at          REAL,
+                    updated_at          REAL,
+                    pinned              INTEGER DEFAULT 0,
+                    repo_id             TEXT,
+                    consolidation_state TEXT,
+                    observed_at         REAL,
+                    fitness_score       REAL,
+                    backlinks           TEXT,
+                    category            TEXT,
+                    context_prefix      TEXT,
+                    deleted_by          TEXT,
+                    superseded_by       TEXT,
+                    valid_from          TEXT,
+                    valid_to            TEXT,
+                    last_accessed       TEXT,
+                    deleted_at          TEXT,
+                    tier                TEXT,
+                    importance          REAL,
+                    importance_score    REAL,
+                    metadata            TEXT,
+                    access_count        INTEGER DEFAULT 0,
+                    success_score       REAL DEFAULT 0.0
                 )
             """)
-        except sqlite3.OperationalError:
-            pass  # FTS5 may not be available
-        # --- FTS sync triggers (SQLite 3.53+ uses DELETE FROM) ---
-        # Drop old triggers that use the deprecated 'delete' INSERT syntax
-        for trig in ("memories_ai", "memories_ad", "memories_au"):
-            conn.execute(f"DROP TRIGGER IF EXISTS {trig}")
-        try:
+            # --- schema_version ---
             conn.execute("""
-                CREATE TRIGGER memories_ai AFTER INSERT ON memories
-                WHEN new.deleted_at IS NULL
-                BEGIN
-                    INSERT INTO memories_fts(rowid, content, tags)
-                    VALUES (new.rowid, new.content, new.tags);
-                END
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    id      INTEGER PRIMARY KEY CHECK (id = 1),
+                    version INTEGER NOT NULL
+                )
+            """)
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)",
+                (SCHEMA_VERSION,),
+            )
+            # --- backlinks ---
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS backlinks (
+                    source_id   TEXT NOT NULL,
+                    target_id   TEXT NOT NULL,
+                    source_file TEXT,
+                    UNIQUE(source_id, target_id)
+                )
+            """)
+            # --- memory_chunks ---
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_chunks (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    parent_id     TEXT NOT NULL,
+                    chunk_idx     INTEGER NOT NULL,
+                    start_offset  INTEGER NOT NULL,
+                    end_offset    INTEGER NOT NULL,
+                    content       TEXT NOT NULL,
+                    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(parent_id, chunk_idx)
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_chunks_parent_id "
+                "ON memory_chunks(parent_id)"
+            )
+            # --- memory_embeddings ---
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_embeddings (
+                    memory_id       TEXT PRIMARY KEY,
+                    content_hash    TEXT NOT NULL,
+                    embedding       BLOB NOT NULL,
+                    model_revision  TEXT NOT NULL,
+                    dim             INTEGER NOT NULL,
+                    updated_at      REAL NOT NULL,
+                    FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_embeddings_hash "
+                "ON memory_embeddings(content_hash)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_embeddings_revision "
+                "ON memory_embeddings(model_revision)"
+            )
+            # --- user_access_log (adaptive retention) ---
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_access_log (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    note_id    TEXT NOT NULL,
+                    access_ts  REAL NOT NULL,
+                    source     TEXT NOT NULL DEFAULT 'search'
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_access_log_note_id "
+                "ON user_access_log(note_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_access_log_ts "
+                "ON user_access_log(access_ts)"
+            )
+            # --- kg_entities ---
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kg_entities (
+                    id          TEXT PRIMARY KEY,
+                    name        TEXT NOT NULL,
+                    entity_type TEXT NOT NULL DEFAULT 'concept',
+                    created_at  TEXT DEFAULT (datetime('now')),
+                    updated_at  TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            # --- kg_edges ---
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kg_edges (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_id   TEXT NOT NULL,
+                    target_id   TEXT NOT NULL,
+                    relation    TEXT NOT NULL DEFAULT 'related_to',
+                    weight      REAL DEFAULT 1.0,
+                    created_at  TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY (source_id) REFERENCES kg_entities(id) ON DELETE CASCADE,
+                    FOREIGN KEY (target_id) REFERENCES kg_entities(id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kg_edges_source ON kg_edges(source_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kg_edges_target ON kg_edges(target_id)"
+            )
+            # --- kg_facts ---
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kg_facts (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_memory   TEXT NOT NULL,
+                    subject         TEXT NOT NULL,
+                    predicate       TEXT NOT NULL,
+                    object_value    TEXT NOT NULL,
+                    confidence      REAL DEFAULT 1.0,
+                    created_at      TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY (source_memory) REFERENCES memories(id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_kg_facts_source ON kg_facts(source_memory)"
+            )
+            # --- memory_vec_idx ---
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_vec_idx (
+                    id                INTEGER PRIMARY KEY CHECK (id = 1),
+                    n_vectors         INTEGER NOT NULL,
+                    dim               INTEGER NOT NULL,
+                    metric            TEXT NOT NULL,
+                    quantization      TEXT NOT NULL,
+                    connectivity      INTEGER NOT NULL,
+                    expansion_add     INTEGER NOT NULL,
+                    expansion_search  INTEGER NOT NULL,
+                    built_at          REAL NOT NULL,
+                    index_blob        BLOB NOT NULL,
+                    key_count         INTEGER NOT NULL
+                )
             """)
             conn.execute("""
-                CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
-                    DELETE FROM memories_fts WHERE rowid = old.rowid;
-                END
+                CREATE TABLE IF NOT EXISTS memory_vec_keys (
+                    key         INTEGER PRIMARY KEY,
+                    memory_id   TEXT NOT NULL UNIQUE REFERENCES memories(id) ON DELETE CASCADE
+                )
             """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vec_keys_memory_id "
+                "ON memory_vec_keys(memory_id)"
+            )
+            # --- memory_audit_log ---
             conn.execute("""
-                CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN
-                    DELETE FROM memories_fts WHERE rowid = old.rowid;
-                    INSERT INTO memories_fts(rowid, content, tags)
-                    VALUES (new.rowid, new.content, new.tags);
-                END
+                CREATE TABLE IF NOT EXISTS memory_audit_log (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts              REAL NOT NULL,
+                    tool            TEXT NOT NULL,
+                    args            TEXT,
+                    results_count   INTEGER,
+                    top1_id         TEXT,
+                    latency_ms      REAL NOT NULL,
+                    error           TEXT,
+                    request_id      TEXT
+                )
             """)
-        except sqlite3.OperationalError:
-            pass
-        conn.commit()
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_log_tool_ts "
+                "ON memory_audit_log(tool, ts)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON memory_audit_log(ts)"
+            )
+            # --- FTS5 ---
+            try:
+                conn.execute("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+                        content, tags,
+                        tokenize='porter unicode61'
+                    )
+                """)
+            except sqlite3.OperationalError:
+                pass  # FTS5 may not be available
+            # --- FTS sync triggers (SQLite 3.53+ uses DELETE FROM) ---
+            # Drop old triggers that use the deprecated 'delete' INSERT syntax
+            for trig in ("memories_ai", "memories_ad", "memories_au"):
+                conn.execute(f"DROP TRIGGER IF EXISTS {trig}")
+            try:
+                conn.execute("""
+                    CREATE TRIGGER memories_ai AFTER INSERT ON memories
+                    WHEN new.deleted_at IS NULL
+                    BEGIN
+                        INSERT INTO memories_fts(rowid, content, tags)
+                        VALUES (new.rowid, new.content, new.tags);
+                    END
+                """)
+                conn.execute("""
+                    CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
+                        DELETE FROM memories_fts WHERE rowid = old.rowid;
+                    END
+                """)
+                conn.execute("""
+                    CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN
+                        DELETE FROM memories_fts WHERE rowid = old.rowid;
+                        INSERT INTO memories_fts(rowid, content, tags)
+                        VALUES (new.rowid, new.content, new.tags);
+                    END
+                """)
+            except sqlite3.OperationalError:
+                pass
+            conn.commit()
+    finally:
+        conn.close()
     return db_path
 
 

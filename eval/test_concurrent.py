@@ -63,10 +63,15 @@ from audit import flush_audit
 
 # Safety: use ONLY the test DB, never production.
 _test_db = os.environ.get("CONCURRENT_TEST_DB")
-_default_db = str(
-    Path.home() / ".config" / "agentic-memory" / "eval" / ".concurrent_test.db"
-)
-PROD_DB = Path(_test_db if _test_db else _default_db)
+worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+if _test_db:
+    _default_db = _test_db
+else:
+    suffix = f"_{worker_id}" if worker_id else ""
+    _default_db = str(
+        Path.home() / ".config" / "agentic-memory" / "eval" / f".concurrent_test{suffix}.db"
+    )
+PROD_DB = Path(_default_db)
 
 # Guard: never allow production DB path
 if "agentic-memory/" in str(PROD_DB) and ".concurrent" not in str(PROD_DB):
