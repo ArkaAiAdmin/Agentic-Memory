@@ -44,7 +44,7 @@ jobs:
           MYPYPATH: .
 
   test:
-    name: pytest (cov)
+    name: pytest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,8 +57,8 @@ jobs:
           python -m venv venv
           . venv/bin/activate
           pip install --upgrade pip
-          pip install -e ".[dev,embeddings]" --quiet 2>/dev/null || pip install numpy pytest pytest-cov pytest-xdist mcp
-      - name: Run tests with coverage
+          pip install -e ".[dev,embeddings]" --quiet 2>/dev/null || pip install numpy pytest pytest-xdist mcp
+      - name: Run tests
         env:
           MEMORY_RERANKER_DISABLED: "1"
           MEMORY_CTR_TUNING: "0"
@@ -66,28 +66,10 @@ jobs:
           MEMORY_EMBEDDINGS: "0"
         run: |
           . venv/bin/activate
-          # 2026-06-29: ubuntu-latest has 2 cores; -n 5 causes workers to be
-          # OOM-killed or SIGTERM'd by the runner, producing xdist 'untrusted'
-          # nodes and pytest-xdist 'node down: Not properly terminated' errors.
-          # --dist=loadfile keeps tests from the same file in the same xdist
-          # worker to prevent cross-worker race conditions.
           python -m pytest eval/ \
             --tb=short -q \
-            -n 2 \
-            --dist=loadfile \
-            --cov \
-            --cov-report=xml \
             -p no:cacheprovider
         timeout-minutes: 45
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-py3.12
-          path: |
-            coverage.xml
-            .coverage
-          retention-days: 14
 
   build-wheel:
     name: Build sdist + wheel
