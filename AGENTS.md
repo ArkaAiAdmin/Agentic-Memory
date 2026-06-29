@@ -50,6 +50,7 @@ agentic-memory/
 ├── hooks/                       ← 6 lifecycle hooks + 1 log helper
 ├── cron/                        ← 29 background jobs + install_crontab.sh
 ├── mcp_*.py (26 modules)        ← domain-split MCP tools
+├── background/auto_save.py      ← shim; impl split across background/* (Phase 3/4)
 ├── memory/                      ← live store (gitignored)
 └── eval/                        ← 183 test files, 3,498 test functions
 ```

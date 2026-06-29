@@ -106,7 +106,16 @@ agentic-memory/                    # Repo root — 102 production modules, 42,37
 │   ├── __init__.py                 # Public API, re-exports
 │   ├── index_backfills.py          # FTS, embedding, chunk, backlink, vec
 │   └── kg_backfills.py             # KG facts, KG graph, entity filter
-├── auto_save.py                    # Tool-call auto-save + async daemon (2,469 LOC)
+├── auto_save.py                    # Shim + CLI entry (617 LOC); impl in background/auto_save.py
+├── background/                     # Phase 3/4 decomposed auto-save modules
+│   ├── auto_save.py                # Core auto-save logic (imported by shim)
+│   ├── circuit_breaker.py          # Circuit breaker state, backoff, audit
+│   ├── config.py                   # Config helpers, allowlist/denylist, defaults
+│   ├── inbox.py                    # Inbox I/O, manifest, daemon lifecycle
+│   ├── tool_complete.py            # tool_complete, _fast_path_enqueue, _upsert_memory
+│   ├── daily_digest.py             # daily_digest, _build_daily_sections, archive
+│   ├── purge.py                    # purge_auto_saves
+│   └── daemon.py                   # run_daemon, _wait_for_file_modification
 ├── knowledge_graph.py              # Entity extraction
 ├── fact_extraction.py              # SPO triple extraction
 ├── kg_dedup.py                     # Exact + semantic dedup
@@ -126,7 +135,7 @@ agentic-memory/                    # Repo root — 102 production modules, 42,37
 | `save_pipeline.py` + `save/` | Write | Orchestrates markdown → index writes (~1,623 LOC shim + 5 submodules, ~1,400 LOC; 24+11=35 functions) |
 | `search_pipeline.py` + `search/` | Read | BM25 + vector + KG hybrid search (shim + 8 submodules, ~4,500 LOC; `search/orchestrator.py` 1,811 LOC with 28 functions) |
 | `backfill_all.py` + `backfill/` | Maintenance | Audit pipeline for index rebuilds |
-| `auto_save.py` | Hook | Tool-call auto-save + async/background-batch daemon (2,469 LOC, 44 functions) |
+| `auto_save.py` + `background/` (circuit_breaker, config, inbox, tool_complete, daily_digest, purge, daemon) | Hook | Tool-call auto-save + async/background-batch daemon (617 LOC shim + 7 submodules, ~2,076 LOC total; 26 functions) |
 | `knowledge_graph.py` | Write | Pattern-based NER, entity storage |
 | `fact_extraction.py` | Write | Regex-based SPO triple extraction |
 | `kg_dedup.py` | Maintenance | Exact + semantic entity deduplication |
