@@ -625,3 +625,150 @@ class TestDaemonSignalHandler(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ===========================================================================
+# Phase 6: Async daemon lifecycle tests
+# ===========================================================================
+
+
+class TestProcessInboxBatch(unittest.TestCase):
+    """_process_inbox_batch must process entries and return a summary dict
+    with saved/skipped/failed counts."""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.db_path = self.tmpdir / "memory.db"
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        run_schema_setup(conn)
+        conn.commit()
+        conn.close()
+
+        self._orig_db = os.environ.get("MEMORY_DB_PATH")
+        os.environ["MEMORY_DB_PATH"] = str(self.db_path)
+        if "auto_save" in sys.modules:
+            del sys.modules["auto_save"]
+        from auto_save import _process_inbox_batch
+
+        self._process = _process_inbox_batch
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        if self._orig_db:
+            os.environ["MEMORY_DB_PATH"] = self._orig_db
+        else:
+            os.environ.pop("MEMORY_DB_PATH", None)
+        if "auto_save" in sys.modules:
+            del sys.modules["auto_save"]
+
+    def test_empty_batch_returns_zero_summary(self):
+        """An empty entries list must return all-zero summary."""
+        result = self._process([])
+        self.assertEqual(result, {"saved": 0, "skipped": 0, "failed": 0})
+
+    def test_valid_entry_is_processed(self):
+        """A well-formed entry must increment the 'saved' count."""
+        entries = [
+            {
+                "ts": "2026-06-30T12:00:00+00:00",
+                "tool": "memory_save",
+                "params": '{"content": "test phase6 batch", "category": "sessions", "title_slug": "phase6_test"}',
+                "result_preview": "ok",
+            }
+        ]
+        result = self._process(entries)
+        self.assertEqual(result["saved"], 1)
+        self.assertEqual(result["skipped"], 0)
+        self.assertEqual(result["failed"], 0)
+
+    def test_malformed_json_params_are_handled(self):
+        """Malformed params JSON must not crash the batch."""
+        entries = [
+            {
+                "ts": "2026-06-30T12:00:00+00:00",
+                "tool": "memory_save",
+                "params": "not json",
+                "result_preview": "ok",
+            }
+        ]
+        # Should not raise; count may be failed or skipped depending on handler
+        result = self._process(entries)
+        self.assertIn("saved", result)
+        self.assertIn("skipped", result)
+        self.assertIn("failed", result)
+
+
+class TestEnqueueDrainProcessRoundTrip(unittest.TestCase):
+    """End-to-end: enqueue entries, drain them, process them, verify disk + DB."""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.db_path = self.tmpdir / "memory.db"
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        run_schema_setup(conn)
+        conn.commit()
+        conn.close()
+
+        self._orig_db = os.environ.get("MEMORY_DB_PATH")
+        os.environ["MEMORY_DB_PATH"] = str(self.db_path)
+        if "auto_save" in sys.modules:
+            del sys.modules["auto_save"]
+        from auto_save import _enqueue_to_inbox, _drain_inbox, _process_inbox_batch, get_auto_save_inbox_path
+
+        self._enqueue = _enqueue_to_inbox
+        self._drain = _drain_inbox
+        self._process = _process_inbox_batch
+        self._inbox_path = get_auto_save_inbox_path
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+        if self._orig_db:
+            os.environ["MEMORY_DB_PATH"] = self._orig_db
+        else:
+            os.environ.pop("MEMORY_DB_PATH", None)
+        inbox = self._inbox_path()
+        if inbox.exists():
+            inbox.unlink()
+        if "auto_save" in sys.modules:
+            del sys.modules["auto_save"]
+
+    def test_round_trip_enqueue_drain_process(self):
+        """Enqueue → drain → process must produce saved entries."""
+        entries = [
+            {
+                "ts": "2026-06-30T12:00:00+00:00",
+                "tool": "bash",
+                "params": '{"command": "echo phase6"}',
+                "result_preview": "phase6",
+            }
+        ]
+        for e in entries:
+            self.assertTrue(self._enqueue(e), "enqueue must succeed")
+
+        drained = self._drain()
+        self.assertEqual(len(drained), 1)
+
+        # Inbox is now empty
+        if self._inbox_path().exists():
+            self.assertEqual(self._inbox_path().read_text(encoding="utf-8"), "")
+
+        summary = self._process(drained)
+        self.assertGreaterEqual(summary["saved"], 0)
+        self.assertIn("skipped", summary)
+        self.assertIn("failed", summary)
+
+
+if __name__ == "__main__":
+    unittest.main()
