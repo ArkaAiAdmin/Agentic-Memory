@@ -284,16 +284,23 @@ def clear_pool_between_tests():
 
 @pytest.fixture(autouse=True)
 def reset_auto_save_state():
-    """Autouse fixture: reset auto-save circuit breaker state before every test.
+    """Autouse fixture: reset auto-save circuit breaker state and stop daemon
+    before every test.
 
     The auto-save module holds circuit-breaker state (failure_times,
     circuit_open_until) at module level. Without this fixture, a test that
     triggers failures leaves the breaker open for the next test, causing
     it to see 'simulated DB locked' instead of the expected error.
+
+    Also stops any leftover auto-save daemon from a previous test in the
+    same xdist worker, which can cause worker crashes when the daemon's
+    background threads conflict with the test's own threads.
     """
     try:
         from auto_save import _auto_save_reset_state, _AUTO_SAVE_STATE
+        from auto_save import _cleanup_auto_save_daemon
 
+        _cleanup_auto_save_daemon()
         _auto_save_reset_state()
         _AUTO_SAVE_STATE["failure_times"] = []
         _AUTO_SAVE_STATE["circuit_open_until"] = 0.0
@@ -302,8 +309,9 @@ def reset_auto_save_state():
         pass
     yield
     try:
-        from auto_save import _auto_save_reset_state
+        from auto_save import _auto_save_reset_state, _cleanup_auto_save_daemon
 
+        _cleanup_auto_save_daemon()
         _auto_save_reset_state()
     except Exception:
         pass
