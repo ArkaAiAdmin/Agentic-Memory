@@ -81,7 +81,10 @@ class NeuralForgetModel:
     """
 
     def __init__(self, weights: np.ndarray | list[float] | None = None) -> None:
+        self.W: np.ndarray | list[float]
+        self.b: float
         if _HAS_NUMPY:
+            assert np is not None
             if weights is not None:
                 if isinstance(weights, list):
                     weights = np.array(weights)
@@ -223,7 +226,8 @@ def compute_retention_rate(
         W_sum = np.sum(model.W) if _HAS_NUMPY else sum(model.W)
         is_fallback = False
         if _HAS_NUMPY:
-            is_fallback = (model.W == np.array([_W_ACCESS, _W_SURPRISE, _W_IMPORTANCE, _W_FITNESS, -_W_RECENCY])).all()
+            assert np is not None
+            is_fallback = bool(np.array_equal(model.W, np.array([_W_ACCESS, _W_SURPRISE, _W_IMPORTANCE, _W_FITNESS, -_W_RECENCY])))
         else:
             is_fallback = (model.W == [_W_ACCESS, _W_SURPRISE, _W_IMPORTANCE, _W_FITNESS, -_W_RECENCY])
         if W_sum != 0.0 and not is_fallback:
