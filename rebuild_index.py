@@ -24,8 +24,6 @@ except ImportError:
 
 from memory_common import (
     parse_frontmatter,
-    find_project_root,
-    log_backup,
     atomic_write,
     run_db_migrations,
 )  # noqa: E402
@@ -819,7 +817,7 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
                     else None,
                 ),
             )
-        except Exception as e:
+        except Exception:
             safe_close_db(db)
             if tmp_db_path.exists():
                 try:
@@ -954,7 +952,7 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
             safe_close_db(target_db)
         except Exception as e:
             logger.warning("Could not enable WAL mode: %s", e)
-    except Exception as e:
+    except Exception:
         if tmp_db_path.exists():
             try:
                 tmp_db_path.unlink()

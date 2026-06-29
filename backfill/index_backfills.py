@@ -205,7 +205,6 @@ def _backfill_vec_index_raw(db_path: Path):
 
 def _backfill_crdt_vectors(conn: sqlite3.Connection) -> dict:
     """Backfill version vectors and logical clocks for memories lacking them."""
-    from crdt_merge import parse_version_vector
 
     missing = conn.execute(
         "SELECT COUNT(*) FROM memories WHERE version_vector = '{}' AND logical_clock = 0"

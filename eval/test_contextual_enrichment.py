@@ -8,8 +8,6 @@ connections between related memories.
 import json
 import os
 import sys
-import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 

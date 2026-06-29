@@ -20,7 +20,6 @@ def _setup_test_env(tmpdir: str):
     os.environ["MEMORY_DB_PATH"] = str(Path(tmpdir) / "memory.db")
     os.environ["MEMORY_LOCAL_DIR"] = tmpdir
     # Bootstrap the DB
-    from memory_common import connection_pool
 
     db_path = str(Path(tmpdir) / "memory.db")
     if not Path(db_path).exists():

@@ -7,8 +7,6 @@ tests (Sprint 2) and the hook-path integration test (Sprint 3).
 
 from __future__ import annotations
 
-import json
-import os
 
 import pytest
 

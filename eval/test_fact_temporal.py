@@ -9,7 +9,11 @@ Covers:
 20+ scenarios across all 4 functions.
 """
 
-import os, sys, sqlite3, time, calendar
+import os
+import sys
+import sqlite3
+import time
+import calendar
 
 sys.path.insert(
     0,
@@ -453,7 +457,7 @@ class TestReconcileFactSupersession:
     def test_different_predicate_not_superseded(self):
         conn = _fresh_db()
         # Same subject, different predicate, different object — no contradiction
-        old_id = _upsert(
+        _upsert(
             conn,
             "Python",
             "is_a",
@@ -482,7 +486,7 @@ class TestReconcileFactSupersession:
 
     def test_same_object_not_superseded(self):
         conn = _fresh_db()
-        old_id = _upsert(
+        _upsert(
             conn,
             "Python",
             "is_a",
@@ -547,7 +551,7 @@ class TestReconcileFactSupersession:
 
     def test_different_time_not_superseded(self):
         conn = _fresh_db()
-        old_id = _upsert(
+        _upsert(
             conn,
             "Python",
             "is_a",
@@ -1125,7 +1129,7 @@ class TestEndToEndMemoryEdit:
         # First save: two distinct facts (no S+P collision, so no
         # contradiction fires — we want to isolate T5 invalidation
         # from T3 contradiction logic)
-        result1 = fe.index_facts_for_memory(
+        fe.index_facts_for_memory(
             conn,
             "mem_a",
             "## Description\n\n"
@@ -1159,7 +1163,7 @@ class TestEndToEndMemoryEdit:
     def test_new_memory_does_not_invalidate(self):
         """First save for a memory: no old facts, nothing invalidated."""
         conn = _fresh_db()
-        result = fe.index_facts_for_memory(
+        fe.index_facts_for_memory(
             conn, "fresh_mem", "## Description\n\nPython is a language."
         )
         # No facts should be invalidated

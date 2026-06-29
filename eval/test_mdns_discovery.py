@@ -4,11 +4,9 @@ import os
 import sys
 import tempfile
 import time
-import threading
 import urllib.request
 import json
 from pathlib import Path
-import pytest
 
 sys.path.insert(
     0,
@@ -64,7 +62,6 @@ class TestMDNSDiscoveryAndPEX:
         assert self.server2.start() is True
 
         # Wait up to 10 seconds for discovery to converge
-        discovered = False
         for _ in range(20):
             time.sleep(0.5)
             peers1 = self.server1.browser.get_peers()
@@ -72,7 +69,6 @@ class TestMDNSDiscoveryAndPEX:
             if any(p["agent_id"] == "test-agent-2" for p in peers1) and any(
                 p["agent_id"] == "test-agent-1" for p in peers2
             ):
-                discovered = True
                 break
 
         # Always register peers manually for the HTTP PEX endpoint test.

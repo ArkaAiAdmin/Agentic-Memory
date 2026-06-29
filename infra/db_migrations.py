@@ -723,7 +723,6 @@ def run_schema_setup(conn: sqlite3.Connection) -> None:
         pass
 
     from migration_runner import run_migrations as _run_sql_migrations
-    from migration_runner import SCHEMA_VERSION as _SQL_SCHEMA_VERSION
 
     # 1. SQL migrations version check (the correct fast-path)
     try:

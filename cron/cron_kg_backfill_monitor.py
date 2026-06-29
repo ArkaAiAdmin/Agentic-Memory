@@ -26,10 +26,7 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-import sys
-import os
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)

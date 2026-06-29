@@ -15,7 +15,6 @@ because they need a real ``memories`` table; this file only
 covers the pure surface.
 """
 
-import math
 import sys
 import unittest
 from pathlib import Path

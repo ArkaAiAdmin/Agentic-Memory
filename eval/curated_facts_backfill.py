@@ -23,7 +23,6 @@ os.chdir(INSTALL_ROOT)
 from fact_extraction import (  # noqa: E402
     index_facts_for_memory,
     ensure_facts_schema,
-    _should_skip_category,
 )
 
 DB_PATH = INSTALL_ROOT / "memory" / "memory.db"

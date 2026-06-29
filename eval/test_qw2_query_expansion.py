@@ -16,7 +16,6 @@ Verifies that:
 
 from __future__ import annotations
 
-import pytest
 
 import sqlite3
 import sys

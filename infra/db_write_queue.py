@@ -13,7 +13,7 @@ import queue
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Union
 
 logger = logging.getLogger(__name__)
 

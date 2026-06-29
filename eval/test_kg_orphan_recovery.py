@@ -23,7 +23,6 @@ Coverage:
 """
 
 import json
-import sqlite3
 import sys
 import tempfile
 import unittest
@@ -275,7 +274,7 @@ class TestSagaRollbackCleansOrphans(_KgTestBase):
     def test_undo_upsert_fresh_insert_cleans_kg_rows(self) -> None:
         """When a saga fails after the INSERT, undo deletes the row AND
         the dependent kg_facts/backlinks that an intermediate hook wrote."""
-        from saga import _build_save_memory_steps, Saga, SagaError, SagaStep
+        from saga import _build_save_memory_steps, Saga, SagaError
 
         self._seed_memory("lessons/foo")
         self._seed_fact("a", "b", "lessons/foo")
@@ -402,7 +401,7 @@ class TestFindKgOrphans(_KgTestBase):
         from memory_integrity import find_kg_orphans
 
         # Create an entity that is referenced by nothing.
-        e1 = self._seed_entity("orphan_entity")
+        self._seed_entity("orphan_entity")
         with open_db(self.db_path) as conn:
             orphans = find_kg_orphans(conn)
         names = [e["name"] for e in orphans["kg_entities"]]
@@ -426,7 +425,7 @@ class TestFindKgOrphans(_KgTestBase):
     def test_repair_dry_run_does_not_modify(self) -> None:
         from memory_integrity import repair_kg_orphans
 
-        e1 = self._seed_entity("orphan")
+        self._seed_entity("orphan")
         with open_db(self.db_path) as conn:
             orphans_before = conn.execute(
                 "SELECT COUNT(*) FROM kg_entities"
@@ -444,7 +443,7 @@ class TestFindKgOrphans(_KgTestBase):
     def test_repair_removes_orphans(self) -> None:
         from memory_integrity import repair_kg_orphans
 
-        e1 = self._seed_entity("orphan")
+        self._seed_entity("orphan")
         self._seed_backlink("lessons/missing", "lessons/x")
 
         result = repair_kg_orphans(self.db_path, dry_run=False)

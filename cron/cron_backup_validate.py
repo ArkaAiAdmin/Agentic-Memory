@@ -35,7 +35,6 @@ import shutil
 import sqlite3
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 # H9 fix (2026-06-22): serialize against concurrent backup / integrity runs.
@@ -50,7 +49,6 @@ if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
 from memory_common import GLOBAL_MEM_DIR, safe_close_db
-from infrastructure import resolve_active_memory_dir
 
 BACKUP_DIR_NAME = "backups"
 CURRENT_SCHEMA_VERSION = 23

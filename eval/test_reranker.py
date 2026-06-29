@@ -37,7 +37,7 @@ def _isolate_active_db():
     from pathlib import Path
 
     tmp = tempfile.mkdtemp(prefix="reranker-test-")
-    test_path = Path(tmp) / "memory.db"
+    Path(tmp) / "memory.db"
     memory_mcp.GLOBAL_MEM_DIR = Path(tmp)
     orig_resolve = None
     if hasattr(memory_mcp, "resolve_active_memory_dir"):
@@ -93,7 +93,7 @@ class TestRerankerModule(unittest.TestCase):
         self.assertIsNone(r.load_error())
 
     def test_reranker_disabled_via_env_returns_none_on_score(self):
-        r = reranker.Reranker()
+        reranker.Reranker()
         with patch.dict(os.environ, {"MEMORY_RERANKER_DISABLED": "1"}):
             # RERANKER_ENABLED is captured at module import. Recreate the
             # disabled branch by re-reading the env through the load path

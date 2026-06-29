@@ -499,7 +499,7 @@ class TestCrdtFieldSave(unittest.TestCase):
             tags=json.dumps(["a-tag"]),
         )
         # Step 2: agent-B writes a different field (category) concurrently
-        result = crdt_field.crdt_field_save(
+        crdt_field.crdt_field_save(
             db_path=self.db,
             note_id="n1",
             content="A's content",  # same content

@@ -18,7 +18,6 @@ import sys
 
 sys.path.insert(0, os.getcwd())
 
-from memory_common import open_db, GLOBAL_MEM_DIR
 from db_migrations import run_schema_setup
 
 
@@ -412,7 +411,6 @@ class TestDrainInboxRenamePattern(unittest.TestCase):
     """
 
     def setUp(self):
-        import importlib
         import tempfile
 
         self.tmpdir = Path(tempfile.mkdtemp())
@@ -497,9 +495,7 @@ class TestDrainInboxRenamePattern(unittest.TestCase):
         # Monkey-patch rename to inject a concurrent enqueue between
         # the rename and the read.  This is the worst-case race
         # window the rename-and-process pattern is designed to close.
-        from auto_save import _drain_inbox as _real_drain
 
-        original_rename_call = None
         import os as _os
 
         def race_rename(src, dst):

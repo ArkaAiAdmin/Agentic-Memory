@@ -5,7 +5,6 @@ Run with:
     ~/.config/agentic-memory/venv/bin/python eval/test_arc_cache.py
 """
 
-import os
 import sys
 import sqlite3
 import tempfile
@@ -136,7 +135,6 @@ class TestARCCacheEvictionIntegration(unittest.TestCase):
     """
 
     def setUp(self):
-        import shutil as _shutil
 
         self.tmpdir = Path(tempfile.mkdtemp(prefix="arc_integration_"))
         self.memory_dir = self.tmpdir / "memory"

@@ -11,15 +11,12 @@ Existing oracle weights are preserved on failure (write is atomic).
 
 from __future__ import annotations
 
-import csv
 import json
 import logging
-import math
 import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 from _flock import acquire_lock_or_exit
 
 import numpy as np
@@ -149,7 +146,7 @@ def main() -> int:
         return 0
 
     X = np.stack([f for f, _ in examples])
-    y = np.array([l for _, l in examples], dtype=float)
+    y = np.array([label for _, label in examples], dtype=float)
 
     weights = _sgd_train(X, y)
     weights_str = ",".join(f"{v:.6f}" for v in weights)

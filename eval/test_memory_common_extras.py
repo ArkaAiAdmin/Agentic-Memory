@@ -5,7 +5,6 @@ Run with:
     ~/.config/agentic-memory/venv/bin/python eval/test_memory_common_extras.py
 """
 
-import os
 import sys
 import threading
 import time
@@ -23,9 +22,7 @@ from memory_common import (  # noqa: E402
     RateLimiter,
     rate_limit_check,
     get_default_limiter,
-    _try_flock,
 )
-from _wait_until import wait_until  # noqa: E402
 
 
 class TestFlockHelpers(unittest.TestCase):
@@ -141,7 +138,7 @@ class TestFlockThreadSafety(unittest.TestCase):
         tmpdir = tempfile.mkdtemp(prefix="flock_thread_test_")
         lock_path = Path(tmpdir) / "shared.lock"
         order = []
-        ev = threading.Event()
+        threading.Event()
 
         def worker(name):
             f = open(lock_path, "w")

@@ -4,7 +4,6 @@
 Run with:
     ~/.config/agentic-memory/venv/bin/python eval/test_six_channel.py
 """
-import os
 import sys
 import time
 import unittest
@@ -167,9 +166,7 @@ class TestBackwardCompat(unittest.TestCase):
         """After refactor, the inline loop should still produce a 10-tuple
         with the same field order: (note_id, content, source_file, tags_json,
         created, rank, final_score, fitness_score, importance_val, pinned)."""
-        from unittest.mock import patch
         import inspect
-        import search_pipeline
         from search.orchestrator import _rerank_results
         # Check the rerank function still emits a tuple.
         # Read the rerank block in source code from search.orchestrator.

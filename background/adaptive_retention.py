@@ -9,8 +9,6 @@ Opt-in via MEMORY_ADAPTIVE_RETENTION=1.
 from __future__ import annotations
 
 import json
-import math
-import os
 import sqlite3
 import threading
 import time
@@ -20,7 +18,7 @@ from typing import Optional
 from memory_common import safe_close_db, connection_pool
 
 __all__ = [
-    "ADAPTIVE_RETENTION_ENABLED",
+    "ADAPTIVE_RETENTION_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "ensure_adaptive_schema",
     "compute_adaptive_halflife",
     "batch_update_retention",

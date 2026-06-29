@@ -63,7 +63,7 @@ def _seed_ctr_data(conn: sqlite3.Connection, n_rows: int = 15, **overrides):
 
     for i in range(n_rows):
         qid = overrides.get("query_id", f"q_{i % n_distinct}")
-        note_id = overrides.get("note_id", f"lessons/note_{i}")
+        overrides.get("note_id", f"lessons/note_{i}")
         clicked = now - 100 + i * 10 if i % 3 != 0 else None
         dismissed = now - 50 + i * 5 if i % 5 == 0 else None
 

@@ -15,8 +15,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import time
-from typing import Iterable
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -25,7 +23,6 @@ if HERE not in sys.path:
 from retrieval import (  # noqa: E402
     retrieve_for_question,
     _extract_temporal_range,
-    _date_in_range,
 )
 
 
@@ -47,7 +44,7 @@ def main() -> None:
         qid = q["question_id"]
         gold_set = set(q["answer_session_ids"])
         sid_to_idx = {sid: i for i, sid in enumerate(q["haystack_session_ids"])}
-        gold_indices = [sid_to_idx[s] for s in q["answer_session_ids"] if s in sid_to_idx]
+        [sid_to_idx[s] for s in q["answer_session_ids"] if s in sid_to_idx]
         trange = _extract_temporal_range(q["question"], q.get("question_date"))
         trange_str = f"{trange[0]}..{trange[1]}" if trange else "None"
 

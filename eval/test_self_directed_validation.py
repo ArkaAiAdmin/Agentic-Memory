@@ -5,10 +5,7 @@ and schema version.
 Uses a TEMP DB — no production data touched. Pattern from test_mcp_live.py.
 """
 
-import pytest
 
-import json
-import math
 import os
 import sqlite3
 import sys
@@ -21,10 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from memory_common import (
     open_db,
-    run_db_migrations,
     SCHEMA_VERSION,
-    GLOBAL_MEM_DIR,
-    connection_pool,
 )
 
 # ---------------------------------------------------------------------------
@@ -425,7 +419,7 @@ class TestHeartbeat(unittest.TestCase):
 
     def test_heartbeat_moves_notes_bidirectionally(self):
         """Notes can be promoted (cold→warm) and demoted (warm→cold)."""
-        from self_directed import run_heartbeat, _assign_tier
+        from self_directed import run_heartbeat
 
         # Start as warm with old timestamps
         _insert_note(
@@ -440,7 +434,7 @@ class TestHeartbeat(unittest.TestCase):
             created_at=time.time() - 86400 * 100,
         )
 
-        result = run_heartbeat(self.conn)
+        run_heartbeat(self.conn)
         row = self.conn.execute(
             "SELECT tier FROM memories WHERE id = 'promote-me'"
         ).fetchone()
@@ -463,7 +457,7 @@ class TestHeartbeat(unittest.TestCase):
             created_at=time.time() - 86400 * 200,
         )
 
-        result = run_heartbeat(self.conn)
+        run_heartbeat(self.conn)
         tier = self.conn.execute(
             "SELECT tier FROM memories WHERE id = 'archive-me'"
         ).fetchone()[0]
@@ -483,7 +477,7 @@ class TestHeartbeat(unittest.TestCase):
             self.conn.commit()
             self.assertEqual(_count_table(self.conn, "memory_chunks"), 1)
 
-            result = run_heartbeat(self.conn)
+            run_heartbeat(self.conn)
             remaining = _count_table(self.conn, "memory_chunks")
             # The orphan should be cleaned (the only chunk points to deleted-note-999)
             self.assertEqual(remaining, 0)
@@ -507,7 +501,7 @@ class TestHeartbeat(unittest.TestCase):
             self.conn.commit()
             self.assertEqual(_count_table(self.conn, "memory_embeddings"), 1)
 
-            result = run_heartbeat(self.conn)
+            run_heartbeat(self.conn)
             remaining = _count_table(self.conn, "memory_embeddings")
             self.assertEqual(remaining, 0)
         except sqlite3.OperationalError:
@@ -689,7 +683,7 @@ class TestTierManagement(unittest.TestCase):
 
     def test_pinned_note_never_cold(self):
         """Pinned notes get tier >= warm (importance >= 0.4 floor)."""
-        from self_directed import run_heartbeat, compute_importance
+        from self_directed import run_heartbeat
 
         _insert_note(
             self.conn,

@@ -9,18 +9,15 @@ Opt-in via MEMORY_USER_PROFILE=1.
 from __future__ import annotations
 
 import json
-import os
-import sqlite3
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
-from typing import Optional
 
 from config import resolve_db_path
 from memory_common import safe_close_db, connection_pool, GLOBAL_MEM_DIR
 
 __all__ = [
-    "PROFILE_ENABLED",
+    "PROFILE_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "record_access",
     "get_user_profile",
     "personalize_results",

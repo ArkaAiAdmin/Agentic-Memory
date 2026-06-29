@@ -17,13 +17,11 @@ Verifies that:
  13. Integration: search_memories uses the CE (smoke test)
 """
 
-import os
 import sys
 import unittest
 import tempfile
 import shutil
 import sqlite3
-import json
 from pathlib import Path
 
 # Make the memory_common importable.

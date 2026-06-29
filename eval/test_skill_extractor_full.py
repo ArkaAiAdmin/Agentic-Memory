@@ -1,6 +1,10 @@
 """Tests for skill_extractor.py — push coverage from 94% to 100%."""
 
-import json, os, sqlite3, sys, tempfile, unittest
+import os
+import sqlite3
+import sys
+import tempfile
+import unittest
 from pathlib import Path
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))

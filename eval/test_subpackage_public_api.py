@@ -8,7 +8,6 @@ immediately in CI.  (S3 audit finding, 2026-06-20)
 
 import importlib
 
-import pytest
 
 
 def test_search_subpackage_exposes_search_memories():

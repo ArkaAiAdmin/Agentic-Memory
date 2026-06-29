@@ -11,7 +11,6 @@ import sqlite3
 import sys
 import shutil
 import tempfile
-import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path

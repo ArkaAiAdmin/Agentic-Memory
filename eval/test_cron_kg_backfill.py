@@ -12,7 +12,6 @@ Covers:
 
 import json
 import os
-import sqlite3
 import sys
 import unittest
 from pathlib import Path

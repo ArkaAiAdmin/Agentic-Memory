@@ -6,7 +6,6 @@ Run:
     venv/bin/streamlit run dashboard.py
 """
 import json
-import os
 import struct
 import sqlite3
 import sys
@@ -264,10 +263,14 @@ MEM_DIR = DB.parent
 @st.cache_resource
 def _blob_weight(v):
     if isinstance(v, bytes) and len(v) == 4:
-        try: return struct.unpack("<f", v)[0]
-        except Exception: return 1.0
-    try: return float(v)
-    except (ValueError, TypeError): return 1.0
+        try:
+            return struct.unpack("<f", v)[0]
+        except Exception:
+            return 1.0
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return 1.0
 
 
 def get_conn():
@@ -281,7 +284,7 @@ def get_conn():
 def query(sql: str, params=()) -> pd.DataFrame | None:
     try:
         return pd.read_sql_query(sql, get_conn(), params=params)
-    except Exception as exc:
+    except Exception:
         return None
 
 
@@ -343,7 +346,7 @@ def _render_memory_content(mid: str, expanded: bool = True):
         if s.startswith("# ") and not s.startswith("##"):
             title = s[2:].strip()
             break
-    tags_str = meta.get("tags", "")
+    meta.get("tags", "")
     with st.expander(f"**{title or mid}**", expanded=expanded):
         st.markdown(f"`{mid}`", unsafe_allow_html=True)
         cols = st.columns(4)
@@ -974,7 +977,7 @@ with facts_tab:
             f_search = st.text_input("\U0001f50d Filter", placeholder="subject, predicate, object...", key="fact_search")
             f_min_conf = st.slider("Min confidence", 0.0, 1.0, 0.0, 0.05, key="fact_conf")
             lock_filter = st.selectbox("Locked", ["all", "locked", "unlocked"], key="fact_lock")
-            st.caption(f"Showing top 200 by confidence")
+            st.caption("Showing top 200 by confidence")
 
             where_clauses = ["1=1"]
             f_params = []
@@ -1191,7 +1194,7 @@ with ctr_tab:
             source_filter = st.multiselect("Source", sources, default=sources, key="ctr_src")
             action_filter = st.selectbox("Action", ["all", "clicked", "dismissed", "neither"], key="ctr_act")
             search_qid = st.text_input("Search query_id", placeholder="partial match...", key="ctr_qid")
-            st.caption(f"Showing up to 200 rows")
+            st.caption("Showing up to 200 rows")
 
             action_where = ""
             action_params = []
@@ -1395,7 +1398,7 @@ with cron_tab:
             with f2:
                 tail_n = st.slider("Tail", 5, min(200, len(lines)), 40, key=f"tn_{name}", label_visibility="collapsed")
             if log_search:
-                lines = [l for l in lines if log_search.lower() in l.lower()]
+                lines = [line for line in lines if log_search.lower() in line.lower()]
             shown = lines[-tail_n:] if tail_n > 0 else lines
             st.code("\n".join(shown), language="text")
         else:
@@ -1610,7 +1613,8 @@ with backups_tab:
                 )
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
             if st.button("\U0001f4e4 Create backup now", use_container_width=True):
-                import subprocess, gzip, shutil
+                import gzip
+                import shutil
                 from datetime import date
                 backup_name = f"memory-{date.today().isoformat()}.db.gz"
                 backup_path = backup_dir / backup_name
@@ -1624,7 +1628,8 @@ with backups_tab:
         else:
             st.info("No backups found in memory/backups/")
             if st.button("\U0001f4e4 Create backup", use_container_width=True):
-                import subprocess, gzip, shutil
+                import gzip
+                import shutil
                 backup_dir.mkdir(parents=True, exist_ok=True)
                 from datetime import date
                 backup_name = f"memory-{date.today().isoformat()}.db.gz"
@@ -1636,7 +1641,8 @@ with backups_tab:
     else:
         st.info("No backups directory — backups not enabled or none taken yet")
         if st.button("\U0001f4e4 Create backup directory & backup", use_container_width=True):
-            import gzip, shutil
+            import gzip
+            import shutil
             backup_dir.mkdir(parents=True, exist_ok=True)
             from datetime import date
             backup_name = f"memory-{date.today().isoformat()}.db.gz"

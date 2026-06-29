@@ -17,8 +17,7 @@ from __future__ import annotations
 
 import json
 import os
-import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 from statistics import mean
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -247,7 +246,7 @@ def main() -> None:
     }
     with open(os.path.join(HERE, "results/comparison_v2.json"), "w") as f:
         json.dump(out, f, indent=2)
-    print(f"\nWrote results/comparison_v2.json")
+    print("\nWrote results/comparison_v2.json")
 
 
 if __name__ == "__main__":

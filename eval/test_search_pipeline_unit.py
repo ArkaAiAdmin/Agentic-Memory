@@ -11,7 +11,6 @@ Covers:
 - _compute_final_score logic
 """
 
-import json
 import os
 import shutil
 import sys
@@ -20,12 +19,12 @@ import time
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import open_db, count_rows
+from memory_common import open_db
 from infrastructure import GLOBAL_MEM_DIR
 from save_pipeline import save_memory
 from _fixtures import bootstrap_temp_db_clean

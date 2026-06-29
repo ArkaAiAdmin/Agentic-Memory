@@ -6,7 +6,6 @@ Skip guard: requires crewai installed. Skipped on Python 3.14 (tiktoken).
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path

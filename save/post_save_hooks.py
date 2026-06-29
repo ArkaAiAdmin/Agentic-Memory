@@ -24,34 +24,20 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import sqlite3
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from memory_common import (
     connection_pool,
     safe_close_db,
-    atomic_write,
 )
 from infrastructure import update_memory_md_locked
 from cache import _search_cache
 import audit
-from save.crdt_helpers import _is_crdt_enabled, _crdt_bump_version
-from save.indexers import (
-    _index_backlinks,
-    _index_chunks,
-    _index_embedding,
-    _index_kg,
-    _index_facts,
-    _index_adaptive_retention,
-)
 from save.backlinks import (
-    _auto_semantic_backlinks,
-    _auto_fts_backlinks,
     _auto_backlink_multi_part,
 )
 
@@ -189,9 +175,7 @@ def _recalculate_fitness_scores(
     When called with ``conn``, the caller owns commit/close. When called
     without, this function opens, commits, and closes its own connection.
     """
-    import sqlite3
     import math
-    from datetime import date
 
     if not memory_ids:
         return

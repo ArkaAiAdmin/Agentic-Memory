@@ -15,14 +15,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from memory_common import (
     wal_checkpoint_idle,
     _maybe_checkpoint_on_startup,
-    _STARTUP_CHECKPOINT_DONE,
 )
 
 

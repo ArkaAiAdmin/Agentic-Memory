@@ -10,7 +10,6 @@ Covers:
 - min_length env var filters out short tokens
 """
 
-import importlib
 import os
 import sys
 import tempfile

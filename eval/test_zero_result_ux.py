@@ -9,7 +9,6 @@ import unittest
 import sqlite3
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 from memory_mcp import (
     _did_you_mean,
@@ -17,7 +16,6 @@ from memory_mcp import (
     _top_recent_tags,
     _top_recent_source_files,
     _build_zero_result_suggestions,
-    search_memories,
 )
 
 

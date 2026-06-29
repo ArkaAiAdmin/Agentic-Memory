@@ -1,9 +1,28 @@
 # backward compat - real implementation is in recall/search_memory
+import os as _os
 import sys
 import types
 import recall.search_memory as _real
 
+# Ensure io is available for the shim so mock.patch and getattr work
+import io as _io
+import pathlib
+from pathlib import Path
+
+# Pre-load common attributes that tests mock.patch on the shim module.
+# Without these real module-level bindings, unittest.mock.patch fails
+# because it cannot find the attribute in the module __dict__.
+os = _os
+io = _io
+Path = Path
+find_project_root = getattr(_real, "find_project_root", None)
+get_memory_paths = getattr(_real, "get_memory_paths", None)
+GLOBAL_MEM_DIR = getattr(_real, "GLOBAL_MEM_DIR", None)
+
 def __getattr__(name):
+    if name in ("os", "io", "Path", "find_project_root", "get_memory_paths", "GLOBAL_MEM_DIR"):
+        module = sys.modules[__name__]
+        return getattr(module, name)
     return getattr(_real, name)
 
 def __dir__():

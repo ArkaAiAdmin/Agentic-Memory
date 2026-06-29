@@ -21,13 +21,9 @@ intermediate re-implementations.
 """
 
 import sys
-import os
-import sqlite3
-import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
-from memory_common import find_project_root  # noqa: E402
 from memory_config import get_memory_paths  # noqa: E402
 from search_pipeline import search_memories as _mcp_search_memories  # noqa: E402
 

@@ -14,10 +14,8 @@ compute_adaptive_halflife once per note, so the cache must be:
 """
 
 import json
-import os
 import sqlite3
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -37,7 +35,6 @@ import adaptive_retention  # noqa: E402
 # Force the lazy attr to re-resolve.
 adaptive_retention.__dict__.pop("ADAPTIVE_RETENTION_ENABLED", None)
 
-from memory_common import connection_pool  # noqa: E402
 
 
 def _new_db() -> sqlite3.Connection:

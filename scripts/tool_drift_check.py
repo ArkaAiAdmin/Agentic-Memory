@@ -41,7 +41,6 @@ def main() -> int:
     drift = []
     only_defined = defined - listed
     only_listed = (core | admin) - defined
-    in_wrong_tier: list[Any] = []
 
     # Check tier placement: a tool is "core" if it should be in core
     # (no special reason to be hidden). Admin tools are those that

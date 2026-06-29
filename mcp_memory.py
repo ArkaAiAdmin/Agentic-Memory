@@ -1,8 +1,8 @@
 """
 Memory CRUD MCP tools — save, superseede, delete, restore, trash, purge, auto_save*, daily_digest, reinforce.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
 
 import json
 import os
@@ -10,7 +10,6 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -25,8 +24,6 @@ from mcp_common import (
     logger,
     with_audit,
     atomic_write,
-    parse_frontmatter,
-    _validate_slug,
     resolve_db_for_memory_id,
 )
 from mcp_instance import mcp
@@ -190,7 +187,7 @@ def memory_supersede(old_id: str, new_id: str, valid_to: Optional[str] = None) -
         return (
             f"Superseded: {old_id} is now valid_to={valid_to}, superseded_by={new_id}."
         )
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_supersede")
         return _err(ErrorCode.DB_ERROR, "in memory_supersede")
 
@@ -289,17 +286,15 @@ def memory_auto_save_daemon_metrics() -> str:
         from auto_save import (
             _AUTO_SAVE_STATE,
             _AUTO_SAVE_STATE_LOCK,
-            _auto_save_circuit_open,
         )
     except Exception as e:
         return _err(ErrorCode.DB_ERROR, f"Failed to import auto_save: {e}")
 
     # Get daemon state
-    import time
 
     inbox_path = None
     try:
-        from auto_save import get_auto_save_inbox_path, get_db_path
+        from auto_save import get_auto_save_inbox_path
 
         inbox_path = get_auto_save_inbox_path()
     except Exception:
@@ -385,7 +380,7 @@ def memory_reinforce(memory_ids: list, success: bool) -> str:
             f"Successfully reinforced {updated_total} memories with outcome success={success} "
             f"({', '.join(scope_note) or 'no matches'}; fitness scores recalculated)."
         )
-    except Exception as e:
+    except Exception:
         logger.exception("reinforcing outcomes")
         return _err(ErrorCode.DB_ERROR, "reinforcing outcomes")
 
@@ -437,7 +432,7 @@ def memory_delete(note_id: str, hard: bool = False) -> str:
         )
     except ValueError as ve:
         return _err(ErrorCode.INVALID_PARAMS, str(ve))
-    except Exception as e:
+    except Exception:
         logger.exception("memory_delete failed")
         return _err(ErrorCode.DB_ERROR, "Delete failed")
 
@@ -480,7 +475,7 @@ def memory_restore(note_id: str) -> str:
         )
     except ValueError as ve:
         return _err(ErrorCode.INVALID_PARAMS, str(ve))
-    except Exception as e:
+    except Exception:
         logger.exception("memory_restore failed")
         return _err(ErrorCode.DB_ERROR, "Restore failed")
 
@@ -512,7 +507,7 @@ def memory_trash(include_expired: bool = False) -> str:
             for i, it in enumerate(items)
         ]
         return f"Trash ({len(items)} items):\n" + "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("memory_trash failed")
         return _err(ErrorCode.DB_ERROR, "List trash failed")
 
@@ -538,7 +533,7 @@ def memory_purge_expired() -> str:
             )
         n = purge_expired(db_path)
         return f"Purged {n} expired note(s)."
-    except Exception as e:
+    except Exception:
         logger.exception("memory_purge_expired failed")
         return _err(ErrorCode.DB_ERROR, "Purge failed")
 

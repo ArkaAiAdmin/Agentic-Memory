@@ -19,9 +19,8 @@ from __future__ import annotations
 
 import os
 import threading
-import json
 from dataclasses import dataclass
-from typing import Optional, Any, cast
+from typing import Optional, cast
 import logging
 
 logger = logging.getLogger(__name__)

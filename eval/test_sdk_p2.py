@@ -383,7 +383,7 @@ class TestTemporalKGSupersessionChain(unittest.TestCase):
 
     @patch("mcp_audit.memory_temporal_query")
     def test_supersession_chain(self, mock_query):
-        from agentic_memory import TemporalKG, Fact
+        from agentic_memory import TemporalKG
 
         mock_query.return_value = {
             "rows": [

@@ -8,7 +8,6 @@ Covers:
 - main() CLI parses --commit-every and --progress-every
 """
 
-import importlib
 import inspect
 import os
 import sqlite3
@@ -209,7 +208,7 @@ class TestBackfillCliFlags(unittest.TestCase):
         # verify the parser doesn't error on the flag).
         result = subprocess.run(
             [
-                str(REPO / "venv" / "bin" / "python3.14"),
+                sys.executable,
                 str(REPO / "backfill_all.py"),
                 "--health",
                 "--commit-every",

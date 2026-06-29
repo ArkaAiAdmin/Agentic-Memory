@@ -174,7 +174,7 @@ class TestListActiveThreads:
         db = _admin_env
         mgr = SessionManager(db_path=db)
         ctx = mgr.start_session("/tmp/proj", agent_id="a1")
-        tid = _seed_threads(db, ctx.session.id, count=1, status="open")[0]
+        _seed_threads(db, ctx.session.id, count=1, status="open")[0]
         raw = memory_maintenance("list_active_threads")
         data = json.loads(raw)
         assert "threads" in data

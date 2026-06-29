@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import sys
@@ -13,7 +12,6 @@ from pathlib import Path
 INSTALL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL))
 
-import skill_extractor
 from skill_extractor import (
     ensure_skill_schema,
     save_skill,

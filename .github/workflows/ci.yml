@@ -66,7 +66,7 @@ jobs:
         env:
           MEMORY_RERANKER_DISABLED: "1"
           MEMORY_CTR_TUNING: "0"
-          MEMORY_KNOWLEDGE_GRAPH: "0"
+          MEMORY_KNOWLEDGE_GRAPH: "1"
           MEMORY_EMBEDDINGS: "0"
         run: |
           . venv/bin/activate
@@ -77,7 +77,7 @@ jobs:
             --cov-report=xml \
             --cov-report=term-missing \
             -p no:cacheprovider
-        timeout-minutes: 30
+        timeout-minutes: 45
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
@@ -106,12 +106,12 @@ jobs:
         env:
           MEMORY_RERANKER_DISABLED: "1"
           MEMORY_CTR_TUNING: "0"
-          MEMORY_KNOWLEDGE_GRAPH: "0"
+          MEMORY_KNOWLEDGE_GRAPH: "1"
           MEMORY_EMBEDDINGS: "0"
         run: |
           . venv/bin/activate
           python -m pytest eval/ --tb=short -q -n 5 -p no:cacheprovider
-        timeout-minutes: 30
+        timeout-minutes: 45
 
   build-wheel:
     name: Build sdist + wheel

@@ -8,8 +8,6 @@ Pure-function tests — no DB, no I/O. Run with:
 (Invoke from ``~/.config/agentic-memory/`` so the ``eval`` package path
 resolves, matching the pattern in ``test_arc_cache.py``.)
 """
-import os
-import re
 import sys
 import unittest
 from pathlib import Path

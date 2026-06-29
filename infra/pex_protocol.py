@@ -10,7 +10,7 @@ import logging
 import urllib.request
 import urllib.error
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

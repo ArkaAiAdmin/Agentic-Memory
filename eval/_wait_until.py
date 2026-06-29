@@ -8,7 +8,7 @@ either waits too long (CI slowdown) or too little (CI flake).
 
 from __future__ import annotations
 import time
-from typing import Callable, Optional, TypeVar
+from typing import Callable, TypeVar
 
 T = TypeVar("T")
 

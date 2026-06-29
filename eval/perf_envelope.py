@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import random
 import shutil
 import sqlite3
@@ -35,7 +34,7 @@ import statistics
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -291,7 +290,7 @@ def measure_semantic_search(vocab: list[str], n: int, db_path: Path) -> Measurem
 
 def measure_save(db_path: Path, n: int) -> Measurement:
     """Simulate memory_save: INSERT 1 row + write file."""
-    rng = random.Random(SEED + 2)
+    random.Random(SEED + 2)
     counter = 0
 
     def _one() -> int:
@@ -455,7 +454,7 @@ def run_for_size(n: int) -> dict[str, Any]:
     gen_s = time.perf_counter() - t_gen
     print(f"  generation: {gen_s:.1f}s ({len(files):,} files)", flush=True)
 
-    print(f"  building DB (initial)...", flush=True)
+    print("  building DB (initial)...", flush=True)
     initial_build_s = build_db(memory_dir, db_path)
     print(f"  initial build: {initial_build_s:.1f}s", flush=True)
 

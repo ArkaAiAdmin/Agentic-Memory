@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from migration_runner import run_migrations
-from session_manager import SessionManager, _is_enabled, _scrub_metadata
+from session_manager import SessionManager, _scrub_metadata
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,6 @@ def _disable_session_flag(monkeypatch: pytest.MonkeyPatch):
 
 
 def _wait_for_cleanup():
-    from session_manager import _save_system_record
 
     # give the background save a tick to settle
     time.sleep(0.05)

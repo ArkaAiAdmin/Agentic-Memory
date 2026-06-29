@@ -11,7 +11,6 @@ from quality_gates import (
     validate_result,
     filter_results,
     quality_stats,
-    QUALITY_GATES_ENABLED,
     _tokenize,
     _jaccard,
 )

@@ -9,9 +9,7 @@ Covers memory_common.should_complain_about_score:
 """
 
 import json
-import os
 import sys
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch

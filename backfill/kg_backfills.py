@@ -16,9 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
-import sqlite3
 import time
-from datetime import date
 
 logger = logging.getLogger(__name__)
 

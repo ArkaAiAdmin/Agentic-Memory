@@ -57,7 +57,7 @@ def main() -> int:
         print(f"DB not found: {DB_PATH}")
         return 1
 
-    print(f"=== Baseline: fact extraction on curated subset ===")
+    print("=== Baseline: fact extraction on curated subset ===")
     print(f"DB: {DB_PATH}")
     print(f"Categories: {CATEGORIES}")
     print(f"Sample size: {SAMPLE_SIZE}, seed: {SEED}")
@@ -128,8 +128,8 @@ def main() -> int:
     with open(OUT_PATH, "w") as f:
         json.dump({"summary": summary, "results": results}, f, indent=2)
     print(f"  Wrote {OUT_PATH}")
-    print(f"")
-    print(f"=== Summary ===")
+    print("")
+    print("=== Summary ===")
     for k, v in summary.items():
         print(f"  {k}: {v}")
     return 0

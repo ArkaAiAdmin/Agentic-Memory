@@ -3,8 +3,8 @@ Rebuild subsystem MCP tools — rebuild, backfill_all, compact.
 
 Extracted from mcp_maintenance.py to reduce module size.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
 import json
 import os
 import shutil
@@ -93,10 +93,10 @@ def memory_rebuild(scope: str = "active") -> str:
             if output
             else f"Memory index rebuilt successfully ({scope} scope)."
         )
-    except subprocess.TimeoutExpired as e:
+    except subprocess.TimeoutExpired:
         logger.exception("rebuild timed out after 120s")
         return _err(ErrorCode.TIMEOUT, "rebuild timed out after 120s")
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to rebuild index")
         return _err(ErrorCode.DB_ERROR, "Failed to rebuild index")
 

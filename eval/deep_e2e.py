@@ -36,7 +36,6 @@ import subprocess
 import traceback
 import argparse
 from pathlib import Path
-from contextlib import contextmanager
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -150,7 +149,6 @@ sys.path.insert(0, str(PROD_INSTALL))
 # Now import — Path.home() in memory_mcp.py already points to TEST_ROOT,
 # so its GLOBAL_MEM_DIR resolves to the test memory dir.
 import memory_mcp  # noqa: E402
-import memory_common  # noqa: E402
 
 # Re-resolve paths after import to confirm
 assert str(memory_mcp.GLOBAL_MEM_DIR) == str(TEST_MEM), (
@@ -787,7 +785,6 @@ def section_d_edge_cases():
     # D.5 Concurrent saves
     print("\n--- D.5 concurrent saves ---")
     n_threads = 5
-    errors = []
 
     def save_one(i):
         try:
@@ -910,7 +907,7 @@ def section_d_edge_cases():
            isinstance(r, str) and ("Successfully" in r or "Error" in r),
            r[:120].replace("\n", " "), lat)
     # Verify it was written to ~/.agents/skills/ inside the test home
-    skill_path = TEST_INSTALL / "skills" / "sky-blue-day-test-skill" / "SKILL.md"
+    TEST_INSTALL / "skills" / "sky-blue-day-test-skill" / "SKILL.md"
     # ~/.agents/skills/... in test HOME resolves to TEST_ROOT/.agents/skills/
     test_skill_path = TEST_ROOT / ".agents" / "skills" / "sky-blue-day-test-skill" / "SKILL.md"
     record("D.14.2 compiled skill file written",
@@ -1030,7 +1027,7 @@ def section_e_filesystem():
     # Create, rebuild, delete, rebuild again
     memory_mcp.memory_save(content="ephemeral content xyzzy42",
                             category="lessons", title_slug="ephemeral")
-    r1 = memory_mcp.memory_rebuild(scope="active")
+    memory_mcp.memory_rebuild(scope="active")
     # Delete the .md file (DB row may still exist)
     (bad_dir / "ephemeral.md").unlink()
     r2 = memory_mcp.memory_rebuild(scope="active")
@@ -1155,7 +1152,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 72)
-    print(f"DEEP END-TO-END VALIDATION — agentic-memory MCP surface")
+    print("DEEP END-TO-END VALIDATION — agentic-memory MCP surface")
     print(f"  test install: {TEST_INSTALL}")
     print(f"  test memory:  {TEST_MEM}")
     print(f"  production:   {PROD_INSTALL}")
@@ -1193,7 +1190,7 @@ def main():
         print(f"\nCleaning up test install at {TEST_ROOT}...")
         try:
             shutil.rmtree(TEST_ROOT, ignore_errors=True)
-            print(f"  removed.")
+            print("  removed.")
         except Exception as e:
             print(f"  cleanup error: {e}")
 
@@ -1231,7 +1228,7 @@ def main():
     print(f"\nCleaning up test install at {TEST_ROOT}...")
     try:
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
-        print(f"  removed.")
+        print("  removed.")
     except Exception as e:
         print(f"  cleanup error: {e}")
 

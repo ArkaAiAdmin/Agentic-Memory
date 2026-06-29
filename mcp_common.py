@@ -6,16 +6,12 @@ helpers (_resolve_memory_dir, _run_subprocess_output, etc.) used by
 all domain modules.  No tool registration here.
 """
 
-import _bootstrap_path  # noqa: E402
 import os
-import sys
 from pathlib import Path
 
-import json
 import logging
 import re
 import subprocess
-from typing import Optional
 
 import re as _re
 
@@ -29,40 +25,30 @@ def _validate_slug(value: str, label: str) -> str | None:
 
 
 from memory_common import (
-    open_db,
-    count_rows,
-    safe_call,
-    connection_pool,
-    safe_close_db,
-    acquire_flock_with_retry,
-    release_flock,
-    run_db_migrations,
-    rate_limit_check,
-    reset_rate_limiter,
-    get_memory_paths,
-    parse_frontmatter,
     atomic_write,
-    find_project_root,
+    connection_pool,
+    parse_frontmatter,
+    safe_close_db,
+    open_db,
 )
+from db_migrations import run_db_migrations
+from infra.infrastructure import resolve_db_for_memory_id
+from infra.cache import _search_cache
 from infra.infrastructure import (
-    _normalize_unicode,
-    _resolve_active_db_path,
-    _try_extract_result_meta,
+    ErrorCode,
+    _err,
+    resolve_active_memory_dir,
     with_audit,
     with_memory_connection,
-    _err,
-    ErrorCode,
-    resolve_active_memory_dir,
-    resolve_db_for_memory_id,
-    add_link_to_memory_md_content,
-    update_memory_md_locked,
-    GLOBAL_MEM_DIR,
 )
-from cache import _search_cache, cache_stats
 
 from config import GLOBAL_SCRIPTS_DIR, AGENTS_SKILLS_DIR
+from infra.memory_config import GLOBAL_MEM_DIR, get_memory_paths
 
 logger = logging.getLogger(__name__)
+
+# Bootstrap path: canonical root for all user-level agentic-memory data.
+_bootstrap_path = GLOBAL_SCRIPTS_DIR
 
 
 def _resolve_memory_dir() -> Path:

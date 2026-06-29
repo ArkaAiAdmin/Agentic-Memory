@@ -3,8 +3,8 @@ Audit subsystem MCP tools — audit, audit_query, check_integrity.
 
 Extracted from mcp_maintenance.py to reduce module size.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -126,7 +126,7 @@ def memory_audit() -> str:
                 f"--- Skipped {corrupted_dates} memories with corrupt created_at/updated_at ---"
             )
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("during audit")
         return _err(ErrorCode.DB_ERROR, "during audit")
 
@@ -228,7 +228,7 @@ def memory_audit_query(
                     },
                 }
             )
-    except sqlite3.OperationalError as e:
+    except sqlite3.OperationalError:
         logger.exception("Query failed")
         return _err(ErrorCode.DB_ERROR, "Query failed")
 
@@ -343,7 +343,7 @@ def memory_circuit_breaker_status(
                     },
                 }
             )
-    except sqlite3.OperationalError as e:
+    except sqlite3.OperationalError:
         logger.exception("circuit_breaker_status query failed")
         return _err(ErrorCode.DB_ERROR, "circuit_breaker_status query failed")
 
@@ -405,7 +405,7 @@ def memory_check_integrity(deep: bool = False) -> str:
             if f.get("fix_hint"):
                 lines.append(f"               fix: {f['fix_hint']}")
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("memory_check_integrity failed")
         return _err(ErrorCode.DB_ERROR, "Integrity check failed")
 
@@ -680,7 +680,6 @@ def memory_compliance_check(session_id: str = "") -> str:
         JSON with compliance_score (0-1), checks list, and skipped items.
     """
     try:
-        from pathlib import Path as _P
 
         mem_dir = GLOBAL_MEM_DIR
         marker_file = mem_dir / ".last_session_save.json"

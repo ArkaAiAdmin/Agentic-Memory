@@ -4,7 +4,6 @@
 Run with:
     ~/.config/agentic-memory/venv/bin/python -m unittest eval.test_antonym_contradictions -v
 """
-import os
 import sys
 import tempfile
 import unittest
@@ -15,7 +14,7 @@ from datetime import datetime, timezone
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import open_db, connection_pool, safe_close_db  # noqa: E402
+from memory_common import open_db, connection_pool  # noqa: E402
 from embedding_search import get_embedding_search  # noqa: E402
 from contradiction_detector import detect_contradictions_semantic  # noqa: E402
 

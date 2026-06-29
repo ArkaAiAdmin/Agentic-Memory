@@ -17,7 +17,6 @@ Verifies that:
  13. Schema raises no errors on a fresh DB
  14. End-to-end: write a 5kB note, search for a word only in one chunk
 """
-import os
 import sys
 import unittest
 import tempfile
@@ -155,10 +154,10 @@ class TestIndexAndSearchChunks(unittest.TestCase):
     def test_11_chunk_update_on_content_change(self):
         db = sqlite3.connect(str(self.db_path))
         memory_mcp._qw5_index_chunks_for(db, "m1", "First content. " * 200)
-        first_chunks = db.execute("SELECT COUNT(*) FROM memory_chunks WHERE parent_id = ?", ("m1",)).fetchone()[0]
+        db.execute("SELECT COUNT(*) FROM memory_chunks WHERE parent_id = ?", ("m1",)).fetchone()[0]
         # Now update with completely different content
         memory_mcp._qw5_index_chunks_for(db, "m1", "Totally different stuff about elephant migration patterns. " * 100)
-        second_chunks = db.execute("SELECT COUNT(*) FROM memory_chunks WHERE parent_id = ?", ("m1",)).fetchone()[0]
+        db.execute("SELECT COUNT(*) FROM memory_chunks WHERE parent_id = ?", ("m1",)).fetchone()[0]
         # Old chunk content should be gone from FTS
         rows = db.execute("SELECT rowid FROM memory_chunks_fts WHERE memory_chunks_fts MATCH ?", ("first",)).fetchall()
         self.assertEqual(len(rows), 0, "old 'first' content should be removed from FTS")

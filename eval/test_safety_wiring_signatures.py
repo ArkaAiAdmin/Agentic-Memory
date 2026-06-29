@@ -22,22 +22,17 @@ These tests verify that the ``safety_wiring`` kwarg on
 Run with:
     ~/.config/agentic-memory/venv/bin/python -m unittest eval.test_safety_wiring -v
 """
-import hashlib
 import inspect
 import os
-import shutil
 import sys
-import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 # Make the agentic-memory package importable.
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 import memory_mcp  # noqa: E402
-import save_pipeline  # noqa: E402
 
 # Path to the test DB. The conftest.py session fixture sets MEMORY_DB_PATH
 # to a temp copy of the clean snapshot, so tests never touch prod. When

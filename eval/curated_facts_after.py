@@ -50,7 +50,7 @@ def main() -> int:
         print(f"DB not found: {DB_PATH}")
         return 1
 
-    print(f"=== After: fact extraction on curated subset (Layer 5 active) ===")
+    print("=== After: fact extraction on curated subset (Layer 5 active) ===")
     print(f"DB: {DB_PATH}")
     print(f"Categories: {CATEGORIES}")
     print(f"Sample size: {SAMPLE_SIZE}, seed: {SEED}")
@@ -122,8 +122,8 @@ def main() -> int:
     with open(OUT_PATH, "w") as f:
         json.dump({"summary": summary, "results": results}, f, indent=2)
     print(f"  Wrote {OUT_PATH}")
-    print(f"")
-    print(f"=== Summary ===")
+    print("")
+    print("=== Summary ===")
     for k, v in summary.items():
         print(f"  {k}: {v}")
 
@@ -135,7 +135,7 @@ def main() -> int:
         a_facts = total_facts
         delta_facts = a_facts - b_facts
         delta_pct = round(100 * delta_facts / b_facts, 1) if b_facts else 0
-        print(f"\n=== Delta vs baseline ===")
+        print("\n=== Delta vs baseline ===")
         print(f"  baseline facts:    {b_facts}")
         print(f"  after facts:       {a_facts}")
         print(f"  delta:             {delta_facts:+d} ({delta_pct:+.1f}%)")

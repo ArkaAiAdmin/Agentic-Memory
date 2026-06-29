@@ -74,6 +74,11 @@ from search.chunk_index import (  # noqa: F401
     _QW5_SENT_BOUNDARY,
     _QW5_STOPWORDS,
 )
+from search.orchestrator import (  # noqa: F401
+    ScoreContext,
+    _merge_chunk_hits,
+    _fallback_embedding_search,
+)
 
 __all__ = [
     # query_parser
@@ -131,6 +136,10 @@ __all__ = [
     "_qw5_chunk_content",
     "_qw5_ensure_schema",
     "_qw5_index_chunks_for",
+    # Orchestrator
+    "ScoreContext",
+    "_merge_chunk_hits",
+    "_fallback_embedding_search",
     # Orchestrator — defined in search_pipeline shim, proxied here
     # via __getattr__ so that ``from search import search_memories``
     # works for users who import the subpackage directly.
@@ -139,9 +148,11 @@ __all__ = [
 
 
 def __getattr__(name: str):
+    if name == "ScoreContext":
+        from search.orchestrator import ScoreContext
+        return ScoreContext
     if name == "search_memories":
         from search.orchestrator import search_memories
-
         return search_memories
     if name in _SEARCH_LAZY_CONFIG_KEYS:
         from _lazy_imports import get_config

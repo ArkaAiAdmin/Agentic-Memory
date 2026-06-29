@@ -21,7 +21,7 @@ import sys
 sys.path.insert(0, str(INSTALL_DIR))
 
 import sqlite3
-from memory_common import connection_pool, safe_close_db
+from memory_common import connection_pool
 from db_migrations import run_db_migrations
 
 

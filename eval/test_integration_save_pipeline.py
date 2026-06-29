@@ -24,19 +24,16 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 
-from memory_common import open_db, count_rows, connection_pool
-from infrastructure import GLOBAL_MEM_DIR, resolve_active_memory_dir
+from memory_common import open_db, connection_pool
 from save_pipeline import (
     save_memory,
-    _update_memory_index_incremental,
     _recalculate_fitness_scores,
 )
 
@@ -553,7 +550,7 @@ class TestSaveMemoryUpsert(SavePipelineFixture, unittest.TestCase):
             )
         self.assertGreater(bl_before, 0, "Backlinks should exist after first save")
 
-        result2 = save_memory(
+        save_memory(
             content="Updated reference to [[other/note]] here.",
             category="lessons",
             title_slug=slug,
@@ -578,7 +575,6 @@ class TestSaveSubsystemFTS5(SavePipelineFixture, unittest.TestCase):
 
     def test_fts5_populated(self):
         result, slug = self.save(content="XYZZY_SEARCH_MARKER unique text")
-        note_id = f"lessons/{slug}"
         with open_db(self.db_path) as db:
             rows = db.execute(
                 "SELECT rowid FROM memories_fts WHERE memories_fts MATCH ?",
@@ -703,7 +699,7 @@ class TestSaveSubsystemFacts(SavePipelineFixture, unittest.TestCase):
                 "SELECT predicate, subject, object FROM kg_facts WHERE source_memory=?",
                 (note_id,),
             ).fetchall()
-        predicates = [r[0].lower() for r in facts]
+        [r[0].lower() for r in facts]
         self.assertGreaterEqual(
             len(facts), 1, f"Expected at least 1 fact, got {len(facts)}"
         )
@@ -749,7 +745,7 @@ class TestSaveSubsystemBacklinks(SavePipelineFixture, unittest.TestCase):
 
     def test_self_reference_ignored(self):
         slug = f"selfref-{int(time.time() * 1e6)}"
-        result = save_memory(
+        save_memory(
             content=f"This is about [[lessons/{slug}]] itself.",
             category="lessons",
             title_slug=slug,
@@ -865,8 +861,6 @@ class TestSaveSubsystemSemanticBacklinks(SavePipelineFixture, unittest.TestCase)
             self.skipTest("Semantic backlinks require embedding model")
         r1, s1 = self.save(content="Python for machine learning and AI")
         r2, s2 = self.save(content="Deep learning with Python and TensorFlow")
-        n1 = f"lessons/{s1}"
-        n2 = f"lessons/{s2}"
         with open_db(self.db_path) as db:
             edges = db.execute(
                 "SELECT relation, weight FROM kg_edges WHERE relation='semantically_related'"
@@ -903,7 +897,7 @@ class TestIndexBacklinksDirectly(SavePipelineFixture, unittest.TestCase):
 
     def test_backlinks_skip_self_when_category_matches(self):
         slug = f"selflink-{int(time.time() * 1e6)}"
-        result = save_memory(
+        save_memory(
             content=f"See [[{slug}]] here.",
             category="lessons",
             title_slug=slug,

@@ -3,15 +3,14 @@
 Allows starting, stopping, and checking the status of the
 standalone metrics HTTP server (metrics_server.py).
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
 import json
-import os
 import signal
 import subprocess
 import sys
 from pathlib import Path
 
-import _bootstrap_path  # noqa: E402
 from mcp_instance import mcp
 from mcp_common import _err, ErrorCode, with_audit
 

@@ -2,10 +2,11 @@
 """Cron wrapper: check pinned notes for drift, auto-unpin stale ones."""
 
 from _flock import acquire_lock_or_exit
-import os, sys, traceback
+import os
+import sys
+import traceback
 
 os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
-import sys
 import os
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":

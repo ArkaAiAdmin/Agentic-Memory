@@ -6,12 +6,10 @@ No DB logic lives here — these are pure typed containers.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from sqlite3 import Connection
+    pass
 
 
 @dataclass

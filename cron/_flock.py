@@ -32,7 +32,6 @@ Usage:
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -50,7 +49,7 @@ else:
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from memory_config import GLOBAL_MEM_DIR
+from infra.memory_config import GLOBAL_MEM_DIR
 
 _LOCK_DIR = GLOBAL_MEM_DIR / "locks"
 
@@ -72,12 +71,12 @@ try:
         release_flock,
     )
 except ImportError:  # pragma: no cover
-    FileLockError = None  # type: ignore[assignment,misc]
+    FileLockError = None
 
-    def acquire_flock_with_retry(*_args: Any, **_kwargs: Any) -> bool:  # type: ignore[misc]
+    def acquire_flock_with_retry(*_args: Any, **_kwargs: Any) -> bool:
         return False
 
-    def release_flock(*_args: Any, **_kwargs: Any) -> bool:  # type: ignore[misc]
+    def release_flock(*_args: Any, **_kwargs: Any) -> bool:
         return False
 
 
@@ -85,7 +84,7 @@ def _lock_path(name: str) -> Path:
     """Resolve the per-cron lock file. ``name`` should be the bare
     cron name like ``"cron_consolidate"`` (no extension, no path).
     """
-    safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in name)
+    safe: str = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in name)
     return _LOCK_DIR / f"{safe}.lock"
 
 

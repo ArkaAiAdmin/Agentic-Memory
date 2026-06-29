@@ -24,7 +24,6 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 LOG = logging.getLogger("agentic_memory.cron_runner")

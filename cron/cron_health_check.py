@@ -13,10 +13,13 @@ Inspired by cron_integrity_check.py pattern.
 """
 
 import json
+import logging
 import os
 import sys
 import time
 from pathlib import Path
+
+logger = logging.getLogger("cron_health_check")
 
 os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))

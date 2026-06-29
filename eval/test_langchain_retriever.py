@@ -6,7 +6,6 @@ Skip guard: requires langchain-core and langchain-community installed.
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path

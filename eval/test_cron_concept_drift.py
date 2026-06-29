@@ -5,7 +5,6 @@ Run with:
     ~/.config/agentic-memory/venv/bin/python eval/test_cron_concept_drift.py
 """
 
-import json
 import os
 import sqlite3
 import sys

@@ -8,14 +8,12 @@ api_base), triggers a full vec index rebuild.
 Usage:
     venv/bin/python embedding_recompute.py [--force] [--dry-run]
 """
-import os
 import sys
 import json
-import sqlite3
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from memory_common import GLOBAL_MEM_DIR, safe_close_db
+from memory_common import GLOBAL_MEM_DIR
 from infrastructure import resolve_active_memory_dir
 
 # File that stores the vec index metadata

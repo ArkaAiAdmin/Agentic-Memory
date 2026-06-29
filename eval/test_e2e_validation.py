@@ -13,7 +13,6 @@ import subprocess
 import sys
 import time
 import sqlite3
-import json
 import shutil
 import tempfile
 import re

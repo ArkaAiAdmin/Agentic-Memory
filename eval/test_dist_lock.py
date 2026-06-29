@@ -9,7 +9,6 @@ Covers:
   * locked() context manager
 """
 
-import os
 import sys
 import tempfile
 import threading

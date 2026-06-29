@@ -12,9 +12,9 @@ import math
 import sqlite3
 import tempfile
 import unittest
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -25,10 +25,6 @@ from save_pipeline import (
     _recalculate_fitness_scores,
     _auto_backlink_multi_part,
     save_memory,
-    _err,
-    _update_memory_index_incremental,
-    _upsert_memory_row,
-    _index_backlinks,
 )
 
 # ─── search_pipeline imports ──────────────────────────────────────────
@@ -58,8 +54,6 @@ from memory_common import (
     find_project_root,
     get_memory_paths,
     atomic_write,
-    safe_close_db,
-    open_db,
     count_rows,
     safe_call,
     RateLimiter,
@@ -67,8 +61,6 @@ from memory_common import (
     release_flock,
 )
 
-from tempfile import mkdtemp
-from shutil import rmtree
 
 
 class TestEnsureDbExistsReturnsValue(unittest.TestCase):
@@ -782,7 +774,7 @@ class TestConnectionPool(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             pool = _ConnectionPool(max_size=2)
             conn1 = pool.get(str(Path(td) / "a.db"))
-            conn2 = pool.get(str(Path(td) / "b.db"))
+            pool.get(str(Path(td) / "b.db"))
             # Release conn1 so LRU eviction can work (depth goes to 0)
             pool.put(conn1)
             conn3 = pool.get(str(Path(td) / "c.db"))

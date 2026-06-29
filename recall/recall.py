@@ -21,7 +21,6 @@ __all__ = ["recall_context", "format_briefing", "session_recap"]
 
 import json
 import logging
-import re
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path

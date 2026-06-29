@@ -3,15 +3,12 @@
 
 from _flock import acquire_lock_or_exit
 import argparse
-import json
 import os
 import sqlite3
 import sys
 import traceback
-from pathlib import Path
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-import sys
 import os
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":

@@ -30,8 +30,6 @@ import sys
 import time
 from pathlib import Path
 
-import sys
-import os
 
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":

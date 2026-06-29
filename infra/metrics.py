@@ -16,7 +16,6 @@ Usage:
     # Reset counters
     venv/bin/python metrics.py --reset
 """
-import os
 import sys
 import threading
 import time
@@ -24,7 +23,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from memory_common import GLOBAL_MEM_DIR, open_db
+from memory_common import open_db
 
 
 class _RuntimeCounters:
@@ -251,7 +250,7 @@ def format_text(stats: dict) -> str:
             lines.append(f"  {name}: avg={h['avg_ms']}ms p50={h['p50_ms']}ms p95={h['p95_ms']}ms p99={h['p99_ms']}ms max={h['max_ms']}ms (n={h['count']})")
 
     summary = stats.get("_summary", {})
-    lines.append(f"\n--- Audit Log Stats ---")
+    lines.append("\n--- Audit Log Stats ---")
     lines.append(f"Total operations: {summary.get('total_operations', 0)}")
     lines.append(f"Total errors: {summary.get('total_errors', 0)}")
     lines.append(f"Overall error rate: {summary.get('overall_error_rate', 0)}%")

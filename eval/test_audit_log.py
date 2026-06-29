@@ -11,10 +11,8 @@ or:
 import json
 import os
 import shutil
-import sqlite3
 import sys
 import tempfile
-import threading
 import time
 import unittest
 from pathlib import Path

@@ -298,7 +298,6 @@ class TestSyncOnce(unittest.TestCase):
     def test_sync_once_end_to_end_writes_to_db(self):
         """Full happy-path: spin up a server, sync, verify rows."""
         import socket
-        import threading
         import time as _time
 
         from sync_server import SyncServer

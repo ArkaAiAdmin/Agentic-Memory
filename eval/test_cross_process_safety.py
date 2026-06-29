@@ -28,10 +28,8 @@ Coverage:
 
 import multiprocessing
 import os
-import sqlite3
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -99,7 +97,7 @@ class TestCrossProcessSafety(unittest.TestCase):
         # Open once to run the migration set.
         from _lazy_imports import open_db
 
-        with open_db(self.db_path) as conn:
+        with open_db(self.db_path):
             pass
 
     def tearDown(self) -> None:

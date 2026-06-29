@@ -33,7 +33,6 @@ from pathlib import Path
 from typing import Any, Iterator, Optional, Union, cast
 
 from db_write_queue import ProxyConnection
-from fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
 
 AnyConnection = Union[sqlite3.Connection, ProxyConnection]
 
@@ -603,7 +602,6 @@ def _maybe_checkpoint_on_startup(path: Path) -> None:
     when ``MEMORY_WAL_CHECKPOINT_STARTUP=1`` env var is set.
     Errors are swallowed — startup must never fail because of a checkpoint.
     """
-    import os
 
     global _STARTUP_CHECKPOINT_DONE
     # Resolve the config flag *before* claiming the one-shot so that

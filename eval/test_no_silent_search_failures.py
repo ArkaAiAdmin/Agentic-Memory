@@ -14,8 +14,6 @@ See: projects/active-tutorial-hardening-2026-06-16
 """
 
 import pytest
-import os
-import tempfile
 import sqlite3
 from pathlib import Path
 
@@ -179,9 +177,9 @@ class TestNoSilentSearchFailures:
         assert "results" in r, f"missing 'results' key: {list(r.keys())}"
         assert "count" in r, f"missing 'count' key: {list(r.keys())}"
         assert "output" in r, f"missing 'output' key: {list(r.keys())}"
-        assert isinstance(r["results"], list), f"'results' is not a list"
-        assert isinstance(r["count"], int), f"'count' is not an int"
-        assert isinstance(r["output"], str), f"'output' is not a str"
+        assert isinstance(r["results"], list), "'results' is not a list"
+        assert isinstance(r["count"], int), "'count' is not an int"
+        assert isinstance(r["output"], str), "'output' is not a str"
 
 
 class TestSearchResilience:

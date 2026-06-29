@@ -7,7 +7,6 @@ dominates" and swallows conflicts in multi-agent sync).
 """
 
 import json
-import os
 import sys
 import tempfile
 import unittest
@@ -266,7 +265,6 @@ class TestCrdtMergeContract(unittest.TestCase):
         runtime assertion, but it documents the contract.
         """
         import inspect
-        import crdt_merge
 
         # merge_vectors should NOT itself bump the local clock.
         # The callers in crdt_merge.py:crdt_sync / crdt_save should

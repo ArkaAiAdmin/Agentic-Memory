@@ -12,14 +12,14 @@ Verifies invariants across ALL subsystems after save, delete, rebuild:
 """
 
 import hashlib
-import json
-import os
 import shutil
 import sqlite3
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+import numpy as np
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -322,7 +322,6 @@ def _populate_vec_keys(db: sqlite3.Connection):
 def _populate_embeddings(db: sqlite3.Connection):
     """Populate memory_embeddings with dummy vectors."""
     rows = db.execute("SELECT id, content FROM memories").fetchall()
-    import numpy as np
 
     for mid, content in rows:
         ch = hashlib.md5((content or "").encode()).hexdigest()
@@ -579,7 +578,7 @@ class TestHardDeleteCascade:
         # Soft-delete first (required by hard_delete for young notes)
         soft_delete_note(db_path, note_id)
         result = hard_delete_note(db_path, note_id)
-        assert result, f"hard_delete_note returned False"
+        assert result, "hard_delete_note returned False"
 
         with open_db(db_path) as db:
             mem_count = _count(db, "memories")

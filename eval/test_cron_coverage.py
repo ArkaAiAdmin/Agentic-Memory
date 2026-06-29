@@ -326,7 +326,8 @@ class TestCronDetectVecDrift(unittest.TestCase):
         self.conn.commit()
         self.conn.close()
 
-        import io, contextlib
+        import io
+        import contextlib
 
         buf = io.StringIO()
         with self.assertRaises(SystemExit):
@@ -345,7 +346,8 @@ class TestCronDetectVecDrift(unittest.TestCase):
         self.conn.commit()
         self.conn.close()
 
-        import io, contextlib
+        import io
+        import contextlib
 
         buf = io.StringIO()
         with self.assertRaises(SystemExit):
@@ -356,7 +358,8 @@ class TestCronDetectVecDrift(unittest.TestCase):
 
     def test_main_empty_db(self):
         self.conn.close()
-        import io, contextlib
+        import io
+        import contextlib
 
         buf = io.StringIO()
         with self.assertRaises(SystemExit):
@@ -397,7 +400,8 @@ class TestCronPurgeExpired(unittest.TestCase):
 
     def test_main_empty_db(self):
         self.conn.close()
-        import io, contextlib
+        import io
+        import contextlib
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -405,7 +409,8 @@ class TestCronPurgeExpired(unittest.TestCase):
         self.assertIn("Purged 0", buf.getvalue())
 
     def test_main_nonexistent_db(self):
-        import io, contextlib
+        import io
+        import contextlib
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -416,7 +421,8 @@ class TestCronPurgeExpired(unittest.TestCase):
         self.conn.execute("INSERT INTO memories (id, content) VALUES ('m1', 'hello')")
         self.conn.commit()
         self.conn.close()
-        import io, contextlib
+        import io
+        import contextlib
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):

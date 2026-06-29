@@ -4,7 +4,6 @@
 Run with:
     ~/.config/agentic-memory/venv/bin/python eval/test_wave2c.py
 """
-import os
 import sys
 import unittest
 from pathlib import Path

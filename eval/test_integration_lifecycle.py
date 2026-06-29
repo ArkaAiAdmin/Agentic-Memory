@@ -8,12 +8,9 @@ Run with:
     ~/.config/agentic-memory/venv/bin/python -m unittest eval.test_integration_lifecycle -v
 """
 
-import pytest
 
-import os
 import sys
 import shutil
-import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone

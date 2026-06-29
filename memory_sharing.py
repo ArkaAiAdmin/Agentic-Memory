@@ -22,19 +22,18 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 import time
 
 logger = logging.getLogger(__name__)
-from typing import Any, Optional
+from typing import Any
 
 from config import resolve_db_path
 
-from memory_common import safe_close_db, connection_pool, GLOBAL_MEM_DIR
+from memory_common import safe_close_db, connection_pool
 
 __all__ = [
-    "MULTI_AGENT_ENABLED",
+    "MULTI_AGENT_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "share_memory",
     "list_shared_memories",
     "import_shared_memory",
@@ -501,7 +500,7 @@ def import_shared_memory(
             new_id = f"imported:{target_agent_id}:{source_id or shared_id}"
             from datetime import datetime, timezone
 
-            now_iso = datetime.now(timezone.utc).isoformat()
+            datetime.now(timezone.utc).isoformat()
             source_file = f"imported/{new_id.replace(':', '_')}.md"
 
             scan_result = _scan_shared_content(content, source_agent, shared_id)

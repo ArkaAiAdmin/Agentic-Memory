@@ -7,7 +7,6 @@ temporal-KG integration, and fact locking/unlocking.
 from __future__ import annotations
 
 import logging
-import math
 import os
 import re
 import sqlite3
@@ -31,12 +30,9 @@ from .fact_clean import (
     _DASH_BULLET,
     _CLASSIFY,
     _SECTION_HEADER,
-    _FUNC_CALL,
     _FILE_REF,
     _FUNC_SKIP,
-    _SKIP_CATEGORIES,
     _should_skip_category,
-    _find_verb,
     extract_event_time,
 )
 from .fact_schema import ensure_facts_schema

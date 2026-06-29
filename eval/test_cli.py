@@ -3,7 +3,6 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest import mock
 from unittest.mock import patch
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
@@ -89,7 +88,7 @@ class TestRunHelper(unittest.TestCase):
     @patch("cli.os.path.exists")
     @patch("cli.subprocess.run")
     def test_run_falls_back_to_cron(self, mock_run, mock_exists):
-        from cli import _run, SCRIPTS
+        from cli import _run
 
         mock_exists.side_effect = lambda p: "cron" in str(p)
         _run("test_script.py")

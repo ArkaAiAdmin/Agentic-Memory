@@ -8,13 +8,11 @@ Verifies that:
   - The schema version is current (5)
 """
 
-import sqlite3
 import tempfile
 from pathlib import Path
 
-import pytest
 
-from memory_common import get_memory_paths, open_db
+from memory_common import open_db
 
 
 class TestBootstrapTempDb:

@@ -30,13 +30,9 @@ from __future__ import annotations
 __all__ = ["get_reranker", "reset_reranker_for_tests", "normalize_rerank_score"]
 
 import logging
-import math
 import multiprocessing as mp
-import os
-import sys
 import threading
 import time
-import traceback
 from typing import TYPE_CHECKING, Any, List, Optional, cast
 
 if TYPE_CHECKING:
@@ -122,7 +118,6 @@ class Reranker:
     def _load_qwen3(self, device: str) -> bool:
         """Load the Qwen3-Reranker-0.6B primary. Returns True on success."""
         try:
-            import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
 
             self._tokenizer = AutoTokenizer.from_pretrained(
@@ -156,7 +151,6 @@ class Reranker:
     def _load_bge(self, device: str) -> bool:
         """Load the BAAI/bge-reranker-v2-m3 fallback. Returns True on success."""
         try:
-            import torch
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
             self._tokenizer = AutoTokenizer.from_pretrained(

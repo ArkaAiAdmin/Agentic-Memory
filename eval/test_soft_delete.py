@@ -20,7 +20,6 @@ they assert bug-hunting invariants like
 See: decisions/enrich-pre-compaction-survival-note
 """
 
-import json
 import shutil
 import sqlite3
 import sys
@@ -30,10 +29,8 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _wait_until import wait_until  # noqa: E402
 
 from memory_common import get_memory_paths, open_db
 from memory_delete import (

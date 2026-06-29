@@ -154,7 +154,6 @@ class TestCrdtSaveSagaRollback(unittest.TestCase):
 
         If this test fails, the saga refactor was reverted or never landed.
         """
-        import crdt_merge
 
         # crdt_merge is now a shim — the real code moved to crdt/crdt_merge.py
         src = (Path(INSTALL_DIR) / "crdt" / "crdt_merge.py").read_text()

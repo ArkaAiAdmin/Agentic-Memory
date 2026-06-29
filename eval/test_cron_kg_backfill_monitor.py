@@ -1,10 +1,8 @@
 """Tests for cron_kg_backfill_monitor.py (TODO 2, 2026-06-19)."""
 
 import json
-import os
 import subprocess
 import sys
-import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -230,7 +228,7 @@ class TestEndToEnd(unittest.TestCase):
         )
         try:
             result = subprocess.run(
-                [str(REPO / "venv/bin/python3.14"), str(driver)],
+                [sys.executable, str(driver)],
                 capture_output=True,
                 text=True,
                 timeout=30,

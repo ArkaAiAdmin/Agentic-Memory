@@ -21,7 +21,7 @@ import sqlite3
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from memory_common import GLOBAL_MEM_DIR, safe_close_db
+from memory_common import safe_close_db
 from infrastructure import resolve_active_memory_dir
 
 try:

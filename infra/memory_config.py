@@ -154,7 +154,6 @@ def configure_logging() -> None:
     Reads `LOG_LEVEL` from the environment (default `INFO`).
     Set `LOG_FORMAT=json` for structured JSON output (useful for production).
     """
-    import logging
     import json as _json_mod
 
     if logging.getLogger().handlers:
@@ -196,7 +195,6 @@ def log_backup(db_path: Path, keep: int = 3) -> None:
     Only the `keep` most recent backups (default 3) are retained; older
     ones are deleted. Best-effort — logs and continues on error.
     """
-    import logging
     import datetime
 
     logger = logging.getLogger(__name__)
@@ -212,7 +210,7 @@ def log_backup(db_path: Path, keep: int = 3) -> None:
         logger.warning("Failed to create DB backup of %s: %s", db_path, e)
         return
     try:
-        pattern = db_path.name + ".bak."
+        db_path.name + ".bak."
         backups = sorted(
             db_path.parent.glob(db_path.name + ".bak.*"),
             key=lambda p: p.name,

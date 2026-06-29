@@ -231,7 +231,6 @@ def pull_from_peer(
         Dict with ``applied``, ``conflict``, ``rejected``, ``total``, ``error``.
     """
     start = time.time()
-    result = {"applied": 0, "conflict": 0, "rejected": 0, "total": 0, "error": ""}
 
     changes_url = (
         f"{peer_url.rstrip('/')}/crdt/changes"
@@ -257,7 +256,7 @@ def pull_from_peer(
         return {"applied": 0, "conflict": 0, "rejected": 0, "total": 0}
 
     from crdt_merge import crdt_save
-    from crdt_field import crdt_field_save, FieldUpdate
+    from crdt_field import crdt_field_save
 
     applied = conflict = rejected = 0
     for note in changes:
@@ -346,7 +345,6 @@ def push_to_peer(
         Dict with peer's response (applied/conflict/rejected/total) or error.
     """
     start = time.time()
-    result = {"applied": 0, "conflict": 0, "rejected": 0, "total": 0, "error": ""}
 
     # Query local changes since last sync.
     try:

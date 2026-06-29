@@ -11,7 +11,6 @@ _ConnectionPool, RateLimiter, wal_checkpoint_idle, cleanup_fts5_orphans,
 maybe_checkpoint_on_startup, configure_logging.
 """
 
-import pytest
 
 import os
 import sqlite3
@@ -20,9 +19,8 @@ import tempfile
 import threading
 import time
 import unittest
-from collections import deque
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -41,14 +39,12 @@ from memory_common import (
     open_db,
     validate_config,
     log_backup,
-    connection_pool,
     RateLimiter,
     get_default_limiter,
     rate_limit_check,
     reset_rate_limiter,
     wal_checkpoint_idle,
     _maybe_checkpoint_on_startup,
-    _STARTUP_CHECKPOINT_DONE,
     SCHEMA_VERSION,
     _VALID_LOG_LEVELS,
     PROJECT_ROOT_MARKERS,
@@ -540,16 +536,16 @@ class TestOpenDbMutationKillers(unittest.TestCase):
             tmp = Path(f.name)
         try:
             with open_db(tmp) as conn:
-                conn_id = id(conn)
+                id(conn)
             # Connection should be closed now
         finally:
             tmp.unlink(missing_ok=True)
 
     def test_pooled_returns_same_connection(self):
         with open_db(PROD_DB, pooled=True) as conn1:
-            c1 = id(conn1)
+            id(conn1)
         with open_db(PROD_DB, pooled=True) as conn2:
-            c2 = id(conn2)
+            id(conn2)
         # Pooled connections may be reused (same id)
 
     def test_creates_wal_file(self):
@@ -558,7 +554,7 @@ class TestOpenDbMutationKillers(unittest.TestCase):
         try:
             with open_db(tmp) as conn:
                 conn.execute("CREATE TABLE t(x)")
-            wal = tmp.parent / (tmp.name + "-wal")
+            tmp.parent / (tmp.name + "-wal")
             # WAL file should exist after first write
         finally:
             tmp.unlink(missing_ok=True)
@@ -807,7 +803,7 @@ class TestConnectionPoolMutationKillers(unittest.TestCase):
 
     def test_put_validates_connection(self):
         pool = _ConnectionPool(max_size=5)
-        conn = pool.get(str(PROD_DB))
+        pool.get(str(PROD_DB))
         # Put a non-pooled connection
         fresh = sqlite3.connect(":memory:")
         pool.put(fresh)  # Should not crash
@@ -900,7 +896,7 @@ class TestConnectionPoolMutationKillers(unittest.TestCase):
         db_c = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
         try:
             conn_a = pool.get(db_a)  # depth[K_A] = 1, K_A in LRU
-            conn_b = pool.get(db_b)  # depth[K_B] = 1, K_B in LRU
+            pool.get(db_b)  # depth[K_B] = 1, K_B in LRU
             # Pool is now at max (2 conns, both held).
             self.assertEqual(len(pool._pool), 2)
             self.assertEqual(

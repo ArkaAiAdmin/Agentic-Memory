@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import random
 import shutil
 import sqlite3
@@ -26,7 +25,7 @@ import statistics
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -222,7 +221,7 @@ def build_vec_index(db_path: Path) -> float:
 
 def measure_save(db_path: Path, n: int) -> Measurement:
     """Direct SQLite INSERT simulating memory_save hot path."""
-    rng = random.Random(SEED + 2)
+    random.Random(SEED + 2)
     counter = 0
 
     def _one() -> int:
@@ -403,7 +402,6 @@ def run_for_size(n: int) -> dict[str, Any]:
     print(f"--- corpus size {n} ---")
     t0 = time.perf_counter()
     memory_dir, db_path, root = setup_corpus(n)
-    corpus_root = root  # where memory/ lives
     files = generate_corpus(n, memory_dir)
     gen_s = time.perf_counter() - t0
     print(f"  corpus: {len(files)} files in {gen_s:.1f}s")

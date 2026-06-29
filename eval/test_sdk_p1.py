@@ -28,13 +28,6 @@ class TestExceptions(unittest.TestCase):
             AgenticMemoryError,
             ConnectionError,
             NotFoundError,
-            ValidationError,
-            IntegrityError,
-            MaintenanceError,
-            SyncError,
-            PermissionError,
-            CircuitBreakerOpen,
-            ConfigError,
         )
 
         self.assertIsNotNone(AgenticMemoryError)
@@ -414,7 +407,6 @@ class TestInitReexports(unittest.TestCase):
             ConnectionError,
             NotFoundError,
             ValidationError,
-            IntegrityError,
         )
 
         self.assertIsNotNone(AgenticMemoryError)

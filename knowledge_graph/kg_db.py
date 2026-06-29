@@ -116,7 +116,7 @@ def _upsert_edge(
 
 def invalidate_edge(conn: sqlite3.Connection, edge_id: int) -> bool:
     """Mark an edge as invalid (soft delete). Returns True if an edge was invalidated."""
-    now = time.time()
+    time.time()
     try:
         cur = conn.execute(
             "UPDATE kg_edges SET invalid_at = datetime('now') WHERE id = ? AND invalid_at IS NULL",
@@ -189,7 +189,6 @@ def index_kg_for_memory(
     appear in the same sentence, a ``co_occurs`` edge is created between
     them.
     """
-    import sys
 
     if not sys.modules["knowledge_graph"].KG_ENABLED:
         # Backwards-compatible return shape for the disabled branch.

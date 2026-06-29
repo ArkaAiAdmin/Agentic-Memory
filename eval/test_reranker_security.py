@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -56,7 +56,6 @@ class TestRerankerDisabled(unittest.TestCase):
     def test_mps_warning_logged_when_deep_rerank_on_mps(self):
         """MPS detection should log a warning when deep_rerank=True."""
         from search.rerankers import _apply_cross_encoder_rerank
-        import logging
 
         scored = [
             ("note-1", "some text", "src.md", "[]", "2024-01-01", 1, 0.9, 0.5, 3, False),

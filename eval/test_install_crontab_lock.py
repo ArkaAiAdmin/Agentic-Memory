@@ -6,9 +6,7 @@ parallel invocations from racing on the user's crontab.
 
 import os
 import subprocess
-import sys
 import tempfile
-import textwrap
 import threading
 import time
 import unittest

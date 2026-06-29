@@ -163,52 +163,6 @@ __all__ = [
     "_QW5_CHUNKS_SCHEMA_SQL",
     "_QW5_CHUNKS_TRIGGERS_SQL",
 ]
-import json
-import logging
-import math
-import threading
-import os
-import re
-import sqlite3
-import time
-import uuid
-from collections import OrderedDict, namedtuple
-from typing import NamedTuple, Optional, cast
-from datetime import datetime, timezone
-from pathlib import Path
-from dataclasses import dataclass
-from memory_common import (
-    open_db,
-    count_rows,
-    safe_call,
-    connection_pool,
-    safe_close_db,
-    acquire_flock_with_retry,
-    release_flock,
-    atomic_write,
-    get_memory_paths,
-    parse_frontmatter,
-)
-from infra.infrastructure import (
-    _normalize_unicode,
-    _resolve_active_db_path,
-    _try_extract_result_meta,
-    with_audit,
-    _err,
-    ErrorCode,
-    resolve_active_memory_dir,
-    resolve_db_for_memory_id,
-    add_link_to_memory_md_content,
-    update_memory_md_locked,
-    GLOBAL_MEM_DIR,
-)
-from cache import (
-    _search_cache,
-    SEARCH_CACHE_MAX,
-    SEARCH_CACHE_TTL,
-    SEARCH_CACHE_TTL_ENABLED,
-    make_cache_key,
-)
 
 # ---------------------------------------------------------------------------
 # Cross-encoder + late-interaction rerank primitives
@@ -315,7 +269,6 @@ from search.query_parser import (
     _QUERY_TYPE_MULTIHOP_RE,
     _QUERY_TYPE_CODE_RE,
     _QUERY_TYPE_FACTUAL_RE,
-    _parse_search_query,
     _escape_fts_query,
     _escape_phrase,
     _expand_query,
@@ -330,19 +283,14 @@ from search.query_parser import (
 )
 
 from search.orchestrator import (
-    search_memories,
-    _get_memories_columns,
-    _fetch_rows_by_ids,
-    _merge_chunk_hits,
-    _search_chunks_enhanced,
     ScoreContext,
-    MemoryResultRow,
-    _resolve_late_interaction_enabled,
-    _skill_first_lookup,
-    record_ctr_feedback_db,
-    check_concept_drift_db,
+    _merge_chunk_hits,
     _fallback_embedding_search,
+    check_concept_drift_db,
+    search_memories,
 )
+
+from infra.memory_config import GLOBAL_MEM_DIR  # noqa: E402 — backward compat re-export
 
 
 # (Moved to search/__init__.py — canonical location.)

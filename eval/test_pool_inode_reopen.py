@@ -75,7 +75,6 @@ class TestPoolInodeTracking(unittest.TestCase):
 
     def test_inode_mismatch_evicts_conn(self):
         """get() detects inode change and reopens against new file."""
-        import time as _time
 
         # Open initial conn
         conn1 = self.pool.get(str(self.db_path), timeout=5.0)
@@ -147,7 +146,7 @@ class TestPoolInodeTracking(unittest.TestCase):
         """
         conn1 = self.pool.get(str(self.db_path), timeout=5.0)
         try:
-            conn_id_1 = id(conn1)
+            id(conn1)
         finally:
             self.pool.put(conn1)
 

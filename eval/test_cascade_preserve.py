@@ -8,7 +8,6 @@ Covers:
 """
 
 import sqlite3
-import os
 import tempfile
 import shutil
 from pathlib import Path

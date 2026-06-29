@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for cross_session_learn.py."""
 
-import os
 import sys
-import json
 import sqlite3
 import tempfile
 import unittest
@@ -15,7 +13,6 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 import cross_session_learn  # noqa: E402
-from memory_common import open_db  # noqa: E402
 from db_migrations import run_schema_setup  # noqa: E402
 
 

@@ -4,13 +4,12 @@
 Run with:
     ~/.config/agentic-memory/venv/bin/python -m unittest eval.test_contradiction_save -v
 """
-import os
 import sys
 import sqlite3
 import logging
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from unittest import mock
@@ -174,7 +173,6 @@ class TestTopNLimit(_Base):
             )
 
         call_counter = {"n": 0}
-        real_check = mcs._phrase_check_pair
 
         def counting_check(*args, **kwargs):
             call_counter["n"] += 1
@@ -387,7 +385,6 @@ class TestContentTruncation(_Base):
 
         captured = {}
 
-        real_check = mcs._phrase_check_pair
 
         def capture_check(existing_id, existing_content, new_id, new_content, helpers):
             captured["existing_len"] = len(existing_content)

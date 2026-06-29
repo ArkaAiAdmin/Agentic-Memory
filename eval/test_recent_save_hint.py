@@ -6,7 +6,6 @@ Run with:
 """
 
 import sys
-import time
 import unittest
 from pathlib import Path
 

@@ -7,7 +7,6 @@ now documents that there are TWO distinct tier systems. This test pins
 the DB-tier rules.
 """
 
-import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone

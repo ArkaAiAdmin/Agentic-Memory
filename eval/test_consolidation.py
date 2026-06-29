@@ -1,6 +1,10 @@
 """Tests for consolidation.py — duplicate detection, clustering, merge suggestions."""
 
-import os, sys, sqlite3, json, time
+import os
+import sys
+import sqlite3
+import json
+import time
 
 sys.path.insert(
     0,

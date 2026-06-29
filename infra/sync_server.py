@@ -1005,7 +1005,6 @@ class SyncServer:
         self._discover_enabled = enable_discovery
         if enable_discovery:
             from mdns_discovery import MDNSAdvertiser, MDNSBrowser
-            from pex_protocol import peer_directory
 
             # Start mDNS advertiser
             self.advertiser = MDNSAdvertiser(self.agent_id, self.port)

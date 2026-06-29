@@ -14,7 +14,6 @@ We do NOT load the embedding model for semantic detection. The
 semantic path is exercised end-to-end by the integration suite.
 """
 
-import os
 import sys
 import unittest
 from pathlib import Path

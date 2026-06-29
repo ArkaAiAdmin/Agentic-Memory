@@ -9,7 +9,10 @@ Verifies:
   6. The FTS MATCH query returns ranked results
 """
 
-import os, sys, sqlite3, tempfile
+import os
+import sys
+import sqlite3
+import tempfile
 
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 

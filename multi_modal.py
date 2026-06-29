@@ -20,12 +20,8 @@ without them (returns a note explaining that a format isn't supported).
 from __future__ import annotations
 
 from html.parser import HTMLParser
-import json
 import logging
-import os
 import re
-import tempfile
-import time
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse

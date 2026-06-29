@@ -36,7 +36,6 @@ import contextlib
 import fcntl
 import logging
 import os
-import socket
 import threading
 import time
 import uuid

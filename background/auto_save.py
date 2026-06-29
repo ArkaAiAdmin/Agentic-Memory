@@ -990,11 +990,10 @@ def _wait_for_file_modification(file_path: Path, timeout: float) -> None:
         # masks: IN_CREATE=0x100, IN_DELETE=0x200, IN_MOVED_TO=0x80, IN_MODIFY=0x2
         mask_dir = 0x100 | 0x200 | 0x80
         assert _inotify_add_watch is not None
-        wd_dir = _inotify_add_watch(fd, str(file_path.parent), mask_dir)
-        wd_file = None
+        _inotify_add_watch(fd, str(file_path.parent), mask_dir)
         if file_path.exists():
             try:
-                wd_file = _inotify_add_watch(fd, str(file_path), 0x2)
+                _inotify_add_watch(fd, str(file_path), 0x2)
             except OSError as exc:
                 logger.debug(
                     "auto-save daemon: inotify add-watch (file) failed: %s", exc
@@ -1608,7 +1607,6 @@ def _auto_save_record_success() -> None:
 def _record_circuit_skip(entry: dict) -> None:
     """Record a skipped entry due to circuit breaker being open."""
     try:
-        from memory_common import open_db
         from db import connection_pool
 
         db_path = get_db_path()
@@ -1656,7 +1654,6 @@ def _persist_circuit_state(event: str, *, details: dict) -> None:
     must never break the save path.
     """
     try:
-        from memory_common import open_db
         from db import connection_pool
 
         db_path = get_db_path()
@@ -1720,7 +1717,6 @@ def _load_circuit_state_from_audit() -> None:
     process restarts (CLI hooks and daemon share the same DB).
     """
     try:
-        from memory_common import open_db
         from db import connection_pool
 
         db_path = get_db_path()
@@ -1886,7 +1882,6 @@ def _tool_complete_inner(
     ts_compact = ts.replace(":", "-").replace("T", "_").split(".")[0]
     tool_slug = _slugify(tool, max_len=40)
     note_id = f"sessions/auto-{ts_compact}-{tool_slug}"
-    filename = f"{note_id}.md"
     target_dir = _get_sessions_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
     file_path = target_dir / f"auto-{ts_compact}-{tool_slug}.md"
@@ -2479,7 +2474,6 @@ def status() -> dict:
 def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
     """Check auto-save pipeline health."""
     import time
-    from pathlib import Path
 
     _get_sessions_dir().mkdir(parents=True, exist_ok=True)
     now = time.time()

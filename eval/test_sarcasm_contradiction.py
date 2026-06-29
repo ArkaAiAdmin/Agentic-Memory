@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for sarcasm-aware contradiction detection.
 """
-import os
 import sys
 import tempfile
 import unittest

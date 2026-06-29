@@ -1,11 +1,8 @@
 """
 Summarization MCP tools — memory_summarize, memory_auto_summarize, memory_summarization_stats.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
-import os
-import sys
-from pathlib import Path
 
 
 import json
@@ -34,7 +31,7 @@ def memory_summarize(note_id: str) -> str:
                 f"Note {note_id} not found or too short to summarize.",
             )
         return json.dumps({"note_id": note_id, "summary": summary}, indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("Summarization failed")
         return _err(ErrorCode.SUMMARY_ERROR, "Summarization failed")
 
@@ -50,7 +47,7 @@ def memory_auto_summarize(min_length: int = 500, dry_run: bool = False) -> str:
     try:
         result = sm.auto_summarize_long(min_length=min_length, dry_run=dry_run)
         return json.dumps(result, indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("Auto-summarize failed")
         return _err(ErrorCode.SUMMARY_ERROR, "Auto-summarize failed")
 
@@ -65,6 +62,6 @@ def memory_summarization_stats() -> str:
         return json.dumps({"enabled": False})
     try:
         return json.dumps(sm.summarization_stats(), indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("Stats failed")
         return _err(ErrorCode.SUMMARY_ERROR, "Stats failed")

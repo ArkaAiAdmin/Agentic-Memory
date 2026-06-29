@@ -2,17 +2,16 @@
 """Cron wrapper: delete all auto-saved tool-log entries from DB and disk."""
 
 from _flock import acquire_lock_or_exit
-import os, sys, traceback, json
-from pathlib import Path
-
-import sys
 import os
+import sys
+import traceback
+import json
+
 
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from memory_common import get_memory_paths
 from auto_save import purge_auto_saves
 
 

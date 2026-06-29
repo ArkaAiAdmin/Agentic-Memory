@@ -1,15 +1,14 @@
 import os
 import sys
 import time
-import pytest
 import sqlite3
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agent_context import get_agent, AgentContext, clear_agent
+from agent_context import get_agent, clear_agent
 from memory_bootstrap import get_pinned_notes, get_high_importance, get_recent_notes, get_stats
 from recall import _fetch_pinned, _fetch_recent_digests, _fetch_high_importance, session_recap
 from eval._fixtures import bootstrap_temp_db_clean

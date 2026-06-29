@@ -1,7 +1,6 @@
 import json
 import logging
 import math
-import os
 import re
 import sqlite3
 import threading
@@ -9,7 +8,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple, Optional, cast
+from typing import Any, NamedTuple, Optional
 
 from cache import (
     _search_cache,
@@ -19,29 +18,12 @@ from cache import (
     make_cache_key,
 )
 from memory_common import (
-    open_db,
-    count_rows,
-    safe_call,
     connection_pool,
     safe_close_db,
-    acquire_flock_with_retry,
-    release_flock,
-    atomic_write,
-    get_memory_paths,
-    parse_frontmatter,
 )
 from infrastructure import (
-    _normalize_unicode,
-    _resolve_active_db_path,
-    _try_extract_result_meta,
-    with_audit,
     _err,
     ErrorCode,
-    resolve_active_memory_dir,
-    resolve_db_for_memory_id,
-    add_link_to_memory_md_content,
-    update_memory_md_locked,
-    GLOBAL_MEM_DIR,
 )
 
 # Import functions from other search submodules
@@ -66,12 +48,6 @@ from search.scoring import (
 )
 from search.synthesis import (
     _bb1_synthesize,
-    _bb2_resolve,
-    _bb2_record_turn,
-)
-from search.chunk_index import (
-    _qw5_ensure_schema,
-    _qw5_index_chunks_for,
 )
 
 logger = logging.getLogger(__name__)
@@ -574,7 +550,6 @@ def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15) -> dict
     dedupe window so back-to-back invocations don't write duplicate
     rows to the ``concept_drift`` table.
     """
-    import time as _time
     import numpy as _np
 
     conn = connection_pool.get(str(db_path))

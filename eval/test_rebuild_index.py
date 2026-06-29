@@ -7,7 +7,6 @@ Focus on the testable units:
 """
 
 import json
-import os
 import sqlite3
 import sys
 import tempfile

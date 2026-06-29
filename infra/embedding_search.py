@@ -22,7 +22,6 @@ from memory_config import install_root
 
 if TYPE_CHECKING:
     import numpy as np
-    import torch
 
 # Vector-search result cache. Same LRU+TTL pattern as knowledge_graph.
 # 20 entries / 30s TTL balances hit rate with staleness: a freshly-
@@ -1094,7 +1093,6 @@ class EmbeddingSearch:
         # O(N) over all embeddings; caching helps when an agent issues
         # the same query many times in a loop. TTL is short (30s) so
         # newly-added memories are reflected quickly.
-        from embedding_search import _vec_cache
 
         cache_key = (str(db_path), query, limit)
         cached = _vec_cache_get(cache_key)

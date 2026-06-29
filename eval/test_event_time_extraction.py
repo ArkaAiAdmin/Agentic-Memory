@@ -18,7 +18,10 @@ Plus edge cases: empty input, no dates, code blocks, frontmatter, out-of-range
 dates, ambiguous inputs, ordering of preference.
 """
 
-import os, sys, calendar, time
+import os
+import sys
+import calendar
+import time
 
 sys.path.insert(
     0,

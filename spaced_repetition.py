@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 import os
-import sys
-import json
-import sqlite3
 import datetime
 from pathlib import Path
-from typing import Any
 
 
 
 # Use canonical parse_frontmatter from memory_common (handles CRLF + multi-line values).
-from memory_common import parse_frontmatter, find_project_root, safe_close_db  # noqa: E402
+from memory_common import safe_close_db  # noqa: E402
 
 
 class SpacedRepetition:
@@ -150,14 +146,14 @@ if __name__ == "__main__":
 
     sr = SpacedRepetition(db_path)
     stats = sr.get_stats()
-    print(f"Spaced Repetition Stats:")
+    print("Spaced Repetition Stats:")
     print(f"  Total scheduled: {stats['total_scheduled']}")
     print(f"  Due for review: {stats['due_for_review']}")
     print(f"  Avg ease factor: {stats['avg_ease_factor']}")
 
     due = sr.get_due_reviews()
     if due:
-        print(f"\nDue Reviews:")
+        print("\nDue Reviews:")
         for memory_id, next_review, interval, ef in due:
             preview = memory_id[:50]
             print(

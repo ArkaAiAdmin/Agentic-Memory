@@ -12,7 +12,6 @@ writers proceed concurrently.
 """
 
 import os
-import sqlite3
 import sys
 import tempfile
 import threading
@@ -25,7 +24,6 @@ sys.path.insert(0, str(AGENTIC_DIR))
 sys.path.insert(0, str(AGENTIC_DIR / "eval"))
 
 from memory_common import open_db
-from _wait_until import wait_until  # noqa: E402
 
 
 class TestWalMode(unittest.TestCase):

@@ -24,20 +24,17 @@ Run with:
 """
 
 import hashlib
-import inspect
 import os
 import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 # Make the agentic-memory package importable.
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-import memory_mcp  # noqa: E402
 import save_pipeline  # noqa: E402
 
 # Path to the test DB. The conftest.py session fixture sets MEMORY_DB_PATH

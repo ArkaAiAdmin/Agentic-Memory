@@ -16,8 +16,6 @@ the test fast and model-free.
 """
 
 import hashlib
-import math
-import os
 import random
 import sqlite3
 import sys
@@ -42,11 +40,9 @@ from _fixtures import bootstrap_temp_db_clean
 
 from embedding_search import (
     EmbeddingSearch,
-    MODEL_ID,
     MODEL_REVISION,
     _cache_text,
     _content_hash,
-    get_embedding_search,
 )
 
 
@@ -301,7 +297,7 @@ class TestEmbeddingCache(unittest.TestCase):
             return original_encode(texts)
 
         self.es.model.encode = counting_encode
-        results = self.es.search("alpha", self.db_path, limit=5)
+        self.es.search("alpha", self.db_path, limit=5)
         # 1 (row re-encode) + 1 (query) = 2 calls
         self.assertEqual(call_count["n"], 2)
 
@@ -324,7 +320,7 @@ class TestEmbeddingCache(unittest.TestCase):
     def test_search_saves_back_newly_encoded_rows(self):
         self._insert_memory("a", "alpha")
         # No pre-populated cache row.
-        results = self.es.search("alpha", self.db_path, limit=5)
+        self.es.search("alpha", self.db_path, limit=5)
         self.conn.commit()
         rows = self.conn.execute(
             "SELECT memory_id, content_hash FROM memory_embeddings"

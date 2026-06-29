@@ -328,7 +328,6 @@ def doctor_main() -> None:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
     from infrastructure import resolve_active_memory_dir
-    from config import get_config
 
     mem_dir = resolve_active_memory_dir()
     db_path = Path(parsed.db) if parsed.db else mem_dir / "memory.db"
@@ -467,7 +466,7 @@ def doctor_main() -> None:
             import json
 
             lines = hook_errors.read_text(errors="replace").splitlines()
-            recent = [json.loads(l) for l in lines[-50:] if l.strip()]
+            recent = [json.loads(line) for line in lines[-50:] if line.strip()]
             open_circuits: dict[str, int] = {}
             for entry in recent:
                 label = entry.get("label", "?")
@@ -510,7 +509,7 @@ def doctor_main() -> None:
 
     # ── Check 8: Allowlist config ─────────────────────────────────────────
     try:
-        from auto_save import _resolve_allowlist, _tool_name_matches
+        from auto_save import _resolve_allowlist
 
         al = _resolve_allowlist()
         if al is None:
@@ -678,7 +677,6 @@ def status_main() -> None:
     if db_path.exists():
         size_mb = db_path.stat().st_size / 1024 / 1024
         parts.append(f"db={size_mb:.1f}MB")
-        schema_ok = True
         try:
             import sqlite3
 
@@ -693,7 +691,6 @@ def status_main() -> None:
                     parts.append(
                         _c(f"SCHEMA=v{db_ver}!need=v{SCHEMA_VERSION}", fail_color)
                     )
-                    schema_ok = False
                 else:
                     parts.append(_c(f"schema=v{db_ver}", ok_color))
         except Exception as exc:
@@ -708,7 +705,7 @@ def status_main() -> None:
             lines = hook_errors.read_text(errors="replace").splitlines()
             import json as _json
 
-            recent = [_json.loads(l) for l in lines[-20:] if l.strip()]
+            recent = [_json.loads(line) for line in lines[-20:] if line.strip()]
             open_circuits = {
                 e["label"]
                 for e in recent

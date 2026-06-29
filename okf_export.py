@@ -16,9 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger("okf_export")
@@ -100,7 +98,7 @@ def _memory_to_okf(row: dict) -> str:
     lines.append(f"type: {memory_type}")
     if resource:
         lines.append(f"resource: {resource}")
-    lines.append(f"related: []")
+    lines.append("related: []")
     if valid_from:
         lines.append(f"valid_from: {valid_from}")
     if valid_to:
@@ -222,7 +220,7 @@ def _write_okf_index(index_path: Path, entries: list[dict]):
         f"count: {len(entries)}",
         "---",
         "",
-        f"# OKF Memory Index",
+        "# OKF Memory Index",
         "",
         f"**{len(entries)} memories** exported at {_dt.now().isoformat()}.",
         "",

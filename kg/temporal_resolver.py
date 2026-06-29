@@ -23,11 +23,9 @@ involving E are re-evaluated.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import sqlite3
-import time
 from typing import Optional
 from pathlib import Path
 
@@ -66,7 +64,6 @@ def resolve_temporal_contradiction(
         - ``superseded``: list of note IDs marked as superseded.
         - ``entity_propagation``: dict of entity → count of resolved edges.
     """
-    import re
 
     from config import resolve_db_path
     from contradiction_detector import detect_contradictions

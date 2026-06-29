@@ -1,15 +1,10 @@
 """
 Knowledge Graph MCP tools — graph_search, graph_stats, facts_search, facts_list, facts_stats.
 """
-
-import _bootstrap_path  # noqa: E402
-import os
-import sys
-from pathlib import Path
+from mcp_common import _bootstrap_path  # noqa: E402
 
 
-import json
-from pathlib import Path
+
 
 from mcp_common import (
     _resolve_memory_dir,
@@ -140,7 +135,7 @@ def memory_facts_search(query: str, limit: int = 10) -> str:
                 f"(conf={f['effective_confidence']:.3f}, mentions={f['mention_count']}){lock}"
             )
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_facts_search")
         return _err(ErrorCode.DB_ERROR, "in memory_facts_search")
 
@@ -174,7 +169,7 @@ def memory_facts_list(limit: int = 20, min_confidence: float = 0.0) -> str:
                 f"(conf={f['confidence']:.3f}, mentions={f['mention_count']}){lock}"
             )
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_facts_list")
         return _err(ErrorCode.DB_ERROR, "in memory_facts_list")
 
@@ -209,6 +204,6 @@ def memory_facts_stats() -> str:
                 )
             )
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_facts_stats")
         return _err(ErrorCode.DB_ERROR, "in memory_facts_stats")

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import logging
-import re
 import sqlite3
 import threading
 import time as _time
 from collections import OrderedDict as _OrderedDict
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from .kg_schema import ensure_kg_schema
 from .kg_db import index_kg_for_memory

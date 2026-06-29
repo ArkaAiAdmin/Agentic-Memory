@@ -8,8 +8,6 @@ Run with:
     ~/.config/agentic-memory/venv/bin/python eval/test_embedding_recompute.py
 """
 
-import json
-import os
 import sys
 import tempfile
 import unittest

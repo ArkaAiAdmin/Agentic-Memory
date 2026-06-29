@@ -4,8 +4,10 @@ Covers: duplicate entity merging (same name+type), case handling,
 whitespace, edge redirection, dry-run mode, empty tables, stats.
 """
 
-import os, sys, sqlite3, tempfile
-from pathlib import Path
+import os
+import sys
+import sqlite3
+import tempfile
 
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
@@ -122,7 +124,7 @@ class TestDedupEntitiesBasic:
     def test_duplicate_same_name_type_merges(self):
         conn, _ = _make_db()
         try:
-            id1 = _insert_entity(conn, "OpenAI", "org", mentions=2)
+            _insert_entity(conn, "OpenAI", "org", mentions=2)
             id2 = _insert_entity(conn, "OpenAI", "org", mentions=3)
             stats = dedup_entities(conn)
             assert stats["groups_found"] == 1
@@ -140,7 +142,7 @@ class TestDedupEntitiesBasic:
     def test_keeps_highest_id_newest_entity(self):
         conn, _ = _make_db()
         try:
-            id1 = _insert_entity(conn, "Python", "tech", mentions=1)
+            _insert_entity(conn, "Python", "tech", mentions=1)
             id2 = _insert_entity(conn, "Python", "tech", mentions=2)
             dedup_entities(conn)
             remaining = conn.execute("SELECT id FROM kg_entities").fetchone()[0]
@@ -186,7 +188,7 @@ class TestEdgeRedirection:
             id_alice_dup = _insert_entity(conn, "Alice", "person")
             # Edge from duplicate Alice -> Bob (duplicate will be merged)
             _insert_edge(conn, id_alice_dup, id_b, "knows")
-            stats = dedup_entities(conn)
+            dedup_entities(conn)
             # Kept entity is the lowest id (id_a), edge from dup redirected to it
             edges = conn.execute("SELECT source_id, target_id FROM kg_edges").fetchall()
             assert len(edges) == 1
@@ -221,7 +223,7 @@ class TestEdgeRedirection:
             _insert_edge(conn, id_alice_dup, id_b, "knows", weight=1.0)
             # First Alice also has: Alice -> Bob
             _insert_edge(conn, id_a, id_b, "knows", weight=1.0)
-            stats = dedup_entities(conn)
+            dedup_entities(conn)
             # Should end up with 1 edge, weight bumped by 0.1
             edges = conn.execute("SELECT weight FROM kg_edges").fetchall()
             assert len(edges) == 1
@@ -234,7 +236,7 @@ class TestEdgeRedirection:
         conn, _ = _make_db()
         try:
             id_a = _insert_entity(conn, "Alice", "person")
-            id_a2 = _insert_entity(conn, "Alice", "person")
+            _insert_entity(conn, "Alice", "person")
             id_c = _insert_entity(conn, "Charlie", "person")
             _insert_edge(conn, id_a, id_c, "works_with")
             dedup_entities(conn)
@@ -252,7 +254,7 @@ class TestEdgeRedirection:
     def test_count_edges_redirected(self):
         conn, _ = _make_db()
         try:
-            id_a = _insert_entity(conn, "X", "thing")
+            _insert_entity(conn, "X", "thing")
             id_b = _insert_entity(conn, "Y", "thing")
             id_a2 = _insert_entity(conn, "X", "thing")
             # Edges FROM the newer (will-be-deleted) entity
@@ -315,7 +317,7 @@ class TestEdgeCases:
         """Edge where source == target (after redirect both go to keep_id)."""
         conn, _ = _make_db()
         try:
-            id1 = _insert_entity(conn, "Self", "x")
+            _insert_entity(conn, "Self", "x")
             id2 = _insert_entity(conn, "Self", "x")
             _insert_edge(conn, id2, id2, "self_loop")
             dedup_entities(conn)
@@ -330,11 +332,11 @@ class TestEdgeCases:
     def test_stats_returned_correctly(self):
         conn, _ = _make_db()
         try:
-            id_a = _insert_entity(conn, "A", "t")
+            _insert_entity(conn, "A", "t")
             id_a2 = _insert_entity(conn, "A", "t")
             id_b = _insert_entity(conn, "B", "t")
-            id_b2 = _insert_entity(conn, "B", "t")
-            id_b3 = _insert_entity(conn, "B", "t")
+            _insert_entity(conn, "B", "t")
+            _insert_entity(conn, "B", "t")
             _insert_edge(conn, id_a2, id_b, "r")
             stats = dedup_entities(conn)
             assert isinstance(stats, dict)
@@ -461,7 +463,7 @@ class TestEntityFKOnDeleteSetNull:
         conn, _ = _make_db()
         try:
             conn.execute("PRAGMA foreign_keys = ON;")
-            e1 = _insert_entity(conn, "django", "framework")
+            _insert_entity(conn, "django", "framework")
             e2 = _insert_entity(conn, "django", "framework")
             # Reference the higher-id (merge) entity — will be deleted
             conn.execute(

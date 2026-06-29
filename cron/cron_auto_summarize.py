@@ -2,11 +2,12 @@
 """Cron wrapper: auto-summarize — compress long notes via extractive TF-IDF."""
 
 from _flock import acquire_lock_or_exit
-import os, sys, json, traceback
+import os
+import sys
+import traceback
 
 os.environ.setdefault("MEMORY_SUMMARIZATION", "1")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-import sys
 import os
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":

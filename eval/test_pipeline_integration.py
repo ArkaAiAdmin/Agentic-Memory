@@ -26,7 +26,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from _fixtures import bootstrap_temp_db_clean
 
 # Ensure cron/ scripts (cron_backup, etc.) are importable when this
@@ -1367,8 +1366,8 @@ class TestFactExtractionEdgeCases:
         text = "Status: active\nDate: 2026-01-01\nPython is a language."
         facts = extract_facts(text)
         subjects = [f[0].lower() for f in facts]
-        assert "status" not in subjects, f"Meta-label 'Status' not skipped"
-        assert "date" not in subjects, f"Meta-label 'Date' not skipped"
+        assert "status" not in subjects, "Meta-label 'Status' not skipped"
+        assert "date" not in subjects, "Meta-label 'Date' not skipped"
 
     def test_fact_extraction_verb_skip(self):
         """Built-in verbs are skipped as subjects."""
@@ -1377,7 +1376,7 @@ class TestFactExtractionEdgeCases:
         text = "Use Python for machine learning."
         facts = extract_facts(text)
         subjects = [f[0].lower() for f in facts]
-        assert "use" not in subjects, f"Built-in verb 'use' not skipped"
+        assert "use" not in subjects, "Built-in verb 'use' not skipped"
 
 
 # ===========================================================================
@@ -1423,7 +1422,6 @@ class TestEmbeddingSearchCache:
 
     def test_cache_invalidation_on_rebuild(self):
         """After rebuild_vec_index, cache is refreshed."""
-        from embedding_search import get_embedding_search
 
         db = _make_db(self.db_path)
         _insert_test_memory(db, "test/cache-rebuild", "Rebuild cache test.")
@@ -1495,7 +1493,7 @@ class TestMetricsPrometheus:
         assert isinstance(output, str)
         assert len(output) > 0
         lines = output.strip().split("\n")
-        metric_lines = [l for l in lines if l and not l.startswith("#")]
+        metric_lines = [line for line in lines if line and not line.startswith("#")]
         assert len(metric_lines) >= 1, "No metric lines in output"
 
     def test_runtime_counters(self):
@@ -1560,7 +1558,7 @@ class TestCronBackup:
 
         backup_dir = self.tmpdir / "backups"
         backup_dir.mkdir()
-        result = do_backup(backup_dir)
+        do_backup(backup_dir)
         backups = list(backup_dir.glob("*.db*"))
         assert len(backups) >= 1, "No backup file created"
 

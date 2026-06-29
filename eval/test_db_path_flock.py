@@ -243,7 +243,7 @@ class TestOpenDbWiring(unittest.TestCase):
         os.environ["MEMORY_DB_FLOCK"] = "0"
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "memory.db"
-            with open_db(db) as conn:
+            with open_db(db):
                 pass
             self.assertFalse((db.parent / f"{db.name}.flock").exists())
 

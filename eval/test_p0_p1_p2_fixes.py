@@ -963,7 +963,7 @@ class TestPragmaCacheInvalidationOnSave(unittest.TestCase):
     def test_save_memory_does_not_affect_other_paths(self) -> None:
         """Cache invalidation is scoped to the save's db_path only."""
         import save_pipeline as _sp
-        from save_pipeline import save_memory, _detect_schema_features
+        from save_pipeline import save_memory
 
         # Warm cache for a DIFFERENT db_path
         other_key = "/some/other/path.db"

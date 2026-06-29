@@ -6,13 +6,10 @@ G4 fix (2026-06-22): documentation about the relationship between
 ``memory_record_ctr_feedback`` and ``memory_reinforce`` is in the
 docstring of ``memory_record_ctr_feedback`` below.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
-import os
 import sqlite3
-import sys
 import time
-from pathlib import Path
 
 
 import json

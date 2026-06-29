@@ -21,8 +21,7 @@ import os
 import re
 import sys
 import time
-from collections import Counter, defaultdict
-from statistics import mean
+from collections import Counter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -59,7 +58,7 @@ def main() -> None:
 
     # Print summary
     type_counts = Counter(q["question_type"] for q in failures)
-    print(f"\nFailures by question_type:")
+    print("\nFailures by question_type:")
     for t, n in type_counts.most_common():
         print(f"  {t}: {n}")
 

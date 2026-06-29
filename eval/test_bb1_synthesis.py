@@ -16,7 +16,6 @@ Verifies that:
  12. search_memories with synthesize=True returns a synthesis field
  13. search_memories with synthesize=False doesn't include synthesis
 """
-import os
 import sys
 import unittest
 import tempfile

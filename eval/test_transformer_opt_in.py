@@ -13,8 +13,8 @@ sys.path.insert(0, str(INSTALL_DIR))
 from embedding_search import EmbeddingSearch
 
 try:
-    import torch
-    import transformers
+    import torch  # noqa: F401
+    import transformers  # noqa: F401
     HAS_DEPS = True
 except ImportError:
     HAS_DEPS = False

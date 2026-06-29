@@ -4,7 +4,6 @@ import hashlib
 import logging
 import re
 import threading
-import time
 from collections import deque
 from typing import Optional
 
@@ -809,7 +808,7 @@ def extract_relations(
         return []
 
     relations = []
-    text_lower = text.lower()
+    text.lower()
 
     for pattern, rel_type in _RELATION_PATTERNS:
         for match in re.finditer(pattern, text, re.IGNORECASE):
