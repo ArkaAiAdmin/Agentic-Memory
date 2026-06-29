@@ -10,15 +10,14 @@ or:
     ~/.config/agentic-memory/venv/bin/python eval/test_vec_index.py
 """
 import json
-import os
 import shutil
-import sqlite3
 import sys
 import tempfile
-import time
 from datetime import datetime, timezone
 import unittest
 from pathlib import Path
+
+import numpy as np
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -146,7 +145,6 @@ class TestBuildIndex(_VecIndexTestBase):
 
     def test_persisted_index_is_searchable(self):
         """Load the BLOB and confirm the index answers queries."""
-        import numpy as np
         _insert_memories(self.db_path, [
             ("lessons/a", "first memory about indexing"),
             ("lessons/b", "second memory about quantization"),

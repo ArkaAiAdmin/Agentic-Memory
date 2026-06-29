@@ -72,7 +72,7 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, cast
+from typing import Any, List, Tuple, cast
 
 from memory_common import open_db
 from db import AnyConnection

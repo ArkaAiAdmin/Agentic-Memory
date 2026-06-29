@@ -3,8 +3,8 @@ CRDT sync subsystem MCP tools — crdt_sync, crdt_status.
 
 Extracted from mcp_maintenance.py to reduce module size.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
 import json
 import sqlite3
 
@@ -40,7 +40,7 @@ def memory_crdt_sync(agent_id: str, remote_notes_json: str) -> str:
 
     try:
         remote_notes_raw = json.loads(remote_notes_json)
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         logger.exception("invalid JSON")
         return _err(ErrorCode.INVALID_PARAMS, "invalid JSON")
 
@@ -63,7 +63,7 @@ def memory_crdt_sync(agent_id: str, remote_notes_json: str) -> str:
     try:
         result = crdt_sync_all(str(db_path), agent_id, _crdt_agent_id(), notes)
         return json.dumps(result)
-    except Exception as e:
+    except Exception:
         logger.exception("crdt_sync failed")
         return _err(ErrorCode.DB_ERROR, "crdt_sync failed")
 
@@ -83,7 +83,6 @@ def memory_crdt_status() -> str:
     if not peers:
         return json.dumps({"peers": [], "sync_enabled": cfg.sync_enable_server})
 
-    import sqlite3
 
     target_base = _resolve_memory_dir()
     db_path = target_base / "memory.db"

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-import os
 import re
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -10,7 +8,6 @@ __all__ = ["rewrite_wikilinks"]
 sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
 from config import resolve_db_path
 from memory_common import (
-    find_project_root,
     atomic_write,
     connection_pool,
     safe_close_db,

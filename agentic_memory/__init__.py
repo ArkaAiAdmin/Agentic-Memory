@@ -41,7 +41,6 @@ See Also:
 
 __version__ = "1.1.0"
 
-import os
 import sys
 from pathlib import Path
 

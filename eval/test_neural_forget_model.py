@@ -4,7 +4,6 @@
 Covers: construction, predict, from_config, to_config_str, features.
 """
 
-import math
 import sys
 import unittest
 from pathlib import Path

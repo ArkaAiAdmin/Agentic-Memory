@@ -18,7 +18,6 @@ This script checks:
 
 import ast
 import re
-import subprocess
 import sys
 from pathlib import Path
 

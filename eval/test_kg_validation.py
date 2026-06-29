@@ -4,7 +4,6 @@ fact extraction, and graph-RAG expansion.
 Uses a TEMP DB — never touches production.
 """
 
-import os
 import sqlite3
 import sys
 import tempfile
@@ -17,10 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from knowledge_graph import (
     ensure_kg_schema,
     extract_entities,
-    extract_relations,
     index_kg_for_memory,
     graph_search,
-    graph_stats,
     _upsert_entity,
     _upsert_edge,
 )
@@ -426,9 +423,7 @@ class TestBatchEntityLookups(KGTestBase):
         self._sync_fts()
 
         # Capture SQL calls before
-        calls_before = self.conn.total_changes
         result = graph_search(self.conn, "alice bob carol dave", limit=20)
-        calls_after = self.conn.total_changes
         # Should find all entities
         names = {e["name"] for e in result["entities"]}
         self.assertTrue(len(names) >= 3, f"Expected >= 3 entities, got {names}")

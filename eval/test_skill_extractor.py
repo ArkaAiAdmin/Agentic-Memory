@@ -12,7 +12,6 @@ Test categories:
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import sys
 import tempfile
@@ -23,7 +22,6 @@ from pathlib import Path
 INSTALL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL))
 
-import skill_extractor
 from skill_extractor import (
     ensure_skill_schema,
     extract_skill_from_memory,
@@ -144,7 +142,6 @@ class TestExtractSkillFromMemory(unittest.TestCase):
     def test_name_is_slug(self):
         result = extract_skill_from_memory("m1", _PROCEDURAL_CONTENT)
         # Name should be a URL-safe slug
-        import re
 
         self.assertRegex(result["name"], r"^[a-z0-9-]+$")
 
@@ -356,7 +353,7 @@ $ sudo apt install -y postgresql
                 for _ in range(3):
                     record_skill_hit(self.conn, skill["name"]) if False else None
         # Manually bump hit counts
-        skills = list_skills(self.conn, limit=10)
+        list_skills(self.conn, limit=10)
         # Set distinct hit counts
         self.conn.execute(
             "UPDATE memory_skills SET hit_count = 10 WHERE name LIKE '%ubuntu%'"
@@ -398,7 +395,6 @@ class TestIntegrationWithMemoryDB(unittest.TestCase):
         # Use a fresh temp DB with the full prod schema (memory + memory_skills)
         self.tmpdir = Path(tempfile.mkdtemp(prefix="skill_test_"))
         self.db_path = self.tmpdir / "memory.db"
-        from db_migrations import run_schema_setup
 
         # Manually create a basic memories table for this test
         import sqlite3

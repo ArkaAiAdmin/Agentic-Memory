@@ -113,7 +113,6 @@ def _parse_sql_file(path: Path) -> list[str]:
     statements: list[str] = []
     buf: list[str] = []
     depth = 0  # BEGIN ... END nesting depth
-    upper_buf: list[str] = []  # uppercase mirror to spot keywords cheaply
     i = 0
     n = len(full_text)
     in_single = (

@@ -4,8 +4,9 @@ Covers: entity extraction, relation extraction, indexing, graph search,
 graph stats, schema creation.
 """
 
-import os, sys, sqlite3, tempfile, shutil
-from pathlib import Path
+import os
+import sys
+import sqlite3
 
 import pytest
 
@@ -24,7 +25,7 @@ class TestEntityExtraction:
         text = text + " John Smith and Alice Johnson are colleagues."
         entities = kg.extract_entities(text)
         names = [e[0] for e in entities]
-        types = [e[1] for e in entities]
+        [e[1] for e in entities]
         assert any("John Smith" in n for n in names), f"No John Smith found in {names}"
         assert any("Alice Johnson" in n for n in names), (
             f"No Alice Johnson found in {names}"

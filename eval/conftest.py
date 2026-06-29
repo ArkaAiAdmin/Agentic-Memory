@@ -12,7 +12,6 @@ What this does:
 """
 
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -28,7 +27,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ["MEMORY_LLM_EXTRACTION"] = "0"
 # Session-wide test env: set once here instead of each file doing
 # os.environ["X"] = "1" at module top level (causes cross-test pollution).
-os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
+os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
 os.environ.setdefault("MEMORY_ADAPTIVE_RETENTION", "1")
 os.environ.setdefault("MEMORY_LLM_HYBRID", "0")
 os.environ.setdefault("MEMORY_QUALITY_GATES", "1")

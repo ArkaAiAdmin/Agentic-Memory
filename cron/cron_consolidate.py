@@ -2,12 +2,15 @@
 """Cron wrapper: consolidation — dedup via SHA256 + n-gram Jaccard, detect contradictions."""
 
 from _flock import acquire_lock_or_exit
-import os, sys, sqlite3, json, hashlib, datetime
+import os
+import sys
+import json
+import hashlib
+import datetime
 from pathlib import Path
 
 os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-import sys
 import os
 
 _parent = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +20,6 @@ sys.path.insert(0, _parent)
 
 
 from memory_common import (
-    GLOBAL_MEM_DIR,
     safe_close_db,
     cleanup_fts5_orphans,
     connection_pool,

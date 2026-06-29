@@ -19,6 +19,7 @@ sys.path.insert(0, str(INSTALL_DIR))
 
 import embedding_search  # noqa: E402
 from embedding_search import EmbeddingSearch, get_embedding_search  # noqa: E402
+import numpy as np
 
 
 class TestEmbeddingSingleton(unittest.TestCase):
@@ -99,7 +100,6 @@ class TestEmbeddingSingleton(unittest.TestCase):
         # setUpClass guarantees the model is loaded, so vecs is an ndarray.
         assert vecs is not None
         self.assertEqual(vecs.shape[0], 2)
-        import numpy as np
         self.assertTrue(np.allclose(np.linalg.norm(vecs, axis=1), 1.0, atol=0.01))
 
     def test_l2_norm_assertion_passes_on_empty_list(self):
@@ -117,7 +117,6 @@ class TestEmbeddingSingleton(unittest.TestCase):
         es = EmbeddingSearch()
         if es.model is None:
             self.skipTest("model not loaded")
-        import numpy as np
         # L2 norm of [2,2,2,...] with 256 dims = 32 — far from 1.0.
         bad = np.full((1, es.model.dim), 2.0, dtype=np.float32)
         with patch.dict(os.environ, {"AGENTIC_MEMORY_DEBUG_NORMS": "1"}):

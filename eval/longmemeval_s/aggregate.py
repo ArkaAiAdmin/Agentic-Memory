@@ -148,7 +148,7 @@ md.append("**Per-question state**: fresh in-memory FTS5 DB. No prod DB touched.\
 
 md.append("---\n")
 md.append("## 1. Headline numbers\n")
-md.append(f"**Session-level** (BM25 + CE blend 0.6, primary system):\n")
+md.append("**Session-level** (BM25 + CE blend 0.6, primary system):\n")
 md.append("| metric | value |")
 md.append("|---|---|")
 md.append(f"| `recall_all@5`  | {pct(M['recall_all@5'])} |")
@@ -254,10 +254,10 @@ md.append("4. **Variant sanity**: corpus has `avg_sessions_per_question = 47.7` 
 md.append("---\n")
 md.append("## 7. Verdict\n")
 md.append(f"**Headline**: session-level `recall_all@10 = {M['recall_all@10']*100:.2f}%` on 470 non-abstention LongMemEval_S questions.\n")
-md.append(f"- **NOT in the 48-62% range** the brief expected, but that range is for the full LongMemEval_M benchmark (~500 sessions/q) or for QA-accuracy, not for S retrieval. The 95% result is **in line with published LongMemEval_S numbers** (Memory-Core BM25 96.2%, agentmemory BM25+Vector 98.6%, Prism 92.3% R@5).")
+md.append("- **NOT in the 48-62% range** the brief expected, but that range is for the full LongMemEval_M benchmark (~500 sessions/q) or for QA-accuracy, not for S retrieval. The 95% result is **in line with published LongMemEval_S numbers** (Memory-Core BM25 96.2%, agentmemory BM25+Vector 98.6%, Prism 92.3% R@5).")
 md.append(f"- The CE blend adds a real +{(M['recall_all@10']-B['recall_all@10'])*100:.2f}pp on `recall_all@10` over BM25-only; cheap at 0.27s/q.")
-md.append(f"- The 4-5% gap from published 96-98% is likely explained by their using a tuned BM25 (e.g., `bm25(b=0.75, k1=1.5)`) plus dense + RRF, vs. our FTS5-default BM25 + CE. Acceptable for a simple-blend variant.")
-md.append(f"- All 3 sanity checks pass: no `has_answer` leak, self-query gets gold #1, foreign query does not preferentially surface foreign gold.\n")
+md.append("- The 4-5% gap from published 96-98% is likely explained by their using a tuned BM25 (e.g., `bm25(b=0.75, k1=1.5)`) plus dense + RRF, vs. our FTS5-default BM25 + CE. Acceptable for a simple-blend variant.")
+md.append("- All 3 sanity checks pass: no `has_answer` leak, self-query gets gold #1, foreign query does not preferentially surface foreign gold.\n")
 
 md.append("---\n")
 md.append("## 8. Comparison context (MVE vs M-paper NDCG@5)\n")

@@ -5,9 +5,10 @@ Tests each subsystem end-to-end, verifying schema consistency,
 function signatures, and edge cases.
 """
 
-import pytest
 
-import os, sys, json, time, tempfile, shutil, sqlite3
+import sys
+import tempfile
+import shutil
 from pathlib import Path
 
 # --- Test setup ---
@@ -27,11 +28,7 @@ import search_pipeline as search
 import embedding_search as es
 import memory_delete as md
 import rebuild_index as ri
-import knowledge_graph as kg
-import fact_extraction as fe
 import adaptive_retention as ar
-import self_directed as sd
-import recall
 import audit
 
 results = []

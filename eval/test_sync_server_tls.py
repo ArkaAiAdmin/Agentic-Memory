@@ -18,8 +18,6 @@ import socket
 import ssl
 import sys
 import tempfile
-import threading
-import time
 import unittest
 from http.client import HTTPSConnection
 from pathlib import Path
@@ -191,7 +189,6 @@ class TestTlsServerEndToEnd(unittest.TestCase):
         os.environ["MEMORY_SYNC_TLS_KEY"] = str(self.key_path)
 
         # Pick a random-ish free port
-        import socket
 
         self.port = 19877
 
@@ -279,7 +276,6 @@ class TestCorsAllowlist(unittest.TestCase):
 
     def test_empty_allowlist_does_not_emit_wildcard(self) -> None:
         """An empty allowlist must not produce a wildcard response."""
-        import importlib
 
         # Reload sync_server to pick up a fresh SYNC_CORS_ORIGINS.
         os.environ.pop("MEMORY_SYNC_CORS_ORIGINS", None)
@@ -362,7 +358,6 @@ class TestPlaintextWarning(unittest.TestCase):
     def test_warning_logged_for_non_loopback_no_tls(self) -> None:
         """Starting the server on a non-loopback address without TLS
         must log a warning."""
-        import logging
         import socket as _socket
 
         # Pick a free port — we don't actually want to bind it.
@@ -375,7 +370,6 @@ class TestPlaintextWarning(unittest.TestCase):
             del sys.modules["sync_server"]
         if "infra.sync_server" in sys.modules:
             del sys.modules["infra.sync_server"]
-        import sync_server
         from sync_server import SyncServer
 
         # Capture log messages.
@@ -413,7 +407,6 @@ class TestPlaintextWarning(unittest.TestCase):
             del sys.modules["sync_server"]
         if "infra.sync_server" in sys.modules:
             del sys.modules["infra.sync_server"]
-        import sync_server
         from sync_server import SyncServer
 
         # Capture log messages at INFO level.  We expect no WARNING

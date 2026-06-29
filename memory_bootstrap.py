@@ -13,12 +13,17 @@ the full pre-compaction recovery note is prepended as the first
 section so the agent knows context was lost and what to recover.
 """
 
-import os, sys, json, time, sqlite3, argparse
+import os
+import sys
+import json
+import time
+import argparse
 from pathlib import Path
+
+from infra.memory_config import get_memory_paths
 
 
 def _get_sessions_dir() -> Path:
-    from memory_common import get_memory_paths
 
     _, local_mem, _ = get_memory_paths()
     return local_mem / "sessions"
@@ -101,7 +106,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # needs to force a feature on for the bootstrap pass, they can set the
 # env var explicitly before importing this module.
 
-from memory_common import get_memory_paths, safe_close_db, connection_pool
+from memory_common import safe_close_db, connection_pool
 
 
 def get_preferences(conn):
@@ -377,7 +382,7 @@ def get_bootstrap_summary(db_path: str | None = None) -> str:
 
     conn = connection_pool.get(str(resolved), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
-    project_root = hook_data = None
+    project_root = None
     try:
         project_root = Path.cwd()
     except Exception:

@@ -14,7 +14,6 @@ Usage:
 import argparse
 import json
 import os
-import statistics
 import sys
 import time
 from contextlib import contextmanager
@@ -304,7 +303,7 @@ def main():
         )
         configs = configs[: args.max_runs]
     n_configs = len(configs)
-    print(f"=== heuristic tune ===")
+    print("=== heuristic tune ===")
     print(f"  gold       : {gold_path}")
     print(f"  output     : {output_path}")
     print(f"  candidates : {n_configs}")

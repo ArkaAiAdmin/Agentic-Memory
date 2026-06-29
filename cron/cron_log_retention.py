@@ -9,7 +9,6 @@ Usage:
 """
 
 from _flock import acquire_lock_or_exit
-import os
 import shutil
 from pathlib import Path
 
@@ -34,10 +33,10 @@ def rotate_log(log_path: Path) -> bool:
         gen2.unlink()
     if gen1.exists():
         shutil.move(str(gen1), str(gen2))
-        old_size = gen2.stat().st_size
+        gen2.stat().st_size
 
     shutil.copy2(str(log_path), str(gen1))
-    new_size = gen1.stat().st_size
+    gen1.stat().st_size
 
     with open(log_path, "w") as f:
         f.truncate(0)

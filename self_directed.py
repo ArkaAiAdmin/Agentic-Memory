@@ -14,17 +14,16 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import sqlite3
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from memory_common import connection_pool, safe_close_db, GLOBAL_MEM_DIR
+from memory_common import connection_pool, safe_close_db
 
 __all__ = [
-    "SELF_DIRECTED_ENABLED",
+    "SELF_DIRECTED_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "compute_importance",
     "run_heartbeat",
     "archive_low_importance",
@@ -265,7 +264,7 @@ def _backfill_drifted_subsystems(conn: sqlite3.Connection, drifted: list[str]) -
     # Backfill chunks
     if "chunks" in drifted:
         try:
-            from search_pipeline import _qw5_index_chunks_for, _qw5_chunk_content
+            from search_pipeline import _qw5_index_chunks_for
 
             count = 0
             for nid, content in note_contents.items():
@@ -688,7 +687,6 @@ def tier_stats(conn: sqlite3.Connection) -> dict:
 
 def tier_stats_db(db_path: str | Path) -> dict:
     """tier_stats with connection lifecycle managed."""
-    from memory_common import connection_pool, safe_close_db
 
     conn = connection_pool.get(str(db_path), timeout=10)
     conn.execute("PRAGMA busy_timeout = 10000;")

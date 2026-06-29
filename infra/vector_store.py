@@ -30,7 +30,7 @@ import io
 import logging
 import math
 from dataclasses import dataclass
-from typing import Iterable, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 LOG = logging.getLogger(__name__)
 

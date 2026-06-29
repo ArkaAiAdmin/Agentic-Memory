@@ -31,7 +31,6 @@ from __future__ import annotations
 import re
 import time
 import sqlite3
-from pathlib import Path
 from typing import Optional
 
 # Use the config system for feature flags
@@ -465,7 +464,6 @@ def record_skill_hit(conn: sqlite3.Connection, skill_id: int) -> None:
 
 def list_skills(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
     """List all skills, ordered by hit_count desc (most-used first)."""
-    import json
 
     rows = conn.execute(
         """SELECT id, name, topic, description, hit_count, last_used_at, created_at

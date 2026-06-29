@@ -136,18 +136,17 @@ def main():
     out_dir = _resolve_out_dir(sessions_dir, ts)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    event_count = 0
 
     # Copy events.jsonl if it exists
     if events_source is not None:
         dest = out_dir / "events.jsonl"
         shutil.copy2(str(events_source), str(dest))
         try:
-            event_count = len(
+            len(
                 events_source.read_text(encoding="utf-8").rstrip("\n").split("\n")
             )
         except OSError:
-            event_count = 0
+            pass
 
     # Extract user prompt and write task.md
     task_snippet = ""

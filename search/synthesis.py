@@ -228,7 +228,6 @@ def _bb1_synthesize(
         after = min(len(sentences), idx + _BB1_CONTEXT_SENTENCES + 1)
         block = sentences[before:after]
         block_text = " ".join((t for _, _, t in block))
-        marker = "«" if idx > 0 else ""
         answer_parts.append(f"[From {note_id}]\n{block_text}")
         sentences_out.append(
             {

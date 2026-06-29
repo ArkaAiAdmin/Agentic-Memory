@@ -198,7 +198,7 @@ def _apply_neural_forget_curve(
         return scored_results
 
     note_ids = [r[0] for r in scored_results if r and r[0]]
-    last_queries = get_last_access_queries_batch(note_ids)
+    get_last_access_queries_batch(note_ids)
     now_ts = time.time()
 
     modified = []
@@ -222,7 +222,7 @@ def _apply_neural_forget_curve(
                 pinned,
             ) = r[:10]
             last_accessed = r[10] if len(r) > 10 else None
-            metadata_json = r[11] if len(r) > 11 else None
+            r[11] if len(r) > 11 else None
             access_count = r[12] if len(r) > 12 else 1
         except Exception:
             logger.warning("Failed to unpack result row for neural forget curve")
@@ -598,7 +598,7 @@ class TemporalAttentionModel:
         """Update hidden state after one access event for *memory_id*."""
         sig = 1.0 if clicked else (-1.0 if dismissed else 0.0)
         feat = np.append(query_embedding_first5, sig)  # shape (6,)
-        h_prev = self._hidden.get(memory_id, np.zeros(_HIDDEN_DIM))
+        self._hidden.get(memory_id, np.zeros(_HIDDEN_DIM))
         decay = _DECAY_LAMBDA ** max(0.0, hours_since_access)
         h_new = np.tanh(np.dot(feat, self.W_input.T) + self.b_input) * decay
         self._hidden[memory_id] = h_new

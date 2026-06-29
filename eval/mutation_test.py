@@ -11,14 +11,11 @@ Usage:
 
 import argparse
 import ast
-import importlib
 import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
-import textwrap
 from pathlib import Path
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
@@ -331,7 +328,7 @@ def main():
     # Summary
     elapsed_total = time.time() - start_time
     print(f"\n{'=' * 60}")
-    print(f"MUTATION TESTING SUMMARY")
+    print("MUTATION TESTING SUMMARY")
     print(f"{'=' * 60}")
     print(f"  Total mutations tested: {total_mutations}")
     print(f"  Killed (caught by tests): {killed}")
@@ -344,7 +341,7 @@ def main():
 
     if survived_details:
         print(f"\n{'=' * 60}")
-        print(f"SURVIVED MUTANTS (weak test coverage)")
+        print("SURVIVED MUTANTS (weak test coverage)")
         print(f"{'=' * 60}")
         for mod, idx, desc, snippet in survived_details:
             print(f"  {mod} mutation #{idx}: {desc}")

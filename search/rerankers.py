@@ -308,7 +308,7 @@ def _late_interaction_score(query: str, content: str) -> float:
         q_ngrams = {q_tok[i : i + 3] for i in range(len(q_tok) - 2)}
         max_possible += 1.0
         best_sim = 0.0
-        best_dist = len(c_tokens)
+        len(c_tokens)
         for ci, c_ng in enumerate(c_ngrams):
             if not c_ng or not q_ngrams:
                 continue
@@ -320,7 +320,6 @@ def _late_interaction_score(query: str, content: str) -> float:
             weighted = sim * proximity
             if weighted > best_sim:
                 best_sim = weighted
-                best_dist = dist
         total_score += best_sim
     if max_possible <= 0:
         return 0.0
@@ -388,7 +387,6 @@ def _apply_late_interaction_rerank(
     using _LATE_INTERACTION_BLEND. Returns the full list with adjusted
     scores for the top_k, rest untouched.
     """
-    import sys
 
     # 2026-06-23: Query the config singleton directly to avoid import cycles.
     from _lazy_imports import get_config

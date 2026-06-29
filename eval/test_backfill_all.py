@@ -1,14 +1,12 @@
 """Tests for backfill_all.py — universal backfill orchestrator."""
-import json
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
 
-SCRIPT_DIR = Path.home() / ".config" / "agentic-memory"
+SCRIPT_DIR = Path(__file__).resolve().parent.parent
 SCRIPT = SCRIPT_DIR / "backfill_all.py"
 
 

@@ -1,15 +1,12 @@
 """
 Quality gate MCP tools — memory_quality_filter, memory_quality_stats.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
 import os
-import sys
-from pathlib import Path
 
 
 import json
-import os
 from mcp_common import (
     _resolve_memory_dir,
     get_memory_paths,
@@ -57,7 +54,7 @@ def memory_quality_filter(query: str, limit: int = 50) -> str:
             return "No results found."
         filtered, stats = qg.filter_results(results)
         return json.dumps({"results": filtered, "stats": stats}, indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("Quality filter failed")
         return _err(ErrorCode.QUALITY_ERROR, "Quality filter failed")
 
@@ -77,6 +74,6 @@ def memory_quality_stats() -> str:
             return _err(ErrorCode.DB_ERROR, f"memory.db not found at {db_path}")
         stats = qg.quality_stats_db(db_path)
         return json.dumps(stats, indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("Stats failed")
         return _err(ErrorCode.QUALITY_ERROR, "Stats failed")

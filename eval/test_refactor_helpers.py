@@ -336,8 +336,6 @@ class TestContradictionDetectorFallback(unittest.TestCase):
 
     def test_fallback_safe_close_db_signature(self):
         # Import the fallback branch by faking ImportError
-        import sys
-        from unittest import mock
 
         # The fallback is defined when memory_common import fails.
         # We can't easily trigger that without breaking the real

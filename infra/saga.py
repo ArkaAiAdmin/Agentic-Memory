@@ -49,10 +49,9 @@ Example::
 from __future__ import annotations
 
 import logging
-import os
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Generator, List, Literal, Optional, Union
 
@@ -69,7 +68,7 @@ __all__ = [
     "SagaStep",
     "SagaError",
     "saga_save_memory",
-    "SAGA_ENABLED",
+    "SAGA_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "_saga_fallback_counter",
     "reset_saga_fallback_counter",
 ]

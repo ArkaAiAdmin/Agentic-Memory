@@ -9,11 +9,9 @@ Tests the full sync protocol without external network:
 """
 
 import json
-import os
 import socket as _socket
 import sys
 import tempfile
-import threading
 import time
 import unittest
 from pathlib import Path
@@ -23,7 +21,6 @@ sys.path.insert(0, str(INSTALL_DIR))
 sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
 from memory_common import connection_pool, open_db
-from _wait_until import wait_until  # noqa: E402
 
 
 def _wait_for_server(host: str, port: int, timeout: float = 5.0) -> None:
@@ -39,12 +36,11 @@ def _wait_for_server(host: str, port: int, timeout: float = 5.0) -> None:
     raise RuntimeError(f"Server {host}:{port} did not start within {timeout}s")
 
 
-from sync_server import SyncServer, _SyncHandler
+from sync_server import SyncServer
 from sync_client import (
     pull_from_peer,
     push_to_peer,
     sync_with_peer,
-    _log_sync_result,
     _get_last_push_timestamp,
 )
 
@@ -103,7 +99,6 @@ def _init_db(db_path: Path):
 
 def _write_note(db_path: Path, note_id: str, content: str, agent_id: str = "agent-A"):
     """Write a note directly with CRDT metadata, bypassing the full pipeline."""
-    import time as ttime
     from datetime import datetime, timezone
 
     from save_pipeline import _crdt_bump_version
@@ -178,7 +173,8 @@ class TestSyncServer(unittest.TestCase):
             importlib.reload(_ur)
 
     def test_health(self):
-        import urllib.request, json
+        import urllib.request
+        import json
 
         resp = urllib.request.urlopen(f"{self.url}/health", timeout=5)
         data = json.loads(resp.read().decode("utf-8"))
@@ -187,7 +183,8 @@ class TestSyncServer(unittest.TestCase):
         self.assertGreaterEqual(data["note_count"], 2)
 
     def test_changes_since(self):
-        import urllib.request, json
+        import urllib.request
+        import json
 
         resp = urllib.request.urlopen(
             f"{self.url}/crdt/changes?since=0&agent=test", timeout=5
@@ -197,7 +194,8 @@ class TestSyncServer(unittest.TestCase):
         self.assertGreaterEqual(data["count"], 2)
 
     def test_changes_limit(self):
-        import urllib.request, json
+        import urllib.request
+        import json
 
         resp = urllib.request.urlopen(
             f"{self.url}/crdt/changes?since=0&agent=test&limit=1", timeout=5
@@ -221,7 +219,8 @@ class TestSyncServer(unittest.TestCase):
             self.assertEqual(e.code, 400)
 
     def test_changes_empty(self):
-        import urllib.request, json
+        import urllib.request
+        import json
         from datetime import datetime, timezone
 
         future_ts = int(datetime.now(timezone.utc).timestamp()) + 86400
@@ -233,7 +232,8 @@ class TestSyncServer(unittest.TestCase):
         self.assertEqual(data["changes"], [])
 
     def test_push_new_notes(self):
-        import urllib.request, json
+        import urllib.request
+        import json
 
         body = json.dumps(
             {

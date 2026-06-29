@@ -97,15 +97,15 @@ class TestPatchFile(TestCase):
         # The call must be the first statement inside main(), before print.
         main_body = result.split("def main() -> int:")[1].split("if __name__")[0]
         flock_line = next(
-            (l.strip() for l in main_body.splitlines() if "acquire_lock_or_exit" in l),
+            (line.strip() for line in main_body.splitlines() if "acquire_lock_or_exit" in line),
             None,
         )
         self.assertEqual(flock_line, "acquire_lock_or_exit('cron_test')")
         print_line = next(
             (
-                l.strip()
-                for l in main_body.splitlines()
-                if l.strip().startswith("print")
+                line.strip()
+                for line in main_body.splitlines()
+                if line.strip().startswith("print")
             ),
             None,
         )

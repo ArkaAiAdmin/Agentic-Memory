@@ -18,7 +18,6 @@ import json
 import math
 import os
 import sqlite3
-import statistics
 import subprocess
 import sys
 import tempfile
@@ -324,7 +323,7 @@ examples:
     # ---- per-corpus breakdown ----
     by_corpus = {}
     for corpus, group in by_corpus_groups.items():
-        g_ids = {r["id"] for r in per_query_records if r["corpus"] == corpus}
+        {r["id"] for r in per_query_records if r["corpus"] == corpus}
         g_ndcg = [r["ndcg"] for r in per_query_records if r["corpus"] == corpus]
         g_mrr = [r["mrr"] for r in per_query_records if r["corpus"] == corpus]
         g_zero = sum(
@@ -426,7 +425,7 @@ examples:
 
     # ---- print summary ----
     print("=" * 70)
-    print(f"  retrieval check complete")
+    print("  retrieval check complete")
     print(f"  nDCG@5         : {mean_ndcg:.4f}")
     print(f"  MRR            : {mean_mrr:.4f}")
     print(f"  0-result rate  : {zero_rate:.4f}  ({zero_count}/{n})")

@@ -6,38 +6,19 @@ Re-exports all public symbols from the submodules so both
 """
 
 from knowledge_graph.kg_db import (
-    _upsert_entity,
     _upsert_edge,
-    _write_extraction_stats,
+    _upsert_entity,
     get_active_edges_for_entity,
     index_kg_for_memory,
     invalidate_edge,
 )
 from knowledge_graph.kg_extract import (
-    _content_hash,
-    _extract_capitalized_phrases,
-    _extract_concepts,
-    _extract_dates,
-    _extract_emails,
-    _extract_organizations,
-    _extract_places,
-    _extract_urls,
-    _extraction_cache_get,
-    _extraction_cache_put,
-    _is_file_path_entity,
-    _strip_code_blocks,
-    _strip_frontmatter,
     clear_extraction_cache,
     extract_entities,
     extract_relations,
 )
 from knowledge_graph.kg_schema import ensure_kg_schema
 from knowledge_graph.kg_search import (
-    _assemble_1hop,
-    _assemble_2hop,
-    _graph_cache_get,
-    _graph_cache_put,
-    _match_query_entities,
     _row_to_edge_dict,
     _row_to_entity_dict,
     _temporal_edge_clause,
@@ -64,6 +45,12 @@ __all__ = [
     "clear_graph_cache",
     "invalidate_edge",
     "get_active_edges_for_entity",
+    # backward-compat internals
+    "_upsert_entity",
+    "_upsert_edge",
+    "_row_to_edge_dict",
+    "_row_to_entity_dict",
+    "_temporal_edge_clause",
 ]
 
 _KG_ENABLED_CACHE: bool | None = None

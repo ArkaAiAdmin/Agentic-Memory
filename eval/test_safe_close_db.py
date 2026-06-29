@@ -10,18 +10,14 @@ Run with:
     ~/.config/agentic-memory/venv/bin/python -m unittest eval.test_safe_close_db -v
 """
 
-import hashlib
-import os
-import shutil
 import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 # Make the agentic-memory package importable.
-INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
+INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
 import memory_common  # noqa: E402

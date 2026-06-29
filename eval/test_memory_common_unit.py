@@ -13,12 +13,8 @@ import os
 import sqlite3
 import sys
 import tempfile
-import threading
-import time
 import unittest
-from collections import deque
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -30,7 +26,6 @@ from memory_common import (
     atomic_write,
     open_db,
     safe_close_db,
-    connection_pool,
 )
 from infrastructure import GLOBAL_MEM_DIR
 
@@ -58,13 +53,13 @@ class TestConnectionPool(unittest.TestCase):
         pool = _ConnectionPool(max_size=2)
         # Create 3 connections (capacity is 2)
         db_path = str(PROD_DB)
-        conn1 = pool.get(db_path)
+        pool.get(db_path)
         # Use a temp DB for the second connection
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             tmp_db = f.name
         try:
-            conn2 = pool.get(tmp_db)
-            conn3 = pool.get(db_path)  # Should evict conn2 (LRU)
+            pool.get(tmp_db)
+            pool.get(db_path)  # Should evict conn2 (LRU)
             # Pool should have at most 2 connections
             self.assertLessEqual(len(pool._pool), 2)
         finally:
@@ -93,7 +88,7 @@ class TestConnectionPool(unittest.TestCase):
 
     def test_pool_close_removes_connection(self):
         pool = _ConnectionPool(max_size=5)
-        conn = pool.get(str(PROD_DB))
+        pool.get(str(PROD_DB))
         pool.close(str(PROD_DB))
         self.assertNotIn(str(PROD_DB), pool._pool)
 
@@ -120,7 +115,7 @@ class TestConnectionPool(unittest.TestCase):
             with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
                 tmp_db = f.name
             try:
-                conn = pool.get(tmp_db)
+                pool.get(tmp_db)
                 dbs.append(tmp_db)
             except Exception:
                 pass
@@ -305,7 +300,7 @@ class TestConnectionPoolMore(unittest.TestCase):
         try:
             # Get two connections
             c1 = pool.get(db1)
-            c2 = pool.get(db2)
+            pool.get(db2)
             self.assertEqual(len(pool._pool), 2)
             # Release one so the LRU eviction can work (depth goes to 0)
             pool.put(c1)

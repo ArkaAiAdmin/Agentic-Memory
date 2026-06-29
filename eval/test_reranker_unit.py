@@ -11,7 +11,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _wait_until import wait_until  # noqa: E402
 
 os_chdir_done = False
 
@@ -181,12 +180,9 @@ class TestScoreWithTimeoutKillsSlowChild(unittest.TestCase):
     """
 
     def test_score_with_timeout_kills_slow_child(self):
-        import time
-        import reranker as r_mod
 
         # Capture real _score_with_timeout before monkey-patching so we can
         # still test it.
-        real_score_with_timeout = r_mod._score_with_timeout
 
         # We can't easily patch _score_qwen3 inside the spawned child
         # (the child re-imports the module). Instead, set timeout so low

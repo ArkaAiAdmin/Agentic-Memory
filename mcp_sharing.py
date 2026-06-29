@@ -3,11 +3,8 @@ Multi-agent sharing MCP tools — memory_share, memory_shared_list,
 memory_shared_import, memory_shared_stats, memory_auto_share,
 memory_share_candidates.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
-import os
-import sys
-from pathlib import Path
 
 
 import json
@@ -31,7 +28,7 @@ def memory_share(note_id: str, agent_id: str) -> str:
     try:
         result = ma.share_memory(note_id, agent_id)
         return json.dumps(result, indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("Share failed")
         return _err(ErrorCode.SHARE_ERROR, "Share failed")
 
@@ -51,7 +48,7 @@ def memory_shared_list(agent_id: str = "", category: str = "", limit: int = 50) 
             limit=limit,
         )
         return json.dumps(results, indent=2, default=str)
-    except Exception as e:
+    except Exception:
         logger.exception("List shared failed")
         return _err(ErrorCode.SHARE_ERROR, "List shared failed")
 
@@ -70,7 +67,7 @@ def memory_shared_import(shared_id: str, target_agent_id: str) -> str:
     try:
         result = ma.import_shared_memory(shared_id, target_agent_id)
         return json.dumps(result, indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("Import shared failed")
         return _err(ErrorCode.SHARE_ERROR, "Import shared failed")
 
@@ -85,7 +82,7 @@ def memory_shared_stats() -> str:
         return json.dumps({"enabled": False})
     try:
         return json.dumps(ma.shared_pool_stats(), indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("Shared stats failed")
         return _err(ErrorCode.SHARE_ERROR, "Shared stats failed")
 
@@ -149,6 +146,6 @@ def memory_auto_share(
             kwargs["agent_id"] = agent_id
         result = ma.auto_share_high_value(**kwargs)
         return json.dumps(result, indent=2, default=str)
-    except Exception as e:
+    except Exception:
         logger.exception("Auto-share failed")
         return _err(ErrorCode.SHARE_ERROR, "Auto-share failed")

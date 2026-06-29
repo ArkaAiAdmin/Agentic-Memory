@@ -1,0 +1,6 @@
+[lint]
+# E402: module-import-not-at-top-of-file
+# This project uses sys.path.insert(0, ...) before imports in
+# many scripts (shim files, cron jobs, eval helpers). Suppress
+# to avoid false positives.
+ignore = ["E402"]

@@ -15,7 +15,6 @@ IMPORTANT: This test READS the production DB but never writes to it.
 It validates the production DB state as a regression safety net.
 """
 
-import os
 import sqlite3
 import sys
 from pathlib import Path

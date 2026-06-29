@@ -19,10 +19,8 @@ Usage:
 
 import argparse
 import json
-import os
 import sys
 import sqlite3
-import time
 from contextlib import closing
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -118,7 +116,7 @@ def collect_gauges(db_path: Path) -> str:
     lines.append(
         f"memory_db_size_bytes {db_path.stat().st_size if db_path.exists() else 0}"
     )
-    lines.append(f"# EOF")
+    lines.append("# EOF")
     return "\n".join(lines) + "\n"
 
 

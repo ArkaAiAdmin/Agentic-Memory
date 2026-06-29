@@ -23,7 +23,6 @@ import functools
 import json
 import os
 import re
-import sqlite3
 import time
 import warnings
 from pathlib import Path
@@ -46,7 +45,7 @@ from fts import (
     _migrate_fts5_porter_tokenizer,
     _migrate_ensure_fts_triggers,
 )
-from frontmatter import parse_frontmatter, _coerce
+from frontmatter import parse_frontmatter
 from file_lock import (
     _try_flock,
     acquire_flock_with_retry,
@@ -54,13 +53,11 @@ from file_lock import (
 )
 from memory_config import (
     GLOBAL_MEM_DIR,
-    PROJECT_ROOT_MARKERS,
     get_memory_paths,
     find_project_root,
     configure_logging,
     log_backup,
     validate_config,
-    _VALID_LOG_LEVELS,
 )
 from safe_call import safe_call
 

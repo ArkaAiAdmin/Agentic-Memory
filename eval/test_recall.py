@@ -9,16 +9,13 @@ Tests the recall.py module and MCP tools end-to-end:
   - Edge cases (empty DB, missing DB, no data)
 """
 
-import json
 import os
 import sqlite3
 import sys
-import tempfile
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-import pytest
 
 # Ensure project root is on sys.path
 _project_root = str(Path(__file__).resolve().parent.parent)
@@ -34,10 +31,8 @@ for k in _wrong_modules:
     del sys.modules[k]
 
 from memory_common import (
-    open_db,
     run_db_migrations,
     _migrate_kg_tables,
-    connection_pool,
 )
 from fact_extraction import ensure_facts_schema
 from adaptive_retention import ensure_adaptive_schema
@@ -51,8 +46,6 @@ from recall import (
     _fetch_pinned,
     _fetch_recent_digests,
     _fetch_high_importance,
-    _fetch_relevant,
-    _fetch_user_profile,
     _count_memories,
     _row_to_dict,
     _item_meta,

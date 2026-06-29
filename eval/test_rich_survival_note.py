@@ -16,8 +16,6 @@ See: decisions/enrich-pre-compaction-survival-note
 
 import json
 import os
-import re
-import tempfile
 import time
 from pathlib import Path
 

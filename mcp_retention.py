@@ -3,11 +3,8 @@ Adaptive retention MCP tools — memory_adaptive_retention, memory_retention_sta
 
 Also runs the surprise-based neural forget curve to decay scores.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
-import os
-import sys
-from pathlib import Path
 
 
 import json
@@ -55,6 +52,6 @@ def memory_retention_stats() -> str:
         return json.dumps({"enabled": False})
     try:
         return json.dumps(ar.retention_stats(), indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("Stats failed")
         return _err(ErrorCode.RETENTION_ERROR, "Stats failed")

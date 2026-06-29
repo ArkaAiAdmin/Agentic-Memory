@@ -1,11 +1,9 @@
 """
 Knowledge Graph Traversal MCP tools — memory_graph_shortest_path, memory_graph_traverse.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
-import json
-from pathlib import Path
-from typing import Any, List, Union
+from typing import List, Union
 
 from mcp_common import (
     _resolve_memory_dir,
@@ -35,7 +33,6 @@ def memory_graph_shortest_path(source: str, target: str, max_depth: int = 5) -> 
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
 
     try:
-        import sqlite3
         from db import open_db
         from kg_traversal import find_shortest_path
 
@@ -91,7 +88,6 @@ def memory_graph_traverse(start: str, edge_patterns: Union[str, List[str]]) -> s
         return _err(ErrorCode.INVALID_PARAMS, "edge_patterns cannot be empty")
 
     try:
-        import sqlite3
         from db import open_db
         from kg_traversal import traverse_graph
 

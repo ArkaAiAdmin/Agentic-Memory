@@ -7,11 +7,8 @@ G1 fix (2026-06-22): documentation about the
 ``check_contradictions`` vs ``detect_contradictions`` naming is in
 ``memory_check_contradictions`` below.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
-import os
-import sys
-from pathlib import Path
 
 
 import json
@@ -48,7 +45,7 @@ def memory_scan_injection(content: str) -> str:
 
         result = scan_for_injection(content)
         return json.dumps(result, indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("memory_scan_injection failed")
         return _err(ErrorCode.DB_ERROR, "Scan failed")
 
@@ -64,7 +61,7 @@ def memory_strip_provenance(content: str) -> str:
         if prov:
             return f"{clean}\n\n[provenance stripped: {json.dumps(prov)}]"
         return clean
-    except Exception as e:
+    except Exception:
         logger.exception("memory_strip_provenance failed")
         return _err(ErrorCode.DB_ERROR, "Strip failed")
 
@@ -117,6 +114,6 @@ def memory_check_contradictions(
         if not findings:
             return "No contradictions found."
         return json.dumps(findings, indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("memory_check_contradictions failed")
         return _err(ErrorCode.DB_ERROR, "Contradiction check failed")

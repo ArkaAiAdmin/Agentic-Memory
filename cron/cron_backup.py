@@ -23,15 +23,12 @@ import logging
 import os
 import sys
 import sqlite3
-import shutil
 import subprocess
 import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-import sys
-import os
 
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
@@ -241,7 +238,7 @@ def uninstall_cron() -> dict:
         return {"status": "not_found"}
 
     # Remove lines with our marker
-    lines = [l for l in existing.splitlines() if CRON_MARKER not in l]
+    lines = [line for line in existing.splitlines() if CRON_MARKER not in line]
     new_crontab = "\n".join(lines) + "\n" if lines else ""
     try:
         proc = subprocess.run(

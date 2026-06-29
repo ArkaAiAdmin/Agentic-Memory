@@ -31,7 +31,6 @@ class TestMCPInstance(unittest.TestCase):
         self.assertTrue(hasattr(mcp, "run"))
 
     def test_mcp_has_tool_list(self):
-        import inspect
 
         self.assertTrue(hasattr(mcp, "run"))
 

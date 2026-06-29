@@ -8,7 +8,10 @@ applied to every fact extracted from that memory.  For both the LLM
 and regex paths, this gives a memory-level event_time on every fact.
 """
 
-import os, sys, sqlite3, tempfile, time
+import os
+import sys
+import sqlite3
+import time
 
 sys.path.insert(
     0,

@@ -4,7 +4,6 @@
 Run with:
     ~/.config/agentic-memory/venv/bin/python -m pytest eval/test_quirk_fixes_e2e.py -v
 """
-import os
 import sys
 import sqlite3
 import tempfile
@@ -13,10 +12,10 @@ import unittest
 from pathlib import Path
 from typing import Optional
 
-INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
+INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import open_db, get_memory_paths
+from memory_common import open_db
 
 
 def _create_test_db(tmp_dir: Path) -> Path:
@@ -172,8 +171,6 @@ class TestQuirk8ConsolidationGuard(unittest.TestCase):
         """consolidate_facts.py should warn and exit when >2000 notes."""
         # We can't easily create a 2000+ note DB in a test, so we verify
         # the guard logic directly by reading the source code.
-        import ast
-        import inspect
 
         # Read the source of consolidate_facts.py
         cf_path = INSTALL_DIR / "fact" / "consolidate_facts.py"

@@ -3,16 +3,21 @@
 Covers: merge_entities (shared exact+semantic), compute_semantic_merge_candidates
 (mocked embedding), dedup_entities_semantic (mocked embedding).
 """
-import os, sys, sqlite3, tempfile
-from pathlib import Path
+
+# ruff: noqa: E702 — semicolons used intentionally for compact test data
+import os
+import sys
+import sqlite3
+import tempfile
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
 from kg_dedup import (
-    merge_entities, dedup_entities, compute_semantic_merge_candidates,
+    merge_entities, compute_semantic_merge_candidates,
     dedup_entities_semantic,
 )
+import numpy as np
 
 
 def _make_db():
@@ -68,7 +73,6 @@ def _insert_edge(conn, src, tgt, relation, weight=1.0):
 
 def _make_mock_embedding_search(vectors_map):
     """Create a mock get_embedding_search that returns predetermined vectors."""
-    import numpy as np
     mock_es = MagicMock()
     mock_es.model = True  # Not None
     mock_es.np = np
@@ -223,7 +227,6 @@ class TestComputeSemanticMergeCandidates:
             conn.close()
 
     def test_similar_names_detected(self):
-        import numpy as np
         conn, _ = _make_db()
         try:
             _insert_entity(conn, "OpenAI", "org")
@@ -241,7 +244,6 @@ class TestComputeSemanticMergeCandidates:
             conn.close()
 
     def test_different_types_not_compared(self):
-        import numpy as np
         conn, _ = _make_db()
         try:
             _insert_entity(conn, "Python", "tech")
@@ -255,7 +257,6 @@ class TestComputeSemanticMergeCandidates:
             conn.close()
 
     def test_low_similarity_not_returned(self):
-        import numpy as np
         conn, _ = _make_db()
         try:
             _insert_entity(conn, "Apple", "org")
@@ -270,7 +271,6 @@ class TestComputeSemanticMergeCandidates:
             conn.close()
 
     def test_max_pairs_limit(self):
-        import numpy as np
         conn, _ = _make_db()
         try:
             for i in range(5):
@@ -285,7 +285,6 @@ class TestComputeSemanticMergeCandidates:
             conn.close()
 
     def test_keeps_higher_mentions(self):
-        import numpy as np
         conn, _ = _make_db()
         try:
             _insert_entity(conn, "Low", "org", mentions=1)
@@ -315,11 +314,10 @@ class TestDedupEntitiesSemantic:
             conn.close()
 
     def test_merges_similar_entities(self):
-        import numpy as np
         conn, _ = _make_db()
         try:
-            id1 = _insert_entity(conn, "Acme Corp", "org", mentions=2)
-            id2 = _insert_entity(conn, "Acme Corporation", "org", mentions=3)
+            _insert_entity(conn, "Acme Corp", "org", mentions=2)
+            _insert_entity(conn, "Acme Corporation", "org", mentions=3)
             v1 = np.zeros(128, dtype=np.float32); v1[0] = 1.0
             v2 = np.zeros(128, dtype=np.float32); v2[0] = 0.99; v2[1] = 0.14
             v1 = v1 / np.linalg.norm(v1); v2 = v2 / np.linalg.norm(v2)
@@ -332,7 +330,6 @@ class TestDedupEntitiesSemantic:
             conn.close()
 
     def test_dry_run_no_merge(self):
-        import numpy as np
         conn, _ = _make_db()
         try:
             _insert_entity(conn, "Acme Corp", "org")
@@ -349,7 +346,6 @@ class TestDedupEntitiesSemantic:
             conn.close()
 
     def test_prevents_double_merge(self):
-        import numpy as np
         conn, _ = _make_db()
         try:
             _insert_entity(conn, "Alpha", "org", mentions=1)

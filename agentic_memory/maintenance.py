@@ -11,7 +11,7 @@ import time
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from agentic_memory.exceptions import MaintenanceError
 from agentic_memory.models import IntegrityReport, MaintenanceResult
@@ -190,7 +190,8 @@ class Maintenance:
                                 else:
                                     shutil.move(str(f), str(dst))
                             except OSError as exc:
-                                logger.warning("maintenance: cannot archive session %s: %s", f, exc)
+                                import logging
+                                logging.getLogger("maintenance").warning("maintenance: cannot archive session %s: %s", f, exc)
                             archived += 1
                     if archived:
                         parts.append(f"Archived {archived} sessions.")

@@ -4,21 +4,17 @@ Verifies that the with_audit decorator correctly logs tool calls
 to the memory_audit_log table with proper fields.
 """
 
-import json
 import os
 import sqlite3
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
 
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _wait_until import wait_until  # noqa: E402
 
 _eval_lme = os.path.join(_project_root, "eval", "longmemeval_s")
 if _eval_lme in sys.path:
@@ -28,11 +24,9 @@ for k in _wrong_modules:
     del sys.modules[k]
 
 from memory_common import (
-    open_db,
     run_db_migrations,
     _migrate_kg_tables,
     _migrate_memory_audit_log,
-    connection_pool,
 )
 from fact_extraction import ensure_facts_schema
 from adaptive_retention import ensure_adaptive_schema
@@ -175,7 +169,7 @@ class TestAuditContext:
         db_path = _create_test_db(tmp_path)
 
         try:
-            with audit.audit("failing_tool", db_path=str(db_path)) as ctx:
+            with audit.audit("failing_tool", db_path=str(db_path)):
                 raise ValueError("test error")
         except ValueError:
             pass
@@ -255,7 +249,7 @@ class TestMCPToolAudit:
 
         from mcp_tools import memory_save
 
-        result = memory_save(
+        memory_save(
             content="Audit test note",
             category="lessons",
             title_slug="audit-test",
@@ -290,7 +284,7 @@ class TestMCPToolAudit:
 
         from mcp_tools import memory_search
 
-        result = memory_search(query="test query")
+        memory_search(query="test query")
 
         audit.flush_audit(timeout=5)
 

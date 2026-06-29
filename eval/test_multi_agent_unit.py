@@ -18,7 +18,6 @@ import sys
 
 sys.path.insert(0, os.getcwd())
 
-from memory_common import GLOBAL_MEM_DIR
 from db_migrations import run_schema_setup
 
 

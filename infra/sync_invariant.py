@@ -11,10 +11,8 @@ Usage:
     # result = {"overall": "healthy"|"drift"|"empty", "subsystems": {...}, "ghosts": {...}}
 """
 
-import json
 import logging
 import sqlite3
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

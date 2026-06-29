@@ -18,7 +18,6 @@ Uses a TEMP DB for full isolation.
 """
 import json
 import math
-import os
 import sqlite3
 import sys
 import tempfile
@@ -27,7 +26,7 @@ import time
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -37,7 +36,6 @@ from memory_common import (
     open_db,
     run_db_migrations,
     connection_pool,
-    safe_close_db,
 )
 from rebuild_index import rebuild_index
 from search_pipeline import (
@@ -50,10 +48,8 @@ from search_pipeline import (
     _BB2_TURNS,
     _BB2_LOCK,
     _RERANK_WEIGHTS,
-    _RERANK_HALF_LIFE_DAYS,
 )
-from save_pipeline import save_memory
-from embedding_search import get_embedding_search, _cache_text, _content_hash
+from embedding_search import get_embedding_search
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -527,8 +523,7 @@ class TestFitnessScoring(unittest.TestCase):
         """When fitness is None, the 0.5 default is used, not 1.0."""
         # Manually compute expected
         rank_val = -2.0
-        bm25 = 1.0 / (1.0 + math.exp(rank_val))  # sigmoid(-2) ≈ 0.88
-        fitness_contrib = 0.2 * 0.5  # weight * default
+        1.0 / (1.0 + math.exp(rank_val))  # sigmoid(-2) ≈ 0.88
         # total should be at least bm25 * weight + fitness_contrib
         score = _compute_final_score(
             ScoreContext(

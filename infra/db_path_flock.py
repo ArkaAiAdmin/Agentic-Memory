@@ -104,12 +104,6 @@ class _SupportsClose(Protocol):
     def close(self) -> None: ...
 
 
-import contextlib
-import logging
-import os
-import threading
-from pathlib import Path
-from typing import IO, Optional
 
 
 logger = logging.getLogger(__name__)

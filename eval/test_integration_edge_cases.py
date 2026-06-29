@@ -18,19 +18,16 @@ Tests:
   14. Search with boolean operators
 """
 
-import json
 import os
 import sqlite3
 import stat
 import sys
 import threading
 import time
-import traceback
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
+INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
@@ -40,14 +37,12 @@ from memory_common import (
     connection_pool,
     open_db,
     run_db_migrations,
-    safe_close_db,
     acquire_flock_with_retry,
     release_flock,
 )
 from save_pipeline import save_memory, clear_pragma_cache
 from search_pipeline import search_memories
-from memory_delete import soft_delete_note, hard_delete_note
-from infrastructure import _err, GLOBAL_MEM_DIR
+from memory_delete import soft_delete_note
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +294,7 @@ class TestSpecialCharTitles:
         ],
     )
     def test_special_char_titles(self, fresh_db, char, title):
-        slug = _unique_slug(f"spec_{char}")
+        _unique_slug(f"spec_{char}")
         result = save_memory(
             content=f"Testing title with {char}",
             category="test",
@@ -679,7 +674,7 @@ class TestSaveDeleteSave:
 
         # Verify it's in the DB
         c1 = _count_notes(fresh_db)
-        assert c1 >= 1, f"No notes after first save"
+        assert c1 >= 1, "No notes after first save"
 
         # Delete it (soft delete)
         soft_delete_note(fresh_db, note_id)
@@ -855,7 +850,7 @@ class TestSearchBooleanOperators:
         return prefix
 
     def test_search_and(self, fresh_db):
-        prefix = self._seed_data(fresh_db)
+        self._seed_data(fresh_db)
         # Bare terms are expanded with ` AND ` via _expand_query.
         # "banana cherry" matches notes containing BOTH terms.
         result = search_memories(
@@ -869,7 +864,7 @@ class TestSearchBooleanOperators:
         )
 
     def test_search_or(self, fresh_db):
-        prefix = self._seed_data(fresh_db)
+        self._seed_data(fresh_db)
         # The system implicitly ANDs bare terms. Use a single term to
         # verify FTS5 is working, then verify multi-term AND works.
         result = search_memories(
@@ -883,7 +878,7 @@ class TestSearchBooleanOperators:
         )
 
     def test_search_not(self, fresh_db):
-        prefix = self._seed_data(fresh_db)
+        self._seed_data(fresh_db)
         # Single-term search as baseline
         result = search_memories(
             fresh_db, query="elderberry", limit=10, include_global=False
@@ -896,7 +891,7 @@ class TestSearchBooleanOperators:
         )
 
     def test_search_complex_boolean(self, fresh_db):
-        prefix = self._seed_data(fresh_db)
+        self._seed_data(fresh_db)
         # Multi-word query with both terms in same note
         result = search_memories(
             fresh_db, query="apple durian", limit=10, include_global=False

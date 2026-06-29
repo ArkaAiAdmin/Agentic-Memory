@@ -1,7 +1,6 @@
 import unittest
 import unicodedata
 from rebuild_index import _normalize_unicode
-from memory_mcp import _normalize_unicode as _normalize_unicode_mcp
 
 class TestNFCKNormalization(unittest.TestCase):
     def test_nfkc_diacritics_stripped(self):

@@ -10,7 +10,6 @@ Covers:
 """
 import os
 import sys
-import time
 import unittest
 from collections import OrderedDict
 from pathlib import Path

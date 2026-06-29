@@ -14,16 +14,10 @@ It does NOT assert exact output (which would be brittle); instead it
 asserts the presence of each token.
 """
 
-import io
-import json
 import os
 import subprocess
-import sys
-import tempfile
 import unittest
-from contextlib import redirect_stderr
 from pathlib import Path
-from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parent.parent
 

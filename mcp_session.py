@@ -3,16 +3,15 @@
 CORE tools: memory_thread_context, memory_list_threads, memory_resolve_thread.
 These are explicit retrieval tools — they do not modify search_memories behavior.
 """
-
 from __future__ import annotations
+
+from mcp_common import _bootstrap_path  # noqa: E402
 
 import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
-import _bootstrap_path  # noqa: E402
 from mcp_instance import mcp
 from mcp_common import _err, ErrorCode, with_audit
 

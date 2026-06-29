@@ -134,7 +134,7 @@ def _auto_semantic_backlinks(
         ).fetchone()
         if not rel_row:
             return
-        rel_id = rel_row[0]
+        rel_row[0]
         # Get or create entity for this memory
         db.execute(
             "INSERT OR IGNORE INTO kg_entities (name, entity_type) VALUES (?, 'memory')",
@@ -215,8 +215,8 @@ def _auto_backlink_multi_part(
     if not match:
         return None
     base, part_num_str, total_str = match.groups()
-    part_num = int(part_num_str)
-    total = int(total_str) if total_str else None
+    int(part_num_str)
+    int(total_str) if total_str else None
     like_pattern = f"{category}/{base}-part-%"
 
     def _query(db):

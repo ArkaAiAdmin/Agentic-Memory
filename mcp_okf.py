@@ -5,15 +5,12 @@ Exports memories to or imports from an Open Knowledge Format directory
 of markdown files with full YAML frontmatter, compatible with Obsidian,
 Foam, and other frontmatter-aware tools.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
-import os
-import sys
 from pathlib import Path
 
 
 import json
-from pathlib import Path
 from mcp_common import _err, ErrorCode, logger, with_audit
 from mcp_instance import mcp
 
@@ -59,7 +56,7 @@ def memory_okf_export(
             overwrite=overwrite,
         )
         return json.dumps(result, indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("OKF export failed")
         return _err(ErrorCode.EXPORT_ERROR, "OKF export failed")
 
@@ -103,6 +100,6 @@ def memory_okf_import(
             overwrite=overwrite,
         )
         return json.dumps(result, indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("OKF import failed")
         return _err(ErrorCode.IMPORT_ERROR, "OKF import failed")

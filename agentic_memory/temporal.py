@@ -8,9 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from agentic_memory.exceptions import (
-    AgenticMemoryError,
     NotFoundError,
-    ValidationError,
 )
 from agentic_memory.models import Fact
 from agentic_memory.utils import (

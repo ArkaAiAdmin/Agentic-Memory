@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 import unittest
 
 import pytest
 
 try:
-    from langchain_core.tools import StructuredTool
+    from langchain_core.tools import StructuredTool  # noqa: F401
     from agentic_memory.integrations.langchain.tool import (
         _format_as_llm_readable,
         SearchMemoryInput,

@@ -5,7 +5,6 @@ both a console script (``agentic-memory``) and a module
 (``python -m agentic_memory``).
 """
 
-import sys
 
 from agentic_memory import main
 

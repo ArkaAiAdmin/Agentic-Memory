@@ -12,14 +12,13 @@ to ``_get_local_tools()`` / ``_get_domain_tools()`` which run on first
 dispatch (not at module load). The ``MaintenanceOp`` enum is also
 resolved lazily.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
+import json
 import os
-import sys
 from pathlib import Path
 
 
-from typing import Callable
 
 
 # Lazy-loaded tool registries. Resolved on first dispatch.

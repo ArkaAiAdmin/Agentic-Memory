@@ -10,11 +10,8 @@ monolithic re-export hub.  Four async entry points:
 
 Each delegates to the synchronous equivalent via ``asyncio.to_thread``.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
-import os
-import sys
-from pathlib import Path
 
 
 import asyncio

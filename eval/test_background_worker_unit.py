@@ -16,7 +16,6 @@ import sys
 
 sys.path.insert(0, os.getcwd())
 
-from memory_common import GLOBAL_MEM_DIR
 from db_migrations import run_schema_setup
 
 
@@ -223,7 +222,6 @@ class TestWalCheckpointHandler(unittest.TestCase):
         timestamp only advanced once."""
         from background_worker import (
             _maybe_run_wal_checkpoint,
-            _last_wal_checkpoint_at,
         )
         import background_worker
 

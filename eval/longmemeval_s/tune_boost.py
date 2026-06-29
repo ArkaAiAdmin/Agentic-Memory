@@ -56,7 +56,7 @@ def main() -> None:
             haystack_session_ids=q["haystack_session_ids"],
         )
         bl_ranks = gold_ranks_in(bl_ranked, gold)
-        bl_worst = max(bl_ranks) if bl_ranks else -1
+        max(bl_ranks) if bl_ranks else -1
 
         # Approach B at different boost levels
         rows = []

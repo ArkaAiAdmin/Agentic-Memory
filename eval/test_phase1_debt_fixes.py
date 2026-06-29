@@ -7,13 +7,9 @@ Covers:
 - TD-17: Logging variable names standardized to 'logger'
 """
 import datetime
-import importlib
-import inspect
 import sys
-import os
 import pathlib
 
-import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 

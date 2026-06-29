@@ -3,12 +3,9 @@
 
 import os
 import sys
-import sqlite3
 import tempfile
-import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import pytest
 
 sys.path.insert(0, os.path.expandvars("$HOME/.config/agentic-memory") or os.path.expanduser("~/.config/agentic-memory"))
 

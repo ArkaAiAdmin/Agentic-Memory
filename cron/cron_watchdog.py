@@ -34,7 +34,6 @@ Why one-shot cron instead of a daemon:
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import subprocess
 import sys

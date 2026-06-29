@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-import sqlite3
 import datetime
-import os
 import sys
 import hashlib
 import json
@@ -18,7 +16,6 @@ except ImportError:
 sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
 from config import resolve_db_path
 from memory_common import (
-    find_project_root,
     configure_logging,
     atomic_write,
     safe_close_db,
@@ -170,7 +167,6 @@ def consolidate_memory_facts(db_path: Path | None = None):
             fp_len = len(content_fingerprints[mid])
             bucket_key = fp_len // 100  # Bucket by approximate length
             length_buckets.setdefault(bucket_key, []).append(mid)
-        duplicate_candidates_fuzzy: list[tuple[str, str, str, float]] = []
         for bucket in length_buckets.values():
             if len(bucket) < 2:
                 continue

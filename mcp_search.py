@@ -1,20 +1,18 @@
 """
 Search MCP tools — memory_search, memory_semantic_search, memory_recall_context, memory_session_start.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
 import os
 import sys
 from pathlib import Path
 
 
-from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from mcp_common import (
     _resolve_memory_dir,
     _run_subprocess_output,
-    _search_cache,
     GLOBAL_SCRIPTS_DIR,
     GLOBAL_MEM_DIR,
     get_memory_paths,
@@ -22,10 +20,8 @@ from mcp_common import (
     _err,
     ErrorCode,
     with_audit,
-    resolve_active_memory_dir,
 )
 from mcp_instance import mcp
-import search_pipeline
 from search_pipeline import search_memories as _search_memories_impl
 from search_pipeline import _bb2_resolve, _bb2_record_turn
 
@@ -38,12 +34,6 @@ from search_pipeline import _bb2_resolve, _bb2_record_turn
 # identity wasn't shared, breaking ``is`` checks in tests.
 search_memories = _search_memories_impl
 
-import json
-import os
-import sys
-import subprocess
-import time
-from datetime import datetime
 
 # Spaced repetition: best-effort, never blocks search
 _SpacedRepetition: Any
@@ -227,7 +217,6 @@ def memory_search(
 @with_audit("memory_semantic_search")
 def memory_semantic_search(query: str, limit: int = 5) -> str:
     """Semantic search using embeddings alongside FTS5."""
-    from mcp_common import GLOBAL_SCRIPTS_DIR
 
     script = GLOBAL_SCRIPTS_DIR / "embedding_search.py"
     if not script.exists():
@@ -284,7 +273,7 @@ def memory_recall_context(
             deep_rerank=deep_rerank,
         )
         return cast(str, result.get("formatted", "No recall available."))
-    except Exception as e:
+    except Exception:
         logger.exception("Recall failed")
         return _err(ErrorCode.RECALL_ERROR, "Recall failed")
 
@@ -306,7 +295,6 @@ def memory_session_start(query: str = "") -> str:
     """
     from recall import recall_context
     from self_directed import SELF_DIRECTED_ENABLED
-    from mcp_common import GLOBAL_SCRIPTS_DIR
 
     target_base = _resolve_memory_dir()
     db_path = target_base / "memory.db"
@@ -357,6 +345,6 @@ def memory_session_start(query: str = "") -> str:
             pass
 
         return f"{briefing}\n{stats_section}{review_section}"
-    except Exception as e:
+    except Exception:
         logger.exception("Session start failed")
         return _err(ErrorCode.SESSION_START_ERROR, "Session start failed")

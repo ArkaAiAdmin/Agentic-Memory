@@ -22,9 +22,7 @@ Run with:
 """
 
 import json
-import os
 import shutil
-import sqlite3
 import sys
 import tempfile
 import time
@@ -32,7 +30,6 @@ from datetime import datetime, timezone
 import unittest
 from pathlib import Path
 
-import numpy as np
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -40,7 +37,6 @@ sys.path.insert(0, str(INSTALL_DIR))
 import memory_common
 from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 import rebuild_vec_index  # noqa: E402
-from _wait_until import wait_until  # noqa: E402
 
 
 def _init_db(db_path: Path) -> None:

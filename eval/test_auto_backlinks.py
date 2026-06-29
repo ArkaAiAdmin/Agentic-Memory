@@ -1,11 +1,8 @@
 """Comprehensive tests for auto-backlinks: bidirectional wiki-links and
 semantic similarity edges."""
-import os
 import sqlite3
-import tempfile
 import unittest
 import unittest.mock
-from pathlib import Path
 
 
 def _make_test_db() -> sqlite3.Connection:

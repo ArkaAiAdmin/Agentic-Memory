@@ -6,7 +6,6 @@ import os
 import sqlite3
 import sys
 import tempfile
-import time
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -16,7 +15,6 @@ from summarization import (
     _tokenize_words,
     _compute_tfidf,
     summarize_text,
-    SUMMARIZATION_ENABLED,
 )
 from user_profile import (
     _decay_weight,
@@ -34,7 +32,6 @@ from memory_sharing import (
     share_memory,
     list_shared_memories,
     import_shared_memory,
-    MULTI_AGENT_ENABLED,
 )
 
 

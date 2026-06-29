@@ -12,7 +12,6 @@ Test pattern:
 4. Verify the next call to save_memory succeeds (no half-state)
 """
 
-import json
 import os
 import sys
 import sqlite3

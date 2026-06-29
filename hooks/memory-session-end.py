@@ -32,7 +32,6 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import _bootstrap_path  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:

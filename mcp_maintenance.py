@@ -8,34 +8,23 @@ Sub-modules (imported here for tool registration):
   - mcp_audit    — audit, audit_query, check_integrity
   - mcp_crdt     — crdt_sync, crdt_status
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
 import os
 import sys
 from pathlib import Path
 
 
 import json
-import os
 import re
-import shutil
-import sqlite3
 import subprocess
-import sys
-import time
-from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from cache import clear_all_caches
 from mcp_common import (
     _resolve_memory_dir,
     _run_subprocess_output,
-    _search_cache,
-    connection_pool,
-    safe_close_db,
-    run_db_migrations,
     GLOBAL_SCRIPTS_DIR,
     GLOBAL_MEM_DIR,
     get_memory_paths,
@@ -77,7 +66,7 @@ def memory_heartbeat(conn, dry_run: bool = False) -> str:
             f"{prefix}Heartbeat complete: {result['evaluated']} evaluated, "
             f"{result['tier_changes']} tier changes, {result['archived']} archived."
         )
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_heartbeat")
         return _err(ErrorCode.DB_ERROR, "in memory_heartbeat")
 
@@ -183,7 +172,7 @@ def memory_tier_stats(conn) -> str:
                 f"  {tier}: {info['count']} notes (avg importance={info['avg_importance']:.3f})"
             )
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_tier_stats")
         return _err(ErrorCode.DB_ERROR, "in memory_tier_stats")
 
@@ -222,7 +211,7 @@ def memory_duplicates(conn, threshold: float = 0.85) -> str:
                 f"  {d['id_a']} <-> {d['id_b']} (sim={d['similarity']:.3f}, {d['type']})"
             )
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_duplicates")
         return _err(ErrorCode.DB_ERROR, "in memory_duplicates")
 
@@ -253,7 +242,7 @@ def memory_merge_suggestions(conn, threshold: float = 0.90) -> str:
                 f"  KEEP: {s['keep']}  MERGE: {s['merge']}  (sim={s['similarity']:.3f})"
             )
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_merge_suggestions")
         return _err(ErrorCode.DB_ERROR, "in memory_merge_suggestions")
 
@@ -396,7 +385,7 @@ def memory_arc_stats(conn) -> str:
             lines.append("--- arc_cache.py CLI output ---")
             lines.append(cli_out)
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_arc_stats")
         return _err(ErrorCode.DB_ERROR, "in memory_arc_stats")
 
@@ -427,7 +416,7 @@ def memory_arc_reset(conn) -> str:
             f"ARC cache reset: {result['ghosts_deleted']} ghost entries "
             f"and {result['stats_deleted']} stat rows deleted."
         )
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_arc_reset")
         return _err(ErrorCode.DB_ERROR, "in memory_arc_reset")
 
@@ -512,7 +501,7 @@ def memory_extract_skills(
             f"extracted={result['extracted']} deduplicated={result['deduplicated']} "
             f"updated={result['updated']} skipped={result['skipped']}"
         )
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_extract_skills")
         return _err(ErrorCode.DB_ERROR, "in memory_extract_skills")
 
@@ -551,7 +540,7 @@ def memory_list_skills(conn, limit: int = 50) -> str:
             if s.get("description"):
                 lines.append(f"      {s['description'][:120]}")
         return "\n".join(lines)
-    except Exception as e:
+    except Exception:
         logger.exception("in memory_list_skills")
         return _err(ErrorCode.DB_ERROR, "in memory_list_skills")
 
@@ -669,7 +658,7 @@ def memory_compile_skill(
 
         recompile_skills_catalog()
         return f"Successfully compiled and validated skill: {skill_name} at ~/.agents/skills/{skill_name}/SKILL.md (Skills index updated)."
-    except Exception as e:
+    except Exception:
         logger.exception("compiling skill")
         return _err(ErrorCode.DB_ERROR, "compiling skill")
 

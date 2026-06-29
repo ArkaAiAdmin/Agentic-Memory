@@ -16,7 +16,6 @@ HuggingFace; that's a heavy integration test, not a unit test. The
 class is exercised end-to-end by ``test_vec_index_search.py`` already.
 """
 
-import os
 import sys
 import unittest
 from pathlib import Path

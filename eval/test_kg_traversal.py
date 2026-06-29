@@ -6,14 +6,11 @@ Covers: shortest paths via Recursive CTE, neighborhood queries, and sequence pat
 import os
 import sys
 import sqlite3
-from pathlib import Path
-import pytest
 
 sys.path.insert(0, os.path.expandvars("$HOME/.config/agentic-memory") or os.path.expanduser("~/.config/agentic-memory"))
 
 import knowledge_graph as kg
 from kg_traversal import find_shortest_path, find_neighbors, traverse_graph
-from mcp_kg_traversal import memory_graph_shortest_path, memory_graph_traverse
 
 class TestKGTraversal:
     def setup_method(self):

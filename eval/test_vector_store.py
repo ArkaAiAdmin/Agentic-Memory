@@ -9,7 +9,6 @@ Covers:
   * Round-trip persistence (save → load)
 """
 
-import math
 import sys
 import unittest
 from pathlib import Path

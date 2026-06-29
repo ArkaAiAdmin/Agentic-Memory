@@ -21,9 +21,7 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-import crdt_merge
 from crdt_merge import (
-    crdt_save,
     crdt_sync_all,
     dominates,
     concurrent,

@@ -16,7 +16,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from okf_import import okf_import, _strip_fm_keys, _coerce_tag, OKF_FM_KEYS
+from okf_import import okf_import, _strip_fm_keys, _coerce_tag
 
 
 class TestCoerceTag(unittest.TestCase):

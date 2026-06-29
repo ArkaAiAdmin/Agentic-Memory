@@ -5,7 +5,6 @@ Run with:
     ~/.config/agentic-memory/venv/bin/python eval/test_okf_export.py
 """
 
-import json
 import sqlite3
 import sys
 import tempfile
@@ -15,7 +14,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from okf_export import okf_export, _memory_to_okf, FRONTMATTER_KEYS
+from okf_export import okf_export, _memory_to_okf
 
 
 def _make_db(path: Path) -> sqlite3.Connection:

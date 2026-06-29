@@ -12,16 +12,14 @@ Usage:
 import os
 import sys
 import sqlite3
-import hashlib
 import logging
 
 logger = logging.getLogger(__name__)
-import json
 from pathlib import Path
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from memory_common import GLOBAL_MEM_DIR, safe_close_db
+from memory_common import safe_close_db
 from infrastructure import resolve_active_memory_dir
 
 # Patterns that suggest a reusable lesson
@@ -172,7 +170,7 @@ def scan_sessions_and_learn(
             from uuid import uuid4
 
             slug = f"cross-session-{uuid4().hex[:8]}"
-            now_iso = datetime.now(timezone.utc).isoformat()
+            datetime.now(timezone.utc).isoformat()
             note_id = f"lessons/{slug}"
             # P0-5 fix: route the row write through save_pipeline.upsert_row
             # instead of a raw INSERT.  This keeps fitness_score, importance,

@@ -13,7 +13,6 @@ Verifies:
 """
 
 import inspect
-import os
 import shutil
 import sqlite3
 import sys
@@ -26,12 +25,9 @@ from unittest.mock import patch
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from save_pipeline import save_memory
-from _fixtures import bootstrap_temp_db_clean
 from search_pipeline import search_memories
 from search.orchestrator import (
     _search_kg_facts,
-    _format_search_results,
 )
 
 

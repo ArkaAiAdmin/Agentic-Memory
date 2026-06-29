@@ -22,14 +22,12 @@ import sqlite3
 import sys
 from pathlib import Path
 
-import sys
-import os
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from memory_common import safe_close_db, open_db
-from infrastructure import resolve_active_memory_dir, GLOBAL_MEM_DIR
+from memory_common import open_db
+from infrastructure import resolve_active_memory_dir
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"

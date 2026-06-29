@@ -10,12 +10,13 @@ Verifies:
 import json
 import os
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
 INSTALL_ROOT = Path(__file__).resolve().parent.parent
 HOOKS_DIR = INSTALL_ROOT / "hooks"
-VENV_PY = str(INSTALL_ROOT / "venv" / "bin" / "python3.14")
+VENV_PY = sys.executable
 
 
 def _run_hook(name: str, stdin: str, timeout: float = 30.0) -> tuple[int, str, str]:

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """B7 fix tests: prompt-injection protection for shared memory import."""
 
-import json
-import os
 import sys
 import sqlite3
 import tempfile
@@ -154,13 +152,12 @@ class TestImportSharedMemoryRollback(unittest.TestCase):
 
     def test_indexer_failure_rolls_back_memories_row(self) -> None:
         """If the indexer step fails, no memories row is committed."""
-        from unittest import mock
         from memory_common import connection_pool, open_db
 
         db = _fresh_db()
         _seed_shared(db, "The user prefers dark mode in their IDE.")
         connection_pool.clear()
-        from memory_sharing import import_shared_memory, _run_import_indexers
+        from memory_sharing import import_shared_memory
 
         # Patch _run_import_indexers to raise — simulates a
         # disk-full / schema-mismatch / model-load failure.

@@ -17,14 +17,12 @@ import logging
 import re
 import sqlite3
 import threading
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from session_models import (
-    CompactionLog,
     DecisionThread,
     Session,
     SessionContext,
@@ -437,7 +435,7 @@ class SessionManager:
         if not _is_enabled():
             return None
 
-        db_path_str = self._pool_path()
+        self._pool_path()
         # --- Crash recovery: look for active session in this project ---
         existing: Optional[Session] = None
         try:
@@ -800,7 +798,7 @@ class SessionManager:
                     "         ROW_NUMBER() OVER (PARTITION BY te.thread_id ORDER BY te.seq DESC) AS rn "
                     "  FROM thread_events te "
                     "  JOIN decision_threads dt ON te.thread_id = dt.id "
-                    f" WHERE dt.session_id=? AND dt.status='open'"
+                    " WHERE dt.session_id=? AND dt.status='open'"
                     ") SELECT id, thread_id, session_id, seq, event_type, "
                     "  content, content_summary, memory_id, confidence, "
                     "  created_at, version_vector "

@@ -5,11 +5,15 @@ Includes a PRAGMA integrity_check after rebuild to catch silent corruption.
 """
 
 from _flock import acquire_lock_or_exit
-import os, re, sys, subprocess, shutil, time, sqlite3
+import os
+import re
+import sys
+import subprocess
+import shutil
+import time
+import sqlite3
 from pathlib import Path
 
-import sys
-import os
 
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
@@ -85,7 +89,6 @@ def main() -> int:
         description="Cron compact: tier migration + consolidation + rebuild + archive."
     ).parse_args()
 
-    from _lazy_imports import GLOBAL_MEM_DIR
     from infrastructure import resolve_active_memory_dir
 
     env = os.environ.get("MEMORY_DB_PATH")

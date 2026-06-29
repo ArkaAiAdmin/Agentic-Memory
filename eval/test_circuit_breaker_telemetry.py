@@ -51,7 +51,7 @@ class _CbTestBase(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="cb_telem_"))
         self.db_path = self.tmp / "memory.db"
         # Ensure the directory exists and migrations run.
-        with open_db(self.db_path) as conn:
+        with open_db(self.db_path):
             pass
 
     def tearDown(self) -> None:

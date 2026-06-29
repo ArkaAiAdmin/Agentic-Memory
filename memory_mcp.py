@@ -1,159 +1,23 @@
 #!/usr/bin/env python3
-import _bootstrap_path  # noqa: E402
-import os
 import signal
 import sys
 from pathlib import Path
 
-import json
 import logging
-from datetime import datetime
-import sqlite3
-import subprocess
-import re
-import math
-import time
-import shutil
-import unicodedata
-from typing import Optional
-from infra.memory_config import GLOBAL_MEM_DIR, get_memory_paths  # noqa: E402 — re-exported for tests
-from search.query_parser import _did_you_mean, _top_recent_notes, _top_recent_tags, _top_recent_source_files, _build_zero_result_suggestions  # noqa: E402 — re-exported for tests
 from mcp_instance import mcp  # noqa: E402 — shared instance, avoids circular import
+from mcp_common import _bootstrap_path  # noqa: E402
 from memory_common import (
-    parse_frontmatter,
-    atomic_write,
     configure_logging,
-    open_db,
-    count_rows,
-    safe_call,
-    acquire_flock_with_retry,
-    release_flock,
-    rate_limit_check,
-    run_db_migrations,
-    safe_close_db,
-    connection_pool,
 )  # noqa: E402
 from infrastructure import (  # noqa: E402
-    _normalize_unicode,
-    _resolve_active_db_path,
-    _try_extract_result_meta,
-    with_audit,
-    _err,
     resolve_active_memory_dir,
-    resolve_db_for_memory_id,
-    add_link_to_memory_md_content,
-    update_memory_md_locked,
-    GLOBAL_MEM_DIR,
 )
 from search_pipeline import (  # noqa: E402
-    _RERANK_WEIGHTS,
-    _RERANK_HALF_LIFE_DAYS,
-    _RERANK_TOKEN_RE,
-    _QUERY_EXPANSIONS,
-    _QUERY_EXPANSION_REVERSE,
-    _RRF_K,
-    _QUERY_TYPE_TEMPORAL_RE,
-    _QUERY_TYPE_MULTIHOP_RE,
-    _QUERY_TYPE_CODE_RE,
-    _QUERY_TYPE_FACTUAL_RE,
-    _expand_query,
-    _did_you_mean,
-    _top_recent_tags,
-    _top_recent_notes,
-    _top_recent_source_files,
-    _build_zero_result_suggestions,
-    _detect_query_type,
-    _weights_for_query_type,
-    _reciprocal_rank_fusion,
-    _tokenize_for_ce,
-    _cross_encoder_score,
-    _apply_cross_encoder_rerank,
-    _qw5_extract_keywords,
-    _qw5_keyword_similarity,
-    _qw5_is_topic_boundary,
-    _qw5_chunk_content,
-    _qw5_ensure_schema,
-    _qw5_index_chunks_for,
-    _merge_chunk_hits,
-    _search_chunks_enhanced,
-    _late_interaction_score,
-    _apply_late_interaction_rerank,
-    _temporal_decay_factor,
-    _apply_temporal_decay,
-    _bb1_split_sentences,
-    _bb1_synthesize,
-    _compute_final_score,
-    _bb2_extract_terms,
-    _bb2_is_reference_query,
-    _bb2_resolve,
-    _bb2_record_turn,
-    _bb2_clear_history,
-    _graph_rag_expand,
     search_memories as _search_pipeline_search_memories,
 )
 import search_pipeline  # noqa: E402
 from save_pipeline import (  # noqa: E402
-    _update_memory_index_incremental,
-    _recalculate_fitness_scores,
-    _auto_backlink_multi_part,
     save_memory,
-)
-from mcp_tools import (  # noqa: E402
-    search_memories as _search_memories_reexport,
-    memory_search,
-    memory_save,
-    memory_graph_search,
-    memory_graph_stats,
-    memory_facts_search,
-    memory_facts_list,
-    memory_facts_stats,
-    memory_heartbeat,
-    memory_tier_stats,
-    memory_duplicates,
-    memory_merge_suggestions,
-    memory_supersede,
-    memory_auto_save_hook,
-    memory_daily_digest,
-    memory_auto_save_status,
-    memory_rebuild,
-    memory_reinforce,
-    memory_compile_skill,
-    memory_audit,
-    _run_subprocess_output,
-    memory_audit_query,
-    memory_consolidate,
-    memory_rewrite_links,
-    memory_detect_contradictions,
-    memory_semantic_search,
-    memory_compact,
-    memory_arc_stats,
-    memory_review_schedule,
-    memory_pinned_decay_check,
-    recompile_skills_catalog,
-    memory_delete,
-    memory_restore,
-    memory_trash,
-    memory_purge_expired,
-    memory_purge_auto_saves,
-    memory_scan_injection,
-    memory_strip_provenance,
-    memory_check_integrity,
-    memory_check_contradictions,
-    memory_quality_filter,
-    memory_quality_stats,
-    memory_summarize,
-    memory_auto_summarize,
-    memory_summarization_stats,
-    memory_profile_access,
-    memory_user_profile,
-    memory_profile_stats,
-    memory_adaptive_retention,
-    memory_retention_stats,
-    memory_share,
-    memory_shared_list,
-    memory_shared_import,
-    memory_shared_stats,
-    memory_backfill_all,
 )
 
 # Backward-compatible aliases: tests and external code may access
@@ -185,13 +49,12 @@ logger = logging.getLogger(__name__)
 # ~/.config/agentic-memory/, but the actual global memories live one level
 # deeper at ~/.config/agentic-memory/memory/. Fixing C1.
 GLOBAL_SCRIPTS_DIR = Path.home() / ".config" / "agentic-memory"
+from infra.memory_config import GLOBAL_MEM_DIR, get_memory_paths  # noqa: E402
 
 # H1-b fix: the canonical find_project_root lives in memory_common.py. Import
 # it instead of duplicating the marker list here (the two implementations had
 # drifted).
 sys.path.insert(0, str(GLOBAL_SCRIPTS_DIR))
-from memory_common import find_project_root, get_memory_paths  # noqa: E402
-import audit  # noqa: E402
 
 # --- Cache (imported from cache.py, aliased to old underscore names) ---
 import cache as _cache_mod
@@ -226,11 +89,123 @@ cache_stats = _cache_mod.cache_stats  # backward compat re-export
 search_memories = _search_pipeline_search_memories
 save_memory = save_memory
 
+# Backward-compat re-exports of all MCP tool functions.
+# Tests and external code import tool callables directly from memory_mcp.
+from mcp_audit import (  # noqa: E402,F401
+    memory_audit,
+    memory_audit_query,
+)
+from mcp_memory import (  # noqa: E402,F401
+    memory_auto_save_hook,
+    memory_auto_save_status,
+    memory_daily_digest,
+    memory_delete,
+    memory_reinforce,
+    memory_restore,
+    memory_save,
+    memory_save as _mcp_memory_save_alias,
+    memory_supersede,
+    memory_trash,
+)
+from mcp_maintenance import (  # noqa: E402,F401
+    memory_detect_contradictions,
+    memory_pinned_decay_check,
+    memory_review_schedule,
+)
+from mcp_search import (  # noqa: E402,F401
+    memory_search,
+)
+from mcp_rebuild import (  # noqa: E402,F401
+    memory_compact,
+)
+from mcp_summarization import (  # noqa: E402,F401
+    memory_summarize,
+)
+from mcp_retention import (  # noqa: E402,F401
+    memory_adaptive_retention,
+)
+
+# Backward-compat re-exports of internal search helpers.
+# Tests and external code access these directly from memory_mcp.
+from search.query_parser import (  # noqa: E402,F401
+    _did_you_mean,
+    _expand_query,
+    _top_recent_tags,
+    _top_recent_notes,
+    _top_recent_source_files,
+    _build_zero_result_suggestions,
+    _detect_query_type,
+    _weights_for_query_type,
+    _graph_rag_expand,
+)
+from search.synthesis import (  # noqa: E402,F401
+    _bb1_split_sentences,
+    _bb1_synthesize,
+    _BB1_SENT_SPLIT,
+    _BB1_DEFAULT_MAX_SENTENCES,
+    _BB1_CONTEXT_SENTENCES,
+    _bb2_extract_terms,
+    _bb2_is_reference_query,
+    _bb2_resolve,
+    _bb2_record_turn,
+    _bb2_clear_history,
+    _BB2_TURNS,
+    _BB2_LOCK,
+    _BB2_HISTORY_MAX,
+    _BB2_PRONOUNS,
+    _BB2_REF_PHRASES,
+    _BB2_STOPWORDS,
+)
+from search.scoring import (  # noqa: E402,F401
+    _reciprocal_rank_fusion,
+    _RERANK_WEIGHTS,
+    _temporal_decay_factor,
+    _apply_temporal_decay,
+    _apply_neural_forget_curve,
+    _strong_match_float,
+    _compute_final_score,
+)
+from search.rerankers import (  # noqa: E402,F401
+    _tokenize_for_ce,
+    _cross_encoder_score,
+    _apply_cross_encoder_rerank,
+    _late_interaction_score,
+    _precompute_query_ngrams,
+    _late_interaction_score_batch,
+    _apply_late_interaction_rerank,
+    _CE_STOPWORDS,
+    _CROSS_ENCODER_BLEND,
+    _LATE_INTERACTION_BLEND,
+)
+from search.chunk_index import (  # noqa: E402,F401
+    _qw5_extract_keywords,
+    _qw5_keyword_similarity,
+    _qw5_is_topic_boundary,
+    _qw5_chunk_content,
+    _qw5_ensure_schema,
+    _qw5_index_chunks_for,
+    _QW5_CHUNK_THRESHOLD,
+    _QW5_CHUNK_TARGET_SIZE,
+    _QW5_CHUNK_OVERLAP,
+    _QW5_CHUNK_MAX_SIZE,
+    _QW5_TOPIC_SIMILARITY_THRESHOLD,
+    _QW5_SENT_BOUNDARY,
+    _QW5_STOPWORDS,
+    _QW5_CHUNKS_SCHEMA_SQL,
+    _QW5_CHUNKS_TRIGGERS_SQL,
+)
+from search.orchestrator import (  # noqa: E402,F401
+    _merge_chunk_hits,
+    _fallback_embedding_search,
+)
+from infra.infrastructure import with_audit  # noqa: E402,F401
+from memory_common import safe_close_db  # noqa: E402,F401
+
 
 # ---------------------------------------------------------------------
 # Feature D: Async Pipeline (extracted to mcp_async.py)
 # ---------------------------------------------------------------------
-from mcp_async import (  # noqa: E402
+from mcp_async import (  # noqa: E402,F401
     async_memory_save,
     async_memory_search,
     async_memory_save_batch,

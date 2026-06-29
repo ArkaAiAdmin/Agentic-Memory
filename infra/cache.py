@@ -15,15 +15,14 @@ from __future__ import annotations
 import hashlib
 import sys
 import threading
-import os
 import time
 from collections import OrderedDict
 from pathlib import Path
 
 __all__ = [
     "SEARCH_CACHE_MAX",
-    "SEARCH_CACHE_TTL",
-    "SEARCH_CACHE_TTL_ENABLED",
+    "SEARCH_CACHE_TTL",  # noqa: F822 — dynamically resolved via __getattr__
+    "SEARCH_CACHE_TTL_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "safety_wiring",
     "_search_cache",
     "make_cache_key",

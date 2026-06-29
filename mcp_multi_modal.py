@@ -2,10 +2,10 @@
 
 Wraps the multi_modal.py ingestion pipeline as @mcp.tool() functions.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
 import json
 
-import _bootstrap_path  # noqa: E402
 from mcp_instance import mcp
 from mcp_common import _err, ErrorCode, with_audit
 from multi_modal import ingest_file, ingest_url

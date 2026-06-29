@@ -9,18 +9,15 @@ Opt-in via MEMORY_SUMMARIZATION=1.
 from __future__ import annotations
 
 import math
-import os
 import re
-import sqlite3
 from collections import Counter
 from pathlib import Path
-from typing import Optional
 
 from config import resolve_db_path
 from memory_common import safe_close_db, connection_pool, GLOBAL_MEM_DIR
 
 __all__ = [
-    "SUMMARIZATION_ENABLED",
+    "SUMMARIZATION_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "summarize_text",
     "summarize_note",
     "auto_summarize_long",

@@ -8,13 +8,9 @@ constants, or boolean logic.
 
 import os
 import sys
-import math
-import sqlite3
-import tempfile
 import unittest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -38,9 +34,7 @@ from search_pipeline import (
     _weights_for_query_type,
     _build_zero_result_suggestions,
     _merge_chunk_hits,
-    _search_chunks_enhanced,
     _late_interaction_score,
-    _apply_late_interaction_rerank,
     _bb1_split_sentences,
     _bb1_synthesize,
     _bb2_extract_terms,
@@ -56,11 +50,9 @@ from search_pipeline import (
     _QW5_TOPIC_SIMILARITY_THRESHOLD,
     _CROSS_ENCODER_BLEND,
     _QUERY_TYPE_WEIGHTS,
-    _CE_STOPWORDS,
 )
 
 from infrastructure import GLOBAL_MEM_DIR
-from save_pipeline import save_memory
 
 PROD_DB = Path(os.environ.get("MEMORY_DB_PATH", str(GLOBAL_MEM_DIR / "memory.db")))
 

@@ -22,16 +22,12 @@ The core logic of each indexer is tested in its own module's test file:
 This file focuses on the **wrapper contract**.
 """
 
-import json
-import os
-import pytest
 import sqlite3
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 # Make agentic-memory importable.
 AGENTIC_DIR = Path.home() / ".config" / "agentic-memory"
@@ -533,7 +529,7 @@ class TestAllIndexersIntegration(unittest.TestCase):
         # No assertion — we just verify nothing raises
 
     def test_backlinks_created(self):
-        from save.indexers import _index_backlinks, _index_chunks
+        from save.indexers import _index_backlinks
 
         content = "See [[project-alpha]] for details."
         _insert_memory(self.conn, "test/m2", content)

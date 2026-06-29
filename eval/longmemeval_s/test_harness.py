@@ -126,7 +126,7 @@ def main() -> None:
         if missing:
             print(f"  MISS in top-30 for {qid}: {missing}")
     print()
-    print(f"=== Sanity check ===")
+    print("=== Sanity check ===")
     print(f"All 5 questions have all gold sessions in top-30: {all_gold_in_top30}")
 
 

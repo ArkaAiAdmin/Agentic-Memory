@@ -2,7 +2,8 @@
 """Cron wrapper: heartbeat — decay, tier assignment, archive stale notes."""
 
 from _flock import acquire_lock_or_exit
-import os, sys, sqlite3
+import os
+import sys
 from pathlib import Path
 
 # TOML is the source of truth for feature flags (see memory.toml).
@@ -12,14 +13,13 @@ from pathlib import Path
 # were removed because they silently override TOML values even
 # when running manually (see A2 fix, contradiction-report).
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-import sys
 import os
 
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from memory_common import GLOBAL_MEM_DIR, safe_close_db, connection_pool
+from memory_common import safe_close_db, connection_pool
 from infrastructure import resolve_active_memory_dir
 from self_directed import run_heartbeat
 

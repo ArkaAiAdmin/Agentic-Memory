@@ -18,16 +18,14 @@ logger = logging.getLogger(__name__)
 # Pinned files (pinned: true in frontmatter) are never migrated or archived.
 
 import os
-import re
 import sys
 import json
-import shutil
 import datetime
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
-from memory_common import parse_frontmatter, find_project_root, atomic_write
+from memory_common import parse_frontmatter, atomic_write
 from memory_config import get_memory_paths
 
 
@@ -285,8 +283,8 @@ def run_tier_migration(memory_dir: Path, dry_run: bool = False):
     stats = archive_cold_files(memory_dir, dry_run)
 
     print(f"=== Tier Migration Report {'[DRY RUN]' if dry_run else ''} ===")
-    print(f"  Hot  (<7 days):     N/A (unchanged)")
-    print(f"  Warm (7-90 days):   Consolidated to lessons/")
+    print("  Hot  (<7 days):     N/A (unchanged)")
+    print("  Warm (7-90 days):   Consolidated to lessons/")
     print(
         f"  Cold (>90 days):    {stats['archived']} archived, {stats['skipped']} skipped"
     )
@@ -469,4 +467,3 @@ if __name__ == "__main__":
 # stages; the new ``fresh/consolidated/archived`` names are the
 # preferred API. These aliases keep existing callers working.
 consolidate_warm_sessions = consolidate_consolidated_sessions
-migrate_to_cold = archive_cold_files

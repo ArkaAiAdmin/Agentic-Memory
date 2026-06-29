@@ -11,10 +11,10 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from typing import Any, cast
+from typing import cast
 
 __all__ = [
-    "CONSOLIDATION_ENABLED",
+    "CONSOLIDATION_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "detect_duplicates",
     "cluster_related",
     "merge_suggestions",

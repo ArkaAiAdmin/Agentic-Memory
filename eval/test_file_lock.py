@@ -9,7 +9,6 @@ import os
 import sys
 import tempfile
 import threading
-import time
 import unittest
 from pathlib import Path
 
@@ -26,7 +25,7 @@ from file_lock import (
 
 def _can_fcntl():
     try:
-        import fcntl
+        import fcntl  # noqa: F401
 
         return True
     except ImportError:

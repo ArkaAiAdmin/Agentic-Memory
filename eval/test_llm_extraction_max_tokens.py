@@ -13,7 +13,6 @@ import importlib
 import os
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -143,7 +142,7 @@ class TestBackfillCliLlmMaxTokens(unittest.TestCase):
         )
         try:
             result = subprocess.run(
-                [str(REPO / "venv/bin/python3.14"), str(driver)],
+                [sys.executable, str(driver)],
                 env=env,
                 capture_output=True,
                 text=True,
@@ -175,7 +174,7 @@ class TestBackfillCliLlmMaxTokens(unittest.TestCase):
         )
         try:
             result = subprocess.run(
-                [str(REPO / "venv/bin/python3.14"), str(driver)],
+                [sys.executable, str(driver)],
                 capture_output=True,
                 text=True,
                 timeout=30,

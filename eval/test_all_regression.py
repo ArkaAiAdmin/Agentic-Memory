@@ -1,6 +1,13 @@
 """End-to-end regression test: ALL fixed subsystems."""
 
-import os, sys, uuid, json, sqlite3, tempfile, math, threading
+import os
+import sys
+import uuid
+import json
+import sqlite3
+import tempfile
+import math
+import threading
 from pathlib import Path
 
 INSTALL_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -103,7 +110,7 @@ def w(i):
 ts = [threading.Thread(target=w, args=(i,)) for i in range(8)]
 [t.start() for t in ts]
 [t.join() for t in ts]
-ok(f"8 threads × 10 ops: 0 errors")
+ok("8 threads × 10 ops: 0 errors")
 
 # E
 section("E", "C1+C2: auto-save transactional upsert")
@@ -212,7 +219,7 @@ if isinstance(res, str):
     res = json.loads(res)
 ids = [r.get("id", "") for r in res.get("results", [])]
 assert any(tid in n for n in ids), f"roundtrip failed: {ids}"
-ok(f"saved note found via FTS roundtrip")
+ok("saved note found via FTS roundtrip")
 # Clean up test entry so it doesn't pollute the prod DB
 with sqlite3.connect(DB) as con:
     con.execute("DELETE FROM memories WHERE id = ?", (f"tests/{tid}",))

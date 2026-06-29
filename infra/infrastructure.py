@@ -30,19 +30,16 @@ import unicodedata
 import functools
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 from memory_common import (
     atomic_write,
     configure_logging,
-    count_rows,
     safe_close_db,
     connection_pool,
     acquire_flock_with_retry,
     release_flock,
     rate_limit_check,
     get_memory_paths,
-    find_project_root,
     GLOBAL_MEM_DIR,
 )
 

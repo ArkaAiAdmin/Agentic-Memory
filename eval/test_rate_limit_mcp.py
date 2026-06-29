@@ -10,11 +10,9 @@ import sys
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _wait_until import wait_until  # noqa: E402
 
 
 class TestWithAuditRateLimit(unittest.TestCase):

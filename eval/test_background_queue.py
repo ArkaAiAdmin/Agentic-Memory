@@ -4,8 +4,11 @@ Covers: init, enqueue, dequeue, complete, fail, dedup, worker_status,
 cleanup, retry logic.
 """
 
-import os, sys, sqlite3, tempfile, json
-from pathlib import Path
+import os
+import sys
+import sqlite3
+import tempfile
+import json
 
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
@@ -173,9 +176,9 @@ class TestDequeueTask:
     def test_dequeue_fifo_within_priority(self):
         conn, _ = _make_db()
         try:
-            id1 = enqueue_task(conn, "test", {"n": 1})
-            id2 = enqueue_task(conn, "test", {"n": 2})
-            id3 = enqueue_task(conn, "test", {"n": 3})
+            enqueue_task(conn, "test", {"n": 1})
+            enqueue_task(conn, "test", {"n": 2})
+            enqueue_task(conn, "test", {"n": 3})
             t1 = dequeue_task(conn)
             t2 = dequeue_task(conn)
             t3 = dequeue_task(conn)
@@ -191,9 +194,9 @@ class TestDequeueTask:
     def test_dequeue_priority_order(self):
         conn, _ = _make_db()
         try:
-            id_low = enqueue_task(conn, "test", {"p": "low"}, priority=0)
-            id_high = enqueue_task(conn, "test", {"p": "high"}, priority=10)
-            id_med = enqueue_task(conn, "test", {"p": "med"}, priority=5)
+            enqueue_task(conn, "test", {"p": "low"}, priority=0)
+            enqueue_task(conn, "test", {"p": "high"}, priority=10)
+            enqueue_task(conn, "test", {"p": "med"}, priority=5)
             t1 = dequeue_task(conn)
             t2 = dequeue_task(conn)
             t3 = dequeue_task(conn)
@@ -350,7 +353,7 @@ class TestWorkerStatus:
         conn, _ = _make_db()
         try:
             id1 = enqueue_task(conn, "entity_resolution", {})
-            id2 = enqueue_task(conn, "fact_consolidation", {})
+            enqueue_task(conn, "fact_consolidation", {})
             dequeue_task(conn, "entity_resolution")
             complete_task(conn, id1)
             status = worker_status(conn)

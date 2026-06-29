@@ -16,7 +16,6 @@ Output: eval/results/longmemeval-s-run.json
 from __future__ import annotations
 
 import json
-import os
 import re
 import sqlite3
 import sys
@@ -844,7 +843,7 @@ def main():
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(RESULTS_PATH, "w") as f:
         json.dump(result, f, indent=2)
-    print(f"\n=== SUMMARY ===")
+    print("\n=== SUMMARY ===")
     print(f"Questions: {n}")
     print(f"Hybrid score: {hybrid_score * 100:.1f}%")
     print(f"Baseline score: {baseline_score * 100:.1f}%")

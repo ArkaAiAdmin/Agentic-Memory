@@ -14,11 +14,9 @@ Default: --days=3 (recent week of sessions). For longer windows, set
 """
 
 from _flock import acquire_lock_or_exit
-import os
 import sys
 import subprocess
 import time
-from pathlib import Path
 
 # 2026-06-19 fix: bootstrap install_root BEFORE any agentic-memory import
 # (same chicken-and-egg protection as the rest of the cron scripts).

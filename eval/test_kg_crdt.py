@@ -8,11 +8,9 @@ Validates the four CRDT properties:
                        operations in any order reach the same state.
 """
 
-import copy
 import json
 import sqlite3
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 

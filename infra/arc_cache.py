@@ -40,7 +40,7 @@ import sqlite3
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator
 
 from memory_common import find_project_root, safe_close_db  # noqa: E402
 

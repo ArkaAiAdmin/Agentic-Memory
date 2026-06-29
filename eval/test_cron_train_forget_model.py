@@ -4,8 +4,6 @@
 Covers: _sgd_train, _load_examples structure, cold-start guard.
 """
 
-import json
-import os
 import sys
 import unittest
 from pathlib import Path

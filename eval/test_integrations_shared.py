@@ -5,11 +5,9 @@ Requires at least one of langchain or crewai formatter to be importable.
 
 from __future__ import annotations
 
-import sys
 import unittest
 from typing import Any
 
-import pytest
 
 
 # ── Formatter discovery ───────────────────────────────────────────────────────

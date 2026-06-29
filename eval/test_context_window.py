@@ -1,6 +1,10 @@
 """Tests for Context window management — bootstrap, recall, context monitor."""
 
-import os, sqlite3, sys, tempfile, unittest
+import os
+import sqlite3
+import sys
+import tempfile
+import unittest
 from pathlib import Path
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))

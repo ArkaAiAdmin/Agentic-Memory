@@ -16,7 +16,7 @@ import time
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -25,7 +25,6 @@ sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
 import _fixtures
 import sqlite3
-import tempfile
 from memory_common import open_db, count_rows
 from infrastructure import GLOBAL_MEM_DIR
 from save_pipeline import (
@@ -225,7 +224,6 @@ class TestSaveMemoryReturnValues(unittest.TestCase):
         json.dumps cannot handle (e.g. a datetime), the function must
         fall back to '{}' and log a warning rather than raising.
         """
-        import logging
 
         content = "---\ncategory: lessons\ntitle_slug: foo\ntags: [t]\nmetadata: bad\n---\n\nBody."
         with patch(
@@ -435,7 +433,7 @@ class TestAuditIntegration(unittest.TestCase):
         """Audit should be called even on error paths (e.g. DB error)."""
         # Force a DB error by mocking open_db to raise
         with patch("save_pipeline.open_db", side_effect=Exception("DB error")):
-            result = save_memory(
+            save_memory(
                 content=f"---\ncategory: lessons\ntitle_slug: err-{int(time.time())}\ntags: []\nvalid_from: {now_iso()}\n---\n\nError path.",
                 category="lessons",
                 title_slug=f"err-{int(time.time())}",
@@ -539,8 +537,6 @@ class TestFitnessScoreWeights(_TempDbTestMixin, unittest.TestCase):
 
     def test_decay_rates_lookup(self):
         """Different decay settings should produce different scores."""
-        import math
-        from datetime import date
         from save_pipeline import _recalculate_fitness_scores
 
         with sqlite3.connect(str(self.tmp_db)) as db:
@@ -823,13 +819,11 @@ class TestAutoBacklinkMultiPartValues(_TempDbTestMixin, unittest.TestCase):
     """Kill int mutations on _auto_backlink_multi_part (L175, L179, L182, L186, L197)."""
 
     def test_non_multipart_returns_none(self):
-        from save_pipeline import _auto_backlink_multi_part
 
         result = _auto_backlink_multi_part(self.tmp_db, "lessons/foo", "lessons", "foo")
         self.assertIsNone(result)
 
     def test_single_part_returns_none(self):
-        from save_pipeline import _auto_backlink_multi_part
 
         result = _auto_backlink_multi_part(
             self.tmp_db, "lessons/test-part-1", "lessons", "test-part-1"
@@ -1005,14 +999,12 @@ class TestAutoBacklinkMultiPart(_TempDbTestMixin, unittest.TestCase):
     """Kill L166 not, L175 compare, L179 int, L184 not, L186 int, L197 int."""
 
     def test_non_multipart_noop(self):
-        from save_pipeline import _auto_backlink_multi_part
 
         # "foo" has no "-" so parts < 2
         result = _auto_backlink_multi_part(self.tmp_db, "lessons/foo", "lessons", "foo")
         self.assertIsNone(result)
 
     def test_single_word_slug_noop(self):
-        from save_pipeline import _auto_backlink_multi_part
 
         result = _auto_backlink_multi_part(
             self.tmp_db, "lessons/test", "lessons", "test"
@@ -1167,7 +1159,6 @@ class TestCountRows(unittest.TestCase):
     """Kill L38 int on count_rows."""
 
     def test_count_memories(self):
-        from memory_common import count_rows
 
         count = count_rows(GLOBAL_MEM_DIR)
         self.assertIsInstance(count, int)
@@ -1221,7 +1212,6 @@ class TestAutoBacklinkMultiPartEdge(_TempDbTestMixin, unittest.TestCase):
     """Kill L166 not, L175 compare, L179 int, L184 not, L186 int, L197 int."""
 
     def test_no_dash_in_slug(self):
-        from save_pipeline import _auto_backlink_multi_part
 
         result = _auto_backlink_multi_part(
             self.tmp_db, "lessons/test", "lessons", "test"
@@ -1229,7 +1219,6 @@ class TestAutoBacklinkMultiPartEdge(_TempDbTestMixin, unittest.TestCase):
         self.assertIsNone(result)
 
     def test_single_part_after_dash(self):
-        from save_pipeline import _auto_backlink_multi_part
 
         result = _auto_backlink_multi_part(
             self.tmp_db, "lessons/part-1", "lessons", "part-1"
@@ -1649,7 +1638,7 @@ class TestUpsertRowMetadataGuard(unittest.TestCase):
         tmp = Path(tempfile.mktemp(suffix=".guard.db"))
         tmp.write_bytes(b"")
         conn = sqlite3.connect(str(tmp))
-        conn.execute(f"CREATE TABLE IF NOT EXISTS file_mtimes (path TEXT PRIMARY KEY, mtime REAL, content_hash TEXT);")
+        conn.execute("CREATE TABLE IF NOT EXISTS file_mtimes (path TEXT PRIMARY KEY, mtime REAL, content_hash TEXT);")
         conn.execute(f"CREATE TABLE IF NOT EXISTS memories ({self.COLUMNS});")
         conn.commit()
         return tmp, conn

@@ -10,10 +10,8 @@ Covers:
 
 import json
 import time
-import types
 from pathlib import Path
 
-import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers to create a minimal fake context_monitor module so we can import
@@ -104,9 +102,9 @@ class TestSynthesizeSessionSummary:
         ]
         result = self._call(autos, [], _make_state())
         lines = [
-            l.strip("- ")
-            for l in result["conclusions"].split("\n")
-            if l.strip() and "derived" not in l
+            line.strip("- ")
+            for line in result["conclusions"].split("\n")
+            if line.strip() and "derived" not in line
         ]
         assert len(lines) == 1
 
@@ -142,9 +140,9 @@ class TestSynthesizeSessionSummary:
         autos = [_make_autosave("edit", f"Edit file_{i}.py") for i in range(20)]
         result = self._call(autos, [], _make_state())
         lines = [
-            l
-            for l in result["conclusions"].split("\n")
-            if l.startswith("- ") and "derived" not in l
+            line
+            for line in result["conclusions"].split("\n")
+            if line.startswith("- ") and "derived" not in line
         ]
         assert len(lines) <= 6
 

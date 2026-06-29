@@ -8,14 +8,13 @@ Opt-in via MEMORY_QUALITY_GATES=1.
 
 from __future__ import annotations
 
-import os
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 __all__ = [
-    "QUALITY_GATES_ENABLED",
+    "QUALITY_GATES_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "validate_result",
     "filter_results",
     "quality_stats",

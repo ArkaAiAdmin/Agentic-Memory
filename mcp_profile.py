@@ -1,11 +1,8 @@
 """
 User profile MCP tools — memory_profile_access, memory_user_profile, memory_profile_stats.
 """
+from mcp_common import _bootstrap_path  # noqa: E402
 
-import _bootstrap_path  # noqa: E402
-import os
-import sys
-from pathlib import Path
 
 
 import json
@@ -31,7 +28,7 @@ def memory_profile_access(
             note_id, source=source, category=category or None, tags=tag_list or None
         )
         return json.dumps({"recorded": ok, "note_id": note_id})
-    except Exception as e:
+    except Exception:
         logger.exception("Access recording failed")
         return _err(ErrorCode.PROFILE_ERROR, "Access recording failed")
 
@@ -50,7 +47,7 @@ def memory_user_profile() -> str:
     try:
         profile = up.get_user_profile()
         return json.dumps(profile, indent=2, default=str)
-    except Exception as e:
+    except Exception:
         logger.exception("Profile failed")
         return _err(ErrorCode.PROFILE_ERROR, "Profile failed")
 
@@ -65,6 +62,6 @@ def memory_profile_stats() -> str:
         return json.dumps({"enabled": False})
     try:
         return json.dumps(up.profile_stats(), indent=2)
-    except Exception as e:
+    except Exception:
         logger.exception("Stats failed")
         return _err(ErrorCode.PROFILE_ERROR, "Stats failed")

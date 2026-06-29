@@ -46,7 +46,6 @@ pytestmark = pytest.mark.skipif(
 
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 from pathlib import Path
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
@@ -55,12 +54,8 @@ sys.path.insert(0, str(INSTALL_DIR))
 
 from memory_common import (
     open_db,
-    safe_close_db,
     connection_pool,
-    run_db_migrations,
-    count_rows,
 )
-from infrastructure import GLOBAL_MEM_DIR
 from save_pipeline import save_memory
 from search_pipeline import search_memories
 from _fixtures import bootstrap_temp_db
@@ -175,7 +170,7 @@ class TestConcurrentSaves(unittest.TestCase):
     def test_parallel_saves_no_deadlock(self):
         """10 threads hitting save simultaneously must complete within timeout."""
         slug_prefix = _unique_slug("deadlock")
-        completed = threading.Event()
+        threading.Event()
         results = []
         lock = threading.Lock()
 
@@ -461,7 +456,7 @@ class TestConcurrentMixed(unittest.TestCase):
                     PROD_DB, f"Mixed test thread {thread_id}", limit=5
                 )
                 if isinstance(search_result, dict):
-                    found = any(
+                    any(
                         r.get("id", r.get("memory_id", "")) == result
                         for r in search_result.get("results", [])
                     )
@@ -580,7 +575,7 @@ class TestConnectionPoolContention(unittest.TestCase):
             try:
                 if i % 2 == 0:
                     slug = f"{slug_prefix}_{i}"
-                    result = save_memory(
+                    save_memory(
                         content=f"Pool burst {i}",
                         category="test_concurrent",
                         title_slug=slug,
@@ -591,7 +586,7 @@ class TestConnectionPoolContention(unittest.TestCase):
                         db_path=str(PROD_DB),
                     )
                 else:
-                    result = search_memories(PROD_DB, "pool burst", limit=3)
+                    search_memories(PROD_DB, "pool burst", limit=3)
                 with lock:
                     results.append(("ok", i))
             except Exception as e:
@@ -610,7 +605,7 @@ class TestConnectionPoolContention(unittest.TestCase):
     def test_pool_no_connection_leak(self):
         """After concurrent ops, pool must not hold stale connections."""
         # Record pool state before
-        pool_size_before = len(connection_pool._pool)
+        len(connection_pool._pool)
 
         slug_prefix = _unique_slug("leak")
         note_ids = []

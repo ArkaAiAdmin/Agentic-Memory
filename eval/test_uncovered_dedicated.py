@@ -1,8 +1,4 @@
-import pytest
 import sqlite3
-import numpy as np
-from pathlib import Path
-from typing import Any
 
 # 1. Test embedding_search
 from embedding_search import get_embedding_search

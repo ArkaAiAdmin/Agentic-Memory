@@ -16,7 +16,6 @@ Verifies:
  12. _bb2_clear_history empties the buffer
  13. End-to-end: prior turn "database migration rates" enables "it" to find rate notes
 """
-import os
 import sys
 import unittest
 import tempfile

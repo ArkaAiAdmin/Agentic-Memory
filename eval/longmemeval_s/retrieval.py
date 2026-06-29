@@ -13,7 +13,6 @@ Returns doc_ids ranked best-first.
 from __future__ import annotations
 
 import calendar
-import math
 import re
 import sqlite3
 import time

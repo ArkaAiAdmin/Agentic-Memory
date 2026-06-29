@@ -26,10 +26,8 @@ __all__ = [
     "classify_operation",
 ]
 
-import os
 import sys
 import re
-import sqlite3
 import logging
 from collections import OrderedDict
 from pathlib import Path

@@ -318,7 +318,7 @@ class TestBackfillCliHybridFlags(unittest.TestCase):
             import subprocess
 
             result = subprocess.run(
-                [str(REPO / "venv/bin/python3.14"), str(driver)],
+                [sys.executable, str(driver)],
                 capture_output=True,
                 text=True,
                 timeout=30,

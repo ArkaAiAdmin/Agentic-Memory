@@ -33,8 +33,6 @@ in this file for the precise check.
 
 import json
 import os
-import re
-import sqlite3
 import sys
 import time
 from datetime import datetime, timezone, timedelta, datetime as _dt2
@@ -46,7 +44,7 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 
-from memory_common import open_db, connection_pool, run_db_migrations, safe_close_db
+from memory_common import connection_pool, run_db_migrations, safe_close_db
 from save_pipeline import save_memory
 from search_pipeline import (
     search_memories,
@@ -57,7 +55,6 @@ from search_pipeline import (
     _reciprocal_rank_fusion,
     _cross_encoder_score,
     _graph_rag_expand,
-    _parse_search_query,
     _bb2_clear_history,
 )
 from cache import _search_cache
@@ -92,7 +89,7 @@ def _deep_rerank_available():
 
 def _kg_available():
     try:
-        from knowledge_graph import KG_ENABLED, extract_entities, graph_search
+        from knowledge_graph import KG_ENABLED
 
         return bool(KG_ENABLED)
     except Exception:
@@ -326,7 +323,7 @@ class TestTemporalFiltering:
             safety_wiring=False,
             db_path=tmp_db,
         )
-        now_str = now_iso()
+        now_iso()
         yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
         conn = connection_pool.get(str(tmp_db), timeout=30.0)
         try:

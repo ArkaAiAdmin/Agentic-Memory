@@ -1,6 +1,8 @@
 """Tests for fact_extraction.py — SPO fact extraction, locking, decay, search."""
 
-import os, sys, sqlite3
+import os
+import sys
+import sqlite3
 
 sys.path.insert(
     0,

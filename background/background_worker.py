@@ -480,7 +480,7 @@ def process_one_task(
             elapsed,
             result,
         )
-    except _TaskTimeout as e:
+    except _TaskTimeout:
         elapsed = time.time() - t_start
         fail_task(conn, task_id, f"timeout after {elapsed:.1f}s")
         logger.error(
@@ -573,7 +573,6 @@ def run_worker(
                 os.environ.get("MEMORY_WORKER_DRAIN_MAX_WALL_S", "600")
             )
             processed = 0
-            consecutive_failures = 0
             t_drain = time.time()
             while not _shutdown and processed < max_tasks:
                 # Wall-clock guard
@@ -589,7 +588,6 @@ def run_worker(
                     # Queue empty (or all tasks of this type are done)
                     break
                 processed += 1
-                consecutive_failures = 0
                 if processed % 50 == 0:
                     elapsed = time.time() - t_drain
                     rate = processed / elapsed if elapsed > 0 else 0

@@ -8,7 +8,7 @@ import signal
 from pathlib import Path
 from contextlib import closing
 
-import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402
 from mcp_instance import mcp
 from mcp_common import _err, ErrorCode, with_audit, _resolve_memory_dir
 

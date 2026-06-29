@@ -30,9 +30,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from memory_common import (
-    open_db,
-    count_rows,
-    safe_call,
     connection_pool,
     safe_close_db,
     acquire_flock_with_retry,
@@ -47,6 +44,7 @@ from infra.infrastructure import (
     resolve_active_memory_dir,
     GLOBAL_MEM_DIR,
 )
+from infra.db import open_db  # noqa: E402 — backward compat re-export
 import audit
 from self_directed import _assign_tier as assign_tier
 from backfill_all import auto_backfill
@@ -1478,7 +1476,6 @@ def save_memory(
                 category = _derived_cat
             if not title_slug:
                 title_slug = _derived_slug
-        body = content
         from memory_common import _resolve_tags
 
         tags_list = _resolve_tags(category, tags_list, context=context)

@@ -8,13 +8,12 @@ Covers:
   3. _tag: source_db label attachment
 """
 
-import os
 import sys
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -103,8 +102,8 @@ class TestResolveDbPaths(unittest.TestCase):
             patch("search_memory.find_project_root", return_value=fake_project),
         ):
             mock_os.getcwd.return_value = "/some/project"
-            fake_global = Path("/global/dir")
-            with patch("search_memory.Path") as MockPath:
+            Path("/global/dir")
+            with patch("search_memory.Path"):
                 # Need to reconstruct properly; simpler: patch GLOBAL_MEM_DIR
                 # and the is_symlink check
                 local_db, global_db = search_memory._resolve_db_paths()
@@ -692,7 +691,6 @@ class TestCLI(unittest.TestCase):
         ):
             search_memory.search_memories = mock_search
             # Simulate the __main__ block
-            import importlib
 
             # We test the logic inline rather than re-exec __main__
             query = "test query"
@@ -752,7 +750,7 @@ class TestResolveDbPathsEdgeCases(unittest.TestCase):
     def test_real_world_default_paths(self):
         """With real find_project_root, default paths should be sensible."""
         # Don't patch find_project_root; use the real one
-        cwd = Path.cwd()
+        Path.cwd()
         local_db, global_db = search_memory._resolve_db_paths()
         self.assertIsInstance(local_db, Path)
         self.assertIsInstance(global_db, Path)

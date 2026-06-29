@@ -1,6 +1,10 @@
 """End-to-end regression test: ALL NEW MODULES + EXISTING FIXES."""
 
-import os, sys, uuid, json, sqlite3, tempfile, math, threading
+import os
+import sys
+import uuid
+import sqlite3
+import threading
 from pathlib import Path
 
 INSTALL_ROOT = str(Path(__file__).resolve().parent.parent)
@@ -51,7 +55,7 @@ with sqlite3.connect(DB) as con:
         AND NOT EXISTS (SELECT 1 FROM memory_vec_keys k WHERE k.memory_id = m.id)
     """).fetchone()[0]
     assert miss == 0
-ok(f"all memories indexed")
+ok("all memories indexed")
 assert migration_runner.SCHEMA_VERSION == db_migrations.SCHEMA_VERSION >= 12
 ok(f"SCHEMA_VERSION={migration_runner.SCHEMA_VERSION} consistent")
 
@@ -75,7 +79,7 @@ ok(f"8 threads × 10 ops: {len(errs)} errors")
 
 # ----
 section("D", "R0b: Agent context scoping")
-from agent_context import init_agent, get_agent, scope_note_id, list_agents
+from agent_context import init_agent, scope_note_id, list_agents
 
 ctx = init_agent("e2e-test-agent", display_name="E2E Test")
 assert ctx.agent_id == "e2e-test-agent"
@@ -101,7 +105,7 @@ ok("agent save+search roundtrip OK")
 
 # ----
 section("F", "R2: Temporal contradiction resolver")
-from temporal_resolver import get_temporal_facts, resolve_temporal_contradiction
+from temporal_resolver import get_temporal_facts
 
 facts = get_temporal_facts(DBPATH, note_id=nid)
 assert isinstance(facts, list)
@@ -150,7 +154,7 @@ ok(f"forgetting rate={rate:.3f} (0-1 range)")
 
 # ----
 section("J", "R3: Multi-modal stub")
-from multi_modal import ingest_file, SUPPORTED_FORMATS
+from multi_modal import SUPPORTED_FORMATS
 
 assert ".md" in SUPPORTED_FORMATS
 assert ".pdf" in SUPPORTED_FORMATS

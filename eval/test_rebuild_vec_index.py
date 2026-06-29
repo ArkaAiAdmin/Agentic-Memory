@@ -11,7 +11,8 @@ import time
 from pathlib import Path
 
 import pytest
-from _fixtures import bootstrap_temp_db_clean
+
+import numpy as np
 
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
@@ -27,7 +28,6 @@ from memory_common import (
     open_db,
     run_db_migrations,
     _migrate_kg_tables,
-    connection_pool,
 )
 from fact_extraction import ensure_facts_schema
 from adaptive_retention import ensure_adaptive_schema
@@ -36,12 +36,9 @@ from adaptive_retention import ensure_adaptive_schema
 sys.path.insert(0, _project_root)
 from rebuild_vec_index import (
     _md5_to_uint64,
-    _ensure_schema,
     _load_cached_embeddings,
     rebuild_vec_index,
     VEC_INDEX_METRIC,
-    VEC_INDEX_DTYPE,
-    VEC_INDEX_CONNECTIVITY,
 )
 
 # ---------------------------------------------------------------------------
@@ -264,7 +261,6 @@ class TestLoadCachedEmbeddings:
 
         # Insert a memory + embedding
         _insert_memory(conn, id="emb-1", content="Embedding test")
-        import numpy as np
 
         emb = np.random.randn(256).astype(np.float32)
         emb_blob = emb.tobytes()
@@ -371,7 +367,6 @@ class TestRebuildVecIndex:
         """Rebuild raises RuntimeError if memories table missing."""
         db_path = tmp_path / "memory.db"
         # Use open_db to get full schema, then drop memories table
-        from memory_common import open_db
 
         with open_db(db_path) as db:
             db.execute(
