@@ -10,7 +10,7 @@ This tool is the canonical "show me how to use the SDK" entry
 point. It saves a few sample memories, runs a search, and prints
 DB stats so the caller can verify the wiring works.
 """
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 
 

@@ -1,7 +1,7 @@
 """
 Knowledge Graph MCP tools — graph_search, graph_stats, facts_search, facts_list, facts_stats.
 """
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 
 

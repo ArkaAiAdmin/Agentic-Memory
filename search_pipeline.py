@@ -261,7 +261,7 @@ from search.chunk_index import (  # noqa: E402, F401
     _QW5_CHUNKS_TRIGGERS_SQL,
 )
 
-from search.query_parser import (
+from search.query_parser import (  # noqa: E402,F401
     _QUERY_EXPANSIONS,
     _QUERY_EXPANSION_REVERSE,
     _QUERY_TYPE_WEIGHTS,
@@ -282,7 +282,7 @@ from search.query_parser import (
     _graph_rag_expand,
 )
 
-from search.orchestrator import (
+from search.orchestrator import (  # noqa: E402,F401
     ScoreContext,
     _merge_chunk_hits,
     _fallback_embedding_search,
@@ -290,7 +290,7 @@ from search.orchestrator import (
     search_memories,
 )
 
-from infra.memory_config import GLOBAL_MEM_DIR  # noqa: E402 — backward compat re-export
+from infra.memory_config import GLOBAL_MEM_DIR  # noqa: E402,F401 — backward compat re-export
 
 
 # (Moved to search/__init__.py — canonical location.)

@@ -1,5 +1,5 @@
-from infra.frontmatter import _coerce  # noqa: E402 — explicit re-export for backward compat
-from infra.memory_config import (  # noqa: E402 — explicit re-exports for backward compat
+from infra.frontmatter import _coerce  # noqa: E402,F401 — explicit re-export for backward compat
+from infra.memory_config import (  # noqa: E402,E501,F401 — explicit re-exports for backward compat
     PROJECT_ROOT_MARKERS,
     _VALID_LOG_LEVELS,
 )

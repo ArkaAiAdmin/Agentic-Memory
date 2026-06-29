@@ -5,7 +5,7 @@ Each domain module registers its tools on the shared ``mcp`` instance
 via ``@mcp.tool()`` at import time.  This module re-exports every tool
 and helper so that ``from mcp_tools import memory_search`` works.
 """
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 # ---- domain modules (import = register via @mcp.tool()) ----
 

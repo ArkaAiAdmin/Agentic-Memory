@@ -1,7 +1,7 @@
 """
 User profile MCP tools — memory_profile_access, memory_user_profile, memory_profile_stats.
 """
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 
 

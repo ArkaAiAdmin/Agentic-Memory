@@ -3,7 +3,7 @@
 Allows starting, stopping, and checking the status of the
 standalone metrics HTTP server (metrics_server.py).
 """
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 import signal

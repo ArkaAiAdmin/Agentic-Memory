@@ -3,7 +3,7 @@
 Provides ADMIN tools for initializing, clearing, and listing agent contexts.
 Agent scoping enables namespace isolation for multi-agent CRDT systems.
 """
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 

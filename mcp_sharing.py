@@ -3,7 +3,7 @@ Multi-agent sharing MCP tools — memory_share, memory_shared_list,
 memory_shared_import, memory_shared_stats, memory_auto_share,
 memory_share_candidates.
 """
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 
 

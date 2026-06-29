@@ -6,7 +6,6 @@ import recall.search_memory as _real
 
 # Ensure io is available for the shim so mock.patch and getattr work
 import io as _io
-import pathlib
 from pathlib import Path
 
 # Pre-load common attributes that tests mock.patch on the shim module.

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import logging
 from mcp_instance import mcp  # noqa: E402 — shared instance, avoids circular import
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 from memory_common import (
     configure_logging,
 )  # noqa: E402
@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 # ~/.config/agentic-memory/, but the actual global memories live one level
 # deeper at ~/.config/agentic-memory/memory/. Fixing C1.
 GLOBAL_SCRIPTS_DIR = Path.home() / ".config" / "agentic-memory"
-from infra.memory_config import GLOBAL_MEM_DIR, get_memory_paths  # noqa: E402
+from infra.memory_config import GLOBAL_MEM_DIR, get_memory_paths  # noqa: E402,F401
 
 # H1-b fix: the canonical find_project_root lives in memory_common.py. Import
 # it instead of duplicating the marker list here (the two implementations had

@@ -1,7 +1,7 @@
 """
 Quality gate MCP tools — memory_quality_filter, memory_quality_stats.
 """
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import os
 

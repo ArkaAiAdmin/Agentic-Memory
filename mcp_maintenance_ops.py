@@ -12,7 +12,7 @@ to ``_get_local_tools()`` / ``_get_domain_tools()`` which run on first
 dispatch (not at module load). The ``MaintenanceOp`` enum is also
 resolved lazily.
 """
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 import os

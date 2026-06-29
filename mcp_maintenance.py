@@ -8,7 +8,7 @@ Sub-modules (imported here for tool registration):
   - mcp_audit    — audit, audit_query, check_integrity
   - mcp_crdt     — crdt_sync, crdt_status
 """
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import os
 import sys

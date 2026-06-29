@@ -44,7 +44,7 @@ from infra.infrastructure import (
     resolve_active_memory_dir,
     GLOBAL_MEM_DIR,
 )
-from infra.db import open_db  # noqa: E402 — backward compat re-export
+from infra.db import open_db  # noqa: E402,F401 — backward compat re-export
 import audit
 from self_directed import _assign_tier as assign_tier
 from backfill_all import auto_backfill

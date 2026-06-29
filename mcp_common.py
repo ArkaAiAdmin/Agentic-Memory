@@ -24,17 +24,17 @@ def _validate_slug(value: str, label: str) -> str | None:
     return None
 
 
-from memory_common import (
+from memory_common import (  # noqa: E402,F401
     atomic_write,
     connection_pool,
     parse_frontmatter,
     safe_close_db,
     open_db,
 )
-from db_migrations import run_db_migrations
-from infra.infrastructure import resolve_db_for_memory_id
-from infra.cache import _search_cache
-from infra.infrastructure import (
+from db_migrations import run_db_migrations  # noqa: E402,F401
+from infra.infrastructure import resolve_db_for_memory_id  # noqa: E402,F401
+from infra.cache import _search_cache  # noqa: E402,F401
+from infra.infrastructure import (  # noqa: E402,F401
     ErrorCode,
     _err,
     resolve_active_memory_dir,
@@ -43,7 +43,7 @@ from infra.infrastructure import (
 )
 
 from config import GLOBAL_SCRIPTS_DIR, AGENTS_SKILLS_DIR
-from infra.memory_config import GLOBAL_MEM_DIR, get_memory_paths
+from infra.memory_config import GLOBAL_MEM_DIR, get_memory_paths  # noqa: E402,F401
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ These are explicit retrieval tools — they do not modify search_memories behavi
 """
 from __future__ import annotations
 
-from mcp_common import _bootstrap_path  # noqa: E402
+from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 import logging
