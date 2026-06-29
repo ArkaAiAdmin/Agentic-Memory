@@ -13,8 +13,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
+INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
+
+# 2026-06-29 fix: torch is not installed in the CI matrix; skip the
+# MPS-warning test gracefully instead of failing the whole module.
+try:
+    import torch  # noqa: F401
+
+    _HAS_TORCH = True
+except ImportError:
+    _HAS_TORCH = False
+
+_MPS_SKIP_REASON = "torch not installed in this environment (CI matrix doesn't include it)"
 
 
 class TestRerankerDisabled(unittest.TestCase):
@@ -55,6 +66,8 @@ class TestRerankerDisabled(unittest.TestCase):
 
     def test_mps_warning_logged_when_deep_rerank_on_mps(self):
         """MPS detection should log a warning when deep_rerank=True."""
+        if not _HAS_TORCH:
+            self.skipTest(_MPS_SKIP_REASON)
         from search.rerankers import _apply_cross_encoder_rerank
 
         scored = [

@@ -13,7 +13,9 @@ import sys
 import unittest
 from pathlib import Path
 
-INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
+# 2026-06-29 fix: resolve from the test file location, not the user's home
+# dir. On CI runners the ~/.config/agentic-memory install dir does not exist.
+INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
 

@@ -1,8 +1,10 @@
 """Tests for cron_kg_backfill_monitor.py (TODO 2, 2026-06-19)."""
 
 import json
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -200,10 +202,11 @@ class TestEndToEnd(unittest.TestCase):
 
     def test_monitor_subprocess_ok(self):
         """Subprocess run with --days returns proper exit code on good log."""
-        # Skip this test if we can't write to /tmp
-        log_dir = Path("/tmp/kg_monitor_test")
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / "kg.log"
+        # 2026-06-29 fix: use tmp_path instead of /tmp + REPO/memory so the
+        # test works on CI runners where the project's memory/ dir does not
+        # exist (it's gitignored and only created at runtime).
+        tmpdir = Path(tempfile.mkdtemp(prefix="kg_monitor_test_"))
+        log_file = tmpdir / "kg.log"
 
         now = datetime.now(timezone.utc)
         days_back = (now.weekday() - 6) % 7
@@ -214,9 +217,8 @@ class TestEndToEnd(unittest.TestCase):
         log_file.write_text(json.dumps(entry) + "\n")
 
         # Run the monitor with a hacked LOG_FILE path
-        # We do this by writing a wrapper script. Use Path object so
-        # .exists() works correctly.
-        driver = REPO / "memory" / ".test_monitor_driver.py"
+        # We do this by writing a wrapper script in tmpdir.
+        driver = tmpdir / ".test_monitor_driver.py"
         driver.write_text(
             "import sys\n"
             f"sys.path.insert(0, {str(REPO)!r})\n"
@@ -234,13 +236,7 @@ class TestEndToEnd(unittest.TestCase):
                 timeout=30,
             )
         finally:
-            try:
-                driver.unlink()
-            except Exception:
-                pass
-            import shutil
-
-            shutil.rmtree(log_dir, ignore_errors=True)
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
         self.assertEqual(
             result.returncode,

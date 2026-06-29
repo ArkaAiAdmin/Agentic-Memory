@@ -15,6 +15,7 @@ IMPORTANT: This test READS the production DB but never writes to it.
 It validates the production DB state as a regression safety net.
 """
 
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -93,8 +94,18 @@ def prod_entries():
 
 
 class TestProductionDBRowCount:
-    """Assert the production DB is within expected bounds."""
+    """Assert the production DB is within expected bounds.
 
+    2026-06-29: on CI the production DB at ~/.config/agentic-memory/memory/memory.db
+    does not exist (or has 0 rows). The conftest fixture already skips when the
+    DB is missing, but we add a CI-aware skip in case the DB exists but is empty.
+    """
+
+    @pytest.mark.skipif(
+        os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true",
+        reason="Production DB row count assertions require a populated user DB; "
+        "CI runners start from an empty state.",
+    )
     def test_row_count_at_most_3000(self, prod_entries):
         ids, _contents, _count = prod_entries
         core_ids = [

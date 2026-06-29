@@ -118,6 +118,15 @@ _llm_DEFAULT = 256
 class TestBackfillCliLlmMaxTokens(unittest.TestCase):
     """backfill_all.py --llm-max-tokens flag must set env var."""
 
+    def setUp(self):
+        # 2026-06-29 fix: tmp dir instead of REPO/memory (which is gitignored
+        # and may not exist on CI).
+        import shutil
+        import tempfile
+
+        self._driver_dir = Path(tempfile.mkdtemp(prefix="llm_max_tokens_"))
+        self.addCleanup(shutil.rmtree, self._driver_dir, True)
+
     def test_flag_sets_env_var(self):
         """The --llm-max-tokens flag must set MEMORY_LLM_EXTRACTION_MAX_TOKENS env var."""
         env = os.environ.copy()
@@ -127,7 +136,7 @@ class TestBackfillCliLlmMaxTokens(unittest.TestCase):
 
         # Write the test driver to a temp file to avoid format-string issues
         # with % chars in the embedded Python code.
-        driver = REPO / "memory" / ".test_llm_max_tokens_driver.py"
+        driver = self._driver_dir / ".test_llm_max_tokens_driver.py"
         driver.write_text(
             "import sys\n"
             f"sys.path.insert(0, {str(REPO)!r})\n"
@@ -163,7 +172,7 @@ class TestBackfillCliLlmMaxTokens(unittest.TestCase):
 
     def test_flag_with_invalid_value_warns_but_does_not_crash(self):
         """A non-int --llm-max-tokens value should warn, not error."""
-        driver = REPO / "memory" / ".test_llm_max_tokens_bad_driver.py"
+        driver = self._driver_dir / ".test_llm_max_tokens_bad_driver.py"
         driver.write_text(
             "import sys\n"
             f"sys.path.insert(0, {str(REPO)!r})\n"

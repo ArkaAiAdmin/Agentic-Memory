@@ -405,10 +405,28 @@ class SQLiteWriteQueue:
             except Exception as e:
                 logger.error("Fatal error in SQLiteWriteQueue run loop: %s", e)
 
-    def stop(self) -> None:
-        """Gracefully stop the background worker thread."""
-        self._queue.put(None)
-        self._thread.join()
+    def stop(self, timeout: float = 5.0) -> None:
+        """Gracefully stop the background worker thread.
+
+        Sends a sentinel ``None`` task to the queue, then joins the thread
+        with a timeout.  Pending writes are drained before the sentinel
+        is processed, so callers that use ``enqueue_write`` and rely on
+        a future resolve will see them complete.
+
+        The timeout exists because the test suite imports this module
+        at conftest-load time; if a previous worker is wedged the join
+        would otherwise block the whole test process forever.  A
+        non-joined thread is a daemon, so the OS will reap it at exit
+        (the SQLite connection it holds will be released by the OS's
+        own cleanup, since Python's __del__ on sqlite3.Connection is
+        best-effort and we never get a clean interpreter shutdown on
+        a segfault anyway).
+        """
+        try:
+            self._queue.put(None)
+        except Exception:
+            return
+        self._thread.join(timeout=timeout)
 
 
 # Global Singleton write queue

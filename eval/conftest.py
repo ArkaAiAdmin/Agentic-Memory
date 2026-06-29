@@ -118,6 +118,50 @@ def temp_db_path(tmp_path):
     return db
 
 
+# ---------------------------------------------------------------------------
+# 2026-06-29: Path resolution fixtures for tests that previously hardcoded
+# ~/.config/agentic-memory or wrote driver scripts to REPO/memory/. On CI
+# the project lives at a non-standard path (e.g. /home/runner/work/...) and
+# the user install dir does not exist, so hardcoded paths broke a dozen
+# tests. Use these fixtures instead of Path.home() / ".config" / "agentic-memory".
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def project_root() -> Path:
+    """Repo root (directory containing pyproject.toml / conftest.py's parent)."""
+    return Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="session")
+def project_venv_python(project_root) -> Path:
+    """Path to the venv python inside the project root.
+
+    On local dev installs: <project_root>/venv/bin/python
+    On CI: same path (CI uses the same venv layout).
+    Falls back to sys.executable if no project-local venv exists.
+    """
+    venv_py = project_root / "venv" / "bin" / "python"
+    if not venv_py.exists():
+        venv_py = project_root / ".venv" / "bin" / "python"
+    if not venv_py.exists():
+        venv_py = Path(sys.executable)
+    return venv_py
+
+
+@pytest.fixture
+def project_memory_dir(project_root, tmp_path):
+    """A writable memory/ dir for driver scripts and test artifacts.
+
+    Uses tmp_path by default so the test is hermetic. Tests that need
+    a real REPO/memory/ dir can opt in via the `use_real_memory_dir`
+    marker, but the default is tmp_path to avoid CI side-effects.
+    """
+    d = tmp_path / "memory"
+    d.mkdir(exist_ok=True)
+    return d
+
+
 collect_ignore = []
 for _f in os.listdir(os.path.dirname(__file__)):
     if _f.startswith("test_all_") and _f.endswith(".py"):
@@ -149,7 +193,45 @@ def pytest_runtest_makereport(item, call):
 
 
 def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
-    """Auto-save a pinned lessons memory for any flaky tests found."""
+    """Session-end hooks: drain the write queue, close the pool, save lessons.
+
+    2026-06-29 fix: the sqlite_write_queue module-level singleton starts a
+    daemon thread on import. When a worker process exits (especially under
+    xdist or --forked, or when a test segfaults), the daemon thread is killed
+    abruptly without releasing the SQLite connection or the db_path_flock. That
+    triggered the exit-139 segfault in the no-extras job: the main process was
+    stuck waiting on a queue whose worker thread had already died holding a
+    locked DB file, and atexit finalisation then segfaulted during native
+    shutdown (sqlite + numpy + usearch). Stopping the queue at session end
+    gives the thread a chance to drain pending writes and release the
+    flock before the process exits.
+    """
+    # 1. Drain the singleton write queue and join its thread.
+    try:
+        from infra import db_write_queue
+
+        q = getattr(db_write_queue, "sqlite_write_queue", None)
+        if q is not None and hasattr(q, "stop"):
+            try:
+                q.stop(timeout=5.0)
+            except TypeError:
+                # Older signature without timeout.
+                q.stop()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # 2. Close every connection the pool is still holding. The pool's
+    #    __del__ may not run in time on worker shutdown, leaving WAL-mode
+    #    file locks held across processes.
+    try:
+        from db import connection_pool
+
+        connection_pool.close_all()
+    except Exception:
+        pass
+
+    # 3. Auto-save a pinned lessons memory for any flaky tests found.
     if not _flaky_items:
         return
     try:

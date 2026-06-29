@@ -207,17 +207,27 @@ class TestMainExitCodes(unittest.TestCase):
 
             tmpdir = tempfile.mkdtemp()
             log_file = Path(tmpdir) / "kg.log"
+            fake_db = Path(tmpdir) / "memory.db"
+            fake_db.write_bytes(b"")  # existence is all that matters
             try:
-                # Patch sys.argv so argparse parses the right args
-                with patch.object(
-                    sys, "argv", ["cron_kg_backfill.py", f"--log-file={log_file}"]
-                ):
-                    rc = 0
-                    try:
-                        mod.main()
-                    except SystemExit as e:
-                        rc = e.code if e.code is not None else 0
-                    self.assertEqual(rc, 0)
+                # 2026-06-29 fix: force _resolve_db_path to a tmp path
+                # so the test does not depend on ~/.config/agentic-memory
+                # existing (it doesn't on CI). Also patch the flock so the
+                # test is not affected by a sibling xdist worker holding the
+                # cron_kg_backfill.lock file.
+                with patch.object(mod, "_resolve_db_path", return_value=fake_db):
+                    with patch.object(
+                        mod, "acquire_lock_or_exit", lambda *_a, **_kw: None
+                    ):
+                        with patch.object(
+                            sys, "argv", ["cron_kg_backfill.py", f"--log-file={log_file}"]
+                        ):
+                            rc = 0
+                            try:
+                                mod.main()
+                            except SystemExit as e:
+                                rc = e.code if e.code is not None else 0
+                            self.assertEqual(rc, 0)
                 # Log file should have one JSON line
                 self.assertTrue(log_file.exists())
                 lines = log_file.read_text().strip().split("\n")
@@ -239,9 +249,12 @@ class TestMainExitCodes(unittest.TestCase):
         # Don't even let argparse see pytest args
         with patch.object(sys, "argv", ["cron_kg_backfill.py"]):
             with patch.object(mod, "_resolve_db_path", return_value=missing):
-                with self.assertRaises(SystemExit) as cm:
-                    mod.main()
-                self.assertEqual(cm.exception.code, 1)
+                with patch.object(
+                    mod, "acquire_lock_or_exit", lambda *_a, **_kw: None
+                ):
+                    with self.assertRaises(SystemExit) as cm:
+                        mod.main()
+                    self.assertEqual(cm.exception.code, 1)
 
 
 if __name__ == "__main__":

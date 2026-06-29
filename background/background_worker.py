@@ -225,6 +225,10 @@ def handle_vec_index_rebuild(
         import sys as _sys
 
         candidates.append(Path(_sys.executable).parent.parent / "rebuild_vec_index.py")
+        # 2026-06-29 fix: cwd-relative resolution. On CI runners the install
+        # root doesn't match `install_root()`'s default (~/.config/agentic-memory)
+        # but the script is always next to the test runner's cwd.
+        candidates.append(Path.cwd() / "rebuild_vec_index.py")
         script = next((c for c in candidates if c and c.exists()), None)
         if script is None:
             raise RuntimeError("rebuild_vec_index.py not found on disk")

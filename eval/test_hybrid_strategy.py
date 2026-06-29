@@ -300,8 +300,20 @@ class TestIndexFactsForMemoryUsesRegexByDefault(unittest.TestCase):
 class TestBackfillCliHybridFlags(unittest.TestCase):
     """backfill_all.py --llm-hybrid-threshold and --no-llm-hybrid flags."""
 
+    def setUp(self):
+        # 2026-06-29 fix: use tmp_path instead of REPO/memory. The REPO/memory
+        # dir is gitignored and does not exist on fresh CI checkouts.
+        import tempfile
+
+        self._driver_dir = Path(tempfile.mkdtemp(prefix="hybrid_driver_"))
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self._driver_dir, ignore_errors=True)
+
     def _run_driver(self, argv, env_var):
-        driver = REPO / "memory" / f".test_hybrid_driver_{env_var}.py"
+        driver = self._driver_dir / f".test_hybrid_driver_{env_var}.py"
         driver.write_text(
             "import sys\n"
             f"sys.path.insert(0, {str(REPO)!r})\n"

@@ -73,22 +73,37 @@ class TestLoadSchedule(unittest.TestCase):
 
 
 class TestRunOnce(unittest.TestCase):
+    def setUp(self):
+        # 2026-06-29 fix: create a real tmp dir with the script the test
+        # expects. Path.exists() doesn't go through os.path.exists, so
+        # the previous mock did not intercept the file-existence check and
+        # the function returned early on CI where /scripts/test.py doesn't
+        # exist.
+        import tempfile
+
+        self._tmpdir = Path(tempfile.mkdtemp(prefix="docker_cron_runner_"))
+        (self._tmpdir / "test.py").write_text("# stub script\n")
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
     def test_runs_subprocess_with_env(self):
         with patch("cron_runner.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             mock_run.return_value.stderr = ""
-            with patch("cron_runner.os.path.exists", return_value=True):
-                cron_runner.run_once(
-                    {
-                        "name": "test.py",
-                        "args": ["--foo"],
-                        "env": {"A": "1"},
-                    },
-                    Path("/scripts"),
-                )
+            cron_runner.run_once(
+                {
+                    "name": "test.py",
+                    "args": ["--foo"],
+                    "env": {"A": "1"},
+                },
+                self._tmpdir,
+            )
         args, kwargs = mock_run.call_args
         self.assertEqual(args[0][0], sys.executable)
-        self.assertEqual(args[0][1], "/scripts/test.py")
+        self.assertEqual(args[0][1], str(self._tmpdir / "test.py"))
         self.assertEqual(args[0][2], "--foo")
         self.assertEqual(kwargs["env"]["A"], "1")
         self.assertEqual(
@@ -97,12 +112,11 @@ class TestRunOnce(unittest.TestCase):
 
     def test_missing_script_logs_error(self):
         with patch("cron_runner.subprocess.run") as mock_run:
-            with patch("cron_runner.os.path.exists", return_value=False):
-                with self.assertLogs("agentic_memory.cron_runner", level="ERROR") as cm:
-                    cron_runner.run_once(
-                        {"name": "missing.py", "args": []},
-                        Path("/nonexistent"),
-                    )
+            with self.assertLogs("agentic_memory.cron_runner", level="ERROR") as cm:
+                cron_runner.run_once(
+                    {"name": "missing.py", "args": []},
+                    self._tmpdir,
+                )
         self.assertFalse(mock_run.called)
         self.assertTrue(any("missing.py" in line for line in cm.output))
 
@@ -110,12 +124,11 @@ class TestRunOnce(unittest.TestCase):
         with patch("cron_runner.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 1
             mock_run.return_value.stderr = "boom"
-            with patch("cron_runner.os.path.exists", return_value=True):
-                with self.assertLogs("agentic_memory.cron_runner", level="ERROR"):
-                    cron_runner.run_once(
-                        {"name": "test.py", "args": []},
-                        Path("/scripts"),
-                    )
+            with self.assertLogs("agentic_memory.cron_runner", level="ERROR"):
+                cron_runner.run_once(
+                    {"name": "test.py", "args": []},
+                    self._tmpdir,
+                )
         # No exception raised.
 
     def test_timeout_logged(self):
@@ -125,12 +138,11 @@ class TestRunOnce(unittest.TestCase):
             "cron_runner.subprocess.run",
             side_effect=sp.TimeoutExpired(cmd="test", timeout=5),
         ):
-            with patch("cron_runner.os.path.exists", return_value=True):
-                with self.assertLogs("agentic_memory.cron_runner", level="ERROR"):
-                    cron_runner.run_once(
-                        {"name": "test.py", "args": [], "timeout_seconds": 5},
-                        Path("/scripts"),
-                    )
+            with self.assertLogs("agentic_memory.cron_runner", level="ERROR"):
+                cron_runner.run_once(
+                    {"name": "test.py", "args": [], "timeout_seconds": 5},
+                    self._tmpdir,
+                )
 
 
 class TestNextDue(unittest.TestCase):

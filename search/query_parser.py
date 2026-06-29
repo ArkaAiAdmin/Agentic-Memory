@@ -512,6 +512,10 @@ def _parse_search_query(query: str, db_path: Path) -> tuple[str, str, str, list[
     )
     graph_rag_terms = _graph_rag_expand(normalized_query, db_path)
     if graph_rag_terms:
-        graph_rag_fts = " OR ".join((f'"{t}"' for t in graph_rag_terms))
+        # 2026-06-29 fix: route KG expansion terms through _escape_phrase so
+        # embedded double-quotes and `/` in malformed KG entities don't
+        # produce broken FTS5 syntax. Regression: see
+        # test_no_silent_search_failures.py::test_search_on_db_with_bad_kg_entity_never_returns_error
+        graph_rag_fts = " OR ".join(_escape_phrase(t) for t in graph_rag_terms)
         fts_query = f"({fts_query}) OR ({graph_rag_fts})"
     return normalized_query, fts_query, " ".join(bare_words), graph_rag_terms
