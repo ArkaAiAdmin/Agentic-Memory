@@ -369,16 +369,25 @@ the opencode process.  Documented in AGENTS.md hard rule 13.
 
 ## Surface: cron jobs, MCP tools, hooks (2026-06-22)
 
-- **85 MCP tools** (15 CORE + 70 ADMIN). Single source of truth: `tool_registry.py`.
-- **26 cron scripts** in `cron/` (up from 19): 7 new — `cron_embedding_recompute.py`,
+- **88 MCP tools** (7 CORE + 81 ADMIN). Single source of truth: `tool_registry.py`.
+- **29 cron scripts** in `cron/`: `cron_embedding_recompute.py`,
   `cron_tier_migration.py`, `cron_auto_share.py`, `cron_sync.py`,
-  `cron_crdt_sync.py`, `cron_heartbeat.py`, `cron_*` (others).
+  `cron_crdt_sync.py`, `cron_heartbeat.py`, `cron_auto_summarize.py`,
+  `cron_backup.py`, `cron_backup_validate.py`, `cron_compact.py`,
+  `cron_concept_drift.py`, `cron_consolidate.py`, `cron_cross_session_learn.py`,
+  `cron_detect_vec_drift.py`, `cron_integrity_check.py`, `cron_kg_backfill.py`,
+  `cron_kg_backfill_monitor.py`, `cron_log_retention.py`, `cron_pinned_decay.py`,
+  `cron_purge_auto_saves.py`, `cron_purge_expired.py`, `cron_quality_filter.py`,
+  `cron_rebuild_fts.py`, `cron_retention_stats.py`, `cron_rewrite_links.py`,
+  `cron_skill_extraction.py`, `cron_sync.py`, `cron_train_forget_model.py`,
+  `cron_watchdog.py`, `cron_health_check.py`, `cron_purge_auto_saves.py`.
   `cron/install_crontab.sh` rewritten as an idempotent block installer
   (H-fix 2026-06-22: every cron now acquires a flock lock before running).
   Cadence reduced from `*/5` to `*/15` to avoid runaway workers.
-- **4 user-facing hooks** in `hooks/`: `memory-proactive-context.py`,
-  `memory-search-on-demand.py`, `memory-session-start.py`,
-  `memory-recall-session.py` + 1 log helper (`_log_error.py`).
+- **6 user-facing hooks** in `hooks/`: `memory-precompact-snapshot.py`,
+  `memory-proactive-context.py`, `memory-recall-session.py`,
+  `memory-session-start.py`, `memory-session-end.py`,
+  `memory-search-on-demand.py` + 1 log helper (`_log_error.py`).
 - **Async auto-save** (2026-06-22): `auto_save.py` gains an
   async/background-batch path. The hook enqueues a tiny JSONL
   line to `<memory>/.auto_save_inbox.jsonl` (~2-5ms) and a

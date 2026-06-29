@@ -767,6 +767,8 @@ class MaintenanceOp(str, Enum):
     CHECK_CONTRADICTIONS = "check_contradictions"
     SCAN_INJECTION = "scan_injection"
     PROFILE_ACCESS = "profile_access"
+    FLAGS_STATUS = "flags_status"
+    PHASE_ERRORS = "phase_errors"
 
     @classmethod
     def all_values(cls) -> list[str]:
@@ -801,7 +803,8 @@ def memory_maintenance(
       ``tier_stats``, ``audit``, ``consolidate``, ``rewrite_links``,
       ``arc_stats``, ``arc_reset``, ``review_schedule``, ``quality_stats``, ``facts_stats``,
       ``graph_stats``, ``profile_stats``, ``retention_stats``,
-      ``summarization_stats``, ``auto_save_status``, ``shared_stats``
+      ``summarization_stats``, ``auto_save_status``, ``shared_stats``,
+      ``flags_status``, ``phase_errors``
 
     **Operations with params:**
       ``heartbeat``         dry_run

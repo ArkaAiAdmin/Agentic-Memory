@@ -1,90 +1,59 @@
 #!/usr/bin/env python3
-"""tool_drift_check.py — detect drift between tool_registry.py and
-the @mcp.tool() definitions in mcp_tools.py.
+"""Verify tool_registry.py matches @mcp.tool() definitions in mcp_*.py.
 
-Returns non-zero exit code if drift is detected. Run from CI to
-prevent the kind of drift we found in the 2026-06-15 audit:
-8 phantom tools in the registry + 2 actual tools not in the registry.
+Usage: python scripts/tool_drift_check.py
+Exit: 0 if match, 1 if drift detected.
 """
-
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
-from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
 
-import tool_registry
+def extract_mcp_tools_from_files() -> set[str]:
+    """Extract all @mcp.tool() function names from mcp_*.py files."""
+    tools = set()
+    for mcp_file in Path(".").glob("mcp_*.py"):
+        if mcp_file.name == "mcp_maintenance_ops.py":
+            continue  # This file doesn't define @mcp tools
+        content = mcp_file.read_text(encoding="utf-8")
+        # Match @mcp.tool() followed by any number of decorators, then def function_name(
+        # The pattern handles:
+        # @mcp.tool()
+        # @other_decorator
+        # def function_name(
+        pattern = r"@mcp\.tool\(\)(?:\s*\n\s*@\w+(?:\([^)]*\))?)*\s*\n\s*def\s+(\w+)\s*\("
+        for match in re.finditer(pattern, content):
+            tools.add(match.group(1))
+    return tools
 
 
 def main() -> int:
-    # Scan all mcp_*.py files (but not mcp_tools.py itself which only has
-    # comments about @mcp.tool()) for actual @mcp.tool() decorator definitions.
-    pattern = re.compile(
-        r"^@mcp\.tool\(\)"
-        r"(?:\s*@\w+(?:\.\w+)*(?:\([^)]*\))?)*"  # 0-N decorators (with or without parens)
-        r"\s*(?:async\s+)?def\s+(\w+)",
-        re.MULTILINE,
-    )
-    defined: set[str] = set()
-    for f in sorted(ROOT.glob("mcp_*.py")):
-        if f.name == "mcp_tools.py":
-            continue
-        src = f.read_text()
-        defined.update(pattern.findall(src))
+    # Parse tool_registry.py
+    from tool_registry import CORE_TOOLS, ADMIN_TOOLS
 
-    core = set(tool_registry.CORE_TOOLS)
-    admin = set(tool_registry.ADMIN_TOOLS)
-    listed = core | admin
+    registered = set(CORE_TOOLS + ADMIN_TOOLS)
 
-    drift = []
-    only_defined = defined - listed
-    only_listed = (core | admin) - defined
+    # Extract tools from source files
+    defined = extract_mcp_tools_from_files()
 
-    # Check tier placement: a tool is "core" if it should be in core
-    # (no special reason to be hidden). Admin tools are those that
-    # are explicitly admin.
-    for t in only_defined:
-        drift.append(("EXPOSED_BUT_NOT_LISTED", t, "actual @mcp.tool not in registry"))
-    for t in only_listed:
-        if t in core:
-            drift.append(("LISTED_BUT_NOT_DEFINED_CORE", t, "in CORE but not defined"))
-        else:
-            drift.append(
-                ("LISTED_BUT_NOT_DEFINED_ADMIN", t, "in ADMIN but not defined")
-            )
+    # Find drift
+    missing_in_registry = defined - registered
+    extra_in_registry = registered - defined
 
-    # Core/Admin tier sanity
-    for t in defined:
-        if t == "memory_maintenance":
-            continue
-        if t in core and t in admin:
-            drift.append(("DUPLICATE", t, "in both core and admin"))
-        elif t in core:
-            pass  # ok
-        elif t in admin:
-            pass  # ok
-        else:
-            # not in either — this is the bug we want to flag
-            drift.append(
-                ("UNLISTED", t, "tool exists in mcp_tools.py but is not in registry")
-            )
+    if missing_in_registry or extra_in_registry:
+        print("DRIFT DETECTED:")
+        if missing_in_registry:
+            print(f"  Tools defined in mcp_*.py but MISSING from tool_registry.py ({len(missing_in_registry)}):")
+            for t in sorted(missing_in_registry):
+                print(f"    {t}")
+        if extra_in_registry:
+            print(f"  Tools in tool_registry.py but NOT defined in mcp_*.py ({len(extra_in_registry)}):")
+            for t in sorted(extra_in_registry):
+                print(f"    {t}")
+        return 1
 
-    if not drift:
-        print(f"OK: {len(defined)} tools defined, all listed in registry.")
-        return 0
-
-    print(f"DRIFT: {len(drift)} issues between tool_registry and mcp_tools.py\n")
-    by_kind: dict[str, Any] = {}
-    for kind, name, msg in drift:
-        by_kind.setdefault(kind, []).append((name, msg))
-    for kind, items in by_kind.items():
-        print(f"--- {kind} ({len(items)}) ---")
-        for name, msg in items:
-            print(f"  {name:<45}  {msg}")
-        print()
-    return 1
+    print(f"OK: {len(defined)} tools match between mcp_*.py and tool_registry.py")
+    return 0
 
 
 if __name__ == "__main__":

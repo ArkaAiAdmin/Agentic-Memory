@@ -1,7 +1,7 @@
 name: CI
 
 # Runs on every push to main/development and every PR.
-# Checks: ruff lint, mypy typecheck, pytest, coverage gate.
+# Checks: ruff lint, mypy typecheck, pytest, coverage gate, drift checks.
 # Extended/integration tests run weekly (see extended-tests.yml).
 
 on:
@@ -42,6 +42,25 @@ jobs:
         run: mypy
         env:
           MYPYPATH: .
+
+  drift-checks:
+    name: Drift Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install deps
+        run: |
+          pip install -e ".[dev]" --quiet 2>/dev/null || pip install numpy pytest pytest-xdist mcp
+      - name: Tool registry drift check
+        run: python scripts/tool_drift_check.py
+      - name: Documentation drift check
+        run: python scripts/doc_drift_check.py
+      - name: Schema version check
+        run: python scripts/schema_version_check.py
 
   test:
     name: pytest
