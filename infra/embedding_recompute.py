@@ -8,6 +8,7 @@ api_base), triggers a full vec index rebuild.
 Usage:
     venv/bin/python embedding_recompute.py [--force] [--dry-run]
 """
+import os
 import sys
 import json
 from pathlib import Path
@@ -98,7 +99,23 @@ def check_and_rebuild(force: bool = False, dry_run: bool = False) -> dict:
     # Model changed — rebuild
     if not dry_run:
         import subprocess
-        venv_python = str(GLOBAL_MEM_DIR.parent / "venv" / "bin" / "python")
+        # 2026-06-29 fix: venv lookup chain. Hardcoded
+        # `GLOBAL_MEM_DIR.parent / "venv" / "bin" / "python"` only works
+        # on the user's local install; on CI the project lives at
+        # /home/runner/work/.../ and the venv is right next to it. Try
+        # the project-root venv, then `.venv`, then fall back to
+        # sys.executable (always works because we ARE the venv python
+        # when running inside a test).
+        from memory_config import install_root
+
+        _project_root = Path(install_root()) if not os.environ.get(
+            "MEMORY_INSTALL_ROOT"
+        ) else Path(os.environ["MEMORY_INSTALL_ROOT"])
+        venv_python = str(_project_root / "venv" / "bin" / "python")
+        if not Path(venv_python).exists():
+            venv_python = str(_project_root / ".venv" / "bin" / "python")
+        if not Path(venv_python).exists():
+            venv_python = sys.executable
         rebuild_script = str(Path(__file__).resolve().parent.parent / "rebuild_vec_index.py")
         db_path = str(GLOBAL_MEM_DIR / "memory.db")
 
