@@ -43,7 +43,8 @@ def _bootstrap_db(db_path: Path, memories: list[tuple[str, str]]) -> None:
             importance REAL,
             pinned INTEGER DEFAULT 0,
             last_accessed TEXT,
-            metadata TEXT
+            metadata TEXT,
+            access_count INTEGER DEFAULT 1
         );
         CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
             content, tags, source_file,
@@ -52,10 +53,15 @@ def _bootstrap_db(db_path: Path, memories: list[tuple[str, str]]) -> None:
         );
     """)
     for i, (mid, content) in enumerate(memories):
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO memories (id, content, source_file, tags, created_at, updated_at, observed_at) "
             "VALUES (?, ?, ?, '[]', datetime('now'), datetime('now'), datetime('now'))",
             (mid, content, f"lessons/{mid}.md"),
+        )
+        rowid = cur.lastrowid
+        conn.execute(
+            "INSERT INTO memories_fts (rowid, content, tags, source_file) VALUES (?, ?, '[]', ?)",
+            (rowid, content, f"lessons/{mid}.md")
         )
     conn.commit()
     ensure_skill_schema(conn)

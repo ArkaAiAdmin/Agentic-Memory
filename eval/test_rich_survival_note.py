@@ -27,20 +27,34 @@ import pytest
 @pytest.fixture
 def isolated_context_monitor(tmp_path, monkeypatch):
     """Redirect context_monitor to a temp SESSIONS_DIR and reset state."""
-    from context_monitor import _save_state, SESSIONS_DIR, STATE_FILE, _load_state
-    import context_monitor
+    from _fixtures import bootstrap_temp_db_clean
 
-    monkeypatch.setattr(context_monitor, "SESSIONS_DIR", tmp_path)
+    db_path = tmp_path / "memory.db"
+    bootstrap_temp_db_clean(db_path)
+
+    monkeypatch.setenv("AGENTIC_MEMORY_DIR", str(tmp_path))
+    monkeypatch.setenv("MEMORY_DB_PATH", str(db_path))
+    monkeypatch.setenv("GLOBAL_MEM_DIR", str(tmp_path))
+
+    import context_monitor
+    monkeypatch.setattr(context_monitor, "MEMORY_DIR", tmp_path)
+    monkeypatch.setattr(context_monitor, "SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr(
-        context_monitor, "STATE_FILE", tmp_path / ".context_monitor_state.json"
+        context_monitor, "STATE_FILE", tmp_path / "sessions" / ".context_monitor_state.json"
     )
+    monkeypatch.setattr(
+        context_monitor, "_STATE_LOCK_PATH", tmp_path / "sessions" / ".context_monitor_state.json.flock"
+    )
+
+    from context_monitor import _save_state, _load_state
+
     # Force a fresh session so the autosave filter window includes our seeded file
     state = _load_state()
     state["session_start_time"] = time.time() - 60  # 1 min ago
     state["last_compaction_time"] = 0  # clear dedup window
     state["tool_call_count"] = 0
     _save_state(state)
-    return tmp_path
+    return tmp_path / "sessions"
 
 
 def _seed_memory_save_autosave(

@@ -44,25 +44,31 @@ def memory_save(
     is_global: bool = False,
     importance: int = 3,
 ) -> str:
-    """Write a memory note to disk and update the FTS5 index incrementally. category is a subdirectory under memory/ (lessons, projects, decisions, preferences, sessions). is_global=True routes to ~/.config/agentic-memory/memory/.
+    """Save a memory note to persistent offline storage and update the search index.
 
-    importance: 1-5, default 3. Higher importance boosts the note in
-    recall ranking and the spaced-repetition review schedule. Values
-    are clamped to [1, 5] by save_pipeline.
+    USE THIS TOOL WHEN:
+    - You want to remember a significant lesson learned, design decision, user preference, project detail, or session summary for future interactions.
+    - You want to persist information that should span across sessions/conversations.
 
-    MCP tool wrapper around ``save_memory``. The ``safety_wiring`` kwarg
-    is intentionally NOT exposed on this MCP tool — only direct Python
-    callers can opt in to the contradiction-checked save. Existing MCP
-    callers see the same success / error envelope as before, bit-for-bit.
+    DO NOT USE THIS TOOL FOR:
+    - Storing transient conversation context (that fits in the short-term window).
 
-    .. note::
+    ARGUMENTS:
+    - content: The substantive text of the memory (markdown format is encouraged). Keep it detailed and self-contained.
+    - category: The directory where the memory will be stored. Choose from:
+        * 'lessons': general rules, coding guidelines, or lessons learned.
+        * 'decisions': architectural or technical decisions with rationale.
+        * 'projects': details about specific projects or features being built.
+        * 'preferences': user-specific preferences, constraints, or styles.
+        * 'sessions': high-level summaries of conversation threads.
+    - title_slug: A URL-friendly alphanumeric name for the file (e.g. 'setup_nextjs_auth_v2').
+    - tags: Optional list of keyword tags for search indexing.
+    - pinned: If True, locks the memory to the 'hot' tier (preventing automatic decay/archival). Use only for critical, permanent rules/context.
+    - is_global: If True, saves to the global configuration memory path (available to all workspaces). If False, saves to the workspace-specific local memory.
+    - importance: Integer 1-5 (default 3) indicating importance level. Higher levels boost ranking and slow down decay.
 
-       Expensive operations (embedding, KG entity extraction, fact
-       extraction, context enrichment, contradiction check) are
-       **deferred** to the background worker when called through the
-       MCP tool.  The background worker processes them asynchronously,
-       so the MCP call returns in <200ms and never times out.
-       The main DB row and .md file are written synchronously.
+    RETURNS:
+    A status string indicating whether the write succeeded and the path of the saved memory file.
     """
     if len(content) > 100_000:
         return f"Error: content exceeds 100,000 character limit ({len(content)} chars)"
@@ -96,12 +102,19 @@ def memory_save(
 @mcp.tool()
 @with_audit("memory_supersede")
 def memory_supersede(old_id: str, new_id: str, valid_to: Optional[str] = None) -> str:
-    """Mark an existing memory note as superseded by a newer one.
+    """Mark an existing memory note as outdated and superseded by a newer memory.
 
-    Sets the old note's `valid_to` to the current time (or a provided ISO
-    timestamp) and its `superseded_by` to the new note's id. After this call,
-    the old note is excluded from `memory_search` results by default
-    (include_invalid=False). The new note is unaffected.
+    USE THIS TOOL WHEN:
+    - You are updating/replacing a previous memory note (e.g. updating a project design or user preference).
+    - You want to ensure the old memory is excluded from searches by default, but preserved in the historical timeline.
+
+    ARGUMENTS:
+    - old_id: The ID (category/title_slug) of the old memory to supersede (e.g. 'preferences/editor_font_size').
+    - new_id: The ID (category/title_slug) of the new memory replacing it (e.g. 'preferences/editor_font_size_v2').
+    - valid_to: Optional ISO 8601 string (e.g. '2026-06-29T12:00:00Z'). Defaults to current time if not provided.
+
+    RETURNS:
+    A status string indicating whether the supersession was recorded successfully.
     """
     active_dir = _resolve_memory_dir()
     if os.environ.get("MEMORY_DB_PATH"):
@@ -380,7 +393,20 @@ def memory_reinforce(memory_ids: list, success: bool) -> str:
 @mcp.tool()
 @with_audit("memory_delete")
 def memory_delete(note_id: str, hard: bool = False) -> str:
-    """Soft-delete a memory by note_id. With hard=True, immediately purges."""
+    """Soft-delete or hard-purge a memory note by ID.
+
+    USE THIS TOOL WHEN:
+    - You want to delete a memory that is incorrect, outdated, or no longer needed.
+    - Soft-delete (default) keeps the note in a recycle bin (trash) for 30 days before permanent deletion, enabling restoration.
+    - Hard-purge (hard=True) deletes it from the disk and database immediately and irreversibly.
+
+    ARGUMENTS:
+    - note_id: The ID of the memory note to delete (e.g. 'lessons/old_rules_v1').
+    - hard: If True, executes an immediate hard-delete. Default is False.
+
+    RETURNS:
+    A status string indicating whether the deletion succeeded.
+    """
     try:
         from memory_delete import soft_delete_note, hard_delete_note
 
@@ -419,7 +445,18 @@ def memory_delete(note_id: str, hard: bool = False) -> str:
 @mcp.tool()
 @with_audit("memory_restore")
 def memory_restore(note_id: str) -> str:
-    """Restore a soft-deleted memory by note_id. Within the 30-day window."""
+    """Restore a soft-deleted memory note from the trash.
+
+    USE THIS TOOL WHEN:
+    - You accidentally soft-deleted a memory note and want to recover it.
+    - Soft-deleted notes remain in the trash for up to 30 days before they are purged forever.
+
+    ARGUMENTS:
+    - note_id: The ID of the soft-deleted memory note to restore (e.g. 'lessons/old_rules_v1').
+
+    RETURNS:
+    A status string indicating whether the note was successfully restored.
+    """
     try:
         from memory_delete import restore_note
 

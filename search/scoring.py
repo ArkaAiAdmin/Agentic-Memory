@@ -180,27 +180,10 @@ def _temporal_decay_factor(
     )
 
 
-def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
-    """Apply neural-forget-curve surprise-based re-ranking.
-
-    B19 fix: the original temporal decay is purely time-based. The
-    neural-forget curve adds a *surprise* term — how unexpected this
-    note was for the current query — so notes that the user has
-    recently accessed for *similar* queries decay less than notes
-    that were last accessed for unrelated queries.
-
-    This is a lightweight proxy: it uses Jaccard distance between
-    the current query and the last-accessed query (from
-    adaptive_retention) as the surprise signal. When surprise is
-    high (low overlap), the note is "forgotten faster."
-
-    P1-10 fix (2026-06-24): replaced the N+1 pattern (``_galq(note_id)``
-    called once per result) with a single batch call
-    (``get_last_access_queries_batch``) that resolves all note_ids in
-    one query against ``memory_audit_log``.
-
-    Best-effort: failures degrade to no-op.
-    """
+def _apply_neural_forget_curve(
+    scored_results: list, query: str, decay_weight: float = 0.15
+) -> list:
+    """Apply surprise-based neural forgetting curve using NeuralForgetModel."""
     try:
         from adaptive_retention import get_last_access_queries_batch
     except ImportError:
@@ -208,18 +191,15 @@ def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
 
     if not scored_results or not query:
         return scored_results
+
     try:
-        q_tokens = set(query.lower().split())
-    except Exception:
-        logger.warning("Failed to tokenize query for surprise scoring")
-        return scored_results
-    if not q_tokens:
+        from neural_forget import compute_retention_rate, surprise_score
+    except ImportError:
         return scored_results
 
-    # P1-10 fix: batch-collect all note_ids and resolve last-access
-    # queries in a single DB round trip instead of one query per row.
     note_ids = [r[0] for r in scored_results if r and r[0]]
     last_queries = get_last_access_queries_batch(note_ids)
+    now_ts = time.time()
 
     modified = []
     for r in scored_results:
@@ -227,27 +207,7 @@ def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
         if not note_id:
             modified.append(r)
             continue
-        last_q = last_queries.get(note_id)
-        if not last_q:
-            modified.append(r)
-            continue
-        try:
-            last_tokens = set(last_q.lower().split())
-        except Exception:
-            logger.warning("Failed to tokenize last query for surprise scoring")
-            modified.append(r)
-            continue
-        if not last_tokens:
-            modified.append(r)
-            continue
-        inter = len(q_tokens & last_tokens)
-        union = len(q_tokens | last_tokens)
-        jaccard = inter / union if union > 0 else 0.0
-        # surprise = 1 - jaccard (high surprise = low overlap)
-        surprise = 1.0 - jaccard
-        # Apply gentle surprise penalty (capped at 10% to avoid
-        # overriding relevance signals)
-        penalty = 1.0 - 0.1 * surprise
+
         try:
             (
                 note_id_r,
@@ -257,19 +217,56 @@ def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
                 created,
                 rank,
                 final_score,
-                fitness,
-                importance,
+                fitness_score,
+                importance_val,
                 pinned,
             ) = r[:10]
             last_accessed = r[10] if len(r) > 10 else None
-            adjusted = final_score * penalty
-            new_r = list(r)
-            if len(new_r) >= 7:
-                new_r[6] = adjusted
-            modified.append(tuple(new_r))
+            metadata_json = r[11] if len(r) > 11 else None
+            access_count = r[12] if len(r) > 12 else 1
         except Exception:
-            logger.warning("Failed to apply surprise penalty to result")
+            logger.warning("Failed to unpack result row for neural forget curve")
             modified.append(r)
+            continue
+
+        # Compute query surprise
+        q_surprise = surprise_score(content or "", query)
+
+        # Calculate recency_days
+        recency_days = 0.0
+        if last_accessed:
+            try:
+                la_ts = datetime.fromisoformat(last_accessed).timestamp()
+                recency_days = max(0.0, (now_ts - la_ts) / 86400.0)
+            except (ValueError, TypeError):
+                if created:
+                    try:
+                        c_ts = datetime.fromisoformat(created).timestamp()
+                        recency_days = max(0.0, (now_ts - c_ts) / 86400.0)
+                    except (ValueError, TypeError):
+                        pass
+
+        # Compute retention rate using trained/formula weights
+        try:
+            retention = compute_retention_rate(
+                content=content or "",
+                access_count=access_count,
+                recency_days=recency_days,
+                fitness=fitness_score,
+                importance=importance_val,
+                query_surprise=q_surprise,
+            )
+        except Exception as e:
+            logger.warning("compute_retention_rate failed: %s", e)
+            retention = 1.0
+
+        # Adjust score using the retention rate
+        adjusted = final_score * (1.0 - decay_weight + decay_weight * retention)
+        new_r = list(r)
+        if len(new_r) >= 7:
+            new_r[6] = adjusted
+        modified.append(tuple(new_r))
+
     return modified
 
 
@@ -561,7 +558,7 @@ class TemporalAttentionModel:
 
     # Expected weight count: W_readout(HIDDEN_DIM) + b_readout(1)
     #                        + W_input(HIDDEN_DIM * INPUT_DIM) + b_input(1)
-    _EXPECTED_WEIGHTS = 2 * _HIDDEN_DIM + _INPUT_DIM + 2
+    _EXPECTED_WEIGHTS = _HIDDEN_DIM + 1 + _HIDDEN_DIM * _INPUT_DIM + 1
 
     def __init__(self, weights: np.ndarray | None = None) -> None:
         self._hidden: dict[str, np.ndarray] = {}
@@ -639,7 +636,7 @@ class TemporalAttentionModel:
         try:
             parts = [float(x) for x in raw.split(",")]
             arr = np.array(parts)
-            expected = 2 * _HIDDEN_DIM + 2  # W_readout + b_readout + W_input + b_input
+            expected = cls._EXPECTED_WEIGHTS
             if arr.shape == (expected,):
                 return cls(arr)
         except Exception:

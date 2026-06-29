@@ -87,33 +87,11 @@ def memory_heartbeat(conn, dry_run: bool = False) -> str:
 def memory_incremental_update(
     memory_id: str, new_content: str, old_state: Optional[list] = None
 ) -> str:
-    """Compute an SSM-encoder update for a memory whose content changed.
+    """[DEPRECATED] Compute an SSM-encoder update for a memory whose content changed.
 
-    Fast path: when a memory is updated, the new SSM state is the
-    previous state extended with the new text — no need to re-encode
-    the entire document. The main model2vec / sentence-transformers
-    embedding is still produced by the standard save pipeline; this
-    tool exposes the SSM side-channel for testing and manual use.
-
-    Args:
-        memory_id: The memory being updated (used for cache-key only).
-        new_content: The new content to encode (or the delta if old_state is given).
-        old_state: Previous SSM state, or None for a fresh encode.
+    This tool is deprecated. SSM v1 has been removed as a dead end; the new Temporal SSM v2 lives in search/scoring.py and runs automatically during search.
     """
-    try:
-        from embedding_incremental import incremental_embed_update
-
-        state = incremental_embed_update(memory_id, new_content, old_state=old_state)
-        return json.dumps(
-            {
-                "memory_id": memory_id,
-                "dim": len(state),
-                "state": [round(float(x), 6) for x in state[:8]] + ["..."],
-            }
-        )
-    except Exception as e:
-        logger.exception("in memory_incremental_update")
-        return _err(ErrorCode.DB_ERROR, f"in memory_incremental_update: {e}")
+    return "memory_incremental_update is deprecated. SSM v1 has been removed as a dead end; the new Temporal SSM v2 lives in search/scoring.py and runs automatically during search."
 
 
 
@@ -789,6 +767,17 @@ class MaintenanceOp(str, Enum):
     GRAPH_TRAVERSE = "graph_traverse"
     RECONCILE_AUDIT = "reconcile_audit"
     TRAIN_FORGET_MODEL = "train_forget_model"
+    SEMANTIC_SEARCH = "semantic_search"
+    FACTS_SEARCH = "facts_search"
+    GRAPH_SEARCH = "graph_search"
+    RECALL_CONTEXT = "recall_context"
+    THREAD_CONTEXT = "thread_context"
+    LIST_THREADS = "list_threads"
+    RESOLVE_THREAD = "resolve_thread"
+    USER_PROFILE = "user_profile"
+    CHECK_CONTRADICTIONS = "check_contradictions"
+    SCAN_INJECTION = "scan_injection"
+    PROFILE_ACCESS = "profile_access"
 
     @classmethod
     def all_values(cls) -> list[str]:
@@ -807,11 +796,17 @@ def memory_maintenance(
     operation: str,
     **kwargs: Any,
 ) -> str:
-    """Run an admin maintenance operation.
+    """Run an administrative or maintenance operation on the memory system.
 
-    Consolidated entry point for all administrative memory operations.
-    Instead of 37 individual tools, the agent calls this single tool
-    with ``operation="<name>"`` and any params the operation needs.
+    USE THIS TOOL WHEN:
+    - You need to perform system administration, diagnostics, index compacting, sync, or custom statistics checks.
+    - This is the single entry point for all administrative, routing, and specialized metadata operations.
+
+    ARGUMENTS:
+    - operation: The name of the operation to run (case-insensitive).
+    - kwargs: Key-value arguments specific to the chosen operation.
+
+    **List of supported operations:**
 
     **Common operations (no extra params):**
       ``tier_stats``, ``audit``, ``consolidate``, ``rewrite_links``,
@@ -878,8 +873,8 @@ def memory_maintenance(
         ``graph_traverse``     start, edge_patterns
 
     Per-operation validation is delegated to the handler — each
-    operation extracts only the kwargs it needs.  Unknown kwargs are
-    silently ignored (the handler lambdas use ``**_`` catch-all).
+    operation extracts only the kwargs it needs. Unknown kwargs are
+    silently ignored.
     """
     unknown = {
         k: f"<{type(v).__name__}>" for k, v in kwargs.items() if not k.startswith("_")

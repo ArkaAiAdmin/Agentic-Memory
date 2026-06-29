@@ -260,6 +260,13 @@ run("D1: wikilinks create backlinks", test_D1_wikilinks_create_backlinks, ["A1"]
 
 
 def test_D2_backlink_cascade_delete():
+    # Ensure test-spacex exists so we can delete it
+    sp.save_memory(
+        content="Elon Musk founded SpaceX in 2002. SpaceX launches rockets.",
+        title_slug="test-spacex",
+        category="test",
+        db_path=TEST_DB,
+    )
     # Delete the target, backlinks should be cleaned up
     # hard_delete requires soft-delete first
     md.soft_delete_note(TEST_DB, "test/test-spacex")

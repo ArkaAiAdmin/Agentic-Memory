@@ -32,7 +32,21 @@ from mcp_instance import mcp
 @mcp.tool()
 @with_audit("memory_rebuild")
 def memory_rebuild(scope: str = "active") -> str:
-    """Rebuild the FTS5 index."""
+    """Rebuild the SQLite FTS5 (full-text search) index from the source markdown files.
+
+    USE THIS TOOL WHEN:
+    - You suspect the SQLite search index is desynchronized, corrupted, or missing.
+    - You manually edited the source markdown files on the local filesystem and want to sync the SQLite index.
+
+    ARGUMENTS:
+    - scope: The target scope for the rebuild. Choose from:
+        * 'active': The active memory directory (default).
+        * 'local': The workspace-specific local memory.
+        * 'global': The global user memory configuration directory.
+
+    RETURNS:
+    A status string indicating whether the rebuild succeeded.
+    """
     active_dir = _resolve_memory_dir()
     if os.environ.get("MEMORY_DB_PATH"):
         local_mem = active_dir

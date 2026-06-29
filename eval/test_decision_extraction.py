@@ -217,7 +217,7 @@ _SKIP_LLM = _os.environ.get("MEMORY_SESSION_DECISION_LLM") != "1"
 )
 class TestLLMEnrichment:
     def test_enrich_returns_candidates(self):
-        from decision_extraction import _enrich_candidates_with_llm, DecisionCandidate
+        from save.decision_extraction import _enrich_candidates_with_llm, DecisionCandidate
 
         cands = [
             DecisionCandidate(
@@ -234,7 +234,7 @@ class TestLLMEnrichment:
         assert any(c.title for c in result)
 
     def test_enrich_does_not_fail_on_missing_llm(self):
-        from decision_extraction import _enrich_candidates_with_llm, DecisionCandidate
+        from save.decision_extraction import _enrich_candidates_with_llm, DecisionCandidate
 
         cands = [
             DecisionCandidate(
@@ -248,7 +248,7 @@ class TestLLMEnrichment:
         assert isinstance(result, list)
 
     def test_enrich_empty_candidates_returns_empty(self):
-        from decision_extraction import _enrich_candidates_with_llm
+        from save.decision_extraction import _enrich_candidates_with_llm
 
         result = _enrich_candidates_with_llm([], "some content")
         assert result == []

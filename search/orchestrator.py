@@ -62,6 +62,7 @@ from search.scoring import (
     _strong_match_float,
     _compute_final_score,
     compute_channel_weights,
+    _sp_lazy,
 )
 from search.synthesis import (
     _bb1_synthesize,
@@ -120,7 +121,7 @@ def _fetch_rows_by_ids(
     db: sqlite3.Connection,
     ids: list,
     table: str = "memories",
-    columns: str = "id, content, source_file, tags, created_at, fitness_score, importance, pinned, last_accessed, metadata",
+    columns: str = "id, content, source_file, tags, created_at, fitness_score, importance, pinned, last_accessed, metadata, access_count",
     extra_filter: str = "",
 ) -> dict:
     """Batch-fetch rows by IDs to avoid N+1 queries. Returns {id: row_tuple}.
@@ -735,7 +736,7 @@ def _fts_search(
     if has_fitness:
         return db.execute(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
-            "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata\n"
+            "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count\n"
             "          FROM memories_fts fts\n"
             "          JOIN memories m ON m.rowid = fts.rowid\n"
             f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{repo_filter}\n"
@@ -745,7 +746,7 @@ def _fts_search(
         ).fetchall()
     return db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
-        "             NULL, NULL, NULL, m.last_accessed, m.metadata\n"
+        "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count\n"
         "      FROM memories_fts fts\n"
         "      JOIN memories m ON m.rowid = fts.rowid\n"
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{repo_filter}\n"
@@ -968,6 +969,7 @@ def _enhance_with_chunks(
             ) = row[:8]
             last_accessed = row[8] if len(row) > 8 else None
             metadata_json = row[9] if len(row) > 9 else None
+            access_count = row[10] if len(row) > 10 else 1
             boost = 1.0 + (chunk_count - 1) * 0.1 if chunk_count > 1 else 1.0
             results.append(
                 (
@@ -982,6 +984,7 @@ def _enhance_with_chunks(
                     pinned,
                     last_accessed,
                     metadata_json,
+                    access_count,
                 )
             )
             seen_ids.add(parent_id)
@@ -1128,6 +1131,7 @@ def _rerank_results(
         for r in results:
             last_accessed_col = r[9] if len(r) > 9 else None
             metadata_json = r[10] if len(r) > 10 else None
+            access_count = r[11] if len(r) > 11 else 1
             out.append(
                 (
                     r[0],
@@ -1142,8 +1146,11 @@ def _rerank_results(
                     None,
                     last_accessed_col,
                     metadata_json,
+                    access_count,
                 )
             )
+        if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
+            return _apply_neural_forget_curve(out, query), None
         return _apply_temporal_decay(out), None
 
     _qtype = _detect_query_type(query)
@@ -1166,6 +1173,7 @@ def _rerank_results(
         ) = r[:9]
         last_accessed = r[9] if len(r) > 9 else None
         metadata_json = r[10] if len(r) > 10 else None
+        access_count = r[11] if len(r) > 11 else 1
         final_score = _compute_final_score(
             ScoreContext(
                 rank=rank,
@@ -1196,6 +1204,7 @@ def _rerank_results(
                 pinned,
                 last_accessed,
                 metadata_json,
+                access_count,
             )
         )
 
@@ -1207,7 +1216,10 @@ def _rerank_results(
         deep_rerank=deep_rerank,
     )
     out = _apply_late_interaction_rerank(query, out, top_k=min(len(out), limit * 2))
-    out = _apply_temporal_decay(out)
+    if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
+        out = _apply_neural_forget_curve(out, query)
+    else:
+        out = _apply_temporal_decay(out)
     return out[:limit], _qweights
 
 
