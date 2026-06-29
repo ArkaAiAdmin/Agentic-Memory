@@ -91,11 +91,11 @@ save_memory = save_memory
 
 # Backward-compat re-exports of all MCP tool functions.
 # Tests and external code import tool callables directly from memory_mcp.
-from mcp_audit import (  # noqa: E402
+from mcp_audit import (  # noqa: E402,F401
     memory_audit,
     memory_audit_query,
 )
-from mcp_memory import (  # noqa: E402
+from mcp_memory import (  # noqa: E402,F401
     memory_auto_save_hook,
     memory_auto_save_status,
     memory_daily_digest,
@@ -107,27 +107,27 @@ from mcp_memory import (  # noqa: E402
     memory_supersede,
     memory_trash,
 )
-from mcp_maintenance import (  # noqa: E402
+from mcp_maintenance import (  # noqa: E402,F401
     memory_detect_contradictions,
     memory_pinned_decay_check,
     memory_review_schedule,
 )
-from mcp_search import (  # noqa: E402
+from mcp_search import (  # noqa: E402,F401
     memory_search,
 )
-from mcp_rebuild import (  # noqa: E402
+from mcp_rebuild import (  # noqa: E402,F401
     memory_compact,
 )
-from mcp_summarization import (  # noqa: E402
+from mcp_summarization import (  # noqa: E402,F401
     memory_summarize,
 )
-from mcp_retention import (  # noqa: E402
+from mcp_retention import (  # noqa: E402,F401
     memory_adaptive_retention,
 )
 
 # Backward-compat re-exports of internal search helpers.
 # Tests and external code access these directly from memory_mcp.
-from search.query_parser import (  # noqa: E402
+from search.query_parser import (  # noqa: E402,F401
     _did_you_mean,
     _expand_query,
     _top_recent_tags,
@@ -138,7 +138,7 @@ from search.query_parser import (  # noqa: E402
     _weights_for_query_type,
     _graph_rag_expand,
 )
-from search.synthesis import (  # noqa: E402
+from search.synthesis import (  # noqa: E402,F401
     _bb1_split_sentences,
     _bb1_synthesize,
     _BB1_SENT_SPLIT,
@@ -156,7 +156,7 @@ from search.synthesis import (  # noqa: E402
     _BB2_REF_PHRASES,
     _BB2_STOPWORDS,
 )
-from search.scoring import (  # noqa: E402
+from search.scoring import (  # noqa: E402,F401
     _reciprocal_rank_fusion,
     _RERANK_WEIGHTS,
     _temporal_decay_factor,
@@ -165,7 +165,7 @@ from search.scoring import (  # noqa: E402
     _strong_match_float,
     _compute_final_score,
 )
-from search.rerankers import (  # noqa: E402
+from search.rerankers import (  # noqa: E402,F401
     _tokenize_for_ce,
     _cross_encoder_score,
     _apply_cross_encoder_rerank,
@@ -177,7 +177,7 @@ from search.rerankers import (  # noqa: E402
     _CROSS_ENCODER_BLEND,
     _LATE_INTERACTION_BLEND,
 )
-from search.chunk_index import (  # noqa: E402
+from search.chunk_index import (  # noqa: E402,F401
     _qw5_extract_keywords,
     _qw5_keyword_similarity,
     _qw5_is_topic_boundary,
@@ -194,18 +194,18 @@ from search.chunk_index import (  # noqa: E402
     _QW5_CHUNKS_SCHEMA_SQL,
     _QW5_CHUNKS_TRIGGERS_SQL,
 )
-from search.orchestrator import (  # noqa: E402
+from search.orchestrator import (  # noqa: E402,F401
     _merge_chunk_hits,
     _fallback_embedding_search,
 )
-from infra.infrastructure import with_audit  # noqa: E402
-from memory_common import safe_close_db  # noqa: E402
+from infra.infrastructure import with_audit  # noqa: E402,F401
+from memory_common import safe_close_db  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------------
 # Feature D: Async Pipeline (extracted to mcp_async.py)
 # ---------------------------------------------------------------------
-from mcp_async import (  # noqa: E402
+from mcp_async import (  # noqa: E402,F401
     async_memory_save,
     async_memory_search,
     async_memory_save_batch,

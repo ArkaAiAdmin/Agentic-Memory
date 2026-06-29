@@ -34,7 +34,6 @@ import json
 import logging
 import os
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
