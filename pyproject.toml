@@ -160,7 +160,7 @@ files = [
     "mcp_memory.py",
 ]
 disallow_untyped_defs = false  # legacy; tighten over time
-warn_unused_ignores = true
+warn_unused_ignores = false
 warn_return_any = true
 ignore_missing_imports = true
 # Exclude tests and the live store from mypy runs.

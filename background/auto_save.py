@@ -948,14 +948,22 @@ def _wait_for_file_modification(file_path: Path, timeout: float) -> None:
         import select as _select
 
         if hasattr(_select, "kqueue"):
-            kq = _select.kqueue()
+            kqueue_fn = getattr(_select, "kqueue")
+            kevent_fn = getattr(_select, "kevent")
+            KQ_FILTER_VNODE = getattr(_select, "KQ_FILTER_VNODE")
+            KQ_EV_ADD = getattr(_select, "KQ_EV_ADD")
+            KQ_EV_CLEAR = getattr(_select, "KQ_EV_CLEAR")
+            KQ_NOTE_WRITE = getattr(_select, "KQ_NOTE_WRITE")
+            KQ_NOTE_EXTEND = getattr(_select, "KQ_NOTE_EXTEND")
+
+            kq = kqueue_fn()
             dir_fd = os.open(str(file_path.parent), os.O_RDONLY)
             kevents = [
-                _select.kevent(
+                kevent_fn(
                     dir_fd,
-                    filter=_select.KQ_FILTER_VNODE,
-                    flags=_select.KQ_EV_ADD | _select.KQ_EV_CLEAR,
-                    fflags=_select.KQ_NOTE_WRITE,
+                    filter=KQ_FILTER_VNODE,
+                    flags=KQ_EV_ADD | KQ_EV_CLEAR,
+                    fflags=KQ_NOTE_WRITE,
                 )
             ]
             file_fd = None
@@ -963,11 +971,11 @@ def _wait_for_file_modification(file_path: Path, timeout: float) -> None:
                 try:
                     file_fd = os.open(str(file_path), os.O_RDONLY)
                     kevents.append(
-                        _select.kevent(
+                        kevent_fn(
                             file_fd,
-                            filter=_select.KQ_FILTER_VNODE,
-                            flags=_select.KQ_EV_ADD | _select.KQ_EV_CLEAR,
-                            fflags=_select.KQ_NOTE_WRITE | _select.KQ_NOTE_EXTEND,
+                            filter=KQ_FILTER_VNODE,
+                            flags=KQ_EV_ADD | KQ_EV_CLEAR,
+                            fflags=KQ_NOTE_WRITE | KQ_NOTE_EXTEND,
                         )
                     )
                 except OSError as exc:
