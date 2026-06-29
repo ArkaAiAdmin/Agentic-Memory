@@ -74,7 +74,7 @@ jobs:
           # --durations=10 surfaces slow tests in the CI log for investigation.
           python -m pytest eval/ \
             --tb=short -q \
-            -n auto \
+            -n 2 \
             --dist=loadfile \
             --cov \
             --cov-report=xml \
