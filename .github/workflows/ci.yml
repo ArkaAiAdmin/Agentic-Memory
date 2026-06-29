@@ -66,14 +66,17 @@ jobs:
           MEMORY_EMBEDDINGS: "0"
         run: |
           . venv/bin/activate
-          # 2026-06-29: --dist=loadfile keeps tests from the same file
-          # in the same xdist worker. Several test files (test_adversarial_e2e,
-          # test_cron_behavior, test_integration_edge_cases) mutate shared
-          # global state in setUpClass/setUp and spawn subprocesses; running
-          # them in one worker prevents cross-worker race conditions.
+          # 2026-06-29: ubuntu-latest has 2 cores; -n 5 causes workers to be
+          # OOM-killed or SIGTERM'd by the runner, producing xdist 'untrusted'
+          # nodes and pytest-xdist 'node down: Not properly terminated' errors.
+          # -n auto lets xdist pick a sensible worker count for the environment.
+          # --timeout=60 kills any hung test per-worker so the job finishes.
+          # --durations=10 surfaces slow tests in the CI log for investigation.
           python -m pytest eval/ \
             --tb=short -q \
-            -n 5 \
+            --timeout=60 \
+            --durations=10 \
+            -n auto \
             --dist=loadfile \
             --cov \
             --cov-report=xml \
