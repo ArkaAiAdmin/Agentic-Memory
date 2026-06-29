@@ -191,7 +191,8 @@ def _tool_complete_inner(
     tool: str, params: str, result_preview: str, ts: Optional[str], conn=None
 ) -> dict:
 
-    from background.auto_save import _resolve_allowlist, _resolve_denylist, _tool_name_matches, _scan_content_for_injection, _now_iso, _slugify, _get_sessions_dir, atomic_write, _resolve_tags, _upsert_memory, _params_max, _preview_max, _truncate  # noqa: E402
+    from background.auto_save import _resolve_allowlist, _resolve_denylist, _tool_name_matches, _scan_content_for_injection, _now_iso, _slugify, _get_sessions_dir, atomic_write, _resolve_tags, _upsert_memory, _truncate  # noqa: E402
+    from background.config import _params_max, _preview_max  # noqa: E402
     """The original tool_complete body, factored out so retry can wrap it.
 
     Performs the file write + DB upsert. Returns the save result dict,

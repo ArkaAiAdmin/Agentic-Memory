@@ -102,6 +102,28 @@ from background.circuit_breaker import (
     _load_circuit_state_from_audit,
 )
 
+# Phase 4: config and tool-policy helpers moved to background/config.py.
+from background.config import (
+    _batch_interval,
+    _daemon_idle_seconds,
+    _preview_max,
+    _params_max,
+    _health_check_minutes,
+    _resolve_denylist,
+    _resolve_allowlist,
+    _tool_name_matches,
+    DEFAULT_TOOL_ALLOWLIST,
+    DEFAULT_TOOL_DENYLIST,
+    _DEFAULT_BATCH_INTERVAL_S,
+    _DEFAULT_BATCH_SIZE,
+    _DEFAULT_DAEMON_IDLE_S,
+    _DEFAULT_PREVIEW_MAX,
+    _DEFAULT_PARAMS_MAX,
+    _DEFAULT_HEALTH_CHECK_MINUTES,
+    _DEFAULT_ASYNC_AUTOSAVE,
+)
+
+
 
 # H1 fix: hook path now invalidates the search cache so the canonical-path
 # safety contract (every save clears _search_cache) is upheld here too.
@@ -141,211 +163,6 @@ def _log_structured(level: str, event: str, **fields: Any) -> None:
 from memory_config import GLOBAL_MEM_DIR
 
 ARCHIVE_DIR_NAME = "archive"
-
-# Fallback constants for when config is not available
-_DEFAULT_BATCH_INTERVAL_S = 0.5  # 500ms
-_DEFAULT_BATCH_SIZE = 50
-_DEFAULT_DAEMON_IDLE_S = 300  # 5 min — exit quickly after inactivity to avoid accumulating stale daemons
-_DEFAULT_INBOX_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
-_DEFAULT_PREVIEW_MAX = 200
-_DEFAULT_PARAMS_MAX = 2000
-_DEFAULT_ASYNC_AUTOSAVE = True
-_DEFAULT_HEALTH_CHECK_MINUTES = 5
-
-AUTO_SAVE_INBOX_FILENAME = ".auto_save_inbox.jsonl"
-AUTO_SAVE_PID_FILENAME = ".auto_save_daemon.pid"
-AUTO_SAVE_LOCK_FILENAME = ".auto_save_daemon.lock"
-AUTO_SAVE_MANIFEST_FILENAME = ".auto_save_daemon_manifest.json"
-
-
-def _batch_interval() -> float:
-    from _lazy_imports import get_config
-
-    return getattr(
-        get_config(), "auto_save_batch_interval_seconds", _DEFAULT_BATCH_INTERVAL_S
-    )
-
-
-def _daemon_idle_seconds() -> int:
-    from _lazy_imports import get_config
-
-    return getattr(
-        get_config(), "auto_save_daemon_idle_seconds", _DEFAULT_DAEMON_IDLE_S
-    )
-
-
-def _preview_max() -> int:
-    from _lazy_imports import get_config
-
-    return getattr(get_config(), "auto_save_preview_max", _DEFAULT_PREVIEW_MAX)
-
-
-def _params_max() -> int:
-    from _lazy_imports import get_config
-
-    return getattr(get_config(), "auto_save_params_max", _DEFAULT_PARAMS_MAX)
-
-
-def _health_check_minutes() -> int:
-    from _lazy_imports import get_config
-
-    return getattr(
-        get_config(), "auto_save_health_check_minutes", _DEFAULT_HEALTH_CHECK_MINUTES
-    )
-
-
-# 2026-06-15: tool-call denylist for the auto-save hook.
-# These tools fire constantly during normal agent operation but the resulting
-# auto-* notes are pure tool-call co-occurrences that add no semantic value
-# (they show up in the KG as the highest-edge entities and dominate the index
-# without surfacing in any useful search). Override with
-# ``AUTO_SAVE_TOOL_DENYLIST`` (comma-separated). Set to ``""`` to disable.
-# Note: the user's *intentional* memory_save calls are NOT in this list —
-# they pass the explicit save path, not this hook.
-# 2026-06-22: allow-list for the auto-save hook.
-# Only tools on this list get auto-saved. Everything else is silently
-# skipped. This replaces the old denylist approach — instead of
-# blocking specific noisy tools, we only save tools that produce
-# lasting knowledge. Override with ``AUTO_SAVE_TOOL_ALLOWLIST``
-# (comma-separated). Set to ``"*"`` to allow all tools (denylist-only mode).
-DEFAULT_TOOL_ALLOWLIST = frozenset(
-    {
-        # Explicit save operations (user intent)
-        "memory_save",
-        "memory_supersede",
-        "memory_delete",
-        "memory_reinforce",
-        # Task tracking
-        "todowrite",
-        # Subagent task results
-        "task",
-        # User decisions / questions
-        "question",
-        # File reads (content-bearing — must be saved)
-        "read",
-        "filesystem_read_file",
-        "filesystem_read_text_file",
-        "filesystem_read_multiple_files",
-        # File writes (code/content creation)
-        "write",
-        "edit",
-        # File discovery (content-bearing results)
-        "glob",
-        "grep",
-        "search_files",
-        "filesystem_search_files",
-        # Commands / shell actions (git commits, pytest runs, etc.)
-        "bash",
-        "run_command",
-        # Memory search and retrieval
-        "memory_search",
-        "memory_read_graph",
-        # KG tools (repo-native + Omega skill)
-        "memory_graph_search",
-        "memory_graph_stats",
-        "memory_graph_shortest_path",
-        "memory_graph_traverse",
-        "memory_temporal_query",
-        "memory_temporal_contradictions",
-        "memory_create_entities",
-        "memory_add_observations",
-        "memory_search_nodes",
-        "memory_open_nodes",
-        "memory_create_relations",
-        "memory_delete_relations",
-    }
-)
-
-DEFAULT_TOOL_DENYLIST = frozenset(
-    {
-        # filesystem navigation — pure metadata, no content
-        "filesystem_list_allowed_directories",
-        "filesystem_list_directory",
-        "filesystem_directory_tree",
-        "filesystem_read_multiple_files",
-        "filesystem_search_files",
-        "filesystem_get_file_info",
-        "filesystem_list_directory_with_sizes",
-        # session lifecycle tools
-        "memory_session_start",
-        "memory_user_profile",
-        "memory_recall_context",
-        "memory_profile_access",
-        "memory_record_ctr_feedback",
-        "memory_check_concept_drift",
-        # internal agent plumbing
-        "todo",
-        "process",
-        "read_terminal",
-    }
-)
-
-
-def _tool_name_matches(name: str, candidates: frozenset) -> bool:
-    """Check if ``name`` matches any entry in ``candidates``.
-
-    MCP tools are namespaced as ``<server>_<tool>`` (e.g.
-    ``agentic-memory_memory_save``) while the allowlist/denylist uses
-    bare tool names. This helper matches both forms."""
-    if name in candidates:
-        return True
-    if "_" in name:
-        unprefixed = name.split("_", 1)[1]
-        if unprefixed in candidates:
-            return True
-    return False
-
-
-def _resolve_denylist() -> frozenset:
-    """Return the active tool denylist, honoring env/TOML override."""
-    # Priority: env var > TOML config > default
-    override = os.environ.get("AUTO_SAVE_TOOL_DENYLIST", "").strip()
-    if override == "":
-        if "AUTO_SAVE_TOOL_DENYLIST" in os.environ:
-            return frozenset()
-        # Fall back to TOML config
-        try:
-            from _lazy_imports import get_config
-
-            cfg = get_config()
-            toml_denylist = getattr(cfg, "auto_save_denylist", "")
-            if toml_denylist:
-                return frozenset(
-                    t.strip() for t in toml_denylist.split(",") if t.strip()
-                )
-        except Exception:
-            pass
-        return DEFAULT_TOOL_DENYLIST
-    if override.lower() in {"0", "false", "off", "disable", "disabled"}:
-        return frozenset()
-    return frozenset(t.strip() for t in override.split(",") if t.strip())
-
-
-def _resolve_allowlist() -> frozenset | None:
-    """Return the active tool allow-list, or None if all tools are allowed.
-
-    Priority: env var > TOML config > default.
-    Set to ``"*"`` to allow all tools (fall back to denylist-only).
-
-    NOTE: allowlist takes precedence over denylist. When the allowlist
-    is set (default), the denylist is never reached."""
-    override = os.environ.get("AUTO_SAVE_TOOL_ALLOWLIST", "").strip()
-    if override == "*":
-        return None
-    if override:
-        return frozenset(t.strip() for t in override.split(",") if t.strip())
-    # Fall back to TOML config
-    try:
-        from _lazy_imports import get_config
-
-        cfg = get_config()
-        toml_allowlist = getattr(cfg, "auto_save_allowlist", "")
-        if toml_allowlist:
-            return frozenset(t.strip() for t in toml_allowlist.split(",") if t.strip())
-    except Exception:
-        pass
-    return DEFAULT_TOOL_ALLOWLIST
-
 
 def get_db_path() -> Path:
     """Return the active memory DB — resolves to local workspace if available."""
