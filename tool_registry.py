@@ -20,22 +20,11 @@ and makes the tool surface scannable.
 CORE_TOOLS = [
     "memory_save",
     "memory_search",
-    "memory_semantic_search",
-    "memory_facts_search",
-    "memory_graph_search",
-    "memory_recall_context",
-    "memory_thread_context",  # Sprint 5
-    "memory_list_threads",  # Sprint 5
-    "memory_resolve_thread",  # Sprint 5
-    "memory_session_start",
-    "memory_user_profile",
     "memory_delete",
     "memory_restore",
-    "memory_check_contradictions",
-    "memory_scan_injection",
     "memory_rebuild",
+    "memory_session_start",
     "memory_supersede",
-    "memory_profile_access",
 ]
 
 # Admin tools: routed through memory_maintenance. Kept in sync with
@@ -117,4 +106,16 @@ ADMIN_TOOLS = [
     "memory_temporal_contradictions",  # mcp_maintenance.py — fact supersession events
     "memory_temporal_query",  # mcp_maintenance.py — time-aware KG queries
     "memory_compliance_check",  # mcp_audit.py — AGENTS.md rule compliance audit
+    # Demoted core tools
+    "memory_semantic_search",
+    "memory_facts_search",
+    "memory_graph_search",
+    "memory_recall_context",
+    "memory_thread_context",
+    "memory_list_threads",
+    "memory_resolve_thread",
+    "memory_user_profile",
+    "memory_check_contradictions",
+    "memory_scan_injection",
+    "memory_profile_access",
 ]

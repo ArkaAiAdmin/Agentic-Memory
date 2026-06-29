@@ -26,6 +26,8 @@ from unittest.mock import patch, MagicMock
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
+sys.path.insert(0, str(INSTALL_DIR / "eval"))
+from _fixtures import bootstrap_temp_db_clean
 
 
 from memory_common import (
@@ -55,7 +57,14 @@ from memory_common import (
 )
 from infrastructure import GLOBAL_MEM_DIR as PROD_GLOBAL
 
-PROD_DB = Path(os.environ.get("MEMORY_DB_PATH", str(PROD_GLOBAL / "memory.db")))
+_test_dir = tempfile.mkdtemp(prefix="test_mutation_killers_prod_")
+PROD_DB = Path(_test_dir) / "memory.db"
+bootstrap_temp_db_clean(PROD_DB)
+
+def tearDownModule():
+    import shutil
+    shutil.rmtree(_test_dir, ignore_errors=True)
+
 
 
 # ─── _coerce tests ───────────────────────────────────────────────────────────

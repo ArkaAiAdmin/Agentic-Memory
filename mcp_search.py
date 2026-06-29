@@ -96,32 +96,26 @@ def memory_search(
     include_facts: bool = True,
     fact_limit: int = 5,
 ) -> str:
-    """FTS5 + semantic search across local and global memories. Returns ranked snippets with source, tags, and fitness. Use as the first call in any session.
+    """Perform FTS5 (full-text) and semantic hybrid search across local and global memories.
 
-    deep_rerank: when True, also runs Qwen3-Reranker-0.6B (with BAAI/bge-
-    reranker-v2-m3 fallback) on the top candidates. Adds 1-3s of CPU
-    latency per call but gives the best quality ranking the system can
-    produce. Falls back silently to the lightweight cross-encoder if the
-    model can't be loaded. Off by default because the default path's
-    <5ms p95 is what keeps search feel instant.
+    USE THIS TOOL WHEN:
+    - You start a new session or need context about the user's workspace, historical code guidelines, past decisions, or preferences.
+    - You want to retrieve relevant memories before modifying/adding code, resolving an issue, or saving new memories. Always search first to prevent duplicate memories!
 
-    include_invalid: when False, filters out notes that have been superseded
-    or expired (valid_to IS NOT NULL). Default True preserves backward
-    compatibility — set to False to enforce temporal validity.
+    ARGUMENTS:
+    - query: The search query string. Keep it descriptive (e.g. 'NextJS authentication configuration').
+    - limit: Max number of memory results to return (default 5).
+    - rerank: If True, uses the local cross-encoder model to rerank candidate documents for higher precision. Default is True.
+    - boost_pinned: If True, elevates pinned ('hot') memories to the top. Default is True.
+    - recency_weight: Weight given to note recency. Default is 0.1.
+    - include_global: If True, includes memories from the global (~/.config/agentic-memory/memory/) path. Default is True.
+    - include_invalid: If False, excludes memories that are expired or superseded. Default is True.
+    - deep_rerank: If True, runs a deep transformer reranker (highest accuracy, but adds 1-3 seconds latency). Default is False.
+    - include_facts: If True, also queries and appends matching knowledge graph facts. Default is True.
+    - fact_limit: Max number of related facts to return. Default is 5.
 
-    include_facts (T10, default True): also search the knowledge-graph
-    fact index and surface matching facts as a "Related facts" section
-    appended to the output.  Set to False to disable fact surfacing.
-
-    fact_limit (T10, default 5): max number of facts to surface.
-
-    BLK-1 (2026-06-07): the internal ``safety_wiring`` mode (which runs
-    ``memory_injection.demote_results_by_injection`` on the result set)
-    is now ON by default. The MCP tool signature does NOT expose
-    ``safety_wiring`` to clients (the demotion is opt-out at the Python
-    ``search_memories`` layer only). Demotion cost is sub-millisecond; it
-    is not observable in the latency budget. Direct Python callers can
-    opt out by passing ``safety_wiring=False``.
+    RETURNS:
+    A human-readable formatted string listing the ranked memories, their content, category, tags, and related facts.
     """
     resolution_note = ""
     expanded_query = query
@@ -298,7 +292,18 @@ def memory_recall_context(
 @mcp.tool()
 @with_audit("memory_session_start")
 def memory_session_start(query: str = "") -> str:
-    """Convenience wrapper for session startup: recall briefing + stats + review schedule."""
+    """Retrieve the session startup briefing including recent stats, recall context, and spaced repetition review schedule.
+
+    USE THIS TOOL WHEN:
+    - You start a new interaction session with the user.
+    - You want a quick summary of the current memory database statistics, active memory tiers, and any pending spaced-repetition review items.
+
+    ARGUMENTS:
+    - query: An optional query to scope the briefing to (e.g., active topic or project).
+
+    RETURNS:
+    A human-readable text briefing with database statistics and session context.
+    """
     from recall import recall_context
     from self_directed import SELF_DIRECTED_ENABLED
     from mcp_common import GLOBAL_SCRIPTS_DIR

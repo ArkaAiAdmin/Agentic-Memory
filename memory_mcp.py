@@ -16,6 +16,8 @@ import time
 import shutil
 import unicodedata
 from typing import Optional
+from infra.memory_config import GLOBAL_MEM_DIR, get_memory_paths  # noqa: E402 — re-exported for tests
+from search.query_parser import _did_you_mean, _top_recent_notes, _top_recent_tags, _top_recent_source_files, _build_zero_result_suggestions  # noqa: E402 — re-exported for tests
 from mcp_instance import mcp  # noqa: E402 — shared instance, avoids circular import
 from memory_common import (
     parse_frontmatter,

@@ -157,15 +157,20 @@ def _get_domain_tools() -> dict:
             memory_facts_list,
             memory_facts_stats,
             memory_graph_stats,
+            memory_facts_search,
+            memory_graph_search,
         )
         from mcp_kg_traversal import (
             memory_graph_shortest_path,
             memory_graph_traverse,
         )
-        from mcp_profile import memory_profile_stats
+        from mcp_profile import memory_profile_stats, memory_user_profile, memory_profile_access
         from mcp_multi_modal import memory_ingest_file, memory_ingest_url
         from mcp_dashboard import memory_dashboard
         from mcp_metrics import memory_metrics_server
+        from mcp_search import memory_semantic_search, memory_recall_context
+        from mcp_session import memory_thread_context, memory_list_threads, memory_resolve_thread
+        from mcp_safety import memory_check_contradictions, memory_scan_injection
 
         _domain_tools = {
             "memory_agent_init": memory_agent_init,
@@ -207,6 +212,17 @@ def _get_domain_tools() -> dict:
             "memory_ingest_url": memory_ingest_url,
             "memory_dashboard": memory_dashboard,
             "memory_metrics_server": memory_metrics_server,
+            "memory_semantic_search": memory_semantic_search,
+            "memory_facts_search": memory_facts_search,
+            "memory_graph_search": memory_graph_search,
+            "memory_recall_context": memory_recall_context,
+            "memory_thread_context": memory_thread_context,
+            "memory_list_threads": memory_list_threads,
+            "memory_resolve_thread": memory_resolve_thread,
+            "memory_user_profile": memory_user_profile,
+            "memory_check_contradictions": memory_check_contradictions,
+            "memory_scan_injection": memory_scan_injection,
+            "memory_profile_access": memory_profile_access,
         }
     return _domain_tools
 
@@ -492,6 +508,17 @@ def _get_handlers() -> dict:
             MaintenanceOp.TRAIN_FORGET_MODEL: lambda **_: (
                 _train_forget_model()
             ),
+            MaintenanceOp.SEMANTIC_SEARCH: lambda *, query, **_: t["memory_semantic_search"](query=query),
+            MaintenanceOp.FACTS_SEARCH: lambda *, query, **_: t["memory_facts_search"](query=query),
+            MaintenanceOp.GRAPH_SEARCH: lambda *, query, **_: t["memory_graph_search"](query=query),
+            MaintenanceOp.RECALL_CONTEXT: lambda *, query="", **_: t["memory_recall_context"](query=query),
+            MaintenanceOp.THREAD_CONTEXT: lambda *, session_id, **_: t["memory_thread_context"](session_id=session_id),
+            MaintenanceOp.LIST_THREADS: lambda *, session_id, **_: t["memory_list_threads"](session_id=session_id),
+            MaintenanceOp.RESOLVE_THREAD: lambda *, session_id, thread_id, resolution, **_: t["memory_resolve_thread"](session_id=session_id, thread_id=thread_id, resolution=resolution),
+            MaintenanceOp.USER_PROFILE: lambda **_: t["memory_user_profile"](),
+            MaintenanceOp.CHECK_CONTRADICTIONS: lambda *, content, **_: t["memory_check_contradictions"](content=content),
+            MaintenanceOp.SCAN_INJECTION: lambda *, content, **_: t["memory_scan_injection"](content=content),
+            MaintenanceOp.PROFILE_ACCESS: lambda *, note_id, **_: t["memory_profile_access"](note_id=note_id),
         }
     return _MAINTENANCE_HANDLERS
 

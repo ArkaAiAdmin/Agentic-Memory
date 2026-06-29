@@ -35,41 +35,47 @@ class TestCronHeartbeatBehavior(unittest.TestCase):
     def test_missing_db_exits_1(self):
         """When MEMORY_DB_PATH points to a non-existent file, main() exits 1."""
         # Set up environment so the cron's import-time setdefault doesn't override us
-        env = os.environ.copy()
-        env["MEMORY_SELF_DIRECTED"] = "1"
-        env["MEMORY_DB_PATH"] = str(Path(tempfile.mkdtemp()) / "no_such_db.db")
-        # Run the cron in a subprocess so its setdefault doesn't pollute us
-        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = os.environ.copy()
+            env["GLOBAL_MEM_DIR"] = tmpdir
+            env["MEMORY_SELF_DIRECTED"] = "1"
+            env["MEMORY_DB_PATH"] = str(Path(tmpdir) / "no_such_db.db")
+            # Run the cron in a subprocess so its setdefault doesn't pollute us
+            import subprocess
 
-        result = subprocess.run(
-            [sys.executable, str(INSTALL_DIR / "cron" / "cron_heartbeat.py")],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("ERROR: no memory.db", result.stdout)
+            result = subprocess.run(
+                [sys.executable, str(INSTALL_DIR / "cron" / "cron_heartbeat.py")],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("ERROR: no memory.db", result.stdout)
 
     def test_present_db_runs_heartbeat(self):
         """When DB exists, main() runs the heartbeat and prints a summary."""
         db = _fresh_db("heartbeat_present")
-        env = os.environ.copy()
-        env["MEMORY_SELF_DIRECTED"] = "1"
-        env["MEMORY_DB_PATH"] = str(db)
-        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = os.environ.copy()
+            env["GLOBAL_MEM_DIR"] = tmpdir
+            env["MEMORY_SELF_DIRECTED"] = "1"
+            env["MEMORY_DB_PATH"] = str(db)
+            import subprocess
 
-        result = subprocess.run(
-            [sys.executable, str(INSTALL_DIR / "cron" / "cron_heartbeat.py")],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        self.assertEqual(
-            result.returncode, 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
-        )
-        self.assertIn("Heartbeat complete", result.stdout)
+            result = subprocess.run(
+                [sys.executable, str(INSTALL_DIR / "cron" / "cron_heartbeat.py")],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                result.returncode, 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+            )
+            self.assertIn("Heartbeat complete", result.stdout)
 
 
 class TestCronPinnedDecayBehavior(unittest.TestCase):
@@ -203,22 +209,25 @@ class TestCronPinnedDecayBehavior(unittest.TestCase):
             )
             conn.commit()
 
-        env = os.environ.copy()
-        env["MEMORY_DB_PATH"] = str(db)
-        env["MEMORY_KNOWLEDGE_GRAPH"] = "1"
-        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = os.environ.copy()
+            env["GLOBAL_MEM_DIR"] = tmpdir
+            env["MEMORY_DB_PATH"] = str(db)
+            env["MEMORY_KNOWLEDGE_GRAPH"] = "1"
+            import subprocess
 
-        result = subprocess.run(
-            [sys.executable, str(INSTALL_DIR / "cron" / "cron_pinned_decay.py"), "--auto-apply"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        # Exit code 2 = applied auto-decay
-        self.assertEqual(
-            result.returncode, 2, f"stdout={result.stdout!r} stderr={result.stderr!r}"
-        )
+            result = subprocess.run(
+                [sys.executable, str(INSTALL_DIR / "cron" / "cron_pinned_decay.py"), "--auto-apply"],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            # Exit code 2 = applied auto-decay
+            self.assertEqual(
+                result.returncode, 2, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+            )
 
 
 class TestCronCrdtSyncBehavior(unittest.TestCase):
@@ -226,44 +235,50 @@ class TestCronCrdtSyncBehavior(unittest.TestCase):
 
     def test_missing_db_exits_1(self):
         """No DB at MEMORY_DB_PATH returns exit code 1 with error message."""
-        env = os.environ.copy()
-        env["MEMORY_MULTI_AGENT"] = "1"
-        env["MEMORY_CRDT_ENABLED"] = "1"
-        env["MEMORY_DB_PATH"] = str(Path(tempfile.mkdtemp()) / "no_such.db")
-        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = os.environ.copy()
+            env["GLOBAL_MEM_DIR"] = tmpdir
+            env["MEMORY_MULTI_AGENT"] = "1"
+            env["MEMORY_CRDT_ENABLED"] = "1"
+            env["MEMORY_DB_PATH"] = str(Path(tmpdir) / "no_such.db")
+            import subprocess
 
-        result = subprocess.run(
-            [sys.executable, str(INSTALL_DIR / "cron" / "cron_crdt_sync.py")],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        # cron_crdt_sync returns 1 when DB is missing, not sys.exit(1)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("memory.db not found", result.stdout)
+            result = subprocess.run(
+                [sys.executable, str(INSTALL_DIR / "cron" / "cron_crdt_sync.py")],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            # cron_crdt_sync returns 1 when DB is missing, not sys.exit(1)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("memory.db not found", result.stdout)
 
     def test_no_peers_exits_0(self):
         """With no sync peers configured, exits 0 and prints a helpful message."""
         db = _fresh_db("crdt_sync_no_peers")
-        env = os.environ.copy()
-        env["MEMORY_MULTI_AGENT"] = "1"
-        env["MEMORY_CRDT_ENABLED"] = "1"
-        env["MEMORY_DB_PATH"] = str(db)
-        # Force no peers by setting an empty memory.toml path that doesn't exist,
-        # which the config resolver treats as empty.
-        env["MEMORY_CONFIG_PATH"] = str(Path(tempfile.mkdtemp()) / "no_config.toml")
-        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = os.environ.copy()
+            env["GLOBAL_MEM_DIR"] = tmpdir
+            env["MEMORY_MULTI_AGENT"] = "1"
+            env["MEMORY_CRDT_ENABLED"] = "1"
+            env["MEMORY_DB_PATH"] = str(db)
+            # Force no peers by setting an empty memory.toml path that doesn't exist,
+            # which the config resolver treats as empty.
+            env["MEMORY_CONFIG_PATH"] = str(Path(tmpdir) / "no_config.toml")
+            import subprocess
 
-        result = subprocess.run(
-            [sys.executable, str(INSTALL_DIR / "cron" / "cron_crdt_sync.py")],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        self.assertEqual(result.returncode, 0)
-        self.assertIn("No sync peers", result.stdout)
+            result = subprocess.run(
+                [sys.executable, str(INSTALL_DIR / "cron" / "cron_crdt_sync.py")],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("No sync peers", result.stdout)
 
 
 if __name__ == "__main__":
