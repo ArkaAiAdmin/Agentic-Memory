@@ -37,7 +37,7 @@ jobs:
       - name: Install mypy + deps
         run: |
           pip install mypy --quiet
-          pip install -e ".[dev]" --quiet 2>/dev/null || pip install pytest mcp
+          pip install -e ".[dev,embeddings]" --quiet 2>/dev/null || pip install numpy pytest pytest-xdist mcp
       - name: Typecheck
         run: mypy
         env:
@@ -61,7 +61,7 @@ jobs:
           python -m venv venv
           . venv/bin/activate
           pip install --upgrade pip
-          pip install -e ".[dev]" --quiet 2>/dev/null || pip install pytest pytest-cov mcp
+          pip install -e ".[dev,embeddings]" --quiet 2>/dev/null || pip install numpy pytest pytest-cov pytest-xdist mcp
       - name: Run tests with coverage
         env:
           MEMORY_RERANKER_DISABLED: "1"
@@ -72,6 +72,7 @@ jobs:
           . venv/bin/activate
           python -m pytest eval/ \
             --tb=short -q \
+            -n 5 \
             --cov \
             --cov-report=xml \
             --cov-report=term-missing \
@@ -87,7 +88,7 @@ jobs:
           retention-days: 14
 
   test-no-extras:
-    name: pytest (no optional extras)
+    name: pytest (dev + embeddings)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,12 +96,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - name: Install core only
+      - name: Install core + numpy
         run: |
           python -m venv venv
           . venv/bin/activate
           pip install --upgrade pip
-          pip install -e . --quiet 2>/dev/null || pip install mcp pytest
+          pip install -e ".[dev,embeddings]" --quiet 2>/dev/null || pip install numpy pytest pytest-cov pytest-xdist mcp
       - name: Run tests
         env:
           MEMORY_RERANKER_DISABLED: "1"
@@ -109,7 +110,7 @@ jobs:
           MEMORY_EMBEDDINGS: "0"
         run: |
           . venv/bin/activate
-          python -m pytest eval/ --tb=short -q -p no:cacheprovider
+          python -m pytest eval/ --tb=short -q -n 5 -p no:cacheprovider
         timeout-minutes: 30
 
   build-wheel:

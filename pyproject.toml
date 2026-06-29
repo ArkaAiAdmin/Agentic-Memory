@@ -54,6 +54,7 @@ reranker = [
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "pytest-xdist>=3.0.0",
 ]
 docs = [
     "mkdocs>=1.6.0",
@@ -173,6 +174,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["eval"]
 python_files = ["test_*.py"]
+addopts = "-n 5"
 markers = [
     "slow: marks tests as slow (use -m 'not slow' to skip)",
 ]
