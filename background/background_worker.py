@@ -221,10 +221,11 @@ def handle_vec_index_rebuild(
         candidates.append(install_root() / "rebuild_vec_index.py")
         if db_path.parent.name == "memory":
             candidates.append(db_path.parent.parent / "rebuild_vec_index.py")
-        # Legacy venv heuristic (kept as last-resort fallback for non-standard layouts)
+        # Legacy venv heuristic (kept as last-resort fallback for non-standard layouts).
+        # sys.executable = <repo>/venv/bin/python; parent.parent.parent = <repo>.
         import sys as _sys
 
-        candidates.append(Path(_sys.executable).parent.parent / "rebuild_vec_index.py")
+        candidates.append(Path(_sys.executable).parent.parent.parent / "rebuild_vec_index.py")
         # 2026-06-29 fix: cwd-relative resolution. On CI runners the install
         # root doesn't match `install_root()`'s default (~/.config/agentic-memory)
         # but the script is always next to the test runner's cwd.

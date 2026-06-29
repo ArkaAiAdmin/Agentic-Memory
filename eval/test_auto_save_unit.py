@@ -292,6 +292,7 @@ class TestBackoffAndCircuitBreaker(unittest.TestCase):
 
         import background.auto_save as _as_backend
 
+        _original_inner = _as_backend._tool_complete_inner
         _as_backend._tool_complete_inner = boom
         import os as _os
 
@@ -300,6 +301,7 @@ class TestBackoffAndCircuitBreaker(unittest.TestCase):
         try:
             result = self.auto_save.tool_complete("memory_save", '{"x":1}', "preview")
         finally:
+            _as_backend._tool_complete_inner = _original_inner
             if saved_env is None:
                 _os.environ.pop("MEMORY_ASYNC_AUTOSAVE", None)
             else:
