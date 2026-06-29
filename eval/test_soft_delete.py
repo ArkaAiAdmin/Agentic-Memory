@@ -46,32 +46,21 @@ from save_pipeline import save_memory
 
 
 def _bootstrap_full_db(db_path: Path) -> None:
-    """Create a fully-bootstrapped temp DB by copying the live schema.
+    """Create a fully-bootstrapped temp DB with the complete schema.
 
-    This is the same pattern used by test_no_silent_search_failures.py.
-    Copies the live prod DB so all 5 migrations (incl. 005 which adds
-    deleted_at + deleted_by) are present.
+    Uses ``bootstrap_temp_db_clean`` from the H21 fixture helpers to build
+    the schema fresh from ``run_schema_setup`` + FTS5 triggers. This avoids
+    the WAL-copy pitfall: ``shutil.copy2`` on a live WAL-mode database can
+    capture a mid-checkpoint state, producing a "database disk image is
+    malformed" error on the very next SQLite open (especially under xdist
+    fork where the parent may have uncheckpointed WAL pages at fork time).
+
+    Each test inserts its own rows via ``_insert_note``, so no prod data
+    bleeds across test cases.
     """
-    _, _, global_mem = get_memory_paths()
-    prod_db = global_mem / "memory.db"
-    if prod_db.exists():
-        shutil.copy2(prod_db, db_path)
-        conn = sqlite3.connect(str(db_path))
-        try:
-            conn.execute("PRAGMA foreign_keys = OFF")
-            tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
-            for table in tables:
-                if table == "sqlite_sequence":
-                    continue
-                if any(table.endswith(suffix) for suffix in ["_data", "_idx", "_docsize", "_config", "_content"]):
-                    continue
-                try:
-                    conn.execute(f"DELETE FROM {table}")
-                except sqlite3.OperationalError:
-                    pass
-            conn.commit()
-        finally:
-            conn.close()
+    from _fixtures import bootstrap_temp_db_clean
+
+    bootstrap_temp_db_clean(db_path)
 
 
 def _table_names(conn: sqlite3.Connection) -> set:
