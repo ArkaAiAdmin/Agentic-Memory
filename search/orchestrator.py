@@ -25,6 +25,7 @@ from infrastructure import (
     _err,
     ErrorCode,
 )
+from infra.error_counter import increment as _phase_inc, get_counts as _phase_counts
 
 # Import functions from other search submodules
 from search.query_parser import (
@@ -879,7 +880,9 @@ def _hybrid_fusion(
         merged.extend(semantic_only)
         merged.sort(key=lambda x: x[5])  # sort by rank_proxy (index 5)
         return merged
-    except Exception:
+    except Exception as e:
+        _phase_inc("search.hybrid_fusion", e)
+        logger.warning("hybrid_fusion failed: %s", e)
         return results
 
 
@@ -1066,8 +1069,9 @@ def _apply_safety_demoting(
             _new_output.append(output[_old_idx + 1])
         output = _new_output
         results_to_display = [results_to_display[_i] for _i in _new_order]
-    except Exception:
-        pass
+    except Exception as e:
+        _phase_inc("search.safety_demoting", e)
+        logger.warning("safety_demoting failed: %s", e)
     return result_items, output, results_to_display
 
 
@@ -1441,6 +1445,7 @@ def _record_last_accessed(db, result_items) -> None:
         )
         db.commit()
     except Exception as e:
+        _phase_inc("search.record_last_accessed", e)
         logger.warning("_record_last_accessed failed: %s", e)
 
 
@@ -1544,8 +1549,9 @@ def _apply_quality_gates(
                     result_items,
                     backlinks_map,
                 )
-    except Exception:
-        pass
+    except Exception as e:
+        _phase_inc("search.quality_gates", e)
+        logger.warning("quality_gates failed: %s", e)
     return result_items, output
 
 
@@ -1585,8 +1591,9 @@ def _apply_user_profiling(
                 result_items,
                 backlinks_map,
             )
-    except Exception:
-        pass
+    except Exception as e:
+        _phase_inc("search.user_profiling", e)
+        logger.warning("user_profiling failed: %s", e)
     return result_items, output
 
 
@@ -1617,7 +1624,9 @@ def _record_search_telemetry(*, db, query_id, result_items, ctr_weights) -> None
             ),
         )
         db.commit()
-    except Exception:
+    except Exception as e:
+        _phase_inc("search.record_search_telemetry", e)
+        logger.warning("record_search_telemetry failed: %s", e)
         pass
     try:
         from adaptive_retention import record_access
@@ -1625,8 +1634,9 @@ def _record_search_telemetry(*, db, query_id, result_items, ctr_weights) -> None
         for r in result_items:
             record_access(db, r.get("id", ""), source="search")
         db.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        _phase_inc("search.record_search_telemetry", e)
+        logger.warning("record_search_telemetry failed: %s", e)
 
 
 def _apply_save_hint_floater(
@@ -1962,6 +1972,9 @@ def search_memories(
             related_facts=related_facts if include_facts else None,
         )
         _cache_store_result(cache_key, result)
+        _phase_errs = _phase_counts()
+        if _phase_errs.get("total_count"):
+            result["phase_errors"] = _phase_errs
         _record_search_telemetry(
             db=db,
             query_id=result["query_id"],
@@ -1970,6 +1983,7 @@ def search_memories(
         )
         return result
     except Exception as e:
+        _phase_inc("search.orchestrator", e)
         return {
             "results": [],
             "count": 0,
