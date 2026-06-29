@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-%20passed-brightgreen)](#testing)
 [![SQLite FTS5](https://img.shields.io/badge/sqlite-FTS5-orange.svg)](https://www.sqlite.org/fts5.html)
-[![MCP Tools](https://img.shields.io/badge/MCP-85%20tools_(15%20CORE%20%2B%2070%20ADMIN)-purple.svg)](docs/reference/mcp-tools.md)
+[![MCP Tools](https://img.shields.io/badge/MCP-88%20tools_(7%20CORE%20%2B%2081%20ADMIN)-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
 [![Temporal KG](https://img.shields.io/badge/Temporal-KG-brightgreen)](docs/concepts/temporal-kg.md)
 [![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
@@ -35,7 +35,7 @@ Built for **Claude Code**, **OpenCode**, and any MCP-compatible agent harness.
 │  │  (Git-ready) │    │  Graph (KG)  │    │  Reranker     │  │
 │  └──────────────┘    └──────────────┘    └───────────────┘  │
 │                                                               │
-│  27 cron jobs │ 4 hooks │ 85 MCP tools │ CRDT sync │ Arc cache │
+│  29 cron jobs │ 6 hooks │ 88 MCP tools │ CRDT sync │ Arc cache │
 └──────────────────────────────────────────────────────────────┘
 ```
 

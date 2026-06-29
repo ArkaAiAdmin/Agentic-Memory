@@ -518,6 +518,10 @@ def _get_handlers() -> dict:
             MaintenanceOp.CHECK_CONTRADICTIONS: lambda *, content, **_: t["memory_check_contradictions"](content=content),
             MaintenanceOp.SCAN_INJECTION: lambda *, content, **_: t["memory_scan_injection"](content=content),
             MaintenanceOp.PROFILE_ACCESS: lambda *, note_id, **_: t["memory_profile_access"](note_id=note_id),
+            MaintenanceOp.FLAGS_STATUS: lambda **_: _op_flags_status(),
+            MaintenanceOp.PHASE_ERRORS: lambda *, since_ts=None, until_ts=None, limit=50, **_: _op_phase_errors(
+                since_ts=since_ts, until_ts=until_ts, limit=limit
+            ),
         }
     return _MAINTENANCE_HANDLERS
 
@@ -759,6 +763,28 @@ def _op_recover_session(session_id: str) -> str:
         return _json.dumps({"chain": chain})
     except Exception as e:
         return _json.dumps({"error": str(e)})
+
+
+def _op_flags_status() -> str:
+    """Return all feature flags with their resolved values and sources."""
+    try:
+        from infra.config import get_feature_flags
+
+        return json.dumps(get_feature_flags(), indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = None, limit: int = 50) -> str:
+    """Return per-phase error counts from the error counter."""
+    try:
+        from infra.error_counter import get_counts
+
+        return json.dumps(
+            get_counts(since_ts=since_ts, until_ts=until_ts, limit=limit), indent=2
+        )
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 
 MAINTENANCE_HANDLERS = _MaintenanceHandlersProxy()

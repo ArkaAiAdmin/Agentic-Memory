@@ -1209,4 +1209,109 @@ def get_config() -> MemoryConfig:
 def reset_config() -> None:
     """Reset the singleton (useful in tests)."""
     global _instance
-    _instance = None
+    with _instance_lock:
+        _instance = None
+
+
+def get_feature_flags() -> dict:
+    """Return all feature flags with their resolved values and sources.
+
+    Returns a dict of {flag_name: {value, env_var, toml_path, default}}.
+    The 14 feature flags are the boolean fields in the MemoryConfig "features" section.
+    """
+    cfg = get_config()
+    return {
+        "multi_agent": {
+            "value": cfg.multi_agent,
+            "env_var": "MEMORY_MULTI_AGENT",
+            "toml_path": "features.multi_agent",
+            "default": True,
+        },
+        "summarization": {
+            "value": cfg.summarization,
+            "env_var": "MEMORY_SUMMARIZATION",
+            "toml_path": "features.summarization",
+            "default": True,
+        },
+        "user_profile": {
+            "value": cfg.user_profile,
+            "env_var": "MEMORY_USER_PROFILE",
+            "toml_path": "features.user_profile",
+            "default": True,
+        },
+        "self_directed": {
+            "value": cfg.self_directed,
+            "env_var": "MEMORY_SELF_DIRECTED",
+            "toml_path": "features.self_directed",
+            "default": True,
+        },
+        "adaptive_retention": {
+            "value": cfg.adaptive_retention,
+            "env_var": "MEMORY_ADAPTIVE_RETENTION",
+            "toml_path": "features.adaptive_retention",
+            "default": True,
+        },
+        "temporal_ssm_enabled": {
+            "value": cfg.temporal_ssm_enabled,
+            "env_var": "MEMORY_TEMPORAL_SSM_ENABLED",
+            "toml_path": "features.temporal_ssm_enabled",
+            "default": False,
+        },
+        "consolidation": {
+            "value": cfg.consolidation,
+            "env_var": "MEMORY_CONSOLIDATION",
+            "toml_path": "features.consolidation",
+            "default": True,
+        },
+        "quality_gates": {
+            "value": cfg.quality_gates,
+            "env_var": "MEMORY_QUALITY_GATES",
+            "toml_path": "features.quality_gates",
+            "default": True,
+        },
+        "saga_enabled": {
+            "value": cfg.saga_enabled,
+            "env_var": "MEMORY_SAGA_ENABLED",
+            "toml_path": "features.saga_enabled",
+            "default": True,
+        },
+        "temporal_tiers": {
+            "value": cfg.temporal_tiers,
+            "env_var": "MEMORY_TEMPORAL_TIERS",
+            "toml_path": "features.temporal_tiers",
+            "default": True,
+        },
+        "crdt_enabled": {
+            "value": cfg.crdt_enabled,
+            "env_var": "MEMORY_CRDT_ENABLED",
+            "toml_path": "features.crdt_enabled",
+            "default": True,
+        },
+        "llm_extraction": {
+            "value": cfg.llm_extraction,
+            "env_var": "MEMORY_LLM_EXTRACTION",
+            "toml_path": "features.llm_extraction",
+            "default": True,
+        },
+        "feature_temporal_kg": {
+            "value": cfg.feature_temporal_kg,
+            "env_var": "MEMORY_TEMPORAL_KG",
+            "toml_path": "features.feature_temporal_kg",
+            "default": True,
+        },
+    }
+
+
+__all__ = [
+    "MemoryConfig",
+    "get_config",
+    "reset_config",
+    "get_feature_flags",
+    "INSTALL_ROOT",
+    "GLOBAL_SCRIPTS_DIR",
+    "SCRIPTS_SUBDIR",
+    "AGENTS_SKILLS_DIR",
+    "OPENCODE_SKILLS_DIR",
+    "resolve_db_path",
+    "DECISION_CATEGORIES",
+]
