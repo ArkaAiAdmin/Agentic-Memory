@@ -150,7 +150,7 @@ reportMissingImports = "warning"
 # 2026-06-20: Baseline reduced to 0. All 141 errors have been fixed
 # across 28 files. CI now fails on any new mypy error.
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 # Run on the 5 core modules covered by the gate.
 files = [
     "adaptive_retention.py",
