@@ -229,7 +229,7 @@ ok()
 # ----
 section("O", "Existing: cron backup")
 r = os.system(
-    "cd ~/.config/agentic-memory && ./venv/bin/python cron/cron_backup.py >/dev/null 2>&1"
+    f"cd {INSTALL_ROOT} && {sys.executable} cron/cron_backup.py >/dev/null 2>&1"
 )
 assert r == 0
 ok()

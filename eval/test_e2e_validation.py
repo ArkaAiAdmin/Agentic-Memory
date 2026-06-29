@@ -19,8 +19,14 @@ import re
 import unittest
 from pathlib import Path
 
-INSTALL = Path.home() / ".config" / "agentic-memory"
-VENV = INSTALL / "venv" / "bin" / "python"
+# Resolve INSTALL from the environment, fallback to the repository root.
+INSTALL_ENV = os.environ.get("MEMORY_INSTALL_ROOT")
+if INSTALL_ENV:
+    INSTALL = Path(INSTALL_ENV).expanduser()
+else:
+    INSTALL = Path(__file__).parent.parent.resolve()
+
+VENV = Path(sys.executable)
 PROD_DB_PATH = INSTALL / "memory" / "memory.db"
 
 
@@ -236,7 +242,7 @@ def main(test_root=None):
 
     # B2. search_memory.py on test DB
     v(
-        f"{py} {INSTALL}/search_memory.py 'validation'",
+        f"{py} {INSTALL}/search_memory.py 'validation' --no-global",
         val,
         "B2 search_memory.py",
         must_contain=["test-lesson-1"],
@@ -496,38 +502,43 @@ print(f"avg_search_ms={{(t1-t0)/20*1000:.1f}}")
     # =========================================
     print()
     print("=== F. Prod safety check ===")
-    # F1. prod memory.db untouched (baseline captured at start).
-    # Always checks the real prod DB — never MEMORY_DB_PATH.
-    try:
-        if not PROD_DB_PATH.exists():
-            val.record("F1 prod DB exists", "FAIL", f"prod not at {PROD_DB_PATH}")
-        else:
-            c = sqlite3.connect(str(PROD_DB_PATH))
-            n = c.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
-            if n == PROD_BASELINE_ROWS:
-                val.record(
-                    "F1 prod DB untouched", "PASS", f"{n} rows (matches baseline)"
-                )
+    is_ci = os.environ.get("GITHUB_ACTIONS") == "true" or os.environ.get("CI") == "true"
+    if is_ci:
+        val.record("F1 prod DB untouched", "SKIP", "Running on CI: skipped production database check")
+        val.record("F2 prod lessons present", "SKIP", "Running on CI: skipped production lessons check")
+    else:
+        # F1. prod memory.db untouched (baseline captured at start).
+        # Always checks the real prod DB — never MEMORY_DB_PATH.
+        try:
+            if not PROD_DB_PATH.exists():
+                val.record("F1 prod DB exists", "FAIL", f"prod not at {PROD_DB_PATH}")
+            else:
+                c = sqlite3.connect(str(PROD_DB_PATH))
+                n = c.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+                if n == PROD_BASELINE_ROWS:
+                    val.record(
+                        "F1 prod DB untouched", "PASS", f"{n} rows (matches baseline)"
+                    )
+                else:
+                    val.record(
+                        "F1 prod DB untouched",
+                        "WARN",
+                        f"{n} rows (expected {PROD_BASELINE_ROWS})",
+                    )
+        except Exception as e:
+            val.record("F1 prod DB untouched", "FAIL", f"err: {e}")
+
+        # F2. prod files unmodified
+        try:
+            prod_lessons = list((INSTALL / "lessons").glob("*.md"))
+            if len(prod_lessons) >= 1:
+                val.record("F2 prod lessons present", "PASS", f"{len(prod_lessons)} files")
             else:
                 val.record(
-                    "F1 prod DB untouched",
-                    "WARN",
-                    f"{n} rows (expected {PROD_BASELINE_ROWS})",
+                    "F2 prod lessons present", "FAIL", "no .md files in prod lessons/"
                 )
-    except Exception as e:
-        val.record("F1 prod DB untouched", "FAIL", f"err: {e}")
-
-    # F2. prod files unmodified
-    try:
-        prod_lessons = list((INSTALL / "lessons").glob("*.md"))
-        if len(prod_lessons) >= 1:
-            val.record("F2 prod lessons present", "PASS", f"{len(prod_lessons)} files")
-        else:
-            val.record(
-                "F2 prod lessons present", "FAIL", "no .md files in prod lessons/"
-            )
-    except Exception as e:
-        val.record("F2 prod lessons present", "FAIL", f"err: {e}")
+        except Exception as e:
+            val.record("F2 prod lessons present", "FAIL", f"err: {e}")
 
     val.report()
     return val.results

@@ -171,12 +171,21 @@ class TestMemoryCompactCallsCheckpoint(unittest.TestCase):
 
         old = memory_common._STARTUP_CHECKPOINT_DONE
         memory_common._STARTUP_CHECKPOINT_DONE = True  # skip startup checkpoint
-        try:
-            result = memory_mcp.memory_compact(dry_run=True)
-            self.assertIn("Tier Migration", result)
-            mock_ckpt.assert_called_once()
-        finally:
-            memory_common._STARTUP_CHECKPOINT_DONE = old
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "memory.db"
+            db_path.touch()
+            old_env = os.environ.get("MEMORY_DB_PATH")
+            os.environ["MEMORY_DB_PATH"] = str(db_path)
+            try:
+                result = memory_mcp.memory_compact(dry_run=True)
+                self.assertIn("Tier Migration", result)
+                mock_ckpt.assert_called_once()
+            finally:
+                if old_env is not None:
+                    os.environ["MEMORY_DB_PATH"] = old_env
+                else:
+                    os.environ.pop("MEMORY_DB_PATH", None)
+                memory_common._STARTUP_CHECKPOINT_DONE = old
 
 
 if __name__ == "__main__":

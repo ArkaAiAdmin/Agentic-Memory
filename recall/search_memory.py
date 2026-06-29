@@ -136,7 +136,10 @@ def search_memories(
 
     # Increment access_count for every displayed result (legacy side effect).
     note_ids = [item["id"] for item in all_items if item.get("id")]
-    for db_path in (db_file, global_db):
+    dbs_to_update = [db_file]
+    if include_global and "global" in sources_searched:
+        dbs_to_update.append(global_db)
+    for db_path in dbs_to_update:
         if not db_path.exists() or not note_ids:
             continue
         try:
