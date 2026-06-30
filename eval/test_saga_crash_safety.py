@@ -141,22 +141,22 @@ class TestSagaCrashSafety(unittest.TestCase):
                 );
             """)
 
+        saga_conn = sqlite3.connect(str(db))
+
         # do_upsert_db succeeds, do_write_file raises
         def do_upsert_db():
-            with open_db(db) as conn:
-                conn.execute(
-                    "INSERT INTO memories (id, content, source_file, created_at, updated_at, observed_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (
-                        "lessons/crash",
-                        "hello",
-                        "lessons/crash.md",
-                        "2026-01-01",
-                        "2026-01-01",
-                        "2026-01-01",
-                    ),
-                )
-                conn.commit()
+            saga_conn.execute(
+                "INSERT INTO memories (id, content, source_file, created_at, updated_at, observed_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    "lessons/crash",
+                    "hello",
+                    "lessons/crash.md",
+                    "2026-01-01",
+                    "2026-01-01",
+                    "2026-01-01",
+                ),
+            )
 
         def do_write_vec_key():
             return None
@@ -164,10 +164,6 @@ class TestSagaCrashSafety(unittest.TestCase):
         def do_write_file():
             raise RuntimeError("simulated disk failure")
 
-        # Use a direct connection for the saga's undo operations.
-        # This connection must be closed after the saga to avoid
-        # interfering with the write queue.
-        saga_conn = sqlite3.connect(str(db))
         try:
             with self.assertRaises(Exception):
                 saga_save_memory(

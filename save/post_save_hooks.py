@@ -316,16 +316,18 @@ def _hook_audit_contradictions(db_path_obj, content, note_id, contradictions):
 
 
 def _hook_auto_backlink_with_flush(db_path_obj, note_id, category, title_slug, conn):
-    """Run the multi-part auto-backlink generator and flush any pending .md writes.
+    """Run the multi-part auto-backlink generator and return any pending .md writes.
 
-    P1-6 fix: pass conn=None so _auto_backlink_multi_part opens its own
-    connection and handles its own commit + .md writes.  This prevents
-    the hook from committing the caller's transaction.
+    P1-6 fix: pass conn to participate in active transaction, defer file writes.
     """
     try:
-        _auto_backlink_multi_part(db_path_obj, note_id, category, title_slug, conn=None)
+        pending = _auto_backlink_multi_part(db_path_obj, note_id, category, title_slug, conn=conn)
+        if pending:
+            from pathlib import Path
+            return [(Path(db_path_obj).parent / f"{pid}.md", new_content) for pid, new_content in pending]
     except Exception as _abe:
         logger.debug("save_memory: auto-backlink failed: %s", _abe)
+    return []
 
 
 def _hook_track_decisions(db_path_obj, note_id, content, category):
@@ -580,13 +582,16 @@ def _run_post_save_hooks(
     orchestrator itself never raises; the helpers are responsible for
     their own error containment.
     """
+    deferred_writes = []
     _hook_update_memory_md_index(target_base, category, title_slug)
     _search_cache.clear()
     if safety_wiring:
         contradictions = _hook_run_contradiction_check(db_path_obj, content, note_id)
         _hook_audit_contradictions(db_path_obj, content, note_id, contradictions)
         _hook_resolve_contradictions(db_path_obj, note_id, contradictions)
-    _hook_auto_backlink_with_flush(db_path_obj, note_id, category, title_slug, conn)
+    backlink_writes = _hook_auto_backlink_with_flush(db_path_obj, note_id, category, title_slug, conn)
+    if backlink_writes:
+        deferred_writes.extend(backlink_writes)
     _hook_track_decisions(db_path_obj, note_id, content, category)
     _hook_extract_skill(conn, note_id, content, category)
     _hook_audit_save_success(
@@ -601,6 +606,7 @@ def _run_post_save_hooks(
         start_time,
     )
     _hook_record_recent_save(db_path_obj, note_id)
+    return deferred_writes
 
 
 def _enqueue_background_tasks(db_path_obj: Path, note_id: str) -> None:

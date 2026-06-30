@@ -15,6 +15,7 @@ asserts the presence of each token.
 """
 
 import os
+import sys
 import subprocess
 import unittest
 from pathlib import Path
@@ -30,7 +31,7 @@ class TestConfigLogShowsResolution(unittest.TestCase):
         must show effective=True so operators aren't misled."""
         result = subprocess.run(
             [
-                str(REPO / "venv" / "bin" / "python"),
+                sys.executable,
                 "-c",
                 "import config",
             ],
@@ -52,7 +53,7 @@ class TestConfigLogShowsResolution(unittest.TestCase):
         """When MEMORY_LLM_EXTRACTION=0 is set, effective must be False."""
         result = subprocess.run(
             [
-                str(REPO / "venv" / "bin" / "python"),
+                sys.executable,
                 "-c",
                 "import config",
             ],
@@ -70,7 +71,7 @@ class TestConfigLogShowsResolution(unittest.TestCase):
         """When MEMORY_LLM_EXTRACTION=1 is set, effective must be True."""
         result = subprocess.run(
             [
-                str(REPO / "venv" / "bin" / "python"),
+                sys.executable,
                 "-c",
                 "import config",
             ],
