@@ -218,10 +218,10 @@ def daily_digest(date_str: Optional[str] = None, dry_run: bool = False) -> dict:
     orchestrator below reads as a 5-step pipeline.
     """
     if date_str is None:
-        date_str = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        date_str = (datetime.today() - timedelta(days=1)).isoformat()
     # Validate
     try:
-        datetime.date.fromisoformat(date_str)
+        datetime.fromisoformat(date_str)
     except ValueError:
         return {"digested": 0, "error": f"invalid date: {date_str}"}
 

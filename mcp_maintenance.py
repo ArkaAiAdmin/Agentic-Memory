@@ -769,6 +769,7 @@ class MaintenanceOp(str, Enum):
     PROFILE_ACCESS = "profile_access"
     FLAGS_STATUS = "flags_status"
     PHASE_ERRORS = "phase_errors"
+    MEMORY_STATS = "memory_stats"
 
     @classmethod
     def all_values(cls) -> list[str]:

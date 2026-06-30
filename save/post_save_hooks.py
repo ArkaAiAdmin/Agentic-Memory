@@ -613,11 +613,22 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str) -> None:
     try:
         from background_queue import init_task_queue, enqueue_task
         from db import connection_pool
+        from _lazy_imports import get_config
+
+        cfg = get_config()
+        max_qs = getattr(cfg, "background_max_queue_size", 500)
+        reject_pol = getattr(cfg, "background_reject_policy", "reject_new")
 
         _bq_conn = connection_pool.get(str(db_path_obj), timeout=5.0)
         init_task_queue(_bq_conn)
-        enqueue_task(_bq_conn, "entity_resolution", {"memory_id": note_id})
-        enqueue_task(_bq_conn, "fact_consolidation", {"memory_id": note_id})
+        enqueue_task(
+            _bq_conn, "entity_resolution", {"memory_id": note_id},
+            max_queue_size=max_qs, reject_policy=reject_pol,
+        )
+        enqueue_task(
+            _bq_conn, "fact_consolidation", {"memory_id": note_id},
+            max_queue_size=max_qs, reject_policy=reject_pol,
+        )
         safe_close_db(_bq_conn)
     except Exception as _bqe:
         logger.debug("save_memory: background queue enqueue failed: %s", _bqe)

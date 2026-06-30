@@ -11,7 +11,47 @@ import time
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from background.circuit_breaker import (
+    _DAEMON_LOCKS,
+    _DAEMON_STOP_REQUESTED,
+    _check_circuit_timeout_expiry,
+    _update_shared_memory_state,
+)
+from background.inbox import (
+    get_auto_save_inbox_path,
+    get_auto_save_lock_path,
+    get_auto_save_pid_path,
+    _drain_inbox,
+    _process_inbox_batch,
+    _register_in_daemon_manifest,
+    _write_pid_file,
+)
+
+logger = logging.getLogger("auto_save.daemon")
+
+_DEFAULT_BATCH_INTERVAL_S = 0.5
+_DEFAULT_BATCH_SIZE = 50
+_DEFAULT_DAEMON_IDLE_S = 300
+
+
+def _batch_interval_s() -> float:
+    return _DEFAULT_BATCH_INTERVAL_S
+
+
+def _batch_size() -> int:
+    return _DEFAULT_BATCH_SIZE
+
+
+def _daemon_idle_s() -> float:
+    return _DEFAULT_DAEMON_IDLE_S
+
+
+def _log_structured(level: str, event: str, **fields: object) -> None:
+    """Emit a structured JSON log entry for observability."""
+    import json as _json
+
+    log_entry = {"event": event, **fields}
+    getattr(logger, level)(_json.dumps(log_entry))
 
 
 def _wait_for_file_modification(file_path: Path, timeout: float) -> None:
@@ -94,6 +134,18 @@ def _wait_for_file_modification(file_path: Path, timeout: float) -> None:
 
     # 3. Fallback to sleep
     time.sleep(min(timeout, 0.05))
+
+
+# Inotify handles (loaded lazily to avoid Linux-only import error on macOS)
+try:
+    from inotify_simple import inotify_init, inotify_add_watch
+
+    _inotify_init = inotify_init
+    _inotify_add_watch = inotify_add_watch
+except ImportError:
+    _inotify_init = None  # type: ignore[assignment]
+    _inotify_add_watch = None  # type: ignore[assignment]
+
 
 def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa: F821
     """Long-running daemon: tail the inbox, process in batches.
@@ -205,99 +257,75 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
                 )
                 break
 
-            # 3. Drain inbox.
-            entries = _drain_inbox()
+            # 3. Drain any new entries from the inbox.
+            try:
+                entries = _drain_inbox()
+            except Exception as exc:
+                logger.warning("auto-save daemon: drain failed: %s", exc)
+                entries = []
+
             if entries:
                 buffer.extend(entries)
                 last_activity = time.time()
-            elif buffer and (time.time() - last_activity) > idle_limit:
-                # No new entries for a long time — flush what we have
-                # and exit so the next call respawns us.
-                break
 
-            # 4. Flush if size or interval reached.
-            now = time.time()
-            should_flush = bool(buffer) and (
-                len(buffer) >= size_cap or (now - last_flush) >= interval
+            # 4. Flush batch when big enough or interval elapsed.
+            if buffer and (
+                len(buffer) >= size_cap or (time.time() - last_flush) >= interval
+            ):
+                try:
+                    summary = _process_inbox_batch(buffer)
+                    _log_structured(
+                        "info",
+                        "auto_save_batch_flushed",
+                        saved=summary.get("saved", 0),
+                        skipped=summary.get("skipped", 0),
+                        failed=summary.get("failed", 0),
+                        buffer_size=0,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "auto-save daemon: batch flush failed: %s", exc
+                    )
+                    _log_structured(
+                        "warning", "auto_save_batch_flush_failed", error=str(exc)
+                    )
+                buffer = []
+                last_flush = time.time()
+                last_activity = time.time()
+
+            # 5. Wait for new file activity before the next iteration.
+            _wait_for_file_modification(
+                get_auto_save_inbox_path(), _batch_interval_s()
             )
-            # Respect circuit breaker: skip flush if breaker is open
-            if should_flush and _auto_save_circuit_open():
-                _log_structured(
-                    "warning",
-                    "auto_save_circuit_breaker_skip",
-                    buffer_size=len(buffer),
-                    circuit_state="open",
-                )
-                # Record skipped entries as circuit-breaker skips
-                for entry in buffer:
-                    _record_circuit_skip(entry)
-                buffer = []
-                last_flush = now
-                continue
-            if should_flush:
-                batch_size = len(buffer)
-                flush_start = time.time()
-                summary = _process_inbox_batch(buffer)
-                flush_duration_ms = int((time.time() - flush_start) * 1000)
-                _log_structured(
-                    "info",
-                    "auto_save_batch_flush",
-                    batch_size=batch_size,
-                    saved=summary["saved"],
-                    skipped=summary["skipped"],
-                    failed=summary["failed"],
-                    duration_ms=flush_duration_ms,
-                )
-                buffer = []
-                last_flush = now
-                continue  # immediately try to drain more
 
-            # 5. Wait for inbox activity using modification watcher (inotify/kqueue)
-            # instead of busy-wait polling.
-            timeout = interval
-            if buffer:
-                # If we have buffered entries, cap wait at remaining interval
-                remaining = interval - (time.time() - last_flush)
-                if remaining <= 0:
-                    timeout = 0
-                else:
-                    timeout = min(timeout, remaining)
-
-            inbox_path = get_auto_save_inbox_path()
-            _wait_for_file_modification(inbox_path, timeout)
-            if _DAEMON_STOP_REQUESTED:
-                break
+    except Exception as exc:
+        logger.exception("auto-save daemon: fatal error: %s", exc)
     finally:
-        # Final flush so no entry is lost on shutdown.
-        if buffer:
-            try:
-                summary = _process_inbox_batch(buffer)
+        # Final flush — process anything still in the buffer.
+        try:
+            if buffer:
+                _process_inbox_batch(buffer)
                 _log_structured(
                     "info",
                     "auto_save_final_flush",
-                    batch_size=len(buffer),
-                    saved=summary["saved"],
-                    skipped=summary["skipped"],
-                    failed=summary["failed"],
+                    buffer_size=len(buffer),
                 )
-            except Exception as e:
-                _log_structured("warning", "auto_save_final_flush_failed", error=str(e))
-        _remove_pid_file()
-        _unregister_from_daemon_manifest()
+        except Exception as exc:
+            logger.warning("auto-save daemon: final flush failed: %s", exc)
+            _log_structured(
+                "warning", "auto_save_final_flush_failed", error=str(exc)
+            )
+
+        # Always clean up PID and lock on exit.
         try:
-            # Release the flock FD.  The FD close itself also releases
-            # the flock (POSIX semantics), so we drop it from the
-            # keep-alive dict first to avoid double-release.
-            fd = _DAEMON_LOCKS.pop("auto_save_daemon", None)
-            if fd is not None:
-                try:
-                    release_flock(fd)
-                except Exception:
-                    pass
-                try:
-                    fd.close()
-                except Exception:
-                    pass
+            pid_path = get_auto_save_pid_path()
+            pid_path.unlink(missing_ok=True)
         except Exception:
             pass
-        _log_structured("info", "auto_save_daemon_stopped_stopped")
+        try:
+            fd = _DAEMON_LOCKS.pop("auto_save_daemon", None)
+            if fd is not None:
+                release_flock(fd)
+        except Exception:
+            pass
+        _log_structured("info", "auto_save_daemon_stopped", pid=os.getpid())

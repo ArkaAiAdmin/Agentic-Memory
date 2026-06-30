@@ -1031,12 +1031,22 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
         import sys
         import time
 
+        # Clean up any stale daemon lock from a prior run — without this,
+        # a surviving flock from a previous subprocess causes the new daemon
+        # to silently exit without writing a PID file (no DEVNULL output to recover).
+        import auto_save
+        auto_save._cleanup_stale_daemon_lock()
+
         script = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "..", "background", "auto_save.py"
         )
         root = os.path.dirname(os.path.abspath(__file__)) + "/.."
         cron = root + "/cron"
-        env = {**os.environ, "PYTHONPATH": cron + ":" + root}
+        # Ensure the project root is on sys.path so the _lazy_imports shim
+        # (and other bare-name imports like from _lazy_imports import get_config)
+        # resolve correctly inside the subprocess.  "cron:" was the previous
+        # value but that alone is insufficient — bare-name imports need "." too.
+        env = {**os.environ, "PYTHONPATH": cron + ":" + root + ":" + root}
         proc = subprocess.Popen(
             [sys.executable, script, "daemon"],
             stdin=subprocess.DEVNULL,
@@ -1049,14 +1059,18 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
             # Wait for the daemon to write its PID file.
             import auto_save
 
-            deadline = time.time() + 2.0
+            # Increased from 2.0 s to 5.0 s: Python cold-start (importing
+            # background.auto_save pulls in circuit_breaker, config, daemon,
+            # inbox, tool_complete, daily_digest, purge) regularly exceeds
+            # 2 s on a loaded CI machine.
+            deadline = time.time() + 5.0
             ready = False
             while time.time() < deadline:
                 if auto_save._is_daemon_running():
                     ready = True
                     break
                 time.sleep(0.05)
-            self.assertTrue(ready, "daemon did not become ready in 2s")
+            self.assertTrue(ready, "daemon did not become ready in 5s")
 
             # Now send SIGTERM and verify it exits within 2s.
             proc.terminate()

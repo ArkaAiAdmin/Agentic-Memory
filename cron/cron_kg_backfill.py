@@ -226,12 +226,14 @@ def main() -> int:
         pre["memories"],
     )
 
-    result = run_backfill(
-        db_path,
-        commit_every=args.commit_every,
-        progress_every=args.progress_every,
-        dry_run=args.dry_run,
-    )
+    from background.cron_model_lock import cron_model_lock
+    with cron_model_lock("kg_backfill", timeout=600.0):
+        result = run_backfill(
+            db_path,
+            commit_every=args.commit_every,
+            progress_every=args.progress_every,
+            dry_run=args.dry_run,
+        )
 
     post = postflight_stats(db_path, pre)
     logger.info(

@@ -528,7 +528,7 @@ def main():
     p_hc.add_argument(
         "--minutes",
         type=int,
-        default=_health_check_minutes(),
+        default=_health_check_minutes,  # callable: argparse calls it only when --minutes absent
         help="Recent window in minutes",
     )
 

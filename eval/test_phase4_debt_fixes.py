@@ -4,6 +4,24 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
+def _reset_quality_gates_cache():
+    """Reset the make_lazy_getattr cache for quality_gates.
+
+    When tests earlier in the full suite set MEMORY_QUALITY_GATES=1 and
+    touch the quality_gates module, the lazy getter caches
+    ``QUALITY_GATES_ENABLED=True`` in quality_gates.__dict__.  A later
+    test runs with the flag unset but sees the stale True — activating
+    the dedup filter unexpectedly and changing assertion outcomes.
+    This function clears that cache and (re-)resolves from the current
+    env/config state.
+    """
+    from infra.memory_common import reset_all_lazy_config_attrs
+    reset_all_lazy_config_attrs()
+
+
+_reset_quality_gates_cache()
+
 from quality_gates import filter_results, _jaccard, _tokenize
 
 

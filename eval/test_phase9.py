@@ -10,6 +10,16 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+# Reset lazy-config caches BEFORE any module-level ``from X import LAZY_CONST``
+# statements fire.  make_lazy_getattr caches resolved values in the target
+# module's __dict__; a prior test that triggered the getter (e.g. a
+# TestUserProfileIntegration setUp that sets MEMORY_USER_PROFILE=1) will leave
+# ``PROFILE_ENABLED=True`` permanently baked in for the rest of the process
+# unless we clear it here.
+from infra.memory_common import reset_all_lazy_config_attrs
+
+reset_all_lazy_config_attrs()
+
 from summarization import (
     _split_sentences,
     _tokenize_words,
@@ -21,7 +31,6 @@ from user_profile import (
     record_access,
     get_user_profile,
     personalize_results,
-    PROFILE_ENABLED,
 )
 from adaptive_retention import (
     compute_adaptive_halflife,
@@ -104,6 +113,21 @@ class TestSummarizeText(unittest.TestCase):
 
 
 class TestUserProfile(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import user_profile
+
+        cls._original_enabled = user_profile.__dict__.get("PROFILE_ENABLED")
+        user_profile.__dict__.pop("PROFILE_ENABLED", None)
+        user_profile.PROFILE_ENABLED = False  # bypass lazy getter
+
+    @classmethod
+    def tearDownClass(cls):
+        import user_profile as _up
+        _up.__dict__.pop("PROFILE_ENABLED", None)
+        if cls._original_enabled is not None:
+            _up.__dict__["PROFILE_ENABLED"] = cls._original_enabled
+
     def test_decay_weight_recent(self):
         w = _decay_weight(0)
         self.assertAlmostEqual(w, 1.0, places=2)
@@ -113,18 +137,36 @@ class TestUserProfile(unittest.TestCase):
         self.assertLess(w, 1.0)
 
     def test_record_access_disabled(self):
-        # By default MEMORY_USER_PROFILE is not set
         result = record_access("test:note1", "search")
-        if not PROFILE_ENABLED:
-            self.assertFalse(result)
+        import user_profile as _up
+        self.assertFalse(_up.PROFILE_ENABLED)
+        self.assertFalse(result)
 
 
 class TestPersonalizeResults(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import user_profile
+
+        cls._original_enabled = user_profile.__dict__.get("PROFILE_ENABLED")
+        user_profile.__dict__.pop("PROFILE_ENABLED", None)
+        user_profile.PROFILE_ENABLED = False  # bypass lazy getter
+
+    @classmethod
+    def tearDownClass(cls):
+        import user_profile as _up
+        _up.__dict__.pop("PROFILE_ENABLED", None)
+        if cls._original_enabled is not None:
+            _up.__dict__["PROFILE_ENABLED"] = cls._original_enabled
+
     def test_empty_results(self):
         result = personalize_results([])
         self.assertEqual(result, [])
 
     def test_boost_matching_category(self):
+        import user_profile as _up
+        _up.__dict__.pop("PROFILE_ENABLED", None)
+        _up.PROFILE_ENABLED = False  # ensure disabled to use ad-hoc profile arg
         results = [
             {"content": "A", "category": "lessons", "score": 1.0},
             {"content": "B", "category": "other", "score": 1.0},
@@ -135,7 +177,6 @@ class TestPersonalizeResults(unittest.TestCase):
             "top_tags": [],
         }
         boosted = personalize_results(results, profile=profile, boost_factor=2.0)
-        # lessons category should be boosted above other
         self.assertGreaterEqual(boosted[0]["score"], boosted[1]["score"])
 
 
