@@ -243,6 +243,10 @@ $BLOCK_BEGIN
 
 # Daemon watchdog — restart auto-save daemon if it has crashed (every 5 min at :03/:18/:33/:48)
 3,18,33,48 *  *   *   *    $VENV_PY $ROOT/cron/cron_daemon_watchdog.py >> $LOG_DIR/watchdog-daemon.log 2>&1
+
+# Task queue monitor — alert on backlog depth and stale task types (Phase F)
+# Staggered at :10 and :40 to avoid all other operational crons.
+10,40 *  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/monitor_task_queue.py >> $LOG_DIR/task-queue-monitor.log 2>&1
 $BLOCK_END
 EOF
 }
