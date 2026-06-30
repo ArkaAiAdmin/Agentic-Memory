@@ -343,6 +343,7 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_embedding_recompute": "cron/cron_embedding_recompute.py",
     "cron_detect_vec_drift": "cron/cron_detect_vec_drift.py",
     "cron_rewrite_links": "cron/cron_rewrite_links.py",
+    "cron_consolidate": "cron/cron_consolidate.py",
     "cron_compact": "cron/cron_compact.py",
     "cron_rebuild_fts": "cron/cron_rebuild_fts.py",
     "cron_heartbeat": "cron/cron_heartbeat.py",
