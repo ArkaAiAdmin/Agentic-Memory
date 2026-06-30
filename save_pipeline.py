@@ -5,6 +5,7 @@ _auto_backlink_multi_part, and save_memory.
 """
 
 __all__ = [
+    "SaveRequest",
     "save_memory",
     "upsert_row",
     "memory_supersede_db",
@@ -19,6 +20,7 @@ __all__ = [
     "_is_crdt_enabled",
     "_crdt_bump_version",
 ]
+from dataclasses import dataclass, field
 import hashlib
 import json
 import logging
@@ -48,6 +50,22 @@ from infra.db import open_db  # noqa: E402,F401 — backward compat re-export
 import audit
 from self_directed import _assign_tier as assign_tier
 from backfill_all import auto_backfill
+
+
+@dataclass(frozen=True)
+class SaveRequest:
+    content: str
+    category: str
+    title_slug: str
+    tags: Optional[list] = None
+    pinned: bool = False
+    is_global: bool = False
+    safety_wiring: bool = True
+    db_path: str | None = None
+    importance: int = 3
+    note_id: str = ""
+    context: str = "generic"
+    defer_expensive: bool = False
 
 
 def _md5_to_uint64(memory_id: str) -> int:
@@ -1422,9 +1440,9 @@ def _audit_save_failure(db_path_obj, note_id, category, title_slug, _start_time)
 
 
 def save_memory(
-    content: str,
-    category: str,
-    title_slug: str,
+    content: str | SaveRequest,
+    category: str | None = None,
+    title_slug: str | None = None,
     tags: Optional[list] = None,
     pinned: bool = False,
     is_global: bool = False,
@@ -1439,40 +1457,67 @@ def save_memory(
 ):
     """Write a memory note to disk and update the FTS5 index incrementally.
 
-    All normalization — content validation, frontmatter stripping,
-    category/title_slug derivation from note_id, and tag policy via
-    _resolve_tags — lives inside this function. Callers must pass raw
-    inputs and use the ``context`` kwarg so tag policy is applied
-    consistently. Do not reimplement any of this logic in callers.
+    Two calling conventions:
 
-    Args:
-        content: Raw note body.
-        category: Memory category (e.g. "lessons").
-        title_slug: URL-safe slug for the note.
-        tags: Optional list of tags (caller-supplied, always win).
-        pinned: Whether the note is pinned.
-        is_global: Write to global store vs local project store.
-        safety_wiring: Enable contradiction check at save time.
-        db_path: Override database path.
-        _now_iso: Override timestamp (testing).
-        importance: 1-5 importance score.
-        _conn: Reuse an existing DB connection (saga path).
-        note_id: Canonical note id ("category/slug"). When provided,
-            derives category and title_slug if those are empty.
-        context: Tag policy selector: "generic", "mcp", or "auto-save".
-            "mcp" auto-adds [category] for lessons/decisions when no
-            caller tags given. "auto-save" prepends hook tags.
-        defer_expensive: When True, skip embedding, KG indexing, fact
-            extraction, context enrichment, and contradiction check
-            inside the synchronous save path.  These are enqueued as
-            background tasks for the worker to process asynchronously.
-            Use this for MCP tool calls and any path where fast
-            response time matters more than immediate indexing.
+    1. **New (preferred):** ``save_memory(SaveRequest(...))``
+    2. **Legacy (backward compat):** ``save_memory(content, category, title_slug, ...)``
+
+    Internal params ``_now_iso`` and ``_conn`` are accepted in both forms.
 
     Returns:
         The canonical note_id string on success, or an _err envelope
         string on failure.
     """
+    if isinstance(content, SaveRequest):
+        return _save_memory_core(content, _now_iso=_now_iso, _conn=_conn)
+    req = SaveRequest(
+        content=content,
+        category=category or "",
+        title_slug=title_slug or "",
+        tags=tags,
+        pinned=pinned,
+        is_global=is_global,
+        safety_wiring=safety_wiring,
+        db_path=db_path,
+        importance=importance,
+        note_id=note_id,
+        context=context,
+        defer_expensive=defer_expensive,
+    )
+    return _save_memory_core(req, _now_iso=_now_iso, _conn=_conn)
+
+
+def _save_memory_core(
+    req: SaveRequest,
+    _now_iso: str | None = None,
+    _conn=None,
+):
+    """Internal implementation of save_memory."""
+    content = req.content
+    category = req.category
+    title_slug = req.title_slug
+    tags = req.tags
+    pinned = req.pinned
+    is_global = req.is_global
+    db_path = req.db_path
+    importance = req.importance
+    note_id = req.note_id
+    context = req.context
+    defer_expensive = req.defer_expensive
+    safety_wiring = req.safety_wiring
+    content = req.content
+    category = req.category
+    title_slug = req.title_slug
+    tags = req.tags
+    pinned = req.pinned
+    is_global = req.is_global
+    db_path = req.db_path
+    importance = req.importance
+    note_id = req.note_id
+    context = req.context
+    defer_expensive = req.defer_expensive
+    safety_wiring = req.safety_wiring
+
     from db import _local_state
 
     _local_state.in_save_pipeline = True

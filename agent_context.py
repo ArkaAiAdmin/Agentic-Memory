@@ -165,16 +165,21 @@ def agent_save(content: str, category: str, title_slug: str, **kwargs):
 
     Wraps ``save_pipeline.save_memory`` with automatic note ID scoping.
     """
-    from _lazy_imports import save_memory
+    from _lazy_imports import save_memory, SaveRequest
 
     scoped_slug = scope_note_id(title_slug)
-    # Remove metadata_json if present (save_memory doesn't accept it)
+    _now_iso = kwargs.pop("_now_iso", None)
+    _conn = kwargs.pop("_conn", None)
     kwargs.pop("metadata_json", None)
     return save_memory(
-        content=content,
-        category=category,
-        title_slug=scoped_slug,
-        **kwargs,
+        SaveRequest(
+            content=content,
+            category=category,
+            title_slug=scoped_slug,
+            **kwargs,
+        ),
+        _now_iso=_now_iso,
+        _conn=_conn,
     )
 
 
