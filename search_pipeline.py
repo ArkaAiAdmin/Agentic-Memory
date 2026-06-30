@@ -36,14 +36,6 @@ Graph-RAG expansion, and the main search_memories orchestrator.
 # they never conflict. Do not remove either hook without adding a
 # comment explaining why the other one is not affected.
 # ---------------------------------------------------------------------------
-# Canonical __getattr__ lives in search/__init__.py (single source of
-# truth for both the search_memories proxy and config lazy keys).
-from search import __getattr__ as _search_getattr  # noqa: E402
-
-# Proxy class + _install_proxies: forward writes to _CTR_WEIGHTS_CACHE
-# (and similar shared state) to the canonical submodule. This is what
-# lets tests do `search_pipeline._CTR_WEIGHTS_CACHE = None` and have
-# it actually clear the live cache in search.scoring.
 import sys as _sys
 import types as _types
 
@@ -78,12 +70,6 @@ class _ProxyModule(_types.ModuleType):
 
 _module = _sys.modules[__name__]
 _module.__class__ = _ProxyModule
-
-
-# Install the canonical __getattr__ on this module so that
-# ``from search_pipeline import _TEMPORAL_DECAY_HALF_LIFE`` etc. still
-# resolves through the same code path as ``from search import ...``.
-_module.__getattr__ = _search_getattr  # type: ignore[method-assign]
 
 
 __all__ = [
@@ -163,6 +149,52 @@ __all__ = [
     "_QW5_CHUNKS_SCHEMA_SQL",
     "_QW5_CHUNKS_TRIGGERS_SQL",
 ]
+import json
+import logging
+import math
+import threading
+import os
+import re
+import sqlite3
+import time
+import uuid
+from collections import OrderedDict, namedtuple
+from typing import NamedTuple, Optional, cast
+from datetime import datetime, timezone
+from pathlib import Path
+from dataclasses import dataclass
+from memory_common import (
+    open_db,
+    count_rows,
+    safe_call,
+    connection_pool,
+    safe_close_db,
+    acquire_flock_with_retry,
+    release_flock,
+    atomic_write,
+    get_memory_paths,
+    parse_frontmatter,
+)
+from infrastructure import (
+    _normalize_unicode,
+    _resolve_active_db_path,
+    _try_extract_result_meta,
+    with_audit,
+    _err,
+    ErrorCode,
+    resolve_active_memory_dir,
+    resolve_db_for_memory_id,
+    add_link_to_memory_md_content,
+    update_memory_md_locked,
+    GLOBAL_MEM_DIR,
+)
+from cache import (
+    _search_cache,
+    SEARCH_CACHE_MAX,
+    SEARCH_CACHE_TTL,
+    SEARCH_CACHE_TTL_ENABLED,
+    make_cache_key,
+)
 
 # ---------------------------------------------------------------------------
 # Cross-encoder + late-interaction rerank primitives
@@ -261,7 +293,7 @@ from search.chunk_index import (  # noqa: E402, F401
     _QW5_CHUNKS_TRIGGERS_SQL,
 )
 
-from search.query_parser import (  # noqa: E402,F401
+from search.query_parser import (
     _QUERY_EXPANSIONS,
     _QUERY_EXPANSION_REVERSE,
     _QUERY_TYPE_WEIGHTS,
@@ -269,6 +301,7 @@ from search.query_parser import (  # noqa: E402,F401
     _QUERY_TYPE_MULTIHOP_RE,
     _QUERY_TYPE_CODE_RE,
     _QUERY_TYPE_FACTUAL_RE,
+    _parse_search_query,
     _escape_fts_query,
     _escape_phrase,
     _expand_query,
@@ -282,34 +315,61 @@ from search.query_parser import (  # noqa: E402,F401
     _graph_rag_expand,
 )
 
-from search.orchestrator import (  # noqa: E402,F401
-    ScoreContext,
-    _merge_chunk_hits,
-    _fallback_embedding_search,
-    check_concept_drift_db,
+from search.orchestrator import (
     search_memories,
+    _get_memories_columns,
+    _fetch_rows_by_ids,
+    _merge_chunk_hits,
+    _search_chunks_enhanced,
+    ScoreContext,
+    MemoryResultRow,
+    _resolve_late_interaction_enabled,
+    _skill_first_lookup,
+    record_ctr_feedback_db,
+    check_concept_drift_db,
+    _fallback_embedding_search,
 )
 
-from infra.memory_config import GLOBAL_MEM_DIR  # noqa: E402,F401 — backward compat re-export
 
+def __getattr__(name: str):
+    if name == "_LATE_INTERACTION_ENABLED":
+        from _lazy_imports import get_config
 
-# (Moved to search/__init__.py — canonical location.)
-# Marker remains for reset_all_lazy_config_attrs().
+        return get_config().late_interaction
+    if name == "_TEMPORAL_DECAY_HALF_LIFE":
+        from _lazy_imports import get_config
 
+        return get_config().temporal_half_life
+    if name == "_TEMPORAL_DECAY_MODE":
+        from _lazy_imports import get_config
 
-# Marker for reset_all_lazy_config_attrs(): this module uses a hand-rolled
-# __getattr__ with underscore-prefixed lazy config keys.
-_lazy_config_attr_names = frozenset(
-    {
-        "_LATE_INTERACTION_ENABLED",
-        "_TEMPORAL_DECAY_HALF_LIFE",
-        "_TEMPORAL_DECAY_MODE",
-        "_FORGETTING_CURVE_ENABLED",
-        "_FORGETTING_CURVE_HALF_LIFE",
-        "_GRAPH_RAG_ENABLED",
-        "_GRAPH_RAG_MAX_HOPS",
-        "_GRAPH_RAG_MAX_EXPANSIONS",
-        "_RERANK_HALF_LIFE_DAYS",
-        "_TEMPORAL_DECAY_WEIGHT",
-    }
-)
+        return get_config().temporal_decay_mode
+    if name == "_FORGETTING_CURVE_ENABLED":
+        from _lazy_imports import get_config
+
+        return get_config().forgetting_curve
+    if name == "_FORGETTING_CURVE_HALF_LIFE":
+        from _lazy_imports import get_config
+
+        return get_config().forgetting_curve_half_life
+    if name == "_GRAPH_RAG_ENABLED":
+        from _lazy_imports import get_config
+
+        return get_config().knowledge_graph
+    if name == "_GRAPH_RAG_MAX_HOPS":
+        from _lazy_imports import get_config
+
+        return get_config().graph_rag_hops
+    if name == "_GRAPH_RAG_MAX_EXPANSIONS":
+        from _lazy_imports import get_config
+
+        return get_config().graph_rag_expansions
+    if name == "_RERANK_HALF_LIFE_DAYS":
+        from _lazy_imports import get_config
+
+        return float(get_config().rerank_half_life_days)
+    if name == "_TEMPORAL_DECAY_WEIGHT":
+        from _lazy_imports import get_config
+
+        return float(get_config().temporal_decay_weight)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

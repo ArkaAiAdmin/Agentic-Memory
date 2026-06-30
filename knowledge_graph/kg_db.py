@@ -116,7 +116,7 @@ def _upsert_edge(
 
 def invalidate_edge(conn: sqlite3.Connection, edge_id: int) -> bool:
     """Mark an edge as invalid (soft delete). Returns True if an edge was invalidated."""
-    time.time()
+    now = time.time()
     try:
         cur = conn.execute(
             "UPDATE kg_edges SET invalid_at = datetime('now') WHERE id = ? AND invalid_at IS NULL",
@@ -158,12 +158,7 @@ def get_active_edges_for_entity(
     ]
 
 
-def index_kg_for_memory(
-    conn: sqlite3.Connection,
-    memory_id: str,
-    content: str,
-    force_regex_only: bool = False,
-) -> dict:
+def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) -> dict:
     """Extract and index entities/relations from a memory note.
 
     Returns stats: {"entities": N, "relations": N, "regex_count": R,
@@ -177,11 +172,6 @@ def index_kg_for_memory(
       LLM cost bounded to memories the regex can't handle, while
       still letting the LLM rescue the long tail of messy notes.
 
-    When *force_regex_only* is True, Stage 2 is skipped entirely so
-    no LLM model is loaded.  Used by cron/heartbeat backfill to avoid
-    accidentally pulling Qwen2.5-3B into memory during a routine drift
-    check.
-
     Extraction results are cached in-process by content hash (P2c.3)
     so a re-save of the same content doesn't re-pay extraction.
 
@@ -189,6 +179,7 @@ def index_kg_for_memory(
     appear in the same sentence, a ``co_occurs`` edge is created between
     them.
     """
+    import sys
 
     if not sys.modules["knowledge_graph"].KG_ENABLED:
         # Backwards-compatible return shape for the disabled branch.
@@ -231,14 +222,13 @@ def index_kg_for_memory(
         entities = list(regex_entities)
 
         # P2c.2 — Stage 2: LLM fallback when regex returned too few entities
-        if not force_regex_only:
-            try:
-                from _lazy_imports import get_config
+        try:
+            from _lazy_imports import get_config
 
-                _fallback_threshold = int(get_config().kg_llm_fallback_min_entities)
-            except Exception:
-                _fallback_threshold = 2
-        if not force_regex_only and len(entities) < _fallback_threshold:
+            _fallback_threshold = int(get_config().kg_llm_fallback_min_entities)
+        except Exception:
+            _fallback_threshold = 2
+        if len(entities) < _fallback_threshold:
             try:
                 from llm_extraction import extract_entities_via_llm
 
@@ -275,27 +265,10 @@ def index_kg_for_memory(
     now = time.time()
     entity_ids = {}
     entity_count = 0
-    crdt_agent = None
-    crdt_vv = None
     for name, etype in entities:
         eid = _upsert_entity(conn, name, etype, now)
         entity_ids[name.lower().strip()] = eid
         entity_count += 1
-    # Record CRDT entity ops for peer-to-peer sync (best-effort)
-    if entity_count:
-        try:
-            from save.crdt_helpers import _crdt_agent_id
-            from kg_crdt import ensure_kg_crdt_schema, record_entity_add
-
-            crdt_agent = _crdt_agent_id()
-            crdt_vv = {crdt_agent: 1}
-            ensure_kg_crdt_schema(conn)
-            for name, etype in entities:
-                eid = entity_ids.get(name.lower().strip())  # type: ignore[assignment]
-                if eid is not None:
-                    record_entity_add(conn, eid, crdt_agent, crdt_vv, name, etype)
-        except Exception as _crdt_e:
-            logger.debug("KG CRDT entity recording skipped: %s", _crdt_e)
     stats["entities"] = entity_count
 
     # Co-occurrence relations: two extracted entities in the same sentence
@@ -343,18 +316,6 @@ def index_kg_for_memory(
                 "INSERT INTO kg_edges (source_id, target_id, relation, created_at, valid_at) VALUES (?, ?, 'co_occurs', ?, ?)",
                 [(p[0], p[1], now_ts, now_ts) for p in new_pairs],
             )
-            # Record CRDT edge ops for peer-to-peer sync (best-effort)
-            if crdt_agent and crdt_vv:
-                try:
-                    from kg_crdt import record_edge_add
-
-                    for src, tgt, _ctx in new_pairs:
-                        record_edge_add(
-                            conn, src, tgt, "co_occurs", 1.0,
-                            crdt_agent, crdt_vv,
-                        )
-                except Exception as _crdt_edge_e:
-                    logger.debug("KG CRDT edge recording skipped: %s", _crdt_edge_e)
             relation_count += len(new_pairs)
         # Update weight for existing pairs
         update_pairs = [p for p in all_pairs if (p[0], p[1]) in existing_pairs]

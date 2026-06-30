@@ -33,8 +33,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, cast
 
-import numpy as np
-
 logger = logging.getLogger(__name__)
 
 _RRF_K = 60
@@ -180,10 +178,27 @@ def _temporal_decay_factor(
     )
 
 
-def _apply_neural_forget_curve(
-    scored_results: list, query: str, decay_weight: float = 0.15
-) -> list:
-    """Apply surprise-based neural forgetting curve using NeuralForgetModel."""
+def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
+    """Apply neural-forget-curve surprise-based re-ranking.
+
+    B19 fix: the original temporal decay is purely time-based. The
+    neural-forget curve adds a *surprise* term — how unexpected this
+    note was for the current query — so notes that the user has
+    recently accessed for *similar* queries decay less than notes
+    that were last accessed for unrelated queries.
+
+    This is a lightweight proxy: it uses Jaccard distance between
+    the current query and the last-accessed query (from
+    adaptive_retention) as the surprise signal. When surprise is
+    high (low overlap), the note is "forgotten faster."
+
+    P1-10 fix (2026-06-24): replaced the N+1 pattern (``_galq(note_id)``
+    called once per result) with a single batch call
+    (``get_last_access_queries_batch``) that resolves all note_ids in
+    one query against ``memory_audit_log``.
+
+    Best-effort: failures degrade to no-op.
+    """
     try:
         from adaptive_retention import get_last_access_queries_batch
     except ImportError:
@@ -191,15 +206,18 @@ def _apply_neural_forget_curve(
 
     if not scored_results or not query:
         return scored_results
-
     try:
-        from neural_forget import compute_retention_rate, surprise_score
-    except ImportError:
+        q_tokens = set(query.lower().split())
+    except Exception:
+        logger.warning("Failed to tokenize query for surprise scoring")
+        return scored_results
+    if not q_tokens:
         return scored_results
 
+    # P1-10 fix: batch-collect all note_ids and resolve last-access
+    # queries in a single DB round trip instead of one query per row.
     note_ids = [r[0] for r in scored_results if r and r[0]]
-    get_last_access_queries_batch(note_ids)
-    now_ts = time.time()
+    last_queries = get_last_access_queries_batch(note_ids)
 
     modified = []
     for r in scored_results:
@@ -207,7 +225,27 @@ def _apply_neural_forget_curve(
         if not note_id:
             modified.append(r)
             continue
-
+        last_q = last_queries.get(note_id)
+        if not last_q:
+            modified.append(r)
+            continue
+        try:
+            last_tokens = set(last_q.lower().split())
+        except Exception:
+            logger.warning("Failed to tokenize last query for surprise scoring")
+            modified.append(r)
+            continue
+        if not last_tokens:
+            modified.append(r)
+            continue
+        inter = len(q_tokens & last_tokens)
+        union = len(q_tokens | last_tokens)
+        jaccard = inter / union if union > 0 else 0.0
+        # surprise = 1 - jaccard (high surprise = low overlap)
+        surprise = 1.0 - jaccard
+        # Apply gentle surprise penalty (capped at 10% to avoid
+        # overriding relevance signals)
+        penalty = 1.0 - 0.1 * surprise
         try:
             (
                 note_id_r,
@@ -217,56 +255,19 @@ def _apply_neural_forget_curve(
                 created,
                 rank,
                 final_score,
-                fitness_score,
-                importance_val,
+                fitness,
+                importance,
                 pinned,
             ) = r[:10]
             last_accessed = r[10] if len(r) > 10 else None
-            r[11] if len(r) > 11 else None
-            access_count = r[12] if len(r) > 12 else 1
+            adjusted = final_score * penalty
+            new_r = list(r)
+            if len(new_r) >= 7:
+                new_r[6] = adjusted
+            modified.append(tuple(new_r))
         except Exception:
-            logger.warning("Failed to unpack result row for neural forget curve")
+            logger.warning("Failed to apply surprise penalty to result")
             modified.append(r)
-            continue
-
-        # Compute query surprise
-        q_surprise = surprise_score(content or "", query)
-
-        # Calculate recency_days
-        recency_days = 0.0
-        if last_accessed:
-            try:
-                la_ts = datetime.fromisoformat(last_accessed).timestamp()
-                recency_days = max(0.0, (now_ts - la_ts) / 86400.0)
-            except (ValueError, TypeError):
-                if created:
-                    try:
-                        c_ts = datetime.fromisoformat(created).timestamp()
-                        recency_days = max(0.0, (now_ts - c_ts) / 86400.0)
-                    except (ValueError, TypeError):
-                        pass
-
-        # Compute retention rate using trained/formula weights
-        try:
-            retention = compute_retention_rate(
-                content=content or "",
-                access_count=access_count,
-                recency_days=recency_days,
-                fitness=fitness_score,
-                importance=importance_val,
-                query_surprise=q_surprise,
-            )
-        except Exception as e:
-            logger.warning("compute_retention_rate failed: %s", e)
-            retention = 1.0
-
-        # Adjust score using the retention rate
-        adjusted = final_score * (1.0 - decay_weight + decay_weight * retention)
-        new_r = list(r)
-        if len(new_r) >= 7:
-            new_r[6] = adjusted
-        modified.append(tuple(new_r))
-
     return modified
 
 
@@ -391,20 +392,10 @@ def _compute_final_score(ctx) -> float:
         try:
             c_ts = datetime.fromisoformat(ctx.created).timestamp()
             age_days = max(0.0, (now_ts - c_ts) / 86400.0)
-            half_life = _get_rerank_half_life_days()
-            effective_half_life = min(7.0, half_life) if age_days < 7 else half_life
-            recency_factor = 0.5 ** (age_days / effective_half_life)
+            recency_factor = 0.5 ** (age_days / _get_rerank_half_life_days())
         except (ValueError, TypeError):
             recency_factor = 0.0
     recency_factor *= ctx.recency_weight
-    freshness_bonus = 0.0
-    if ctx.last_accessed:
-        try:
-            la_ts = datetime.fromisoformat(ctx.last_accessed).timestamp()
-            if (now_ts - la_ts) < 86400:
-                freshness_bonus = 0.05
-        except (ValueError, TypeError):
-            pass
     tag_match = 0.0
     query_tokens = {
         t.lower() for t in _RERANK_TOKEN_RE.findall(ctx.query) if len(t) >= 3
@@ -430,7 +421,6 @@ def _compute_final_score(ctx) -> float:
         + weights.get("pinned", _get_rerank_weights()["pinned"]) * pinned_bonus
         + weights.get("recency", _get_rerank_weights()["recency"]) * recency_factor
         + weights.get("tag_match", _get_rerank_weights()["tag_match"]) * tag_match
-        + freshness_bonus
     )
 
 
@@ -535,126 +525,3 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
         logger.warning("Failed to compute CTR weights from feedback")
         _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
         return None
-
-
-# ---------------------------------------------------------------------------
-# TemporalAttentionModel — SSM over per-memory access sequences (P2)
-# ---------------------------------------------------------------------------
-# Replaces the old "SSM encoder" (infra/embedding_incremental.py) which
-# produced 128-dim content-delta vectors that were never consumed by any
-# search path.  This version models the *access pattern* for each memory
-# rather than its content, and adds a temporal activity signal to the
-# final retrieval score.
-#
-# Design:
-#   - Hidden state per memory_id: np.ndarray shape (8,) initialized to zeros
-#   - observe()  — update the hidden state when a memory is clicked,
-#                  dismissed, or surfaced without interaction
-#   - score()    — sigmoid(readout · hidden_state) → [0, 1] temporal boost
-#   - prune()    — drop hidden states for memories not accessed recently
-#
-# Weights are learned offline by cron_train_temporal_ssm.py and stored
-# as CSV in config.temporal_ssm_weights.  Cold-start: weights=None uses
-# a no-op model (score always returns 0.5, blend factor zeroed out).
-# ---------------------------------------------------------------------------
-
-_HIDDEN_DIM = 8
-_INPUT_DIM = 6       # 5 from query_embedding[:5] + 1 for click/dismiss signal
-_DECAY_LAMBDA = 0.92   # hourly decay factor
-_PRUNE_HOURS = 720.0   # 30 days
-
-
-class TemporalAttentionModel:
-    """SSM over per-memory access sequences for temporal retrieval boost."""
-
-    # Expected weight count: W_readout(HIDDEN_DIM) + b_readout(1)
-    #                        + W_input(HIDDEN_DIM * INPUT_DIM) + b_input(1)
-    _EXPECTED_WEIGHTS = _HIDDEN_DIM + 1 + _HIDDEN_DIM * _INPUT_DIM + 1
-
-    def __init__(self, weights: np.ndarray | None = None) -> None:
-        self._hidden: dict[str, np.ndarray] = {}
-        self._last_access_ts: dict[str, float] = {}
-        if weights is not None and weights.shape == (self._EXPECTED_WEIGHTS,):
-            offset = _HIDDEN_DIM + 1
-            self.W_readout = weights[:_HIDDEN_DIM].astype(float)
-            self.b_readout = float(weights[_HIDDEN_DIM])
-            flat_w = weights[offset : offset + _HIDDEN_DIM * _INPUT_DIM]
-            self.W_input = flat_w.reshape((_HIDDEN_DIM, _INPUT_DIM))
-            self.b_input = float(weights[offset + _HIDDEN_DIM * _INPUT_DIM])
-            self._loaded = True
-        else:
-            # Cold start: uniform weights produce a near-zero signal.
-            # The blend factor in search_pipeline is also zeroed when
-            # no loaded weights are detected, so this is a safe no-op.
-            self.W_readout = np.zeros(_HIDDEN_DIM, dtype=float)
-            self.b_readout = 0.0
-            self.W_input = np.zeros((_HIDDEN_DIM, _INPUT_DIM), dtype=float)
-            self.b_input = 0.0
-            self._loaded = False
-
-    @property
-    def has_learned_weights(self) -> bool:
-        return self._loaded and (
-            self.W_readout.sum() != 0.0 or self.W_input.sum() != 0.0
-        )
-
-    def observe(
-        self,
-        memory_id: str,
-        query_embedding_first5: np.ndarray,
-        clicked: bool = False,
-        dismissed: bool = False,
-        hours_since_access: float = 0.0,
-    ) -> None:
-        """Update hidden state after one access event for *memory_id*."""
-        sig = 1.0 if clicked else (-1.0 if dismissed else 0.0)
-        feat = np.append(query_embedding_first5, sig)  # shape (6,)
-        self._hidden.get(memory_id, np.zeros(_HIDDEN_DIM))
-        decay = _DECAY_LAMBDA ** max(0.0, hours_since_access)
-        h_new = np.tanh(np.dot(feat, self.W_input.T) + self.b_input) * decay
-        self._hidden[memory_id] = h_new
-        self._last_access_ts[memory_id] = time.time()
-
-    def score(self, memory_id: str) -> float:
-        """Return temporal activity score [0, 1] for *memory_id*."""
-        h = self._hidden.get(memory_id, np.zeros(_HIDDEN_DIM))
-        raw = float(np.dot(h, self.W_readout) + self.b_readout)
-        return 1.0 / (1.0 + math.exp(-np.clip(raw, -88.0, 88.0)))
-
-    def prune(self, older_than_hours: float = _PRUNE_HOURS) -> int:
-        """Drop hidden states not accessed within the window. Returns count."""
-        cutoff = time.time() - older_than_hours * 3600
-        stale = [
-            mid
-            for mid, ts in self._last_access_ts.items()
-            if ts < cutoff and mid in self._hidden
-        ]
-        for mid in stale:
-            del self._hidden[mid]
-            del self._last_access_ts[mid]
-        return len(stale)
-
-    @classmethod
-    def from_config(cls) -> "TemporalAttentionModel":
-        raw = ""
-        try:
-            from _lazy_imports import get_config
-            raw = getattr(get_config(), "temporal_ssm_weights", "")
-        except Exception:
-            pass
-        if not raw:
-            return cls(weights=None)
-        try:
-            parts = [float(x) for x in raw.split(",")]
-            arr = np.array(parts)
-            expected = cls._EXPECTED_WEIGHTS
-            if arr.shape == (expected,):
-                return cls(arr)
-        except Exception:
-            pass
-        return cls(weights=None)
-
-    def to_config_str(self) -> str:
-        parts = list(self.W_readout) + [self.b_readout]
-        parts += list(self.W_input.flatten()) + [self.b_input]
-        return ",".join(f"{v:.6f}" for v in parts)
