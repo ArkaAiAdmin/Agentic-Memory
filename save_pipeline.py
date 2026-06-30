@@ -389,6 +389,7 @@ def _upsert_memory_row(
     importance: int = 3,
     tier: str = "warm",
     tenant_id: str = "default",
+    cols: set | None = None,
 ):
     """Insert or update the memory row (and file_mtimes).
 
@@ -401,6 +402,15 @@ def _upsert_memory_row(
     Values are clamped to [1, 5] so a misbehaving caller can't
     produce rows outside the documented scale.
     """
+    if cols is None:
+        try:
+            cols = {
+                row[1]
+                for row in db.execute("PRAGMA table_info(memories)").fetchall()
+            }
+        except Exception:
+            cols = set()
+    has_tenant = "tenant_id" in cols
     importance = max(1, min(5, int(importance)))
     repo_id = None if is_global else db_path.parent.parent.name
     try:
@@ -412,58 +422,72 @@ def _upsert_memory_row(
             exc,
         )
         metadata_json = "{}"
+
+    def _mk_insert(temporal: bool) -> tuple[str, tuple]:
+        base_cols = [
+            "id", "source_file", "content", "tags",
+            "created_at", "updated_at", "observed_at",
+            "fitness_score", "importance", "importance_score",
+            "pinned", "repo_id",
+        ]
+        if temporal:
+            base_cols += ["valid_from", "valid_to", "superseded_by"]
+        base_cols += ["category", "tier", "metadata"]
+        if has_tenant:
+            base_cols.append("tenant_id")
+        col_sql = ", ".join(base_cols)
+        ph = ", ".join(["?"] * len(base_cols))
+        update_cols = [
+            "content = excluded.content",
+            "tags = excluded.tags",
+            "updated_at = excluded.updated_at",
+            "observed_at = excluded.observed_at",
+            "pinned = excluded.pinned",
+            "fitness_score = excluded.fitness_score",
+            "importance = excluded.importance",
+            "importance_score = excluded.importance_score",
+            "deleted_at = NULL",
+            "category = excluded.category",
+            "tier = excluded.tier",
+            "metadata = COALESCE(excluded.metadata, memories.metadata)",
+        ]
+        if temporal:
+            update_cols.append(
+                "valid_from = COALESCE(memories.valid_from, excluded.valid_from)"
+            )
+        if has_tenant:
+            update_cols.append("tenant_id = excluded.tenant_id")
+        update_sql = ", ".join(update_cols)
+        if temporal:
+            vals = (
+                note_id, source_file, content, tags_json,
+                now_iso, now_iso, now_iso,
+                0.5, importance, float(importance),
+                1 if pinned else 0, repo_id,
+                now_iso, None, None,
+                category, tier, metadata_json,
+            )
+        else:
+            vals = (
+                note_id, source_file, content, tags_json,
+                now_iso, now_iso, now_iso,
+                0.5, importance, float(importance),
+                1 if pinned else 0, repo_id,
+                category, tier, metadata_json,
+            )
+        if has_tenant:
+            vals = vals + (tenant_id,)
+        sql = (
+            f"INSERT INTO memories ({col_sql}) VALUES ({ph}) "
+            f"ON CONFLICT(id) DO UPDATE SET {update_sql}"
+        )
+        return sql, vals
+
     if has_temporal:
-        # 2026-06-22 (D5 fix): the previous ``ON CONFLICT`` clause had
-        # ``metadata = COALESCE(memories.metadata, memories.metadata)``,
-        # which is a tautology — both arguments are the *same* column,
-        # so the COALESCE always returns ``memories.metadata`` and the
-        # incoming ``excluded.metadata`` is silently dropped on update.
-        # The correct pattern (used in the no-temporal branch) is
-        # ``COALESCE(excluded.metadata, memories.metadata)`` — prefer
-        # the new value, fall back to the existing one if the new one
-        # is NULL.  Same fix in both branches.
-         db.execute(
-            "INSERT INTO memories (id, source_file, content, tags, created_at, updated_at, observed_at, fitness_score, importance, importance_score, pinned, repo_id, valid_from, valid_to, superseded_by, category, tier, metadata, tenant_id)\n               VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ? )\n               ON CONFLICT(id) DO UPDATE SET\n                   content = excluded.content,\n                   tags = excluded.tags,\n                   updated_at = excluded.updated_at,\n                   observed_at = excluded.observed_at,\n                   pinned = excluded.pinned,\n                   fitness_score = excluded.fitness_score,\n                   importance = excluded.importance,\n                   importance_score = excluded.importance_score,\n                   valid_from = COALESCE(memories.valid_from, excluded.valid_from),\n                   deleted_at = NULL,\n                   category = excluded.category,\n                   tier = excluded.tier,\n                   metadata = COALESCE(excluded.metadata, memories.metadata),\n                   tenant_id = excluded.tenant_id",
-             (
-                note_id,
-                source_file,
-                content,
-                tags_json,
-                now_iso,
-                now_iso,
-                now_iso,
-                importance,
-                float(importance),
-                1 if pinned else 0,
-                repo_id,
-                now_iso,
-                category,
-                tier,
-                metadata_json,
-                tenant_id,
-            ),
-        )
+        sql, vals = _mk_insert(temporal=True)
     else:
-        db.execute(
-            "INSERT INTO memories (id, source_file, content, tags, created_at, updated_at, observed_at, fitness_score, importance, importance_score, pinned, repo_id, category, tier, metadata, tenant_id)\n               VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, ?, ?, ?, ?, ?, ?, ?, ? )\n               ON CONFLICT(id) DO UPDATE SET\n                   content = excluded.content,\n                   tags = excluded.tags,\n                   updated_at = excluded.updated_at,\n                   observed_at = excluded.observed_at,\n                   pinned = excluded.pinned,\n                   fitness_score = excluded.fitness_score,\n                   importance = excluded.importance,\n                   importance_score = excluded.importance_score,\n                   deleted_at = NULL,\n                   category = excluded.category,\n                   tier = excluded.tier,\n                   metadata = COALESCE(excluded.metadata, memories.metadata),\n                   tenant_id = excluded.tenant_id",
-            (
-                note_id,
-                source_file,
-                content,
-                tags_json,
-                now_iso,
-                now_iso,
-                now_iso,
-                importance,
-                float(importance),
-                1 if pinned else 0,
-                repo_id,
-                category,
-                tier,
-                metadata_json,
-                tenant_id,
-            ),
-        )
+        sql, vals = _mk_insert(temporal=False)
+    db.execute(sql, vals)
     try:
         fm_cols = {
             row[1] for row in db.execute("PRAGMA table_info(file_mtimes)").fetchall()
@@ -782,6 +806,7 @@ def _update_memory_index_incremental(
             importance,
             tier,
             tenant_id,
+            cols=cols,
         )
         if _is_crdt_enabled():
             _crdt_bump_version(conn, note_id, cols)
@@ -1384,7 +1409,6 @@ def _persist_via_saga_or_fallback(
     to double-acquire the same flock (which would block forever on a
     different fd for the same file).
     """
-    note_id: str = ""
     saga_ok = False
     if _is_saga_enabled():
         try:
