@@ -1,46 +1,51 @@
 """Tool registry: defines tool visibility tiers for the MCP server.
 
-This list is the source of truth for what the agent sees in its
-tool surface. The mcp_*.py modules define **85** actual @mcp.tool
-functions (15 CORE + 70 ADMIN); the tool_registry must stay in
-lockstep with that definition. Run `scripts/tool_drift_check.py`
-to detect any drift (exits non-zero on mismatch).
+Phase A (2026-06-30) restructure:
+  CORE_TOOLS:    verbs the agent sees directly (12 + 7 existing = 16)
+  ADMIN_TOOLS:   legacy tools still callable via memory_maintenance(operation=...)
+                 but hidden from the agent surface by memory_mcp.py
+  DEPRECATED:    tools superseded by verbs (for audit/logging only)
 
-CORE_TOOLS (15): always exposed. High-value, day-to-day memory
-operations that the agent needs without extra context-budget cost.
-
-ADMIN_TOOLS (70): grouped under `memory_maintenance` so the agent
-sees a single router tool. The agent calls them via
-`memory_maintenance(operation="...")`. This keeps the visible tool
-count low (~20 instead of 80), which reduces model context overhead
-and makes the tool surface scannable.
+The agent sees ~16 tools on its surface. The 70 legacy ops are still
+functional via `memory_advanced(operation="legacy_name")` but are no
+longer advertised. Run `scripts/tool_drift_check.py` to detect drift.
 """
 
-# Core tools: always exposed to agents via MCP.
+# Core tools: agent-facing verbs for 90% of use cases.
 CORE_TOOLS = [
-    "memory_save",
     "memory_search",
+    "memory_save",
     "memory_delete",
     "memory_restore",
     "memory_rebuild",
     "memory_session_start",
     "memory_supersede",
+    # Phase A verbs
+    "memory_recall",
+    "memory_note",
+    "memory_learn",
+    "memory_health",
+    "memory_audit",
+    "memory_organize",
+    "memory_share",
+    "memory_graph",
+    "memory_profile",
+    "memory_advanced",
 ]
 
-# Admin tools: routed through memory_maintenance. Kept in sync with
-# the @mcp.tool() definitions in mcp_tools.py. Run
-# `scripts/tool_drift_check.py` after adding/removing a tool.
+# All legacy admin operations — still callable via memory_maintenance
+# but hidden from the agent's direct tool list by memory_mcp.py.
 ADMIN_TOOLS = [
+    "memory_maintenance",
     "memory_adaptive_retention",
     "memory_arc_stats",
-    "memory_audit",
     "memory_audit_query",
     "memory_auto_save_hook",
     "memory_auto_save_status",
     "memory_auto_save_daemon_metrics",
     "memory_auto_summarize",
     "memory_backfill_all",
-    "memory_check_concept_drift",  # 2026-06-15: added to admin (was unfiltered)
+    "memory_check_concept_drift",
     "memory_check_integrity",
     "memory_compact",
     "memory_consolidate",
@@ -56,8 +61,8 @@ ADMIN_TOOLS = [
     "memory_purge_auto_saves",
     "memory_quality_filter",
     "memory_quality_stats",
-    "memory_record_ctr_feedback",  # 2026-06-15: added to admin (was unfiltered)
-    "memory_list_drift_alarms",  # 2026-06-22: per-memory drift alarm list + ack (v15)
+    "memory_record_ctr_feedback",
+    "memory_list_drift_alarms",
     "memory_reinforce",
     "memory_retention_stats",
     "memory_review_schedule",
@@ -70,15 +75,11 @@ ADMIN_TOOLS = [
     "memory_summarize",
     "memory_summarization_stats",
     "memory_trash",
-    "memory_maintenance",  # grouped router; the agent calls this instead
-    # of the 30+ admin tools individually
-    "memory_crdt_sync",  # 2026-06-17: multi-agent CRDT sync
-    "memory_crdt_status",  # 2026-06-17: multi-agent sync status
-    "memory_okf_export",  # 2026-06-17: Open Knowledge Format export
-    "memory_okf_import",  # 2026-06-17: Open Knowledge Format import
-    # 2026-06-18: H4 fix — 5 tools leaked through the filter
+    "memory_crdt_sync",
+    "memory_crdt_status",
+    "memory_okf_export",
+    "memory_okf_import",
     "memory_heartbeat",
-    "memory_health",
     "memory_tier_stats",
     "memory_run_tier_migration",
     "memory_check_embedding_model",
@@ -90,24 +91,20 @@ ADMIN_TOOLS = [
     "memory_ingest_url",
     "memory_dashboard",
     "memory_metrics_server",
-    # 2026-06-22: 8 tools were exposed via @mcp.tool() but not curated
-    # in this registry. Now listed to match the actual surface.
-    "memory_agent_init",  # mcp_agent.py — initialize agent memory scope
-    "memory_agent_clear",  # mcp_agent.py — clear agent memory scope
-    "memory_agent_list",  # mcp_agent.py — list agent memory scopes
-    "memory_arc_reset",  # mcp_maintenance.py — reset ARC ghost lists + stats
-    "memory_extract_skills",  # mcp_maintenance.py — refresh memory_skills cache
-    "memory_list_skills",  # mcp_maintenance.py — list cached skills
-    "memory_sdk_demo",  # mcp_sdk.py — SDK demo / quickstart
-    "memory_auto_share",  # mcp_sharing.py — auto-publish opt-in memories
-    # 2026-06-25: 5 tools were exposed via @mcp.tool() but not in registry (drift fix)
-    "memory_graph_shortest_path",  # mcp_memory_server.py — KG shortest path
-    "memory_graph_traverse",  # mcp_memory_server.py — KG edge traversal
-    "memory_circuit_breaker_status",  # mcp_maintenance.py — CB open/close history
-    "memory_temporal_contradictions",  # mcp_maintenance.py — fact supersession events
-    "memory_temporal_query",  # mcp_maintenance.py — time-aware KG queries
-    "memory_compliance_check",  # mcp_audit.py — AGENTS.md rule compliance audit
-    # Demoted core tools
+    "memory_agent_init",
+    "memory_agent_clear",
+    "memory_agent_list",
+    "memory_arc_reset",
+    "memory_extract_skills",
+    "memory_list_skills",
+    "memory_sdk_demo",
+    "memory_auto_share",
+    "memory_graph_shortest_path",
+    "memory_graph_traverse",
+    "memory_circuit_breaker_status",
+    "memory_temporal_contradictions",
+    "memory_temporal_query",
+    "memory_compliance_check",
     "memory_semantic_search",
     "memory_facts_search",
     "memory_graph_search",
@@ -119,4 +116,11 @@ ADMIN_TOOLS = [
     "memory_check_contradictions",
     "memory_scan_injection",
     "memory_profile_access",
+]
+
+# Deprecated: superseded by verbs. Listed for audit/telemetry only.
+DEPRECATED = [
+    "memory_incremental_update",
+    "memory_check_embedding_model",
+    "memory_run_tier_migration",
 ]

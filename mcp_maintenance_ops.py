@@ -75,12 +75,37 @@ def _get_local_tools() -> dict:
             memory_llm_unload,
             memory_health,
         )
+        from mcp_verbs import (
+            memory_search,
+            memory_save,
+            memory_recall,
+            memory_note,
+            memory_learn,
+            memory_audit as _memory_audit_verb,
+            memory_organize,
+            memory_share as _memory_share_verb,
+            memory_graph as _memory_graph_verb,
+            memory_profile as _memory_profile_verb,
+            memory_advanced,
+        )
 
         _local_tools = {
             "memory_heartbeat": memory_heartbeat,
             "memory_health": memory_health,
             "memory_tier_stats": memory_tier_stats,
             "memory_run_tier_migration": memory_run_tier_migration,
+            "memory_search": memory_search,
+            "memory_save": memory_save,
+            "memory_recall": memory_recall,
+            "memory_note": memory_note,
+            "memory_learn": memory_learn,
+            "memory_audit": _memory_audit_verb,
+            "memory_organize": memory_organize,
+            "memory_share": _memory_share_verb,
+            "memory_graph": _memory_graph_verb,
+            "memory_profile": _memory_profile_verb,
+            "memory_advanced": memory_advanced,
+            "memory_tier_stats": memory_tier_stats,
             "memory_check_embedding_model": memory_check_embedding_model,
             "memory_incremental_update": memory_incremental_update,
             "memory_duplicates": memory_duplicates,
@@ -264,6 +289,72 @@ def _get_handlers() -> dict:
                 "memory_heartbeat"
             ](dry_run=dry_run),
             MaintenanceOp.HEALTH: lambda **_: _op_health(),
+            MaintenanceOp.SEARCH: lambda *, query, category="", limit=10, include_global=True, mode="hybrid", **_: (
+                t["memory_search"](
+                    query=query,
+                    category=category,
+                    limit=limit,
+                    include_global=include_global,
+                    mode=mode,
+                )
+            ),
+            MaintenanceOp.SAVE: lambda *, content, category="lessons", title_slug="", tags=None, pinned=False, importance=3, is_global=False, **_: (
+                t["memory_save"](
+                    content=content,
+                    category=category,
+                    title_slug=title_slug,
+                    tags=tags or [],
+                    pinned=pinned,
+                    importance=importance,
+                    is_global=is_global,
+                )
+            ),
+            MaintenanceOp.RECALL: lambda *, query="", session_id="", **_: (
+                t["memory_recall"](query=query, session_id=session_id)
+            ),
+            MaintenanceOp.NOTE: lambda *, note_id, action="read", content="", category="", title_slug="", tags=None, **_: (
+                t["memory_note"](
+                    note_id=note_id,
+                    action=action,
+                    content=content,
+                    category=category,
+                    title_slug=title_slug,
+                    tags=tags or [],
+                )
+            ),
+            MaintenanceOp.LEARN: lambda *, content, as_skill=False, skill_name="", category="lessons", tags=None, **_: (
+                t["memory_learn"](
+                    content=content,
+                    as_skill=as_skill,
+                    skill_name=skill_name,
+                    category=category,
+                    tags=tags or [],
+                )
+            ),
+            MaintenanceOp.AUDIT_VERB: lambda *, hours=24, limit=20, include_errors=True, **_: (
+                t["memory_audit"](hours=hours, limit=limit, include_errors=include_errors)
+            ),
+            MaintenanceOp.ORGANIZE: lambda *, target="safe_default", dry_run=False, **_: (
+                t["memory_organize"](target=target, dry_run=dry_run)
+            ),
+            MaintenanceOp.SHARE_VERB: lambda *, note_id, share_with="", action="list", **_: (
+                t["memory_share"](note_id=note_id, share_with=share_with, action=action)
+            ),
+            MaintenanceOp.GRAPH_VERB: lambda *, query="", start="", edge_patterns="", max_depth=2, action="explore", **_: (
+                t["memory_graph"](
+                    query=query,
+                    start=start,
+                    edge_patterns=edge_patterns,
+                    max_depth=max_depth,
+                    action=action,
+                )
+            ),
+            MaintenanceOp.PROFILE_VERB: lambda *, action="stats", agent_id="", **_: (
+                t["memory_profile"](action=action, agent_id=agent_id)
+            ),
+            MaintenanceOp.ADVANCED: lambda *, operation, **kwargs: (
+                t["memory_advanced"](operation=operation, **kwargs)
+            ),
             MaintenanceOp.TIER_STATS: lambda **_: t["memory_tier_stats"](),
             MaintenanceOp.TIER_MIGRATION: lambda *, dry_run=False, **_: t[
                 "memory_run_tier_migration"
