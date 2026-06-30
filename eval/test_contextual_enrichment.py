@@ -5,6 +5,7 @@ providing 49% retrieval improvement by creating richer embedding space
 connections between related memories.
 """
 
+import importlib
 import json
 import os
 import sys
@@ -14,6 +15,13 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Clear lazy-config caches at import time so the first test class that touches
+# any config key (e.g. test_phase4_debt_fixes setting MEMORY_QUALITY_GATES=1)
+# cannot poison this file's later tests through make_lazy_getattr caching.
+from infra.memory_common import reset_all_lazy_config_attrs
+reset_all_lazy_config_attrs()
+
 os.environ.pop("MEMORY_CONTEXTUAL_ENRICHMENT", None)
 
 
@@ -22,6 +30,9 @@ def enrichment_db(tmp_path):
     """Create a fresh DB for contextual enrichment tests."""
     db_path = tmp_path / "test.db"
     os.environ["MEMORY_DB_PATH"] = str(db_path)
+    # Reset all lazy-config caches before setting the enrichment flag so that
+    # the value set here is the one read by _get_config().contextual_enrichment.
+    reset_all_lazy_config_attrs()
     os.environ["MEMORY_CONTEXTUAL_ENRICHMENT"] = "1"
     from memory_common import connection_pool, safe_close_db
 
@@ -86,9 +97,12 @@ class TestContextualEnrichment:
     """Test contextual enrichment feature."""
 
     def test_enrichment_disabled_by_default(self, enrichment_db):
-        """Enrichment should not run when MEMORY_CONTEXTUAL_ENRICHMENT != '1'."""
+        """Enrichment should not run when the flag is cleared."""
         conn, db_path = enrichment_db
+        # Reset the lazy cache so the pop below actually takes effect
+        reset_all_lazy_config_attrs()
         os.environ.pop("MEMORY_CONTEXTUAL_ENRICHMENT", None)
+        importlib.reload(sys.modules.get("save.post_save_hooks", __import__("save.post_save_hooks")))
 
         from save_pipeline import _enrich_context
 
@@ -96,12 +110,9 @@ class TestContextualEnrichment:
             conn, "test/note1", "Some content about Python", "test", ["python"]
         )
 
-        # Metadata should not have contextual_related
         row = conn.execute(
             "SELECT metadata FROM memories WHERE id = 'test/note1'"
         ).fetchone()
-        # No row means the function didn't run (which is correct when disabled)
-        # If row exists, metadata should not have contextual_related
         if row:
             metadata = json.loads(row[0])
             assert "contextual_related" not in metadata

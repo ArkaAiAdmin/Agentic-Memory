@@ -45,6 +45,13 @@ _QUERY_EXPANSION_REVERSE = search_pipeline._QUERY_EXPANSION_REVERSE
 # H1 fix: configure root logging once at module load (idempotent).
 configure_logging()
 logger = logging.getLogger(__name__)
+
+# Phase 4: configure per-tool rate limits from memory.toml [rate_limits].
+try:
+    from infra.rate_limiter import configure_rate_limits
+    configure_rate_limits()
+except Exception:
+    logger.info("rate_limits not configured (no [rate_limits] section or import error)")
 # The agentic-memory project is special: scripts live at the top level of
 # ~/.config/agentic-memory/, but the actual global memories live one level
 # deeper at ~/.config/agentic-memory/memory/. Fixing C1.

@@ -34,6 +34,35 @@ from memory_common import configure_logging, GLOBAL_MEM_DIR
 configure_logging()
 
 
+def _run_check_and_rebuild(args: argparse.Namespace) -> int:
+    db_path = GLOBAL_MEM_DIR / "memory.db"
+    if not db_path.exists():
+        print(f"ERROR: no memory.db at {db_path}")
+        return 1
+    t0 = time.time()
+    try:
+        from embedding_recompute import check_and_rebuild
+
+        stats = check_and_rebuild(force=args.force, dry_run=args.dry_run)
+        elapsed = time.time() - t0
+        prefix = "[DRY RUN] " if args.dry_run else ""
+        if stats.get("changed") and stats.get("rebuilt"):
+            print(
+                f"{prefix}Embedding recomputation: {stats['details']} ({elapsed:.2f}s)"
+            )
+        elif stats.get("changed"):
+            print(
+                f"{prefix}Embedding recomputation: {stats['details']} ({elapsed:.2f}s)"
+            )
+        else:
+            print(f"Embedding recomputation: {stats['details']} ({elapsed:.2f}s)")
+        return 0
+    except Exception:
+        print("ERROR: embedding_recompute failed with exception:")
+        traceback.print_exc()
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Detect embedding model change, auto-rebuild vec index."
@@ -57,34 +86,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     acquire_lock_or_exit('cron_embedding_recompute')
 
-    db_path = GLOBAL_MEM_DIR / "memory.db"
-    if not db_path.exists():
-        print(f"ERROR: no memory.db at {db_path}")
-        return 1
-
-    t0 = time.time()
-    try:
-        # Import the existing module so the cron wrapper stays a thin shell.
-        from embedding_recompute import check_and_rebuild
-
-        stats = check_and_rebuild(force=args.force, dry_run=args.dry_run)
-        elapsed = time.time() - t0
-        prefix = "[DRY RUN] " if args.dry_run else ""
-        if stats.get("changed") and stats.get("rebuilt"):
-            print(
-                f"{prefix}Embedding recomputation: {stats['details']} ({elapsed:.2f}s)"
-            )
-        elif stats.get("changed"):
-            print(
-                f"{prefix}Embedding recomputation: {stats['details']} ({elapsed:.2f}s)"
-            )
-        else:
-            print(f"Embedding recomputation: {stats['details']} ({elapsed:.2f}s)")
-        return 0
-    except Exception:
-        print("ERROR: embedding_recompute failed with exception:")
-        traceback.print_exc()
-        return 1
+    from background.cron_model_lock import cron_model_lock
+    with cron_model_lock("embedding_recompute", timeout=600.0):
+        return _run_check_and_rebuild(args)
 
 
 if __name__ == "__main__":

@@ -69,8 +69,9 @@ class TestMemoryConfigDefaults:
         # 2026-06-25 further field additions brought total to 103.
         # 2026-06-25 idle_unload_seconds added to MemoryConfig → 104.
         # 2026-06-29 neural_forget_mode, neural_forget_weights, temporal_ssm_enabled, temporal_ssm_weights added → 110.
-        assert len(fields) == 110, (
-            f"Expected 110 fields, got {len(fields)}: {[f.name for f in fields]}"
+        # 2026-06-30 Phase 4: background_max_queue_size, background_reject_policy, rate_limits added → 113.
+        assert len(fields) == 113, (
+            f"Expected 113 fields, got {len(fields)}: {[f.name for f in fields]}"
         )
 
     def test_default_db_path(self):

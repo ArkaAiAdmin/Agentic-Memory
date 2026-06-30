@@ -796,6 +796,11 @@ def _defer_indexing_background_tasks(
     try:
         from background_queue import init_task_queue, enqueue_task
         from db import connection_pool
+        from _lazy_imports import get_config
+
+        cfg = get_config()
+        max_qs = getattr(cfg, "background_max_queue_size", 500)
+        reject_pol = getattr(cfg, "background_reject_policy", "reject_new")
 
         bq_conn = connection_pool.get(str(db_path), timeout=5.0)
         init_task_queue(bq_conn)
@@ -803,16 +808,22 @@ def _defer_indexing_background_tasks(
             bq_conn,
             "embedding_index",
             {"memory_id": note_id, "content": content, "source_file": source_file},
+            max_queue_size=max_qs,
+            reject_policy=reject_pol,
         )
         enqueue_task(
             bq_conn,
             "kg_and_fact_index",
             {"memory_id": note_id, "content": content},
+            max_queue_size=max_qs,
+            reject_policy=reject_pol,
         )
         enqueue_task(
             bq_conn,
             "semantic_backlinks",
             {"memory_id": note_id, "content": content},
+            max_queue_size=max_qs,
+            reject_policy=reject_pol,
         )
         safe_close_db(bq_conn)
     except Exception as _bqe:

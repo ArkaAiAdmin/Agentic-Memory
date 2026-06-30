@@ -27,6 +27,20 @@ from infrastructure import (
 )
 from infra.error_counter import increment as _phase_inc, get_counts as _phase_counts
 
+# ---------------------------------------------------------------------------
+# Phase-level latency tracking (Phase 7 observability)
+# ---------------------------------------------------------------------------
+
+_phase_latencies: dict[str, float] = {}
+_phase_latencies_lock = threading.Lock()
+
+
+def _record_phase_latency(phase: str, start_time: float) -> None:
+    """Record the elapsed time (ms) for a named search phase."""
+    duration_ms = (time.monotonic() - start_time) * 1000.0
+    with _phase_latencies_lock:
+        _phase_latencies[phase] = round(duration_ms, 3)
+
 # Import functions from other search submodules
 from search.query_parser import (
     _parse_search_query,
@@ -1737,6 +1751,9 @@ def search_memories(
     include_facts: bool = True,
     fact_limit: int = 5,
 ) -> dict:
+    global _phase_latencies
+    _phase_latencies.clear()
+
     if not db_path.exists():
         return {
             "results": [],
@@ -1786,7 +1803,9 @@ def search_memories(
         ts, cached_result = _search_cache[cache_key]
         if not SEARCH_CACHE_TTL_ENABLED or now - ts <= SEARCH_CACHE_TTL:
             _search_cache.move_to_end(cache_key)
-            return cached_result  # type: ignore[no-any-return]
+            result = dict(cached_result)
+            result["query_id"] = uuid.uuid4().hex
+            return result  # type: ignore[no-any-return]
         _search_cache.pop(cache_key)
 
     db = None
@@ -1796,6 +1815,7 @@ def search_memories(
         db = connection_pool.get(str(db_path), timeout=30.0)
 
         # Phase 3: DB setup
+        _t0 = time.time()
         cols = _get_memories_columns(db)
         has_fitness = "fitness_score" in cols
         repo_filter = ""
@@ -1811,11 +1831,14 @@ def search_memories(
                     repo_filter = f" AND m.source_file LIKE 'agents/{ctx.namespace}/%'"
         except (ImportError, Exception):
             pass
+        _phase_latencies["db_setup"] = (time.time() - _t0) * 1000.0
 
         # Phase 4: FTS search
+        _t0 = time.time()
         results = _fts_search(
             db, fts_query, limit * 3 if rerank else limit, has_fitness, repo_filter
         )
+        _phase_latencies["fts"] = (time.time() - _t0) * 1000.0
 
         # Phase 4b: T10 — KG fact search (independent of memory results).
         # Facts are surfaced in the output as a "Related facts" section and
@@ -1834,9 +1857,13 @@ def search_memories(
             if not _is_opaque:
                 import search_pipeline
 
+                _t0 = time.time()
                 results = search_pipeline._fallback_embedding_search(
                     db, normalized_query, db_path, limit, repo_filter
                 )
+                _phase_latencies["embedding_fallback"] = (
+                    time.time() - _t0
+                ) * 1000.0
             if not results:
                 try:
                     total = db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
@@ -1862,9 +1889,11 @@ def search_memories(
 
         # Phase 6: Hybrid fusion
         if hybrid and results:
+            _t0 = time.time()
             results = _hybrid_fusion(
                 db, results, normalized_query, db_path, limit, repo_filter
             )
+            _phase_latencies["hybrid_fusion"] = (time.time() - _t0) * 1000.0
 
         # Phase 7: Temporal filtering
         if not include_invalid:
@@ -1886,11 +1915,14 @@ def search_memories(
                     )
 
         # Phase 8: Chunk enhancement
+        _t0 = time.time()
         results = _enhance_with_chunks(
             db, results, fts_query, limit, include_invalid, repo_filter
         )
+        _phase_latencies["chunk_enhance"] = (time.time() - _t0) * 1000.0
 
         # Phase 9: Reranking
+        _t0 = time.time()
         results_to_display, _search_ctr_weights = _rerank_results(
             results=results,
             query=query,
@@ -1902,6 +1934,7 @@ def search_memories(
             limit=limit,
             deep_rerank=deep_rerank,
         )
+        _phase_latencies["rerank"] = (time.time() - _t0) * 1000.0
 
         # Phase 10: Build output
         result_items, output, backlinks_map = _build_result_items(
@@ -1975,6 +2008,8 @@ def search_memories(
         _phase_errs = _phase_counts()
         if _phase_errs.get("total_count"):
             result["phase_errors"] = _phase_errs
+        if _phase_latencies:
+            result["phase_latencies"] = dict(sorted(_phase_latencies.items()))
         _record_search_telemetry(
             db=db,
             query_id=result["query_id"],

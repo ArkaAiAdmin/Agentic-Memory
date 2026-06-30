@@ -145,3 +145,18 @@ inbox_max_bytes = 104857600          # AUTO_SAVE_INBOX_MAX_BYTES (100 MB)
 [session_memory]
 enabled = false                         # MEMORY_SESSION_MEMORY — enable session/thread/compaction tracking (v22). Off by default.
 decision_llm = false                    # MEMORY_SESSION_DECISION_LLM — use LLM to enrich decision candidates (Sprint 6 opt-in). Adds ~100-200ms per save in decisions/lessons/projects/architecture categories.
+
+[background]
+# Background queue backpressure settings (Phase 4).
+max_queue_size = 500                    # MEMORY_BACKGROUND_MAX_QUEUE_SIZE — cap on pending tasks. 0 = unlimited.
+reject_policy = "reject_new"            # MEMORY_BACKGROUND_REJECT_POLICY — reject_new | reject_old | block
+
+[rate_limits]
+# Per-tool rate limits in RPM (requests per minute).
+# Set MEMORY_RATE_LIMIT_<TOOL_UPPER>=<rpm>,<burst> to override.
+memory_save = 100                       # MEMORY_RATE_LIMIT_MEMORY_SAVE
+memory_search = 300                     # MEMORY_RATE_LIMIT_MEMORY_SEARCH
+memory_delete = 50                      # MEMORY_RATE_LIMIT_MEMORY_DELETE
+memory_supersede = 50                   # MEMORY_RATE_LIMIT_MEMORY_SUPERSEDE
+memory_maintenance = 30                 # MEMORY_RATE_LIMIT_MEMORY_MAINTENANCE
+default = 600                           # catch-all for tools without an explicit entry

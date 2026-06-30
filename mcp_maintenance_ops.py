@@ -522,6 +522,7 @@ def _get_handlers() -> dict:
             MaintenanceOp.PHASE_ERRORS: lambda *, since_ts=None, until_ts=None, limit=50, **_: _op_phase_errors(
                 since_ts=since_ts, until_ts=until_ts, limit=limit
             ),
+            MaintenanceOp.MEMORY_STATS: lambda **_: _op_memory_stats(),
         }
     return _MAINTENANCE_HANDLERS
 
@@ -782,6 +783,66 @@ def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = Non
 
         return json.dumps(
             get_counts(since_ts=since_ts, until_ts=until_ts, limit=limit), indent=2
+        )
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def _op_memory_stats() -> str:
+    """Return aggregate memory system stats: DB size, note count, queue depth, circuit breaker state, feature flags."""
+    try:
+        import os
+        import sqlite3
+        from pathlib import Path
+
+        from infra.config import get_feature_flags, get_config
+        from infra.infrastructure import resolve_active_memory_dir
+
+        db_path = resolve_active_memory_dir() / "memory.db"
+        db_size = 0
+        note_count = 0
+        if db_path.exists():
+            db_size = db_path.stat().st_size
+            conn = sqlite3.connect(str(db_path))
+            try:
+                note_count = conn.execute(
+                    "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
+                ).fetchone()[0]
+            except Exception:
+                pass
+            finally:
+                conn.close()
+
+        queue_depth = 0
+        try:
+            from background.background_queue import pending_count
+            from db import connection_pool
+
+            bq_conn = connection_pool.get(str(db_path), timeout=3.0)
+            queue_depth = pending_count(bq_conn)
+        except Exception:
+            pass
+
+        circuit_open = False
+        try:
+            from background.circuit_breaker import get_circuit_breaker_state
+            circuit_open = get_circuit_breaker_state().get("open", False)
+        except Exception:
+            pass
+
+        flags = get_feature_flags()
+        flag_summary = {k: v["value"] for k, v in flags.items()}
+
+        return json.dumps(
+            {
+                "db_path": str(db_path),
+                "db_size_bytes": db_size,
+                "note_count": note_count,
+                "background_queue_depth": queue_depth,
+                "circuit_breaker_open": circuit_open,
+                "feature_flags": flag_summary,
+            },
+            indent=2,
         )
     except Exception as e:
         return json.dumps({"error": str(e)})

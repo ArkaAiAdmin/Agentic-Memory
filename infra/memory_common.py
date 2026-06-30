@@ -324,20 +324,36 @@ class RateLimiter:
     budget. Old timestamps are dropped on each check so the window
     slides forward.
 
+    Per-tool limits can be supplied via ``per_tool_limits``: a dict of
+    ``tool_name → (max_calls, window_seconds)``. When a tool has an
+    entry there that entry overrides the class-level defaults.
+
     Args:
-        max_calls: Maximum calls allowed per window (default 60).
-        window_seconds: Window length in seconds (default 60).
+        max_calls: Default maximum calls allowed per window (default 60).
+        window_seconds: Default window length in seconds (default 60).
+        per_tool_limits: Per-tool overrides ``{name: (max_calls, window_seconds)}``.
     """
 
-    def __init__(self, max_calls: int = 60, window_seconds: float = 60.0):
+    def __init__(
+        self,
+        max_calls: int = 60,
+        window_seconds: float = 60.0,
+        per_tool_limits: dict[str, tuple[int, float]] | None = None,
+    ):
         if max_calls <= 0:
             raise ValueError("max_calls must be positive")
         if window_seconds <= 0:
             raise ValueError("window_seconds must be positive")
         self.max_calls = max_calls
         self.window_seconds = float(window_seconds)
+        self.per_tool_limits = per_tool_limits or {}
         self._buckets: dict = {}
         self._lock = _threading.Lock()
+
+    def _get_limit(self, name: str) -> tuple[int, float]:
+        if name in self.per_tool_limits:
+            return self.per_tool_limits[name]
+        return self.max_calls, self.window_seconds
 
     def check(self, name: str) -> bool:
         """Return True if a call to ``name`` is allowed right now.
@@ -348,12 +364,13 @@ class RateLimiter:
         already at the cap.
         """
         now = _time.monotonic()
-        cutoff = now - self.window_seconds
+        max_calls, window_seconds = self._get_limit(name)
+        cutoff = now - window_seconds
         with self._lock:
             bucket = self._buckets.setdefault(name, _collections.deque())
             while bucket and bucket[0] < cutoff:
                 bucket.popleft()
-            if len(bucket) >= self.max_calls:
+            if len(bucket) >= max_calls:
                 return False
             bucket.append(now)
             return True
@@ -376,11 +393,36 @@ _default_limiter_lock = _threading.Lock()
 
 
 def get_default_limiter() -> RateLimiter:
-    """Return the process-wide default ``RateLimiter`` (lazy-initialized)."""
+    """Return the process-wide default ``RateLimiter`` (lazy-initialized).
+
+    Reads per-tool limits from ``get_config().rate_limits`` when
+    available so operators get the configured defaults without extra code.
+    """
     global _default_limiter
     with _default_limiter_lock:
         if _default_limiter is None:
-            _default_limiter = RateLimiter(max_calls=60, window_seconds=60.0)
+            per_tool: dict[str, tuple[int, float]] = {}
+            try:
+                from infra.config import get_config
+                cfg = get_config()
+                toml_limits = dict(cfg.rate_limits or {})
+                try:
+                    from infra.rate_limiter import _resolve_tool_limits, _default_limits
+                    known_tools = set(_default_limits()) - {"_default"}
+                    for tool in known_tools:
+                        limits = _resolve_tool_limits(tool, toml_limits)
+                        per_tool[tool] = (limits["burst"], 60.0)
+                    # also populate the catch-all
+                    _resolve_tool_limits("_default", toml_limits)
+                except Exception:
+                    for tool, entry in toml_limits.items():
+                        if isinstance(entry, dict):
+                            rpm = float(entry.get("rate", 60.0 / 60.0)) * 60.0
+                            burst = int(entry.get("burst", max(1, int(rpm))))
+                            per_tool[tool] = (burst, 60.0)
+            except Exception:
+                pass
+            _default_limiter = RateLimiter(max_calls=60, window_seconds=60.0, per_tool_limits=per_tool)
         return _default_limiter
 
 

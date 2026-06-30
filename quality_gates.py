@@ -208,8 +208,12 @@ def filter_results(results: list[dict]) -> tuple[list[dict], dict]:
     Returns (filtered_results, stats).
     """
     import sys
+    import importlib
 
-    _self = sys.modules[__name__]
+    try:
+        _self = sys.modules[__name__]
+    except KeyError:
+        _self = importlib.import_module(__name__)
     if not _self.QUALITY_GATES_ENABLED:
         return results, {
             "enabled": False,

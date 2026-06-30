@@ -77,7 +77,7 @@ jobs:
           . venv/bin/activate
           pip install --upgrade pip
           pip install -e ".[dev,embeddings]" --quiet 2>/dev/null || pip install numpy pytest pytest-xdist mcp
-      - name: Run tests
+      - name: Run tests with coverage
         env:
           MEMORY_RERANKER_DISABLED: "1"
           MEMORY_CTR_TUNING: "0"
@@ -85,14 +85,19 @@ jobs:
           MEMORY_EMBEDDINGS: "0"
         run: |
           . venv/bin/activate
-          # ubuntu-latest has 2 cores; avoid OOM-killed xdist workers.
-          # ``-n auto`` scales to CPU count. ``--dist=loadfile`` keeps
-          # tests from the same file on the same worker to reduce races.
           python -m pytest eval/ \
             --tb=short -q \
             -n auto \
             --dist=loadfile \
-            -p no:cacheprovider
+            -p no:cacheprovider \
+            --cov=infra \
+            --cov=background \
+            --cov=search \
+            --cov=save \
+            --cov=mcp_* \
+            --cov-fail-under=70 \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing
         timeout-minutes: 45
 
   build-wheel:

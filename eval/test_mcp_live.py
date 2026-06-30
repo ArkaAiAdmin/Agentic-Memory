@@ -21,6 +21,12 @@ import save_pipeline
 from memory_common import reset_rate_limiter
 from rebuild_index import rebuild_index
 
+try:
+    from infra.config import reset_config
+except ImportError:
+    def reset_config():  # type: ignore[misc]
+        pass
+
 
 def _setup_test_env(tmpdir: str):
     """Redirect all DB paths to tmpdir and bootstrap all required tables.
@@ -147,6 +153,14 @@ class TestLiveMCPRateLimit(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        os.environ["MEMORY_RATE_LIMIT_MEMORY_SEARCH"] = "60,60"
+        reset_config()
+        reset_rate_limiter()
+
+    @classmethod
+    def tearDownClass(cls):
+        os.environ.pop("MEMORY_RATE_LIMIT_MEMORY_SEARCH", None)
+        reset_config()
         reset_rate_limiter()
 
     def setUp(self):

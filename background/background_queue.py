@@ -4,6 +4,8 @@ Provides a lightweight, persistent task queue for offloading expensive
 operations (entity resolution, fact consolidation, contradiction checks)
 to a background worker. All operations are idempotent and crash-safe.
 
+Rate limiting and backpressure are enforced via ``infra.rate_limiter``.
+
 Schema:
     task_queue: pending/processing/completed/failed tasks with payloads
 
@@ -31,7 +33,29 @@ __all__ = [
     "pending_count",
     "worker_status",
     "cleanup_old_tasks",
+    "RejectPolicy",
 ]
+
+from enum import Enum
+
+
+class RejectPolicy(str, Enum):
+    """Backpressure policy when the queue is at capacity."""
+
+    REJECT_NEW = "reject_new"
+    REJECT_OLD = "reject_old"
+    BLOCK = "block"
+
+
+# Default queue cap (can be overridden via config at runtime).
+# Set to 0 to disable the cap entirely.
+DEFAULT_MAX_QUEUE_SIZE: int = 500
+
+# Default backpressure policy when the cap is reached.
+DEFAULT_REJECT_POLICY: RejectPolicy = RejectPolicy.REJECT_NEW
+
+# Backpressure wait timeout for BLOCK policy (seconds).
+BLOCK_TIMEOUT_S: float = 5.0
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -73,14 +97,89 @@ def enqueue_task(
     task_type: str,
     payload: dict[str, Any] | None = None,
     priority: int = 0,
-) -> int:
+    *,
+    max_queue_size: int | None = None,
+    reject_policy: str | RejectPolicy | None = None,
+) -> int | dict[str, Any]:
     """Insert a pending task into the queue. Returns the task id.
 
     Duplicate task_type + payload combinations are deduplicated:
     if an identical pending task already exists, its id is returned
     without inserting a new row.
+
+    Backpressure (when enabled):
+        If the pending queue is at or above ``max_queue_size`` the
+        ``reject_policy`` determines the outcome:
+
+        ``reject_new``
+            Return ``{"queued": False, "reason": "queue_full", ...}``
+            immediately (default).
+        ``reject_old``
+            Evict the oldest pending task(s) to make room, then enqueue.
+        ``block``
+            Wait up to ``BLOCK_TIMEOUT_S`` for space to free up. If
+            timeout is exceeded return ``{"queued": False, "reason": "timeout", ...}``.
+
+    Set ``max_queue_size=0`` (or ``None``) to disable the cap.
     """
     payload_json = json.dumps(payload or {}, sort_keys=True, default=str)
+
+    # Resolve backpressure parameters
+    _max_qs = max_queue_size if max_queue_size is not None else DEFAULT_MAX_QUEUE_SIZE
+    if isinstance(reject_policy, str):
+        try:
+            _policy = RejectPolicy(reject_policy)
+        except ValueError:
+            _policy = DEFAULT_REJECT_POLICY
+    else:
+        _policy = reject_policy or DEFAULT_REJECT_POLICY
+
+    # --- backpressure check ---
+    if _max_qs > 0:
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM task_queue WHERE status = 'pending'"
+        ).fetchone()[0]
+        if pending >= _max_qs:
+            if _policy == RejectPolicy.REJECT_NEW:
+                retry_after = 0.0
+                try:
+                    from infra.rate_limiter import get_retry_after
+                    retry_after = get_retry_after(task_type)
+                except Exception:
+                    pass
+                return {
+                    "queued": False,
+                    "reason": "queue_full",
+                    "pending": pending,
+                    "max_queue_size": _max_qs,
+                    "retry_after": retry_after,
+                }
+            if _policy == RejectPolicy.REJECT_OLD:
+                conn.execute(
+                    "DELETE FROM task_queue WHERE id = ("
+                    "  SELECT id FROM task_queue "
+                    "  WHERE status = 'pending' "
+                    "  ORDER BY priority ASC, created_at ASC LIMIT 1"
+                    ")"
+                )
+                conn.commit()
+            if _policy == RejectPolicy.BLOCK:
+                import time as _time
+
+                deadline = _time.monotonic() + BLOCK_TIMEOUT_S
+                while pending >= _max_qs:
+                    if _time.monotonic() > deadline:
+                        return {
+                            "queued": False,
+                            "reason": "timeout",
+                            "pending": pending,
+                            "max_queue_size": _max_qs,
+                            "retry_after": 0.0,
+                        }
+                    _time.sleep(0.05)
+                    pending = conn.execute(
+                        "SELECT COUNT(*) FROM task_queue WHERE status = 'pending'"
+                    ).fetchone()[0]
 
     in_outer = bool(getattr(conn, "in_transaction", False))
     if in_outer:

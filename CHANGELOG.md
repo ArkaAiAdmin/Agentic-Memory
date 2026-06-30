@@ -4,6 +4,90 @@ All notable changes to agentic-memory are documented here. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased — 2026-06-30 Phases 4-10]
+
+### Added
+
+**Phase 4 — Rate Limiting & Backpressure:**
+
+- **`infra/rate_limiter.py`** — TokenBucket rate limiter with per-tool RPM and burst
+  support, env-var override (`MEMORY_RATE_LIMIT_<TOOL>`), and `retry_after` query.
+- **`memory.toml [rate_limits]`** — Configurable per-tool RPM: `memory_save=100`,
+  `memory_search=300`, `memory_delete=50`, `memory_supersede=50`,
+  `memory_maintenance=30`, `default=600`.
+- **`memory.toml [background]`** — Queue tuning: `max_queue_size=500`,
+  `reject_policy=reject_new`.
+- **Queue backpressure** — `background/background_queue.py` now reads
+  `MemoryConfig.background_max_queue_size` / `background_reject_policy` from
+  all call sites (`save_pipeline._defer_indexing_background_tasks`,
+  `save/post_save_hooks._enqueue_background_tasks`).
+- **Tests** — `eval/test_rate_limiter.py` (11 tests), `eval/test_backpressure.py` (7 tests).
+
+**Phase 5 — Feature Flag Visibility:**
+
+- **`log_feature_flags_at_startup()`** — Emits a JSON snapshot of all 17 feature
+  flags with values, env-var keys, and TOML paths at config startup.
+- **`warnings` list** in `get_feature_flags()` — Disabled flags include a
+  human-readable warning describing the impact.
+- **Tests** — `eval/test_feature_flags.py` (5 tests).
+
+**Phase 6 — Cron Robustness:**
+
+- **`background/cron_model_lock.py`** — Flock-based model-load mutex with
+  `MAX_CRON_RUNTIME_S=600`, stale lock detection, and `cleanup_stale_locks()`.
+- **`cron_embedding_recompute.py`** — Dual locking: per-cron flock + model lock.
+- **`cron_kg_backfill.py`** — Dual locking: per-cron flock + model lock.
+- **`cron_health_check.py`** — Stale lock cleanup, lock acquisition moved to
+  start of `main()` (fixed lock-after-work bug), import-fail fallback now
+  exits instead of silently passing.
+- **Tests** — `eval/test_cron_model_lock.py` (7 tests), `eval/test_cron_integration.py`
+  (6 tests).
+
+**Phase 7 — Observability:**
+
+- **Search phase timing** — `search/orchestrator.py` tracks latencies for 6 phases
+  (db_setup, fts, embedding_fallback, hybrid_fusion, chunk_enhance, rerank) in
+  `_phase_latencies` dict, included in search result envelope.
+- **`memory_stats` admin op** — Returns db_path, db_size, note_count, queue depth,
+  circuit-breaker state, and feature flags.
+- **Tests** — `eval/test_observability.py` (7 tests).
+
+**Phase 8 — CI Integration:**
+
+- **CI workflow** — `.github/workflows/ci.yml`: ruff lint, mypy typecheck,
+  drift checks (tool/docker/schema), pytest with `--cov-fail-under=70`,
+  sdist+wheel build.
+- **Pre-commit hooks** — `tool-registry-drift-check`, `schema-version-check`.
+- **Issue/PR templates** — Bug report, feature request, pull request templates.
+
+**Phase 9 — Testing:**
+
+- 15 new integration tests across `eval/test_auto_save_integration.py`,
+  `eval/test_search_integration.py`, `eval/test_cron_integration.py`.
+- Total test count: 3,806 (up from 3,498).
+
+**Phase 10 — Production Polish:**
+
+- **`docs/kg_dashboard.md`** — KG visualization guide and admin ops reference.
+- **Benchmark scripts** — `eval/benchmarks/bench_save.py`, `eval/benchmarks/bench_search.py`.
+- **Release template** — `.github/RELEASE_TEMPLATE.md` with version, test, and
+  publish checklist.
+
+### Fixed
+
+- **`cron_health_check.py` lock order** — `acquire_lock_or_exit` moved from
+  line 227 (after all health probes) to start of `main()`. Previously a second
+  cron instance could run concurrently.
+- **`cron_health_check.py` import fallback** — No-op fallback when `_flock`
+  module unavailable now calls `sys.exit(1)` instead of silently proceeding
+  without the lock.
+- **`eval/test_auto_save_integration.py` circuit-breaker state leak** —
+  `TestAutoSaveResilience.setUp()` now calls `_auto_save_reset_state()` to
+  clear stale circuit state loaded from the audit log at import time.
+- **`eval/test_auto_save_integration.py` SQL comparison** — Changed
+  `WHERE content=?` to `WHERE content LIKE ?` in upsert idempotency test
+  to match `tool_complete`'s markdown-wrapped content.
+
 ## [Unreleased — 2026-06-27 Production-Ship Quality]
 
 ### Changed — Phase 1 (Foundation) + Phase 2 (Quality & Security)

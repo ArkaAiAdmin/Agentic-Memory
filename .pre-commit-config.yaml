@@ -8,3 +8,19 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: tool-registry-drift-check
+        name: tool-registry-drift-check
+        description: Detect drift between tool_registry.py and actual @mcp.tool definitions
+        entry: python scripts/tool_drift_check.py
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+      - id: schema-version-check
+        name: schema-version-check
+        description: Verify schema version in migration_runner.py matches applied migrations
+        entry: python scripts/schema_version_check.py
+        language: system
+        types: [python, sql]
+        pass_filenames: false
+        always_run: true

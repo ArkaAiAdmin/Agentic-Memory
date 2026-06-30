@@ -35,7 +35,8 @@ try:
 except ImportError:
 
     def acquire_lock_or_exit(name):  # type: ignore[misc]
-        pass
+        logger.error("cron_health_check: _flock module not available, cannot acquire lock")
+        sys.exit(1)
 
 
 def _check_circuit_breaker() -> dict:
@@ -105,11 +106,21 @@ def main() -> int:
         )
         sys.exit(0)
 
+    acquire_lock_or_exit("cron_health_check")
+
     env = os.environ.get("MEMORY_DB_PATH")
     db_path = Path(env) if env else resolve_active_memory_dir() / "memory.db"
     if not db_path.exists():
         print(f"ERROR: no memory.db at {db_path}")
         return 1
+
+    from background.cron_model_lock import cleanup_stale_locks
+
+    cleaned = cleanup_stale_locks()
+    if cleaned:
+        logger.info("cron_health_check: cleaned stale cron_model_locks: %s", cleaned)
+
+    # Self-check: warn if any cron is holding a lock for too long (budget: 10 min)
 
     report: dict = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -216,7 +227,6 @@ def main() -> int:
     else:
         print("  No alerts.")
 
-    acquire_lock_or_exit("cron_health_check")
     return 0 if report["overall_healthy"] else 1
 
 

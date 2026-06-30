@@ -198,12 +198,10 @@ def _auto_save_record_success() -> None:
     was_open = False
     open_until_before = 0.0
     with _AUTO_SAVE_STATE_LOCK:
-        was_open = (
-            _AUTO_SAVE_STATE["failure_times"] == []
-            and _AUTO_SAVE_STATE["circuit_open_until"] > 0
-        )
+        was_open = _AUTO_SAVE_STATE["circuit_open_until"] > 0
         open_until_before = float(_AUTO_SAVE_STATE["circuit_open_until"])
         _AUTO_SAVE_STATE["failure_times"] = []
+        _AUTO_SAVE_STATE["circuit_open_until"] = 0.0
         _AUTO_SAVE_STATE["last_backoff_seconds"] = 0.0
     if was_open:
         _persist_circuit_state(
