@@ -109,7 +109,8 @@ def _get_cross_encoder_blend() -> float:
     try:
         from _lazy_imports import get_config
 
-        return get_config().cross_encoder_blend
+        v = get_config().cross_encoder_blend
+        return float(v)
     except Exception:
         return _CROSS_ENCODER_BLEND
 
@@ -200,12 +201,27 @@ def _apply_cross_encoder_rerank(
     """
     if not scored_results or not query:
         return scored_results
+    try:
+        from _lazy_imports import get_config
+        if get_config().reranker_disabled:
+            return list(scored_results)
+    except Exception:
+        pass
     head = scored_results[:top_k]
     tail = scored_results[top_k:]
     blend = _get_cross_encoder_blend()
     docs = [r[1] or "" for r in head]
     ce_scores: list = []
     if deep_rerank:
+        try:
+            import torch
+            if torch.backends.mps.is_available() and not torch.cuda.is_available():
+                logger.warning(
+                    "deep_rerank requested but only MPS backend is available; "
+                    "falling back to weak CE for this query."
+                )
+        except ImportError:
+            pass
         try:
             from _lazy_imports import get_config
             from reranker import get_reranker, normalize_rerank_score
