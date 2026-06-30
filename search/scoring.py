@@ -391,10 +391,20 @@ def _compute_final_score(ctx) -> float:
         try:
             c_ts = datetime.fromisoformat(ctx.created).timestamp()
             age_days = max(0.0, (now_ts - c_ts) / 86400.0)
-            recency_factor = 0.5 ** (age_days / _get_rerank_half_life_days())
+            half_life = _get_rerank_half_life_days()
+            effective_half_life = min(7.0, half_life) if age_days < 7 else half_life
+            recency_factor = 0.5 ** (age_days / effective_half_life)
         except (ValueError, TypeError):
             recency_factor = 0.0
     recency_factor *= ctx.recency_weight
+    freshness_bonus = 0.0
+    if ctx.last_accessed:
+        try:
+            la_ts = datetime.fromisoformat(ctx.last_accessed).timestamp()
+            if (now_ts - la_ts) < 86400:
+                freshness_bonus = 0.05
+        except (ValueError, TypeError):
+            pass
     tag_match = 0.0
     query_tokens = {
         t.lower() for t in _RERANK_TOKEN_RE.findall(ctx.query) if len(t) >= 3
@@ -420,6 +430,7 @@ def _compute_final_score(ctx) -> float:
         + weights.get("pinned", _get_rerank_weights()["pinned"]) * pinned_bonus
         + weights.get("recency", _get_rerank_weights()["recency"]) * recency_factor
         + weights.get("tag_match", _get_rerank_weights()["tag_match"]) * tag_match
+        + freshness_bonus
     )
 
 

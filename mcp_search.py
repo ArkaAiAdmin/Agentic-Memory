@@ -79,7 +79,7 @@ def memory_search(
     limit: int = 5,
     rerank: bool = True,
     boost_pinned: bool = True,
-    recency_weight: float = 0.1,
+    recency_weight: float = 0.2,
     include_global: bool = True,
     include_invalid: bool = True,
     deep_rerank: bool = False,

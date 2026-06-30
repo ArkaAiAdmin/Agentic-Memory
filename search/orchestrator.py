@@ -209,6 +209,7 @@ class ScoreContext:
     query: str
     boost_pinned: bool
     recency_weight: float
+    last_accessed: Optional[str] = None
     now_ts: Optional[float] = None
     weights: Optional[dict] = None
 
@@ -1143,8 +1144,11 @@ def _rerank_results(
                 )
             )
         if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
-            return _apply_neural_forget_curve(out, query), None
-        return _apply_temporal_decay(out), None
+            out = _apply_neural_forget_curve(out, query)
+        else:
+            out = _apply_temporal_decay(out)
+        out.sort(key=lambda r: r[6], reverse=True)
+        return out, None
 
     _qtype = _detect_query_type(query)
     _qweights = _weights_for_query_type(_qtype)
@@ -1178,6 +1182,7 @@ def _rerank_results(
                 query=query,
                 boost_pinned=boost_pinned,
                 recency_weight=recency_weight,
+                last_accessed=last_accessed,
                 weights=_qweights,
             )
         )
@@ -1213,6 +1218,7 @@ def _rerank_results(
         out = _apply_neural_forget_curve(out, query)
     else:
         out = _apply_temporal_decay(out)
+    out.sort(key=lambda r: r[6], reverse=True)
     return out[:limit], _qweights
 
 
@@ -1677,20 +1683,6 @@ def _apply_save_hint_floater(
     if hint is None:
         return result_items, output
     hint_id, _hint_ts = hint
-    try:
-        hint_in_fts = (
-            db.execute(
-                "SELECT 1 FROM memories_fts fts "
-                "JOIN memories m ON m.rowid = fts.rowid "
-                "WHERE memories_fts MATCH ? AND m.id = ? AND m.deleted_at IS NULL",
-                (hint_id, hint_id),
-            ).fetchone()
-            is not None
-        )
-    except Exception:
-        return result_items, output
-    if not (hint_in_fts and result_items):
-        return result_items, output
     if any(ri.get("id") == hint_id for ri in result_items):
         return result_items, output
     try:
