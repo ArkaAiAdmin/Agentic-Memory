@@ -229,7 +229,7 @@ def _backfill_drifted_subsystems(conn: sqlite3.Connection, drifted: list[str]) -
                 count = 0
                 for nid, content in note_contents.items():
                     if content:
-                        index_kg_for_memory(conn, nid, content, force_regex_only=True)
+                        index_kg_for_memory(conn, nid, content)
                         count += 1
                 stats["fixed"]["kg_entities"] = count
                 stats["fixed"]["kg_edges"] = count
