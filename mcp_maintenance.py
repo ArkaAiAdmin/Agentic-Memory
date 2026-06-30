@@ -72,27 +72,6 @@ def memory_heartbeat(conn, dry_run: bool = False) -> str:
 
 
 @mcp.tool()
-@with_audit("memory_health")
-def memory_health() -> str:
-    """Return a summary of the system health status written by cron_health_check.
-
-    Reads memory/.health_status.json (last cron run) and returns a
-    human-readable status block covering index integrity, KG orphans,
-    circuit breaker, auto-save health, and semantic search. If the
-    file does not exist yet (cron has not run), returns an
-    ``unknown`` status.
-    """
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from mcp_maintenance_ops import _op_health
-
-        return _op_health()
-    except Exception:
-        logger.exception("in memory_health")
-        return _err(ErrorCode.DB_ERROR, "in memory_health")
-
-
-@mcp.tool()
 @with_audit("memory_incremental_update")
 def memory_incremental_update(
     memory_id: str, new_content: str, old_state: Optional[list] = None
@@ -701,18 +680,6 @@ def memory_compile_skill(
 
 class MaintenanceOp(str, Enum):
     HEARTBEAT = "heartbeat"
-    HEALTH = "health"
-    SEARCH = "search"
-    SAVE = "save"
-    RECALL = "recall"
-    NOTE = "note"
-    LEARN = "learn"
-    AUDIT_VERB = "audit_verb"
-    ORGANIZE = "organize"
-    SHARE_VERB = "share_verb"
-    GRAPH_VERB = "graph_verb"
-    PROFILE_VERB = "profile_verb"
-    ADVANCED = "advanced"
     TIER_STATS = "tier_stats"
     TIER_MIGRATION = "tier_migration"
     EMBEDDING_MODEL_CHECK = "embedding_model_check"
@@ -802,7 +769,6 @@ class MaintenanceOp(str, Enum):
     PROFILE_ACCESS = "profile_access"
     FLAGS_STATUS = "flags_status"
     PHASE_ERRORS = "phase_errors"
-    MEMORY_STATS = "memory_stats"
 
     @classmethod
     def all_values(cls) -> list[str]:

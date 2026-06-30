@@ -14,15 +14,12 @@ Usage::
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
-
-logger = logging.getLogger(__name__)
 
 # The MEMORY_LLM_EXTRACTION resolution log is emitted after _resolve
 # is defined (see _log_llm_extraction_resolution below) so it can show
@@ -448,13 +445,6 @@ class MemoryConfig:
     session_memory: bool = False
     session_decision_llm: bool = False
 
-    # background queue backpressure (Phase 4)
-    background_max_queue_size: int = 500
-    background_reject_policy: str = "reject_new"
-
-    # rate limits (Phase 4) — dict of tool_name → {"rate": float, "burst": int}
-    rate_limits: dict[str, Any] = field(default_factory=dict)
-
 
 # Categories in which decision-thread extraction is attempted (read by save/decision_extraction.py)
 DECISION_CATEGORIES = frozenset({"decisions", "lessons", "projects", "architecture"})
@@ -503,27 +493,6 @@ def _resolve_sync_peers(toml_data: dict) -> tuple:
             },
         )
     return ()
-
-
-def _resolve_rate_limits(toml_data: dict) -> dict[str, dict[str, Any]]:
-    """Build rate limit dict from TOML [rate_limits] section.
-
-    Env var precedence: ``MEMORY_RATE_LIMIT_<TOOL_UPPER>=<rpm>,<burst>``
-    overrides TOML, which overrides hardcoded defaults.
-    """
-    raw = _deep_get(toml_data, "rate_limits")
-    result: dict[str, dict[str, Any]] = {}
-    if isinstance(raw, dict):
-        for tool, val in raw.items():
-            if isinstance(val, dict):
-                result[tool] = {
-                    "rate": float(val.get("rate", 600.0 / 60.0)),
-                    "burst": int(val.get("burst", 100)),
-                }
-            elif isinstance(val, (int, float)):
-                rpm = float(val)
-                result[tool] = {"rate": rpm / 60.0, "burst": max(1, int(rpm))}
-    return result
 
 
 def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
@@ -1201,23 +1170,6 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             bool,
             toml_data,
         ),
-        # --- background queue (Phase 4) ---
-        background_max_queue_size=_b(
-            "MEMORY_BACKGROUND_MAX_QUEUE_SIZE",
-            "background.max_queue_size",
-            500,
-            int,
-            toml_data,
-        ),
-        background_reject_policy=_b(
-            "MEMORY_BACKGROUND_REJECT_POLICY",
-            "background.reject_policy",
-            "reject_new",
-            str,
-            toml_data,
-        ),
-        # --- rate limits (Phase 4) ---
-        rate_limits=_resolve_rate_limits(toml_data),
     )
     return cfg
 
@@ -1251,11 +1203,6 @@ def get_config() -> MemoryConfig:
 
         if not is_testing:
             _instance = cfg
-            try:
-                from infra.config import log_feature_flags_at_startup
-                log_feature_flags_at_startup()
-            except Exception:
-                pass
         return cfg
 
 
@@ -1269,11 +1216,11 @@ def reset_config() -> None:
 def get_feature_flags() -> dict:
     """Return all feature flags with their resolved values and sources.
 
-    Returns a dict of {flag_name: {value, env_var, toml_path, default, warnings}}.
-    The 17 feature flags are the boolean fields in the MemoryConfig "features" section.
+    Returns a dict of {flag_name: {value, env_var, toml_path, default}}.
+    The 14 feature flags are the boolean fields in the MemoryConfig "features" section.
     """
     cfg = get_config()
-    all_flags = {
+    return {
         "multi_agent": {
             "value": cfg.multi_agent,
             "env_var": "MEMORY_MULTI_AGENT",
@@ -1352,62 +1299,7 @@ def get_feature_flags() -> dict:
             "toml_path": "features.feature_temporal_kg",
             "default": True,
         },
-        "fts5_cache": {
-            "value": cfg.fts5_cache,
-            "env_var": "MEMORY_FTS5_CACHE",
-            "toml_path": "cache.fts5_cache",
-            "default": True,
-        },
-        "query_cache": {
-            "value": cfg.query_cache,
-            "env_var": "MEMORY_QUERY_CACHE",
-            "toml_path": "search.query_cache",
-            "default": True,
-        },
-        "reranker_disabled": {
-            "value": cfg.reranker_disabled,
-            "env_var": "MEMORY_RERANKER_DISABLED",
-            "toml_path": "search.reranker_disabled",
-            "default": False,
-        },
-        "contextual_retrieval": {
-            "value": cfg.contextual_retrieval,
-            "env_var": "MEMORY_CONTEXTUAL_RETRIEVAL",
-            "toml_path": "search.contextual_retrieval",
-            "default": True,
-        },
     }
-
-    _FLAG_WARNINGS: dict[str, str] = {
-        "feature_temporal_kg": "Disabled: temporal KG supersession + contradiction detection off (set MEMORY_TEMPORAL_KG=0 explicitly to acknowledge).",
-        "llm_extraction": "Disabled: LLM fact/entity extraction off. KG quality may degrade without regex fallback.",
-        "saga_enabled": "Disabled: saga transaction rollback off. DB corruption risk on partial save failures.",
-        "crdt_enabled": "Disabled: CRDT conflict resolution off. Concurrent writes may silently lose data.",
-        "temporal_tiers": "Disabled: hot/warm/cold tier system off. All memories treated equally, archive may not run.",
-    }
-
-    for name, meta in all_flags.items():
-        if not meta["value"] and name in _FLAG_WARNINGS:
-            meta["warnings"] = [_FLAG_WARNINGS[name]]
-        else:
-            meta["warnings"] = []
-    return all_flags
-
-
-def log_feature_flags_at_startup() -> None:
-    """Emit a structured JSON log of all feature flags at INFO level.
-
-    Safe to call multiple times; uses the current config snapshot.
-    """
-    try:
-        import json
-        flags = get_feature_flags()
-        summary = {
-            name: meta["value"] for name, meta in flags.items()
-        }
-        logger.info("feature_flags_snapshot=%s", json.dumps(summary, sort_keys=True))
-    except Exception as exc:
-        logger.debug("feature_flags snapshot failed: %s", exc)
 
 
 __all__ = [
@@ -1415,7 +1307,6 @@ __all__ = [
     "get_config",
     "reset_config",
     "get_feature_flags",
-    "log_feature_flags_at_startup",
     "INSTALL_ROOT",
     "GLOBAL_SCRIPTS_DIR",
     "SCRIPTS_SUBDIR",

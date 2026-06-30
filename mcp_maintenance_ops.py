@@ -16,7 +16,6 @@ from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 import os
-import sys
 from pathlib import Path
 
 
@@ -73,39 +72,12 @@ def _get_local_tools() -> dict:
             memory_pinned_decay_check,
             memory_compile_skill,
             memory_llm_unload,
-            memory_health,  # type: ignore[name-defined]
-        )
-        from mcp_verbs import (
-            memory_search,
-            memory_save,
-            memory_recall,
-            memory_note,
-            memory_learn,
-            memory_audit as _memory_audit_verb,
-            memory_organize,
-            memory_share as _memory_share_verb,
-            memory_graph as _memory_graph_verb,
-            memory_profile as _memory_profile_verb,
-            memory_advanced,
         )
 
         _local_tools = {
             "memory_heartbeat": memory_heartbeat,
-            "memory_health": memory_health,
             "memory_tier_stats": memory_tier_stats,
             "memory_run_tier_migration": memory_run_tier_migration,
-            "memory_search": memory_search,
-            "memory_save": memory_save,
-            "memory_recall": memory_recall,
-            "memory_note": memory_note,
-            "memory_learn": memory_learn,
-            "memory_audit": _memory_audit_verb,
-            "memory_organize": memory_organize,
-            "memory_share": _memory_share_verb,
-            "memory_graph": _memory_graph_verb,
-            "memory_profile": _memory_profile_verb,
-            "memory_advanced": memory_advanced,
-            "memory_tier_stats": memory_tier_stats,
             "memory_check_embedding_model": memory_check_embedding_model,
             "memory_incremental_update": memory_incremental_update,
             "memory_duplicates": memory_duplicates,
@@ -280,81 +252,11 @@ def _get_handlers() -> dict:
         _maintenance_op_cls = MaintenanceOp
         t = _tools()
         from session_manager import reconcile_audit as _reconcile_audit
-        _CRON_DIR = str(Path(__file__).resolve().parent / "cron")
-        if _CRON_DIR not in sys.path:
-            sys.path.insert(0, _CRON_DIR)
         from cron.cron_train_forget_model import main as _train_forget_model
         _MAINTENANCE_HANDLERS = {
             MaintenanceOp.HEARTBEAT: lambda *, dry_run=False, **_: t[
                 "memory_heartbeat"
             ](dry_run=dry_run),
-            MaintenanceOp.HEALTH: lambda **_: _op_health(),  # type: ignore[attr-defined]
-            MaintenanceOp.SEARCH: lambda *, query, category="", limit=10, include_global=True, mode="hybrid", **_: (  # type: ignore[attr-defined]
-                t["memory_search"](
-                    query=query,
-                    category=category,
-                    limit=limit,
-                    include_global=include_global,
-                    mode=mode,
-                )
-            ),
-            MaintenanceOp.SAVE: lambda *, content, category="lessons", title_slug="", tags=None, pinned=False, importance=3, is_global=False, **_: (  # type: ignore[attr-defined]
-                t["memory_save"](
-                    content=content,
-                    category=category,
-                    title_slug=title_slug,
-                    tags=tags or [],
-                    pinned=pinned,
-                    importance=importance,
-                    is_global=is_global,
-                )
-            ),
-            MaintenanceOp.RECALL: lambda *, query="", session_id="", **_: (  # type: ignore[attr-defined]
-                t["memory_recall"](query=query, session_id=session_id)
-            ),
-            MaintenanceOp.NOTE: lambda *, note_id, action="read", content="", category="", title_slug="", tags=None, **_: (  # type: ignore[attr-defined]
-                t["memory_note"](
-                    note_id=note_id,
-                    action=action,
-                    content=content,
-                    category=category,
-                    title_slug=title_slug,
-                    tags=tags or [],
-                )
-            ),
-            MaintenanceOp.LEARN: lambda *, content, as_skill=False, skill_name="", category="lessons", tags=None, **_: (  # type: ignore[attr-defined]
-                t["memory_learn"](
-                    content=content,
-                    as_skill=as_skill,
-                    skill_name=skill_name,
-                    category=category,
-                    tags=tags or [],
-                )
-            ),
-            MaintenanceOp.AUDIT_VERB: lambda *, hours=24, limit=20, include_errors=True, **_: (  # type: ignore[attr-defined]
-                t["memory_audit"](hours=hours, limit=limit, include_errors=include_errors)
-            ),
-            MaintenanceOp.ORGANIZE: lambda *, target="safe_default", dry_run=False, **_: (  # type: ignore[attr-defined]
-                t["memory_organize"](target=target, dry_run=dry_run)
-            ),
-            MaintenanceOp.SHARE_VERB: lambda *, note_id, share_with="", action="list", **_: (  # type: ignore[attr-defined]
-                t["memory_share"](note_id=note_id, share_with=share_with, action=action)
-            ),
-            MaintenanceOp.GRAPH_VERB: lambda *, query="", start="", edge_patterns="", max_depth=2, action="explore", **_: (  # type: ignore[attr-defined]
-                t["memory_graph"](
-                    query=query,
-                    start=start,
-                    edge_patterns=edge_patterns,
-                    max_depth=max_depth,
-                    action=action,
-                )
-            ),
-            MaintenanceOp.PROFILE_VERB: lambda *, action="stats", agent_id="", **_: (  # type: ignore[attr-defined]
-                t["memory_profile"](action=action, agent_id=agent_id)
-            ),
-            MaintenanceOp.ADVANCED: lambda *, operation, **kwargs: (  # type: ignore[attr-defined]
-                t["memory_advanced"](operation=operation, **kwargs)
-            ),
             MaintenanceOp.TIER_STATS: lambda **_: t["memory_tier_stats"](),
             MaintenanceOp.TIER_MIGRATION: lambda *, dry_run=False, **_: t[
                 "memory_run_tier_migration"
@@ -620,7 +522,6 @@ def _get_handlers() -> dict:
             MaintenanceOp.PHASE_ERRORS: lambda *, since_ts=None, until_ts=None, limit=50, **_: _op_phase_errors(
                 since_ts=since_ts, until_ts=until_ts, limit=limit
             ),
-            MaintenanceOp.MEMORY_STATS: lambda **_: _op_memory_stats(),
         }
     return _MAINTENANCE_HANDLERS
 
@@ -801,8 +702,7 @@ def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
         with open_db(db_path, write=False) as conn:
             from mcp_maintenance import memory_extract_skills
-            result = memory_extract_skills(conn, memory_id=memory_id, dry_run=dry_run)
-            return str(result)
+            return memory_extract_skills(conn, memory_id=memory_id, dry_run=dry_run)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -820,8 +720,7 @@ def _op_list_skills(limit: int = 50) -> str:
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
         with open_db(db_path, write=False) as conn:
             from mcp_maintenance import memory_list_skills
-            result = memory_list_skills(conn, limit=limit)
-            return str(result)
+            return memory_list_skills(conn, limit=limit)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -886,111 +785,6 @@ def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = Non
         )
     except Exception as e:
         return json.dumps({"error": str(e)})
-
-
-def _op_memory_stats() -> str:
-    """Return aggregate memory system stats: DB size, note count, queue depth, circuit breaker state, feature flags."""
-    try:
-        import os
-        import sqlite3
-        from pathlib import Path
-
-        from infra.config import get_feature_flags, get_config
-        from infra.infrastructure import resolve_active_memory_dir
-
-        db_path = resolve_active_memory_dir() / "memory.db"
-        db_size = 0
-        note_count = 0
-        if db_path.exists():
-            db_size = db_path.stat().st_size
-            conn = sqlite3.connect(str(db_path))
-            try:
-                note_count = conn.execute(
-                    "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
-                ).fetchone()[0]
-            except Exception:
-                pass
-            finally:
-                conn.close()
-
-        queue_depth = 0
-        try:
-            from background.background_queue import pending_count
-            from db import connection_pool
-
-            bq_conn = connection_pool.get(str(db_path), timeout=3.0)
-            queue_depth = pending_count(bq_conn)
-        except Exception:
-            pass
-
-        circuit_open = False
-        try:
-            from background.circuit_breaker import _auto_save_get_state
-            circuit_open = _auto_save_get_state().get("open", False)
-        except Exception:
-            pass
-
-        flags = get_feature_flags()
-        flag_summary = {k: v["value"] for k, v in flags.items()}
-
-        return json.dumps(
-            {
-                "db_path": str(db_path),
-                "db_size_bytes": db_size,
-                "note_count": note_count,
-                "background_queue_depth": queue_depth,
-                "circuit_breaker_open": circuit_open,
-                "feature_flags": flag_summary,
-            },
-            indent=2,
-        )
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-def _op_health(
-    brief: bool = True,
-    full: bool = False,
-    structured: bool = False,
-) -> str:
-    try:
-        from memory_common import GLOBAL_MEM_DIR
-
-        health_file = GLOBAL_MEM_DIR / ".health_status.json"
-        if not health_file.exists():
-            return json.dumps(
-                {"status": "unknown", "message": ".health_status.json not found — cron_health_check may not have run yet"}
-            )
-        data = json.loads(health_file.read_text())
-        alerts = data.get("alerts", [])
-        overall = data.get("overall_healthy", False)
-
-        if structured:
-            return json.dumps({
-                "status": "healthy" if overall else "unhealthy",
-                "needs_attention": not overall,
-                "alerts": alerts[:20],
-                "timestamp": data.get("timestamp"),
-                "db_path": data.get("db_path"),
-            })
-
-        if full:
-            return json.dumps(data, indent=2)
-
-        # brief mode (default) — only show what needs attention
-        if overall and not alerts:
-            return "Health: HEALTHY — no attention needed."
-
-        lines = [f"Health: {'HEALTHY' if overall else 'UNHEALTHY'}"]
-        if not overall:
-            lines.append(f"DB: {data.get('db_path', 'unknown')}")
-            lines.append(f"Timestamp: {data.get('timestamp', 'unknown')}")
-            lines.append(f"Alerts ({len(alerts)}):")
-            for a in alerts[:10]:
-                lines.append(f"  - {a}")
-        return "\n".join(lines)
-    except Exception as e:
-        return json.dumps({"status": "error", "message": str(e)})
 
 
 MAINTENANCE_HANDLERS = _MaintenanceHandlersProxy()
