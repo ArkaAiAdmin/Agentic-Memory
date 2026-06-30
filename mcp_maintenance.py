@@ -116,7 +116,7 @@ def memory_health_check(conn) -> str:
 
     try:
         fts_count = conn.execute(
-            "SELECT COUNT(*) FROM fts_memories"
+            "SELECT COUNT(*) FROM memories_fts"
         ).fetchone()[0]
         status["fts"] = {"row_count": fts_count or 0}
     except Exception as exc:

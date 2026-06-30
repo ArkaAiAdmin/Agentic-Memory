@@ -85,6 +85,7 @@ def memory_search(
     deep_rerank: bool = False,
     include_facts: bool = True,
     fact_limit: int = 5,
+    tenant_id: str = "default",
 ) -> str:
     """Perform FTS5 (full-text) and semantic hybrid search across local and global memories.
 
@@ -141,6 +142,7 @@ def memory_search(
                 deep_rerank=deep_rerank,
                 include_facts=include_facts,
                 fact_limit=fact_limit,
+                tenant_id=tenant_id,
             )
         except Exception as exc:
             logger.warning("Local search failed for query %r: %s", expanded_query, exc)
@@ -159,6 +161,7 @@ def memory_search(
                 deep_rerank=deep_rerank,
                 include_facts=include_facts,
                 fact_limit=fact_limit,
+                tenant_id="default",
             )
         except Exception as exc:
             logger.warning("Global search failed for query %r: %s", expanded_query, exc)

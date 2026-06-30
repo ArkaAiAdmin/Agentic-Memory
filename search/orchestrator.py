@@ -246,7 +246,7 @@ _skill_cache: dict = {}
 _skill_cache_order: list = []
 
 
-def _skill_first_lookup(db_path: Path, terms: list[str], limit: int) -> dict | None:
+def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: str = "default") -> dict | None:
     """Look up skills in memory_skills table matching the query terms."""
     cache_key = (str(db_path), tuple(sorted(terms)), limit)
     if cache_key in _skill_cache:
@@ -255,7 +255,7 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int) -> dict | N
     try:
         from _lazy_imports import connection_pool, safe_close_db
 
-        db = connection_pool.get(str(db_path), timeout=10.0)
+        db = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
     except Exception as exc:
         logger.warning("_skill_first_lookup: connection_pool.get failed: %s", exc)
         return None
@@ -352,11 +352,12 @@ def record_ctr_feedback_db(
     returned_at: Optional[float] = None,
     source: Optional[str] = None,
     ranking_params: Optional[str] = None,
+    tenant_id: str = "default",
 ) -> None:
     """Record CTR feedback with connection lifecycle managed."""
     import time as _time
 
-    conn = connection_pool.get(str(db_path))
+    conn = connection_pool.get(str(db_path), tenant_id=tenant_id)
     try:
         now = returned_at if returned_at is not None else _time.time()
         if action == "returned":
@@ -540,7 +541,7 @@ def _record_drift_event(
     return alarm_id, n_alarms_written, True
 
 
-def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15) -> dict:
+def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15, tenant_id: str = "default") -> dict:
     """Check concept drift with connection lifecycle managed.
 
     Writes a row to the ``concept_drift`` table when drift exceeds the
@@ -557,7 +558,7 @@ def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15) -> dict
     """
     import numpy as _np
 
-    conn = connection_pool.get(str(db_path))
+    conn = connection_pool.get(str(db_path), tenant_id=tenant_id)
     try:
         rows = conn.execute("SELECT embedding FROM memory_embeddings").fetchall()
         if not rows:
@@ -1740,6 +1741,7 @@ def search_memories(
     skill_first: bool = False,
     include_facts: bool = True,
     fact_limit: int = 5,
+    tenant_id: str = "default",
 ) -> dict:
     if not db_path.exists():
         return {
@@ -1768,7 +1770,7 @@ def search_memories(
 
     # Phase 1b: Skill-first lookup (if requested)
     if skill_first:
-        skill_result = _skill_first_lookup(db_path, terms, limit)
+        skill_result = _skill_first_lookup(db_path, terms, limit, tenant_id=tenant_id)
         if skill_result is not None:
             return skill_result
 
@@ -1801,7 +1803,7 @@ def search_memories(
     try:
         from _lazy_imports import connection_pool
 
-        db = connection_pool.get(str(db_path), timeout=30.0)
+        db = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
 
         # Phase 3: DB setup
         cols = _get_memories_columns(db)

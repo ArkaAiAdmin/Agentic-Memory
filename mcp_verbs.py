@@ -54,6 +54,7 @@ def memory_search(
     limit: int = 10,
     include_global: bool = True,
     mode: str = "hybrid",
+    tenant_id: str = "default",
 ) -> str:
     """Search memories by semantic + FTS5 hybrid search.
 
@@ -75,6 +76,7 @@ def memory_search(
             query=query,
             limit=limit,
             include_global=include_global,
+            tenant_id=tenant_id,
         )
         return result.get("results_blob", str(result))
     except Exception as e:
@@ -124,7 +126,7 @@ def memory_save(
 
 @mcp.tool()
 @with_audit("memory_recall")
-def memory_recall(query: str = "", session_id: str = "") -> str:
+def memory_recall(query: str = "", session_id: str = "", tenant_id: str = "default") -> str:
     """Recall context for the current session or a named thread.
 
     Combines session_start + recall_context into one call.
@@ -144,6 +146,7 @@ def memory_recall(query: str = "", session_id: str = "") -> str:
             query=q,
             limit=5,
             include_global=True,
+            tenant_id=tenant_id,
         )
         return result.get("results_blob", str(result))
     except Exception as e:

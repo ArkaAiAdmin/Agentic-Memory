@@ -206,9 +206,11 @@ def with_audit(tool_name: str):
                     f"Too many calls to {tool_name}. Try again later. (retry_after={retry_after:.1f}s)",
                 )
             db_path = _resolve_active_db_path()
+            audit_args = dict(kwargs) if kwargs else {}
+            audit_args.setdefault("tenant_id", "default")
             with audit.audit(
                 tool_name,
-                args=kwargs,
+                args=audit_args,
                 db_path=db_path,
             ) as ctx:
                 result = func(*args, **kwargs)
