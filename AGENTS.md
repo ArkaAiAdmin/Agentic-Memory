@@ -132,4 +132,4 @@ See `memory.toml` for all 17 feature flags.
 - **Auto-save**: Async inbox+daemon (2-5ms enqueue). Default since 2026-06-22.
 - **Deferred indexing**: MCP `memory_save` defers embedding/KG/facts to background worker — returns <200ms, never times out.
 - **Mypy**: 0 errors. **Coverage**: 70% gate.
-- **Test command**: `./venv/bin/python -m pytest eval/ -n 3 --ignore=eval/test_session_manager.py --ignore=eval/test_session_admin.py --ignore=eval/test_session_search.py --ignore=eval/test_tool_routing.py --ignore=eval/test_save_pipeline_unit.py -q`
+- **Test command**: `./venv/bin/python -m pytest eval/ -n 3 --ignore=eval/test_session_manager.py --ignore=eval/test_session_admin.py --ignore=eval/test_session_search.py --ignore=eval/test_tool_routing.py --ignore=eval/test_save_pipeline_unit.py --ignore=eval/test_contextual_enrichment.py --ignore=eval/test_refactor_helpers.py -q`

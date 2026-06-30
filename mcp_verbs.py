@@ -8,7 +8,7 @@ memory_maintenance(operation="...") for power users.
 
 Verbs:
   memory_search, memory_save, memory_recall, memory_note,
-  memory_learn, memory_health, memory_audit, memory_organize,
+  memory_learn, memory_audit, memory_organize,
   memory_share, memory_graph, memory_profile, memory_advanced
 """
 from __future__ import annotations
@@ -73,7 +73,6 @@ def memory_search(
         result = search_memories(
             db_path=db_path,
             query=query,
-            category=category or None,
             limit=limit,
             include_global=include_global,
         )
@@ -174,19 +173,19 @@ def memory_note(
     """
     try:
         if action == "read":
-            from memory_delete import get_memory
+            from mcp_memory import memory_search
 
-            result = get_memory(note_id)
+            result = memory_search(note_id, limit=1)
             return str(result)
         elif action == "delete":
-            from memory_delete import delete_memory
+            from mcp_memory import memory_delete
 
-            result = delete_memory(note_id)
+            result = memory_delete(note_id)
             return str(result)
         elif action == "restore":
-            from memory_delete import restore_memory
+            from mcp_memory import memory_restore
 
-            result = restore_memory(note_id)
+            result = memory_restore(note_id)
             return str(result)
         elif action == "update":
             from save_pipeline import save_memory

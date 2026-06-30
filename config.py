@@ -300,6 +300,7 @@ class MemoryConfig:
     # MEMORY_TEMPORAL_KG=0 to disable (reverts to plain fact extraction
     # with no event_time / supersession / invalidation logic).
     feature_temporal_kg: bool = True
+    session_memory: bool = False
 
     # cache
     fts5_cache: bool = True
@@ -738,6 +739,9 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         feature_temporal_kg=_b(
             "MEMORY_TEMPORAL_KG", "features.feature_temporal_kg", True, bool, toml_data
+        ),
+        session_memory=_b(
+            "MEMORY_SESSION_MEMORY", "session_memory.enabled", False, bool, toml_data
         ),
         # --- cache ---
         fts5_cache=_b("MEMORY_FTS5_CACHE", "cache.fts5_cache", True, bool, toml_data),
