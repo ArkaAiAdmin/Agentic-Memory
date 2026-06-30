@@ -351,6 +351,7 @@ def tool_complete(
         result = _tool_complete_inner(tool, params, result_preview, ts)
     except Exception as e:
         cb = _auto_save_record_failure_and_maybe_trip()
+        tb = logging.getLogger(__name__).getEffectiveLevel() <= logging.DEBUG and __import__("traceback").format_exc() or str(e)
         logger.warning(
             "auto-save %s failed: %s (failure %d/%d within window, backoff=%.1fs)",
             tool,
@@ -359,6 +360,24 @@ def tool_complete(
             cb["max_retries"] + 1,
             cb["next_backoff"],
         )
+        try:
+            import os, json as _json, datetime as _dt
+            from pathlib import Path
+            _am_dir = Path(__file__).resolve().parent.parent
+            _err_path = _am_dir / "memory" / "hook-errors.jsonl"
+            _err_path.parent.mkdir(parents=True, exist_ok=True)
+            _entry = {
+                "ts": int(_dt.datetime.now().timestamp() * 1000),
+                "label": "auto-save",
+                "error": str(e),
+                "traceback": tb if "traceback" in dir() else "",
+                "failureCount": cb["n_failures"],
+                "code": 1,
+            }
+            with open(_err_path, "a") as _ef:
+                _ef.write(_json.dumps(_entry) + "\n")
+        except Exception:
+            pass
         return {
             "saved": False,
             "error": f"save failed: {e}",

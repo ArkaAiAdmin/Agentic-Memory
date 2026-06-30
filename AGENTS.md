@@ -11,7 +11,7 @@ You are an agent working on the **agentic-memory** codebase at the repo root. Th
 
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
-- **Surface**: 88 MCP tools (7 CORE + 81 ADMIN) + 6 lifecycle hooks + 29 cron scripts / 29 scheduled jobs + 11 CLI commands
+- **Surface**: 88 MCP tools (7 CORE + 81 ADMIN) + 4 lifecycle hooks + 29 cron scripts / 29 scheduled jobs + 11 CLI commands
 - **Schema**: v23, ~51 tables (~31 user-visible)
 - **Code**: 71k LOC production + 75k LOC test; see `docs/architecture.md`
 
@@ -47,7 +47,7 @@ agentic-memory/
 ├── search_pipeline.py + search/ ← read path (FTS5 + usearch + KG fusion)
 ├── mcp_maintenance.py           ← admin tools + memory_maintenance router
 ├── tool_registry.py             ← 7 CORE + 81 ADMIN (single source of truth)
-├── hooks/                       ← 6 lifecycle hooks + 1 log helper
+├── hooks/                       ← 4 lifecycle hooks + 2 supporting scripts + log helper
 ├── cron/                        ← 29 background jobs + install_crontab.sh
 ├── mcp_*.py (26 modules)        ← domain-split MCP tools
 ├── background/auto_save.py      ← shim; impl split across background/* (Phase 3/4)
@@ -86,7 +86,7 @@ Binds to `127.0.0.1:9877`. Key env vars: `MEMORY_SYNC_TOKEN` (required), `MEMORY
 
 ## Hook Wiring
 
-Four lifecycle hooks (PreToolUse, SessionStart, Stop/PostToolUse, plus log helper `_log_error.py` is not a lifecycle hook). All lifecycle hooks write to STDOUT. See `~/.claude/settings.json` for wiring. `auto_save.py on_tool_complete` is wired via `opencode.jsonc`.
+OpenCode plugin wires 4 lifecycle hooks via `plugin/agentic-memory-hooks.ts` (registered in `opencode.jsonc`: `session.created → startSession`, `tool.execute.before → beforeTool`, `tool.execute.after → onToolAfter`, `experimental.session.compacting → onCompacting`, `session.deleted → endSession`). Each delegates to the matching Python script in `hooks/` as a subprocess. `auto_save.py tool-complete` is the per-tool save path; failures are logged to `memory/hook-errors.jsonl`. Claude Code sessions are out of scope.
 
 ---
 
@@ -107,7 +107,7 @@ See `memory.toml` for all 17 feature flags.
 | `skills/memory-architecture/` | "How does the system work?" |
 | `skills/add-an-mcp-tool/` | "Add a new MCP tool" |
 | `skills/add-a-cron-job/` | "Add a new cron job" |
-| `skills/add-a-claude-code-hook/` | "Add a new lifecycle hook" |
+| `skills/hookify-rules/` | "Configure OpenCode plugin hook rules" |
 
 ---
 
