@@ -11,6 +11,7 @@ point. It saves a few sample memories, runs a search, and prints
 DB stats so the caller can verify the wiring works.
 """
 from mcp_common import _bootstrap_path  # noqa: E402,F401
+from typing import Any
 
 
 
@@ -74,7 +75,7 @@ def memory_sdk_demo(query: str = "preferences", samples: int = 3) -> str:
                 results = [{"error": str(exc)}]
 
         try:
-            stats = m.stats()
+            stats: dict[str, Any] = m.stats()
         except Exception as exc:
             stats = {"error": str(exc)}
 

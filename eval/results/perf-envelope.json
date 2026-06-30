@@ -1,133 +1,147 @@
 {
-  "timestamp": "2026-06-06T19:10:14.845816+00:00",
+  "timestamp": "2026-06-30T09:18:50.745408+00:00",
   "host": "macOS",
-  "venv_python": "./venv/bin/python",
-  "perf_root": "/tmp/perf_env_test",
+  "venv_python": "/Users/arka/.config/agentic-memory/venv/bin/python",
+  "perf_root": "/tmp/perf_envelope_test",
   "sizes": [
     1000,
     10000,
     100000
   ],
   "warmup_iters": 2,
-  "measure_iters": 3,
-  "total_s": 186.69,
+  "measure_iters": 5,
+  "total_s": 285.2,
   "corpora": [
     {
       "corpus_size": 1000,
-      "generation_s": 0.07,
-      "initial_build_s": 0.16,
-      "total_s": 6.13,
+      "generation_s": 0.09,
+      "initial_build_s": 0.86,
+      "total_s": 11.68,
       "db_rows": 1000,
       "measurements": [
         {
           "name": "fts5_search",
           "corpus_size": 1000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0003,
-          "p95_s": 0.0004,
-          "max_s": 0.0004,
-          "mean_s": 0.0004,
+          "p50_s": 0.0005,
+          "p95_s": 0.0006,
+          "max_s": 0.0006,
+          "mean_s": 0.0005,
           "elapsed_s": [
-            0.0004,
-            0.0003,
-            0.0003
+            0.0006,
+            0.0005,
+            0.0005,
+            0.0005,
+            0.0005
           ],
           "notes": "20 random terms; LIMIT 20; sqlite3 direct"
         },
         {
           "name": "semantic_search",
           "corpus_size": 1000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0231,
-          "p95_s": 0.0234,
-          "max_s": 0.0234,
-          "mean_s": 0.0231,
+          "p50_s": 0.0,
+          "p95_s": 0.0,
+          "max_s": 0.0,
+          "mean_s": 0.0,
           "elapsed_s": [
-            0.0231,
-            0.0234,
-            0.023
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
           ],
           "notes": "1 query x limit=5 per iteration; potion-base-8M; encodes all rows in DB"
         },
         {
           "name": "save",
           "corpus_size": 1000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0009,
-          "p95_s": 0.0013,
-          "max_s": 0.0013,
-          "mean_s": 0.001,
+          "p50_s": 0.0007,
+          "p95_s": 0.0007,
+          "max_s": 0.0007,
+          "mean_s": 0.0007,
           "elapsed_s": [
-            0.0009,
-            0.0013,
-            0.0009
+            0.0007,
+            0.0007,
+            0.0007,
+            0.0007,
+            0.0007
           ],
           "notes": "direct SQLite INSERT; no frontmatter parse"
         },
         {
           "name": "rebuild",
           "corpus_size": 1000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.1678,
-          "p95_s": 0.1694,
-          "max_s": 0.1694,
-          "mean_s": 0.168,
+          "p50_s": 0.7397,
+          "p95_s": 0.7422,
+          "max_s": 0.7422,
+          "mean_s": 0.7395,
           "elapsed_s": [
-            0.1668,
-            0.1694,
-            0.1678
+            0.7397,
+            0.7368,
+            0.7422,
+            0.7414,
+            0.7377
           ],
           "notes": "rebuild_index.py on full corpus; reads from disk"
         },
         {
           "name": "pinned_decay_dry_run",
           "corpus_size": 1000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0004,
-          "p95_s": 0.0004,
-          "max_s": 0.0004,
-          "mean_s": 0.0004,
+          "p50_s": 0.0005,
+          "p95_s": 0.0006,
+          "max_s": 0.0006,
+          "mean_s": 0.0005,
           "elapsed_s": [
-            0.0004,
-            0.0004,
-            0.0004
+            0.0005,
+            0.0005,
+            0.0005,
+            0.0006,
+            0.0006
           ],
           "notes": "library call: SELECT pinned notes + per-note psi check"
         },
         {
           "name": "contradiction_phrase",
           "corpus_size": 1000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0219,
-          "p95_s": 0.0221,
-          "max_s": 0.0221,
-          "mean_s": 0.0217,
+          "p50_s": 0.0511,
+          "p95_s": 0.0518,
+          "max_s": 0.0518,
+          "mean_s": 0.0509,
           "elapsed_s": [
-            0.0211,
-            0.0221,
-            0.0219
+            0.0518,
+            0.0495,
+            0.0508,
+            0.0511,
+            0.0511
           ],
           "notes": "contradiction_detector.py --mode=phrase on 200-note subsample (detector is O(n^2); full corpus would be ~25x longer)"
         },
         {
           "name": "contradiction_semantic",
           "corpus_size": 1000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.7611,
-          "p95_s": 0.7957,
-          "max_s": 0.7957,
-          "mean_s": 0.769,
+          "p50_s": 0.5062,
+          "p95_s": 0.5251,
+          "max_s": 0.5251,
+          "mean_s": 0.5113,
           "elapsed_s": [
-            0.7501,
-            0.7611,
-            0.7957
+            0.5062,
+            0.5057,
+            0.5052,
+            0.5141,
+            0.5251
           ],
           "notes": "contradiction_detector.py --mode=semantic on 200-note subsample (detector is O(n^2); full corpus would be ~25x longer)"
         }
@@ -135,88 +149,98 @@
     },
     {
       "corpus_size": 10000,
-      "generation_s": 0.72,
-      "initial_build_s": 1.52,
-      "total_s": 11.53,
+      "generation_s": 0.78,
+      "initial_build_s": 2.55,
+      "total_s": 22.9,
       "db_rows": 10000,
       "measurements": [
         {
           "name": "fts5_search",
           "corpus_size": 10000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0003,
-          "p95_s": 0.0004,
-          "max_s": 0.0004,
-          "mean_s": 0.0003,
+          "p50_s": 0.0005,
+          "p95_s": 0.0005,
+          "max_s": 0.0005,
+          "mean_s": 0.0005,
           "elapsed_s": [
-            0.0003,
-            0.0004,
-            0.0003
+            0.0005,
+            0.0005,
+            0.0005,
+            0.0005,
+            0.0005
           ],
           "notes": "20 random terms; LIMIT 20; sqlite3 direct"
         },
         {
           "name": "semantic_search",
           "corpus_size": 10000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.2287,
-          "p95_s": 0.229,
-          "max_s": 0.229,
-          "mean_s": 0.2286,
+          "p50_s": 0.0,
+          "p95_s": 0.0,
+          "max_s": 0.0,
+          "mean_s": 0.0,
           "elapsed_s": [
-            0.229,
-            0.2282,
-            0.2287
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
           ],
           "notes": "1 query x limit=5 per iteration; potion-base-8M; encodes all rows in DB"
         },
         {
           "name": "save",
           "corpus_size": 10000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.001,
-          "p95_s": 0.0012,
-          "max_s": 0.0012,
-          "mean_s": 0.0011,
+          "p50_s": 0.0006,
+          "p95_s": 0.0008,
+          "max_s": 0.0008,
+          "mean_s": 0.0007,
           "elapsed_s": [
-            0.001,
-            0.001,
-            0.0012
+            0.0007,
+            0.0008,
+            0.0006,
+            0.0006,
+            0.0006
           ],
           "notes": "direct SQLite INSERT; no frontmatter parse"
         },
         {
           "name": "rebuild",
           "corpus_size": 10000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 1.5065,
-          "p95_s": 1.527,
-          "max_s": 1.527,
-          "mean_s": 1.5045,
+          "p50_s": 2.5941,
+          "p95_s": 2.6136,
+          "max_s": 2.6136,
+          "mean_s": 2.5959,
           "elapsed_s": [
-            1.4799,
-            1.527,
-            1.5065
+            2.5809,
+            2.5824,
+            2.5941,
+            2.6084,
+            2.6136
           ],
           "notes": "rebuild_index.py on full corpus; reads from disk"
         },
         {
           "name": "pinned_decay_dry_run",
           "corpus_size": 10000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0003,
-          "p95_s": 0.0003,
-          "max_s": 0.0003,
-          "mean_s": 0.0003,
+          "p50_s": 0.0005,
+          "p95_s": 0.0005,
+          "max_s": 0.0005,
+          "mean_s": 0.0005,
           "elapsed_s": [
-            0.0003,
-            0.0003,
-            0.0003
+            0.0005,
+            0.0005,
+            0.0005,
+            0.0004,
+            0.0004
           ],
           "notes": "library call: SELECT pinned notes + per-note psi check"
         },
@@ -248,88 +272,98 @@
     },
     {
       "corpus_size": 100000,
-      "generation_s": 8.18,
-      "initial_build_s": 16.58,
-      "total_s": 169.01,
+      "generation_s": 8.41,
+      "initial_build_s": 22.09,
+      "total_s": 250.61,
       "db_rows": 100000,
       "measurements": [
         {
           "name": "fts5_search",
           "corpus_size": 100000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0004,
-          "p95_s": 0.0004,
-          "max_s": 0.0004,
-          "mean_s": 0.0004,
+          "p50_s": 0.0006,
+          "p95_s": 0.0007,
+          "max_s": 0.0007,
+          "mean_s": 0.0006,
           "elapsed_s": [
-            0.0004,
-            0.0004,
-            0.0004
+            0.0006,
+            0.0006,
+            0.0006,
+            0.0005,
+            0.0007
           ],
           "notes": "20 random terms; LIMIT 20; sqlite3 direct"
         },
         {
           "name": "semantic_search",
           "corpus_size": 100000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.963,
-          "p95_s": 0.97,
-          "max_s": 0.97,
-          "mean_s": 0.9609,
+          "p50_s": 0.0,
+          "p95_s": 0.0,
+          "max_s": 0.0,
+          "mean_s": 0.0,
           "elapsed_s": [
-            0.9496,
-            0.963,
-            0.97
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
           ],
           "notes": "1 query x limit=5 per iteration; potion-base-8M; encodes all rows in DB"
         },
         {
           "name": "save",
           "corpus_size": 100000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0016,
-          "p95_s": 0.0021,
-          "max_s": 0.0021,
-          "mean_s": 0.0016,
+          "p50_s": 0.0007,
+          "p95_s": 0.0008,
+          "max_s": 0.0008,
+          "mean_s": 0.0007,
           "elapsed_s": [
-            0.0016,
-            0.0021,
-            0.0012
+            0.0007,
+            0.0006,
+            0.0006,
+            0.0008,
+            0.0008
           ],
           "notes": "direct SQLite INSERT; no frontmatter parse"
         },
         {
           "name": "rebuild",
           "corpus_size": 100000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 26.3911,
-          "p95_s": 26.5874,
-          "max_s": 26.5874,
-          "mean_s": 26.374,
+          "p50_s": 32.0676,
+          "p95_s": 36.9698,
+          "max_s": 36.9698,
+          "mean_s": 32.1243,
           "elapsed_s": [
-            26.5874,
-            26.3911,
-            26.1435
+            30.3793,
+            32.3375,
+            36.9698,
+            32.0676,
+            28.8673
           ],
           "notes": "rebuild_index.py on full corpus; reads from disk"
         },
         {
           "name": "pinned_decay_dry_run",
           "corpus_size": 100000,
-          "iterations": 3,
+          "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0004,
-          "p95_s": 0.0005,
-          "max_s": 0.0005,
-          "mean_s": 0.0004,
+          "p50_s": 0.0006,
+          "p95_s": 0.0007,
+          "max_s": 0.0007,
+          "mean_s": 0.0006,
           "elapsed_s": [
-            0.0005,
-            0.0004,
-            0.0004
+            0.0006,
+            0.0006,
+            0.0006,
+            0.0006,
+            0.0007
           ],
           "notes": "library call: SELECT pinned notes + per-note psi check"
         },

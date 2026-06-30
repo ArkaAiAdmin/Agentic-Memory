@@ -70,7 +70,7 @@ def memory_record_ctr_feedback(
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
     try:
-        from search_pipeline import record_ctr_feedback_db
+        from search.orchestrator import record_ctr_feedback_db
 
         record_ctr_feedback_db(
             db_path,
@@ -178,16 +178,16 @@ def memory_list_drift_alarms(
 
         # 2. Build the SELECT.
         where = []
-        params: list = []
+        params_list: list = []
         if acknowledged is True:
             where.append("acknowledged_at IS NOT NULL")
         elif acknowledged is False:
             where.append("acknowledged_at IS NULL")
         if alarm_level:
             where.append("alarm_level = ?")
-            params.append(alarm_level)
+            params_list.append(alarm_level)
         where_clause = ("WHERE " + " AND ".join(where)) if where else ""
-        params.append(limit)
+        params_list.append(limit)
 
         rows = conn.execute(
             f"SELECT id, memory_id, concept, drift_score, threshold, "
@@ -195,7 +195,7 @@ def memory_list_drift_alarms(
             f"notes "
             f"FROM drift_alarms {where_clause} "
             f"ORDER BY detected_at DESC LIMIT ?",
-            params,
+            params_list,
         ).fetchall()
 
         total_unack = conn.execute(

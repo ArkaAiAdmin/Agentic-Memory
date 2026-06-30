@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -19,8 +20,7 @@ logger = logging.getLogger(__name__)
 def _build_daily_sections(
     autos: list[Path], date_str: str
 ) -> tuple[list[str], list[tuple[Path, str, str]], dict[str, int]]:
-
-    from background.auto_save import _get_sessions_dir  # noqa: E402
+    from background.auto_save import _get_sessions_dir, _truncate  # noqa: E402
     """Walk the auto-save files for ``date_str`` and return:
 
       * sections: the rendered markdown sections (one per file)
@@ -115,7 +115,9 @@ def _archive_one_autosave(
     path: Path, ts_part: str, tool_slug: str, date_str: str, archive_dir: Path
 ) -> bool:
 
-    from background.auto_save import _get_sessions_dir, atomic_write, _resolve_tags  # noqa: E402
+    from background.auto_save import _get_sessions_dir, atomic_write, _resolve_tags, get_db_path  # noqa: E402
+    from db import connection_pool  # noqa: E402
+    from memory_common import safe_close_db  # noqa: E402
     """C9 fix: delete the DB row FIRST (idempotent — re-runs are
     safe), then move the file. The previous order (move-then-delete)
     left a window where the file was archived but the DB row leaked.
@@ -164,6 +166,9 @@ def _archive_one_autosave(
     return False
 
 def _sweep_orphan_rows() -> None:
+    from background.auto_save import get_db_path  # noqa: E402
+    from db import connection_pool  # noqa: E402
+    from memory_common import safe_close_db  # noqa: E402
     """Sweep pre-existing orphan rows in tables that don't have
     ``ON DELETE CASCADE`` or that pre-date ``PRAGMA foreign_keys=ON``.
     Catches rows in user_access_log, memory_embeddings,
@@ -207,7 +212,13 @@ def _sweep_orphan_rows() -> None:
 
 def daily_digest(date_str: Optional[str] = None, dry_run: bool = False) -> dict:
 
-    from background.auto_save import _get_sessions_dir, _resolve_tags  # noqa: E402
+    from background.auto_save import (
+        ARCHIVE_DIR_NAME, _get_sessions_dir, _now_iso, _resolve_tags, atomic_write,
+    )  # noqa: E402
+    from background.tool_complete import _upsert_memory  # noqa: E402
+    from db import connection_pool  # noqa: E402
+    from background.auto_save import get_db_path  # noqa: E402
+    from memory_common import safe_close_db  # noqa: E402
     """Roll all auto-*.md notes for `date_str` into one sessions/YYYY-MM-DD.md.
 
     If date_str is None, defaults to yesterday (most common case: run at

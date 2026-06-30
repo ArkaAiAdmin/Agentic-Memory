@@ -74,6 +74,7 @@ agentic-memory/
 13. **Cross-process writes are single-writer.** Long-lived daemons hold a `flock`; cron scripts hold per-cron `flock`. Add a `flock` to any new long-lived writer.
 14. **Saga rollback cleans up dependent rows.** `save.saga.undo_upsert` calls `save.cleanup.cleanup_memory_relations()` (covers kg_facts, orphan kg_edges, backlinks).
 15. **Update docs after code changes.** Stale docs are a maintenance hazard — fix them in the same commit.
+16. **Always run tests with `-n 3` (not `-n auto`).** Auto mode freezes this machine. Full suite: `./venv/bin/python -m pytest eval/ -n 3 --tb=short -q`. Never omit `-n 3`.
 
 ---
 

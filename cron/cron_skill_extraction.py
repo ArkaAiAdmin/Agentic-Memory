@@ -164,7 +164,7 @@ def run_extraction(
     }
 
 
-def main() -> int:
+def main() -> None:
     os.environ.setdefault("MEMORY_DB_PATH", "")
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     parser = argparse.ArgumentParser(

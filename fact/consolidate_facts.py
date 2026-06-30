@@ -27,7 +27,6 @@ from contradiction_detector import detect_contradictions
 # H2 fix: also import the semantic + all-mode detector so the cron
 # consolidation path catches antonym-based and polarity-flip
 # contradictions, not just the phrase-based ones.
-_detect_all: Any
 try:
     from contradiction_detector import detect_contradictions_all as _detect_all
 

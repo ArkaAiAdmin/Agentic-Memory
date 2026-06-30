@@ -1,14 +1,16 @@
 {
-  "timestamp": "2026-06-07T17:19:01.644060+00:00",
+  "timestamp": "2026-06-30T09:20:25.150030+00:00",
   "host": "macOS",
-  "venv_python": "./venv/bin/python",
+  "venv_python": "/Users/arka/.config/agentic-memory/venv/bin/python",
   "perf_root": "/tmp/perf_envelope_v3",
   "sizes": [
-    1000
+    1000,
+    10000,
+    100000
   ],
   "warmup_iters": 2,
   "measure_iters": 5,
-  "total_s": 2.75,
+  "total_s": 82.55,
   "schema": {
     "rebuild_index": "rebuild_index.py",
     "rebuild_vec_index": "rebuild_vec_index.py"
@@ -19,10 +21,10 @@
   "corpora": [
     {
       "corpus_size": 1000,
-      "generation_s": 0.12,
-      "rebuild_index_s": 1.01,
-      "rebuild_vec_index_s": 0.77,
-      "total_s": 3.53,
+      "generation_s": 0.07,
+      "rebuild_index_s": 0.75,
+      "rebuild_vec_index_s": 0.6,
+      "total_s": 2.73,
       "db_rows": 1000,
       "measurements": [
         {
@@ -30,16 +32,16 @@
           "corpus_size": 1000,
           "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0012,
-          "p95_s": 0.0013,
-          "max_s": 0.0013,
-          "mean_s": 0.0012,
+          "p50_s": 0.0015,
+          "p95_s": 0.0017,
+          "max_s": 0.0017,
+          "mean_s": 0.0015,
           "elapsed_s": [
-            0.0013,
-            0.0012,
-            0.0012,
-            0.0012,
-            0.0013
+            0.0017,
+            0.0014,
+            0.0014,
+            0.0015,
+            0.0015
           ],
           "notes": "direct SQLite INSERT; no frontmatter parse; covers the new memory_embeddings insert via trigger or follow-up"
         },
@@ -48,16 +50,16 @@
           "corpus_size": 1000,
           "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0004,
-          "p95_s": 0.0004,
-          "max_s": 0.0004,
-          "mean_s": 0.0004,
+          "p50_s": 0.0005,
+          "p95_s": 0.0005,
+          "max_s": 0.0005,
+          "mean_s": 0.0005,
           "elapsed_s": [
-            0.0004,
-            0.0004,
-            0.0004,
-            0.0004,
-            0.0004
+            0.0005,
+            0.0005,
+            0.0005,
+            0.0005,
+            0.0005
           ],
           "notes": "20 random terms; LIMIT 20; sqlite3 direct; no rerank, no semantic fallback"
         },
@@ -66,16 +68,16 @@
           "corpus_size": 1000,
           "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0019,
-          "p95_s": 0.0021,
-          "max_s": 0.0021,
-          "mean_s": 0.0019,
+          "p50_s": 0.0,
+          "p95_s": 0.0,
+          "max_s": 0.0,
+          "mean_s": 0.0,
           "elapsed_s": [
-            0.0021,
-            0.0018,
-            0.0019,
-            0.0019,
-            0.002
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
           ],
           "notes": "EmbeddingSearch.search() with usearch HNSW + FP32 rerank; includes model2vec encode of the query (warm model); end-to-end including DB I/O + cache load on iter 0"
         },
@@ -93,6 +95,170 @@
             0.0004,
             0.0004,
             0.0004,
+            0.0004
+          ],
+          "notes": "weak CE (IDF + bigram phrase bonus) on top_k=20 FTS hits; deep_rerank=False (default); jina-reranker-v3 not measured (opt-in, off the envelope)"
+        }
+      ]
+    },
+    {
+      "corpus_size": 10000,
+      "generation_s": 0.71,
+      "rebuild_index_s": 2.55,
+      "rebuild_vec_index_s": 2.22,
+      "total_s": 8.13,
+      "db_rows": 10000,
+      "measurements": [
+        {
+          "name": "save",
+          "corpus_size": 10000,
+          "iterations": 5,
+          "unit": "seconds",
+          "p50_s": 0.0015,
+          "p95_s": 0.0016,
+          "max_s": 0.0016,
+          "mean_s": 0.0014,
+          "elapsed_s": [
+            0.0015,
+            0.0016,
+            0.0015,
+            0.0012,
+            0.0012
+          ],
+          "notes": "direct SQLite INSERT; no frontmatter parse; covers the new memory_embeddings insert via trigger or follow-up"
+        },
+        {
+          "name": "fts5_search",
+          "corpus_size": 10000,
+          "iterations": 5,
+          "unit": "seconds",
+          "p50_s": 0.0006,
+          "p95_s": 0.0007,
+          "max_s": 0.0007,
+          "mean_s": 0.0006,
+          "elapsed_s": [
+            0.0005,
+            0.0005,
+            0.0007,
+            0.0007,
+            0.0006
+          ],
+          "notes": "20 random terms; LIMIT 20; sqlite3 direct; no rerank, no semantic fallback"
+        },
+        {
+          "name": "indexed_search",
+          "corpus_size": 10000,
+          "iterations": 5,
+          "unit": "seconds",
+          "p50_s": 0.0,
+          "p95_s": 0.0,
+          "max_s": 0.0,
+          "mean_s": 0.0,
+          "elapsed_s": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "notes": "EmbeddingSearch.search() with usearch HNSW + FP32 rerank; includes model2vec encode of the query (warm model); end-to-end including DB I/O + cache load on iter 0"
+        },
+        {
+          "name": "rerank",
+          "corpus_size": 10000,
+          "iterations": 5,
+          "unit": "seconds",
+          "p50_s": 0.0004,
+          "p95_s": 0.0004,
+          "max_s": 0.0004,
+          "mean_s": 0.0004,
+          "elapsed_s": [
+            0.0004,
+            0.0004,
+            0.0004,
+            0.0003,
+            0.0004
+          ],
+          "notes": "weak CE (IDF + bigram phrase bonus) on top_k=20 FTS hits; deep_rerank=False (default); jina-reranker-v3 not measured (opt-in, off the envelope)"
+        }
+      ]
+    },
+    {
+      "corpus_size": 100000,
+      "generation_s": 9.38,
+      "rebuild_index_s": 25.4,
+      "rebuild_vec_index_s": 38.59,
+      "total_s": 113.1,
+      "db_rows": 100000,
+      "measurements": [
+        {
+          "name": "save",
+          "corpus_size": 100000,
+          "iterations": 5,
+          "unit": "seconds",
+          "p50_s": 0.0016,
+          "p95_s": 0.0016,
+          "max_s": 0.0016,
+          "mean_s": 0.0016,
+          "elapsed_s": [
+            0.0016,
+            0.0016,
+            0.0015,
+            0.0015,
+            0.0016
+          ],
+          "notes": "direct SQLite INSERT; no frontmatter parse; covers the new memory_embeddings insert via trigger or follow-up"
+        },
+        {
+          "name": "fts5_search",
+          "corpus_size": 100000,
+          "iterations": 5,
+          "unit": "seconds",
+          "p50_s": 0.0005,
+          "p95_s": 0.0006,
+          "max_s": 0.0006,
+          "mean_s": 0.0005,
+          "elapsed_s": [
+            0.0005,
+            0.0006,
+            0.0005,
+            0.0005,
+            0.0006
+          ],
+          "notes": "20 random terms; LIMIT 20; sqlite3 direct; no rerank, no semantic fallback"
+        },
+        {
+          "name": "indexed_search",
+          "corpus_size": 100000,
+          "iterations": 5,
+          "unit": "seconds",
+          "p50_s": 0.0,
+          "p95_s": 0.0,
+          "max_s": 0.0,
+          "mean_s": 0.0,
+          "elapsed_s": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "notes": "EmbeddingSearch.search() with usearch HNSW + FP32 rerank; includes model2vec encode of the query (warm model); end-to-end including DB I/O + cache load on iter 0"
+        },
+        {
+          "name": "rerank",
+          "corpus_size": 100000,
+          "iterations": 5,
+          "unit": "seconds",
+          "p50_s": 0.0003,
+          "p95_s": 0.0004,
+          "max_s": 0.0004,
+          "mean_s": 0.0003,
+          "elapsed_s": [
+            0.0004,
+            0.0003,
+            0.0003,
+            0.0003,
             0.0004
           ],
           "notes": "weak CE (IDF + bigram phrase bonus) on top_k=20 FTS hits; deep_rerank=False (default); jina-reranker-v3 not measured (opt-in, off the envelope)"

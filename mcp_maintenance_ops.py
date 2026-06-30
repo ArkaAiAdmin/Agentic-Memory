@@ -16,6 +16,7 @@ from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 import os
+import sys
 from pathlib import Path
 
 
@@ -252,6 +253,9 @@ def _get_handlers() -> dict:
         _maintenance_op_cls = MaintenanceOp
         t = _tools()
         from session_manager import reconcile_audit as _reconcile_audit
+        _CRON_DIR = str(Path(__file__).resolve().parent / "cron")
+        if _CRON_DIR not in sys.path:
+            sys.path.insert(0, _CRON_DIR)
         from cron.cron_train_forget_model import main as _train_forget_model
         _MAINTENANCE_HANDLERS = {
             MaintenanceOp.HEARTBEAT: lambda *, dry_run=False, **_: t[
@@ -703,7 +707,8 @@ def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
         with open_db(db_path, write=False) as conn:
             from mcp_maintenance import memory_extract_skills
-            return memory_extract_skills(conn, memory_id=memory_id, dry_run=dry_run)
+            result = memory_extract_skills(conn, memory_id=memory_id, dry_run=dry_run)
+            return str(result)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -721,7 +726,8 @@ def _op_list_skills(limit: int = 50) -> str:
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
         with open_db(db_path, write=False) as conn:
             from mcp_maintenance import memory_list_skills
-            return memory_list_skills(conn, limit=limit)
+            result = memory_list_skills(conn, limit=limit)
+            return str(result)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -825,8 +831,8 @@ def _op_memory_stats() -> str:
 
         circuit_open = False
         try:
-            from background.circuit_breaker import get_circuit_breaker_state
-            circuit_open = get_circuit_breaker_state().get("open", False)
+            from background.circuit_breaker import _auto_save_get_state
+            circuit_open = _auto_save_get_state().get("open", False)
         except Exception:
             pass
 

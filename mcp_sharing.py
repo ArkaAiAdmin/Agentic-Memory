@@ -121,12 +121,11 @@ def memory_auto_share(
         )
     try:
         if dry_run:
-            kwargs = {
-                "min_importance": min_importance or ma._AUTO_SHARE_MIN_IMPORTANCE,
-                "min_fitness": min_fitness or ma._AUTO_SHARE_MIN_FITNESS,
-                "limit": limit or ma._AUTO_SHARE_MAX_PER_CYCLE,
-            }
-            candidates = ma.list_share_candidates(**kwargs)
+            candidates = ma.list_share_candidates(
+                min_importance=min_importance or ma._AUTO_SHARE_MIN_IMPORTANCE,
+                min_fitness=min_fitness or ma._AUTO_SHARE_MIN_FITNESS,
+                limit=limit or ma._AUTO_SHARE_MAX_PER_CYCLE,
+            )
             return json.dumps(
                 {
                     "enabled": True,
@@ -137,14 +136,12 @@ def memory_auto_share(
                 indent=2,
                 default=str,
             )
-        kwargs = {
-            "min_importance": min_importance or ma._AUTO_SHARE_MIN_IMPORTANCE,
-            "min_fitness": min_fitness or ma._AUTO_SHARE_MIN_FITNESS,
-            "limit": limit or ma._AUTO_SHARE_MAX_PER_CYCLE,
-        }
-        if agent_id:
-            kwargs["agent_id"] = agent_id
-        result = ma.auto_share_high_value(**kwargs)
+        result = ma.auto_share_high_value(
+            min_importance=min_importance or ma._AUTO_SHARE_MIN_IMPORTANCE,
+            min_fitness=min_fitness or ma._AUTO_SHARE_MIN_FITNESS,
+            limit=limit or ma._AUTO_SHARE_MAX_PER_CYCLE,
+            agent_id=agent_id or None,
+        )
         return json.dumps(result, indent=2, default=str)
     except Exception:
         logger.exception("Auto-share failed")
