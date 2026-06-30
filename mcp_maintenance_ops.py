@@ -73,10 +73,12 @@ def _get_local_tools() -> dict:
             memory_pinned_decay_check,
             memory_compile_skill,
             memory_llm_unload,
+            memory_health,
         )
 
         _local_tools = {
             "memory_heartbeat": memory_heartbeat,
+            "memory_health": memory_health,
             "memory_tier_stats": memory_tier_stats,
             "memory_run_tier_migration": memory_run_tier_migration,
             "memory_check_embedding_model": memory_check_embedding_model,
@@ -261,6 +263,7 @@ def _get_handlers() -> dict:
             MaintenanceOp.HEARTBEAT: lambda *, dry_run=False, **_: t[
                 "memory_heartbeat"
             ](dry_run=dry_run),
+            MaintenanceOp.HEALTH: lambda **_: _op_health(),
             MaintenanceOp.TIER_STATS: lambda **_: t["memory_tier_stats"](),
             MaintenanceOp.TIER_MIGRATION: lambda *, dry_run=False, **_: t[
                 "memory_run_tier_migration"
@@ -852,6 +855,37 @@ def _op_memory_stats() -> str:
         )
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+
+def _op_health() -> str:
+    try:
+        from memory_common import GLOBAL_MEM_DIR
+
+        health_file = GLOBAL_MEM_DIR / ".health_status.json"
+        if not health_file.exists():
+            return json.dumps(
+                {"status": "unknown", "message": ".health_status.json not found — cron_health_check may not have run yet"}
+            )
+        data = json.loads(health_file.read_text())
+        alerts = data.get("alerts", [])
+        overall = data.get("overall_healthy", False)
+        checks = data.get("checks", {})
+        summary_lines = [
+            f"Health: {'HEALTHY' if overall else 'UNHEALTHY'}",
+            f"DB: {data.get('db_path', 'unknown')}",
+            f"Timestamp: {data.get('timestamp', 'unknown')}",
+        ]
+        for name, info in checks.items():
+            summary_lines.append(f"  {name}: {info.get('status', '?')}")
+        if alerts:
+            summary_lines.append(f"Alerts ({len(alerts)}):")
+            for a in alerts[:10]:
+                summary_lines.append(f"    - {a}")
+        else:
+            summary_lines.append("  No alerts.")
+        return "\n".join(summary_lines)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
 
 
 MAINTENANCE_HANDLERS = _MaintenanceHandlersProxy()

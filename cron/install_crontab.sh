@@ -220,7 +220,11 @@ $BLOCK_BEGIN
 # Watchdog — periodic health assertion and daemon uptime check
 # (Staggered at :25 and :55 to avoid overlapping background_worker at :00/:15/:30/:45)
 25,55 *  *   *   *    $VENV_PY $ROOT/cron/cron_watchdog.py >> $LOG_DIR/watchdog.log 2>&1
+
+# Daemon watchdog — restart auto-save daemon if it has crashed (every 5 min at :03/:18/:33/:48)
+3,18,33,48 *  *   *   *    $VENV_PY $ROOT/cron/cron_daemon_watchdog.py >> $LOG_DIR/watchdog-daemon.log 2>&1
 $BLOCK_END
+<parameter>
 EOF
 }
 

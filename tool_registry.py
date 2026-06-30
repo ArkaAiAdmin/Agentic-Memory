@@ -78,6 +78,7 @@ ADMIN_TOOLS = [
     "memory_okf_import",  # 2026-06-17: Open Knowledge Format import
     # 2026-06-18: H4 fix — 5 tools leaked through the filter
     "memory_heartbeat",
+    "memory_health",
     "memory_tier_stats",
     "memory_run_tier_migration",
     "memory_check_embedding_model",
