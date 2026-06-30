@@ -224,7 +224,6 @@ $BLOCK_BEGIN
 # Daemon watchdog — restart auto-save daemon if it has crashed (every 5 min at :03/:18/:33/:48)
 3,18,33,48 *  *   *   *    $VENV_PY $ROOT/cron/cron_daemon_watchdog.py >> $LOG_DIR/watchdog-daemon.log 2>&1
 $BLOCK_END
-<parameter>
 EOF
 }
 
