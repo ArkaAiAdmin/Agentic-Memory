@@ -600,6 +600,14 @@ def process_one_task(
     return True
 
 
+def _check_high_priority_pending(conn: sqlite3.Connection) -> bool:
+    try:
+        row = conn.execute("SELECT id FROM task_queue WHERE status = 'pending' LIMIT 1").fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
 def run_worker(
     db_path: Path,
     interval: int = 300,
@@ -715,6 +723,8 @@ def run_worker(
                     # No tasks — sleep then re-poll
                     for _ in range(interval):
                         if _shutdown:
+                            break
+                        if _check_high_priority_pending(conn):
                             break
                         time.sleep(1)
     finally:

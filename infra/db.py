@@ -72,6 +72,35 @@ class _ConnectionPool:
         self._inodes: dict[tuple[str, int], int] = {}
         # Intra-process serialization is handled by per-thread connection
         # keys in the pool; inter-process serialization uses flock files.
+        self._reval_thread = threading.Thread(target=self._revalidate_loop, daemon=True)
+        self._reval_thread.start()
+
+    def _revalidate_loop(self) -> None:
+        import time
+        while True:
+            time.sleep(30)
+            with self._lock:
+                keys = list(self._pool.keys())
+                for key in keys:
+                    if key not in self._pool:
+                        continue
+                    conn = self._pool[key]
+                    if self._depth.get(key, 0) == 0 and self._inode_mismatch(key, conn):
+                        if key in self._lru:
+                            try:
+                                self._lru.remove(key)
+                            except ValueError:
+                                pass
+                        self._pool.pop(key)
+                        conn_id = id(conn)
+                        self._pooled_ids.discard(conn_id)
+                        self._migrated.discard(conn_id)
+                        self._inodes.pop(key, None)
+                        try:
+                            conn.close()
+                            logger.info("db pool: evicted connection for %s in background due to inode drift", key[0])
+                        except Exception:
+                            pass
 
     @staticmethod
     def _inode_of(path: str) -> int:

@@ -322,6 +322,7 @@ class MemoryConfig:
 
     # user profile tunables (cont.)
     ctr_data_window_days: int = 90
+    exploration_mode: str = "off"
 
     # features — all on by default so the agent gets the richest context
     # automatically. Tests that need to opt out set the env var to "0"
@@ -713,6 +714,13 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "search.ctr_data_window_days",
             90,
             int,
+            toml_data,
+        ),
+        exploration_mode=_b(
+            "MEMORY_EXPLORATION_MODE",
+            "search.exploration_mode",
+            "off",
+            str,
             toml_data,
         ),
         rerank_half_life_days=_b(

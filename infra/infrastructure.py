@@ -199,9 +199,11 @@ def with_audit(tool_name: str):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             if not rate_limit_check(tool_name):
+                from infra.rate_limiter import get_retry_after
+                retry_after = get_retry_after(tool_name)
                 return _err(
                     ErrorCode.RATE_LIMITED,
-                    f"Too many calls to {tool_name}. Try again later.",
+                    f"Too many calls to {tool_name}. Try again later. (retry_after={retry_after:.1f}s)",
                 )
             db_path = _resolve_active_db_path()
             with audit.audit(

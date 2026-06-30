@@ -426,6 +426,42 @@ def _compute_final_score(ctx) -> float:
     )
 
 
+def _apply_exploration(cached_stats) -> Optional[dict]:
+    if cached_stats is None:
+        return None
+    alphas, betas, expected = cached_stats
+    from config import get_config
+    try:
+        cfg = get_config()
+        mode = os.environ.get("MEMORY_EXPLORATION_MODE", getattr(cfg, "exploration_mode", "off")).lower()
+    except Exception:
+        mode = os.environ.get("MEMORY_EXPLORATION_MODE", "off").lower()
+
+    if mode == "thompson":
+        sampled = {}
+        for ch in _RERANK_WEIGHTS:
+            a = alphas.get(ch, 1.0)
+            b = betas.get(ch, 1.0)
+            sampled[ch] = float(np.random.beta(max(0.1, a), max(0.1, b)))
+        s = sum(sampled.values())
+        if s > 0:
+            return {ch: v / s for ch, v in sampled.items()}
+        return expected
+
+    elif mode == "epsilon_greedy":
+        epsilon = float(os.environ.get("MEMORY_CTR_EPSILON", "0.1"))
+        if np.random.random() < epsilon:
+            if np.random.random() < 0.5:
+                return _RERANK_WEIGHTS
+            else:
+                raw_random = {ch: float(np.random.random()) for ch in _RERANK_WEIGHTS}
+                s = sum(raw_random.values())
+                return {ch: v / s for ch, v in raw_random.items()} if s > 0 else _RERANK_WEIGHTS
+        return expected
+
+    return expected
+
+
 def compute_channel_weights(db_path: Path) -> Optional[dict]:
     """Compute channel weights from CTR feedback data.
 
@@ -446,6 +482,7 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
     # the env var between sessions.)
     env_now = os.environ.get("MEMORY_CTR_TUNING") == "1"
     global _CTR_WEIGHTS_CACHE
+
     if _CTR_WEIGHTS_CACHE is not None:
         ts, cached, cached_env = _CTR_WEIGHTS_CACHE
         if cached_env != env_now or time.time() - ts >= _CTR_WEIGHTS_TTL:
@@ -453,7 +490,7 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
 
     if _CTR_WEIGHTS_CACHE is not None:
         ts, cached, _cached_env = _CTR_WEIGHTS_CACHE
-        return cached
+        return _apply_exploration(cached)
 
     if not env_now:
         _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
@@ -493,6 +530,8 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
                 _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
                 return None
 
+            alphas = {ch: 1.0 for ch in _RERANK_WEIGHTS}
+            betas = {ch: 1.0 for ch in _RERANK_WEIGHTS}
             channel_sums: dict = {k: 0.0 for k in _RERANK_WEIGHTS}
             total_weight = 0.0
 
@@ -507,7 +546,10 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
                     logger.warning("Failed to parse CTR ranking params")
                     row_weights = _RERANK_WEIGHTS
                 for ch in _RERANK_WEIGHTS:
-                    channel_sums[ch] += ctr * row_weights.get(ch, _RERANK_WEIGHTS[ch])
+                    w = row_weights.get(ch, _RERANK_WEIGHTS[ch])
+                    alphas[ch] += clicks * w
+                    betas[ch] += dismissals * w
+                    channel_sums[ch] += ctr * w
                 total_weight += ctr
 
             if total_weight <= 0:
@@ -518,9 +560,12 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
             s = sum(adjusted.values())
             if s > 0:
                 adjusted = {ch: v / s for ch, v in adjusted.items()}
+            else:
+                adjusted = _RERANK_WEIGHTS
 
-            _CTR_WEIGHTS_CACHE = (time.time(), adjusted, env_now)
-            return adjusted
+            stats = (alphas, betas, adjusted)
+            _CTR_WEIGHTS_CACHE = (time.time(), stats, env_now)
+            return _apply_exploration(stats)
         finally:
             connection_pool.put(db)
     except Exception:

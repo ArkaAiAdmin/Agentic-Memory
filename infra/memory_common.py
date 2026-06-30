@@ -428,7 +428,13 @@ def get_default_limiter() -> RateLimiter:
 
 def rate_limit_check(name: str) -> bool:
     """Convenience wrapper around the default limiter's ``check()``."""
-    return get_default_limiter().check(name)
+    try:
+        from infra.rate_limiter import check_rate_limit, configure_rate_limits, RATE_LIMITERS
+        if not RATE_LIMITERS:
+            configure_rate_limits()
+        return check_rate_limit(name)
+    except Exception:
+        return get_default_limiter().check(name)
 
 
 def reset_rate_limiter() -> None:
