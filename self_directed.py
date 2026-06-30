@@ -31,6 +31,7 @@ __all__ = [
 ]
 
 # SELF_DIRECTED_ENABLED is dynamically resolved via __getattr__
+SELF_DIRECTED_ENABLED: bool  # PEP 526 annotation for LSP; runtime value comes from __getattr__
 
 # ---------------------------------------------------------------------------
 # Importance Scoring

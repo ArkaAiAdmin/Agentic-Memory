@@ -656,3 +656,64 @@ def should_complain_about_score(
         )
         return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# Session lifecycle helpers (Phase D)
+# ---------------------------------------------------------------------------
+
+def get_sessions_dir() -> Path:
+    """Return the active memory dir's sessions directory."""
+    try:
+        _, local_mem, _ = get_memory_paths()
+        return local_mem / "sessions"
+    except Exception:
+        return Path.home() / ".config" / "agentic-memory" / "memory" / "sessions"
+
+
+_CURRENT_SESSION_FILE = get_sessions_dir() / ".current_session.json"
+
+
+def read_current_session() -> dict:
+    if not _CURRENT_SESSION_FILE.exists():
+        return {}
+    try:
+        return json.loads(_CURRENT_SESSION_FILE.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def is_session_active(max_age_seconds: float = 3600.0) -> bool:
+    """Return True if a session was started within max_age_seconds."""
+    data = read_current_session()
+    started_at = data.get("started_at")
+    if not started_at:
+        return False
+    try:
+        elapsed = time.time() - float(started_at)
+        return elapsed < max_age_seconds
+    except (TypeError, ValueError):
+        return False
+
+
+def ensure_session_active(max_age_seconds: float = 3600.0) -> bool:
+    """Ensure a session is active; return True if one already was active.
+
+    This does NOT produce output — it only writes/refreshes the
+    .current_session.json state so that subsequent memory_search and
+    save_memory calls know a session exists.
+    """
+    if is_session_active(max_age_seconds):
+        return True
+    sessions_dir = get_sessions_dir()
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    data = {
+        "started_at": time.time(),
+        "started_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "source": "ensure_session_active",
+    }
+    try:
+        _CURRENT_SESSION_FILE.write_text(json.dumps(data, indent=2))
+    except OSError:
+        pass
+    return False

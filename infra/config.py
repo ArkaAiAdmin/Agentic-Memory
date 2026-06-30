@@ -363,6 +363,9 @@ class MemoryConfig:
     # llm_extraction
     llm_provider: str = "huggingface"  # S3: "ollama" | "llama_cpp" | "huggingface"
     ollama_host: str = "http://localhost:11434"  # S3.5
+
+    # rate_limits — per-tool rate limiting (Phase 4)
+    rate_limits: dict[str, dict[str, float]] | None = None
     ollama_model: str = "qwen2.5:3b"  # S3: default Ollama model
     ollama_timeout_s: float = 30.0  # S3: per-request HTTP timeout
     llama_cpp_host: str = "http://localhost:8080"  # S3.6
