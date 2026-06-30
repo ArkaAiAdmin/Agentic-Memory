@@ -21,11 +21,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-print(
-    f"IMPORT config.py: MEMORY_LLM_EXTRACTION={os.environ.get('MEMORY_LLM_EXTRACTION')}",
-    file=sys.stderr,
-)
-
 # ---------------------------------------------------------------------------
 # TOML parsing — tomllib (3.11+) with tomli fallback
 # ---------------------------------------------------------------------------
@@ -1118,3 +1113,16 @@ def reset_config() -> None:
     """Reset the singleton (useful in tests)."""
     global _instance
     _instance = None
+
+
+_toml_data_for_log = _read_toml(_TOML_PATH)
+_env_llm = os.environ.get("MEMORY_LLM_EXTRACTION")
+_toml_llm = _deep_get(_toml_data_for_log, "features.llm_extraction")
+_effective_llm = _resolve(
+    "MEMORY_LLM_EXTRACTION", "features.llm_extraction", True, _toml_data_for_log
+)
+print(
+    f"IMPORT config.py: MEMORY_LLM_EXTRACTION env={_env_llm!r} "
+    f"toml[features.llm_extraction]={_toml_llm!r} effective={_effective_llm!r}",
+    file=sys.stderr,
+)

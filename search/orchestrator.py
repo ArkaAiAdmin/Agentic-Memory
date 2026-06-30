@@ -1752,9 +1752,11 @@ def search_memories(
         }
 
     # Phase 1: Parse query
+    _t0 = time.time()
     normalized_query, fts_query, bare_text, graph_rag_terms = _parse_search_query(
         query, db_path
     )
+    _record_phase_latency("parse_query", _t0)
     terms = re.findall("[\\w@\\#\\.\\+\\-]+", fts_query, flags=re.UNICODE)
     if not terms:
         return {
@@ -1819,9 +1821,11 @@ def search_memories(
             pass
 
         # Phase 4: FTS search
+        _t0 = time.time()
         results = _fts_search(
             db, fts_query, limit * 3 if rerank else limit, has_fitness, repo_filter
         )
+        _record_phase_latency("fts", _t0)
 
         # Phase 4b: T10 — KG fact search (independent of memory results).
         # Facts are surfaced in the output as a "Related facts" section and
@@ -1832,17 +1836,20 @@ def search_memories(
         # matching facts.
         related_facts: list[dict] = []
         if include_facts:
+            _t0 = time.time()
             related_facts = _search_kg_facts(db, fts_query, fact_limit, include_invalid)
+            _record_phase_latency("kg_facts", _t0)
 
         # Phase 5: Fallback to embeddings
         if not results:
             _is_opaque = bool(re.fullmatch(r"[A-Za-z0-9_\-]{6,}", query or ""))
             if not _is_opaque:
                 import search_pipeline
-
+                _t0 = time.time()
                 results = search_pipeline._fallback_embedding_search(
                     db, normalized_query, db_path, limit, repo_filter
                 )
+                _record_phase_latency("embedding_fallback", _t0)
             if not results:
                 try:
                     total = db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
@@ -1868,9 +1875,11 @@ def search_memories(
 
         # Phase 6: Hybrid fusion
         if hybrid and results:
+            _t0 = time.time()
             results = _hybrid_fusion(
                 db, results, normalized_query, db_path, limit, repo_filter
             )
+            _record_phase_latency("hybrid_fusion", _t0)
 
         # Phase 7: Temporal filtering
         if not include_invalid:
@@ -1897,6 +1906,7 @@ def search_memories(
         )
 
         # Phase 9: Reranking
+        _t0 = time.time()
         results_to_display, _search_ctr_weights = _rerank_results(
             results=results,
             query=query,
@@ -1908,6 +1918,7 @@ def search_memories(
             limit=limit,
             deep_rerank=deep_rerank,
         )
+        _record_phase_latency("rerank", _t0)
 
         # Phase 10: Build output
         result_items, output, backlinks_map = _build_result_items(
@@ -1981,6 +1992,8 @@ def search_memories(
         _phase_errs = _phase_counts()
         if _phase_errs.get("total_count"):
             result["phase_errors"] = _phase_errs
+        if _phase_latencies:
+            result["phase_latencies"] = dict(_phase_latencies)
         _record_search_telemetry(
             db=db,
             query_id=result["query_id"],

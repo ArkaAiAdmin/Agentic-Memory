@@ -47,6 +47,15 @@ class TestMemoryMaintenanceUnknownOp(unittest.TestCase):
 
 
 class TestMemoryMaintenanceDispatch(unittest.TestCase):
+    def setUp(self):
+        from infra.rate_limiter import configure_rate_limits
+        configure_rate_limits()
+        self._rl_patcher = patch("infra.infrastructure.rate_limit_check", return_value=True)
+        self._rl_patcher.start()
+
+    def tearDown(self):
+        self._rl_patcher.stop()
+
     def test_known_op_dispatches(self):
         from mcp_maintenance import memory_maintenance
         from mcp_maintenance import MaintenanceOp

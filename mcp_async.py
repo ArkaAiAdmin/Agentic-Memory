@@ -16,7 +16,8 @@ from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import asyncio
 
-from mcp_tools import memory_save as _memory_save, memory_search as _memory_search
+from mcp_memory import memory_save as _memory_save
+from mcp_search import memory_search as _memory_search
 
 
 async def async_memory_save(
