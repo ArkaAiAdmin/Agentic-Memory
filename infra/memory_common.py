@@ -427,14 +427,14 @@ def get_default_limiter() -> RateLimiter:
 
 
 def rate_limit_check(name: str) -> bool:
-    """Convenience wrapper around the default limiter's ``check()``."""
-    try:
-        from infra.rate_limiter import check_rate_limit, configure_rate_limits, RATE_LIMITERS
-        if not RATE_LIMITERS:
-            configure_rate_limits()
-        return check_rate_limit(name)
-    except Exception:
-        return get_default_limiter().check(name)
+    """Convenience wrapper around the default limiter's ``check()``.
+
+    Uses ``get_default_limiter()`` as the single source of truth so that
+    ``limiter.reset(name)`` in tests correctly resets the rate-limit
+    state.  The previous implementation delegated to a separate
+    ``infra.rate_limiter.RATE_LIMITERS`` dict which caused a mismatch.
+    """
+    return get_default_limiter().check(name)
 
 
 def reset_rate_limiter() -> None:
