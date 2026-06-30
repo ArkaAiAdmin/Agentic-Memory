@@ -553,11 +553,21 @@ def run_worker(
         safe_close_db(conn)
         return
 
-    # Proactive vec-index drift check — runs every worker invocation
-    # (~5 min) regardless of task queue state. Catches incremental
-    # drift from auto_save/cross_session_learn that never reaches
-    # the save_pipeline's threshold of 50.
     _check_and_reconcile_vec_drift(conn, db_path)
+
+    # Corpus budget guard — triggers compaction if the corpus has grown
+    # beyond the configured multiple of the 50k-token budget.
+    try:
+        from background.corpus_budget_guard import run_corpus_budget_guard
+        guard_status = run_corpus_budget_guard(db_path, conn=conn)
+        if guard_status.get("compaction_enqueued"):
+            logger.info(
+                "worker: corpus budget exceeded (~%d tokens, budget %d) — compaction enqueued",
+                guard_status.get("tokens", 0),
+                guard_status.get("budget", 0),
+            )
+    except Exception as _guard_exc:
+        logger.debug("worker: corpus budget guard failed: %s", _guard_exc)
 
     # S4.3 (2026-06-23): proactive WAL checkpoint.  Same shape as
     # the vec drift check above — runs every worker invocation and

@@ -1042,7 +1042,10 @@ def _resolve_save_paths(category, title_slug, is_global, db_path):
             )
     try:
         target_base_resolved = target_base.resolve()
-        category_dir = (target_base_resolved / category).resolve()
+        effective_category = category
+        if category == "lessons" and title_slug.startswith("audit-"):
+            effective_category = "audits"
+        category_dir = (target_base_resolved / effective_category).resolve()
         # Note: is_relative_to returns True for self, so the second clause
         # below is the one that catches an empty/identity category. Split the
         # two conditions into distinct error messages for debuggability.
@@ -1066,7 +1069,7 @@ def _resolve_save_paths(category, title_slug, is_global, db_path):
     except Exception as e:
         return _err(ErrorCode.INVALID_PARAMS, f"validating paths: {e}")
     category_dir.mkdir(parents=True, exist_ok=True)
-    return target_base, file_path, category_dir, project_root
+    return target_base, file_path, category_dir, project_root, effective_category
 
 
 def _build_memory_file(
@@ -1544,7 +1547,9 @@ def _save_memory_core(
         result = _resolve_save_paths(category, title_slug, is_global, db_path)
         if isinstance(result, str):
             return result
-        target_base, file_path, _category_dir, _project_root = result
+        target_base, file_path, _category_dir, _project_root, effective_category = result
+        if effective_category != category:
+            category = effective_category
         _markdown, _fm_meta, now_iso, metadata_json = _build_memory_file(
             content,
             category,

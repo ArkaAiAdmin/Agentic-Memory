@@ -120,6 +120,9 @@ $BLOCK_BEGIN
 # Purge auto-save inbox — clean stale pending auto-saves (daily 00:30)
 30 0  *   *   *    $VENV_PY $ROOT/cron/cron_purge_auto_saves.py >> $LOG_DIR/purge-auto-saves.log 2>&1
 
+# Cleanup raw auto-save tool logs — archive sessions/auto-* older than 30d (daily 00:45)
+45 0  *   *   *    $VENV_PY $ROOT/cron/cleanup_auto_logs.py >> $LOG_DIR/cleanup-auto-logs.log 2>&1
+
 # Integrity check — DB health, FTS consistency (Sunday 01:00)
 0  1  *   *   0    MEMORY_KNOWLEDGE_GRAPH=1 $VENV_PY $ROOT/cron/cron_integrity_check.py >> $LOG_DIR/integrity.log 2>&1
 

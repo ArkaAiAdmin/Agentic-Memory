@@ -1810,17 +1810,16 @@ def search_memories(
         _t0 = time.time()
         cols = _get_memories_columns(db)
         has_fitness = "fitness_score" in cols
-        repo_filter = ""
-        # Apply thread-local agent namespace scoping to the SQL search query.
+        repo_filter = " AND m.category != 'audits'"
         try:
             from agent_context import get_agent
 
             ctx = get_agent()
             if ctx.namespace != "default" and ctx.namespace is not None:
                 if include_global:
-                    repo_filter = f" AND (m.source_file LIKE 'agents/{ctx.namespace}/%' OR m.source_file NOT LIKE 'agents/%')"
+                    repo_filter += f" AND (m.source_file LIKE 'agents/{ctx.namespace}/%' OR m.source_file NOT LIKE 'agents/%')"
                 else:
-                    repo_filter = f" AND m.source_file LIKE 'agents/{ctx.namespace}/%'"
+                    repo_filter += f" AND m.source_file LIKE 'agents/{ctx.namespace}/%'"
         except (ImportError, Exception):
             pass
         _phase_latencies["db_setup"] = (time.time() - _t0) * 1000.0

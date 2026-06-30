@@ -164,6 +164,39 @@ from memory_config import GLOBAL_MEM_DIR
 
 ARCHIVE_DIR_NAME = "archive"
 
+_AUTO_SAVE_DEDUP_CACHE: dict[str, float] = {}
+_AUTO_SAVE_DEDUP_TTL_S = 24 * 3600
+
+def _auto_log_archive_dir() -> Path:
+    return GLOBAL_MEM_DIR / "log-archive"
+
+def _dedup_key(tool: str, params: str, result_preview: str) -> str:
+    import hashlib
+    raw = f"{tool}\0{params}\0{result_preview}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+def _should_skip_dedup(key: str) -> bool:
+    now = time.time()
+    last = _AUTO_SAVE_DEDUP_CACHE.get(key)
+    if last is None:
+        return False
+    if now - last > _AUTO_SAVE_DEDUP_TTL_S:
+        del _AUTO_SAVE_DEDUP_CACHE[key]
+        return False
+    return True
+
+def _record_dedup(key: str) -> None:
+    _AUTO_SAVE_DEDUP_CACHE[key] = time.time()
+
+def _auto_save_ttl_hours() -> int:
+    env_val = os.environ.get("AUTO_SAVE_TTL_HOURS")
+    if env_val is not None:
+        try:
+            return max(1, int(env_val))
+        except ValueError:
+            pass
+    return 24
+
 def get_db_path() -> Path:
     """Return the active memory DB — resolves to local workspace if available."""
     env = os.environ.get("MEMORY_DB_PATH")
