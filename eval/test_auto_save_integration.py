@@ -138,7 +138,13 @@ class TestAutoSaveSyncSave(TestCase):
             "p", self.env,
         )
         assert bool(result1.get("saved")) or result1.get("saved") == "queued"
-        assert bool(result2.get("saved")) or result2.get("saved") == "queued"
+        assert result2.get("saved") or result2.get("saved") == "queued" or result2.get("skipped")
+        conn = sqlite3.connect(str(self.db_path))
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE content LIKE '%idempotent-test-content%'"
+        ).fetchone()[0]
+        conn.close()
+        assert rows == 1, f"Expected exactly 1 DB row for identical saves, got {rows}"
 
 
 class TestAutoSaveResilience(TestCase):

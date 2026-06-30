@@ -166,6 +166,43 @@ ARCHIVE_DIR_NAME = "archive"
 
 _AUTO_SAVE_DEDUP_CACHE: dict[str, float] = {}
 _AUTO_SAVE_DEDUP_TTL_S = 24 * 3600
+_DEDUP_LOCK_STALE_S = 300  # 5 min — stale lock holder is assumed dead
+
+
+def _get_dedup_lock_dir() -> Path:
+    return _get_sessions_dir() / ".dedup_locks"
+
+
+def _acquire_dedup_lock(key: str) -> bool:
+    try:
+        lock_dir = _get_dedup_lock_dir()
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        lock_file = lock_dir / f"{key}.lock"
+        fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            os.write(fd, str(os.getpid()).encode())
+        finally:
+            os.close(fd)
+        return True
+    except FileExistsError:
+        return False
+    except OSError:
+        return False
+
+
+def _release_dedup_lock(key: str) -> None:
+    try:
+        (_get_dedup_lock_dir() / f"{key}.lock").unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _is_dedup_lock_stale(lock_path: Path) -> bool:
+    try:
+        age = time.time() - lock_path.stat().st_mtime
+        return age > _DEDUP_LOCK_STALE_S
+    except OSError:
+        return True
 
 def _auto_log_archive_dir() -> Path:
     return GLOBAL_MEM_DIR / "log-archive"

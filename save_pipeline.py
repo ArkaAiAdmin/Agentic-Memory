@@ -1043,9 +1043,21 @@ def _resolve_save_paths(category, title_slug, is_global, db_path):
     try:
         target_base_resolved = target_base.resolve()
         effective_category = category
+        redirected = False
         if category == "lessons" and title_slug.startswith("audit-"):
             effective_category = "audits"
+            redirected = True
         category_dir = (target_base_resolved / effective_category).resolve()
+        if redirected:
+            logger.warning(
+                "Audit redirect: category=lessons + title_slug='%s' routed to dir 'audits' (effective_category=%s). "
+                "The returned note_id remains backward-compatible (%s), "
+                "but the on-disk path is memory/audits/%s.md",
+                title_slug,
+                effective_category,
+                f"{category}/{title_slug}",
+                title_slug,
+            )
         # Note: is_relative_to returns True for self, so the second clause
         # below is the one that catches an empty/identity category. Split the
         # two conditions into distinct error messages for debuggability.
@@ -1335,6 +1347,7 @@ def _persist_via_saga_or_fallback(
     lock_already_held: bool = False,
     _conn_is_shared: bool = False,
     defer_expensive: bool = False,
+    note_id: str = "",
 ):
     """Persist a memory via the saga path, with policy-driven fallback.
 
@@ -1548,6 +1561,7 @@ def _save_memory_core(
         if isinstance(result, str):
             return result
         target_base, file_path, _category_dir, _project_root, effective_category = result
+        original_category = category
         if effective_category != category:
             category = effective_category
         _markdown, _fm_meta, now_iso, metadata_json = _build_memory_file(
@@ -1670,6 +1684,14 @@ def _save_memory_core(
                 _audit_save_failure(
                     db_path_obj, note_id, category, title_slug, _start_time
                 )
+            if (
+                original_category == "lessons"
+                and title_slug.startswith("audit-")
+                and isinstance(note_id, str)
+                and not note_id.startswith("Error [")
+                and note_id.startswith("audits/")
+            ):
+                note_id = f"lessons/{title_slug}"
             return note_id
         except Exception:
             _save_errored = True
