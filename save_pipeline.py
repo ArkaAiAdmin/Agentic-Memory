@@ -289,7 +289,8 @@ def _ensure_db_exists(db_path: Path):
         try:
             db = connection_pool.get(str(db_path), timeout=30.0)
             safe_close_db(db)
-        except Exception:
+        except Exception as e:
+            logger.error("_ensure_db_exists: could not initialize DB at %s: %s", db_path, e)
             return False
     # Invalidate PRAGMA cache after migration (M1 fix)
     clear_pragma_cache()
@@ -1727,7 +1728,7 @@ def reinforce_memories_db(db_path: Path, ids: list[str], delta: float) -> int:
                 hits += 1
         db.commit()
     except Exception as e:
-        logger.warning("reinforce_memories_db: %s", e)
+        logger.error("reinforce_memories_db: %s", e)
     finally:
         if db is not None:
             safe_close_db(db)
@@ -1736,5 +1737,5 @@ def reinforce_memories_db(db_path: Path, ids: list[str], delta: float) -> int:
         try:
             _recalculate_fitness_scores(db_path, ids)
         except Exception as e:
-            logger.warning("reinforce_memories_db: fitness recalc failed: %s", e)
+            logger.error("reinforce_memories_db: fitness recalc failed: %s", e)
     return hits

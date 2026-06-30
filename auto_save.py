@@ -4,11 +4,6 @@ import sys
 import types
 from pathlib import Path as _Path
 
-if __name__ == "auto_save":
-    _CRON_DIR = str(_Path(__file__).resolve().parent / "cron")
-    if _CRON_DIR not in sys.path:
-        sys.path.insert(0, _CRON_DIR)
-
 import background.auto_save as _real
 
 def __getattr__(name):
