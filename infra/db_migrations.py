@@ -144,6 +144,7 @@ def _migrate_ensure_columns(conn: sqlite3.Connection, existing_cols: set) -> Non
         ("tier", "TEXT"),
         ("importance_score", "REAL"),
         ("metadata", "TEXT"),
+        ("tenant_id", "TEXT DEFAULT 'default'"),
     )
     for col_name, col_type in desired:
         if col_name not in existing_cols:
@@ -755,7 +756,8 @@ def run_schema_setup(conn: sqlite3.Connection) -> None:
             conflict_policy TEXT DEFAULT 'supersede',
             version_vector TEXT DEFAULT '{}',
             logical_clock INTEGER DEFAULT 0,
-            consolidation_state TEXT DEFAULT 'working'
+            consolidation_state TEXT DEFAULT 'working',
+            tenant_id     TEXT DEFAULT 'default'
         )
         """
     )

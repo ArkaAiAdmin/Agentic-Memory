@@ -1074,86 +1074,158 @@ def detect_contradictions_semantic(memory_dir, threshold=SEMANTIC_THRESHOLD):
     n = len(claim_texts)
     seen_pairs = set()
 
-    # Sliding window for large corpora
-    if n > SLIDING_WINDOW_SIZE:
-        mat = embeddings - embeddings.mean(axis=0)
-        _, _, Vt = np.linalg.svd(mat, full_matrices=False)
-        pc1_dir = Vt[0]
-        sort_key = embeddings @ pc1_dir
-    else:
-        sort_key = np.arange(n, dtype=np.float64)
-    sorted_idx = np.argsort(sort_key).tolist()
-    window = min(SLIDING_WINDOW_SIZE, n)
+    # Try using usearch ANN index for claim pair contradiction detection
+    usearch_success = False
+    try:
+        from usearch.index import Index
+        dim = embeddings.shape[1]
+        index = Index(ndim=dim, metric="cos")
+        index.add(np.arange(n), embeddings)
 
-    # B16 fix: vectorize pairwise cosine sim.  Normalize rows once,
-    # then within each sliding window compute the full matrix product.
-    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0
-    normed = embeddings / norms
+        for i in range(n):
+            nid_a, claim_a, _ = note_claims[i]
+            res = index.search(embeddings[i], 50)
+            for j, dist in zip(res.keys, res.distances):
+                j = int(j)
+                if i == j:
+                    continue
+                sim = 1.0 - float(dist)
+                if sim < threshold:
+                    continue
 
-    for i_pos in range(n):
-        end = min(i_pos + window, n)
-        if end <= i_pos + 1:
-            continue
-        # Vectorized cosine within the window
-        i = sorted_idx[i_pos]
-        js = sorted_idx[i_pos + 1 : end]
-        sims = normed[js] @ normed[i]  # (window-1,) vector
-        nid_a, claim_a, _ = note_claims[i]
-        for j_local, j in enumerate(js):
-            sim = float(sims[j_local])
-            if sim < threshold:
+                nid_b, claim_b, _ = note_claims[j]
+                if nid_a == nid_b:
+                    continue
+                pair_key = tuple(sorted([nid_a, nid_b]))
+                if pair_key in seen_pairs:
+                    continue
+
+                # Check 1: Negation polarity flip
+                neg_a, aff_a = _claim_polarity(claim_a)
+                neg_b, aff_b = _claim_polarity(claim_b)
+                polarity_flipped = (neg_a > 0 and neg_b == 0) or (neg_b > 0 and neg_a == 0)
+
+                # Check 2: Antonym polarity flip
+                has_antonym, antonym_evidence = _check_antonym_polarity(claim_a, claim_b)
+
+                if not polarity_flipped and not has_antonym:
+                    continue
+
+                seen_pairs.add(pair_key)
+                confidence = "high" if sim >= SEMANTIC_HIGH_THRESHOLD else "medium"
+
+                if has_antonym:
+                    antonym_str = ", ".join(f"{e[0]}<->{e[1]}" for e in antonym_evidence)
+                    contradictions.append(
+                        {
+                            "source": nid_a,
+                            "target": nid_b,
+                            "type": "semantic_antonym",
+                            "confidence": confidence,
+                            "evidence_a": claim_a[:200],
+                            "evidence_b": claim_b[:200],
+                            "cosine": round(sim, 3),
+                            "polarity": f"antonyms=[{antonym_str}] a_neg={neg_a} a_aff={aff_a} | b_neg={neg_b} b_aff={aff_b}",
+                        }
+                    )
+                else:
+                    contradictions.append(
+                        {
+                            "source": nid_a,
+                            "target": nid_b,
+                            "type": "semantic_negation",
+                            "confidence": confidence,
+                            "evidence_a": claim_a[:200],
+                            "evidence_b": claim_b[:200],
+                            "cosine": round(sim, 3),
+                            "polarity": f"a_neg={neg_a} a_aff={aff_a} | b_neg={neg_b} b_aff={aff_b}",
+                        }
+                    )
+        usearch_success = True
+    except Exception as e:
+        logger.warning("usearch ANN index failed or not available, falling back to numpy sliding window: %s", e)
+
+    if not usearch_success:
+        # Sliding window for large corpora
+        if n > SLIDING_WINDOW_SIZE:
+            mat = embeddings - embeddings.mean(axis=0)
+            _, _, Vt = np.linalg.svd(mat, full_matrices=False)
+            pc1_dir = Vt[0]
+            sort_key = embeddings @ pc1_dir
+        else:
+            sort_key = np.arange(n, dtype=np.float64)
+        sorted_idx = np.argsort(sort_key).tolist()
+        window = min(SLIDING_WINDOW_SIZE, n)
+
+        # B16 fix: vectorize pairwise cosine sim.  Normalize rows once,
+        # then within each sliding window compute the full matrix product.
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        normed = embeddings / norms
+
+        for i_pos in range(n):
+            end = min(i_pos + window, n)
+            if end <= i_pos + 1:
                 continue
-            nid_b, claim_b, _ = note_claims[j]
-            if nid_a == nid_b:
-                continue
-            pair_key = tuple(sorted([nid_a, nid_b]))
-            if pair_key in seen_pairs:
-                continue
+            # Vectorized cosine within the window
+            i = sorted_idx[i_pos]
+            js = sorted_idx[i_pos + 1 : end]
+            sims = normed[js] @ normed[i]  # (window-1,) vector
+            nid_a, claim_a, _ = note_claims[i]
+            for j_local, j in enumerate(js):
+                sim = float(sims[j_local])
+                if sim < threshold:
+                    continue
+                nid_b, claim_b, _ = note_claims[j]
+                if nid_a == nid_b:
+                    continue
+                pair_key = tuple(sorted([nid_a, nid_b]))
+                if pair_key in seen_pairs:
+                    continue
 
-            # Check 1: Negation polarity flip
-            neg_a, aff_a = _claim_polarity(claim_a)
-            neg_b, aff_b = _claim_polarity(claim_b)
-            polarity_flipped = (neg_a > 0 and neg_b == 0) or (neg_b > 0 and neg_a == 0)
+                # Check 1: Negation polarity flip
+                neg_a, aff_a = _claim_polarity(claim_a)
+                neg_b, aff_b = _claim_polarity(claim_b)
+                polarity_flipped = (neg_a > 0 and neg_b == 0) or (neg_b > 0 and neg_a == 0)
 
-            # Check 2: Antonym polarity flip
-            has_antonym, antonym_evidence = _check_antonym_polarity(claim_a, claim_b)
+                # Check 2: Antonym polarity flip
+                has_antonym, antonym_evidence = _check_antonym_polarity(claim_a, claim_b)
 
-            if not polarity_flipped and not has_antonym:
-                continue
+                if not polarity_flipped and not has_antonym:
+                    continue
 
-            seen_pairs.add(pair_key)
-            confidence = "high" if sim >= SEMANTIC_HIGH_THRESHOLD else "medium"
-            neg_a, aff_a = _claim_polarity(claim_a)
-            neg_b, aff_b = _claim_polarity(claim_b)
+                seen_pairs.add(pair_key)
+                confidence = "high" if sim >= SEMANTIC_HIGH_THRESHOLD else "medium"
+                neg_a, aff_a = _claim_polarity(claim_a)
+                neg_b, aff_b = _claim_polarity(claim_b)
 
-            if has_antonym:
-                antonym_str = ", ".join(f"{e[0]}<->{e[1]}" for e in antonym_evidence)
-                contradictions.append(
-                    {
-                        "source": nid_a,
-                        "target": nid_b,
-                        "type": "semantic_antonym",
-                        "confidence": confidence,
-                        "evidence_a": claim_a[:200],
-                        "evidence_b": claim_b[:200],
-                        "cosine": round(sim, 3),
-                        "polarity": f"antonyms=[{antonym_str}] a_neg={neg_a} a_aff={aff_a} | b_neg={neg_b} b_aff={aff_b}",
-                    }
-                )
-            else:
-                contradictions.append(
-                    {
-                        "source": nid_a,
-                        "target": nid_b,
-                        "type": "semantic_negation",
-                        "confidence": confidence,
-                        "evidence_a": claim_a[:200],
-                        "evidence_b": claim_b[:200],
-                        "cosine": round(sim, 3),
-                        "polarity": f"a_neg={neg_a} a_aff={aff_a} | b_neg={neg_b} b_aff={aff_b}",
-                    }
-                )
+                if has_antonym:
+                    antonym_str = ", ".join(f"{e[0]}<->{e[1]}" for e in antonym_evidence)
+                    contradictions.append(
+                        {
+                            "source": nid_a,
+                            "target": nid_b,
+                            "type": "semantic_antonym",
+                            "confidence": confidence,
+                            "evidence_a": claim_a[:200],
+                            "evidence_b": claim_b[:200],
+                            "cosine": round(sim, 3),
+                            "polarity": f"antonyms=[{antonym_str}] a_neg={neg_a} a_aff={aff_a} | b_neg={neg_b} b_aff={aff_b}",
+                        }
+                    )
+                else:
+                    contradictions.append(
+                        {
+                            "source": nid_a,
+                            "target": nid_b,
+                            "type": "semantic_negation",
+                            "confidence": confidence,
+                            "evidence_a": claim_a[:200],
+                            "evidence_b": claim_b[:200],
+                            "cosine": round(sim, 3),
+                            "polarity": f"a_neg={neg_a} a_aff={aff_a} | b_neg={neg_b} b_aff={aff_b}",
+                        }
+                    )
 
     return contradictions
 

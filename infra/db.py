@@ -281,7 +281,7 @@ class _ConnectionPool:
             except Exception as exc:
                 logger.warning("db: schema ensure_failed: %s", exc)
 
-    def get(self, path: str, timeout: float = 30.0) -> sqlite3.Connection:
+    def get(self, path: str, timeout: float = 30.0, tenant_id: str | None = None) -> sqlite3.Connection:
         """Return a live connection for *path*, creating one if needed.
 
         Connections are keyed by ``(path, thread_ident)`` so different
@@ -343,6 +343,15 @@ class _ConnectionPool:
                         self._depth.pop(key, None)
                         self._inodes.pop(key, None)
                     else:
+                        t_id = tenant_id or "default"
+                        try:
+                            conn.create_function("tenant_id", 0, lambda: t_id)
+                            conn.execute(
+                                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+                            )
+                        except Exception:
+                            pass
                         return conn
             # Close any orphaned connection from another thread holding the same path
             for other_key in list(self._pool):
@@ -397,6 +406,18 @@ class _ConnectionPool:
             self._lru.append(key)
         # Run full schema outside the lock (migrations are idempotent)
         self._ensure_full_schema(conn)
+
+        # Bind tenant_id and configure view routing
+        t_id = tenant_id or "default"
+        try:
+            conn.create_function("tenant_id", 0, lambda: t_id)
+            conn.execute(
+                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+            )
+        except Exception:
+            pass
+
         return conn
 
     def put(self, conn: AnyConnection) -> None:
@@ -694,6 +715,7 @@ def open_db(
     row_factory: Optional[Any] = None,
     pooled: bool = False,
     write: bool = True,
+    tenant_id: str | None = None,
 ) -> Iterator[AnyConnection]:
     """Open a sqlite3 connection as a context manager with sane defaults.
 
@@ -717,6 +739,15 @@ def open_db(
             if row_factory is not None:
                 conn.row_factory = row_factory
             run_schema_setup(conn)
+            t_id = tenant_id or "default"
+            try:
+                conn.create_function("tenant_id", 0, lambda: t_id)
+                conn.execute(
+                    "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                    "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+                )
+            except Exception:
+                pass
             yield conn
         except BaseException as exc:
             exc_info = exc
@@ -740,7 +771,7 @@ def open_db(
     lock_ctx = db_path_flock(path) if write else nullcontext()
     with lock_ctx:
         if pooled:
-            conn = connection_pool.get(str(path), timeout=timeout)
+            conn = connection_pool.get(str(path), timeout=timeout, tenant_id=tenant_id)
             original_row_factory = conn.row_factory
             exc_info = None
             try:
@@ -776,6 +807,15 @@ def open_db(
                 conn.row_factory = row_factory
             run_schema_setup(conn)
             _maybe_checkpoint_on_startup(path)
+            t_id = tenant_id or "default"
+            try:
+                conn.create_function("tenant_id", 0, lambda: t_id)
+                conn.execute(
+                    "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                    "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+                )
+            except Exception:
+                pass
             yield conn
         except BaseException as exc:
             exc_info = exc
