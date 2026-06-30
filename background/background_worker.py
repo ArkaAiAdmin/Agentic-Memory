@@ -269,6 +269,59 @@ def handle_vec_index_rebuild(
         raise RuntimeError(f"vec_index_rebuild timed out: {e}") from e
 
 
+def handle_run_script(
+    payload: dict, conn: sqlite3.Connection, db_path: Path
+) -> str:
+    """Run a cron script as a subprocess.
+
+    Payload fields:
+      script: relative path to the script (from repo root), e.g. "cron/cron_consolidate.py"
+      args: list of CLI args (optional, default [])
+      env: dict of extra env vars (optional)
+      timeout: seconds (optional, default 300)
+
+    If ``task_type`` matches an entry in ``CRON_SCRIPT_MAP`` (e.g.
+    ``cron_consolidate``), the script path is resolved automatically
+    from the map and the explicit ``script`` field is not required.
+    """
+    script_rel = payload.get("script", "")
+    # Resolve from CRON_SCRIPT_MAP if the payload didn't specify a script.
+    if not script_rel:
+        # payload['task_type'] is not passed here; we rely on the
+        # caller setting `script` explicitly when using the generic
+        # run_script handler.  For cron-style task types, callers
+        # should use the mapped handler directly or pass script via
+        # the CRON_SCRIPT_MAP lookup in enqueue_task.py.
+        raise ValueError("missing 'script' in payload")
+    # Resolve script path relative to repo root (parent of background/)
+    repo_root = Path(__file__).resolve().parent.parent
+    script = repo_root / script_rel
+    if not script.exists():
+        raise RuntimeError(f"script not found: {script}")
+    venv_py = Path(sys.executable)
+    if not venv_py.exists():
+        raise RuntimeError(f"venv python not found at {venv_py}")
+    extra_args = payload.get("args", [])
+    timeout = int(payload.get("timeout", 300))
+    env = os.environ.copy()
+    env.update(payload.get("env", {}))
+    env["MEMORY_DB_PATH"] = str(db_path)
+    result = subprocess.run(
+        [str(venv_py), str(script), *extra_args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=env,
+    )
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{script.name} exited {result.returncode}: "
+            f"stderr={stderr[:300]} stdout={stdout[:300]}"
+        )
+    return f"{script.name}: {stdout[:300] or 'ok'}"
+
 # Handler registry
 HANDLERS = {
     "entity_resolution": handle_entity_resolution,
@@ -278,6 +331,32 @@ HANDLERS = {
     "semantic_backlinks": handle_semantic_backlinks,
     "vec_index_rebuild": handle_vec_index_rebuild,
     "wal_checkpoint": handle_wal_checkpoint,
+    "run_script": handle_run_script,
+}
+
+# Mapping of cron-style task types to their script paths.
+# Keys are the task_type values used in enqueue_task.py --task-type;
+# values are relative paths from repo root to the cron script.
+CRON_SCRIPT_MAP: dict[str, str] = {
+    "cron_cleanup_auto_logs": "cron/cleanup_auto_logs.py",
+    "cron_kg_backfill_monitor": "cron/cron_kg_backfill_monitor.py",
+    "cron_embedding_recompute": "cron/cron_embedding_recompute.py",
+    "cron_detect_vec_drift": "cron/cron_detect_vec_drift.py",
+    "cron_rewrite_links": "cron/cron_rewrite_links.py",
+    "cron_compact": "cron/cron_compact.py",
+    "cron_rebuild_fts": "cron/cron_rebuild_fts.py",
+    "cron_heartbeat": "cron/cron_heartbeat.py",
+    "cron_tier_migration": "cron/cron_tier_migration.py",
+    "cron_kg_backfill": "cron/cron_kg_backfill.py",
+    "cron_skill_extraction": "cron/cron_skill_extraction.py",
+    "cron_cross_session_learn": "cron/cron_cross_session_learn.py",
+    "cron_pinned_decay": "cron/cron_pinned_decay.py",
+    "cron_concept_drift": "cron/cron_concept_drift.py",
+    "cron_purge_expired": "cron/cron_purge_expired.py",
+    "cron_quality_filter": "cron/cron_quality_filter.py",
+    "cron_auto_summarize": "cron/cron_auto_summarize.py",
+    "cron_retention_stats": "cron/cron_retention_stats.py",
+    "cron_auto_share": "cron/cron_auto_share.py",
 }
 
 
@@ -437,7 +516,14 @@ def process_one_task(
     task_id = task["id"]
     ttype = task["task_type"]
     payload = task["payload"]
-    handler = HANDLERS.get(ttype)
+
+    # Resolve cron script paths from CRON_SCRIPT_MAP for cron-style task types.
+    if not payload.get("script") and ttype in CRON_SCRIPT_MAP:
+        payload = {**payload, "script": CRON_SCRIPT_MAP[ttype]}
+        handler = HANDLERS.get("run_script")
+    else:
+        handler = HANDLERS.get(ttype)
+
     if not handler:
         fail_task(conn, task_id, f"unknown task type: {ttype}")
         logger.warning("worker: unknown task type %s (id=%d)", ttype, task_id)
