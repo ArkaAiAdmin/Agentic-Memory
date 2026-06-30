@@ -24,13 +24,9 @@ faulthandler.enable()
 faulthandler.dump_traceback_later(15, repeat=True)
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ["MEMORY_LLM_EXTRACTION"] = "0"
-# Session-wide test env: set once here instead of each file doing
-# os.environ["X"] = "1" at module top level (causes cross-test pollution).
-os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
-os.environ.setdefault("MEMORY_ADAPTIVE_RETENTION", "1")
-os.environ.setdefault("MEMORY_LLM_HYBRID", "0")
-os.environ.setdefault("MEMORY_QUALITY_GATES", "1")
+# NOTE: KMP_DUPLICATE_LIB_OK and OMP_NUM_THREADS stay at module level
+# because they must be set before torch is first imported. All other
+# test env vars are in the session-scoped _test_env fixture below.
 
 # 2026-06-20: MEMORY_DB_PATH is intentionally NOT set here. The
 # 14 production-DB tests in test_p0_p1_p2_fixes.py skip when
@@ -101,6 +97,27 @@ from _fixtures import bootstrap_temp_db  # noqa: E402
 #
 # bootstrap_temp_db is defined in eval/_fixtures.py so test files can
 # import it directly. The temp_db_path fixture below uses it.
+
+_TEST_ENV_VARS = {
+    "MEMORY_LLM_EXTRACTION": "0",
+    "MEMORY_KNOWLEDGE_GRAPH": "1",
+    "MEMORY_ADAPTIVE_RETENTION": "1",
+    "MEMORY_LLM_HYBRID": "0",
+    "MEMORY_QUALITY_GATES": "1",
+}
+
+@pytest.fixture(scope="session", autouse=True)
+def _test_session_env():
+    _saved = {}
+    for k, v in _TEST_ENV_VARS.items():
+        _saved[k] = os.environ.get(k)
+        os.environ[k] = v
+    yield
+    for k, v in _saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
 
 
 @pytest.fixture
