@@ -1637,6 +1637,7 @@ def _save_memory_core(
         # a transaction after an error — safe_close_db(should_commit=False)
         # will rollback instead.
         _save_errored = False
+        deferred_writes = []
         try:
             # Persist via the saga path.  _persist_via_saga_or_fallback() handles
             # both the saga call and the MEMORY_SAGA_FALLBACK policy; on the
@@ -1665,7 +1666,7 @@ def _save_memory_core(
             )
 
             if isinstance(note_id, str) and not note_id.startswith("Error ["):
-                _run_post_save_hooks(
+                deferred_writes = _run_post_save_hooks(
                     target_base,
                     db_path_obj,
                     note_id,
@@ -1707,10 +1708,24 @@ def _save_memory_core(
             if conn is not None and _conn is None:
                 try:
                     safe_close_db(conn, should_commit=not _save_errored)
+                    if not _save_errored and deferred_writes:
+                        from memory_common import safe_atomic_write
+                        for filepath, filecontent in deferred_writes:
+                            try:
+                                safe_atomic_write(Path(filepath), filecontent, encoding="utf-8")
+                            except Exception as _we:
+                                logger.warning("Failed to run deferred file write for %s: %s", filepath, _we)
                 except Exception as _close_err:
                     logger.debug(
                         "save_memory: safe_close_db in finally failed: %s", _close_err
                     )
+            elif not _save_errored and deferred_writes:
+                from memory_common import safe_atomic_write
+                for filepath, filecontent in deferred_writes:
+                    try:
+                        safe_atomic_write(Path(filepath), filecontent, encoding="utf-8")
+                    except Exception as _we:
+                        logger.warning("Failed to run deferred file write for %s: %s", filepath, _we)
     finally:
         _local_state.in_save_pipeline = False
 

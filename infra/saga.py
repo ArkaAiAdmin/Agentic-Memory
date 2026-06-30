@@ -50,10 +50,12 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Generator, List, Literal, Optional, Union
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +65,30 @@ logger = logging.getLogger(__name__)
 # return value).
 _SAGA_DO_NOT_SET: Any = object()
 
+_deferred_state = threading.local()
+
+def _is_saga_deferred(conn: sqlite3.Connection) -> bool:
+    if not hasattr(_deferred_state, "conns"):
+        _deferred_state.conns = set()
+    return id(conn) in _deferred_state.conns
+
+def _set_saga_deferred(conn: sqlite3.Connection, deferred: bool) -> None:
+    if not hasattr(_deferred_state, "conns"):
+        _deferred_state.conns = set()
+    if deferred:
+        _deferred_state.conns.add(id(conn))
+    else:
+        _deferred_state.conns.discard(id(conn))
+
+class SagaMode(str, Enum):
+    PER_STEP = "per_step"
+    DEFERRED = "deferred"
+
 __all__ = [
     "Saga",
     "SagaStep",
     "SagaError",
+    "SagaMode",
     "saga_save_memory",
     "SAGA_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "_saga_fallback_counter",
@@ -222,15 +244,17 @@ class Saga:
         name: str,
         steps: List[SagaStep],
         *,
+        conn: Optional[sqlite3.Connection] = None,
+        mode: SagaMode = SagaMode.DEFERRED,
         on_rollback: Optional[Callable[[SagaError], None]] = None,
     ) -> None:
         if not steps:
             raise ValueError(f"Saga({name!r}) requires at least one step")
         self.name = name
         self._steps: List[SagaStep] = list(steps)
+        self.conn = conn
+        self.mode = mode
         self._on_rollback = on_rollback
-        # Records are populated as steps execute. Indexed by step
-        # position so the public ``saga.results`` list is stable.
         self._records: List[_StepRecord] = [_StepRecord(step=s) for s in self._steps]
         # What the most recent ``do`` returned, per step. None until
         # the step runs. Public read-only handle for callers.
@@ -238,12 +262,21 @@ class Saga:
         self.committed: bool = False
         self.rolled_back: bool = False
         self._error: Optional[BaseException] = None
+        self._started_transaction: bool = False
 
     # ------------------------------------------------------------------
     # Context manager protocol
     # ------------------------------------------------------------------
 
     def __enter__(self) -> "Saga":
+        if self.conn is not None and self.mode == SagaMode.DEFERRED:
+            if not self.conn.in_transaction:
+                self.conn.execute("BEGIN IMMEDIATE")
+                self._started_transaction = True
+            else:
+                self.conn.execute("SAVEPOINT saga_sp")
+                self._started_transaction = False
+            _set_saga_deferred(self.conn, True)
         try:
             for idx, step in enumerate(self._steps):
                 logger.info(
@@ -265,6 +298,15 @@ class Saga:
                         exc,
                     )
                     self._error = exc
+                    if self.conn is not None and self.mode == SagaMode.DEFERRED:
+                        try:
+                            if self._started_transaction:
+                                self.conn.rollback()
+                            else:
+                                self.conn.execute("ROLLBACK TO SAVEPOINT saga_sp")
+                                self.conn.execute("RELEASE SAVEPOINT saga_sp")
+                        except Exception as sp_err:
+                            logger.warning("saga rollback failed: %r", sp_err)
                     rollback_errors = self._rollback(idx)
                     raise SagaError(
                         f"Saga {self.name!r} failed at step {step.name!r}: {exc!r}",
@@ -283,16 +325,30 @@ class Saga:
                     step.name,
                 )
         except SagaError:
+            if self.conn is not None and self.mode == SagaMode.DEFERRED:
+                _set_saga_deferred(self.conn, False)
             raise
         except Exception as exc:
             # The ``with`` block raised something we didn't expect. We
             # still want to roll back if any steps completed.
             self._error = exc
+            if self.conn is not None and self.mode == SagaMode.DEFERRED:
+                try:
+                    if self._started_transaction:
+                        self.conn.rollback()
+                    else:
+                        self.conn.execute("ROLLBACK TO SAVEPOINT saga_sp")
+                        self.conn.execute("RELEASE SAVEPOINT saga_sp")
+                except Exception as sp_err:
+                    logger.warning("saga rollback on external exception failed: %r", sp_err)
+                _set_saga_deferred(self.conn, False)
             self._rollback(len(self._records) - 1)
             raise
         return self
 
     def __exit__(self, exc_type, exc, tb) -> "Literal[False]":
+        if self.conn is not None and self.mode == SagaMode.DEFERRED:
+            _set_saga_deferred(self.conn, False)
         if exc_type is not None:
             # An exception escaped the ``with`` body. Run rollback if
             # any steps completed and we haven't already.
@@ -307,10 +363,27 @@ class Saga:
                     if r.do_result is not _SAGA_DO_NOT_SET:
                         last_completed = i
                 if last_completed >= 0:
-                    self._error = exc
-                    self._rollback(last_completed)
+                     self._error = exc
+                     if self.conn is not None and self.mode == SagaMode.DEFERRED:
+                        try:
+                            if self._started_transaction:
+                                self.conn.rollback()
+                            else:
+                                self.conn.execute("ROLLBACK TO SAVEPOINT saga_sp")
+                                self.conn.execute("RELEASE SAVEPOINT saga_sp")
+                        except Exception as sp_err:
+                            logger.warning("saga rollback in exit failed: %r", sp_err)
+                     self._rollback(last_completed)
             # Do not swallow the exception.
             return False
+        if self.conn is not None and self.mode == SagaMode.DEFERRED:
+            try:
+                if self._started_transaction:
+                    self.conn.commit()
+                else:
+                    self.conn.execute("RELEASE SAVEPOINT saga_sp")
+            except Exception as sp_err:
+                logger.warning("saga commit/release in exit failed: %r", sp_err)
         self.committed = True
         logger.info("saga[%s] committed (%d steps)", self.name, len(self._steps))
         return False
@@ -485,7 +558,8 @@ def _delete_memory_row(conn: sqlite3.Connection, note_id: str) -> None:
     """Best-effort delete of a single memory row. Logs and swallows."""
     try:
         conn.execute("DELETE FROM memories WHERE id = ?", (note_id,))
-        conn.commit()
+        if not _is_saga_deferred(conn):
+            conn.commit()
     except Exception as exc:
         logger.warning(
             "saga undo: DELETE FROM memories for %s failed: %r", note_id, exc
@@ -564,7 +638,8 @@ def _restore_memory_row(
                 # applied migration 005 (_migrate_columns_indexes_chunks).
                 # Graceful degradation — metadata is best-effort.
                 pass
-        conn.commit()
+        if not _is_saga_deferred(conn):
+            conn.commit()
     except Exception as exc:
         logger.warning("saga undo: restore UPDATE for %s failed: %r", note_id, exc)
 
@@ -573,7 +648,8 @@ def _remove_vec_key(conn: sqlite3.Connection, note_id: str) -> None:
     """Best-effort removal of the usearch key->memory_id mapping."""
     try:
         conn.execute("DELETE FROM memory_vec_keys WHERE memory_id = ?", (note_id,))
-        conn.commit()
+        if not _is_saga_deferred(conn):
+            conn.commit()
     except Exception as exc:
         logger.warning(
             "saga undo: DELETE FROM memory_vec_keys for %s failed: %r", note_id, exc
@@ -861,7 +937,7 @@ def saga_save_memory(
     )
 
     try:
-        with Saga(name="save_memory", steps=steps) as saga:
+        with Saga(name="save_memory", steps=steps, conn=conn, mode=SagaMode.DEFERRED) as saga:
             # ``saga.results[0]`` is the note_id, ``saga.results[1]`` is
             # the vec key (or 0), ``saga.results[2]`` is the file path.
             result = saga.results[0]
