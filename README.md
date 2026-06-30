@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-3830%20passed-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-3820%20passed-brightgreen)](#testing)
 [![SQLite FTS5](https://img.shields.io/badge/sqlite-FTS5-orange.svg)](https://www.sqlite.org/fts5.html)
 [![MCP Tools](https://img.shields.io/badge/MCP-88%20tools_(7%20CORE%20%2B%2081%20ADMIN)-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
