@@ -402,11 +402,30 @@ class TestBoundaryConditions(unittest.TestCase):
 
 
 class TestAuditIntegration(unittest.TestCase):
-    """Test that audit.enqueue_audit is called on save."""
+    """Test that save_memory writes audit entries to memory_audit_log."""
 
-    @patch("save.post_save_hooks.audit")
-    @patch("save_pipeline.audit")
-    def test_audit_called_on_save(self, mock_audit_sp, mock_audit_psh):
+    @staticmethod
+    def _assert_audit_row(audit_db, slug, expect_error):
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            conn = sqlite3.connect(str(audit_db))
+            rows = conn.execute(
+                "SELECT tool, args, error FROM memory_audit_log "
+                "WHERE tool = 'memory_save' AND args LIKE ? "
+                "ORDER BY id DESC LIMIT 1",
+                (f"%{slug}%",),
+            ).fetchall()
+            conn.close()
+            if rows:
+                break
+            time.sleep(0.05)
+        else:
+            assert False, f"audit entry for save of '{slug}' not found in memory_audit_log"
+        assert rows[0][2] is None if not expect_error else rows[0][2] is not None, (
+            f"audit row error={rows[0][2]!r} but expect_error={expect_error}"
+        )
+
+    def test_audit_written_on_save(self):
         slug = f"unit-audit-{int(time.time())}"
         nid = f"lessons/{slug}"
         save_memory(
@@ -418,35 +437,37 @@ class TestAuditIntegration(unittest.TestCase):
             is_global=False,
             safety_wiring=False,
         )
-        # Cleanup
         _hard_delete(PROD_DB, nid)
-        # Assert audit was called (either module could have called it
-        # depending on which subpath triggered)
-        called = (
-            mock_audit_sp.enqueue_audit.called or mock_audit_psh.enqueue_audit.called
-        )
-        assert called, "audit.enqueue_audit was not called"
+        audit_db = PROD_DB.parent / "memory.db"
+        if not audit_db.exists():
+            shutil.copy2(str(PROD_DB), str(audit_db))
+        from infra.audit import flush_audit
 
-    @patch("save.post_save_hooks.audit")
-    @patch("save_pipeline.audit")
-    def test_audit_called_on_error(self, mock_audit_sp, mock_audit_psh):
-        """Audit should be called even on error paths (e.g. DB error)."""
-        # Force a DB error by mocking open_db to raise
-        with patch("save_pipeline.open_db", side_effect=Exception("DB error")):
+        flush_audit(timeout=5)
+        self._assert_audit_row(audit_db, slug, expect_error=False)
+
+    def test_audit_written_on_error(self):
+        """Audit writes an error row to memory_audit_log even on DB failure."""
+        from unittest.mock import patch
+
+        slug = f"unit-err-{int(time.time())}"
+        with patch("save_pipeline.connection_pool.get", side_effect=Exception("DB error")):
             save_memory(
-                content=f"---\ncategory: lessons\ntitle_slug: err-{int(time.time())}\ntags: []\nvalid_from: {now_iso()}\n---\n\nError path.",
+                content=f"---\ncategory: lessons\ntitle_slug: {slug}\ntags: []\nvalid_from: {now_iso()}\n---\n\nError path.",
                 category="lessons",
-                title_slug=f"err-{int(time.time())}",
+                title_slug=slug,
                 tags=[],
                 pinned=False,
                 is_global=False,
                 safety_wiring=False,
             )
-        # Audit should be called even on error paths
-        called = (
-            mock_audit_sp.enqueue_audit.called or mock_audit_psh.enqueue_audit.called
-        )
-        assert called, "audit.enqueue_audit was not called on error path"
+        audit_db = PROD_DB.parent / "memory.db"
+        if not audit_db.exists():
+            shutil.copy2(str(PROD_DB), str(audit_db))
+        from infra.audit import flush_audit
+
+        flush_audit(timeout=5)
+        self._assert_audit_row(audit_db, slug, expect_error=True)
 
 
 class TestEnsureDbExists(_TempDbTestMixin, unittest.TestCase):

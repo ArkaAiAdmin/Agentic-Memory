@@ -33,6 +33,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, cast
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 _RRF_K = 60
@@ -525,3 +527,87 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
         logger.warning("Failed to compute CTR weights from feedback")
         _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
         return None
+
+
+_W_INPUT_DIM = 6   # query embedding dimension
+_W_HIDDEN = 8      # hidden state dimension
+_W_TOTAL = _W_HIDDEN + 1 + _W_HIDDEN * _W_INPUT_DIM + 1  # 58
+
+
+class TemporalAttentionModel:
+    """Lightweight SSM-style temporal attention model for note recency scoring.
+
+    Weights layout (58 elements total):
+        W_readout[0:8]    — linear readout head
+        b_readout[8]      — readout bias
+        W_input[8:56]     — 8×6 input-weight matrix (row-major)
+        b_input[56:57]    — input bias
+    """
+
+    def __init__(self, weights=None):
+        self.has_learned_weights = False
+        self.W_readout = np.zeros(_W_HIDDEN, dtype=np.float64)
+        self.W_input = np.zeros((_W_HIDDEN, _W_INPUT_DIM), dtype=np.float64)
+        self.b_readout = 0.0
+        self.b_input = 0.0
+        self._hidden: dict[str, np.ndarray] = {}
+        self._last_access_ts: dict[str, float] = {}
+        if weights is not None:
+            w = np.asarray(weights, dtype=np.float64)
+            if w.size != _W_TOTAL:
+                raise ValueError(
+                    f"TemporalAttentionModel expects {_W_TOTAL} weights, got {w.size}"
+                )
+            self.has_learned_weights = True
+            self.W_readout = w[0:8].copy()
+            self.b_readout = float(w[8])
+            flat_input = w[9:57].copy()
+            self.W_input = flat_input.reshape(_W_HIDDEN, _W_INPUT_DIM)
+            self.b_input = float(w[57])
+
+    def observe(
+        self,
+        note_id: str,
+        query_emb: np.ndarray,
+        clicked: bool = False,
+        dismissed: bool = False,
+        hours_since_access: float = 0.0,
+    ) -> None:
+        h = np.zeros(_W_HIDDEN, dtype=np.float64)
+        if self.has_learned_weights:
+            q = np.asarray(query_emb, dtype=np.float64).flatten()
+            if q.shape[0] != _W_INPUT_DIM:
+                q = np.pad(q, (0, max(0, _W_INPUT_DIM - q.shape[0])))[:_W_INPUT_DIM]
+            decay = math.exp(-max(0.0, hours_since_access) / 168.0)
+            h = np.tanh(self.W_input @ q + self.b_input) * decay
+            if clicked:
+                h += 0.1 * self.W_readout
+            elif dismissed:
+                h -= 0.1 * self.W_readout
+        self._hidden[note_id] = h
+        self._last_access_ts[note_id] = time.time()
+
+    def score(self, note_id: str) -> float:
+        if not self.has_learned_weights or note_id not in self._hidden:
+            return 0.5
+        h = self._hidden[note_id]
+        raw = float(np.dot(self.W_readout, h)) + self.b_readout
+        return float(np.tanh(raw) * 0.5 + 0.5)
+
+    def prune(self, older_than_hours: float = 720) -> int:
+        cutoff = time.time() - older_than_hours * 3600
+        stale = [
+            nid for nid, ts in self._last_access_ts.items() if ts < cutoff
+        ]
+        for nid in stale:
+            self._hidden.pop(nid, None)
+            self._last_access_ts.pop(nid, None)
+        return len(stale)
+
+    def to_config_str(self) -> str:
+        parts = [f"{v:.6f}" for v in self.W_readout]
+        parts.append(f"{self.b_readout:.6f}")
+        flat_input = self.W_input.ravel()
+        parts.extend(f"{v:.6f}" for v in flat_input)
+        parts.append(f"{self.b_input:.6f}")
+        return ",".join(parts)

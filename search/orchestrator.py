@@ -56,6 +56,10 @@ logger = logging.getLogger(__name__)
 _db_columns_cache: dict = {}
 _db_columns_cache_lock = threading.Lock()
 
+# Backward-compatible phase latency tracking (pre-error_counter API).
+_phase_latencies: dict[str, float] = {}
+_phase_latencies_lock = threading.Lock()
+
 
 def _get_memories_columns(db: sqlite3.Connection) -> set[str]:
     """Cache memories table columns by DB path to save PRAGMA queries."""
@@ -1535,7 +1539,7 @@ def _apply_quality_gates(
     try:
         import quality_gates as qg
 
-        if qg.QUALITY_GATES_ENABLED and result_items:
+        if getattr(qg, "QUALITY_GATES_ENABLED", False) and result_items:
             result_items, qg_stats = qg.filter_results(result_items)
             if qg_stats.get("filtered", 0) > 0:
                 output = _format_search_results(
@@ -1577,7 +1581,7 @@ def _apply_user_profiling(
     try:
         import user_profile as up
 
-        if up.PROFILE_ENABLED and result_items:
+        if getattr(up, "PROFILE_ENABLED", False) and result_items:
             profile = up.get_user_profile(db_path=str(db_path))
             result_items = up.personalize_results(result_items, profile=profile)
             output = _format_search_results(
@@ -1786,7 +1790,9 @@ def search_memories(
         ts, cached_result = _search_cache[cache_key]
         if not SEARCH_CACHE_TTL_ENABLED or now - ts <= SEARCH_CACHE_TTL:
             _search_cache.move_to_end(cache_key)
-            return cached_result  # type: ignore[no-any-return]
+            cached_result = dict(cached_result)
+            cached_result["query_id"] = uuid.uuid4().hex
+            return cached_result
         _search_cache.pop(cache_key)
 
     db = None
@@ -1995,3 +2001,11 @@ def search_memories(
                 safe_close_db(db)
             except Exception:
                 pass
+
+
+# Backward-compatible phase latency helper for test_observability.py.
+def _record_phase_latency(name: str, start_time: float) -> None:
+    """Record elapsed wall-clock latency for *name* into _phase_latencies."""
+    elapsed_ms = (time.time() - start_time) * 1000.0
+    with _phase_latencies_lock:
+        _phase_latencies[name] = elapsed_ms

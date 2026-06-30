@@ -18,6 +18,8 @@ import json
 import os
 from pathlib import Path
 
+from infra.config import get_feature_flags
+
 
 
 
@@ -638,6 +640,69 @@ def _op_compaction_stats() -> str:
             )
         finally:
             safe_close_db(conn)
+    except Exception as e:
+        return _json.dumps({"error": str(e)})
+
+
+def _op_memory_stats() -> str:
+    try:
+        db_path = os.environ.get("MEMORY_DB_PATH", "")
+        db_size = 0
+        note_count = 0
+        if db_path:
+            p = Path(db_path)
+            if p.exists():
+                db_size = p.stat().st_size
+            try:
+                from session_manager import SessionManager
+                from db import safe_close_db
+
+                mgr = SessionManager(db_path=Path(db_path))
+                conn = mgr._conn()
+                try:
+                    note_count = conn.execute(
+                        "SELECT COUNT(*) FROM memories"
+                    ).fetchone()[0]
+                finally:
+                    safe_close_db(conn)
+            except Exception:
+                pass
+        queue_depth = 0
+        try:
+            from background_queue import init_task_queue, queue_depth as _qd
+
+            if db_path:
+                from db import open_db
+                qconn = open_db(Path(db_path))
+                try:
+                    init_task_queue(qconn)
+                    queue_depth = _qd(qconn)
+                finally:
+                    safe_close_db(qconn)
+        except Exception:
+            pass
+        cb_open = False
+        try:
+            from circuit_breaker import get_circuit_breaker_state
+
+            cb_open = get_circuit_breaker_state().get("open", False)
+        except Exception:
+            pass
+        flags = {}
+        try:
+            flags = get_feature_flags()
+        except Exception:
+            pass
+        return _json.dumps(
+            {
+                "db_path": db_path,
+                "db_size_bytes": db_size,
+                "note_count": note_count,
+                "background_queue_depth": queue_depth,
+                "circuit_breaker_open": cb_open,
+                "feature_flags": flags,
+            }
+        )
     except Exception as e:
         return _json.dumps({"error": str(e)})
 

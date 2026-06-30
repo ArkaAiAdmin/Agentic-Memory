@@ -14,6 +14,8 @@ Usage::
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import sys
 import threading
@@ -1220,89 +1222,146 @@ def get_feature_flags() -> dict:
     """Return all feature flags with their resolved values and sources.
 
     Returns a dict of {flag_name: {value, env_var, toml_path, default}}.
-    The 14 feature flags are the boolean fields in the MemoryConfig "features" section.
+    The feature flags are the boolean fields in the MemoryConfig
+    "features", "search", and "cache" sections. Each entry carries
+    the resolved value, env var name, TOML path, default, and any
+    human-readable warnings about the flag's current state.
     """
+
+    def _flag(value, env_var, toml_path, default):
+        warnings = []
+        if not value and default:
+            if "temporal" in toml_path or "temporal" in env_var.lower():
+                warnings.append(
+                    "Temporal features disabled: temporal KG, contradiction "
+                    "detection, and supersession are off."
+                )
+            elif "KG" in env_var or "kg" in toml_path:
+                warnings.append(
+                    "Knowledge graph disabled; graph-RAG, backlinks, and "
+                    "fact extraction are off."
+                )
+            elif "quality" in toml_path:
+                warnings.append("Quality gates disabled; noisy/degraded content may pass.")
+            elif "saga" in toml_path:
+                warnings.append("Saga rolled back; writes may be non-atomic on failure.")
+            elif "crdt" in toml_path:
+                warnings.append("CRDT disabled; concurrent writes may overwrite each other.")
+            elif "summarization" in toml_path:
+                warnings.append("Summarization disabled; long notes will not be condensed.")
+            elif "consolidation" in toml_path:
+                warnings.append("Consolidation disabled; duplicate memories may accumulate.")
+            elif "tiers" in toml_path:
+                warnings.append("Temporal tiers disabled; adaptive retention is off.")
+            elif "user_profile" in toml_path:
+                warnings.append("User profile disabled; search personalization is off.")
+        return {
+            "value": value,
+            "env_var": env_var,
+            "toml_path": toml_path,
+            "default": default,
+            "warnings": warnings,
+        }
+
     cfg = get_config()
     return {
-        "multi_agent": {
-            "value": cfg.multi_agent,
-            "env_var": "MEMORY_MULTI_AGENT",
-            "toml_path": "features.multi_agent",
-            "default": True,
-        },
-        "summarization": {
-            "value": cfg.summarization,
-            "env_var": "MEMORY_SUMMARIZATION",
-            "toml_path": "features.summarization",
-            "default": True,
-        },
-        "user_profile": {
-            "value": cfg.user_profile,
-            "env_var": "MEMORY_USER_PROFILE",
-            "toml_path": "features.user_profile",
-            "default": True,
-        },
-        "self_directed": {
-            "value": cfg.self_directed,
-            "env_var": "MEMORY_SELF_DIRECTED",
-            "toml_path": "features.self_directed",
-            "default": True,
-        },
-        "adaptive_retention": {
-            "value": cfg.adaptive_retention,
-            "env_var": "MEMORY_ADAPTIVE_RETENTION",
-            "toml_path": "features.adaptive_retention",
-            "default": True,
-        },
-        "temporal_ssm_enabled": {
-            "value": cfg.temporal_ssm_enabled,
-            "env_var": "MEMORY_TEMPORAL_SSM_ENABLED",
-            "toml_path": "features.temporal_ssm_enabled",
-            "default": False,
-        },
-        "consolidation": {
-            "value": cfg.consolidation,
-            "env_var": "MEMORY_CONSOLIDATION",
-            "toml_path": "features.consolidation",
-            "default": True,
-        },
-        "quality_gates": {
-            "value": cfg.quality_gates,
-            "env_var": "MEMORY_QUALITY_GATES",
-            "toml_path": "features.quality_gates",
-            "default": True,
-        },
-        "saga_enabled": {
-            "value": cfg.saga_enabled,
-            "env_var": "MEMORY_SAGA_ENABLED",
-            "toml_path": "features.saga_enabled",
-            "default": True,
-        },
-        "temporal_tiers": {
-            "value": cfg.temporal_tiers,
-            "env_var": "MEMORY_TEMPORAL_TIERS",
-            "toml_path": "features.temporal_tiers",
-            "default": True,
-        },
-        "crdt_enabled": {
-            "value": cfg.crdt_enabled,
-            "env_var": "MEMORY_CRDT_ENABLED",
-            "toml_path": "features.crdt_enabled",
-            "default": True,
-        },
-        "llm_extraction": {
-            "value": cfg.llm_extraction,
-            "env_var": "MEMORY_LLM_EXTRACTION",
-            "toml_path": "features.llm_extraction",
-            "default": True,
-        },
-        "feature_temporal_kg": {
-            "value": cfg.feature_temporal_kg,
-            "env_var": "MEMORY_TEMPORAL_KG",
-            "toml_path": "features.feature_temporal_kg",
-            "default": True,
-        },
+        "multi_agent": _flag(
+            cfg.multi_agent, "MEMORY_MULTI_AGENT", "features.multi_agent", True
+        ),
+        "summarization": _flag(
+            cfg.summarization, "MEMORY_SUMMARIZATION", "features.summarization", True
+        ),
+        "user_profile": _flag(
+            cfg.user_profile, "MEMORY_USER_PROFILE", "features.user_profile", True
+        ),
+        "self_directed": _flag(
+            cfg.self_directed, "MEMORY_SELF_DIRECTED", "features.self_directed", True
+        ),
+        "adaptive_retention": _flag(
+            cfg.adaptive_retention,
+            "MEMORY_ADAPTIVE_RETENTION",
+            "features.adaptive_retention",
+            True,
+        ),
+        "temporal_ssm_enabled": _flag(
+            cfg.temporal_ssm_enabled,
+            "MEMORY_TEMPORAL_SSM_ENABLED",
+            "features.temporal_ssm_enabled",
+            False,
+        ),
+        "consolidation": _flag(
+            cfg.consolidation,
+            "MEMORY_CONSOLIDATION",
+            "features.consolidation",
+            True,
+        ),
+        "quality_gates": _flag(
+            cfg.quality_gates,
+            "MEMORY_QUALITY_GATES",
+            "features.quality_gates",
+            True,
+        ),
+        "saga_enabled": _flag(
+            cfg.saga_enabled,
+            "MEMORY_SAGA_ENABLED",
+            "features.saga_enabled",
+            True,
+        ),
+        "temporal_tiers": _flag(
+            cfg.temporal_tiers,
+            "MEMORY_TEMPORAL_TIERS",
+            "features.temporal_tiers",
+            True,
+        ),
+        "crdt_enabled": _flag(
+            cfg.crdt_enabled,
+            "MEMORY_CRDT_ENABLED",
+            "features.crdt_enabled",
+            True,
+        ),
+        "llm_extraction": _flag(
+            cfg.llm_extraction,
+            "MEMORY_LLM_EXTRACTION",
+            "features.llm_extraction",
+            True,
+        ),
+        "feature_temporal_kg": _flag(
+            cfg.feature_temporal_kg,
+            "MEMORY_TEMPORAL_KG",
+            "features.feature_temporal_kg",
+            True,
+        ),
+        "fts5_cache": _flag(
+            cfg.fts5_cache, "MEMORY_FTS5_CACHE", "cache.fts5_cache", True
+        ),
+        "query_cache": _flag(
+            cfg.query_cache, "MEMORY_QUERY_CACHE", "search.query_cache", True
+        ),
+        "reranker_disabled": _flag(
+            cfg.reranker_disabled,
+            "MEMORY_RERANKER_DISABLED",
+            "search.reranker_disabled",
+            False,
+        ),
+        "contextual_retrieval": _flag(
+            cfg.contextual_retrieval,
+            "MEMORY_CONTEXTUAL_RETRIEVAL",
+            "search.contextual_retrieval",
+            True,
+        ),
     }
+
+
+def log_feature_flags_at_startup() -> None:
+    """Emit a JSON snapshot of all feature flags to the INFO log.
+
+    Format: ``feature_flags_snapshot=<json>``.
+    Called once at process startup so operators have a record of which
+    flags were on/off for the lifetime of the session.
+    """
+    flags = get_feature_flags()
+    logger = logging.getLogger(__name__)
+    logger.info("feature_flags_snapshot=%s", json.dumps(flags))
 
 
 __all__ = [
@@ -1310,6 +1369,7 @@ __all__ = [
     "get_config",
     "reset_config",
     "get_feature_flags",
+    "log_feature_flags_at_startup",
     "INSTALL_ROOT",
     "GLOBAL_SCRIPTS_DIR",
     "SCRIPTS_SUBDIR",
