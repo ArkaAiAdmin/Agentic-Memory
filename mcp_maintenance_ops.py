@@ -73,7 +73,7 @@ def _get_local_tools() -> dict:
             memory_pinned_decay_check,
             memory_compile_skill,
             memory_llm_unload,
-            memory_health,
+            memory_health,  # type: ignore[name-defined]
         )
         from mcp_verbs import (
             memory_search,
@@ -288,8 +288,8 @@ def _get_handlers() -> dict:
             MaintenanceOp.HEARTBEAT: lambda *, dry_run=False, **_: t[
                 "memory_heartbeat"
             ](dry_run=dry_run),
-            MaintenanceOp.HEALTH: lambda **_: _op_health(),
-            MaintenanceOp.SEARCH: lambda *, query, category="", limit=10, include_global=True, mode="hybrid", **_: (
+            MaintenanceOp.HEALTH: lambda **_: _op_health(),  # type: ignore[attr-defined]
+            MaintenanceOp.SEARCH: lambda *, query, category="", limit=10, include_global=True, mode="hybrid", **_: (  # type: ignore[attr-defined]
                 t["memory_search"](
                     query=query,
                     category=category,
@@ -298,7 +298,7 @@ def _get_handlers() -> dict:
                     mode=mode,
                 )
             ),
-            MaintenanceOp.SAVE: lambda *, content, category="lessons", title_slug="", tags=None, pinned=False, importance=3, is_global=False, **_: (
+            MaintenanceOp.SAVE: lambda *, content, category="lessons", title_slug="", tags=None, pinned=False, importance=3, is_global=False, **_: (  # type: ignore[attr-defined]
                 t["memory_save"](
                     content=content,
                     category=category,
@@ -309,10 +309,10 @@ def _get_handlers() -> dict:
                     is_global=is_global,
                 )
             ),
-            MaintenanceOp.RECALL: lambda *, query="", session_id="", **_: (
+            MaintenanceOp.RECALL: lambda *, query="", session_id="", **_: (  # type: ignore[attr-defined]
                 t["memory_recall"](query=query, session_id=session_id)
             ),
-            MaintenanceOp.NOTE: lambda *, note_id, action="read", content="", category="", title_slug="", tags=None, **_: (
+            MaintenanceOp.NOTE: lambda *, note_id, action="read", content="", category="", title_slug="", tags=None, **_: (  # type: ignore[attr-defined]
                 t["memory_note"](
                     note_id=note_id,
                     action=action,
@@ -322,7 +322,7 @@ def _get_handlers() -> dict:
                     tags=tags or [],
                 )
             ),
-            MaintenanceOp.LEARN: lambda *, content, as_skill=False, skill_name="", category="lessons", tags=None, **_: (
+            MaintenanceOp.LEARN: lambda *, content, as_skill=False, skill_name="", category="lessons", tags=None, **_: (  # type: ignore[attr-defined]
                 t["memory_learn"](
                     content=content,
                     as_skill=as_skill,
@@ -331,16 +331,16 @@ def _get_handlers() -> dict:
                     tags=tags or [],
                 )
             ),
-            MaintenanceOp.AUDIT_VERB: lambda *, hours=24, limit=20, include_errors=True, **_: (
+            MaintenanceOp.AUDIT_VERB: lambda *, hours=24, limit=20, include_errors=True, **_: (  # type: ignore[attr-defined]
                 t["memory_audit"](hours=hours, limit=limit, include_errors=include_errors)
             ),
-            MaintenanceOp.ORGANIZE: lambda *, target="safe_default", dry_run=False, **_: (
+            MaintenanceOp.ORGANIZE: lambda *, target="safe_default", dry_run=False, **_: (  # type: ignore[attr-defined]
                 t["memory_organize"](target=target, dry_run=dry_run)
             ),
-            MaintenanceOp.SHARE_VERB: lambda *, note_id, share_with="", action="list", **_: (
+            MaintenanceOp.SHARE_VERB: lambda *, note_id, share_with="", action="list", **_: (  # type: ignore[attr-defined]
                 t["memory_share"](note_id=note_id, share_with=share_with, action=action)
             ),
-            MaintenanceOp.GRAPH_VERB: lambda *, query="", start="", edge_patterns="", max_depth=2, action="explore", **_: (
+            MaintenanceOp.GRAPH_VERB: lambda *, query="", start="", edge_patterns="", max_depth=2, action="explore", **_: (  # type: ignore[attr-defined]
                 t["memory_graph"](
                     query=query,
                     start=start,
@@ -349,10 +349,10 @@ def _get_handlers() -> dict:
                     action=action,
                 )
             ),
-            MaintenanceOp.PROFILE_VERB: lambda *, action="stats", agent_id="", **_: (
+            MaintenanceOp.PROFILE_VERB: lambda *, action="stats", agent_id="", **_: (  # type: ignore[attr-defined]
                 t["memory_profile"](action=action, agent_id=agent_id)
             ),
-            MaintenanceOp.ADVANCED: lambda *, operation, **kwargs: (
+            MaintenanceOp.ADVANCED: lambda *, operation, **kwargs: (  # type: ignore[attr-defined]
                 t["memory_advanced"](operation=operation, **kwargs)
             ),
             MaintenanceOp.TIER_STATS: lambda **_: t["memory_tier_stats"](),
@@ -948,7 +948,11 @@ def _op_memory_stats() -> str:
         return json.dumps({"error": str(e)})
 
 
-def _op_health() -> str:
+def _op_health(
+    brief: bool = True,
+    full: bool = False,
+    structured: bool = False,
+) -> str:
     try:
         from memory_common import GLOBAL_MEM_DIR
 
@@ -960,21 +964,31 @@ def _op_health() -> str:
         data = json.loads(health_file.read_text())
         alerts = data.get("alerts", [])
         overall = data.get("overall_healthy", False)
-        checks = data.get("checks", {})
-        summary_lines = [
-            f"Health: {'HEALTHY' if overall else 'UNHEALTHY'}",
-            f"DB: {data.get('db_path', 'unknown')}",
-            f"Timestamp: {data.get('timestamp', 'unknown')}",
-        ]
-        for name, info in checks.items():
-            summary_lines.append(f"  {name}: {info.get('status', '?')}")
-        if alerts:
-            summary_lines.append(f"Alerts ({len(alerts)}):")
+
+        if structured:
+            return json.dumps({
+                "status": "healthy" if overall else "unhealthy",
+                "needs_attention": not overall,
+                "alerts": alerts[:20],
+                "timestamp": data.get("timestamp"),
+                "db_path": data.get("db_path"),
+            })
+
+        if full:
+            return json.dumps(data, indent=2)
+
+        # brief mode (default) — only show what needs attention
+        if overall and not alerts:
+            return "Health: HEALTHY — no attention needed."
+
+        lines = [f"Health: {'HEALTHY' if overall else 'UNHEALTHY'}"]
+        if not overall:
+            lines.append(f"DB: {data.get('db_path', 'unknown')}")
+            lines.append(f"Timestamp: {data.get('timestamp', 'unknown')}")
+            lines.append(f"Alerts ({len(alerts)}):")
             for a in alerts[:10]:
-                summary_lines.append(f"    - {a}")
-        else:
-            summary_lines.append("  No alerts.")
-        return "\n".join(summary_lines)
+                lines.append(f"  - {a}")
+        return "\n".join(lines)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
