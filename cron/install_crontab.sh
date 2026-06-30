@@ -121,7 +121,8 @@ $BLOCK_BEGIN
 30 0  *   *   *    $VENV_PY $ROOT/cron/cron_purge_auto_saves.py >> $LOG_DIR/purge-auto-saves.log 2>&1
 
 # Cleanup raw auto-save tool logs — archive sessions/auto-* older than 30d (daily 00:45)
-45 0  *   *   *    $VENV_PY $ROOT/cron/cleanup_auto_logs.py >> $LOG_DIR/cleanup-auto-logs.log 2>&1
+# Phase B: enqueue via worker task queue
+45 0  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_cleanup_auto_logs --payload '{"args": ["--max-age-days", "30"]}' >> $LOG_DIR/cleanup-auto-logs.log 2>&1
 
 # Integrity check — DB health, FTS consistency (Sunday 01:00)
 0  1  *   *   0    MEMORY_KNOWLEDGE_GRAPH=1 $VENV_PY $ROOT/cron/cron_integrity_check.py >> $LOG_DIR/integrity.log 2>&1
@@ -142,13 +143,16 @@ $BLOCK_BEGIN
 # Compact — monthly tier migration + consolidation + rebuild + archive
 # (H4: shifted from 02:00 to 02:30 on the 1st to avoid racing
 # cron_backup at 02:00 daily; flock is the safety net.)
-30 2  1   *   *    MEMORY_KNOWLEDGE_GRAPH=1 $VENV_PY $ROOT/cron/cron_compact.py >> $LOG_DIR/compact.log 2>&1
+# Phase B: enqueue via worker task queue
+30 2  1   *   *    MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_compact >> $LOG_DIR/compact.log 2>&1
 
 # FTS5 rebuild — daily lightweight rebuild
-33 2  *   *   *    $VENV_PY $ROOT/cron/cron_rebuild_fts.py >> $LOG_DIR/fts-rebuild.log 2>&1
+# Phase B: enqueue via worker task queue
+33 2  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_rebuild_fts >> $LOG_DIR/fts-rebuild.log 2>&1
 
 # Heartbeat — decay, tier assignment, archive stale notes (daily 03:00)
-0  3  *   *   *    MEMORY_SELF_DIRECTED=1 MEMORY_KNOWLEDGE_GRAPH=1 $VENV_PY $ROOT/cron/cron_heartbeat.py >> $LOG_DIR/heartbeat.log 2>&1
+# Phase B: enqueue via worker task queue
+0  3  *   *   *    MEMORY_SELF_DIRECTED=1 MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_heartbeat >> $LOG_DIR/heartbeat.log 2>&1
 
 # Tier migration — on-demand hot/warm/cold migration (Sunday 03:00).
 # Uses the per-cron flock to serialize against cron_heartbeat at
@@ -156,59 +160,75 @@ $BLOCK_BEGIN
 # tier_migration runs. If a slow heartbeat holds the lock past
 # 03:00:30, tier_migration is skipped that week — safe, not
 # lossy.
-0  3  *   *   0    MEMORY_TEMPORAL_TIERS=1 $VENV_PY $ROOT/cron/cron_tier_migration.py --once >> $LOG_DIR/tier-migration.log 2>&1
+# Phase B: enqueue via worker task queue
+0  3  *   *   0    MEMORY_TEMPORAL_TIERS=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_tier_migration --payload '{"args": ["--once"]}' >> $LOG_DIR/tier-migration.log 2>&1
 
 # Weekly KG backfill — refresh kg_facts/entities/edges (Sunday 03:30)
-30 3  *   *   0    $VENV_PY $ROOT/cron/cron_kg_backfill.py >> $LOG_DIR/kg-backfill-cron.log 2>&1
+# Phase B: enqueue via worker task queue
+30 3  *   *   0    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_kg_backfill --payload '{"args": ["--incremental"]}' >> $LOG_DIR/kg-backfill-cron.log 2>&1
 
 # Skill extraction — turn procedural memories into skills (Mondays 03:45)
-45 3  *   *   1    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/cron_skill_extraction.py >> $LOG_DIR/skill-extraction.log 2>&1
+# Phase B: enqueue via worker task queue
+45 3  *   *   1    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_skill_extraction >> $LOG_DIR/skill-extraction.log 2>&1
 
 # Cross-session learning — extract reusable patterns (Mondays 04:15)
-15 4  *   *   1    $VENV_PY $ROOT/cron/cron_cross_session_learn.py >> $LOG_DIR/cross-session-learn.log 2>&1
+# Phase B: enqueue via worker task queue
+15 4  *   *   1    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_cross_session_learn >> $LOG_DIR/cross-session-learn.log 2>&1
 
 # KG backfill monitor — alerts on backfill failures (daily 04:00).
 # On Sundays 04:00 this overlaps with cron_consolidate; the per-cron
 # flocks let both run and the SQLite WAL serializes their writes.
-0  4  *   *   *    $VENV_PY $ROOT/cron/cron_kg_backfill_monitor.py >> $LOG_DIR/kg-backfill-monitor.log 2>&1
+# Phase B: enqueue via worker task queue
+0  4  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_kg_backfill_monitor >> $LOG_DIR/kg-backfill-monitor.log 2>&1
 
 # Embedding recompute — detect model change, re-embed if needed (daily 04:00)
-0  4  *   *   *    $VENV_PY $ROOT/cron/cron_embedding_recompute.py --once >> $LOG_DIR/embedding-recompute.log 2>&1
+# Phase B: enqueue via worker task queue
+0  4  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_embedding_recompute --payload '{"args": ["--once"]}' >> $LOG_DIR/embedding-recompute.log 2>&1
 
 # Consolidation — dedup, detect contradictions (Sunday 04:00)
-0  4  *   *   0    MEMORY_KNOWLEDGE_GRAPH=1 $VENV_PY $ROOT/cron/cron_consolidate.py >> $LOG_DIR/consolidation.log 2>&1
+# Phase B: enqueue via worker task queue
+0  4  *   *   0    MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_consolidate >> $LOG_DIR/consolidation.log 2>&1
 
 # Vec drift detection — alerts if vec_keys/vec_idx diverge (daily 04:30)
-30 4  *   *   *    $VENV_PY $ROOT/cron/cron_detect_vec_drift.py >> $LOG_DIR/drift.log 2>&1
+# Phase B: enqueue via worker task queue
+30 4  *   *   *    $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_detect_vec_drift >> $LOG_DIR/drift.log 2>&1
 
 # Rewrite broken wiki links (Sunday 04:30)
-30 4  *   *   0    MEMORY_KNOWLEDGE_GRAPH=1 $VENV_PY $ROOT/cron/cron_rewrite_links.py >> $LOG_DIR/rewrite-links.log 2>&1
+# Phase B: enqueue via worker task queue
+30 4  *   *   0    MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_rewrite_links >> $LOG_DIR/rewrite-links.log 2>&1
 
 # Pinned decay — auto-unpin stale pinned notes (Sunday 05:00)
-0  5  *   *   0    MEMORY_KNOWLEDGE_GRAPH=1 $VENV_PY $ROOT/cron/cron_pinned_decay.py >> $LOG_DIR/pinned-decay.log 2>&1
+# Phase B: enqueue via worker task queue
+0  5  *   *   0    MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_pinned_decay >> $LOG_DIR/pinned-decay.log 2>&1
 
 # Concept drift detection — cosine distance between current and
 # previous embedding centroid (Sunday 06:00 UTC). Populates the
 # concept_drift AND drift_alarms tables.
-0  6  *   *   0    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/cron_concept_drift.py >> $LOG_DIR/concept-drift.log 2>&1
+# Phase B: enqueue via worker task queue
+0  6  *   *   0    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_concept_drift >> $LOG_DIR/concept-drift.log 2>&1
 
 # Purge soft-deleted notes older than 30 days (1st of month 06:30).
 # (H8: shifted from 06:00 to 06:30 so it never races cron_concept_drift
 # on the 1st Sunday/Monday when both are scheduled.)
-30 6  1   *   *    $VENV_PY $ROOT/cron/cron_purge_expired.py >> $LOG_DIR/purge.log 2>&1
+# Phase B: enqueue via worker task queue
+30 6  1   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_purge_expired >> $LOG_DIR/purge.log 2>&1
 
 # Quality gate stats (Mondays 07:00). H8: shifted from 06:00.
-0  7  *   *   1    MEMORY_QUALITY_GATES=1 $VENV_PY $ROOT/cron/cron_quality_filter.py >> $LOG_DIR/quality.log 2>&1
+# Phase B: enqueue via worker task queue
+0  7  *   *   1    MEMORY_QUALITY_GATES=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_quality_filter >> $LOG_DIR/quality.log 2>&1
 
 # Auto-summarize long notes (Mondays 07:30). H8: shifted from 07:00
 # to make room for cron_quality_filter at 07:00.
-30 7  *   *   1    MEMORY_SUMMARIZATION=1 $VENV_PY $ROOT/cron/cron_auto_summarize.py >> $LOG_DIR/summarize.log 2>&1
+# Phase B: enqueue via worker task queue
+30 7  *   *   1    MEMORY_SUMMARIZATION=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_auto_summarize >> $LOG_DIR/summarize.log 2>&1
 
 # Adaptive retention stats (Mondays 08:00)
-0  8  *   *   1    MEMORY_ADAPTIVE_RETENTION=1 $VENV_PY $ROOT/cron/cron_retention_stats.py >> $LOG_DIR/retention.log 2>&1
+# Phase B: enqueue via worker task queue
+0  8  *   *   1    MEMORY_ADAPTIVE_RETENTION=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_retention_stats >> $LOG_DIR/retention.log 2>&1
 
 # Auto-share — opt-in memories to the shared pool (daily 09:00)
-0  9  *   *   *    MEMORY_MULTI_AGENT=1 $VENV_PY $ROOT/cron/cron_auto_share.py >> $LOG_DIR/auto-share.log 2>&1
+# Phase B: enqueue via worker task queue
+0  9  *   *   *    MEMORY_MULTI_AGENT=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_auto_share >> $LOG_DIR/auto-share.log 2>&1
 
 # Sync — single-peer two-way sync (5 min past every hour)
 5  *  *   *   *    $VENV_PY $ROOT/cron/cron_sync.py >> $LOG_DIR/sync.log 2>&1
