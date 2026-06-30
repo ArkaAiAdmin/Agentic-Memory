@@ -18,6 +18,7 @@ __all__ = [
     # import these from save_pipeline directly).
     "_crdt_agent_id",
     "_is_crdt_enabled",
+    "_is_legacy_note_crdt_enabled",
     "_crdt_bump_version",
 ]
 from dataclasses import dataclass, field
@@ -66,6 +67,7 @@ class SaveRequest:
     note_id: str = ""
     context: str = "generic"
     defer_expensive: bool = False
+    tenant_id: str = "default"
 
 
 def _md5_to_uint64(memory_id: str) -> int:
@@ -155,6 +157,7 @@ _CORE_COLS = frozenset(
         "pinned",
         "importance",
         "repo_id",
+        "tenant_id",
     }
 )
 # Optional columns that the upsert conditionally includes based on
@@ -297,6 +300,7 @@ def clear_pragma_cache():
 from save.crdt_helpers import (  # noqa: E402, F401
     _crdt_agent_id,
     _is_crdt_enabled,
+    _is_legacy_note_crdt_enabled,
     _crdt_bump_version,
 )
 
@@ -384,6 +388,7 @@ def _upsert_memory_row(
     metadata_json: str = "{}",
     importance: int = 3,
     tier: str = "warm",
+    tenant_id: str = "default",
 ):
     """Insert or update the memory row (and file_mtimes).
 
@@ -417,9 +422,9 @@ def _upsert_memory_row(
         # ``COALESCE(excluded.metadata, memories.metadata)`` — prefer
         # the new value, fall back to the existing one if the new one
         # is NULL.  Same fix in both branches.
-        db.execute(
-            "INSERT INTO memories (id, source_file, content, tags, created_at, updated_at, observed_at, fitness_score, importance, importance_score, pinned, repo_id, valid_from, valid_to, superseded_by, category, tier, metadata)\n               VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ? )\n               ON CONFLICT(id) DO UPDATE SET\n                   content = excluded.content,\n                   tags = excluded.tags,\n                   updated_at = excluded.updated_at,\n                   observed_at = excluded.observed_at,\n                   pinned = excluded.pinned,\n                   fitness_score = excluded.fitness_score,\n                   importance = excluded.importance,\n                   importance_score = excluded.importance_score,\n                   valid_from = COALESCE(memories.valid_from, excluded.valid_from),\n                   deleted_at = NULL,\n                   category = excluded.category,\n                   tier = excluded.tier,\n                   metadata = COALESCE(excluded.metadata, memories.metadata)",
-            (
+         db.execute(
+            "INSERT INTO memories (id, source_file, content, tags, created_at, updated_at, observed_at, fitness_score, importance, importance_score, pinned, repo_id, valid_from, valid_to, superseded_by, category, tier, metadata, tenant_id)\n               VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ? )\n               ON CONFLICT(id) DO UPDATE SET\n                   content = excluded.content,\n                   tags = excluded.tags,\n                   updated_at = excluded.updated_at,\n                   observed_at = excluded.observed_at,\n                   pinned = excluded.pinned,\n                   fitness_score = excluded.fitness_score,\n                   importance = excluded.importance,\n                   importance_score = excluded.importance_score,\n                   valid_from = COALESCE(memories.valid_from, excluded.valid_from),\n                   deleted_at = NULL,\n                   category = excluded.category,\n                   tier = excluded.tier,\n                   metadata = COALESCE(excluded.metadata, memories.metadata),\n                   tenant_id = excluded.tenant_id",
+             (
                 note_id,
                 source_file,
                 content,
@@ -435,11 +440,12 @@ def _upsert_memory_row(
                 category,
                 tier,
                 metadata_json,
+                tenant_id,
             ),
         )
     else:
         db.execute(
-            "INSERT INTO memories (id, source_file, content, tags, created_at, updated_at, observed_at, fitness_score, importance, importance_score, pinned, repo_id, category, tier, metadata)\n               VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, ?, ?, ?, ?, ?, ?, ? )\n               ON CONFLICT(id) DO UPDATE SET\n                   content = excluded.content,\n                   tags = excluded.tags,\n                   updated_at = excluded.updated_at,\n                   observed_at = excluded.observed_at,\n                   pinned = excluded.pinned,\n                   fitness_score = excluded.fitness_score,\n                   importance = excluded.importance,\n                   importance_score = excluded.importance_score,\n                   deleted_at = NULL,\n                   category = excluded.category,\n                   tier = excluded.tier,\n                   metadata = COALESCE(excluded.metadata, memories.metadata)",
+            "INSERT INTO memories (id, source_file, content, tags, created_at, updated_at, observed_at, fitness_score, importance, importance_score, pinned, repo_id, category, tier, metadata, tenant_id)\n               VALUES (?, ?, ?, ?, ?, ?, ?, 0.5, ?, ?, ?, ?, ?, ?, ?, ? )\n               ON CONFLICT(id) DO UPDATE SET\n                   content = excluded.content,\n                   tags = excluded.tags,\n                   updated_at = excluded.updated_at,\n                   observed_at = excluded.observed_at,\n                   pinned = excluded.pinned,\n                   fitness_score = excluded.fitness_score,\n                   importance = excluded.importance,\n                   importance_score = excluded.importance_score,\n                   deleted_at = NULL,\n                   category = excluded.category,\n                   tier = excluded.tier,\n                   metadata = COALESCE(excluded.metadata, memories.metadata),\n                   tenant_id = excluded.tenant_id",
             (
                 note_id,
                 source_file,
@@ -455,6 +461,7 @@ def _upsert_memory_row(
                 category,
                 tier,
                 metadata_json,
+                tenant_id,
             ),
         )
     try:
@@ -490,6 +497,7 @@ def upsert_row(
     db_path=None,
     is_global: bool = False,
     importance: int = 3,
+    tenant_id: str = "default",
 ) -> None:
     """Public upsert: insert or update a single memory row.
 
@@ -617,6 +625,7 @@ def upsert_row(
         metadata_json,
         importance,
         tier,
+        tenant_id,
     )
 
 
@@ -680,6 +689,7 @@ def _update_memory_index_incremental(
     importance: int = 3,
     tier: str = "warm",
     defer_expensive: bool = False,
+    tenant_id: str = "default",
 ):
     """Update memory index incrementally.
 
@@ -771,6 +781,7 @@ def _update_memory_index_incremental(
             metadata_json,
             importance,
             tier,
+            tenant_id,
         )
         if _is_crdt_enabled():
             _crdt_bump_version(conn, note_id, cols)
@@ -956,7 +967,7 @@ def _scan_for_injection_or_skip(
     return None
 
 
-def _acquire_db_connection(db_path_obj, category, title_slug, start_time):
+def _acquire_db_connection(db_path_obj, category, title_slug, start_time, tenant_id: str = "default"):
     """Acquire a SQLite connection from the pool. Returns the
     connection on success, or a string error message if acquisition
     failed (the message is already audit-logged).
@@ -965,7 +976,7 @@ def _acquire_db_connection(db_path_obj, category, title_slug, start_time):
     stays readable.
     """
     try:
-        conn = connection_pool.get(str(db_path_obj), timeout=30.0)
+        conn = connection_pool.get(str(db_path_obj), timeout=30.0, tenant_id=tenant_id)
         conn.execute("PRAGMA busy_timeout = 30000;")
         return conn
     except Exception as e:
@@ -1149,6 +1160,7 @@ def _persist_to_db(
     importance: int = 3,
     _conn_is_shared: bool = False,
     defer_expensive: bool = False,
+    tenant_id: str = "default",
 ):
     try:
         _update_memory_index_incremental(
@@ -1164,6 +1176,7 @@ def _persist_to_db(
             db=conn,
             importance=importance,
             defer_expensive=defer_expensive,
+            tenant_id=tenant_id,
         )
         try:
             atomic_write(file_path, markdown_content, encoding="utf-8")
@@ -1241,6 +1254,7 @@ def _try_saga_persist(
     importance,
     lock_already_held: bool = False,
     defer_expensive: bool = False,
+    tenant_id: str = "default",
 ):
     """Wrap the upsert + write + vec-key triple-store steps in a saga.
 
@@ -1252,9 +1266,6 @@ def _try_saga_persist(
     ``lock_already_held`` (P0-2 fix, 2026-06-22): when True, the saga
     skips its internal file-lock acquisition.  See _persist_via_saga_or_fallback.
     """
-    # Caller checks _is_saga_enabled() first, which guards against the
-    # saga module being unavailable.  Re-assert here so type checkers
-    # know _saga_save_memory is callable inside this function.
     assert _saga_save_memory is not None, "caller must check _is_saga_enabled() first"
 
     def _do_upsert_db():
@@ -1271,6 +1282,7 @@ def _try_saga_persist(
             db=conn,
             importance=importance,
             defer_expensive=defer_expensive,
+            tenant_id=tenant_id,
         )
 
     def _do_write_vec_key():
@@ -1348,6 +1360,7 @@ def _persist_via_saga_or_fallback(
     _conn_is_shared: bool = False,
     defer_expensive: bool = False,
     note_id: str = "",
+    tenant_id: str = "default",
 ):
     """Persist a memory via the saga path, with policy-driven fallback.
 
@@ -1391,6 +1404,7 @@ def _persist_via_saga_or_fallback(
                 importance=importance,
                 lock_already_held=lock_already_held,
                 defer_expensive=defer_expensive,
+                tenant_id=tenant_id,
             )
             saga_ok = True
         except Exception as saga_exc:
@@ -1420,6 +1434,7 @@ def _persist_via_saga_or_fallback(
             importance,
             _conn_is_shared=_conn_is_shared,
             defer_expensive=defer_expensive,
+            tenant_id=tenant_id,
         )
         if not _conn_is_shared:
             conn = (
@@ -1470,6 +1485,7 @@ def save_memory(
     note_id: str = "",
     context: str = "generic",
     defer_expensive: bool = False,
+    tenant_id: str = "default",
 ):
     """Write a memory note to disk and update the FTS5 index incrementally.
 
@@ -1499,6 +1515,7 @@ def save_memory(
         note_id=note_id,
         context=context,
         defer_expensive=defer_expensive,
+        tenant_id=tenant_id,
     )
     return _save_memory_core(req, _now_iso=_now_iso, _conn=_conn)
 
@@ -1521,6 +1538,7 @@ def _save_memory_core(
     context = req.context
     defer_expensive = req.defer_expensive
     safety_wiring = req.safety_wiring
+    tenant_id = req.tenant_id
     content = req.content
     category = req.category
     title_slug = req.title_slug
@@ -1615,7 +1633,7 @@ def _save_memory_core(
             conn = _conn
         else:
             conn = _acquire_db_connection(
-                db_path_obj, category, title_slug, _start_time
+                db_path_obj, category, title_slug, _start_time, tenant_id=tenant_id
             )
             if isinstance(conn, str):
                 if lock_file is not None:

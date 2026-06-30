@@ -25,6 +25,7 @@ contextual_enrichment = true          # MEMORY_CONTEXTUAL_ENRICHMENT
 forgetting_curve = true               # MEMORY_FORGETTING_CURVE — Ebbinghaus decay boosts recent notes
 forgetting_curve_half_life = 30       # MEMORY_FORGETTING_CURVE_HALF_LIFE — Ebbinghaus half-life in DAYS (float, e.g. 30 or 7.5). Used by neural_forget.py and the search scoring pipeline.
 vec_rebuild_threshold = 15           # MEMORY_VEC_REBUILD_THRESHOLD — count of drift rows (vec_keys/embeddings mismatch) that triggers an automatic vec index rebuild. Default 15 (was 5, raised 2026-06-23) tolerates single-row drift without forcing a rebuild. Set to 0 to disable auto-rebuild, or 100+ to make it very lazy (drift will accumulate).
+vec_rebuild_adaptive = true          # MEMORY_VEC_REBUILD_ADAPTIVE — scale threshold dynamically based on write velocity. Threshold = base * clamp(drift_rate / velocity, 0.5, 3.0).
 concept_drift_threshold = 0.15       # MEMORY_CONCEPT_DRIFT_THRESHOLD — cosine drift threshold for concept drift cron
 entity_min_occurrences = 2           # MEMORY_ENTITY_MIN_OCCURRENCES — min occurrences for regex entity extraction (tight=2, legacy=1)
 ctr_data_window_days = 90            # MEMORY_CTR_DATA_WINDOW_DAYS — CTR feedback lookback window
@@ -51,6 +52,7 @@ quality_gates = true                  # MEMORY_QUALITY_GATES — filter results 
 saga_enabled = true                   # MEMORY_SAGA_ENABLED — transactional save (DB + vec + file)
 temporal_tiers = true                 # MEMORY_TEMPORAL_TIERS — hot/warm/cold tier system on `tier` column. Source of truth: this TOML key (read via get_config().temporal_tiers). The legacy bare env var MEMORY_TEMPORAL_TIERS=1 is no longer consulted by save_pipeline.py as of 2026-06-22.
 crdt_enabled = true                   # MEMORY_CRDT_ENABLED — version vector tracking + conflict resolution on every save
+legacy_note_crdt = false              # MEMORY_LEGACY_NOTE_CRDT — bump legacy note-level version vector on save. Deprecated: per-field CRDT is the source of truth. Warns when enabled.
 llm_extraction = true                # MEMORY_LLM_EXTRACTION — use local LLM for fact/entity extraction (hook subprocesses are excluded automatically)
 feature_temporal_kg = true            # MEMORY_TEMPORAL_KG (T8, 2026-06-23) — fact-level temporal KG: event_time extraction, contradiction detection, supersession, edit invalidation. Default ON. Set to false to disable the entire temporal subsystem (reverts to plain fact extraction with no temporal logic).
 

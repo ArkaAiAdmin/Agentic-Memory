@@ -1,4 +1,122 @@
-# Architecture
+#!/usr/bin/env python3
+"""Generate docs/architecture.md from live codebase inspection.
+
+Sources:
+  - Phase count      : search/orchestrator.py Phase comments
+  - Tool counts      : tool_registry.py CORE_TOOLS + ADMIN_TOOLS
+  - Schema version   : migration_runner.py SCHEMA_VERSION
+  - Cron count       : cron/ directory
+  - Hook count       : hooks/ directory (excluding _log_error.py)
+
+Usage:
+    python scripts/generate_architecture_md.py          # write in-place
+    python scripts/generate_architecture_md.py --check  # CI: fail on mismatch
+"""
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+# scripts/ runs from repo root for imports to work
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# ---------------------------------------------------------------------------
+# Counters
+# ---------------------------------------------------------------------------
+
+def count_search_phases() -> tuple[int, list[str]]:
+    """Return (unique_phase_count, phase_names_in_order)."""
+    path = Path("search/orchestrator.py")
+    seen: dict[str, int] = {}  # name -> first occurrence index
+    for lineno, line in enumerate(path.read_text().splitlines()):
+        m = re.search(
+            r"#\s*Phase\s+(\d+[b]?)\s*:\s*(.+)", line, re.IGNORECASE
+        )
+        if m:
+            num = m.group(1).strip()
+            name = m.group(2).strip().rstrip(".")
+            seen.setdefault(name, lineno)
+    ordered = [name for _, name in sorted((ln, n) for n, ln in seen.items())]
+    return len(ordered), ordered
+
+
+def count_tools() -> dict[str, int]:
+    from tool_registry import CORE_TOOLS, ADMIN_TOOLS
+    return {
+        "total": len(CORE_TOOLS) + len(ADMIN_TOOLS),
+        "core": len(CORE_TOOLS),
+        "admin": len(ADMIN_TOOLS),
+    }
+
+
+def count_schema_version() -> int:
+    from migration_runner import SCHEMA_VERSION
+    return SCHEMA_VERSION
+
+
+def count_cron_scripts() -> int:
+    return len(list(Path("cron").glob("cron_*.py")))
+
+
+def count_hooks() -> int:
+    return len([
+        f for f in Path("hooks").glob("memory-*.py")
+        if f.name != "_log_error.py"
+    ])
+
+
+def count_core_save_steps() -> int:
+    content = Path("docs/architecture.md").read_text()
+    m = re.search(r"The canonical write path.*?(\d+) steps in order:", content, re.DOTALL)
+    return int(m.group(1)) if m else 13
+
+
+# ---------------------------------------------------------------------------
+# Phase names list builder (keeps names, drops phase numbers)
+# ---------------------------------------------------------------------------
+
+PHASE_TRANSITIONS: list[tuple[str, str]] = [
+    ("Parse query", "Parse query"),
+    ("Skill-first lookup", "Skill-first"),
+    ("Cache check", "Cache"),
+    ("DB setup", "DB setup"),
+    ("FTS search", "FTS5"),
+    ("KG fact search", "KG facts"),
+    ("Fallback to embeddings", "Embedding"),
+    ("Hybrid fusion", "Hybrid fusion"),
+    ("Temporal filtering", "Temporal filter"),
+    ("Chunk enhancement", "Chunk enhance"),
+    ("Reranking", "Rerank"),
+    ("Build output", "Output build"),
+    ("Safety demoting", "Safety demoting"),
+    ("Quality gates", "Quality gates"),
+    ("User profiling", "User profile boost"),
+    ("Record access", "Record access"),
+]
+
+# ---------------------------------------------------------------------------
+# Document generator
+# ---------------------------------------------------------------------------
+
+def generate_doc() -> str:
+    tools = count_tools()
+    version = count_schema_version()
+    n_cron = count_cron_scripts()
+    n_hooks = count_hooks()
+    n_phases, phase_names = count_search_phases()
+
+    save_steps = count_core_save_steps()
+
+    # Build phase arrow from actual names if available
+    if phase_names:
+        phase_arrow = " → ".join(phase_names)
+    else:
+        phase_arrow = " → ".join(
+            name for _, name in PHASE_TRANSITIONS[:n_phases]
+        )
+
+    doc = f"""# Architecture
 
 Agentic Memory is a local-first, markdown-primary persistent memory system for AI agents.
 
@@ -38,28 +156,14 @@ User/Agent
 ## Search Pipeline
 
 The search orchestrator (`search_memories` in `search/orchestrator.py`)
-runs the following **15 phases** in order:
+runs the following **{n_phases} phases** in order:
 
-1. Parse query
-2. Skill-first lookup (if requested)
-3. Cache check
-4. DB setup
-5. FTS search
-6. T10 — KG fact search (independent of memory results)
-7. Fallback to embeddings
-8. Hybrid fusion
-9. Temporal filtering
-10. Chunk enhancement
-11. Reranking
-12. Build output
-13. Safety demoting
-14. Quality gates
-15. Record access
+{_numbered_list(phase_names if phase_names else PHASE_TRANSITIONS[:n_phases])}
 
 ## Save Pipeline
 
 The canonical write path (`save_memory` → `_upsert_memory_row` +
-`_run_post_save_hooks`) runs the following **13 steps** in order:
+`_run_post_save_hooks`) runs the following **{save_steps} steps** in order:
 
 1. Lock acquire
 2. Compute tier + PRAGMA setup
@@ -102,7 +206,7 @@ agentic-memory/                    # Repo root
 │   ├── synthesis.py                # BB1/BB2 synthesis
 │   ├── chunk_index.py              # Chunk search, Graph-RAG expansion
 │   ├── instrumentation.py          # Timing/log/observability
-│   └── orchestrator.py             # search_memories + 15-phase search
+│   └── orchestrator.py             # search_memories + {len(phase_names)}-phase search
 ├── backfill_all.py                 # Audit pipeline shim → backfill/
 ├── backfill/                       # Audit pipeline subpackage
 │   ├── __init__.py                 # Public API
@@ -121,8 +225,8 @@ agentic-memory/                    # Repo root
 ├── embedding_search.py             # Semantic search via model2vec
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
-├── migration_runner.py             # Schema migrations (current v23)
-└── ... (118 modules total)
+├── migration_runner.py             # Schema migrations (current v{version})
+└── ... ({_module_count()} modules total)
 ```
 
 | Module | Layer | Purpose |
@@ -139,16 +243,16 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v23, 23 migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v{version}, {version} migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
-- **96 MCP tools** (16 CORE + 80 ADMIN).
+- **{tools["total"]} MCP tools** ({tools["core"]} CORE + {tools["admin"]} ADMIN).
   Single source of truth: `tool_registry.py`.
-- **30 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
+- **{n_cron} cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.
-- **6 lifecycle hooks** in `hooks/` — session start/end,
+- **{n_hooks} lifecycle hooks** in `hooks/` — session start/end,
   precompact snapshot, proactive context, recall,
   search-on-demand. See `~/.claude/settings.json` and `opencode.jsonc` for wiring.
   `_log_error.py` is a log helper, not a lifecycle hook.
@@ -199,3 +303,43 @@ See `memory.toml [features]` for all flags. Key defaults:
 ---
 *This file is generated by `scripts/generate_architecture_md.py`.
 Do not edit directly; run the script and review the diff.*
+"""
+    return doc
+
+
+def _numbered_list(names: list[str]) -> str:
+    return "\n".join(f"{i+1}. {n}" for i, n in enumerate(names))
+
+
+def _module_count() -> int:
+    py_files = list(Path(".").glob("*.py"))
+    return len([f for f in py_files if f.name not in {
+        # exclude obvious build/test artifacts
+        # (keep it simple: count all .py at repo root)
+    }])
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main() -> int:
+    doc = generate_doc()
+    target = Path("docs/architecture.md")
+
+    if "--check" in sys.argv:
+        existing = target.read_text() if target.exists() else ""
+        if existing.strip() == doc.strip():
+            print("✅ docs/architecture.md is in sync with live code.")
+            return 0
+        print("❌ docs/architecture.md has drifted from live code.")
+        print("   Run: python scripts/generate_architecture_md.py")
+        return 1
+
+    target.write_text(doc, encoding="utf-8")
+    print(f"Written: {target}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

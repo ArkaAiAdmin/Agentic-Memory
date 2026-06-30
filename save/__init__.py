@@ -21,6 +21,7 @@ subpackage directly.
 from save.crdt_helpers import (  # noqa: F401
     _crdt_agent_id,
     _is_crdt_enabled,
+    _is_legacy_note_crdt_enabled,
     _crdt_bump_version,
 )
 from save.indexers import (  # noqa: F401
@@ -52,6 +53,7 @@ __all__ = [
     # crdt_helpers
     "_crdt_agent_id",
     "_is_crdt_enabled",
+    "_is_legacy_note_crdt_enabled",
     "_crdt_bump_version",
     # indexers
     "_index_backlinks",

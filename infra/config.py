@@ -309,6 +309,7 @@ class MemoryConfig:
     forgetting_curve: bool = True
     forgetting_curve_half_life: float = 30.0
     vec_rebuild_threshold: int = 15
+    vec_rebuild_adaptive: bool = True
 
     # kg_extract tunables
     entity_min_occurrences: int = 2
@@ -343,6 +344,7 @@ class MemoryConfig:
     saga_enabled: bool = True
     temporal_tiers: bool = True
     crdt_enabled: bool = True
+    legacy_note_crdt: bool = False
     llm_extraction: bool = True
     # T8 (2026-06-23): fact-level temporal KG. Default ON so the agent
     # gets automatic contradiction detection + edit invalidation. Set
@@ -667,6 +669,13 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             int,
             toml_data,
         ),
+        vec_rebuild_adaptive=_b(
+            "MEMORY_VEC_REBUILD_ADAPTIVE",
+            "search.vec_rebuild_adaptive",
+            True,
+            bool,
+            toml_data,
+        ),
         entity_min_occurrences=_b(
             "MEMORY_ENTITY_MIN_OCCURRENCES",
             "search.entity_min_occurrences",
@@ -827,6 +836,9 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         crdt_enabled=_b(
             "MEMORY_CRDT_ENABLED", "features.crdt_enabled", True, bool, toml_data
+        ),
+        legacy_note_crdt=_b(
+            "MEMORY_LEGACY_NOTE_CRDT", "features.legacy_note_crdt", False, bool, toml_data
         ),
         llm_extraction=_b(
             "MEMORY_LLM_EXTRACTION", "features.llm_extraction", True, bool, toml_data
@@ -1326,6 +1338,12 @@ def get_feature_flags() -> dict:
             "MEMORY_CRDT_ENABLED",
             "features.crdt_enabled",
             True,
+        ),
+        "legacy_note_crdt": _flag(
+            cfg.legacy_note_crdt,
+            "MEMORY_LEGACY_NOTE_CRDT",
+            "features.legacy_note_crdt",
+            False,
         ),
         "llm_extraction": _flag(
             cfg.llm_extraction,

@@ -370,15 +370,55 @@ def _get_vec_rebuild_threshold() -> int:
     """Return the max allowable drift before auto-rebuild.
 
     Reads from config (memory.toml → search.vec_rebuild_threshold,
-    env var MEMORY_VEC_REBUILD_THRESHOLD). Default: 5.
+    env var MEMORY_VEC_REBUILD_THRESHOLD). Default: 15.
+
+    When ``vec_rebuild_adaptive`` is true, computes a dynamic threshold
+    based on the ratio of observed drift to write velocity in the last
+    10 minutes.  High write velocity relaxes the threshold (multiplier
+    up to 3.0×); low velocity tightens it (multiplier down to 0.5×).
+    Falls back to the base value on any error.
     """
     try:
         from _lazy_imports import get_config
 
-        val = get_config().vec_rebuild_threshold
-        return int(val) if val is not None else 5
+        cfg = get_config()
+        base = int(getattr(cfg, "vec_rebuild_threshold", 15) or 15)
+        adaptive = bool(getattr(cfg, "vec_rebuild_adaptive", False))
     except Exception:
-        return int(os.environ.get("MEMORY_VEC_REBUILD_THRESHOLD", "5"))
+        base = int(os.environ.get("MEMORY_VEC_REBUILD_THRESHOLD", "15"))
+        adaptive = False
+
+    if not adaptive or base <= 0:
+        return base
+
+    try:
+        import sqlite3
+        from _lazy_imports import get_memory_paths
+
+        _, mem_dir, _ = get_memory_paths()
+        db_path = mem_dir / "memory.db"
+        if not db_path.exists():
+            return base
+        conn = sqlite3.connect(str(db_path), timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        window_seconds = 600  # 10-minute window for rate estimation
+        recent_writes = conn.execute(
+            "SELECT COUNT(*) AS n FROM memories "
+            "WHERE updated_at >= datetime('now', ?)",
+            (f"-{window_seconds} seconds",),
+        ).fetchone()["n"]
+        recent_drift_rows = conn.execute(
+            "SELECT COUNT(*) AS n FROM memory_vec_keys "
+            "WHERE memory_id NOT IN (SELECT id FROM memories)"
+        ).fetchone()["n"]
+        conn.close()
+        writes_per_minute = max(recent_writes / (window_seconds / 60.0), 0.01)
+        drift_per_minute = recent_drift_rows  # count in window
+        ratio = drift_per_minute / writes_per_minute
+        multiplier = max(0.5, min(3.0, ratio))
+        return max(1, int(base * multiplier))
+    except Exception:
+        return base
 
 
 def _check_and_reconcile_vec_drift(conn: sqlite3.Connection, db_path: Path) -> None:

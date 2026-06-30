@@ -20,6 +20,7 @@ CORE_TOOLS = [
     "memory_rebuild",
     "memory_session_start",
     "memory_supersede",
+    "memory_health_check",
     # Phase A verbs
     "memory_recall",
     "memory_note",

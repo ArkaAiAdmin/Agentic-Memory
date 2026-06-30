@@ -72,6 +72,97 @@ def memory_heartbeat(conn, dry_run: bool = False) -> str:
 
 
 @mcp.tool()
+@with_audit("memory_health_check")
+@with_memory_connection
+def memory_health_check(conn) -> str:
+    """Unified health-check: returns a JSON dict summarising subsystem state.
+
+    Checks DB availability, row counts, vec-index drift, FTS sync status,
+    connection-pool depth, background-worker liveness, and disk space.
+    """
+    import shutil
+    from pathlib import Path
+
+    from mcp_common import get_memory_paths
+    from memory_common import connection_pool
+
+    status: dict = {"db": {}, "vec_index": {}, "fts": {}, "pool": {}, "disk": {}}
+
+    try:
+        db_path = conn.execute("PRAGMA database_list").fetchone()["file"]
+        row_count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        status["db"] = {
+            "path": str(db_path),
+            "accessible": True,
+            "row_count": row_count,
+        }
+        conn.rollback()
+    except Exception as exc:
+        status["db"] = {"accessible": False, "error": str(exc)[:200]}
+
+    try:
+        n_memories = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
+        ).fetchone()[0]
+        n_vec = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()[0]
+        drift = n_memories - n_vec
+        status["vec_index"] = {
+            "memories": n_memories,
+            "vec_keys": n_vec,
+            "drift": max(drift, 0),
+        }
+    except Exception as exc:
+        status["vec_index"] = {"error": str(exc)[:200]}
+
+    try:
+        fts_count = conn.execute(
+            "SELECT COUNT(*) FROM fts_memories"
+        ).fetchone()[0]
+        status["fts"] = {"row_count": fts_count or 0}
+    except Exception as exc:
+        status["fts"] = {"error": str(exc)[:200]}
+
+    try:
+        pool_state = connection_pool.get_state()
+        status["pool"] = {
+            k: pool_state.get(k)
+            for k in ("active", "idle", "max_size", "timeout")
+            if k in pool_state
+        }
+    except Exception as exc:
+        status["pool"] = {"error": str(exc)[:200]}
+
+    try:
+        _, mem_dir, _ = get_memory_paths()
+        worker_log = Path(mem_dir) / "worker.log"
+        worker_alive = worker_log.exists() and (
+            worker_log.stat().st_mtime > __import__("time").time() - 600
+        )
+        status["worker"] = {"alive": worker_alive}
+    except Exception as exc:
+        status["worker"] = {"error": str(exc)[:200]}
+
+    try:
+        _, mem_dir, _ = get_memory_paths()
+        usage = shutil.disk_usage(str(mem_dir))
+        status["disk"] = {
+            "total_gb": round(usage.total / 1e9, 2),
+            "free_gb": round(usage.free / 1e9, 2),
+            "pct_used": round(usage.used / usage.total * 100, 1) if usage.total else 0,
+        }
+    except Exception as exc:
+        status["disk"] = {"error": str(exc)[:200]}
+
+    degraded = bool(
+        status["db"].get("accessible") is False
+        or status["vec_index"].get("drift", 0) > 50
+        or status.get("disk", {}).get("pct_used", 0) > 95
+    )
+    status["overall"] = "degraded" if degraded else "healthy"
+    return json.dumps(status)
+
+
+@mcp.tool()
 @with_audit("memory_incremental_update")
 def memory_incremental_update(
     memory_id: str, new_content: str, old_state: Optional[list] = None

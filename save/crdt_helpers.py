@@ -76,6 +76,22 @@ def _is_crdt_enabled() -> bool:
     return True
 
 
+def _is_legacy_note_crdt_enabled() -> bool:
+    """Check the legacy_note_crdt feature flag.
+
+    Returns True when the legacy note-level version vector bump is enabled.
+    This flag is off by default; the per-field CRDT is the source of truth.
+    """
+    if _get_config is not None:
+        try:
+            cfg = _get_config()
+            return bool(cfg.legacy_note_crdt)
+        except Exception:
+            logger.warning("Failed to fetch legacy_note_crdt from config")
+            pass
+    return False
+
+
 def _crdt_bump_version(db, note_id: str, cols: set) -> None:
     """Bump the CRDT version vector for ``note_id``.
 
@@ -83,7 +99,23 @@ def _crdt_bump_version(db, note_id: str, cols: set) -> None:
     increments the local agent's counter, and writes back the new values.
     No-op if the CRDT columns don't exist in the schema.
     Best-effort: failures are logged, never propagated.
+
+    .. deprecated::
+        Legacy note-level CRDT bump. Per-field CRDT is the source of truth
+        since v13. Superseded by the per-field CRDT stored in
+        ``memory_field_crdt``. The call site in ``save_pipeline.py``
+        is separately gated by the ``legacy_note_crdt`` config flag.
     """
+    if not _is_crdt_enabled():
+        return
+    if _is_legacy_note_crdt_enabled():
+        logger.warning(
+            "_crdt_bump_version called for %s — legacy note-level CRDT bump "
+            "is deprecated. Per-field CRDT (memory_field_crdt) is the "
+            "source of truth since v13. Set legacy_note_crdt = false in "
+            "memory.toml to silence.",
+            note_id,
+        )
     if not {"version_vector", "logical_clock"}.issubset(cols):
         return
     if parse_version_vector is None:
