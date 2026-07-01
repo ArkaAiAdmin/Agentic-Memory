@@ -44,10 +44,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_BG_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _BG_DIR)
+_REPO_ROOT = os.path.dirname(_BG_DIR)
+sys.path.insert(0, _REPO_ROOT)
+from background_queue import init_task_queue, dequeue_task, complete_task, fail_task
 from memory_common import safe_close_db, connection_pool
 from infrastructure import resolve_active_memory_dir
-from .background_queue import init_task_queue, dequeue_task, complete_task, fail_task
 
 logger = logging.getLogger(__name__)
 

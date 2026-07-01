@@ -382,7 +382,7 @@ def _write_imported_note_crdt(
 
     Extracted 2026-06-22.
     """
-    from crdt_field import crdt_field_save
+    from crdt_field import crdt_field_save, project_crdt_to_sql
 
     try:
         crdt_field_save(
@@ -397,6 +397,7 @@ def _write_imported_note_crdt(
             remote_logical_clock=1,
             tags=json.dumps(tags_list),
         )
+        project_crdt_to_sql(conn, new_id)
     except Exception as crdt_err:
         # Non-fatal: if the field table doesn't exist (pre-v13 DB)
         # the legacy note-level path still works.

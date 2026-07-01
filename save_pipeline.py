@@ -1544,6 +1544,21 @@ def save_memory(
     return _save_memory_core(req, _now_iso=_now_iso, _conn=_conn)
 
 
+def _project_sql_to_crdt(db_path_obj: Path, note_id: str) -> None:
+    """Best-effort: project the committed SQL row into memory_field_crdt."""
+    try:
+        from crdt.crdt_field import project_sql_to_crdt as _proj
+        from db import connection_pool, safe_close_db
+
+        conn = connection_pool.get(str(db_path_obj), timeout=5.0)
+        try:
+            _proj(conn, note_id, _crdt_agent_id())
+        finally:
+            safe_close_db(conn)
+    except Exception as _e:
+        logger.debug("save_memory: CRDT SQL projection skipped: %s", _e)
+
+
 def _save_memory_core(
     req: SaveRequest,
     _now_iso: str | None = None,
@@ -1723,6 +1738,8 @@ def _save_memory_core(
                     conn=conn,
                 )
                 _enqueue_background_tasks(db_path_obj, note_id)
+                if _is_crdt_enabled():
+                    _project_sql_to_crdt(db_path_obj, note_id)
             else:
                 _audit_save_failure(
                     db_path_obj, note_id, category, title_slug, _start_time

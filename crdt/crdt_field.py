@@ -412,6 +412,85 @@ def read_fields(
     return {r[0]: r[1] for r in rows}
 
 
+def project_sql_to_crdt(
+    conn: sqlite3.Connection,
+    memory_id: str,
+    agent_id: str,
+) -> None:
+    """Project the SQL winning values into ``memory_field_crdt``.
+
+    Called after a local ``save_memory`` commits — reads the current
+    ``memories`` row and writes corresponding ``memory_field_crdt``
+    rows via ``apply_field_updates_to_db`` (which respects LWW merge
+    semantics: if a concurrent CRDT merge wrote a higher-VV value,
+    the SQL value won't overwrite it).
+    """
+    row = conn.execute(
+        "SELECT content, tags, category, version_vector, logical_clock "
+        "FROM memories WHERE id=?",
+        (memory_id,),
+    ).fetchone()
+    if not row:
+        return
+    content, tags, category, vv_str, clock = row
+    vv = json.loads(vv_str) if vv_str else {}
+    clock = clock or 0
+    ensure_field_crdt_schema(conn)
+    field_val = {"content": content, "tags": tags, "category": category}
+    updates = [
+        FieldUpdate(
+            memory_id=memory_id,
+            field_name=fname,
+            value=str(field_val.get(fname) or ""),
+            version_vector=vv,
+            logical_clock=clock,
+            last_writer_agent=agent_id,
+        )
+        for fname in REPLICATED_FIELDS
+    ]
+    apply_field_updates_to_db(conn, updates)
+
+
+def project_crdt_to_sql(
+    conn: sqlite3.Connection,
+    memory_id: str,
+) -> set[str]:
+    """Project winning CRDT field values back to the ``memories`` row.
+
+    Called after a CRDT merge — reads live field values from
+    ``memory_field_crdt`` and updates ``memories`` columns that are
+    stale.  Only fields listed in ``REPLICATED_FIELDS`` are projected.
+
+    Returns the set of field names that were updated (caller can use
+    this to decide whether to enqueue background indexing tasks).
+    """
+    fields = read_fields(conn, memory_id)
+    if not fields:
+        return set()
+    allowed = set(REPLICATED_FIELDS)
+    updated: set[str] = set()
+    for field_name in REPLICATED_FIELDS:
+        if field_name not in allowed:
+            continue
+        val = fields.get(field_name)
+        if val is None:
+            continue
+        cur = conn.execute(
+            f"SELECT {field_name} FROM memories WHERE id=?", (memory_id,)
+        )
+        row = cur.fetchone()
+        if row is None:
+            continue
+        if str(row[0] or "") != str(val or ""):
+            conn.execute(
+                f"UPDATE memories SET {field_name}=? WHERE id=?", (val, memory_id)
+            )
+            updated.add(field_name)
+    if updated:
+        conn.commit()
+    return updated
+
+
 def backfill_from_memories(conn: sqlite3.Connection) -> int:
     """One-shot: for every memory row, write a field-crdt row per
     replicated field, seeded with the memory's content/tags/

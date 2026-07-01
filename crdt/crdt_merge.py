@@ -339,7 +339,7 @@ def crdt_save(
 
     if _has_table:
         # Field-level path is available. Delegate.
-        from crdt_field import crdt_field_save
+        from crdt_field import crdt_field_save, project_crdt_to_sql
 
         try:
             _result = crdt_field_save(
@@ -354,6 +354,41 @@ def crdt_save(
                 remote_logical_clock=remote_logical_clock,
                 conflict_policy=conflict_policy,
             )
+
+            if _result.get("applied"):
+                try:
+                    from _lazy_imports import open_db
+
+                    with open_db(db_path, timeout=10.0) as _proj_conn:
+                        _updated = project_crdt_to_sql(_proj_conn, note_id)
+                        if _updated:
+                            from background_queue import (
+                                init_task_queue,
+                                enqueue_task,
+                            )
+
+                            init_task_queue(_proj_conn)
+                            enqueue_task(
+                                _proj_conn,
+                                "embedding_index",
+                                {"note_id": note_id},
+                            )
+                            enqueue_task(
+                                _proj_conn,
+                                "kg_and_fact_index",
+                                {"note_id": note_id},
+                            )
+                            enqueue_task(
+                                _proj_conn,
+                                "semantic_backlinks",
+                                {"note_id": note_id},
+                            )
+                except Exception as _pe:
+                    logger.warning(
+                        "crdt_save: post-merge projection failed for %s: %s",
+                        note_id, _pe,
+                    )
+
             # Map fields to the legacy shape.
             return {
                 "applied": _result["applied"],
