@@ -270,8 +270,15 @@ class TestGetMemoryPathsMutationKillers(unittest.TestCase):
         self.assertEqual(global_mem, GLOBAL_MEM_DIR)
 
     def test_second_element_ends_with_memory(self):
-        project_root, local_mem, global_mem = get_memory_paths()
-        self.assertEqual(local_mem.name, "memory")
+        old_val = os.environ.get("MEMORY_DB_PATH")
+        if "MEMORY_DB_PATH" in os.environ:
+            del os.environ["MEMORY_DB_PATH"]
+        try:
+            project_root, local_mem, global_mem = get_memory_paths()
+            self.assertEqual(local_mem.name, "memory")
+        finally:
+            if old_val is not None:
+                os.environ["MEMORY_DB_PATH"] = old_val
 
     def test_first_element_is_not_none(self):
         project_root, local_mem, global_mem = get_memory_paths()

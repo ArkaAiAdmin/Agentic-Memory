@@ -36,6 +36,7 @@ def _ensure_schema(db: Path) -> None:
                 last_accessed TEXT,
                 fitness_score REAL DEFAULT 0.5,
                 importance INTEGER DEFAULT 3,
+                importance_score REAL DEFAULT 0.5,
                 pinned INTEGER DEFAULT 0,
                 repo_id TEXT,
                 valid_from TEXT,

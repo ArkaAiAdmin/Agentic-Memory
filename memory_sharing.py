@@ -24,12 +24,14 @@ import json
 import logging
 import sqlite3
 import time
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 from typing import Any
 
 from config import resolve_db_path
 
+from db_write_queue import sqlite_write_queue
 from memory_common import safe_close_db, connection_pool
 
 __all__ = [
@@ -119,7 +121,7 @@ def share_memory(note_id: str, agent_id: str, db_path: str | None = None) -> dic
     db = db_path if db_path is not None else str(local_mem / "memory.db")
 
     try:
-        conn = connection_pool.get(db)
+        conn = sqlite_write_queue.start_session(Path(db))
         try:
             _ensure_shared_table(conn)
 
@@ -183,7 +185,7 @@ def share_memory(note_id: str, agent_id: str, db_path: str | None = None) -> dic
                 raise
             return {"enabled": True, "shared_id": shared_id, "agent_id": agent_id}
         finally:
-            safe_close_db(conn)
+            conn.close()
     except Exception as e:
         return {"enabled": True, "error": str(e)}
 
@@ -480,7 +482,7 @@ def import_shared_memory(
     db = db_or_error
 
     try:
-        conn = connection_pool.get(db)
+        conn = sqlite_write_queue.start_session(Path(db))
         work_succeeded = False
         try:
             _ensure_shared_table(conn)
@@ -557,19 +559,14 @@ def import_shared_memory(
                 "new_note_id": new_id,
                 "source_agent": source_agent,
             }
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
         finally:
-            # SEC-3 fix (2026-06-22): safe_close_db defaults to
-            # should_commit=True, which would commit partial work on
-            # any exception inside the try block.  For
-            # import_shared_memory, partial work means a memories
-            # row exists but the FTS/embedding rows don't (the
-            # note is "half-indexed" — committed in the DB but
-            # invisible to search).  Roll back on failure so the
-            # caller can retry cleanly.
-            if work_succeeded:
-                safe_close_db(conn)
-            else:
-                safe_close_db(conn, should_commit=False)
+            conn.close()
     except Exception as e:
         return {"enabled": True, "error": str(e)}
 
@@ -593,7 +590,7 @@ def shared_pool_stats(db_path: str | None = None) -> dict:
             return {"enabled": True, "error": "memory_common not found"}
 
     try:
-        conn = connection_pool.get(db)
+        conn = sqlite_write_queue.start_session(Path(db))
         try:
             _ensure_shared_table(conn)
             _purge_expired_shared(conn)
@@ -607,7 +604,7 @@ def shared_pool_stats(db_path: str | None = None) -> dict:
                 f"SELECT COUNT(DISTINCT category) FROM {_SHARED_TABLE} WHERE category IS NOT NULL"
             ).fetchone()[0]
         finally:
-            safe_close_db(conn)
+            conn.close()
         return {
             "enabled": True,
             "total_shared": total,

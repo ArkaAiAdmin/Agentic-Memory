@@ -150,9 +150,9 @@ class Memory:
         and kg_facts. We now rely on the FK trigger to cascade, and we
         use the pool so the connection is properly returned.
         """
-        from _lazy_imports import connection_pool, safe_close_db
+        from db_write_queue import sqlite_write_queue
 
-        conn = connection_pool.get(str(self._db_path), timeout=10.0)
+        conn = sqlite_write_queue.start_session(Path(self._db_path))
         try:
             conn.execute("PRAGMA foreign_keys=ON")
             n = conn.execute(
@@ -161,7 +161,7 @@ class Memory:
             conn.commit()
             return int(n)
         finally:
-            safe_close_db(conn)
+            conn.close()
 
     def stats(self) -> dict:
         """Return memory and vector index stats."""

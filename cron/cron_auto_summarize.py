@@ -28,7 +28,11 @@ def main() -> int:
         if not sm.SUMMARIZATION_ENABLED:
             print("MEMORY_SUMMARIZATION not enabled, skipping.")
             return
-        result = sm.auto_summarize_long(min_length=500, dry_run=False)
+        db_path = os.environ.get("MEMORY_DB_PATH")
+        if db_path:
+            result = sm.auto_summarize_long(min_length=500, dry_run=False, db_path=db_path)
+        else:
+            result = sm.auto_summarize_long(min_length=500, dry_run=False)
         print(
             f"Auto-summarize: summarized={result.get('summarized', 0)}, "
             f"skipped={result.get('skipped', 0)}"

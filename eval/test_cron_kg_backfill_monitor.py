@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
@@ -175,7 +176,8 @@ class TestCheck(unittest.TestCase):
         # Last entry is 3 days old
         old_ts = datetime.now(timezone.utc) - timedelta(days=3)
         entries = [_make_entry(old_ts, dry_run=False)]
-        code, alerts = mod.check(entries)
+        with mock.patch.object(mod, "_is_in_expected_window", return_value=False):
+            code, alerts = mod.check(entries)
         self.assertEqual(code, 1)
         self.assertTrue(any("days old" in a for a in alerts))
 
@@ -184,7 +186,8 @@ class TestCheck(unittest.TestCase):
         # Last entry is 10 days old
         old_ts = datetime.now(timezone.utc) - timedelta(days=10)
         entries = [_make_entry(old_ts, dry_run=False)]
-        code, alerts = mod.check(entries)
+        with mock.patch.object(mod, "_is_in_expected_window", return_value=False):
+            code, alerts = mod.check(entries)
         self.assertEqual(code, 2)
         self.assertTrue(any("over a week" in a for a in alerts))
 

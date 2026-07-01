@@ -530,7 +530,7 @@ def run_heartbeat(
         )
 
         if ADAPTIVE_RETENTION_ENABLED:
-            adaptive_stats = batch_update_retention(dry_run=dry_run, db_path=db_path)
+            adaptive_stats = batch_update_retention(dry_run=dry_run, db_path=db_path, conn=conn)
     except ImportError:
         pass
 

@@ -465,13 +465,12 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
     if not entries:
         return summary
 
-    from db import connection_pool
+    from db_write_queue import sqlite_write_queue
 
     db_path = get_db_path()
     conn = None
     try:
-        conn = connection_pool.get(str(db_path), timeout=30.0)
-        conn.execute("PRAGMA busy_timeout = 30000;")
+        conn = sqlite_write_queue.start_session(db_path)
     except Exception as e:
         logger.warning(
             "auto-save daemon: failed to acquire DB connection for batch: %s", e
@@ -520,7 +519,8 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
                 summary["failed"] += 1
     finally:
         if conn is not None:
-            from memory_common import safe_close_db
-
-            safe_close_db(conn, should_commit=False)
+            try:
+                conn.close()
+            except Exception:
+                pass
     return summary

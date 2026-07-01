@@ -44,8 +44,8 @@ def _env_for(db_path: Path) -> dict:
 def _call_tool_complete(tool: str, params: str, preview: str = "", env: dict | None = None):
     from background.tool_complete import tool_complete
 
-    effective_env = env or os.environ
-    extras = {k: v for k, v in effective_env.items() if k not in os.environ}
+    effective_env = env or {}
+    extras = {k: v for k, v in effective_env.items() if os.environ.get(k) != v}
     old = {}
     for k, v in extras.items():
         old[k] = os.environ.get(k)

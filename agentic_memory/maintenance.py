@@ -20,6 +20,7 @@ from agentic_memory.utils import (
     safe_close_db,
     get_db_connection,
 )
+from db_write_queue import sqlite_write_queue
 
 
 def _safe_json_parse(raw: str) -> Any:
@@ -399,14 +400,14 @@ class Maintenance:
                 "enabled": False,
                 "message": "Self-directed memory disabled. Set MEMORY_SELF_DIRECTED=1 to enable.",
             }
-        conn = get_db_connection(self.db_path)
+        conn = sqlite_write_queue.start_session(Path(self.db_path))
         try:
             result = run_heartbeat(conn, dry_run=False)
             return dict(result)
         except Exception as e:
             raise MaintenanceError(f"Heartbeat failed: {e}") from e
         finally:
-            safe_close_db(conn)
+            conn.close()
 
     # ------------------------------------------------------------------
     # Tier statistics

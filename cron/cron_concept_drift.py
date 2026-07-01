@@ -134,7 +134,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         t0 = time.time()
-        conn = sqlite3.connect(args.db_path)
+        from db_write_queue import sqlite_write_queue
+        conn = sqlite_write_queue.start_session(Path(args.db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         try:
             centroid = _compute_centroid(conn)

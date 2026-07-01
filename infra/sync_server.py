@@ -91,22 +91,18 @@ def _open_server_db(db_path: str) -> sqlite3.Connection:
     # Imported lazily to avoid a hard dependency on db.py at
     # import time (some test runners use sync_server without the
     # full DB stack).
-    from db import connection_pool
+    from db_write_queue import sqlite_write_queue
     from db_migrations import run_schema_setup
 
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    conn = sqlite_write_queue.start_session(Path(db_path))
     try:
-        # Idempotent: run_schema_setup checks schema_version.
         run_schema_setup(conn)
         conn.execute("PRAGMA busy_timeout = 30000;")
     except Exception:
-        # If the project DB stack is unavailable, fall back to a
-        # raw connection with safe defaults. S2 callers will still
-        # work because the kg_crdt module manages its own schema.
         conn.close()
         conn = sqlite3.connect(str(db_path), timeout=30.0)
         conn.execute("PRAGMA foreign_keys = ON")
-    return conn  # type: ignore[no-any-return]
+    return conn
 
 
 class _SyncHandler(BaseHTTPRequestHandler):

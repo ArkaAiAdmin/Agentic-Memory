@@ -126,16 +126,14 @@ def _archive_one_autosave(
     """
     note_id = f"sessions/auto-{date_str}_{ts_part}-{tool_slug}"
     try:
-        conn = connection_pool.get(str(get_db_path()), timeout=10.0)
+        from db_write_queue import sqlite_write_queue
+        conn = sqlite_write_queue.start_session(get_db_path())
         try:
             conn.execute("PRAGMA foreign_keys=ON")
             rowid = conn.execute(
                 "SELECT rowid FROM memories WHERE id = ?", (note_id,)
             ).fetchone()
             if rowid:
-                # Only manually delete from FTS5 if the content-sync
-                # trigger is NOT present. With the trigger, DELETE FROM
-                # memories automatically removes the FTS5 row.
                 trigger_exists = conn.execute(
                     "SELECT name FROM sqlite_master WHERE type='trigger' "
                     "AND name='memories_ad'"
@@ -153,7 +151,10 @@ def _archive_one_autosave(
                 )
             conn.commit()
         finally:
-            safe_close_db(conn)
+            try:
+                conn.close()
+            except Exception:
+                pass
     except Exception as e:
         logger.warning("could not delete archived DB row for %s: %s", path.name, e)
     # Now move the file (idempotent: if missing, skip silently).
@@ -178,7 +179,8 @@ def _sweep_orphan_rows() -> None:
     Extracted 2026-06-22 from daily_digest().
     """
     try:
-        conn = connection_pool.get(str(get_db_path()), timeout=10.0)
+        from db_write_queue import sqlite_write_queue
+        conn = sqlite_write_queue.start_session(get_db_path())
         try:
             conn.execute("PRAGMA foreign_keys=OFF")
             try:
@@ -206,7 +208,10 @@ def _sweep_orphan_rows() -> None:
                 except Exception:
                     logger.warning("Failed to restore PRAGMA foreign_keys=ON")
         finally:
-            safe_close_db(conn)
+            try:
+                conn.close()
+            except Exception:
+                pass
     except Exception as e:
         logger.debug("daily-digest orphan cleanup skipped: %s", e)
 

@@ -451,7 +451,7 @@ class TestAuditIntegration(unittest.TestCase):
         from unittest.mock import patch
 
         slug = f"unit-err-{int(time.time())}"
-        with patch("save_pipeline.connection_pool.get", side_effect=Exception("DB error")):
+        with patch("db_write_queue.sqlite_write_queue.start_session", side_effect=Exception("DB error")):
             save_memory(
                 content=f"---\ncategory: lessons\ntitle_slug: {slug}\ntags: []\nvalid_from: {now_iso()}\n---\n\nError path.",
                 category="lessons",

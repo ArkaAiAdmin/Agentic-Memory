@@ -25,7 +25,7 @@ sys.path.insert(0, _parent)
 
 from _flock import acquire_lock_or_exit  # noqa: E402
 from background.auto_save import _get_sessions_dir, _auto_log_archive_dir, get_db_path  # noqa: E402
-from memory_common import connection_pool, safe_close_db  # noqa: E402
+from db_write_queue import sqlite_write_queue  # noqa: E402
 
 DEFAULT_MAX_AGE_DAYS = 30
 
@@ -82,7 +82,7 @@ def cleanup_auto_logs(dry_run: bool = False, max_age_days: int = DEFAULT_MAX_AGE
         }
 
     archive_dir.mkdir(parents=True, exist_ok=True)
-    db = connection_pool.get(str(db_path), timeout=30.0)
+    db = sqlite_write_queue.start_session(db_path)
     moved = 0
     errors = []
     try:
@@ -105,7 +105,7 @@ def cleanup_auto_logs(dry_run: bool = False, max_age_days: int = DEFAULT_MAX_AGE
         db.rollback()
         raise
     finally:
-        safe_close_db(db)
+        db.close()
 
     return {
         "moved": moved,

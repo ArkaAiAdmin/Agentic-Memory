@@ -312,6 +312,7 @@ class TestMultiAgentIntegration(unittest.TestCase):
                 deleted_at TEXT,
                 category TEXT,
                 tier TEXT DEFAULT 'warm',
+                importance_score REAL DEFAULT 0.5,
                 metadata TEXT,
                 repo_id TEXT,
                 hash TEXT

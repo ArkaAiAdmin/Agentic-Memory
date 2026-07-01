@@ -53,7 +53,7 @@ def _call_tool_complete(
 
     effective_env = env or os.environ
     # Merge extra env vars into os.environ for the duration of the call
-    extras = {k: v for k, v in effective_env.items() if k not in os.environ}
+    extras = {k: v for k, v in effective_env.items() if os.environ.get(k) != v}
     old = {}
     for k, v in extras.items():
         old[k] = os.environ.get(k)

@@ -74,10 +74,9 @@ class TestEnsureDbExistsReturnsValue(unittest.TestCase):
             self.assertIsNotNone(result)
 
     def test_returns_false_on_error(self):
-        with tempfile.TemporaryDirectory() as td:
-            db_path = Path(td) / "nonexistent" / "deep" / "test.db"
-            result = _ensure_db_exists(db_path)
-            self.assertFalse(result)
+        db_path = Path("/nonexistent/deep/test.db")
+        result = _ensure_db_exists(db_path)
+        self.assertFalse(result)
 
 
 class TestAcquireLockReturnsValue(unittest.TestCase):

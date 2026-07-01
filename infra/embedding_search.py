@@ -892,16 +892,26 @@ class EmbeddingSearch:
         if to_save:
             try:
                 now = time.time()
-                with db:
-                    db.executemany(
-                        "INSERT OR REPLACE INTO memory_embeddings "
-                        "(memory_id, content_hash, embedding, model_revision, dim, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?)",
-                        [
-                            (mid, chash, vec.tobytes(), MODEL_REVISION, dim, now)
-                            for mid, chash, vec, dim in to_save
-                        ],
-                    )
+                try:
+                    db.execute("PRAGMA busy_timeout = 50;")
+                except Exception:
+                    pass
+                try:
+                    with db:
+                        db.executemany(
+                            "INSERT OR REPLACE INTO memory_embeddings "
+                            "(memory_id, content_hash, embedding, model_revision, dim, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?)",
+                            [
+                                (mid, chash, vec.tobytes(), MODEL_REVISION, dim, now)
+                                for mid, chash, vec, dim in to_save
+                            ],
+                        )
+                finally:
+                    try:
+                        db.execute("PRAGMA busy_timeout = 30000;")
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.warning("failed to write embeddings back: %s", e)
 

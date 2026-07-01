@@ -1085,65 +1085,57 @@ def _enforce_compaction_pin_limit():
     """
     try:
         sys.path.insert(0, str(Path(__file__).parent))
-        import sqlite3
-        from memory_common import get_memory_paths
+        from memory_common import get_memory_paths, open_db
 
         _, local_mem, _ = get_memory_paths()
         db_path = local_mem / "memory.db"
-        conn = sqlite3.connect(db_path)
-        # note_id already carries 'sessions/compaction-save-...' so use
-        # MEMORY_DIR directly — appending another 'sessions/' creates a
-        # double-nested path that never matches the real .md file.
         sessions_dir = MEMORY_DIR
 
-        rows = conn.execute(
-            "SELECT id FROM memories "
-            "WHERE category='sessions' AND pinned=1 AND id LIKE 'sessions/compaction-save-%' "
-            "ORDER BY created_at DESC"
-        ).fetchall()
-        to_unpin = [r[0] for r in rows[COMPACTION_PIN_LIMIT:]]
-        if to_unpin:
-            conn.executemany(
-                "UPDATE memories SET pinned=0 WHERE id=?", [(i,) for i in to_unpin]
-            )
-            conn.commit()
-            logger.info(
-                "compaction pin limit: unpinned %d old compaction saves, kept %d",
-                len(to_unpin),
-                min(COMPACTION_PIN_LIMIT, len(rows)),
-            )
+        with open_db(db_path, write=True) as conn:
+            rows = conn.execute(
+                "SELECT id FROM memories "
+                "WHERE category='sessions' AND pinned=1 AND id LIKE 'sessions/compaction-save-%' "
+                "ORDER BY created_at DESC"
+            ).fetchall()
+            to_unpin = [r[0] for r in rows[COMPACTION_PIN_LIMIT:]]
+            if to_unpin:
+                conn.executemany(
+                    "UPDATE memories SET pinned=0 WHERE id=?", [(i,) for i in to_unpin]
+                )
+                logger.info(
+                    "compaction pin limit: unpinned %d old compaction saves, kept %d",
+                    len(to_unpin),
+                    min(COMPACTION_PIN_LIMIT, len(rows)),
+                )
 
-        # Delete compaction notes older than COMPACTION_RETENTION_DAYS
-        all_rows = conn.execute(
-            "SELECT id FROM memories "
-            "WHERE category='sessions' AND id LIKE 'sessions/compaction-save-%'"
-        ).fetchall()
-        to_delete = []
-        for (note_id,) in all_rows:
-            age = _compaction_note_age_days(note_id)
-            if age is not None and age > COMPACTION_RETENTION_DAYS:
-                to_delete.append(note_id)
+            all_rows = conn.execute(
+                "SELECT id FROM memories "
+                "WHERE category='sessions' AND id LIKE 'sessions/compaction-save-%'"
+            ).fetchall()
+            to_delete = []
+            for (note_id,) in all_rows:
+                age = _compaction_note_age_days(note_id)
+                if age is not None and age > COMPACTION_RETENTION_DAYS:
+                    to_delete.append(note_id)
 
-        if to_delete:
-            for note_id in to_delete:
-                md = sessions_dir / f"{note_id}.md"
-                if md.exists():
-                    md.unlink()
-                conn.execute("DELETE FROM memories WHERE id=?", (note_id,))
-            conn.commit()
-            logger.info(
-                "compaction retention: deleted %d notes older than %d days",
-                len(to_delete),
-                COMPACTION_RETENTION_DAYS,
-            )
+            if to_delete:
+                for note_id in to_delete:
+                    md = sessions_dir / f"{note_id}.md"
+                    if md.exists():
+                        md.unlink()
+                    conn.execute("DELETE FROM memories WHERE id=?", (note_id,))
+                logger.info(
+                    "compaction retention: deleted %d notes older than %d days",
+                    len(to_delete),
+                    COMPACTION_RETENTION_DAYS,
+                )
 
-        # Sweep orphaned .md files whose DB row was already deleted by
-        # a previous run (or manually) so the filesystem doesn't drift.
-        valid_ids = set()
-        for (nid,) in conn.execute(
-            "SELECT id FROM memories WHERE id LIKE 'sessions/compaction-save-%'"
-        ).fetchall():
-            valid_ids.add(nid)
+            valid_ids = set()
+            for (nid,) in conn.execute(
+                "SELECT id FROM memories WHERE id LIKE 'sessions/compaction-save-%'"
+            ).fetchall():
+                valid_ids.add(nid)
+
         orphan_count = 0
         for md in sessions_dir.glob("compaction-save-*.md"):
             note_id = "sessions/" + md.stem
@@ -1157,8 +1149,9 @@ def _enforce_compaction_pin_limit():
             logger.info(
                 "compaction retention: removed %d orphaned .md files", orphan_count
             )
-    except Exception as exc:
-        logger.warning("compaction retention enforcement failed: %s", exc)
+
+    except Exception as e:
+        logger.warning("compaction pin limit / retention: %s", e)
 
 
 def _write_compaction_note(

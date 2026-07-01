@@ -49,7 +49,6 @@ sys.path.insert(0, _BG_DIR)
 _REPO_ROOT = os.path.dirname(_BG_DIR)
 sys.path.insert(0, _REPO_ROOT)
 from background_queue import init_task_queue, dequeue_task, complete_task, fail_task
-from memory_common import safe_close_db, connection_pool
 from infrastructure import resolve_active_memory_dir
 
 logger = logging.getLogger(__name__)
@@ -692,7 +691,8 @@ class WorkerPool:
                     logger.exception("worker pool: worker thread crashed")
 
     def _worker_loop(self, worker_id: int, drain: bool, max_tasks: int) -> None:
-        conn = connection_pool.get(str(self._db_path), timeout=30.0)
+        from db_write_queue import sqlite_write_queue
+        conn = sqlite_write_queue.start_session(self._db_path)
         processed = 0
         t_drain = time.time()
         try:
@@ -721,7 +721,10 @@ class WorkerPool:
         except Exception:
             logger.exception("worker pool: worker %d crashed", worker_id)
         finally:
-            safe_close_db(conn)
+            try:
+                conn.close()
+            except Exception:
+                pass
             logger.info(
                 "worker pool: worker %d stopped (processed %d tasks)",
                 worker_id, processed,
@@ -769,33 +772,32 @@ def run_worker(
     )
 
     # Init phase — runs once with a temporary connection, then workers
-    # get their own connections from the pool.
-    init_conn = connection_pool.get(str(db_path), timeout=30.0)
-    try:
-        init_task_queue(init_conn)
-    except Exception as e:
-        logger.error("worker: failed to init task queue: %s", e)
-        safe_close_db(init_conn)
-        return
+    # get their own connections via the write queue.
+    from infra.db import open_db
+    with open_db(db_path, timeout=30.0) as init_conn:
+        try:
+            init_task_queue(init_conn)
+        except Exception as e:
+            logger.error("worker: failed to init task queue: %s", e)
+            return
 
-    _check_and_reconcile_vec_drift(init_conn, db_path)
+        _check_and_reconcile_vec_drift(init_conn, db_path)
 
-    try:
-        from background.corpus_budget_guard import run_corpus_budget_guard
+        try:
+            from background.corpus_budget_guard import run_corpus_budget_guard
 
-        guard_status = run_corpus_budget_guard(db_path, conn=init_conn)
-        if guard_status.get("compaction_enqueued"):
-            logger.info(
-                "worker: corpus budget exceeded (~%d tokens, budget %d) — "
-                "compaction enqueued",
-                guard_status.get("tokens", 0),
-                guard_status.get("budget", 0),
-            )
-    except Exception as _guard_exc:
-        logger.debug("worker: corpus budget guard failed: %s", _guard_exc)
+            guard_status = run_corpus_budget_guard(db_path, conn=init_conn)
+            if guard_status.get("compaction_enqueued"):
+                logger.info(
+                    "worker: corpus budget exceeded (~%d tokens, budget %d) — "
+                    "compaction enqueued",
+                    guard_status.get("tokens", 0),
+                    guard_status.get("budget", 0),
+                )
+        except Exception as _guard_exc:
+            logger.debug("worker: corpus budget guard failed: %s", _guard_exc)
 
-    _maybe_run_wal_checkpoint(init_conn, db_path)
-    safe_close_db(init_conn)
+        _maybe_run_wal_checkpoint(init_conn, db_path)
 
     # Delegate to WorkerPool when n_workers > 1
     if n_workers > 1:
@@ -803,8 +805,9 @@ def run_worker(
         pool.run(drain=drain, max_tasks=max_tasks)
         return
 
-    # Single-threaded path (unchanged from original)
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    # Single-threaded path
+    from db_write_queue import sqlite_write_queue
+    conn = sqlite_write_queue.start_session(db_path)
     try:
         if drain:
             _DRAIN_MAX_WALL_S = int(
@@ -853,7 +856,10 @@ def run_worker(
                             break
                         time.sleep(1)
     finally:
-        safe_close_db(conn)
+        try:
+            conn.close()
+        except Exception:
+            pass
         logger.info("worker: stopped")
 
 

@@ -114,16 +114,18 @@ def get_memory_paths() -> "Tuple[Path, Path, Path]":
     at `GLOBAL_SCRIPTS_DIR` (one level up).
 
     DB location heuristic:
-    1. If project_root/memory/memory.db exists → local_mem = project_root/memory
-    2. If project_root/memory.db exists directly → local_mem = project_root
-    3. Otherwise → local_mem = project_root/memory (may not exist yet)
-
-    2026-06-20: tightened return type from ``Tuple[Path | None, Path, Path]``
-    to ``Tuple[Path, Path, Path]``. The ``Path | None`` was vestigial —
-    the function's fallback (line below) guarantees ``project_root`` is
-    always a Path. The older type caused spurious LSP/mypy errors at
-    every call site that did ``project_root / m``.
+    1. If MEMORY_DB_PATH is set in environment → local_mem = db_path.parent
+    2. If project_root/memory/memory.db exists → local_mem = project_root/memory
+    3. If project_root/memory.db exists directly → local_mem = project_root
+    4. Otherwise → local_mem = project_root/memory (may not exist yet)
     """
+    env_db = os.environ.get("MEMORY_DB_PATH")
+    if env_db:
+        db_path = Path(env_db)
+        local_mem = db_path.parent
+        project_root = find_project_root(local_mem) or local_mem
+        return (project_root, local_mem, GLOBAL_MEM_DIR)
+
     cwd = Path(os.getcwd())
     project_root = find_project_root(cwd)
     if project_root is None:

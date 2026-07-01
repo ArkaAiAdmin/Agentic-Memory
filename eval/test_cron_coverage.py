@@ -595,7 +595,10 @@ class TestCronAutoSummarizeBehavior(unittest.TestCase):
             buf = self._io.StringIO()
             with self._contextlib.redirect_stdout(buf):
                 self.mod.main()
-        mock_call.assert_called_once_with(min_length=500, dry_run=False)
+        self.assertEqual(mock_call.call_count, 1)
+        kwargs = mock_call.call_args.kwargs
+        self.assertEqual(kwargs.get("min_length"), 500)
+        self.assertEqual(kwargs.get("dry_run"), False)
         self.assertIn("summarized=7", buf.getvalue())
         self.assertIn("skipped=3", buf.getvalue())
 

@@ -12,10 +12,9 @@ from agentic_memory.exceptions import (
 )
 from agentic_memory.models import Fact
 from agentic_memory.utils import (
-    get_db_connection,
     resolve_db_path,
-    safe_close_db,
 )
+from db_write_queue import sqlite_write_queue
 
 
 class TemporalKG:
@@ -249,7 +248,7 @@ class TemporalKG:
         """
         from fact_temporal import invalidate_fact as _invalidate_fact
 
-        conn = get_db_connection(self._db_path)
+        conn = sqlite_write_queue.start_session(Path(self._db_path))
         try:
             ok = _invalidate_fact(conn, int(fact_id), reason=reason)
             if not ok:
@@ -262,4 +261,4 @@ class TemporalKG:
             conn.commit()
             return ok
         finally:
-            safe_close_db(conn)
+            conn.close()

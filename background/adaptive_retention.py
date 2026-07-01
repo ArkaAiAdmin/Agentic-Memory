@@ -220,6 +220,7 @@ def batch_update_retention(
     base_halflife: float = _DEFAULT_HALF_LIFE_DAYS,
     dry_run: bool = False,
     db_path: str | None = None,
+    conn: sqlite3.Connection | None = None,
 ) -> dict:
     """Batch compute and optionally store adaptive half-lives for all notes.
 
@@ -230,6 +231,8 @@ def batch_update_retention(
         dry_run: if True, don't write anything
         db_path: optional explicit path to the database. If not provided,
                  resolves via get_memory_paths() (CWD-dependent).
+        conn: optional active Connection/ProxyConnection to use.
+              If provided, prevents opening a new session.
 
     Returns:
         dict with stats
@@ -252,18 +255,27 @@ def batch_update_retention(
     except ImportError:
         return {"enabled": True, "error": "memory_common not found"}
 
+    conn_to_use = None
+    should_close = False
     try:
-        conn = connection_pool.get(actual_db)
-        ensure_adaptive_schema(conn)
+        if conn is None:
+            from db_write_queue import sqlite_write_queue
+            conn_to_use = sqlite_write_queue.start_session(Path(actual_db))
+            should_close = True
+        else:
+            conn_to_use = conn
+            should_close = False
+
+        ensure_adaptive_schema(conn_to_use)
         try:
-            rows = conn.execute(
+            rows = conn_to_use.execute(
                 "SELECT id, metadata FROM memories WHERE deleted_at IS NULL"
             ).fetchall()
 
             # Pre-compute audit log search hits once (O(M) instead of O(N*M))
             # and stash in the module-level cache so compute_adaptive_halflife
             # can reuse it without re-scanning.
-            _audit_hits_cache = _build_audit_hits_index(conn)
+            _audit_hits_cache = _build_audit_hits_index(conn_to_use)
             with _audit_hits_cache_lock:
                 _audit_hits_cache_by_db[actual_db] = _audit_hits_cache
 
@@ -275,7 +287,7 @@ def batch_update_retention(
                     note_id,
                     base_halflife,
                     actual_db,
-                    conn=conn,
+                    conn=conn_to_use,
                     audit_hits=_audit_hits_cache.get(note_id, 0),
                 )
 
@@ -296,16 +308,20 @@ def batch_update_retention(
                         meta = {}
                     meta["adaptive_halflife_days"] = round(halflife, 1)
                     meta["base_halflife_days"] = base_halflife
-                    conn.execute(
+                    conn_to_use.execute(
                         "UPDATE memories SET metadata = ? WHERE id = ?",
                         (json.dumps(meta), note_id),
                     )
                     updated += 1
 
             if not dry_run:
-                conn.commit()
+                conn_to_use.commit()
         finally:
-            safe_close_db(conn)
+            if should_close and conn_to_use:
+                try:
+                    conn_to_use.close()
+                except Exception:
+                    pass
         return {
             "enabled": True,
             "total_notes": len(rows),

@@ -19,7 +19,6 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from memory_common import safe_close_db
 from infrastructure import resolve_active_memory_dir
 
 # Patterns that suggest a reusable lesson
@@ -248,9 +247,9 @@ def main():
         print(f"ERROR: no memory.db at {db_path}")
         sys.exit(1)
 
-    from db import connection_pool
+    from db_write_queue import sqlite_write_queue
 
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    conn = sqlite_write_queue.start_session(db_path)
     conn.execute("PRAGMA busy_timeout = 30000;")
     try:
         stats = scan_sessions_and_learn(conn, days=days, dry_run=dry_run)
@@ -261,7 +260,7 @@ def main():
             f"{' (dry run)' if dry_run else ''}"
         )
     finally:
-        safe_close_db(conn)
+        conn.close()
 
 
 if __name__ == "__main__":

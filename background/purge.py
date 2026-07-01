@@ -27,13 +27,13 @@ def purge_auto_saves(dry_run: bool = False) -> dict:
     Returns a dict with counts of deleted DB rows and moved files.
     """
     from background.auto_save import get_db_path, _get_sessions_dir, _now_iso  # noqa: E402
-    from memory_common import connection_pool, safe_close_db  # noqa: E402
+    from db_write_queue import sqlite_write_queue
 
     db_path = get_db_path()
     if not db_path.exists():
         return {"error": "no database found", "deleted": 0}
 
-    db = connection_pool.get(str(db_path), timeout=10.0)
+    db = sqlite_write_queue.start_session(db_path)
     db.row_factory = sqlite3.Row
     try:
         rows = db.execute(
@@ -79,4 +79,4 @@ def purge_auto_saves(dry_run: bool = False) -> dict:
             "archive_dir": str(archive_dir),
         }
     finally:
-        safe_close_db(db)
+        db.close()

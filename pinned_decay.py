@@ -87,95 +87,96 @@ def check(dry_run: bool = True, db_path: Optional[Path] = None) -> dict:
     db_path = db_path or resolve_db()
     if not db_path.exists():
         return {"error": f"no DB at {db_path}"}
-    from _lazy_imports import connection_pool
+    from db_write_queue import sqlite_write_queue
 
-    conn = connection_pool.get(str(db_path), timeout=30.0)
-    conn.execute("PRAGMA busy_timeout = 30000;")
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(memories)").fetchall()}
-    if "last_accessed" not in cols:
-        return {
-            "error": "last_accessed column missing — run migrate_last_accessed.py first"
+    conn = sqlite_write_queue.start_session(db_path)
+    try:
+        conn.execute("PRAGMA busy_timeout = 30000;")
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(memories)").fetchall()}
+        if "last_accessed" not in cols:
+            return {
+                "error": "last_accessed column missing — run migrate_last_accessed.py first"
+            }
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        rows = conn.execute(
+            """SELECT id, pinned, fitness_score, access_count, success_score,
+                      created_at, updated_at, observed_at, last_accessed, importance_score
+               FROM memories WHERE pinned = 1"""
+        ).fetchall()
+        col_names = [
+            "id",
+            "pinned",
+            "fitness_score",
+            "access_count",
+            "success_score",
+            "created_at",
+            "updated_at",
+            "observed_at",
+            "last_accessed",
+            "importance_score",
+        ]
+        metrics = [dict(zip(col_names, r)) for r in rows]
+
+        auto_unpin = []
+        review = []
+        for m in metrics:
+            updated = _parse_dt(m["updated_at"])
+            last_acc = _parse_dt(m["last_accessed"]) or updated
+            if last_acc is None:
+                last_acc = _parse_dt(m["created_at"])
+            if last_acc is None:
+                continue
+            days_since_access = (now - last_acc).days
+            access_count = m["access_count"] or 0
+            psi = days_since_access / max(1, access_count)
+            m["psi"] = round(psi, 2)
+            m["days_since_access"] = days_since_access
+            m["last_accessed"] = last_acc.isoformat(timespec="seconds")
+            if psi > UNPIN_PSI and days_since_access > UNPIN_DAYS:
+                auto_unpin.append(m)
+            elif psi > REVIEW_PSI and days_since_access > REVIEW_DAYS:
+                review.append(m)
+
+        unpinned_ids = []
+        if auto_unpin and not dry_run:
+            for m in auto_unpin:
+                conn.execute("UPDATE memories SET pinned = 0 WHERE id = ?", (m["id"],))
+                unpinned_ids.append(m["id"])
+            conn.commit()
+
+        pinned_total = len(metrics)
+        health_summary = {
+            "pinned_total": pinned_total,
+            "auto_unpin_candidates": len(auto_unpin),
+            "review_candidates": len(review),
+            "unpinned": unpinned_ids if not dry_run else [],
         }
 
-    now = datetime.datetime.now(datetime.timezone.utc)
-    rows = conn.execute(
-        """SELECT id, pinned, fitness_score, access_count, success_score,
-                  created_at, updated_at, observed_at, last_accessed, importance_score
-           FROM memories WHERE pinned = 1"""
-    ).fetchall()
-    col_names = [
-        "id",
-        "pinned",
-        "fitness_score",
-        "access_count",
-        "success_score",
-        "created_at",
-        "updated_at",
-        "observed_at",
-        "last_accessed",
-        "importance_score",
-    ]
-    metrics = [dict(zip(col_names, r)) for r in rows]
+        def _trim(m):
+            return {
+                "id": m["id"],
+                "psi": m["psi"],
+                "days_since_access": m["days_since_access"],
+                "access_count": m["access_count"],
+                "last_accessed": m["last_accessed"],
+                "importance": m["importance_score"],
+                "fitness_score": round(m["fitness_score"] or 0.0, 2),
+            }
 
-    auto_unpin = []
-    review = []
-    for m in metrics:
-        updated = _parse_dt(m["updated_at"])
-        last_acc = _parse_dt(m["last_accessed"]) or updated
-        if last_acc is None:
-            last_acc = _parse_dt(m["created_at"])
-        if last_acc is None:
-            continue
-        days_since_access = (now - last_acc).days
-        access_count = m["access_count"] or 0
-        psi = days_since_access / max(1, access_count)
-        m["psi"] = round(psi, 2)
-        m["days_since_access"] = days_since_access
-        m["last_accessed"] = last_acc.isoformat(timespec="seconds")
-        if psi > UNPIN_PSI and days_since_access > UNPIN_DAYS:
-            auto_unpin.append(m)
-        elif psi > REVIEW_PSI and days_since_access > REVIEW_DAYS:
-            review.append(m)
-
-    unpinned_ids = []
-    if auto_unpin and not dry_run:
-        for m in auto_unpin:
-            conn.execute("UPDATE memories SET pinned = 0 WHERE id = ?", (m["id"],))
-            unpinned_ids.append(m["id"])
-        conn.commit()
-
-    # Summary stats
-    pinned_total = len(metrics)
-    health_summary = {
-        "pinned_total": pinned_total,
-        "auto_unpin_candidates": len(auto_unpin),
-        "review_candidates": len(review),
-        "unpinned": unpinned_ids if not dry_run else [],
-    }
-
-    # Trim fields for output
-    def _trim(m):
         return {
-            "id": m["id"],
-            "psi": m["psi"],
-            "days_since_access": m["days_since_access"],
-            "access_count": m["access_count"],
-            "last_accessed": m["last_accessed"],
-            "importance": m["importance_score"],
-            "fitness_score": round(m["fitness_score"] or 0.0, 2),
+            "dry_run": dry_run,
+            "db": str(db_path),
+            "policies": {
+                "unpin": f"psi > {UNPIN_PSI} AND days > {UNPIN_DAYS}",
+                "review": f"psi > {REVIEW_PSI} AND days > {REVIEW_DAYS}",
+            },
+            "summary": health_summary,
+            "auto_unpin": [_trim(m) for m in sorted(auto_unpin, key=lambda x: -x["psi"])],
+            "review": [_trim(m) for m in sorted(review, key=lambda x: -x["psi"])],
         }
-
-    return {
-        "dry_run": dry_run,
-        "db": str(db_path),
-        "policies": {
-            "unpin": f"psi > {UNPIN_PSI} AND days > {UNPIN_DAYS}",
-            "review": f"psi > {REVIEW_PSI} AND days > {REVIEW_DAYS}",
-        },
-        "summary": health_summary,
-        "auto_unpin": [_trim(m) for m in sorted(auto_unpin, key=lambda x: -x["psi"])],
-        "review": [_trim(m) for m in sorted(review, key=lambda x: -x["psi"])],
-    }
+    finally:
+        conn.close()
 
 
 def main():

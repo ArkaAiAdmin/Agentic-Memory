@@ -61,11 +61,45 @@ def _setup_test_env(tmpdir: str):
     mcp_tools.GLOBAL_MEM_DIR = tmp
     mcp_tools.get_memory_paths = lambda: (tmp, tmp, tmp)
 
+    import memory_common
+    import infra.memory_common
+    import infra.memory_config
+    import infra.infrastructure
+    import infrastructure
+
+    orig_mem_common_paths = getattr(memory_common, "get_memory_paths", None)
+    orig_infra_mem_common_paths = getattr(infra.memory_common, "get_memory_paths", None)
+    orig_infra_config_paths = getattr(infra.memory_config, "get_memory_paths", None)
+    orig_infra_infra_resolve = getattr(infra.infrastructure, "resolve_active_memory_dir", None)
+    orig_infra_resolve = getattr(infrastructure, "resolve_active_memory_dir", None)
+
+    mock_paths = lambda: (tmp, tmp, tmp)
+    mock_resolve = lambda **_: tmp
+
+    if orig_mem_common_paths is not None:
+        memory_common.get_memory_paths = mock_paths
+    if orig_infra_mem_common_paths is not None:
+        infra.memory_common.get_memory_paths = mock_paths
+    if orig_infra_config_paths is not None:
+        infra.memory_config.get_memory_paths = mock_paths
+    if orig_infra_infra_resolve is not None:
+        infra.infrastructure.resolve_active_memory_dir = mock_resolve
+    if orig_infra_resolve is not None:
+        infrastructure.resolve_active_memory_dir = mock_resolve
+
     rebuild_index(tmp, tmp / "memory.db")
-    return orig_global, orig_resolve, orig_paths
+    return (
+        orig_global, orig_resolve, orig_paths,
+        orig_mem_common_paths, orig_infra_mem_common_paths,
+        orig_infra_config_paths, orig_infra_infra_resolve, orig_infra_resolve
+    )
 
 
-def _restore_test_env(orig_global, orig_resolve, orig_paths):
+def _restore_test_env(
+    orig_global, orig_resolve, orig_paths,
+    orig_mem_common_paths, orig_infra_mem_common_paths,
+    orig_infra_config_paths, orig_infra_infra_resolve, orig_infra_resolve
+):
     """Restore original DB path functions."""
     memory_mcp.GLOBAL_MEM_DIR = orig_global
     memory_mcp.resolve_active_memory_dir = orig_resolve
@@ -79,6 +113,23 @@ def _restore_test_env(orig_global, orig_resolve, orig_paths):
     mcp_tools.resolve_active_memory_dir = orig_resolve
     mcp_tools.GLOBAL_MEM_DIR = orig_global
     mcp_tools.get_memory_paths = orig_paths
+
+    import memory_common
+    import infra.memory_common
+    import infra.memory_config
+    import infra.infrastructure
+    import infrastructure
+
+    if orig_mem_common_paths is not None:
+        memory_common.get_memory_paths = orig_mem_common_paths
+    if orig_infra_mem_common_paths is not None:
+        infra.memory_common.get_memory_paths = orig_infra_mem_common_paths
+    if orig_infra_config_paths is not None:
+        infra.memory_config.get_memory_paths = orig_infra_config_paths
+    if orig_infra_infra_resolve is not None:
+        infra.infrastructure.resolve_active_memory_dir = orig_infra_infra_resolve
+    if orig_infra_resolve is not None:
+        infrastructure.resolve_active_memory_dir = orig_infra_resolve
 
 
 def _delete_note_direct(db_path, note_id):

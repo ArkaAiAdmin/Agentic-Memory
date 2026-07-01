@@ -222,7 +222,9 @@ def summarize_note(
     db = db_path if db_path is not None else str(local_mem / "memory.db")
 
     try:
-        conn = connection_pool.get(db)
+        from db_write_queue import sqlite_write_queue
+
+        conn = sqlite_write_queue.start_session(Path(db))
         try:
             row = conn.execute(
                 "SELECT content FROM memories WHERE id = ? AND deleted_at IS NULL",
@@ -255,7 +257,7 @@ def summarize_note(
                 conn.commit()
             return summary
         finally:
-            safe_close_db(conn)
+            conn.close()
     except Exception:
         return ""
 
@@ -296,7 +298,9 @@ def auto_summarize_long(
             return {"enabled": True, "error": "memory_common not found"}
 
     try:
-        conn = connection_pool.get(db)
+        from db_write_queue import sqlite_write_queue
+
+        conn = sqlite_write_queue.start_session(Path(db))
         try:
             rows = conn.execute(
                 "SELECT id, content FROM memories WHERE deleted_at IS NULL "
@@ -341,7 +345,7 @@ def auto_summarize_long(
                 "dry_run": dry_run,
             }
         finally:
-            safe_close_db(conn)
+            conn.close()
     except Exception as e:
         return {"enabled": True, "error": str(e)}
 

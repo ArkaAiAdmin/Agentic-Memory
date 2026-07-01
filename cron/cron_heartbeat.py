@@ -43,7 +43,7 @@ def main() -> int:
     conn = connection_pool.get(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
     try:
-        result = run_heartbeat(conn, dry_run=False)
+        result = run_heartbeat(conn, dry_run=False, db_path=str(db_path))
         print(
             f"Heartbeat complete: {result['evaluated']} evaluated, "
             f"{result['tier_changes']} tier changes "

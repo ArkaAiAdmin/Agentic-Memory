@@ -132,9 +132,16 @@ class ProxyConnection:
     def cursor(self) -> ProxyCursorObject:
         return ProxyCursorObject(self)
 
+    @property
+    def in_transaction(self) -> bool:
+        return True
+
     def execute(self, sql: str, params: tuple = ()) -> ProxyCursor:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
+        if sql.strip().upper().startswith("BEGIN"):
+            # The write queue session is already in a transaction (started with BEGIN IMMEDIATE)
+            return ProxyCursor(None, [], None, None)
         self._cmd_queue.put(("execute", (sql, params)))
         status, res = self._resp_queue.get()
         if status == "error":
@@ -206,6 +213,12 @@ class ProxyConnection:
         else:
             self.commit()
 
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
 
 class SQLiteWriteQueue:
     """Thread-safe queue that processes database writes serially on a background thread.
@@ -276,9 +289,8 @@ class SQLiteWriteQueue:
             if task is None:
                 break
 
+            db_path, task_type, payload, future = task
             try:
-                db_path, task_type, payload, future = task
-
                 from db_path_flock import db_path_flock
 
                 lock_ctx = db_path_flock(db_path)
@@ -399,10 +411,13 @@ class SQLiteWriteQueue:
                                 conn.close()
                             except Exception:
                                 pass
-                        self._queue.task_done()
 
             except Exception as e:
                 logger.error("Fatal error in SQLiteWriteQueue run loop: %s", e)
+                if not future.done():
+                    future.set_exception(e)
+            finally:
+                self._queue.task_done()
 
     def stop(self, timeout: float = 15.0) -> None:
         """Gracefully stop the background worker thread.

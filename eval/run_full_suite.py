@@ -100,13 +100,33 @@ def _parse_junit(junit_path: Path) -> dict:
     return counts
 
 
-for f in test_files:
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+lock = threading.Lock()
+
+def run_one_test(f):
     start = time.time()
-    print(f"  {f.name} ... ", end="", flush=True)
     with tempfile.NamedTemporaryFile(
         suffix=".xml", prefix="junit_", delete=False
     ) as jf:
         junit_path = Path(jf.name)
+    with tempfile.NamedTemporaryFile(
+        suffix=".db", prefix="test_db_", delete=False
+    ) as db_f:
+        temp_db_path = Path(db_f.name)
+
+    try:
+        from eval._fixtures import bootstrap_temp_db_clean
+        bootstrap_temp_db_clean(temp_db_path)
+    except Exception:
+        pass
+
+    # Copy base env and set MEMORY_DB_PATH
+    test_env = env.copy()
+    test_env["MEMORY_DB_PATH"] = str(temp_db_path)
+    test_env["AGENTIC_MEMORY_DIR"] = str(temp_db_path.parent)
+
     try:
         result = subprocess.run(
             [
@@ -125,7 +145,7 @@ for f in test_files:
             capture_output=True,
             text=True,
             timeout=600,
-            env=env,
+            env=test_env,
         )
         output = result.stdout + result.stderr
 
@@ -136,8 +156,16 @@ for f in test_files:
         xxf = counts["xfailed"]
         xxp = counts["xpassed"]
         ee = counts["errors"]
+    except Exception as exc:
+        output = str(exc)
+        pp, ff, ss, xxf, xxp, ee = 0, 1, 0, 0, 0, 0
+        class DummyResult:
+            returncode = -1
+        result = DummyResult()
     finally:
         junit_path.unlink(missing_ok=True)
+        temp_db_path.unlink(missing_ok=True)
+        Path(str(temp_db_path) + ".flock").unlink(missing_ok=True)
 
     dur = time.time() - start
 
@@ -154,25 +182,32 @@ for f in test_files:
         ff = (ff or 0) + 1
     elif result.returncode == 5 and pp == 0 and ff == 0:
         status = f"EMPTY ({dur:.1f}s)"
-        passed_names.append(f.name)
     elif ff == 0 and result.returncode == 0:
         status = f"OK ({dur:.1f}s)"
-        passed_names.append(f.name)
     else:
         status = f"FAIL ({ff}f {ee}e) {dur:.1f}s"
-        failed_names.append(f.name)
 
-    summary["passed"] += pp
-    summary["failed"] += ff
-    summary["skipped"] += ss
-    summary["xfailed"] += xxf
-    summary["xpassed"] += xxp
-    summary["errors"] += ee
+    with lock:
+        if status.startswith("OK") or status.startswith("EMPTY"):
+            passed_names.append(f.name)
+        else:
+            failed_names.append(f.name)
 
-    if ff > 0 or is_segfault:
-        failures.append((f.name, output[-2000:]))
+        summary["passed"] += pp
+        summary["failed"] += ff
+        summary["skipped"] += ss
+        summary["xfailed"] += xxf
+        summary["xpassed"] += xxp
+        summary["errors"] += ee
 
-    print(f"{status}")
+        if ff > 0 or is_segfault:
+            failures.append((f.name, output[-2000:]))
+
+        print(f"  {f.name} ... {status}", flush=True)
+
+# Run up to 3 tests concurrently
+with ThreadPoolExecutor(max_workers=3) as executor:
+    executor.map(run_one_test, test_files)
 
 # Write results file
 with open(results_file, "w") as r:

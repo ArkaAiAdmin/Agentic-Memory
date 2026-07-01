@@ -217,11 +217,9 @@ def _auto_save_record_success() -> None:
 def _record_circuit_skip(entry: dict) -> None:
     """Record a skipped entry due to circuit breaker being open."""
     try:
-        from db import connection_pool
+        from infra.db import open_db
 
-        db_path = _get_db_path()
-        conn = connection_pool.get(str(db_path), timeout=5.0)
-        try:
+        with open_db(_get_db_path(), timeout=5.0) as conn:
             conn.execute(
                 "INSERT INTO memory_audit_log ("
                 "  ts, tool, args, results_count, latency_ms"
@@ -234,14 +232,6 @@ def _record_circuit_skip(entry: dict) -> None:
                     0.0,
                 ),
             )
-            conn.commit()
-        finally:
-            try:
-                from memory_common import safe_close_db
-
-                safe_close_db(conn, should_commit=False)
-            except Exception as e:
-                logger.debug("Failed to close db connection in audit: %s", e)
     except Exception:
         pass
 
@@ -249,11 +239,9 @@ def _record_circuit_skip(entry: dict) -> None:
 def _persist_circuit_state(event: str, *, details: dict) -> None:
     """Append a circuit-breaker event to memory_audit_log."""
     try:
-        from db import connection_pool
+        from infra.db import open_db
 
-        db_path = _get_db_path()
-        conn = connection_pool.get(str(db_path), timeout=5.0)
-        try:
+        with open_db(_get_db_path(), timeout=5.0) as conn:
             conn.execute(
                 "INSERT INTO memory_audit_log ("
                 "  ts, tool, args, results_count, latency_ms"
@@ -266,17 +254,6 @@ def _persist_circuit_state(event: str, *, details: dict) -> None:
                     0.0,
                 ),
             )
-            conn.commit()
-        finally:
-            try:
-                from memory_common import safe_close_db
-
-                safe_close_db(conn, should_commit=False)
-            except Exception as exc:
-                logger.debug(
-                    "auto_save: safe_close_db during circuit-state persist failed (non-fatal): %s",
-                    exc,
-                )
     except Exception as exc:
         logger.debug(
             "auto_save: circuit-state persistence failed (non-fatal): %s",

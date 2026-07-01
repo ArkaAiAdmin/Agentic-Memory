@@ -309,8 +309,8 @@ def _ensure_db_exists(db_path: Path):
     """Create the DB and run migrations if it doesn't exist yet."""
     if not db_path.exists():
         try:
-            db = connection_pool.get(str(db_path), timeout=30.0)
-            safe_close_db(db)
+            with open_db(db_path, timeout=30.0) as db:
+                pass
         except Exception as e:
             logger.error("_ensure_db_exists: could not initialize DB at %s: %s", db_path, e)
             return False
@@ -777,8 +777,10 @@ def _update_memory_index_incremental(
         if external_db:
             conn = db
         else:
-            conn = connection_pool.get(str(db_path), timeout=30.0)
-            conn.execute("PRAGMA busy_timeout = 30000;")
+            from db_write_queue import sqlite_write_queue
+            conn = sqlite_write_queue.start_session(db_path)
+            from db_migrations import run_schema_setup
+            run_schema_setup(conn)
             local_db = conn
         # B5 fix: use the centralized helper instead of duplicating the
         # PRAGMA walk + subset check that lived here.
@@ -821,7 +823,7 @@ def _update_memory_index_incremental(
         _auto_fts_backlinks(conn, note_id, content)
         _index_adaptive_retention(conn, note_id, db_path=str(db_path))
         if defer_expensive:
-            _defer_indexing_background_tasks(db_path, note_id, content, source_file)
+            _defer_indexing_background_tasks(db_path, note_id, content, source_file, conn=conn)
     except Exception as e:
         if external_db:
             raise
@@ -837,11 +839,14 @@ def _update_memory_index_incremental(
         if lock_file:
             release_flock(lock_file)
         if local_db is not None:
-            safe_close_db(local_db)
+            try:
+                local_db.close()
+            except Exception:
+                pass
 
 
 def _defer_indexing_background_tasks(
-    db_path: Path, note_id: str, content: str, source_file: str
+    db_path: Path, note_id: str, content: str, source_file: str, conn=None
 ) -> None:
     """Enqueue expensive indexing operations as background tasks.
 
@@ -850,14 +855,16 @@ def _defer_indexing_background_tasks(
     """
     try:
         from background_queue import init_task_queue, enqueue_task
-        from db import connection_pool
         from _lazy_imports import get_config
 
         cfg = get_config()
         max_qs = getattr(cfg, "background_max_queue_size", 500)
         reject_pol = getattr(cfg, "background_reject_policy", "reject_new")
 
-        bq_conn = connection_pool.get(str(db_path), timeout=5.0)
+        bq_conn = conn
+        if bq_conn is None:
+            from db_write_queue import sqlite_write_queue
+            bq_conn = sqlite_write_queue.start_session(db_path)
         init_task_queue(bq_conn)
         enqueue_task(
             bq_conn,
@@ -880,9 +887,14 @@ def _defer_indexing_background_tasks(
             max_queue_size=max_qs,
             reject_policy=reject_pol,
         )
-        safe_close_db(bq_conn)
-    except Exception as _bqe:
-        logger.debug("save_memory: defer background indexing failed: %s", _bqe)
+    except Exception as _e:
+        logger.warning("save: background task enqueue failed: %s", _e)
+    finally:
+        if conn is None:
+            try:
+                bq_conn.close()
+            except Exception:
+                pass
 
 
 def _validate_save_params(content, category, title_slug, tags):
@@ -993,16 +1005,18 @@ def _scan_for_injection_or_skip(
 
 
 def _acquire_db_connection(db_path_obj, category, title_slug, start_time, tenant_id: str = "default"):
-    """Acquire a SQLite connection from the pool. Returns the
-    connection on success, or a string error message if acquisition
-    failed (the message is already audit-logged).
+    """Acquire a write-serialized SQLite connection via the write queue.
+    Returns the connection on success, or a string error message if
+    acquisition failed (the message is already audit-logged).
 
     Extracted from save_memory() (2026-06-22) so the orchestrator
     stays readable.
     """
     try:
-        conn = connection_pool.get(str(db_path_obj), timeout=30.0, tenant_id=tenant_id)
-        conn.execute("PRAGMA busy_timeout = 30000;")
+        from db_write_queue import sqlite_write_queue
+        conn = sqlite_write_queue.start_session(db_path_obj)
+        from db_migrations import run_schema_setup
+        run_schema_setup(conn)
         return conn
     except Exception as e:
         try:
@@ -1544,17 +1558,17 @@ def save_memory(
     return _save_memory_core(req, _now_iso=_now_iso, _conn=_conn)
 
 
-def _project_sql_to_crdt(db_path_obj: Path, note_id: str) -> None:
+def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn=None) -> None:
     """Best-effort: project the committed SQL row into memory_field_crdt."""
     try:
         from crdt.crdt_field import project_sql_to_crdt as _proj
-        from db import connection_pool, safe_close_db
+        from infra.db import open_db
 
-        conn = connection_pool.get(str(db_path_obj), timeout=5.0)
-        try:
+        if conn is not None:
             _proj(conn, note_id, _crdt_agent_id())
-        finally:
-            safe_close_db(conn)
+        else:
+            with open_db(db_path_obj, timeout=5.0) as c:
+                _proj(c, note_id, _crdt_agent_id())
     except Exception as _e:
         logger.debug("save_memory: CRDT SQL projection skipped: %s", _e)
 
@@ -1737,9 +1751,9 @@ def _save_memory_core(
                     _start_time,
                     conn=conn,
                 )
-                _enqueue_background_tasks(db_path_obj, note_id)
+                _enqueue_background_tasks(db_path_obj, note_id, conn=conn)
                 if _is_crdt_enabled():
-                    _project_sql_to_crdt(db_path_obj, note_id)
+                    _project_sql_to_crdt(db_path_obj, note_id, conn=conn)
             else:
                 _audit_save_failure(
                     db_path_obj, note_id, category, title_slug, _start_time
@@ -1766,7 +1780,7 @@ def _save_memory_core(
                     )
             if conn is not None and _conn is None:
                 try:
-                    safe_close_db(conn, should_commit=not _save_errored)
+                    conn.close()
                     if not _save_errored and deferred_writes:
                         from memory_common import safe_atomic_write
                         for filepath, filecontent in deferred_writes:
@@ -1810,35 +1824,31 @@ def memory_supersede_db(
         return (False, f"memory.db not found at {db_path}")
     db = None
     try:
-        db = connection_pool.get(str(db_path), timeout=30.0)
-        db.execute("PRAGMA busy_timeout = 30000;")
-        # B5 fix: use the centralized schema detection helper.
-        features = _detect_schema_features(db_path, conn=db)
-        if not features["has_temporal"]:
-            return (False, "memory schema does not have temporal columns")
-        old_row = db.execute(
-            "SELECT id FROM memories WHERE id = ?", (old_id,)
-        ).fetchone()
-        if not old_row:
-            return (False, f"old_id '{old_id}' not found")
-        new_row = db.execute(
-            "SELECT id FROM memories WHERE id = ?", (new_id,)
-        ).fetchone()
-        if not new_row:
-            return (False, f"new_id '{new_id}' not found")
-        db.execute(
-            """UPDATE memories
-               SET valid_to = ?, superseded_by = ?, updated_at = ?
-               WHERE id = ?""",
-            (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
-        )
-        db.commit()
-        return (True, None)
+        from infra.db import open_db
+
+        with open_db(db_path, timeout=30.0) as db:
+            features = _detect_schema_features(db_path, conn=db)
+            if not features["has_temporal"]:
+                return (False, "memory schema does not have temporal columns")
+            old_row = db.execute(
+                "SELECT id FROM memories WHERE id = ?", (old_id,)
+            ).fetchone()
+            if not old_row:
+                return (False, f"old_id '{old_id}' not found")
+            new_row = db.execute(
+                "SELECT id FROM memories WHERE id = ?", (new_id,)
+            ).fetchone()
+            if not new_row:
+                return (False, f"new_id '{new_id}' not found")
+            db.execute(
+                """UPDATE memories
+                   SET valid_to = ?, superseded_by = ?, updated_at = ?
+                   WHERE id = ?""",
+                (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
+            )
+            return (True, None)
     except Exception as e:
         return (False, str(e))
-    finally:
-        if db is not None:
-            safe_close_db(db)
 
 
 def reinforce_memories_db(db_path: Path, ids: list[str], delta: float) -> int:
@@ -1855,29 +1865,25 @@ def reinforce_memories_db(db_path: Path, ids: list[str], delta: float) -> int:
         return 0
     if not db_path.exists():
         return 0
-    db = None
     hits = 0
     try:
-        db = connection_pool.get(str(db_path), timeout=30.0)
-        db.execute("PRAGMA busy_timeout = 30000;")
-        for mid in ids:
-            row = db.execute(
-                "SELECT success_score FROM memories WHERE id=?", (mid,)
-            ).fetchone()
-            if row:
-                old_score = row[0] or 0.0
-                new_score = max(-3.0, min(5.0, old_score + delta))
-                db.execute(
-                    "UPDATE memories SET success_score = ? WHERE id = ?",
-                    (new_score, mid),
-                )
-                hits += 1
-        db.commit()
+        from infra.db import open_db
+
+        with open_db(db_path, timeout=30.0) as db:
+            for mid in ids:
+                row = db.execute(
+                    "SELECT success_score FROM memories WHERE id=?", (mid,)
+                ).fetchone()
+                if row:
+                    old_score = row[0] or 0.0
+                    new_score = max(-3.0, min(5.0, old_score + delta))
+                    db.execute(
+                        "UPDATE memories SET success_score = ? WHERE id = ?",
+                        (new_score, mid),
+                    )
+                    hits += 1
     except Exception as e:
         logger.error("reinforce_memories_db: %s", e)
-    finally:
-        if db is not None:
-            safe_close_db(db)
     # Recalculate fitness scores for the touched ids
     if hits:
         try:

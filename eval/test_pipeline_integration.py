@@ -905,7 +905,8 @@ class TestConnectionPoolThreadSafety:
 
         conn = connection_pool.get(str(self.db_path))
         conn_id = id(conn)
-        assert conn_id in connection_pool._migrated
+        real_db_path = conn.execute("PRAGMA database_list").fetchone()[2]
+        assert (real_db_path, conn_id) in connection_pool._migrated
         conn2 = connection_pool.get(str(self.db_path))
         assert id(conn2) == conn_id
 

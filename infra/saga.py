@@ -268,9 +268,15 @@ class Saga:
     # Context manager protocol
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _is_proxy(conn) -> bool:
+        return hasattr(conn, "_cmd_queue")
+
     def __enter__(self) -> "Saga":
         if self.conn is not None and self.mode == SagaMode.DEFERRED:
-            if not self.conn.in_transaction:
+            if self._is_proxy(self.conn):
+                pass
+            elif not self.conn.in_transaction:
                 self.conn.execute("BEGIN IMMEDIATE")
                 self._started_transaction = True
             else:
@@ -299,14 +305,15 @@ class Saga:
                     )
                     self._error = exc
                     if self.conn is not None and self.mode == SagaMode.DEFERRED:
-                        try:
-                            if self._started_transaction:
-                                self.conn.rollback()
-                            else:
-                                self.conn.execute("ROLLBACK TO SAVEPOINT saga_sp")
-                                self.conn.execute("RELEASE SAVEPOINT saga_sp")
-                        except Exception as sp_err:
-                            logger.warning("saga rollback failed: %r", sp_err)
+                        if not self._is_proxy(self.conn):
+                            try:
+                                if self._started_transaction:
+                                    self.conn.rollback()
+                                else:
+                                    self.conn.execute("ROLLBACK TO SAVEPOINT saga_sp")
+                                    self.conn.execute("RELEASE SAVEPOINT saga_sp")
+                            except Exception as sp_err:
+                                logger.warning("saga rollback failed: %r", sp_err)
                     rollback_errors = self._rollback(idx)
                     raise SagaError(
                         f"Saga {self.name!r} failed at step {step.name!r}: {exc!r}",
@@ -329,18 +336,17 @@ class Saga:
                 _set_saga_deferred(self.conn, False)
             raise
         except Exception as exc:
-            # The ``with`` block raised something we didn't expect. We
-            # still want to roll back if any steps completed.
             self._error = exc
             if self.conn is not None and self.mode == SagaMode.DEFERRED:
-                try:
-                    if self._started_transaction:
-                        self.conn.rollback()
-                    else:
-                        self.conn.execute("ROLLBACK TO SAVEPOINT saga_sp")
-                        self.conn.execute("RELEASE SAVEPOINT saga_sp")
-                except Exception as sp_err:
-                    logger.warning("saga rollback on external exception failed: %r", sp_err)
+                if not self._is_proxy(self.conn):
+                    try:
+                        if self._started_transaction:
+                            self.conn.rollback()
+                        else:
+                            self.conn.execute("ROLLBACK TO SAVEPOINT saga_sp")
+                            self.conn.execute("RELEASE SAVEPOINT saga_sp")
+                    except Exception as sp_err:
+                        logger.warning("saga rollback on external exception failed: %r", sp_err)
                 _set_saga_deferred(self.conn, False)
             self._rollback(len(self._records) - 1)
             raise
@@ -365,25 +371,27 @@ class Saga:
                 if last_completed >= 0:
                      self._error = exc
                      if self.conn is not None and self.mode == SagaMode.DEFERRED:
-                        try:
-                            if self._started_transaction:
-                                self.conn.rollback()
-                            else:
-                                self.conn.execute("ROLLBACK TO SAVEPOINT saga_sp")
-                                self.conn.execute("RELEASE SAVEPOINT saga_sp")
-                        except Exception as sp_err:
-                            logger.warning("saga rollback in exit failed: %r", sp_err)
+                        if not self._is_proxy(self.conn):
+                            try:
+                                if self._started_transaction:
+                                    self.conn.rollback()
+                                else:
+                                    self.conn.execute("ROLLBACK TO SAVEPOINT saga_sp")
+                                    self.conn.execute("RELEASE SAVEPOINT saga_sp")
+                            except Exception as sp_err:
+                                logger.warning("saga rollback in exit failed: %r", sp_err)
                      self._rollback(last_completed)
             # Do not swallow the exception.
             return False
         if self.conn is not None and self.mode == SagaMode.DEFERRED:
-            try:
-                if self._started_transaction:
-                    self.conn.commit()
-                else:
-                    self.conn.execute("RELEASE SAVEPOINT saga_sp")
-            except Exception as sp_err:
-                logger.warning("saga commit/release in exit failed: %r", sp_err)
+            if not self._is_proxy(self.conn):
+                try:
+                    if self._started_transaction:
+                        self.conn.commit()
+                    else:
+                        self.conn.execute("RELEASE SAVEPOINT saga_sp")
+                except Exception as sp_err:
+                    logger.warning("saga commit/release in exit failed: %r", sp_err)
         self.committed = True
         logger.info("saga[%s] committed (%d steps)", self.name, len(self._steps))
         return False

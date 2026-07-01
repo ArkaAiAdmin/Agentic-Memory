@@ -14,7 +14,8 @@ from collections import Counter
 from pathlib import Path
 
 from config import resolve_db_path
-from memory_common import safe_close_db, connection_pool, GLOBAL_MEM_DIR
+from db_write_queue import sqlite_write_queue
+from memory_common import GLOBAL_MEM_DIR
 
 __all__ = [
     "PROFILE_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -83,7 +84,7 @@ def record_access(
     db = db_path if db_path is not None else str(local_mem / "memory.db")
 
     try:
-        conn = connection_pool.get(db)
+        conn = sqlite_write_queue.start_session(Path(db))
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_profile_access_log (
@@ -103,7 +104,7 @@ def record_access(
             conn.commit()
             return True
         finally:
-            safe_close_db(conn)
+            conn.close()
     except Exception as _e:
         import logging
 
@@ -142,7 +143,7 @@ def get_user_profile(
     db = db_path if db_path is not None else str(local_mem / "memory.db")
 
     try:
-        conn = connection_pool.get(db)
+        conn = sqlite_write_queue.start_session(Path(db))
         try:
             # Ensure table exists
             conn.execute("""
@@ -163,7 +164,7 @@ def get_user_profile(
                 (cutoff,),
             ).fetchall()
         finally:
-            safe_close_db(conn)
+            conn.close()
 
         if not rows:
             return {
@@ -290,7 +291,7 @@ def profile_stats(db_path: str | None = None) -> dict:
     db = db_path if db_path is not None else str(local_mem / "memory.db")
 
     try:
-        conn = connection_pool.get(db)
+        conn = sqlite_write_queue.start_session(Path(db))
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_profile_access_log (
@@ -319,7 +320,7 @@ def profile_stats(db_path: str | None = None) -> dict:
                 "unique_notes_accessed": unique_notes,
             }
         finally:
-            safe_close_db(conn)
+            conn.close()
     except Exception as _e:
         import logging
 

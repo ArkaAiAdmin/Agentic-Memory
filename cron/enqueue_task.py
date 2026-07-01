@@ -26,7 +26,7 @@ if os.path.basename(_parent) == "cron":
 sys.path.insert(0, _parent)
 
 from infrastructure import resolve_active_memory_dir
-from memory_common import connection_pool, safe_close_db
+from db_write_queue import sqlite_write_queue
 
 
 def _check_debounce(
@@ -126,7 +126,7 @@ def main() -> int:
 
     max_qs = args.max_queue_size
 
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    conn = sqlite_write_queue.start_session(db_path)
     try:
         debounced, debounce_reason = _check_debounce(
             conn, args.task_type, args.debounce_seconds
@@ -157,7 +157,7 @@ def main() -> int:
         print(f"Error enqueuing task: {exc}", file=sys.stderr)
         return 1
     finally:
-        safe_close_db(conn)
+        conn.close()
 
 
 if __name__ == "__main__":

@@ -360,12 +360,9 @@ def main():
         print(f"ERROR: no memory.db at {db_path}")
         sys.exit(1)
 
-    conn = sqlite3.connect(str(db_path), timeout=30.0)
-    conn.execute("PRAGMA busy_timeout = 30000;")
-    # B23 fix: enable FK enforcement for the CLI path too.
-    conn.execute("PRAGMA foreign_keys = ON;")
+    from db_write_queue import sqlite_write_queue
+    conn = sqlite_write_queue.start_session(db_path)
     try:
-        # Always run exact dedup
         stats = dedup_entities(conn, dry_run=dry_run)
         print(
             f"KG dedup (exact): {stats['groups_found']} duplicate groups, "
@@ -374,7 +371,6 @@ def main():
             f"{' (dry run)' if dry_run else ''}"
         )
 
-        # Optionally run semantic dedup
         if semantic:
             sem_stats = dedup_entities_semantic(
                 conn, threshold=threshold, dry_run=dry_run
@@ -386,10 +382,9 @@ def main():
                 f"{sem_stats['semantic_edges_redirected']} edges redirected"
                 f"{' (dry run)' if dry_run else ''}"
             )
-            # Merge stats for return value if needed
             stats.update(sem_stats)
     finally:
-        safe_close_db(conn)
+        conn.close()
     return stats
 
 

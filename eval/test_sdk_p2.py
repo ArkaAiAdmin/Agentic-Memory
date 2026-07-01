@@ -422,7 +422,7 @@ class TestTemporalKGInvalidate(unittest.TestCase):
         mock_invalidate.return_value = True
         db_path = str(self.db)
 
-        with patch("agentic_memory.temporal.get_db_connection") as mock_conn:
+        with patch("agentic_memory.temporal.sqlite_write_queue.start_session") as mock_conn:
             mock_conn.return_value.__enter__ = lambda s: mock_conn.return_value
             mock_conn.return_value.__exit__ = lambda *a: None
             mock_conn.return_value.execute.return_value.fetchone.return_value = None

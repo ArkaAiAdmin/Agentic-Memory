@@ -5,8 +5,7 @@ from pathlib import Path
 
 
 
-# Use canonical parse_frontmatter from memory_common (handles CRLF + multi-line values).
-from memory_common import safe_close_db  # noqa: E402
+
 
 
 class SpacedRepetition:
@@ -19,9 +18,9 @@ class SpacedRepetition:
         # connection; ``close()`` returns it to the pool rather than
         # closing it. Callers that depend on ``self.db`` being a
         # ``sqlite3.Connection`` (it still is) are unaffected.
-        from db import connection_pool
+        from db_write_queue import sqlite_write_queue
 
-        self.db = connection_pool.get(str(db_path), timeout=10.0)
+        self.db = sqlite_write_queue.start_session(db_path)
         self.db.execute("PRAGMA busy_timeout = 30000;")
         self._ensure_table()
 
@@ -131,7 +130,7 @@ class SpacedRepetition:
         }
 
     def close(self):
-        safe_close_db(self.db)
+        self.db.close()
 
 
 if __name__ == "__main__":

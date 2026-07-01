@@ -189,10 +189,10 @@ def _recalculate_fitness_scores(
         if owns_connection:
             if not db_path.exists():
                 return
-            db = connection_pool.get(str(db_path), timeout=30.0)
-            db.execute("PRAGMA busy_timeout = 30000;")
+            from db_write_queue import sqlite_write_queue
+            db = sqlite_write_queue.start_session(db_path)
         else:
-            assert conn is not None  # owns_connection=False means conn is not None
+            assert conn is not None
             db = conn
         today = date.today()
         w_r, w_f, w_s = (0.4, 0.3, 0.3)
@@ -239,7 +239,7 @@ def _recalculate_fitness_scores(
     finally:
         if owns_connection and db is not None:
             try:
-                safe_close_db(db)
+                db.close()
             except Exception:
                 logger.warning("Failed to safely close DB after fitness recalculation")
                 pass
@@ -609,7 +609,7 @@ def _run_post_save_hooks(
     return deferred_writes
 
 
-def _enqueue_background_tasks(db_path_obj: Path, note_id: str) -> None:
+def _enqueue_background_tasks(db_path_obj: Path, note_id: str, conn=None) -> None:
     """Best-effort enqueue of entity-resolution and fact-consolidation tasks.
 
     Runs after the main save transaction has committed. The background
@@ -618,14 +618,16 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str) -> None:
     """
     try:
         from background_queue import init_task_queue, enqueue_task
-        from db import connection_pool
         from _lazy_imports import get_config
 
         cfg = get_config()
         max_qs = getattr(cfg, "background_max_queue_size", 500)
         reject_pol = getattr(cfg, "background_reject_policy", "reject_new")
 
-        _bq_conn = connection_pool.get(str(db_path_obj), timeout=5.0)
+        _bq_conn = conn
+        if _bq_conn is None:
+            from db_write_queue import sqlite_write_queue
+            _bq_conn = sqlite_write_queue.start_session(db_path_obj)
         init_task_queue(_bq_conn)
         enqueue_task(
             _bq_conn, "entity_resolution", {"memory_id": note_id},
@@ -635,6 +637,7 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str) -> None:
             _bq_conn, "fact_consolidation", {"memory_id": note_id},
             max_queue_size=max_qs, reject_policy=reject_pol,
         )
-        safe_close_db(_bq_conn)
+        if conn is None:
+            _bq_conn.close()
     except Exception as _bqe:
         logger.debug("save_memory: background queue enqueue failed: %s", _bqe)

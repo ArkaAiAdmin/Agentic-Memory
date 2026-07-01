@@ -39,10 +39,11 @@ import os
 import sqlite3
 import sys
 from contextlib import contextmanager
+from db_write_queue import sqlite_write_queue
 from pathlib import Path
 from typing import Iterator
 
-from memory_common import find_project_root, safe_close_db  # noqa: E402
+from memory_common import find_project_root  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,7 @@ class ARCCache:
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
-        self.db: sqlite3.Connection = sqlite3.connect(str(self.db_path), timeout=30.0)
+        self.db: sqlite3.Connection = sqlite_write_queue.start_session(self.db_path)
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("PRAGMA busy_timeout = 30000;")
         self._ensure_tables()
@@ -308,7 +309,7 @@ class ARCCache:
     def close(self) -> None:
         """Close the underlying connection. Idempotent."""
         try:
-            safe_close_db(self.db)
+            self.db.close()
         except Exception as e:
             logger.warning("ARCCache.close failed: %s", e)
 

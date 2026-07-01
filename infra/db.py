@@ -176,7 +176,7 @@ class _ConnectionPool:
             conn = self._pool.pop(key)
             conn_id = id(conn)
             self._pooled_ids.discard(conn_id)
-            self._migrated.discard(conn_id)
+            self._migrated.discard((key[0], conn_id))
             try:
                 conn.close()
             except Exception:
@@ -223,15 +223,16 @@ class _ConnectionPool:
         released by ``get()`` (see line ~191). To prevent deadlock,
         callers must NEVER call this method while holding self._lock.
         """
-        conn_id = id(conn)
-        if conn_id in self._migrated:
-            return
-
         try:
             db_path = conn.execute("PRAGMA database_list").fetchone()[2]
         except Exception:
             logger.warning("db: db_path resolve_failed from PRAGMA database_list")
             db_path = ""
+
+        conn_id = id(conn)
+        migrated_key = (db_path, conn_id)
+        if migrated_key in self._migrated:
+            return
 
         # Resolve or create the per-path migration lock. We hold
         # _migration_locks_lock just long enough to look up / allocate.
@@ -254,7 +255,7 @@ class _ConnectionPool:
                 # run_schema_setup maintains its own _MIGRATIONS_DONE
                 # cache keyed by id(conn); we don't need a duplicate
                 # mirror here. The pool's _migrated set is sufficient.
-                if conn_id in self._migrated:
+                if migrated_key in self._migrated:
                     return
                 try:
                     from db_migrations import run_schema_setup
@@ -264,20 +265,20 @@ class _ConnectionPool:
                     # Perform one-shot startup checkpoint if needed
                     if db_path:
                         _maybe_checkpoint_on_startup(Path(db_path).parent)
-                    self._migrated.add(conn_id)
+                    self._migrated.add(migrated_key)
                 except Exception as exc:
                     logger.warning(
                         "_ensure_full_schema failed: %s", exc
                     )  # best-effort; callers can retry via open_db()
         else:
             # No path lock (e.g. :memory: DB) — proceed without serialisation.
-            if conn_id in self._migrated:
+            if migrated_key in self._migrated:
                 return
             try:
                 from db_migrations import run_schema_setup
 
                 run_schema_setup(conn)
-                self._migrated.add(conn_id)
+                self._migrated.add(migrated_key)
             except Exception as exc:
                 logger.warning("db: schema ensure_failed: %s", exc)
 
