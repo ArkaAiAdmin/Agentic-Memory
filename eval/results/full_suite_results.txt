@@ -3,19 +3,19 @@ Passed files: 218
 Failed/segfault files: 0
 
 
-  PASSED: test_add_flock_to_crons.py
   PASSED: test_adaptive_retention.py
+  PASSED: test_add_flock_to_crons.py
   PASSED: test_agent_scoping_hooks.py
   PASSED: test_antonym_contradictions.py
   PASSED: test_arc_cache.py
-  PASSED: test_atomic_write_coverage.py
   PASSED: test_advanced_features.py
+  PASSED: test_atomic_write_coverage.py
   PASSED: test_audit_log.py
   PASSED: test_audit_logging.py
   PASSED: test_auto_backlinks.py
   PASSED: test_auto_save_integration.py
-  PASSED: test_auto_save_unit.py
   PASSED: test_b7_shared_memory_injection.py
+  PASSED: test_auto_save_unit.py
   PASSED: test_backfill_orphans.py
   PASSED: test_backfill_safety.py
   PASSED: test_background_queue.py
@@ -25,19 +25,19 @@ Failed/segfault files: 0
   PASSED: test_backfill_all.py
   PASSED: test_bb3_rrf.py
   PASSED: test_bb2_history.py
-  PASSED: test_adversarial_e2e.py
-  PASSED: test_cli.py
   PASSED: test_cascade_preserve.py
+  PASSED: test_cli.py
   PASSED: test_compaction_synthesis.py
+  PASSED: test_adversarial_e2e.py
   PASSED: test_compliance_rate_limit.py
+  PASSED: test_circuit_breaker_telemetry.py
   PASSED: test_concurrent.py
   PASSED: test_config_loading.py
-  PASSED: test_circuit_breaker_telemetry.py
-  PASSED: test_consolidation.py
   PASSED: test_config_log_resolution.py
+  PASSED: test_consolidation.py
   PASSED: test_context_window.py
-  PASSED: test_contextual_retrieval.py
   PASSED: test_contextual_enrichment.py
+  PASSED: test_contextual_retrieval.py
   PASSED: test_contradiction_detector_unit.py
   PASSED: test_crdt_field.py
   PASSED: test_crdt_merge.py
@@ -47,21 +47,21 @@ Failed/segfault files: 0
   PASSED: test_crdt_integration.py
   PASSED: test_crdt_sync.py
   PASSED: test_crewai_tool.py
-  PASSED: test_cron_behavior.py
   PASSED: test_cron_concept_drift.py
+  PASSED: test_cron_behavior.py
   PASSED: test_cron_crdt_sync.py
-  PASSED: test_cron_coverage.py
   PASSED: test_crewai_memory.py
+  PASSED: test_cron_coverage.py
   PASSED: test_cron_cross_session_learn.py
   PASSED: test_cron_kg_backfill.py
   PASSED: test_cron_kg_backfill_monitor.py
   PASSED: test_cron_skill_extraction.py
-  PASSED: test_cron_train_forget_model.py
   PASSED: test_cron_model_lock.py
+  PASSED: test_cron_train_forget_model.py
   PASSED: test_cron_watchdog.py
   PASSED: test_cross_process_safety.py
-  PASSED: test_cross_session_learn.py
   PASSED: test_ctr_feedback.py
+  PASSED: test_cross_session_learn.py
   PASSED: test_db_path_flock.py
   PASSED: test_db_write_queue.py
   PASSED: test_decision_extraction.py
@@ -75,14 +75,14 @@ Failed/segfault files: 0
   PASSED: test_embedding_recompute.py
   PASSED: test_embedding_search_unit.py
   PASSED: test_dedup_audit_behavior.py
-  PASSED: test_enqueue_task_behavior.py
   PASSED: test_embedding_singleton.py
+  PASSED: test_enqueue_task_behavior.py
   PASSED: test_event_time_extraction.py
-  PASSED: test_eval_judge.py
   PASSED: test_e2e_validation.py
   PASSED: test_fact_extraction.py
-  PASSED: test_fact_temporal.py
+  PASSED: test_eval_judge.py
   PASSED: test_feature_flags.py
+  PASSED: test_fact_temporal.py
   PASSED: test_forgetting_curve.py
   PASSED: test_frontmatter.py
   PASSED: test_fts.py
@@ -105,16 +105,16 @@ Failed/segfault files: 0
   PASSED: test_kg_dedup_semantic.py
   PASSED: test_kg_entity_filter.py
   PASSED: test_kg_facts_fts.py
+  PASSED: test_integration_save_pipeline.py
   PASSED: test_kg_orphan_recovery.py
   PASSED: test_kg_traversal.py
-  PASSED: test_integration_save_pipeline.py
-  PASSED: test_knowledge_graph.py
   PASSED: test_kg_validation.py
+  PASSED: test_knowledge_graph.py
+  PASSED: test_integration_search_pipeline.py
+  PASSED: test_langchain_tool.py
+  PASSED: test_llm_contradiction.py
   PASSED: test_langchain_history.py
   PASSED: test_langchain_retriever.py
-  PASSED: test_langchain_tool.py
-  PASSED: test_integration_search_pipeline.py
-  PASSED: test_llm_contradiction.py
   PASSED: test_llm_extraction_max_tokens.py
   PASSED: test_mcp_instance.py
   PASSED: test_mcp_maintenance_dispatch.py
@@ -123,15 +123,15 @@ Failed/segfault files: 0
   PASSED: test_mcp_live.py
   PASSED: test_mcp_verbs.py
   PASSED: test_llm_providers.py
-  PASSED: test_mcp_wrappers.py
   PASSED: test_memory_common_extras.py
+  PASSED: test_mcp_wrappers.py
   PASSED: test_memory_common_unit.py
   PASSED: test_memory_injection_unit.py
   PASSED: test_migration_runner.py
   PASSED: test_multi_agent_unit.py
   PASSED: test_mdns_discovery.py
-  PASSED: test_neural_forget_model.py
   PASSED: test_mutation_killers.py
+  PASSED: test_neural_forget_model.py
   PASSED: test_neural_forget_unit.py
   PASSED: test_observability.py
   PASSED: test_okf_export.py
@@ -139,8 +139,8 @@ Failed/segfault files: 0
   PASSED: test_p0_p1_p2_fixes.py
   PASSED: test_no_silent_search_failures.py
   PASSED: test_phase1_debt_fixes.py
-  PASSED: test_p2_share_and_sync_wireup.py
   PASSED: test_memory_common_mutation_killers.py
+  PASSED: test_p2_share_and_sync_wireup.py
   PASSED: test_phase2_debt_fixes.py
   PASSED: test_phase4_debt_fixes.py
   PASSED: test_phase2_instrumentation.py
@@ -152,13 +152,13 @@ Failed/segfault files: 0
   PASSED: test_quirk_fixes_e2e.py
   PASSED: test_pipeline_integration.py
   PASSED: test_qw3_query_types.py
-  PASSED: test_qw2_query_expansion.py
   PASSED: test_qw4_cross_encoder.py
+  PASSED: test_qw2_query_expansion.py
   PASSED: test_qw5_chunk_indexing.py
-  PASSED: test_rate_limiter.py
   PASSED: test_rate_limit_mcp.py
-  PASSED: test_rebuild_concurrency.py
+  PASSED: test_rate_limiter.py
   PASSED: test_rebuild_index.py
+  PASSED: test_rebuild_concurrency.py
   PASSED: test_read_path_remediation.py
   PASSED: test_recent_save_hint.py
   PASSED: test_rebuild_vec_index.py
@@ -170,15 +170,15 @@ Failed/segfault files: 0
   PASSED: test_safe_call.py
   PASSED: test_safe_close_db.py
   PASSED: test_safety_wiring.py
-  PASSED: test_reranker.py
   PASSED: test_safety_wiring_signatures.py
+  PASSED: test_reranker.py
   PASSED: test_sarcasm_contradiction.py
   PASSED: test_saga_crash_safety.py
   PASSED: test_reranker_security.py
   PASSED: test_save_skill_extraction.py
+  PASSED: test_sdk.py
   PASSED: test_save_pipeline_unit.py
   PASSED: test_sdk_p2.py
-  PASSED: test_sdk.py
   PASSED: test_sdk_p3.py
   PASSED: test_search_kg_facts.py
   PASSED: test_sdk_p1.py
@@ -201,15 +201,15 @@ Failed/segfault files: 0
   PASSED: test_session_manager.py
   PASSED: test_session_search.py
   PASSED: test_subpackage_public_api.py
-  PASSED: test_sync_check.py
   PASSED: test_spaced_repetition.py
+  PASSED: test_sync_check.py
   PASSED: test_sync_layer.py
   PASSED: test_temporal_facts.py
   PASSED: test_temporal_ssm_v2.py
   PASSED: test_tier_migration.py
   PASSED: test_tier_migration_assign_tier.py
-  PASSED: test_soft_delete.py
   PASSED: test_sync_server_tls.py
+  PASSED: test_soft_delete.py
   PASSED: test_tool_routing.py
   PASSED: test_unicode_normalization.py
   PASSED: test_transformer_opt_in.py
