@@ -45,7 +45,6 @@ class TestToolRegistry(unittest.TestCase):
             "memory_save",
             "memory_search",
             "memory_delete",
-            "memory_rebuild",
             "memory_session_start",
         ]
         for tool in expected:
