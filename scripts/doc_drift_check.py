@@ -13,6 +13,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tool_registry import CORE_TOOLS, ADMIN_TOOLS, DEPRECATED as _DEPRECATED
+
 
 def count_mcp_tools() -> int:
     """Count @mcp.tool() definitions in mcp_*.py files (same regex as tool_drift_check.py)."""
@@ -36,8 +39,40 @@ def count_hooks() -> int:
 
 def count_cron_scripts() -> int:
     """Count cron scripts in cron/ directory."""
-    cron_files = list(Path("cron").glob("cron_*.py"))
+    cron_files = list(Path("cron").glob("cron_*.py")) + list(
+        Path("cron").glob("cleanup_auto_logs.py")
+    )
     return len(cron_files)
+
+
+def _count_crontab_jobs() -> int:
+    """Count cron job entries (lines with schedule + command) in the managed block."""
+    import subprocess
+
+    result = subprocess.run(
+        ["crontab", "-l"], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        return 0
+    in_block = False
+    count = 0
+    for line in result.stdout.splitlines():
+        if "BEGIN agentic-memory managed block" in line:
+            in_block = True
+            continue
+        if "END agentic-memory managed block" in line:
+            break
+        if in_block:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            parts = stripped.split()
+            if not parts:
+                continue
+            # A cron job line always starts with a schedule field
+            # (digit, *, or env var like MEMORY_DB_PATH= with schedule later)
+            count += 1
+    return count
 
 
 def count_migrations() -> int:
@@ -105,8 +140,8 @@ def parse_architecture_md(path: Path) -> dict:
     content = path.read_text()
     result = {}
 
-    # "85 MCP tools (15 CORE + 70 ADMIN)"
-    tools_match = re.search(r"85 MCP tools \((\d+) CORE \+ (\d+) ADMIN\)", content)
+    # "96 MCP tools (13 CORE + 83 ADMIN)"
+    tools_match = re.search(r"(\d+) MCP tools \((\d+) CORE \+ (\d+) ADMIN\)", content)
     if tools_match:
         result["core_tools"] = int(tools_match.group(1))
         result["admin_tools"] = int(tools_match.group(2))
@@ -132,6 +167,7 @@ def main() -> int:
     actual_tools = count_mcp_tools()
     actual_hooks = count_hooks()
     actual_cron = count_cron_scripts()
+    actual_cron_jobs = _count_crontab_jobs()
     actual_migrations = count_migrations()
 
     print(f"Actual counts:")
@@ -147,13 +183,16 @@ def main() -> int:
     print("--- AGENTS.md ---")
     agents = parse_agents_md(Path("AGENTS.md"))
     for key, expected in agents.items():
+        actual_core = len(CORE_TOOLS)
+        actual_admin = len(ADMIN_TOOLS)
+        total_tools = actual_core + actual_admin
         actual_map = {
-            "total_tools": actual_tools,
-            "core_tools": 7,  # From tool_registry.py CORE_TOOLS
-            "admin_tools": 81,  # From tool_registry.py ADMIN_TOOLS
+            "total_tools": total_tools,
+            "core_tools": actual_core,
+            "admin_tools": actual_admin,
             "hooks": actual_hooks,
             "cron_scripts": actual_cron,
-            "cron_jobs": actual_cron,
+            "cron_jobs": actual_cron_jobs,
             "schema_version": actual_migrations,
         }
         actual = actual_map.get(key)
@@ -167,13 +206,15 @@ def main() -> int:
     print("\n--- README.md ---")
     readme = parse_readme_md(Path("README.md"))
     for key, expected in readme.items():
+        actual_core = len(CORE_TOOLS)
+        actual_admin = len(ADMIN_TOOLS)
         actual_map = {
-            "total_tools": actual_tools,
-            "core_tools": 7,
-            "admin_tools": 81,
-            "cron_jobs": actual_cron,
+            "total_tools": actual_core + actual_admin,
+            "core_tools": actual_core,
+            "admin_tools": actual_admin,
+            "cron_jobs": actual_cron_jobs,
             "hooks": actual_hooks,
-            "mcp_tools": actual_tools,
+            "mcp_tools": actual_core + actual_admin,
         }
         actual = actual_map.get(key)
         if actual is not None and actual != expected:
@@ -186,11 +227,13 @@ def main() -> int:
     print("\n--- docs/architecture.md ---")
     arch = parse_architecture_md(Path("docs/architecture.md"))
     for key, expected in arch.items():
+        actual_core = len(CORE_TOOLS)
+        actual_admin = len(ADMIN_TOOLS)
         actual_map = {
-            "total_tools": actual_tools,
-            "core_tools_tools": actual_tools,
-            "core_tools": 7,
-            "admin_tools": 81,
+            "total_tools": actual_core + actual_admin,
+            "core_tools_tools": actual_core + actual_admin,
+            "core_tools": actual_core,
+            "admin_tools": actual_admin,
             "cron_scripts": actual_cron,
             "hooks": actual_hooks,
         }

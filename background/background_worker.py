@@ -342,6 +342,18 @@ HANDLERS = {
 # Keys are the task_type values used in enqueue_task.py --task-type;
 # values are relative paths from repo root to the cron script.
 CRON_SCRIPT_MAP: dict[str, str] = {
+    # Phase B — originally direct, now enqueued
+    "cron_daily_digest": "auto_save.py",
+    "cron_purge_auto_saves": "cron/cron_purge_auto_saves.py",
+    "cron_integrity_check": "cron/cron_integrity_check.py",
+    "cron_log_retention": "cron/cron_log_retention.py",
+    "cron_backfill_all": "backfill_all.py",
+    "cron_backup": "cron/cron_backup.py",
+    "cron_backup_validate": "cron/cron_backup_validate.py",
+    "cron_sync": "cron/cron_sync.py",
+    "cron_crdt_sync": "cron/cron_crdt_sync.py",
+    "cron_monitor_task_queue": "cron/monitor_task_queue.py",
+    # Pre-Phase B — already mapped
     "cron_cleanup_auto_logs": "cron/cleanup_auto_logs.py",
     "cron_kg_backfill_monitor": "cron/cron_kg_backfill_monitor.py",
     "cron_embedding_recompute": "cron/cron_embedding_recompute.py",

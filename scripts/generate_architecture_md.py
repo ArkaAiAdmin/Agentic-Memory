@@ -56,7 +56,10 @@ def count_schema_version() -> int:
 
 
 def count_cron_scripts() -> int:
-    return len(list(Path("cron").glob("cron_*.py")))
+    return len(
+        list(Path("cron").glob("cron_*.py"))
+        + list(Path("cron").glob("cleanup_auto_logs.py"))
+    )
 
 
 def count_hooks() -> int:

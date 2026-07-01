@@ -11,7 +11,7 @@ You are an agent working on the **agentic-memory** codebase at the repo root. Th
 
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
-- **Surface**: 88 MCP tools (7 CORE + 81 ADMIN) + 6 lifecycle hooks + 29 cron scripts / 29 scheduled jobs + 11 CLI commands
+- **Surface**: 96 MCP tools (13 CORE + 83 ADMIN) + 6 lifecycle hooks + 31 cron scripts / 34 scheduled jobs + 11 CLI commands
 - **Schema**: v23, ~51 tables (~31 user-visible)
 - **Code**: 71k LOC production + 75k LOC test; see `docs/architecture.md`
 
@@ -46,9 +46,9 @@ agentic-memory/
 ├── save_pipeline.py + save/    ← write path (saga, FTS5, embeddings, KG, audit)
 ├── search_pipeline.py + search/ ← read path (FTS5 + usearch + KG fusion)
 ├── mcp_maintenance.py           ← admin tools + memory_maintenance router
-├── tool_registry.py             ← 7 CORE + 81 ADMIN (single source of truth)
+├── tool_registry.py             ← 13 CORE + 83 ADMIN (single source of truth)
 ├── hooks/                       ← 6 lifecycle hooks + 1 log helper
-├── cron/                        ← 29 background jobs + install_crontab.sh
+├── cron/                        ← 34 scheduled jobs + install_crontab.sh
 ├── mcp_*.py (26 modules)        ← domain-split MCP tools
 ├── memory/                      ← live store (gitignored)
 └── eval/                        ← 183 test files, 3,498 test functions
@@ -63,7 +63,7 @@ agentic-memory/
 3. **Vec keys/index drift after warm-up.** Run `rebuild_vec_index.py` after warm-up chains, not before.
 4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **23**. Never edit live DB schema by hand.
 5. **Default search is `include_global=True`** with blended RRF. Don't override "for safety."
-6. **7 CORE tools are user-facing**; 81 ADMIN under `memory_maintenance(operation=...)`. Don't add CORE tools without checking.
+6. **13 CORE tools are user-facing**; 83 ADMIN under `memory_maintenance(operation=...)`. Don't add CORE tools without checking.
 7. **Use `--incremental` / `--full` with backfill.** Bare args create 22 MB garbage DBs at repo root.
 8. **Tests hitting prod DB must use `_ProdDBGuarded` mixin.** See `eval/test_safety_wiring.py:60-109`.
 9. **Lock order: file lock first, then conn.** Both `save_memory` and `_update_memory_index_incremental` follow this order.
@@ -123,12 +123,12 @@ See `memory.toml` for all 17 feature flags.
 ## Current Status (2026-06-30)
 
 - **Schema v23**: 23 migrations applied. Temporal KG ON by default.
-- **Phase 1 (Docs/Drift)**: `tool_drift_check.py`, `doc_drift_check.py`, `schema_version_check.py` in CI. Tool count reconciled: 88 tools (7 CORE + 81 ADMIN).
+- **Phase 1 (Docs/Drift)**: `tool_drift_check.py`, `doc_drift_check.py`, `schema_version_check.py` in CI. Tool count reconciled: 96 tools (13 CORE + 83 ADMIN).
 - **Phase 2 (Search Observability)**: 6 search phases instrumented with `infra.error_counter`. Failures return `<call>_phase_inc("<phase>", e)` + `logger.warning`. `search_memories` adds `phase_errors` to result envelope when counter is non-empty.
 - **Phase 1 tools**: `memory_flags_status`, `memory_phase_errors` admin ops added.
 - **Circuit-breaker fixed**: 5 handler lambda signatures corrected.
 - **Rule enforcement**: `memory-session-end.py` (Rule #7), `cron_health_check.py` (Rules #5, #9-11), `memory_compliance_check` MCP tool.
-- **Cron**: 29 scheduled jobs. `background_worker` every 15 min with flock protection.
+- **Cron**: 34 scheduled jobs. `background_worker` every 15 min with flock protection.
 - **Auto-save**: Async inbox+daemon (2-5ms enqueue). Default since 2026-06-22.
 - **Deferred indexing**: MCP `memory_save` defers embedding/KG/facts to background worker — returns <200ms, never times out.
 - **Mypy**: 0 errors. **Coverage**: 70% gate.
