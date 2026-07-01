@@ -72,7 +72,6 @@ def _record_spaced_repetition(db_path: Path, result_items: list, query: str) -> 
 # monkey-patches applied to the canonical function were bypassed.
 
 
-@mcp.tool()
 @with_audit("memory_search")
 def memory_search(
     query: str,
@@ -281,7 +280,6 @@ def memory_recall_context(
         return _err(ErrorCode.RECALL_ERROR, "Recall failed")
 
 
-@mcp.tool()
 @with_audit("memory_session_start")
 def memory_session_start(query: str = "") -> str:
     """Retrieve the session startup briefing including recent stats, recall context, and spaced repetition review schedule.

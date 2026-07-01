@@ -224,6 +224,9 @@ from mcp_async import (  # noqa: E402,F401
 # Remove admin tools from MCP surface; they're accessible via memory_maintenance.
 import tool_registry  # noqa: E402
 
+# Phase A: explicitly import the verb surface so tool registration is intentional.
+import mcp_verbs  # noqa: E402, F401
+
 # Keep memory_maintenance (the router) visible; hide individual admin tools.
 for _admin_name in tool_registry.ADMIN_TOOLS:
     if _admin_name == "memory_maintenance":

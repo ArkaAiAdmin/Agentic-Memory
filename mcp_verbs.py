@@ -3,13 +3,17 @@
 Each verb is a thin @mcp.tool() wrapper around existing functionality
 with sensible defaults so the agent can call it with 1-2 params.
 
-The underlying 81 ADMIN tools are still accessible via
-memory_maintenance(operation="...") for power users.
+The underlying ADMIN tools are still accessible via
+memory_advanced(operation="...") for power users.
 
-Verbs:
-  memory_search, memory_save, memory_recall, memory_note,
-  memory_learn, memory_audit, memory_organize,
-  memory_share, memory_graph, memory_profile, memory_advanced
+Verbs (12 + 1 escape hatch):
+  memory_search, memory_save, memory_delete, memory_recall, memory_note,
+  memory_learn, memory_audit, memory_organize, memory_share,
+  memory_graph, memory_profile, memory_session_start,
+  memory_advanced
+
+Phase A (2026-07-01): These 13 tools are the entire agent-facing MCP
+surface. The 80+ legacy tools are callable through memory_advanced.
 """
 from __future__ import annotations
 
@@ -125,6 +129,27 @@ def memory_save(
 
 
 @mcp.tool()
+@with_audit("memory_delete")
+def memory_delete(
+    note_id: str,
+    hard: bool = False,
+) -> str:
+    """Delete a memory note by ID. Soft-delete by default (recoverable for 30 days).
+
+    Args:
+        note_id: The note ID (e.g. "lessons/my-note").
+        hard: If True, permanently delete immediately (default False).
+    """
+    try:
+        from mcp_memory import memory_delete as _delete
+
+        return _delete(note_id=note_id, hard=hard)
+    except Exception as e:
+        logger.exception("in memory_delete verb")
+        return _err(ErrorCode.DB_ERROR, f"memory_delete: {e}")
+
+
+@mcp.tool()
 @with_audit("memory_recall")
 def memory_recall(query: str = "", session_id: str = "", tenant_id: str = "default") -> str:
     """Recall context for the current session or a named thread.
@@ -176,10 +201,12 @@ def memory_note(
     """
     try:
         if action == "read":
-            from mcp_memory import memory_search
+            from search.orchestrator import search_memories
 
-            result = memory_search(note_id, limit=1)
-            return str(result)
+            result = search_memories(
+                db_path=_resolve_db_path(), query=note_id, limit=1
+            )
+            return result.get("results_blob", str(result))
         elif action == "delete":
             from mcp_memory import memory_delete
 
@@ -285,7 +312,7 @@ def memory_audit(
         include_errors: Include error entries (default True).
     """
     try:
-        from mcp_maintenance import memory_audit_query, memory_circuit_breaker_status
+        from mcp_audit import memory_audit_query, memory_circuit_breaker_status
 
         since_ts = None
         if hours > 0:
@@ -324,12 +351,11 @@ def memory_organize(
         dry_run: Preview without changes (default False).
     """
     try:
+        from mcp_rebuild import memory_compact, memory_backfill_all
+        from mcp_memory import memory_purge_expired
         from mcp_maintenance import (
-            memory_compact,
             memory_consolidate,
             memory_rewrite_links,
-            memory_backfill_all,
-            memory_purge_expired,
             memory_duplicates,
         )
 
@@ -384,9 +410,9 @@ def memory_share(
         action: "list" | "share" | "import" | "stats".
     """
     try:
-        from mcp_maintenance import (
+        from mcp_sharing import (
             memory_shared_list,
-            memory_share,
+            memory_share as _share_to_pool,
             memory_shared_import,
             memory_shared_stats,
         )
@@ -396,7 +422,7 @@ def memory_share(
         elif action == "share":
             if not share_with:
                 return _err(ErrorCode.INVALID_PARAMS, "share_with required for action=share")
-            return memory_share(note_id=note_id, share_agent_id=share_with)
+            return _share_to_pool(note_id=note_id, agent_id=share_with)
         elif action == "import":
             return memory_shared_import(shared_id=note_id, target_agent_id=share_with)
         elif action == "stats":
@@ -427,12 +453,8 @@ def memory_graph(
         action: "explore" | "traverse" | "shortest_path" | "stats".
     """
     try:
-        from mcp_maintenance import (
-            memory_facts_list,
-            memory_graph_stats,
-            memory_graph_shortest_path,
-            memory_graph_traverse,
-        )
+        from mcp_kg import memory_facts_list, memory_graph_stats
+        from mcp_kg_traversal import memory_graph_shortest_path, memory_graph_traverse
 
         if action == "explore":
             facts = memory_facts_list(facts_limit=20)
@@ -464,11 +486,9 @@ def memory_profile(
         agent_id: Agent ID (for action=agents).
     """
     try:
+        from mcp_profile import memory_profile_stats, memory_user_profile
+        from mcp_agent import memory_agent_list, memory_agent_init
         from mcp_maintenance import (
-            memory_profile_stats,
-            memory_user_profile,
-            memory_agent_list,
-            memory_agent_init,
             memory_arc_stats,
             memory_list_skills,
         )
@@ -490,6 +510,23 @@ def memory_profile(
     except Exception as e:
         logger.exception("in memory_profile verb")
         return _err(ErrorCode.DB_ERROR, f"memory_profile: {e}")
+
+
+@mcp.tool()
+@with_audit("memory_session_start")
+def memory_session_start(query: str = "") -> str:
+    """Retrieve the session startup briefing.
+
+    Args:
+        query: Optional topic to scope the briefing to.
+    """
+    try:
+        from mcp_search import memory_session_start as _session_start
+
+        return _session_start(query=query)
+    except Exception as e:
+        logger.exception("in memory_session_start verb")
+        return _err(ErrorCode.DB_ERROR, f"memory_session_start: {e}")
 
 
 @mcp.tool()

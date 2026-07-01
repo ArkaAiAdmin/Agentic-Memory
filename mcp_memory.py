@@ -30,7 +30,6 @@ from mcp_instance import mcp
 from save_pipeline import save_memory
 
 
-@mcp.tool()
 @with_audit("memory_save")
 def memory_save(
     content: str,
@@ -385,7 +384,6 @@ def memory_reinforce(memory_ids: list, success: bool) -> str:
         return _err(ErrorCode.DB_ERROR, "reinforcing outcomes")
 
 
-@mcp.tool()
 @with_audit("memory_delete")
 def memory_delete(note_id: str, hard: bool = False) -> str:
     """Soft-delete or hard-purge a memory note by ID.
