@@ -1,39 +1,29 @@
 """Tool registry: defines tool visibility tiers for the MCP server.
 
-Phase A (2026-06-30) restructure:
-  CORE_TOOLS:    verbs the agent sees directly (12 + 7 existing = 16)
-  ADMIN_TOOLS:   legacy tools still callable via memory_maintenance(operation=...)
-                 but hidden from the agent surface by memory_mcp.py
-  DEPRECATED:    tools superseded by verbs (for audit/logging only)
+Phase A (2026-07-01): 12 verbs + 1 escape hatch.
 
-The agent sees ~16 tools on its surface. The 70 legacy ops are still
-functional via `memory_advanced(operation="legacy_name")` but are no
-longer advertised. Run `scripts/tool_drift_check.py` to detect drift.
+CORE_TOOLS:    13 tools the agent sees directly (12 verbs + memory_session_start).
+                Everything else is accessible via memory_advanced(operation=...).
+ADMIN_TOOLS:   Legacy tools callable via memory_maintenance / memory_advanced.
+DEPRECATED:    Tools superseded by verbs (for audit/logging only).
 """
 
-# Core tools: agent-facing verbs for 90% of use cases.
 CORE_TOOLS = [
     "memory_search",
     "memory_save",
     "memory_delete",
-    "memory_restore",
-    "memory_rebuild",
-    "memory_session_start",
-    "memory_supersede",
-    "memory_health_check",
-    # Phase A verbs
     "memory_recall",
     "memory_note",
     "memory_learn",
     "memory_audit",
     "memory_organize",
+    "memory_share",
     "memory_graph",
     "memory_profile",
+    "memory_session_start",
     "memory_advanced",
 ]
 
-# All legacy admin operations — still callable via memory_maintenance
-# but hidden from the agent's direct tool list by memory_mcp.py.
 ADMIN_TOOLS = [
     "memory_maintenance",
     "memory_adaptive_retention",
@@ -66,7 +56,10 @@ ADMIN_TOOLS = [
     "memory_retention_stats",
     "memory_review_schedule",
     "memory_rewrite_links",
-    "memory_share",
+    "memory_restore",
+    "memory_rebuild",
+    "memory_supersede",
+    "memory_health_check",
     "memory_shared_import",
     "memory_shared_list",
     "memory_shared_stats",
@@ -117,7 +110,6 @@ ADMIN_TOOLS = [
     "memory_profile_access",
 ]
 
-# Deprecated: superseded by verbs. Listed for audit/telemetry only.
 DEPRECATED = [
     "memory_incremental_update",
     "memory_check_embedding_model",

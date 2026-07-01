@@ -24,7 +24,6 @@ from mcp_common import (
 from mcp_instance import mcp
 
 
-@mcp.tool()
 @with_audit("memory_audit")
 def memory_audit() -> str:
     """Audit memory system health using SRMA-inspired metrics."""
