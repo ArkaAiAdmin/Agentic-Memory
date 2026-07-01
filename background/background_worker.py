@@ -41,6 +41,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -640,6 +641,78 @@ def process_one_task(
     return True
 
 
+class WorkerPool:
+    """Fixed-size pool of background worker threads.
+
+    Each thread maintains its own DB connection from the pool.
+    Workers serialize on ``dequeue_task``'s ``BEGIN IMMEDIATE`` — only one
+    worker dequeues at a time; the rest wait on the SQLite write lock.
+
+    In drain mode each worker has an independent deadline derived from
+    the original wall-clock guard in ``run_worker``.
+    """
+
+    def __init__(self, db_path: Path, n_workers: int = 2,
+                 task_type: str | None = None):
+        if n_workers < 1:
+            raise ValueError("n_workers must be >= 1")
+        self._db_path = db_path
+        self._n_workers = n_workers
+        self._task_type = task_type
+
+    def run(self, drain: bool = False, max_tasks: int = 10000) -> None:
+        logger.info(
+            "worker pool: starting %d workers (db=%s, drain=%s, max_tasks=%d)",
+            self._n_workers, self._db_path, drain, max_tasks,
+        )
+        with ThreadPoolExecutor(max_workers=self._n_workers) as executor:
+            futures = [
+                executor.submit(self._worker_loop, i, drain, max_tasks)
+                for i in range(self._n_workers)
+            ]
+            for f in as_completed(futures):
+                try:
+                    f.result()
+                except Exception:
+                    logger.exception("worker pool: worker thread crashed")
+
+    def _worker_loop(self, worker_id: int, drain: bool, max_tasks: int) -> None:
+        conn = connection_pool.get(str(self._db_path), timeout=30.0)
+        processed = 0
+        t_drain = time.time()
+        try:
+            _DRAIN_MAX_WALL_S = int(
+                os.environ.get("MEMORY_WORKER_DRAIN_MAX_WALL_S", "600")
+            )
+            while not _shutdown:
+                ok = process_one_task(conn, self._db_path, task_type=self._task_type)
+                if not ok:
+                    if drain:
+                        break
+                    for _ in range(15):
+                        if _shutdown:
+                            return
+                        time.sleep(1)
+                    continue
+                processed += 1
+                if drain and processed >= max_tasks:
+                    break
+                if drain and time.time() - t_drain > _DRAIN_MAX_WALL_S:
+                    logger.warning(
+                        "worker pool: worker %d hit wall-clock cap of %ds after %d tasks",
+                        worker_id, _DRAIN_MAX_WALL_S, processed,
+                    )
+                    break
+        except Exception:
+            logger.exception("worker pool: worker %d crashed", worker_id)
+        finally:
+            safe_close_db(conn)
+            logger.info(
+                "worker pool: worker %d stopped (processed %d tasks)",
+                worker_id, processed,
+            )
+
+
 def _check_high_priority_pending(conn: sqlite3.Connection) -> bool:
     try:
         row = conn.execute("SELECT id FROM task_queue WHERE status = 'pending' LIMIT 1").fetchone()
@@ -655,6 +728,7 @@ def run_worker(
     once: bool = False,
     drain: bool = False,
     max_tasks: int = 10000,
+    n_workers: int = 1,
 ) -> None:
     """Run the worker loop.
 
@@ -664,68 +738,66 @@ def run_worker(
         task_type: If set, only process tasks of this type
         once: If True, process one task and exit (for cron)
         drain: If True, process all pending tasks until empty or
-            ``max_tasks`` reached, then exit. Use this to burn down
+            ``max_tasks`` reached, then exit. Use to burn down
             a backlog (e.g. 12K tasks accumulated during downtime).
         max_tasks: Safety cap on drain mode (default 10000).
+        n_workers: Number of concurrent worker threads (default 1).
+            Pass >1 to enable the threaded WorkerPool.
     """
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
     logger.info(
-        "worker: starting (db=%s, interval=%ds, once=%s, drain=%s, max_tasks=%d)",
-        db_path,
-        interval,
-        once,
-        drain,
-        max_tasks,
+        "worker: starting (db=%s, interval=%ds, once=%s, drain=%s, "
+        "max_tasks=%d, n_workers=%d)",
+        db_path, interval, once, drain, max_tasks, n_workers,
     )
 
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    # Init phase — runs once with a temporary connection, then workers
+    # get their own connections from the pool.
+    init_conn = connection_pool.get(str(db_path), timeout=30.0)
     try:
-        init_task_queue(conn)
+        init_task_queue(init_conn)
     except Exception as e:
         logger.error("worker: failed to init task queue: %s", e)
-        safe_close_db(conn)
+        safe_close_db(init_conn)
         return
 
-    _check_and_reconcile_vec_drift(conn, db_path)
+    _check_and_reconcile_vec_drift(init_conn, db_path)
 
-    # Corpus budget guard — triggers compaction if the corpus has grown
-    # beyond the configured multiple of the 50k-token budget.
     try:
         from background.corpus_budget_guard import run_corpus_budget_guard
-        guard_status = run_corpus_budget_guard(db_path, conn=conn)
+
+        guard_status = run_corpus_budget_guard(db_path, conn=init_conn)
         if guard_status.get("compaction_enqueued"):
             logger.info(
-                "worker: corpus budget exceeded (~%d tokens, budget %d) — compaction enqueued",
+                "worker: corpus budget exceeded (~%d tokens, budget %d) — "
+                "compaction enqueued",
                 guard_status.get("tokens", 0),
                 guard_status.get("budget", 0),
             )
     except Exception as _guard_exc:
         logger.debug("worker: corpus budget guard failed: %s", _guard_exc)
 
-    # S4.3 (2026-06-23): proactive WAL checkpoint.  Same shape as
-    # the vec drift check above — runs every worker invocation and
-    # is debounced by reading the WAL file size.  S4.4: if the
-    # last checkpoint was < 60s ago (e.g. a parallel cron-driven
-    # checkpoint), skip.
-    _maybe_run_wal_checkpoint(conn, db_path)
+    _maybe_run_wal_checkpoint(init_conn, db_path)
+    safe_close_db(init_conn)
 
+    # Delegate to WorkerPool when n_workers > 1
+    if n_workers > 1:
+        pool = WorkerPool(db_path, n_workers=n_workers, task_type=task_type)
+        pool.run(drain=drain, max_tasks=max_tasks)
+        return
+
+    # Single-threaded path (unchanged from original)
+    conn = connection_pool.get(str(db_path), timeout=30.0)
     try:
         if drain:
-            # Drain mode: process tasks back-to-back until the queue
-            # is empty, max_tasks is hit, OR a wall-clock cap is reached.
-            # The wall-clock cap (default 10 min) prevents the worker
-            # from getting stuck for hours if individual tasks
-            # legitimately slow but the queue keeps re-filling itself
-            # (seen on 2026-06-22 before the timeout fix).
             _DRAIN_MAX_WALL_S = int(
                 os.environ.get("MEMORY_WORKER_DRAIN_MAX_WALL_S", "600")
             )
             processed = 0
             t_drain = time.time()
             while not _shutdown and processed < max_tasks:
-                # Wall-clock guard
                 if time.time() - t_drain > _DRAIN_MAX_WALL_S:
                     logger.warning(
                         "worker: drain hit wall-clock cap of %ds after %d tasks — exiting",
@@ -735,7 +807,6 @@ def run_worker(
                     break
                 ok = process_one_task(conn, db_path, task_type=task_type)
                 if not ok:
-                    # Queue empty (or all tasks of this type are done)
                     break
                 processed += 1
                 if processed % 50 == 0:
@@ -760,7 +831,6 @@ def run_worker(
                 if once:
                     break
                 if not processed:
-                    # No tasks — sleep then re-poll
                     for _ in range(interval):
                         if _shutdown:
                             break
@@ -841,6 +911,9 @@ def main():
         help="Safety cap on --drain mode (default 10000 from env or built-in)",
     )
     parser.add_argument("--db", type=str, default=None, help="Database path")
+    parser.add_argument(
+        "--workers", type=int, default=None, help="Number of worker threads (default 1)"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -870,6 +943,7 @@ def main():
         once=args.once,
         drain=args.drain,
         max_tasks=max_tasks,
+        n_workers=args.workers or 1,
     )
 
 
