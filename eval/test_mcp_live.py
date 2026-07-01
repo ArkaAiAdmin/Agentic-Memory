@@ -22,7 +22,7 @@ from memory_common import reset_rate_limiter
 from rebuild_index import rebuild_index
 
 try:
-    from infra.config import reset_config
+    from config import reset_config
 except ImportError:
     def reset_config():  # type: ignore[misc]
         pass

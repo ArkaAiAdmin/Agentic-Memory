@@ -18,7 +18,7 @@ import json
 import os
 from pathlib import Path
 
-from infra.config import get_feature_flags
+from config import get_feature_flags
 
 
 
@@ -833,7 +833,7 @@ def _op_recover_session(session_id: str) -> str:
 def _op_flags_status() -> str:
     """Return all feature flags with their resolved values and sources."""
     try:
-        from infra.config import get_feature_flags
+        from config import get_feature_flags
 
         return json.dumps(get_feature_flags(), indent=2)
     except Exception as e:

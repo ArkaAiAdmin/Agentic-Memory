@@ -47,7 +47,7 @@ def _get_lock_dir() -> Path:
     if env_dir:
         return Path(env_dir)
     try:
-        from infra.config import get_config
+        from config import get_config
         cfg = get_config()
         db_path = Path(cfg.db_path)
         lock_dir = db_path.parent / _DEFAULT_LOCK_DIR_NAME

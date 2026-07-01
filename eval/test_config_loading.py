@@ -69,8 +69,10 @@ class TestMemoryConfigDefaults:
         # 2026-06-25 further field additions brought total to 103.
         # 2026-06-25 idle_unload_seconds added to MemoryConfig → 104.
         # 2026-07-01 legacy_note_crdt + vec_rebuild_adaptive → 107.
-        assert len(fields) == 107, (
-            f"Expected 107 fields, got {len(fields)}: {[f.name for f in fields]}"
+        # 2026-07-01 config merge: exploration_mode, neural_forget_mode/weights,
+        # temporal_ssm_enabled/weights, session_decision_llm, rate_limits → 114.
+        assert len(fields) == 114, (
+            f"Expected 114 fields, got {len(fields)}: {[f.name for f in fields]}"
         )
 
     def test_default_db_path(self):

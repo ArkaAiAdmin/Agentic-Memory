@@ -1592,18 +1592,6 @@ def _save_memory_core(
     defer_expensive = req.defer_expensive
     safety_wiring = req.safety_wiring
     tenant_id = req.tenant_id
-    content = req.content
-    category = req.category
-    title_slug = req.title_slug
-    tags = req.tags
-    pinned = req.pinned
-    is_global = req.is_global
-    db_path = req.db_path
-    importance = req.importance
-    note_id = req.note_id
-    context = req.context
-    defer_expensive = req.defer_expensive
-    safety_wiring = req.safety_wiring
 
     from db import _local_state
 

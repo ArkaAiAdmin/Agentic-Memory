@@ -403,7 +403,7 @@ def get_default_limiter() -> RateLimiter:
         if _default_limiter is None:
             per_tool: dict[str, tuple[int, float]] = {}
             try:
-                from infra.config import get_config
+                from config import get_config
                 cfg = get_config()
                 toml_limits = dict(cfg.rate_limits or {})
                 try:

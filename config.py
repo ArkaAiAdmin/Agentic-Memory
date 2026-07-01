@@ -14,6 +14,8 @@ Usage::
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import sys
 import threading
@@ -203,10 +205,12 @@ def _resolve(
         # ``30`` and ``30.0`` interchangeably; an int value in the
         # TOML is valid for a float dataclass field).
         if toml_val is not None and not isinstance(toml_val, type(default)):
-            # Allow int → float and bool → int promotions.
+            # Allow int → float, bool → int, and None → dict promotions.
             if isinstance(default, float) and isinstance(toml_val, int):
                 pass
             elif isinstance(default, int) and isinstance(toml_val, bool):
+                pass
+            elif default is None and isinstance(toml_val, dict):
                 pass
             else:
                 print(
@@ -220,11 +224,40 @@ def _resolve(
 
     return default
 
-    toml_val = _deep_get(toml_data or {}, dotted_path)
-    if toml_val is not None:
-        return toml_val
 
-    return default
+# 2026-06-26: the original import-time log only printed the raw env var
+# (e.g. "MEMORY_LLM_EXTRACTION=None"), which misled operators into thinking
+# LLM extraction was disabled — when in fact the TOML config was the source
+# of truth. This function shows all three: env var, TOML value, and the
+# resolved effective value.
+def _log_llm_extraction_resolution() -> None:
+    raw_env = os.environ.get("MEMORY_LLM_EXTRACTION")
+    try:
+        with open(_TOML_PATH, "rb") as fh:
+            toml_data = tomllib.load(fh) if tomllib else {}
+    except (OSError, ValueError, KeyError, TypeError):
+        toml_data = {}
+    toml_val = None
+    try:
+        features = toml_data.get("features", {}) if isinstance(toml_data, dict) else {}
+        toml_val = features.get("llm_extraction")
+    except (AttributeError, TypeError):
+        toml_val = None
+    effective = _resolve(
+        "MEMORY_LLM_EXTRACTION",
+        "features.llm_extraction",
+        True,
+        toml_data,
+        parser=_parse_bool,
+    )
+    print(
+        f"IMPORT config.py: MEMORY_LLM_EXTRACTION env={raw_env!r} "
+        f"toml[features.llm_extraction]={toml_val!r} effective={effective}",
+        file=sys.stderr,
+    )
+
+
+_log_llm_extraction_resolution()
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +312,7 @@ class MemoryConfig:
 
     # user profile tunables (cont.)
     ctr_data_window_days: int = 90
+    exploration_mode: str = "off"
 
     # features — all on by default so the agent gets the richest context
     # automatically. Tests that need to opt out set the env var to "0"
@@ -290,6 +324,10 @@ class MemoryConfig:
     user_profile: bool = True
     self_directed: bool = True
     adaptive_retention: bool = True
+    neural_forget_mode: str = "formula"  # "formula" | "learned" | "hybrid"
+    neural_forget_weights: str = ""      # CSV: w1,w2,w3,w4,w5,b  (filled by cron)
+    temporal_ssm_enabled: bool = False
+    temporal_ssm_weights: str = ""
     consolidation: bool = True
     quality_gates: bool = True
     saga_enabled: bool = True
@@ -303,6 +341,7 @@ class MemoryConfig:
     # with no event_time / supersession / invalidation logic).
     feature_temporal_kg: bool = True
     session_memory: bool = False
+    session_decision_llm: bool = False
 
     # cache
     fts5_cache: bool = True
@@ -319,6 +358,10 @@ class MemoryConfig:
 
     # llm_extraction
     llm_provider: str = "huggingface"  # S3: "ollama" | "llama_cpp" | "huggingface"
+
+    # rate_limits — per-tool rate limiting (Phase 4)
+    rate_limits: dict[str, dict[str, float]] | None = None
+
     ollama_host: str = "http://localhost:11434"  # S3.5
     ollama_model: str = "qwen2.5:3b"  # S3: default Ollama model
     ollama_timeout_s: float = 30.0  # S3: per-request HTTP timeout
@@ -397,6 +440,9 @@ class MemoryConfig:
     auto_save_preview_max: int = 200
     auto_save_params_max: int = 2000
     auto_save_health_check_minutes: int = 5
+
+
+DECISION_CATEGORIES = frozenset({"decisions", "lessons", "projects", "architecture"})
 
 
 # ---------------------------------------------------------------------------
@@ -666,6 +712,13 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             int,
             toml_data,
         ),
+        exploration_mode=_b(
+            "MEMORY_EXPLORATION_MODE",
+            "search.exploration_mode",
+            "off",
+            str,
+            toml_data,
+        ),
         rerank_half_life_days=_b(
             "MEMORY_RERANK_HALF_LIFE_DAYS",
             "search.rerank_half_life_days",
@@ -726,6 +779,34 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "features.adaptive_retention",
             True,
             bool,
+            toml_data,
+        ),
+        neural_forget_mode=_b(
+            "MEMORY_NEURAL_FORGET_MODE",
+            "features.neural_forget_mode",
+            "formula",
+            str,
+            toml_data,
+        ),
+        neural_forget_weights=_b(
+            "MEMORY_NEURAL_FORGET_WEIGHTS",
+            "features.neural_forget_weights",
+            "",
+            str,
+            toml_data,
+        ),
+        temporal_ssm_enabled=_b(
+            "MEMORY_TEMPORAL_SSM_ENABLED",
+            "features.temporal_ssm_enabled",
+            False,
+            bool,
+            toml_data,
+        ),
+        temporal_ssm_weights=_b(
+            "MEMORY_TEMPORAL_SSM_WEIGHTS",
+            "features.temporal_ssm_weights",
+            "",
+            str,
             toml_data,
         ),
         consolidation=_b(
@@ -1089,6 +1170,22 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             int,
             toml_data,
         ),
+        # --- session_memory (decision_llm; session_memory is bound above) ---
+        session_decision_llm=_b(
+            "MEMORY_SESSION_DECISION_LLM",
+            "session_memory.decision_llm",
+            False,
+            bool,
+            toml_data,
+        ),
+        # --- rate_limits ---
+        rate_limits=_b(
+            "MEMORY_RATE_LIMITS",
+            "rate_limits",
+            None,
+            cast=None,
+            toml_data=toml_data,
+        ),
     )
     return cfg
 
@@ -1128,17 +1225,161 @@ def get_config() -> MemoryConfig:
 def reset_config() -> None:
     """Reset the singleton (useful in tests)."""
     global _instance
-    _instance = None
+    with _instance_lock:
+        _instance = None
 
 
-_toml_data_for_log = _read_toml(_TOML_PATH)
-_env_llm = os.environ.get("MEMORY_LLM_EXTRACTION")
-_toml_llm = _deep_get(_toml_data_for_log, "features.llm_extraction")
-_effective_llm = _resolve(
-    "MEMORY_LLM_EXTRACTION", "features.llm_extraction", True, _toml_data_for_log
-)
-print(
-    f"IMPORT config.py: MEMORY_LLM_EXTRACTION env={_env_llm!r} "
-    f"toml[features.llm_extraction]={_toml_llm!r} effective={_effective_llm!r}",
-    file=sys.stderr,
-)
+def get_feature_flags() -> dict:
+    """Return all feature flags with their resolved values and sources.
+
+    Returns a dict of {flag_name: {value, env_var, toml_path, default}}.
+    The feature flags are the boolean fields in the MemoryConfig
+    "features", "search", and "cache" sections. Each entry carries
+    the resolved value, env var name, TOML path, default, and any
+    human-readable warnings about the flag's current state.
+    """
+
+    def _flag(value, env_var, toml_path, default):
+        warnings = []
+        if not value and default:
+            if "temporal" in toml_path or "temporal" in env_var.lower():
+                warnings.append(
+                    "Temporal features disabled: temporal KG, contradiction "
+                    "detection, and supersession are off."
+                )
+            elif "KG" in env_var or "kg" in toml_path:
+                warnings.append(
+                    "Knowledge graph disabled; graph-RAG, backlinks, and "
+                    "fact extraction are off."
+                )
+            elif "quality" in toml_path:
+                warnings.append("Quality gates disabled; noisy/degraded content may pass.")
+            elif "saga" in toml_path:
+                warnings.append("Saga rolled back; writes may be non-atomic on failure.")
+            elif "crdt" in toml_path:
+                warnings.append("CRDT disabled; concurrent writes may overwrite each other.")
+            elif "summarization" in toml_path:
+                warnings.append("Summarization disabled; long notes will not be condensed.")
+            elif "consolidation" in toml_path:
+                warnings.append("Consolidation disabled; duplicate memories may accumulate.")
+            elif "tiers" in toml_path:
+                warnings.append("Temporal tiers disabled; adaptive retention is off.")
+            elif "user_profile" in toml_path:
+                warnings.append("User profile disabled; search personalization is off.")
+        return {
+            "value": value,
+            "env_var": env_var,
+            "toml_path": toml_path,
+            "default": default,
+            "warnings": warnings,
+        }
+
+    cfg = get_config()
+    return {
+        "multi_agent": _flag(
+            cfg.multi_agent, "MEMORY_MULTI_AGENT", "features.multi_agent", True
+        ),
+        "summarization": _flag(
+            cfg.summarization, "MEMORY_SUMMARIZATION", "features.summarization", True
+        ),
+        "user_profile": _flag(
+            cfg.user_profile, "MEMORY_USER_PROFILE", "features.user_profile", True
+        ),
+        "self_directed": _flag(
+            cfg.self_directed, "MEMORY_SELF_DIRECTED", "features.self_directed", True
+        ),
+        "adaptive_retention": _flag(
+            cfg.adaptive_retention,
+            "MEMORY_ADAPTIVE_RETENTION",
+            "features.adaptive_retention",
+            True,
+        ),
+        "temporal_ssm_enabled": _flag(
+            cfg.temporal_ssm_enabled,
+            "MEMORY_TEMPORAL_SSM_ENABLED",
+            "features.temporal_ssm_enabled",
+            False,
+        ),
+        "consolidation": _flag(
+            cfg.consolidation,
+            "MEMORY_CONSOLIDATION",
+            "features.consolidation",
+            True,
+        ),
+        "quality_gates": _flag(
+            cfg.quality_gates, "MEMORY_QUALITY_GATES", "features.quality_gates", True
+        ),
+        "saga_enabled": _flag(
+            cfg.saga_enabled, "MEMORY_SAGA_ENABLED", "features.saga_enabled", True
+        ),
+        "temporal_tiers": _flag(
+            cfg.temporal_tiers, "MEMORY_TEMPORAL_TIERS", "features.temporal_tiers", True
+        ),
+        "crdt_enabled": _flag(
+            cfg.crdt_enabled, "MEMORY_CRDT_ENABLED", "features.crdt_enabled", True
+        ),
+        "legacy_note_crdt": _flag(
+            cfg.legacy_note_crdt,
+            "MEMORY_LEGACY_NOTE_CRDT",
+            "features.legacy_note_crdt",
+            False,
+        ),
+        "llm_extraction": _flag(
+            cfg.llm_extraction,
+            "MEMORY_LLM_EXTRACTION",
+            "features.llm_extraction",
+            True,
+        ),
+        "feature_temporal_kg": _flag(
+            cfg.feature_temporal_kg,
+            "MEMORY_TEMPORAL_KG",
+            "features.feature_temporal_kg",
+            True,
+        ),
+        "fts5_cache": _flag(
+            cfg.fts5_cache, "MEMORY_FTS5_CACHE", "cache.fts5_cache", True
+        ),
+        "query_cache": _flag(
+            cfg.query_cache, "MEMORY_QUERY_CACHE", "search.query_cache", True
+        ),
+        "reranker_disabled": _flag(
+            cfg.reranker_disabled,
+            "MEMORY_RERANKER_DISABLED",
+            "search.reranker_disabled",
+            False,
+        ),
+        "contextual_retrieval": _flag(
+            cfg.contextual_retrieval,
+            "MEMORY_CONTEXTUAL_RETRIEVAL",
+            "search.contextual_retrieval",
+            True,
+        ),
+    }
+
+
+def log_feature_flags_at_startup() -> None:
+    """Emit a JSON snapshot of all feature flags to the INFO log.
+
+    Format: ``feature_flags_snapshot=<json>``.
+    Called once at process startup so operators have a record of which
+    flags were on/off for the lifetime of the session.
+    """
+    flags = get_feature_flags()
+    logger = logging.getLogger(__name__)
+    logger.info("feature_flags_snapshot=%s", json.dumps(flags))
+
+
+__all__ = [
+    "MemoryConfig",
+    "get_config",
+    "reset_config",
+    "get_feature_flags",
+    "log_feature_flags_at_startup",
+    "INSTALL_ROOT",
+    "GLOBAL_SCRIPTS_DIR",
+    "SCRIPTS_SUBDIR",
+    "AGENTS_SKILLS_DIR",
+    "OPENCODE_SKILLS_DIR",
+    "resolve_db_path",
+    "DECISION_CATEGORIES",
+]

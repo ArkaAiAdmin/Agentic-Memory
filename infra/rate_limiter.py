@@ -137,7 +137,7 @@ def _resolve_tool_limits(
 def configure_rate_limits(toml_limits: dict[str, Any] | None = None) -> None:
     """Build the per-tool TokenBucket registry. Call once at startup."""
     try:
-        from infra.config import get_config  # late import avoids cycle
+        from config import get_config  # late import avoids cycle
         cfg = get_config()
         # cfg.rate_limits is a dict[str, dict] if set, or empty dict
         toml_limits = cfg.rate_limits or toml_limits or {}

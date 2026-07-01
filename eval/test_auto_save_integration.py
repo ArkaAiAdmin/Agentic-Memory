@@ -80,7 +80,7 @@ class TestAutoSaveSyncSave(TestCase):
         _auto_save_reset_state()
 
     def tearDown(self) -> None:
-        from infra.config import _instance
+        from config import _instance
 
         _instance = None
         from db import connection_pool
@@ -158,7 +158,7 @@ class TestAutoSaveResilience(TestCase):
         _auto_save_reset_state()
 
     def tearDown(self) -> None:
-        from infra.config import _instance
+        from config import _instance
         _instance = None
         from background.circuit_breaker import _auto_save_reset_state
         _auto_save_reset_state()

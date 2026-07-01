@@ -7,7 +7,7 @@ import logging
 
 import pytest
 
-from infra.config import get_feature_flags, log_feature_flags_at_startup, reset_config
+from config import get_feature_flags, log_feature_flags_at_startup, reset_config
 
 
 class TestFeatureFlags:

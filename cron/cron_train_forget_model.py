@@ -40,7 +40,7 @@ _RECENCY_CAP = 365
 def _get_config():
     # Lazy import to avoid boot-time cycle; this cron runs standalone.
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from infra.config import get_config
+    from config import get_config
     return get_config()
 
 
