@@ -104,6 +104,8 @@ def _seed_compaction(
 def _admin_env(tmp_path, monkeypatch):
     _enable_session_flag(monkeypatch)
     _reset_config()
+    from infra.memory_common import reset_rate_limiter as _rl_reset
+    _rl_reset()
     db = _make_db(tmp_path)
     monkeypatch.setenv("MEMORY_DB_PATH", str(db))
     return db

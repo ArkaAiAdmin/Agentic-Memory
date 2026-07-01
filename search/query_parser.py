@@ -291,7 +291,7 @@ def _did_you_mean(query: str, synonym_map: dict) -> list:
     return expansions[:3]
 
 
-def _top_recent_tags(db_path, limit: int = 5) -> list:
+def _top_recent_tags(db_path, limit: int = 5, tenant_id: str = "default") -> list:
     """Return up to `limit` most-recently-observed distinct tag sets.
 
     Each row in the memories table stores tags as a JSON array string.
@@ -301,10 +301,10 @@ def _top_recent_tags(db_path, limit: int = 5) -> list:
     if not db_path:
         return []
     try:
-        conn = connection_pool.get(str(db_path))
+        conn = connection_pool.get(str(db_path), tenant_id=tenant_id)
         try:
             rows = conn.execute(
-                "\n                SELECT tags, MAX(observed_at) as latest\n                FROM memories\n                WHERE tags != '[]' AND tags IS NOT NULL\n                GROUP BY tags\n                ORDER BY latest DESC\n                LIMIT ?\n            ",
+                "\n                SELECT tags, MAX(observed_at) as latest\n                FROM tenant_memories\n                WHERE tags != '[]' AND tags IS NOT NULL\n                GROUP BY tags\n                ORDER BY latest DESC\n                LIMIT ?\n            ",
                 (limit,),
             ).fetchall()
             return [{"tag": r[0], "latest_observed_at": r[1]} for r in rows]
@@ -315,15 +315,15 @@ def _top_recent_tags(db_path, limit: int = 5) -> list:
         return []
 
 
-def _top_recent_notes(db_path, limit: int = 5) -> list:
+def _top_recent_notes(db_path, limit: int = 5, tenant_id: str = "default") -> list:
     """Return up to `limit` most-recently-observed notes (id + preview)."""
     if not db_path:
         return []
     try:
-        conn = connection_pool.get(str(db_path))
+        conn = connection_pool.get(str(db_path), tenant_id=tenant_id)
         try:
             rows = conn.execute(
-                "\n                SELECT id, substr(content, 1, 80) as preview, observed_at\n                FROM memories\n                ORDER BY observed_at DESC\n                LIMIT ?\n            ",
+                "\n                SELECT id, substr(content, 1, 80) as preview, observed_at\n                FROM tenant_memories\n                ORDER BY observed_at DESC\n                LIMIT ?\n            ",
                 (limit,),
             ).fetchall()
             return [{"id": r[0], "preview": r[1], "observed_at": r[2]} for r in rows]
@@ -334,15 +334,15 @@ def _top_recent_notes(db_path, limit: int = 5) -> list:
         return []
 
 
-def _top_recent_source_files(db_path, limit: int = 5) -> list:
+def _top_recent_source_files(db_path, limit: int = 5, tenant_id: str = "default") -> list:
     """Return up to `limit` source files grouped by recency, with counts."""
     if not db_path:
         return []
     try:
-        conn = connection_pool.get(str(db_path))
+        conn = connection_pool.get(str(db_path), tenant_id=tenant_id)
         try:
             rows = conn.execute(
-                "\n                SELECT source_file, COUNT(*) as cnt, MAX(observed_at) as latest\n                FROM memories\n                GROUP BY source_file\n                ORDER BY latest DESC\n                LIMIT ?\n            ",
+                "\n                SELECT source_file, COUNT(*) as cnt, MAX(observed_at) as latest\n                FROM tenant_memories\n                GROUP BY source_file\n                ORDER BY latest DESC\n                LIMIT ?\n            ",
                 (limit,),
             ).fetchall()
             return [

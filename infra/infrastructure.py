@@ -234,7 +234,8 @@ def with_memory_connection(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         db_path = _resolve_active_db_path()
-        conn = connection_pool.get(str(db_path), timeout=30.0)
+        tenant_id = kwargs.get("tenant_id", "default")
+        conn = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
         conn.execute("PRAGMA busy_timeout = 30000;")
         try:
             return func(conn, *args, **kwargs)

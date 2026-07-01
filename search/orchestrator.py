@@ -928,7 +928,7 @@ def _enhance_with_chunks(
                 if check_ids:
                     placeholders = ",".join("?" * len(check_ids))
                     _rows = db.execute(
-                        f"SELECT id, valid_to FROM memories WHERE id IN ({placeholders})",
+                        f"SELECT id, valid_to FROM tenant_memories WHERE id IN ({placeholders})",
                         check_ids,
                     ).fetchall()
                     invalid_ids = {row[0] for row in _rows if row[1] not in (None, "")}
@@ -1689,7 +1689,7 @@ def _apply_save_hint_floater(
             "SELECT id, content, source_file, tags, created_at, "
             "fitness_score, importance, pinned, last_accessed, "
             "metadata, valid_to, 0 AS rank, 0.5 AS final_score "
-            "FROM memories WHERE id = ? AND deleted_at IS NULL",
+            "FROM tenant_memories WHERE id = ? AND deleted_at IS NULL",
             (hint_id,),
         ).fetchone()
     except Exception:
@@ -1854,7 +1854,7 @@ def search_memories(
                 _record_phase_latency("embedding_fallback", _t0)
             if not results:
                 try:
-                    total = db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+                    total = db.execute("SELECT COUNT(*) FROM tenant_memories").fetchone()[0]
                 except Exception:
                     total = 0
                 if total == 0:
@@ -1889,7 +1889,7 @@ def search_memories(
                 valid_ids = {
                     row[0]
                     for row in db.execute(
-                        "SELECT id FROM memories WHERE valid_to IS NULL OR valid_to = ''"
+                        "SELECT id FROM tenant_memories WHERE valid_to IS NULL OR valid_to = ''"
                     ).fetchall()
                 }
                 results = [r for r in results if r[0] in valid_ids]

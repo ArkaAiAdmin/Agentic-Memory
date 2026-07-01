@@ -49,6 +49,7 @@ async def async_memory_search(
     include_global: bool = True,
     include_invalid: bool = True,
     deep_rerank: bool = False,
+    tenant_id: str = "default",
 ) -> str:
     """Async wrapper around memory_search."""
     return await asyncio.to_thread(
@@ -61,6 +62,7 @@ async def async_memory_search(
         include_global=include_global,
         include_invalid=include_invalid,
         deep_rerank=deep_rerank,
+        tenant_id=tenant_id,
     )
 
 

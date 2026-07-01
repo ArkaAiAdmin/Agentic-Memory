@@ -158,6 +158,22 @@ def configure_rate_limits(toml_limits: dict[str, Any] | None = None) -> None:
     logger.info("rate_limits configured for %d tools", len(RATE_LIMITERS))
 
 
+def reset_rate_limiter(tool_name: str | None = None) -> None:
+    """Refill token bucket(s) to full capacity. Primarily a test helper."""
+    if not RATE_LIMITERS:
+        configure_rate_limits()
+    with _rl_lock:
+        if tool_name is not None:
+            bucket = RATE_LIMITERS.get(tool_name)
+            if bucket is not None:
+                bucket.tokens = float(bucket.burst)
+                bucket.last_refill = time.monotonic()
+        else:
+            for bucket in RATE_LIMITERS.values():
+                bucket.tokens = float(bucket.burst)
+                bucket.last_refill = time.monotonic()
+
+
 def check_rate_limit(tool: str) -> bool:
     """Return True if the request for *tool* is within the rate limit.
 

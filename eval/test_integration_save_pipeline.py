@@ -82,7 +82,8 @@ def _init_schema(db: sqlite3.Connection) -> None:
             next_review   TEXT,
             adaptive_halflife_days REAL,
             embedding_revision TEXT,
-            metadata      TEXT DEFAULT '{}'
+            metadata      TEXT DEFAULT '{}',
+            tenant_id     TEXT DEFAULT 'default'
         )
     """)
     db.execute("""
@@ -1338,7 +1339,7 @@ class TestSaveMemoryLockOrder(SavePipelineFixture, unittest.TestCase):
             # Return None to skip the lock — we only care about order.
             return None
 
-        def mock_pool_get(path, timeout=30.0):
+        def mock_pool_get(path, timeout=30.0, **kwargs):
             call_order.append(("conn", time.time()))
             return original_pool_get(path, timeout=timeout)
 
