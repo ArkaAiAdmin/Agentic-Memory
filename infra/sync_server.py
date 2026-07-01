@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from mdns_discovery import MDNSAdvertiser, MDNSBrowser
+    from infra.mdns_discovery import MDNSAdvertiser, MDNSBrowser
 from urllib.parse import urlparse, parse_qs
 
 logger = logging.getLogger(__name__)
@@ -91,8 +91,8 @@ def _open_server_db(db_path: str) -> sqlite3.Connection:
     # Imported lazily to avoid a hard dependency on db.py at
     # import time (some test runners use sync_server without the
     # full DB stack).
-    from db_write_queue import sqlite_write_queue
-    from db_migrations import run_schema_setup
+    from infra.db_write_queue import sqlite_write_queue
+    from infra.db_migrations import run_schema_setup
 
     conn = sqlite_write_queue.start_session(Path(db_path))
     try:
@@ -306,7 +306,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
         )
 
     def _handle_get_peers(self) -> None:
-        from pex_protocol import peer_directory
+        from infra.pex_protocol import peer_directory
 
         active = peer_directory.get_active_peers(max_age_s=60.0)
         self._json_response({"peers": active})
@@ -314,7 +314,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
     def _handle_gossip_peers(self) -> None:
         if not self._require_auth():
             return
-        from pex_protocol import peer_directory
+        from infra.pex_protocol import peer_directory
 
         try:
             body = self._read_body()
@@ -484,7 +484,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            from crdt_merge import crdt_sync_all
+            from crdt.crdt_merge import crdt_sync_all
 
             result = crdt_sync_all(
                 self.db_path,
@@ -535,7 +535,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 pass
 
         try:
-            from kg_crdt import ensure_kg_crdt_schema
+            from kg.kg_crdt import ensure_kg_crdt_schema
 
             db_path = self.server.db_path  # type: ignore[attr-defined]
             conn = _open_server_db(db_path)
@@ -639,7 +639,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            from kg_crdt import ensure_kg_crdt_schema
+            from kg.kg_crdt import ensure_kg_crdt_schema
 
             db_path = self.server.db_path  # type: ignore[attr-defined]
             conn = _open_server_db(db_path)
@@ -1000,7 +1000,7 @@ class SyncServer:
         ).strip().lower() in ("1", "true", "yes")
         self._discover_enabled = enable_discovery
         if enable_discovery:
-            from mdns_discovery import MDNSAdvertiser, MDNSBrowser
+            from infra.mdns_discovery import MDNSAdvertiser, MDNSBrowser
 
             # Start mDNS advertiser
             self.advertiser = MDNSAdvertiser(self.agent_id, self.port)
@@ -1020,7 +1020,7 @@ class SyncServer:
         return True
 
     def _gossip_loop(self) -> None:
-        from pex_protocol import peer_directory, send_gossip
+        from infra.pex_protocol import peer_directory, send_gossip
 
         assert self.gossip_stop_event is not None
         while not self.gossip_stop_event.is_set():
@@ -1093,7 +1093,7 @@ def start_server_from_config(db_path: str | Path) -> Optional[SyncServer]:
     ``sync_listen_port`` from the global config singleton. Returns
     ``None`` if sync is disabled.
     """
-    from _lazy_imports import get_config
+    from infra._lazy_imports import get_config
 
     cfg = get_config()
     if not cfg.sync_enable_server:

@@ -22,7 +22,7 @@ import numpy as np
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-import memory_common
+import infra.memory_common as memory_common
 from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 import rebuild_vec_index  # noqa: E402
 
@@ -153,7 +153,7 @@ class TestBuildIndex(_VecIndexTestBase):
         rebuild_vec_index.rebuild_vec_index(self.db_path)
         idx, dim, metric, dtype = _load_index_from_db(self.db_path)
         self.assertEqual(len(idx), 3)
-        from embedding_search import get_embedding_search
+        from infra.embedding_search import get_embedding_search
         es = get_embedding_search()
         q = es.encode(["cosine similarity"])[0]
         matches = idx.search(q.astype(np.float32), 3)

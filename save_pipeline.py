@@ -32,7 +32,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from memory_common import (
+from infra.memory_common import (
     connection_pool,
     safe_close_db,
     acquire_flock_with_retry,
@@ -48,9 +48,9 @@ from infra.infrastructure import (
     GLOBAL_MEM_DIR,
 )
 from infra.db import open_db  # noqa: E402,F401 — backward compat re-export
-import audit
+import infra.audit
 from self_directed import _assign_tier as assign_tier
-from backfill_all import auto_backfill
+from backfill.orchestrator import auto_backfill
 
 
 @dataclass(frozen=True)
@@ -100,7 +100,7 @@ def _write_vec_key(db, note_id: str) -> int:
 
 
 try:
-    from crdt_merge import parse_version_vector
+    from crdt.crdt_merge import parse_version_vector
 except ImportError:  # FLAVOR_A: optional dependency guard
     parse_version_vector = None
 
@@ -108,7 +108,7 @@ logger = logging.getLogger(__name__)
 
 # Try to import saga coordinator; fall back gracefully if unavailable.
 try:
-    from saga import saga_save_memory as _saga_save_memory
+    from infra.saga import saga_save_memory as _saga_save_memory
 except ImportError:  # FLAVOR_A: optional dependency guard
     _saga_save_memory = None
 
@@ -356,7 +356,7 @@ def _acquire_lock(db_path: Path):
         )
         return lock_file
     except Exception as e:
-        from _lazy_imports import FileLockError
+        from infra._lazy_imports import FileLockError
 
         if isinstance(e, FileLockError):
             # Don't catch — let it propagate per the strict contract.
@@ -739,7 +739,7 @@ def _update_memory_index_incremental(
     # per-thread connection keys still serialise intra-process writes
     # on the same path, so this is a defence-in-depth fallback rather
     # than a primary correctness mechanism.
-    from _lazy_imports import FileLockError
+    from infra._lazy_imports import FileLockError
 
     if external_db:
         lock_file = None
@@ -777,9 +777,9 @@ def _update_memory_index_incremental(
         if external_db:
             conn = db
         else:
-            from db_write_queue import sqlite_write_queue
+            from infra.db_write_queue import sqlite_write_queue
             conn = sqlite_write_queue.start_session(db_path)
-            from db_migrations import run_schema_setup
+            from infra.db_migrations import run_schema_setup
             run_schema_setup(conn)
             local_db = conn
         # B5 fix: use the centralized helper instead of duplicating the
@@ -854,8 +854,8 @@ def _defer_indexing_background_tasks(
     worker processes these asynchronously so the MCP tool returns fast.
     """
     try:
-        from background_queue import init_task_queue, enqueue_task
-        from _lazy_imports import get_config
+        from background.background_queue import init_task_queue, enqueue_task
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         max_qs = getattr(cfg, "background_max_queue_size", 500)
@@ -863,7 +863,7 @@ def _defer_indexing_background_tasks(
 
         bq_conn = conn
         if bq_conn is None:
-            from db_write_queue import sqlite_write_queue
+            from infra.db_write_queue import sqlite_write_queue
             bq_conn = sqlite_write_queue.start_session(db_path)
         init_task_queue(bq_conn)
         enqueue_task(
@@ -900,7 +900,7 @@ def _defer_indexing_background_tasks(
 def _validate_save_params(content, category, title_slug, tags):
     if not isinstance(content, str):
         return _err(ErrorCode.INVALID_PARAMS, "content must be a string.")
-    from _lazy_imports import get_config
+    from infra._lazy_imports import get_config
 
     max_content = get_config().save_max_content_bytes
     if len(content) > max_content:
@@ -919,7 +919,7 @@ def _validate_save_params(content, category, title_slug, tags):
             ErrorCode.INVALID_CATEGORY,
             "Invalid category. Must be a non-empty single segment like 'lessons' or 'decisions'.",
         )
-    from _lazy_imports import get_config
+    from infra._lazy_imports import get_config
 
     cfg = get_config()
     max_slug = cfg.save_max_slug_len
@@ -971,7 +971,7 @@ def _scan_for_injection_or_skip(
     tool and the auto-save hook delegate to save_memory.
     """
     try:
-        from _lazy_imports import scan_for_injection
+        from infra._lazy_imports import scan_for_injection
 
         inj = scan_for_injection(content)
         if inj["is_suspicious"] and inj["risk_score"] >= 0.5:
@@ -1013,9 +1013,9 @@ def _acquire_db_connection(db_path_obj, category, title_slug, start_time, tenant
     stays readable.
     """
     try:
-        from db_write_queue import sqlite_write_queue
+        from infra.db_write_queue import sqlite_write_queue
         conn = sqlite_write_queue.start_session(db_path_obj)
-        from db_migrations import run_schema_setup
+        from infra.db_migrations import run_schema_setup
         run_schema_setup(conn)
         return conn
     except Exception as e:
@@ -1367,7 +1367,7 @@ def _apply_saga_fallback_policy(category, title_slug):
     # S2 fix: counter for telemetry.  Even when fallback is allowed,
     # the operator should know it happened.
     try:
-        from saga import _saga_fallback_counter
+        from infra.saga import _saga_fallback_counter
 
         _saga_fallback_counter.inc()
     except Exception:
@@ -1593,7 +1593,7 @@ def _save_memory_core(
     safety_wiring = req.safety_wiring
     tenant_id = req.tenant_id
 
-    from db import _local_state
+    from infra.db import _local_state
 
     _local_state.in_save_pipeline = True
     try:
@@ -1608,7 +1608,7 @@ def _save_memory_core(
                 category = _derived_cat
             if not title_slug:
                 title_slug = _derived_slug
-        from memory_common import _resolve_tags
+        from infra.memory_common import _resolve_tags
 
         tags_list = _resolve_tags(category, tags_list, context=context)
         # H9: Prompt-injection scan — pure regex, no side effects, runs on every
@@ -1659,7 +1659,7 @@ def _save_memory_core(
         # the pool's per-thread conn still gives intra-process isolation,
         # and intra-process callers using the same path from different
         # threads are already serialized via the pool's per-thread keys.
-        from _lazy_imports import FileLockError
+        from infra._lazy_imports import FileLockError
 
         try:
             lock_file = _acquire_lock(db_path_obj)
@@ -1770,7 +1770,7 @@ def _save_memory_core(
                 try:
                     conn.close()
                     if not _save_errored and deferred_writes:
-                        from memory_common import safe_atomic_write
+                        from infra.memory_common import safe_atomic_write
                         for filepath, filecontent in deferred_writes:
                             try:
                                 safe_atomic_write(Path(filepath), filecontent, encoding="utf-8")
@@ -1781,7 +1781,7 @@ def _save_memory_core(
                         "save_memory: safe_close_db in finally failed: %s", _close_err
                     )
             elif not _save_errored and deferred_writes:
-                from memory_common import safe_atomic_write
+                from infra.memory_common import safe_atomic_write
                 for filepath, filecontent in deferred_writes:
                     try:
                         safe_atomic_write(Path(filepath), filecontent, encoding="utf-8")

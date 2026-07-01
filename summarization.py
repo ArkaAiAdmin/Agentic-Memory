@@ -14,7 +14,7 @@ from collections import Counter
 from pathlib import Path
 
 from config import resolve_db_path
-from memory_common import safe_close_db, connection_pool, GLOBAL_MEM_DIR
+from infra.memory_common import safe_close_db, connection_pool, GLOBAL_MEM_DIR
 
 __all__ = [
     "SUMMARIZATION_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -214,7 +214,7 @@ def summarize_note(
         global_mem = Path(GLOBAL_MEM_DIR)
     else:
         try:
-            from _lazy_imports import get_memory_paths
+            from infra._lazy_imports import get_memory_paths
 
             _, local_mem, global_mem = get_memory_paths()
         except ImportError:
@@ -222,7 +222,7 @@ def summarize_note(
     db = db_path if db_path is not None else str(local_mem / "memory.db")
 
     try:
-        from db_write_queue import sqlite_write_queue
+        from infra.db_write_queue import sqlite_write_queue
 
         conn = sqlite_write_queue.start_session(Path(db))
         try:
@@ -290,7 +290,7 @@ def auto_summarize_long(
         db = db_path
     else:
         try:
-            from _lazy_imports import get_memory_paths
+            from infra._lazy_imports import get_memory_paths
 
             _, local_mem, global_mem = get_memory_paths()
             db = str(local_mem / "memory.db")
@@ -298,7 +298,7 @@ def auto_summarize_long(
             return {"enabled": True, "error": "memory_common not found"}
 
     try:
-        from db_write_queue import sqlite_write_queue
+        from infra.db_write_queue import sqlite_write_queue
 
         conn = sqlite_write_queue.start_session(Path(db))
         try:
@@ -370,7 +370,7 @@ def summarization_stats(db_path: str | None = None) -> dict:
         db = db_path
     else:
         try:
-            from _lazy_imports import get_memory_paths
+            from infra._lazy_imports import get_memory_paths
 
             _, local_mem, global_mem = get_memory_paths()
             db = str(local_mem / "memory.db")
@@ -405,6 +405,6 @@ def summarization_stats(db_path: str | None = None) -> dict:
         return {"enabled": True, "error": "stats unavailable"}
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 __getattr__ = make_lazy_getattr({"SUMMARIZATION_ENABLED": "summarization"})

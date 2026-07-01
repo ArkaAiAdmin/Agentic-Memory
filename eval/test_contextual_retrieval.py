@@ -21,32 +21,32 @@ class TestBuildContextPrefix(unittest.TestCase):
     """_build_context_prefix assembles short context strings."""
 
     def test_category_and_tags(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
         result = _build_context_prefix("lessons", ["python", "testing"], "")
         self.assertEqual(result, "[lessons | python, testing] ")
 
     def test_category_only(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
         result = _build_context_prefix("projects", None, "")
         self.assertEqual(result, "[projects] ")
 
     def test_tags_only(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
         result = _build_context_prefix("", ["rust", "async"], "")
         self.assertEqual(result, "[rust, async] ")
 
     def test_empty_everything(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
         result = _build_context_prefix("", None, "")
         self.assertEqual(result, "")
 
     def test_source_file_fallback(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
         result = _build_context_prefix("", None, "lessons/python/foo.md")
         self.assertIn("lessons", result)
 
     def test_max_five_tags(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
         result = _build_context_prefix("x", ["a", "b", "c", "d", "e", "f", "g"], "")
         self.assertNotIn("f", result)
         self.assertIn("e", result)
@@ -56,11 +56,11 @@ class TestEmbedTextWithContext(unittest.TestCase):
     """_embed_text_with_context respects MEMORY_CONTEXTUAL_RETRIEVAL."""
 
     def test_enabled_prepends_prefix(self):
-        import embedding_search
+        import infra.embedding_search
         old = embedding_search._CONTEXTUAL_ENABLED
         embedding_search._CONTEXTUAL_ENABLED = True
         try:
-            from embedding_search import _embed_text_with_context
+            from infra.embedding_search import _embed_text_with_context
             result = _embed_text_with_context(
                 "Python is great", category="lessons", tags=["python"]
             )
@@ -71,11 +71,11 @@ class TestEmbedTextWithContext(unittest.TestCase):
             embedding_search._CONTEXTUAL_ENABLED = old
 
     def test_disabled_returns_raw(self):
-        import embedding_search
+        import infra.embedding_search
         old = embedding_search._CONTEXTUAL_ENABLED
         embedding_search._CONTEXTUAL_ENABLED = False
         try:
-            from embedding_search import _embed_text_with_context
+            from infra.embedding_search import _embed_text_with_context
             result = _embed_text_with_context(
                 "Python is great", category="lessons", tags=["python"]
             )
@@ -85,11 +85,11 @@ class TestEmbedTextWithContext(unittest.TestCase):
             embedding_search._CONTEXTUAL_ENABLED = old
 
     def test_no_prefix_when_empty(self):
-        import embedding_search
+        import infra.embedding_search
         old = embedding_search._CONTEXTUAL_ENABLED
         embedding_search._CONTEXTUAL_ENABLED = True
         try:
-            from embedding_search import _embed_text_with_context
+            from infra.embedding_search import _embed_text_with_context
             result = _embed_text_with_context("Hello world")
             self.assertFalse(result.startswith("["))
         finally:
@@ -100,7 +100,7 @@ class TestContextPrefixColumn(unittest.TestCase):
     """context_prefix column exists after migration on existing DB."""
 
     def test_column_exists_after_migration(self):
-        from memory_common import run_db_migrations
+        from infra.memory_common import run_db_migrations
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
         try:
@@ -125,11 +125,11 @@ class TestIndexEmbeddingWithContext(unittest.TestCase):
     """index_embedding stores correct hash when context is enabled."""
 
     def test_hash_includes_context(self):
-        import embedding_search
+        import infra.embedding_search
         old = embedding_search._CONTEXTUAL_ENABLED
         embedding_search._CONTEXTUAL_ENABLED = True
         try:
-            from embedding_search import _embed_text_with_context, _content_hash
+            from infra.embedding_search import _embed_text_with_context, _content_hash
             text_with_ctx = _embed_text_with_context(
                 "Hello", category="test", tags=["a"]
             )

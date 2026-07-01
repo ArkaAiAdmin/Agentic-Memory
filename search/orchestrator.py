@@ -10,18 +10,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
 
-from cache import (
+from infra.cache import (
     _search_cache,
     SEARCH_CACHE_MAX,
     SEARCH_CACHE_TTL,
     SEARCH_CACHE_TTL_ENABLED,
     make_cache_key,
 )
-from memory_common import (
+from infra.memory_common import (
     connection_pool,
     safe_close_db,
 )
-from infrastructure import (
+from infra.infrastructure import (
     _err,
     ErrorCode,
 )
@@ -223,7 +223,7 @@ class MemoryResultRow(NamedTuple):
 def _resolve_late_interaction_enabled() -> bool:
     """Eagerly resolve the late-interaction flag from config."""
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return bool(getattr(get_config(), "late_interaction", True))
     except Exception:
@@ -232,7 +232,7 @@ def _resolve_late_interaction_enabled() -> bool:
 
 def _get_embedding_score_threshold() -> float:
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return float(get_config().embedding_score_threshold)
     except Exception:
@@ -253,7 +253,7 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: 
         return _skill_cache[cache_key]  # type: ignore[no-any-return]
 
     try:
-        from _lazy_imports import connection_pool, safe_close_db
+        from infra._lazy_imports import connection_pool, safe_close_db
 
         db = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
     except Exception as exc:
@@ -746,7 +746,7 @@ def _fallback_embedding_search(
 ) -> list:
     """Try embedding search as fallback when FTS returns nothing."""
     try:
-        from _lazy_imports import get_embedding_search
+        from infra._lazy_imports import get_embedding_search
 
         _es = get_embedding_search()
         _es_results = _es.search(normalized_query, db_path, limit=limit * 2)
@@ -815,7 +815,7 @@ def _hybrid_fusion(
 ) -> list:
     """Merge FTS and semantic results using reciprocal rank fusion."""
     try:
-        from _lazy_imports import get_config, get_embedding_search
+        from infra._lazy_imports import get_config, get_embedding_search
 
         _es = get_embedding_search()
         _overfetch = int(getattr(get_config(), "hybrid_semantic_overfetch", 3))
@@ -1801,7 +1801,7 @@ def search_memories(
 
     db = None
     try:
-        from _lazy_imports import connection_pool
+        from infra._lazy_imports import connection_pool
 
         db = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
 

@@ -32,7 +32,7 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 
-from memory_common import (
+from infra.memory_common import (
     open_db,
     run_db_migrations,
     connection_pool,
@@ -49,7 +49,7 @@ from search_pipeline import (
     _BB2_LOCK,
     _RERANK_WEIGHTS,
 )
-from embedding_search import get_embedding_search
+from infra.embedding_search import get_embedding_search
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

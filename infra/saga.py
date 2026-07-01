@@ -29,7 +29,7 @@ Public surface:
 
 Example::
 
-    from saga import Saga, SagaStep, SagaError
+    from infra.saga import Saga, SagaStep, SagaError
 
     def add_one(state):
         state["x"] = state.get("x", 0) + 1
@@ -681,7 +681,7 @@ def _acquire_serialize_lock(db_path: Path) -> object | None:
     IMMEDIATE handle DB-level safety. Returns the open file handle
     (or ``None`` if lock acquisition failed).
     """
-    from _lazy_imports import FileLockError, acquire_flock_with_retry
+    from infra._lazy_imports import FileLockError, acquire_flock_with_retry
 
     try:
         lock_path = db_path.parent / ".rebuild.lock"
@@ -699,7 +699,7 @@ def _release_serialize_lock(lock_file) -> None:
     if lock_file is None:
         return
     try:
-        from _lazy_imports import release_flock
+        from infra._lazy_imports import release_flock
 
         release_flock(lock_file)
     except Exception:
@@ -815,7 +815,7 @@ def _build_save_memory_steps(
         # conflict file before the new content is written.  This
         # closes the LWW gap where a second opencode session could
         # silently overwrite the first.
-        from memory_common import safe_atomic_write
+        from infra.memory_common import safe_atomic_write
 
         if params.initial_file_content is not None:
             try:
@@ -979,7 +979,7 @@ def saga(name: str, steps: List[SagaStep]) -> Generator[Saga, None, None]:
 
     Example::
 
-        from saga import saga, SagaStep
+        from infra.saga import saga, SagaStep
         with saga("two-step", [step1, step2]):
             ...
     """
@@ -987,6 +987,6 @@ def saga(name: str, steps: List[SagaStep]) -> Generator[Saga, None, None]:
         yield s
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 __getattr__ = make_lazy_getattr({"SAGA_ENABLED": "saga_enabled"})

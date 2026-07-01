@@ -15,7 +15,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 os.chdir("..")
 sys.path.insert(0, os.getcwd())
 
-from db_migrations import run_schema_setup
+from infra.db_migrations import run_schema_setup
 
 
 class TestBacklinks(unittest.TestCase):

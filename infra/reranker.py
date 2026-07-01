@@ -546,7 +546,7 @@ def normalize_rerank_score(raw: float, backend: str = "") -> float:
     return _sigmoid(float(raw))
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 # RERANKER_ENABLED is the negation of config.reranker_disabled.
 # The (name, attr, transform) form supports the negation.

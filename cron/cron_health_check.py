@@ -25,8 +25,8 @@ os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from memory_common import GLOBAL_MEM_DIR
-from infrastructure import resolve_active_memory_dir
+from infra.memory_common import GLOBAL_MEM_DIR
+from infra.infrastructure import resolve_active_memory_dir
 from memory_integrity import check_index_integrity, find_kg_orphans
 
 # Minimal lock — don't overlap with other health checks
@@ -66,7 +66,7 @@ def _check_auto_save_health() -> dict:
     """Check auto-save pipeline health."""
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        from auto_save import health_check
+        from background.auto_save import health_check
 
         return health_check(minutes=30)
     except Exception as e:

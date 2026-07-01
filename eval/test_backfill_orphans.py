@@ -14,7 +14,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from backfill_orphans import cleanup
+from backfill.backfill_orphans import cleanup
 
 
 def _make_db(path: Path) -> sqlite3.Connection:

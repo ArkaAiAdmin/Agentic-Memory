@@ -76,8 +76,8 @@ def _measure_search(db_path: str, query: str, mode: str) -> float:
 def run_bench(quick: bool = False) -> dict:
     import shutil
     import sqlite3
-    from db_migrations import run_schema_setup
-    from fact_extraction import ensure_facts_schema
+    from infra.db_migrations import run_schema_setup
+    from fact import ensure_facts_schema
 
     results: dict = {}
     sizes = [100] if quick else CORPUS_SIZES

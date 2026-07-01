@@ -46,7 +46,7 @@ from search_pipeline import (
 )
 
 # ─── memory_common imports ────────────────────────────────────────────
-from memory_common import (
+from infra.memory_common import (
     _ConnectionPool,
     validate_config,
     parse_frontmatter,

@@ -1,7 +1,7 @@
 import sqlite3
 
 # 1. Test embedding_search
-from embedding_search import get_embedding_search
+from infra.embedding_search import get_embedding_search
 
 def test_embedding_search_singleton():
     es = get_embedding_search()
@@ -9,7 +9,7 @@ def test_embedding_search_singleton():
     assert hasattr(es, "search")
 
 # 2. Test contradiction_detector
-from contradiction_detector import detect_contradictions_all
+from kg.contradiction_detector import detect_contradictions_all
 
 def test_contradiction_detector_basic(tmp_path):
     # detect_contradictions_all requires a directory path
@@ -61,7 +61,7 @@ def test_neural_forget_retention():
     assert rate_high > rate_low
 
 # 5. Test fts
-from fts import cleanup_fts5_orphans, _create_fts5_table
+from infra.fts import cleanup_fts5_orphans, _create_fts5_table
 
 def test_fts_orphans_cleanup():
     conn = sqlite3.connect(":memory:")

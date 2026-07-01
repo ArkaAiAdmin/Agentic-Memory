@@ -25,7 +25,7 @@ INSTALL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_ROOT))
 os.chdir(INSTALL_ROOT)
 
-from fact_extraction import extract_facts, _is_valid  # noqa: E402
+from fact import extract_facts, _is_valid  # noqa: E402
 
 DB_PATH = INSTALL_ROOT / "memory" / "memory.db"
 OUT_PATH = INSTALL_ROOT / "memory" / "curated_facts_baseline.json"

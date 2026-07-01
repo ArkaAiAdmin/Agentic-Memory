@@ -31,7 +31,7 @@ import functools
 from enum import Enum
 from pathlib import Path
 
-from memory_common import (
+from infra.memory_common import (
     atomic_write,
     configure_logging,
     safe_close_db,
@@ -46,7 +46,7 @@ from memory_common import (
 configure_logging()
 logger = logging.getLogger(__name__)
 
-import audit  # noqa: E402
+import infra.audit as audit  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +329,7 @@ def update_memory_md_locked(index_file_path: Path, category: str, title_slug: st
     Reads under an exclusive flock, then writes to a sibling temp file and
     os.replace()s into place.
     """
-    from _lazy_imports import FileLockError
+    from infra._lazy_imports import FileLockError
 
     lock_dir = index_file_path.parent
     lock_dir.mkdir(parents=True, exist_ok=True)

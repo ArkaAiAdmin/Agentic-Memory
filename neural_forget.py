@@ -114,7 +114,7 @@ class NeuralForgetModel:
     @classmethod
     def from_config(cls) -> "NeuralForgetModel":
         try:
-            from _lazy_imports import get_config
+            from infra._lazy_imports import get_config
             raw = get_config().neural_forget_weights
         except Exception:
             raw = ""
@@ -204,7 +204,7 @@ def compute_retention_rate(
     )
 
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         mode = getattr(get_config(), "neural_forget_mode", "formula")
     except Exception:
@@ -284,7 +284,7 @@ def compute_forgetting_rate(
     Returns:
         Retention rate [0, 1].
     """
-    from _lazy_imports import open_db
+    from infra._lazy_imports import open_db
 
     with open_db(Path(db_path)) as conn:
         row = conn.execute(
@@ -350,7 +350,7 @@ def batch_update_retention(db_path: str | Path, limit: int = 500) -> dict:
     Returns:
         Dict with counts.
     """
-    from _lazy_imports import open_db
+    from infra._lazy_imports import open_db
 
     db_path = Path(db_path)
     updated = 0

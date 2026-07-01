@@ -20,7 +20,7 @@ INSTALL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_ROOT))
 os.chdir(INSTALL_ROOT)
 
-from fact_extraction import (  # noqa: E402
+from fact import (  # noqa: E402
     index_facts_for_memory,
     ensure_facts_schema,
 )

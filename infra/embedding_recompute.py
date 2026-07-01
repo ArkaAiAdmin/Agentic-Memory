@@ -14,8 +14,8 @@ import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from memory_common import GLOBAL_MEM_DIR
-from infrastructure import resolve_active_memory_dir
+from infra.memory_common import GLOBAL_MEM_DIR
+from infra.infrastructure import resolve_active_memory_dir
 
 # File that stores the vec index metadata
 VEC_META_FILE = GLOBAL_MEM_DIR / "vec_index.meta.json"
@@ -35,7 +35,7 @@ def get_current_model_config() -> dict:
                 "dimensions": 256,
             }
         # Fallback: try embedding_search module
-        import embedding_search
+        import infra.embedding_search
         es = embedding_search.get_embedding_search()
         if es.model is not None:
             return {
@@ -106,7 +106,7 @@ def check_and_rebuild(force: bool = False, dry_run: bool = False) -> dict:
         # the project-root venv, then `.venv`, then fall back to
         # sys.executable (always works because we ARE the venv python
         # when running inside a test).
-        from memory_config import install_root
+        from infra.memory_config import install_root
 
         _project_root = Path(install_root()) if not os.environ.get(
             "MEMORY_INSTALL_ROOT"

@@ -19,7 +19,7 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 import memory_contradiction_save as mcs  # noqa: E402
-from memory_common import open_db  # noqa: E402
+from infra.memory_common import open_db  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +449,7 @@ class TestDBErrorSilent(_Base):
         # The module imports `open_db` inside the function via
         # `from memory_common import open_db`. Patch the source module
         # so the lookup at call time resolves to a raising callable.
-        import memory_common
+        import infra.memory_common
         with mock.patch.object(
             memory_common, "open_db",
             side_effect=sqlite3.OperationalError("simulated DB failure"),

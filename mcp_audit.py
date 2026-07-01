@@ -166,7 +166,7 @@ def memory_audit_query(
         where.append("error IS NOT NULL")
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     try:
-        from _lazy_imports import open_db
+        from infra._lazy_imports import open_db
 
         with open_db(db_path, timeout=5.0, row_factory=sqlite3.Row) as db:
             total = db.execute(
@@ -278,7 +278,7 @@ def memory_circuit_breaker_status(
             where_parts.append("ts >= ?")
             params.append(since_ts)
         where_sql = "WHERE " + " AND ".join(where_parts)
-        from _lazy_imports import open_db
+        from infra._lazy_imports import open_db
 
         with open_db(db_path, timeout=5.0, row_factory=sqlite3.Row) as db:
             total = db.execute(
@@ -624,7 +624,7 @@ def memory_temporal_query(
             "since_ts (epoch seconds) is required for operation='changed_since'",
         )
     try:
-        from fact_temporal import (
+        from fact.fact_temporal import (
             query_facts_at_time,
             query_fact_supersession_chain,
             query_facts_changed_since,

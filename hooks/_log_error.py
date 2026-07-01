@@ -23,7 +23,7 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from memory_config import GLOBAL_MEM_DIR
+from infra.memory_config import GLOBAL_MEM_DIR
 
 # Log file lives next to memory.db so it ships with the memory directory.
 _HOOK_LOG = Path(os.environ.get("MEMORY_HOOK_LOG") or GLOBAL_MEM_DIR / "hooks.log")

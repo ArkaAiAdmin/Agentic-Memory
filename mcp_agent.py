@@ -32,7 +32,7 @@ def memory_agent_init(
         namespace: Override default namespace (defaults to agent_id).
     """
     try:
-        from _lazy_imports import init_agent
+        from infra._lazy_imports import init_agent
 
         ctx = init_agent(
             agent_id=agent_id,
@@ -61,7 +61,7 @@ def memory_agent_clear() -> str:
     default (unscoped) namespace.
     """
     try:
-        from _lazy_imports import clear_agent
+        from infra._lazy_imports import clear_agent
 
         clear_agent()
         return json.dumps({"ok": True, "message": "Agent context cleared"})
@@ -78,7 +78,7 @@ def memory_agent_list() -> str:
         Dict with agents key mapping agent_id to metadata.
     """
     try:
-        from _lazy_imports import list_agents
+        from infra._lazy_imports import list_agents
 
         agents = list_agents()
         return json.dumps({"ok": True, "agents": agents})

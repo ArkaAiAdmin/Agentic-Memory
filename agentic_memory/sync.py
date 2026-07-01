@@ -48,7 +48,7 @@ class SyncManager:
             Dict with keys: ``applied``, ``conflicted``, ``rejected``,
             ``total``.
         """
-        from crdt_merge import crdt_sync_all
+        from crdt.crdt_merge import crdt_sync_all
         from save.crdt_helpers import _crdt_agent_id
 
         notes: dict[str, tuple[str, str, int, str, int]] = {}
@@ -91,7 +91,7 @@ class SyncManager:
             Dict with ``peers`` (list of per-peer status dicts) and
             ``sync_enabled`` flag.
         """
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
         import sqlite3
 
         cfg = get_config()

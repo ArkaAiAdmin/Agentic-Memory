@@ -11,7 +11,7 @@ import shutil
 import sqlite3
 from pathlib import Path
 
-from memory_common import get_memory_paths
+from infra.memory_common import get_memory_paths
 
 
 def bootstrap_temp_db(db_path: Path) -> None:
@@ -46,10 +46,10 @@ def bootstrap_temp_db_clean(db_path: Path) -> None:
     try:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA foreign_keys = ON")
-        from db_migrations import run_schema_setup
+        from infra.db_migrations import run_schema_setup
 
         run_schema_setup(conn)
-        from fact_extraction import ensure_facts_schema
+        from fact import ensure_facts_schema
 
         ensure_facts_schema(conn)
         conn.commit()

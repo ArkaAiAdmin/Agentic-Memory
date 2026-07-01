@@ -20,7 +20,7 @@ from agentic_memory.utils import (
     safe_close_db,
     get_db_connection,
 )
-from db_write_queue import sqlite_write_queue
+from infra.db_write_queue import sqlite_write_queue
 
 
 def _safe_json_parse(raw: str) -> Any:
@@ -95,7 +95,7 @@ class Maintenance:
                     success=False,
                     message=f"Rebuild script exited {result.returncode}:\n{output}",
                 )
-            from cache import clear_all_caches
+            from infra.cache import clear_all_caches
 
             clear_all_caches()
             return MaintenanceResult(
@@ -209,7 +209,7 @@ class Maintenance:
 
             if self.db_path.exists():
                 try:
-                    from memory_common import wal_checkpoint_idle
+                    from infra.memory_common import wal_checkpoint_idle
 
                     ckpt = wal_checkpoint_idle(self.db_path, wal_size_threshold_mb=1.0)
                     if ckpt.get("status") != "skipped":
@@ -479,7 +479,7 @@ class Maintenance:
             output = r.stdout or ""
             if r.stderr and r.stderr.strip():
                 output += "\n[stderr]\n" + r.stderr
-            from cache import clear_all_caches
+            from infra.cache import clear_all_caches
 
             clear_all_caches()
             return MaintenanceResult(
@@ -525,7 +525,7 @@ class Maintenance:
             output = r.stdout or ""
             if r.stderr and r.stderr.strip():
                 output += "\n[stderr]\n" + r.stderr
-            from cache import clear_all_caches
+            from infra.cache import clear_all_caches
 
             clear_all_caches()
             return MaintenanceResult(

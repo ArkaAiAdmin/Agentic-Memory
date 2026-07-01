@@ -29,7 +29,7 @@ AGENTIC = THIS_DIR.parent
 sys.path.insert(0, str(AGENTIC))
 
 import memory_mcp
-from memory_common import configure_logging
+from infra.memory_common import configure_logging
 from _fixtures import bootstrap_temp_db_clean
 configure_logging()
 

@@ -37,7 +37,7 @@ except Exception:
 # (see B1 in the contradiction report).
 try:
     from search.orchestrator import search_memories  # noqa: E402
-    from memory_common import get_memory_paths  # noqa: E402
+    from infra.memory_common import get_memory_paths  # noqa: E402
 except Exception as import_err:
     log_error(import_err, context="memory-proactive-context.imports")
 
@@ -106,7 +106,7 @@ def _health_alerts() -> None:
     No-op if the file doesn't exist or is unreadable.
     """
     try:
-        from memory_config import GLOBAL_MEM_DIR
+        from infra.memory_config import GLOBAL_MEM_DIR
 
         health_file = GLOBAL_MEM_DIR / ".health_status.json"
         if not health_file.exists():

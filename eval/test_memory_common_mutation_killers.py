@@ -28,7 +28,7 @@ sys.path.insert(0, str(INSTALL_DIR / "eval"))
 from _fixtures import bootstrap_temp_db_clean
 
 
-from memory_common import (
+from infra.memory_common import (
     _ConnectionPool,
     _coerce,
     parse_frontmatter,
@@ -51,7 +51,7 @@ from memory_common import (
     GLOBAL_MEM_DIR,
     configure_logging,
 )
-from infrastructure import GLOBAL_MEM_DIR as PROD_GLOBAL
+from infra.infrastructure import GLOBAL_MEM_DIR as PROD_GLOBAL
 
 _test_dir = tempfile.mkdtemp(prefix="test_mutation_killers_prod_")
 PROD_DB = Path(_test_dir) / "memory.db"
@@ -900,7 +900,7 @@ class TestConnectionPoolMutationKillers(unittest.TestCase):
           5. put(conn_A) — depth[K_A] goes to 0.
           6. get conn C — should now succeed; K_A is evicted (depth=0).
         """
-        from db import PoolExhaustedError
+        from infra.db import PoolExhaustedError
 
         pool = _ConnectionPool(max_size=2)
         db_a = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
@@ -1144,7 +1144,7 @@ class TestMaybeCheckpointOnStartupMutationKillers(unittest.TestCase):
     """Target survived mutations in _maybe_checkpoint_on_startup."""
 
     def test_returns_none(self):
-        import memory_common
+        import infra.memory_common
 
         old_val = memory_common._STARTUP_CHECKPOINT_DONE
         try:
@@ -1156,7 +1156,7 @@ class TestMaybeCheckpointOnStartupMutationKillers(unittest.TestCase):
             memory_common._STARTUP_CHECKPOINT_DONE = old_val
 
     def test_sets_checkpoint_done_flag(self):
-        import memory_common
+        import infra.memory_common
 
         old_val = memory_common._STARTUP_CHECKPOINT_DONE
         try:
@@ -1168,7 +1168,7 @@ class TestMaybeCheckpointOnStartupMutationKillers(unittest.TestCase):
             memory_common._STARTUP_CHECKPOINT_DONE = old_val
 
     def test_skips_when_already_done(self):
-        import memory_common
+        import infra.memory_common
 
         old_val = memory_common._STARTUP_CHECKPOINT_DONE
         try:
@@ -1179,7 +1179,7 @@ class TestMaybeCheckpointOnStartupMutationKillers(unittest.TestCase):
             memory_common._STARTUP_CHECKPOINT_DONE = old_val
 
     def test_skips_when_env_not_set(self):
-        import memory_common
+        import infra.memory_common
 
         old_val = memory_common._STARTUP_CHECKPOINT_DONE
         try:
@@ -1199,21 +1199,21 @@ class TestCleanupFts5OrphansMutationKillers(unittest.TestCase):
     """Target survived mutations in cleanup_fts5_orphans."""
 
     def test_returns_int(self):
-        from memory_common import cleanup_fts5_orphans
+        from infra.memory_common import cleanup_fts5_orphans
 
         with open_db(PROD_DB) as conn:
             result = cleanup_fts5_orphans(conn)
             self.assertIsInstance(result, int)
 
     def test_returns_non_negative(self):
-        from memory_common import cleanup_fts5_orphans
+        from infra.memory_common import cleanup_fts5_orphans
 
         with open_db(PROD_DB) as conn:
             result = cleanup_fts5_orphans(conn)
             self.assertGreaterEqual(result, 0)
 
     def test_returns_zero_on_clean_db(self):
-        from memory_common import cleanup_fts5_orphans
+        from infra.memory_common import cleanup_fts5_orphans
 
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             tmp = Path(f.name)
@@ -1253,7 +1253,7 @@ class TestConstantsMutationKillers(unittest.TestCase):
     def test_schema_version_is_current(self):
         # 2026-06-22: bumped to 16 for concept_drift. v15 = drift_alarms.
         # v14 = arc_cache. v13 = memory_field_crdt.
-        from migration_runner import SCHEMA_VERSION as expected_version
+        from infra.migration_runner import SCHEMA_VERSION as expected_version
 
         self.assertEqual(SCHEMA_VERSION, expected_version)
 

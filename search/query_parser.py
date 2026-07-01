@@ -26,8 +26,8 @@ import logging
 import re
 from pathlib import Path
 
-from infrastructure import _normalize_unicode
-from memory_common import connection_pool, safe_close_db
+from infra.infrastructure import _normalize_unicode
+from infra.memory_common import connection_pool, safe_close_db
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ _QUERY_TYPE_WEIGHTS: dict[str, dict[str, float]] = {
 
 def _get_query_type_weights() -> dict:
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         raw = get_config().query_type_weights
         if raw:
@@ -450,7 +450,7 @@ def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
         if not KG_ENABLED:
             return []
         try:
-            from _lazy_imports import get_config
+            from infra._lazy_imports import get_config
 
             _min_occ_q = int(get_config().entity_min_occurrences)
         except Exception:
@@ -461,7 +461,7 @@ def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
     if not query_entities:
         return []
     try:
-        from _lazy_imports import open_db
+        from infra._lazy_imports import open_db
 
         with open_db(db_path) as conn:
             all_related = []

@@ -29,19 +29,19 @@ class TestPinnedConstants(unittest.TestCase):
     """The pinned model identity must not drift silently."""
 
     def test_model_id_is_potion(self):
-        from embedding_search import MODEL_ID
+        from infra.embedding_search import MODEL_ID
 
         self.assertEqual(MODEL_ID, "minishlab/potion-base-8M")
 
     def test_model_revision_is_pinned_sha(self):
-        from embedding_search import MODEL_REVISION
+        from infra.embedding_search import MODEL_REVISION
 
         # 40-char git SHA. If this changes, embedding scores shift.
         self.assertEqual(len(MODEL_REVISION), 40)
         self.assertTrue(all(c in "0123456789abcdef" for c in MODEL_REVISION))
 
     def test_unindexed_safety_net_limit_is_positive(self):
-        from embedding_search import UNINDEXED_SAFETY_NET_LIMIT
+        from infra.embedding_search import UNINDEXED_SAFETY_NET_LIMIT
 
         self.assertIsInstance(UNINDEXED_SAFETY_NET_LIMIT, int)
         self.assertGreater(UNINDEXED_SAFETY_NET_LIMIT, 0)
@@ -56,30 +56,30 @@ class TestCacheText(unittest.TestCase):
     one and the vec-index cache becomes perma-stale."""
 
     def test_empty_input_returns_empty(self):
-        from embedding_search import _cache_text
+        from infra.embedding_search import _cache_text
 
         self.assertEqual(_cache_text(""), "")
 
     def test_none_like_input_returns_empty(self):
-        from embedding_search import _cache_text
+        from infra.embedding_search import _cache_text
 
         # Defensive: even falsy values must not raise.
         self.assertEqual(_cache_text(None or ""), "")
 
     def test_truncates_at_500_chars(self):
-        from embedding_search import _cache_text
+        from infra.embedding_search import _cache_text
 
         s = "x" * 1000
         out = _cache_text(s)
         self.assertEqual(len(out), 500)
 
     def test_preserves_short_string(self):
-        from embedding_search import _cache_text
+        from infra.embedding_search import _cache_text
 
         self.assertEqual(_cache_text("hello world"), "hello world")
 
     def test_normalizes_unicode(self):
-        from embedding_search import _cache_text
+        from infra.embedding_search import _cache_text
 
         # Two different Unicode representations of the same character.
         # NFKC must collapse them so embeddings are stable.
@@ -90,44 +90,44 @@ class TestCacheText(unittest.TestCase):
 
 class TestParseTags(unittest.TestCase):
     def test_empty_string_returns_empty_list(self):
-        from embedding_search import _parse_tags
+        from infra.embedding_search import _parse_tags
 
         self.assertEqual(_parse_tags(""), [])
 
     def test_none_returns_empty_list(self):
-        from embedding_search import _parse_tags
+        from infra.embedding_search import _parse_tags
 
         self.assertEqual(_parse_tags(None), [])
 
     def test_parses_valid_json_list(self):
-        from embedding_search import _parse_tags
+        from infra.embedding_search import _parse_tags
 
         self.assertEqual(_parse_tags('["a", "b"]'), ["a", "b"])
 
     def test_invalid_json_returns_empty_list(self):
-        from embedding_search import _parse_tags
+        from infra.embedding_search import _parse_tags
 
         self.assertEqual(_parse_tags("not json"), [])
 
     def test_non_list_json_returns_empty_list(self):
-        from embedding_search import _parse_tags
+        from infra.embedding_search import _parse_tags
 
         self.assertEqual(_parse_tags('{"a": 1}'), [])
 
 
 class TestBuildContextPrefix(unittest.TestCase):
     def test_no_inputs_returns_empty(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
 
         self.assertEqual(_build_context_prefix(), "")
 
     def test_category_only(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
 
         self.assertEqual(_build_context_prefix(category="lessons"), "[lessons] ")
 
     def test_category_and_tags(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
 
         out = _build_context_prefix(category="lessons", tags=["python", "tests"])
         self.assertIn("lessons", out)
@@ -138,7 +138,7 @@ class TestBuildContextPrefix(unittest.TestCase):
         self.assertTrue(out.endswith("] "))
 
     def test_tag_count_capped_at_five(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
 
         long_tags = [f"t{i}" for i in range(20)]
         out = _build_context_prefix(tags=long_tags)
@@ -149,7 +149,7 @@ class TestBuildContextPrefix(unittest.TestCase):
             self.assertNotIn(f"t{i}", out)
 
     def test_source_file_extracts_top_folder(self):
-        from embedding_search import _build_context_prefix
+        from infra.embedding_search import _build_context_prefix
 
         out = _build_context_prefix(source_file="lessons/foo/bar.md")
         self.assertIn("lessons", out)
@@ -161,12 +161,12 @@ class TestVecCacheRoundtrip(unittest.TestCase):
     pollution."""
 
     def setUp(self):
-        from embedding_search import clear_vec_cache
+        from infra.embedding_search import clear_vec_cache
 
         clear_vec_cache()
 
     def test_put_then_get_returns_value(self):
-        from embedding_search import (
+        from infra.embedding_search import (
             _vec_cache_get,
             _vec_cache_put,
             clear_vec_cache,
@@ -177,13 +177,13 @@ class TestVecCacheRoundtrip(unittest.TestCase):
         self.assertEqual(_vec_cache_get(("db1", "query1")), ["hit1", "hit2"])
 
     def test_get_missing_key_returns_none(self):
-        from embedding_search import _vec_cache_get, clear_vec_cache
+        from infra.embedding_search import _vec_cache_get, clear_vec_cache
 
         clear_vec_cache()
         self.assertIsNone(_vec_cache_get(("nope",)))
 
     def test_clear_empties_cache(self):
-        from embedding_search import (
+        from infra.embedding_search import (
             _vec_cache_get,
             _vec_cache_put,
             clear_vec_cache,
@@ -195,7 +195,7 @@ class TestVecCacheRoundtrip(unittest.TestCase):
 
     def test_cache_respects_max_size(self):
         """After _VEC_CACHE_MAX inserts, the oldest entry must be evicted."""
-        from embedding_search import (
+        from infra.embedding_search import (
             _VEC_CACHE_MAX,
             _vec_cache_get,
             _vec_cache_put,

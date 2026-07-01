@@ -18,22 +18,22 @@ sys.path.insert(0, str(INSTALL_DIR))
 
 class TestSyncCheckImports(unittest.TestCase):
     def test_module_importable(self):
-        import sync_check
+        import infra.sync_check
 
         self.assertTrue(hasattr(sync_check, "main"))
 
     def test_sync_invariant_importable(self):
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         self.assertTrue(callable(check_sync_invariant))
 
     def test_format_sync_report_importable(self):
-        from sync_invariant import format_sync_report
+        from infra.sync_invariant import format_sync_report
 
         self.assertTrue(callable(format_sync_report))
 
     def test_get_drifted_subsystems_importable(self):
-        from sync_invariant import get_drifted_subsystems
+        from infra.sync_invariant import get_drifted_subsystems
 
         self.assertTrue(callable(get_drifted_subsystems))
 

@@ -97,7 +97,7 @@ class KnowledgeGraph:
         Returns:
             Matching facts with confidence scores and temporal metadata.
         """
-        from fact_extraction import facts_search_db
+        from fact import facts_search_db
 
         raw = facts_search_db(self._db_path, query, limit=limit)
         items = _as_list(raw)
@@ -141,8 +141,8 @@ class KnowledgeGraph:
             path, ordered from source toward target.  Empty list when
             no path exists.
         """
-        from db import open_db
-        from kg_traversal import find_shortest_path
+        from infra.db import open_db
+        from kg.kg_traversal import find_shortest_path
 
         with open_db(self._db_path, timeout=5.0, write=False) as conn:
             path = find_shortest_path(conn, source, target, max_depth=max_hops)
@@ -184,8 +184,8 @@ class KnowledgeGraph:
             A ``(entities, relations)`` tuple with deduplicated entities
             and all discovered relations.
         """
-        from db import open_db
-        from kg_traversal import find_neighbors
+        from infra.db import open_db
+        from kg.kg_traversal import find_neighbors
 
         with open_db(self._db_path, timeout=5.0, write=False) as conn:
             edges = find_neighbors(conn, start, direction="out", max_depth=max_hops)

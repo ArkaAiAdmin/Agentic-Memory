@@ -13,7 +13,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from safe_call import safe_call
+from infra.safe_call import safe_call
 
 
 class TestSafeCall(unittest.TestCase):

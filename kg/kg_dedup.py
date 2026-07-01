@@ -21,8 +21,8 @@ import sqlite3
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from memory_common import safe_close_db
-from infrastructure import resolve_active_memory_dir
+from infra.memory_common import safe_close_db
+from infra.infrastructure import resolve_active_memory_dir
 
 try:
     from config import get_config
@@ -213,7 +213,7 @@ def compute_semantic_merge_candidates(
     if threshold is None:
         threshold = get_config().kg_dedup_threshold if get_config is not None else 0.92
     try:
-        from _lazy_imports import get_embedding_search
+        from infra._lazy_imports import get_embedding_search
 
         es = get_embedding_search()
         if es.model is None:
@@ -360,7 +360,7 @@ def main():
         print(f"ERROR: no memory.db at {db_path}")
         sys.exit(1)
 
-    from db_write_queue import sqlite_write_queue
+    from infra.db_write_queue import sqlite_write_queue
     conn = sqlite_write_queue.start_session(db_path)
     try:
         stats = dedup_entities(conn, dry_run=dry_run)

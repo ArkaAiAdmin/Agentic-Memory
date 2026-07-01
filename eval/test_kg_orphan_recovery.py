@@ -31,7 +31,7 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import open_db
+from infra.memory_common import open_db
 
 
 # Schema mirroring the live install (pre-migration-017) so the helper
@@ -274,7 +274,7 @@ class TestSagaRollbackCleansOrphans(_KgTestBase):
     def test_undo_upsert_fresh_insert_cleans_kg_rows(self) -> None:
         """When a saga fails after the INSERT, undo deletes the row AND
         the dependent kg_facts/backlinks that an intermediate hook wrote."""
-        from saga import _build_save_memory_steps, Saga, SagaError
+        from infra.saga import _build_save_memory_steps, Saga, SagaError
 
         self._seed_memory("lessons/foo")
         self._seed_fact("a", "b", "lessons/foo")
@@ -312,7 +312,7 @@ class TestSagaRollbackCleansOrphans(_KgTestBase):
 
     def test_undo_upsert_update_path_cleans_kg_rows(self) -> None:
         """UPDATE-style rollback (pre-existing row) also cleans up."""
-        from saga import _build_save_memory_steps, Saga, SagaError
+        from infra.saga import _build_save_memory_steps, Saga, SagaError
 
         # Pre-existing memory: set initial content + tags so the
         # pre-existing branch fires.
@@ -504,7 +504,7 @@ class TestMigrationCascade(_KgTestBase):
 
     def test_migration_sql_parses(self) -> None:
         """The migration file must be present and parse cleanly."""
-        from migration_runner import _parse_sql_file
+        from infra.migration_runner import _parse_sql_file
 
         path = INSTALL_DIR / "migrations" / "017_kg_cascade.sql"
         self.assertTrue(path.exists(), f"missing migration: {path}")
@@ -518,7 +518,7 @@ class TestMigrationCascade(_KgTestBase):
             self.assertTrue(s.strip(), f"empty statement in 017: {s!r}")
 
     def test_down_migration_sql_parses(self) -> None:
-        from migration_runner import _parse_sql_file
+        from infra.migration_runner import _parse_sql_file
 
         path = INSTALL_DIR / "migrations" / "017_kg_cascade.down.sql"
         self.assertTrue(path.exists(), f"missing down migration: {path}")
@@ -526,7 +526,7 @@ class TestMigrationCascade(_KgTestBase):
         self.assertGreater(len(statements), 0)
 
     def test_schema_version_bumped_to_17(self) -> None:
-        from migration_runner import SCHEMA_VERSION
+        from infra.migration_runner import SCHEMA_VERSION
 
         self.assertGreaterEqual(SCHEMA_VERSION, 17)
 

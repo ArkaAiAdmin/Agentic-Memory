@@ -16,7 +16,7 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
-from memory_common import (  # noqa: E402
+from infra.memory_common import (  # noqa: E402
     acquire_flock_with_retry,
     release_flock,
     RateLimiter,

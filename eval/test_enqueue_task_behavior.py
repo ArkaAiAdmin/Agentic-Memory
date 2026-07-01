@@ -41,7 +41,7 @@ def _env_for(db_path: Path) -> dict:
 
 def _reset_autosave_state():
     from background.circuit_breaker import _auto_save_reset_state
-    from db import connection_pool
+    from infra.db import connection_pool
 
     _auto_save_reset_state()
     connection_pool._pool.clear()
@@ -260,7 +260,7 @@ class TestWorkerRunScriptHandler(TestCase):
     def _enqueue_and_process(self, task_type: str, payload: dict):
         from background.background_worker import process_one_task
         from background.background_queue import init_task_queue, enqueue_task
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(str(self.db_path), timeout=10)
         init_task_queue(conn)
@@ -303,7 +303,7 @@ class TestWorkerRunScriptHandler(TestCase):
     def test_run_script_fails_on_missing_script(self) -> None:
         """Explicit script path that doesn't exist fails the task."""
         from background.background_worker import HANDLERS
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
         from background.background_queue import init_task_queue, enqueue_task
 
         conn = connection_pool.get(str(self.db_path), timeout=10)
@@ -319,7 +319,7 @@ class TestWorkerRunScriptHandler(TestCase):
         conn.close()
         # task should be marked failed after processing
         from background.background_worker import process_one_task
-        from memory_common import connection_pool as cp2
+        from infra.memory_common import connection_pool as cp2
 
         conn2 = cp2.get(str(self.db_path), timeout=10)
         for _ in range(3):
@@ -342,7 +342,7 @@ class TestWorkerRunScriptHandler(TestCase):
     def test_worker_completes_enqueued_cron_task(self) -> None:
         """End-to-end: enqueue and process via worker in-process."""
         from background.background_queue import init_task_queue, enqueue_task
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(str(self.db_path), timeout=10)
         init_task_queue(conn)

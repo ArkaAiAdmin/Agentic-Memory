@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import connection_pool
+from infra.memory_common import connection_pool
 
 
 def _fresh_db() -> Path:
@@ -54,7 +54,7 @@ class TestMaintenanceRebuild(unittest.TestCase):
         mock_run.return_value.returncode = 0
 
         m = Maintenance(db_path=str(self.db))
-        with patch("cache.clear_all_caches"):
+        with patch("infra.cache.clear_all_caches"):
             result = m.rebuild("active")
         self.assertIsInstance(result, MaintenanceResult)
         self.assertTrue(result.success)
@@ -176,7 +176,7 @@ class TestMaintenanceConsolidate(unittest.TestCase):
         mock_run.return_value.returncode = 0
 
         m = Maintenance(db_path=str(self.db))
-        with patch("cache.clear_all_caches"):
+        with patch("infra.cache.clear_all_caches"):
             result = m.consolidate()
         self.assertIsInstance(result, MaintenanceResult)
         self.assertTrue(result.success)

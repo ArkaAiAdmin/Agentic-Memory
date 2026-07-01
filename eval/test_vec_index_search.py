@@ -34,7 +34,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-import memory_common
+import infra.memory_common as memory_common
 from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 import rebuild_vec_index  # noqa: E402
 
@@ -104,7 +104,7 @@ class _TestBase(unittest.TestCase):
     def setUp(self):
         super().setUp()
         import memory_mcp
-        from embedding_search import EmbeddingSearch
+        from infra.embedding_search import EmbeddingSearch
 
         self._memory_mcp = memory_mcp
         self._orig_global = memory_mcp.GLOBAL_MEM_DIR
@@ -171,7 +171,7 @@ class TestIndexedPathFindsResults(_TestBase):
 
         # Self-es: indexed path.
         # A fresh es instance to use the full-scan path independently.
-        from embedding_search import EmbeddingSearch
+        from infra.embedding_search import EmbeddingSearch
 
         es_indexed = self.es
         es_full = EmbeddingSearch()

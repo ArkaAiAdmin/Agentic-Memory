@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from memory_common import (
+from infra.memory_common import (
     open_db,
     SCHEMA_VERSION,
 )
@@ -35,7 +35,7 @@ def _create_test_db(tmpdir: str) -> Path:
     db_path = Path(tmpdir) / "memory.db"
     conn = sqlite3.connect(str(db_path))
     try:
-        from db_migrations import run_schema_setup
+        from infra.db_migrations import run_schema_setup
         run_schema_setup(conn)
         with conn:
             # --- Base memories table (required by all subsystems) ---
@@ -1107,7 +1107,7 @@ class TestSyncInvariant(unittest.TestCase):
 
     def test_healthy_state(self):
         """When all subsystems match, overall is 'healthy'."""
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         # Insert note — memories_ai trigger auto-inserts FTS entry
         _insert_note(self.conn, "healthy-1", "short content", tier="warm")
@@ -1117,7 +1117,7 @@ class TestSyncInvariant(unittest.TestCase):
 
     def test_detects_notes_not_in_fts(self):
         """Detects notes in memories but not in FTS."""
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         _insert_note(self.conn, "no-fts-note", "content here", tier="warm")
         # Don't add FTS entry
@@ -1130,7 +1130,7 @@ class TestSyncInvariant(unittest.TestCase):
 
     def test_detects_notes_not_in_embeddings(self):
         """Detects notes in memories but not in embeddings."""
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         _insert_note(self.conn, "no-emb-note", "content", tier="warm")
         # Don't add embedding
@@ -1141,7 +1141,7 @@ class TestSyncInvariant(unittest.TestCase):
 
     def test_detects_notes_not_in_chunks(self):
         """Detects notes missing from chunks subsystem."""
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         _insert_note(self.conn, "no-chunks-note", "x" * 5000, tier="warm")
         # Long note should be chunked but isn't
@@ -1152,7 +1152,7 @@ class TestSyncInvariant(unittest.TestCase):
 
     def test_detects_ghost_fts_rows(self):
         """Detects FTS rows referencing deleted memories."""
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         # Drop triggers to have full control over FTS state
         self.conn.execute("DROP TRIGGER IF EXISTS memories_ai")
@@ -1216,7 +1216,7 @@ class TestSyncInvariant(unittest.TestCase):
 
     def test_empty_db_returns_empty(self):
         """An empty DB returns overall='empty'."""
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         result = check_sync_invariant(self.conn)
         self.assertEqual(result["overall"], "empty")
@@ -1224,7 +1224,7 @@ class TestSyncInvariant(unittest.TestCase):
 
     def test_get_drifted_subsystems(self):
         """get_drifted_subsystems returns list of drifted subsystem names."""
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         _insert_note(self.conn, "drift-check", "content", tier="warm")
         result = check_sync_invariant(self.conn)
@@ -1369,7 +1369,7 @@ class TestIntegration(unittest.TestCase):
     def test_full_lifecycle(self):
         """Insert notes → heartbeat → check tiers → verify sync."""
         from self_directed import run_heartbeat, tier_stats
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         # Insert a mix of notes
         _insert_note(

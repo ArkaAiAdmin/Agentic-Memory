@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
-from memory_config import get_memory_paths  # noqa: E402
+from infra.memory_config import get_memory_paths  # noqa: E402
 from search_pipeline import search_memories as _mcp_search_memories  # noqa: E402
 
 
@@ -40,7 +40,7 @@ def _resolve_db_paths(custom_db_path=None):
         db_file = Path(custom_db_path)
     else:
         db_file = local_mem / "memory.db"
-    from _lazy_imports import GLOBAL_MEM_DIR
+    from infra._lazy_imports import GLOBAL_MEM_DIR
 
     local_global_link = local_mem / "global"
     if local_global_link.is_symlink():
@@ -143,7 +143,7 @@ def search_memories(
         if not db_path.exists() or not note_ids:
             continue
         try:
-            from _lazy_imports import open_db
+            from infra._lazy_imports import open_db
 
             placeholders = ",".join("?" * len(note_ids))
             with open_db(db_path) as conn:

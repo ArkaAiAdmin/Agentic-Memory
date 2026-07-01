@@ -18,7 +18,7 @@ import sys
 
 sys.path.insert(0, os.getcwd())
 
-from db_migrations import run_schema_setup
+from infra.db_migrations import run_schema_setup
 
 
 class TestUpsertMemory(unittest.TestCase):
@@ -45,7 +45,7 @@ class TestUpsertMemory(unittest.TestCase):
             os.environ.pop("MEMORY_DB_PATH", None)
 
     def test_upsert_creates_new_memory(self):
-        from auto_save import _upsert_memory
+        from background.auto_save import _upsert_memory
 
         success = _upsert_memory(
             "lessons/test-note",
@@ -67,7 +67,7 @@ class TestUpsertMemory(unittest.TestCase):
         self.assertEqual(row[2], "lessons")
 
     def test_upsert_updates_existing_memory(self):
-        from auto_save import _upsert_memory
+        from background.auto_save import _upsert_memory
 
         _upsert_memory(
             "lessons/test-note",
@@ -94,7 +94,7 @@ class TestUpsertMemory(unittest.TestCase):
         self.assertIn("2026-06-17T01", row[2])
 
     def test_upsert_with_pinned_and_importance(self):
-        from auto_save import _upsert_memory
+        from background.auto_save import _upsert_memory
 
         success = _upsert_memory(
             "decisions/important-decision",
@@ -118,7 +118,7 @@ class TestUpsertMemory(unittest.TestCase):
 
     def test_upsert_missing_db_returns_false(self):
         os.environ["MEMORY_DB_PATH"] = "/nonexistent/path/memory.db"
-        from auto_save import _upsert_memory
+        from background.auto_save import _upsert_memory
 
         success = _upsert_memory(
             "lessons/test",
@@ -154,7 +154,7 @@ class TestDailyDigestToolBreakdown(unittest.TestCase):
             os.environ.pop("MEMORY_DB_PATH", None)
 
     def test_get_tool_counts_from_db(self):
-        from auto_save import _upsert_memory, _get_tool_counts_from_db
+        from background.auto_save import _upsert_memory, _get_tool_counts_from_db
 
         # 1. Insert timezone-aware memories for date 2026-06-24
         _upsert_memory(
@@ -214,7 +214,7 @@ class TestBackoffAndCircuitBreaker(unittest.TestCase):
     """
 
     def setUp(self):
-        import auto_save
+        import background.auto_save
 
         self.auto_save = auto_save
         self.auto_save._auto_save_reset_state()
@@ -351,7 +351,7 @@ class TestInboxSizeCap(unittest.TestCase):
         # Re-import auto_save with the new cap
         if "auto_save" in sys.modules:
             del sys.modules["auto_save"]
-        from auto_save import _enqueue_to_inbox, get_auto_save_inbox_path
+        from background.auto_save import _enqueue_to_inbox, get_auto_save_inbox_path
 
         self._enqueue = _enqueue_to_inbox
         self._inbox_path = get_auto_save_inbox_path
@@ -430,7 +430,7 @@ class TestDrainInboxRenamePattern(unittest.TestCase):
         # Re-import auto_save with a fresh inbox path
         if "auto_save" in sys.modules:
             del sys.modules["auto_save"]
-        from auto_save import _drain_inbox, get_auto_save_inbox_path
+        from background.auto_save import _drain_inbox, get_auto_save_inbox_path
 
         self._drain = _drain_inbox
         self._inbox_path = get_auto_save_inbox_path
@@ -504,7 +504,7 @@ class TestDrainInboxRenamePattern(unittest.TestCase):
             # Inject: enqueue a new entry to the new (renamed-away) inbox.
             # After the rename, src is gone, dst is the processing file.
             # The new inbox doesn't exist yet — the enqueue creates it.
-            from auto_save import _enqueue_to_inbox
+            from background.auto_save import _enqueue_to_inbox
 
             result = _os.rename(src, dst)
             _enqueue_to_inbox(
@@ -652,7 +652,7 @@ class TestProcessInboxBatch(unittest.TestCase):
         os.environ["MEMORY_DB_PATH"] = str(self.db_path)
         if "auto_save" in sys.modules:
             del sys.modules["auto_save"]
-        from auto_save import _process_inbox_batch
+        from background.auto_save import _process_inbox_batch
 
         self._process = _process_inbox_batch
 
@@ -723,7 +723,7 @@ class TestEnqueueDrainProcessRoundTrip(unittest.TestCase):
         os.environ["MEMORY_DB_PATH"] = str(self.db_path)
         if "auto_save" in sys.modules:
             del sys.modules["auto_save"]
-        from auto_save import _enqueue_to_inbox, _drain_inbox, _process_inbox_batch, get_auto_save_inbox_path
+        from background.auto_save import _enqueue_to_inbox, _drain_inbox, _process_inbox_batch, get_auto_save_inbox_path
 
         self._enqueue = _enqueue_to_inbox
         self._drain = _drain_inbox

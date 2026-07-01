@@ -14,7 +14,7 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from infrastructure import resolve_active_memory_dir
+from infra.infrastructure import resolve_active_memory_dir
 from memory_integrity import check_index_integrity, repair_kg_orphans
 
 

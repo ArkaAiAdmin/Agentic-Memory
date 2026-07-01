@@ -26,7 +26,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from infrastructure import resolve_active_memory_dir
+from infra.infrastructure import resolve_active_memory_dir
 
 
 def collect_gauges(db_path: Path) -> str:

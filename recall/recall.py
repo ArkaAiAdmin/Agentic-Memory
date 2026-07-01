@@ -26,7 +26,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
-from infrastructure import resolve_active_memory_dir
+from infra.infrastructure import resolve_active_memory_dir
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def recall_context(
     if not db_path_resolved.exists():
         return _empty_result(query, "Database not found")
 
-    from db import connection_pool, safe_close_db
+    from infra.db import connection_pool, safe_close_db
 
     try:
         conn = connection_pool.get(str(db_path_resolved), timeout=10.0)
@@ -421,7 +421,7 @@ def _fetch_relevant(
                      Apple Silicon (see reranker.py).
     """
     try:
-        from _lazy_imports import search_memories
+        from infra._lazy_imports import search_memories
 
         result = search_memories(
             db_path=db_path,

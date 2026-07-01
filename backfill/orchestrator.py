@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 INSTALL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL))
 
-from memory_common import (
+from infra.memory_common import (
     safe_close_db,
     connection_pool,
 )
@@ -607,7 +607,7 @@ def _run_post_backfill_cleanup(db_path: Path, stats: dict) -> None:
     conn.execute("PRAGMA busy_timeout = 30000;")
     try:
         try:
-            from backfill_orphans import cleanup as _cleanup_orphans
+            from backfill.backfill_orphans import cleanup as _cleanup_orphans
 
             orphans_stats = _cleanup_orphans(conn)
             stats["operations"].append(
@@ -618,7 +618,7 @@ def _run_post_backfill_cleanup(db_path: Path, stats: dict) -> None:
 
         if os.environ.get("MEMORY_KNOWLEDGE_GRAPH") == "1":
             try:
-                from kg_dedup import (
+                from kg.kg_dedup import (
                     dedup_entities as _dedup_entities,
                     dedup_entities_semantic as _dedup_entities_semantic,
                 )

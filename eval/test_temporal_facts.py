@@ -21,11 +21,11 @@ sys.path.insert(
     ),
 )
 
-from memory_config import install_root
+from infra.memory_config import install_root
 
 sys.path.insert(0, str(install_root()))
 
-import fact_extraction as fe
+import fact as fe
 
 
 def _fresh_db() -> sqlite3.Connection:

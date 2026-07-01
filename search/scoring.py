@@ -50,7 +50,7 @@ _RERANK_WEIGHTS = {
 
 def _get_rerank_weights() -> dict:
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         raw = get_config().rerank_weights
         if raw:
@@ -90,7 +90,7 @@ _RERANK_HALF_LIFE_DAYS = _sp_lazy("_RERANK_HALF_LIFE_DAYS", 180)
 def _get_rerank_half_life_days() -> float:
     """Resolve rerank_half_life_days from config; falls back to 180.0."""
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return float(get_config().rerank_half_life_days)
     except Exception:
@@ -284,7 +284,7 @@ def _apply_temporal_decay(scored_results: list, decay_weight: float = 0.15) -> l
     """
     if decay_weight == 0.15:
         try:
-            from _lazy_imports import get_config
+            from infra._lazy_imports import get_config
 
             decay_weight = float(get_config().temporal_decay_weight)
         except Exception:
@@ -497,7 +497,7 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
         return None
 
     try:
-        from _lazy_imports import connection_pool
+        from infra._lazy_imports import connection_pool
 
         db = connection_pool.get(str(db_path), timeout=5.0)
         try:

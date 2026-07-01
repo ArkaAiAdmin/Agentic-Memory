@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from cache import clear_all_caches
+from infra.cache import clear_all_caches
 from mcp_common import (
     _resolve_memory_dir,
     _err,
@@ -171,7 +171,7 @@ def memory_compact(dry_run: bool = False) -> str:
     try:
         db_path = active / "memory.db"
         if db_path.exists():
-            from memory_common import wal_checkpoint_idle
+            from infra.memory_common import wal_checkpoint_idle
 
             ckpt = wal_checkpoint_idle(db_path, wal_size_threshold_mb=1.0)
             if ckpt.get("status") != "skipped":
@@ -191,7 +191,7 @@ def memory_backfill_all(mode: str = "health", source: str = "") -> str:
     chunks, KG facts, KG graph (entities+edges), vector index, and backlinks.
     """
     from pathlib import Path as _Path
-    from backfill_all import (
+    from backfill.orchestrator import (
         health_check,
         backfill_incremental,
         backfill_full,

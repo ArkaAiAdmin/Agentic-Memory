@@ -14,7 +14,7 @@ sys.path.insert(
     ),
 )
 
-from memory_config import install_root
+from infra.memory_config import install_root
 
 sys.path.insert(0, str(install_root()))
 

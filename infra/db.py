@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Optional, Union, cast
 
-from db_write_queue import ProxyConnection
+from infra.db_write_queue import ProxyConnection
 
 AnyConnection = Union[sqlite3.Connection, ProxyConnection]
 
@@ -258,7 +258,7 @@ class _ConnectionPool:
                 if migrated_key in self._migrated:
                     return
                 try:
-                    from db_migrations import run_schema_setup
+                    from infra.db_migrations import run_schema_setup
 
                     run_schema_setup(conn)
 
@@ -275,7 +275,7 @@ class _ConnectionPool:
             if migrated_key in self._migrated:
                 return
             try:
-                from db_migrations import run_schema_setup
+                from infra.db_migrations import run_schema_setup
 
                 run_schema_setup(conn)
                 self._migrated.add(migrated_key)
@@ -662,7 +662,7 @@ def _maybe_checkpoint_on_startup(path: Path) -> None:
     # the previous code set _STARTUP_CHECKPOINT_DONE outside the
     # config check, causing one process to silently disarm the
     # checkpoint for the entire daemon lifecycle.
-    from _lazy_imports import get_config
+    from infra._lazy_imports import get_config
 
     if not get_config().wal_checkpoint_startup:
         return
@@ -722,17 +722,17 @@ def open_db(
 
     ...
     """
-    from db_migrations import run_schema_setup
+    from infra.db_migrations import run_schema_setup
     from contextlib import nullcontext
 
     # B-3 follow-up (2026-06-22): cross-process serialisation.  The
     # flock is acquired on entry and released on exit.  When the
     # env var ``MEMORY_DB_FLOCK=0``, ``db_path_flock()`` is a no-op.
-    from db_path_flock import db_path_flock
+    from infra.db_path_flock import db_path_flock
 
     path = Path(path)
     if write:
-        from db_write_queue import sqlite_write_queue
+        from infra.db_write_queue import sqlite_write_queue
 
         conn = cast(AnyConnection, sqlite_write_queue.start_session(path))
         exc_info = None

@@ -25,7 +25,7 @@ sys.path.insert(
 from memory_mcp import GLOBAL_MEM_DIR as PROD_MEM_DIR  # noqa: E402
 
 import memory_mcp  # noqa: E402
-import reranker  # noqa: E402
+import infra.reranker as reranker  # noqa: E402
 
 
 def _isolate_active_db():

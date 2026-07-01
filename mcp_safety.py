@@ -41,7 +41,7 @@ def memory_scan_injection(content: str) -> str:
     risk_score >= 0.5`` as the rejection boundary.
     """
     try:
-        from _lazy_imports import scan_for_injection
+        from infra._lazy_imports import scan_for_injection
 
         result = scan_for_injection(content)
         return json.dumps(result, indent=2)

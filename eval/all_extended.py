@@ -13,8 +13,8 @@ os.environ["MEMORY_DB_PATH"] = f"{INSTALL_ROOT}/memory/memory.db"
 DB = os.environ["MEMORY_DB_PATH"]
 
 import config as cfg
-import db_migrations
-import migration_runner  # type: ignore
+import infra.db_migrations
+import infra.migration_runner  # type: ignore
 from pathlib import Path
 import subprocess as sp
 
@@ -65,7 +65,7 @@ errs = []
 
 
 def w(i):
-    from db import open_db
+    from infra.db import open_db
 
     for _ in range(10):
         with open_db(DBPATH) as c:
@@ -105,7 +105,7 @@ ok("agent save+search roundtrip OK")
 
 # ----
 section("F", "R2: Temporal contradiction resolver")
-from temporal_resolver import get_temporal_facts
+from kg.temporal_resolver import get_temporal_facts
 
 facts = get_temporal_facts(DBPATH, note_id=nid)
 assert isinstance(facts, list)
@@ -113,7 +113,7 @@ ok(f"temporal facts query works ({len(facts)} results)")
 
 # ----
 section("G", "R4: CRDT merge engine")
-from crdt_merge import (
+from crdt.crdt_merge import (
     parse_version_vector,
     dominates,
     concurrent,

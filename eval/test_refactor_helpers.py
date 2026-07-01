@@ -16,7 +16,7 @@ class TestFactExtractionHelpers(unittest.TestCase):
     """Tests for the layer functions extracted from extract_facts."""
 
     def test_layer1_section_header_bold_emits_has_description(self):
-        from fact_extraction import _layer1_section_header_bold
+        from fact import _layer1_section_header_bold
 
         captured = []
         text = "## Foo\n**What it does:** This is a test description.\n"
@@ -26,8 +26,8 @@ class TestFactExtractionHelpers(unittest.TestCase):
         self.assertTrue(any(c[1] == "has_description" for c in captured))
 
     def test_layer1_skips_meta_labels(self):
-        from fact_extraction import _layer1_section_header_bold
-        from fact_extraction import _META_LABELS
+        from fact import _layer1_section_header_bold
+        from fact import _META_LABELS
 
         captured = []
         first_meta = next(iter(_META_LABELS))
@@ -38,7 +38,7 @@ class TestFactExtractionHelpers(unittest.TestCase):
         self.assertEqual(captured, [])
 
     def test_layer2_dash_bullets_extracts_label_desc(self):
-        from fact_extraction import _layer2_dash_bullets
+        from fact import _layer2_dash_bullets
 
         captured = []
         _layer2_dash_bullets(
@@ -50,7 +50,7 @@ class TestFactExtractionHelpers(unittest.TestCase):
         self.assertEqual(captured[0][1], "has_description")
 
     def test_layer3_classification_rejects_single_word(self):
-        from fact_extraction import _layer3_classification
+        from fact import _layer3_classification
 
         captured = []
         # Single word → single word: rejected by quality gate
@@ -58,7 +58,7 @@ class TestFactExtractionHelpers(unittest.TestCase):
         self.assertEqual(captured, [])
 
     def test_layer3_classification_allows_proper_noun(self):
-        from fact_extraction import _layer3_classification
+        from fact import _layer3_classification
 
         captured = []
         # The _CLASSIFY regex requires "X is a/an/the Y" pattern. Use
@@ -75,7 +75,7 @@ class TestFactExtractionHelpers(unittest.TestCase):
         self.assertIsInstance(captured, list)
 
     def test_dedup_facts_keeps_highest_confidence(self):
-        from fact_extraction import _dedup_facts
+        from fact import _dedup_facts
 
         facts = [
             ("Score", "has_value", "5", 0.5),
@@ -88,7 +88,7 @@ class TestFactExtractionHelpers(unittest.TestCase):
         self.assertEqual(score[3], 0.9)
 
     def test_is_meta_header_recognizes_priority_markers(self):
-        from fact_extraction import _is_meta_header
+        from fact import _is_meta_header
 
         # These should be detected as meta headers (the regex requires
         # a separator after the marker; we use ":" to satisfy that).
@@ -105,7 +105,7 @@ class TestSagaSaveMemoryHelpers(unittest.TestCase):
     """Tests for the helpers extracted from saga_save_memory."""
 
     def test_capture_pre_existing_returns_none_for_missing(self):
-        from saga import _capture_pre_existing
+        from infra.saga import _capture_pre_existing
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
@@ -118,7 +118,7 @@ class TestSagaSaveMemoryHelpers(unittest.TestCase):
                 conn.close()
 
     def test_capture_pre_existing_returns_row_for_existing(self):
-        from saga import _capture_pre_existing
+        from infra.saga import _capture_pre_existing
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
@@ -216,13 +216,13 @@ class TestAutoSaveInjectionScan(unittest.TestCase):
     """Tests for the new _scan_content_for_injection in auto_save."""
 
     def test_clean_content_passes(self):
-        from auto_save import _scan_content_for_injection
+        from background.auto_save import _scan_content_for_injection
 
         result = _scan_content_for_injection("bash", '{"cmd": "ls -la"}', "file.txt")
         self.assertIsNone(result)
 
     def test_high_risk_content_rejected(self):
-        from auto_save import _scan_content_for_injection
+        from background.auto_save import _scan_content_for_injection
 
         result = _scan_content_for_injection(
             "write",
@@ -234,7 +234,7 @@ class TestAutoSaveInjectionScan(unittest.TestCase):
         self.assertGreaterEqual(result["risk_score"], 0.5)
 
     def test_low_risk_content_allowed(self):
-        from auto_save import _scan_content_for_injection
+        from background.auto_save import _scan_content_for_injection
 
         result = _scan_content_for_injection(
             "memory_save",
@@ -244,7 +244,7 @@ class TestAutoSaveInjectionScan(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_empty_content_passes(self):
-        from auto_save import _scan_content_for_injection
+        from background.auto_save import _scan_content_for_injection
 
         self.assertIsNone(_scan_content_for_injection("ls", "", ""))
 
@@ -341,7 +341,7 @@ class TestContradictionDetectorFallback(unittest.TestCase):
         # We can't easily trigger that without breaking the real
         # import. Instead, verify the function exists and has the
         # right signature on the real path.
-        from memory_common import safe_close_db
+        from infra.memory_common import safe_close_db
 
         import inspect
 
@@ -833,7 +833,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
         import shutil
 
         try:
-            import auto_save as _as
+            import background.auto_save as _as
 
             pid_path = _as.get_auto_save_pid_path()
             if pid_path.exists():
@@ -866,7 +866,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_inbox_path_resolves_to_memory_dir(self):
         """The inbox path lives next to the DB, not at a fixed location."""
-        import auto_save
+        import background.auto_save
 
         self.assertEqual(
             auto_save.get_auto_save_inbox_path(),
@@ -905,7 +905,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_enqueue_to_inbox_writes_one_line(self):
         """A successful enqueue appends one valid JSONL line."""
-        import auto_save
+        import background.auto_save
 
         result = auto_save._enqueue_to_inbox(
             {
@@ -926,7 +926,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_drain_inbox_returns_entries_and_truncates(self):
         """Drain parses entries and atomically empties the inbox."""
-        import auto_save
+        import background.auto_save
 
         for i in range(3):
             auto_save._enqueue_to_inbox(
@@ -946,7 +946,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_drain_inbox_handles_missing_file(self):
         """Drain on a missing inbox returns [] without error."""
-        import auto_save
+        import background.auto_save
 
         auto_save.get_auto_save_inbox_path().unlink(missing_ok=True)
         entries = auto_save._drain_inbox()
@@ -954,7 +954,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_drain_inbox_skips_malformed_lines(self):
         """A bad JSONL line is dropped, not blocking the whole drain."""
-        import auto_save
+        import background.auto_save
 
         inbox = auto_save.get_auto_save_inbox_path()
         inbox.parent.mkdir(parents=True, exist_ok=True)
@@ -973,14 +973,14 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_is_daemon_running_false_when_no_pid(self):
         """No PID file → not running."""
-        import auto_save
+        import background.auto_save
 
         auto_save.get_auto_save_pid_path().unlink(missing_ok=True)
         self.assertFalse(auto_save._is_daemon_running())
 
     def test_write_and_remove_pid_file(self):
         """PID file round-trips through write+remove."""
-        import auto_save
+        import background.auto_save
 
         ok = auto_save._write_pid_file()
         self.assertTrue(ok)
@@ -992,7 +992,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_async_path_returns_queued_envelope(self):
         """When async is on, tool_complete returns a 'queued' envelope."""
-        import auto_save
+        import background.auto_save
 
         result = auto_save.tool_complete("memory_save", '{"x":1}', "preview")
         self.assertIn("saved", result)
@@ -1034,7 +1034,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
         # Clean up any stale daemon lock from a prior run — without this,
         # a surviving flock from a previous subprocess causes the new daemon
         # to silently exit without writing a PID file (no DEVNULL output to recover).
-        import auto_save
+        import background.auto_save
         auto_save._cleanup_stale_daemon_lock()
 
         script = os.path.join(
@@ -1057,7 +1057,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
         )
         try:
             # Wait for the daemon to write its PID file.
-            import auto_save
+            import background.auto_save
 
             # Increased from 2.0 s to 5.0 s: Python cold-start (importing
             # background.auto_save pulls in circuit_breaker, config, daemon,

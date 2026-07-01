@@ -27,7 +27,7 @@ import sys
 import time
 from pathlib import Path
 
-from memory_common import safe_close_db
+from infra.memory_common import safe_close_db
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ except ImportError:
 import numpy as np
 from usearch.index import Index as USearchIndex
 
-from embedding_search import (
+from infra.embedding_search import (
     _cache_text,
     _content_hash,
     get_embedding_search,
@@ -74,7 +74,7 @@ def _md5_to_uint64(memory_id: str) -> int:
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     """Run migrations so memory_vec_idx + memory_vec_keys exist."""
     try:
-        from _lazy_imports import run_db_migrations
+        from infra._lazy_imports import run_db_migrations
 
         run_db_migrations(conn)
     except Exception as e:

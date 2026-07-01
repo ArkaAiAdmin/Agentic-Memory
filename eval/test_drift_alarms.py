@@ -34,7 +34,7 @@ class TestDriftAlarmsSchema(unittest.TestCase):
         conn = sqlite3.connect(str(self.db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         # Bring the DB up to current schema (memories + all migrations)
-        from db_migrations import run_schema_setup
+        from infra.db_migrations import run_schema_setup
 
         run_schema_setup(conn)
         conn.commit()
@@ -121,7 +121,7 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
         self.db_path = self.tmpdir / "memory.db"
         conn = sqlite3.connect(str(self.db_path))
         conn.execute("PRAGMA foreign_keys=ON")
-        from db_migrations import run_schema_setup
+        from infra.db_migrations import run_schema_setup
 
         run_schema_setup(conn)
         conn.commit()
@@ -252,7 +252,7 @@ class TestCheckConceptDriftWritePath(unittest.TestCase):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="drift_alarms_write_"))
         self.db_path = self.tmpdir / "memory.db"
         # Bring the DB up to current schema.
-        from db_migrations import run_schema_setup
+        from infra.db_migrations import run_schema_setup
 
         conn = sqlite3.connect(str(self.db_path))
         conn.execute("PRAGMA foreign_keys=ON")

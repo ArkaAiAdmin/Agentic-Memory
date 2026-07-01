@@ -15,7 +15,7 @@ if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
 
-from memory_common import GLOBAL_MEM_DIR
+from infra.memory_common import GLOBAL_MEM_DIR
 
 DEFAULT_DB_PATH = str(GLOBAL_MEM_DIR / "memory.db")
 
@@ -28,7 +28,7 @@ INFO_THRESHOLD = 10
 def _get_rebuild_threshold() -> int:
     """Read vec_rebuild_threshold from config (env/memory.toml)."""
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
         val = get_config().vec_rebuild_threshold
         return int(val) if val is not None else 5
     except Exception:

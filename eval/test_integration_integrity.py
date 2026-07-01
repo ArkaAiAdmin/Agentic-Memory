@@ -27,9 +27,9 @@ sys.path.insert(0, str(INSTALL_DIR))
 import pytest
 from _fixtures import bootstrap_temp_db_clean
 
-import infrastructure
+import infra.infrastructure as infrastructure
 import save_pipeline as _save_pipeline_mod
-from memory_common import connection_pool, open_db, run_db_migrations
+from infra.memory_common import connection_pool, open_db, run_db_migrations
 from save_pipeline import (
     save_memory,
     clear_pragma_cache,

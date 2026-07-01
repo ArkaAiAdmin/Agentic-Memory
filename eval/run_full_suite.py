@@ -126,6 +126,7 @@ def run_one_test(f):
     test_env = env.copy()
     test_env["MEMORY_DB_PATH"] = str(temp_db_path)
     test_env["AGENTIC_MEMORY_DIR"] = str(temp_db_path.parent)
+    test_env["PYTHONPATH"] = str(HERE.parent)
 
     try:
         result = subprocess.run(

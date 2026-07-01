@@ -11,7 +11,7 @@ import tempfile
 
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
-from kg_dedup import dedup_entities
+from kg.kg_dedup import dedup_entities
 
 
 def _make_db():

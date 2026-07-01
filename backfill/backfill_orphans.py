@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 try:
-    from _lazy_imports import get_memory_paths, safe_close_db
+    from infra._lazy_imports import get_memory_paths, safe_close_db
 except ImportError:
     get_memory_paths = None
     safe_close_db = None
@@ -150,7 +150,7 @@ def main():
         sys.exit(1)
 
     print(f"Cleaning: {db_path}")
-    from _lazy_imports import connection_pool
+    from infra._lazy_imports import connection_pool
 
     conn = connection_pool.get(str(db_path), timeout=30.0)
     try:

@@ -18,7 +18,7 @@ def memory_adaptive_retention(dry_run: bool = False) -> str:
     """Batch compute adaptive half-lives and neural forget curve scores."""
     import adaptive_retention as ar
     import neural_forget as nf
-    from infrastructure import resolve_active_memory_dir
+    from infra.infrastructure import resolve_active_memory_dir
 
     results = {}
     if ar.ADAPTIVE_RETENTION_ENABLED:

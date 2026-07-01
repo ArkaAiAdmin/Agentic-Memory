@@ -15,7 +15,7 @@ import time
 from collections import Counter
 from typing import Optional
 
-from memory_common import safe_close_db, connection_pool
+from infra.memory_common import safe_close_db, connection_pool
 
 __all__ = [
     "ADAPTIVE_RETENTION_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -165,7 +165,7 @@ def compute_adaptive_halflife(
         return base_halflife
 
     try:
-        from _lazy_imports import get_memory_paths
+        from infra._lazy_imports import get_memory_paths
 
         _, local_mem, global_mem = get_memory_paths()
         actual_db = db_path or str(local_mem / "memory.db")
@@ -244,7 +244,7 @@ def batch_update_retention(
 
     try:
         if db_path is None:
-            from memory_common import get_memory_paths
+            from infra.memory_common import get_memory_paths
 
             _, local_mem, global_mem = get_memory_paths()
             actual_db = str(local_mem / "memory.db")
@@ -259,7 +259,7 @@ def batch_update_retention(
     should_close = False
     try:
         if conn is None:
-            from db_write_queue import sqlite_write_queue
+            from infra.db_write_queue import sqlite_write_queue
             conn_to_use = sqlite_write_queue.start_session(Path(actual_db))
             should_close = True
         else:
@@ -341,7 +341,7 @@ def retention_stats(db_path: str | None = None) -> dict:
         return {"enabled": False}
 
     try:
-        from _lazy_imports import get_memory_paths
+        from infra._lazy_imports import get_memory_paths
 
         _, local_mem, global_mem = get_memory_paths()
         actual_db = db_path or str(local_mem / "memory.db")
@@ -444,7 +444,7 @@ def get_last_access_queries_batch(
         return {}
 
     try:
-        from _lazy_imports import get_memory_paths
+        from infra._lazy_imports import get_memory_paths
 
         _, local_mem, _ = get_memory_paths()
         actual_db = db_path or str(local_mem / "memory.db")
@@ -505,6 +505,6 @@ def get_last_access_queries_batch(
     return result
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 __getattr__ = make_lazy_getattr({"ADAPTIVE_RETENTION_ENABLED": "adaptive_retention"})

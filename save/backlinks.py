@@ -18,7 +18,7 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
-from memory_common import open_db, atomic_write
+from infra.memory_common import open_db, atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ def _auto_semantic_backlinks(
         if np.linalg.norm(query_vec) < 1e-8:
             return
 
-        from _lazy_imports import get_embedding_search
+        from infra._lazy_imports import get_embedding_search
 
         es = get_embedding_search()
         if es.model is None:

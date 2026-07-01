@@ -625,7 +625,7 @@ def crdt_field_save(
           coexisting version.
     """
     from datetime import datetime, timezone
-    from _lazy_imports import open_db
+    from infra._lazy_imports import open_db
     from contextlib import nullcontext
 
     if hasattr(db_path, "execute"):
@@ -1019,7 +1019,7 @@ def _finalize_crdt_save(
         # safe_atomic_write (Scenario 4 fix): if a local edit
         # happened during the CRDT merge, the local edit is
         # preserved as <path>.conflict-<pid>-<ts>.
-        from memory_common import safe_atomic_write
+        from infra.memory_common import safe_atomic_write
 
         try:
             safe_atomic_write(md_path, body, encoding="utf-8")

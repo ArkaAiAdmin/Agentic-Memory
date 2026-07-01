@@ -25,8 +25,8 @@ if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
 
-from infrastructure import resolve_active_memory_dir
-from db_write_queue import sqlite_write_queue
+from infra.infrastructure import resolve_active_memory_dir
+from infra.db_write_queue import sqlite_write_queue
 
 
 def _check_debounce(
@@ -135,7 +135,7 @@ def main() -> int:
             print(f"skipped: debounce ({debounce_reason})")
             return 0
 
-        from background_queue import init_task_queue, enqueue_task
+        from background.background_queue import init_task_queue, enqueue_task
 
         init_task_queue(conn)
         task_id = enqueue_task(

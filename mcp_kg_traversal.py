@@ -33,8 +33,8 @@ def memory_graph_shortest_path(source: str, target: str, max_depth: int = 5) -> 
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
 
     try:
-        from db import open_db
-        from kg_traversal import find_shortest_path
+        from infra.db import open_db
+        from kg.kg_traversal import find_shortest_path
 
         with open_db(db_path, timeout=5.0, write=False) as conn:
             path = find_shortest_path(conn, source, target, max_depth=max_depth)
@@ -88,8 +88,8 @@ def memory_graph_traverse(start: str, edge_patterns: Union[str, List[str]]) -> s
         return _err(ErrorCode.INVALID_PARAMS, "edge_patterns cannot be empty")
 
     try:
-        from db import open_db
-        from kg_traversal import traverse_graph
+        from infra.db import open_db
+        from kg.kg_traversal import traverse_graph
 
         with open_db(db_path, timeout=5.0, write=False) as conn:
             paths = traverse_graph(conn, start, patterns)

@@ -120,7 +120,7 @@ def _import_detector_helpers():
     this module's "top-N candidates chosen by the caller" design.
     """
     try:
-        from contradiction_detector import (
+        from kg.contradiction_detector import (
             NEGATION_PAIRS,
             split_segments,
             find_phrase_in_sentence,
@@ -445,7 +445,7 @@ def check_contradictions_on_save(
     recency_budget = max(1, top_n // 2)
     semantic_budget = top_n - recency_budget
     try:
-        from _lazy_imports import open_db
+        from infra._lazy_imports import open_db
 
         with open_db(db_path, timeout=30, write=False) as conn:
             try:
@@ -471,7 +471,7 @@ def check_contradictions_on_save(
             # with older but semantically related notes that the recency-
             # bounded query would miss.
             try:
-                from _lazy_imports import get_embedding_search
+                from infra._lazy_imports import get_embedding_search
 
                 es = get_embedding_search()
                 if es.model is not None:

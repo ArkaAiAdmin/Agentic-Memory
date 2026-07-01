@@ -21,7 +21,7 @@ from unittest.mock import patch
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import should_complain_about_score, _compliance_last_warn_path
+from infra.memory_common import should_complain_about_score, _compliance_last_warn_path
 
 # 2026-06-29 fix: redirect the compliance state file to a per-worker
 # temp dir on CI (and on any machine that doesn't have a writable

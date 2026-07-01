@@ -23,14 +23,14 @@ AGENTIC_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(AGENTIC_DIR))
 sys.path.insert(0, str(AGENTIC_DIR / "eval"))
 
-from memory_common import open_db
+from infra.memory_common import open_db
 
 
 class TestWalMode(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="wal_test_"))
         self.db_path = self.tmpdir / "memory.db"
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool.clear()
 

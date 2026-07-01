@@ -207,7 +207,7 @@ def _mark_audit_pending(
     path = str(db_path) if db_path else str(Path.cwd() / "memory" / "memory.db")
     conn = None
     try:
-        from db import connection_pool
+        from infra.db import connection_pool
 
         conn = connection_pool.get(path, timeout=10.0)
         conn.execute(
@@ -223,7 +223,7 @@ def _mark_audit_pending(
                 pass
     finally:
         if conn:
-            from db import safe_close_db
+            from infra.db import safe_close_db
 
             safe_close_db(conn)
 
@@ -237,7 +237,7 @@ def reconcile_audit(db_path: Optional[Path] = None) -> str:
     conn = None
     pending: dict[str, list[str]] = {}
     try:
-        from db import connection_pool
+        from infra.db import connection_pool
 
         conn = connection_pool.get(path, timeout=30.0)
         for table in _TABLE_DML:
@@ -257,7 +257,7 @@ def reconcile_audit(db_path: Optional[Path] = None) -> str:
         return json.dumps({"ok": False, "error": str(exc)})
     finally:
         if conn:
-            from db import safe_close_db
+            from infra.db import safe_close_db
 
             safe_close_db(conn)
 
@@ -295,7 +295,7 @@ def _save_system_record(
     conn = None
     saved = False
     try:
-        from db import connection_pool
+        from infra.db import connection_pool
 
         path = str(db_path) if db_path else str(Path.cwd() / "memory" / "memory.db")
         conn = connection_pool.get(path, timeout=30.0)
@@ -314,7 +314,7 @@ def _save_system_record(
                 pass
     finally:
         if conn:
-            from db import safe_close_db
+            from infra.db import safe_close_db
 
             safe_close_db(conn)
     if not saved:
@@ -388,7 +388,7 @@ class SessionManager:
 
     def _conn(self):
         """Acquire a pooled connection for read/write operations."""
-        from db import connection_pool
+        from infra.db import connection_pool
 
         path = (
             str(self._db_path)
@@ -461,7 +461,7 @@ class SessionManager:
                         metadata=json.loads(row[9]) if row[9] else {},
                     )
             finally:
-                from db import safe_close_db
+                from infra.db import safe_close_db
 
                 safe_close_db(conn)
         except Exception as exc:
@@ -550,7 +550,7 @@ class SessionManager:
                     ).fetchone()[0]
                     seq = (max_seq or 0) + 1
                 finally:
-                    from db import safe_close_db
+                    from infra.db import safe_close_db
 
                     safe_close_db(conn)
             except Exception as exc:
@@ -681,7 +681,7 @@ class SessionManager:
                     (session_id,),
                 ).fetchall()
             finally:
-                from db import safe_close_db
+                from infra.db import safe_close_db
 
                 safe_close_db(conn)
             for (tid,) in open_threads:
@@ -760,7 +760,7 @@ class SessionManager:
                     (session_id,),
                 ).fetchall()
             finally:
-                from db import safe_close_db
+                from infra.db import safe_close_db
 
                 safe_close_db(conn)
             for r in rows:
@@ -806,7 +806,7 @@ class SessionManager:
                     (session_id, per_thread),
                 ).fetchall()
             finally:
-                from db import safe_close_db
+                from infra.db import safe_close_db
 
                 safe_close_db(conn)
             for r in rows:

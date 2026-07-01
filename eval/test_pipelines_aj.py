@@ -19,17 +19,17 @@ sys.path.insert(0, str(PROJ))
 _tmp = tempfile.mkdtemp(prefix="memtest_")
 TEST_DB = Path(_tmp) / "memory.db"
 
-import memory_common as mc
+import infra.memory_common as mc
 
 # Clear any stale connection pool from previous test sessions
 mc.connection_pool.clear()
 import save_pipeline as sp
 import search_pipeline as search
-import embedding_search as es
+import infra.embedding_search as es
 import memory_delete as md
 import rebuild_index as ri
 import adaptive_retention as ar
-import audit
+import infra.audit as audit
 
 results = []
 
@@ -720,7 +720,7 @@ def test_O1_audit_entry_written():
         # Background writer failed — insert synchronously as fallback.
         try:
             import json as _json
-            from memory_common import open_db as _open_db
+            from infra.memory_common import open_db as _open_db
 
             with _open_db(TEST_DB, write=True) as _conn:
                 with _conn:

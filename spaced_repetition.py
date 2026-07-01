@@ -18,7 +18,7 @@ class SpacedRepetition:
         # connection; ``close()`` returns it to the pool rather than
         # closing it. Callers that depend on ``self.db`` being a
         # ``sqlite3.Connection`` (it still is) are unaffected.
-        from db_write_queue import sqlite_write_queue
+        from infra.db_write_queue import sqlite_write_queue
 
         self.db = sqlite_write_queue.start_session(db_path)
         self.db.execute("PRAGMA busy_timeout = 30000;")
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     if db_env:
         db_path = Path(db_env)
     else:
-        from memory_config import get_memory_paths
+        from infra.memory_config import get_memory_paths
 
         _, local_mem, _ = get_memory_paths()
         db_path = local_mem / "memory.db"

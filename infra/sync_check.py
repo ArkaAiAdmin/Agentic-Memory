@@ -18,8 +18,8 @@ from pathlib import Path
 import os
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from memory_common import get_memory_paths, connection_pool, safe_close_db
-from sync_invariant import check_sync_invariant, format_sync_report, get_drifted_subsystems
+from infra.memory_common import get_memory_paths, connection_pool, safe_close_db
+from infra.sync_invariant import check_sync_invariant, format_sync_report, get_drifted_subsystems
 
 
 def main(db_path: str | None = None):

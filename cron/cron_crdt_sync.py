@@ -28,7 +28,7 @@ if _PACKAGE_ROOT.name == "cron":
 sys.path.insert(0, str(_PACKAGE_ROOT))
 os.chdir(str(_PACKAGE_ROOT))
 
-from memory_common import configure_logging
+from infra.memory_common import configure_logging
 from config import get_config
 
 configure_logging()
@@ -62,7 +62,7 @@ def main() -> int:
         print("No sync peers configured. Add [[sync.peers]] to memory.toml.")
         return 0
 
-    from sync_client import sync_with_peer
+    from infra.sync_client import sync_with_peer
     from save.crdt_helpers import _crdt_agent_id
 
     local_agent_id = _crdt_agent_id()

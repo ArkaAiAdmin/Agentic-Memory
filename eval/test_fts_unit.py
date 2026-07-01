@@ -79,7 +79,7 @@ class TestCleanupFts5Orphans(unittest.TestCase):
         self.conn.close()
 
     def test_returns_zero_when_no_orphans(self):
-        from fts import cleanup_fts5_orphans
+        from infra.fts import cleanup_fts5_orphans
 
         # Insert a non-deleted memory; the AI trigger writes the FTS row.
         self.conn.execute(
@@ -95,7 +95,7 @@ class TestCleanupFts5Orphans(unittest.TestCase):
         and remove it. We construct the orphan directly because
         constructing it via the trigger path is brittle in unit-test
         SQLite configurations."""
-        from fts import cleanup_fts5_orphans
+        from infra.fts import cleanup_fts5_orphans
 
         # Manually insert a memory so we have a known live rowid.
         self.conn.execute(
@@ -119,7 +119,7 @@ class TestCleanupFts5Orphans(unittest.TestCase):
         self.assertEqual(after, 1)
 
     def test_returns_count_as_int(self):
-        from fts import cleanup_fts5_orphans
+        from infra.fts import cleanup_fts5_orphans
 
         result = cleanup_fts5_orphans(self.conn)
         self.assertIsInstance(result, int)
@@ -133,7 +133,7 @@ class TestCreateFts5Table(unittest.TestCase):
     present."""
 
     def test_creates_table_with_porter_tokenizer(self):
-        from fts import _create_fts5_table
+        from infra.fts import _create_fts5_table
 
         conn = sqlite3.connect(":memory:")
         try:
@@ -153,7 +153,7 @@ class TestCreateFts5Table(unittest.TestCase):
             conn.close()
 
     def test_creates_three_sync_triggers(self):
-        from fts import _create_fts5_table
+        from infra.fts import _create_fts5_table
 
         conn = sqlite3.connect(":memory:")
         try:
@@ -179,7 +179,7 @@ class TestMigrateFts5PorterTokenizer(unittest.TestCase):
     def test_no_op_when_porter_already_present(self):
         """If the table is already porter, the migration must be a
         no-op (no DROP TABLE) — that's the documented fast path."""
-        from fts import _create_fts5_table, _migrate_fts5_porter_tokenizer
+        from infra.fts import _create_fts5_table, _migrate_fts5_porter_tokenizer
 
         conn = sqlite3.connect(":memory:")
         try:
@@ -205,7 +205,7 @@ class TestMigrateFts5PorterTokenizer(unittest.TestCase):
 
 class TestMigrateEnsureFtsTriggers(unittest.TestCase):
     def test_creates_missing_triggers(self):
-        from fts import _migrate_ensure_fts_triggers
+        from infra.fts import _migrate_ensure_fts_triggers
 
         conn = sqlite3.connect(":memory:")
         try:
@@ -234,7 +234,7 @@ class TestMigrateEnsureFtsTriggers(unittest.TestCase):
     def test_no_op_when_fts_table_missing(self):
         """If the FTS table doesn't exist, the function must not
         crash and must not create anything."""
-        from fts import _migrate_ensure_fts_triggers
+        from infra.fts import _migrate_ensure_fts_triggers
 
         conn = sqlite3.connect(":memory:")
         try:

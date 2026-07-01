@@ -165,7 +165,7 @@ def agent_save(content: str, category: str, title_slug: str, **kwargs):
 
     Wraps ``save_pipeline.save_memory`` with automatic note ID scoping.
     """
-    from _lazy_imports import save_memory, SaveRequest
+    from infra._lazy_imports import save_memory, SaveRequest
 
     scoped_slug = scope_note_id(title_slug)
     _now_iso = kwargs.pop("_now_iso", None)
@@ -189,7 +189,7 @@ def agent_search(query: str, limit: int = 5, rerank: bool = True) -> dict:
     Wraps ``search_pipeline.search_memories`` with automatic agent
     namespace filtering. Returns the same dict shape as search_memories.
     """
-    from _lazy_imports import search_memories, get_config
+    from infra._lazy_imports import search_memories, get_config
     from pathlib import Path
 
     db_path = Path(get_config().db_path)

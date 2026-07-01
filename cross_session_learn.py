@@ -19,7 +19,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from infrastructure import resolve_active_memory_dir
+from infra.infrastructure import resolve_active_memory_dir
 
 # Patterns that suggest a reusable lesson
 PATTERN_SIGNALS = [
@@ -247,7 +247,7 @@ def main():
         print(f"ERROR: no memory.db at {db_path}")
         sys.exit(1)
 
-    from db_write_queue import sqlite_write_queue
+    from infra.db_write_queue import sqlite_write_queue
 
     conn = sqlite_write_queue.start_session(db_path)
     conn.execute("PRAGMA busy_timeout = 30000;")

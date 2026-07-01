@@ -81,7 +81,7 @@ def _backfill_fts(conn):
 def _backfill_embeddings(conn):
     """Batch-encode all memories into memory_embeddings."""
     try:
-        from embedding_search import get_embedding_search
+        from infra.embedding_search import get_embedding_search
 
         es = get_embedding_search()
         if es.model is None:

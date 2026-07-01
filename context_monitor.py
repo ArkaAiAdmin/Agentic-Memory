@@ -98,7 +98,7 @@ def _save_state(state: dict):
         lock_fd = None  # best-effort: proceed without lock
 
     try:
-        from memory_common import atomic_write
+        from infra.memory_common import atomic_write
 
         atomic_write(STATE_FILE, json.dumps(state, indent=2) + "\n")
     finally:
@@ -355,7 +355,7 @@ with a manual summary of decisions, progress, and next steps.
     # Also save to DB so it's searchable
     try:
         sys.path.insert(0, str(Path(__file__).parent))
-        from _lazy_imports import save_memory
+        from infra._lazy_imports import save_memory
 
         save_memory(
             content=content,
@@ -426,7 +426,7 @@ This is the final session summary. The agent should add:
     # Also save to DB so it's searchable
     try:
         sys.path.insert(0, str(Path(__file__).parent))
-        from _lazy_imports import save_memory
+        from infra._lazy_imports import save_memory
 
         save_memory(
             content=content,
@@ -1085,7 +1085,7 @@ def _enforce_compaction_pin_limit():
     """
     try:
         sys.path.insert(0, str(Path(__file__).parent))
-        from memory_common import get_memory_paths, open_db
+        from infra.memory_common import get_memory_paths, open_db
 
         _, local_mem, _ = get_memory_paths()
         db_path = local_mem / "memory.db"
@@ -1182,7 +1182,7 @@ def _write_compaction_note(
     # compaction note survives future purges — they're critical.
     try:
         sys.path.insert(0, str(Path(__file__).parent))
-        from _lazy_imports import save_memory
+        from infra._lazy_imports import save_memory
 
         save_memory(
             content=content,
@@ -1201,7 +1201,7 @@ def _write_compaction_note(
     if rich_summary:
         try:
             sys.path.insert(0, str(Path(__file__).parent))
-            from _lazy_imports import save_memory as _save_mem2
+            from infra._lazy_imports import save_memory as _save_mem2
 
             derived_tags = ["compaction", "session-summary", "derived", "auto"]
             if rich_summary.get("todos", "").startswith("- No todo"):

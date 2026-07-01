@@ -31,7 +31,7 @@ from typing import Optional
 # Re-exports from the 6 new modules (one canonical home, multiple import paths)
 import logging
 
-from db import (
+from infra.db import (
     _ConnectionPool,
     connection_pool,
     safe_close_db,
@@ -39,19 +39,19 @@ from db import (
     wal_checkpoint_idle,
     count_rows,
 )
-import db as _db_module
-from fts import (
+import infra.db as _db_module
+from infra.fts import (
     cleanup_fts5_orphans,
     _migrate_fts5_porter_tokenizer,
     _migrate_ensure_fts_triggers,
 )
-from frontmatter import parse_frontmatter
-from file_lock import (
+from infra.frontmatter import parse_frontmatter
+from infra.file_lock import (
     _try_flock,
     acquire_flock_with_retry,
     release_flock,
 )
-from memory_config import (
+from infra.memory_config import (
     GLOBAL_MEM_DIR,
     get_memory_paths,
     find_project_root,
@@ -59,11 +59,11 @@ from memory_config import (
     log_backup,
     validate_config,
 )
-from safe_call import safe_call
+from infra.safe_call import safe_call
 
 # Migration helpers — canonical home is db_migrations.py, re-exported here
 # so ``from memory_common import _migrate_*`` continues to work.
-from db_migrations import (
+from infra.db_migrations import (
     SCHEMA_VERSION,
     run_db_migrations,
     _migrate_schema_version,

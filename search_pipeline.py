@@ -163,7 +163,7 @@ from typing import NamedTuple, Optional, cast
 from datetime import datetime, timezone
 from pathlib import Path
 from dataclasses import dataclass
-from memory_common import (
+from infra.memory_common import (
     open_db,
     count_rows,
     safe_call,
@@ -175,7 +175,7 @@ from memory_common import (
     get_memory_paths,
     parse_frontmatter,
 )
-from infrastructure import (
+from infra.infrastructure import (
     _normalize_unicode,
     _resolve_active_db_path,
     _try_extract_result_meta,
@@ -188,7 +188,7 @@ from infrastructure import (
     update_memory_md_locked,
     GLOBAL_MEM_DIR,
 )
-from cache import (
+from infra.cache import (
     _search_cache,
     SEARCH_CACHE_MAX,
     SEARCH_CACHE_TTL,
@@ -333,43 +333,43 @@ from search.orchestrator import (
 
 def __getattr__(name: str):
     if name == "_LATE_INTERACTION_ENABLED":
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return get_config().late_interaction
     if name == "_TEMPORAL_DECAY_HALF_LIFE":
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return get_config().temporal_half_life
     if name == "_TEMPORAL_DECAY_MODE":
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return get_config().temporal_decay_mode
     if name == "_FORGETTING_CURVE_ENABLED":
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return get_config().forgetting_curve
     if name == "_FORGETTING_CURVE_HALF_LIFE":
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return get_config().forgetting_curve_half_life
     if name == "_GRAPH_RAG_ENABLED":
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return get_config().knowledge_graph
     if name == "_GRAPH_RAG_MAX_HOPS":
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return get_config().graph_rag_hops
     if name == "_GRAPH_RAG_MAX_EXPANSIONS":
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return get_config().graph_rag_expansions
     if name == "_RERANK_HALF_LIFE_DAYS":
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return float(get_config().rerank_half_life_days)
     if name == "_TEMPORAL_DECAY_WEIGHT":
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return float(get_config().temporal_decay_weight)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

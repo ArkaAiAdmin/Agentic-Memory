@@ -32,7 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from memory_common import open_db
+from infra.memory_common import open_db
 from memory_delete import (
     ensure_deleted_at_column,
     hard_delete_note,

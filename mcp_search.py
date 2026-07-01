@@ -256,7 +256,7 @@ def memory_recall_context(
     `reranker_disabled = true` in memory.toml to fully disable the
     reranker (falls back to the lightweight weak cross-encoder).
     """
-    from recall import recall_context
+    from recall.recall import recall_context
 
     target_base = _resolve_memory_dir()
     db_path = target_base / "memory.db"
@@ -294,11 +294,11 @@ def memory_session_start(query: str = "") -> str:
     RETURNS:
     A human-readable text briefing with database statistics and session context.
     """
-    from memory_common import is_session_active
+    from infra.memory_common import is_session_active
     if is_session_active(max_age_seconds=3600):
         return "Session already initialized. Use memory_search or memory_save to continue."
 
-    from recall import recall_context
+    from recall.recall import recall_context
     from self_directed import SELF_DIRECTED_ENABLED
 
     target_base = _resolve_memory_dir()

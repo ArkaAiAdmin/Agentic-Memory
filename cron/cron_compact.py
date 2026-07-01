@@ -19,8 +19,8 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from memory_common import safe_close_db
-from memory_config import install_root
+from infra.memory_common import safe_close_db
+from infra.memory_config import install_root
 
 os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
 # M8 fix: prefer the venv's own python (sys.executable) if we're already
@@ -89,7 +89,7 @@ def main() -> int:
         description="Cron compact: tier migration + consolidation + rebuild + archive."
     ).parse_args()
 
-    from infrastructure import resolve_active_memory_dir
+    from infra.infrastructure import resolve_active_memory_dir
 
     env = os.environ.get("MEMORY_DB_PATH")
     if env:

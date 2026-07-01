@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from migration_runner import run_migrations, migrate_down, SCHEMA_VERSION
+from infra.migration_runner import run_migrations, migrate_down, SCHEMA_VERSION
 
 
 def _conn(db_path: Path):

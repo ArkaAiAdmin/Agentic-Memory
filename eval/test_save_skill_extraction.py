@@ -13,7 +13,7 @@ INSTALL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL))
 
 from save_pipeline import save_memory
-from auto_save import _upsert_memory
+from background.auto_save import _upsert_memory
 
 
 _PROC = """\

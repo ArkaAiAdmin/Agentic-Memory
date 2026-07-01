@@ -21,7 +21,7 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 import tier_migration  # noqa: E402
-from memory_common import atomic_write  # noqa: E402
+from infra.memory_common import atomic_write  # noqa: E402
 
 
 def _write_note(

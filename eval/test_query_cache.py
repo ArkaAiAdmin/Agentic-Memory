@@ -23,7 +23,7 @@ class TestQueryEmbeddingCache(unittest.TestCase):
     """Query embedding cache (LRU 128) in EmbeddingSearch."""
 
     def test_cache_disabled_by_default(self):
-        from embedding_search import EmbeddingSearch
+        from infra.embedding_search import EmbeddingSearch
         es = EmbeddingSearch.__new__(EmbeddingSearch)
         es._QUERY_CACHE_ENABLED = False
         es._query_cache = OrderedDict()
@@ -31,13 +31,13 @@ class TestQueryEmbeddingCache(unittest.TestCase):
 
     @patch.dict(os.environ, {"MEMORY_QUERY_CACHE": "1"})
     def test_cache_enabled(self):
-        from embedding_search import EmbeddingSearch
+        from infra.embedding_search import EmbeddingSearch
         es = EmbeddingSearch.__new__(EmbeddingSearch)
         es._QUERY_CACHE_ENABLED = os.environ.get("MEMORY_QUERY_CACHE", "0") == "1"
         self.assertTrue(es._QUERY_CACHE_ENABLED)
 
     def test_cache_hit_returns_same_embedding(self):
-        from embedding_search import EmbeddingSearch
+        from infra.embedding_search import EmbeddingSearch
         es = EmbeddingSearch.__new__(EmbeddingSearch)
         es._QUERY_CACHE_ENABLED = True
         es._query_cache = OrderedDict()
@@ -52,7 +52,7 @@ class TestQueryEmbeddingCache(unittest.TestCase):
         self.assertEqual(es.model.encode.call_count, 1)
 
     def test_cache_disabled_encodes_every_time(self):
-        from embedding_search import EmbeddingSearch
+        from infra.embedding_search import EmbeddingSearch
         es = EmbeddingSearch.__new__(EmbeddingSearch)
         es._QUERY_CACHE_ENABLED = False
         es._query_cache = OrderedDict()
@@ -66,7 +66,7 @@ class TestQueryEmbeddingCache(unittest.TestCase):
         self.assertEqual(es.model.encode.call_count, 2)
 
     def test_lru_eviction_at_max(self):
-        from embedding_search import EmbeddingSearch
+        from infra.embedding_search import EmbeddingSearch
         es = EmbeddingSearch.__new__(EmbeddingSearch)
         es._QUERY_CACHE_ENABLED = True
         es._query_cache = OrderedDict()

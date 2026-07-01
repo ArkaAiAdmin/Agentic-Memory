@@ -21,8 +21,8 @@ import sys
 sys.path.insert(0, str(INSTALL_DIR))
 
 import sqlite3
-from memory_common import connection_pool
-from db_migrations import run_db_migrations
+from infra.memory_common import connection_pool
+from infra.db_migrations import run_db_migrations
 
 
 def _fresh_db() -> Path:
@@ -365,7 +365,7 @@ class TestFieldLevelCRDTIntegration(unittest.TestCase):
         The v13 behavior: each field is merged independently; both
         agents' edits survive.
         """
-        from crdt_merge import crdt_save
+        from crdt.crdt_merge import crdt_save
 
         # Step 1: agent-A creates the note.
         r1 = crdt_save(
@@ -401,7 +401,7 @@ class TestFieldLevelCRDTIntegration(unittest.TestCase):
         )
 
         # Verify the field-level state in the DB.
-        from crdt_field import read_fields
+        from crdt.crdt_field import read_fields
 
         fields = read_fields(sqlite3.connect(str(self.db_path)), "concurrent-test")
         self.assertEqual(
@@ -420,8 +420,8 @@ class TestFieldLevelCRDTIntegration(unittest.TestCase):
     def test_field_crdt_table_populated_after_save(self):
         """After a save via crdt_save, the memory_field_crdt table
         must have rows for content/tags/category."""
-        from crdt_merge import crdt_save
-        from crdt_field import read_fields
+        from crdt.crdt_merge import crdt_save
+        from crdt.crdt_field import read_fields
 
         crdt_save(
             db_path=self.db_path,

@@ -65,7 +65,7 @@ _OPEN_LOCKS: dict[str, Any] = {}
 # control (e.g. ``strict=True``) can use them directly without adding
 # a second import line.
 try:
-    from file_lock import (
+    from infra.file_lock import (
         FileLockError,
         acquire_flock_with_retry,
         release_flock,

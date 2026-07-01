@@ -30,8 +30,8 @@ if _PACKAGE_ROOT.name == "cron":
 sys.path.insert(0, str(_PACKAGE_ROOT))
 os.chdir(str(_PACKAGE_ROOT))
 
-from memory_common import configure_logging, GLOBAL_MEM_DIR
-from infrastructure import resolve_active_memory_dir
+from infra.memory_common import configure_logging, GLOBAL_MEM_DIR
+from infra.infrastructure import resolve_active_memory_dir
 
 configure_logging()
 

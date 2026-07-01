@@ -52,14 +52,14 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 
-from memory_common import (
+from infra.memory_common import (
     open_db,
     connection_pool,
 )
 from save_pipeline import save_memory
 from search_pipeline import search_memories
 from _fixtures import bootstrap_temp_db
-from audit import flush_audit
+from infra.audit import flush_audit
 
 # Safety: use ONLY the test DB, never production.
 _test_db = os.environ.get("CONCURRENT_TEST_DB")
@@ -400,7 +400,7 @@ class TestConcurrentMixed(unittest.TestCase):
             if p.exists():
                 p.unlink()
         # Clear stale pool connection before opening fresh DB
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         path_key = str(PROD_DB)
         with connection_pool._lock:

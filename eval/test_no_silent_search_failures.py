@@ -18,7 +18,7 @@ import sqlite3
 from pathlib import Path
 
 from memory_mcp import search_memories
-from memory_common import get_memory_paths
+from infra.memory_common import get_memory_paths
 
 
 # Snapshot of high-traffic queries that MUST always work, derived from the

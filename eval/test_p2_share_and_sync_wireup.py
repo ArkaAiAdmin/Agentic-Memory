@@ -31,7 +31,7 @@ def _fresh_db(name: str) -> Path:
     conn = sqlite3.connect(str(db))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
-    from db_migrations import run_schema_setup
+    from infra.db_migrations import run_schema_setup
 
     run_schema_setup(conn)
     conn.close()
@@ -183,7 +183,7 @@ class TestAutoShareHighValue(unittest.TestCase):
         os.environ["MEMORY_MULTI_AGENT"] = "0"
         # The module resolves MULTI_AGENT_ENABLED lazily via memory_common.
         # We need to invalidate the cached value.
-        from memory_common import reset_all_lazy_config_attrs
+        from infra.memory_common import reset_all_lazy_config_attrs
 
         reset_all_lazy_config_attrs()
 
@@ -257,8 +257,8 @@ class TestSyncOnce(unittest.TestCase):
     """``sync_client.sync_once`` wires up to sync_log and CLI."""
 
     def test_sync_once_missing_peer_returns_error(self):
-        from pex_protocol import peer_directory
-        from sync_client import sync_once
+        from infra.pex_protocol import peer_directory
+        from infra.sync_client import sync_once
 
         # Clear any stale peers from the global singleton (test pollution)
         peer_directory.peers.clear()
@@ -277,7 +277,7 @@ class TestSyncOnce(unittest.TestCase):
         port = s.getsockname()[1]
         s.close()  # Nothing listening on this port
 
-        from sync_client import sync_once
+        from infra.sync_client import sync_once
 
         db = _fresh_db("slog")
         result = sync_once(peer_url=f"http://127.0.0.1:{port}", db_path=str(db))
@@ -300,7 +300,7 @@ class TestSyncOnce(unittest.TestCase):
         import socket
         import time as _time
 
-        from sync_server import SyncServer
+        from infra.sync_server import SyncServer
 
         db_a = _fresh_db("sync_a")
         db_b = _fresh_db("sync_b")
@@ -357,7 +357,7 @@ class TestSyncOnce(unittest.TestCase):
                 _time.sleep(0.05)
 
         try:
-            from sync_client import sync_once
+            from infra.sync_client import sync_once
 
             result = sync_once(
                 peer_url=f"http://127.0.0.1:{port}",

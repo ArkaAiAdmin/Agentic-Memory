@@ -24,8 +24,8 @@ from unittest.mock import patch
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import open_db
-from infrastructure import GLOBAL_MEM_DIR
+from infra.memory_common import open_db
+from infra.infrastructure import GLOBAL_MEM_DIR
 from save_pipeline import save_memory
 from _fixtures import bootstrap_temp_db_clean
 from search_pipeline import (

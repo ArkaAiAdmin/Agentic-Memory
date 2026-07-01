@@ -59,7 +59,7 @@ def _update_shared_memory_state() -> None:
     if _os.environ.get("MEMORY_USE_SHARED_MEMORY", "0") != "1":
         return
     try:
-        import shared_memory_state as _sms
+        import infra.shared_memory_state as _sms
 
         state = _sms.SharedMemoryState()
         if not state.attach():
@@ -87,7 +87,7 @@ def _auto_save_circuit_open() -> bool:
 
     if _os.environ.get("MEMORY_USE_SHARED_MEMORY", "0") == "1":
         try:
-            import shared_memory_state as _sms
+            import infra.shared_memory_state as _sms
 
             state = _sms.SharedMemoryState()
             if state.attach():
@@ -134,7 +134,7 @@ def _auto_save_record_failure_and_maybe_trip() -> dict:
     import time as _t
 
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         max_retries = int(getattr(cfg, "auto_save_max_retries", 3))
@@ -284,7 +284,7 @@ def _auto_save_reset_state() -> None:
 def _load_circuit_state_from_audit() -> None:
     """Load circuit breaker state from memory_audit_log on startup."""
     try:
-        from db import connection_pool
+        from infra.db import connection_pool
 
         db_path = _get_db_path()
         conn = connection_pool.get(str(db_path), timeout=5.0)
@@ -331,7 +331,7 @@ def _load_circuit_state_from_audit() -> None:
                         _AUTO_SAVE_STATE["failure_times"] = []
         finally:
             try:
-                from memory_common import safe_close_db
+                from infra.memory_common import safe_close_db
 
                 safe_close_db(conn, should_commit=False)
             except Exception as e:

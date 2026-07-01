@@ -37,8 +37,8 @@ if os.path.basename(_parent) == "cron":
 sys.path.insert(0, _parent)
 
 
-from memory_common import safe_close_db, connection_pool
-from infrastructure import resolve_active_memory_dir
+from infra.memory_common import safe_close_db, connection_pool
+from infra.infrastructure import resolve_active_memory_dir
 from skill_extractor import (
     ensure_skill_schema,
     extract_skill_from_memory,

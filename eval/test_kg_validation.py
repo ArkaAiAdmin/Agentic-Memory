@@ -21,7 +21,7 @@ from knowledge_graph import (
     _upsert_entity,
     _upsert_edge,
 )
-from fact_extraction import (
+from fact import (
     ensure_facts_schema,
     extract_facts,
     _clean_description,

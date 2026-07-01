@@ -66,8 +66,8 @@ def resolve_temporal_contradiction(
     """
 
     from config import resolve_db_path
-    from contradiction_detector import detect_contradictions
-    from _lazy_imports import open_db
+    from kg.contradiction_detector import detect_contradictions
+    from infra._lazy_imports import open_db
 
     resolved_path = resolve_db_path(db_path)
     contradictions = detect_contradictions(
@@ -231,7 +231,7 @@ def get_temporal_facts(
     Returns:
         List of dicts with: id, content, valid_from, valid_to, superseded_by.
     """
-    from _lazy_imports import open_db
+    from infra._lazy_imports import open_db
 
     db_path = Path(db_path)
     as_of = as_of or __import__("datetime").datetime.now(

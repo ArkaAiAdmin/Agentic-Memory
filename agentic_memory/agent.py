@@ -10,7 +10,7 @@ from typing import Any
 from agentic_memory.client import MemoryClient
 from agentic_memory.models import AgentInfo, MemoryResult, SearchResults
 from agentic_memory.utils import resolve_db_path, get_db_connection, safe_close_db
-from db_write_queue import sqlite_write_queue
+from infra.db_write_queue import sqlite_write_queue
 
 logger = logging.getLogger(__name__)
 

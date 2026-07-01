@@ -31,7 +31,7 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 
-from memory_common import open_db, connection_pool
+from infra.memory_common import open_db, connection_pool
 from save_pipeline import (
     save_memory,
     _recalculate_fitness_scores,
@@ -125,8 +125,8 @@ def _init_schema(db: sqlite3.Connection) -> None:
             content_hash TEXT
         )
     """)
-    from memory_common import run_db_migrations, _migrate_kg_tables
-    from fact_extraction import ensure_facts_schema
+    from infra.memory_common import run_db_migrations, _migrate_kg_tables
+    from fact import ensure_facts_schema
     from adaptive_retention import ensure_adaptive_schema
 
     run_db_migrations(db)
@@ -608,7 +608,7 @@ class TestSaveSubsystemFTS5(SavePipelineFixture, unittest.TestCase):
 def _embedding_model_available():
     """Check if an embedding model is available (best-effort)."""
     try:
-        from embedding_search import get_embedding_search
+        from infra.embedding_search import get_embedding_search
 
         es = get_embedding_search()
         return es.model is not None

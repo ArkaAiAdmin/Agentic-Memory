@@ -263,7 +263,7 @@ class TestWiringInRecall:
         mock_sr = MagicMock()
         with patch("recall.SpacedRepetition", create=True) as MockSR:
             MockSR.return_value = mock_sr
-            from recall import _fetch_relevant
+            from recall.recall import _fetch_relevant
 
             # _fetch_relevant does `from spaced_repetition import SpacedRepetition`
             # internally, so patch spaced_repetition (not recall)

@@ -66,7 +66,7 @@ class TestConfigValidation:
 
     def test_invalid_log_level_corrected(self):
         """Invalid LOG_LEVEL should be corrected to INFO."""
-        from memory_common import validate_config
+        from infra.memory_common import validate_config
 
         os.environ["LOG_LEVEL"] = "NOTALEVEL"
         try:
@@ -78,7 +78,7 @@ class TestConfigValidation:
 
     def test_invalid_fts5_cache_ttl_corrected(self):
         """Invalid MEMORY_FTS5_CACHE_TTL should be corrected."""
-        from memory_common import validate_config
+        from infra.memory_common import validate_config
 
         os.environ["MEMORY_FTS5_CACHE_TTL"] = "notanumber"
         try:
@@ -90,7 +90,7 @@ class TestConfigValidation:
 
     def test_valid_config_no_warnings(self):
         """Valid config should produce no warnings."""
-        from memory_common import validate_config
+        from infra.memory_common import validate_config
 
         old_level = os.environ.get("LOG_LEVEL")
         os.environ["LOG_LEVEL"] = "INFO"

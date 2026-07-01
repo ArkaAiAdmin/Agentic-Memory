@@ -24,12 +24,12 @@ _wrong_modules = [k for k in sys.modules if k in ("metrics", "longmemeval_s.metr
 for k in _wrong_modules:
     del sys.modules[k]
 
-from memory_common import (
+from infra.memory_common import (
     open_db,
     run_db_migrations,
     _migrate_kg_tables,
 )
-from fact_extraction import ensure_facts_schema
+from fact import ensure_facts_schema
 from adaptive_retention import ensure_adaptive_schema
 
 # Import rebuild_vec_index functions
@@ -296,7 +296,7 @@ class TestRebuildVecIndex:
     def _check_model(self):
         """Skip if embedding model unavailable."""
         try:
-            from embedding_search import get_embedding_search
+            from infra.embedding_search import get_embedding_search
 
             es = get_embedding_search()
             if es.model is None:

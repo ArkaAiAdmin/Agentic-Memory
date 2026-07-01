@@ -112,7 +112,7 @@ class TestSearchKgFactsInMemory(unittest.TestCase):
     """
 
     def setUp(self):
-        import fact_extraction as fe
+        import fact as fe
 
         self.conn = sqlite3.connect(":memory:")
         # ensure_facts_schema creates kg_facts + FTS5 virtual table + triggers
@@ -251,8 +251,8 @@ class TestSearchMemoriesFactsIntegration(unittest.TestCase):
     """
 
     def setUp(self):
-        from db_migrations import run_schema_setup
-        import fact_extraction as fe
+        from infra.db_migrations import run_schema_setup
+        import fact as fe
 
         self.tmpdir = Path(tempfile.mkdtemp())
         self.local_db = self.tmpdir / "memory.db"
@@ -275,7 +275,7 @@ class TestSearchMemoriesFactsIntegration(unittest.TestCase):
 
     def _insert_fact(self, subject, predicate, obj, confidence=0.95):
         """Insert a fact via the pool (triggers FTS sync)."""
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(str(self.local_db))
         try:
@@ -340,7 +340,7 @@ class TestSearchMemoriesFactsIntegration(unittest.TestCase):
     def test_facts_filtered_by_invalid_when_include_invalid_false(self):
         """include_invalid=False filters out invalidated facts."""
         self._insert_fact("alice", "is_a", "engineer", 0.95)
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(str(self.local_db))
         try:

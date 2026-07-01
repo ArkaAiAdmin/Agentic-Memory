@@ -12,11 +12,11 @@ sys.path.insert(
     ),
 )
 
-from memory_config import install_root
+from infra.memory_config import install_root
 
 sys.path.insert(0, str(install_root()))
 
-import fact_extraction as fe
+import fact as fe
 
 
 class TestFactExtraction:
@@ -323,7 +323,7 @@ class TestFactSearchFTS5:
             #    via the same connection the wrapper will read from, because
             #    the data file may not be visible to a freshly-opened pool conn
             #    (WAL mode, connection caching, etc.).
-            from memory_common import connection_pool
+            from infra.memory_common import connection_pool
 
             conn = connection_pool.get(str(db_path))
             try:
@@ -353,7 +353,7 @@ class TestFactSearchFTS5:
             assert results[0]["subject"] == "alice"
             # Clean up the pooled conn so it doesn't leak across tests.
             try:
-                from memory_common import safe_close_db
+                from infra.memory_common import safe_close_db
 
                 conn2 = connection_pool.get(str(db_path))
                 safe_close_db(conn2)

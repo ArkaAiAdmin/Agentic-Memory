@@ -85,7 +85,7 @@ __all__ = [
 
 def __getattr__(name: str):
     if name == "save_memory":
-        from _lazy_imports import save_memory
+        from infra._lazy_imports import save_memory
 
         return save_memory
     if name == "memory_supersede_db":

@@ -22,7 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-from metrics import recall_all_at_k, recall_any_at_k, ndcg_any_at_k  # noqa: E402
+from infra.metrics import recall_all_at_k, recall_any_at_k, ndcg_any_at_k  # noqa: E402
 from retrieval import retrieve_for_question  # noqa: E402
 
 

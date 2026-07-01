@@ -155,7 +155,7 @@ def __getattr__(name: str):
         from search.orchestrator import search_memories
         return search_memories
     if name in _SEARCH_LAZY_CONFIG_KEYS:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         spec = _SEARCH_LAZY_CONFIG_KEYS[name]
         if isinstance(spec, tuple):

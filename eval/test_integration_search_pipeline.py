@@ -44,7 +44,7 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 
-from memory_common import connection_pool, run_db_migrations, safe_close_db
+from infra.memory_common import connection_pool, run_db_migrations, safe_close_db
 from save_pipeline import save_memory
 from search_pipeline import (
     search_memories,
@@ -57,7 +57,7 @@ from search_pipeline import (
     _graph_rag_expand,
     _bb2_clear_history,
 )
-from cache import _search_cache
+from infra.cache import _search_cache
 
 
 def now_iso():
@@ -66,7 +66,7 @@ def now_iso():
 
 def _embedding_available():
     try:
-        from embedding_search import get_embedding_search
+        from infra.embedding_search import get_embedding_search
 
         es = get_embedding_search()
         return es.model is not None
@@ -76,7 +76,7 @@ def _embedding_available():
 
 def _deep_rerank_available():
     try:
-        from reranker import get_reranker
+        from infra.reranker import get_reranker
 
         r = get_reranker()
         if r is not None:
@@ -803,7 +803,7 @@ class TestAccessCountTracking:
             # P1-12 fix: last_accessed update is enqueued to background
             # queue, not written synchronously. Drain the queue before
             # asserting by repeatedly dequeue+complete until empty.
-            from background_queue import (
+            from background.background_queue import (
                 init_task_queue,
                 dequeue_task,
                 complete_task,

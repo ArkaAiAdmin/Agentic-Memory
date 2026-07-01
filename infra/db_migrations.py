@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # SELECT in run_schema_setup is the correct fast-path. See
 # lessons/bug-migrations-done-cache-recycled-ids-2026-06-16.
 
-from fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
+from infra.fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
 
 # ---------------------------------------------------------------------------
 # SCHEMA_VERSION
@@ -32,7 +32,7 @@ from fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
 # Single source of truth: imported by db.py, db_migrations.py, and
 # migration_runner.py. Mutating a schema must bump this AND add a
 # matching migrations/NNN_*.sql file (see migration_runner._get_available_migrations).
-from migration_runner import SCHEMA_VERSION  # noqa: F401  re-export
+from infra.migration_runner import SCHEMA_VERSION  # noqa: F401  re-export
 
 # ---------------------------------------------------------------------------
 # Non-FTS5 schema migration helpers
@@ -723,7 +723,7 @@ def run_schema_setup(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass
 
-    from migration_runner import run_migrations as _run_sql_migrations
+    from infra.migration_runner import run_migrations as _run_sql_migrations
 
     # 1. SQL migrations version check (the correct fast-path)
     try:

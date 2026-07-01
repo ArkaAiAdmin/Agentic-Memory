@@ -20,7 +20,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
 
-from memory_config import install_root
+from infra.memory_config import install_root
 
 if TYPE_CHECKING:
     import numpy as np
@@ -241,7 +241,7 @@ class EmbeddingSearch:
         # Maps query_text -> embedding_vector (numpy array).
         self._query_cache: OrderedDict = OrderedDict()
         self._QUERY_CACHE_MAX = 128
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         self._QUERY_CACHE_ENABLED = get_config().query_cache
 
@@ -961,7 +961,7 @@ class EmbeddingSearch:
         Falls back to ``search()`` with a dummy query if the model is not
         loaded, since the text-based path's full scan handles raw encoding.
         """
-        from _lazy_imports import connection_pool
+        from infra._lazy_imports import connection_pool
 
         own_db = False
         if db is None:
@@ -1060,7 +1060,7 @@ class EmbeddingSearch:
             return self._search_full_scan_memories(db, query_vec, limit)
         finally:
             if own_db:
-                from _lazy_imports import safe_close_db
+                from infra._lazy_imports import safe_close_db
 
                 safe_close_db(db)
 
@@ -1099,7 +1099,7 @@ class EmbeddingSearch:
         if self.model is None:
             return "Embedding search unavailable. Install model2vec: pip install model2vec numpy"
 
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         # TTL cache for vector search results. The full-scan path is
         # O(N) over all embeddings; caching helps when an agent issues
@@ -1143,7 +1143,7 @@ class EmbeddingSearch:
             _vec_cache_put(cache_key, result)
             return result
         finally:
-            from memory_common import safe_close_db
+            from infra.memory_common import safe_close_db
 
             safe_close_db(db)
 
@@ -1163,11 +1163,11 @@ class EmbeddingSearch:
         if not results:
             return
         try:
-            from db import _local_state
+            from infra.db import _local_state
             if getattr(_local_state, "in_save_pipeline", False):
                 return
 
-            from arc_cache import ARCCache
+            from infra.arc_cache import ARCCache
 
             cache = ARCCache(db_path)
             try:
@@ -1230,7 +1230,7 @@ if __name__ == "__main__":
     if db_env:
         db_path = Path(db_env)
     else:
-        from memory_config import get_memory_paths
+        from infra.memory_config import get_memory_paths
 
         _, local_mem, _ = get_memory_paths()
         db_path = local_mem / "memory.db"
@@ -1250,6 +1250,6 @@ if __name__ == "__main__":
             print("-" * 80)
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 __getattr__ = make_lazy_getattr({"_CONTEXTUAL_ENABLED": "contextual_retrieval"})

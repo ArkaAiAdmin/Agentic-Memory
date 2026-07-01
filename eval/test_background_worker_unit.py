@@ -16,7 +16,7 @@ import sys
 
 sys.path.insert(0, os.getcwd())
 
-from db_migrations import run_schema_setup
+from infra.db_migrations import run_schema_setup
 
 
 class TestVecDriftCheck(unittest.TestCase):
@@ -262,7 +262,7 @@ class TestMmapSizeConfig(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_resolve_mmap_size_default(self):
-        from db import _resolve_mmap_size
+        from infra.db import _resolve_mmap_size
 
         old = os.environ.pop("MEMORY_SQLITE_MMAP_SIZE", None)
         try:
@@ -273,7 +273,7 @@ class TestMmapSizeConfig(unittest.TestCase):
                 os.environ["MEMORY_SQLITE_MMAP_SIZE"] = old
 
     def test_resolve_mmap_size_env_zero(self):
-        from db import _resolve_mmap_size
+        from infra.db import _resolve_mmap_size
 
         old = os.environ.get("MEMORY_SQLITE_MMAP_SIZE")
         os.environ["MEMORY_SQLITE_MMAP_SIZE"] = "0"
@@ -286,7 +286,7 @@ class TestMmapSizeConfig(unittest.TestCase):
                 os.environ["MEMORY_SQLITE_MMAP_SIZE"] = old
 
     def test_resolve_mmap_size_env_override(self):
-        from db import _resolve_mmap_size
+        from infra.db import _resolve_mmap_size
 
         old = os.environ.get("MEMORY_SQLITE_MMAP_SIZE")
         os.environ["MEMORY_SQLITE_MMAP_SIZE"] = "134217728"
@@ -299,7 +299,7 @@ class TestMmapSizeConfig(unittest.TestCase):
                 os.environ["MEMORY_SQLITE_MMAP_SIZE"] = old
 
     def test_resolve_mmap_size_env_garbage_falls_back(self):
-        from db import _resolve_mmap_size
+        from infra.db import _resolve_mmap_size
 
         old = os.environ.get("MEMORY_SQLITE_MMAP_SIZE")
         os.environ["MEMORY_SQLITE_MMAP_SIZE"] = "not-a-number"
@@ -316,7 +316,7 @@ class TestMmapSizeConfig(unittest.TestCase):
         """S4.7: confirm mmap_size PRAGMA is applied when opening
         a connection via the pool.  Use a temp DB."""
         import threading
-        from db import connection_pool
+        from infra.db import connection_pool
 
         old = os.environ.get("MEMORY_SQLITE_MMAP_SIZE")
         os.environ["MEMORY_SQLITE_MMAP_SIZE"] = "1048576"  # 1 MiB

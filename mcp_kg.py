@@ -122,7 +122,7 @@ def memory_facts_search(query: str, limit: int = 10) -> str:
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
     try:
-        from fact_extraction import facts_search_db
+        from fact import facts_search_db
 
         results = facts_search_db(db_path, query, limit=limit)
         if not results:
@@ -156,7 +156,7 @@ def memory_facts_list(limit: int = 20, min_confidence: float = 0.0) -> str:
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
     try:
-        from fact_extraction import facts_list_db
+        from fact import facts_list_db
 
         results = facts_list_db(db_path, limit=limit, min_confidence=min_confidence)
         if not results:
@@ -187,7 +187,7 @@ def memory_facts_stats() -> str:
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
     try:
-        from fact_extraction import facts_stats_db
+        from fact import facts_stats_db
 
         stats = facts_stats_db(db_path)
         lines = [

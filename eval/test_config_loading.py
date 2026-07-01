@@ -506,7 +506,7 @@ class TestTomlIntegration:
         # so importlib.reload() clears the cache; reset_all is a
         # belt-and-suspenders safety net for any test that imported a
         # lazy-config module without reloading.
-        from memory_common import reset_all_lazy_config_attrs
+        from infra.memory_common import reset_all_lazy_config_attrs
 
         reset_all_lazy_config_attrs()
         original_toml = _config_mod._TOML_PATH
@@ -599,19 +599,19 @@ class TestTomlIntegration:
             importlib.reload(self_directed)
             assert self_directed.SELF_DIRECTED_ENABLED is True
 
-            import cache
+            import infra.cache
 
-            importlib.reload(cache)
-            assert cache.SEARCH_CACHE_TTL_ENABLED is True
+            importlib.reload(infra.cache)
+            assert infra.cache.SEARCH_CACHE_TTL_ENABLED is True
 
-            import saga
+            import infra.saga
 
-            importlib.reload(saga)
-            assert saga.SAGA_ENABLED is True
+            importlib.reload(infra.saga)
+            assert infra.saga.SAGA_ENABLED is True
 
-            import reranker
+            import infra.reranker
 
-            importlib.reload(reranker)
+            importlib.reload(infra.reranker)
             # Force a fresh config read so the lazy resolve below sees
             # the test's TOML (reranker_disabled = false), not a stale
             # singleton from an earlier test that set
@@ -625,7 +625,7 @@ class TestTomlIntegration:
             # The canonical assertion. Safe now that make_lazy_getattr
             # caches in the target module's __dict__ (so importlib.reload
             # clears the cache), instead of the caller's globals.
-            assert reranker.RERANKER_ENABLED is True
+            assert infra.reranker.RERANKER_ENABLED is True
 
         finally:
             _config_mod._TOML_PATH = original_toml

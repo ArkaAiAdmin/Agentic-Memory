@@ -19,12 +19,12 @@ if os.path.basename(_parent) == "cron":
 sys.path.insert(0, _parent)
 
 
-from memory_common import (
+from infra.memory_common import (
     safe_close_db,
     cleanup_fts5_orphans,
     connection_pool,
 )
-from infrastructure import resolve_active_memory_dir
+from infra.infrastructure import resolve_active_memory_dir
 
 
 def compute_content_hash(content: str) -> str:

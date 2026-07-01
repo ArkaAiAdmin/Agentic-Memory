@@ -30,7 +30,7 @@ class TestSyncServerAuthBypassFix(unittest.TestCase):
             for mod in list(sys.modules):
                 if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):
                     del sys.modules[mod]
-            from sync_server import _SyncHandler
+            from infra.sync_server import _SyncHandler
 
             handler = _SyncHandler.__new__(_SyncHandler)
             handler.host = host
@@ -65,7 +65,7 @@ class TestSyncServerAuthBypassFix(unittest.TestCase):
             for mod in list(sys.modules):
                 if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):
                     del sys.modules[mod]
-            from sync_server import _SyncHandler
+            from infra.sync_server import _SyncHandler
 
             handler = _SyncHandler.__new__(_SyncHandler)
             handler.host = "0.0.0.0"
@@ -79,7 +79,7 @@ class TestSyncServerAuthBypassFix(unittest.TestCase):
             for mod in list(sys.modules):
                 if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):
                     del sys.modules[mod]
-            from sync_server import _SyncHandler
+            from infra.sync_server import _SyncHandler
 
             handler = _SyncHandler.__new__(_SyncHandler)
             handler.host = "127.0.0.1"
@@ -93,7 +93,7 @@ class TestSyncServerAuthBypassFix(unittest.TestCase):
             for mod in list(sys.modules):
                 if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):
                     del sys.modules[mod]
-            from sync_server import _SyncHandler
+            from infra.sync_server import _SyncHandler
 
             handler = _SyncHandler.__new__(_SyncHandler)
             handler.host = "127.0.0.1"
@@ -122,7 +122,7 @@ class TestSyncServerHmacDeadCode(unittest.TestCase):
             for mod in list(sys.modules):
                 if mod == "sync_server" or mod.startswith("sync_server.") or mod == "infra.sync_server" or mod.startswith("infra.sync_server."):
                     del sys.modules[mod]
-            from sync_server import _SyncHandler
+            from infra.sync_server import _SyncHandler
 
             source = inspect.getsource(_SyncHandler._check_hmac)
             returns = [line.strip() for line in source.splitlines() if "return True" in line]

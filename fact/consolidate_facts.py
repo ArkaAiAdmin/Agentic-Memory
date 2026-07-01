@@ -15,20 +15,20 @@ except ImportError:
     fcntl = None
 sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
 from config import resolve_db_path
-from memory_common import (
+from infra.memory_common import (
     configure_logging,
     atomic_write,
     safe_close_db,
     connection_pool,
 )
-from memory_config import get_memory_paths
-from contradiction_detector import detect_contradictions
+from infra.memory_config import get_memory_paths
+from kg.contradiction_detector import detect_contradictions
 
 # H2 fix: also import the semantic + all-mode detector so the cron
 # consolidation path catches antonym-based and polarity-flip
 # contradictions, not just the phrase-based ones.
 try:
-    from contradiction_detector import detect_contradictions_all as _detect_all
+    from kg.contradiction_detector import detect_contradictions_all as _detect_all
 
     _HAS_SEMANTIC = True
 except ImportError:

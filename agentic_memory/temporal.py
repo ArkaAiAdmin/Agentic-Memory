@@ -14,7 +14,7 @@ from agentic_memory.models import Fact
 from agentic_memory.utils import (
     resolve_db_path,
 )
-from db_write_queue import sqlite_write_queue
+from infra.db_write_queue import sqlite_write_queue
 
 
 class TemporalKG:
@@ -246,7 +246,7 @@ class TemporalKG:
         Raises:
             NotFoundError: If the fact does not exist.
         """
-        from fact_temporal import invalidate_fact as _invalidate_fact
+        from fact.fact_temporal import invalidate_fact as _invalidate_fact
 
         conn = sqlite_write_queue.start_session(Path(self._db_path))
         try:

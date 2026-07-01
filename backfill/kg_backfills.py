@@ -539,7 +539,7 @@ def _backfill_kg_facts(
         return 0
 
     try:
-        from fact_extraction import ensure_facts_schema, index_facts_for_memory
+        from fact import ensure_facts_schema, index_facts_for_memory
 
         ensure_facts_schema(conn)
     except Exception as e:

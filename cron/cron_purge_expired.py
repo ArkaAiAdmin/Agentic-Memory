@@ -12,7 +12,7 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from memory_common import get_memory_paths
+from infra.memory_common import get_memory_paths
 from memory_delete import purge_expired
 
 

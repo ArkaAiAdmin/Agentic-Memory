@@ -79,7 +79,7 @@ def _get_tool_counts_from_db(date_str: str) -> dict[str, int]:
     """
     from background.auto_save import get_db_path  # noqa: E402
     try:
-        from db import connection_pool
+        from infra.db import connection_pool
 
         db_path = get_db_path()
         conn = connection_pool.get(str(db_path), timeout=10.0)
@@ -105,7 +105,7 @@ def _get_tool_counts_from_db(date_str: str) -> dict[str, int]:
             ).fetchall()
             return {row[0]: row[1] for row in rows}
         finally:
-            from memory_common import safe_close_db
+            from infra.memory_common import safe_close_db
 
             safe_close_db(conn, should_commit=False)
     except Exception:
@@ -116,8 +116,8 @@ def _archive_one_autosave(
 ) -> bool:
 
     from background.auto_save import _get_sessions_dir, atomic_write, _resolve_tags, get_db_path  # noqa: E402
-    from db import connection_pool  # noqa: E402
-    from memory_common import safe_close_db  # noqa: E402
+    from infra.db import connection_pool  # noqa: E402
+    from infra.memory_common import safe_close_db  # noqa: E402
     """C9 fix: delete the DB row FIRST (idempotent — re-runs are
     safe), then move the file. The previous order (move-then-delete)
     left a window where the file was archived but the DB row leaked.
@@ -126,7 +126,7 @@ def _archive_one_autosave(
     """
     note_id = f"sessions/auto-{date_str}_{ts_part}-{tool_slug}"
     try:
-        from db_write_queue import sqlite_write_queue
+        from infra.db_write_queue import sqlite_write_queue
         conn = sqlite_write_queue.start_session(get_db_path())
         try:
             conn.execute("PRAGMA foreign_keys=ON")
@@ -168,8 +168,8 @@ def _archive_one_autosave(
 
 def _sweep_orphan_rows() -> None:
     from background.auto_save import get_db_path  # noqa: E402
-    from db import connection_pool  # noqa: E402
-    from memory_common import safe_close_db  # noqa: E402
+    from infra.db import connection_pool  # noqa: E402
+    from infra.memory_common import safe_close_db  # noqa: E402
     """Sweep pre-existing orphan rows in tables that don't have
     ``ON DELETE CASCADE`` or that pre-date ``PRAGMA foreign_keys=ON``.
     Catches rows in user_access_log, memory_embeddings,
@@ -179,7 +179,7 @@ def _sweep_orphan_rows() -> None:
     Extracted 2026-06-22 from daily_digest().
     """
     try:
-        from db_write_queue import sqlite_write_queue
+        from infra.db_write_queue import sqlite_write_queue
         conn = sqlite_write_queue.start_session(get_db_path())
         try:
             conn.execute("PRAGMA foreign_keys=OFF")
@@ -221,9 +221,9 @@ def daily_digest(date_str: Optional[str] = None, dry_run: bool = False) -> dict:
         ARCHIVE_DIR_NAME, _get_sessions_dir, _now_iso, _resolve_tags, atomic_write,
     )  # noqa: E402
     from background.tool_complete import _upsert_memory  # noqa: E402
-    from db import connection_pool  # noqa: E402
+    from infra.db import connection_pool  # noqa: E402
     from background.auto_save import get_db_path  # noqa: E402
-    from memory_common import safe_close_db  # noqa: E402
+    from infra.memory_common import safe_close_db  # noqa: E402
     """Roll all auto-*.md notes for `date_str` into one sessions/YYYY-MM-DD.md.
 
     If date_str is None, defaults to yesterday (most common case: run at

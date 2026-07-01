@@ -30,7 +30,7 @@ def memory_crdt_sync(agent_id: str, remote_notes_json: str) -> str:
 
     Returns JSON with applied/conflicted/rejected/total counts.
     """
-    from crdt_merge import crdt_sync_all
+    from crdt.crdt_merge import crdt_sync_all
     from save.crdt_helpers import _crdt_agent_id
 
     target_base = _resolve_memory_dir()
@@ -76,7 +76,7 @@ def memory_crdt_status() -> str:
 
     Reads peer config and sync_log from the active DB.
     """
-    from _lazy_imports import get_config
+    from infra._lazy_imports import get_config
 
     cfg = get_config()
     peers = cfg.sync_peers

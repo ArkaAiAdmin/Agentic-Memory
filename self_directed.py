@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from memory_common import connection_pool, safe_close_db
+from infra.memory_common import connection_pool, safe_close_db
 
 __all__ = [
     "SELF_DIRECTED_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -201,7 +201,7 @@ def _backfill_drifted_subsystems(conn: sqlite3.Connection, drifted: list[str]) -
     # Backfill embeddings
     if "embeddings" in drifted:
         try:
-            from _lazy_imports import get_embedding_search
+            from infra._lazy_imports import get_embedding_search
 
             es = get_embedding_search()
             count = 0
@@ -247,7 +247,7 @@ def _backfill_drifted_subsystems(conn: sqlite3.Connection, drifted: list[str]) -
     # bulk function instead of a force_regex flag.)
     if "kg_facts" in drifted:
         try:
-            from fact_extraction import (
+            from fact import (
                 ensure_facts_schema,
                 index_facts_for_memory_bulk,
             )
@@ -505,7 +505,7 @@ def run_heartbeat(
     # Step 0: check subsystem sync, backfill if drifted
     sync_backfill = None
     try:
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         drift_result = check_sync_invariant(conn)
         drifted = get_drifted_subsystems(drift_result)
@@ -697,6 +697,6 @@ def tier_stats_db(db_path: str | Path) -> dict:
         safe_close_db(conn)
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 __getattr__ = make_lazy_getattr({"SELF_DIRECTED_ENABLED": "self_directed"})

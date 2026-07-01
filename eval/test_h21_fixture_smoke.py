@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 
-from memory_common import open_db
+from infra.memory_common import open_db
 
 
 class TestBootstrapTempDb:

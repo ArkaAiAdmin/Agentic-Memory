@@ -31,7 +31,7 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from memory_config import install_root
+from infra.memory_config import install_root
 
 REPO = install_root()
 LOG_FILE = REPO / "memory" / "kg-backfill-cron.log"

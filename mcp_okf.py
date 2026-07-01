@@ -41,7 +41,7 @@ def memory_okf_export(
         Overwrite existing files without skipping (default: false).
     """
     import okf_export as oe
-    from infrastructure import resolve_active_memory_dir
+    from infra.infrastructure import resolve_active_memory_dir
 
     db_path = resolve_active_memory_dir() / "memory.db"
     if not db_path.exists():

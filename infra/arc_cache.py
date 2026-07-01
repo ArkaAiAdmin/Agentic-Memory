@@ -39,11 +39,11 @@ import os
 import sqlite3
 import sys
 from contextlib import contextmanager
-from db_write_queue import sqlite_write_queue
+from infra.db_write_queue import sqlite_write_queue
 from pathlib import Path
 from typing import Iterator
 
-from memory_common import find_project_root  # noqa: E402
+from infra.memory_common import find_project_root  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

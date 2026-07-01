@@ -10,7 +10,7 @@ from pathlib import Path
 INSTALL_DIR = Path.resolve(Path(__file__).parents[2])
 sys.path.insert(0, str(INSTALL_DIR))
 
-from contradiction_detector import _claim_polarity, detect_contradictions_semantic
+from kg.contradiction_detector import _claim_polarity, detect_contradictions_semantic
 
 
 def _bootstrap_test_db(db_path: Path) -> None:

@@ -17,8 +17,8 @@ from unittest.mock import patch
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-import embedding_search  # noqa: E402
-from embedding_search import EmbeddingSearch, get_embedding_search  # noqa: E402
+import infra.embedding_search as embedding_search  # noqa: E402
+from infra.embedding_search import EmbeddingSearch, get_embedding_search  # noqa: E402
 import numpy as np
 
 

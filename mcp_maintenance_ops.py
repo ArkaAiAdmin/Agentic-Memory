@@ -567,7 +567,7 @@ def _op_session_stats() -> str:
     try:
         from pathlib import Path
         from session_manager import SessionManager
-        from db import safe_close_db
+        from infra.db import safe_close_db
 
         db_path = os.environ.get("MEMORY_DB_PATH")
         mgr = SessionManager(db_path=Path(db_path)) if db_path else SessionManager()
@@ -593,7 +593,7 @@ def _op_thread_stats() -> str:
     try:
         from pathlib import Path
         from session_manager import SessionManager
-        from db import safe_close_db
+        from infra.db import safe_close_db
 
         db_path = os.environ.get("MEMORY_DB_PATH")
         mgr = SessionManager(db_path=Path(db_path)) if db_path else SessionManager()
@@ -613,7 +613,7 @@ def _op_compaction_stats() -> str:
     try:
         from pathlib import Path
         from session_manager import SessionManager
-        from db import safe_close_db
+        from infra.db import safe_close_db
 
         db_path = os.environ.get("MEMORY_DB_PATH")
         mgr = SessionManager(db_path=Path(db_path)) if db_path else SessionManager()
@@ -655,7 +655,7 @@ def _op_memory_stats() -> str:
                 db_size = p.stat().st_size
             try:
                 from session_manager import SessionManager
-                from db import safe_close_db
+                from infra.db import safe_close_db
 
                 mgr = SessionManager(db_path=Path(db_path))
                 conn = mgr._conn()
@@ -669,10 +669,10 @@ def _op_memory_stats() -> str:
                 pass
         queue_depth = 0
         try:
-            from background_queue import init_task_queue, queue_depth as _qd
+            from background.background_queue import init_task_queue, queue_depth as _qd
 
             if db_path:
-                from db import open_db
+                from infra.db import open_db
                 qconn = open_db(Path(db_path))
                 try:
                     init_task_queue(qconn)
@@ -714,7 +714,7 @@ def _op_list_active_threads(
         import json as _json
         from pathlib import Path
         from session_manager import SessionManager
-        from db import safe_close_db
+        from infra.db import safe_close_db
 
         db_path = os.environ.get("MEMORY_DB_PATH")
         mgr = SessionManager(db_path=Path(db_path)) if db_path else SessionManager()
@@ -757,11 +757,11 @@ def _op_list_active_threads(
 def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
     """Wrapper for memory_extract_skills (needs conn injection)."""
     try:
-        from db import open_db
+        from infra.db import open_db
         from pathlib import Path
         target_base = Path(os.environ.get("MEMORY_DB_PATH", ""))
         if not target_base.exists():
-            from memory_common import get_memory_paths
+            from infra.memory_common import get_memory_paths
             _, local_mem, _ = get_memory_paths()
             target_base = local_mem
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
@@ -775,11 +775,11 @@ def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
 def _op_list_skills(limit: int = 50) -> str:
     """Wrapper for memory_list_skills (needs conn injection)."""
     try:
-        from db import open_db
+        from infra.db import open_db
         from pathlib import Path
         target_base = Path(os.environ.get("MEMORY_DB_PATH", ""))
         if not target_base.exists():
-            from memory_common import get_memory_paths
+            from infra.memory_common import get_memory_paths
             _, local_mem, _ = get_memory_paths()
             target_base = local_mem
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
@@ -810,7 +810,7 @@ def _op_recover_session(session_id: str) -> str:
                     (current,),
                 ).fetchone()
             finally:
-                from db import safe_close_db
+                from infra.db import safe_close_db
 
                 safe_close_db(conn)
             if not row:

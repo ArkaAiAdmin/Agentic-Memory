@@ -75,7 +75,7 @@ def _call_save_memory(content: str, category: str, title_slug: str, db_path: Pat
 
 def _reset_autosave_state():
     from background.circuit_breaker import _auto_save_reset_state
-    from db import connection_pool
+    from infra.db import connection_pool
     from config import _instance
 
     _auto_save_reset_state()

@@ -29,7 +29,7 @@ from unittest.mock import patch
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from db import _ConnectionPool  # noqa: E402
+from infra.db import _ConnectionPool  # noqa: E402
 
 
 def _make_db(path: Path) -> None:

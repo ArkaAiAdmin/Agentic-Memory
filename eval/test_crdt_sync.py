@@ -20,7 +20,7 @@ INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
-from memory_common import connection_pool, open_db
+from infra.memory_common import connection_pool, open_db
 
 
 def _wait_for_server(host: str, port: int, timeout: float = 5.0) -> None:
@@ -36,8 +36,8 @@ def _wait_for_server(host: str, port: int, timeout: float = 5.0) -> None:
     raise RuntimeError(f"Server {host}:{port} did not start within {timeout}s")
 
 
-from sync_server import SyncServer
-from sync_client import (
+from infra.sync_server import SyncServer
+from infra.sync_client import (
     pull_from_peer,
     push_to_peer,
     sync_with_peer,
@@ -379,7 +379,7 @@ class TestSyncClient(unittest.TestCase):
 
     def test_sync_log_written(self):
         """Verify sync_with_peer writes a row to sync_log."""
-        from memory_common import open_db
+        from infra.memory_common import open_db
 
         sync_with_peer(
             db_path=self.db_b,
@@ -506,7 +506,7 @@ class TestSyncCrdtMerge(unittest.TestCase):
         # Agent B writes with higher logical clock
         _write_note(db, "note/lww", "Version B", "agent-B")
 
-        from memory_common import open_db
+        from infra.memory_common import open_db
 
         with open_db(db, timeout=5.0) as conn:
             row = conn.execute(

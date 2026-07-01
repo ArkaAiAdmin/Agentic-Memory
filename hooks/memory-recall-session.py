@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import _bootstrap_path  # noqa: E402, F401
+import infra._bootstrap_path  # noqa: E402, F401
 
-from recall import session_recap  # noqa: E402
+from recall.recall import session_recap  # noqa: E402
 
 
 def main():

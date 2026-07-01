@@ -250,8 +250,8 @@ def pull_from_peer(
         )
         return {"applied": 0, "conflict": 0, "rejected": 0, "total": 0}
 
-    from crdt_merge import crdt_save
-    from crdt_field import crdt_field_save
+    from crdt.crdt_merge import crdt_save
+    from crdt.crdt_field import crdt_field_save
 
     applied = conflict = rejected = 0
     for note in changes:
@@ -531,7 +531,7 @@ def sync_once(
     if not peer_url:
         peer_url = os.environ.get("MEMORY_SYNC_PEER", "").strip()
     if not peer_url:
-        from pex_protocol import peer_directory
+        from infra.pex_protocol import peer_directory
         active_peers = peer_directory.get_active_peers(max_age_s=60.0)
         if active_peers:
             # Sync with all active discovered peers
@@ -561,7 +561,7 @@ def sync_once(
             db_path = env_db
         else:
             try:
-                from _lazy_imports import get_config
+                from infra._lazy_imports import get_config
 
                 cfg = get_config()
                 db_path = cfg.db_path

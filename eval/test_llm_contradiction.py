@@ -23,7 +23,7 @@ from unittest.mock import patch
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-import fact_temporal as ft
+import fact.fact_temporal as ft
 from llm_extraction import (
     score_fact_contradiction_via_llm,
     _parse_contradiction_score,
@@ -63,7 +63,7 @@ class TestSupersedeFactAcceptsScore(unittest.TestCase):
 
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
-        import fact_extraction as fe
+        import fact as fe
 
         fe.ensure_facts_schema(self.conn)
         # Insert two facts (old + new) with overlapping event_time
@@ -112,7 +112,7 @@ class TestReconcileSupersessionLLM(unittest.TestCase):
     """T11: reconcile_fact_supersession uses the LLM score when flag is on."""
 
     def setUp(self):
-        import fact_extraction as fe
+        import fact as fe
 
         self.conn = sqlite3.connect(":memory:")
         fe.ensure_facts_schema(self.conn)
@@ -234,7 +234,7 @@ class TestReconcileSupersessionNoCandidates(unittest.TestCase):
     """T11: reconcile_fact_supersession handles edge cases gracefully."""
 
     def setUp(self):
-        import fact_extraction as fe
+        import fact as fe
 
         self.conn = sqlite3.connect(":memory:")
         fe.ensure_facts_schema(self.conn)

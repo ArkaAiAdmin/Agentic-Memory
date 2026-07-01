@@ -206,7 +206,7 @@ def facts_stats(conn: sqlite3.Connection) -> dict:
 
 def facts_search_db(db_path: str | Path, query: str, limit: int = 10) -> list[dict]:
     """facts_search with connection lifecycle managed."""
-    from memory_common import connection_pool, safe_close_db
+    from infra.memory_common import connection_pool, safe_close_db
 
     conn = connection_pool.get(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
@@ -221,7 +221,7 @@ def facts_list_db(
     db_path: str | Path, limit: int = 20, min_confidence: float = 0.0
 ) -> list[dict]:
     """facts_list with connection lifecycle managed."""
-    from memory_common import connection_pool, safe_close_db
+    from infra.memory_common import connection_pool, safe_close_db
 
     conn = connection_pool.get(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
@@ -234,7 +234,7 @@ def facts_list_db(
 
 def facts_stats_db(db_path: str | Path) -> dict:
     """facts_stats with connection lifecycle managed."""
-    from memory_common import connection_pool, safe_close_db
+    from infra.memory_common import connection_pool, safe_close_db
 
     conn = connection_pool.get(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")

@@ -5,7 +5,7 @@ Re-exports all symbols from ``recall.recall`` so that
 (whether ``<symbol>`` is public or private).
 """
 
-from recall import recall as _recall
+from recall.recall import recall as _recall
 
 
 def __getattr__(name):

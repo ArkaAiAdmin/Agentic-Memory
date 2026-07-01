@@ -18,7 +18,7 @@ import sys
 
 sys.path.insert(0, os.getcwd())
 
-from db_migrations import run_schema_setup
+from infra.db_migrations import run_schema_setup
 
 
 class TestShareMemory(unittest.TestCase):

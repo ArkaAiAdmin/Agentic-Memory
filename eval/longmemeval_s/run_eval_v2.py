@@ -28,7 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-from metrics import compute_all_k  # noqa: E402
+from infra.metrics import compute_all_k  # noqa: E402
 from retrieval import (  # noqa: E402
     retrieve_for_question,
     _extract_temporal_range,

@@ -15,7 +15,7 @@ _install_root = os.environ.get("MEMORY_INSTALL_ROOT") or str(
 sys.path.insert(0, _install_root)
 
 from _fixtures import bootstrap_temp_db_clean
-from memory_common import open_db
+from infra.memory_common import open_db
 from memory_integrity import (
     check_index_integrity,
     find_orphan_files,

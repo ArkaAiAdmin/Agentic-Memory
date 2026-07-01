@@ -205,7 +205,7 @@ _MAX_NEW_TOKENS = 256
 def _get_max_tokens() -> int:
     """Resolve max_tokens from config or env, falling back to _MAX_NEW_TOKENS."""
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return int(get_config().llm_extraction_max_tokens)
     except Exception:
@@ -314,7 +314,7 @@ class LLMExtractor:
         self._load_error: Optional[str] = None
         self.last_used: float = 0.0
         try:
-            from _lazy_imports import get_config
+            from infra._lazy_imports import get_config
 
             self._idle_unload_s = int(get_config().idle_unload_seconds)
         except Exception:
@@ -601,7 +601,7 @@ def _start_idle_unload_monitor_if_needed() -> None:
             return
         check_interval = 1800
         try:
-            from _lazy_imports import get_config
+            from infra._lazy_imports import get_config
 
             check_interval = int(get_config().idle_unload_seconds)
         except Exception:
@@ -676,7 +676,7 @@ def _get_extractor(model_id: str = "") -> LLMExtractor:
             return _extractor
         if not model_id:
             try:
-                from _lazy_imports import get_config
+                from infra._lazy_imports import get_config
 
                 model_id = get_config().llm_extraction_model_id
             except Exception:
@@ -699,7 +699,7 @@ def is_llm_extraction_available() -> bool:
         return False
 
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         if not get_config().llm_extraction:
             return False
@@ -812,7 +812,7 @@ def _extract_via_provider(content: str, max_tokens: int) -> dict[str, Any]:
     if no provider is available or the call fails.
     """
     try:
-        from llm_providers import get_provider
+        from fact.llm_providers import get_provider
     except Exception as e:
         logger.debug("llm_extraction: llm_providers import failed: %s", e)
         return {}
@@ -844,7 +844,7 @@ def is_llm_extraction_available_via_provider() -> bool:
     if _is_hook_process():
         return False
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         if not get_config().llm_extraction:
             return False
@@ -852,7 +852,7 @@ def is_llm_extraction_available_via_provider() -> bool:
         if os.environ.get("MEMORY_LLM_EXTRACTION") != "1":
             return False
     try:
-        from llm_providers import get_provider
+        from fact.llm_providers import get_provider
 
         return get_provider() is not None
     except Exception:
@@ -928,7 +928,7 @@ def score_fact_contradiction_via_llm_v2(
             subj_a, pred_a, obj_a, subj_b, pred_b, obj_b
         )
     try:
-        from llm_providers import get_provider
+        from fact.llm_providers import get_provider
 
         provider = get_provider()
     except Exception:

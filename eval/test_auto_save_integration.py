@@ -83,7 +83,7 @@ class TestAutoSaveSyncSave(TestCase):
         from config import _instance
 
         _instance = None
-        from db import connection_pool
+        from infra.db import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -162,7 +162,7 @@ class TestAutoSaveResilience(TestCase):
         _instance = None
         from background.circuit_breaker import _auto_save_reset_state
         _auto_save_reset_state()
-        from db import connection_pool
+        from infra.db import connection_pool
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
         connection_pool._migrated.clear()

@@ -48,7 +48,7 @@ class _TempDirMixin:
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rebuild_index import rebuild_index
-from memory_common import reset_rate_limiter
+from infra.memory_common import reset_rate_limiter
 
 
 class TestFeatureAChunkMerging(_TempDirMixin, unittest.TestCase):

@@ -21,7 +21,7 @@ import subprocess
 from enum import Enum
 from typing import Any, Optional
 
-from cache import clear_all_caches
+from infra.cache import clear_all_caches
 from mcp_common import (
     _resolve_memory_dir,
     _run_subprocess_output,
@@ -84,7 +84,7 @@ def memory_health_check(conn) -> str:
     from pathlib import Path
 
     from mcp_common import get_memory_paths
-    from memory_common import connection_pool
+    from infra.memory_common import connection_pool
 
     status: dict = {"db": {}, "vec_index": {}, "fts": {}, "pool": {}, "disk": {}}
 
@@ -191,7 +191,7 @@ def memory_check_embedding_model(force: bool = False, dry_run: bool = False) -> 
         dry_run: Show what would be done without making changes.
     """
     try:
-        from embedding_recompute import check_and_rebuild
+        from infra.embedding_recompute import check_and_rebuild
 
         stats = check_and_rebuild(force=force, dry_run=dry_run)
         return json.dumps(stats)
@@ -417,7 +417,7 @@ def memory_arc_stats(conn) -> str:
     ghosts, lifetime eviction count, and the most-recent
     eviction/recent timestamps.
     """
-    from arc_cache import ARCCache
+    from infra.arc_cache import ARCCache
 
     try:
         db_path = Path(str(_resolve_memory_dir())) / "memory.db"
@@ -492,7 +492,7 @@ def memory_arc_reset(conn) -> str:
     the eviction-pressure signal from a clean slate without dropping
     the schema.
     """
-    from arc_cache import ARCCache
+    from infra.arc_cache import ARCCache
 
     try:
         db_path = Path(str(_resolve_memory_dir())) / "memory.db"

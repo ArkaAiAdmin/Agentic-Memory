@@ -171,7 +171,7 @@ def sync_server_env_names() -> tuple:
 
 
 # Import after helpers are defined so the import order is stable.
-import sync_server  # noqa: E402
+import infra.sync_server  # noqa: E402
 
 
 class TestTlsServerEndToEnd(unittest.TestCase):
@@ -207,7 +207,7 @@ class TestTlsServerEndToEnd(unittest.TestCase):
     def test_https_health_endpoint(self):
         """Connect to /health over HTTPS and verify response."""
         # Initialize the DB schema so /health works
-        from db_migrations import run_schema_setup
+        from infra.db_migrations import run_schema_setup
         import sqlite3
 
         conn = sqlite3.connect(str(self.db_path))
@@ -283,7 +283,7 @@ class TestCorsAllowlist(unittest.TestCase):
             del sys.modules["sync_server"]
         if "infra.sync_server" in sys.modules:
             del sys.modules["infra.sync_server"]
-        from sync_server import _SyncHandler, SYNC_CORS_ORIGINS
+        from infra.sync_server import _SyncHandler, SYNC_CORS_ORIGINS
 
         self.assertEqual(SYNC_CORS_ORIGINS, frozenset())
 
@@ -323,7 +323,7 @@ class TestCorsAllowlist(unittest.TestCase):
             del sys.modules["sync_server"]
         if "infra.sync_server" in sys.modules:
             del sys.modules["infra.sync_server"]
-        from sync_server import _is_loopback
+        from infra.sync_server import _is_loopback
 
         for loopback in ("127.0.0.1", "localhost", "::1"):
             self.assertTrue(_is_loopback(loopback), f"{loopback} should be loopback")
@@ -370,7 +370,7 @@ class TestPlaintextWarning(unittest.TestCase):
             del sys.modules["sync_server"]
         if "infra.sync_server" in sys.modules:
             del sys.modules["infra.sync_server"]
-        from sync_server import SyncServer
+        from infra.sync_server import SyncServer
 
         # Capture log messages.
         with self.assertLogs("infra.sync_server", level="WARNING") as cm:
@@ -407,7 +407,7 @@ class TestPlaintextWarning(unittest.TestCase):
             del sys.modules["sync_server"]
         if "infra.sync_server" in sys.modules:
             del sys.modules["infra.sync_server"]
-        from sync_server import SyncServer
+        from infra.sync_server import SyncServer
 
         # Capture log messages at INFO level.  We expect no WARNING
         # for the plaintext path.

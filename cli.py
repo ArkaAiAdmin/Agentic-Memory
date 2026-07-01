@@ -95,7 +95,7 @@ def search_main() -> NoReturn:
 
 
 def rebuild_main() -> None:
-    from infrastructure import resolve_active_memory_dir
+    from infra.infrastructure import resolve_active_memory_dir
 
     d = resolve_active_memory_dir()
     _run("rebuild_index.py", [str(d), str(d / "memory.db")])
@@ -183,7 +183,7 @@ def sync_main() -> int:
     if package_root not in sys.path:
         sys.path.insert(0, package_root)
 
-    from sync_client import sync_once
+    from infra.sync_client import sync_once
 
     result: dict = sync_once(
         peer_url=parsed.peer,
@@ -327,7 +327,7 @@ def doctor_main() -> None:
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-    from infrastructure import resolve_active_memory_dir
+    from infra.infrastructure import resolve_active_memory_dir
 
     mem_dir = resolve_active_memory_dir()
     db_path = Path(parsed.db) if parsed.db else mem_dir / "memory.db"
@@ -365,7 +365,7 @@ def doctor_main() -> None:
                     "SELECT version FROM schema_version WHERE id=1"
                 ).fetchone()
                 db_version = row[0] if row else None
-                from migration_runner import SCHEMA_VERSION
+                from infra.migration_runner import SCHEMA_VERSION
 
                 if db_version is None:
                     add_check(
@@ -509,7 +509,7 @@ def doctor_main() -> None:
 
     # ── Check 8: Allowlist config ─────────────────────────────────────────
     try:
-        from auto_save import _resolve_allowlist
+        from background.auto_save import _resolve_allowlist
 
         al = _resolve_allowlist()
         if al is None:
@@ -598,14 +598,14 @@ def doctor_main() -> None:
                     print("done")
                     fix_applied = True
                 elif label == "fts5_drift":
-                    from infrastructure import resolve_active_memory_dir
+                    from infra.infrastructure import resolve_active_memory_dir
 
                     mem_dir = resolve_active_memory_dir()
                     _run("rebuild_index.py", [str(mem_dir), str(mem_dir / "memory.db")])
                     print("done (FTS5 rebuilt)")
                     fix_applied = True
                 elif label == "db_integrity":
-                    from infrastructure import resolve_active_memory_dir
+                    from infra.infrastructure import resolve_active_memory_dir
 
                     mem_dir = resolve_active_memory_dir()
                     _run(
@@ -656,8 +656,8 @@ def status_main() -> None:
 
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-    from infrastructure import resolve_active_memory_dir
-    from migration_runner import SCHEMA_VERSION
+    from infra.infrastructure import resolve_active_memory_dir
+    from infra.migration_runner import SCHEMA_VERSION
 
     mem_dir = resolve_active_memory_dir()
     db_path = mem_dir / "memory.db"
@@ -734,7 +734,7 @@ def status_main() -> None:
 
     # Allowlist
     try:
-        from auto_save import _resolve_allowlist
+        from background.auto_save import _resolve_allowlist
 
         al = _resolve_allowlist()
         parts.append(f"allowlist={'*' if al is None else len(al)}")

@@ -25,8 +25,8 @@ if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
 
-from memory_common import connection_pool, safe_close_db
-from infrastructure import resolve_active_memory_dir
+from infra.memory_common import connection_pool, safe_close_db
+from infra.infrastructure import resolve_active_memory_dir
 
 WARN_PENDING_THRESHOLD = int(os.environ.get("MEMORY_TASK_QUEUE_WARN_THRESHOLD", "50"))
 WARN_STALE_SECONDS = int(os.environ.get("MEMORY_TASK_STALE_THRESHOLD_S", "86400"))

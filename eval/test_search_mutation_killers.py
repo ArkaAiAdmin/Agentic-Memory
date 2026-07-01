@@ -52,7 +52,7 @@ from search_pipeline import (
     _QUERY_TYPE_WEIGHTS,
 )
 
-from infrastructure import GLOBAL_MEM_DIR
+from infra.infrastructure import GLOBAL_MEM_DIR
 
 PROD_DB = Path(os.environ.get("MEMORY_DB_PATH", str(GLOBAL_MEM_DIR / "memory.db")))
 
@@ -74,7 +74,7 @@ def _hard_delete(db_path, note_id):
     (Path(db_path).parent / f"{note_id}.md").unlink(missing_ok=True)
 
 
-from memory_common import open_db
+from infra.memory_common import open_db
 
 
 # ─── _tokenize_for_ce ─────────────────────────────────────────────────

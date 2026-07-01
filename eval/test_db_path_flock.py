@@ -31,7 +31,7 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from db_path_flock import (  # noqa: E402
+from infra.db_path_flock import (  # noqa: E402
     acquire_db_path_flock,
     db_path_flock,
     is_db_path_flock_enabled,
@@ -227,7 +227,7 @@ class TestOpenDbWiring(unittest.TestCase):
     def test_open_db_creates_lock_file(self) -> None:
         """By default, open_db acquires the flock and creates the
         lock file next to the DB."""
-        from db import open_db
+        from infra.db import open_db
 
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "memory.db"
@@ -238,7 +238,7 @@ class TestOpenDbWiring(unittest.TestCase):
             self.assertTrue((db.parent / f"{db.name}.flock").exists())
 
     def test_open_db_skips_lock_when_disabled(self) -> None:
-        from db import open_db
+        from infra.db import open_db
 
         os.environ["MEMORY_DB_FLOCK"] = "0"
         with tempfile.TemporaryDirectory() as tmp:

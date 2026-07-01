@@ -13,7 +13,7 @@ from typing import Optional
 
 __all__ = ["rebuild_index", "_rebuild_index_body"]
 import unicodedata
-from memory_common import safe_close_db
+from infra.memory_common import safe_close_db
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ try:
 except ImportError:
     fcntl = None  # type: ignore[assignment]
 
-from memory_common import (
+from infra.memory_common import (
     parse_frontmatter,
     atomic_write,
     run_db_migrations,
@@ -879,7 +879,7 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
     # stays empty. The search path will then encode on-the-fly and
     # save-back per row, which is the same end state just slower.
     try:
-        from _lazy_imports import get_embedding_search
+        from infra._lazy_imports import get_embedding_search
 
         es = get_embedding_search()
         if es.model is not None:
@@ -940,7 +940,7 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
         # Evict stale pool connection: os.replace swapped the file
         # underneath, so any cached connection points to the old data.
         try:
-            from _lazy_imports import connection_pool
+            from infra._lazy_imports import connection_pool
 
             connection_pool.close(str(db_path))
         except Exception:
@@ -1002,7 +1002,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         source_dir = sys.argv[1]
     else:
-        from memory_config import get_memory_paths
+        from infra.memory_config import get_memory_paths
 
         _, local_mem, _ = get_memory_paths()
         source_dir = str(local_mem)

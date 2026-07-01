@@ -77,7 +77,7 @@ class TestCacheKeySafety(unittest.TestCase):
 
 class TestSlidingWindowConstant(unittest.TestCase):
     def test_sliding_window_constant_exists(self):
-        from contradiction_detector import SLIDING_WINDOW_SIZE
+        from kg.contradiction_detector import SLIDING_WINDOW_SIZE
         self.assertIsInstance(SLIDING_WINDOW_SIZE, int)
         self.assertGreater(SLIDING_WINDOW_SIZE, 0)
 

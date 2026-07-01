@@ -35,7 +35,7 @@ from typing import Optional
 
 # Use the config system for feature flags
 try:
-    from _lazy_imports import get_config
+    from infra._lazy_imports import get_config
 except ImportError:
     get_config = None
 

@@ -38,7 +38,7 @@ class Admin:
             Dict with keys ``db_path``, ``tables`` (per-table stats),
             ``all_healthy``, ``stale_count``.
         """
-        from backfill_all import health_check as _health_check
+        from backfill.orchestrator import health_check as _health_check
 
         result = _health_check(db_path or self.db_path)
         return dict(result)

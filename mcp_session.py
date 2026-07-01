@@ -44,7 +44,7 @@ def memory_thread_context(
         mgr = _session_manager()
         if not session_id:
             try:
-                from memory_common import get_memory_paths
+                from infra.memory_common import get_memory_paths
 
                 _, local_mem, _ = get_memory_paths()
                 state_file = local_mem / "sessions" / ".current_session.json"
@@ -108,7 +108,7 @@ def memory_list_threads(
         mgr = _session_manager()
         if not session_id:
             try:
-                from memory_common import get_memory_paths
+                from infra.memory_common import get_memory_paths
 
                 _, local_mem, _ = get_memory_paths()
                 state_file = local_mem / "sessions" / ".current_session.json"

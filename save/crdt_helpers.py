@@ -25,12 +25,12 @@ import socket
 logger = logging.getLogger(__name__)
 
 try:
-    from crdt_merge import parse_version_vector
+    from crdt.crdt_merge import parse_version_vector
 except ImportError:  # FLAVOR_A: optional dependency guard
     parse_version_vector = None
 
 try:
-    from _lazy_imports import get_config as _get_config
+    from infra._lazy_imports import get_config as _get_config
 except ImportError:  # FLAVOR_A: optional dependency guard
     _get_config = None
 

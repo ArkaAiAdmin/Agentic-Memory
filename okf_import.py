@@ -16,7 +16,7 @@ import logging
 import os
 from pathlib import Path
 
-from frontmatter import parse_frontmatter
+from infra.frontmatter import parse_frontmatter
 from save_pipeline import save_memory
 
 logger = logging.getLogger("okf_import")
@@ -92,7 +92,7 @@ def okf_import(
     if not dry_run:
         try:
             from save_pipeline import _ensure_db_exists
-            from memory_common import resolve_db_path
+            from infra.memory_common import resolve_db_path
 
             target_db = resolve_db_path()
             if not _ensure_db_exists(target_db):

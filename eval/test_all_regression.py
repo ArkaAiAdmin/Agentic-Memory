@@ -16,12 +16,12 @@ os.environ["MEMORY_DB_PATH"] = f"{INSTALL_ROOT}/memory/memory.db"
 DB = os.environ["MEMORY_DB_PATH"]
 
 import config as cfg
-import db_migrations
-import migration_runner  # type: ignore
+import infra.db_migrations
+import infra.migration_runner  # type: ignore
 import adaptive_retention
 from save_pipeline import save_memory
 from search_pipeline import search_memories, ScoreContext, _compute_final_score
-from db import open_db
+from infra.db import open_db
 from pathlib import Path
 import subprocess as sp
 

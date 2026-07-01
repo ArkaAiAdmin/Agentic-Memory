@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # reflected. Set _GRAPH_CACHE_TTL_S=0 to disable.
 def _get_graph_cache_max() -> int:
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return int(get_config().graph_cache_max)
     except Exception:
@@ -30,7 +30,7 @@ def _get_graph_cache_max() -> int:
 
 def _get_graph_cache_ttl_s() -> float:
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return float(get_config().graph_cache_ttl_s)
     except Exception:
@@ -414,7 +414,7 @@ def graph_search_db(
     db_path: str | Path, query: str, limit: int = 10, max_hops: int = 2
 ) -> dict:
     """graph_search with connection lifecycle managed."""
-    from memory_common import connection_pool, safe_close_db
+    from infra.memory_common import connection_pool, safe_close_db
 
     conn = connection_pool.get(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
@@ -427,7 +427,7 @@ def graph_search_db(
 
 def graph_stats_db(db_path: str | Path) -> dict:
     """graph_stats with connection lifecycle managed."""
-    from memory_common import connection_pool, safe_close_db
+    from infra.memory_common import connection_pool, safe_close_db
 
     conn = connection_pool.get(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
@@ -440,7 +440,7 @@ def graph_stats_db(db_path: str | Path) -> dict:
 
 def index_kg_for_memory_db(db_path: str | Path, memory_id: str, content: str) -> dict:
     """index_kg_for_memory + index_facts_for_memory with connection lifecycle managed."""
-    from memory_common import connection_pool, safe_close_db
+    from infra.memory_common import connection_pool, safe_close_db
 
     conn = connection_pool.get(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")

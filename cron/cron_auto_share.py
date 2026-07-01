@@ -36,7 +36,7 @@ if _PACKAGE_ROOT.name == "cron":
 sys.path.insert(0, str(_PACKAGE_ROOT))
 os.chdir(str(_PACKAGE_ROOT))
 
-from memory_common import configure_logging
+from infra.memory_common import configure_logging
 
 configure_logging()
 logger = logging.getLogger(__name__)

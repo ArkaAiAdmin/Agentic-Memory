@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def _get_edge_weight_params() -> tuple[float, float]:
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         c = get_config()
         return (c.kg_edge_weight_increment, c.kg_edge_weight_cap)
@@ -212,7 +212,7 @@ def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) 
     else:
         # P2c.1 — Stage 1: regex extraction
         try:
-            from _lazy_imports import get_config
+            from infra._lazy_imports import get_config
 
             _min_occ = int(get_config().entity_min_occurrences)
         except Exception:
@@ -223,7 +223,7 @@ def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) 
 
         # P2c.2 — Stage 2: LLM fallback when regex returned too few entities
         try:
-            from _lazy_imports import get_config
+            from infra._lazy_imports import get_config
 
             _fallback_threshold = int(get_config().kg_llm_fallback_min_entities)
         except Exception:
@@ -277,7 +277,7 @@ def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) 
     relation_count = 0
     seen_pairs: set[tuple[int, int]] = set()
     sentences = re.split(r"[.!?\n]+", content)
-    from _lazy_imports import get_config
+    from infra._lazy_imports import get_config
 
     _KG_COCCUR_ENTITY_CAP = getattr(get_config(), "kg_coccurr_entity_cap", 20)
     # Collect all pairs first, then batch upsert (H4 fix: batch co-occurrence edges)

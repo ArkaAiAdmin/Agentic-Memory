@@ -48,8 +48,8 @@ _BG_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _BG_DIR)
 _REPO_ROOT = os.path.dirname(_BG_DIR)
 sys.path.insert(0, _REPO_ROOT)
-from background_queue import init_task_queue, dequeue_task, complete_task, fail_task
-from infrastructure import resolve_active_memory_dir
+from background.background_queue import init_task_queue, dequeue_task, complete_task, fail_task
+from infra.infrastructure import resolve_active_memory_dir
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def handle_entity_resolution(
 ) -> str:
     """Run semantic entity dedup on the KG."""
     try:
-        from kg_dedup import dedup_entities, dedup_entities_semantic
+        from kg.kg_dedup import dedup_entities, dedup_entities_semantic
 
         # Exact dedup first
         exact = dedup_entities(conn)
@@ -98,7 +98,7 @@ def handle_fact_consolidation(
 ) -> str:
     """Run fact consolidation (merge similar SPO triples)."""
     try:
-        from consolidate_facts import consolidate_memory_facts
+        from fact.consolidate_facts import consolidate_memory_facts
 
         consolidate_memory_facts(db_path=db_path)
         return "fact consolidation completed"
@@ -141,7 +141,7 @@ def handle_wal_checkpoint(
       threshold_mb: float (default 10.0).  Only run a checkpoint
         if the WAL file is larger than this many megabytes.
     """
-    from db import wal_checkpoint_idle
+    from infra.db import wal_checkpoint_idle
 
     threshold = float(payload.get("threshold_mb", 10.0))
     try:
@@ -216,7 +216,7 @@ def handle_vec_index_rebuild(
         #    else ~/.config/agentic-memory/)
         # 3. db_path-relative: walk up from the db (covers ad-hoc test DBs)
         # 4. venv heuristic: parent of sys.executable's parent (legacy fallback)
-        from memory_config import install_root
+        from infra.memory_config import install_root
 
         candidates = []
         if os.environ.get("MEMORY_REBUILD_VEC_INDEX"):
@@ -394,7 +394,7 @@ def _get_vec_rebuild_threshold() -> int:
     Falls back to the base value on any error.
     """
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         base = int(getattr(cfg, "vec_rebuild_threshold", 15) or 15)
@@ -408,7 +408,7 @@ def _get_vec_rebuild_threshold() -> int:
 
     try:
         import sqlite3
-        from _lazy_imports import get_memory_paths
+        from infra._lazy_imports import get_memory_paths
 
         _, mem_dir, _ = get_memory_paths()
         db_path = mem_dir / "memory.db"
@@ -691,7 +691,7 @@ class WorkerPool:
                     logger.exception("worker pool: worker thread crashed")
 
     def _worker_loop(self, worker_id: int, drain: bool, max_tasks: int) -> None:
-        from db_write_queue import sqlite_write_queue
+        from infra.db_write_queue import sqlite_write_queue
         conn = sqlite_write_queue.start_session(self._db_path)
         processed = 0
         t_drain = time.time()
@@ -806,7 +806,7 @@ def run_worker(
         return
 
     # Single-threaded path
-    from db_write_queue import sqlite_write_queue
+    from infra.db_write_queue import sqlite_write_queue
     conn = sqlite_write_queue.start_session(db_path)
     try:
         if drain:

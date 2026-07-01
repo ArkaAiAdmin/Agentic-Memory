@@ -53,7 +53,7 @@ class TestSearchEndToEnd(TestCase):
         conn.commit()
         conn.close()
         # Reset connection pool so new connections use the seeded DB
-        from db import connection_pool
+        from infra.db import connection_pool
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
         return self.db_path

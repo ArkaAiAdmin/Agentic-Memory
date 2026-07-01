@@ -111,7 +111,7 @@ class TestSkillFirstSearch(unittest.TestCase):
 
     def test_skill_first_records_hit_count(self):
         """skill_first search increments hit_count on matched skills."""
-        from cache import _search_cache
+        from infra.cache import _search_cache
 
         _search_cache.clear()
         search_memories(self.db_path, "install nginx", skill_first=True)

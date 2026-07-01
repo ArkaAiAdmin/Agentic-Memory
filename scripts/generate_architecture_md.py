@@ -51,7 +51,7 @@ def count_tools() -> dict[str, int]:
 
 
 def count_schema_version() -> int:
-    from migration_runner import SCHEMA_VERSION
+    from infra.migration_runner import SCHEMA_VERSION
     return SCHEMA_VERSION
 
 

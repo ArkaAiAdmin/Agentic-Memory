@@ -36,14 +36,14 @@ def _slow_child_for_timeout_test(q):
 
 class TestRerankerSingleton(unittest.TestCase):
     def test_get_reranker_returns_instance(self):
-        from reranker import get_reranker, reset_reranker_for_tests
+        from infra.reranker import get_reranker, reset_reranker_for_tests
 
         reset_reranker_for_tests()
         r = get_reranker()
         self.assertIsNotNone(r)
 
     def test_get_reranker_returns_same_instance(self):
-        from reranker import get_reranker, reset_reranker_for_tests
+        from infra.reranker import get_reranker, reset_reranker_for_tests
 
         reset_reranker_for_tests()
         r1 = get_reranker()
@@ -51,28 +51,28 @@ class TestRerankerSingleton(unittest.TestCase):
         self.assertIs(r1, r2)
 
     def test_reranker_not_loaded_initially(self):
-        from reranker import get_reranker, reset_reranker_for_tests
+        from infra.reranker import get_reranker, reset_reranker_for_tests
 
         reset_reranker_for_tests()
         r = get_reranker()
         self.assertFalse(r.is_loaded())
 
     def test_reranker_load_error_is_none_initially(self):
-        from reranker import get_reranker, reset_reranker_for_tests
+        from infra.reranker import get_reranker, reset_reranker_for_tests
 
         reset_reranker_for_tests()
         r = get_reranker()
         self.assertIsNone(r.load_error())
 
     def test_reranker_backend_is_empty_initially(self):
-        from reranker import get_reranker, reset_reranker_for_tests
+        from infra.reranker import get_reranker, reset_reranker_for_tests
 
         reset_reranker_for_tests()
         r = get_reranker()
         self.assertEqual(r.backend(), "")
 
     def test_reset_creates_new_instance(self):
-        from reranker import get_reranker, reset_reranker_for_tests
+        from infra.reranker import get_reranker, reset_reranker_for_tests
 
         reset_reranker_for_tests()
         r1 = get_reranker()
@@ -81,13 +81,13 @@ class TestRerankerSingleton(unittest.TestCase):
         self.assertIsNot(r1, r2)
 
     def test_normalize_rerank_score_clamps(self):
-        from reranker import normalize_rerank_score
+        from infra.reranker import normalize_rerank_score
 
         self.assertAlmostEqual(normalize_rerank_score(1.0), 0.731, places=2)
         self.assertAlmostEqual(normalize_rerank_score(-1.0), 0.269, places=2)
 
     def test_model_ids_are_set(self):
-        import reranker
+        import infra.reranker
 
         self.assertTrue(len(reranker.PRIMARY_MODEL_ID) > 0)
         self.assertTrue(len(reranker.FALLBACK_MODEL_ID) > 0)
@@ -104,7 +104,7 @@ class TestRerankerScoreTimeout(unittest.TestCase):
 
     def test_score_with_empty_docs_returns_empty_list(self):
         """Empty docs list must short-circuit before any model work."""
-        from reranker import Reranker
+        from infra.reranker import Reranker
 
         r = Reranker()
         # Don't call load() — empty docs should return [] before load.
@@ -118,7 +118,7 @@ class TestRerankerScoreTimeout(unittest.TestCase):
         """If load() returns False (sets _load_error), score() must return
         None and not raise. We simulate a load failure by setting the
         internal state directly without actually loading the model."""
-        from reranker import Reranker
+        from infra.reranker import Reranker
 
         r = Reranker()
         # Simulate a failed load without actually trying to load the model.
@@ -134,7 +134,7 @@ class TestRerankerScoreTimeout(unittest.TestCase):
     def test_score_with_timeout_none_uses_fast_path(self):
         """timeout=None must skip the subprocess wrapper (fast path)."""
         import inspect
-        from reranker import Reranker
+        from infra.reranker import Reranker
 
         r = Reranker()
         # Inspect the source: fast path returns _score_qwen3/_score_bge
@@ -147,7 +147,7 @@ class TestRerankerScoreTimeout(unittest.TestCase):
     def test_score_with_timeout_positive_uses_subprocess(self):
         """timeout > 0 must route through _score_with_timeout (subprocess)."""
         import inspect
-        from reranker import Reranker
+        from infra.reranker import Reranker
 
         r = Reranker()
         # The branch is `if timeout is None or timeout <= 0:` for fast path
@@ -159,13 +159,13 @@ class TestRerankerScoreTimeout(unittest.TestCase):
     def test_score_worker_main_is_importable(self):
         """The child-process entry point must be importable so spawn-context
         multiprocessing can pickle it."""
-        from reranker import _score_worker_main
+        from infra.reranker import _score_worker_main
 
         self.assertTrue(callable(_score_worker_main))
 
     def test_score_with_timeout_helper_is_importable(self):
         """The timeout wrapper must be a module-level callable."""
-        from reranker import _score_with_timeout
+        from infra.reranker import _score_with_timeout
 
         self.assertTrue(callable(_score_with_timeout))
 
@@ -193,7 +193,7 @@ class TestScoreWithTimeoutKillsSlowChild(unittest.TestCase):
         # so the child will fail to load (no torch in test env if we're
         # running this in CI without the venv). To force a fast timeout
         # without depending on model load, patch _resolve_device to crash.
-        from reranker import Reranker
+        from infra.reranker import Reranker
 
         r = Reranker()
         # Force load_attempted=True with a non-empty load_error so score()
@@ -211,7 +211,7 @@ class TestScoreWithTimeoutKillsSlowChild(unittest.TestCase):
     def test_score_with_timeout_returns_none_on_unloaded(self):
         """If the reranker never loaded, _score_with_timeout should return
         None without spawning a child (the load check is in the parent)."""
-        from reranker import Reranker
+        from infra.reranker import Reranker
 
         r = Reranker()
         # Mark as attempted-with-failure; score() short-circuits.
@@ -263,7 +263,7 @@ class TestRecallContextDeepRerankParam(unittest.TestCase):
 
     def test_recall_context_has_deep_rerank_param(self):
         import inspect
-        from recall import recall_context
+        from recall.recall import recall_context
 
         sig = inspect.signature(recall_context)
         self.assertIn("deep_rerank", sig.parameters)
@@ -271,7 +271,7 @@ class TestRecallContextDeepRerankParam(unittest.TestCase):
 
     def test_fetch_relevant_has_deep_rerank_param(self):
         import inspect
-        from recall import _fetch_relevant
+        from recall.recall import _fetch_relevant
 
         sig = inspect.signature(_fetch_relevant)
         self.assertIn("deep_rerank", sig.parameters)

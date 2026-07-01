@@ -31,11 +31,11 @@ sys.path.insert(
     ),
 )
 
-from memory_config import install_root
+from infra.memory_config import install_root
 
 sys.path.insert(0, str(install_root()))
 
-import fact_extraction as fe
+import fact as fe
 
 
 def _epoch(year: int, month: int = 1, day: int = 1) -> float:

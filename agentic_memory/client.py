@@ -80,7 +80,7 @@ class MemoryClient:
         if importance < 1 or importance > 5:
             raise ValidationError("Importance must be between 1 and 5")
 
-        from _lazy_imports import save_memory
+        from infra._lazy_imports import save_memory
 
         slug = title_slug or _auto_slug(content)
         note_id = save_memory(
@@ -112,7 +112,7 @@ class MemoryClient:
         Returns a ``SearchResults`` container with typed ``MemoryResult``
         objects and optional synthesis.
         """
-        from _lazy_imports import search_memories
+        from infra._lazy_imports import search_memories
 
         raw = search_memories(
             db_path=self._db_path,

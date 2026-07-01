@@ -30,13 +30,13 @@ import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from memory_common import (
+from infra.memory_common import (
     connection_pool,
     safe_close_db,
 )
-from infrastructure import update_memory_md_locked
-from cache import _search_cache
-import audit
+from infra.infrastructure import update_memory_md_locked
+from infra.cache import _search_cache
+import infra.audit
 from save.backlinks import (
     _auto_backlink_multi_part,
 )
@@ -189,7 +189,7 @@ def _recalculate_fitness_scores(
         if owns_connection:
             if not db_path.exists():
                 return
-            from db_write_queue import sqlite_write_queue
+            from infra.db_write_queue import sqlite_write_queue
             db = sqlite_write_queue.start_session(db_path)
         else:
             assert conn is not None
@@ -363,7 +363,7 @@ def _hook_track_decisions(db_path_obj, note_id, content, category):
         mgr = SessionManager()
         # Resolve the active session for this project; best-effort.
         try:
-            from memory_common import get_memory_paths
+            from infra.memory_common import get_memory_paths
 
             _, local_mem, _ = get_memory_paths()
             conn = mgr._conn()
@@ -373,7 +373,7 @@ def _hook_track_decisions(db_path_obj, note_id, content, category):
                     "WHERE status='active' ORDER BY started_at DESC LIMIT 1"
                 ).fetchone()
             finally:
-                from db import safe_close_db
+                from infra.db import safe_close_db
 
                 safe_close_db(conn)
         except Exception:
@@ -394,7 +394,7 @@ def _hook_track_decisions(db_path_obj, note_id, content, category):
                     (session_id,),
                 ).fetchall()
             finally:
-                from db import safe_close_db
+                from infra.db import safe_close_db
 
                 safe_close_db(conn)
         except Exception:
@@ -617,8 +617,8 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str, conn=None) -> Non
     row is guaranteed visible by the time the worker picks up the task.
     """
     try:
-        from background_queue import init_task_queue, enqueue_task
-        from _lazy_imports import get_config
+        from background.background_queue import init_task_queue, enqueue_task
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         max_qs = getattr(cfg, "background_max_queue_size", 500)
@@ -626,7 +626,7 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str, conn=None) -> Non
 
         _bq_conn = conn
         if _bq_conn is None:
-            from db_write_queue import sqlite_write_queue
+            from infra.db_write_queue import sqlite_write_queue
             _bq_conn = sqlite_write_queue.start_session(db_path_obj)
         init_task_queue(_bq_conn)
         enqueue_task(

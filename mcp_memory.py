@@ -282,7 +282,7 @@ def memory_auto_save_status() -> str:
 def memory_auto_save_daemon_metrics() -> str:
     """Get auto-save daemon metrics (buffer size, circuit state, inbox size, etc.)."""
     try:
-        from auto_save import (
+        from background.auto_save import (
             _AUTO_SAVE_STATE,
             _AUTO_SAVE_STATE_LOCK,
         )
@@ -293,7 +293,7 @@ def memory_auto_save_daemon_metrics() -> str:
 
     inbox_path = None
     try:
-        from auto_save import get_auto_save_inbox_path
+        from background.auto_save import get_auto_save_inbox_path
 
         inbox_path = get_auto_save_inbox_path()
     except Exception:
@@ -544,7 +544,7 @@ def memory_purge_auto_saves(dry_run: bool = False) -> str:
     Removes the ~3400+ zero-importance entries created by the old
     firehose-style auto-save hook. Use ``dry_run=True`` to preview.
     """
-    from auto_save import purge_auto_saves
+    from background.auto_save import purge_auto_saves
 
     result = purge_auto_saves(dry_run=dry_run)
     return json.dumps(result, indent=2)

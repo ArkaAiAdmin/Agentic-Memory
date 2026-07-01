@@ -124,7 +124,7 @@ def main():
         print(json.dumps({"ok": False, "error": "no session_id in stdin"}))
         return
 
-    from memory_common import get_memory_paths
+    from infra.memory_common import get_memory_paths
 
     project_root, local_mem, _global_mem = get_memory_paths()
 
@@ -161,7 +161,7 @@ def main():
     try:
         db_path = local_mem / "memory.db"
         if db_path.exists():
-            from db import open_db
+            from infra.db import open_db
 
             log_id = str(uuid.uuid4())
             compacted_at = datetime.now(timezone.utc).isoformat()

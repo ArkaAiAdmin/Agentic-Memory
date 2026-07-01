@@ -13,7 +13,7 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
-from kg_dedup import (
+from kg.kg_dedup import (
     merge_entities, compute_semantic_merge_candidates,
     dedup_entities_semantic,
 )

@@ -15,7 +15,7 @@ from typing import Optional
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import open_db
+from infra.memory_common import open_db
 
 
 def _create_test_db(tmp_dir: Path) -> Path:

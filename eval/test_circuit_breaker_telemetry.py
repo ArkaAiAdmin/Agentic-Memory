@@ -34,14 +34,14 @@ from unittest import mock
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from _lazy_imports import open_db  # noqa: E402
+from infra._lazy_imports import open_db  # noqa: E402
 
 
 class _CbTestBase(unittest.TestCase):
     """Shared setup: fresh temp DB, breaker state reset, MEMORY_DB_PATH patched."""
 
     def setUp(self) -> None:
-        from auto_save import _AUTO_SAVE_STATE, _AUTO_SAVE_STATE_LOCK
+        from background.auto_save import _AUTO_SAVE_STATE, _AUTO_SAVE_STATE_LOCK
 
         with _AUTO_SAVE_STATE_LOCK:
             _AUTO_SAVE_STATE["failure_times"] = []
@@ -85,7 +85,7 @@ class TestPersistCircuitState(_CbTestBase):
     """_persist_circuit_state writes to memory_audit_log."""
 
     def test_writes_to_audit_log(self) -> None:
-        from auto_save import _persist_circuit_state
+        from background.auto_save import _persist_circuit_state
 
         with self.temp_db():
             _persist_circuit_state(
@@ -110,7 +110,7 @@ class TestPersistCircuitState(_CbTestBase):
     def test_persistence_failure_is_non_fatal(self) -> None:
         """If the audit log is unavailable, _persist_circuit_state logs
         and swallows the error rather than raising."""
-        from auto_save import _persist_circuit_state
+        from background.auto_save import _persist_circuit_state
 
         # Point MEMORY_DB_PATH at a non-existent directory so the
         # conn lookup fails.
@@ -130,7 +130,7 @@ class TestBreakerTransitions(_CbTestBase):
         it directly.  Instead, pre-seed the failure window so the
         next call trips the breaker under the default threshold.
         """
-        from auto_save import (
+        from background.auto_save import (
             _auto_save_record_failure_and_maybe_trip,
             _AUTO_SAVE_STATE,
             _AUTO_SAVE_STATE_LOCK,
@@ -154,7 +154,7 @@ class TestBreakerTransitions(_CbTestBase):
         self.assertGreaterEqual(args["n_failures"], 5)  # 4 + this failure
 
     def test_close_event_recorded_on_recovery(self) -> None:
-        from auto_save import (
+        from background.auto_save import (
             _auto_save_record_success,
             _AUTO_SAVE_STATE,
             _AUTO_SAVE_STATE_LOCK,
@@ -171,7 +171,7 @@ class TestBreakerTransitions(_CbTestBase):
 
     def test_close_event_not_recorded_on_normal_success(self) -> None:
         """If the breaker was never open, a success should not log a close."""
-        from auto_save import _auto_save_record_success
+        from background.auto_save import _auto_save_record_success
 
         # Breaker is closed (default state).
         with self.temp_db():
@@ -197,7 +197,7 @@ class TestMemoryCircuitBreakerStatus(_CbTestBase):
 
     def test_returns_events_newest_first(self) -> None:
         from mcp_audit import memory_circuit_breaker_status
-        from auto_save import _persist_circuit_state
+        from background.auto_save import _persist_circuit_state
 
         with self.temp_db():
             _persist_circuit_state(
@@ -221,7 +221,7 @@ class TestMemoryCircuitBreakerStatus(_CbTestBase):
 
     def test_respects_limit(self) -> None:
         from mcp_audit import memory_circuit_breaker_status
-        from auto_save import _persist_circuit_state
+        from background.auto_save import _persist_circuit_state
 
         with self.temp_db():
             for i in range(5):
@@ -240,7 +240,7 @@ class TestMemoryCircuitBreakerStatus(_CbTestBase):
     def test_respects_since_ts(self) -> None:
         import time
         from mcp_audit import memory_circuit_breaker_status
-        from auto_save import _persist_circuit_state
+        from background.auto_save import _persist_circuit_state
 
         # Insert two events with a known time gap.
         with self.temp_db():
@@ -261,7 +261,7 @@ class TestMemoryCircuitBreakerStatus(_CbTestBase):
     def test_only_returns_circuit_breaker_events(self) -> None:
         """The status tool should not surface unrelated audit log entries."""
         from mcp_audit import memory_circuit_breaker_status
-        from auto_save import _persist_circuit_state
+        from background.auto_save import _persist_circuit_state
 
         with self.temp_db():
             _persist_circuit_state("open", details={"n_failures": 1})

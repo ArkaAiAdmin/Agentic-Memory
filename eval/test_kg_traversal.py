@@ -10,7 +10,7 @@ import sqlite3
 sys.path.insert(0, os.path.expandvars("$HOME/.config/agentic-memory") or os.path.expanduser("~/.config/agentic-memory"))
 
 import knowledge_graph as kg
-from kg_traversal import find_shortest_path, find_neighbors, traverse_graph
+from kg.kg_traversal import find_shortest_path, find_neighbors, traverse_graph
 
 class TestKGTraversal:
     def setup_method(self):

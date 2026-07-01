@@ -24,7 +24,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from memory_common import atomic_write, safe_atomic_write
+from infra.memory_common import atomic_write, safe_atomic_write
 
 
 class TestAtomicWriteBytes(unittest.TestCase):

@@ -13,7 +13,7 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 import cross_session_learn  # noqa: E402
-from db_migrations import run_schema_setup  # noqa: E402
+from infra.db_migrations import run_schema_setup  # noqa: E402
 
 
 class TestCrossSessionLearn(unittest.TestCase):

@@ -97,7 +97,7 @@ class TestConnectionPoolSchema(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmp, "drift_test.db")
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -111,7 +111,7 @@ class TestConnectionPoolSchema(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _get_pooled_conn(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         return connection_pool.get(self.db_path, timeout=5.0)
 
@@ -240,7 +240,7 @@ class TestMigrationIdempotency(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_double_migration_no_error(self):
-        from memory_common import open_db
+        from infra.memory_common import open_db
 
         with open_db(Path(self.db_path)) as db:
             db.execute(
@@ -256,7 +256,7 @@ class TestMigrationIdempotency(unittest.TestCase):
             self.assertEqual(row[0], "content 1")
 
     def test_migration_preserves_data(self):
-        from memory_common import open_db
+        from infra.memory_common import open_db
 
         with open_db(Path(self.db_path)) as db:
             db.execute(
@@ -287,14 +287,14 @@ class TestForeignKeyEnforcement(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_fk_on_for_pooled_connections(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
         fk = conn.execute("PRAGMA foreign_keys").fetchone()[0]
         self.assertEqual(fk, 1)
 
     def test_cascade_delete_embeddings(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
         conn.execute(
@@ -327,7 +327,7 @@ class TestForeignKeyEnforcement(unittest.TestCase):
         )
 
     def test_cascade_delete_vec_keys(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
         conn.execute(
@@ -391,7 +391,7 @@ class TestUpsertPreservesSubsystems(unittest.TestCase):
         conn.commit()
 
     def test_upsert_preserves_embedding(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
         import numpy as np
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
@@ -428,7 +428,7 @@ class TestUpsertPreservesSubsystems(unittest.TestCase):
         )
 
     def test_upsert_preserves_vec_keys(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
         conn.execute(
@@ -448,7 +448,7 @@ class TestUpsertPreservesSubsystems(unittest.TestCase):
         self.assertEqual(vk[0], 100)
 
     def test_upsert_preserves_kg_entities(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
         conn.execute(
@@ -467,7 +467,7 @@ class TestUpsertPreservesSubsystems(unittest.TestCase):
         self.assertIsNotNone(ent, "KG entity lost after upsert!")
 
     def test_upsert_preserves_kg_edges(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
         conn.execute(
@@ -515,7 +515,7 @@ class TestHardDeleteCascade(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_hard_delete_removes_embedding(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
         from memory_delete import hard_delete_note
         from datetime import datetime, timedelta, timezone
         import numpy as np
@@ -548,7 +548,7 @@ class TestHardDeleteCascade(unittest.TestCase):
         )
 
     def test_hard_delete_removes_vec_keys(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
         from memory_delete import hard_delete_note
         from datetime import datetime, timedelta, timezone
 
@@ -573,7 +573,7 @@ class TestHardDeleteCascade(unittest.TestCase):
         )
 
     def test_hard_delete_removes_backlinks(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
         from memory_delete import hard_delete_note
         from datetime import datetime, timedelta, timezone
 
@@ -622,7 +622,7 @@ class TestPurgeExpiredCascade(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_purge_removes_expired_with_embeddings(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
         import numpy as np
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
@@ -698,7 +698,7 @@ class TestSavePipelineEndToEnd(unittest.TestCase):
     def test_save_indexes_all_subsystems(self):
         """After save_pipeline, data exists in memories, embeddings, KG."""
         self._save("e2e/note-1", "This is test content about Python programming.")
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
         self.assertEqual(
@@ -723,7 +723,7 @@ class TestSavePipelineEndToEnd(unittest.TestCase):
         """Save with [[wiki-links]] creates bidirectional backlinks."""
         self._save("e2e/target", "Target note.")
         self._save("e2e/source", "See [[e2e/target]] for details.")
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
         self.assertEqual(
@@ -744,7 +744,7 @@ class TestSavePipelineEndToEnd(unittest.TestCase):
     def test_upsert_preserves_all_subsystem_data(self):
         """Re-saving the same note preserves all subsystem data."""
         self._save("e2e/upsert", "Original content.", tags=["v1"])
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(self.db_path, timeout=5.0)
         self.assertEqual(
@@ -791,7 +791,7 @@ class TestSyncInvariant(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _get_conn(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         return connection_pool.get(self.db_path, timeout=5.0)
 
@@ -799,7 +799,7 @@ class TestSyncInvariant(unittest.TestCase):
         """A freshly saved memory with all subsystems indexed shows no drift."""
         from pathlib import Path
         from save_pipeline import _update_memory_index_incremental
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         _update_memory_index_incremental(
             Path(self.db_path),
@@ -818,7 +818,7 @@ class TestSyncInvariant(unittest.TestCase):
 
     def test_drifted_fts_detected(self):
         """Missing FTS5 entry for an existing memory is detected as drift."""
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         conn = self._get_conn()
         # Insert two memories (trigger auto-syncs to FTS)
@@ -843,7 +843,7 @@ class TestSyncInvariant(unittest.TestCase):
 
     def test_drifted_embeddings_detected(self):
         """Missing embedding for an existing memory is detected as drift."""
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         conn = self._get_conn()
         # Need multiple memories to get "drift" (partial coverage), not "empty"
@@ -872,7 +872,7 @@ class TestSyncInvariant(unittest.TestCase):
 
     def test_drifted_kg_detected(self):
         """Missing KG entity for an existing memory is detected as drift."""
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         conn = self._get_conn()
         # Need enough memories that one KG entity is partial coverage (<5% threshold)
@@ -897,7 +897,7 @@ class TestSyncInvariant(unittest.TestCase):
         """After full pipeline save, sync check shows 0 drift."""
         from pathlib import Path
         from save_pipeline import _update_memory_index_incremental
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         for i in range(5):
             _update_memory_index_incremental(
@@ -931,7 +931,7 @@ class TestConnectionPoolThreadIsolation(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_different_threads_get_different_connections(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         results = {}
 
@@ -948,7 +948,7 @@ class TestConnectionPoolThreadIsolation(unittest.TestCase):
         self.assertNotEqual(results["t1"], results["t2"])
 
     def test_same_thread_reuses_connection(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn1 = connection_pool.get(self.db_path, timeout=5.0)
         conn2 = connection_pool.get(self.db_path, timeout=5.0)

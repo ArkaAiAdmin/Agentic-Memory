@@ -9,7 +9,7 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import connection_pool
+from infra.memory_common import connection_pool
 
 
 def _fresh_db() -> Path:

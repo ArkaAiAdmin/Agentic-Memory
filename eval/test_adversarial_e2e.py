@@ -29,7 +29,7 @@ import memory_mcp
 import save_pipeline
 import search_pipeline
 import mcp_tools
-from memory_common import (
+from infra.memory_common import (
     open_db,
     connection_pool,
 )
@@ -61,11 +61,11 @@ def _setup_test_env(tmpdir: str):
     mcp_tools.GLOBAL_MEM_DIR = tmp
     mcp_tools.get_memory_paths = lambda: (tmp, tmp, tmp)
 
-    import memory_common
+    import infra.memory_common
     import infra.memory_common
     import infra.memory_config
     import infra.infrastructure
-    import infrastructure
+    import infra.infrastructure
 
     orig_mem_common_paths = getattr(memory_common, "get_memory_paths", None)
     orig_infra_mem_common_paths = getattr(infra.memory_common, "get_memory_paths", None)
@@ -114,11 +114,11 @@ def _restore_test_env(
     mcp_tools.GLOBAL_MEM_DIR = orig_global
     mcp_tools.get_memory_paths = orig_paths
 
-    import memory_common
+    import infra.memory_common
     import infra.memory_common
     import infra.memory_config
     import infra.infrastructure
-    import infrastructure
+    import infra.infrastructure
 
     if orig_mem_common_paths is not None:
         memory_common.get_memory_paths = orig_mem_common_paths
@@ -697,7 +697,7 @@ class TestAdversarialPhase3(unittest.TestCase):
         self.assertLessEqual(len(result.get("results", [])), 3, "Limit not respected")
 
     def test_3_10_search_cache_functional(self):
-        from cache import _search_cache
+        from infra.cache import _search_cache
 
         _search_cache.get("quantumflux_test_cache_key")
         _search_cache.get("quantumflux_test_cache_key")
@@ -1021,7 +1021,7 @@ class TestAdversarialPhase6(unittest.TestCase):
         connection_pool.put(c1)
 
     def test_6_3_atomic_write(self):
-        from memory_common import atomic_write
+        from infra.memory_common import atomic_write
         import tempfile as _tf
 
         with _tf.NamedTemporaryFile(delete=False, suffix=".test") as f:

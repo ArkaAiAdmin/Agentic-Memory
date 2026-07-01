@@ -15,10 +15,10 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import connection_pool, open_db
+from infra.memory_common import connection_pool, open_db
 
-import crdt_merge
-from crdt_merge import crdt_save, crdt_sync_all, dominates, concurrent
+import crdt.crdt_merge
+from crdt.crdt_merge import crdt_save, crdt_sync_all, dominates, concurrent
 
 
 def _fresh_db(name: str) -> Path:
@@ -159,7 +159,7 @@ class TestMergeVectorsProperties(unittest.TestCase):
     """
 
     def test_idempotency_basic(self):
-        from crdt_merge import merge_vectors
+        from crdt.crdt_merge import merge_vectors
 
         v = {"a": 5, "b": 3, "c": 7}
         r1 = merge_vectors("a", v, v)
@@ -174,7 +174,7 @@ class TestMergeVectorsProperties(unittest.TestCase):
             )
 
     def test_idempotency_three_agents(self):
-        from crdt_merge import merge_vectors
+        from crdt.crdt_merge import merge_vectors
 
         v1 = {"alice": 3, "bob": 5, "carol": 2}
         v2 = {"alice": 7, "bob": 1, "carol": 4}
@@ -185,7 +185,7 @@ class TestMergeVectorsProperties(unittest.TestCase):
         self.assertEqual(m_again, m_third)
 
     def test_commutativity(self):
-        from crdt_merge import merge_vectors
+        from crdt.crdt_merge import merge_vectors
 
         v1 = {"alice": 3, "bob": 5}
         v2 = {"alice": 7, "bob": 1}
@@ -195,7 +195,7 @@ class TestMergeVectorsProperties(unittest.TestCase):
         self.assertEqual(m12, m21, "merge_vectors must be commutative")
 
     def test_associativity(self):
-        from crdt_merge import merge_vectors
+        from crdt.crdt_merge import merge_vectors
 
         v1 = {"a": 1, "b": 2}
         v2 = {"a": 3, "b": 1}
@@ -209,7 +209,7 @@ class TestMergeVectorsProperties(unittest.TestCase):
         self.assertEqual(m123_left, m123_right, "merge_vectors must be associative")
 
     def test_monotone(self):
-        from crdt_merge import merge_vectors
+        from crdt.crdt_merge import merge_vectors
 
         v1 = {"a": 5, "b": 3}
         v2 = {"a": 3, "b": 1}  # v1 dominates v2
@@ -218,7 +218,7 @@ class TestMergeVectorsProperties(unittest.TestCase):
         self.assertEqual(m, v1, "merge(x,y) where x dominates y should equal x")
 
     def test_empty_vectors(self):
-        from crdt_merge import merge_vectors
+        from crdt.crdt_merge import merge_vectors
 
         # merge with empty should be identity
         m = merge_vectors("a", {}, {"x": 5, "y": 3})
@@ -232,7 +232,7 @@ class TestMergeVectorsProperties(unittest.TestCase):
         This is the specific bug from the audit.  merge_vectors should be
         pure pointwise-max with no local clock mutation.
         """
-        from crdt_merge import merge_vectors
+        from crdt.crdt_merge import merge_vectors
 
         v1 = {"agent_a": 5, "agent_b": 3}
         v2 = {"agent_a": 7, "agent_b": 2}
@@ -380,7 +380,7 @@ class TestCrdtSaveWritesMarkdown(unittest.TestCase):
                 ),
             )
         # Write the .md file to mirror the local DB state.
-        from memory_common import safe_atomic_write
+        from infra.memory_common import safe_atomic_write
 
         md_path = db_dir / "lessons" / "rej_md.md"
         safe_atomic_write(md_path, "newer local content", encoding="utf-8")

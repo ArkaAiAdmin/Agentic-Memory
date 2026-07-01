@@ -29,7 +29,7 @@ if _PACKAGE_ROOT.name == "cron":
 sys.path.insert(0, str(_PACKAGE_ROOT))
 os.chdir(str(_PACKAGE_ROOT))
 
-from memory_common import configure_logging, GLOBAL_MEM_DIR
+from infra.memory_common import configure_logging, GLOBAL_MEM_DIR
 
 configure_logging()
 
@@ -41,7 +41,7 @@ def _run_check_and_rebuild(args: argparse.Namespace) -> int:
         return 1
     t0 = time.time()
     try:
-        from embedding_recompute import check_and_rebuild
+        from infra.embedding_recompute import check_and_rebuild
 
         stats = check_and_rebuild(force=args.force, dry_run=args.dry_run)
         elapsed = time.time() - t0

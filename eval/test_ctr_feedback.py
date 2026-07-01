@@ -20,7 +20,7 @@ _INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 if str(_INSTALL_DIR) not in sys.path:
     sys.path.insert(0, str(_INSTALL_DIR))
 
-from memory_common import run_db_migrations, _migrate_memory_ctr_feedback
+from infra.memory_common import run_db_migrations, _migrate_memory_ctr_feedback
 
 
 # ---------------------------------------------------------------------------

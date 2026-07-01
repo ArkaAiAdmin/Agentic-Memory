@@ -25,14 +25,14 @@ sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
 class TestNegationPairsData(unittest.TestCase):
     def test_pairs_are_tuples(self):
-        from contradiction_detector import NEGATION_PAIRS
+        from kg.contradiction_detector import NEGATION_PAIRS
 
         for p in NEGATION_PAIRS:
             self.assertIsInstance(p, tuple)
             self.assertEqual(len(p), 2)
 
     def test_pairs_have_distinct_pos_and_neg(self):
-        from contradiction_detector import NEGATION_PAIRS
+        from kg.contradiction_detector import NEGATION_PAIRS
 
         for pos, neg in NEGATION_PAIRS:
             self.assertNotEqual(
@@ -40,7 +40,7 @@ class TestNegationPairsData(unittest.TestCase):
             )
 
     def test_known_pair_present(self):
-        from contradiction_detector import NEGATION_PAIRS
+        from kg.contradiction_detector import NEGATION_PAIRS
 
         flat = {w for pair in NEGATION_PAIRS for w in pair}
         self.assertIn("enabled", flat)
@@ -51,18 +51,18 @@ class TestNegationPairsData(unittest.TestCase):
 
 class TestStopWords(unittest.TestCase):
     def test_stop_words_is_frozenset(self):
-        from contradiction_detector import STOP_WORDS
+        from kg.contradiction_detector import STOP_WORDS
 
         self.assertIsInstance(STOP_WORDS, frozenset)
 
     def test_common_words_present(self):
-        from contradiction_detector import STOP_WORDS
+        from kg.contradiction_detector import STOP_WORDS
 
         for w in ("a", "the", "is", "and", "to"):
             self.assertIn(w, STOP_WORDS)
 
     def test_meaningful_words_absent(self):
-        from contradiction_detector import STOP_WORDS
+        from kg.contradiction_detector import STOP_WORDS
 
         for w in ("python", "memory", "database", "agent", "search"):
             self.assertNotIn(w, STOP_WORDS)
@@ -70,12 +70,12 @@ class TestStopWords(unittest.TestCase):
 
 class TestSignificantWords(unittest.TestCase):
     def test_empty_string_returns_empty(self):
-        from contradiction_detector import significant_words
+        from kg.contradiction_detector import significant_words
 
         self.assertEqual(significant_words(""), set())
 
     def test_drops_stop_words(self):
-        from contradiction_detector import significant_words
+        from kg.contradiction_detector import significant_words
 
         # Note: "fox" is 3 chars and is filtered by MIN_WORD_LEN; we use
         # 4+ char words so length filter doesn't dominate the test.
@@ -87,7 +87,7 @@ class TestSignificantWords(unittest.TestCase):
         self.assertNotIn("the", out)
 
     def test_lowercases_input(self):
-        from contradiction_detector import significant_words
+        from kg.contradiction_detector import significant_words
 
         out = significant_words("Python PYTHON python")
         # All three collapse to the same word.
@@ -95,7 +95,7 @@ class TestSignificantWords(unittest.TestCase):
         self.assertIn("python", out)
 
     def test_short_words_filtered(self):
-        from contradiction_detector import significant_words
+        from kg.contradiction_detector import significant_words
 
         out = significant_words("a b c defg hijk")
         # Words under MIN_WORD_LEN=4 are filtered.
@@ -112,32 +112,32 @@ class TestClassifyOperation(unittest.TestCase):
     *content* (not slugs) for signals like 'supersedes', 'no longer'."""
 
     def test_add_when_no_existing(self):
-        from contradiction_detector import classify_operation
+        from kg.contradiction_detector import classify_operation
 
         op, reason = classify_operation("new content", "")
         self.assertEqual(op, "ADD")
         self.assertIn("existing", reason.lower())
 
     def test_noop_when_identical(self):
-        from contradiction_detector import classify_operation
+        from kg.contradiction_detector import classify_operation
 
         op, _ = classify_operation("same text", "same text")
         self.assertEqual(op, "NOOP")
 
     def test_delete_marker(self):
-        from contradiction_detector import classify_operation
+        from kg.contradiction_detector import classify_operation
 
         op, _ = classify_operation("[DELETED]", "old text")
         self.assertEqual(op, "DELETE")
 
     def test_delete_on_empty_new(self):
-        from contradiction_detector import classify_operation
+        from kg.contradiction_detector import classify_operation
 
         op, _ = classify_operation("", "old text")
         self.assertEqual(op, "DELETE")
 
     def test_update_on_supersedes_signal(self):
-        from contradiction_detector import classify_operation
+        from kg.contradiction_detector import classify_operation
 
         op, _ = classify_operation(
             "This supersedes the old approach", "the old approach"
@@ -145,7 +145,7 @@ class TestClassifyOperation(unittest.TestCase):
         self.assertEqual(op, "UPDATE")
 
     def test_update_on_high_overlap(self):
-        from contradiction_detector import classify_operation
+        from kg.contradiction_detector import classify_operation
 
         # Most words overlap → UPDATE.
         op, _ = classify_operation(
@@ -155,7 +155,7 @@ class TestClassifyOperation(unittest.TestCase):
         self.assertEqual(op, "UPDATE")
 
     def test_add_on_distinct(self):
-        from contradiction_detector import classify_operation
+        from kg.contradiction_detector import classify_operation
 
         op, _ = classify_operation(
             "completely unrelated content here please",
@@ -166,19 +166,19 @@ class TestClassifyOperation(unittest.TestCase):
 
 class TestSplitSentences(unittest.TestCase):
     def test_empty_string(self):
-        from contradiction_detector import split_sentences
+        from kg.contradiction_detector import split_sentences
 
         self.assertEqual(split_sentences(""), [])
 
     def test_single_sentence(self):
-        from contradiction_detector import split_sentences
+        from kg.contradiction_detector import split_sentences
 
         out = split_sentences("This is one sentence.")
         self.assertEqual(len(out), 1)
         self.assertIn("one sentence", out[0])
 
     def test_multiple_sentences(self):
-        from contradiction_detector import split_sentences
+        from kg.contradiction_detector import split_sentences
 
         out = split_sentences("First sentence. Second sentence. Third.")
         self.assertGreaterEqual(len(out), 2)
@@ -187,7 +187,7 @@ class TestSplitSentences(unittest.TestCase):
         self.assertIn("Second", joined)
 
     def test_handles_exclamation_and_question(self):
-        from contradiction_detector import split_sentences
+        from kg.contradiction_detector import split_sentences
 
         out = split_sentences("Wow! Really? Yes.")
         self.assertGreaterEqual(len(out), 2)
@@ -198,12 +198,12 @@ class TestSplitSegments(unittest.TestCase):
     tuples where kind is one of 'header' | 'list' | 'code' | 'prose'."""
 
     def test_empty(self):
-        from contradiction_detector import split_segments
+        from kg.contradiction_detector import split_segments
 
         self.assertEqual(split_segments(""), [])
 
     def test_single_segment_returns_tuple(self):
-        from contradiction_detector import split_segments
+        from kg.contradiction_detector import split_segments
 
         out = split_segments("just one segment")
         self.assertEqual(len(out), 1)
@@ -212,7 +212,7 @@ class TestSplitSegments(unittest.TestCase):
         self.assertIn(kind, ("header", "list", "code", "prose"))
 
     def test_splits_on_blank_lines(self):
-        from contradiction_detector import split_segments
+        from kg.contradiction_detector import split_segments
 
         out = split_segments("para one\n\npara two")
         self.assertEqual(len(out), 2)

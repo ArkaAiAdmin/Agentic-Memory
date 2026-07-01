@@ -21,7 +21,7 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from crdt_merge import (
+from crdt.crdt_merge import (
     crdt_sync_all,
     dominates,
     concurrent,
@@ -229,7 +229,7 @@ class TestCrdtSyncAllBehavior(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "test.db"
             # Bootstrap a minimal DB by copying the prod schema
-            from memory_common import get_memory_paths
+            from infra.memory_common import get_memory_paths
 
             _, _, gm = get_memory_paths()
             prod = gm / "memory.db"
@@ -250,7 +250,7 @@ class TestCrdtSyncAllBehavior(unittest.TestCase):
         """Syncing one remote note should report total=1 and applied=1."""
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "test.db"
-            from memory_common import get_memory_paths
+            from infra.memory_common import get_memory_paths
 
             _, _, gm = get_memory_paths()
             prod = gm / "memory.db"

@@ -43,7 +43,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from memory_config import GLOBAL_MEM_DIR
+from infra.memory_config import GLOBAL_MEM_DIR
 
 UNPIN_PSI = 60.0
 UNPIN_DAYS = 180
@@ -57,7 +57,7 @@ def resolve_db():
     if env_path:
         return Path(env_path)
     try:
-        from infrastructure import resolve_active_memory_dir
+        from infra.infrastructure import resolve_active_memory_dir
 
         return resolve_active_memory_dir() / "memory.db"
     except ImportError:
@@ -87,7 +87,7 @@ def check(dry_run: bool = True, db_path: Optional[Path] = None) -> dict:
     db_path = db_path or resolve_db()
     if not db_path.exists():
         return {"error": f"no DB at {db_path}"}
-    from db_write_queue import sqlite_write_queue
+    from infra.db_write_queue import sqlite_write_queue
 
     conn = sqlite_write_queue.start_session(db_path)
     try:

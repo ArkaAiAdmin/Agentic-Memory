@@ -12,7 +12,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from frontmatter import parse_frontmatter, _coerce
+from infra.frontmatter import parse_frontmatter, _coerce
 
 
 class TestCoerce(unittest.TestCase):

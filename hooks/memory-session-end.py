@@ -44,7 +44,7 @@ except Exception:
         print(f"logger error: {exc} context={context}", file=_sys.stderr)
 
 
-from memory_config import GLOBAL_MEM_DIR
+from infra.memory_config import GLOBAL_MEM_DIR
 
 _MARKER_FILE = GLOBAL_MEM_DIR / ".last_session_save.json"
 _SESSION_SAVE_CATEGORY = "sessions"

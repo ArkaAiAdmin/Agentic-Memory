@@ -58,7 +58,7 @@ _cd_dir = _Path(__file__).resolve().parent.parent
 if str(_cd_dir) not in _sys.path:
     _sys.path.insert(0, str(_cd_dir))
 try:
-    from memory_common import find_project_root, safe_close_db, connection_pool
+    from infra.memory_common import find_project_root, safe_close_db, connection_pool
 except ImportError:
     # P0-7 fix (2026-06-23): if memory_common is genuinely not
     # importable, fail loudly rather than silently using a divergent
@@ -1004,7 +1004,7 @@ def detect_contradictions_semantic(memory_dir, threshold=SEMANTIC_THRESHOLD):
         return []
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from embedding_search import EmbeddingSearch
+        from infra.embedding_search import EmbeddingSearch
     except ImportError as e:
         logger.error("embedding_search.py not found on path: %s", e)
         return []

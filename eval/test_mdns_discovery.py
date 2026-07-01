@@ -14,9 +14,9 @@ sys.path.insert(
     or os.path.expanduser("~/.config/agentic-memory"),
 )
 
-from sync_server import SyncServer
-from pex_protocol import peer_directory
-from db import open_db
+from infra.sync_server import SyncServer
+from infra.pex_protocol import peer_directory
+from infra.db import open_db
 
 
 class TestMDNSDiscoveryAndPEX:

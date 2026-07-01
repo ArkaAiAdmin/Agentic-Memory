@@ -103,7 +103,7 @@ def _upsert_memory(
         else:
             tags_list = []
 
-        from _lazy_imports import save_memory as _save_memory
+        from infra._lazy_imports import save_memory as _save_memory
 
         result = _save_memory(
             content=content,
@@ -150,7 +150,7 @@ def _scan_content_for_injection(
       * risk_score > 0     → allowed but tier=untrusted (set downstream)
       * risk_score == 0    → clean, allow
     """
-    from _lazy_imports import scan_for_injection
+    from infra._lazy_imports import scan_for_injection
 
     content_to_scan = " ".join(filter(None, [params, result_preview]))
     if not content_to_scan.strip():

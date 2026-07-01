@@ -25,8 +25,8 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
-from memory_common import parse_frontmatter, atomic_write
-from memory_config import get_memory_paths
+from infra.memory_common import parse_frontmatter, atomic_write
+from infra.memory_config import get_memory_paths
 
 
 def get_note_date(metadata: dict, file_path: Path) -> datetime.date:
@@ -157,7 +157,7 @@ def archive_cold_files(memory_dir: Path, dry_run: bool = False):
         try:
             db_path = memory_dir / "memory.db"
             if db_path.exists():
-                from arc_cache import ARCCache
+                from infra.arc_cache import ARCCache
 
                 arc_cache = ARCCache(db_path)
         except Exception:

@@ -291,7 +291,7 @@ class SQLiteWriteQueue:
 
             db_path, task_type, payload, future = task
             try:
-                from db_path_flock import db_path_flock
+                from infra.db_path_flock import db_path_flock
 
                 lock_ctx = db_path_flock(db_path)
                 with lock_ctx:

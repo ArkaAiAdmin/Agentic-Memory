@@ -107,7 +107,7 @@ _LATE_INTERACTION_BLEND = 0.3
 
 def _get_cross_encoder_blend() -> float:
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         v = get_config().cross_encoder_blend
         return float(v)
@@ -117,7 +117,7 @@ def _get_cross_encoder_blend() -> float:
 
 def _get_late_interaction_blend() -> float:
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return get_config().late_interaction_blend
     except Exception:
@@ -202,7 +202,7 @@ def _apply_cross_encoder_rerank(
     if not scored_results or not query:
         return scored_results
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
         if get_config().reranker_disabled:
             return list(scored_results)
     except Exception:
@@ -223,8 +223,8 @@ def _apply_cross_encoder_rerank(
         except ImportError:
             pass
         try:
-            from _lazy_imports import get_config
-            from reranker import get_reranker, normalize_rerank_score
+            from infra._lazy_imports import get_config
+            from infra.reranker import get_reranker, normalize_rerank_score
 
             reranker = get_reranker()
             raw = reranker.score(
@@ -392,7 +392,7 @@ def _apply_late_interaction_rerank(
     import sys
 
     # 2026-06-23: Query the config singleton directly to avoid import cycles.
-    from _lazy_imports import get_config
+    from infra._lazy_imports import get_config
 
     if not get_config().late_interaction or not scored_results or (not query):
         return scored_results

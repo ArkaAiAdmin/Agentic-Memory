@@ -88,7 +88,7 @@ def ingest_file(
         return {"note_id": "", "format": fmt, "error": "No content extracted"}
 
     # Save through the standard pipeline
-    from _lazy_imports import save_memory
+    from infra._lazy_imports import save_memory
 
     title_slug = _slugify(path.stem)
     note_id = save_memory(
@@ -261,7 +261,7 @@ def _extract_audio(path: Path) -> str:
 
 def _save_content(content: str, category: str, tags: list, title_slug: str) -> dict:
     """Save content through the standard pipeline."""
-    from _lazy_imports import save_memory
+    from infra._lazy_imports import save_memory
 
     note_id = save_memory(
         content=content,

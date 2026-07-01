@@ -296,7 +296,7 @@ class TestRebuildPreservesSubsystems:
         ).fetchone()[0]
         db.close()
         # Check that schema version is preserved (use actual current version)
-        from migration_runner import SCHEMA_VERSION as expected_version
+        from infra.migration_runner import SCHEMA_VERSION as expected_version
 
         assert version == expected_version, (
             f"Expected schema version {expected_version}, got {version}"

@@ -25,7 +25,7 @@ from pathlib import Path
 INSTALL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL))
 
-import crdt_field  # noqa: E402
+import crdt.crdt_field  # noqa: E402
 import os  # noqa: E402
 
 
@@ -437,7 +437,7 @@ class TestCrdtFieldSave(unittest.TestCase):
 
     def _conn(self):
         import os
-        from memory_common import open_db, run_db_migrations
+        from infra.memory_common import open_db, run_db_migrations
 
         if "MEMORY_DB_PATH" in os.environ:
             del os.environ["MEMORY_DB_PATH"]
@@ -446,12 +446,12 @@ class TestCrdtFieldSave(unittest.TestCase):
         return conn
 
     def test_new_note_all_fields_applied(self):
-        from memory_common import open_db
+        from infra.memory_common import open_db
 
         if "MEMORY_DB_PATH" in os.environ:
             del os.environ["MEMORY_DB_PATH"]
         with open_db(str(self.db), timeout=5.0) as conn:
-            from db_migrations import run_db_migrations
+            from infra.db_migrations import run_db_migrations
 
             run_db_migrations(conn)
         result = crdt_field.crdt_field_save(
@@ -479,8 +479,8 @@ class TestCrdtFieldSave(unittest.TestCase):
 
     def test_concurrent_different_fields_both_apply(self):
         """The bug fix: two agents edit different fields concurrently; both win."""
-        from memory_common import open_db
-        from db_migrations import run_db_migrations
+        from infra.memory_common import open_db
+        from infra.db_migrations import run_db_migrations
 
         if "MEMORY_DB_PATH" in os.environ:
             del os.environ["MEMORY_DB_PATH"]
@@ -537,8 +537,8 @@ class TestBackfill(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_backfill_creates_field_rows(self):
-        from memory_common import open_db
-        from db_migrations import run_db_migrations
+        from infra.memory_common import open_db
+        from infra.db_migrations import run_db_migrations
 
         if "MEMORY_DB_PATH" in os.environ:
             del os.environ["MEMORY_DB_PATH"]

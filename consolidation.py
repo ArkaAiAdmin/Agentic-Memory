@@ -308,6 +308,6 @@ def consolidation_stats(conn: sqlite3.Connection) -> dict:
         return {"enabled": True, "error": "consolidation stats unavailable"}
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 __getattr__ = make_lazy_getattr({"CONSOLIDATION_ENABLED": "consolidation"})

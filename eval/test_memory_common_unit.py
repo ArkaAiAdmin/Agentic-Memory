@@ -19,7 +19,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import (
+from infra.memory_common import (
     _ConnectionPool,
     count_rows,
     safe_call,
@@ -27,7 +27,7 @@ from memory_common import (
     open_db,
     safe_close_db,
 )
-from infrastructure import GLOBAL_MEM_DIR
+from infra.infrastructure import GLOBAL_MEM_DIR
 
 PROD_DB = Path(os.environ.get("MEMORY_DB_PATH", str(GLOBAL_MEM_DIR / "memory.db")))
 
@@ -519,13 +519,13 @@ class TestValidateConfig(unittest.TestCase):
     """Test validate_config function."""
 
     def test_returns_list(self):
-        from memory_common import validate_config
+        from infra.memory_common import validate_config
 
         result = validate_config()
         self.assertIsInstance(result, list)
 
     def test_returns_warnings_list(self):
-        from memory_common import validate_config
+        from infra.memory_common import validate_config
 
         result = validate_config()
         # Each item should be a string
@@ -537,7 +537,7 @@ class TestParseFrontmatter(unittest.TestCase):
     """Test parse_frontmatter function."""
 
     def test_returns_tuple(self):
-        from memory_common import parse_frontmatter
+        from infra.memory_common import parse_frontmatter
 
         content = "---\ntitle: test\n---\n\nBody content"
         result = parse_frontmatter(content)
@@ -545,7 +545,7 @@ class TestParseFrontmatter(unittest.TestCase):
         self.assertEqual(len(result), 2)
 
     def test_parses_metadata(self):
-        from memory_common import parse_frontmatter
+        from infra.memory_common import parse_frontmatter
 
         content = "---\ntitle: test\ncategory: lessons\n---\n\nBody"
         metadata, body = parse_frontmatter(content)
@@ -553,7 +553,7 @@ class TestParseFrontmatter(unittest.TestCase):
         self.assertEqual(metadata.get("category"), "lessons")
 
     def test_strips_quotes(self):
-        from memory_common import parse_frontmatter
+        from infra.memory_common import parse_frontmatter
 
         content = '---\ntitle: "quoted value"\n---\n\nBody'
         metadata, body = parse_frontmatter(content)
@@ -564,19 +564,19 @@ class TestCoerce(unittest.TestCase):
     """Test _coerce function."""
 
     def test_strips_double_quotes(self):
-        from memory_common import _coerce
+        from infra.memory_common import _coerce
 
         result = _coerce('"hello"')
         self.assertEqual(result, "hello")
 
     def test_strips_single_quotes(self):
-        from memory_common import _coerce
+        from infra.memory_common import _coerce
 
         result = _coerce("'hello'")
         self.assertEqual(result, "hello")
 
     def test_no_quotes(self):
-        from memory_common import _coerce
+        from infra.memory_common import _coerce
 
         result = _coerce("hello")
         self.assertEqual(result, "hello")
@@ -586,14 +586,14 @@ class TestGetMemoryPaths(unittest.TestCase):
     """Test get_memory_paths function."""
 
     def test_returns_tuple(self):
-        from memory_common import get_memory_paths
+        from infra.memory_common import get_memory_paths
 
         result = get_memory_paths()
         self.assertIsInstance(result, tuple)
         self.assertEqual(len(result), 3)
 
     def test_returns_paths(self):
-        from memory_common import get_memory_paths
+        from infra.memory_common import get_memory_paths
 
         project_root, local_mem, global_mem = get_memory_paths()
         self.assertIsInstance(project_root, Path)

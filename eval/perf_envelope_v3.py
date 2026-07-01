@@ -300,7 +300,7 @@ def measure_indexed_search(db_path: Path, vocab: list[str], n: int) -> Measureme
     if hasattr(memory_mcp, "resolve_active_memory_dir"):
         memory_mcp.resolve_active_memory_dir = lambda **_: P(tmp)
 
-    from embedding_search import EmbeddingSearch  # type: ignore
+    from infra.embedding_search import EmbeddingSearch  # type: ignore
 
     rng = random.Random(SEED + 1)
     query = " ".join(rng.sample(vocab, 5))

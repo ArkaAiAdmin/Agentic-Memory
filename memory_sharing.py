@@ -31,8 +31,8 @@ from typing import Any
 
 from config import resolve_db_path
 
-from db_write_queue import sqlite_write_queue
-from memory_common import safe_close_db, connection_pool
+from infra.db_write_queue import sqlite_write_queue
+from infra.memory_common import safe_close_db, connection_pool
 
 __all__ = [
     "MULTI_AGENT_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -113,7 +113,7 @@ def share_memory(note_id: str, agent_id: str, db_path: str | None = None) -> dic
         local_mem = resolve_db_path(db_path).parent
     else:
         try:
-            from _lazy_imports import get_memory_paths
+            from infra._lazy_imports import get_memory_paths
 
             _, local_mem, _ = get_memory_paths()
         except ImportError:
@@ -216,7 +216,7 @@ def list_shared_memories(
         db = db_path
     else:
         try:
-            from _lazy_imports import get_memory_paths
+            from infra._lazy_imports import get_memory_paths
 
             _, local_mem, _ = get_memory_paths()
             db = str(local_mem / "memory.db")
@@ -280,7 +280,7 @@ def _resolve_import_db_path(db_path: str | None) -> str | dict:
     if db_path is not None:
         return db_path
     try:
-        from _lazy_imports import get_memory_paths
+        from infra._lazy_imports import get_memory_paths
 
         _, local_mem, _ = get_memory_paths()
         return str(local_mem / "memory.db")
@@ -300,7 +300,7 @@ def _scan_shared_content(content: str, source_agent: str, shared_id: str) -> dic
 
     Extracted 2026-06-22 from import_shared_memory().
     """
-    from _lazy_imports import scan_for_injection
+    from infra._lazy_imports import scan_for_injection
 
     injection_scan = scan_for_injection(content or "")
     is_suspicious = bool(injection_scan["is_suspicious"])
@@ -384,7 +384,7 @@ def _write_imported_note_crdt(
 
     Extracted 2026-06-22.
     """
-    from crdt_field import crdt_field_save, project_crdt_to_sql
+    from crdt.crdt_field import crdt_field_save, project_crdt_to_sql
 
     try:
         crdt_field_save(
@@ -582,7 +582,7 @@ def shared_pool_stats(db_path: str | None = None) -> dict:
         db = db_path
     else:
         try:
-            from _lazy_imports import get_memory_paths
+            from infra._lazy_imports import get_memory_paths
 
             _, local_mem, _ = get_memory_paths()
             db = str(local_mem / "memory.db")
@@ -655,7 +655,7 @@ def list_share_candidates(
         db = db_path
     else:
         try:
-            from _lazy_imports import get_memory_paths
+            from infra._lazy_imports import get_memory_paths
 
             _, local_mem, _ = get_memory_paths()
             db = str(local_mem / "memory.db")
@@ -786,7 +786,7 @@ def auto_share_high_value(
     }
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 __getattr__ = make_lazy_getattr(
     {

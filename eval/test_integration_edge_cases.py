@@ -33,7 +33,7 @@ sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
 import pytest
 
-from memory_common import (
+from infra.memory_common import (
     connection_pool,
     open_db,
     run_db_migrations,

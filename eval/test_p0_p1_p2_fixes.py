@@ -130,7 +130,7 @@ class TestAutoSaveDenylist(unittest.TestCase):
     """P0.6: 3 tools in auto_save denylist."""
 
     def _denylist(self):
-        from auto_save import _resolve_denylist, DEFAULT_TOOL_DENYLIST
+        from background.auto_save import _resolve_denylist, DEFAULT_TOOL_DENYLIST
 
         try:
             return _resolve_denylist()
@@ -742,8 +742,8 @@ class TestUpsertColumnDrift(unittest.TestCase):
         import tempfile as _tf
 
         db_path = Path(_tf.mkdtemp(prefix="d5_features_")) / "memory.db"
-        from migration_runner import run_migrations
-        from memory_common import open_db
+        from infra.migration_runner import run_migrations
+        from infra.memory_common import open_db
 
         with open_db(db_path, timeout=5.0) as conn:
             run_migrations(conn)
@@ -800,7 +800,7 @@ class TestUpsertColumnDrift(unittest.TestCase):
 
         from eval._fixtures import bootstrap_temp_db_clean
         from save_pipeline import upsert_row
-        from memory_common import open_db
+        from infra.memory_common import open_db
 
         db_path = Path(tempfile.mktemp(suffix=".db"))
         bootstrap_temp_db_clean(db_path)
@@ -880,8 +880,8 @@ class TestPragmaCacheInvalidationOnSave(unittest.TestCase):
         with _sp._pragma_cache_lock:
             _sp._pragma_cache.pop(self.cache_key, None)
         # Bootstrap a fresh DB with the full schema.
-        from migration_runner import run_migrations
-        from memory_common import open_db
+        from infra.migration_runner import run_migrations
+        from infra.memory_common import open_db
 
         with open_db(self.db_path, timeout=5.0) as conn:
             run_migrations(conn)

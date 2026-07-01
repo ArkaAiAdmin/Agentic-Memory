@@ -23,14 +23,14 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp())
         self.orig_vec_meta = None
-        import embedding_recompute
+        import infra.embedding_recompute
 
         if hasattr(embedding_recompute, "VEC_META_FILE"):
             self.orig_vec_meta = str(embedding_recompute.VEC_META_FILE)
             embedding_recompute.VEC_META_FILE = self.tmpdir / "vec_index.meta.json"
 
     def tearDown(self):
-        import embedding_recompute
+        import infra.embedding_recompute
 
         if self.orig_vec_meta:
             embedding_recompute.VEC_META_FILE = Path(self.orig_vec_meta)
@@ -39,7 +39,7 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_get_current_model_config_returns_dict(self):
-        from embedding_recompute import get_current_model_config
+        from infra.embedding_recompute import get_current_model_config
 
         config = get_current_model_config()
         self.assertIsInstance(config, dict)
@@ -48,13 +48,13 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         self.assertIn("dimensions", config)
 
     def test_get_stored_config_no_file(self):
-        from embedding_recompute import get_stored_model_config
+        from infra.embedding_recompute import get_stored_model_config
 
         config = get_stored_model_config()
         self.assertEqual(config, {})
 
     def test_get_stored_config_with_file(self):
-        from embedding_recompute import get_stored_model_config, save_model_config
+        from infra.embedding_recompute import get_stored_model_config, save_model_config
 
         expected = {
             "model": "minishlab/potion-base-8M",
@@ -66,14 +66,14 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         self.assertEqual(config, expected)
 
     def test_get_stored_config_bad_json(self):
-        import embedding_recompute
+        import infra.embedding_recompute
 
         embedding_recompute.VEC_META_FILE.write_text("not json")
         config = embedding_recompute.get_stored_model_config()
         self.assertEqual(config, {})
 
     def test_check_and_rebuild_no_change(self):
-        from embedding_recompute import check_and_rebuild, save_model_config
+        from infra.embedding_recompute import check_and_rebuild, save_model_config
 
         save_model_config(
             {
@@ -87,7 +87,7 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         self.assertFalse(result["rebuilt"])
 
     def test_check_and_rebuild_force(self):
-        from embedding_recompute import check_and_rebuild, save_model_config
+        from infra.embedding_recompute import check_and_rebuild, save_model_config
 
         save_model_config(
             {
@@ -100,7 +100,7 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         self.assertTrue(result["changed"])
 
     def test_check_and_rebuild_dry_run(self):
-        from embedding_recompute import check_and_rebuild, save_model_config
+        from infra.embedding_recompute import check_and_rebuild, save_model_config
 
         save_model_config(
             {"model": "old-model", "api_base": "remote", "dimensions": 128}
@@ -111,7 +111,7 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         self.assertIn("dry run", result["details"])
 
     def test_save_model_config_writes_file(self):
-        from embedding_recompute import (
+        from infra.embedding_recompute import (
             save_model_config,
             VEC_META_FILE,
             get_stored_model_config,

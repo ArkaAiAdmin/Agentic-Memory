@@ -7,7 +7,7 @@ import threading
 from collections import deque
 from typing import Optional
 
-from memory_common import deprecated
+from infra.memory_common import deprecated
 
 logger = logging.getLogger(__name__)
 

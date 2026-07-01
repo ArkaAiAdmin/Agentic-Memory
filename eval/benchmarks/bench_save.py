@@ -53,7 +53,7 @@ def _measure(note: dict, db_path: str) -> float:
 
 
 def run_bench(quick: bool = False) -> dict:
-    from memory_common import GLOBAL_MEM_DIR
+    from infra.memory_common import GLOBAL_MEM_DIR
     import shutil
 
     results: dict = {}
@@ -87,8 +87,8 @@ def run_bench(quick: bool = False) -> dict:
 
 def _bootstrap_db(db_path: str):
     import sqlite3
-    from db_migrations import run_schema_setup
-    from fact_extraction import ensure_facts_schema
+    from infra.db_migrations import run_schema_setup
+    from fact import ensure_facts_schema
     conn = sqlite3.connect(db_path)
     try:
         conn.execute("PRAGMA journal_mode=WAL")

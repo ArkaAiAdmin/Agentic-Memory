@@ -20,8 +20,8 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-import audit  # noqa: E402
-import memory_common  # noqa: E402
+import infra.audit as audit  # noqa: E402
+import infra.memory_common  # noqa: E402
 
 
 def _init_db(db_path: Path) -> None:

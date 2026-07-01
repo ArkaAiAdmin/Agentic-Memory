@@ -130,7 +130,7 @@ def _inbox_max_bytes() -> int:
     if env_val is not None:
         return int(env_val)
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         return int(getattr(cfg, "auto_save_inbox_max_bytes", _DEFAULT_INBOX_MAX_BYTES))
@@ -333,7 +333,7 @@ def _is_daemon_lock_held() -> bool:
         logger.warning("auto-save daemon: cannot open lock file %s: %s", lock_path, exc)
         return False
     try:
-        from file_lock import acquire_flock_with_retry, release_flock
+        from infra.file_lock import acquire_flock_with_retry, release_flock
 
         got = acquire_flock_with_retry(lock_fd, max_attempts=1, nonblocking=True)
         if got:
@@ -377,7 +377,7 @@ def _cleanup_stale_daemon_lock() -> bool:
     # but handle it defensively).
     lock_fd = None
     try:
-        from file_lock import acquire_flock_with_retry, release_flock
+        from infra.file_lock import acquire_flock_with_retry, release_flock
 
         lock_fd = open(lock_path, "w", encoding="utf-8")
         got = acquire_flock_with_retry(lock_fd, max_attempts=1, nonblocking=True)
@@ -465,7 +465,7 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
     if not entries:
         return summary
 
-    from db_write_queue import sqlite_write_queue
+    from infra.db_write_queue import sqlite_write_queue
 
     db_path = get_db_path()
     conn = None

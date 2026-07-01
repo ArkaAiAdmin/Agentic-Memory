@@ -37,7 +37,7 @@ def main() -> int:
         else:
             print("MEMORY_ADAPTIVE_RETENTION not enabled, skipping adaptive retention.")
 
-        from infrastructure import resolve_active_memory_dir
+        from infra.infrastructure import resolve_active_memory_dir
 
         db_path = resolve_active_memory_dir() / "memory.db"
         if db_path.exists():

@@ -66,7 +66,7 @@ Usage
 The wrapper is automatic — every ``open_db()`` call is protected.
 Manual opt-in::
 
-    from db_path_flock import db_path_flock
+    from infra.db_path_flock import db_path_flock
 
     with db_path_flock(db_path):
         # Critical section.
@@ -74,7 +74,7 @@ Manual opt-in::
 
 Opt-out (rare)::
 
-    from db_path_flock import is_db_path_flock_enabled
+    from infra.db_path_flock import is_db_path_flock_enabled
     if not is_db_path_flock_enabled():
         # Default-install path; flock is on.  Tests or debug only.
         ...
@@ -152,7 +152,7 @@ class PathLockFd:
         with self._lock:
             if self._ref_count == 0:
                 self._fd = self._ensure_fd()
-                from _lazy_imports import acquire_flock_with_retry
+                from infra._lazy_imports import acquire_flock_with_retry
 
                 try:
                     acquire_flock_with_retry(

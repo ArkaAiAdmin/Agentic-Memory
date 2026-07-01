@@ -23,7 +23,7 @@ class TestCleanupFts5Orphans(unittest.TestCase):
             VALUES ('note/2', 'deleted content', '', 'lessons', '2026-01-01');
         """
         )
-        from fts import _create_fts5_table, cleanup_fts5_orphans
+        from infra.fts import _create_fts5_table, cleanup_fts5_orphans
 
         _create_fts5_table(self.db)
         self._create_fts5_table = _create_fts5_table
@@ -79,7 +79,7 @@ class TestCreateFts5Table(unittest.TestCase):
         self.db.close()
 
     def test_creates_virtual_table(self):
-        from fts import _create_fts5_table
+        from infra.fts import _create_fts5_table
 
         _create_fts5_table(self.db)
         row = self.db.execute(
@@ -88,7 +88,7 @@ class TestCreateFts5Table(unittest.TestCase):
         self.assertIsNotNone(row)
 
     def test_creates_sync_triggers(self):
-        from fts import _create_fts5_table
+        from infra.fts import _create_fts5_table
 
         _create_fts5_table(self.db)
         triggers = {
@@ -102,7 +102,7 @@ class TestCreateFts5Table(unittest.TestCase):
         self.assertIn("memories_au", triggers)
 
     def test_calling_twice_is_harmless(self):
-        from fts import _create_fts5_table
+        from infra.fts import _create_fts5_table
 
         _create_fts5_table(self.db)
         _create_fts5_table(self.db)
@@ -133,7 +133,7 @@ class TestMigratePorterTokenizer(unittest.TestCase):
         self.db.close()
 
     def test_noop_when_porter_exists(self):
-        from fts import _create_fts5_table, _migrate_fts5_porter_tokenizer
+        from infra.fts import _create_fts5_table, _migrate_fts5_porter_tokenizer
 
         _create_fts5_table(self.db)
         _migrate_fts5_porter_tokenizer(self.db)
@@ -144,7 +144,7 @@ class TestMigratePorterTokenizer(unittest.TestCase):
         self.assertIn("porter", (row[0] or "").lower())
 
     def test_creates_table_if_missing(self):
-        from fts import _migrate_fts5_porter_tokenizer
+        from infra.fts import _migrate_fts5_porter_tokenizer
 
         _migrate_fts5_porter_tokenizer(self.db)
         row = self.db.execute(
@@ -169,7 +169,7 @@ class TestMigrateEnsureFtsTriggers(unittest.TestCase):
         self.db.close()
 
     def test_creates_missing_triggers(self):
-        from fts import _create_fts5_table, _migrate_ensure_fts_triggers
+        from infra.fts import _create_fts5_table, _migrate_ensure_fts_triggers
 
         _create_fts5_table(self.db)
         self.db.execute("DROP TRIGGER memories_ai")
@@ -187,7 +187,7 @@ class TestMigrateEnsureFtsTriggers(unittest.TestCase):
         self.assertIn("memories_au", triggers)
 
     def test_noop_when_triggers_exist(self):
-        from fts import _create_fts5_table, _migrate_ensure_fts_triggers
+        from infra.fts import _create_fts5_table, _migrate_ensure_fts_triggers
 
         _create_fts5_table(self.db)
         _migrate_ensure_fts_triggers(self.db)
@@ -202,7 +202,7 @@ class TestMigrateEnsureFtsTriggers(unittest.TestCase):
         self.assertIn("memories_au", triggers)
 
     def test_noop_if_fts_table_missing(self):
-        from fts import _migrate_ensure_fts_triggers
+        from infra.fts import _migrate_ensure_fts_triggers
 
         _migrate_ensure_fts_triggers(self.db)
         triggers = {

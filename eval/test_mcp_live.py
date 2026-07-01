@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import memory_mcp
 import save_pipeline
-from memory_common import reset_rate_limiter
+from infra.memory_common import reset_rate_limiter
 from rebuild_index import rebuild_index
 
 try:

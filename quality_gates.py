@@ -410,7 +410,7 @@ def quality_stats(conn: sqlite3.Connection) -> dict:
 
 def quality_stats_db(db_path: str | Path) -> dict:
     """quality_stats with connection lifecycle managed."""
-    from memory_common import connection_pool, safe_close_db
+    from infra.memory_common import connection_pool, safe_close_db
 
     conn = connection_pool.get(str(db_path))
     try:
@@ -419,7 +419,7 @@ def quality_stats_db(db_path: str | Path) -> dict:
         safe_close_db(conn)
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 # Lazy config-attr resolution. Note: __getattr__ is only invoked for
 # attribute access on the module object (e.g. `qg._MIN_CONTENT_LENGTH`

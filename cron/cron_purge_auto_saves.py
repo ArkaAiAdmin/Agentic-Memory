@@ -12,7 +12,7 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from auto_save import purge_auto_saves
+from background.auto_save import purge_auto_saves
 
 
 def main(db_path: str | None = None) -> int:

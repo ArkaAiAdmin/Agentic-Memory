@@ -193,7 +193,7 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
     # daemon is already running.  Uses the same fd-keeps-alive pattern
     # as cron/_flock.py: a module-level dict holds the FD so the GC
     # doesn't reap it and release the lock mid-run.
-    from file_lock import acquire_flock_with_retry, release_flock
+    from infra.file_lock import acquire_flock_with_retry, release_flock
 
     lock_path = get_auto_save_lock_path()
     try:

@@ -5,7 +5,7 @@ break circular import cycles (e.g., ``memory_common → config → memory_common
 This module provides a single place to define *which module exports which name*,
 so that callers write::
 
-    from _lazy_imports import save_memory
+    from infra._lazy_imports import save_memory
 
 instead of::
 
@@ -33,15 +33,15 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "get_config": ("config", "get_config"),
     "MemoryConfig": ("config", "MemoryConfig"),
     # database
-    "open_db": ("memory_common", "open_db"),
-    "safe_close_db": ("memory_common", "safe_close_db"),
-    "connection_pool": ("memory_common", "connection_pool"),
-    "run_db_migrations": ("memory_common", "run_db_migrations"),
-    "get_memory_paths": ("memory_common", "get_memory_paths"),
-    "find_project_root": ("memory_common", "find_project_root"),
-    "GLOBAL_MEM_DIR": ("memory_common", "GLOBAL_MEM_DIR"),
+    "open_db": ("infra.memory_common", "open_db"),
+    "safe_close_db": ("infra.memory_common", "safe_close_db"),
+    "connection_pool": ("infra.memory_common", "connection_pool"),
+    "run_db_migrations": ("infra.memory_common", "run_db_migrations"),
+    "get_memory_paths": ("infra.memory_common", "get_memory_paths"),
+    "find_project_root": ("infra.memory_common", "find_project_root"),
+    "GLOBAL_MEM_DIR": ("infra.memory_common", "GLOBAL_MEM_DIR"),
     # embeddings
-    "get_embedding_search": ("embedding_search", "get_embedding_search"),
+    "get_embedding_search": ("infra.embedding_search", "get_embedding_search"),
     # injection safety
     "scan_for_injection": ("memory_injection", "scan_for_injection"),
     # agent context
@@ -54,13 +54,38 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "scope_note_id": ("agent_context", "scope_note_id"),
     "agent_filter_clause": ("agent_context", "agent_filter_clause"),
     # file lock
-    "FileLockError": ("file_lock", "FileLockError"),
-    "acquire_flock_with_retry": ("file_lock", "acquire_flock_with_retry"),
+    "FileLockError": ("infra.file_lock", "FileLockError"),
+    "acquire_flock_with_retry": ("infra.file_lock", "acquire_flock_with_retry"),
     # saga
-    "saga_save_memory": ("saga", "saga_save_memory"),
+    "saga_save_memory": ("infra.saga", "saga_save_memory"),
     # error codes
-    "ErrorCode": ("infrastructure", "ErrorCode"),
-    "ErrorCategory": ("infrastructure", "ErrorCategory"),
+    "ErrorCode": ("infra.infrastructure", "ErrorCode"),
+    "ErrorCategory": ("infra.infrastructure", "ErrorCategory"),
+    # backfill
+    "backfill_health_check": ("backfill.orchestrator", "health_check"),
+    # knowledge graph traversal
+    "find_shortest_path": ("kg.kg_traversal", "find_shortest_path"),
+    "find_neighbors": ("kg.kg_traversal", "find_neighbors"),
+    "traverse_graph": ("kg.kg_traversal", "traverse_graph"),
+    # crdt
+    "crdt_save": ("crdt.crdt_merge", "crdt_save"),
+    "crdt_sync_all": ("crdt.crdt_merge", "crdt_sync_all"),
+    # cache
+    "clear_vec_cache": ("infra.cache", "clear_vec_cache"),
+    # adaptive retention
+    "compute_adaptive_halflife": ("background.adaptive_retention", "compute_adaptive_halflife"),
+    "record_access": ("background.adaptive_retention", "record_access"),
+    # facts
+    "extract_facts": ("fact.fact_extract", "extract_facts"),
+    # db
+    "_resolve_mmap_size": ("infra.db", "_resolve_mmap_size"),
+    "_local_state": ("infra.db", "_local_state"),
+    # search memory
+    "search_memories_impl": ("recall.search_memory", "search_memories_impl"),
+    # migration
+    "SCHEMA_VERSION": ("infra.migration_runner", "SCHEMA_VERSION"),
+    # reranker
+    "get_reranker": ("infra.reranker", "get_reranker"),
 }
 
 

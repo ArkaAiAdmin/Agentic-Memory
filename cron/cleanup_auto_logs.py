@@ -25,7 +25,7 @@ sys.path.insert(0, _parent)
 
 from _flock import acquire_lock_or_exit  # noqa: E402
 from background.auto_save import _get_sessions_dir, _auto_log_archive_dir, get_db_path  # noqa: E402
-from db_write_queue import sqlite_write_queue  # noqa: E402
+from infra.db_write_queue import sqlite_write_queue  # noqa: E402
 
 DEFAULT_MAX_AGE_DAYS = 30
 

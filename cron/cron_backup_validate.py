@@ -48,7 +48,7 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from memory_common import GLOBAL_MEM_DIR, safe_close_db
+from infra.memory_common import GLOBAL_MEM_DIR, safe_close_db
 
 BACKUP_DIR_NAME = "backups"
 CURRENT_SCHEMA_VERSION = 23

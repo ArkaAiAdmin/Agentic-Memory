@@ -31,7 +31,7 @@ import json
 
 # I10 fix: import directly from search.orchestrator.
 from search.orchestrator import search_memories  # noqa: E402
-from memory_common import get_memory_paths  # noqa: E402
+from infra.memory_common import get_memory_paths  # noqa: E402
 
 # 2026-06-23: Removed ineffective in-memory _SEARCH_CACHE. CLI hooks
 # are run as transient, separate Python subprocesses, meaning

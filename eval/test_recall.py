@@ -30,16 +30,16 @@ _wrong_modules = [k for k in sys.modules if k in ("metrics", "longmemeval_s.metr
 for k in _wrong_modules:
     del sys.modules[k]
 
-from memory_common import (
+from infra.memory_common import (
     run_db_migrations,
     _migrate_kg_tables,
 )
-from fact_extraction import ensure_facts_schema
+from fact import ensure_facts_schema
 from adaptive_retention import ensure_adaptive_schema
 
 # Import recall module
 sys.path.insert(0, _project_root)
-from recall import (
+from recall.recall import (
     recall_context,
     format_briefing,
     session_recap,

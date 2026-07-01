@@ -25,8 +25,8 @@ sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
 import _fixtures
 import sqlite3
-from memory_common import open_db, count_rows
-from infrastructure import GLOBAL_MEM_DIR
+from infra.memory_common import open_db, count_rows
+from infra.infrastructure import GLOBAL_MEM_DIR
 from save_pipeline import (
     save_memory,
     _recalculate_fitness_scores,

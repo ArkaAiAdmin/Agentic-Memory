@@ -158,7 +158,7 @@ def _flush_audit_rows(rows: list) -> None:
     dropped. The audit log must never propagate failures.
     """
     # Local import to avoid circular dependency with memory_common.
-    from _lazy_imports import open_db
+    from infra._lazy_imports import open_db
 
     by_path: dict = {}
     for row in rows:

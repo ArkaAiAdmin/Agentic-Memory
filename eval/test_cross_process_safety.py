@@ -52,7 +52,7 @@ def _writer(db_path: str, tag: str, count: int, result_queue):
     and surface any locking issue.
     """
     try:
-        from _lazy_imports import open_db
+        from infra._lazy_imports import open_db
 
         with open_db(Path(db_path)) as conn:
             conn.execute("PRAGMA busy_timeout=30000")
@@ -95,7 +95,7 @@ class TestCrossProcessSafety(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="xproc_"))
         self.db_path = self.tmp / "memory.db"
         # Open once to run the migration set.
-        from _lazy_imports import open_db
+        from infra._lazy_imports import open_db
 
         with open_db(self.db_path):
             pass
@@ -110,7 +110,7 @@ class TestCrossProcessSafety(unittest.TestCase):
             os.environ["MEMORY_DB_FLOCK"] = self._env_backup
 
     def _count_memories(self) -> int:
-        from _lazy_imports import open_db
+        from infra._lazy_imports import open_db
 
         with open_db(self.db_path) as conn:
             return int(conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0])
@@ -162,7 +162,7 @@ class TestCrossProcessSafety(unittest.TestCase):
         If this test fails, the SQLite-level cross-process safety
         contract is broken; see ``db.py`` for the WAL setup.
         """
-        from _lazy_imports import open_db
+        from infra._lazy_imports import open_db
 
         with open_db(self.db_path) as conn:
             mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
@@ -178,7 +178,7 @@ class TestCrossProcessSafety(unittest.TestCase):
         Without this, the loser of a write race would get an
         immediate SQLITE_BUSY error rather than blocking.
         """
-        from _lazy_imports import open_db
+        from infra._lazy_imports import open_db
 
         with open_db(self.db_path) as conn:
             busy = conn.execute("PRAGMA busy_timeout").fetchone()[0]
@@ -192,7 +192,7 @@ class TestCrossProcessSafety(unittest.TestCase):
         per-thread keys.  This test pins the contract so a future
         refactor can't silently break it.
         """
-        from db import _ConnectionPool
+        from infra.db import _ConnectionPool
 
         pool = _ConnectionPool(max_size=4)
         # Same path, two thread keys → two separate connections.

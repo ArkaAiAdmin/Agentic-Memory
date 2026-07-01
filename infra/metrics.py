@@ -23,7 +23,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from memory_common import open_db
+from infra.memory_common import open_db
 
 
 class _RuntimeCounters:
@@ -90,7 +90,7 @@ def record_event(name: str, latency_ms: float = 0, error: bool = False):
 def get_stats(db_path: Path | None = None) -> dict:
     """Aggregate metrics from audit log."""
     if db_path is None:
-        from infrastructure import resolve_active_memory_dir
+        from infra.infrastructure import resolve_active_memory_dir
         db_path = resolve_active_memory_dir() / "memory.db"
 
     with open_db(db_path, timeout=10.0) as conn:
@@ -287,7 +287,7 @@ def main():
             print(f"  {name}: avg={h['avg_ms']}ms p50={h['p50_ms']}ms p95={h['p95_ms']}ms p99={h['p99_ms']}ms")
     elif "--reset" in sys.argv:
         _runtime.reset()
-        from infrastructure import resolve_active_memory_dir
+        from infra.infrastructure import resolve_active_memory_dir
         db_path = resolve_active_memory_dir() / "memory.db"
         with open_db(db_path, timeout=10.0) as conn:
             conn.execute("DELETE FROM memory_audit_log")

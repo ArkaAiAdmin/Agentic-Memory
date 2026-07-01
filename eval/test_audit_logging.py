@@ -23,16 +23,16 @@ _wrong_modules = [k for k in sys.modules if k in ("metrics", "longmemeval_s.metr
 for k in _wrong_modules:
     del sys.modules[k]
 
-from memory_common import (
+from infra.memory_common import (
     run_db_migrations,
     _migrate_kg_tables,
     _migrate_memory_audit_log,
 )
-from fact_extraction import ensure_facts_schema
+from fact import ensure_facts_schema
 from adaptive_retention import ensure_adaptive_schema
 
 sys.path.insert(0, _project_root)
-import audit
+import infra.audit as audit
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -220,7 +220,7 @@ class TestMCPToolAudit:
         """memory_save triggers audit logging."""
         db_path = _create_test_db(tmp_path)
 
-        import infrastructure
+        import infra.infrastructure
 
         monkeypatch.setattr(infrastructure, "_resolve_active_db_path", lambda: db_path)
         # Monkeypatch get_memory_paths at the mcp_common level before mcp_tools
@@ -269,7 +269,7 @@ class TestMCPToolAudit:
         """memory_search triggers audit logging."""
         db_path = _create_test_db(tmp_path)
 
-        import infrastructure
+        import infra.infrastructure
 
         monkeypatch.setattr(infrastructure, "_resolve_active_db_path", lambda: db_path)
         # Monkeypatch get_memory_paths at the mcp_common level before mcp_tools

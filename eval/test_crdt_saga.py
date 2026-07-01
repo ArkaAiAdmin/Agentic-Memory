@@ -15,7 +15,7 @@ INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
-from memory_common import open_db
+from infra.memory_common import open_db
 from _fixtures import bootstrap_temp_db_clean
 
 
@@ -34,7 +34,7 @@ def _seed_note(
     conflict_policy: str = "supersede",
 ) -> None:
     """Insert a note using the crdt-compatible column set."""
-    from crdt_merge import crdt_save
+    from crdt.crdt_merge import crdt_save
 
     # Use crdt_save to create the row (it fills all the right columns)
     crdt_save(
@@ -58,7 +58,7 @@ class TestCrdtSaveSagaRollback(unittest.TestCase):
         This is the baseline: the saga's happy path must produce the
         same result the pre-saga crdt_save did.
         """
-        from crdt_merge import crdt_save
+        from crdt.crdt_merge import crdt_save
 
         db = _fresh_db("happy_path")
         result = crdt_save(
@@ -84,7 +84,7 @@ class TestCrdtSaveSagaRollback(unittest.TestCase):
 
     def test_capture_pre_state_missing_returns_none(self):
         """_capture_pre_state_main returns None for missing rows."""
-        from crdt_merge import _capture_pre_state_main
+        from crdt.crdt_merge import _capture_pre_state_main
 
         db = _fresh_db("capture_missing")
         with open_db(db) as conn:
@@ -93,7 +93,7 @@ class TestCrdtSaveSagaRollback(unittest.TestCase):
 
     def test_capture_pre_state_existing_returns_dict(self):
         """_capture_pre_state_main returns the dict shape for existing rows."""
-        from crdt_merge import _capture_pre_state_main
+        from crdt.crdt_merge import _capture_pre_state_main
 
         db = _fresh_db("capture_existing")
         # Direct INSERT to control the exact values (crdt_save bumps clocks)
@@ -132,7 +132,7 @@ class TestCrdtSaveSagaRollback(unittest.TestCase):
         The undo closure deletes the row only on SagaError. On success,
         the row persists.
         """
-        from crdt_merge import crdt_save
+        from crdt.crdt_merge import crdt_save
 
         db = _fresh_db("success_no_undo")
         crdt_save(

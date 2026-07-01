@@ -38,7 +38,7 @@ if str(EVAL_DIR) not in sys.path:
 
 from _fixtures import bootstrap_temp_db_clean
 
-from embedding_search import (
+from infra.embedding_search import (
     EmbeddingSearch,
     MODEL_REVISION,
     _cache_text,

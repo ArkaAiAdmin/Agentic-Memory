@@ -7,12 +7,12 @@ from pathlib import Path
 __all__ = ["rewrite_wikilinks"]
 sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
 from config import resolve_db_path
-from memory_common import (
+from infra.memory_common import (
     atomic_write,
     connection_pool,
     safe_close_db,
 )
-from memory_config import get_memory_paths
+from infra.memory_config import get_memory_paths
 
 
 def rewrite_wikilinks(dry_run: bool = False, db_path: Path | None = None):

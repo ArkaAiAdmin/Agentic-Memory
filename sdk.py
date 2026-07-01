@@ -57,7 +57,7 @@ class Memory:
         if db_path:
             self._db_path = Path(db_path)
         else:
-            from _lazy_imports import get_config
+            from infra._lazy_imports import get_config
 
             self._db_path = Path(get_config().db_path)
         self._user_id = user_id
@@ -68,7 +68,7 @@ class Memory:
 
         Compatible with Mem0's ``m.add("text")`` API.
         """
-        from _lazy_imports import save_memory
+        from infra._lazy_imports import save_memory
 
         ts = time.strftime("%Y%m%d_%H%M%S")
         title_slug = f"sdk-auto-{ts}-{hash(content) & 0xFFFF:04x}"
@@ -89,7 +89,7 @@ class Memory:
 
         Returns a list of dicts with keys: id, content, score, tags.
         """
-        from _lazy_imports import search_memories
+        from infra._lazy_imports import search_memories
 
         result = search_memories(
             db_path=self._db_path,
@@ -124,7 +124,7 @@ class Memory:
 
     def list(self, limit: int = 50, offset: int = 0) -> list[dict]:
         """List recent memories."""
-        from _lazy_imports import connection_pool, safe_close_db
+        from infra._lazy_imports import connection_pool, safe_close_db
 
         conn = connection_pool.get(str(self._db_path), timeout=10.0)
         try:
@@ -150,7 +150,7 @@ class Memory:
         and kg_facts. We now rely on the FK trigger to cascade, and we
         use the pool so the connection is properly returned.
         """
-        from db_write_queue import sqlite_write_queue
+        from infra.db_write_queue import sqlite_write_queue
 
         conn = sqlite_write_queue.start_session(Path(self._db_path))
         try:
@@ -165,7 +165,7 @@ class Memory:
 
     def stats(self) -> dict:
         """Return memory and vector index stats."""
-        from _lazy_imports import connection_pool, safe_close_db
+        from infra._lazy_imports import connection_pool, safe_close_db
 
         conn = connection_pool.get(str(self._db_path), timeout=10.0)
         try:

@@ -16,7 +16,7 @@ import tempfile
 
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
-from fact_extraction import ensure_facts_schema
+from fact import ensure_facts_schema
 
 
 def _make_db_with_facts():

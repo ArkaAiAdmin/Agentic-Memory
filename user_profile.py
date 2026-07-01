@@ -14,8 +14,8 @@ from collections import Counter
 from pathlib import Path
 
 from config import resolve_db_path
-from db_write_queue import sqlite_write_queue
-from memory_common import GLOBAL_MEM_DIR
+from infra.db_write_queue import sqlite_write_queue
+from infra.memory_common import GLOBAL_MEM_DIR
 
 __all__ = [
     "PROFILE_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -76,7 +76,7 @@ def record_access(
         global_mem = Path(GLOBAL_MEM_DIR)
     else:
         try:
-            from _lazy_imports import get_memory_paths
+            from infra._lazy_imports import get_memory_paths
 
             _, local_mem, global_mem = get_memory_paths()
         except ImportError:
@@ -125,7 +125,7 @@ def get_user_profile(
         - total_accesses: total number of access events in window
         - active_days: number of distinct days with accesses
     """
-    from _lazy_imports import get_config
+    from infra._lazy_imports import get_config
 
     if not get_config().user_profile:
         return {"enabled": False}
@@ -135,7 +135,7 @@ def get_user_profile(
         global_mem = Path(GLOBAL_MEM_DIR)
     else:
         try:
-            from _lazy_imports import get_memory_paths
+            from infra._lazy_imports import get_memory_paths
 
             _, local_mem, global_mem = get_memory_paths()
         except ImportError:
@@ -273,7 +273,7 @@ def personalize_results(
 
 def profile_stats(db_path: str | None = None) -> dict:
     """Return user profiling statistics."""
-    from _lazy_imports import get_config
+    from infra._lazy_imports import get_config
 
     if not get_config().user_profile:
         return {"enabled": False}
@@ -283,7 +283,7 @@ def profile_stats(db_path: str | None = None) -> dict:
         global_mem = Path(GLOBAL_MEM_DIR)
     else:
         try:
-            from _lazy_imports import get_memory_paths
+            from infra._lazy_imports import get_memory_paths
 
             _, local_mem, global_mem = get_memory_paths()
         except ImportError:
@@ -328,6 +328,6 @@ def profile_stats(db_path: str | None = None) -> dict:
         return {"enabled": True, "error": "stats unavailable"}
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 __getattr__ = make_lazy_getattr({"PROFILE_ENABLED": "user_profile"})

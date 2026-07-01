@@ -34,7 +34,7 @@ def enrichment_db(tmp_path):
     # the value set here is the one read by _get_config().contextual_enrichment.
     reset_all_lazy_config_attrs()
     os.environ["MEMORY_CONTEXTUAL_ENRICHMENT"] = "1"
-    from memory_common import connection_pool, safe_close_db
+    from infra.memory_common import connection_pool, safe_close_db
 
     conn = connection_pool.get(str(db_path), timeout=5.0)
     conn.execute("PRAGMA busy_timeout = 5000;")

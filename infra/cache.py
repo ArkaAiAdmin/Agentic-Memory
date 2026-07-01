@@ -108,7 +108,7 @@ def make_cache_key(
 def _flag_enabled(name: str) -> bool:
     """Resolve a config boolean flag by dotted name without throwing."""
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         return bool(getattr(get_config(), name, False))
     except Exception:
@@ -156,14 +156,14 @@ def clear_all_caches() -> None:
     with _search_cache_lock:
         _search_cache.clear()
     try:
-        from embedding_search import clear_vec_cache
+        from infra.embedding_search import clear_vec_cache
 
         clear_vec_cache()
     except ImportError:
         pass
 
 
-from memory_common import make_lazy_getattr
+from infra.memory_common import make_lazy_getattr
 
 __getattr__ = make_lazy_getattr(
     {

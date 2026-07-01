@@ -19,8 +19,8 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from memory_common import safe_close_db, connection_pool
-from infrastructure import resolve_active_memory_dir
+from infra.memory_common import safe_close_db, connection_pool
+from infra.infrastructure import resolve_active_memory_dir
 from self_directed import run_heartbeat
 
 

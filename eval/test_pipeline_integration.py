@@ -128,7 +128,7 @@ class TestSavePipelineWritesAllSubsystems:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -389,7 +389,7 @@ class TestSearchPipelineReadsAllSubsystems:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -488,7 +488,7 @@ class TestRebuildSubsystemCopy:
         self.source_dir.mkdir(parents=True, exist_ok=True)
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -662,7 +662,7 @@ class TestFKCascadeDelete:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -828,7 +828,7 @@ class TestConnectionPoolThreadSafety:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -837,7 +837,7 @@ class TestConnectionPoolThreadSafety:
 
     def test_concurrent_get_different_threads(self):
         """Different threads get different connections."""
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         results = {}
         errors = []
@@ -861,7 +861,7 @@ class TestConnectionPoolThreadSafety:
 
     def test_concurrent_reads_no_corruption(self):
         """Concurrent reads don't corrupt the database."""
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         db = _make_db(self.db_path)
         for i in range(10):
@@ -892,7 +892,7 @@ class TestConnectionPoolThreadSafety:
 
     def test_pool_lru_eviction(self):
         """Pool evicts LRU connection when at max capacity."""
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._max_size = 3
         for i in range(5):
@@ -901,7 +901,7 @@ class TestConnectionPoolThreadSafety:
 
     def test_schema_migration_runs_once(self):
         """_ensure_full_schema runs only once per connection."""
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         conn = connection_pool.get(str(self.db_path))
         conn_id = id(conn)
@@ -929,7 +929,7 @@ class TestFTSTriggerConsistency:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -1009,7 +1009,7 @@ class TestSyncInvariant:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -1023,7 +1023,7 @@ class TestSyncInvariant:
         db.commit()
         db.close()
 
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         db = _make_db(self.db_path)
         result = check_sync_invariant(db)
@@ -1048,7 +1048,7 @@ class TestSyncInvariant:
         db.commit()
         db.close()
 
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         db = _make_db(self.db_path)
         result = check_sync_invariant(db)
@@ -1058,7 +1058,7 @@ class TestSyncInvariant:
 
     def test_empty_state(self):
         """Empty: no memories, subsystems are empty."""
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         db = _make_db(self.db_path)
         result = check_sync_invariant(db)
@@ -1085,7 +1085,7 @@ class TestContradictionCheckIntegration:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -1155,7 +1155,7 @@ class TestAdaptiveRetentionFromSearch:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -1221,7 +1221,7 @@ class TestGraphRAGExpansion:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -1291,7 +1291,7 @@ class TestCrossDBSearch:
             db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -1345,7 +1345,7 @@ class TestFactExtractionEdgeCases:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -1354,7 +1354,7 @@ class TestFactExtractionEdgeCases:
 
     def test_fact_extraction_is_a(self):
         """Fact extraction captures 'is_a' predicates."""
-        from fact_extraction import extract_facts
+        from fact import extract_facts
 
         facts = extract_facts("Python is a programming language.")
         predicates = [f[1] for f in facts]
@@ -1362,7 +1362,7 @@ class TestFactExtractionEdgeCases:
 
     def test_fact_extraction_meta_label_skip(self):
         """Meta-labels like 'Status:' and 'Date:' are skipped in extraction."""
-        from fact_extraction import extract_facts
+        from fact import extract_facts
 
         text = "Status: active\nDate: 2026-01-01\nPython is a language."
         facts = extract_facts(text)
@@ -1372,7 +1372,7 @@ class TestFactExtractionEdgeCases:
 
     def test_fact_extraction_verb_skip(self):
         """Built-in verbs are skipped as subjects."""
-        from fact_extraction import extract_facts
+        from fact import extract_facts
 
         text = "Use Python for machine learning."
         facts = extract_facts(text)
@@ -1398,7 +1398,7 @@ class TestEmbeddingSearchCache:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()
@@ -1407,7 +1407,7 @@ class TestEmbeddingSearchCache:
 
     def test_cache_hit_after_index(self):
         """After indexing, embedding search uses cache."""
-        from embedding_search import get_embedding_search
+        from infra.embedding_search import get_embedding_search
 
         db = _make_db(self.db_path)
         _insert_test_memory(db, "test/cache-hit", "Cache test content.")
@@ -1478,7 +1478,7 @@ class TestMetricsPrometheus:
                 _f = getattr(sys.modules[k], "__file__", None)
                 if _f and "longmemeval_s" in _f:
                     del sys.modules[k]
-        from metrics import format_prometheus, _runtime
+        from infra.metrics import format_prometheus, _runtime
 
         _runtime.reset()  # isolate from prior tests
         stats = {
@@ -1511,7 +1511,7 @@ class TestMetricsPrometheus:
                 _f = getattr(sys.modules[k], "__file__", None)
                 if _f and "longmemeval_s" in _f:
                     del sys.modules[k]
-        from metrics import _RuntimeCounters
+        from infra.metrics import _RuntimeCounters
 
         counters = _RuntimeCounters()
         counters.inc("saves")
@@ -1546,7 +1546,7 @@ class TestCronBackup:
         db.close()
 
     def teardown_method(self):
-        from memory_common import connection_pool
+        from infra.memory_common import connection_pool
 
         connection_pool._pool.clear()
         connection_pool._pooled_ids.clear()

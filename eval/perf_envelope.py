@@ -264,7 +264,7 @@ def measure_semantic_search(vocab: list[str], n: int, db_path: Path) -> Measurem
     """Single model2vec query via embedding_search.py (full search path).
     Encodes the whole DB per call -- this is the current implementation cost."""
     sys.path.insert(0, str(REPO_ROOT))
-    from embedding_search import EmbeddingSearch  # type: ignore
+    from infra.embedding_search import EmbeddingSearch  # type: ignore
 
     rng = random.Random(SEED + 1)
     query = " ".join(rng.sample(vocab, 5))

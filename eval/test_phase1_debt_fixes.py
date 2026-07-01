@@ -115,12 +115,12 @@ class TestLoggingStandardization:
 
     def test_reranker_logger_references_work(self):
         """Verify reranker module can be imported and logger is accessible."""
-        import reranker
+        import infra.reranker
         assert hasattr(reranker, "logger")
         assert reranker.logger.name == "infra.reranker"
 
     def test_audit_logger_references_work(self):
         """Verify audit module can be imported and logger is accessible."""
-        import audit
+        import infra.audit
         assert hasattr(audit, "logger")
         assert audit.logger.name == "infra.audit"

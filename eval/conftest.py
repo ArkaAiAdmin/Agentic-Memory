@@ -242,7 +242,7 @@ def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
     #    __del__ may not run in time on worker shutdown, leaving WAL-mode
     #    file locks held across processes.
     try:
-        from db import connection_pool
+        from infra.db import connection_pool
 
         connection_pool.close_all()
     except Exception:
@@ -285,14 +285,14 @@ def clear_pool_between_tests():
     now that the pool strictly enforces max_size limits.
     """
     try:
-        from db import connection_pool
+        from infra.db import connection_pool
 
         connection_pool.clear()
     except Exception:
         pass
     yield
     try:
-        from db import connection_pool
+        from infra.db import connection_pool
 
         connection_pool.clear()
     except Exception:
@@ -314,8 +314,8 @@ def reset_auto_save_state():
     background threads conflict with the test's own threads.
     """
     try:
-        from auto_save import _auto_save_reset_state, _AUTO_SAVE_STATE
-        from auto_save import _cleanup_auto_save_daemon
+        from background.auto_save import _auto_save_reset_state, _AUTO_SAVE_STATE
+        from background.auto_save import _cleanup_auto_save_daemon
 
         _cleanup_auto_save_daemon()
         _auto_save_reset_state()
@@ -326,7 +326,7 @@ def reset_auto_save_state():
         pass
     yield
     try:
-        from auto_save import _auto_save_reset_state, _cleanup_auto_save_daemon
+        from background.auto_save import _auto_save_reset_state, _cleanup_auto_save_daemon
 
         _cleanup_auto_save_daemon()
         _auto_save_reset_state()
@@ -351,14 +351,14 @@ def reset_lazy_config_cache():
 
     saved_reranker_disabled = os.environ.pop("MEMORY_RERANKER_DISABLED", None)
     try:
-        from memory_common import reset_all_lazy_config_attrs
+        from infra.memory_common import reset_all_lazy_config_attrs
 
         reset_all_lazy_config_attrs()
     except Exception:
         pass
     yield
     try:
-        from memory_common import reset_all_lazy_config_attrs
+        from infra.memory_common import reset_all_lazy_config_attrs
 
         reset_all_lazy_config_attrs()
     except Exception:

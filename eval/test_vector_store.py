@@ -16,7 +16,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from vector_store import (  # noqa: E402
+from infra.vector_store import (  # noqa: E402
     NumpyVectorStore,
     SearchHit,
     USearchVectorStore,

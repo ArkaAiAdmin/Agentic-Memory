@@ -20,7 +20,7 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-import memory_common  # noqa: E402
+import infra.memory_common as memory_common  # noqa: E402
 
 
 class TestSafeCloseDb(unittest.TestCase):

@@ -19,7 +19,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import open_db, connection_pool, safe_close_db
+from infra.memory_common import open_db, connection_pool, safe_close_db
 import memory_delete
 
 

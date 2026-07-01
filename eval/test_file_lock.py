@@ -15,7 +15,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from file_lock import (
+from infra.file_lock import (
     acquire_flock_with_retry,
     release_flock,
     FileLockError,

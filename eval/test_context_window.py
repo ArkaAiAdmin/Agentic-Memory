@@ -10,7 +10,7 @@ from pathlib import Path
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 os.chdir("..")
 sys.path.insert(0, os.getcwd())
-from db_migrations import run_schema_setup
+from infra.db_migrations import run_schema_setup
 
 _ROW = (
     "INSERT INTO memories (id,content,source_file,tags,created_at,updated_at,observed_at,pinned,importance_score) "
@@ -100,13 +100,13 @@ class TestRecall(unittest.TestCase):
             os.environ.pop("MEMORY_DB_PATH", None)
 
     def test_recall_context_returns_dict(self):
-        from recall import recall_context
+        from recall.recall import recall_context
 
         r = recall_context(db_path=str(self.db_path))
         self.assertIsInstance(r, dict)
 
     def test_recall_empty_fresh_db(self):
-        from recall import recall_context
+        from recall.recall import recall_context
 
         r = recall_context(db_path=str(self.db_path))
         c = r.get("count", 0)

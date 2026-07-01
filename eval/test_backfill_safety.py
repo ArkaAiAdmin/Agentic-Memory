@@ -79,7 +79,7 @@ class TestBackfillPreservesKg(unittest.TestCase):
         )
         self.db_path = Path(self.tmp) / "memory.db"
         # Bootstrap a minimal schema
-        from memory_common import open_db
+        from infra.memory_common import open_db
 
         with open_db(Path(self.db_path)) as conn:
             conn.executescript(

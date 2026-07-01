@@ -139,7 +139,7 @@ class TestOllamaProvider(unittest.TestCase):
         self.server.server_close()
 
     def test_is_available_returns_true(self) -> None:
-        from llm_providers import OllamaProvider
+        from fact.llm_providers import OllamaProvider
 
         provider = OllamaProvider(
             host=f"http://{self.host}:{self.port}", model="qwen2.5:3b"
@@ -147,7 +147,7 @@ class TestOllamaProvider(unittest.TestCase):
         self.assertTrue(provider.is_available())
 
     def test_generate_sends_correct_request(self) -> None:
-        from llm_providers import OllamaProvider
+        from fact.llm_providers import OllamaProvider
 
         provider = OllamaProvider(
             host=f"http://{self.host}:{self.port}", model="qwen2.5:3b"
@@ -165,7 +165,7 @@ class TestOllamaProvider(unittest.TestCase):
         self.assertEqual(body["options"]["temperature"], 0.0)
 
     def test_availability_cache(self) -> None:
-        from llm_providers import OllamaProvider
+        from fact.llm_providers import OllamaProvider
 
         provider = OllamaProvider(
             host=f"http://{self.host}:{self.port}", model="qwen2.5:3b"
@@ -179,7 +179,7 @@ class TestOllamaProvider(unittest.TestCase):
         self.assertTrue(provider.is_available())
 
     def test_generate_returns_empty_on_server_error(self) -> None:
-        from llm_providers import OllamaProvider
+        from fact.llm_providers import OllamaProvider
 
         provider = OllamaProvider(
             host=f"http://{self.host}:{self.port}", model="qwen2.5:3b"
@@ -189,7 +189,7 @@ class TestOllamaProvider(unittest.TestCase):
         self.assertEqual(out, "")
 
     def test_unavailable_server(self) -> None:
-        from llm_providers import OllamaProvider
+        from fact.llm_providers import OllamaProvider
 
         # Point at a port nothing is listening on.
         provider = OllamaProvider(host="http://127.0.0.1:1", model="qwen2.5:3b")
@@ -207,7 +207,7 @@ class TestLlamaCppProvider(unittest.TestCase):
         self.server.server_close()
 
     def test_is_available_returns_true(self) -> None:
-        from llm_providers import LlamaCppProvider
+        from fact.llm_providers import LlamaCppProvider
 
         provider = LlamaCppProvider(
             host=f"http://{self.host}:{self.port}", model="default"
@@ -215,7 +215,7 @@ class TestLlamaCppProvider(unittest.TestCase):
         self.assertTrue(provider.is_available())
 
     def test_generate_sends_correct_request(self) -> None:
-        from llm_providers import LlamaCppProvider
+        from fact.llm_providers import LlamaCppProvider
 
         provider = LlamaCppProvider(
             host=f"http://{self.host}:{self.port}", model="default"
@@ -227,18 +227,18 @@ class TestLlamaCppProvider(unittest.TestCase):
 
 class TestProviderSelection(unittest.TestCase):
     def setUp(self) -> None:
-        from llm_providers import reset_provider_cache
+        from fact.llm_providers import reset_provider_cache
 
         reset_provider_cache()
 
     def tearDown(self) -> None:
-        from llm_providers import reset_provider_cache
+        from fact.llm_providers import reset_provider_cache
 
         reset_provider_cache()
 
     def test_get_provider_returns_none_when_nothing_available(self) -> None:
         import os
-        from llm_providers import get_provider, reset_provider_cache
+        from fact.llm_providers import get_provider, reset_provider_cache
 
         reset_provider_cache()
         env = {
@@ -262,7 +262,7 @@ class TestProviderSelection(unittest.TestCase):
 
     def test_get_provider_selects_ollama_when_available(self) -> None:
         import os
-        from llm_providers import get_provider, reset_provider_cache
+        from fact.llm_providers import get_provider, reset_provider_cache
 
         _MockOllamaHandler.call_count = 0
         _MockOllamaHandler.response_text = "{}"
@@ -295,7 +295,7 @@ class TestProviderSelection(unittest.TestCase):
         down, fall back to HuggingFace. This validates the
         ``_FALLBACK_CHAIN`` logic in get_provider()."""
         import os
-        from llm_providers import get_provider, reset_provider_cache
+        from fact.llm_providers import get_provider, reset_provider_cache
 
         env = {
             # Preferred = huggingface, but the test environment has
@@ -332,7 +332,7 @@ class TestLLMExtractionV2(unittest.TestCase):
     the mock Ollama server."""
 
     def setUp(self) -> None:
-        from llm_providers import reset_provider_cache
+        from fact.llm_providers import reset_provider_cache
 
         reset_provider_cache()
         _MockOllamaHandler.call_count = 0
@@ -345,7 +345,7 @@ class TestLLMExtractionV2(unittest.TestCase):
         self.server, self.host, self.port = _start_server(_MockOllamaHandler)
 
     def tearDown(self) -> None:
-        from llm_providers import reset_provider_cache
+        from fact.llm_providers import reset_provider_cache
 
         reset_provider_cache()
         self.server.shutdown()
@@ -353,7 +353,7 @@ class TestLLMExtractionV2(unittest.TestCase):
 
     def test_extract_facts_via_llm_v2_uses_provider(self) -> None:
         import os
-        from llm_providers import reset_provider_cache
+        from fact.llm_providers import reset_provider_cache
 
         env = {
             "MEMORY_LLM_PROVIDER": "ollama",

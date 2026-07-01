@@ -15,7 +15,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from arc_cache import ARCCache  # noqa: E402
+from infra.arc_cache import ARCCache  # noqa: E402
 
 
 class TestARCCache(unittest.TestCase):
@@ -144,7 +144,7 @@ class TestARCCacheEvictionIntegration(unittest.TestCase):
 
         # Bring the DB up to current schema so the migration can call
         # ARCCache against it without crashing.
-        from db_migrations import run_schema_setup
+        from infra.db_migrations import run_schema_setup
         import sqlite3
 
         conn = sqlite3.connect(str(self.db_path))

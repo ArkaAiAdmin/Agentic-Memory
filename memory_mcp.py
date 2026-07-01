@@ -6,10 +6,10 @@ from pathlib import Path
 import logging
 from mcp_instance import mcp  # noqa: E402 — shared instance, avoids circular import
 from mcp_common import _bootstrap_path  # noqa: E402,F401
-from memory_common import (
+from infra.memory_common import (
     configure_logging,
 )  # noqa: E402
-from infrastructure import (  # noqa: E402
+from infra.infrastructure import (  # noqa: E402
     resolve_active_memory_dir,
 )
 from search_pipeline import (  # noqa: E402
@@ -64,7 +64,7 @@ from infra.memory_config import GLOBAL_MEM_DIR, get_memory_paths  # noqa: E402,F
 sys.path.insert(0, str(GLOBAL_SCRIPTS_DIR))
 
 # --- Cache (imported from cache.py, aliased to old underscore names) ---
-import cache as _cache_mod
+import infra.cache as _cache_mod
 
 _search_cache = _cache_mod._search_cache
 _SEARCH_CACHE_MAX = _cache_mod.SEARCH_CACHE_MAX
@@ -206,7 +206,7 @@ from search.orchestrator import (  # noqa: E402,F401
     _fallback_embedding_search,
 )
 from infra.infrastructure import with_audit  # noqa: E402,F401
-from memory_common import safe_close_db  # noqa: E402,F401
+from infra.memory_common import safe_close_db  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------------
@@ -240,8 +240,8 @@ for _admin_name in tool_registry.ADMIN_TOOLS:
 if __name__ == "__main__":
     # Start the optional CRDT sync server as a daemon thread.
     try:
-        from sync_server import start_server_from_config
-        from infrastructure import resolve_active_memory_dir
+        from infra.sync_server import start_server_from_config
+        from infra.infrastructure import resolve_active_memory_dir
 
         active_dir = resolve_active_memory_dir()
         start_server_from_config(active_dir / "memory.db")

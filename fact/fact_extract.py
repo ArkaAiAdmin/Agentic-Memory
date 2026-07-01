@@ -710,7 +710,7 @@ def index_facts_for_memory(
     # resolution, and we don't need it loaded at module import time
     # for hooks that skip fact extraction).
     if temporal_kg_enabled:
-        from fact_temporal import (
+        from fact.fact_temporal import (
             audit_fact_temporal_event,
             invalidate_stale_facts,
             reconcile_fact_supersession,
@@ -941,7 +941,7 @@ def _process_extracted_facts(
         event_time, event_time_granularity = None, None
 
     if temporal_kg_enabled:
-        from fact_temporal import (
+        from fact.fact_temporal import (
             audit_fact_temporal_event,
             invalidate_stale_facts,
             reconcile_fact_supersession,

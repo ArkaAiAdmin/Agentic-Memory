@@ -11,7 +11,7 @@ from pathlib import Path
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 os.chdir("..")
 sys.path.insert(0, os.getcwd())
-from db_migrations import run_schema_setup
+from infra.db_migrations import run_schema_setup
 
 _ROW = (
     "INSERT INTO memories (id,content,source_file,tags,created_at,updated_at,observed_at) "
@@ -35,7 +35,7 @@ class TestSyncInvariant(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_check_sync_invariant_returns_dict(self):
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         c = sqlite3.connect(str(self.db_path))
         r = check_sync_invariant(c)
@@ -44,7 +44,7 @@ class TestSyncInvariant(unittest.TestCase):
         self.assertIn("overall", r)
 
     def test_empty_db_reports_empty(self):
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         c = sqlite3.connect(str(self.db_path))
         r = check_sync_invariant(c)
@@ -52,7 +52,7 @@ class TestSyncInvariant(unittest.TestCase):
         self.assertIn(r["overall"], ("empty", "healthy"))
 
     def test_get_drifted_subsystems_returns_list(self):
-        from sync_invariant import check_sync_invariant, get_drifted_subsystems
+        from infra.sync_invariant import check_sync_invariant, get_drifted_subsystems
 
         c = sqlite3.connect(str(self.db_path))
         r = check_sync_invariant(c)
@@ -64,7 +64,7 @@ class TestSyncInvariant(unittest.TestCase):
         c = sqlite3.connect(str(self.db_path))
         c.execute(_ROW, ("test/a", "sync test", "test/a.md"))
         c.commit()
-        from sync_invariant import check_sync_invariant
+        from infra.sync_invariant import check_sync_invariant
 
         r = check_sync_invariant(c)
         c.close()

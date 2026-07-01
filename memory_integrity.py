@@ -36,7 +36,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from memory_common import open_db
+from infra.memory_common import open_db
 
 logger = logging.getLogger(__name__)
 
@@ -1017,7 +1017,7 @@ def recover_orphan_files(
             # atomic_write lives in memory_common (re-exported at the
             # top of save_pipeline).  Importing here avoids a circular
             # import with memory_common at module-load time.
-            from memory_common import atomic_write
+            from infra.memory_common import atomic_write
 
             atomic_write(md_path, body, encoding="utf-8")
             recovered.append(mid)
@@ -1260,7 +1260,7 @@ def _run_temporal_query_cli(db_path: "Path", args: list[str]) -> int:
     Opens a read-only URI connection so it works even when the live
     auto-save daemon holds the flock.
     """
-    from fact_temporal import (
+    from fact.fact_temporal import (
         query_facts_at_time,
         query_fact_supersession_chain,
         query_facts_changed_since,

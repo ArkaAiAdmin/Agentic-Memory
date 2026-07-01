@@ -106,7 +106,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # needs to force a feature on for the bootstrap pass, they can set the
 # env var explicitly before importing this module.
 
-from memory_common import safe_close_db, connection_pool
+from infra.memory_common import safe_close_db, connection_pool
 
 
 def get_preferences(conn):
@@ -374,7 +374,7 @@ def get_bootstrap_summary(db_path: str | None = None) -> str:
     elif os.environ.get("MEMORY_DB_PATH"):
         resolved = Path(os.environ["MEMORY_DB_PATH"])
     else:
-        from infrastructure import resolve_active_memory_dir
+        from infra.infrastructure import resolve_active_memory_dir
 
         resolved = resolve_active_memory_dir() / "memory.db"
     if not resolved.exists():
@@ -456,7 +456,7 @@ def main(db_path: str | None = None):
     elif os.environ.get("MEMORY_DB_PATH"):
         resolved = Path(os.environ["MEMORY_DB_PATH"])
     else:
-        from infrastructure import resolve_active_memory_dir
+        from infra.infrastructure import resolve_active_memory_dir
 
         resolved = resolve_active_memory_dir() / "memory.db"
     if not resolved.exists():

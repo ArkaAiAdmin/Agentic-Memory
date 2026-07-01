@@ -6,7 +6,7 @@ when subsystems are out of sync. Also detects reverse ghost rows:
 subsystem entries pointing to deleted memories.
 
 Usage:
-    from sync_invariant import check_sync_invariant
+    from infra.sync_invariant import check_sync_invariant
     result = check_sync_invariant(conn)
     # result = {"overall": "healthy"|"drift"|"empty", "subsystems": {...}, "ghosts": {...}}
 """

@@ -13,7 +13,7 @@ Design:
     as having migrations 001-004 already applied
 
 Usage:
-    from migration_runner import run_migrations
+    from infra.migration_runner import run_migrations
     run_migrations(conn)
 """
 
@@ -396,7 +396,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         # partial migration + hook run can be resumed.
         if any(num == 13 for num, _ in pending):
             try:
-                from crdt_field import backfill_from_memories
+                from crdt.crdt_field import backfill_from_memories
 
                 count = backfill_from_memories(conn)
                 logger.info(

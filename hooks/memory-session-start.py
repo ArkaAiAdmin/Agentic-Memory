@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import _bootstrap_path  # noqa: E402
+import infra._bootstrap_path  # noqa: E402
 
 # Make the sibling _log_error.py importable (same dir as this hook)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -95,7 +95,7 @@ def _load_search():
     if _search_fn is None:
         # I10 fix: import directly from search.orchestrator.
         from search.orchestrator import search_memories  # noqa: E402
-        from memory_common import get_memory_paths  # noqa: E402
+        from infra.memory_common import get_memory_paths  # noqa: E402
 
         _search_fn = search_memories
         _paths_fn = get_memory_paths
@@ -132,7 +132,7 @@ def _cache_put(query: str, results: list[dict]) -> None:
 
 def _get_sessions_dir() -> Path:
     try:
-        from memory_common import get_memory_paths
+        from infra.memory_common import get_memory_paths
 
         _, local_mem, _ = get_memory_paths()
         return local_mem / "sessions"

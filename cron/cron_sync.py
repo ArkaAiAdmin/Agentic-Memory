@@ -33,7 +33,7 @@ if _PACKAGE_ROOT.name == "cron":
 sys.path.insert(0, str(_PACKAGE_ROOT))
 os.chdir(str(_PACKAGE_ROOT))
 
-from memory_common import configure_logging
+from infra.memory_common import configure_logging
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 def _resolve_peer_url_from_config() -> str:
     """Return the first configured peer's URL, or '' if none."""
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
     except Exception:
@@ -61,7 +61,7 @@ def main() -> int:
         print("Cron job — runs the scheduled operation; no flags required.", file=sys.stderr)
         sys.exit(0)
 
-    from sync_client import sync_once
+    from infra.sync_client import sync_once
     acquire_lock_or_exit('cron_sync')
 
     peer_url = (

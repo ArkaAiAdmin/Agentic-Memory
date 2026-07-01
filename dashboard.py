@@ -320,7 +320,7 @@ DARK = dict(
 # ── DB resolution ───────────────────────────────────────────────────────
 @st.cache_resource
 def resolve_db() -> Path:
-    from infrastructure import resolve_active_memory_dir
+    from infra.infrastructure import resolve_active_memory_dir
 
     return resolve_active_memory_dir() / "memory.db"
 
@@ -1961,7 +1961,7 @@ with cron_tab:
 # MULTI-AGENT SYNC
 # ═══════════════════════════════════════════════════════════════════════════
 with multi_agent_tab:
-    from _lazy_imports import get_config as _cfg
+    from infra._lazy_imports import get_config as _cfg
 
     st.subheader("Multi-Agent Sync")
 

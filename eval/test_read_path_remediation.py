@@ -157,7 +157,7 @@ class TestReadPathRemediation(unittest.TestCase):
         # We can construct a mock database in a temporary directory
         import tempfile
         import sqlite3
-        from db_migrations import run_schema_setup
+        from infra.db_migrations import run_schema_setup
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "memory.db"

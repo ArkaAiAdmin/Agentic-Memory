@@ -23,7 +23,7 @@ from unittest import mock
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from memory_common import open_db
+from infra.memory_common import open_db
 
 
 def _fresh_db() -> Path:
@@ -37,7 +37,7 @@ class TestSagaCrashSafety(unittest.TestCase):
     def test_step_failure_rolls_back_db(self):
         """If the DB upsert step succeeds but the file write fails, the
         DB write must be rolled back so the note doesn't exist."""
-        from saga import Saga, SagaStep, SagaError
+        from infra.saga import Saga, SagaStep, SagaError
 
         db = _fresh_db()
 
@@ -122,7 +122,7 @@ class TestSagaCrashSafety(unittest.TestCase):
 
     def test_saga_save_memory_rollback_on_failure(self):
         """End-to-end: saga_save_memory with a failing step rolls back."""
-        from saga import saga_save_memory
+        from infra.saga import saga_save_memory
 
         db = _fresh_db()
         # Initialize the schema
@@ -233,7 +233,7 @@ class TestSagaFallbackBehaviour(unittest.TestCase):
         non-saga path."""
         from save_pipeline import save_memory
         import save_pipeline
-        from saga import _saga_fallback_counter, reset_saga_fallback_counter
+        from infra.saga import _saga_fallback_counter, reset_saga_fallback_counter
 
         reset_saga_fallback_counter()
         with mock.patch.object(
@@ -260,7 +260,7 @@ class TestSagaFallbackCounter(unittest.TestCase):
     """S2 fix: counter for saga fallbacks."""
 
     def test_counter_increments(self):
-        from saga import _saga_fallback_counter, reset_saga_fallback_counter
+        from infra.saga import _saga_fallback_counter, reset_saga_fallback_counter
 
         reset_saga_fallback_counter()
         self.assertEqual(_saga_fallback_counter.value, 0)
@@ -271,7 +271,7 @@ class TestSagaFallbackCounter(unittest.TestCase):
         self.assertEqual(_saga_fallback_counter.value, 3)
 
     def test_counter_reset(self):
-        from saga import _saga_fallback_counter, reset_saga_fallback_counter
+        from infra.saga import _saga_fallback_counter, reset_saga_fallback_counter
 
         _saga_fallback_counter.inc()
         _saga_fallback_counter.inc()
@@ -322,7 +322,7 @@ class TestSagaFallbackPolicy(unittest.TestCase):
         import tempfile
         from pathlib import Path
         import shutil
-        from auto_save import tool_complete, _auto_save_reset_state
+        from background.auto_save import tool_complete, _auto_save_reset_state
 
         # H-fix (2026-06-22): also reset the failure_times list so the
         # circuit-breaker state from prior tests in the same suite does
@@ -332,7 +332,7 @@ class TestSagaFallbackPolicy(unittest.TestCase):
         _auto_save_reset_state()
         # Defense in depth: if reset doesn't clear failure_times for
         # some reason, force it to be empty before the test.
-        from auto_save import _AUTO_SAVE_STATE, _AUTO_SAVE_STATE_LOCK
+        from background.auto_save import _AUTO_SAVE_STATE, _AUTO_SAVE_STATE_LOCK
 
         with _AUTO_SAVE_STATE_LOCK:
             _AUTO_SAVE_STATE["failure_times"] = []

@@ -28,7 +28,7 @@ def resolve_db_path(db_path: str | Path | None = None) -> Path:
         return Path(env_path)
 
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         return Path(cfg.db_path)
@@ -45,14 +45,14 @@ def get_db_connection(db_path: str | Path, timeout: float = 10.0) -> Any:
     Returns the connection object; the caller is responsible for
     calling ``safe_close_db()`` when done (or using ``with_connection``).
     """
-    from _lazy_imports import connection_pool
+    from infra._lazy_imports import connection_pool
 
     return connection_pool.get(str(db_path), timeout=timeout)
 
 
 def safe_close_db(conn: Any) -> None:
     """Safely return a connection to the pool."""
-    from _lazy_imports import safe_close_db as _safe_close
+    from infra._lazy_imports import safe_close_db as _safe_close
 
     _safe_close(conn)
 

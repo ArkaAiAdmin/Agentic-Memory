@@ -43,7 +43,7 @@ if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
 
-from memory_common import GLOBAL_MEM_DIR
+from infra.memory_common import GLOBAL_MEM_DIR
 
 DEFAULT_DB_PATH = str(GLOBAL_MEM_DIR / "memory.db")
 DEFAULT_THRESHOLD = 0.15
@@ -58,7 +58,7 @@ logger = logging.getLogger("cron_concept_drift")
 def _get_threshold() -> float:
     """Read concept-drift threshold from config (env/memory.toml)."""
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         return float(cfg.concept_drift_threshold)
@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         t0 = time.time()
-        from db_write_queue import sqlite_write_queue
+        from infra.db_write_queue import sqlite_write_queue
         conn = sqlite_write_queue.start_session(Path(args.db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         try:

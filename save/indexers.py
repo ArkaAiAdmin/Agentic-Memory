@@ -92,7 +92,7 @@ def _index_embedding(
     column.  This is what search uses for cosine similarity.
     """
     try:
-        from _lazy_imports import get_embedding_search
+        from infra._lazy_imports import get_embedding_search
 
         get_embedding_search().index_embedding(
             db, note_id, content, category=category, tags=tags, source_file=source_file
@@ -119,7 +119,7 @@ def _index_facts(db, note_id: str, content: str):
         from knowledge_graph import KG_ENABLED
 
         if KG_ENABLED:
-            from fact_extraction import ensure_facts_schema, index_facts_for_memory
+            from fact import ensure_facts_schema, index_facts_for_memory
 
             ensure_facts_schema(db)
             index_facts_for_memory(db, note_id, content)

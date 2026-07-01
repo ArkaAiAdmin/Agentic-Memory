@@ -10,7 +10,7 @@ Schema:
     task_queue: pending/processing/completed/failed tasks with payloads
 
 Usage:
-    from background_queue import init_task_queue, enqueue_task
+    from background.background_queue import init_task_queue, enqueue_task
     init_task_queue(conn)
     enqueue_task(conn, 'entity_resolution', {'memory_id': 'lessons/foo'})
 """

@@ -209,7 +209,7 @@ def _write_merged_markdown(
         # safe_atomic_write (Scenario 4 fix): if a local edit
         # happened during the CRDT merge, the local edit is
         # preserved as <path>.conflict-<pid>-<ts>.
-        from memory_common import safe_atomic_write
+        from infra.memory_common import safe_atomic_write
 
         try:
             safe_atomic_write(md_path, body, encoding="utf-8")
@@ -301,7 +301,7 @@ def crdt_save(
         - ``conflict_id``: (coexist only) Note ID of the coexisting version.
     """
     from datetime import datetime, timezone
-    from _lazy_imports import open_db
+    from infra._lazy_imports import open_db
 
     db_path = Path(db_path)
 
@@ -339,7 +339,7 @@ def crdt_save(
 
     if _has_table:
         # Field-level path is available. Delegate.
-        from crdt_field import crdt_field_save, project_crdt_to_sql
+        from crdt.crdt_field import crdt_field_save, project_crdt_to_sql
 
         try:
             _result = crdt_field_save(
@@ -357,12 +357,12 @@ def crdt_save(
 
             if _result.get("applied"):
                 try:
-                    from _lazy_imports import open_db
+                    from infra._lazy_imports import open_db
 
                     with open_db(db_path, timeout=10.0) as _proj_conn:
                         _updated = project_crdt_to_sql(_proj_conn, note_id)
                         if _updated:
-                            from background_queue import (
+                            from background.background_queue import (
                                 init_task_queue,
                                 enqueue_task,
                             )
@@ -419,7 +419,7 @@ def crdt_save(
             conn, f"{note_id}__conflict_{remote_agent_id}"
         )
 
-        from saga import Saga, SagaStep, SagaError
+        from infra.saga import Saga, SagaStep, SagaError
 
         def _do_resolve() -> dict:
             conn.execute("BEGIN IMMEDIATE")

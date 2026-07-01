@@ -27,7 +27,7 @@ def purge_auto_saves(dry_run: bool = False) -> dict:
     Returns a dict with counts of deleted DB rows and moved files.
     """
     from background.auto_save import get_db_path, _get_sessions_dir, _now_iso  # noqa: E402
-    from db_write_queue import sqlite_write_queue
+    from infra.db_write_queue import sqlite_write_queue
 
     db_path = get_db_path()
     if not db_path.exists():

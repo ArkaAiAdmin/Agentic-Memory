@@ -75,7 +75,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cron"))
 from _flock import acquire_lock_or_exit  # noqa: E402  # type: ignore[import]
 
 # H1 fix: configure root logging (idempotent).
-from memory_common import (
+from infra.memory_common import (
     configure_logging,
     atomic_write,
     safe_close_db,
@@ -128,7 +128,7 @@ from background.config import (
 # H1 fix: hook path now invalidates the search cache so the canonical-path
 # safety contract (every save clears _search_cache) is upheld here too.
 try:
-    from cache import _search_cache
+    from infra.cache import _search_cache
 except ImportError:  # cache module is optional in some test contexts
     _search_cache = None
 
@@ -160,7 +160,7 @@ def _log_structured(level: str, event: str, **fields: Any) -> None:
     getattr(logger, level)(_json.dumps(log_entry))
 
 
-from memory_config import GLOBAL_MEM_DIR
+from infra.memory_config import GLOBAL_MEM_DIR
 
 ARCHIVE_DIR_NAME = "archive"
 
@@ -269,7 +269,7 @@ def _async_autosave_enabled() -> bool:
     if env_val is not None:
         return env_val != "0"
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         return getattr(cfg, "auto_save_async_enabled", _DEFAULT_ASYNC_AUTOSAVE)
@@ -283,7 +283,7 @@ def _batch_interval_s() -> float:
     if env_val is not None:
         return float(env_val)
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         return float(
@@ -299,7 +299,7 @@ def _batch_size() -> int:
     if env_val is not None:
         return int(env_val)
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         return int(getattr(cfg, "auto_save_batch_size", _DEFAULT_BATCH_SIZE))
@@ -313,7 +313,7 @@ def _daemon_idle_s() -> float:
     if env_val is not None:
         return float(env_val)
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
 
         cfg = get_config()
         return float(
@@ -489,7 +489,7 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
     db_writable = False
     db_error = None
     try:
-        from db import connection_pool
+        from infra.db import connection_pool
 
         db_path = get_db_path()
         conn = connection_pool.get(str(db_path), timeout=5.0)
@@ -501,7 +501,7 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
             else:
                 db_error = f"PRAGMA quick_check failed: {result}"
         finally:
-            from memory_common import safe_close_db
+            from infra.memory_common import safe_close_db
 
             safe_close_db(conn, should_commit=False)
     except Exception as e:

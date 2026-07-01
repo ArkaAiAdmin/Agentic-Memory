@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.expandvars("$HOME/.config/agentic-memory") or os.path.expanduser("~/.config/agentic-memory"))
 
-from db import open_db
+from infra.db import open_db
 
 class TestDBWriteQueueConcurrency:
     def setup_method(self):

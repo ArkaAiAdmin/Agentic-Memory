@@ -7,7 +7,7 @@ the ``sys.path.insert`` is a no-op.
 
 Usage in every entry-point module::
 
-    import _bootstrap_path  # noqa: E402
+    import infra._bootstrap_path  # noqa: E402
 """
 
 import os

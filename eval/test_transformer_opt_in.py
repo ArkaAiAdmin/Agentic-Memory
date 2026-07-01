@@ -10,7 +10,7 @@ from unittest import mock
 INSTALL_DIR = Path.resolve(Path(__file__).parents[2])
 sys.path.insert(0, str(INSTALL_DIR))
 
-from embedding_search import EmbeddingSearch
+from infra.embedding_search import EmbeddingSearch
 
 try:
     import torch  # noqa: F401

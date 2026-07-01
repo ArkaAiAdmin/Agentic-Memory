@@ -20,7 +20,7 @@ INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 sys.path.insert(0, str(INSTALL_DIR / "infra"))
 
-from dist_lock import (  # noqa: E402
+from infra.dist_lock import (  # noqa: E402
     FileLock,
     InMemoryLock,
     Lock,

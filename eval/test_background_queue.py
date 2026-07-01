@@ -12,7 +12,7 @@ import json
 
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
-from background_queue import (
+from background.background_queue import (
     init_task_queue,
     enqueue_task,
     dequeue_task,

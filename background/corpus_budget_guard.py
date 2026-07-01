@@ -34,7 +34,7 @@ def _corpus_budget_multiple() -> int:
         except ValueError:
             pass
     try:
-        from _lazy_imports import get_config
+        from infra._lazy_imports import get_config
         cfg = get_config()
         return max(1, int(getattr(cfg, "corpus_budget_multiple", _DEFAULT_CORPUS_BUDGET_MULTIPLE)))
     except Exception:
@@ -43,7 +43,7 @@ def _corpus_budget_multiple() -> int:
 
 def _estimate_corpus_tokens(db_path: Path) -> int:
     try:
-        from memory_common import connection_pool, safe_close_db
+        from infra.memory_common import connection_pool, safe_close_db
         conn = connection_pool.get(str(db_path), timeout=10.0)
         try:
             row = conn.execute(
