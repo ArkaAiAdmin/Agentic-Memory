@@ -32,7 +32,11 @@ import unittest
 from pathlib import Path
 
 # Make the agentic-memory package importable.
-INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
+# Prefer the active worktree (Sprint 0+) over the main install so
+# test-process path contamination picks up the worktree's save_pipeline.
+_WORKTREE = Path(__file__).resolve().parent.parent
+_MAIN_INSTALL = Path.home() / ".config" / "agentic-memory"
+INSTALL_DIR = _WORKTREE if _WORKTREE.joinpath("save_pipeline.py").exists() else _MAIN_INSTALL
 sys.path.insert(0, str(INSTALL_DIR))
 
 import save_pipeline  # noqa: E402

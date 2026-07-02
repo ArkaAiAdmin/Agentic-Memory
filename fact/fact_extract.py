@@ -556,6 +556,8 @@ def _upsert_fact(
     context: str = "",
     event_time: "float | None" = None,
     event_time_granularity: "str | None" = None,
+    belief_status: str = "active",
+    epistemic_source: str = "agent",
 ) -> "int | None":
     """Insert or update a fact. Used by `index_facts_for_memory`.
 
@@ -572,8 +574,8 @@ def _upsert_fact(
     now). The ``first_seen`` and ``last_seen`` columns are the
     legacy "transaction time" trackers and are kept in sync.
 
-    Returns the fact id (new on INSERT, existing on UPDATE, or None on
-    the vanishingly-rare DELETE-between-fail-and-retry race).
+    ``belief_status`` and ``epistemic_source`` are set on INSERT and
+    preserved on UPDATE — the first-seen source is canonical.
     """
     row = conn.execute(
         "SELECT id, locked, confidence, source_memory FROM kg_facts "
@@ -614,8 +616,9 @@ def _upsert_fact(
             "INSERT INTO kg_facts (subject, predicate, object, confidence, "
             "first_seen, last_seen, source_memory, context, "
             "subject_entity_id, object_entity_id, "
-            "event_time, event_time_granularity, transaction_time) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "event_time, event_time_granularity, transaction_time, "
+            "belief_status, epistemic_source) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 subject.lower(),
                 predicate,
@@ -630,6 +633,8 @@ def _upsert_fact(
                 event_time,
                 event_time_granularity,
                 now,  # transaction_time: when we learned it
+                belief_status,
+                epistemic_source,
             ),
         )
         assert cur.lastrowid is not None
@@ -658,7 +663,7 @@ def _upsert_fact(
 
 
 def index_facts_for_memory(
-    conn: AnyConnection, memory_id: str, content: str
+    conn: AnyConnection, memory_id: str, content: str, belief_status: str = "active", epistemic_source: str = "agent"
 ) -> dict:
     # Use config system for feature flag
     if get_config is not None:
@@ -785,6 +790,8 @@ def index_facts_for_memory(
             content[:200],
             event_time=fact_epoch,
             event_time_granularity=fact_etg,
+            belief_status=belief_status,
+            epistemic_source=epistemic_source,
         )
         # T3.4: supersession reconciliation (gated by feature_temporal_kg)
         if fact_id is not None and temporal_kg_enabled:

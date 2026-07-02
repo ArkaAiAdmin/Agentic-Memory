@@ -117,6 +117,7 @@ def _upsert_memory(
             importance=importance,
             _conn=conn,
             note_id=note_id,
+            epistemic_source="auto_save",
         )
         return isinstance(result, str) and not result.startswith("Error")
     except Exception as e:

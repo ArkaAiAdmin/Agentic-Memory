@@ -54,11 +54,11 @@ def ensure_facts_schema(conn: AnyConnection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_facts)").fetchall()}
     if "subject_entity_id" not in cols:
         conn.execute(
-            "ALTER TABLE kg_facts ADD COLUMN subject_entity_id INTEGER REFERENCES kg_entities(id)"
+            "ALTER TABLE kg_facts ADD COLUMN subject_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL"
         )
     if "object_entity_id" not in cols:
         conn.execute(
-            "ALTER TABLE kg_facts ADD COLUMN object_entity_id INTEGER REFERENCES kg_entities(id)"
+            "ALTER TABLE kg_facts ADD COLUMN object_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL"
         )
     # T1.x: v18 temporal columns. Each column is independent — if a
     # pre-v18 DB has some but not others, only the missing ones are

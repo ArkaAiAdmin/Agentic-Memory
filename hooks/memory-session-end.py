@@ -174,6 +174,7 @@ def _maybe_auto_save() -> dict:
             title_slug=f"auto-session-end-{session_id[:8] if session_id else 'unknown'}",
             tags=["auto-session-end", "rule-7"],
             importance=2,
+            epistemic_source="hook",
         )
         # Mark as saved
         marker["saved_at"] = now

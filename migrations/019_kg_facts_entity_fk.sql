@@ -64,7 +64,24 @@ CREATE TABLE IF NOT EXISTS kg_facts_backup_019 (
 );
 -- Copy existing rows (no-op on fresh DBs where kg_facts doesn't exist yet;
 -- the migration runner logs a debug-level message and continues).
-INSERT INTO kg_facts_backup_019 SELECT * FROM kg_facts;
+-- Explicit column list: tolerant of kg_facts having extra unknowns
+-- columns (e.g. from re-running on a DB already upgraded past 025).
+INSERT INTO kg_facts_backup_019 (
+    id, subject, predicate, object, confidence, locked,
+    first_seen, last_seen, mention_count, source_memory, context,
+    subject_entity_id, object_entity_id,
+    event_time, event_time_granularity,
+    transaction_time, valid_at, invalid_at,
+    superseded_by, supersedes, contradiction_score, invalidation_reason
+)
+SELECT
+    id, subject, predicate, object, confidence, locked,
+    first_seen, last_seen, mention_count, source_memory, context,
+    subject_entity_id, object_entity_id,
+    event_time, event_time_granularity,
+    transaction_time, valid_at, invalid_at,
+    superseded_by, supersedes, contradiction_score, invalidation_reason
+FROM kg_facts;
 
 -- ---------------------------------------------------------------------------
 -- 2. Drop the old table

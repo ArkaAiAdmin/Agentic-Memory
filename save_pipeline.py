@@ -67,6 +67,8 @@ class SaveRequest:
     context: str = "generic"
     defer_expensive: bool = False
     tenant_id: str = "default"
+    epistemic_source: str = "agent"
+    belief_status: str = "active"
 
 
 def _md5_to_uint64(memory_id: str) -> int:
@@ -742,6 +744,8 @@ def _update_memory_index_incremental(
     tier: str = "warm",
     defer_expensive: bool = False,
     tenant_id: str = "default",
+    epistemic_source: str = "agent",
+    belief_status: str = "active",
 ):
     """Update memory index incrementally.
 
@@ -846,7 +850,7 @@ def _update_memory_index_incremental(
         if not defer_expensive:
             _index_embedding(conn, note_id, content, category, tags, source_file)
             _index_kg(conn, note_id, content)
-            _index_facts(conn, note_id, content)
+            _index_facts(conn, note_id, content, belief_status, epistemic_source)
             _enrich_context(conn, note_id, content, category, tags)
             _auto_semantic_backlinks(conn, note_id, content, db_path=str(db_path))
         _auto_fts_backlinks(conn, note_id, content)
@@ -1236,6 +1240,8 @@ def _persist_to_db(
     _conn_is_shared: bool = False,
     defer_expensive: bool = False,
     tenant_id: str = "default",
+    epistemic_source: str = "agent",
+    belief_status: str = "active",
 ):
     try:
         _update_memory_index_incremental(
@@ -1252,6 +1258,8 @@ def _persist_to_db(
             importance=importance,
             defer_expensive=defer_expensive,
             tenant_id=tenant_id,
+            epistemic_source=epistemic_source,
+            belief_status=belief_status,
         )
         try:
             atomic_write(file_path, markdown_content, encoding="utf-8")
@@ -1330,6 +1338,8 @@ def _try_saga_persist(
     lock_already_held: bool = False,
     defer_expensive: bool = False,
     tenant_id: str = "default",
+    epistemic_source: str = "agent",
+    belief_status: str = "active",
 ):
     """Wrap the upsert + write + vec-key triple-store steps in a saga.
 
@@ -1358,6 +1368,8 @@ def _try_saga_persist(
             importance=importance,
             defer_expensive=defer_expensive,
             tenant_id=tenant_id,
+            epistemic_source=epistemic_source,
+            belief_status=belief_status,
         )
 
     def _do_write_vec_key():
@@ -1436,6 +1448,8 @@ def _persist_via_saga_or_fallback(
     defer_expensive: bool = False,
     note_id: str = "",
     tenant_id: str = "default",
+    epistemic_source: str = "agent",
+    belief_status: str = "active",
 ):
     """Persist a memory via the saga path, with policy-driven fallback.
 
@@ -1479,6 +1493,8 @@ def _persist_via_saga_or_fallback(
                 lock_already_held=lock_already_held,
                 defer_expensive=defer_expensive,
                 tenant_id=tenant_id,
+                epistemic_source=epistemic_source,
+                belief_status=belief_status,
             )
             saga_ok = True
         except Exception as saga_exc:
@@ -1509,6 +1525,8 @@ def _persist_via_saga_or_fallback(
             _conn_is_shared=_conn_is_shared,
             defer_expensive=defer_expensive,
             tenant_id=tenant_id,
+            epistemic_source=epistemic_source,
+            belief_status=belief_status,
         )
         if not _conn_is_shared:
             conn = (
@@ -1560,6 +1578,8 @@ def save_memory(
     context: str = "generic",
     defer_expensive: bool = False,
     tenant_id: str = "default",
+    epistemic_source: str = "agent",
+    belief_status: str = "active",
 ):
     """Write a memory note to disk and update the FTS5 index incrementally.
 
@@ -1590,6 +1610,8 @@ def save_memory(
         context=context,
         defer_expensive=defer_expensive,
         tenant_id=tenant_id,
+        epistemic_source=epistemic_source,
+        belief_status=belief_status,
     )
     return _save_memory_core(req, _now_iso=_now_iso, _conn=_conn)
 
@@ -1628,6 +1650,8 @@ def _save_memory_core(
     defer_expensive = req.defer_expensive
     safety_wiring = req.safety_wiring
     tenant_id = req.tenant_id
+    epistemic_source = req.epistemic_source
+    belief_status = req.belief_status
 
     from infra.db import _local_state
 
@@ -1758,6 +1782,8 @@ def _save_memory_core(
                 lock_already_held=(lock_file is not None),
                 _conn_is_shared=(_conn is not None),
                 defer_expensive=defer_expensive,
+                epistemic_source=epistemic_source,
+                belief_status=belief_status,
             )
 
             if isinstance(note_id, str) and not note_id.startswith("Error ["):

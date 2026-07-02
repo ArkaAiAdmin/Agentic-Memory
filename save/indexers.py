@@ -127,7 +127,7 @@ def _index_kg(db, note_id: str, content: str):
         logger.debug("KG indexing skipped for %s: %s", note_id, ke)
 
 
-def _index_facts(db, note_id: str, content: str):
+def _index_facts(db, note_id: str, content: str, belief_status: str = "active", epistemic_source: str = "agent"):
     """Index SPO facts into kg_facts."""
     try:
         from knowledge_graph import KG_ENABLED
@@ -136,7 +136,7 @@ def _index_facts(db, note_id: str, content: str):
             from fact import ensure_facts_schema, index_facts_for_memory
 
             ensure_facts_schema(db)
-            index_facts_for_memory(db, note_id, content)
+            index_facts_for_memory(db, note_id, content, belief_status=belief_status, epistemic_source=epistemic_source)
     except Exception as fe:
         logger.warning("Fact indexing skipped for %s: %s", note_id, fe)
 
