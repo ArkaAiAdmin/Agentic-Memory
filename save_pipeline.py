@@ -347,26 +347,52 @@ def _acquire_lock(db_path: Path):
     # exceptions (e.g. OSError from a stale lock file) are caught
     # and converted to None so the caller can proceed without a
     # lock in the case of an infrastructure error, not contention.
+    from infra._lazy_imports import FileLockError
     try:
         acquire_flock_with_retry(
             lock_file, max_attempts=5, initial_backoff=0.05, strict=True
         )
         return lock_file
-    except Exception as e:
-        from infra._lazy_imports import FileLockError
+    except FileLockError:
+        from infra.file_lock import _is_stale_lock
 
-        if isinstance(e, FileLockError):
-            # Don't catch — let it propagate per the strict contract.
+        if _is_stale_lock(lock_path):
+            logger.info(
+                "Removing stale lock %s (no live flock holder detected)",
+                lock_path,
+            )
             try:
                 lock_file.close()
             except Exception:
                 pass
-            raise
+            try:
+                lock_path.unlink()
+            except Exception as e:
+                logger.debug("Could not remove stale lock %s: %s", lock_path, e)
+                raise
+            try:
+                lock_file = open(lock_path, "w")
+            except Exception as e:
+                logger.warning(
+                    "Could not reopen lock file after stale cleanup: %s", e
+                )
+                raise
+            try:
+                acquire_flock_with_retry(
+                    lock_file, max_attempts=3, initial_backoff=0.02, strict=True
+                )
+                return lock_file
+            except FileLockError:
+                raise
+        raise
+    except Exception as e:
         try:
             lock_file.close()
         except Exception:
             pass
-        logger.warning("Could not open lock file for incremental update: %s", e)
+        logger.warning(
+            "Could not acquire flock for lock file %s: %s", lock_path, e
+        )
         return None
 
 
@@ -896,7 +922,7 @@ def _defer_indexing_background_tasks(
     except Exception as _e:
         logger.warning("save: background task enqueue failed: %s", _e)
     finally:
-        if conn is None:
+        if conn is None and bq_conn is not None:
             try:
                 bq_conn.close()
             except Exception:

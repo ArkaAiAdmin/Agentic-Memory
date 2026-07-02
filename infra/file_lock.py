@@ -11,7 +11,9 @@ Provides:
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
+from pathlib import Path
 
 __all__ = ["acquire_flock_with_retry", "release_flock", "FileLockError"]
 
@@ -44,6 +46,29 @@ def _try_flock(lock_file, nonblocking: bool) -> bool:
         _fcntl.flock(lock_file.fileno(), flag)
         return True
     except (BlockingIOError, OSError):
+        return False
+
+
+def _is_stale_lock(lock_path) -> bool:
+    """Return True if the lock file exists on disk but no live process holds a flock on it.
+
+    Uses ``fuser`` to detect open FDs; falls back to ``lsof``. Neither
+    command finding an FD means either the OS released the flock (process
+    died) or the file is simply not open — both are stale.
+    """
+    if not lock_path.exists():
+        return False
+    try:
+        for cmd in (["fuser", str(lock_path)], ["lsof", "-t", str(lock_path)]):
+            try:
+                out = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
+                pids = [p.strip() for p in out.stdout.split() if p.strip().isdigit()]
+                if pids:
+                    return False
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+        return True
+    except Exception:
         return False
 
 

@@ -24,7 +24,10 @@ logger = logging.getLogger(__name__)
 # SELECT in run_schema_setup is the correct fast-path. See
 # lessons/bug-migrations-done-cache-recycled-ids-2026-06-16.
 
-from infra.fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 # ---------------------------------------------------------------------------
 # SCHEMA_VERSION
@@ -39,7 +42,7 @@ from infra.migration_runner import SCHEMA_VERSION  # noqa: F401  re-export
 # ---------------------------------------------------------------------------
 
 
-def _migrate_schema_version(conn: sqlite3.Connection) -> None:
+def _migrate_schema_version(conn: 'AnyConnection') -> None:
     """Create the schema_version singleton and stamp it.
 
     Must run FIRST in the migration chain so the fast-path gate in
@@ -56,7 +59,7 @@ def _migrate_schema_version(conn: sqlite3.Connection) -> None:
     )
 
 
-def _migrate_memory_embeddings(conn: sqlite3.Connection) -> None:
+def _migrate_memory_embeddings(conn: 'AnyConnection') -> None:
     """Create the memory_embeddings cache table if absent."""
     conn.execute(
         "\n        CREATE TABLE IF NOT EXISTS memory_embeddings (\n"
@@ -78,7 +81,7 @@ def _migrate_memory_embeddings(conn: sqlite3.Connection) -> None:
     )
 
 
-def _migrate_memory_audit_log(conn: sqlite3.Connection) -> None:
+def _migrate_memory_audit_log(conn: 'AnyConnection') -> None:
     """Create the memory_audit_log table if absent (Sprint 4 / P0 #4)."""
     conn.execute(
         "\n        CREATE TABLE IF NOT EXISTS memory_audit_log (\n"
@@ -100,7 +103,7 @@ def _migrate_memory_audit_log(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON memory_audit_log(ts)")
 
 
-def _migrate_memory_vec_idx(conn: sqlite3.Connection) -> None:
+def _migrate_memory_vec_idx(conn: 'AnyConnection') -> None:
     """Create the memory_vec_idx + memory_vec_keys tables (Sprint 4 / P2 #8)."""
     conn.execute(
         "\n        CREATE TABLE IF NOT EXISTS memory_vec_idx (\n"
@@ -130,7 +133,7 @@ def _migrate_memory_vec_idx(conn: sqlite3.Connection) -> None:
     )
 
 
-def _migrate_ensure_columns(conn: sqlite3.Connection, existing_cols: set) -> None:
+def _migrate_ensure_columns(conn: 'AnyConnection', existing_cols: set) -> None:
     """Idempotently add missing columns to the memories table."""
     desired = (
         ("valid_from", "TEXT"),
@@ -154,7 +157,7 @@ def _migrate_ensure_columns(conn: sqlite3.Connection, existing_cols: set) -> Non
                 pass
 
 
-def _migrate_ensure_backlinks_table(conn: sqlite3.Connection) -> None:
+def _migrate_ensure_backlinks_table(conn: 'AnyConnection') -> None:
     """Create the backlinks table for bidirectional wiki-links and semantic edges."""
     try:
         conn.execute(
@@ -170,7 +173,7 @@ def _migrate_ensure_backlinks_table(conn: sqlite3.Connection) -> None:
         pass
 
 
-def _migrate_ensure_indexes(conn: sqlite3.Connection) -> None:
+def _migrate_ensure_indexes(conn: 'AnyConnection') -> None:
     """Create performance indexes if missing. Idempotent."""
     _migrate_ensure_backlinks_table(conn)
     indexes = (
@@ -196,7 +199,7 @@ def _migrate_ensure_indexes(conn: sqlite3.Connection) -> None:
             pass
 
 
-def _migrate_memory_ctr_feedback(conn: sqlite3.Connection) -> None:
+def _migrate_memory_ctr_feedback(conn: 'AnyConnection') -> None:
     """Create CTR feedback table if absent (P2a)."""
     try:
         conn.execute(
@@ -219,7 +222,7 @@ def _migrate_memory_ctr_feedback(conn: sqlite3.Connection) -> None:
         pass
 
 
-def _migrate_concept_drift(conn: sqlite3.Connection) -> None:
+def _migrate_concept_drift(conn: 'AnyConnection') -> None:
     """Create concept drift tracking table if absent.
 
     2026-06-22 (D1 fix): the canonical schema is now in
@@ -250,7 +253,7 @@ def _migrate_concept_drift(conn: sqlite3.Connection) -> None:
         pass
 
 
-def _migrate_add_fk_constraints(conn: sqlite3.Connection) -> None:
+def _migrate_add_fk_constraints(conn: 'AnyConnection') -> None:
     """Add missing FK constraints to tables that were created without them.
 
     Recreates tables with FK constraints if they don't already have them.
@@ -421,7 +424,7 @@ def _migrate_add_fk_constraints(conn: sqlite3.Connection) -> None:
     # run_schema_setup provides transaction atomicity.
 
 
-def _migrate_fix_kg_edges_fk(conn: sqlite3.Connection) -> None:
+def _migrate_fix_kg_edges_fk(conn: 'AnyConnection') -> None:
     """Fix kg_edges FK ON DELETE from NO ACTION to CASCADE."""
     fks = conn.execute("PRAGMA foreign_key_list(kg_edges)").fetchall()
     needs_fix = any(fk[6] == "NO ACTION" for fk in fks)
@@ -471,7 +474,7 @@ def _migrate_fix_kg_edges_fk(conn: sqlite3.Connection) -> None:
     # B4 fix: removed inner conn.commit() for atomicity.
 
 
-def _migrate_ensure_chunks_table(conn: sqlite3.Connection) -> None:
+def _migrate_ensure_chunks_table(conn: 'AnyConnection') -> None:
     """Create the memory_chunks table for pre-computed semantic chunks."""
     try:
         conn.execute(
@@ -544,7 +547,7 @@ def _migrate_ensure_chunks_table(conn: sqlite3.Connection) -> None:
         logger.warning("_migrate_ensure_chunks_table failed: %s", e)
 
 
-def _migrate_kg_tables(conn: sqlite3.Connection) -> None:
+def _migrate_kg_tables(conn: 'AnyConnection') -> None:
     """Create knowledge graph tables and FTS5 indexes if absent."""
     try:
         conn.execute(
@@ -648,7 +651,7 @@ def _migrate_kg_tables(conn: sqlite3.Connection) -> None:
         logger.warning("_migrate_kg_tables failed: %s", exc)
 
 
-def _migrate_kg_extraction_stats(conn: sqlite3.Connection) -> None:
+def _migrate_kg_extraction_stats(conn: 'AnyConnection') -> None:
     """Create the kg_extraction_stats observability table (P2a.2).
 
     Per-memory observability for the two-stage extraction pipeline
@@ -690,7 +693,7 @@ def _migrate_kg_extraction_stats(conn: sqlite3.Connection) -> None:
 # ---------------------------------------------------------------------------
 
 
-def run_schema_setup(conn: sqlite3.Connection) -> None:
+def run_schema_setup(conn: 'AnyConnection') -> None:
     """Idempotently bring a memory DB up to the current schema and initialize all subsystems.
 
     This is the single source of truth for database schema setup and migrations.
@@ -780,6 +783,7 @@ def run_schema_setup(conn: sqlite3.Connection) -> None:
         _migrate_memory_vec_idx(conn)
         _migrate_kg_tables(conn)
         _migrate_kg_extraction_stats(conn)
+        from infra.fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
         _migrate_fts5_porter_tokenizer(conn)
         _migrate_ensure_fts_triggers(conn)
         _migrate_memory_ctr_feedback(conn)
@@ -833,6 +837,6 @@ def run_schema_setup(conn: sqlite3.Connection) -> None:
     # canonical fast-path. See the gate at the top of this function.
 
 
-def run_db_migrations(conn: sqlite3.Connection) -> None:
+def run_db_migrations(conn: 'AnyConnection') -> None:
     """Legacy entry point delegating to the unified run_schema_setup."""
     run_schema_setup(conn)

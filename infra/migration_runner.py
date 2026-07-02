@@ -152,7 +152,7 @@ def _parse_sql_file(path: Path) -> list[str]:
     return statements
 
 
-def _get_applied_migrations(conn: sqlite3.Connection) -> set[int]:
+def _get_applied_migrations(conn: 'AnyConnection') -> set[int]:
     """Read the set of already-applied migration numbers.
 
     Uses the schema_version table. For backward compatibility with
@@ -231,7 +231,7 @@ def _get_down_migrations() -> list[tuple[int, Path]]:
     return sorted(migrations)
 
 
-def run_migrations(conn: sqlite3.Connection) -> None:
+def run_migrations(conn: 'AnyConnection') -> None:
     """Apply all pending migrations.
 
     This is the forward-only entry point for schema evolution. It
@@ -416,7 +416,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         raise
 
 
-def migrate_down(conn: sqlite3.Connection, target_version: int) -> None:
+def migrate_down(conn: 'AnyConnection', target_version: int) -> None:
     """Rollback migrations to target_version.
 
     Applies down-migrations in reverse order (highest to lowest) for
