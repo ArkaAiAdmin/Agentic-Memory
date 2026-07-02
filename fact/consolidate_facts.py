@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import datetime
 import sys
+import time
 import hashlib
 import json
 import logging
@@ -90,7 +91,17 @@ def consolidate_memory_facts(db_path: Path | None = None):
                 "Another consolidation is already running. Waiting for it to finish..."
             )
             if lock_file is not None:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                deadline = time.monotonic() + 600  # 10-minute safety cap
+                while True:
+                    try:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() > deadline:
+                            raise TimeoutError(
+                                "Consolidate lock held for >10 minutes; aborting."
+                            )
+                        time.sleep(0.5)
         except Exception as e:
             logger.warning("Could not acquire process lock: %s", e)
             lock_file = None

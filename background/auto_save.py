@@ -201,6 +201,18 @@ def _release_dedup_lock(key: str) -> None:
 def _is_dedup_lock_stale(lock_path: Path) -> bool:
     try:
         age = time.time() - lock_path.stat().st_mtime
+        if age <= _DEDUP_LOCK_STALE_S:
+            return False
+        try:
+            pid = int(lock_path.read_text().strip())
+            if pid > 0:
+                try:
+                    os.kill(pid, 0)
+                    return False  # holder alive
+                except (OSError, ProcessLookupError):
+                    return True  # holder dead
+        except (ValueError, OSError):
+            pass
         return age > _DEDUP_LOCK_STALE_S
     except OSError:
         return True

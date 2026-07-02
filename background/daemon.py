@@ -324,9 +324,11 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
         except Exception:
             pass
         try:
+            lock_path = get_auto_save_lock_path()
             fd = _DAEMON_LOCKS.pop("auto_save_daemon", None)
             if fd is not None:
                 release_flock(fd)
+            lock_path.unlink(missing_ok=True)
         except Exception:
             pass
         _log_structured("info", "auto_save_daemon_stopped", pid=os.getpid())

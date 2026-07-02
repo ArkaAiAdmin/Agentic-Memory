@@ -298,6 +298,8 @@ def main():
         if SESSIONS_DIR.exists():
             recovery_chunks = []
             for comp_dir in sorted(SESSIONS_DIR.glob("compaction-save-*")):
+                if not comp_dir.is_dir():
+                    continue
                 surfaced_marker = comp_dir / ".surfaced"
                 if surfaced_marker.exists():
                     continue

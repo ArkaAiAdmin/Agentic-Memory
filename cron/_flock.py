@@ -32,6 +32,7 @@ Usage:
 
 from __future__ import annotations
 
+import atexit
 import sys
 from pathlib import Path
 from typing import Any
@@ -131,6 +132,29 @@ def acquire_lock_or_exit(name: str, max_attempts: int = 5) -> None:
         sys.exit(0)
     # Pin the FD in a module-level dict so the GC doesn't reap it.
     _OPEN_LOCKS[name] = lock_fd
+
+    # Register atexit cleanup so the lock file is unlinked on clean
+    # process exit.  Without this, a normally-completed cron run
+    # leaves a 0-byte stale marker behind.
+    def _atexit_cleanup() -> None:
+        try:
+            fd = _OPEN_LOCKS.pop(name, None)
+            if fd is not None:
+                try:
+                    release_flock(fd)
+                except Exception:
+                    try:
+                        fd.close()
+                    except Exception:
+                        pass
+            lock_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    try:
+        atexit.register(_atexit_cleanup)
+    except Exception:
+        pass
 
 
 __all__ = [

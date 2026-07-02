@@ -9,6 +9,7 @@ import json
 import datetime
 import hashlib
 import math
+import time
 from typing import Optional
 
 __all__ = ["rebuild_index", "_rebuild_index_body"]
@@ -127,15 +128,19 @@ def rebuild_index(source_dir, db_path):
                 "Another index rebuild is already running. Waiting for it to finish..."
             )
             if lock_file is not None:
-                try:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-                except Exception as e:
-                    logger.warning("blocking flock failed: %s", e)
+                deadline = time.monotonic() + 600  # 10-minute safety cap
+                while True:
                     try:
-                        lock_file.close()
-                    except Exception:
-                        pass
-                    lock_file = None
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() > deadline:
+                            raise TimeoutError(
+                                "Index rebuild lock held for >10 minutes; aborting. "
+                                "If you believe this is stale, remove "
+                                ".rebuild.lock and retry."
+                            )
+                        time.sleep(0.5)
         except Exception as e:
             logger.warning("Could not acquire process lock: %s", e)
             if lock_file:
