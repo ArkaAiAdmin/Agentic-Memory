@@ -229,7 +229,7 @@ class EmbeddingSearch:
     def __init__(self):
         self.model = None
         self.np = None
-        self._load_model()
+        self.is_transformer = False
         # Per-process cache of loaded usearch Indexes. Keyed by db_path;
         # value is (Index, meta_dict). The cache is invalidated when the
         # singleton row's built_at or blob length changes (i.e. a rebuild
@@ -246,6 +246,13 @@ class EmbeddingSearch:
         self._QUERY_CACHE_ENABLED = get_config().query_cache
         self._chunk_index_cache: dict = {}
         self._CHUNK_SEARCH_ENABLED = os.environ.get("MEMORY_CHUNK_SEARCH", "1") not in ("0", "false", "no")
+        # Lazy model load: spawn background thread so __init__ never blocks
+        # the caller (prevents MCP server hangs on cold start / network stalls).
+        self._model_loaded = False
+        self._model_load_failed = False
+        import threading
+        _load_thread = threading.Thread(target=self._load_model, daemon=True)
+        _load_thread.start()
 
     def _embed_query(self, query: str) -> Any:
         """Get query embedding with optional LRU cache."""
@@ -341,8 +348,10 @@ class EmbeddingSearch:
 
                     self.model = TransformerModelWrapper(model_id)
                     self.is_transformer = True
+            self._model_loaded = True
         except Exception as e:
             logger.error("Failed to load embedding model: %s", e)
+            self._model_load_failed = True
             self.model = None
 
     def encode(self, texts) -> np.ndarray | None:
