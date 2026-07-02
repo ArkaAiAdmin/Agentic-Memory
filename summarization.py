@@ -8,13 +8,65 @@ Opt-in via MEMORY_SUMMARIZATION=1.
 
 from __future__ import annotations
 
+import logging
 import math
+import os
 import re
 from collections import Counter
 from pathlib import Path
+from typing import Optional
 
 from config import resolve_db_path
 from infra.memory_common import safe_close_db, GLOBAL_MEM_DIR
+
+logger = logging.getLogger(__name__)
+
+
+def is_llm_summarization_available() -> bool:
+    """Check if LLM summarization is active and available."""
+    try:
+        from infra._lazy_imports import get_config
+        cfg = get_config()
+        # Enable if llm_summarization is True or either env var is set to 1
+        if getattr(cfg, "llm_summarization", False):
+            return True
+    except Exception:
+        pass
+
+    if os.environ.get("MEMORY_LLM_SUMMARIZATION") == "1" or os.environ.get("MEMORY_LLM_EXTRACTION") == "1":
+        try:
+            from fact.llm_providers import get_provider
+            return get_provider() is not None
+        except Exception:
+            return False
+    return False
+
+
+def summarize_text_via_llm(text: str) -> Optional[str]:
+    """Summarize text using the configured LLM provider (abstractive summarization)."""
+    if not is_llm_summarization_available():
+        return None
+        
+    try:
+        from fact.llm_providers import get_provider
+        provider = get_provider()
+        if not provider:
+            return None
+            
+        prompt = (
+            "You are a helpful assistant. Write a concise, 1-3 sentence abstractive summary "
+            "of the following text, focusing on the key takeaways, decisions, or preferences:\n\n"
+            f"{text.strip()}\n\n"
+            "Summary:"
+        )
+        
+        summary = provider.generate(prompt, max_tokens=150, temperature=0.3)
+        if summary:
+            return summary.strip()
+    except Exception as e:
+        logger.debug("LLM summarization failed: %s", e)
+        
+    return None
 
 __all__ = [
     "SUMMARIZATION_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -167,18 +219,16 @@ def _compute_tfidf(sentences: list[str]) -> list[dict]:
 
 
 def summarize_text(text: str, max_sentences: int = _MAX_SUMMARY_SENTENCES) -> str:
-    """Extractive summary: pick top TF-IDF sentences in original order.
-
-    Args:
-        text: full text to summarize
-        max_sentences: maximum sentences in summary
-
-    Returns:
-        summary text
-    """
+    """Summarize text using LLM if available; otherwise, pick top TF-IDF sentences."""
     if not text or len(text.strip()) < _MIN_CONTENT_LENGTH:
         return text
 
+    # Try LLM abstractive summarization first
+    llm_sum = summarize_text_via_llm(text)
+    if llm_sum:
+        return llm_sum
+
+    # Fallback to TF-IDF extractive summarization
     sentences = _split_sentences(text)
     if len(sentences) <= max_sentences:
         return text

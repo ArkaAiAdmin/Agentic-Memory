@@ -28,15 +28,86 @@ def _get_edge_weight_params() -> tuple[float, float]:
         return (0.1, 10.0)
 
 
+def _jaccard_similarity(s1: str, s2: str) -> float:
+    """Compute character bigram Jaccard similarity between two strings."""
+    import re
+    norm1 = re.sub(r"[^\w\s]", "", s1.lower().strip())
+    norm2 = re.sub(r"[^\w\s]", "", s2.lower().strip())
+    
+    def get_ngrams(s: str, n: int = 2) -> set[str]:
+        return set(s[i:i+n] for i in range(len(s)-n+1))
+    
+    g1, g2 = get_ngrams(norm1), get_ngrams(norm2)
+    if not g1 or not g2:
+        return 1.0 if norm1 == norm2 else 0.0
+    return len(g1.intersection(g2)) / len(g1.union(g2))
+
+
 def _upsert_entity(
     conn: sqlite3.Connection, name: str, entity_type: str, now: float
 ) -> int:
-    """Insert or update an entity. Returns the entity ID."""
+    """Insert or update an entity. Returns the entity ID.
+    
+    Resolves entities using exact match, exact alias match, or fuzzy Jaccard similarity.
+    """
     normalized = name.lower().strip()
+    
+    # 1. Exact match on name
     row = conn.execute(
         "SELECT id FROM kg_entities WHERE name = ? AND entity_type = ?",
         (normalized, entity_type),
     ).fetchone()
+    
+    # 2. Exact match on alias
+    if not row:
+        row = conn.execute(
+            "SELECT entity_id FROM kg_entity_aliases a "
+            "JOIN kg_entities e ON a.entity_id = e.id "
+            "WHERE a.alias = ? AND e.entity_type = ?",
+            (normalized, entity_type),
+        ).fetchone()
+        
+    # 3. Fuzzy match on existing entities or aliases
+    if not row:
+        best_match_id = None
+        best_similarity = 0.0
+        
+        # Check existing entity names
+        candidates = conn.execute(
+            "SELECT id, name FROM kg_entities WHERE entity_type = ?",
+            (entity_type,)
+        ).fetchall()
+        for cid, cname in candidates:
+            sim = _jaccard_similarity(normalized, cname.lower())
+            if sim > best_similarity:
+                best_similarity = sim
+                best_match_id = cid
+                
+        # Check existing aliases
+        if best_similarity < 0.85:
+            alias_candidates = conn.execute(
+                "SELECT a.entity_id, a.alias "
+                "FROM kg_entity_aliases a JOIN kg_entities e ON a.entity_id = e.id "
+                "WHERE e.entity_type = ?",
+                (entity_type,)
+            ).fetchall()
+            for cid, calias in alias_candidates:
+                sim = _jaccard_similarity(normalized, calias.lower())
+                if sim > best_similarity:
+                    best_similarity = sim
+                    best_match_id = cid
+                    
+        if best_similarity >= 0.85:
+            # Found a fuzzy match, link it by adding an alias
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO kg_entity_aliases (entity_id, alias) VALUES (?, ?)",
+                    (best_match_id, normalized)
+                )
+            except Exception:
+                pass
+            row = (best_match_id,)
+
     if row:
         entity_id = row[0]
         conn.execute(
@@ -271,61 +342,88 @@ def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) 
         entity_count += 1
     stats["entities"] = entity_count
 
-    # Co-occurrence relations: two extracted entities in the same sentence
-    # get a co_occurs edge.  This avoids the name mismatch problem where
-    # extract_relations() used a different regex than extract_entities().
     relation_count = 0
-    seen_pairs: set[tuple[int, int]] = set()
-    sentences = re.split(r"[.!?\n]+", content)
-    from infra._lazy_imports import get_config
 
-    _KG_COCCUR_ENTITY_CAP = getattr(get_config(), "kg_coccurr_entity_cap", 20)
-    # Collect all pairs first, then batch upsert (H4 fix: batch co-occurrence edges)
-    all_pairs: list[tuple[int, int, str]] = []  # (source_id, target_id, context)
-    for sentence in sentences:
-        sent_lower = sentence.lower()
-        present = [
-            eid
-            for name, eid in entity_ids.items()
-            if re.search(rf"\b{re.escape(name)}\b", sent_lower)
-        ]
-        if len(present) > _KG_COCCUR_ENTITY_CAP:
-            present = present[:_KG_COCCUR_ENTITY_CAP]
-        for i in range(len(present)):
-            for j in range(i + 1, len(present)):
-                pair = (min(present[i], present[j]), max(present[i], present[j]))
-                if pair not in seen_pairs:
-                    seen_pairs.add(pair)
-                    all_pairs.append((pair[0], pair[1], sentence[:200]))
+    # Stage 3: LLM relation extraction when enabled (otherwise falls back to sentence co-occurrence)
+    llm_relations_extracted = False
+    from llm_extraction import is_llm_extraction_available, extract_facts_via_llm
+    if is_llm_extraction_available():
+        try:
+            facts = extract_facts_via_llm(content)
+            for s, p, o, c in facts:
+                # Clean and upsert subject & object entities
+                sid = _upsert_entity(conn, s, "concept", now)
+                oid = _upsert_entity(conn, o, "concept", now)
+                
+                # Check for Markdown/filepath filtering (same as entities)
+                s_lower = s.lower().strip()
+                o_lower = o.lower().strip()
+                if (s_lower in _MARKDOWN_STOPWORDS or o_lower in _MARKDOWN_STOPWORDS or
+                        _is_file_path_entity(s) or _is_file_path_entity(o)):
+                    continue
+                
+                # Upsert directed relation edge
+                _upsert_edge(conn, sid, oid, p, now, context="")
+                relation_count += 1
+            llm_relations_extracted = True
+        except Exception as e:
+            logger.exception("KG LLM relation extraction failed for %s: %s", memory_id, e)
 
-    # Batch upsert all co_occurs edges
-    if all_pairs:
-        # Check existing edges in batch
-        placeholders = ",".join("(?, ?)" for _ in all_pairs)
-        flat_params = [p for pair in all_pairs for p in (pair[0], pair[1])]
-        existing = conn.execute(
-            f"SELECT source_id, target_id FROM kg_edges WHERE (source_id, target_id) IN ({placeholders}) AND relation = 'co_occurs'",
-            flat_params,
-        ).fetchall()
-        existing_pairs = {(row[0], row[1]) for row in existing}
+    if not llm_relations_extracted:
+        # Co-occurrence relations: two extracted entities in the same sentence
+        # get a co_occurs edge.  This avoids the name mismatch problem where
+        # extract_relations() used a different regex than extract_entities().
+        seen_pairs: set[tuple[int, int]] = set()
+        sentences = re.split(r"[.!?\n]+", content)
+        from infra._lazy_imports import get_config
 
-        new_pairs = [p for p in all_pairs if (p[0], p[1]) not in existing_pairs]
-        if new_pairs:
-            now_ts = now
-            conn.executemany(
-                "INSERT INTO kg_edges (source_id, target_id, relation, created_at, valid_at) VALUES (?, ?, 'co_occurs', ?, ?)",
-                [(p[0], p[1], now_ts, now_ts) for p in new_pairs],
-            )
-            relation_count += len(new_pairs)
-        # Update weight for existing pairs
-        update_pairs = [p for p in all_pairs if (p[0], p[1]) in existing_pairs]
-        if update_pairs:
-            inc, cap = _get_edge_weight_params()
-            conn.executemany(
-                "UPDATE kg_edges SET weight = MIN(weight + ?, ?) WHERE source_id = ? AND target_id = ? AND relation = 'co_occurs'",
-                [(inc, cap, p[0], p[1]) for p in update_pairs],
-            )
-            relation_count += len(update_pairs)
+        _KG_COCCUR_ENTITY_CAP = getattr(get_config(), "kg_coccurr_entity_cap", 20)
+        # Collect all pairs first, then batch upsert (H4 fix: batch co-occurrence edges)
+        all_pairs: list[tuple[int, int, str]] = []  # (source_id, target_id, context)
+        for sentence in sentences:
+            sent_lower = sentence.lower()
+            present = [
+                eid
+                for name, eid in entity_ids.items()
+                if re.search(rf"\b{re.escape(name)}\b", sent_lower)
+            ]
+            if len(present) > _KG_COCCUR_ENTITY_CAP:
+                present = present[:_KG_COCCUR_ENTITY_CAP]
+            for i in range(len(present)):
+                for j in range(i + 1, len(present)):
+                    pair = (min(present[i], present[j]), max(present[i], present[j]))
+                    if pair not in seen_pairs:
+                        seen_pairs.add(pair)
+                        all_pairs.append((pair[0], pair[1], sentence[:200]))
+
+        # Batch upsert all co_occurs edges
+        if all_pairs:
+            # Check existing edges in batch
+            placeholders = ",".join("(?, ?)" for _ in all_pairs)
+            flat_params = [p for pair in all_pairs for p in (pair[0], pair[1])]
+            existing = conn.execute(
+                f"SELECT source_id, target_id FROM kg_edges WHERE (source_id, target_id) IN ({placeholders}) AND relation = 'co_occurs'",
+                flat_params,
+            ).fetchall()
+            existing_pairs = {(row[0], row[1]) for row in existing}
+
+            new_pairs = [p for p in all_pairs if (p[0], p[1]) not in existing_pairs]
+            if new_pairs:
+                now_ts = now
+                conn.executemany(
+                    "INSERT INTO kg_edges (source_id, target_id, relation, created_at, valid_at) VALUES (?, ?, 'co_occurs', ?, ?)",
+                    [(p[0], p[1], now_ts, now_ts) for p in new_pairs],
+                )
+                relation_count += len(new_pairs)
+            # Update weight for existing pairs
+            update_pairs = [p for p in all_pairs if (p[0], p[1]) in existing_pairs]
+            if update_pairs:
+                inc, cap = _get_edge_weight_params()
+                conn.executemany(
+                    "UPDATE kg_edges SET weight = MIN(weight + ?, ?) WHERE source_id = ? AND target_id = ? AND relation = 'co_occurs'",
+                    [(inc, cap, p[0], p[1]) for p in update_pairs],
+                )
+                relation_count += len(update_pairs)
 
     stats["relations"] = relation_count
 
@@ -337,6 +435,13 @@ def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) 
         _write_extraction_stats(conn, memory_id, stats)
     except Exception as stat_exc:
         logger.debug("kg_extraction_stats write failed for %s: %s", memory_id, stat_exc)
+
+    # Update PageRank centrality scores for all entities
+    try:
+        from kg.graph_analytics import update_graph_analytics
+        update_graph_analytics(conn)
+    except Exception as ga_exc:
+        logger.debug("Graph analytics update failed: %s", ga_exc)
 
     return stats
 

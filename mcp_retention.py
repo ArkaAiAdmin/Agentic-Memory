@@ -16,26 +16,24 @@ from mcp_instance import mcp
 @with_audit("memory_adaptive_retention")
 def memory_adaptive_retention(dry_run: bool = False) -> str:
     """Batch compute adaptive half-lives and neural forget curve scores."""
-    import adaptive_retention as ar
-    import neural_forget as nf
+    from background.retention_coordinator import run_retention_pipeline
     from infra.infrastructure import resolve_active_memory_dir
+    import adaptive_retention as ar
 
-    results = {}
-    if ar.ADAPTIVE_RETENTION_ENABLED:
-        try:
-            r = ar.batch_update_retention(dry_run=dry_run)
-            results["adaptive_retention"] = r
-        except Exception as e:
-            results["adaptive_retention"] = {"error": str(e)}
+    db_path = resolve_active_memory_dir() / "memory.db"
+    if dry_run:
+        results = {}
+        if ar.ADAPTIVE_RETENTION_ENABLED:
+            try:
+                results["adaptive_retention"] = ar.batch_update_retention(dry_run=True)
+            except Exception as e:
+                results["adaptive_retention"] = {"error": str(e)}
+        return json.dumps(results, indent=2)
 
-    if not dry_run:
-        try:
-            db_path = resolve_active_memory_dir() / "memory.db"
-            if db_path.exists():
-                r = nf.batch_update_retention(db_path)
-                results["neural_forget"] = r
-        except Exception as e:
-            results["neural_forget"] = {"error": str(e)}
+    try:
+        results = run_retention_pipeline(db_path)
+    except Exception as e:
+        results = {"error": str(e)}
 
     return json.dumps(
         results if results else {"message": "no retention systems active"}, indent=2

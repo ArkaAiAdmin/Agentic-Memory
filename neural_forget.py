@@ -181,6 +181,7 @@ def compute_retention_rate(
     fitness: float,
     importance: int,
     query_surprise: float = 0.5,
+    half_life_days: Optional[float] = None,
 ) -> float:
     """Compute retention rate in [0, 1].
 
@@ -191,12 +192,14 @@ def compute_retention_rate(
         fitness: Existing fitness score [0, 1].
         importance: Importance level (1-5).
         query_surprise: Surprise relative to current query [0, 1].
+        half_life_days: Optional adapted half-life in days to scale decay.
 
     Returns:
         Retention rate where 1.0 = keep, 0.0 = forget.
     """
     access_signal = min(access_count / _ACCESS_CAP, 1.0)
-    recency_penalty = min(recency_days / _RECENCY_CAP, 1.0)
+    recency_cap = (half_life_days * 2.0) if half_life_days is not None else _RECENCY_CAP
+    recency_penalty = min(recency_days / recency_cap, 1.0)
     importance_norm = importance / 5.0
 
     features = NeuralForgetModel.features(
@@ -272,6 +275,7 @@ def compute_forgetting_rate(
     db_path: str | Path,
     content: Optional[str] = None,
     recent_memories: Optional[list[str]] = None,
+    conn: Optional[sqlite3.Connection] = None,
 ) -> float:
     """Compute retention rate for a single note.
 
@@ -280,27 +284,56 @@ def compute_forgetting_rate(
         db_path: Path to memory.db.
         content: Pre-loaded content (avoids second DB query).
         recent_memories: Ignored (kept for API compat).
+        conn: Optional existing connection to reuse (avoids nested open_db).
 
     Returns:
         Retention rate [0, 1].
     """
-    from infra._lazy_imports import open_db
+    row_data: dict = {}
+    should_close = conn is None
+    if conn is None:
+        from infra._lazy_imports import open_db
+        conn = open_db(Path(db_path)).__enter__()
 
-    with open_db(Path(db_path)) as conn:
+    try:
         row = conn.execute(
             "SELECT content, fitness_score, importance, access_count, "
-            "       last_accessed "
+            "       last_accessed, metadata "
             "FROM memories WHERE id=?",
             (note_id,),
         ).fetchone()
         if row is None:
             return 0.5
 
-        body: str = row[0] or ""
-        fitness = float(row[1] or 0.5)
-        importance = int(row[2] or 3)
-        access_count = int(row[3] or 1)
-        last_accessed = row[4] or ""
+        row_data = {
+            "body": row[0] or "",
+            "fitness": float(row[1] or 0.5),
+            "importance": int(row[2] or 3),
+            "access_count": int(row[3] or 1),
+            "last_accessed": row[4] or "",
+            "meta_json": row[5] or "{}",
+        }
+    finally:
+        if should_close:
+            try:
+                conn.__exit__(None, None, None)
+            except Exception:
+                pass
+
+    body: str = row_data["body"]
+    fitness = row_data["fitness"]
+    importance = row_data["importance"]
+    access_count = row_data["access_count"]
+    last_accessed = row_data["last_accessed"]
+    meta_json = row_data["meta_json"]
+
+    half_life_days = None
+    try:
+        meta = json.loads(meta_json)
+        if isinstance(meta, dict) and "adaptive_halflife_days" in meta:
+            half_life_days = float(meta["adaptive_halflife_days"])
+    except Exception:
+        pass
 
     recency_days = 0.0
     if last_accessed:
@@ -312,7 +345,9 @@ def compute_forgetting_rate(
         except (ValueError, TypeError):
             pass
 
-    return compute_retention_rate(body, access_count, recency_days, fitness, importance)
+    return compute_retention_rate(
+        body, access_count, recency_days, fitness, importance, half_life_days=half_life_days
+    )
 
 
 def compute_query_surprise(
@@ -363,7 +398,7 @@ def batch_update_retention(db_path: str | Path, limit: int = 500) -> dict:
 
         for note_id, content in rows:
             try:
-                rate = compute_forgetting_rate(note_id, db_path, content=content)
+                rate = compute_forgetting_rate(note_id, db_path, content=content, conn=conn)
                 conn.execute(
                     "UPDATE memories SET score=? WHERE id=?",
                     (round(rate, 4), note_id),

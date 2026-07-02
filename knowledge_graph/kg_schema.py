@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS kg_entities (
     name TEXT NOT NULL,
     entity_type TEXT,
     mentions INTEGER DEFAULT 1,
+    centrality REAL DEFAULT 0.0,
     created_at TEXT,
     updated_at TEXT,
     UNIQUE(name, entity_type)
@@ -16,6 +17,15 @@ CREATE TABLE IF NOT EXISTS kg_entities (
 
 CREATE INDEX IF NOT EXISTS idx_kg_entities_name ON kg_entities(name);
 CREATE INDEX IF NOT EXISTS idx_kg_entities_type ON kg_entities(entity_type);
+
+CREATE TABLE IF NOT EXISTS kg_entity_aliases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id INTEGER NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
+    alias TEXT NOT NULL,
+    UNIQUE(entity_id, alias)
+);
+
+CREATE INDEX IF NOT EXISTS idx_kg_entity_aliases_alias ON kg_entity_aliases(alias);
 
 CREATE TABLE IF NOT EXISTS kg_edges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,17 +73,23 @@ END;
 def ensure_kg_schema(conn: sqlite3.Connection) -> None:
     """Create KG tables if they don't exist. Also add temporal columns to existing tables."""
     conn.executescript(_KG_SCHEMA_SQL)
-    # Migrate existing tables: add valid_at/invalid_at if missing
+    # Migrate existing tables: add valid_at/invalid_at/centrality if missing
     try:
-        cols = {
+        cols_edges = {
             row[1] for row in conn.execute("PRAGMA table_info(kg_edges)").fetchall()
         }
-        if "valid_at" not in cols:
+        if "valid_at" not in cols_edges:
             conn.execute("ALTER TABLE kg_edges ADD COLUMN valid_at TEXT")
-        if "invalid_at" not in cols:
+        if "invalid_at" not in cols_edges:
             conn.execute("ALTER TABLE kg_edges ADD COLUMN invalid_at TEXT")
+        
+        cols_entities = {
+            row[1] for row in conn.execute("PRAGMA table_info(kg_entities)").fetchall()
+        }
+        if "centrality" not in cols_entities:
+            conn.execute("ALTER TABLE kg_entities ADD COLUMN centrality REAL DEFAULT 0.0")
     except Exception as exc:
-        logger.debug("KG schema migration (kg_edges ALTER TABLE) skipped: %s", exc)
+        logger.debug("KG schema migration (ALTER TABLE) skipped: %s", exc)
 
     # FTS5 entity search index
     try:
