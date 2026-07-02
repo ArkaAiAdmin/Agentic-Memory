@@ -48,6 +48,7 @@ from search.scoring import (
     _reciprocal_rank_fusion,
     _apply_temporal_decay,
     _apply_neural_forget_curve,
+    _apply_concept_boost,
     _strong_match_float,
     _compute_final_score,
     compute_channel_weights,
@@ -1247,6 +1248,7 @@ def _rerank_results(
         out = _apply_neural_forget_curve(out, query)
     else:
         out = _apply_temporal_decay(out, as_of=as_of)
+    out = _apply_concept_boost(out, query, db_path)
     return out[:limit], _qweights
 
 

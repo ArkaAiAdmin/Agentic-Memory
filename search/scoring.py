@@ -482,6 +482,113 @@ def _apply_exploration(cached_stats) -> Optional[dict]:
     return cast(dict, expected)
 
 
+def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> list:
+    """Sprint 3 read path: boost results that share a concepts/ entry with the query.
+
+    Compiles a list of concept note_ids from the DB (``category='concepts'``)
+    plus their entity_id lists from the stored metadata JSON.
+    For each scored result whose source memory or linked entities overlap
+    with a concept, multiply final_score by a small boost factor (up to 1.5×
+    for full entity overlap).  Results that ARE concept notes get a stronger
+    boost since they are the compiled knowledge themselves.
+
+    Best-effort: failures degrade to no-op.
+    """
+    if not scored_results or not query:
+        return scored_results
+    try:
+        from infra._lazy_imports import connection_pool
+
+        db = connection_pool.get(str(db_path), timeout=5.0)
+    except Exception:
+        return scored_results
+
+    try:
+        concept_rows = db.execute(
+            "SELECT note_id, metadata FROM memories WHERE category = 'concepts' AND deleted_at IS NULL"
+        ).fetchall()
+    except Exception:
+        return scored_results
+    finally:
+        try:
+            connection_pool.put(db)
+        except Exception:
+            pass
+
+    if not concept_rows:
+        return scored_results
+
+    _CONCEPT_BOOST = 1.35
+    _CONCEPT_MEMBERSHIP_BOOST = 1.20
+    _MAX_BOOST = 1.50
+
+    concept_entities: dict[str, set[int]] = {}
+    for note_id, meta_json in concept_rows:
+        if not meta_json:
+            continue
+        try:
+            meta = json.loads(meta_json) if isinstance(meta_json, str) else meta_json
+            ents = meta.get("entities", [])
+            concept_entities[note_id] = {int(e) for e in ents if e is not None}
+        except Exception:
+            continue
+
+    if not concept_entities:
+        return scored_results
+
+    q_tokens = {t.lower() for t in re.findall(r"\b[a-z][a-z\-]+\b", query.lower()) if len(t) >= 3}
+
+    modified = []
+    for r in scored_results:
+        (
+            note_id,
+            content,
+            source_file,
+            tags_json,
+            created,
+            rank,
+            final_score,
+            fitness,
+            importance,
+            pinned,
+        ) = r[:10]
+        last_accessed = r[10] if len(r) > 10 else None
+        metadata_json = r[11] if len(r) > 11 else None
+        access_count = r[12] if len(r) > 12 else 1
+        boosted = float(final_score or 0.0)
+        concept_match = False
+        try:
+            meta = json.loads(metadata_json) if isinstance(metadata_json, str) else (metadata_json or {})
+            result_entities = {int(e) for e in (meta.get("entities") or []) if e is not None}
+        except Exception:
+            result_entities = set()
+
+        for cid, centities in concept_entities.items():
+            if note_id == cid or cid in (source_file or ""):
+                boosted *= _CONCEPT_BOOST
+                concept_match = True
+                break
+            if result_entities and centities and (result_entities & centities):
+                boosted *= _CONCEPT_MEMBERSHIP_BOOST
+                concept_match = True
+                break
+
+        if q_tokens:
+            cname_tokens = set()
+            for cid in concept_entities:
+                slug = cid.split("/")[-1] if "/" in cid else cid
+                cname_tokens.update(slug.replace("-", " ").lower().split())
+            if cname_tokens and (q_tokens & cname_tokens):
+                boosted *= 1.10
+
+        boosted = min(boosted, _MAX_BOOST * max(float(final_score or 0.0), 0.01))
+        new_r = list(r)
+        if len(new_r) >= 7:
+            new_r[6] = boosted
+        modified.append((tuple(new_r) if isinstance(r, tuple) else new_r))
+    return modified
+
+
 def compute_channel_weights(db_path: Path) -> Optional[dict]:
     """Compute channel weights from CTR feedback data.
 
