@@ -40,8 +40,12 @@ import numpy as np
 from usearch.index import Index as USearchIndex
 
 from infra.embedding_search import (
+    MODEL_REVISION,
     _cache_text,
+    _chunk_cache_text,
+    _chunk_content_hash,
     _content_hash,
+    chunk_memory,
     get_embedding_search,
 )
 
@@ -53,6 +57,13 @@ VEC_INDEX_DTYPE = "f16"
 VEC_INDEX_CONNECTIVITY = 16
 VEC_INDEX_EXPANSION_ADD = 128
 VEC_INDEX_EXPANSION_SEARCH = 64
+
+# Chunk-level index settings (identical defaults)
+CHUNK_VEC_INDEX_METRIC = "cos"
+CHUNK_VEC_INDEX_DTYPE = "f16"
+CHUNK_VEC_INDEX_CONNECTIVITY = 16
+CHUNK_VEC_INDEX_EXPANSION_ADD = 128
+CHUNK_VEC_INDEX_EXPANSION_SEARCH = 64
 
 
 def _md5_to_uint64(memory_id: str) -> int:
@@ -352,6 +363,208 @@ def rebuild_vec_index(db_path, *, force: bool = False) -> dict:
                 logger.debug("rebuild_vec_index: cannot unlink lock %s: %s", lock_path, exc)
 
 
+def _md5_chunk_key(parent_id: str, chunk_idx: int) -> int:
+    """Derive a stable uint64 key from (parent_id, chunk_idx)."""
+    raw = hashlib.md5(f"{parent_id}\x00{chunk_idx}".encode("utf-8")).digest()
+    val = int.from_bytes(raw[:8], "big", signed=False)
+    return val & ((1 << 63) - 1)
+
+
+def _load_chunk_cached_embeddings(conn: sqlite3.Connection) -> dict:
+    """Read memory_chunk_embeddings into {chunk_id: (content_hash, blob, parent_id)}."""
+    try:
+        rows = conn.execute(
+            "SELECT chunk_id, content_hash, embedding, parent_id FROM memory_chunk_embeddings"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {cid: (ch, blob, pid) for cid, ch, blob, pid in rows}
+
+
+def rebuild_chunk_vec_index(db_path, *, force: bool = False) -> dict:
+    """Rebuild the chunk-level usearch HNSW vector index in-place.
+
+    Reads memory_chunks + memory_chunk_embeddings, embeds any chunks not
+    in the cache, builds a separate usearch index, and persists it to
+    memory_chunk_vec_idx + memory_chunk_vec_keys.
+    """
+    db_path = Path(db_path).resolve()
+    if not db_path.exists():
+        raise FileNotFoundError(f"DB not found: {db_path}")
+
+    probe = sqlite3.connect(str(db_path), timeout=5.0)
+    try:
+        tables = {r[0] for r in probe.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    finally:
+        probe.close()
+    if "memory_chunks" not in tables:
+        raise RuntimeError("The memory_chunks table is missing. Run rebuild_index.py first.")
+    if "memory_chunk_embeddings" not in tables:
+        raise RuntimeError("memory_chunk_embeddings table missing. Run migration 024 first.")
+
+    lock_path = db_path.parent / ".vec_rebuild.lock"
+    lock_file = _try_acquire_lock(lock_path, force=force)
+
+    try:
+        t0 = time.time()
+        es = get_embedding_search()
+        if es.model is None:
+            raise RuntimeError("Embedding model unavailable. Run with venv python + model2vec installed.")
+        dim = int(es.model.dim)
+
+        conn = _open_db_for_rebuild(db_path)
+        try:
+            _ensure_schema(conn)
+            chunk_rows = conn.execute(
+                "SELECT id, parent_id, content FROM memory_chunks ORDER BY parent_id, chunk_idx"
+            ).fetchall()
+            cached = _load_chunk_cached_embeddings(conn)
+        finally:
+            safe_close_db(conn)
+
+        n = len(chunk_rows)
+        if n == 0:
+            elapsed = time.time() - t0
+            print("  No chunks in DB. Nothing to index.")
+            return {
+                "n_chunks": 0, "n_indexed": 0, "n_skipped": 0,
+                "dim": dim, "quantization": CHUNK_VEC_INDEX_DTYPE,
+                "metric": CHUNK_VEC_INDEX_METRIC, "serialized_bytes": 0,
+                "elapsed_s": elapsed, "collisions_resolved": 0,
+            }
+
+        vec_array = np.empty((n, dim), dtype=np.float32)
+        to_encode_texts: list[str] = []
+        to_encode_indices: list[int] = []
+        n_cache_hits = 0
+        n_cache_misses = 0
+        for i, (chunk_id, parent_id, content) in enumerate(chunk_rows):
+            text = _chunk_cache_text(content)
+            chash = _chunk_content_hash(text)
+            entry = cached.get(chunk_id)
+            if entry is not None and entry[0] == chash and entry[1] is not None:
+                try:
+                    vec = np.frombuffer(entry[1], dtype=np.float32)
+                    if vec.size == dim:
+                        vec_array[i] = vec
+                        n_cache_hits += 1
+                        continue
+                except Exception:
+                    pass
+            to_encode_texts.append(text)
+            to_encode_indices.append(i)
+            n_cache_misses += 1
+
+        if to_encode_texts:
+            fresh = es.model.encode(to_encode_texts)
+            for j, idx in enumerate(to_encode_indices):
+                vec_array[idx] = fresh[j]
+
+        index = USearchIndex(
+            ndim=dim,
+            metric=CHUNK_VEC_INDEX_METRIC,
+            dtype=CHUNK_VEC_INDEX_DTYPE,
+            connectivity=CHUNK_VEC_INDEX_CONNECTIVITY,
+            expansion_add=CHUNK_VEC_INDEX_EXPANSION_ADD,
+            expansion_search=CHUNK_VEC_INDEX_EXPANSION_SEARCH,
+        )
+
+        used_keys: set[int] = set()
+        key_to_chunk: list[tuple[int, int, str]] = []
+        collisions_resolved = 0
+        for i, (chunk_id, parent_id, _content) in enumerate(chunk_rows):
+            key = _md5_chunk_key(parent_id, chunk_id)
+            while key in used_keys:
+                key = (key + 1) % (1 << 63)
+                if key < 0:
+                    key = 0
+                collisions_resolved += 1
+            used_keys.add(key)
+            index.add(np.uint64(key), vec_array[i])
+            key_to_chunk.append((key, chunk_id, parent_id))
+
+        serialized = index.save() or b""
+        serialized_len = len(serialized)
+        elapsed = time.time() - t0
+        print(
+            f"  Built chunk index: {n} vectors, dim={dim}, "
+            f"dtype={CHUNK_VEC_INDEX_DTYPE}, serialized={serialized_len} bytes, "
+            f"cache_hits={n_cache_hits}, cache_misses={n_cache_misses}, "
+            f"elapsed={elapsed:.2f}s"
+        )
+
+        # Persist new embeddings for cache misses
+        if to_encode_texts:
+            try:
+                now = time.time()
+                conn = _open_db_for_rebuild(db_path)
+                try:
+                    miss_indices = to_encode_indices
+                    chunk_ids = [chunk_rows[i][0] for i in miss_indices]
+                    parent_ids = [chunk_rows[i][1] for i in miss_indices]
+                    contents = [_chunk_cache_text(chunk_rows[i][2]) for i in miss_indices]
+                    chashes = [_chunk_content_hash(c) for c in contents]
+                    rows = [
+                        (cid, pid, ch, fresh[j].tobytes(), MODEL_REVISION, dim, now)
+                        for j, (cid, pid, ch) in enumerate(zip(chunk_ids, parent_ids, chashes))
+                    ]
+                    with conn:
+                        conn.executemany(
+                            "INSERT OR REPLACE INTO memory_chunk_embeddings "
+                            "(chunk_id, parent_id, content_hash, embedding, model_revision, dim, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            rows,
+                        )
+                finally:
+                    safe_close_db(conn)
+            except Exception as e:
+                logger.warning("failed to write chunk embeddings back: %s", e)
+
+        # Persist index
+        conn = _open_db_for_rebuild(db_path)
+        try:
+            _ensure_schema(conn)
+            with conn:
+                conn.execute("DELETE FROM memory_chunk_vec_keys")
+                conn.execute("DELETE FROM memory_chunk_vec_idx")
+                conn.execute(
+                    "INSERT INTO memory_chunk_vec_idx "
+                    "(id, n_vectors, dim, metric, quantization, connectivity, "
+                    " expansion_add, expansion_search, built_at, index_blob, key_count) "
+                    "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        n, dim, CHUNK_VEC_INDEX_METRIC, CHUNK_VEC_INDEX_DTYPE,
+                        CHUNK_VEC_INDEX_CONNECTIVITY, CHUNK_VEC_INDEX_EXPANSION_ADD,
+                        CHUNK_VEC_INDEX_EXPANSION_SEARCH, time.time(), serialized, len(key_to_chunk),
+                    ),
+                )
+                conn.executemany(
+                    "INSERT INTO memory_chunk_vec_keys (key, chunk_id, parent_id) VALUES (?, ?, ?)",
+                    key_to_chunk,
+                )
+        finally:
+            safe_close_db(conn)
+
+        return {
+            "n_chunks": n,
+            "n_indexed": n,
+            "n_skipped": 0,
+            "dim": dim,
+            "quantization": CHUNK_VEC_INDEX_DTYPE,
+            "metric": CHUNK_VEC_INDEX_METRIC,
+            "serialized_bytes": serialized_len,
+            "elapsed_s": elapsed,
+            "collisions_resolved": collisions_resolved,
+        }
+    finally:
+        if lock_file is not None:
+            lock_file.close()
+            try:
+                lock_path.unlink()
+            except OSError as exc:
+                logger.debug("rebuild_chunk_vec_index: cannot unlink lock %s: %s", lock_path, exc)
+
+
 def main() -> int:
     import argparse
 
@@ -367,10 +580,10 @@ def main() -> int:
     parser.add_argument(
         "--subsystems",
         type=str,
-        default="fts5,embeddings,kg,backlinks,chunks,audit,vec_idx",
+        default="fts5,embeddings,kg,backlinks,chunks,audit,vec_idx,chunk_vec_idx",
         help=(
             "Comma-separated list of subsystems to rebuild. "
-            "Valid: fts5,embeddings,kg,backlinks,chunks,audit,vec_idx. "
+            "Valid: fts5,embeddings,kg,backlinks,chunks,audit,vec_idx,chunk_vec_idx. "
             "Default: all."
         ),
     )
@@ -398,38 +611,50 @@ def main() -> int:
         )
         return 4
 
-    if "vec_idx" not in requested:
-        # Caller explicitly opted out of the vec-index rebuild. We still
-        # do the other subsystems via the standard path (rebuild_index.py)
-        # but skip the vec-index pass. For now, rebuild_vec_index.py is
-        # dedicated to the vec index, so opt-out means "do nothing" — we
-        # return success without rebuilding.
+    vec_requested = "vec_idx" in requested
+    chunk_requested = "chunk_vec_idx" in requested
+    if not vec_requested and not chunk_requested:
         print(
-            "vec_idx not in subsystems; skipping (caller wanted other rebuilds only).",
+            "vec_idx or chunk_vec_idx not in subsystems; skipping "
+            "(caller wanted other rebuilds only).",
             file=sys.stderr,
         )
         return 0
 
     db_path = args.db_path
+    results = {}
 
-    try:
-        stats = rebuild_vec_index(db_path, force=args.force)
-    except FileNotFoundError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        return 1
-    except RuntimeError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        return 2
-    except BlockingIOError:
-        print(
-            "ERROR: another rebuild is running (use --force to clear stale lock)",
-            file=sys.stderr,
-        )
-        return 3
+    if vec_requested:
+        try:
+            results["vec_idx"] = rebuild_vec_index(db_path, force=args.force)
+        except FileNotFoundError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+        except RuntimeError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
+        except BlockingIOError:
+            print("ERROR: another vec rebuild is running (use --force to clear stale lock)", file=sys.stderr)
+            return 3
+
+    if chunk_requested:
+        try:
+            results["chunk_vec_idx"] = rebuild_chunk_vec_index(db_path, force=args.force)
+        except FileNotFoundError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+        except RuntimeError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
+        except BlockingIOError:
+            print("ERROR: another chunk rebuild is running (use --force to clear stale lock)", file=sys.stderr)
+            return 3
 
     print("\n=== Vector index rebuild complete ===")
-    for k, v in stats.items():
-        print(f"  {k}: {v}")
+    for name, stats in results.items():
+        print(f"  [{name}]")
+        for k, v in stats.items():
+            print(f"    {k}: {v}")
     return 0
 
 

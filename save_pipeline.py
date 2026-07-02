@@ -660,6 +660,7 @@ def upsert_row(
 from save.indexers import (  # noqa: E402, F401
     _index_backlinks,
     _index_chunks,
+    _index_chunk_embeddings,
     _index_embedding,
     _index_kg,
     _index_facts,
@@ -811,6 +812,7 @@ def _update_memory_index_incremental(
             _crdt_bump_version(conn, note_id, cols)
         _index_backlinks(conn, note_id, content)
         _index_chunks(conn, note_id, content)
+        _index_chunk_embeddings(conn, note_id)
         if not defer_expensive:
             _index_embedding(conn, note_id, content, category, tags, source_file)
             _index_kg(conn, note_id, content)
@@ -880,6 +882,13 @@ def _defer_indexing_background_tasks(
         enqueue_task(
             bq_conn,
             "semantic_backlinks",
+            {"memory_id": note_id, "content": content},
+            max_queue_size=max_qs,
+            reject_policy=reject_pol,
+        )
+        enqueue_task(
+            bq_conn,
+            "chunk_embedding_index",
             {"memory_id": note_id, "content": content},
             max_queue_size=max_qs,
             reject_policy=reject_pol,

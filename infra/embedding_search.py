@@ -244,6 +244,8 @@ class EmbeddingSearch:
         from infra._lazy_imports import get_config
 
         self._QUERY_CACHE_ENABLED = get_config().query_cache
+        self._chunk_index_cache: dict = {}
+        self._CHUNK_SEARCH_ENABLED = os.environ.get("MEMORY_CHUNK_SEARCH", "1") not in ("0", "false", "no")
 
     def _embed_query(self, query: str) -> Any:
         """Get query embedding with optional LRU cache."""
@@ -1190,6 +1192,251 @@ class EmbeddingSearch:
             logger.warning("ARC hit-tracking failed: %s", e)
 
 
+    def index_chunk_embeddings_batch(self, db, chunks: list[dict]) -> int:
+        if self.model is None or not chunks:
+            return 0
+        try:
+            texts = [_chunk_cache_text(c["content"]) for c in chunks]
+            chashes = [_chunk_content_hash(t) for t in texts]
+            vecs = self.model.encode(texts)
+            now = time.time()
+            rows = [
+                (
+                    c.get("chunk_id"),
+                    c["parent_id"],
+                    ch,
+                    vec.tobytes(),
+                    MODEL_REVISION,
+                    int(self.model.dim),
+                    now,
+                )
+                for c, ch, vec in zip(chunks, chashes, vecs)
+            ]
+            db.executemany(
+                "INSERT OR REPLACE INTO memory_chunk_embeddings "
+                "(chunk_id, parent_id, content_hash, embedding, model_revision, dim, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        c.get("chunk_id"),
+                        c["parent_id"],
+                        ch,
+                        vec.tobytes(),
+                        MODEL_REVISION,
+                        int(self.model.dim),
+                        now,
+                    )
+                    for c, ch, vec in zip(chunks, chashes, vecs)
+                ],
+            )
+            return len(rows)
+        except Exception as e:
+            logger.warning("index_chunk_embeddings_batch failed: %s", e)
+            return 0
+
+    def _load_chunk_vec_index(self, db_path, db) -> tuple[Any, dict | None] | tuple[None, None]:
+        cache_key = str(db_path)
+        try:
+            row = db.execute(
+                "SELECT n_vectors, dim, metric, quantization, connectivity, "
+                "       expansion_add, expansion_search, built_at, length(index_blob) "
+                "FROM memory_chunk_vec_idx WHERE id=1"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None, None
+        if row is None:
+            return None, None
+        (n_vectors, dim, metric, qdtype, connectivity, exp_add, exp_s, built_at, blob_len) = row
+        meta = {
+            "n_vectors": n_vectors, "dim": dim, "metric": metric,
+            "quantization": qdtype, "connectivity": connectivity,
+            "expansion_add": exp_add, "expansion_search": exp_s,
+            "built_at": built_at, "blob_len": blob_len,
+        }
+        cached = self._chunk_index_cache.get(cache_key)
+        if cached is not None and cached[1]["built_at"] == built_at and cached[1]["blob_len"] == blob_len:
+            return cached
+        if self.model is not None and dim != int(self.model.dim):
+            return None, None
+        try:
+            blob = db.execute("SELECT index_blob FROM memory_chunk_vec_idx WHERE id=1").fetchone()[0]
+            from usearch.index import Index as USearchIndex
+            idx = USearchIndex(
+                ndim=dim, metric=metric, dtype=qdtype,
+                connectivity=connectivity, expansion_add=exp_add, expansion_search=exp_s,
+            )
+            idx.load(blob)
+        except Exception as e:
+            logger.warning("chunk usearch index load failed for %s: %s", db_path, e)
+            return None, None
+        self._chunk_index_cache[cache_key] = (idx, meta)
+        return idx, meta
+
+    def _search_chunks_via_index(self, idx, meta, db, query, limit) -> list[dict] | None:
+        if self.model is None or self.np is None:
+            return None
+        n_vectors = meta["n_vectors"]
+        if n_vectors == 0:
+            return []
+        ann_k = min(200, n_vectors)
+        query_vec = self._embed_query(query)
+        if query_vec is None:
+            return None
+        try:
+            matches = idx.search(query_vec, ann_k)
+        except Exception as e:
+            logger.warning("chunk usearch search failed: %s", e)
+            return None
+        candidate_keys = [int(k) for k in matches.keys.tolist()]
+        if not candidate_keys:
+            return []
+        placeholders = ",".join("?" for _ in candidate_keys)
+        try:
+            rows = db.execute(
+                f"SELECT key, chunk_id, parent_id FROM memory_chunk_vec_keys "
+                f"WHERE key IN ({placeholders})",
+                candidate_keys,
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return None
+        key_map = {int(r[0]): {"chunk_id": r[1], "parent_id": r[2]} for r in rows}
+        mid_scores: dict = {}
+        for k in candidate_keys:
+            entry = key_map.get(k)
+            if entry is None:
+                continue
+            parent_id = entry["parent_id"]
+            idx_in_matches = candidate_keys.index(k)
+            score = float(matches.distances[idx_in_matches])
+            if parent_id not in mid_scores or score > mid_scores[parent_id]["score"]:
+                mid_scores[parent_id] = {"parent_id": parent_id, "score": score, "chunk_id": entry["chunk_id"]}
+        ranked = sorted(mid_scores.values(), key=lambda x: x["score"], reverse=True)[:limit]
+        return ranked
+
+    def _search_chunks_full_scan(self, db, query, limit) -> list[dict]:
+        if self.model is None or self.np is None:
+            return []
+        try:
+            rows = db.execute(
+                "SELECT mc.chunk_id, mc.parent_id, mc.embedding FROM memory_chunk_embeddings mc "
+                "JOIN memory_chunks ck ON ck.id = mc.chunk_id"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        if not rows:
+            return []
+        query_vec = self._embed_query(query)
+        if query_vec is None:
+            return []
+        dim_val = int(self.model.dim)
+        mid_scores: dict = {}
+        for chunk_id, parent_id, emb_blob in rows:
+            try:
+                vec = self.np.frombuffer(emb_blob, dtype=self.np.float32)
+                if vec.size != dim_val:
+                    continue
+                score = float(self.np.dot(vec, query_vec))
+                if parent_id not in mid_scores or score > mid_scores[parent_id]["score"]:
+                    mid_scores[parent_id] = {"parent_id": parent_id, "score": score, "chunk_id": chunk_id}
+            except Exception:
+                continue
+        ranked = sorted(mid_scores.values(), key=lambda x: x["score"], reverse=True)[:limit]
+        return ranked
+
+    def search_chunks(self, db, query, limit=5, db_path=None) -> list[dict]:
+        from infra.memory_common import connection_pool as _cp
+        _path = Path(db_path) if db_path else None
+        if _path is None:
+            try:
+                from infra.memory_config import get_memory_paths
+                _, local_mem, _ = get_memory_paths()
+                _path = local_mem / "memory.db"
+            except Exception:
+                _path = Path("memory/memory.db")
+        _db = db
+        own_db = False
+        if _db is None:
+            _db = _cp.get(str(_path), timeout=30.0)
+            _db.execute("PRAGMA busy_timeout = 30000;")
+            _db.execute("PRAGMA journal_mode = WAL;")
+            own_db = True
+        try:
+            if not self._CHUNK_SEARCH_ENABLED:
+                return self._search_chunks_full_scan(_db, query, limit)
+            idx, meta = self._load_chunk_vec_index(_path, _db)
+            if idx is not None and meta is not None and meta.get("n_vectors", 0) > 0:
+                result = self._search_chunks_via_index(idx, meta, _db, query, limit)
+                if result is not None:
+                    return result
+            return self._search_chunks_full_scan(_db, query, limit)
+        finally:
+            if own_db:
+                from infra.memory_common import safe_close_db
+                safe_close_db(_db)
+
+
+# ---------------------------------------------------------------------------
+# Chunk-level helpers (module-level)
+# ---------------------------------------------------------------------------
+
+_CHUNK_MAX_SIZE = 500
+_CHUNK_OVERLAP = 50
+
+
+def chunk_memory(content: str, max_chunk_size: int = 500, overlap: int = 50) -> list[dict]:
+    """Split content into paragraph-level chunks for multi-vector retrieval."""
+    if not content:
+        return []
+    max_cs = max(100, max_chunk_size)
+    ov = max(0, min(overlap, max_cs // 5))
+    paras = [p for p in content.split("\n\n") if p.strip()]
+    chunks: list[dict] = []
+    buf = ""
+    b_start = 0
+    cidx = 0
+    cursor = 0
+    for para in paras:
+        p_start = cursor
+        p_end = cursor + len(para)
+        candidate = buf + ("\n\n" if buf else "") + para
+        if buf and len(candidate) > max_cs and len(buf) >= max_cs // 4:
+            end = b_start + len(buf)
+            chunks.append(
+                {"content": buf, "chunk_idx": cidx, "start_offset": b_start, "end_offset": end}
+            )
+            cidx += 1
+            if ov > 0 and len(buf) > ov:
+                b_start = end - ov
+                buf = buf[-ov:] + "\n\n"
+            else:
+                b_start = p_start
+                buf = ""
+        buf += ("\n\n" if buf else "") + para
+        cursor = p_end + 2
+    if buf:
+        end = b_start + len(buf)
+        chunks.append(
+            {"content": buf, "chunk_idx": cidx, "start_offset": b_start, "end_offset": end}
+        )
+    if not chunks and content:
+        chunks.append(
+            {"content": content, "chunk_idx": 0, "start_offset": 0, "end_offset": len(content)}
+        )
+    return chunks
+
+
+def _chunk_cache_text(content: str) -> str:
+    if not content:
+        return ""
+    return unicodedata.normalize("NFKC", content[:500])
+
+
+def _chunk_content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Process-wide singleton
 # ---------------------------------------------------------------------------
 # Process-wide singleton
 # ---------------------------------------------------------------------------

@@ -85,12 +85,7 @@ def _index_chunks(db, note_id: str, content: str):
 def _index_embedding(
     db, note_id: str, content: str, category: str, tags: list, source_file: str
 ):
-    """Refresh the embedding cache for a single row.
-
-    Produces the main model2vec / sentence-transformers embedding
-    (full document, 256-dim) and stores it in the ``embedding`` BLOB
-    column.  This is what search uses for cosine similarity.
-    """
+    """Refresh the embedding cache for a single row."""
     try:
         from infra._lazy_imports import get_embedding_search
 
@@ -99,6 +94,25 @@ def _index_embedding(
         )
     except Exception as ee:
         logger.debug("Embedding cache write skipped for %s: %s", note_id, ee)
+
+
+def _index_chunk_embeddings(db, note_id: str):
+    """Embed all chunks for a memory and persist to memory_chunk_embeddings."""
+    try:
+        from infra.embedding_search import get_embedding_search
+        rows = db.execute(
+            "SELECT id, content FROM memory_chunks WHERE parent_id = ? ORDER BY chunk_idx",
+            (note_id,),
+        ).fetchall()
+        if not rows:
+            return
+        chunks = [
+            {"chunk_id": row[0], "parent_id": note_id, "content": row[1]}
+            for row in rows
+        ]
+        get_embedding_search().index_chunk_embeddings_batch(db, chunks)
+    except Exception as ce:
+        logger.debug("Chunk embedding write skipped for %s: %s", note_id, ce)
 
 
 def _index_kg(db, note_id: str, content: str):

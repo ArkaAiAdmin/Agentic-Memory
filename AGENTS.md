@@ -12,7 +12,7 @@ You are an agent working on the **agentic-memory** codebase at the repo root. Th
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
 - **Surface**: 96 MCP tools (13 CORE + 83 ADMIN) + 6 lifecycle hooks + 31 cron scripts / 34 scheduled jobs + 11 CLI commands
-- **Schema**: v23, ~51 tables (~31 user-visible)
+- **Schema**: v24, ~54 tables (~34 user-visible)
 - **Code**: 71k LOC production + 75k LOC test; see `docs/architecture.md`
 
 ---
@@ -61,7 +61,7 @@ agentic-memory/
 1. **All writes go through `save_memory`** (`save_pipeline.save_memory`). Hooks and auto-save delegate to it. Don't re-implement.
 2. **Connection pool is per-DB-path.** `connection_pool.get(str(db_path))` returns stale connections if the path doesn't exist. Active connections cannot be evicted.
 3. **Vec keys/index drift after warm-up.** Run `rebuild_vec_index.py` after warm-up chains, not before.
-4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **23**. Never edit live DB schema by hand.
+4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **24**. Never edit live DB schema by hand.
 5. **Default search is `include_global=True`** with blended RRF. Don't override "for safety."
 6. **13 CORE tools are user-facing**; 83 ADMIN under `memory_maintenance(operation=...)`. Don't add CORE tools without checking.
 7. **Use `--incremental` / `--full` with backfill.** Bare args create 22 MB garbage DBs at repo root.
@@ -122,7 +122,7 @@ See `memory.toml` for all 17 feature flags.
 
 ## Current Status (2026-06-30)
 
-- **Schema v23**: 23 migrations applied. Temporal KG ON by default.
+- **Schema v24**: 24 migrations applied. Chunk-level multi-vector search active.
 - **Phase 1 (Docs/Drift)**: `tool_drift_check.py`, `doc_drift_check.py`, `schema_version_check.py` in CI. Tool count reconciled: 96 tools (13 CORE + 83 ADMIN).
 - **Phase 2 (Search Observability)**: 6 search phases instrumented with `infra.error_counter`. Failures return `<call>_phase_inc("<phase>", e)` + `logger.warning`. `search_memories` adds `phase_errors` to result envelope when counter is non-empty.
 - **Phase 1 tools**: `memory_flags_status`, `memory_phase_errors` admin ops added.
