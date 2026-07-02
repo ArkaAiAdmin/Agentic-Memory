@@ -82,7 +82,7 @@ class TestM4CommentRemoved:
         """The actual import must still be there — only the comment was removed."""
         src_path = pathlib.Path(__file__).resolve().parent.parent / "infra" / "arc_cache.py"
         src = src_path.read_text()
-        assert "from memory_common import find_project_root" in src
+        assert "from infra.memory_common import find_project_root" in src
 
 
 # ---------------------------------------------------------------------------
@@ -115,12 +115,12 @@ class TestLoggingStandardization:
 
     def test_reranker_logger_references_work(self):
         """Verify reranker module can be imported and logger is accessible."""
-        import infra.reranker
+        import infra.reranker as reranker
         assert hasattr(reranker, "logger")
         assert reranker.logger.name == "infra.reranker"
 
     def test_audit_logger_references_work(self):
         """Verify audit module can be imported and logger is accessible."""
-        import infra.audit
+        import infra.audit as audit
         assert hasattr(audit, "logger")
         assert audit.logger.name == "infra.audit"

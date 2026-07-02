@@ -56,7 +56,7 @@ class TestEmbedTextWithContext(unittest.TestCase):
     """_embed_text_with_context respects MEMORY_CONTEXTUAL_RETRIEVAL."""
 
     def test_enabled_prepends_prefix(self):
-        import infra.embedding_search
+        import infra.embedding_search as embedding_search
         old = embedding_search._CONTEXTUAL_ENABLED
         embedding_search._CONTEXTUAL_ENABLED = True
         try:
@@ -71,7 +71,7 @@ class TestEmbedTextWithContext(unittest.TestCase):
             embedding_search._CONTEXTUAL_ENABLED = old
 
     def test_disabled_returns_raw(self):
-        import infra.embedding_search
+        import infra.embedding_search as embedding_search
         old = embedding_search._CONTEXTUAL_ENABLED
         embedding_search._CONTEXTUAL_ENABLED = False
         try:
@@ -85,7 +85,7 @@ class TestEmbedTextWithContext(unittest.TestCase):
             embedding_search._CONTEXTUAL_ENABLED = old
 
     def test_no_prefix_when_empty(self):
-        import infra.embedding_search
+        import infra.embedding_search as embedding_search
         old = embedding_search._CONTEXTUAL_ENABLED
         embedding_search._CONTEXTUAL_ENABLED = True
         try:
@@ -125,7 +125,7 @@ class TestIndexEmbeddingWithContext(unittest.TestCase):
     """index_embedding stores correct hash when context is enabled."""
 
     def test_hash_includes_context(self):
-        import infra.embedding_search
+        import infra.embedding_search as embedding_search
         old = embedding_search._CONTEXTUAL_ENABLED
         embedding_search._CONTEXTUAL_ENABLED = True
         try:

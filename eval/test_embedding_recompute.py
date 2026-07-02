@@ -23,14 +23,14 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp())
         self.orig_vec_meta = None
-        import infra.embedding_recompute
+        import infra.embedding_recompute as embedding_recompute
 
         if hasattr(embedding_recompute, "VEC_META_FILE"):
             self.orig_vec_meta = str(embedding_recompute.VEC_META_FILE)
             embedding_recompute.VEC_META_FILE = self.tmpdir / "vec_index.meta.json"
 
     def tearDown(self):
-        import infra.embedding_recompute
+        import infra.embedding_recompute as embedding_recompute
 
         if self.orig_vec_meta:
             embedding_recompute.VEC_META_FILE = Path(self.orig_vec_meta)
@@ -66,7 +66,7 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         self.assertEqual(config, expected)
 
     def test_get_stored_config_bad_json(self):
-        import infra.embedding_recompute
+        import infra.embedding_recompute as embedding_recompute
 
         embedding_recompute.VEC_META_FILE.write_text("not json")
         config = embedding_recompute.get_stored_model_config()

@@ -220,7 +220,7 @@ class TestMCPToolAudit:
         """memory_save triggers audit logging."""
         db_path = _create_test_db(tmp_path)
 
-        import infra.infrastructure
+        import infra.infrastructure as infrastructure
 
         monkeypatch.setattr(infrastructure, "_resolve_active_db_path", lambda: db_path)
         # Monkeypatch get_memory_paths at the mcp_common level before mcp_tools
@@ -269,7 +269,7 @@ class TestMCPToolAudit:
         """memory_search triggers audit logging."""
         db_path = _create_test_db(tmp_path)
 
-        import infra.infrastructure
+        import infra.infrastructure as infrastructure
 
         monkeypatch.setattr(infrastructure, "_resolve_active_db_path", lambda: db_path)
         # Monkeypatch get_memory_paths at the mcp_common level before mcp_tools

@@ -217,7 +217,7 @@ class TestMemoryMcpUsesSafeCloseDb(unittest.TestCase):
         with open(memory_mcp_path, "r") as f:
             source = f.read()
         match = re.search(
-            r"from\s+memory_common\s+import\s+[^)]*\bsafe_close_db\b",
+            r"from\s+(?:infra\.)?memory_common\s+import\s+[^)]*\bsafe_close_db\b",
             source,
         )
         self.assertIsNotNone(

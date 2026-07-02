@@ -214,7 +214,7 @@ class TestBackoffAndCircuitBreaker(unittest.TestCase):
     """
 
     def setUp(self):
-        import background.auto_save
+        import background.auto_save as auto_save
 
         self.auto_save = auto_save
         self.auto_save._auto_save_reset_state()

@@ -48,7 +48,7 @@ from infra.infrastructure import (
     GLOBAL_MEM_DIR,
 )
 from infra.db import open_db  # noqa: E402,F401 — backward compat re-export
-import infra.audit
+import infra.audit as audit
 from self_directed import _assign_tier as assign_tier
 from backfill.orchestrator import auto_backfill
 

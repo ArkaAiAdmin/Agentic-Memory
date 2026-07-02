@@ -20,7 +20,7 @@ sys.path.insert(0, str(INSTALL_DIR))
 
 # Suppress reranker / embedding side effects during unit tests
 
-import recall.search_memory  # noqa: E402
+import recall.search_memory as search_memory  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

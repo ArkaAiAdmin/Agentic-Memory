@@ -25,7 +25,7 @@ from pathlib import Path
 INSTALL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL))
 
-import crdt.crdt_field  # noqa: E402
+import crdt.crdt_field as crdt_field  # noqa: E402
 import os  # noqa: E402
 
 

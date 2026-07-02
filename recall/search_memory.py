@@ -20,6 +20,7 @@ itself a thin alias of the canonical, so the import chain now reads
 intermediate re-implementations.
 """
 
+import os
 import sys
 from pathlib import Path
 

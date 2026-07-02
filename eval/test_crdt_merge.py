@@ -17,7 +17,7 @@ sys.path.insert(0, str(INSTALL_DIR))
 
 from infra.memory_common import connection_pool, open_db
 
-import crdt.crdt_merge
+import crdt.crdt_merge as crdt_merge
 from crdt.crdt_merge import crdt_save, crdt_sync_all, dominates, concurrent
 
 

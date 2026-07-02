@@ -436,11 +436,10 @@ class TestAuditIntegration(unittest.TestCase):
             pinned=False,
             is_global=False,
             safety_wiring=False,
+            db_path=str(PROD_DB),
         )
         _hard_delete(PROD_DB, nid)
-        audit_db = PROD_DB.parent / "memory.db"
-        if not audit_db.exists():
-            shutil.copy2(str(PROD_DB), str(audit_db))
+        audit_db = PROD_DB
         from infra.audit import flush_audit
 
         flush_audit(timeout=5)
@@ -451,7 +450,7 @@ class TestAuditIntegration(unittest.TestCase):
         from unittest.mock import patch
 
         slug = f"unit-err-{int(time.time())}"
-        with patch("db_write_queue.sqlite_write_queue.start_session", side_effect=Exception("DB error")):
+        with patch("infra.db_write_queue.sqlite_write_queue.start_session", side_effect=Exception("DB error")):
             save_memory(
                 content=f"---\ncategory: lessons\ntitle_slug: {slug}\ntags: []\nvalid_from: {now_iso()}\n---\n\nError path.",
                 category="lessons",
@@ -460,10 +459,9 @@ class TestAuditIntegration(unittest.TestCase):
                 pinned=False,
                 is_global=False,
                 safety_wiring=False,
+                db_path=str(PROD_DB),
             )
-        audit_db = PROD_DB.parent / "memory.db"
-        if not audit_db.exists():
-            shutil.copy2(str(PROD_DB), str(audit_db))
+        audit_db = PROD_DB
         from infra.audit import flush_audit
 
         flush_audit(timeout=5)

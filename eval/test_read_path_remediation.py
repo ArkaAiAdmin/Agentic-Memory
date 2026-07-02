@@ -21,18 +21,19 @@ class TestReadPathRemediation(unittest.TestCase):
 
     def test_token_bucket_rate_limiter_integration(self):
         """Verify token bucket rate limiter is wired and functions correctly."""
-        configure_rate_limits()
-        self.assertIn("memory_save", RATE_LIMITERS)
-        self.assertIn("memory_search", RATE_LIMITERS)
+        with patch.dict(os.environ, {"MEMORY_RATE_LIMIT_MEMORY_SAVE": "100,20"}):
+            configure_rate_limits()
+            self.assertIn("memory_save", RATE_LIMITERS)
+            self.assertIn("memory_search", RATE_LIMITERS)
 
-        # Consume tokens until rate limited
-        allowed = [check_rate_limit("memory_save") for _ in range(30)]
-        self.assertIn(False, allowed)
-        self.assertGreater(get_retry_after("memory_save"), 0.0)
+            # Consume tokens until rate limited
+            allowed = [check_rate_limit("memory_save") for _ in range(30)]
+            self.assertIn(False, allowed)
+            self.assertGreater(get_retry_after("memory_save"), 0.0)
 
-        # Check redirection wrapper
-        redirection_ok = rate_limit_check("memory_search")
-        self.assertTrue(redirection_ok)
+            # Check redirection wrapper
+            redirection_ok = rate_limit_check("memory_search")
+            self.assertTrue(redirection_ok)
 
     def test_thompson_sampling_weights(self):
         """Verify Thompson sampling computes weights using Beta distribution."""

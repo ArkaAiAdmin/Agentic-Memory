@@ -233,7 +233,7 @@ class TestSyncMain(unittest.TestCase):
         with patch.object(
             sys, "argv", ["cli.py", "sync", "--peer", "http://test:9877"]
         ):
-            with patch.dict(sys.modules, {"sync_client": fake}):
+            with patch.dict(sys.modules, {"infra.sync_client": fake}):
                 result = sync_main()
         self.assertEqual(result, 0)
 
@@ -244,7 +244,7 @@ class TestSyncMain(unittest.TestCase):
         with patch.object(
             sys, "argv", ["cli.py", "sync", "--peer", "http://test:9877"]
         ):
-            with patch.dict(sys.modules, {"sync_client": fake}):
+            with patch.dict(sys.modules, {"infra.sync_client": fake}):
                 result = sync_main()
         self.assertEqual(result, 1)
 
@@ -255,6 +255,6 @@ class TestSyncMain(unittest.TestCase):
         with patch.object(
             sys, "argv", ["cli.py", "sync", "--peer", "http://test:9877"]
         ):
-            with patch.dict(sys.modules, {"sync_client": fake}):
+            with patch.dict(sys.modules, {"infra.sync_client": fake}):
                 result = sync_main()
         self.assertEqual(result, 2)

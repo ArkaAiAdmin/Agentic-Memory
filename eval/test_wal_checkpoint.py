@@ -90,7 +90,7 @@ class TestMaybeCheckpointOnStartup(unittest.TestCase):
 
     def test_sets_flag_after_first_call(self):
         """First call sets _STARTUP_CHECKPOINT_DONE to True."""
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         old = memory_common._STARTUP_CHECKPOINT_DONE
         memory_common._STARTUP_CHECKPOINT_DONE = False
@@ -109,7 +109,7 @@ class TestMaybeCheckpointOnStartup(unittest.TestCase):
 
     def test_second_call_is_noop(self):
         """Second call is a no-op (flag already True)."""
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         old = memory_common._STARTUP_CHECKPOINT_DONE
         memory_common._STARTUP_CHECKPOINT_DONE = True
@@ -123,7 +123,7 @@ class TestMaybeCheckpointOnStartup(unittest.TestCase):
 
     def test_noop_without_env_var(self):
         """Without MEMORY_WAL_CHECKPOINT_STARTUP=1, checkpoint is skipped."""
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         old = memory_common._STARTUP_CHECKPOINT_DONE
         memory_common._STARTUP_CHECKPOINT_DONE = False
@@ -167,7 +167,7 @@ class TestMemoryCompactCallsCheckpoint(unittest.TestCase):
     def test_compact_includes_checkpoint(self, mock_ckpt, mock_run):
         """memory_compact calls wal_checkpoint_idle after rebuild."""
         import memory_mcp
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         old = memory_common._STARTUP_CHECKPOINT_DONE
         memory_common._STARTUP_CHECKPOINT_DONE = True  # skip startup checkpoint

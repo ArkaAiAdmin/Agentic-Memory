@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import infra._bootstrap_path  # noqa: E402
+import infra._bootstrap_path as _bootstrap_path  # noqa: E402
 
 # Make the sibling _log_error.py importable (same dir as this hook)
 sys.path.insert(0, str(Path(__file__).resolve().parent))

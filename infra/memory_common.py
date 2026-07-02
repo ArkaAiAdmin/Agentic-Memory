@@ -28,6 +28,7 @@ import warnings
 from pathlib import Path
 from typing import Optional
 
+from infra.frontmatter import _coerce  # noqa: F401
 # Re-exports from the 6 new modules (one canonical home, multiple import paths)
 import logging
 
@@ -58,6 +59,8 @@ from infra.memory_config import (
     configure_logging,
     log_backup,
     validate_config,
+    PROJECT_ROOT_MARKERS,
+    _VALID_LOG_LEVELS,
 )
 from infra.safe_call import safe_call
 
@@ -137,6 +140,7 @@ __all__ = [
     "_migrate_ensure_fts_triggers",
     # frontmatter.py
     "parse_frontmatter",
+    "_coerce",
     # file_lock.py
     "_try_flock",
     "acquire_flock_with_retry",
@@ -148,6 +152,8 @@ __all__ = [
     "configure_logging",
     "log_backup",
     "validate_config",
+    "PROJECT_ROOT_MARKERS",
+    "_VALID_LOG_LEVELS",
     # safe_call.py
     "safe_call",
     # db_migrations.py (re-exported for backward compat)

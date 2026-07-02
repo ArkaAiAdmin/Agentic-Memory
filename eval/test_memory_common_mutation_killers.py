@@ -1144,7 +1144,7 @@ class TestMaybeCheckpointOnStartupMutationKillers(unittest.TestCase):
     """Target survived mutations in _maybe_checkpoint_on_startup."""
 
     def test_returns_none(self):
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         old_val = memory_common._STARTUP_CHECKPOINT_DONE
         try:
@@ -1156,7 +1156,7 @@ class TestMaybeCheckpointOnStartupMutationKillers(unittest.TestCase):
             memory_common._STARTUP_CHECKPOINT_DONE = old_val
 
     def test_sets_checkpoint_done_flag(self):
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         old_val = memory_common._STARTUP_CHECKPOINT_DONE
         try:
@@ -1168,7 +1168,7 @@ class TestMaybeCheckpointOnStartupMutationKillers(unittest.TestCase):
             memory_common._STARTUP_CHECKPOINT_DONE = old_val
 
     def test_skips_when_already_done(self):
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         old_val = memory_common._STARTUP_CHECKPOINT_DONE
         try:
@@ -1179,7 +1179,7 @@ class TestMaybeCheckpointOnStartupMutationKillers(unittest.TestCase):
             memory_common._STARTUP_CHECKPOINT_DONE = old_val
 
     def test_skips_when_env_not_set(self):
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         old_val = memory_common._STARTUP_CHECKPOINT_DONE
         try:

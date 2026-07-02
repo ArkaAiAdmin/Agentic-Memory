@@ -61,11 +61,9 @@ def _setup_test_env(tmpdir: str):
     mcp_tools.GLOBAL_MEM_DIR = tmp
     mcp_tools.get_memory_paths = lambda: (tmp, tmp, tmp)
 
-    import infra.memory_common
-    import infra.memory_common
+    import infra.memory_common as memory_common
     import infra.memory_config
-    import infra.infrastructure
-    import infra.infrastructure
+    import infra.infrastructure as infrastructure
 
     orig_mem_common_paths = getattr(memory_common, "get_memory_paths", None)
     orig_infra_mem_common_paths = getattr(infra.memory_common, "get_memory_paths", None)
@@ -114,11 +112,9 @@ def _restore_test_env(
     mcp_tools.GLOBAL_MEM_DIR = orig_global
     mcp_tools.get_memory_paths = orig_paths
 
-    import infra.memory_common
-    import infra.memory_common
+    import infra.memory_common as memory_common
     import infra.memory_config
-    import infra.infrastructure
-    import infra.infrastructure
+    import infra.infrastructure as infrastructure
 
     if orig_mem_common_paths is not None:
         memory_common.get_memory_paths = orig_mem_common_paths

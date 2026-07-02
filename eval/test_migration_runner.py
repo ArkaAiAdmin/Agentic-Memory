@@ -35,8 +35,8 @@ from pathlib import Path
 INSTALL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL))
 
-import infra.migration_runner  # noqa: E402
-import infra.db_migrations  # noqa: E402
+import infra.migration_runner as migration_runner  # noqa: E402
+import infra.db_migrations as db_migrations  # noqa: E402
 
 
 def _new_db() -> sqlite3.Connection:

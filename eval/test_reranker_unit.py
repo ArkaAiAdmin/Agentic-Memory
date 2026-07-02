@@ -87,7 +87,7 @@ class TestRerankerSingleton(unittest.TestCase):
         self.assertAlmostEqual(normalize_rerank_score(-1.0), 0.269, places=2)
 
     def test_model_ids_are_set(self):
-        import infra.reranker
+        import infra.reranker as reranker
 
         self.assertTrue(len(reranker.PRIMARY_MODEL_ID) > 0)
         self.assertTrue(len(reranker.FALLBACK_MODEL_ID) > 0)

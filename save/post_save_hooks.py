@@ -36,7 +36,7 @@ from infra.memory_common import (
 )
 from infra.infrastructure import update_memory_md_locked
 from infra.cache import _search_cache
-import infra.audit
+import infra.audit as audit
 from save.backlinks import (
     _auto_backlink_multi_part,
 )

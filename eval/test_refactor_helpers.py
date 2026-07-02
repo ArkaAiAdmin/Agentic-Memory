@@ -866,7 +866,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_inbox_path_resolves_to_memory_dir(self):
         """The inbox path lives next to the DB, not at a fixed location."""
-        import background.auto_save
+        import background.auto_save as auto_save
 
         self.assertEqual(
             auto_save.get_auto_save_inbox_path(),
@@ -905,7 +905,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_enqueue_to_inbox_writes_one_line(self):
         """A successful enqueue appends one valid JSONL line."""
-        import background.auto_save
+        import background.auto_save as auto_save
 
         result = auto_save._enqueue_to_inbox(
             {
@@ -926,7 +926,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_drain_inbox_returns_entries_and_truncates(self):
         """Drain parses entries and atomically empties the inbox."""
-        import background.auto_save
+        import background.auto_save as auto_save
 
         for i in range(3):
             auto_save._enqueue_to_inbox(
@@ -946,7 +946,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_drain_inbox_handles_missing_file(self):
         """Drain on a missing inbox returns [] without error."""
-        import background.auto_save
+        import background.auto_save as auto_save
 
         auto_save.get_auto_save_inbox_path().unlink(missing_ok=True)
         entries = auto_save._drain_inbox()
@@ -954,7 +954,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_drain_inbox_skips_malformed_lines(self):
         """A bad JSONL line is dropped, not blocking the whole drain."""
-        import background.auto_save
+        import background.auto_save as auto_save
 
         inbox = auto_save.get_auto_save_inbox_path()
         inbox.parent.mkdir(parents=True, exist_ok=True)
@@ -973,14 +973,14 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_is_daemon_running_false_when_no_pid(self):
         """No PID file → not running."""
-        import background.auto_save
+        import background.auto_save as auto_save
 
         auto_save.get_auto_save_pid_path().unlink(missing_ok=True)
         self.assertFalse(auto_save._is_daemon_running())
 
     def test_write_and_remove_pid_file(self):
         """PID file round-trips through write+remove."""
-        import background.auto_save
+        import background.auto_save as auto_save
 
         ok = auto_save._write_pid_file()
         self.assertTrue(ok)
@@ -992,7 +992,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
 
     def test_async_path_returns_queued_envelope(self):
         """When async is on, tool_complete returns a 'queued' envelope."""
-        import background.auto_save
+        import background.auto_save as auto_save
 
         result = auto_save.tool_complete("memory_save", '{"x":1}', "preview")
         self.assertIn("saved", result)
@@ -1034,7 +1034,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
         # Clean up any stale daemon lock from a prior run — without this,
         # a surviving flock from a previous subprocess causes the new daemon
         # to silently exit without writing a PID file (no DEVNULL output to recover).
-        import background.auto_save
+        import background.auto_save as auto_save
         auto_save._cleanup_stale_daemon_lock()
 
         script = os.path.join(
@@ -1057,7 +1057,7 @@ class TestAutoSaveAsyncBatch(unittest.TestCase):
         )
         try:
             # Wait for the daemon to write its PID file.
-            import background.auto_save
+            import background.auto_save as auto_save
 
             # Increased from 2.0 s to 5.0 s: Python cold-start (importing
             # background.auto_save pulls in circuit_breaker, config, daemon,

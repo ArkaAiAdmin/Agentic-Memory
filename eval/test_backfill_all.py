@@ -134,7 +134,7 @@ class TestAutoBackfill:
     def test_auto_skips_when_interval_not_reached(self, sample_db, monkeypatch):
         monkeypatch.setenv("MEMORY_BACKFILL_INTERVAL", "100")
         from backfill.orchestrator import auto_backfill
-        import backfill.orchestrator
+        import backfill.orchestrator as backfill_all
         backfill_all._save_counter = 0
         result = auto_backfill(sample_db)
         assert result is None
@@ -142,7 +142,7 @@ class TestAutoBackfill:
     def test_auto_triggers_at_interval(self, sample_db, monkeypatch):
         monkeypatch.setenv("MEMORY_BACKFILL_INTERVAL", "2")
         from backfill.orchestrator import auto_backfill
-        import backfill.orchestrator
+        import backfill.orchestrator as backfill_all
         backfill_all._save_counter = 0
         result1 = auto_backfill(sample_db)
         assert result1 is None
@@ -153,7 +153,7 @@ class TestAutoBackfill:
     def test_auto_resets_counter_after_trigger(self, sample_db, monkeypatch):
         monkeypatch.setenv("MEMORY_BACKFILL_INTERVAL", "2")
         from backfill.orchestrator import auto_backfill
-        import backfill.orchestrator
+        import backfill.orchestrator as backfill_all
         backfill_all._save_counter = 0
         auto_backfill(sample_db)
         auto_backfill(sample_db)
@@ -162,7 +162,7 @@ class TestAutoBackfill:
     def test_auto_disabled_by_default(self, sample_db, monkeypatch):
         monkeypatch.delenv("MEMORY_BACKFILL_INTERVAL", raising=False)
         from backfill.orchestrator import auto_backfill
-        import backfill.orchestrator
+        import backfill.orchestrator as backfill_all
         backfill_all._save_counter = 0
         result = auto_backfill(sample_db)
         assert result is None

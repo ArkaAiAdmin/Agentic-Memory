@@ -361,6 +361,7 @@ class TestLLMExtractionV2(unittest.TestCase):
             "MEMORY_LLAMA_CPP_HOST": "http://127.0.0.1:1",
         }
         old = {k: os.environ.get(k) for k in env}
+        orig_llm_ext = os.environ.get("MEMORY_LLM_EXTRACTION")
         try:
             os.environ.update(env)
             reset_provider_cache()
@@ -380,7 +381,10 @@ class TestLLMExtractionV2(unittest.TestCase):
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
-            os.environ.pop("MEMORY_LLM_EXTRACTION", None)
+            if orig_llm_ext is None:
+                os.environ.pop("MEMORY_LLM_EXTRACTION", None)
+            else:
+                os.environ["MEMORY_LLM_EXTRACTION"] = orig_llm_ext
             reset_provider_cache()
 
 

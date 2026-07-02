@@ -171,7 +171,7 @@ def sync_server_env_names() -> tuple:
 
 
 # Import after helpers are defined so the import order is stable.
-import infra.sync_server  # noqa: E402
+import infra.sync_server as sync_server  # noqa: E402
 
 
 class TestTlsServerEndToEnd(unittest.TestCase):

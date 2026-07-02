@@ -127,8 +127,8 @@ class TestKnowledgeGraphShortestPath(unittest.TestCase):
     def setUp(self):
         self.db = _fresh_db()
 
-    @patch("db.open_db")
-    @patch("kg_traversal.find_shortest_path")
+    @patch("infra.db.open_db")
+    @patch("kg.kg_traversal.find_shortest_path")
     def test_shortest_path(self, mock_find, mock_open):
         from agentic_memory import KnowledgeGraph, Relation
 
@@ -147,8 +147,8 @@ class TestKnowledgeGraphShortestPath(unittest.TestCase):
         self.assertEqual(path[0].target, "JavaScript")
         self.assertEqual(path[0].relation_type, "influenced")
 
-    @patch("db.open_db")
-    @patch("kg_traversal.find_shortest_path")
+    @patch("infra.db.open_db")
+    @patch("kg.kg_traversal.find_shortest_path")
     def test_shortest_path_no_path(self, mock_find, mock_open):
         from agentic_memory import KnowledgeGraph
 
@@ -164,8 +164,8 @@ class TestKnowledgeGraphTraverse(unittest.TestCase):
     def setUp(self):
         self.db = _fresh_db()
 
-    @patch("db.open_db")
-    @patch("kg_traversal.find_neighbors")
+    @patch("infra.db.open_db")
+    @patch("kg.kg_traversal.find_neighbors")
     def test_traverse(self, mock_neighbors, mock_open):
         from agentic_memory import KnowledgeGraph, Entity, Relation
 
@@ -187,8 +187,8 @@ class TestKnowledgeGraphTraverse(unittest.TestCase):
         self.assertIsInstance(entities[0], Entity)
         self.assertIsInstance(relations[0], Relation)
 
-    @patch("db.open_db")
-    @patch("kg_traversal.find_neighbors")
+    @patch("infra.db.open_db")
+    @patch("kg.kg_traversal.find_neighbors")
     def test_traverse_empty(self, mock_neighbors, mock_open):
         from agentic_memory import KnowledgeGraph
 

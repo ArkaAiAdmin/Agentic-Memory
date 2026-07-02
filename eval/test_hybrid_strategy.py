@@ -571,13 +571,13 @@ class TestBulkFunctionLLMSafe(unittest.TestCase):
             "_backfill_drifted_subsystems must use "
             "index_facts_for_memory_bulk in the kg_facts backfill branch",
         )
-        # The fact_extraction import block must include the bulk
+        # The fact import block must include the bulk
         # function. Use a regex to handle multi-line parenthesised
         # imports correctly.
-        match = re.search(r"from\s+fact_extraction\s+import\s+\(([^)]+)\)", source)
+        match = re.search(r"from\s+fact\s+import\s+\(([^)]+)\)", source)
         self.assertIsNotNone(
             match,
-            "self_directed must import from fact_extraction (parenthesised) "
+            "self_directed must import from fact (parenthesised) "
             "for the backfill to work",
         )
         assert match is not None

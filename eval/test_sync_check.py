@@ -18,7 +18,7 @@ sys.path.insert(0, str(INSTALL_DIR))
 
 class TestSyncCheckImports(unittest.TestCase):
     def test_module_importable(self):
-        import infra.sync_check
+        import infra.sync_check as sync_check
 
         self.assertTrue(hasattr(sync_check, "main"))
 

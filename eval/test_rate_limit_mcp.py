@@ -20,7 +20,7 @@ class TestWithAuditRateLimit(unittest.TestCase):
 
     def test_burst_returns_rate_limited(self):
         """61 rapid calls to the same tool => 61st returns RATE_LIMITED."""
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         limiter = memory_common.get_default_limiter()
         limiter.reset("test_burst_tool")
@@ -48,7 +48,7 @@ class TestWithAuditRateLimit(unittest.TestCase):
 
     def test_different_tools_independent_buckets(self):
         """Rate limit is per-tool, not global."""
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         limiter = memory_common.get_default_limiter()
         limiter.reset("tool_a")
@@ -79,7 +79,7 @@ class TestWithAuditRateLimit(unittest.TestCase):
 
     def test_rate_limit_check_resets_after_window(self):
         """Rate limit resets after the window passes."""
-        import infra.memory_common
+        import infra.memory_common as memory_common
 
         # Create a short-window limiter for testing
         short_limiter = memory_common.RateLimiter(max_calls=3, window_seconds=0.1)

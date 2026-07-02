@@ -157,7 +157,7 @@ class TestCrdtSaveSagaRollback(unittest.TestCase):
 
         # crdt_merge is now a shim — the real code moved to crdt/crdt_merge.py
         src = (Path(INSTALL_DIR) / "crdt" / "crdt_merge.py").read_text()
-        self.assertIn("from saga import Saga", src)
+        self.assertIn("from infra.saga import Saga", src)
         self.assertIn("SagaStep", src)
         self.assertIn("_capture_pre_state_main", src)
 

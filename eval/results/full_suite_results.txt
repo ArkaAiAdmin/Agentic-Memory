@@ -1,6 +1,6 @@
-Total: 3334 passed, 190 failed, 26 skipped, 0 xfailed
-Passed files: 184
-Failed/segfault files: 34
+Total: 3332 passed, 143 failed, 26 skipped, 0 xfailed
+Passed files: 183
+Failed/segfault files: 35
 
   FAILED: test_agent_scoping_hooks.py
   FAILED: test_adversarial_e2e.py
@@ -32,13 +32,14 @@ Failed/segfault files: 34
   FAILED: test_reranker_unit.py
   FAILED: test_safe_close_db.py
   FAILED: test_search_memory_cli.py
+  FAILED: test_save_pipeline_unit.py
   FAILED: test_spaced_repetition.py
   FAILED: test_sync_check.py
   FAILED: test_sync_server_tls.py
   FAILED: test_wal_checkpoint.py
 
-  PASSED: test_add_flock_to_crons.py
   PASSED: test_adaptive_retention.py
+  PASSED: test_add_flock_to_crons.py
   PASSED: test_arc_cache.py
   PASSED: test_atomic_write_coverage.py
   PASSED: test_antonym_contradictions.py
@@ -54,14 +55,14 @@ Failed/segfault files: 34
   PASSED: test_bb1_synthesis.py
   PASSED: test_bb3_rrf.py
   PASSED: test_bb2_history.py
-  PASSED: test_compaction_synthesis.py
   PASSED: test_cascade_preserve.py
+  PASSED: test_compaction_synthesis.py
   PASSED: test_compliance_rate_limit.py
   PASSED: test_concurrent.py
   PASSED: test_config_loading.py
   PASSED: test_config_log_resolution.py
-  PASSED: test_consolidation.py
   PASSED: test_circuit_breaker_telemetry.py
+  PASSED: test_consolidation.py
   PASSED: test_contextual_enrichment.py
   PASSED: test_contradiction_detector_unit.py
   PASSED: test_crdt_merge_helpers.py
@@ -77,8 +78,8 @@ Failed/segfault files: 34
   PASSED: test_cron_kg_backfill.py
   PASSED: test_cron_kg_backfill_monitor.py
   PASSED: test_cron_skill_extraction.py
-  PASSED: test_cron_train_forget_model.py
   PASSED: test_cron_model_lock.py
+  PASSED: test_cron_train_forget_model.py
   PASSED: test_cron_watchdog.py
   PASSED: test_cross_process_safety.py
   PASSED: test_ctr_feedback.py
@@ -118,39 +119,39 @@ Failed/segfault files: 34
   PASSED: test_integrity.py
   PASSED: test_isolation_guard.py
   PASSED: test_kg_dedup.py
+  PASSED: test_integration_save_pipeline.py
   PASSED: test_kg_dedup_semantic.py
   PASSED: test_kg_entity_filter.py
   PASSED: test_kg_facts_fts.py
-  PASSED: test_integration_save_pipeline.py
   PASSED: test_kg_traversal.py
   PASSED: test_kg_orphan_recovery.py
   PASSED: test_knowledge_graph.py
   PASSED: test_kg_validation.py
+  PASSED: test_integration_search_pipeline.py
+  PASSED: test_langchain_tool.py
+  PASSED: test_llm_contradiction.py
   PASSED: test_langchain_history.py
   PASSED: test_langchain_retriever.py
-  PASSED: test_llm_contradiction.py
-  PASSED: test_langchain_tool.py
   PASSED: test_llm_extraction_max_tokens.py
   PASSED: test_mcp_instance.py
-  PASSED: test_integration_search_pipeline.py
   PASSED: test_mcp_maintenance_dispatch.py
   PASSED: test_mcp_maintenance_ops_unit.py
-  PASSED: test_mcp_live.py
   PASSED: test_mcp_skill_ops.py
+  PASSED: test_mcp_live.py
   PASSED: test_mcp_verbs.py
   PASSED: test_llm_providers.py
-  PASSED: test_mcp_wrappers.py
   PASSED: test_memory_common_extras.py
+  PASSED: test_mcp_wrappers.py
   PASSED: test_memory_injection_unit.py
   PASSED: test_multi_agent_unit.py
   PASSED: test_neural_forget_model.py
   PASSED: test_neural_forget_unit.py
   PASSED: test_observability.py
   PASSED: test_okf_export.py
-  PASSED: test_okf_import.py
   PASSED: test_mdns_discovery.py
-  PASSED: test_p0_p1_p2_fixes.py
+  PASSED: test_okf_import.py
   PASSED: test_p2_share_and_sync_wireup.py
+  PASSED: test_p0_p1_p2_fixes.py
   PASSED: test_phase2_debt_fixes.py
   PASSED: test_phase4_debt_fixes.py
   PASSED: test_phase2_instrumentation.py
@@ -158,8 +159,8 @@ Failed/segfault files: 34
   PASSED: test_phase9.py
   PASSED: test_pool_inode_reopen.py
   PASSED: test_quality_gates.py
-  PASSED: test_pipelines_aj.py
   PASSED: test_pipeline_integration.py
+  PASSED: test_pipelines_aj.py
   PASSED: test_query_cache.py
   PASSED: test_quirk_fixes_e2e.py
   PASSED: test_qw3_query_types.py
@@ -167,56 +168,55 @@ Failed/segfault files: 34
   PASSED: test_qw2_query_expansion.py
   PASSED: test_qw5_chunk_indexing.py
   PASSED: test_rate_limiter.py
-  PASSED: test_rebuild_index.py
   PASSED: test_rebuild_concurrency.py
+  PASSED: test_rebuild_index.py
   PASSED: test_recent_save_hint.py
-  PASSED: test_relational_storage.py
   PASSED: test_rebuild_vec_index.py
+  PASSED: test_relational_storage.py
   PASSED: test_rich_survival_note.py
   PASSED: test_safe_call.py
   PASSED: test_safety_wiring.py
   PASSED: test_safety_wiring_signatures.py
-  PASSED: test_reranker.py
   PASSED: test_saga_crash_safety.py
   PASSED: test_sarcasm_contradiction.py
+  PASSED: test_reranker.py
   PASSED: test_save_skill_extraction.py
-  PASSED: test_sdk.py
   PASSED: test_reranker_security.py
+  PASSED: test_sdk.py
   PASSED: test_sdk_p2.py
-  PASSED: test_sdk_p1.py
-  PASSED: test_save_pipeline_unit.py
   PASSED: test_sdk_p3.py
+  PASSED: test_sdk_p1.py
   PASSED: test_search_kg_facts.py
   PASSED: test_search_mutation_killers.py
   PASSED: test_search_pipeline_unit.py
-  PASSED: test_search_skill_first.py
   PASSED: test_search_pipeline_validation.py
+  PASSED: test_search_skill_first.py
   PASSED: test_security_sync_auth.py
   PASSED: test_self_directed.py
-  PASSED: test_semantic_correctness.py
   PASSED: test_self_directed_validation.py
-  PASSED: test_session_manager.py
+  PASSED: test_search_integration.py
+  PASSED: test_semantic_correctness.py
   PASSED: test_session_admin.py
+  PASSED: test_session_manager.py
   PASSED: test_session_migration.py
   PASSED: test_shared_memory_state.py
   PASSED: test_six_channel.py
-  PASSED: test_search_integration.py
   PASSED: test_skill_extractor.py
   PASSED: test_skill_extractor_full.py
-  PASSED: test_subpackage_public_api.py
   PASSED: test_session_search.py
+  PASSED: test_subpackage_public_api.py
   PASSED: test_sync_layer.py
   PASSED: test_temporal_facts.py
   PASSED: test_soft_delete.py
-  PASSED: test_temporal_ssm_v2.py
   PASSED: test_tier_migration.py
+  PASSED: test_temporal_ssm_v2.py
   PASSED: test_tier_migration_assign_tier.py
   PASSED: test_tool_routing.py
   PASSED: test_unicode_normalization.py
   PASSED: test_transformer_opt_in.py
   PASSED: test_uncovered_dedicated.py
-  PASSED: test_vector_store.py
   PASSED: test_vec_index.py
+  PASSED: test_vector_store.py
   PASSED: test_wave2c.py
   PASSED: test_zero_result_ux.py
   PASSED: test_vec_index_search.py
@@ -226,20 +226,21 @@ Failed/segfault files: 34
 Failure details:
 
 === test_audit_log.py ===
-   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_audit_log.py:70: NameError: name 'memory_common' is not defined
+ory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_audit_log.py:124: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_audit_log.py:70: NameError: name 'memory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_audit_log.py:136: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_audit_log.py:124: NameError: name 'memory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_audit_log.py:107: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_audit_log.py:136: NameError: name 'memory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_audit_log.py:34: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_audit_log.py:107: NameError: name 'memory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_audit_log.py:34: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_audit_log.py:34: NameError: name 'memory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_audit_log.py:34: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_audit_log.py:34: NameError: name 'memory_common' is not defined
+E   NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_audit_log.py:34: NameError: name 'memory_common' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_audit_log.py::TestEnqueueAudit::test_enqueue_creates_row - N...
 FAILED eval/test_audit_log.py::TestEnqueueAudit::test_enqueue_many_rows - Nam...
@@ -250,7 +251,7 @@ FAILED eval/test_audit_log.py::TestAuditContextManager::test_success_records_row
 FAILED eval/test_audit_log.py::TestAsyncFlush::test_no_double_counting_on_flush
 FAILED eval/test_audit_log.py::TestAsyncFlush::test_pending_counter_drains_on_flush
 FAILED eval/test_audit_log.py::TestAsyncFlush::test_thread_routes_multiple_dbs
-9 failed, 6 passed in 1.52s
+9 failed, 6 passed in 1.53s
 
 
 === test_audit_logging.py ===
@@ -259,31 +260,31 @@ FAILED eval/test_audit_log.py::TestAsyncFlush::test_thread_routes_multiple_dbs
 E   NameError: name 'infrastructure' is not defined
 ------------------------------ Captured log call -------------------------------
 WARNING  infra.migration_runner:migration_runner.py:407 Migration 013: backfill failed (non-fatal; will retry on next save via _seed_note_into_field_crdt): no such column: version_vector
-/Users/arka/.config/agentic-memory-wt2/eval/test_audit_logging.py:225: NameError: name 'infrastructure' is not defined
+/Users/arka/.config/agentic-memory/eval/test_audit_logging.py:225: NameError: name 'infrastructure' is not defined
 E   NameError: name 'infrastructure' is not defined
 ------------------------------ Captured log call -------------------------------
 WARNING  infra.migration_runner:migration_runner.py:407 Migration 013: backfill failed (non-fatal; will retry on next save via _seed_note_into_field_crdt): no such column: version_vector
-/Users/arka/.config/agentic-memory-wt2/eval/test_audit_logging.py:274: NameError: name 'infrastructure' is not defined
+/Users/arka/.config/agentic-memory/eval/test_audit_logging.py:274: NameError: name 'infrastructure' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_audit_logging.py::TestMCPToolAudit::test_memory_save_creates_audit
 FAILED eval/test_audit_logging.py::TestMCPToolAudit::test_memory_search_creates_audit
-2 failed, 8 passed in 0.58s
+2 failed, 8 passed in 0.59s
 
 
 === test_auto_save_unit.py ===
-t.py:219: NameError: name 'auto_save' is not defined
+/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_auto_save_unit.py:219: NameError: name 'auto_save' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_auto_save_unit.py::TestBackoffAndCircuitBreaker::test_circuit_closed_initially
 FAILED eval/test_auto_save_unit.py::TestBackoffAndCircuitBreaker::test_circuit_resets_after_circuit_breaker_seconds
@@ -293,26 +294,26 @@ FAILED eval/test_auto_save_unit.py::TestBackoffAndCircuitBreaker::test_first_fai
 FAILED eval/test_auto_save_unit.py::TestBackoffAndCircuitBreaker::test_success_resets_failure_window
 FAILED eval/test_auto_save_unit.py::TestBackoffAndCircuitBreaker::test_tool_complete_returns_backoff_on_failure
 FAILED eval/test_auto_save_unit.py::TestBackoffAndCircuitBreaker::test_tool_complete_short_circuits_when_circuit_open
-8 failed, 14 passed, 1 skipped in 0.99s
+8 failed, 14 passed, 1 skipped in 1.01s
 
 
 === test_backfill_all.py ===
 ...........FFFF........                                                  [100%]
 =================================== FAILURES ===================================
 E   NameError: name 'backfill_all' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_backfill_all.py:138: NameError: name 'backfill_all' is not defined
+/Users/arka/.config/agentic-memory/eval/test_backfill_all.py:138: NameError: name 'backfill_all' is not defined
 E   NameError: name 'backfill_all' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_backfill_all.py:146: NameError: name 'backfill_all' is not defined
+/Users/arka/.config/agentic-memory/eval/test_backfill_all.py:146: NameError: name 'backfill_all' is not defined
 E   NameError: name 'backfill_all' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_backfill_all.py:157: NameError: name 'backfill_all' is not defined
+/Users/arka/.config/agentic-memory/eval/test_backfill_all.py:157: NameError: name 'backfill_all' is not defined
 E   NameError: name 'backfill_all' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_backfill_all.py:166: NameError: name 'backfill_all' is not defined
+/Users/arka/.config/agentic-memory/eval/test_backfill_all.py:166: NameError: name 'backfill_all' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_backfill_all.py::TestAutoBackfill::test_auto_skips_when_interval_not_reached
 FAILED eval/test_backfill_all.py::TestAutoBackfill::test_auto_triggers_at_interval
 FAILED eval/test_backfill_all.py::TestAutoBackfill::test_auto_resets_counter_after_trigger
 FAILED eval/test_backfill_all.py::TestAutoBackfill::test_auto_disabled_by_default
-4 failed, 19 passed in 3.52s
+4 failed, 19 passed in 3.70s
 
 
 === test_cli.py ===
@@ -330,7 +331,7 @@ E   AssertionError: 2 != 1
   "pull": {
     "error": "Failed to fetch changes from http://test:9877"
   },
-  "duration_ms": 14,
+  "duration_ms": 13,
   "success": false
 }
 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 2 != 1
@@ -359,24 +360,24 @@ FAILED eval/test_cli.py::TestSyncMain::test_sync_success - AssertionError: 2 ...
 === test_context_window.py ===
 ....F.                                                                   [100%]
 =================================== FAILURES ===================================
-E   ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory-wt2/recall/recall.py)
-/Users/arka/.config/agentic-memory-wt2/recall/__init__.py:8: ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory-wt2/recall/recall.py)
+E   ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory/recall/recall.py)
+/Users/arka/.config/agentic-memory/recall/__init__.py:8: ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory/recall/recall.py)
 =========================== short test summary info ============================
 FAILED eval/test_context_window.py::TestRecall::test_recall_context_returns_dict
-1 failed, 5 passed in 0.14s
+1 failed, 5 passed in 0.15s
 
 
 === test_contextual_retrieval.py ===
 ......FFF.F                                                              [100%]
 =================================== FAILURES ===================================
 E   NameError: name 'embedding_search' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_contextual_retrieval.py:75: NameError: name 'embedding_search' is not defined
+/Users/arka/.config/agentic-memory/eval/test_contextual_retrieval.py:75: NameError: name 'embedding_search' is not defined
 E   NameError: name 'embedding_search' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_contextual_retrieval.py:60: NameError: name 'embedding_search' is not defined
+/Users/arka/.config/agentic-memory/eval/test_contextual_retrieval.py:60: NameError: name 'embedding_search' is not defined
 E   NameError: name 'embedding_search' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_contextual_retrieval.py:89: NameError: name 'embedding_search' is not defined
+/Users/arka/.config/agentic-memory/eval/test_contextual_retrieval.py:89: NameError: name 'embedding_search' is not defined
 E   NameError: name 'embedding_search' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_contextual_retrieval.py:129: NameError: name 'embedding_search' is not defined
+/Users/arka/.config/agentic-memory/eval/test_contextual_retrieval.py:129: NameError: name 'embedding_search' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_contextual_retrieval.py::TestEmbedTextWithContext::test_disabled_returns_raw
 FAILED eval/test_contextual_retrieval.py::TestEmbedTextWithContext::test_enabled_prepends_prefix
@@ -386,11 +387,11 @@ FAILED eval/test_contextual_retrieval.py::TestIndexEmbeddingWithContext::test_ha
 
 
 === test_crdt_field.py ===
-agentic-memory-wt2/eval/test_crdt_field.py:490: NameError: name 'crdt_field' is not defined
+rka/.config/agentic-memory/eval/test_crdt_field.py:490: NameError: name 'crdt_field' is not defined
 E   NameError: name 'crdt_field' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_crdt_field.py:457: NameError: name 'crdt_field' is not defined
+/Users/arka/.config/agentic-memory/eval/test_crdt_field.py:457: NameError: name 'crdt_field' is not defined
 E   NameError: name 'crdt_field' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_crdt_field.py:563: NameError: name 'crdt_field' is not defined
+/Users/arka/.config/agentic-memory/eval/test_crdt_field.py:563: NameError: name 'crdt_field' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_crdt_field.py::TestCRDTCommutativity::test_commutativity_concurrent_different_fields
 FAILED eval/test_crdt_field.py::TestCRDTCommutativity::test_commutativity_concurrent_same_field
@@ -415,42 +416,42 @@ FAILED eval/test_crdt_field.py::TestBackfill::test_backfill_creates_field_rows
 ..............F...                                                       [100%]
 =================================== FAILURES ===================================
 E   NameError: name 'crdt_merge' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_crdt_merge.py:272: NameError: name 'crdt_merge' is not defined
+/Users/arka/.config/agentic-memory/eval/test_crdt_merge.py:272: NameError: name 'crdt_merge' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_crdt_merge.py::TestCrdtMergeContract::test_callers_bump_local_clock_before_merge
-1 failed, 17 passed in 0.21s
+1 failed, 17 passed in 0.20s
 
 
 === test_contradiction_save.py ===
 ..............F..                                                        [100%]
 =================================== FAILURES ===================================
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_contradiction_save.py:454: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_contradiction_save.py:454: NameError: name 'memory_common' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_contradiction_save.py::TestDBErrorSilent::test_db_error_silent
-1 failed, 16 passed in 0.82s
+1 failed, 16 passed in 0.86s
 
 
 === test_crdt_saga.py ===
 the caller. The crdt_sync_all caller counts this\n            # as a rejected write.\n            raise\n        except Exception as exc:\n            # Saga wraps SagaError around step failures. If something\n            # outside the Saga raised (e.g. open_db), re-raise so the\n            # caller sees the real error.\n            raise RuntimeError(f"crdt_save failed for {note_id}: {exc!r}") from exc\n        return result\n\n\ndef crdt_sync_all(\n    db_path: str | Path,\n    remote_agent_id: str,\n    local_agent_id: str,\n    remote_notes: dict[str, tuple[str, str, int, str, int]],\n) -> dict:\n    """Bulk-sync multiple notes from a remote agent.\n\n    H19 fix: the tuple now includes the remote version vector and\n    logical clock so the per-note ``crdt_save`` can do real conflict\n    resolution instead of always treating the local row as authoritative.\n\n    ``remote_notes``: {note_id: (content, source_file, logical_clock, version_vector, remote_clock)}\n\n    Returns summary dict with counts of applied, conflicted, and rejected.\n    """\n    results = {"applied": 0, "conflict": 0, "rejected": 0, "total": len(remote_notes)}\n    for note_id, (\n        content,\n        source_file,\n        remote_clock,\n        remote_vv,\n        _sender_clock,\n    ) in remote_notes.items():\n        r = crdt_save(\n            db_path,\n            note_id,\n            content,\n            remote_agent_id,\n            local_agent_id,\n            source_file,\n            remote_vv_str=remote_vv,\n            remote_logical_clock=remote_clock,\n        )\n        if r["applied"]:\n            results["applied"] += 1\n        if r["conflict"]:\n            results["conflict"] += 1\n        if r["rejected"]:\n            results["rejected"] += 1\n    return results\n'
 =========================== short test summary info ============================
 FAILED eval/test_crdt_saga.py::TestCrdtSaveSagaRollback::test_crdt_save_uses_saga_module
-1 failed, 4 passed in 0.17s
+1 failed, 4 passed in 0.15s
 
 
 === test_embedding_recompute.py ===
-efined
-/Users/arka/.config/agentic-memory-wt2/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
+ding_recompute' is not defined
+/Users/arka/.config/agentic-memory/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
 E   NameError: name 'embedding_recompute' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
+/Users/arka/.config/agentic-memory/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
 E   NameError: name 'embedding_recompute' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
+/Users/arka/.config/agentic-memory/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
 E   NameError: name 'embedding_recompute' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
+/Users/arka/.config/agentic-memory/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
 E   NameError: name 'embedding_recompute' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
+/Users/arka/.config/agentic-memory/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
 E   NameError: name 'embedding_recompute' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
+/Users/arka/.config/agentic-memory/eval/test_embedding_recompute.py:28: NameError: name 'embedding_recompute' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_embedding_recompute.py::TestEmbeddingRecomputeConfig::test_check_and_rebuild_dry_run
 FAILED eval/test_embedding_recompute.py::TestEmbeddingRecomputeConfig::test_check_and_rebuild_force
@@ -460,11 +461,11 @@ FAILED eval/test_embedding_recompute.py::TestEmbeddingRecomputeConfig::test_get_
 FAILED eval/test_embedding_recompute.py::TestEmbeddingRecomputeConfig::test_get_stored_config_no_file
 FAILED eval/test_embedding_recompute.py::TestEmbeddingRecomputeConfig::test_get_stored_config_with_file
 FAILED eval/test_embedding_recompute.py::TestEmbeddingRecomputeConfig::test_save_model_config_writes_file
-8 failed in 0.05s
+8 failed in 0.04s
 
 
 === test_e2e_validation.py ===
-ons/2026-06-01-test-session']
+ content: 3 rows: ['lessons/test-lesson-1', 'projects/test-project-1', 'sessions/2026-06-01-test-session']
   [-] B2 search_memory.py: rc=1 dur=0.05s missing: 'test-lesson-1'
   [+] B3 tier_migration.py --dry-run: rc=0 dur=0.05s
   [+] B4 consolidate_facts.py (test root): rc=0 dur=0.67s
@@ -487,21 +488,20 @@ ons/2026-06-01-test-session']
   [+] E1 search latency: 2.6ms/search
 
 === F. Prod safety check ===
-  [+] F1 prod DB untouched: 0 rows (matches baseline)
-  [-] F2 prod lessons present: no .md files in prod lessons/
+  [+] F1 prod DB untouched: 2457 rows (matches baseline)
+  [+] F2 prod lessons present: 13 files
 
 ============================================================
-PASSED: 27   FAILED: 3   WARN: 0   SKIP: 1   TOTAL: 31
+PASSED: 28   FAILED: 2   WARN: 0   SKIP: 1   TOTAL: 31
 ============================================================
 
 FAILURES:
-  - import search_memory: rc=1 'init__.py", line 8, in <module>\n    from recall.recall import recall as _recall\nImportError: cannot import name \'recall\' from \'recall.recall\' (/Users/arka/.config/agentic-memory-wt2/recall/recall.py)\n'
+  - import search_memory: rc=1 'l/__init__.py", line 8, in <module>\n    from recall.recall import recall as _recall\nImportError: cannot import name \'recall\' from \'recall.recall\' (/Users/arka/.config/agentic-memory/recall/recall.py)\n'
   - B2 search_memory.py: rc=1 dur=0.05s missing: 'test-lesson-1'
-  - F2 prod lessons present: no .md files in prod lessons/
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 3 != 0 : 3 E2E validation(s) failed:
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 2 != 0 : 2 E2E validation(s) failed:
 =========================== short test summary info ============================
 FAILED eval/test_e2e_validation.py::TestE2EValidation::test_full_e2e_validation
-1 failed in 4.72s
+1 failed in 4.83s
 
 
 === test_hybrid_strategy.py ===
@@ -517,14 +517,14 @@ FAILED eval/test_hybrid_strategy.py::TestBulkFunctionLLMSafe::test_self_directed
 === test_hook_resilience.py ===
 ..F....F.......                                                          [100%]
 =================================== FAILURES ===================================
-E   AssertionError: 1 != 0 : hook exited 1: stderr='Traceback (most recent call last):\n  File "/Users/arka/.config/agentic-memory-wt2/hooks/memory-session-start.py", line 47, in <module>\n    _INSTALL_ROOT = _bootstrap_path.INSTALL_ROOT\n                    ^^^^^^^^^^^^^^^\nNameError: name \'_bootstrap_path\' is not defined\n'
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 1 != 0 : hook exited 1: stderr='Traceback (most recent call last):\n  File "/Users/arka/.config/agentic-memory-wt2/hooks/memory-session-start.py", line 47, in <module>\n    _INSTALL_ROOT = _bootstrap_path.INSTALL_ROOT\n                    ^^^^^^^^^^^^^^^\nNameError: name \'_bootstrap_path\' is not defined\n'
-E   AssertionError: 1 != 0 : hook exited 1: stderr='Traceback (most recent call last):\n  File "/Users/arka/.config/agentic-memory-wt2/hooks/memory-session-start.py", line 47, in <module>\n    _INSTALL_ROOT = _bootstrap_path.INSTALL_ROOT\n                    ^^^^^^^^^^^^^^^\nNameError: name \'_bootstrap_path\' is not defined\n'
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 1 != 0 : hook exited 1: stderr='Traceback (most recent call last):\n  File "/Users/arka/.config/agentic-memory-wt2/hooks/memory-session-start.py", line 47, in <module>\n    _INSTALL_ROOT = _bootstrap_path.INSTALL_ROOT\n                    ^^^^^^^^^^^^^^^\nNameError: name \'_bootstrap_path\' is not defined\n'
+E   AssertionError: 1 != 0 : hook exited 1: stderr='Traceback (most recent call last):\n  File "/Users/arka/.config/agentic-memory/hooks/memory-session-start.py", line 47, in <module>\n    _INSTALL_ROOT = _bootstrap_path.INSTALL_ROOT\n                    ^^^^^^^^^^^^^^^\nNameError: name \'_bootstrap_path\' is not defined\n'
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 1 != 0 : hook exited 1: stderr='Traceback (most recent call last):\n  File "/Users/arka/.config/agentic-memory/hooks/memory-session-start.py", line 47, in <module>\n    _INSTALL_ROOT = _bootstrap_path.INSTALL_ROOT\n                    ^^^^^^^^^^^^^^^\nNameError: name \'_bootstrap_path\' is not defined\n'
+E   AssertionError: 1 != 0 : hook exited 1: stderr='Traceback (most recent call last):\n  File "/Users/arka/.config/agentic-memory/hooks/memory-session-start.py", line 47, in <module>\n    _INSTALL_ROOT = _bootstrap_path.INSTALL_ROOT\n                    ^^^^^^^^^^^^^^^\nNameError: name \'_bootstrap_path\' is not defined\n'
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 1 != 0 : hook exited 1: stderr='Traceback (most recent call last):\n  File "/Users/arka/.config/agentic-memory/hooks/memory-session-start.py", line 47, in <module>\n    _INSTALL_ROOT = _bootstrap_path.INSTALL_ROOT\n                    ^^^^^^^^^^^^^^^\nNameError: name \'_bootstrap_path\' is not defined\n'
 =========================== short test summary info ============================
 FAILED eval/test_hook_resilience.py::TestHookImportPathFix::test_session_start_runs
 FAILED eval/test_hook_resilience.py::TestHookOutput::test_session_start_outputs_memory_summary
-2 failed, 13 passed in 3.05s
+2 failed, 13 passed in 3.22s
 
 
 === test_kg_crdt.py ===
@@ -559,22 +559,22 @@ FAILED eval/test_kg_crdt.py::TestNameCollisionDedup::test_redirect_edge_ids
 === test_memory_common_unit.py ===
 .....................................................FFF..               [100%]
 =================================== FAILURES ===================================
-E   ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory-wt2/infra/memory_common.py)
-/Users/arka/.config/agentic-memory-wt2/eval/test_memory_common_unit.py:579: ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory-wt2/infra/memory_common.py)
-E   ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory-wt2/infra/memory_common.py)
-/Users/arka/.config/agentic-memory-wt2/eval/test_memory_common_unit.py:567: ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory-wt2/infra/memory_common.py)
-E   ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory-wt2/infra/memory_common.py)
-/Users/arka/.config/agentic-memory-wt2/eval/test_memory_common_unit.py:573: ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory-wt2/infra/memory_common.py)
+E   ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory/infra/memory_common.py)
+/Users/arka/.config/agentic-memory/eval/test_memory_common_unit.py:579: ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory/infra/memory_common.py)
+E   ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory/infra/memory_common.py)
+/Users/arka/.config/agentic-memory/eval/test_memory_common_unit.py:567: ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory/infra/memory_common.py)
+E   ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory/infra/memory_common.py)
+/Users/arka/.config/agentic-memory/eval/test_memory_common_unit.py:573: ImportError: cannot import name '_coerce' from 'infra.memory_common' (/Users/arka/.config/agentic-memory/infra/memory_common.py)
 =========================== short test summary info ============================
 FAILED eval/test_memory_common_unit.py::TestCoerce::test_no_quotes - ImportEr...
 FAILED eval/test_memory_common_unit.py::TestCoerce::test_strips_double_quotes
 FAILED eval/test_memory_common_unit.py::TestCoerce::test_strips_single_quotes
-3 failed, 55 passed in 0.23s
+3 failed, 55 passed in 0.24s
 
 
 === test_migration_runner.py ===
-or: name 'db_migrations' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_migration_runner.py:56: NameError: name 'db_migrations' is not defined
+eError: name 'db_migrations' is not defined
+/Users/arka/.config/agentic-memory/eval/test_migration_runner.py:56: NameError: name 'db_migrations' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_migration_runner.py::TestParseSqlFile::test_comments_stripped
 FAILED eval/test_migration_runner.py::TestParseSqlFile::test_create_trigger_with_embedded_semicolons
@@ -594,18 +594,18 @@ FAILED eval/test_migration_runner.py::TestApplyRollbackRoundTrip::test_every_dow
 FAILED eval/test_migration_runner.py::TestApplyRollbackRoundTrip::test_every_up_has_matching_down
 FAILED eval/test_migration_runner.py::TestApplyRollbackRoundTrip::test_every_up_script_parses
 FAILED eval/test_migration_runner.py::TestSchemaVersionIntegration::test_schema_version_matches_table_set
-18 failed in 0.06s
+18 failed in 0.05s
 
 
 === test_phase1_debt_fixes.py ===
 .....F..FF                                                               [100%]
 =================================== FAILURES ===================================
 E   assert 'from memory_common import find_project_root' in '#!/usr/bin/env python3\n"""Adaptive Replacement Cache ghost-tracking layer for the Agentic Memory system.\n\nARC (Meg...leted = cache.cleanup_old_ghosts()\n        if deleted:\n            print(f"  Pruned {deleted} old ghost entries.")\n'
-/Users/arka/.config/agentic-memory-wt2/eval/test_phase1_debt_fixes.py:85: assert 'from memory_common import find_project_root' in '#!/usr/bin/env python3\n"""Adaptive Replacement Cache ghost-tracking layer for the Agentic Memory system.\n\nARC (Meg...leted = cache.cleanup_old_ghosts()\n        if deleted:\n            print(f"  Pruned {deleted} old ghost entries.")\n'
+/Users/arka/.config/agentic-memory/eval/test_phase1_debt_fixes.py:85: assert 'from memory_common import find_project_root' in '#!/usr/bin/env python3\n"""Adaptive Replacement Cache ghost-tracking layer for the Agentic Memory system.\n\nARC (Meg...leted = cache.cleanup_old_ghosts()\n        if deleted:\n            print(f"  Pruned {deleted} old ghost entries.")\n'
 E   NameError: name 'reranker' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_phase1_debt_fixes.py:119: NameError: name 'reranker' is not defined
+/Users/arka/.config/agentic-memory/eval/test_phase1_debt_fixes.py:119: NameError: name 'reranker' is not defined
 E   NameError: name 'audit' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_phase1_debt_fixes.py:125: NameError: name 'audit' is not defined
+/Users/arka/.config/agentic-memory/eval/test_phase1_debt_fixes.py:125: NameError: name 'audit' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_phase1_debt_fixes.py::TestM4CommentRemoved::test_find_project_root_import_preserved
 FAILED eval/test_phase1_debt_fixes.py::TestLoggingStandardization::test_reranker_logger_references_work
@@ -619,11 +619,11 @@ FFF                                                                      [100%]
 E   NameError: name 'memory_common' is not defined
 ---------------------------- Captured stderr setup -----------------------------
 IMPORT config.py: MEMORY_LLM_EXTRACTION env='0' toml[features.llm_extraction]=True effective=False
-/Users/arka/.config/agentic-memory-wt2/eval/test_rate_limit_mcp.py:25: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_rate_limit_mcp.py:25: NameError: name 'memory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_rate_limit_mcp.py:53: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_rate_limit_mcp.py:53: NameError: name 'memory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_rate_limit_mcp.py:85: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_rate_limit_mcp.py:85: NameError: name 'memory_common' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_rate_limit_mcp.py::TestWithAuditRateLimit::test_burst_returns_rate_limited
 FAILED eval/test_rate_limit_mcp.py::TestWithAuditRateLimit::test_different_tools_independent_buckets
@@ -638,22 +638,23 @@ E   AssertionError: False not found in [True, True, True, True, True, True, True
 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: False not found in [True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True, True]
 =========================== short test summary info ============================
 FAILED eval/test_read_path_remediation.py::TestReadPathRemediation::test_token_bucket_rate_limiter_integration
-1 failed, 6 passed in 0.68s
+1 failed, 6 passed in 0.65s
 
 
 === test_refactor_helpers.py ===
-r: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_refactor_helpers.py:932: NameError: name 'auto_save' is not defined
+not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_refactor_helpers.py:959: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_refactor_helpers.py:932: NameError: name 'auto_save' is not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_refactor_helpers.py:910: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_refactor_helpers.py:959: NameError: name 'auto_save' is not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_refactor_helpers.py:872: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_refactor_helpers.py:910: NameError: name 'auto_save' is not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_refactor_helpers.py:978: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_refactor_helpers.py:872: NameError: name 'auto_save' is not defined
 E   NameError: name 'auto_save' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_refactor_helpers.py:985: NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_refactor_helpers.py:978: NameError: name 'auto_save' is not defined
+E   NameError: name 'auto_save' is not defined
+/Users/arka/.config/agentic-memory/eval/test_refactor_helpers.py:985: NameError: name 'auto_save' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_refactor_helpers.py::TestAutoSaveAsyncBatch::test_async_path_returns_queued_envelope
 FAILED eval/test_refactor_helpers.py::TestAutoSaveAsyncBatch::test_daemon_can_be_spawned_and_dies_on_sigterm
@@ -664,20 +665,20 @@ FAILED eval/test_refactor_helpers.py::TestAutoSaveAsyncBatch::test_enqueue_to_in
 FAILED eval/test_refactor_helpers.py::TestAutoSaveAsyncBatch::test_inbox_path_resolves_to_memory_dir
 FAILED eval/test_refactor_helpers.py::TestAutoSaveAsyncBatch::test_is_daemon_running_false_when_no_pid
 FAILED eval/test_refactor_helpers.py::TestAutoSaveAsyncBatch::test_write_and_remove_pid_file
-9 failed, 53 passed in 0.14s
+9 failed, 53 passed in 0.16s
 
 
 === test_reranker_unit.py ===
 ..F..............F.....                                                  [100%]
 =================================== FAILURES ===================================
 E   NameError: name 'reranker' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_reranker_unit.py:92: NameError: name 'reranker' is not defined
-E   ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory-wt2/recall/recall.py)
-/Users/arka/.config/agentic-memory-wt2/recall/__init__.py:8: ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory-wt2/recall/recall.py)
+/Users/arka/.config/agentic-memory/eval/test_reranker_unit.py:92: NameError: name 'reranker' is not defined
+E   ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory/recall/recall.py)
+/Users/arka/.config/agentic-memory/recall/__init__.py:8: ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory/recall/recall.py)
 =========================== short test summary info ============================
 FAILED eval/test_reranker_unit.py::TestRerankerSingleton::test_model_ids_are_set
 FAILED eval/test_reranker_unit.py::TestRecallContextDeepRerankParam::test_fetch_relevant_has_deep_rerank_param
-2 failed, 21 passed in 1.19s
+2 failed, 21 passed in 1.20s
 
 
 === test_safe_close_db.py ===
@@ -690,66 +691,58 @@ FAILED eval/test_safe_close_db.py::TestMemoryMcpUsesSafeCloseDb::test_memory_mcp
 1 failed, 8 passed in 0.09s
 
 
-=== test_search_memory_cli.py ===
-_memory_cli.py::TestSearchMemoriesIntegration::test_real_db_not_exists_returns_empty
-FAILED eval/test_search_memory_cli.py::TestSearchMemoriesIntegration::test_real_search_empty_db
-FAILED eval/test_search_memory_cli.py::TestSearchMemoriesIntegration::test_real_search_returns_results
-FAILED eval/test_search_memory_cli.py::TestSearchMemoriesMultiSource::test_global_only_when_local_empty
-FAILED eval/test_search_memory_cli.py::TestSearchMemoriesMultiSource::test_local_only_when_global_empty
-FAILED eval/test_search_memory_cli.py::TestSearchMemoriesMultiSource::test_sources_searched_in_header
-FAILED eval/test_search_memory_cli.py::TestCLI::test_cli_basic - NameError: n...
-FAILED eval/test_search_memory_cli.py::TestCLI::test_cli_with_db_path - NameE...
-FAILED eval/test_search_memory_cli.py::TestCLI::test_cli_with_limit - NameErr...
-FAILED eval/test_search_memory_cli.py::TestCLI::test_cli_with_no_global - Nam...
-FAILED eval/test_search_memory_cli.py::TestResolveDbPathsEdgeCases::test_custom_path_does_not_touch_global
-FAILED eval/test_search_memory_cli.py::TestResolveDbPathsEdgeCases::test_empty_string_custom_path_not_treated_as_custom
-FAILED eval/test_search_memory_cli.py::TestResolveDbPathsEdgeCases::test_none_custom_path_uses_default
-FAILED eval/test_search_memory_cli.py::TestResolveDbPathsEdgeCases::test_real_world_default_paths
-FAILED eval/test_search_memory_cli.py::TestPrintFormat::test_print_header_format
-FAILED eval/test_search_memory_cli.py::TestPrintFormat::test_print_includes_score
-FAILED eval/test_search_memory_cli.py::TestPrintFormat::test_print_includes_tags
-FAILED eval/test_search_memory_cli.py::TestAccessCount::test_access_count_increment_in_global_db
-FAILED eval/test_search_memory_cli.py::TestAccessCount::test_access_count_not_incremented_for_nonexistent_note
-FAILED eval/test_search_memory_cli.py::TestDedupInPrint::test_duplicate_ids_only_printed_once
-FAILED eval/test_search_memory_cli.py::TestSearchMemoryReal::test_real_search_end_to_end
-49 failed in 0.64s
+=== test_save_pipeline_unit.py ===
+.............FF......................................................... [ 54%]
+...........................................................              [100%]
+=================================== FAILURES ===================================
+E   AssertionError: audit entry for save of 'unit-err-1782931191' not found in memory_audit_log
+    assert False
+/Users/arka/.config/agentic-memory/eval/test_save_pipeline_unit.py:423: AssertionError: audit entry for save of 'unit-err-1782931191' not found in memory_audit_log
+E   AssertionError: audit entry for save of 'unit-audit-1782931201' not found in memory_audit_log
+    assert False
+/Users/arka/.config/agentic-memory/eval/test_save_pipeline_unit.py:423: AssertionError: audit entry for save of 'unit-audit-1782931201' not found in memory_audit_log
+=========================== short test summary info ============================
+FAILED eval/test_save_pipeline_unit.py::TestAuditIntegration::test_audit_written_on_error
+FAILED eval/test_save_pipeline_unit.py::TestAuditIntegration::test_audit_written_on_save
+2 failed, 129 passed in 23.27s
 
 
 === test_spaced_repetition.py ===
 ..............F                                                          [100%]
 =================================== FAILURES ===================================
-E   ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory-wt2/recall/recall.py)
-/Users/arka/.config/agentic-memory-wt2/recall/__init__.py:8: ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory-wt2/recall/recall.py)
+E   ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory/recall/recall.py)
+/Users/arka/.config/agentic-memory/recall/__init__.py:8: ImportError: cannot import name 'recall' from 'recall.recall' (/Users/arka/.config/agentic-memory/recall/recall.py)
 =========================== short test summary info ============================
 FAILED eval/test_spaced_repetition.py::TestWiringInRecall::test_fetch_relevant_calls_sr_on_results
-1 failed, 14 passed in 0.20s
+1 failed, 14 passed in 0.19s
 
 
 === test_sync_check.py ===
 ..F.                                                                     [100%]
 =================================== FAILURES ===================================
 E   NameError: name 'sync_check' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_sync_check.py:23: NameError: name 'sync_check' is not defined
+/Users/arka/.config/agentic-memory/eval/test_sync_check.py:23: NameError: name 'sync_check' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_sync_check.py::TestSyncCheckImports::test_module_importable
-1 failed, 3 passed in 0.06s
+1 failed, 3 passed in 0.04s
 
 
 === test_sync_server_tls.py ===
-NameError: name 'sync_server' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_sync_server_tls.py:122: NameError: name 'sync_server' is not defined
+_server' is not defined
 E   NameError: name 'sync_server' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_sync_server_tls.py:160: NameError: name 'sync_server' is not defined
+/Users/arka/.config/agentic-memory/eval/test_sync_server_tls.py:122: NameError: name 'sync_server' is not defined
 E   NameError: name 'sync_server' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_sync_server_tls.py:105: NameError: name 'sync_server' is not defined
+/Users/arka/.config/agentic-memory/eval/test_sync_server_tls.py:160: NameError: name 'sync_server' is not defined
 E   NameError: name 'sync_server' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_sync_server_tls.py:115: NameError: name 'sync_server' is not defined
+/Users/arka/.config/agentic-memory/eval/test_sync_server_tls.py:105: NameError: name 'sync_server' is not defined
 E   NameError: name 'sync_server' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_sync_server_tls.py:131: NameError: name 'sync_server' is not defined
+/Users/arka/.config/agentic-memory/eval/test_sync_server_tls.py:115: NameError: name 'sync_server' is not defined
 E   NameError: name 'sync_server' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_sync_server_tls.py:96: NameError: name 'sync_server' is not defined
+/Users/arka/.config/agentic-memory/eval/test_sync_server_tls.py:131: NameError: name 'sync_server' is not defined
 E   NameError: name 'sync_server' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_sync_server_tls.py:217: NameError: name 'sync_server' is not defined
+/Users/arka/.config/agentic-memory/eval/test_sync_server_tls.py:96: NameError: name 'sync_server' is not defined
+E   NameError: name 'sync_server' is not defined
+/Users/arka/.config/agentic-memory/eval/test_sync_server_tls.py:217: NameError: name 'sync_server' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_sync_server_tls.py::TestBuildTlsContext::test_mtls_when_client_ca_set
 FAILED eval/test_sync_server_tls.py::TestBuildTlsContext::test_raises_when_cert_file_missing
@@ -766,13 +759,13 @@ FAILED eval/test_sync_server_tls.py::TestTlsServerEndToEnd::test_https_health_en
 ....FFFF                                                                 [100%]
 =================================== FAILURES ===================================
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_wal_checkpoint.py:128: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_wal_checkpoint.py:128: NameError: name 'memory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_wal_checkpoint.py:114: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_wal_checkpoint.py:114: NameError: name 'memory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_wal_checkpoint.py:95: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_wal_checkpoint.py:95: NameError: name 'memory_common' is not defined
 E   NameError: name 'memory_common' is not defined
-/Users/arka/.config/agentic-memory-wt2/eval/test_wal_checkpoint.py:172: NameError: name 'memory_common' is not defined
+/Users/arka/.config/agentic-memory/eval/test_wal_checkpoint.py:172: NameError: name 'memory_common' is not defined
 =========================== short test summary info ============================
 FAILED eval/test_wal_checkpoint.py::TestMaybeCheckpointOnStartup::test_noop_without_env_var
 FAILED eval/test_wal_checkpoint.py::TestMaybeCheckpointOnStartup::test_second_call_is_noop
