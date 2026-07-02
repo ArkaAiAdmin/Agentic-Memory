@@ -473,6 +473,7 @@ def _get_handlers() -> dict:
             MaintenanceOp.METRICS_SERVER: lambda *, action="status", port=9464, **_: t[
                 "memory_metrics_server"
             ](action=action, port=port),
+            MaintenanceOp.MEMORY_STATS: lambda **_: _op_memory_stats(),
             MaintenanceOp.SESSION_STATS: lambda **_: _op_session_stats(),
             MaintenanceOp.THREAD_STATS: lambda **_: _op_thread_stats(),
             MaintenanceOp.COMPACTION_STATS: lambda **_: _op_compaction_stats(),

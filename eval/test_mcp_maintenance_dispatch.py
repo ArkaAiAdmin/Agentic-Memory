@@ -142,3 +142,35 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
         self.assertEqual(result, "ok")
         self.assertEqual(captured["dry_run"], True)
         self.assertEqual(captured["threshold"], 0.9)
+
+    def test_memory_stats_dispatches(self):
+        from mcp_maintenance import memory_maintenance
+        from mcp_maintenance import MaintenanceOp
+
+        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+            mock_h.return_value = {
+                MaintenanceOp.MEMORY_STATS: lambda **_: "STATS_OK",
+            }
+            result = memory_maintenance("memory_stats")
+        self.assertEqual(result, "STATS_OK")
+
+    def test_memory_stats_returns_json_keys(self):
+        from mcp_maintenance import memory_maintenance
+        from mcp_maintenance import MaintenanceOp
+        import json
+
+        captured = {}
+
+        def capture(**_) -> str:
+            captured["called"] = True
+            return json.dumps({"db_size_bytes": 0, "note_count": 0})
+
+        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+            mock_h.return_value = {
+                MaintenanceOp.MEMORY_STATS: capture,
+            }
+            result = memory_maintenance("memory_stats")
+        self.assertTrue(captured.get("called"))
+        parsed = json.loads(result)
+        self.assertIn("db_size_bytes", parsed)
+        self.assertIn("note_count", parsed)

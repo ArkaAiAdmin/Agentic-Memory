@@ -114,6 +114,8 @@ def _upsert_entity(
 
     if row:
         entity_id = row[0]
+        if entity_id is None:
+            raise RuntimeError(f"NULL entity id for {normalized!r}")
         conn.execute(
             "UPDATE kg_entities SET mentions = mentions + 1, updated_at = datetime('now') "
             "WHERE id = ?",
@@ -137,12 +139,15 @@ def _upsert_entity(
                 (normalized, entity_type),
             ).fetchone()
             if row:
+                raw_id = row[0]
+                if raw_id is None:
+                    raise RuntimeError(f"NULL entity id for {normalized!r}")
                 conn.execute(
                     "UPDATE kg_entities SET mentions = mentions + 1, updated_at = datetime('now') "
                     "WHERE id = ?",
-                    (row[0],),
+                    (raw_id,),
                 )
-                return int(row[0])
+                return int(raw_id)
             raise
 
 
@@ -354,7 +359,11 @@ def index_kg_for_memory(conn: AnyConnection, memory_id: str, content: str) -> di
     if is_llm_extraction_available():
         try:
             facts = extract_facts_via_llm(content)
-            for s, p, o, c in facts:
+            for item in facts:
+                s = item[0]
+                p = item[1]
+                o = item[2]
+                c = float(item[3])
                 # Clean and upsert subject & object entities
                 sid = _upsert_entity(conn, s, "concept", now)
                 oid = _upsert_entity(conn, o, "concept", now)

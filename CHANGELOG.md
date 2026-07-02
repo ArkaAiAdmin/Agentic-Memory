@@ -419,6 +419,8 @@ To pin 3B in the config (overrides the env var):
 ## [Unreleased — 2026-06-22 session 2]
 
 ### Fixed — Technical-review audit (5 Blockers + 15 Scenarios)
+
+**Phase 3 — Audit Gap Closeout:**
 2026-06-22 technical review identified 5 production blockers and 15 failure
 modes. All 5 blockers fixed; 5 of the 15 scenarios were PARTIAL/UNHANDLED
 and have been addressed. The remaining 10 were already HANDLED.

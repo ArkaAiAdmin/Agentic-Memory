@@ -526,7 +526,20 @@ class LLMExtractor:
                     pred = _PREDICATE_NORMALIZE.get(pred_lower, pred_lower)
                     # Strip leading articles from subjects
                     subj = _STRIP_ARTICLES.sub("", subj).strip()
-                    validated["facts"].append((subj, pred, obj, round(conf, 4)))
+                    et = f.get("event_time")
+                    etg = f.get("event_time_granularity", "unknown")
+                    if isinstance(et, str) and et.strip():
+                        event_time = et.strip()
+                    else:
+                        event_time = None
+                    if isinstance(etg, str) and etg.strip():
+                        event_time_granularity = etg.strip().lower()
+                    else:
+                        event_time_granularity = "unknown"
+                    validated["facts"].append((
+                        subj, pred, obj, round(conf, 4),
+                        event_time, event_time_granularity,
+                    ))
 
         # Validate entities
         entities = result.get("entities")
@@ -713,8 +726,13 @@ def is_llm_extraction_available() -> bool:
     return extractor.load()
 
 
-def extract_facts_via_llm(content: str) -> list[tuple[str, str, str, float]]:
-    """Extract facts using LLM. Returns list of (subject, predicate, object, confidence).
+def extract_facts_via_llm(content: str) -> list[tuple[str, str, str, float, str | None, str]]:
+    """Extract facts using LLM. Returns list of 6-tuples:
+    (subject, predicate, object, confidence, event_time, event_time_granularity).
+
+    event_time is an ISO date string (YYYY-MM-DD, YYYY-MM, YYYY) or None
+    if the LLM could not extract a time reference.
+    event_time_granularity is one of: "day", "month", "year", "unknown".
 
     Returns empty list if LLM extraction is unavailable or fails.
     The caller should fall back to regex extraction.
@@ -730,8 +748,10 @@ def extract_facts_via_llm(content: str) -> list[tuple[str, str, str, float]]:
     facts = result.get("facts", [])
     if not facts:
         return []
-
-    return [(s, p, o, c) for s, p, o, c in facts]
+    return [
+        (s, p, o, c, et, etg)
+        for s, p, o, c, et, etg in facts
+    ]
 
 
 def extract_entities_via_llm(content: str) -> list[dict[str, str]]:
@@ -859,10 +879,14 @@ def is_llm_extraction_available_via_provider() -> bool:
         return False
 
 
-def extract_facts_via_llm_v2(content: str) -> list[tuple[str, str, str, float]]:
+def extract_facts_via_llm_v2(content: str) -> list[tuple[str, str, str, float, str | None, str]]:
     """S3: extract facts using the provider abstraction.
 
-    Returns list of (subject, predicate, object, confidence).
+    Returns list of 6-tuples:
+    (subject, predicate, object, confidence, event_time, event_time_granularity).
+    event_time is an ISO date string or None.
+    event_time_granularity is one of: "day", "month", "year", "unknown".
+
     Falls back to legacy HuggingFace path if no provider is
     available, then to regex extraction (in the caller).
     """
@@ -874,7 +898,7 @@ def extract_facts_via_llm_v2(content: str) -> list[tuple[str, str, str, float]]:
     facts = result.get("facts", [])
     if not isinstance(facts, list):
         return []
-    out: list[tuple[str, str, str, float]] = []
+    out: list[tuple[str, str, str, float, str | None, str]] = []
     for f in facts:
         if not isinstance(f, dict):
             continue
@@ -884,7 +908,13 @@ def extract_facts_via_llm_v2(content: str) -> list[tuple[str, str, str, float]]:
         if not (s and p and o):
             continue
         c = float(f.get("confidence", 0.5) or 0.5)
-        out.append((s, p, o, c))
+        et = f.get("event_time")
+        etg = f.get("event_time_granularity", "unknown")
+        event_time = et.strip() if isinstance(et, str) and et.strip() else None
+        event_time_granularity = (
+            etg.strip().lower() if isinstance(etg, str) and etg.strip() else "unknown"
+        )
+        out.append((s, p, o, c, event_time, event_time_granularity))
     return out
 
 

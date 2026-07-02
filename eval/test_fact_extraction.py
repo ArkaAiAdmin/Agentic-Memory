@@ -30,7 +30,7 @@ class TestFactExtraction:
         facts = fe.extract_facts(text)
         # Should deduplicate
         seen = set()
-        for s, p, o, c in facts:
+        for s, p, o, c, *_ in facts:
             key = (s.lower(), p, o.lower())
             assert key not in seen, f"Duplicate fact: {key}"
             seen.add(key)

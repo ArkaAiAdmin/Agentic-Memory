@@ -34,6 +34,7 @@ from .fact_clean import (
     _FUNC_SKIP,
     _should_skip_category,
     extract_event_time,
+    _to_epoch,
 )
 from .fact_schema import ensure_facts_schema
 from .fact_search import facts_search, facts_list, facts_stats
@@ -51,6 +52,24 @@ try:
     from config import get_config
 except ImportError:  # FLAVOR_A: optional dependency guard
     pass  # already declared above
+
+
+def _llm_iso_to_epoch(iso_str: str | None) -> float | None:
+    """Convert an LLM-returned ISO date string to epoch seconds.
+
+    Handles YYYY-MM-DD, YYYY-MM, and YYYY formats. Returns 0.0 for
+    unparseable strings, which signals "no event time" to callers.
+    """
+    if not iso_str or not isinstance(iso_str, str):
+        return None
+    parts = iso_str.split("-")
+    try:
+        year = int(parts[0])
+        month = int(parts[1]) if len(parts) > 1 else 1
+        day = int(parts[2]) if len(parts) > 2 else 1
+        return _to_epoch(year, month, day)
+    except (ValueError, TypeError):
+        return None
 
 __all__ = [
     "ensure_facts_schema",
@@ -424,11 +443,11 @@ def _layer5d_subject_verb_object(text: str, add_fn) -> None:
 
 
 def _dedup_facts(
-    facts: list[tuple[str, str, str, float]],
-) -> list[tuple[str, str, str, float]]:
+    facts: list[tuple[str, str, str, float, str | None, str]],
+) -> list[tuple[str, str, str, float, str | None, str]]:
     """Deduplicate by (subject, predicate, object) keeping the
     highest-confidence copy. Normalizes trailing colons and whitespace
-    before keying.
+    before keying. Preserves event_time from the highest-confidence copy.
     """
 
     def _dedup_key(s: str, p: str, o: str) -> tuple[str, str, str]:
@@ -442,11 +461,13 @@ def _dedup_facts(
         o_norm = re.sub(r"[:\s]+$", "", o.lower()).strip()
         return (s_norm, p, o_norm)
 
-    deduped: dict[tuple[str, str, str], tuple[str, str, str, float]] = {}
-    for s, p, o, c in facts:
+    deduped: dict[tuple[str, str, str], tuple[str, str, str, float, str | None, str]] = {}
+    for item in facts:
+        s, p, o = item[0], item[1], item[2]
+        c = item[3]
         key = _dedup_key(s, p, o)
         if key not in deduped or c > deduped[key][3]:
-            deduped[key] = (s, p, o, c)
+            deduped[key] = item
     return list(deduped.values())
 
 
@@ -455,7 +476,7 @@ def _dedup_facts(
 # ---------------------------------------------------------------------------
 
 
-def extract_facts(text: str) -> list[tuple[str, str, str, float]]:
+def extract_facts(text: str) -> list[tuple[str, str, str, float, str | None, str]]:
     """Extract Subject-Predicate-Object triples from text.
 
     Decomposed into 8 layer functions (extracted 2026-06-22 so the
@@ -469,12 +490,16 @@ def extract_facts(text: str) -> list[tuple[str, str, str, float]]:
       Layer 5b: ``_layer5b_colon_definitions``
       Layer 5c: ``_layer5c_plain_dash_bullets``
       Layer 5d: ``_layer5d_subject_verb_object``
+
+    Returns 6-tuples (subject, predicate, object, confidence, event_time,
+    event_time_granularity). Regex-based extraction cannot determine
+    per-fact event_time, so those fields are always None / "unknown".
     """
     if not text or len(text) < 20:
         return []
 
     text = _preprocess(text)
-    all_facts: list[tuple[str, str, str, float]] = []
+    all_facts: list[tuple[str, str, str, float, str | None, str]] = []
     seen: set[tuple[str, str, str]] = set()
 
     def _add(subj: str, pred: str, obj: str, conf: float) -> None:
@@ -501,7 +526,7 @@ def extract_facts(text: str) -> list[tuple[str, str, str, float]]:
         key = (subj.lower(), pred, obj.lower())
         if key not in seen:
             seen.add(key)
-            all_facts.append((subj, pred, obj, conf))
+            all_facts.append((subj, pred, obj, conf, None, "unknown"))
 
     _layer1_section_header_bold(text, _add)
     _layer2_dash_bullets(text, _add)
@@ -669,7 +694,7 @@ def index_facts_for_memory(
     #   MEMORY_LLM_HYBRID=0              — disable hybrid, never use LLM
     use_llm = _should_use_llm_for_memory(conn, memory_id)
 
-    facts = []
+    facts: list[tuple[str, str, str, float, str | None, str]] = []
     if use_llm:
         try:
             from llm_extraction import extract_facts_via_llm
@@ -726,10 +751,29 @@ def index_facts_for_memory(
     # Capture the set of new (subject, predicate, object) triples for
     # the diff in T5.
     new_fact_keys: set[tuple[str, str, str]] = {
-        (s.lower(), p, o.lower()) for s, p, o, _ in facts
+        (s.lower(), p, o.lower()) for s, p, o, *_ in facts
     }
 
-    for subj, pred, obj, conf in facts:
+    for item in facts:
+        subj = item[0]
+        pred = item[1]
+        obj = item[2]
+        conf = float(item[3])
+        per_fact_et = item[4]
+        per_fact_etg = item[5]
+        # Use per-fact event_time from LLM when available, else fall back
+        # to the memory-level regex extract_event_time(content).
+        fact_event_time: float | None
+        fact_etg: str | None
+        if per_fact_et is not None:
+            fact_event_time = _llm_iso_to_epoch(per_fact_et)
+            fact_etg = per_fact_etg
+        else:
+            fact_event_time = event_time
+            fact_etg = event_time_granularity
+        # _upsert_fact expects float | None for event_time; granularity
+        # is stored as-is.
+        fact_epoch = fact_event_time if fact_event_time != 0.0 else None
         fact_id = _upsert_fact(
             conn,
             subj,
@@ -739,8 +783,8 @@ def index_facts_for_memory(
             now,
             memory_id,
             content[:200],
-            event_time=event_time,
-            event_time_granularity=event_time_granularity,
+            event_time=fact_epoch,
+            event_time_granularity=fact_etg,
         )
         # T3.4: supersession reconciliation (gated by feature_temporal_kg)
         if fact_id is not None and temporal_kg_enabled:
@@ -909,7 +953,7 @@ def unlock_fact(
 
 def _extract_facts_via_llm(
     conn: AnyConnection, memory_id: str, content: str
-) -> list[tuple[str, str, str, float]]:
+) -> list[tuple[str, str, str, float, str | None, str]]:
     """Run the hybrid LLM-extraction path. Returns the extracted facts."""
     if not _should_use_llm_for_memory(conn, memory_id):
         return []
@@ -930,7 +974,7 @@ def _process_extracted_facts(
     conn: AnyConnection,
     memory_id: str,
     content: str,
-    facts: list[tuple[str, str, str, float]],
+    facts: list[tuple[str, str, str, float, str | None, str]],
 ) -> dict:
     """Common fact persistence pipeline after extraction."""
     temporal_kg_enabled = True
@@ -955,15 +999,30 @@ def _process_extracted_facts(
         )
 
     new_fact_keys: set[tuple[str, str, str]] = {
-        (s.lower(), p, o.lower()) for s, p, o, _ in facts
+        (s.lower(), p, o.lower()) for s, p, o, *_ in facts
     }
 
     now = time.time()
 
-    for subj, pred, obj, conf in facts:
+    for item in facts:
+        subj = item[0]
+        pred = item[1]
+        obj = item[2]
+        conf = float(item[3])
+        per_fact_et = item[4]
+        per_fact_etg = item[5]
+        fact_epoch: float | None
+        fact_etg: str | None
+        if per_fact_et is not None:
+            fact_epoch = _llm_iso_to_epoch(per_fact_et)
+            fact_etg = per_fact_etg
+        else:
+            fact_epoch = event_time
+            fact_etg = event_time_granularity
+        fact_epoch_val = fact_epoch if fact_epoch != 0.0 else None
         fact_id = _upsert_fact(
             conn, subj, pred, obj, conf, now, memory_id, content[:200],
-            event_time=event_time, event_time_granularity=event_time_granularity,
+            event_time=fact_epoch_val, event_time_granularity=fact_etg,
         )
         if fact_id is not None and temporal_kg_enabled:
             try:

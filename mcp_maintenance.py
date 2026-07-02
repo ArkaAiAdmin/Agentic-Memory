@@ -155,8 +155,8 @@ def memory_health_check(conn) -> str:
 
     degraded = bool(
         status["db"].get("accessible") is False
-        or status["vec_index"].get("drift", 0) > 50
-        or status.get("disk", {}).get("pct_used", 0) > 95
+        or int(status["vec_index"].get("drift", 0)) > 50
+        or int(status.get("disk", {}).get("pct_used", 0)) > 95
     )
     status["overall"] = "degraded" if degraded else "healthy"
     return json.dumps(status)
@@ -826,6 +826,7 @@ class MaintenanceOp(str, Enum):
     INGEST_URL = "ingest_url"
     DASHBOARD = "dashboard"
     METRICS_SERVER = "metrics_server"
+    MEMORY_STATS = "memory_stats"
     CIRCUIT_BREAKER_STATUS = "circuit_breaker_status"  # 2026-06-22 follow-up
     TEMPORAL_CONTRADICTIONS = (
         "temporal_contradictions"  # T3.6: list fact-level supersession events
@@ -895,7 +896,7 @@ def memory_maintenance(
       ``arc_stats``, ``arc_reset``, ``review_schedule``, ``quality_stats``, ``facts_stats``,
       ``graph_stats``, ``profile_stats``, ``retention_stats``,
       ``summarization_stats``, ``auto_save_status``, ``shared_stats``,
-      ``flags_status``, ``phase_errors``
+      ``flags_status``, ``phase_errors``, ``memory_stats``
 
     **Operations with params:**
       ``heartbeat``         dry_run

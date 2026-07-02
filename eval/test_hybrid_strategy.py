@@ -279,7 +279,7 @@ class TestIndexFactsForMemoryUsesRegexByDefault(unittest.TestCase):
 
         def fake_llm_extract(content):
             called["llm"] += 1
-            return [("fake", "is_a", "subject", 0.9)]
+            return [("fake", "is_a", "subject", 0.9, None, "unknown")]
 
         with (
             patch("llm_extraction.is_llm_extraction_available", return_value=True),
@@ -518,7 +518,7 @@ class TestBulkFunctionLLMSafe(unittest.TestCase):
 
         def fake_llm_extract(content):
             called["llm"] += 1
-            return [("should", "not", "appear", 0.9)]
+            return [("should", "not", "appear", 0.9, None, "unknown")]
 
         with (
             patch("llm_extraction.is_llm_extraction_available", return_value=True),
@@ -539,7 +539,7 @@ class TestBulkFunctionLLMSafe(unittest.TestCase):
 
         def fake_llm_extract(content):
             called["llm"] += 1
-            return [("llm", "found", "this", 0.9)]
+            return [("llm", "found", "this", 0.9, None, "unknown")]
 
         with (
             patch("llm_extraction.is_llm_extraction_available", return_value=True),

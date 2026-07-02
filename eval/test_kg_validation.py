@@ -229,7 +229,7 @@ class TestFactExtraction(KGTestBase):
         facts = extract_facts(
             "## Feature\n\n**Description:** Handles all the requests."
         )
-        for _, _, _, conf in facts:
+        for _, _, _, conf, *_ in facts:
             self.assertGreaterEqual(conf, 0.0)
             self.assertLessEqual(conf, 1.0)
 
