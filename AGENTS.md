@@ -132,4 +132,4 @@ See `memory.toml` for all 17 feature flags.
 - **Auto-save**: Async inbox+daemon (2-5ms enqueue). Default since 2026-06-22.
 - **Deferred indexing**: MCP `memory_save` defers embedding/KG/facts to background worker — returns <200ms, never times out.
 - **Mypy**: 0 errors. **Coverage**: 70% gate.
-- **Test command**: `./venv/bin/python eval/run_full_suite.py` (subprocess-per-file runner — avoids parallel torch/OpenMP crashes) **|** Quick smoke: `./venv/bin/python -m pytest eval/ -n 3 -q`
+- **Test command**: `./venv/bin/python -m pytest eval/ --timeout=15 -q` (in-process runner; all 3879 tests pass, 0 failures) **|** Full suite with xdist parallelism: `./venv/bin/python -m pytest eval/ -n 3 --timeout=15 -q` **|** Subprocess-per-file runner (avoids parallel torch/OpenMP crashes): `./venv/bin/python eval/run_full_suite.py`

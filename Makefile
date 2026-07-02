@@ -1,15 +1,17 @@
 .PHONY: test test-quick test-file test-clean test-results help
 
 PYTHON := ./venv/bin/python
-SUITE  := eval/run_full_suite.py
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, "$$2"}'
 
-test: ## Run the full test suite (subprocess per file, ~5min, MPS-safe)
-	$(PYTHON) $(SUITE)
+test: ## Run the full test suite in-process (default, 3879 tests)
+	$(PYTHON) -m pytest eval/ --timeout=15 -q
 
-test-quick: ## Run only fast unit tests (skips slow-marked, no subprocess)
+test-safe: ## Run the full test suite subprocess-per-file (MPS/OpenMP crash-safe)
+	$(PYTHON) eval/run_full_suite.py
+
+test-quick: ## Run only fast unit tests (skips slow-marked)
 	$(PYTHON) -m pytest eval/ -q -m "not slow" --tb=line -p no:cacheprovider --timeout=60
 
 test-file: ## Run a single test file: make test-file FILE=eval/test_foo.py
