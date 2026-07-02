@@ -18,7 +18,7 @@ def _async_enqueue_or_fallback(
     tool: str, params: str, result_preview: str, ts: Optional[str]
 ) -> dict:
 
-    from background.auto_save import _now_iso, _slugify, _is_daemon_running, _start_daemon_if_needed, _enqueue_to_inbox, _get_sessions_dir, _tool_complete_inner, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale  # noqa: E402
+    from background.auto_save import _now_iso, _slugify, _is_daemon_running, _start_daemon_if_needed, _enqueue_to_inbox, _get_sessions_dir, _tool_complete_inner, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale, _get_dedup_lock_dir  # noqa: E402
     """Async path: enqueue to the inbox and start the daemon if needed.
 
     Returns a "queued" envelope on success, or invokes the inline
@@ -192,7 +192,7 @@ def _tool_complete_inner(
     tool: str, params: str, result_preview: str, ts: Optional[str], conn=None
 ) -> dict:
 
-    from background.auto_save import _resolve_allowlist, _resolve_denylist, _tool_name_matches, _scan_content_for_injection, _now_iso, _slugify, _get_sessions_dir, atomic_write, _resolve_tags, _upsert_memory, _truncate, _should_skip_dedup, _record_dedup, _dedup_key, _auto_save_ttl_hours, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale  # noqa: E402
+    from background.auto_save import _resolve_allowlist, _resolve_denylist, _tool_name_matches, _scan_content_for_injection, _now_iso, _slugify, _get_sessions_dir, atomic_write, _resolve_tags, _upsert_memory, _truncate, _should_skip_dedup, _record_dedup, _dedup_key, _auto_save_ttl_hours, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale, _get_dedup_lock_dir  # noqa: E402
     from background.config import _params_max, _preview_max  # noqa: E402
     """The original tool_complete body, factored out so retry can wrap it.
 

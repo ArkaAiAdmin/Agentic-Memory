@@ -16,13 +16,17 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["cleanup_fts5_orphans"]
 
 
-def cleanup_fts5_orphans(conn: sqlite3.Connection) -> int:
+def cleanup_fts5_orphans(conn: AnyConnection) -> int:
     """Remove FTS5 entries for soft-deleted or missing memories.
 
     Soft-delete uses UPDATE, which fires the memories_au trigger — the
@@ -57,7 +61,7 @@ def cleanup_fts5_orphans(conn: sqlite3.Connection) -> int:
         return 0
 
 
-def _create_fts5_table(conn: sqlite3.Connection) -> None:
+def _create_fts5_table(conn: AnyConnection) -> None:
     """Create memories_fts virtual table with porter unicode61 and sync triggers."""
     conn.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5("
@@ -91,7 +95,7 @@ def _create_fts5_table(conn: sqlite3.Connection) -> None:
     )
 
 
-def _migrate_fts5_porter_tokenizer(conn: sqlite3.Connection) -> None:
+def _migrate_fts5_porter_tokenizer(conn: AnyConnection) -> None:
     """Create or upgrade memories_fts with porter unicode61 tokenizer.
 
     If the table doesn't exist, creates it from scratch with proper
@@ -134,7 +138,7 @@ def _migrate_fts5_porter_tokenizer(conn: sqlite3.Connection) -> None:
             time.sleep(0.05 * (attempt + 1))
 
 
-def _migrate_ensure_fts_triggers(conn: sqlite3.Connection) -> None:
+def _migrate_ensure_fts_triggers(conn: AnyConnection) -> None:
     """Recreate the FTS5 sync triggers if missing.
 
     rebuild_index.py defines these inline; legacy DBs may have a

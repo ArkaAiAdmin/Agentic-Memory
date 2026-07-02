@@ -68,6 +68,11 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +239,7 @@ def merge_entity_ops(ops: Iterable[EntityOp]) -> dict[int, dict[str, Any]]:
     return result
 
 
-def compute_entity_crdt_state(conn: sqlite3.Connection) -> dict[int, dict[str, Any]]:
+def compute_entity_crdt_state(conn: AnyConnection) -> dict[int, dict[str, Any]]:
     """Read all entity CRDT ops from the DB and merge them.
 
     This is the canonical state of the entity set after merging all
@@ -265,7 +270,7 @@ def compute_entity_crdt_state(conn: sqlite3.Connection) -> dict[int, dict[str, A
 
 
 def apply_entity_crdt_to_db(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     state: dict[int, dict[str, Any]],
 ) -> int:
     """Apply a merged entity state to the kg_entities table.
@@ -365,7 +370,7 @@ def merge_edge_ops(ops: Iterable[EdgeOp]) -> dict[int, dict[str, Any]]:
     return result
 
 
-def compute_edge_crdt_state(conn: sqlite3.Connection) -> dict[int, dict[str, Any]]:
+def compute_edge_crdt_state(conn: AnyConnection) -> dict[int, dict[str, Any]]:
     """Read all edge CRDT ops from the DB and merge them."""
     rows = conn.execute(
         """
@@ -392,7 +397,7 @@ def compute_edge_crdt_state(conn: sqlite3.Connection) -> dict[int, dict[str, Any
 
 
 def apply_edge_crdt_to_db(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     state: dict[int, dict[str, Any]],
 ) -> int:
     """Apply a merged edge state to the kg_edges table."""
@@ -454,7 +459,7 @@ CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_pair ON kg_edge_crdt(source_id, targ
 """
 
 
-def ensure_kg_crdt_schema(conn: sqlite3.Connection) -> None:
+def ensure_kg_crdt_schema(conn: AnyConnection) -> None:
     """Create the CRDT tables if they don't exist.
 
     Idempotent — safe to call on every connection open.
@@ -469,7 +474,7 @@ def ensure_kg_crdt_schema(conn: sqlite3.Connection) -> None:
 
 
 def record_entity_add(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     entity_id: int,
     agent_id: str,
     version_vector: dict[str, int],
@@ -498,7 +503,7 @@ def record_entity_add(
 
 
 def record_entity_remove(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     entity_id: int,
     agent_id: str,
     version_vector: dict[str, int],
@@ -521,7 +526,7 @@ def record_entity_remove(
 
 
 def record_edge_add(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     source_id: int,
     target_id: int,
     relation: str,
@@ -654,7 +659,7 @@ def redirect_edge_ids(
 
 
 def project_crdt_to_entities(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
 ) -> tuple[int, int, dict[int, int]]:
     """Project the merged CRDT state into the kg_entities table.
 

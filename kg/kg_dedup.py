@@ -23,11 +23,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from infra.memory_common import safe_close_db
 from infra.infrastructure import resolve_active_memory_dir
+from typing import TYPE_CHECKING, Callable, Any
 
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
+
+get_config: Callable[[], Any] | None = None
 try:
     from config import get_config
 except Exception:
-    get_config = None
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +42,7 @@ except Exception:
 
 
 def merge_entities(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     keep_id: int,
     merge_id: int,
     dry_run: bool = False,
@@ -121,7 +127,7 @@ def merge_entities(
 # ---------------------------------------------------------------------------
 
 
-def dedup_entities(conn: sqlite3.Connection, dry_run: bool = False) -> dict:
+def dedup_entities(conn: AnyConnection, dry_run: bool = False) -> dict:
     """Find and merge duplicate KG entities by exact name+type match.
 
     Strategy: group by (name, entity_type), keep the one with highest
@@ -190,7 +196,7 @@ def dedup_entities(conn: sqlite3.Connection, dry_run: bool = False) -> dict:
 
 
 def compute_semantic_merge_candidates(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     threshold: float | None = None,
     max_pairs: int = 100,
 ) -> list[dict]:
@@ -289,7 +295,7 @@ def compute_semantic_merge_candidates(
 
 
 def dedup_entities_semantic(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     threshold: float | None = None,
     dry_run: bool = False,
 ) -> dict:

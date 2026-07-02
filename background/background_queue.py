@@ -37,6 +37,11 @@ __all__ = [
 ]
 
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 
 class RejectPolicy(str, Enum):
@@ -82,7 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_task_queue_priority ON task_queue(priority DESC, 
 """
 
 
-def init_task_queue(conn: sqlite3.Connection) -> None:
+def init_task_queue(conn: AnyConnection) -> None:
     """Create the task_queue table if it doesn't exist. Idempotent."""
     conn.executescript(_TASK_QUEUE_DDL)
 
@@ -93,7 +98,7 @@ def init_task_queue(conn: sqlite3.Connection) -> None:
 
 
 def enqueue_task(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     task_type: str,
     payload: dict[str, Any] | None = None,
     priority: int = 0,
@@ -136,9 +141,10 @@ def enqueue_task(
 
     # --- backpressure check ---
     if _max_qs > 0:
-        pending = conn.execute(
+        pending_row = conn.execute(
             "SELECT COUNT(*) FROM task_queue WHERE status = 'pending'"
-        ).fetchone()[0]
+        ).fetchone()
+        pending = pending_row[0] if pending_row is not None else 0
         if pending >= _max_qs:
             if _policy == RejectPolicy.REJECT_NEW:
                 retry_after = 0.0
@@ -177,9 +183,10 @@ def enqueue_task(
                             "retry_after": 0.0,
                         }
                     _time.sleep(0.05)
-                    pending = conn.execute(
+                    pending_row = conn.execute(
                         "SELECT COUNT(*) FROM task_queue WHERE status = 'pending'"
-                    ).fetchone()[0]
+                    ).fetchone()
+                    pending = pending_row[0] if pending_row is not None else 0
 
     in_outer = bool(getattr(conn, "in_transaction", False))
     if in_outer:
@@ -226,8 +233,7 @@ def enqueue_task(
 # ---------------------------------------------------------------------------
 
 
-def dequeue_task(
-    conn: sqlite3.Connection,
+def dequeue_task(conn: AnyConnection,
     task_type: str | None = None,
 ) -> dict | None:
     """Atomically fetch and lock the next pending task.
@@ -310,7 +316,7 @@ def dequeue_task(
 # ---------------------------------------------------------------------------
 
 
-def complete_task(conn: sqlite3.Connection, task_id: int) -> None:
+def complete_task(conn: AnyConnection, task_id: int) -> None:
     """Mark a task as successfully completed."""
     conn.execute(
         "UPDATE task_queue SET status = 'completed', completed_at = datetime('now') "
@@ -321,7 +327,7 @@ def complete_task(conn: sqlite3.Connection, task_id: int) -> None:
     logger.debug("completed task %d", task_id)
 
 
-def fail_task(conn: sqlite3.Connection, task_id: int, error: str) -> None:
+def fail_task(conn: AnyConnection, task_id: int, error: str) -> None:
     """Mark a task as failed. Re-enables it if attempts < max_attempts."""
     row = conn.execute(
         "SELECT attempts, max_attempts FROM task_queue WHERE id = ?",
@@ -355,7 +361,7 @@ def fail_task(conn: sqlite3.Connection, task_id: int, error: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def pending_count(conn: sqlite3.Connection, task_type: str | None = None) -> int:
+def pending_count(conn: AnyConnection, task_type: str | None = None) -> int:
     """Return the number of pending tasks, optionally filtered by type."""
     if task_type:
         row = conn.execute(
@@ -369,7 +375,7 @@ def pending_count(conn: sqlite3.Connection, task_type: str | None = None) -> int
     return row[0] if row else 0
 
 
-def worker_status(conn: sqlite3.Connection) -> dict:
+def worker_status(conn: AnyConnection) -> dict:
     """Return aggregate task counts by status and type."""
     rows = conn.execute(
         "SELECT status, task_type, COUNT(*) FROM task_queue GROUP BY status, task_type"
@@ -388,7 +394,7 @@ def worker_status(conn: sqlite3.Connection) -> dict:
     return result
 
 
-def cleanup_old_tasks(conn: sqlite3.Connection, max_age_days: int = 7) -> int:
+def cleanup_old_tasks(conn: AnyConnection, max_age_days: int = 7) -> int:
     """Delete completed/failed tasks older than max_age_days. Returns count deleted."""
     cur = conn.execute(
         "DELETE FROM task_queue "
@@ -396,7 +402,7 @@ def cleanup_old_tasks(conn: sqlite3.Connection, max_age_days: int = 7) -> int:
         "AND completed_at < datetime('now', ?)",
         (f"-{max_age_days} days",),
     )
-    deleted = cur.rowcount
+    deleted = cur.rowcount or 0
     if deleted:
         conn.commit()
         logger.debug("cleaned up %d old tasks", deleted)

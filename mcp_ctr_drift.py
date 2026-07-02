@@ -172,7 +172,7 @@ def memory_list_drift_alarms(
                     f"WHERE id IN ({placeholders}) AND acknowledged_at IS NULL",
                     params,
                 )
-                acked_now = cur.rowcount
+                acked_now = cur.rowcount or 0
                 conn.commit()
 
             # 2. Build the SELECT.
@@ -193,9 +193,10 @@ def memory_list_drift_alarms(
 
             rows = conn.execute(query, params).fetchall()
 
-            total_unack = conn.execute(
+            total_unack_row = conn.execute(
                 "SELECT COUNT(*) FROM drift_alarms WHERE acknowledged_at IS NULL"
-            ).fetchone()[0]
+            ).fetchone()
+            total_unack = total_unack_row[0] if total_unack_row is not None else 0
 
             alarms = [
                 {

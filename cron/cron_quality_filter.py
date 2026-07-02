@@ -17,6 +17,8 @@ from infra.infrastructure import resolve_active_memory_dir
 import quality_gates as qg
 
 def main() -> int:
+    acquire_lock_or_exit('cron_quality_filter')
+
     # argparse handles --help and exits cleanly. The pipeline itself
     # takes no flags.
     if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
@@ -26,7 +28,7 @@ def main() -> int:
 
     if not qg.QUALITY_GATES_ENABLED:
         print("MEMORY_QUALITY_GATES not enabled, skipping.")
-        return
+        return 0
     env = os.environ.get("MEMORY_DB_PATH")
     db_path = Path(env) if env else resolve_active_memory_dir() / "memory.db"
     if not db_path.exists():
@@ -41,7 +43,8 @@ def main() -> int:
         print(f"Error: {e}")
     finally:
         safe_close_db(conn)
-    acquire_lock_or_exit('cron_quality_filter')
+    return 0
+
 
 if __name__ == "__main__":
     main()

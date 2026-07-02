@@ -31,12 +31,13 @@ import re
 import logging
 from collections import OrderedDict
 from pathlib import Path
+from typing import Any, Callable
 
+get_config: Callable[[], Any] | None = None
 try:
     from config import get_config
 except Exception:
     logging.getLogger(__name__).warning("Failed to import get_config")
-    get_config = None
 
 # M4 fix: import the canonical find_project_root. The 5-line copy that
 # used to live here checked only (memory, .git, CLAUDE.md) — the

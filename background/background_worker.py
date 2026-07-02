@@ -50,6 +50,11 @@ _REPO_ROOT = os.path.dirname(_BG_DIR)
 sys.path.insert(0, _REPO_ROOT)
 from background.background_queue import init_task_queue, dequeue_task, complete_task, fail_task
 from infra.infrastructure import resolve_active_memory_dir
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +80,7 @@ def _handle_signal(signum, frame):
 
 
 def handle_entity_resolution(
-    payload: dict, conn: sqlite3.Connection, db_path: Path
+    payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Run semantic entity dedup on the KG."""
     try:
@@ -94,7 +99,7 @@ def handle_entity_resolution(
 
 
 def handle_fact_consolidation(
-    payload: dict, conn: sqlite3.Connection, db_path: Path
+    payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Run fact consolidation (merge similar SPO triples)."""
     try:
@@ -107,7 +112,7 @@ def handle_fact_consolidation(
 
 
 def handle_semantic_backlinks(
-    payload: dict, conn: sqlite3.Connection, db_path: Path
+    payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Create semantic KG edges between the saved memory and its nearest neighbors."""
     try:
@@ -126,7 +131,7 @@ def handle_semantic_backlinks(
 
 
 def handle_wal_checkpoint(
-    payload: dict, conn: sqlite3.Connection, db_path: Path
+    payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Run a passive WAL checkpoint.
 
@@ -152,7 +157,7 @@ def handle_wal_checkpoint(
 
 
 def handle_embedding_index(
-    payload: dict, conn: sqlite3.Connection, db_path: Path
+    payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Compute and store embedding for a memory note (deferred from save)."""
     try:
@@ -172,7 +177,7 @@ def handle_embedding_index(
 
 
 def handle_kg_and_fact_index(
-    payload: dict, conn: sqlite3.Connection, db_path: Path
+    payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Extract KG entities, facts, and enrich context for a memory (deferred)."""
     try:
@@ -194,7 +199,7 @@ def handle_kg_and_fact_index(
 
 
 def handle_vec_index_rebuild(
-    payload: dict, conn: sqlite3.Connection, db_path: Path
+    payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Rebuild the vector index (memory_vec_idx) from memory_embeddings.
 
@@ -273,7 +278,7 @@ def handle_vec_index_rebuild(
 
 
 def handle_run_script(
-    payload: dict, conn: sqlite3.Connection, db_path: Path
+    payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Run a cron script as a subprocess.
 
@@ -436,7 +441,7 @@ def _get_vec_rebuild_threshold() -> int:
         return base
 
 
-def _check_and_reconcile_vec_drift(conn: sqlite3.Connection, db_path: Path) -> None:
+def _check_and_reconcile_vec_drift(conn: AnyConnection, db_path: Path) -> None:
     """Check vector-index drift every worker run. Rebuild if drift > threshold.
 
     The cron worker runs every 5 minutes. This check costs 2 SELECTs
@@ -450,11 +455,14 @@ def _check_and_reconcile_vec_drift(conn: sqlite3.Connection, db_path: Path) -> N
     or MEMORY_VEC_REBUILD_THRESHOLD env var (default: 5).
     """
     try:
-        n_memories = conn.execute(
+        row_m = conn.execute(
             "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
-        ).fetchone()[0]
-        n_vec = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()[0]
-        n_emb = conn.execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()[0]
+        ).fetchone()
+        n_memories = row_m[0] if row_m is not None else 0
+        row_vec = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()
+        n_vec = row_vec[0] if row_vec is not None else 0
+        row_emb = conn.execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()
+        n_emb = row_emb[0] if row_emb is not None else 0
     except sqlite3.OperationalError as e:
         logger.info("vec_drift_check: skipping (table missing: %s)", e)
         return
@@ -479,8 +487,10 @@ def _check_and_reconcile_vec_drift(conn: sqlite3.Connection, db_path: Path) -> N
                 n_orphan_vec,
                 n_orphan_emb,
             )
-        n_vec = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()[0]
-        n_emb = conn.execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()[0]
+        row_vec2 = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()
+        n_vec = row_vec2[0] if row_vec2 is not None else 0
+        row_emb2 = conn.execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()
+        n_emb = row_emb2[0] if row_emb2 is not None else 0
 
     vec_drift = n_memories - n_vec
     emb_drift = n_memories - n_emb
@@ -497,7 +507,8 @@ def _check_and_reconcile_vec_drift(conn: sqlite3.Connection, db_path: Path) -> N
     )
     try:
         handle_vec_index_rebuild({}, conn, db_path)
-        n_vec_after = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()[0]
+        n_vec_after_row = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()
+        n_vec_after = n_vec_after_row[0] if n_vec_after_row is not None else 0
         logger.info(
             "vec_drift_check: rebuild complete (vec_keys: %d -> %d, drift was %d)",
             n_vec,
@@ -513,7 +524,7 @@ def _check_and_reconcile_vec_drift(conn: sqlite3.Connection, db_path: Path) -> N
 # ---------------------------------------------------------------------------
 
 
-def _maybe_run_wal_checkpoint(conn: sqlite3.Connection, db_path: Path) -> None:
+def _maybe_run_wal_checkpoint(conn: AnyConnection, db_path: Path) -> None:
     """S4.3 (2026-06-23): debounced WAL checkpoint.
 
     Runs a PASSIVE checkpoint if either of:
@@ -562,7 +573,7 @@ _last_wal_checkpoint_at: float = 0.0
 
 
 def process_one_task(
-    conn: sqlite3.Connection, db_path: Path, task_type: str | None = None
+    conn: AnyConnection, db_path: Path, task_type: str | None = None
 ) -> bool:
     """Dequeue and process one task. Returns True if a task was processed."""
     task = dequeue_task(conn, task_type=task_type)
@@ -731,7 +742,7 @@ class WorkerPool:
             )
 
 
-def _check_high_priority_pending(conn: sqlite3.Connection) -> bool:
+def _check_high_priority_pending(conn: AnyConnection) -> bool:
     try:
         row = conn.execute("SELECT id FROM task_queue WHERE status = 'pending' LIMIT 1").fetchone()
         return row is not None

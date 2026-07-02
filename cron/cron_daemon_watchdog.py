@@ -22,6 +22,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import cast
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
@@ -47,7 +48,7 @@ def is_daemon_running() -> bool:
     sys.path.insert(0, str(REPO / "background"))
     from inbox import _is_daemon_running
 
-    return _is_daemon_running()
+    return cast(bool, _is_daemon_running())
 
 
 def start_daemon() -> bool:

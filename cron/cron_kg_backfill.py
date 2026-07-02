@@ -71,6 +71,11 @@ from infra.memory_common import open_db
 from infra.infrastructure import resolve_active_memory_dir
 
 from infra.log import setup_logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = setup_logging("cron_kg_backfill", level="INFO", fmt="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -90,7 +95,7 @@ def _resolve_db_path() -> Path:
     return active_dir / "memory.db"
 
 
-def _table_count(conn: sqlite3.Connection, table: str) -> int:
+def _table_count(conn: AnyConnection, table: str) -> int:
     try:
         row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
         return int(row[0]) if row else 0
@@ -277,6 +282,7 @@ def main() -> int:
         sys.exit(1)
 
     logger.info("=== Weekly KG backfill complete ===")
+    return 0
 
 
 if __name__ == "__main__":

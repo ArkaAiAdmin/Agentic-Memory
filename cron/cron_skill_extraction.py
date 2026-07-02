@@ -45,9 +45,13 @@ from skill_extractor import (
     save_skill,
     is_skill_worthy,
 )
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 
-def _existing_skill_hashes(conn: sqlite3.Connection) -> dict:
+def _existing_skill_hashes(conn: AnyConnection) -> dict:
     """Return {content_hash: (skill_id, updated_at)} for dedup.
 
     P0 fix #5: access by index so the helper works whether or not the
@@ -61,7 +65,7 @@ def _existing_skill_hashes(conn: sqlite3.Connection) -> dict:
     return {r[1]: (r[0], r[2]) for r in rows}
 
 
-def _memory_updated_since(conn: sqlite3.Connection, since_iso: str) -> list:
+def _memory_updated_since(conn: AnyConnection, since_iso: str) -> list:
     """Return memories updated after `since_iso` (or all if since_iso is empty).
 
     P0 fix #5: tries to include the ``category`` column for the
@@ -84,7 +88,7 @@ def _memory_updated_since(conn: sqlite3.Connection, since_iso: str) -> list:
     ).fetchall()
 
 
-def _has_category_column(conn: sqlite3.Connection) -> bool:
+def _has_category_column(conn: AnyConnection) -> bool:
     """Return True iff the ``memories`` table has a ``category`` column."""
     try:
         rows = conn.execute("PRAGMA table_info(memories)").fetchall()
@@ -98,7 +102,7 @@ def _has_category_column(conn: sqlite3.Connection) -> bool:
 
 
 def run_extraction(
-    conn: sqlite3.Connection, since_iso: str = "", dry_run: bool = False
+    conn: AnyConnection, since_iso: str = "", dry_run: bool = False
 ) -> dict:
     """Run skill extraction over memories. Idempotent.
 

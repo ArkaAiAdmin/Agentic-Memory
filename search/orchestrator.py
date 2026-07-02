@@ -26,6 +26,10 @@ from infra.infrastructure import (
     ErrorCode,
 )
 from infra.error_counter import increment as _phase_inc, get_counts as _phase_counts
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 # Import functions from other search submodules
 from search.query_parser import (
@@ -61,10 +65,11 @@ _phase_latencies: dict[str, float] = {}
 _phase_latencies_lock = threading.Lock()
 
 
-def _get_memories_columns(db: sqlite3.Connection) -> set[str]:
+def _get_memories_columns(db: AnyConnection) -> set[str]:
     """Cache memories table columns by DB path to save PRAGMA queries."""
     try:
-        db_path = db.execute("PRAGMA database_list").fetchone()[2]
+        db_path_row = db.execute("PRAGMA database_list").fetchone()
+        db_path = db_path_row[2] if db_path_row is not None else ""
     except Exception:
         db_path = ""
 
@@ -99,7 +104,7 @@ _SQL_SAFE_FILTER_RE = re.compile(r"^[ A-Za-z0-9_.,=<>!()'\"%\-/]+$")
 
 
 def _fetch_rows_by_ids(
-    db: sqlite3.Connection,
+    db: AnyConnection,
     ids: list,
     table: str = "memories",
     columns: str = "id, content, source_file, tags, created_at, fitness_score, importance, pinned, last_accessed, metadata, access_count",
@@ -171,7 +176,7 @@ def _merge_chunk_hits(chunk_hits: list) -> list:
     return merged
 
 
-def _search_chunks_enhanced(db: sqlite3.Connection, fts_query: str, limit: int) -> list:
+def _search_chunks_enhanced(db: AnyConnection, fts_query: str, limit: int) -> list:
     """Enhanced chunk search that returns parent_id metadata directly.
 
     Returns (parent_id, chunk_idx, chunk_text, start_offset, end_offset,
@@ -385,7 +390,7 @@ def record_ctr_feedback_db(
 
 
 def _record_drift_event(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     centroid: Any,
     diff: Any,
     drift: float,
@@ -641,7 +646,7 @@ def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15, tenant_
 
 
 def _search_kg_facts(
-    db: sqlite3.Connection,
+    db: AnyConnection,
     fts_query: str,
     limit: int,
     include_invalid: bool,
@@ -707,7 +712,7 @@ def _search_kg_facts(
 
 
 def _fts_search(
-    db: sqlite3.Connection,
+    db: AnyConnection,
     fts_query: str,
     limit: int,
     has_fitness: bool,
@@ -738,7 +743,7 @@ def _fts_search(
 
 
 def _fallback_embedding_search(
-    db: sqlite3.Connection,
+    db: AnyConnection,
     normalized_query: str,
     db_path: Path,
     limit: int,
@@ -806,7 +811,7 @@ def _fallback_embedding_search(
 
 
 def _hybrid_fusion(
-    db: sqlite3.Connection,
+    db: AnyConnection,
     results: list,
     normalized_query: str,
     db_path: Path,
@@ -892,7 +897,7 @@ def _hybrid_fusion(
 
 
 def _enhance_with_chunks(
-    db: sqlite3.Connection,
+    db: AnyConnection,
     results: list,
     fts_query: str,
     limit: int,

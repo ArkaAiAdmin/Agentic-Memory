@@ -48,6 +48,10 @@ from infra.embedding_search import (
     chunk_memory,
     get_embedding_search,
 )
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 
 # Index settings. These are written into the memory_vec_idx singleton
@@ -82,7 +86,7 @@ def _md5_to_uint64(memory_id: str) -> int:
     return raw & ((1 << 63) - 1)
 
 
-def _ensure_schema(conn: sqlite3.Connection) -> None:
+def _ensure_schema(conn: AnyConnection) -> None:
     """Run migrations so memory_vec_idx + memory_vec_keys exist."""
     try:
         from infra._lazy_imports import run_db_migrations
@@ -92,7 +96,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         logger.warning("Could not run migrations: %s", e)
 
 
-def _load_cached_embeddings(conn: sqlite3.Connection) -> dict:
+def _load_cached_embeddings(conn: AnyConnection) -> dict:
     """Read memory_embeddings into {memory_id: (content_hash, blob)}.
 
     Missing table -> empty dict (no cache available). Stale cache rows
@@ -370,7 +374,7 @@ def _md5_chunk_key(parent_id: str, chunk_idx: int) -> int:
     return val & ((1 << 63) - 1)
 
 
-def _load_chunk_cached_embeddings(conn: sqlite3.Connection) -> dict:
+def _load_chunk_cached_embeddings(conn: AnyConnection) -> dict:
     """Read memory_chunk_embeddings into {chunk_id: (content_hash, blob, parent_id)}."""
     try:
         rows = conn.execute(

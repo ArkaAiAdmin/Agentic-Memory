@@ -1,5 +1,9 @@
 import logging
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +74,7 @@ END;
 """
 
 
-def ensure_kg_schema(conn: sqlite3.Connection) -> None:
+def ensure_kg_schema(conn: AnyConnection) -> None:
     """Create KG tables if they don't exist. Also add temporal columns to existing tables."""
     conn.executescript(_KG_SCHEMA_SQL)
     # Migrate existing tables: add valid_at/invalid_at/centrality if missing
@@ -99,8 +103,10 @@ def ensure_kg_schema(conn: sqlite3.Connection) -> None:
 
     # Backfill FTS if table exists but FTS is empty (first migration)
     try:
-        fts_count = conn.execute("SELECT COUNT(*) FROM kg_entities_fts").fetchone()[0]
-        entity_count = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
+        fts_count_row = conn.execute("SELECT COUNT(*) FROM kg_entities_fts").fetchone()
+        fts_count = int(fts_count_row[0]) if fts_count_row is not None else 0
+        entity_count_row = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()
+        entity_count = int(entity_count_row[0]) if entity_count_row is not None else 0
         if fts_count == 0 and entity_count > 0:
             conn.execute(
                 "INSERT INTO kg_entities_fts(rowid, name, entity_type) "

@@ -27,7 +27,7 @@ def main() -> int:
     try:
         if not sm.SUMMARIZATION_ENABLED:
             print("MEMORY_SUMMARIZATION not enabled, skipping.")
-            return
+            return 0
         db_path = os.environ.get("MEMORY_DB_PATH")
         if db_path:
             result = sm.auto_summarize_long(min_length=500, dry_run=False, db_path=db_path)
@@ -42,6 +42,7 @@ def main() -> int:
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
     acquire_lock_or_exit('cron_auto_summarize')
+    return 0
 
 
 if __name__ == "__main__":

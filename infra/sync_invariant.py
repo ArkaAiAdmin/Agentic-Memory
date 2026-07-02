@@ -13,20 +13,26 @@ Usage:
 
 import logging
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
 
-def _count(conn: sqlite3.Connection, sql: str) -> int:
+def _count(conn: AnyConnection, sql: str) -> int:
     """Execute a COUNT query and return the result, or 0 on error."""
     try:
-        return int(conn.execute(sql).fetchone()[0])
+        row = conn.execute(sql).fetchone()
+        return int(row[0]) if row is not None else 0
     except Exception:
         return 0
 
 
 def _check_subsystem(
-    conn: sqlite3.Connection, name: str, count: int, total: int, threshold: float = 0.80
+    conn: AnyConnection, name: str, count: int, total: int, threshold: float = 0.80
 ) -> dict:
     """Classify a subsystem's health based on its count vs total.
 
@@ -63,7 +69,7 @@ def _check_subsystem(
         }
 
 
-def _detect_reverse_ghosts(conn: sqlite3.Connection) -> dict:
+def _detect_reverse_ghosts(conn: AnyConnection) -> dict:
     """Detect subsystem entries pointing to deleted or missing memories.
 
     Checks FTS, embeddings, KG facts, and chunks for orphaned entries.
@@ -116,7 +122,7 @@ def _detect_reverse_ghosts(conn: sqlite3.Connection) -> dict:
     return ghosts
 
 
-def check_sync_invariant(conn: sqlite3.Connection) -> dict:
+def check_sync_invariant(conn: AnyConnection) -> dict:
     """Check all subsystem row counts against the memories table.
 
     Returns:

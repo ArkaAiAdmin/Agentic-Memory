@@ -32,7 +32,10 @@ import math
 import sqlite3
 import time
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 try:
     import numpy as np
@@ -247,7 +250,7 @@ def compute_retention_rate(
     )
 
 
-def _recent_queries(db: sqlite3.Connection, limit: int = _QUERY_HISTORY) -> list[str]:
+def _recent_queries(db: AnyConnection, limit: int = _QUERY_HISTORY) -> list[str]:
     """Return the text of recent search queries from audit_log."""
     queries: list[str] = []
     try:

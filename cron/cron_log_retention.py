@@ -62,6 +62,7 @@ def main() -> int:
             print(f"  Rotated: {log_path.name} (now {size_mb:.1f} MB)")
 
     print(f"Log retention: {rotated} files rotated")
+    return 0
 
 
 if __name__ == "__main__":

@@ -53,6 +53,11 @@ DEFAULT_THRESHOLD = 0.15
 # per-event detail only prints when --verbose is set, keeping the
 # default cron log readable.
 from infra.log import setup_logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = setup_logging("cron_concept_drift")
 
@@ -73,7 +78,7 @@ def _get_threshold() -> float:
             return DEFAULT_THRESHOLD
 
 
-def _compute_centroid(conn: sqlite3.Connection) -> Optional[npt.NDArray[np.float32]]:
+def _compute_centroid(conn: AnyConnection) -> Optional[npt.NDArray[np.float32]]:
     """Stack all embeddings into a numpy array and return the centroid.
 
     Returns None if there are no embeddings or numpy is missing.
@@ -146,9 +151,8 @@ def main(argv: list[str] | None = None) -> int:
                 print("concept_drift: scanned=0, drifted=0")
                 sys.exit(0)
 
-            n_embedded = int(
-                conn.execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()[0]
-            )
+            n_embedded_row = conn.execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()
+            n_embedded = int(n_embedded_row[0]) if n_embedded_row is not None else 0
             centroid_dim = int(centroid.shape[0])
 
             prev = conn.execute(

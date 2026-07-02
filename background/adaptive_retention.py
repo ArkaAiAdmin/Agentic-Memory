@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 import threading
 import time
 from collections import Counter
@@ -47,7 +51,7 @@ _audit_hits_cache_by_db: dict[str, dict[str, int]] = {}
 _audit_hits_cache_lock = threading.Lock()
 
 
-def _build_audit_hits_index(conn: sqlite3.Connection) -> dict[str, int]:
+def _build_audit_hits_index(conn: AnyConnection) -> dict[str, int]:
     """Scan audit_log once and return a {note_id: hit_count} map.
 
     Catches sqlite3.OperationalError (table doesn't exist) and returns {}.
@@ -86,7 +90,7 @@ def invalidate_audit_hits_cache(db_path: str | None = None) -> None:
             _audit_hits_cache_by_db.pop(str(db_path), None)
 
 
-def ensure_adaptive_schema(conn: sqlite3.Connection) -> None:
+def ensure_adaptive_schema(conn: AnyConnection) -> None:
     """Create user_access_log table if it doesn't exist."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS user_access_log (
@@ -111,7 +115,7 @@ def ensure_adaptive_schema(conn: sqlite3.Connection) -> None:
 
 
 def record_access(
-    conn: sqlite3.Connection, note_id: str, source: str = "search"
+    conn: AnyConnection, note_id: str, source: str = "search"
 ) -> None:
     """Record a user access event for a note.
 
@@ -144,7 +148,7 @@ def compute_adaptive_halflife(
     note_id: str,
     base_halflife: float = _DEFAULT_HALF_LIFE_DAYS,
     db_path: str | None = None,
-    conn: sqlite3.Connection | None = None,
+    conn: AnyConnection | None = None,
     audit_hits: int | None = None,
 ) -> float:
     """Compute adaptive half-life for a note based on its access history.
@@ -183,9 +187,11 @@ def compute_adaptive_halflife(
             # Count access events for this note
             access_count = 0
             try:
-                access_count = conn.execute(
+                row = conn.execute(
                     "SELECT COUNT(*) FROM user_access_log WHERE note_id = ?", (note_id,)
-                ).fetchone()[0]
+                ).fetchone()
+                if row is not None:
+                    access_count = row[0]
             except sqlite3.OperationalError:
                 pass  # table doesn't exist yet
 
@@ -221,7 +227,7 @@ def batch_update_retention(
     base_halflife: float = _DEFAULT_HALF_LIFE_DAYS,
     dry_run: bool = False,
     db_path: str | None = None,
-    conn: sqlite3.Connection | None = None,
+    conn: AnyConnection | None = None,
 ) -> dict:
     """Batch compute and optionally store adaptive half-lives for all notes.
 
@@ -256,7 +262,7 @@ def batch_update_retention(
     except ImportError:
         return {"enabled": True, "error": "memory_common not found"}
 
-    conn_to_use = None
+    conn_to_use: AnyConnection | None = None
     should_close = False
     try:
         if conn is None:
@@ -315,7 +321,7 @@ def batch_update_retention(
                     )
                     updated += 1
 
-            if not dry_run:
+            if conn_to_use is not None and not dry_run:
                 conn_to_use.commit()
         finally:
             if should_close and conn_to_use:

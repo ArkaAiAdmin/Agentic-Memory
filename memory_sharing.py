@@ -23,6 +23,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 import time
 from pathlib import Path
 
@@ -58,7 +62,7 @@ _AUTO_SHARE_MAX_PER_CYCLE = 25
 _SHARED_TABLE = "shared_memories"
 
 
-def _purge_expired_shared(conn: sqlite3.Connection) -> None:
+def _purge_expired_shared(conn: AnyConnection) -> None:
     """Delete TTL-expired entries from the shared pool."""
     import sys
 
@@ -71,7 +75,7 @@ def _purge_expired_shared(conn: sqlite3.Connection) -> None:
         )
 
 
-def _ensure_shared_table(conn: sqlite3.Connection) -> None:
+def _ensure_shared_table(conn: AnyConnection) -> None:
     """Create shared_memories table if it doesn't exist."""
     conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {_SHARED_TABLE} (
@@ -144,9 +148,10 @@ def share_memory(note_id: str, agent_id: str, db_path: str | None = None) -> dic
 
             _purge_expired_shared(conn)
             try:
-                count = conn.execute(
+                count_row = conn.execute(
                     f"SELECT COUNT(*) FROM {_SHARED_TABLE}"
-                ).fetchone()[0]
+                ).fetchone()
+                count = int(count_row[0]) if count_row is not None else 0
                 this_mod = sys.modules[__name__]
                 if count >= this_mod._MAX_SHARED_POOL_SIZE:
                     to_evict = count - this_mod._MAX_SHARED_POOL_SIZE + 1
@@ -225,7 +230,7 @@ def list_shared_memories(
 
     try:
         from infra.db import open_db
-        with open_db(db, pooled=True, write=True) as conn:
+        with open_db(Path(db), pooled=True, write=True) as conn:
             _ensure_shared_table(conn)
 
             query = f"SELECT id, agent_id, content, category, tags, shared_at, source_note_id FROM {_SHARED_TABLE}"
@@ -594,13 +599,16 @@ def shared_pool_stats(db_path: str | None = None) -> dict:
             _purge_expired_shared(conn)
             conn.commit()
 
-            total = conn.execute(f"SELECT COUNT(*) FROM {_SHARED_TABLE}").fetchone()[0]
-            agents = conn.execute(
+            total_row = conn.execute(f"SELECT COUNT(*) FROM {_SHARED_TABLE}").fetchone()
+            total = int(total_row[0]) if total_row is not None else 0
+            agents_row = conn.execute(
                 f"SELECT COUNT(DISTINCT agent_id) FROM {_SHARED_TABLE}"
-            ).fetchone()[0]
-            categories = conn.execute(
+            ).fetchone()
+            agents = int(agents_row[0]) if agents_row is not None else 0
+            categories_row = conn.execute(
                 f"SELECT COUNT(DISTINCT category) FROM {_SHARED_TABLE} WHERE category IS NOT NULL"
-            ).fetchone()[0]
+            ).fetchone()
+            categories = int(categories_row[0]) if categories_row is not None else 0
         finally:
             conn.close()
         return {
@@ -662,7 +670,7 @@ def list_share_candidates(
 
     try:
         from infra.db import open_db
-        with open_db(db, pooled=True, write=True) as conn:
+        with open_db(Path(db), pooled=True, write=True) as conn:
             _ensure_shared_table(conn)
             rows = conn.execute(
                 """

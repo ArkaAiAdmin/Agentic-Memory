@@ -53,6 +53,7 @@ def main() -> int:
             f"backlinks={repair_result['deleted_backlinks']}"
         )
     acquire_lock_or_exit("cron_integrity_check")
+    return 0
 
 
 if __name__ == "__main__":

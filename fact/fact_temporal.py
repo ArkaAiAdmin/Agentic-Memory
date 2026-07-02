@@ -23,6 +23,11 @@ import os
 import sqlite3
 import time
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +159,7 @@ def detect_fact_contradiction(
 
 
 def supersede_fact(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     old_id: int,
     new_id: int,
     reason: str = "contradicted",
@@ -226,7 +231,7 @@ def supersede_fact(
 
 
 def reconcile_fact_supersession(
-    conn: sqlite3.Connection, new_fact_id: int
+    conn: AnyConnection, new_fact_id: int
 ) -> list[int]:
     """Find facts that contradict new_fact_id and supersede them.
 
@@ -389,7 +394,7 @@ def _contradiction_score_threshold() -> float:
 
 
 def invalidate_fact(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     fact_id: int,
     reason: str = "manual",
     invalid_at: "float | None" = None,
@@ -435,7 +440,7 @@ def invalidate_fact(
 
 
 def invalidate_stale_facts(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     memory_id: str,
     new_fact_keys: "set[tuple[str, str, str]]",
 ) -> list[int]:
@@ -505,7 +510,7 @@ def invalidate_stale_facts(
 
 
 def audit_fact_temporal_event(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     event: str,
     fact_id: int,
     reason: str,
@@ -601,7 +606,7 @@ def _temporal_fact_clause(as_of: "float | None") -> "tuple[str, list]":
 
 
 def query_facts_at_time(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     as_of: float,
     *,
     query: "str | None" = None,
@@ -648,7 +653,7 @@ def query_facts_at_time(
     return [_row_to_dict(r, _FACT_COLUMNS) for r in rows]
 
 
-def query_fact_supersession_chain(conn: sqlite3.Connection, fact_id: int) -> list[dict]:
+def query_fact_supersession_chain(conn: AnyConnection, fact_id: int) -> list[dict]:
     """T4.3: walk the ``superseded_by`` chain starting from ``fact_id``.
 
     Returns facts in chronological order (oldest first), so the result
@@ -704,7 +709,7 @@ def query_fact_supersession_chain(conn: sqlite3.Connection, fact_id: int) -> lis
 
 
 def query_facts_changed_since(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     since_ts: float,
     *,
     limit: int = 100,

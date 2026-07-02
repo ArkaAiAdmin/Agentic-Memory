@@ -22,7 +22,7 @@ class ProxyCursor:
     description: Optional[tuple]
     _data: list
     lastrowid: Optional[int]
-    rowcount: int
+    rowcount: Optional[int]
     _idx: int
 
     def __init__(
@@ -30,7 +30,7 @@ class ProxyCursor:
         description: Optional[tuple],
         fetchall_data: list,
         lastrowid: Optional[int],
-        rowcount: int,
+        rowcount: Optional[int],
     ) -> None:
         self.description = description
         self._data = fetchall_data
@@ -67,7 +67,7 @@ class ProxyCursorObject:
     connection: ProxyConnection
     description: Optional[tuple]
     lastrowid: Optional[int]
-    rowcount: int
+    rowcount: Optional[int]
     _data: list
     _idx: int
 
@@ -79,7 +79,7 @@ class ProxyCursorObject:
         self._data = []
         self._idx = 0
 
-    def execute(self, sql: str, params: tuple = ()) -> ProxyCursorObject:
+    def execute(self, sql: str, params: Any = ()) -> ProxyCursorObject:
         cursor = self.connection.execute(sql, params)
         self.description = cursor.description
         self.lastrowid = cursor.lastrowid
@@ -136,7 +136,7 @@ class ProxyConnection:
     def in_transaction(self) -> bool:
         return True
 
-    def execute(self, sql: str, params: tuple = ()) -> ProxyCursor:
+    def execute(self, sql: str, params: Any = ()) -> ProxyCursor:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
         if sql.strip().upper().startswith("BEGIN"):

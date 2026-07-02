@@ -10,10 +10,15 @@ from __future__ import annotations
 
 import sqlite3
 from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 
 def find_shortest_path(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     source_name: str,
     target_name: str,
     max_depth: int = 5,
@@ -44,10 +49,12 @@ def find_shortest_path(
     target_id = target_row[0]
 
     if source_id == target_id:
-        entity_info = conn.execute(
+        entity_info_row = conn.execute(
             "SELECT id, name, entity_type FROM kg_entities WHERE id = ?", (source_id,)
         ).fetchone()
-        return [{"id": entity_info[0], "name": entity_info[1], "entity_type": entity_info[2]}]
+        if entity_info_row is None:
+            return None
+        return [{"id": entity_info_row[0], "name": entity_info_row[1], "entity_type": entity_info_row[2]}]
 
     # 2. Run recursive CTE to find shortest path of IDs and relations
     # path_ids matches: ,id1,id2,id3,
@@ -125,7 +132,7 @@ def find_shortest_path(
 
 
 def find_neighbors(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     entity_name: str,
     direction: str = "out",
     relation_types: Optional[List[str]] = None,
@@ -273,7 +280,7 @@ def find_neighbors(
 
 
 def traverse_graph(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     start_name: str,
     edge_patterns: List[str],
 ) -> List[List[Dict[str, Any]]]:

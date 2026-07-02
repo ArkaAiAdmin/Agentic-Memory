@@ -41,11 +41,15 @@ __all__ = [
 
 import logging
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 logger = logging.getLogger(__name__)
 
 
-def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+def _table_exists(conn: AnyConnection, table_name: str) -> bool:
     """Return True if *table_name* exists in the database.
 
     Cheap PRAGMA lookup; used to gate cleanup calls on older databases
@@ -61,7 +65,7 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     )
 
 
-def remove_backlinks_for_note(conn: sqlite3.Connection, note_id: str) -> int:
+def remove_backlinks_for_note(conn: AnyConnection, note_id: str) -> int:
     """Delete backlinks rows where source_id (or its slug) equals *note_id*.
 
     By design, target_id may refer to non-existent notes (wiki-style
@@ -89,7 +93,7 @@ def remove_backlinks_for_note(conn: sqlite3.Connection, note_id: str) -> int:
 
 
 def remove_kg_relations_for_note(
-    conn: sqlite3.Connection, note_id: str
+    conn: AnyConnection, note_id: str
 ) -> dict[str, int]:
     """Remove kg_edges / kg_entities / kg_facts rows tied to *note_id*.
 
@@ -148,7 +152,7 @@ def remove_kg_relations_for_note(
     return counts
 
 
-def cleanup_memory_relations(conn: sqlite3.Connection, note_id: str) -> dict[str, int]:
+def cleanup_memory_relations(conn: AnyConnection, note_id: str) -> dict[str, int]:
     """Remove all dependent rows for *note_id* in one call.
 
     Convenience wrapper used by:
@@ -194,7 +198,7 @@ def cleanup_memory_relations(conn: sqlite3.Connection, note_id: str) -> dict[str
 
 
 def remove_chunks_and_embeddings_for_note(
-    conn: sqlite3.Connection, note_id: str
+    conn: AnyConnection, note_id: str
 ) -> dict[str, int]:
     """Remove ``memory_chunks`` and ``memory_embeddings`` for *note_id*.
 

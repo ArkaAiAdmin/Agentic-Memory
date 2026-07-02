@@ -117,12 +117,12 @@ def get_stats(db_path: Path | None = None) -> dict:
                 "error_rate": round(errors / total * 100, 2) if total > 0 else 0,
             }
 
-        time_range = conn.execute("""
+        time_range_row = conn.execute("""
             SELECT MIN(ts), MAX(ts) FROM memory_audit_log
         """).fetchone()
 
-        if time_range[0] and time_range[1]:
-            window_seconds = time_range[1] - time_range[0]
+        if time_range_row is not None and time_range_row[0] and time_range_row[1]:
+            window_seconds = time_range_row[1] - time_range_row[0]
             total_ops = sum(s["total"] for s in stats.values())
             stats["_summary"] = {
                 "total_operations": total_ops,
@@ -132,8 +132,8 @@ def get_stats(db_path: Path | None = None) -> dict:
                 "overall_error_rate": round(
                     sum(s["errors"] for s in stats.values()) / total_ops * 100, 2
                 ) if total_ops > 0 else 0,
-                "first_event": time_range[0],
-                "last_event": time_range[1],
+                "first_event": time_range_row[0],
+                "last_event": time_range_row[1],
             }
         else:
             stats["_summary"] = {"total_operations": 0, "total_errors": 0}
@@ -141,7 +141,8 @@ def get_stats(db_path: Path | None = None) -> dict:
         db_stats = {}
         for table in ["memories", "memories_fts", "memory_embeddings", "kg_entities", "kg_edges"]:
             try:
-                count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                count_row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                count = int(count_row[0]) if count_row is not None else 0
                 db_stats[table] = count
             except Exception:
                 db_stats[table] = -1

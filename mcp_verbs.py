@@ -82,7 +82,7 @@ def memory_search(
             include_global=include_global,
             tenant_id=tenant_id,
         )
-        return result.get("results_blob", str(result))
+        return str(result.get("results_blob", str(result)))
     except Exception as e:
         logger.exception("in memory_search verb")
         return _err(ErrorCode.DB_ERROR, f"memory_search: {e}")
@@ -143,7 +143,7 @@ def memory_delete(
     try:
         from mcp_memory import memory_delete as _delete
 
-        return _delete(note_id=note_id, hard=hard)
+        return str(_delete(note_id=note_id, hard=hard))
     except Exception as e:
         logger.exception("in memory_delete verb")
         return _err(ErrorCode.DB_ERROR, f"memory_delete: {e}")
@@ -173,7 +173,7 @@ def memory_recall(query: str = "", session_id: str = "", tenant_id: str = "defau
             include_global=True,
             tenant_id=tenant_id,
         )
-        return result.get("results_blob", str(result))
+        return str(result.get("results_blob", str(result)))
     except Exception as e:
         logger.exception("in memory_recall verb")
         return _err(ErrorCode.DB_ERROR, f"memory_recall: {e}")
@@ -206,7 +206,7 @@ def memory_note(
             result = search_memories(
                 db_path=_resolve_db_path(), query=note_id, limit=1
             )
-            return result.get("results_blob", str(result))
+            return str(result.get("results_blob", str(result)))
         elif action == "delete":
             from mcp_memory import memory_delete
 
@@ -375,9 +375,9 @@ def memory_organize(
                 ("dedup", memory_duplicates(threshold=0.85)),
             ]
         elif target == "compact":
-            return memory_compact(dry_run=dry_run)
+            return str(memory_compact(dry_run=dry_run))
         elif target == "dedup":
-            return memory_duplicates(threshold=0.85)
+            return str(memory_duplicates(threshold=0.85))
         else:
             return _err(
                 ErrorCode.INVALID_PARAMS,
@@ -418,15 +418,15 @@ def memory_share(
         )
 
         if action == "list":
-            return memory_shared_list()
+            return str(memory_shared_list())
         elif action == "share":
             if not share_with:
                 return _err(ErrorCode.INVALID_PARAMS, "share_with required for action=share")
-            return _share_to_pool(note_id=note_id, agent_id=share_with)
+            return str(_share_to_pool(note_id=note_id, agent_id=share_with))
         elif action == "import":
-            return memory_shared_import(shared_id=note_id, target_agent_id=share_with)
+            return str(memory_shared_import(shared_id=note_id, target_agent_id=share_with))
         elif action == "stats":
-            return memory_shared_stats()
+            return str(memory_shared_stats())
         else:
             return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'")
     except Exception as e:
@@ -461,11 +461,11 @@ def memory_graph(
             stats = memory_graph_stats()
             return f"## KG Facts\n{facts}\n\n## Stats\n{stats}"
         elif action == "traverse":
-            return memory_graph_traverse(start=start, edge_patterns=edge_patterns)
+            return str(memory_graph_traverse(start=start, edge_patterns=edge_patterns))
         elif action == "shortest_path":
-            return memory_graph_shortest_path(source=start, target=edge_patterns, max_depth=max_depth)
+            return str(memory_graph_shortest_path(source=start, target=edge_patterns, max_depth=max_depth))
         elif action == "stats":
-            return memory_graph_stats()
+            return str(memory_graph_stats())
         else:
             return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'")
     except Exception as e:
@@ -494,17 +494,17 @@ def memory_profile(
         )
 
         if action == "stats":
-            return memory_profile_stats()
+            return str(memory_profile_stats())
         elif action == "user":
-            return memory_user_profile()
+            return str(memory_user_profile())
         elif action == "agents":
             if agent_id:
-                return memory_agent_init(agent_id=agent_id)
-            return memory_agent_list()
+                return str(memory_agent_init(agent_id=agent_id))
+            return str(memory_agent_list())
         elif action == "skills":
-            return memory_list_skills(limit=50)
+            return str(memory_list_skills(limit=50))
         elif action == "arc":
-            return memory_arc_stats()
+            return str(memory_arc_stats())
         else:
             return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'")
     except Exception as e:
@@ -523,7 +523,7 @@ def memory_session_start(query: str = "") -> str:
     try:
         from mcp_search import memory_session_start as _session_start
 
-        return _session_start(query=query)
+        return str(_session_start(query=query))
     except Exception as e:
         logger.exception("in memory_session_start verb")
         return _err(ErrorCode.DB_ERROR, f"memory_session_start: {e}")
@@ -543,7 +543,7 @@ def memory_advanced(operation: str, **kwargs: str) -> str:
     try:
         from mcp_maintenance import memory_maintenance
 
-        return memory_maintenance(operation=operation, **kwargs)
+        return str(memory_maintenance(operation=operation, **kwargs))
     except Exception as e:
         logger.exception("in memory_advanced verb")
         return _err(ErrorCode.DB_ERROR, f"memory_advanced: {e}")

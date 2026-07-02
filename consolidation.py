@@ -62,7 +62,7 @@ def _content_hash(text: str) -> str:
 
 
 def detect_duplicates(
-    conn: sqlite3.Connection, threshold: float = 0.85, limit: int = 50
+    conn: AnyConnection, threshold: float = 0.85, limit: int = 50
 ) -> list[dict]:
     """Find pairs of notes with Jaccard similarity above threshold.
 
@@ -138,7 +138,7 @@ def detect_duplicates(
 
 
 def cluster_related(
-    conn: sqlite3.Connection, tag_threshold: float = 0.3, limit: int = 50
+    conn: AnyConnection, tag_threshold: float = 0.3, limit: int = 50
 ) -> list[dict]:
     """Find clusters of related notes based on tag overlap.
 
@@ -204,7 +204,7 @@ def cluster_related(
 
 
 def merge_suggestions(
-    conn: sqlite3.Connection, duplicate_threshold: float = 0.90, limit: int = 20
+    conn: AnyConnection, duplicate_threshold: float = 0.90, limit: int = 20
 ) -> list[dict]:
     """Suggest merges for near-duplicate notes.
 
@@ -258,7 +258,7 @@ def merge_suggestions(
 # ---------------------------------------------------------------------------
 
 
-def consolidation_stats(conn: sqlite3.Connection) -> dict:
+def consolidation_stats(conn: AnyConnection) -> dict:
     """Return consolidation-related statistics."""
     import sys
 
@@ -266,9 +266,10 @@ def consolidation_stats(conn: sqlite3.Connection) -> dict:
         return {"enabled": False}
 
     try:
-        total = conn.execute(
+        total_row = conn.execute(
             "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
-        ).fetchone()[0]
+        ).fetchone()
+        total = int(total_row[0]) if total_row is not None else 0
 
         # Content hash distribution
         rows = conn.execute(
@@ -309,5 +310,10 @@ def consolidation_stats(conn: sqlite3.Connection) -> dict:
 
 
 from infra.memory_common import make_lazy_getattr
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 __getattr__ = make_lazy_getattr({"CONSOLIDATION_ENABLED": "consolidation"})

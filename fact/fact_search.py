@@ -13,6 +13,11 @@ import time
 from pathlib import Path
 
 from .fact_schema import ensure_facts_schema
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +50,7 @@ def _build_fts_query(query_lower: str) -> str | None:
 
 
 def _facts_search_fts(
-    conn: sqlite3.Connection, fts_query: str, limit: int
+    conn: AnyConnection, fts_query: str, limit: int
 ) -> list[sqlite3.Row] | None:
     """FTS5-backed fact search.
 
@@ -74,7 +79,7 @@ def _facts_search_fts(
 
 
 def _facts_search_like(
-    conn: sqlite3.Connection, query_lower: str, limit: int
+    conn: AnyConnection, query_lower: str, limit: int
 ) -> list[sqlite3.Row]:
     """Original LIKE-based fact search.  Fallback for pre-v20 DBs and FTS5
     syntax errors.  O(n) full table scan due to leading-wildcard LIKE."""
@@ -88,7 +93,7 @@ def _facts_search_like(
     ).fetchall()
 
 
-def facts_search(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[dict]:
+def facts_search(conn: AnyConnection, query: str, limit: int = 10) -> list[dict]:
     query_lower = query.lower().strip()
     now = time.time()
     half_life = 180 * 86400
@@ -140,7 +145,7 @@ def facts_search(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[
 
 
 def facts_list(
-    conn: sqlite3.Connection, limit: int = 20, min_confidence: float = 0.0
+    conn: AnyConnection, limit: int = 20, min_confidence: float = 0.0
 ) -> list[dict]:
     rows = conn.execute(
         "SELECT id, subject, predicate, object, confidence, locked, "
@@ -171,20 +176,21 @@ def facts_list(
 # ---------------------------------------------------------------------------
 
 
-def facts_stats(conn: sqlite3.Connection) -> dict:
+def facts_stats(conn: AnyConnection) -> dict:
     try:
-        total = conn.execute("SELECT COUNT(*) FROM kg_facts").fetchone()[0]
-        locked = conn.execute(
+        total_row = conn.execute("SELECT COUNT(*) FROM kg_facts").fetchone()
+        total = int(total_row[0]) if total_row is not None else 0
+        locked_row = conn.execute(
             "SELECT COUNT(*) FROM kg_facts WHERE locked = 1"
-        ).fetchone()[0]
+        ).fetchone()
+        locked = int(locked_row[0]) if locked_row is not None else 0
         predicates = {}
         for row in conn.execute(
             "SELECT predicate, COUNT(*) FROM kg_facts GROUP BY predicate"
         ).fetchall():
             predicates[row[0]] = row[1]
-        avg_conf = (
-            conn.execute("SELECT AVG(confidence) FROM kg_facts").fetchone()[0] or 0.0
-        )
+        avg_conf_row = conn.execute("SELECT AVG(confidence) FROM kg_facts").fetchone()
+        avg_conf = (avg_conf_row[0] if avg_conf_row is not None else 0.0) or 0.0
         return {
             "total_facts": total,
             "locked_facts": locked,

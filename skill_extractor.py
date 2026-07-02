@@ -32,6 +32,11 @@ import re
 import time
 import sqlite3
 from typing import Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 # Use the config system for feature flags
 try:
@@ -73,7 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_skills_hit ON memory_skills(hit_count DESC
 """
 
 
-def ensure_skill_schema(conn: sqlite3.Connection) -> None:
+def ensure_skill_schema(conn: AnyConnection) -> None:
     """Create the memory_skills table if it doesn't exist. Idempotent."""
     conn.executescript(_SKILL_SCHEMA_SQL)
     conn.commit()
@@ -335,7 +340,7 @@ def extract_skill_from_memory(
     }
 
 
-def save_skill(conn: sqlite3.Connection, skill: dict) -> int:
+def save_skill(conn: AnyConnection, skill: dict) -> int:
     """Insert or update a skill in the memory_skills table. Returns the skill id.
 
     If a skill with the same name exists, updates it (idempotent re-extraction).
@@ -393,7 +398,7 @@ def save_skill(conn: sqlite3.Connection, skill: dict) -> int:
     return int(cur.lastrowid) if cur.lastrowid is not None else 0
 
 
-def search_skills(conn: sqlite3.Connection, query: str, limit: int = 5) -> list[dict]:
+def search_skills(conn: AnyConnection, query: str, limit: int = 5) -> list[dict]:
     """Skill-first search: returns skills whose triggers match the query.
 
     This is the "indexed memory" path — the system has already figured
@@ -451,7 +456,7 @@ def search_skills(conn: sqlite3.Connection, query: str, limit: int = 5) -> list[
     return results[:limit]
 
 
-def record_skill_hit(conn: sqlite3.Connection, skill_id: int) -> None:
+def record_skill_hit(conn: AnyConnection, skill_id: int) -> None:
     """Record that a skill was used. Increments hit_count and updates last_used_at."""
     conn.execute(
         """UPDATE memory_skills
@@ -462,7 +467,7 @@ def record_skill_hit(conn: sqlite3.Connection, skill_id: int) -> None:
     conn.commit()
 
 
-def list_skills(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
+def list_skills(conn: AnyConnection, limit: int = 50) -> list[dict]:
     """List all skills, ordered by hit_count desc (most-used first)."""
 
     rows = conn.execute(
@@ -487,7 +492,7 @@ def list_skills(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
 
 
 def extract_skill_for_memory(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     note_id: str,
     content: str,
     category: str = "",

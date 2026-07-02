@@ -35,8 +35,9 @@ def get_current_model_config() -> dict:
                 "dimensions": 256,
             }
         # Fallback: try embedding_search module
-        import infra.embedding_search
-        es = embedding_search.get_embedding_search()
+        from infra.embedding_search import get_embedding_search
+
+        es = get_embedding_search()
         if es.model is not None:
             return {
                 "model": "minishlab/potion-base-8M",

@@ -37,6 +37,11 @@ from pathlib import Path
 from typing import Any
 
 from infra.memory_common import open_db
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +51,7 @@ _OPTIONAL_TABLES = frozenset({"memories_fts", "memory_chunks"})
 _SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2, "ok": 3}
 
 
-def _get_table_names(db: sqlite3.Connection) -> set[str]:
+def _get_table_names(db: AnyConnection) -> set[str]:
     return {
         row[0]
         for row in db.execute(
@@ -55,7 +60,7 @@ def _get_table_names(db: sqlite3.Connection) -> set[str]:
     }
 
 
-def _get_memories_count(db: sqlite3.Connection) -> int:
+def _get_memories_count(db: AnyConnection) -> int:
     """Count active (non-deleted) memories for FTS5 comparison."""
     try:
         cols = {row[1] for row in db.execute("PRAGMA table_info(memories)").fetchall()}
@@ -73,7 +78,7 @@ def _get_memories_count(db: sqlite3.Connection) -> int:
     return int(row[0])
 
 
-def _get_fts_indexed_count(db: sqlite3.Connection, tables: set[str]) -> int | None:
+def _get_fts_indexed_count(db: AnyConnection, tables: set[str]) -> int | None:
     """Count documents actually indexed in the FTS5 structure.
 
     For external-content FTS5, the virtual table's COUNT(*) and rowid
@@ -112,7 +117,7 @@ def _get_fts_indexed_count(db: sqlite3.Connection, tables: set[str]) -> int | No
         return None
 
 
-def _table_has_column(db: sqlite3.Connection, table: str, column: str) -> bool:
+def _table_has_column(db: AnyConnection, table: str, column: str) -> bool:
     if not table or not table.replace("_", "").isalnum():
         return False
     if not column or not column.replace("_", "").isalnum():
@@ -124,7 +129,7 @@ def _table_has_column(db: sqlite3.Connection, table: str, column: str) -> bool:
     return any(row[1] == column for row in rows)
 
 
-def _get_orphaned_backlinks(db: sqlite3.Connection) -> list[dict[str, Any]]:
+def _get_orphaned_backlinks(db: AnyConnection) -> list[dict[str, Any]]:
     """Find backlinks whose source_id no longer exists in memories.
 
     By design, target_id may refer to non-existent notes (wiki-style
@@ -161,7 +166,7 @@ def _get_orphaned_backlinks(db: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def _get_orphaned_chunks(
-    db: sqlite3.Connection, tables: set[str]
+    db: AnyConnection, tables: set[str]
 ) -> list[dict[str, Any]]:
     if "memory_chunks" not in tables:
         return []
@@ -193,12 +198,13 @@ def _get_orphaned_chunks(
 
 
 def _get_orphaned_notes(
-    db: sqlite3.Connection, tables: set[str]
+    db: AnyConnection, tables: set[str]
 ) -> list[dict[str, Any]]:
     if "backlinks" not in tables:
         return []
     try:
-        backlink_count = db.execute("SELECT COUNT(*) FROM backlinks").fetchone()[0]
+        backlink_count_row = db.execute("SELECT COUNT(*) FROM backlinks").fetchone()
+        backlink_count = int(backlink_count_row[0]) if backlink_count_row is not None else 0
     except sqlite3.DatabaseError:
         backlink_count = 0
     if backlink_count == 0:
@@ -226,7 +232,7 @@ def _get_orphaned_notes(
 
 
 def _check_fts5_mismatch(
-    db: sqlite3.Connection, tables: set[str]
+    db: AnyConnection, tables: set[str]
 ) -> dict[str, Any] | None:
     if "memories" not in tables:
         return None
@@ -268,7 +274,7 @@ def _check_fts5_mismatch(
 
 
 def _check_vector_index_mismatch(
-    db: sqlite3.Connection, tables: set[str]
+    db: AnyConnection, tables: set[str]
 ) -> dict[str, Any] | None:
     if "memories" not in tables:
         return None
@@ -278,14 +284,14 @@ def _check_vector_index_mismatch(
         return None
     try:
         # If the vector index has never been built, don't flag a mismatch
-        idx_exists = db.execute("SELECT 1 FROM memory_vec_idx WHERE id=1").fetchone()
-        if not idx_exists:
+        idx_exists_row = db.execute("SELECT 1 FROM memory_vec_idx WHERE id=1").fetchone()
+        if not idx_exists_row:
             return None
 
-        vec_keys_count = db.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()[
-            0
-        ]
-        mem_count = db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        vec_keys_count_row = db.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()
+        vec_keys_count = int(vec_keys_count_row[0]) if vec_keys_count_row is not None else 0
+        mem_count_row = db.execute("SELECT COUNT(*) FROM memories").fetchone()
+        mem_count = int(mem_count_row[0]) if mem_count_row is not None else 0
         if vec_keys_count != mem_count:
             return {
                 "id": "vector-index-mismatch",
@@ -300,7 +306,7 @@ def _check_vector_index_mismatch(
     return None
 
 
-def _check_pragma_integrity(db: sqlite3.Connection) -> list[dict[str, Any]]:
+def _check_pragma_integrity(db: AnyConnection) -> list[dict[str, Any]]:
     try:
         db.execute("PRAGMA wal_checkpoint(PASSIVE)")
     except sqlite3.DatabaseError:
@@ -335,7 +341,7 @@ def _check_pragma_integrity(db: sqlite3.Connection) -> list[dict[str, Any]]:
     return findings
 
 
-def _check_fk_violations(db: sqlite3.Connection) -> list[dict[str, Any]]:
+def _check_fk_violations(db: AnyConnection) -> list[dict[str, Any]]:
     try:
         rows = db.execute("PRAGMA foreign_key_check").fetchall()
     except sqlite3.DatabaseError:
@@ -844,7 +850,7 @@ def repair_fts_drift(db_path: Path, *, dry_run: bool = False) -> dict[str, Any]:
 
 
 def find_orphan_files(
-    db: sqlite3.Connection, memory_root: Path
+    db: AnyConnection, memory_root: Path
 ) -> list[dict[str, Any]]:
     """Return memories rows whose .md file is missing on disk.
 
@@ -901,7 +907,7 @@ def find_orphan_files(
     return findings
 
 
-def find_orphan_vec_keys(db: sqlite3.Connection) -> list[dict[str, Any]]:
+def find_orphan_vec_keys(db: AnyConnection) -> list[dict[str, Any]]:
     """Defensive: return memory_vec_keys rows whose memory_id is gone.
 
     The FK constraint ``memory_id REFERENCES memories(id) ON DELETE
@@ -1065,7 +1071,7 @@ def recover_orphan_files(
 # ---------------------------------------------------------------------------
 
 
-def find_kg_orphans(db: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
+def find_kg_orphans(db: AnyConnection) -> dict[str, list[dict[str, Any]]]:
     """Return orphan rows in kg_edges, kg_entities, and backlinks.
 
     Returns a dict with three keys:

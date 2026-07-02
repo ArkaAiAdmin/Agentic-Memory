@@ -33,6 +33,7 @@ def main(db_path: str | None = None) -> int:
         print(f"cron_purge_auto_saves FAILED: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
+    return 0
 
 
 if __name__ == "__main__":

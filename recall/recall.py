@@ -27,6 +27,11 @@ from pathlib import Path
 from typing import Optional
 
 from infra.infrastructure import resolve_active_memory_dir
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +310,7 @@ def session_recap(db_path: str | None = None, session_id: str = "") -> str:
 # ---------------------------------------------------------------------------
 
 
-def _fetch_pinned(conn: sqlite3.Connection, limit: int) -> list[dict]:
+def _fetch_pinned(conn: AnyConnection, limit: int) -> list[dict]:
     """Fetch pinned notes."""
     from agent_context import get_agent
     ctx = get_agent()
@@ -338,7 +343,7 @@ def _fetch_pinned(conn: sqlite3.Connection, limit: int) -> list[dict]:
 
 
 def _fetch_recent_digests(
-    conn: sqlite3.Connection, days: int, limit: int
+    conn: AnyConnection, days: int, limit: int
 ) -> list[dict]:
     """Fetch recent session digest notes (excluding auto-saved tool logs)."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -375,7 +380,7 @@ def _fetch_recent_digests(
     return [_row_to_dict(r) for r in rows]
 
 
-def _fetch_high_importance(conn: sqlite3.Connection, limit: int) -> list[dict]:
+def _fetch_high_importance(conn: AnyConnection, limit: int) -> list[dict]:
     """Fetch high-importance memories (importance >= 4)."""
     from agent_context import get_agent
     ctx = get_agent()
@@ -497,7 +502,7 @@ def _fetch_user_profile(db_path: str | None = None) -> Optional[dict]:
         return None
 
 
-def _count_memories(conn: sqlite3.Connection) -> int:
+def _count_memories(conn: AnyConnection) -> int:
     """Count total active memories (excluding auto-saved tool logs)."""
     row = conn.execute(
         "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL AND source_file NOT LIKE 'sessions/auto-%'"

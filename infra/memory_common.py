@@ -26,7 +26,7 @@ import re
 import time
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 from infra.frontmatter import _coerce  # noqa: F401
 # Re-exports from the 6 new modules (one canonical home, multiple import paths)
@@ -690,7 +690,7 @@ def read_current_session() -> dict:
     if not _CURRENT_SESSION_FILE.exists():
         return {}
     try:
-        return json.loads(_CURRENT_SESSION_FILE.read_text())
+        return cast(dict, json.loads(_CURRENT_SESSION_FILE.read_text()))
     except (json.JSONDecodeError, OSError):
         return {}
 

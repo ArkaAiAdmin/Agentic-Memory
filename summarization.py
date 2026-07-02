@@ -289,22 +289,23 @@ def summarize_note(
                 # Store summary in metadata
                 import json
 
-                try:
-                    meta = json.loads(
-                        conn.execute(
-                            "SELECT metadata FROM memories WHERE id = ?", (note_id,)
-                        ).fetchone()[0]
-                        or "{}"
-                    )
-                except (json.JSONDecodeError, TypeError):
-                    meta = {}
-                meta["auto_summary"] = summary
-                meta["auto_summary_length"] = len(summary)
-                conn.execute(
-                    "UPDATE memories SET metadata = ? WHERE id = ?",
-                    (json.dumps(meta), note_id),
+            try:
+                meta_row = conn.execute(
+                    "SELECT metadata FROM memories WHERE id = ?", (note_id,)
+                ).fetchone()
+                meta = json.loads(
+                    meta_row[0] if meta_row is not None else None
+                    or "{}"
                 )
-                conn.commit()
+            except (json.JSONDecodeError, TypeError):
+                meta = {}
+            meta["auto_summary"] = summary
+            meta["auto_summary_length"] = len(summary)
+            conn.execute(
+                "UPDATE memories SET metadata = ? WHERE id = ?",
+                (json.dumps(meta), note_id),
+            )
+            conn.commit()
             return summary
         finally:
             conn.close()
@@ -369,10 +370,11 @@ def auto_summarize_long(
                     import json
 
                     try:
+                        meta_row = conn.execute(
+                            "SELECT metadata FROM memories WHERE id = ?", (note_id,)
+                        ).fetchone()
                         meta = json.loads(
-                            conn.execute(
-                                "SELECT metadata FROM memories WHERE id = ?", (note_id,)
-                            ).fetchone()[0]
+                            meta_row[0] if meta_row is not None else None
                             or "{}"
                         )
                     except (json.JSONDecodeError, TypeError):
@@ -429,19 +431,22 @@ def summarization_stats(db_path: str | None = None) -> dict:
 
     try:
         from infra.db import open_db
-        with open_db(db, pooled=True, write=False) as conn:
-            total = conn.execute(
+        with open_db(Path(db), pooled=True, write=False) as conn:
+            total_row = conn.execute(
                 "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
-            ).fetchone()[0]
-            long_notes = conn.execute(
+            ).fetchone()
+            total = int(total_row[0]) if total_row is not None else 0
+            long_notes_row = conn.execute(
                 "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL "
                 "AND LENGTH(content) > ?",
                 (_MIN_CONTENT_LENGTH,),
-            ).fetchone()[0]
-            summarized = conn.execute(
+            ).fetchone()
+            long_notes = int(long_notes_row[0]) if long_notes_row is not None else 0
+            summarized_row = conn.execute(
                 "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL "
                 "AND metadata LIKE '%auto_summary%'"
-            ).fetchone()[0]
+            ).fetchone()
+            summarized = int(summarized_row[0]) if summarized_row is not None else 0
             return {
                 "enabled": True,
                 "total_notes": total,

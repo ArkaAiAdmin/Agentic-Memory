@@ -34,6 +34,7 @@ from typing import Any, Iterator, Optional, Union, cast
 
 from infra.db_write_queue import ProxyConnection
 
+
 AnyConnection = Union[sqlite3.Connection, ProxyConnection]
 
 __all__ = [
@@ -42,6 +43,7 @@ __all__ = [
     "open_db",
     "wal_checkpoint_idle",
     "count_rows",
+    "AnyConnection",
 ]
 
 
@@ -59,7 +61,7 @@ class _ConnectionPool:
         self._pooled_ids: set[int] = set()
         self._max_size = max_size
         self._lru: deque[tuple[str, int]] = deque()
-        self._migrated: set[int] = set()  # conn ids that have full schema
+        self._migrated: set[tuple[str, int]] = set()  # (db_path, conn_id) pairs with full schema
         self._depth: dict[tuple[str, int], int] = {}
         self._migration_locks: dict[str, threading.Lock] = {}
         self._migration_locks_lock = threading.Lock()
@@ -94,7 +96,7 @@ class _ConnectionPool:
                         self._pool.pop(key)
                         conn_id = id(conn)
                         self._pooled_ids.discard(conn_id)
-                        self._migrated.discard(conn_id)
+                        self._migrated.discard(key)
                         self._inodes.pop(key, None)
                         try:
                             conn.close()
@@ -115,7 +117,7 @@ class _ConnectionPool:
         except OSError:
             return 0
 
-    def _inode_mismatch(self, key: tuple[str, int], conn: sqlite3.Connection) -> bool:
+    def _inode_mismatch(self, key: tuple[str, int], conn: AnyConnection) -> bool:
         """True if *conn*'s stored inode no longer matches the current file.
 
         A mismatch means the on-disk file was replaced (e.g. via
@@ -210,7 +212,7 @@ class _ConnectionPool:
             self._lru.clear()
             self._depth.clear()
 
-    def _ensure_full_schema(self, conn: sqlite3.Connection) -> None:
+    def _ensure_full_schema(self, conn: AnyConnection) -> None:
         """Run all Python schema migrations on a new connection.
 
         This is the single source of truth for schema setup on pooled
@@ -224,7 +226,8 @@ class _ConnectionPool:
         callers must NEVER call this method while holding self._lock.
         """
         try:
-            db_path = conn.execute("PRAGMA database_list").fetchone()[2]
+            db_path_row = conn.execute("PRAGMA database_list").fetchone()
+            db_path = db_path_row[2] if db_path_row is not None else ""
         except Exception:
             logger.warning("db: db_path resolve_failed from PRAGMA database_list")
             db_path = ""
@@ -443,7 +446,7 @@ class _ConnectionPool:
                 except Exception:
                     logger.warning("db: connection non_pooled_close_failed during put")
                     pass
-                self._migrated.discard(conn_id)
+                self._migrated.discard(key)
                 return
             try:
                 conn.execute("SELECT 1")
@@ -455,7 +458,7 @@ class _ConnectionPool:
                     logger.warning("db: connection stale_close_failed during pool put")
                     pass
                 self._pooled_ids.discard(conn_id)
-                self._migrated.discard(conn_id)
+                self._migrated.discard(key)
                 for k, v in list(self._pool.items()):
                     if v is conn:
                         self._pool.pop(k, None)
@@ -471,7 +474,7 @@ class _ConnectionPool:
                     conn = self._pool.pop(key)
                     conn_id = id(conn)
                     self._pooled_ids.discard(conn_id)
-                    self._migrated.discard(conn_id)
+                    self._migrated.discard(key)
                     self._depth.pop(key, None)
                     self._inodes.pop(key, None)
                     try:
@@ -493,8 +496,25 @@ class _ConnectionPool:
                 try:
                     conn.close()
                 except Exception:
-                    logger.warning("db: connection close_failed during close_all()")
+                    logger.warning("db: connection close_failed during close_all")
                     pass
+            self._pool.clear()
+            self._pooled_ids.clear()
+            self._migrated.clear()
+            self._depth.clear()
+            self._lru.clear()
+            self._inodes.clear()
+
+    def get_state(self) -> dict:
+        """Return a snapshot of pool state for monitoring."""
+        with self._lock:
+            active = sum(1 for depth in self._depth.values() if depth > 0)
+            idle = len(self._pool) - active
+            return {
+                "active": active,
+                "idle": idle,
+                "max_size": self._max_size,
+            }
             self._pool.clear()
             self._pooled_ids.clear()
             self._lru.clear()
@@ -742,7 +762,8 @@ def open_db(
             run_schema_setup(conn)
             t_id = tenant_id or "default"
             try:
-                conn.create_function("tenant_id", 0, lambda: t_id)
+                if isinstance(conn, sqlite3.Connection):
+                    conn.create_function("tenant_id", 0, lambda: t_id)
                 conn.execute(
                     "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                     "SELECT * FROM memories WHERE tenant_id = tenant_id()"

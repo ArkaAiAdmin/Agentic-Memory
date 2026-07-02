@@ -15,6 +15,11 @@ Safe to run multiple times (idempotent).
 import sqlite3
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 try:
     from infra._lazy_imports import get_memory_paths, safe_close_db
@@ -23,7 +28,7 @@ except ImportError:
     safe_close_db = None
 
 
-def cleanup(conn: sqlite3.Connection) -> dict:
+def cleanup(conn: AnyConnection) -> dict:
     counts = {}
 
     # 1. Facts referencing deleted notes

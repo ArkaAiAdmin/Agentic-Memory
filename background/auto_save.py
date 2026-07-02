@@ -127,6 +127,7 @@ from background.config import (
 
 # H1 fix: hook path now invalidates the search cache so the canonical-path
 # safety contract (every save clears _search_cache) is upheld here too.
+_search_cache: object
 try:
     from infra.cache import _search_cache
 except ImportError:  # cache module is optional in some test contexts

@@ -10,6 +10,11 @@ from typing import Any, cast
 
 from .kg_schema import ensure_kg_schema
 from .kg_db import index_kg_for_memory
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +288,7 @@ def _assemble_2hop(
 
 
 def graph_search(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     query: str,
     limit: int = 10,
     max_hops: int = 2,
@@ -349,7 +354,7 @@ def graph_search(
 # ---------------------------------------------------------------------------
 
 
-def graph_stats(conn: sqlite3.Connection) -> dict:
+def graph_stats(conn: AnyConnection) -> dict:
     """Return statistics about the knowledge graph."""
     import sys
 
@@ -357,8 +362,10 @@ def graph_stats(conn: sqlite3.Connection) -> dict:
         return {"enabled": False}
 
     try:
-        entity_count = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
-        edge_count = conn.execute("SELECT COUNT(*) FROM kg_edges").fetchone()[0]
+        entity_count_row = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()
+        entity_count = int(entity_count_row[0]) if entity_count_row is not None else 0
+        edge_count_row = conn.execute("SELECT COUNT(*) FROM kg_edges").fetchone()
+        edge_count = int(edge_count_row[0]) if edge_count_row is not None else 0
 
         # Type distribution
         type_dist = {}

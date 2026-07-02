@@ -378,7 +378,7 @@ def filter_results(results: list[dict]) -> tuple[list[dict], dict]:
 # ---------------------------------------------------------------------------
 
 
-def quality_stats(conn: sqlite3.Connection) -> dict:
+def quality_stats(conn: AnyConnection) -> dict:
     """Return quality-related statistics for the corpus."""
     import sys
 
@@ -412,11 +412,16 @@ def quality_stats_db(db_path: str | Path) -> dict:
     """quality_stats with connection lifecycle managed."""
     from infra.db import open_db
 
-    with open_db(db_path, pooled=True, write=False) as conn:
+    with open_db(Path(db_path), pooled=True, write=False) as conn:
         return quality_stats(conn)
 
 
 from infra.memory_common import make_lazy_getattr
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 # Lazy config-attr resolution. Note: __getattr__ is only invoked for
 # attribute access on the module object (e.g. `qg._MIN_CONTENT_LENGTH`

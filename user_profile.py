@@ -303,16 +303,19 @@ def profile_stats(db_path: str | None = None) -> dict:
                     accessed_at REAL NOT NULL
                 )
             """)
-            total = conn.execute(
+            total_row = conn.execute(
                 "SELECT COUNT(*) FROM user_profile_access_log"
-            ).fetchone()[0]
-            recent = conn.execute(
+            ).fetchone()
+            total = int(total_row[0]) if total_row is not None else 0
+            recent_row = conn.execute(
                 "SELECT COUNT(*) FROM user_profile_access_log WHERE accessed_at > ?",
                 (time.time() - 86400,),
-            ).fetchone()[0]
-            unique_notes = conn.execute(
+            ).fetchone()
+            recent = int(recent_row[0]) if recent_row is not None else 0
+            unique_notes_row = conn.execute(
                 "SELECT COUNT(DISTINCT note_id) FROM user_profile_access_log"
-            ).fetchone()[0]
+            ).fetchone()
+            unique_notes = int(unique_notes_row[0]) if unique_notes_row is not None else 0
             return {
                 "enabled": True,
                 "total_access_events": total,

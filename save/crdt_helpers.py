@@ -21,18 +21,20 @@ import json
 import logging
 import os
 import socket
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
+parse_version_vector: Any | None = None
 try:
     from crdt.crdt_merge import parse_version_vector
 except ImportError:  # FLAVOR_A: optional dependency guard
-    parse_version_vector = None
+    pass  # declared above
 
 try:
     from infra._lazy_imports import get_config as _get_config
 except ImportError:  # FLAVOR_A: optional dependency guard
-    _get_config = None
+    _get_config = None  # type: ignore[assignment]
 
 
 def _crdt_agent_id() -> str:

@@ -6,7 +6,7 @@ import json
 import logging
 from pathlib import Path
 
-from typing import Any
+from typing import Any, Callable, Optional
 
 fcntl: Any
 try:
@@ -27,12 +27,12 @@ from kg.contradiction_detector import detect_contradictions
 # H2 fix: also import the semantic + all-mode detector so the cron
 # consolidation path catches antonym-based and polarity-flip
 # contradictions, not just the phrase-based ones.
+_detect_all: Any | None = None
 try:
     from kg.contradiction_detector import detect_contradictions_all as _detect_all
 
     _HAS_SEMANTIC = True
 except ImportError:
-    _detect_all = None
     _HAS_SEMANTIC = False
 
 # H1 fix: configure root logging (idempotent).

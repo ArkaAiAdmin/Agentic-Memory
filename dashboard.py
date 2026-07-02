@@ -771,7 +771,7 @@ with memories_tab:
         params.append(f"%{m_search}%")
     if m_min_fit > 0:
         where_clauses.append("COALESCE(fitness_score,0) >= ?")
-        params.append(m_min_fit)
+        params.append(str(m_min_fit))
     if m_cat_filter and m_cat_filter != "all":
         where_clauses.append("category = ?")
         params.append(m_cat_filter)
@@ -1309,7 +1309,7 @@ with facts_tab:
                 f_params.extend([like, like, like])
             if f_min_conf > 0:
                 where_clauses.append("confidence >= ?")
-                f_params.append(f_min_conf)
+                f_params.append(str(f_min_conf))
             if lock_filter == "locked":
                 where_clauses.append("locked = 1")
             elif lock_filter == "unlocked":
@@ -1519,7 +1519,7 @@ with ctr_tab:
             st.caption("Showing up to 200 rows")
 
             action_where = ""
-            action_params = []
+            action_params: list[str] = []
             if action_filter == "clicked":
                 action_where = "AND clicked_at IS NOT NULL"
             elif action_filter == "dismissed":
@@ -1896,7 +1896,7 @@ with cron_tab:
         ("digest",         "digest.log",           "Daily session digest",      "nightly",        "📰"),
     ]
 
-    status_counts = Counter()
+    status_counts: Counter[str] = Counter()
     job_statuses = []
     for name, filename, desc, trigger, emoji in jobs:
         fp = MEM_DIR / filename

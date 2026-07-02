@@ -159,7 +159,7 @@ class Memory:
                 "DELETE FROM memories WHERE source_file LIKE 'sdk-%'"
             ).rowcount
             conn.commit()
-            return int(n)
+            return int(n) if n is not None else 0
         finally:
             conn.close()
 

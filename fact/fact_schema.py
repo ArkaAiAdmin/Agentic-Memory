@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_kg_facts_spo ON kg_facts(subject, predicate, obje
 """
 
 
-def ensure_facts_schema(conn: sqlite3.Connection) -> None:
+def ensure_facts_schema(conn: AnyConnection) -> None:
     """Create the ``kg_facts`` table and indexes if they don't exist.
 
     Idempotent: safe to call on every connection open. The CREATE

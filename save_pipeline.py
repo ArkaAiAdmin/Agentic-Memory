@@ -31,7 +31,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable, Any
 from infra.memory_common import (
     safe_close_db,
     acquire_flock_with_retry,
@@ -98,23 +98,26 @@ def _write_vec_key(db, note_id: str) -> int:
     return key
 
 
+parse_version_vector: Callable[..., Any] | None = None
 try:
     from crdt.crdt_merge import parse_version_vector
 except ImportError:  # FLAVOR_A: optional dependency guard
-    parse_version_vector = None
+    pass
 
 logger = logging.getLogger(__name__)
 
 # Try to import saga coordinator; fall back gracefully if unavailable.
+_saga_save_memory: Callable[..., Any] | None = None
 try:
     from infra.saga import saga_save_memory as _saga_save_memory
 except ImportError:  # FLAVOR_A: optional dependency guard
-    _saga_save_memory = None
+    pass
 
+_get_config: Callable[[], Any] | None = None
 try:
     from config import get_config as _get_config
 except ImportError:  # FLAVOR_A: optional dependency guard
-    _get_config = None
+    pass
 
 # Cache for PRAGMA table_info results (per db_path)
 _pragma_cache: dict[str, set] = {}
@@ -446,7 +449,7 @@ def _upsert_memory_row(
         )
         metadata_json = "{}"
 
-    def _mk_insert(temporal: bool) -> tuple[str, tuple]:
+    def _mk_insert(temporal: bool) -> tuple[str, tuple[Any, ...]]:
         base_cols = [
             "id", "source_file", "content", "tags",
             "created_at", "updated_at", "observed_at",
@@ -481,6 +484,7 @@ def _upsert_memory_row(
         if has_tenant:
             update_cols.append("tenant_id = excluded.tenant_id")
         update_sql = ", ".join(update_cols)
+        vals: tuple[Any, ...]
         if temporal:
             vals = (
                 note_id, source_file, content, tags_json,

@@ -70,7 +70,10 @@ import logging
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, cast
+from typing import Any, Iterable, TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +270,7 @@ def _merge_two(
 # ---------------------------------------------------------------------------
 
 
-def ensure_field_crdt_schema(conn: sqlite3.Connection) -> None:
+def ensure_field_crdt_schema(conn: AnyConnection) -> None:
     """Create the memory_field_crdt table if it doesn't exist.
 
     Idempotent. Mirrors migration 013 so callers (tests, scripts)
@@ -303,7 +306,7 @@ def ensure_field_crdt_schema(conn: sqlite3.Connection) -> None:
 
 
 def apply_field_updates_to_db(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     updates: Iterable[FieldUpdate],
 ) -> list[FieldUpdate]:
     """Apply field updates to the DB using the LWWES rule.
@@ -396,7 +399,7 @@ def apply_field_updates_to_db(
 
 
 def read_fields(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     memory_id: str,
 ) -> dict[str, str]:
     """Read all live (non-tombstoned) fields for a memory_id.
@@ -413,7 +416,7 @@ def read_fields(
 
 
 def project_sql_to_crdt(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     memory_id: str,
     agent_id: str,
 ) -> None:
@@ -452,7 +455,7 @@ def project_sql_to_crdt(
 
 
 def project_crdt_to_sql(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     memory_id: str,
 ) -> set[str]:
     """Project winning CRDT field values back to the ``memories`` row.
@@ -491,7 +494,7 @@ def project_crdt_to_sql(
     return updated
 
 
-def backfill_from_memories(conn: sqlite3.Connection) -> int:
+def backfill_from_memories(conn: AnyConnection) -> int:
     """One-shot: for every memory row, write a field-crdt row per
     replicated field, seeded with the memory's content/tags/
     category and the memory's existing note-level version vector.
@@ -655,7 +658,7 @@ def crdt_field_save(
     # wrap the entire write path in try/except so we can restore on
     # failure regardless of which return branch is taken.
     _pre_state: _CrdtPreState | None = None
-    _write_conn: sqlite3.Connection | None = None
+    _write_conn: AnyConnection | None = None
 
     with conn_context as conn:
         _write_conn = conn
@@ -836,7 +839,7 @@ class _CrdtPreState:
 
 
 def _capture_crdt_pre_state(
-    conn: sqlite3.Connection, note_id: str, db_path_obj: Path | None
+    conn: AnyConnection, note_id: str, db_path_obj: Path | None
 ) -> _CrdtPreState:
     memories_row = conn.execute(
         "SELECT content, tags, category, version_vector, logical_clock, "
@@ -879,7 +882,7 @@ def _capture_crdt_pre_state(
 
 
 def _restore_crdt_pre_state(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     note_id: str,
     pre_state: _CrdtPreState,
     db_path_obj: Path | None,
@@ -935,7 +938,7 @@ def _finalize_crdt_save(
     db_path: str | Path | None,
     note_id: str,
     content: str,
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
 ) -> None:
     """Write the merged content to disk after a successful CRDT merge.
 
@@ -1042,7 +1045,7 @@ def _finalize_crdt_save(
 
 
 def _seed_note_into_field_crdt_if_needed(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     note_id: str,
     local_agent_id: str,
 ) -> None:
@@ -1086,7 +1089,7 @@ def _seed_note_into_field_crdt_if_needed(
         )
 
 
-def parse_existing_vv(conn: sqlite3.Connection, note_id: str) -> dict[str, int]:
+def parse_existing_vv(conn: AnyConnection, note_id: str) -> dict[str, int]:
     """Read the note's existing version vector."""
     row = conn.execute(
         "SELECT version_vector FROM memories WHERE id=?",
@@ -1101,7 +1104,7 @@ def parse_existing_vv(conn: sqlite3.Connection, note_id: str) -> dict[str, int]:
         return {}
 
 
-def parse_existing_clock(conn: sqlite3.Connection, note_id: str) -> int:
+def parse_existing_clock(conn: AnyConnection, note_id: str) -> int:
     """Read the note's existing logical clock."""
     row = conn.execute(
         "SELECT logical_clock FROM memories WHERE id=?",
@@ -1111,7 +1114,7 @@ def parse_existing_clock(conn: sqlite3.Connection, note_id: str) -> int:
 
 
 def _write_note_level_vv(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     note_id: str,
     vv: dict[str, int],
     clock: int,
@@ -1129,7 +1132,7 @@ def _write_note_level_vv(
 
 
 def _fallback_to_note_level(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     note_id: str,
     content: str,
     source_file: str,

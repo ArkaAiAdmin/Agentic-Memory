@@ -162,6 +162,7 @@ def main() -> int:
             count += 1
         if count:
             print(f"\nArchived {count} old session files")
+    return 0
 
 
 if __name__ == "__main__":

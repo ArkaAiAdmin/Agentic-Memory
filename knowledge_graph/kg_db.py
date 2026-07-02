@@ -14,6 +14,10 @@ from .kg_extract import (
     _MARKDOWN_STOPWORDS,
     extract_entities,
 )
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +48,7 @@ def _jaccard_similarity(s1: str, s2: str) -> float:
 
 
 def _upsert_entity(
-    conn: sqlite3.Connection, name: str, entity_type: str, now: float
+    conn: AnyConnection, name: str, entity_type: str, now: float
 ) -> int:
     """Insert or update an entity. Returns the entity ID.
     
@@ -143,7 +147,7 @@ def _upsert_entity(
 
 
 def _upsert_edge(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     source_id: int,
     target_id: int,
     relation: str,
@@ -185,7 +189,7 @@ def _upsert_edge(
                 )
 
 
-def invalidate_edge(conn: sqlite3.Connection, edge_id: int) -> bool:
+def invalidate_edge(conn: AnyConnection, edge_id: int) -> bool:
     """Mark an edge as invalid (soft delete). Returns True if an edge was invalidated."""
     now = time.time()
     try:
@@ -193,14 +197,14 @@ def invalidate_edge(conn: sqlite3.Connection, edge_id: int) -> bool:
             "UPDATE kg_edges SET invalid_at = datetime('now') WHERE id = ? AND invalid_at IS NULL",
             (edge_id,),
         )
-        return cur.rowcount > 0
+        return (cur.rowcount or 0) > 0
     except Exception:
         logger.warning("Failed to invalidate KG edge %s", edge_id)
         return False
 
 
 def get_active_edges_for_entity(
-    conn: sqlite3.Connection, entity_id: int, limit: int = 50
+    conn: AnyConnection, entity_id: int, limit: int = 50
 ) -> list[dict]:
     """Get only non-invalidated edges for an entity."""
     edges = conn.execute(
@@ -229,7 +233,7 @@ def get_active_edges_for_entity(
     ]
 
 
-def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) -> dict:
+def index_kg_for_memory(conn: AnyConnection, memory_id: str, content: str) -> dict:
     """Extract and index entities/relations from a memory note.
 
     Returns stats: {"entities": N, "relations": N, "regex_count": R,
@@ -447,7 +451,7 @@ def index_kg_for_memory(conn: sqlite3.Connection, memory_id: str, content: str) 
 
 
 def _write_extraction_stats(
-    conn: sqlite3.Connection, memory_id: str, stats: dict
+    conn: AnyConnection, memory_id: str, stats: dict
 ) -> None:
     """Insert one row into ``kg_extraction_stats`` for the given memory.
 

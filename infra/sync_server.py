@@ -80,7 +80,10 @@ SYNC_MAX_BODY_SIZE = int(os.environ.get("MEMORY_SYNC_MAX_BODY", str(10 * 1024 * 
 # ---------------------------------------------------------------------------
 
 
-def _open_server_db(db_path: str) -> sqlite3.Connection:
+from infra.db import AnyConnection as _AnyConnection
+
+
+def _open_server_db(db_path: str) -> _AnyConnection:
     """Open a SQLite connection for a sync-server request.
 
     Uses the project's standard pragmas (WAL, foreign keys, busy
@@ -100,8 +103,9 @@ def _open_server_db(db_path: str) -> sqlite3.Connection:
         conn.execute("PRAGMA busy_timeout = 30000;")
     except Exception:
         conn.close()
-        conn = sqlite3.connect(str(db_path), timeout=30.0)
-        conn.execute("PRAGMA foreign_keys = ON")
+        fallback = sqlite3.connect(str(db_path), timeout=30.0)
+        fallback.execute("PRAGMA foreign_keys = ON")
+        return fallback
     return conn
 
 

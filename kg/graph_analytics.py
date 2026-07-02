@@ -7,12 +7,17 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
 
 def compute_pagerank(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     damping: float = 0.85,
     max_iters: int = 100,
     tol: float = 1e-6,
@@ -81,7 +86,7 @@ def compute_pagerank(
     return pr
 
 
-def update_graph_analytics(conn: sqlite3.Connection) -> dict[str, int]:
+def update_graph_analytics(conn: AnyConnection) -> dict[str, Any]:
     """Compute PageRank scores and update the centrality column in kg_entities.
 
     Returns:

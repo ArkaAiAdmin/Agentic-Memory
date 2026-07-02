@@ -67,12 +67,12 @@ _SAGA_DO_NOT_SET: Any = object()
 
 _deferred_state = threading.local()
 
-def _is_saga_deferred(conn: sqlite3.Connection) -> bool:
+def _is_saga_deferred(conn: AnyConnection) -> bool:
     if not hasattr(_deferred_state, "conns"):
         _deferred_state.conns = set()
     return id(conn) in _deferred_state.conns
 
-def _set_saga_deferred(conn: sqlite3.Connection, deferred: bool) -> None:
+def _set_saga_deferred(conn: AnyConnection, deferred: bool) -> None:
     if not hasattr(_deferred_state, "conns"):
         _deferred_state.conns = set()
     if deferred:
@@ -244,7 +244,7 @@ class Saga:
         name: str,
         steps: List[SagaStep],
         *,
-        conn: Optional[sqlite3.Connection] = None,
+        conn: Any = None,
         mode: SagaMode = SagaMode.DEFERRED,
         on_rollback: Optional[Callable[[SagaError], None]] = None,
     ) -> None:
@@ -549,7 +549,7 @@ class _SaveMemoryParams:
     note_id: str
     file_path: Path
     db_path: Path
-    conn: sqlite3.Connection
+    conn: AnyConnection
     wrote_file: bool = False
     wrote_vec_key: bool = False
     vec_key_value: Optional[int] = None
@@ -562,7 +562,7 @@ class _SaveMemoryParams:
     initial_file_content: Optional[str] = None
 
 
-def _delete_memory_row(conn: sqlite3.Connection, note_id: str) -> None:
+def _delete_memory_row(conn: AnyConnection, note_id: str) -> None:
     """Best-effort delete of a single memory row. Logs and swallows."""
     try:
         conn.execute("DELETE FROM memories WHERE id = ?", (note_id,))
@@ -574,7 +574,7 @@ def _delete_memory_row(conn: sqlite3.Connection, note_id: str) -> None:
         )
 
 
-def _cleanup_dependent_rows(conn: sqlite3.Connection, note_id: str) -> None:
+def _cleanup_dependent_rows(conn: AnyConnection, note_id: str) -> None:
     """Best-effort cleanup of kg_facts / kg_edges / backlinks rows for *note_id*.
 
     B-3 fix (2026-06-22 follow-up): the saga rollback path can leave
@@ -608,7 +608,7 @@ def _cleanup_dependent_rows(conn: sqlite3.Connection, note_id: str) -> None:
 
 
 def _restore_memory_row(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     note_id: str,
     content: str,
     tags: str,
@@ -652,7 +652,7 @@ def _restore_memory_row(
         logger.warning("saga undo: restore UPDATE for %s failed: %r", note_id, exc)
 
 
-def _remove_vec_key(conn: sqlite3.Connection, note_id: str) -> None:
+def _remove_vec_key(conn: AnyConnection, note_id: str) -> None:
     """Best-effort removal of the usearch key->memory_id mapping."""
     try:
         conn.execute("DELETE FROM memory_vec_keys WHERE memory_id = ?", (note_id,))
@@ -864,7 +864,7 @@ def _build_save_memory_steps(
 
 def saga_save_memory(
     *,
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     note_id: str,
     file_path: Union[str, Path],
     markdown_content: str,
@@ -988,5 +988,10 @@ def saga(name: str, steps: List[SagaStep]) -> Generator[Saga, None, None]:
 
 
 from infra.memory_common import make_lazy_getattr
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 __getattr__ = make_lazy_getattr({"SAGA_ENABLED": "saga_enabled"})

@@ -20,6 +20,11 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from infra.infrastructure import resolve_active_memory_dir
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 # Patterns that suggest a reusable lesson
 PATTERN_SIGNALS = [
@@ -74,7 +79,7 @@ def extract_lesson_title(text: str) -> str:
     return "Session insight"
 
 
-def find_duplicate_lessons(conn: sqlite3.Connection, title: str) -> bool:
+def find_duplicate_lessons(conn: AnyConnection, title: str) -> bool:
     """Check if a similar lesson already exists."""
     title_lower = title.lower().strip()
     rows = conn.execute(
@@ -98,7 +103,7 @@ def find_duplicate_lessons(conn: sqlite3.Connection, title: str) -> bool:
 
 
 def scan_sessions_and_learn(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     days: int = 7,
     dry_run: bool = False,
 ) -> dict:

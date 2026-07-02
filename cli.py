@@ -591,12 +591,9 @@ def doctor_main() -> None:
             print(f"  Repairing: {label} ...", end=" ", flush=True)
             try:
                 if label == "kg_orphans":
-                    import sqlite3
+                    from memory_integrity import repair_kg_orphans
 
-                    with sqlite3.connect(str(db_path), timeout=10) as conn:
-                        from memory_integrity import repair_kg_orphans
-
-                        repair_kg_orphans(conn)
+                    repair_kg_orphans(Path(db_path))
                     print("done")
                     fix_applied = True
                 elif label == "fts5_drift":

@@ -30,11 +30,16 @@ from infra.memory_common import open_db
 from infra.infrastructure import resolve_active_memory_dir
 
 from infra.log import setup_logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = setup_logging("cron_rebuild_fts", level="INFO", fmt="%(asctime)s [%(levelname)s] %(message)s")
 
 
-def _fts_tables(conn: sqlite3.Connection) -> list[str]:
+def _fts_tables(conn: AnyConnection) -> list[str]:
     """Return names of all FTS5 virtual tables in the database."""
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%USING fts5%'"
@@ -67,12 +72,12 @@ def rebuild_all_fts(db_path: Path) -> dict:
 
 
 def main() -> int:
-    # argparse handles --help and exits cleanly. The pipeline itself
-    # takes no flags.
     if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
         print("usage: %s [-h|--help]" % sys.argv[0], file=sys.stderr)
         print("Cron job — runs the scheduled operation; no flags required.", file=sys.stderr)
         sys.exit(0)
+
+    acquire_lock_or_exit('cron_rebuild_fts')
 
     env = os.environ.get("MEMORY_DB_PATH")
     if env:
@@ -80,15 +85,19 @@ def main() -> int:
     else:
         active_dir = resolve_active_memory_dir()
         db_path = active_dir / "memory.db"
-    acquire_lock_or_exit('cron_rebuild_fts')
-
     if not db_path.exists():
         logger.error("No memory.db at %s", db_path)
         sys.exit(1)
 
     logger.info("Rebuilding FTS5 indexes for %s", db_path)
     results = rebuild_all_fts(db_path)
+    failed = [t for t, r in results.items() if not r.startswith("ok")]
+    if failed:
+        for t in failed:
+            logger.error("FTS5 rebuild failed: %s -> %s", t, results[t])
+        sys.exit(1)
     logger.info("Done: %s", results)
+    return 0
 
 
 if __name__ == "__main__":

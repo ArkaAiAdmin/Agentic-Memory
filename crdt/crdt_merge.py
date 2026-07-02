@@ -39,6 +39,11 @@ import logging
 import sqlite3
 from typing import Optional
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +104,7 @@ def merge_vectors(
 # ---------------------------------------------------------------------------
 
 
-def _capture_pre_state_main(conn: sqlite3.Connection, note_id: str) -> Optional[dict]:
+def _capture_pre_state_main(conn: AnyConnection, note_id: str) -> Optional[dict]:
     """Snapshot a memory row for saga undo. Returns None if the row
     doesn't exist; otherwise returns a dict with the columns the undo
     closure will need to restore.
@@ -126,7 +131,7 @@ def _write_merged_markdown(
     db_path: "str | Path",
     note_id: str,
     content: str,
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
 ) -> None:
     """Write the merged CRDT content to the note's markdown file.
 

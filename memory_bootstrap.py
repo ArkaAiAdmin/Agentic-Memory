@@ -414,7 +414,7 @@ def get_bootstrap_summary(db_path: str | None = None) -> str:
             ]
         except Exception:
             pass
-        summary = format_summary(
+        summary: str = format_summary(
             pinned,
             high_importance,
             recent,

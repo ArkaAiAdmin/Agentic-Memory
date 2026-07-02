@@ -27,10 +27,15 @@ sys.path.insert(0, _parent)
 
 from infra.infrastructure import resolve_active_memory_dir
 from infra.db_write_queue import sqlite_write_queue
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 
 def _check_debounce(
-    conn: sqlite3.Connection, task_type: str, debounce_seconds: int
+    conn: AnyConnection, task_type: str, debounce_seconds: int
 ) -> tuple:
     """Return (is_debounced, reason_str).
 

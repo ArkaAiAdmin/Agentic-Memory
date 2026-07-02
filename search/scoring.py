@@ -31,7 +31,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 import numpy as np
 
@@ -67,7 +67,7 @@ _RERANK_TOKEN_RE = re.compile("\\b[A-Za-z][A-Za-z\\-_/]{2,}\\b")
 
 _STRONG_BM25_THRESHOLD = 0.95  # bm25_score = 1/(1+exp(rank))
 
-_CTR_WEIGHTS_CACHE: Optional[tuple[float, Optional[dict], bool]] = None
+_CTR_WEIGHTS_CACHE: Optional[tuple[float, Any, bool]] = None
 _CTR_WEIGHTS_TTL = 300  # 5 minutes
 
 
@@ -446,7 +446,7 @@ def _apply_exploration(cached_stats) -> Optional[dict]:
         s = sum(sampled.values())
         if s > 0:
             return {ch: v / s for ch, v in sampled.items()}
-        return expected
+        return cast(dict, expected)
 
     elif mode == "epsilon_greedy":
         epsilon = float(os.environ.get("MEMORY_CTR_EPSILON", "0.1"))
@@ -457,9 +457,9 @@ def _apply_exploration(cached_stats) -> Optional[dict]:
                 raw_random = {ch: float(np.random.random()) for ch in _RERANK_WEIGHTS}
                 s = sum(raw_random.values())
                 return {ch: v / s for ch, v in raw_random.items()} if s > 0 else _RERANK_WEIGHTS
-        return expected
+        return cast(dict, expected)
 
-    return expected
+    return cast(dict, expected)
 
 
 def compute_channel_weights(db_path: Path) -> Optional[dict]:

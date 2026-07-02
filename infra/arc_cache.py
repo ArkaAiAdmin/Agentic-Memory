@@ -41,7 +41,12 @@ import sys
 from contextlib import contextmanager
 from infra.db_write_queue import sqlite_write_queue
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
+from typing import Any, Iterator
 
 from infra.memory_common import find_project_root  # noqa: E402
 
@@ -91,7 +96,7 @@ class ARCCache:
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
-        self.db: sqlite3.Connection = sqlite_write_queue.start_session(self.db_path)
+        self.db: AnyConnection = sqlite_write_queue.start_session(self.db_path)
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("PRAGMA busy_timeout = 30000;")
         self._ensure_tables()
@@ -103,7 +108,7 @@ class ARCCache:
         self.close()
 
     @contextmanager
-    def transaction(self) -> Iterator[sqlite3.Cursor]:
+    def transaction(self) -> Iterator[Any]:
         """Yield a cursor inside an explicit transaction.
 
         Commits on success, rolls back on any exception. The connection
@@ -289,7 +294,7 @@ class ARCCache:
         ).isoformat()
         with self.transaction() as cur:
             cur.execute("DELETE FROM arc_ghosts WHERE evicted_at < ?", (cutoff,))
-            return cur.rowcount
+            return cur.rowcount or 0
 
     def get_stats(self) -> dict:
         """Return a dict of ARC stats: eviction_pressure, ghost_hit_rate,
@@ -301,9 +306,10 @@ class ARCCache:
         stats: dict = {}
         for row in self.db.execute("SELECT key, value FROM arc_stats").fetchall():
             stats[row[0]] = row[1]
-        stats["ghost_count"] = self.db.execute(
+        ghost_count_row = self.db.execute(
             "SELECT COUNT(*) FROM arc_ghosts"
-        ).fetchone()[0]
+        ).fetchone()
+        stats["ghost_count"] = ghost_count_row[0] if ghost_count_row is not None else 0
         return stats
 
     def close(self) -> None:

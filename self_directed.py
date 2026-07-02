@@ -73,7 +73,7 @@ def _parse_ts_to_epoch(ts, fallback: float) -> float:
     return fallback
 
 
-def compute_importance(conn: sqlite3.Connection, memory_id: str) -> float:
+def compute_importance(conn: AnyConnection, memory_id: str) -> float:
     """Compute importance score for a memory (0.0 to 1.0).
 
     Factors: access count, success score, recency (with adaptive halflife), pinned status.
@@ -167,7 +167,7 @@ def _assign_tier(importance: float) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _backfill_drifted_subsystems(conn: sqlite3.Connection, drifted: list[str]) -> dict:
+def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dict:
     """Targeted backfill for specific drifted subsystems.
 
     Only re-indexes notes that are missing from the drifted subsystems,
@@ -315,7 +315,8 @@ def _backfill_drifted_subsystems(conn: sqlite3.Connection, drifted: list[str]) -
 
             venv_python = sys.executable
             rebuild_script = str(_Path(__file__).parent / "rebuild_vec_index.py")
-            db_path_str = str(conn.execute("PRAGMA database_list").fetchone()[2])
+            db_path_row = conn.execute("PRAGMA database_list").fetchone()
+            db_path_str = str(db_path_row[2]) if db_path_row is not None else ""
             subprocess.run(
                 [venv_python, rebuild_script, db_path_str],
                 capture_output=True,
@@ -355,7 +356,7 @@ def _backfill_drifted_subsystems(conn: sqlite3.Connection, drifted: list[str]) -
 
 
 def _cleanup_orphaned_subsystem_data(
-    conn: sqlite3.Connection, dry_run: bool = False
+    conn: AnyConnection, dry_run: bool = False
 ) -> dict:
     """Remove subsystem entries that reference notes no longer in memories.
 
@@ -485,7 +486,7 @@ def _cleanup_orphaned_subsystem_data(
 
 
 def run_heartbeat(
-    conn: sqlite3.Connection, dry_run: bool = False, db_path: str | None = None
+    conn: AnyConnection, dry_run: bool = False, db_path: str | None = None
 ) -> dict:
     """Re-evaluate all memories: compute importance, assign tier, archive.
 
@@ -603,7 +604,7 @@ def run_heartbeat(
 
 
 def archive_low_importance(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     threshold: float = _ARCHIVE_THRESHOLD,
     min_age_days: int = _ARCHIVE_MIN_AGE_DAYS,
     dry_run: bool = False,
@@ -659,7 +660,7 @@ def archive_low_importance(
 # ---------------------------------------------------------------------------
 
 
-def tier_stats(conn: sqlite3.Connection) -> dict:
+def tier_stats(conn: AnyConnection) -> dict:
     """Return tier distribution and importance statistics."""
     try:
         tiers = {}
@@ -669,17 +670,19 @@ def tier_stats(conn: sqlite3.Connection) -> dict:
         ).fetchall():
             tiers[row[0]] = {"count": row[1], "avg_importance": round(row[2] or 0, 4)}
 
-        total = conn.execute(
+        total_row = conn.execute(
             "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
-        ).fetchone()[0]
+        ).fetchone()
+        total_val = int(total_row[0]) if total_row is not None else 0
 
-        pinned = conn.execute(
+        pinned_row = conn.execute(
             "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL AND pinned = 1"
-        ).fetchone()[0]
+        ).fetchone()
+        pinned_val = int(pinned_row[0]) if pinned_row is not None else 0
 
         return {
-            "total": total,
-            "pinned": pinned,
+            "total": total_val,
+            "pinned": pinned_val,
             "tiers": tiers,
         }
     except sqlite3.OperationalError:
@@ -689,10 +692,15 @@ def tier_stats(conn: sqlite3.Connection) -> dict:
 def tier_stats_db(db_path: str | Path) -> dict:
     """tier_stats with connection lifecycle managed."""
     from infra.db import open_db
-    with open_db(db_path, timeout=10.0, pooled=True, write=False) as conn:
+    with open_db(Path(db_path), timeout=10.0, pooled=True, write=False) as conn:
         return tier_stats(conn)
 
 
 from infra.memory_common import make_lazy_getattr
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 __getattr__ = make_lazy_getattr({"SELF_DIRECTED_ENABLED": "self_directed"})

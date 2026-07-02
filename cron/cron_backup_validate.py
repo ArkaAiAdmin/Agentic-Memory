@@ -84,7 +84,7 @@ def validate_backup(backup_path: Path, dry_run: bool = False) -> dict:
     Returns a dict with 'valid' (bool), 'checks' (list of per-check results),
     and 'error' (str) if something failed early.
     """
-    checks = []
+    checks: list[dict] = []
     result: dict = {"valid": False, "checks": checks, "backup_path": str(backup_path)}
 
     if not backup_path.exists():

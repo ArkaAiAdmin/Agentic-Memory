@@ -13,6 +13,7 @@ import logging
 import os
 import time
 from pathlib import Path
+from typing import cast
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ def _read_health_status(memory_dir: Path) -> dict:
     if not health_path.exists():
         return {}
     try:
-        return json.loads(health_path.read_text())
+        return cast(dict, json.loads(health_path.read_text()))
     except Exception:
         return {}
 

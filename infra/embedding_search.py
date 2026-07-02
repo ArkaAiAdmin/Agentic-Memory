@@ -18,7 +18,7 @@ import time
 import unicodedata
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING, cast
 
 from infra.memory_config import install_root
 
@@ -1255,7 +1255,7 @@ class EmbeddingSearch:
         }
         cached = self._chunk_index_cache.get(cache_key)
         if cached is not None and cached[1]["built_at"] == built_at and cached[1]["blob_len"] == blob_len:
-            return cached
+            return cast(tuple[Any, dict[Any, Any] | None], cached)
         if self.model is not None and dim != int(self.model.dim):
             return None, None
         try:

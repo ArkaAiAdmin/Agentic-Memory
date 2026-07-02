@@ -37,13 +37,20 @@ from .fact_clean import (
 )
 from .fact_schema import ensure_facts_schema
 from .fact_search import facts_search, facts_list, facts_stats
+from typing import Any, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
+get_config: Callable[[], Any] | None = None
+
 try:
     from config import get_config
-except ImportError:
-    get_config = None
+except ImportError:  # FLAVOR_A: optional dependency guard
+    pass  # already declared above
 
 __all__ = [
     "ensure_facts_schema",
@@ -514,7 +521,7 @@ def extract_facts(text: str) -> list[tuple[str, str, str, float]]:
 
 
 def _upsert_fact(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     subject: str,
     predicate: str,
     obj: str,
@@ -626,7 +633,7 @@ def _upsert_fact(
 
 
 def index_facts_for_memory(
-    conn: sqlite3.Connection, memory_id: str, content: str
+    conn: AnyConnection, memory_id: str, content: str
 ) -> dict:
     # Use config system for feature flag
     if get_config is not None:
@@ -784,7 +791,7 @@ def index_facts_for_memory(
     return {"facts": len(facts)}
 
 
-def _should_use_llm_for_memory(conn: sqlite3.Connection, memory_id: str) -> bool:
+def _should_use_llm_for_memory(conn: AnyConnection, memory_id: str) -> bool:
     """Hybrid strategy: return True iff this memory deserves LLM extraction.
 
     Returns True (use LLM) when:
@@ -874,7 +881,7 @@ def _should_use_llm_for_memory(conn: sqlite3.Connection, memory_id: str) -> bool
 # ---------------------------------------------------------------------------
 
 
-def lock_fact(conn: sqlite3.Connection, subject: str, predicate: str, obj: str) -> bool:
+def lock_fact(conn: AnyConnection, subject: str, predicate: str, obj: str) -> bool:
     """Lock a fact so consolidation / dedup can't merge or remove it.
 
     Locked facts still appear in search results but are exempt from
@@ -884,11 +891,11 @@ def lock_fact(conn: sqlite3.Connection, subject: str, predicate: str, obj: str) 
         "UPDATE kg_facts SET locked = 1 WHERE subject = ? AND predicate = ? AND object = ?",
         (subject.lower(), predicate, obj.lower()),
     )
-    return cur.rowcount > 0
+    return (cur.rowcount or 0) > 0
 
 
 def unlock_fact(
-    conn: sqlite3.Connection, subject: str, predicate: str, obj: str
+    conn: AnyConnection, subject: str, predicate: str, obj: str
 ) -> bool:
     """Unlock a previously-locked fact. Returns True if a fact was
     unlocked, False if the fact doesn't exist or wasn't locked.
@@ -897,11 +904,11 @@ def unlock_fact(
         "UPDATE kg_facts SET locked = 0 WHERE subject = ? AND predicate = ? AND object = ?",
         (subject.lower(), predicate, obj.lower()),
     )
-    return cur.rowcount > 0
+    return (cur.rowcount or 0) > 0
 
 
 def _extract_facts_via_llm(
-    conn: sqlite3.Connection, memory_id: str, content: str
+    conn: AnyConnection, memory_id: str, content: str
 ) -> list[tuple[str, str, str, float]]:
     """Run the hybrid LLM-extraction path. Returns the extracted facts."""
     if not _should_use_llm_for_memory(conn, memory_id):
@@ -920,7 +927,7 @@ def _extract_facts_via_llm(
 
 
 def _process_extracted_facts(
-    conn: sqlite3.Connection,
+    conn: AnyConnection,
     memory_id: str,
     content: str,
     facts: list[tuple[str, str, str, float]],
@@ -996,7 +1003,7 @@ def _process_extracted_facts(
 
 
 def index_facts_for_memory_bulk(
-    conn: sqlite3.Connection, memory_id: str, content: str
+    conn: AnyConnection, memory_id: str, content: str
 ) -> dict:
     """Bulk fact indexing — regex-only by design."""
     if get_config is not None:

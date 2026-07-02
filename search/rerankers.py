@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import cast
 
 # 2026-06-23: Removed top-level search_pipeline import to resolve circular import.
 # _LATE_INTERACTION_ENABLED is resolved directly via get_config() to keep configuration clean.
@@ -119,7 +120,7 @@ def _get_late_interaction_blend() -> float:
     try:
         from infra._lazy_imports import get_config
 
-        return get_config().late_interaction_blend
+        return cast(float, get_config().late_interaction_blend)
     except Exception:
         return _LATE_INTERACTION_BLEND
 

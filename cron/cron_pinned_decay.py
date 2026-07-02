@@ -30,6 +30,7 @@ def main() -> int:
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
     acquire_lock_or_exit('cron_pinned_decay')
+    return 0
 
 
 if __name__ == "__main__":

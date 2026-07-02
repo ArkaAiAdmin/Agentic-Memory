@@ -25,6 +25,8 @@ from self_directed import run_heartbeat
 
 
 def main() -> int:
+    acquire_lock_or_exit("cron_heartbeat")
+
     # argparse handles --help and exits cleanly. The pipeline itself
     # takes no flags.
     if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
@@ -52,7 +54,7 @@ def main() -> int:
         )
     finally:
         safe_close_db(conn)
-    acquire_lock_or_exit("cron_heartbeat")
+    return 0
 
 
 if __name__ == "__main__":

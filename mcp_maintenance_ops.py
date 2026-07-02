@@ -17,6 +17,7 @@ from mcp_common import _bootstrap_path  # noqa: E402,F401
 import json
 import os
 from pathlib import Path
+from typing import cast
 
 from config import get_feature_flags
 
@@ -669,16 +670,14 @@ def _op_memory_stats() -> str:
                 pass
         queue_depth = 0
         try:
-            from background.background_queue import init_task_queue, queue_depth as _qd
+            from background.background_queue import init_task_queue, pending_count
 
             if db_path:
                 from infra.db import open_db
-                qconn = open_db(Path(db_path))
-                try:
+                from pathlib import Path
+                with open_db(Path(db_path)) as qconn:
                     init_task_queue(qconn)
-                    queue_depth = _qd(qconn)
-                finally:
-                    safe_close_db(qconn)
+                    queue_depth = pending_count(qconn)
         except Exception:
             pass
         cb_open = False
@@ -767,7 +766,7 @@ def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
         with open_db(db_path, write=False) as conn:
             from mcp_maintenance import memory_extract_skills
-            return memory_extract_skills(conn, memory_id=memory_id, dry_run=dry_run)
+            return cast(str, memory_extract_skills(conn, memory_id=memory_id, dry_run=dry_run))
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -785,7 +784,7 @@ def _op_list_skills(limit: int = 50) -> str:
         db_path = target_base / "memory.db" if target_base.suffix != ".db" else target_base
         with open_db(db_path, write=False) as conn:
             from mcp_maintenance import memory_list_skills
-            return memory_list_skills(conn, limit=limit)
+            return cast(str, memory_list_skills(conn, limit=limit))
     except Exception as e:
         return json.dumps({"error": str(e)})
 

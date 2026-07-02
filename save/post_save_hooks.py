@@ -29,6 +29,10 @@ import sqlite3
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable, Any
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
 
 from infra.memory_common import (
     connection_pool,
@@ -43,10 +47,11 @@ from save.backlinks import (
 
 logger = logging.getLogger(__name__)
 
+_get_config: Callable[[], Any] | None = None
 try:
     from config import get_config as _get_config
 except ImportError:  # FLAVOR_A: optional dependency guard
-    _get_config = None
+    pass
 
 
 def _enrich_context(db, note_id: str, content: str, category: str, tags: list):
@@ -160,7 +165,7 @@ def _enrich_context(db, note_id: str, content: str, category: str, tags: list):
 def _recalculate_fitness_scores(
     db_path: Path,
     memory_ids: list[str],
-    conn: sqlite3.Connection | None = None,
+    conn: AnyConnection | None = None,
 ):
     """
     Incrementally recalculate fitness scores for specific memories.
@@ -183,7 +188,7 @@ def _recalculate_fitness_scores(
     # Initialize db to None so the finally block can safely check
     # `if owns_connection and db is not None`. The early-return path
     # (db_path doesn't exist) leaves db as None.
-    db: sqlite3.Connection | None = None
+    db: AnyConnection | None = None
     owns_connection = conn is None
     try:
         if owns_connection:

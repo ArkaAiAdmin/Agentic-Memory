@@ -26,6 +26,11 @@ import os
 import re
 import sqlite3
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from infra.db import AnyConnection
+
 
 logger = logging.getLogger(__name__)
 
@@ -203,12 +208,13 @@ def _backfill_vec_index_raw(db_path: Path):
         logger.warning("Vector index rebuild failed: %s", e)
 
 
-def _backfill_crdt_vectors(conn: sqlite3.Connection) -> dict:
+def _backfill_crdt_vectors(conn: AnyConnection) -> dict:
     """Backfill version vectors and logical clocks for memories lacking them."""
 
-    missing = conn.execute(
-        "SELECT COUNT(*) FROM memories WHERE version_vector = '{}' AND logical_clock = 0"
-    ).fetchone()[0]
+    missing_row = conn.execute(
+        "SELECT COUNT(*) FROM memories WHERE tier IS NULL"
+    ).fetchone()
+    missing = int(missing_row[0]) if missing_row is not None else 0
 
     if missing == 0:
         return {"result": "ok", "count": 0}
@@ -235,13 +241,14 @@ def _backfill_crdt_vectors(conn: sqlite3.Connection) -> dict:
     return {"result": "completed", "backfilled": count, "total_missing": missing}
 
 
-def _backfill_tiers(conn: sqlite3.Connection) -> dict:
+def _backfill_tiers(conn: AnyConnection) -> dict:
     """Backfill tier assignments for memories with NULL tier."""
     from self_directed import _assign_tier, compute_importance
 
-    missing = conn.execute(
+    missing_row = conn.execute(
         "SELECT COUNT(*) FROM memories WHERE tier IS NULL"
-    ).fetchone()[0]
+    ).fetchone()
+    missing = int(missing_row[0]) if missing_row is not None else 0
 
     if missing == 0:
         return {"result": "ok", "count": 0}
