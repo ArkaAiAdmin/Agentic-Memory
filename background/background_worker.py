@@ -377,6 +377,30 @@ HANDLERS = {
     "evidence_chain_staleness": handle_evidence_chain_staleness,
 }
 
+
+def _lazy_entailment_chains(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from reasoning.compile import handle_entailment_chains
+    return handle_entailment_chains(payload, conn, db_path)
+
+
+def _lazy_concept_compilation(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from reasoning.compile import handle_concept_compilation
+    return handle_concept_compilation(payload, conn, db_path)
+
+
+def _lazy_skill_enrichment(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from reasoning.compile import handle_skill_enrichment
+    return handle_skill_enrichment(payload, conn, db_path)
+
+
+HANDLERS.update(
+    {
+        "entailment_chains": _lazy_entailment_chains,
+        "concept_compilation": _lazy_concept_compilation,
+        "skill_enrichment": _lazy_skill_enrichment,
+    }
+)
+
 # Mapping of cron-style task types to their script paths.
 # Keys are the task_type values used in enqueue_task.py --task-type;
 # values are relative paths from repo root to the cron script.
@@ -630,6 +654,28 @@ def process_one_task(
         fail_task(conn, task_id, f"unknown task type: {ttype}")
         logger.warning("worker: unknown task type %s (id=%d)", ttype, task_id)
         return True
+
+    # Lazy-resolve None entries in HANDLERS (used to break circular imports).
+    if handler is None:
+        _lazy_map = {
+            "entailment_chains": "reasoning.compile.handle_entailment_chains",
+            "concept_compilation": "reasoning.compile.handle_concept_compilation",
+            "skill_enrichment": "reasoning.compile.handle_skill_enrichment",
+        }
+        _mod_path = _lazy_map.get(ttype)
+        if _mod_path:
+            _mod_name, _fn_name = _mod_path.rsplit(".", 1)
+            try:
+                _mod = __import__(_mod_name, fromlist=[_fn_name])
+                handler = getattr(_mod, _fn_name)
+            except Exception as _le:
+                fail_task(conn, task_id, f"lazy import failed: {_le}")
+                logger.warning("worker: lazy import failed for %s: %s", ttype, _le)
+                return True
+        else:
+            fail_task(conn, task_id, f"no handler for {ttype}")
+            logger.warning("worker: no handler registered for %s", ttype)
+            return True
 
     # Watchdog: warn + fail on per-task hang. The 99.9% CPU incident
     # on 2026-06-22 was a single task stuck in a regex search loop for

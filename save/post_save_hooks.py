@@ -634,6 +634,8 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str, conn=None) -> Non
             from infra.db_write_queue import sqlite_write_queue
             _bq_conn = sqlite_write_queue.start_session(db_path_obj)
         init_task_queue(_bq_conn)
+
+        # Core KG indexing tasks
         enqueue_task(
             _bq_conn, "entity_resolution", {"memory_id": note_id},
             max_queue_size=max_qs, reject_policy=reject_pol,
@@ -642,6 +644,31 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str, conn=None) -> Non
             _bq_conn, "fact_consolidation", {"memory_id": note_id},
             max_queue_size=max_qs, reject_policy=reject_pol,
         )
+
+        # Sprint 3 — Knowledge Compilation
+        # Enqueue cross-memory entailment chain inference and concept
+        # compilation per-save. dedup keeps queue bounded.
+        try:
+            SKILL_ENRICH = True  # Sprint 3: always on; promote to config flag later
+            if SKILL_ENRICH:
+                enqueue_task(
+                    _bq_conn, "entailment_chains",
+                    {"memory_id": note_id, "batch_size": 200, "min_confidence": 0.3},
+                    max_queue_size=max_qs, reject_policy=reject_pol,
+                )
+                enqueue_task(
+                    _bq_conn, "concept_compilation",
+                    {"memory_id": note_id, "min_confidence": 0.4},
+                    max_queue_size=max_qs, reject_policy=reject_pol,
+                )
+                enqueue_task(
+                    _bq_conn, "skill_enrichment",
+                    {"memory_id": note_id},
+                    max_queue_size=max_qs, reject_policy=reject_pol,
+                )
+        except Exception as _enqueue_exc:
+            logger.debug("save_memory: Sprint3 task enqueue failed: %s", _enqueue_exc)
+
         if conn is None:
             _bq_conn.close()
     except Exception as _bqe:
