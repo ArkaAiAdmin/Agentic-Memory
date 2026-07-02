@@ -236,6 +236,7 @@ def init_main() -> None:
         subprocess.run(
             [sys.executable, "-m", "pip", "install", "-e", scripts_dir],
             check=False,
+            timeout=300,
         )
         if not shutil.which("agentic-memory-server"):
             print(
@@ -257,6 +258,7 @@ def init_main() -> None:
         env=env,
         capture_output=True,
         text=True,
+        timeout=120,
     )
     if result.returncode != 0:
         print(f"setup_memory.sh failed (exit {result.returncode}):")

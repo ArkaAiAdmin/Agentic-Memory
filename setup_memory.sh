@@ -98,7 +98,7 @@ echo "Writing agent instructions to AGENTS.md..."
 
 # Remove old block if marker exists
 if grep -q "$MARKER_START" AGENTS.md 2>/dev/null; then
-    sed -i "/$MARKER_START/,/$MARKER_END/d" AGENTS.md
+    sed "/$MARKER_START/,/$MARKER_END/d" AGENTS.md > AGENTS.md.tmp && mv AGENTS.md.tmp AGENTS.md
 fi
 
 cat << EOF >> AGENTS.md
@@ -165,7 +165,7 @@ echo "Writing agent instructions to CLAUDE.md..."
 
 # Remove old block if marker exists
 if grep -q "$MARKER_START" CLAUDE.md 2>/dev/null; then
-    sed -i "/$MARKER_START/,/$MARKER_END/d" CLAUDE.md
+    sed "/$MARKER_START/,/$MARKER_END/d" CLAUDE.md > CLAUDE.md.tmp && mv CLAUDE.md.tmp CLAUDE.md
 fi
 
 cat << EOF >> CLAUDE.md
