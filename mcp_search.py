@@ -89,6 +89,7 @@ def memory_search(
     belief_status: str | None = None,
     epistemic_source: str | None = None,
     fact_type: str | None = None,
+    memory_source: str | None = None,
 ) -> str:
     """Perform FTS5 (full-text) and semantic hybrid search across local and global memories.
 
@@ -111,6 +112,7 @@ def memory_search(
     - belief_status: Optional filter — only return facts with this belief status (active, retracted, deprecated, unconfirmed).
     - epistemic_source: Optional filter — only return facts from this source (agent, auto_save, hook, import, cron).
     - fact_type: Optional filter — only return facts of this type (observation, agent_inference, external_stated, hypothesis, derived).
+    - memory_source: Filter memories by source type ("agent", "auto_save", "import"). Only returns memories whose source file category matches the given type.
 
     RETURNS:
     A human-readable formatted string listing the ranked memories, their content, category, tags, and related facts.
@@ -154,6 +156,7 @@ def memory_search(
                 belief_status=belief_status,
                 epistemic_source=epistemic_source,
                 fact_type=fact_type,
+                memory_source=memory_source,
             )
         except Exception as exc:
             logger.warning("Local search failed for query %r: %s", expanded_query, exc)
@@ -177,6 +180,7 @@ def memory_search(
                 belief_status=belief_status,
                 epistemic_source=epistemic_source,
                 fact_type=fact_type,
+                memory_source=memory_source,
             )
         except Exception as exc:
             logger.warning("Global search failed for query %r: %s", expanded_query, exc)

@@ -14,6 +14,9 @@ __all__ = [
     "_recalculate_fitness_scores",
     "_auto_backlink_multi_part",
     "clear_pragma_cache",
+    "patch_memory",
+    "revert_supersede",
+    "_record_revision_log",
     # Re-exports from the save/ subpackage (preserved for callers that
     # import these from save_pipeline directly).
     "_crdt_agent_id",
@@ -1907,10 +1910,42 @@ def _save_memory_core(
         _local_state.in_save_pipeline = False
 
 
+def _record_revision_log(
+    db: AnyConnection,
+    memory_id: str,
+    revision_type: str,
+    rationale: str = "",
+    old_content: str | None = None,
+    new_content: str | None = None,
+    metadata_json: str | None = None,
+    agent_id: str = "",
+) -> int | None:
+    """Write an entry to the memory_revision_log table.
+
+    Returns the row id of the new entry, or None on failure.
+    """
+    try:
+        now = time.time()
+        cur = db.execute(
+            "INSERT INTO memory_revision_log "
+            "(memory_id, revision_type, old_content, new_content, rationale, metadata, agent_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (memory_id, revision_type, old_content, new_content, rationale, metadata_json, agent_id, now),
+        )
+        return int(cur.lastrowid)
+    except Exception as e:
+        logger.warning("Failed to record revision log for %s/%s: %s", memory_id, revision_type, e)
+        return None
+
+
 def memory_supersede_db(
-    db_path: Path, old_id: str, new_id: str, valid_to: Optional[str] = None
+    db_path: Path, old_id: str, new_id: str, valid_to: Optional[str] = None,
+    rationale: str = "",
 ) -> tuple[bool, Optional[str]]:
     """Mark a memory as superseded by another memory.
+
+    Sprint 2: accepts optional ``rationale`` and records the supersession
+    in ``memory_revision_log``.
 
     Extracted from mcp_memory.py (2026-06-21) to keep all save-path
     DB operations co-located in save_pipeline.
@@ -1944,12 +1979,37 @@ def memory_supersede_db(
             ).fetchone()
             if not new_row:
                 return (False, f"new_id '{new_id}' not found")
+            old_content = db.execute(
+                "SELECT content FROM memories WHERE id = ?", (old_id,)
+            ).fetchone()
             db.execute(
                 """UPDATE memories
                    SET valid_to = ?, superseded_by = ?, updated_at = ?
                    WHERE id = ?""",
                 (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
             )
+            _record_revision_log(
+                db, old_id, "supersede", rationale=rationale,
+                old_content=old_content[0] if old_content else None,
+                metadata_json=json.dumps({"superseded_by": new_id}),
+            )
+            # Store rationale in metadata if provided
+            if rationale:
+                try:
+                    meta_row = db.execute(
+                        "SELECT metadata FROM memories WHERE id = ?", (old_id,)
+                    ).fetchone()
+                    if meta_row and meta_row[0]:
+                        meta = json.loads(meta_row[0])
+                    else:
+                        meta = {}
+                    meta["supersession_rationale"] = rationale
+                    db.execute(
+                        "UPDATE memories SET metadata = ? WHERE id = ?",
+                        (json.dumps(meta), old_id),
+                    )
+                except Exception:
+                    pass
             return (True, None)
     except Exception as e:
         return (False, str(e))
@@ -1995,3 +2055,164 @@ def reinforce_memories_db(db_path: Path, ids: list[str], delta: float) -> int:
         except Exception as e:
             logger.error("reinforce_memories_db: fitness recalc failed: %s", e)
     return hits
+
+
+def patch_memory(
+    db_path: Path,
+    note_id: str,
+    additions: list[str] | None = None,
+    deletions: list[str] | None = None,
+    rationale: str = "",
+) -> str:
+    """In-place memory amendment: apply additions/deletions to an existing note.
+
+    - ``deletions``: text segments to remove (matched by content, anywhere).
+    - ``additions``: text segments to append at the end of the body.
+    - ``rationale``: recorded in ``memories.metadata.patch_history`` as JSON
+      and in the ``memory_revision_log`` table.
+
+    Returns the updated note_id on success, or an error string otherwise.
+    """
+    if not additions and not deletions:
+        return _err(ErrorCode.INVALID_PARAMS, "At least one of additions or deletions is required")
+    try:
+        from infra.db import open_db
+        from infra.memory_common import safe_atomic_write
+
+        with open_db(db_path, timeout=30.0) as db:
+            row = db.execute(
+                "SELECT content, metadata, source_file FROM memories WHERE id = ? AND deleted_at IS NULL",
+                (note_id,),
+            ).fetchone()
+            if row is None:
+                return _err(ErrorCode.NOT_FOUND, f"note '{note_id}' not found or deleted")
+            content, metadata_json, source_file = row
+            source_path = db_path.parent / source_file if source_file else None
+
+            # Parse frontmatter boundary: split on ---
+            body = content
+            frontmatter = ""
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    frontmatter = parts[0] + "---" + parts[1] + "---"
+                    body = parts[2]
+
+            # Apply deletions: remove each segment from body
+            deletions = deletions or []
+            for seg in deletions:
+                if seg in body:
+                    body = body.replace(seg, "", 1)
+                else:
+                    return _err(
+                        ErrorCode.INVALID_PARAMS,
+                        f"deletion text not found in content: {seg[:80]}",
+                    )
+
+            # Append additions
+            additions = additions or []
+            if additions:
+                body = body.rstrip() + "\n\n" + "\n\n".join(additions) + "\n"
+
+            new_content = frontmatter + body
+
+            # Update the DB row with new content
+            now_iso = datetime.now(timezone.utc).isoformat()
+            db.execute(
+                "UPDATE memories SET content = ?, updated_at = ? WHERE id = ?",
+                (new_content, now_iso, note_id),
+            )
+
+            # Update the .md file if it exists
+            if source_path and source_path.exists():
+                safe_atomic_write(source_path, new_content, encoding="utf-8")
+
+            # Append to metadata.patch_history
+            meta = {}
+            if metadata_json:
+                try:
+                    meta = json.loads(metadata_json)
+                except (json.JSONDecodeError, TypeError):
+                    meta = {}
+            patch_entry = {
+                "timestamp": time.time(),
+                "additions": additions,
+                "deletions": deletions,
+                "rationale": rationale,
+            }
+            patch_history = meta.get("patch_history", [])
+            if not isinstance(patch_history, list):
+                patch_history = []
+            patch_history.append(patch_entry)
+            meta["patch_history"] = patch_history
+            db.execute(
+                "UPDATE memories SET metadata = ? WHERE id = ?",
+                (json.dumps(meta), note_id),
+            )
+
+            # Record in revision log
+            _record_revision_log(
+                db, note_id, "amend", rationale=rationale,
+                old_content=content, new_content=new_content,
+                metadata_json=json.dumps({"patch_entry": patch_entry}),
+            )
+
+    except Exception as e:
+        logger.exception("patch_memory failed for %s", note_id)
+        return _err(ErrorCode.DB_ERROR, f"patch_memory: {e}")
+
+    return note_id
+
+
+def revert_supersede(
+    db_path: Path,
+    note_id: str,
+    target_note_id: str | None = None,
+    rationale: str = "",
+) -> str:
+    """Reverse a prior supersession on ``note_id``.
+
+    Sets ``valid_to = NULL`` and ``superseded_by = NULL`` so the note is
+    no longer considered superseded.  If ``target_note_id`` is provided,
+    the function verifies that the supersession record matches before
+    reverting.
+
+    Returns the note_id on success, or an error string otherwise.
+    """
+    try:
+        from infra.db import open_db
+
+        with open_db(db_path, timeout=30.0) as db:
+            row = db.execute(
+                "SELECT valid_to, superseded_by FROM memories WHERE id = ? AND deleted_at IS NULL",
+                (note_id,),
+            ).fetchone()
+            if row is None:
+                return _err(ErrorCode.NOT_FOUND, f"note '{note_id}' not found or deleted")
+            valid_to, superseded_by = row
+            if superseded_by is None:
+                return _err(ErrorCode.INVALID_PARAMS, f"note '{note_id}' is not superseded")
+            if target_note_id is not None and superseded_by != target_note_id:
+                return _err(
+                    ErrorCode.INVALID_PARAMS,
+                    f"note '{note_id}' is superseded by '{superseded_by}', not '{target_note_id}'",
+                )
+
+            db.execute(
+                "UPDATE memories SET valid_to = NULL, superseded_by = NULL, updated_at = ? WHERE id = ?",
+                (datetime.now(timezone.utc).isoformat(), note_id),
+            )
+
+            _record_revision_log(
+                db, note_id, "revert", rationale=rationale,
+                metadata_json=json.dumps({
+                    "previous_valid_to": valid_to,
+                    "previous_superseded_by": superseded_by,
+                }),
+            )
+
+    except Exception as e:
+        logger.exception("revert_supersede failed for %s", note_id)
+        return _err(ErrorCode.DB_ERROR, f"revert_supersede: {e}")
+
+    return note_id

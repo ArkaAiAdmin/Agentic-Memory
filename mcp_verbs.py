@@ -62,6 +62,7 @@ def memory_search(
     belief_status: str | None = None,
     epistemic_source: str | None = None,
     fact_type: str | None = None,
+    memory_source: str | None = None,
 ) -> str:
     """Search memories by semantic + FTS5 hybrid search.
 
@@ -73,9 +74,11 @@ def memory_search(
         limit: Max results (default 10).
         include_global: Include global memories (default True).
         mode: "hybrid" (default), "semantic", "fts", "facts", "graph".
-        belief_status: Filter facts by belief status (active, retracted, deprecated, unconfirmed).
-        epistemic_source: Filter facts by epistemic source (agent, auto_save, hook, import, cron).
-        fact_type: Filter facts by type (observation, agent_inference, external_stated, hypothesis, derived).
+        belief_status: Filter KG facts by belief status (active, retracted, deprecated, unconfirmed).
+        epistemic_source: Filter KG facts by epistemic source (agent, auto_save, hook, import, cron).
+        fact_type: Filter KG facts by type (observation, agent_inference, external_stated, hypothesis, derived).
+        memory_source: Filter memories by source type ("agent", "auto_save", "import"). Only returns
+            memories whose source file category matches the given type.
     """
     try:
         from search.orchestrator import search_memories
@@ -90,6 +93,7 @@ def memory_search(
             belief_status=belief_status,
             epistemic_source=epistemic_source,
             fact_type=fact_type,
+            memory_source=memory_source,
         )
         return str(result.get("results_blob", str(result)))
     except Exception as e:
@@ -135,6 +139,168 @@ def memory_save(
     except Exception as e:
         logger.exception("in memory_save verb")
         return _err(ErrorCode.DB_ERROR, f"memory_save: {e}")
+
+
+@mcp.tool()
+@with_audit("memory_review_beliefs")
+def memory_review_beliefs(
+    min_confidence: float = 0.5,
+    belief_status: str = "active",
+    older_than_days: float = 30.0,
+    limit: int = 20,
+) -> str:
+    """Review beliefs that may need agent attention — low confidence, old, or stale.
+
+    Returns a structured list of belief assertions with subject/predicate/object
+    for the agent to confirm, supersede, retract, or reinforce.
+
+    Args:
+        min_confidence: Maximum confidence threshold (returns beliefs BELOW this).
+        belief_status: Filter by status (default "active").
+        older_than_days: Only return beliefs last reviewed more than this many days ago.
+        limit: Max results (default 20).
+    """
+    try:
+        from infra.db import open_db
+        from belief.belief_lifecycle import get_active_beliefs
+
+        db_path = _resolve_db_path()
+        with open_db(db_path, timeout=10.0) as db:
+            cutoff = time.time() - (older_than_days * 86400)
+            beliefs = get_active_beliefs(
+                db,
+                min_confidence=min_confidence,
+                belief_status=belief_status,
+                limit=limit,
+            )
+            # Apply older_than_days filter: last_reviewed_at < cutoff OR never reviewed
+            candidates = [
+                b for b in beliefs
+                if b.get("last_reviewed_at") is None or b["last_reviewed_at"] < cutoff
+            ]
+            if not candidates:
+                return "No beliefs need review at this time."
+            lines = [f"Found {len(candidates)} beliefs for review:"]
+            for b in candidates:
+                subject = b.get("subject", "?")
+                predicate = b.get("predicate", "?")
+                obj = b.get("object", "?")
+                conf = b.get("confidence", 0)
+                source = b.get("epistemic_source", "?")
+                reviewed = b.get("last_reviewed_at")
+                reviewed_str = time.strftime(
+                    "%Y-%m-%d", time.localtime(reviewed)
+                ) if reviewed else "never"
+                lines.append(
+                    f"  [{b['id']}] {subject} --[{predicate}]--> {obj}  "
+                    f"(confidence={conf:.2f}, source={source}, reviewed={reviewed_str})"
+                )
+            lines.append(
+                "\nUse memory_note(action='supersede', ...) to correct, "
+                "or the corresponding belief management tools to confirm/retract."
+            )
+            return "\n".join(lines)
+    except Exception as e:
+        logger.exception("in memory_review_beliefs")
+        return _err(ErrorCode.DB_ERROR, f"memory_review_beliefs: {e}")
+
+
+@mcp.tool()
+@with_audit("memory_curate_autosave")
+def memory_curate_autosave(
+    start_date: str = "",
+    end_date: str = "",
+    action: str = "list",
+    note_ids: list[str] | None = None,
+    category: str = "lessons",
+) -> str:
+    """Review auto-saved tool invocations and promote or discard them.
+
+    The agent can list auto-saved notes, then batch-promote them into
+    intentional lessons or decisions with ``epistemic_source='agent'``.
+
+    Args:
+        start_date: ISO date filter start (e.g. "2026-06-01"). Empty = no start bound.
+        end_date: ISO date filter end (e.g. "2026-07-01"). Empty = no end bound.
+        action: "list" | "promote" | "discard".
+        note_ids: List of note IDs to promote/discard (required for promote/discard).
+        category: Target category for promotion (default "lessons").
+    """
+    try:
+        from infra.db import open_db
+        from pathlib import Path
+
+        db_path = _resolve_db_path()
+        with open_db(db_path, timeout=30.0) as db:
+            clauses = ["m.source_file LIKE 'auto_saves/%' AND m.deleted_at IS NULL"]
+            params: list = []
+            if start_date:
+                clauses.append("m.created_at >= ?")
+                params.append(start_date)
+            if end_date:
+                clauses.append("m.created_at <= ?")
+                params.append(end_date + "T23:59:59")
+
+            if action == "list":
+                rows = db.execute(
+                    "SELECT m.id, m.content, m.created_at, m.tags "
+                    f"FROM memories m WHERE {' AND '.join(clauses)} "
+                    "ORDER BY m.created_at DESC LIMIT 50",
+                    params,
+                ).fetchall()
+                if not rows:
+                    return "No auto-saved notes found in the given date range."
+                lines = [f"Auto-saved notes ({len(rows)} found):"]
+                for r in rows:
+                    preview = r[1][:100].replace("\n", " ")
+                    lines.append(f"  [{r[0]}] {preview}...")
+                return "\n".join(lines)
+
+            elif action == "promote":
+                if not note_ids:
+                    return _err(ErrorCode.INVALID_PARAMS, "note_ids required for promote")
+                import json, datetime
+                promoted = 0
+                for nid in note_ids:
+                    row = db.execute(
+                        "SELECT content, tags, source_file FROM memories WHERE id = ? AND deleted_at IS NULL",
+                        (nid,),
+                    ).fetchone()
+                    if row is None:
+                        continue
+                    content, tags_json, source_file = row
+                    new_source = f"{category}/{Path(source_file).name}"
+                    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    db.execute(
+                        "UPDATE memories SET source_file = ?, category = ?, updated_at = ? WHERE id = ?",
+                        (new_source, category, now_iso, nid),
+                    )
+                    target_path = db_path.parent / new_source
+                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        from infra.memory_common import safe_atomic_write
+                        safe_atomic_write(target_path, content, encoding="utf-8")
+                    except Exception:
+                        pass
+                    promoted += 1
+                return f"Promoted {promoted} auto-saved note(s) to '{category}'."
+
+            elif action == "discard":
+                if not note_ids:
+                    return _err(ErrorCode.INVALID_PARAMS, "note_ids required for discard")
+                import datetime
+                now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                placeholders = ",".join("?" for _ in note_ids)
+                db.execute(
+                    f"UPDATE memories SET deleted_at = ?, updated_at = ? WHERE id IN ({placeholders}) AND deleted_at IS NULL",
+                    (now_iso, now_iso, *note_ids),
+                )
+                return f"Discarded {len(note_ids)} auto-saved note(s)."
+            else:
+                return _err(ErrorCode.INVALID_PARAMS, "action must be 'list', 'promote', or 'discard'")
+    except Exception as e:
+        logger.exception("in memory_curate_autosave")
+        return _err(ErrorCode.DB_ERROR, f"memory_curate_autosave: {e}")
 
 
 @mcp.tool()
@@ -197,16 +363,24 @@ def memory_note(
     category: str = "",
     title_slug: str = "",
     tags: list[str] | None = None,
+    rationale: str = "",
+    additions: list[str] | None = None,
+    deletions: list[str] | None = None,
 ) -> str:
     """CRUD operations on a specific memory note.
 
+    Sprint 2 additions: ``patch``, ``revert_supersede`` actions + ``rationale`` capture.
+
     Args:
         note_id: The note ID (e.g. "lessons/my-note").
-        action: "read" | "update" | "delete" | "restore" | "supersede".
+        action: "read" | "update" | "delete" | "restore" | "supersede" | "patch" | "revert_supersede".
         content: New content (required for update).
         category: New category (for update).
-        title_slug: New slug (for update).
+        title_slug: New slug (for update/supersede target).
         tags: New tags (for update).
+        rationale: Reason for the action (required for supersede, patch, revert_supersede; recommended for delete).
+        additions: Text segments to insert (for patch action).
+        deletions: Text segments to remove by content match (for patch action).
     """
     try:
         if action == "read":
@@ -220,6 +394,16 @@ def memory_note(
             from mcp_memory import memory_delete
 
             result = memory_delete(note_id)
+            if rationale:
+                try:
+                    from save_pipeline import _record_revision_log
+                    from infra.db import open_db
+                    from pathlib import Path
+
+                    with open_db(_resolve_db_path(), timeout=10.0) as db:
+                        _record_revision_log(db, note_id, "delete", rationale=rationale)
+                except Exception:
+                    pass
             return str(result)
         elif action == "restore":
             from mcp_memory import memory_restore
@@ -247,12 +431,36 @@ def memory_note(
                 db_path=db_path,
                 old_id=note_id,
                 new_id=new_note_id,
+                rationale=rationale,
             )
             return str(ok) if ok else str(err)
+        elif action == "patch":
+            from save_pipeline import patch_memory
+            from pathlib import Path
+
+            result = patch_memory(
+                db_path=_resolve_db_path(),
+                note_id=note_id,
+                additions=additions,
+                deletions=deletions,
+                rationale=rationale,
+            )
+            return str(result)
+        elif action == "revert_supersede":
+            from save_pipeline import revert_supersede
+            from pathlib import Path
+
+            result = revert_supersede(
+                db_path=_resolve_db_path(),
+                note_id=note_id,
+                target_note_id=title_slug or None,
+                rationale=rationale,
+            )
+            return str(result)
         else:
             return _err(
                 ErrorCode.INVALID_PARAMS,
-                f"Unknown action '{action}'. Use: read, update, delete, restore, supersede",
+                f"Unknown action '{action}'. Use: read, update, delete, restore, supersede, patch, revert_supersede",
             )
     except Exception as e:
         logger.exception("in memory_note verb")

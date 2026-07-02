@@ -22,6 +22,7 @@ CORE_TOOLS = [
     "memory_profile",
     "memory_session_start",
     "memory_advanced",
+    "memory_review_beliefs",
 ]
 
 ADMIN_TOOLS = [
@@ -55,6 +56,8 @@ ADMIN_TOOLS = [
     "memory_reinforce",
     "memory_retention_stats",
     "memory_review_schedule",
+    "memory_curate_autosave",
+    "memory_review_beliefs",
     "memory_rewrite_links",
     "memory_restore",
     "memory_rebuild",

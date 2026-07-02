@@ -1790,6 +1790,7 @@ def search_memories(
     belief_status: str | None = None,
     epistemic_source: str | None = None,
     fact_type: str | None = None,
+    memory_source: str | None = None,
 ) -> dict:
     if not db_path.exists():
         return {
@@ -1837,7 +1838,7 @@ def search_memories(
         + f":sw={int(safety_wiring)}:dr={int(deep_rerank)}:sf={int(skill_first)}"
         + f":if={int(include_facts)}:fl={int(fact_limit)}"
         + f":as_of={as_of}"
-        + f":bs={belief_status or ''}:es={epistemic_source or ''}:ft={fact_type or ''}"
+        + f":bs={belief_status or ''}:es={epistemic_source or ''}:ft={fact_type or ''}:ms={memory_source or ''}"
     )
     now = time.time()
     if cache_key in _search_cache:
@@ -1872,6 +1873,16 @@ def search_memories(
                     repo_filter = f" AND m.source_file LIKE 'agents/{ctx.namespace}/%'"
         except (ImportError, Exception):
             pass
+        # Sprint 2: memory_source filter (agent / auto_save / import)
+        if memory_source is not None:
+            source_map = {
+                "agent": "m.source_file LIKE 'agents/%' OR m.source_file LIKE 'lessons/%'",
+                "auto_save": "m.source_file LIKE 'auto_saves/%'",
+                "import": "m.source_file LIKE 'imported/%'",
+            }
+            clause = source_map.get(memory_source)
+            if clause:
+                repo_filter = f"{repo_filter} AND ({clause})" if repo_filter else f" AND ({clause})"
 
         # Phase 4: FTS search
         _t0 = time.time()
