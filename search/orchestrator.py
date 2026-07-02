@@ -653,8 +653,11 @@ def _search_kg_facts(
     limit: int,
     include_invalid: bool,
     as_of: float | None = None,
+    belief_status: str | None = None,
+    epistemic_source: str | None = None,
+    fact_type: str | None = None,
 ) -> list[dict]:
-    """T10 + Sprint 5: search the knowledge-graph fact index for facts relevant to the query.
+    """T10 + Sprint 5 + Sprint 1: search the knowledge-graph fact index.
 
     Surfaces structured facts (``subject --[predicate]--> object``) alongside
     the memory results.  Uses the same FTS5 query string as the memories
@@ -665,17 +668,21 @@ def _search_kg_facts(
     given epoch are returned (via the temporal validity filter from
     ``fact_temporal._temporal_fact_clause``).
 
+    Sprint 1 belief filter params:
+    - ``belief_status``: if set, only return facts with this status (active, retracted, deprecated, unconfirmed)
+    - ``epistemic_source``: if set, only return facts from this source (agent, auto_save, hook, import, cron)
+    - ``fact_type``: if set, only return facts of this type (observation, agent_inference, external_stated, hypothesis, derived)
+
     Returns a list of dicts sorted by FTS5 BM25 rank (best first).  Returns
     an empty list if the kg_facts table is missing or empty — never raises.
     """
     try:
-        # Quick existence check: if kg_facts isn't there, this is a
-        # knowledge-graph-disabled deployment, and we silently return [].
         if not db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='kg_facts'"
         ).fetchone():
             return []
         invalid_filter = ""
+        belief_params: list = []
         if not include_invalid and as_of is None:
             invalid_filter = (
                 " AND (kf.invalid_at IS NULL OR kf.invalid_at = '')"
@@ -684,24 +691,35 @@ def _search_kg_facts(
         elif as_of is not None:
             from fact.fact_temporal import _temporal_fact_clause
 
-            clause, params = _temporal_fact_clause(as_of)
+            clause, t_params = _temporal_fact_clause(as_of)
             invalid_filter = (
                 f" AND (kf.superseded_by IS NULL)"
                 + clause.replace("f.", "kf.")
             )
+            belief_params = t_params
+        belief_filter = ""
+        if belief_status is not None:
+            belief_filter += " AND kf.belief_status = ?"
+            belief_params.append(belief_status)
+        if epistemic_source is not None:
+            belief_filter += " AND kf.epistemic_source = ?"
+            belief_params.append(epistemic_source)
+        if fact_type is not None:
+            belief_filter += " AND kf.fact_type = ?"
+            belief_params.append(fact_type)
         rows = db.execute(
             "SELECT kf.id, kf.subject, kf.predicate, kf.object, kf.confidence, "
             "kf.mention_count, kf.first_seen, kf.last_seen, kf.event_time, "
-            "kf.event_time_granularity, kf.contradiction_score, kg_facts_fts.rank "
+            "kf.event_time_granularity, kf.contradiction_score, kg_facts_fts.rank, "
+            "kf.belief_status, kf.epistemic_source, kf.fact_type "
             "FROM kg_facts_fts "
             "JOIN kg_facts kf ON kf.rowid = kg_facts_fts.rowid "
-            f"WHERE kg_facts_fts MATCH ?{invalid_filter} "
+            f"WHERE kg_facts_fts MATCH ?{invalid_filter}{belief_filter} "
             "ORDER BY kg_facts_fts.rank "
             "LIMIT ?",
-            (fts_query, *([] if as_of is None else params), limit),
+            (fts_query, *belief_params, limit),
         ).fetchall()
     except Exception:
-        # FTS5 syntax errors, missing table, etc. — never break the search.
         logger.warning("KG fact search failed; returning empty list", exc_info=True)
         return []
 
@@ -721,6 +739,9 @@ def _search_kg_facts(
                 "event_time_granularity": r[9],
                 "contradiction_score": r[10],
                 "fts_rank": r[11],
+                "belief_status": r[12],
+                "epistemic_source": r[13],
+                "fact_type": r[14],
             }
         )
     return results
@@ -1766,6 +1787,9 @@ def search_memories(
     tenant_id: str = "default",
     light: bool = False,
     as_of: float | None = None,
+    belief_status: str | None = None,
+    epistemic_source: str | None = None,
+    fact_type: str | None = None,
 ) -> dict:
     if not db_path.exists():
         return {
@@ -1813,6 +1837,7 @@ def search_memories(
         + f":sw={int(safety_wiring)}:dr={int(deep_rerank)}:sf={int(skill_first)}"
         + f":if={int(include_facts)}:fl={int(fact_limit)}"
         + f":as_of={as_of}"
+        + f":bs={belief_status or ''}:es={epistemic_source or ''}:ft={fact_type or ''}"
     )
     now = time.time()
     if cache_key in _search_cache:
@@ -1865,7 +1890,13 @@ def search_memories(
         related_facts: list[dict] = []
         if include_facts:
             _t0 = time.time()
-            related_facts = _search_kg_facts(db, fts_query, fact_limit, include_invalid, as_of=as_of)
+            related_facts = _search_kg_facts(
+                db, fts_query, fact_limit, include_invalid,
+                as_of=as_of,
+                belief_status=belief_status,
+                epistemic_source=epistemic_source,
+                fact_type=fact_type,
+            )
             _record_phase_latency("kg_facts", _t0)
 
         # Phase 5: Fallback to embeddings

@@ -57,6 +57,7 @@ llm_extraction = true                # MEMORY_LLM_EXTRACTION — use local LLM f
 feature_temporal_kg = true            # MEMORY_TEMPORAL_KG (T8, 2026-06-23) — fact-level temporal KG: event_time extraction, contradiction detection, supersession, edit invalidation. Default ON. Set to false to disable the entire temporal subsystem (reverts to plain fact extraction with no temporal logic).
 feature_temporal_kg_llm = true        # MEMORY_TEMPORAL_KG_LLM (T11, 2026-06-30) — use LLM to score contradiction confidence in [0.0, 1.0]. OFF by default to avoid ~100-500ms per candidate. Set to false to disable LLM scoring and revert to deterministic 1.0.
 temporal_kg_llm_tier = "light"        # MEMORY_TEMPORAL_KG_LLM_TIER — "light" (max_new_tokens=4, threshold=0.5, cheaper) or "heavy" (max_new_tokens=8, threshold=0.7, thorough). Default "light".
+feature_belief_layer = true           # MEMORY_BELIEF_LAYER (Sprint 1, 2026-07-03) — fact/belief separation. Creates belief_assertions for every kg_facts row. Default ON. Set to false to disable belief assertion creation (reverts to plain kg_facts with no belief layer).
 
 [cache]
 fts5_cache = true                     # MEMORY_FTS5_CACHE — LRU result cache for search

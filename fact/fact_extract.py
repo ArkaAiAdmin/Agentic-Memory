@@ -558,6 +558,7 @@ def _upsert_fact(
     event_time_granularity: "str | None" = None,
     belief_status: str = "active",
     epistemic_source: str = "agent",
+    fact_type: str = "observation",
 ) -> "int | None":
     """Insert or update a fact. Used by `index_facts_for_memory`.
 
@@ -576,6 +577,9 @@ def _upsert_fact(
 
     ``belief_status`` and ``epistemic_source`` are set on INSERT and
     preserved on UPDATE — the first-seen source is canonical.
+
+    ``fact_type`` classifies the belief type taxonomy:
+    observation | agent_inference | external_stated | hypothesis | derived
     """
     row = conn.execute(
         "SELECT id, locked, confidence, source_memory FROM kg_facts "
@@ -617,8 +621,8 @@ def _upsert_fact(
             "first_seen, last_seen, source_memory, context, "
             "subject_entity_id, object_entity_id, "
             "event_time, event_time_granularity, transaction_time, "
-            "belief_status, epistemic_source) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "belief_status, epistemic_source, fact_type) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 subject.lower(),
                 predicate,
@@ -635,6 +639,7 @@ def _upsert_fact(
                 now,  # transaction_time: when we learned it
                 belief_status,
                 epistemic_source,
+                fact_type,
             ),
         )
         assert cur.lastrowid is not None
@@ -663,7 +668,9 @@ def _upsert_fact(
 
 
 def index_facts_for_memory(
-    conn: AnyConnection, memory_id: str, content: str, belief_status: str = "active", epistemic_source: str = "agent"
+    conn: AnyConnection, memory_id: str, content: str,
+    belief_status: str = "active", epistemic_source: str = "agent",
+    fact_type: str = "observation",
 ) -> dict:
     # Use config system for feature flag
     if get_config is not None:
@@ -697,6 +704,11 @@ def index_facts_for_memory(
     #   MEMORY_LLM_FORCE=1               — always use LLM (override hybrid)
     #   MEMORY_LLM_HYBRID_THRESHOLD=0.5  — importance_score cutoff (default 0.5)
     #   MEMORY_LLM_HYBRID=0              — disable hybrid, never use LLM
+    # Determine effective fact_type based on caller specification and
+    # extraction method.  If the caller explicitly set fact_type, honour
+    # it; otherwise infer from the extraction method.
+    used_llm = False
+    effective_fact_type = fact_type
     use_llm = _should_use_llm_for_memory(conn, memory_id)
 
     facts: list[tuple[str, str, str, float, str | None, str]] = []
@@ -707,6 +719,7 @@ def index_facts_for_memory(
             llm_facts = extract_facts_via_llm(content)
             if llm_facts:
                 facts = llm_facts
+                used_llm = True
         except Exception:
             logger.warning(
                 "LLM fact extraction failed for memory %s, falling back to regex",
@@ -792,6 +805,7 @@ def index_facts_for_memory(
             event_time_granularity=fact_etg,
             belief_status=belief_status,
             epistemic_source=epistemic_source,
+            fact_type=effective_fact_type,
         )
         # T3.4: supersession reconciliation (gated by feature_temporal_kg)
         if fact_id is not None and temporal_kg_enabled:

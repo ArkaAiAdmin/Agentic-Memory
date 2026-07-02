@@ -59,6 +59,9 @@ def memory_search(
     include_global: bool = True,
     mode: str = "hybrid",
     tenant_id: str = "default",
+    belief_status: str | None = None,
+    epistemic_source: str | None = None,
+    fact_type: str | None = None,
 ) -> str:
     """Search memories by semantic + FTS5 hybrid search.
 
@@ -70,6 +73,9 @@ def memory_search(
         limit: Max results (default 10).
         include_global: Include global memories (default True).
         mode: "hybrid" (default), "semantic", "fts", "facts", "graph".
+        belief_status: Filter facts by belief status (active, retracted, deprecated, unconfirmed).
+        epistemic_source: Filter facts by epistemic source (agent, auto_save, hook, import, cron).
+        fact_type: Filter facts by type (observation, agent_inference, external_stated, hypothesis, derived).
     """
     try:
         from search.orchestrator import search_memories
@@ -81,6 +87,9 @@ def memory_search(
             limit=limit,
             include_global=include_global,
             tenant_id=tenant_id,
+            belief_status=belief_status,
+            epistemic_source=epistemic_source,
+            fact_type=fact_type,
         )
         return str(result.get("results_blob", str(result)))
     except Exception as e:

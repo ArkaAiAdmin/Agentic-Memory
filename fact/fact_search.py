@@ -93,7 +93,12 @@ def _facts_search_like(
     ).fetchall()
 
 
-def facts_search(conn: AnyConnection, query: str, limit: int = 10) -> list[dict]:
+def facts_search(
+    conn: AnyConnection, query: str, limit: int = 10,
+    belief_status: str | None = None,
+    epistemic_source: str | None = None,
+    fact_type: str | None = None,
+) -> list[dict]:
     query_lower = query.lower().strip()
     now = time.time()
     half_life = 180 * 86400
@@ -107,6 +112,31 @@ def facts_search(conn: AnyConnection, query: str, limit: int = 10) -> list[dict]
         rows = _facts_search_fts(conn, fts_query, limit * 3)
     if not rows:
         rows = _facts_search_like(conn, query_lower, limit * 3)
+
+    # Apply belief filters if specified
+    if rows and (belief_status is not None or epistemic_source is not None or fact_type is not None):
+        filtered = []
+        ids = [r[0] for r in rows]
+        if not ids:
+            rows = []
+        else:
+            conditions = []
+            params = []
+            if belief_status is not None:
+                conditions.append("belief_status = ?")
+                params.append(belief_status)
+            if epistemic_source is not None:
+                conditions.append("epistemic_source = ?")
+                params.append(epistemic_source)
+            if fact_type is not None:
+                conditions.append("fact_type = ?")
+                params.append(fact_type)
+            placeholders = ",".join("?" for _ in ids)
+            conditions.append(f"id IN ({placeholders})")
+            params.extend(ids)
+            sql = f"SELECT id FROM kg_facts WHERE {' AND '.join(conditions)}"
+            valid_ids = {r[0] for r in conn.execute(sql, params).fetchall()}
+            rows = [r for r in rows if r[0] in valid_ids]
 
     def _effective(conf: float, locked: int, last_seen: float) -> float:
         if locked:
@@ -145,15 +175,30 @@ def facts_search(conn: AnyConnection, query: str, limit: int = 10) -> list[dict]
 
 
 def facts_list(
-    conn: AnyConnection, limit: int = 20, min_confidence: float = 0.0
+    conn: AnyConnection, limit: int = 20, min_confidence: float = 0.0,
+    belief_status: str | None = None,
+    epistemic_source: str | None = None,
+    fact_type: str | None = None,
 ) -> list[dict]:
-    rows = conn.execute(
+    conditions = ["confidence >= ?"]
+    params: list = [min_confidence]
+    if belief_status is not None:
+        conditions.append("belief_status = ?")
+        params.append(belief_status)
+    if epistemic_source is not None:
+        conditions.append("epistemic_source = ?")
+        params.append(epistemic_source)
+    if fact_type is not None:
+        conditions.append("fact_type = ?")
+        params.append(fact_type)
+    sql = (
         "SELECT id, subject, predicate, object, confidence, locked, "
         "first_seen, last_seen, mention_count, source_memory "
-        "FROM kg_facts WHERE confidence >= ? "
-        "ORDER BY confidence DESC, mention_count DESC LIMIT ?",
-        (min_confidence, limit),
-    ).fetchall()
+        "FROM kg_facts WHERE {} "
+        "ORDER BY confidence DESC, mention_count DESC LIMIT ?"
+    ).format(" AND ".join(conditions))
+    params.append(limit)
+    rows = conn.execute(sql, params).fetchall()
     return [
         {
             "id": r[0],

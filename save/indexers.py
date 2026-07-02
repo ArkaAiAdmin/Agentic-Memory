@@ -127,16 +127,38 @@ def _index_kg(db, note_id: str, content: str):
         logger.debug("KG indexing skipped for %s: %s", note_id, ke)
 
 
-def _index_facts(db, note_id: str, content: str, belief_status: str = "active", epistemic_source: str = "agent"):
+def _index_facts(db, note_id: str, content: str, belief_status: str = "active",
+                 epistemic_source: str = "agent", asserting_agent_id: str = "",
+                 evidence_chain: list | None = None, fact_type: str = "observation"):
     """Index SPO facts into kg_facts."""
     try:
         from knowledge_graph import KG_ENABLED
 
         if KG_ENABLED:
             from fact import ensure_facts_schema, index_facts_for_memory
+            from belief import ensure_belief_assertion, ensure_beliefs_schema
 
             ensure_facts_schema(db)
-            index_facts_for_memory(db, note_id, content, belief_status=belief_status, epistemic_source=epistemic_source)
+            ensure_beliefs_schema(db)
+            facts = index_facts_for_memory(db, note_id, content,
+                                           belief_status=belief_status,
+                                           epistemic_source=epistemic_source,
+                                           fact_type=fact_type)
+            # Create belief_assertions for each extracted fact
+            if isinstance(facts, list):
+                for fact in facts:
+                    fid = fact.get("id") if isinstance(fact, dict) else None
+                    if fid is not None:
+                        ensure_belief_assertion(
+                            db, fid, memory_id=note_id,
+                            belief_status=belief_status,
+                            epistemic_source=epistemic_source,
+                            asserting_agent_id=asserting_agent_id or None,
+                            evidence_chain=evidence_chain,
+                        )
+            elif isinstance(facts, dict):
+                # index_facts_for_memory returns a dict, not a list
+                pass
     except Exception as fe:
         logger.warning("Fact indexing skipped for %s: %s", note_id, fe)
 

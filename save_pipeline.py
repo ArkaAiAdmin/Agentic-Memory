@@ -69,6 +69,9 @@ class SaveRequest:
     tenant_id: str = "default"
     epistemic_source: str = "agent"
     belief_status: str = "active"
+    asserting_agent_id: str = ""
+    evidence_chain: list | None = None
+    fact_type: str = "observation"
 
 
 def _md5_to_uint64(memory_id: str) -> int:
@@ -746,6 +749,9 @@ def _update_memory_index_incremental(
     tenant_id: str = "default",
     epistemic_source: str = "agent",
     belief_status: str = "active",
+    asserting_agent_id: str = "",
+    evidence_chain: list | None = None,
+    fact_type: str = "observation",
 ):
     """Update memory index incrementally.
 
@@ -850,13 +856,21 @@ def _update_memory_index_incremental(
         if not defer_expensive:
             _index_embedding(conn, note_id, content, category, tags, source_file)
             _index_kg(conn, note_id, content)
-            _index_facts(conn, note_id, content, belief_status, epistemic_source)
+            _index_facts(conn, note_id, content, belief_status, epistemic_source,
+                         asserting_agent_id=asserting_agent_id, evidence_chain=evidence_chain,
+                         fact_type=fact_type)
             _enrich_context(conn, note_id, content, category, tags)
             _auto_semantic_backlinks(conn, note_id, content, db_path=str(db_path))
         _auto_fts_backlinks(conn, note_id, content)
         _index_adaptive_retention(conn, note_id, db_path=str(db_path))
         if defer_expensive:
-            _defer_indexing_background_tasks(db_path, note_id, content, source_file, conn=conn)
+            _defer_indexing_background_tasks(db_path, note_id, content, source_file,
+                                             belief_status=belief_status,
+                                             epistemic_source=epistemic_source,
+                                             asserting_agent_id=asserting_agent_id,
+                                             evidence_chain=evidence_chain,
+                                             fact_type=fact_type,
+                                             conn=conn)
     except Exception as e:
         if external_db:
             raise
@@ -879,7 +893,11 @@ def _update_memory_index_incremental(
 
 
 def _defer_indexing_background_tasks(
-    db_path: Path, note_id: str, content: str, source_file: str, conn=None
+    db_path: Path, note_id: str, content: str, source_file: str,
+    belief_status: str = "active", epistemic_source: str = "agent",
+    asserting_agent_id: str = "", evidence_chain: list | None = None,
+    fact_type: str = "observation",
+    conn=None,
 ) -> None:
     """Enqueue expensive indexing operations as background tasks.
 
@@ -909,7 +927,10 @@ def _defer_indexing_background_tasks(
         enqueue_task(
             bq_conn,
             "kg_and_fact_index",
-            {"memory_id": note_id, "content": content},
+            {"memory_id": note_id, "content": content,
+             "belief_status": belief_status, "epistemic_source": epistemic_source,
+             "asserting_agent_id": asserting_agent_id,
+             "evidence_chain": evidence_chain, "fact_type": fact_type},
             max_queue_size=max_qs,
             reject_policy=reject_pol,
         )
@@ -1242,6 +1263,9 @@ def _persist_to_db(
     tenant_id: str = "default",
     epistemic_source: str = "agent",
     belief_status: str = "active",
+    asserting_agent_id: str = "",
+    evidence_chain: list | None = None,
+    fact_type: str = "observation",
 ):
     try:
         _update_memory_index_incremental(
@@ -1260,6 +1284,9 @@ def _persist_to_db(
             tenant_id=tenant_id,
             epistemic_source=epistemic_source,
             belief_status=belief_status,
+            asserting_agent_id=asserting_agent_id,
+            evidence_chain=evidence_chain,
+            fact_type=fact_type,
         )
         try:
             atomic_write(file_path, markdown_content, encoding="utf-8")
@@ -1340,6 +1367,9 @@ def _try_saga_persist(
     tenant_id: str = "default",
     epistemic_source: str = "agent",
     belief_status: str = "active",
+    asserting_agent_id: str = "",
+    evidence_chain: list | None = None,
+    fact_type: str = "observation",
 ):
     """Wrap the upsert + write + vec-key triple-store steps in a saga.
 
@@ -1370,6 +1400,9 @@ def _try_saga_persist(
             tenant_id=tenant_id,
             epistemic_source=epistemic_source,
             belief_status=belief_status,
+            asserting_agent_id=asserting_agent_id,
+            evidence_chain=evidence_chain,
+            fact_type=fact_type,
         )
 
     def _do_write_vec_key():
@@ -1450,6 +1483,9 @@ def _persist_via_saga_or_fallback(
     tenant_id: str = "default",
     epistemic_source: str = "agent",
     belief_status: str = "active",
+    asserting_agent_id: str = "",
+    evidence_chain: list | None = None,
+    fact_type: str = "observation",
 ):
     """Persist a memory via the saga path, with policy-driven fallback.
 
@@ -1495,6 +1531,9 @@ def _persist_via_saga_or_fallback(
                 tenant_id=tenant_id,
                 epistemic_source=epistemic_source,
                 belief_status=belief_status,
+                asserting_agent_id=asserting_agent_id,
+                evidence_chain=evidence_chain,
+                fact_type=fact_type,
             )
             saga_ok = True
         except Exception as saga_exc:
@@ -1527,6 +1566,9 @@ def _persist_via_saga_or_fallback(
             tenant_id=tenant_id,
             epistemic_source=epistemic_source,
             belief_status=belief_status,
+            asserting_agent_id=asserting_agent_id,
+            evidence_chain=evidence_chain,
+            fact_type=fact_type,
         )
         if not _conn_is_shared:
             conn = (
@@ -1580,6 +1622,9 @@ def save_memory(
     tenant_id: str = "default",
     epistemic_source: str = "agent",
     belief_status: str = "active",
+    asserting_agent_id: str = "",
+    evidence_chain: list | None = None,
+    fact_type: str = "observation",
 ):
     """Write a memory note to disk and update the FTS5 index incrementally.
 
@@ -1612,6 +1657,9 @@ def save_memory(
         tenant_id=tenant_id,
         epistemic_source=epistemic_source,
         belief_status=belief_status,
+        asserting_agent_id=asserting_agent_id,
+        evidence_chain=evidence_chain,
+        fact_type=fact_type,
     )
     return _save_memory_core(req, _now_iso=_now_iso, _conn=_conn)
 
@@ -1652,6 +1700,9 @@ def _save_memory_core(
     tenant_id = req.tenant_id
     epistemic_source = req.epistemic_source
     belief_status = req.belief_status
+    asserting_agent_id = req.asserting_agent_id
+    evidence_chain = req.evidence_chain
+    fact_type = req.fact_type
 
     from infra.db import _local_state
 
@@ -1784,6 +1835,9 @@ def _save_memory_core(
                 defer_expensive=defer_expensive,
                 epistemic_source=epistemic_source,
                 belief_status=belief_status,
+                asserting_agent_id=asserting_agent_id,
+                evidence_chain=evidence_chain,
+                fact_type=fact_type,
             )
 
             if isinstance(note_id, str) and not note_id.startswith("Error ["):

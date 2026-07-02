@@ -189,8 +189,17 @@ def handle_kg_and_fact_index(
         if not memory_id or not content:
             return "skipped: no memory_id or content in payload"
         category = memory_id.split("/")[0] if "/" in memory_id else "general"
+        belief_status = payload.get("belief_status", "active")
+        epistemic_source = payload.get("epistemic_source", "agent")
+        asserting_agent_id = payload.get("asserting_agent_id", "")
+        evidence_chain = payload.get("evidence_chain")
+        fact_type = payload.get("fact_type", "observation")
         _index_kg(conn, memory_id, content)
-        _index_facts(conn, memory_id, content)
+        _index_facts(conn, memory_id, content,
+                     belief_status=belief_status, epistemic_source=epistemic_source,
+                     asserting_agent_id=asserting_agent_id,
+                     evidence_chain=evidence_chain,
+                     fact_type=fact_type)
         _enrich_context(conn, memory_id, content, category, [])
         conn.commit()
         return f"KG+facts+context indexed for {memory_id}"
@@ -277,6 +286,30 @@ def handle_vec_index_rebuild(
         raise RuntimeError(f"vec_index_rebuild timed out: {e}") from e
 
 
+def handle_evidence_chain_staleness(
+    payload: dict, conn: AnyConnection, db_path: Path
+) -> str:
+    """Check if any belief's evidence_chain contains superseded facts.
+
+    Background task that runs periodically (every 15 min via the worker
+    loop or on-demand via enqueue).
+    """
+    try:
+        from belief import handle_evidence_chain_staleness as _check_staleness
+
+        result = _check_staleness(conn)
+        if result["deprecated"] > 0:
+            logger.info(
+                "Evidence chain staleness: checked=%d, deprecated=%d",
+                result["checked"],
+                result["deprecated"],
+            )
+        conn.commit()
+        return f"evidence_chain_staleness: checked={result['checked']}, deprecated={result['deprecated']}"
+    except Exception as e:
+        raise RuntimeError(f"evidence_chain_staleness failed: {e}") from e
+
+
 def handle_run_script(
     payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
@@ -340,6 +373,7 @@ HANDLERS = {
     "vec_index_rebuild": handle_vec_index_rebuild,
     "wal_checkpoint": handle_wal_checkpoint,
     "run_script": handle_run_script,
+    "evidence_chain_staleness": handle_evidence_chain_staleness,
 }
 
 # Mapping of cron-style task types to their script paths.

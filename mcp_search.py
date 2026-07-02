@@ -86,6 +86,9 @@ def memory_search(
     fact_limit: int = 5,
     tenant_id: str = "default",
     as_of: float | None = None,
+    belief_status: str | None = None,
+    epistemic_source: str | None = None,
+    fact_type: str | None = None,
 ) -> str:
     """Perform FTS5 (full-text) and semantic hybrid search across local and global memories.
 
@@ -105,6 +108,9 @@ def memory_search(
     - include_facts: If True, also queries and appends matching knowledge graph facts. Default is True.
     - fact_limit: Max number of related facts to return. Default is 5.
     - as_of: If set, search as of this epoch timestamp (time-travel query). Only memories valid at this time are returned. Default is None (current time).
+    - belief_status: Optional filter — only return facts with this belief status (active, retracted, deprecated, unconfirmed).
+    - epistemic_source: Optional filter — only return facts from this source (agent, auto_save, hook, import, cron).
+    - fact_type: Optional filter — only return facts of this type (observation, agent_inference, external_stated, hypothesis, derived).
 
     RETURNS:
     A human-readable formatted string listing the ranked memories, their content, category, tags, and related facts.
@@ -145,6 +151,9 @@ def memory_search(
                 fact_limit=fact_limit,
                 tenant_id=tenant_id,
                 as_of=as_of,
+                belief_status=belief_status,
+                epistemic_source=epistemic_source,
+                fact_type=fact_type,
             )
         except Exception as exc:
             logger.warning("Local search failed for query %r: %s", expanded_query, exc)
@@ -165,6 +174,9 @@ def memory_search(
                 fact_limit=fact_limit,
                 tenant_id="default",
                 as_of=as_of,
+                belief_status=belief_status,
+                epistemic_source=epistemic_source,
+                fact_type=fact_type,
             )
         except Exception as exc:
             logger.warning("Global search failed for query %r: %s", expanded_query, exc)

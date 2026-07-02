@@ -89,6 +89,32 @@ def ensure_facts_schema(conn: AnyConnection) -> None:
         )
     if "invalidation_reason" not in cols:
         conn.execute("ALTER TABLE kg_facts ADD COLUMN invalidation_reason TEXT")
+    # B25+S1: belief-layer columns (Sprint 0 + 1).  These are idempotent
+    # via the ``if not in cols`` check — same pattern as the temporal
+    # columns above.  Fresh DBs get them here; existing DBs get them
+    # via migration 025 + 026.
+    if "belief_status" not in cols:
+        conn.execute("ALTER TABLE kg_facts ADD COLUMN belief_status TEXT DEFAULT 'active'")
+    if "epistemic_source" not in cols:
+        conn.execute("ALTER TABLE kg_facts ADD COLUMN epistemic_source TEXT DEFAULT 'agent'")
+    if "asserting_agent_id" not in cols:
+        conn.execute("ALTER TABLE kg_facts ADD COLUMN asserting_agent_id TEXT")
+    if "evidence_chain" not in cols:
+        conn.execute("ALTER TABLE kg_facts ADD COLUMN evidence_chain TEXT")
+    if "fact_type" not in cols:
+        conn.execute("ALTER TABLE kg_facts ADD COLUMN fact_type TEXT DEFAULT 'observation'")
+    if "embedding" not in cols:
+        conn.execute("ALTER TABLE kg_facts ADD COLUMN embedding BLOB")
+    # Ensure belief-layer indexes exist.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_fact_type ON kg_facts(fact_type)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_belief_status ON kg_facts(belief_status)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_epistemic_source ON kg_facts(epistemic_source)"
+    )
     # Now entity_id and temporal indexes are safe to create.
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_kg_facts_subject_entity ON kg_facts(subject_entity_id)"

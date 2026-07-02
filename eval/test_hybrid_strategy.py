@@ -67,7 +67,10 @@ class TestShouldUseLlmForMemory(unittest.TestCase):
                 source_memory TEXT,
                 mention_count INTEGER DEFAULT 1,
                 first_seen REAL,
-                last_seen REAL
+                last_seen REAL,
+                belief_status TEXT DEFAULT 'active',
+                epistemic_source TEXT DEFAULT 'agent',
+                fact_type TEXT DEFAULT 'observation'
             );
             """
         )
@@ -213,7 +216,10 @@ class TestIndexFactsForMemoryUsesRegexByDefault(unittest.TestCase):
                 superseded_by INTEGER,
                 supersedes INTEGER,
                 contradiction_score REAL DEFAULT 0.0,
-                invalidation_reason TEXT
+                invalidation_reason TEXT,
+                belief_status TEXT DEFAULT 'active',
+                epistemic_source TEXT DEFAULT 'agent',
+                fact_type TEXT DEFAULT 'observation'
             );
             """
         )
@@ -435,7 +441,10 @@ class TestBulkFunctionLLMSafe(unittest.TestCase):
                 superseded_by INTEGER,
                 supersedes INTEGER,
                 contradiction_score REAL DEFAULT 0.0,
-                invalidation_reason TEXT
+                invalidation_reason TEXT,
+                belief_status TEXT DEFAULT 'active',
+                epistemic_source TEXT DEFAULT 'agent',
+                fact_type TEXT DEFAULT 'observation'
             );
             """
         )

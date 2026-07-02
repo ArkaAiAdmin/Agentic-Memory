@@ -84,7 +84,9 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # decision_threads, thread_events, session_compaction_log).
 # 2026-07-02: bumped to 24 for chunk-level multi-vector search (memory_chunk_embeddings,
 # memory_chunk_vec_idx, memory_chunk_vec_keys).
-SCHEMA_VERSION = 25
+# 2026-07-03: bumped to 26 for belief_assertions table + kg_facts.fact_type
+# (Sprint 1 fact/belief separation).
+SCHEMA_VERSION = 26
 
 
 def _parse_sql_file(path: Path) -> list[str]:
