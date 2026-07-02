@@ -12,6 +12,7 @@ Hooks that do the same thing: the on-demand and session-start hooks also call ``
 
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, Set
 
@@ -50,10 +51,87 @@ except Exception as import_err:
         return cwd, cwd / "memory", cwd / "memory"
 
 
-# 2026-06-23: Removed ineffective in-memory _SEARCH_CACHE. CLI hooks
-# are run as transient, separate Python subprocesses, meaning
-# process-local caches do not persist across hook invocations.
-# SQLite querying is direct and fast.
+# 2026-06-23: Shared per-process dedup cache (cross-hook, in-memory)
+# and subprocess-level file-backed cache (cross-invocation, disk-backed).
+# CLI hooks run as transient subprocesses, so process-local state does
+# not survive across invocations. The file-backed cache short-circuits
+# repeated queries within a 60 s window; the in-memory cache avoids
+# duplicate work from sibling hooks in the same process.
+
+_SEARCH_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_SEARCH_CACHE_MAX = int(os.environ.get("MEMORY_HOOK_CACHE_SIZE", "5"))
+_SEARCH_CACHE_TTL = float(os.environ.get("MEMORY_HOOK_CACHE_TTL", "300"))
+
+
+def _cache_get(query: str) -> list[dict] | None:
+    entry = _SEARCH_CACHE.get(query)
+    if entry is None:
+        return None
+    ts, results = entry
+    if (time.time() - ts) > _SEARCH_CACHE_TTL:
+        _SEARCH_CACHE.pop(query, None)
+        return None
+    return results
+
+
+def _cache_put(query: str, results: list[dict]) -> None:
+    _SEARCH_CACHE[query] = (time.time(), results)
+    while len(_SEARCH_CACHE) > _SEARCH_CACHE_MAX:
+        oldest = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k][0])
+        _SEARCH_CACHE.pop(oldest, None)
+
+
+_CACHE_TTL_SECONDS = 60
+_CACHE_MAX_ENTRIES = int(os.environ.get("MEMORY_HOOK_FILE_CACHE_SIZE", "20"))
+
+
+def _get_cache_file() -> Path:
+    _, local_mem, _ = get_memory_paths()
+    return local_mem / "hook_cache.json"
+
+
+def _load_file_cache(cache_file: Path) -> dict:
+    if not cache_file.exists():
+        return {}
+    try:
+        raw = json.loads(cache_file.read_text())
+        if isinstance(raw, dict):
+            return raw
+    except (json.JSONDecodeError, OSError):
+        pass
+    return {}
+
+
+def _save_file_cache(cache_file: Path, cache: dict) -> None:
+    try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(cache, separators=(",", ":")))
+    except OSError:
+        pass
+
+
+def _file_cache_get(
+    query_hash: str, cache_file: Path, db_mtime: float
+) -> list[dict] | None:
+    cache = _load_file_cache(cache_file)
+    entry = cache.get(query_hash)
+    if entry is None:
+        return None
+    ts, result_set, entry_mtime = entry
+    if entry_mtime != db_mtime or (time.time() - ts) > _CACHE_TTL_SECONDS:
+        return None
+    return result_set if isinstance(result_set, list) else None
+
+
+def _file_cache_put(
+    query_hash: str, result_set: list, cache_file: Path, db_mtime: float
+) -> None:
+    cache = _load_file_cache(cache_file)
+    cache[query_hash] = (time.time(), result_set, db_mtime)
+    while len(cache) > _CACHE_MAX_ENTRIES:
+        oldest_key = min(cache, key=lambda k: cache[k][0])
+        cache.pop(oldest_key, None)
+    _save_file_cache(cache_file, cache)
 
 
 def _temporal_kg_alert() -> None:
@@ -239,12 +317,30 @@ def main(db_path: Path | None = None):
             limit = int(os.environ.get("MEMORY_HOOK_RESULT_LIMIT", "3"))
         except ValueError:
             limit = 3
-        results = search_memories(
-            db_path=db_path, query=query, limit=limit, include_global=True
-        )
-        items = results.get("results", [])
-        if not isinstance(items, list):
-            items = []
+
+        cache_file = _get_cache_file()
+        db_mtime = db_path.stat().st_mtime if db_path.exists() else 0.0
+        query_hash = str(hash(query))
+        cached_items = _file_cache_get(query_hash, cache_file, db_mtime)
+        if cached_items is not None:
+            items = cached_items
+        else:
+            in_mem = _cache_get(query)
+            if in_mem is not None:
+                items = in_mem
+            else:
+                results = search_memories(
+                    db_path=db_path,
+                    query=query,
+                    limit=limit,
+                    include_global=True,
+                    light=True,
+                )
+                items = results.get("results", [])
+                if not isinstance(items, list):
+                    items = []
+                _cache_put(query, items)
+                _file_cache_put(query_hash, items, cache_file, db_mtime)
 
         # Output relevant context
         if items:

@@ -248,6 +248,7 @@ def proactive_search(query: str, db_path: Path | None = None) -> str:
                 query=query,
                 limit=limit,
                 include_global=True,
+                light=True,
             )
             items = results.get("results", [])
             if not isinstance(items, list):

@@ -1742,6 +1742,7 @@ def search_memories(
     include_facts: bool = True,
     fact_limit: int = 5,
     tenant_id: str = "default",
+    light: bool = False,
 ) -> dict:
     if not db_path.exists():
         return {
@@ -1804,6 +1805,7 @@ def search_memories(
         from infra._lazy_imports import connection_pool
 
         db = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
+        _effective_rerank = rerank and not light
 
         # Phase 3: DB setup
         cols = _get_memories_columns(db)
@@ -1825,7 +1827,7 @@ def search_memories(
         # Phase 4: FTS search
         _t0 = time.time()
         results = _fts_search(
-            db, fts_query, limit * 3 if rerank else limit, has_fitness, repo_filter
+            db, fts_query, limit * 3 if _effective_rerank else limit, has_fitness, repo_filter
         )
         _record_phase_latency("fts", _t0)
 
@@ -1914,8 +1916,8 @@ def search_memories(
             query=query,
             db_path=db_path,
             has_fitness=has_fitness,
-            rerank=rerank,
-            boost_pinned=boost_pinned,
+            rerank=_effective_rerank,
+            boost_pinned=boost_pinned if not light else False,
             recency_weight=recency_weight,
             limit=limit,
             deep_rerank=deep_rerank,
@@ -1931,52 +1933,57 @@ def search_memories(
         )
 
         # Phase 11: Safety demoting
-        if safety_wiring and result_items:
-            result_items, output, results_to_display = _apply_safety_demoting(
-                result_items, output, results_to_display
-            )
+        if not light:
+            if safety_wiring and result_items:
+                result_items, output, results_to_display = _apply_safety_demoting(
+                    result_items, output, results_to_display
+                )
 
         # Phase 11b: Quality gates
-        result_items, output = _apply_quality_gates(
-            result_items=result_items,
-            output=output,
-            results_to_display=results_to_display,
-            query=query,
-            rerank=rerank,
-            backlinks_map=backlinks_map,
-        )
+        if not light:
+            result_items, output = _apply_quality_gates(
+                result_items=result_items,
+                output=output,
+                results_to_display=results_to_display,
+                query=query,
+                rerank=rerank,
+                backlinks_map=backlinks_map,
+            )
 
         # Phase 11c: User profiling
-        result_items, output = _apply_user_profiling(
-            result_items=result_items,
-            output=output,
-            results_to_display=results_to_display,
-            query=query,
-            rerank=rerank,
-            backlinks_map=backlinks_map,
-            db_path=db_path,
-        )
+        if not light:
+            result_items, output = _apply_user_profiling(
+                result_items=result_items,
+                output=output,
+                results_to_display=results_to_display,
+                query=query,
+                rerank=rerank,
+                backlinks_map=backlinks_map,
+                db_path=db_path,
+            )
 
         # QB6 (final pass)
-        result_items, output, results_to_display = _apply_strong_match_boost(
-            result_items=result_items,
-            output=output,
-            results_to_display=results_to_display,
-            query=query,
-            rerank=rerank,
-            backlinks_map=backlinks_map,
-        )
+        if not light:
+            result_items, output, results_to_display = _apply_strong_match_boost(
+                result_items=result_items,
+                output=output,
+                results_to_display=results_to_display,
+                query=query,
+                rerank=rerank,
+                backlinks_map=backlinks_map,
+            )
 
         # Save-then-search atomicity hint
-        result_items, output = _apply_save_hint_floater(
-            db=db,
-            db_path=db_path,
-            result_items=result_items,
-            output=output,
-            query=query,
-            rerank=rerank,
-            backlinks_map=backlinks_map,
-        )
+        if not light:
+            result_items, output = _apply_save_hint_floater(
+                db=db,
+                db_path=db_path,
+                result_items=result_items,
+                output=output,
+                query=query,
+                rerank=rerank,
+                backlinks_map=backlinks_map,
+            )
 
         # Phase 12: Record access
         _record_last_accessed(db, result_items)

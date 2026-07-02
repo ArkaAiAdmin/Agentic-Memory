@@ -47,7 +47,7 @@ def _get_recent_compaction() -> str | None:
                 ts = time.strftime("%Y-%m-%d_%H-%M-%S", time.gmtime(last_compaction))
                 path = sessions_dir / f"compaction-save-{ts}.md"
                 if path.exists():
-                    return path.read_text()
+                    return path.read_text()[:3000]
     except Exception:
         pass
 
@@ -59,7 +59,7 @@ def _get_recent_compaction() -> str | None:
             reverse=True,
         )
         if candidates:
-            return candidates[0].read_text()
+            return candidates[0].read_text()[:3000]
     except Exception:
         pass
 
@@ -118,14 +118,14 @@ def get_preferences(conn):
         rows = conn.execute(
             "SELECT id, content, category, importance_score, tags FROM memories "
             "WHERE category = 'preferences' AND deleted_at IS NULL AND (id LIKE ? OR id NOT LIKE 'agents/%') "
-            "ORDER BY importance_score DESC, updated_at DESC",
+            "ORDER BY importance_score DESC, updated_at DESC LIMIT 5",
             (f"agents/{namespace}/%",),
         ).fetchall()
     else:
         rows = conn.execute(
             "SELECT id, content, category, importance_score, tags FROM memories "
             "WHERE category = 'preferences' AND deleted_at IS NULL AND id NOT LIKE 'agents/%' "
-            "ORDER BY importance_score DESC, updated_at DESC"
+            "ORDER BY importance_score DESC, updated_at DESC LIMIT 5"
         ).fetchall()
     return [
         {
@@ -160,7 +160,7 @@ def get_pinned_notes(conn):
     return [
         {
             "id": r[0],
-            "content": r[1],
+            "content": r[1][:300],
             "category": r[2],
             "importance": r[3],
             "tags": r[4],
