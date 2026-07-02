@@ -673,6 +673,212 @@ class TestEndToEndIndexing:
         ).fetchone()
         assert rows[0] == 0
 
+    def test_reverse_insertion_order_newer_wins(self):
+        """Sprint 2: order-independent — newer fact wins regardless of insert order."""
+        conn = _fresh_db()
+        # Both facts have same year precision (both 2024), so they contradict.
+        # But B's raw event_time (2024-06-01) is later than A's (2024-01-01),
+        # so B should always win regardless of insertion order.
+        newer_ts = _epoch(2024, 6, 1)  # 2024-06-01
+        older_ts = _epoch(2024, 1, 1)  # 2024-01-01
+        # Insert the NEWER fact FIRST
+        newer_id = _upsert(
+            conn,
+            "Python",
+            "is_a",
+            "framework",
+            0.9,
+            time.time(),
+            "mem_newer",
+            "ctx",
+            event_time=newer_ts,
+            event_time_granularity="year",
+        )
+        # Insert the OLDER fact SECOND
+        older_id = _upsert(
+            conn,
+            "Python",
+            "is_a",
+            "language",
+            0.9,
+            time.time(),
+            "mem_older",
+            "ctx",
+            event_time=older_ts,
+            event_time_granularity="year",
+        )
+        # Reconcile on the older (last-inserted) fact
+        superseded = ft.reconcile_fact_supersession(conn, older_id)
+        # The OLDER fact should be superseded (newer fact is chronologically later)
+        assert older_id in superseded, (
+            f"older_id={older_id} should be in superseded={superseded}"
+        )
+        older = conn.execute(
+            "SELECT superseded_by, invalidation_reason FROM kg_facts WHERE id = ?",
+            (older_id,),
+        ).fetchone()
+        assert older[0] == newer_id
+        assert older[1] == "contradicted"
+        # Newer fact should NOT be superseded
+        newer = conn.execute(
+            "SELECT superseded_by FROM kg_facts WHERE id = ?",
+            (newer_id,),
+        ).fetchone()
+        assert newer[0] is None
+
+    def test_forward_insertion_order_newer_wins(self):
+        """Sprint 2: same outcome in forward order."""
+        conn = _fresh_db()
+        older_ts = _epoch(2024, 1, 1)
+        newer_ts = _epoch(2024, 6, 1)
+        older_id = _upsert(
+            conn,
+            "Python",
+            "is_a",
+            "language",
+            0.9,
+            time.time(),
+            "mem_older",
+            "ctx",
+            event_time=older_ts,
+            event_time_granularity="year",
+        )
+        newer_id = _upsert(
+            conn,
+            "Python",
+            "is_a",
+            "framework",
+            0.9,
+            time.time(),
+            "mem_newer",
+            "ctx",
+            event_time=newer_ts,
+            event_time_granularity="year",
+        )
+        superseded = ft.reconcile_fact_supersession(conn, newer_id)
+        assert older_id in superseded
+        older = conn.execute(
+            "SELECT superseded_by FROM kg_facts WHERE id = ?",
+            (older_id,),
+        ).fetchone()
+        assert older[0] == newer_id
+
+    def test_bidirectional_new_fact_can_lose(self):
+        """Sprint 2: If the new fact is chronologically later, it always wins."""
+        conn = _fresh_db()
+        b_ts = _epoch(2024, 6, 1)
+        c_ts = _epoch(2024, 12, 1)
+        # Insert B first (Jun)
+        b_id = _upsert(
+            conn,
+            "Python",
+            "is_a",
+            "runtime",
+            0.9,
+            time.time(),
+            "mem_b",
+            "ctx",
+            event_time=b_ts,
+            event_time_granularity="year",
+        )
+        # Insert C second (Dec). C will reconcile against B.
+        c_id = _upsert(
+            conn,
+            "Python",
+            "is_a",
+            "platform",
+            0.9,
+            time.time(),
+            "mem_c",
+            "ctx",
+            event_time=c_ts,
+            event_time_granularity="year",
+        )
+        # Reconcile: C (Dec) should supersede B (Jun)
+        superseded = ft.reconcile_fact_supersession(conn, c_id)
+        assert b_id in superseded
+        b_row = conn.execute(
+            "SELECT superseded_by FROM kg_facts WHERE id = ?",
+            (b_id,),
+        ).fetchone()
+        assert b_row[0] == c_id
+        # C should NOT be superseded
+        c_row = conn.execute(
+            "SELECT superseded_by FROM kg_facts WHERE id = ?",
+            (c_id,),
+        ).fetchone()
+        assert c_row[0] is None
+
+    def test_equal_event_times_new_wins(self):
+        """Sprint 2: when event_times are equal, the new fact wins (tie-break)."""
+        conn = _fresh_db()
+        shared_ts = _epoch(2024, 3, 15)
+        old_id = _upsert(
+            conn,
+            "Python",
+            "is_a",
+            "language",
+            0.9,
+            time.time(),
+            "mem_old",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="day",
+        )
+        new_id = _upsert(
+            conn,
+            "Python",
+            "is_a",
+            "framework",
+            0.9,
+            time.time(),
+            "mem_new",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="day",
+        )
+        superseded = ft.reconcile_fact_supersession(conn, new_id)
+        assert old_id in superseded
+        old = conn.execute(
+            "SELECT superseded_by FROM kg_facts WHERE id = ?",
+            (old_id,),
+        ).fetchone()
+        assert old[0] == new_id
+
+    def test_mark_fact_superseded_preserves_winner(self):
+        """_mark_fact_superseded doesn't overwrite winner's supersedes column."""
+        conn = _fresh_db()
+        # Create a chain: A superseded by B
+        a_id = _upsert(conn, "X", "r", "a", 0.9, time.time(), "m1", "c")
+        b_id = _upsert(conn, "X", "r", "b", 0.9, time.time(), "m2", "c")
+        ft.supersede_fact(conn, a_id, b_id, "first", score=1.0)
+        # Verify A is superseded by B
+        a_row = conn.execute(
+            "SELECT superseded_by FROM kg_facts WHERE id = ?", (a_id,)
+        ).fetchone()
+        assert a_row[0] == b_id
+        # B should have supersedes = A
+        b_row = conn.execute(
+            "SELECT supersedes FROM kg_facts WHERE id = ?", (b_id,)
+        ).fetchone()
+        assert b_row[0] == a_id
+
+        # Now a new fact C arrives. B should supersede C (B's event_time > C's).
+        c_id = _upsert(conn, "X", "r", "c", 0.9, time.time(), "m3", "c")
+        # Mark B as winning against C using _mark_fact_superseded
+        result = ft._mark_fact_superseded(conn, c_id, b_id, "contradicted")
+        assert result is True
+        # C should be superseded by B
+        c_row = conn.execute(
+            "SELECT superseded_by FROM kg_facts WHERE id = ?", (c_id,)
+        ).fetchone()
+        assert c_row[0] == b_id
+        # B's supersedes should STILL be A (not overwritten to C)
+        b_row = conn.execute(
+            "SELECT supersedes FROM kg_facts WHERE id = ?", (b_id,)
+        ).fetchone()
+        assert b_row[0] == a_id
+
 
 # ---------------------------------------------------------------------------
 # T4.1-T4.4: Time-aware query layer
@@ -1198,3 +1404,228 @@ class TestEndToEndMemoryEdit:
         ).fetchone()
         assert after[0] == original_id
         assert after[1] is None  # not invalidated
+
+
+class TestPropagateEntitySupersession:
+    """Sprint 4: graph-level contradiction propagation on kg_facts."""
+
+    def _setup_entity_facts(self, conn):
+        """Create facts sharing the same entity_id."""
+        shared_ts = _epoch(2024)
+        # Base fact: Alice was_at Paris (subject_entity_id=1)
+        at_paris = _upsert(
+            conn,
+            "Alice",
+            "was_at",
+            "Paris",
+            0.9,
+            time.time(),
+            "m_at_paris",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1, object_entity_id = 2 "
+            "WHERE id = ?",
+            (at_paris,),
+        )
+        return at_paris, shared_ts
+
+    def test_propagate_same_entity_different_predicate(self):
+        """Sibling facts on the same entity+different predicate get propagated."""
+        conn = _fresh_db()
+        shared_ts = _epoch(2024)
+        # Base fact: Alice was_at Paris (subject_entity_id=1)
+        at_paris = _upsert(
+            conn,
+            "Alice",
+            "was_at",
+            "Paris",
+            0.9,
+            time.time(),
+            "m_at_paris",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1, object_entity_id = 2 "
+            "WHERE id = ?",
+            (at_paris,),
+        )
+        # Sibling fact: Alice is_in Paris (same subject_entity_id=1)
+        is_in_paris = _upsert(
+            conn,
+            "Alice",
+            "is_in",
+            "Paris",
+            0.9,
+            time.time(),
+            "m_is_in_paris",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
+            (is_in_paris,),
+        )
+        # New fact supersedes at_paris: Alice was_at London (same year 2024)
+        new_id = _upsert(
+            conn,
+            "Alice",
+            "was_at",
+            "London",
+            0.9,
+            time.time(),
+            "m_at_london",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
+            (new_id,),
+        )
+        # Reconcile on new_id: should supersede at_paris AND propagate to is_in_paris
+        superseded = ft.reconcile_fact_supersession(conn, new_id)
+        assert at_paris in superseded
+        # Check that is_in_paris is also superseded (propagation)
+        is_in_row = conn.execute(
+            "SELECT superseded_by, invalidation_reason FROM kg_facts WHERE id = ?",
+            (is_in_paris,),
+        ).fetchone()
+        assert is_in_row[0] is not None, "is_in_paris should be propagated superseded"
+        assert is_in_row[1] == "propagated"
+
+    def test_propagate_no_entity_ids_returns_empty(self):
+        """Fact with no entity_ids has no propagation targets."""
+        conn = _fresh_db()
+        plain_id = _upsert(
+            conn,
+            "Python",
+            "is_a",
+            "language",
+            0.9,
+            time.time(),
+            "m_plain",
+            "ctx",
+            event_time=_epoch(2024),
+            event_time_granularity="year",
+        )
+        # entity_id is NULL by default → no propagation
+        result = ft.propagate_entity_supersession(conn, plain_id, 999)
+        assert result == []
+
+    def test_propagate_same_predicate_skipped(self):
+        """Facts with the same predicate are not double-propagated (reconcile handles them)."""
+        conn = _fresh_db()
+        a_id = _upsert(
+            conn,
+            "X",
+            "is_a",
+            "alpha",
+            0.9,
+            time.time(),
+            "m_a",
+            "ctx",
+            event_time=_epoch(2024),
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 10 WHERE id = ?",
+            (a_id,),
+        )
+        # Propagate should return empty because there are no other predicates on X
+        result = ft.propagate_entity_supersession(conn, a_id, 999)
+        assert result == []
+
+    def test_propagate_already_superseded_skipped(self):
+        """Already-superseded facts are not re-propagated."""
+        conn = _fresh_db()
+        # Superseded fact about entity 20
+        superseded_id = _upsert(
+            conn,
+            "Y",
+            "r1",
+            "old_val",
+            0.9,
+            time.time(),
+            "m_sup",
+            "ctx",
+            event_time=_epoch(2024),
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 20, superseded_by = 0 WHERE id = ?",
+            (superseded_id,),
+        )
+        result = ft.propagate_entity_supersession(conn, superseded_id, 999)
+        # No active candidates → empty
+        assert result == []
+
+    def test_propagate_invalidates_sibling_fact(self):
+        """Full round-trip: supersede a fact, verify sibling is also invalidated."""
+        conn = _fresh_db()
+        shared_ts = _epoch(2024)
+        # Bob lives_in NYC (subject_entity_id=30)
+        lives_nyc = _upsert(
+            conn,
+            "Bob",
+            "lives_in",
+            "NYC",
+            0.9,
+            time.time(),
+            "m_lives_nyc",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 30, object_entity_id = 31 WHERE id = ?",
+            (lives_nyc,),
+        )
+        # Bob works_at NYC
+        works_nyc = _upsert(
+            conn,
+            "Bob",
+            "works_at",
+            "NYC",
+            0.9,
+            time.time(),
+            "m_works_nyc",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 30, object_entity_id = 31 WHERE id = ?",
+            (works_nyc,),
+        )
+        # New fact: Bob lives_in LA
+        new_id = _upsert(
+            conn,
+            "Bob",
+            "lives_in",
+            "LA",
+            0.9,
+            time.time(),
+            "m_lives_la",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 30 WHERE id = ?",
+            (new_id,),
+        )
+        superseded = ft.reconcile_fact_supersession(conn, new_id)
+        assert lives_nyc in superseded
+        # works_nyc should be propagated (same entity 30, different predicate)
+        works_row = conn.execute(
+            "SELECT superseded_by, invalidation_reason FROM kg_facts WHERE id = ?",
+            (works_nyc,),
+        ).fetchone()
+        assert works_row[0] is not None, "works_at NYC should be propagated superseded"
+        assert works_row[1] == "propagated"

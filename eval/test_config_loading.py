@@ -71,8 +71,9 @@ class TestMemoryConfigDefaults:
         # 2026-07-01 legacy_note_crdt + vec_rebuild_adaptive → 107.
         # 2026-07-01 config merge: exploration_mode, neural_forget_mode/weights,
         # temporal_ssm_enabled/weights, session_decision_llm, rate_limits → 114.
-        assert len(fields) == 114, (
-            f"Expected 114 fields, got {len(fields)}: {[f.name for f in fields]}"
+        # 2026-07-02 Sprint 3: feature_temporal_kg_llm + temporal_kg_llm_tier → 116.
+        assert len(fields) == 116, (
+            f"Expected 116 fields, got {len(fields)}: {[f.name for f in fields]}"
         )
 
     def test_default_db_path(self):

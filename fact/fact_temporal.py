@@ -68,8 +68,10 @@ def _row_to_dict(row, columns=None) -> dict:
 __all__ = [
     "detect_fact_contradiction",
     "supersede_fact",
+    "_mark_fact_superseded",
     "invalidate_fact",
     "reconcile_fact_supersession",
+    "propagate_entity_supersession",
     "invalidate_stale_facts",
     "query_facts_at_time",
     "query_fact_supersession_chain",
@@ -164,6 +166,7 @@ def supersede_fact(
     new_id: int,
     reason: str = "contradicted",
     score: float = 1.0,
+    winner_valid_at: "float | None" = None,
 ) -> bool:
     """Mark old_id as superseded by new_id.
 
@@ -174,6 +177,7 @@ def supersede_fact(
       * old.contradiction_score — 1.0 for deterministic auto-detection, or
         the LLM-scored confidence in [0.0, 1.0] (T11) when
         ``MEMORY_TEMPORAL_KG_LLM=1`` is set
+      * new.valid_at — set to ``winner_valid_at`` if provided and new.valid_at IS NULL
       * new.supersedes — old_id
 
     Returns True if old_id was updated.  Returns False if:
@@ -181,7 +185,7 @@ def supersede_fact(
       * old_id is missing, locked, or already superseded
       * new_id is missing
 
-    The ``invalid_at`` defaults to the new fact's event_time if set,
+    The ``invalid_at`` defaults to the new fact's event_time if known,
     otherwise to now.  This represents "the moment the new fact took
     effect" — which is the natural interpretation of "the old fact was
     no longer true at this time."
@@ -211,11 +215,18 @@ def supersede_fact(
         )
         return False
     new = conn.execute(
-        "SELECT id, event_time FROM kg_facts WHERE id = ?",
+        "SELECT id, event_time, valid_at FROM kg_facts WHERE id = ?",
         (new_id,),
     ).fetchone()
     if not new:
         return False
+    # Sprint 2: set valid_at on the winner when resolving a contradiction,
+    # so subsequent supersessions have a stable "took effect" anchor.
+    if winner_valid_at is not None and new[2] is None:
+        conn.execute(
+            "UPDATE kg_facts SET valid_at = ? WHERE id = ?",
+            (winner_valid_at, new_id),
+        )
     # invalid_at = the new fact's event_time if known, else now
     invalid_at = new[1] if new[1] is not None else time.time()
     conn.execute(
@@ -230,6 +241,68 @@ def supersede_fact(
     return True
 
 
+def _mark_fact_superseded(
+    conn: AnyConnection,
+    fact_id: int,
+    winner_id: int,
+    reason: str = "contradicted",
+    score: float = 1.0,
+) -> bool:
+    """Mark ``fact_id`` as superseded by ``winner_id`` without touching
+    the winner's ``supersedes`` column.
+
+    This is the reverse-direction counterpart of ``supersede_fact``.
+    When the existing fact has a later event_time than the newly
+    inserted one, the new fact is the loser.  We mark it superseded
+    here without overwriting the winner's existing ``supersedes``
+    pointer (the winner may already have superseded a prior fact).
+    """
+    if fact_id == winner_id:
+        return False
+    winner = conn.execute(
+        "SELECT id, event_time, locked FROM kg_facts WHERE id = ?",
+        (winner_id,),
+    ).fetchone()
+    if not winner:
+        return False
+    if winner[2]:  # locked
+        logger.debug(
+            "_mark_fact_superseded: winner %d is locked, skipping", winner_id
+        )
+        return False
+    fact = conn.execute(
+        "SELECT id, locked, superseded_by FROM kg_facts WHERE id = ?",
+        (fact_id,),
+    ).fetchone()
+    if not fact:
+        return False
+    if fact[1]:  # locked
+        logger.debug(
+            "_mark_fact_superseded: fact %d is locked, skipping", fact_id
+        )
+        return False
+    if fact[2] is not None:  # already superseded
+        logger.debug(
+            "_mark_fact_superseded: fact %d is already superseded, skipping",
+            fact_id,
+        )
+        return False
+    # invalid_at = the winner's event_time if known, else now
+    invalid_at = winner[1] if winner[1] is not None else time.time()
+    conn.execute(
+        "UPDATE kg_facts SET invalid_at = ?, superseded_by = ?, "
+        "invalidation_reason = ?, contradiction_score = ? WHERE id = ?",
+        (invalid_at, winner_id, reason, score, fact_id),
+    )
+    # Set valid_at on winner if not already set
+    if winner[1] is not None:
+        conn.execute(
+            "UPDATE kg_facts SET valid_at = COALESCE(valid_at, ?) WHERE id = ?",
+            (winner[1], winner_id),
+        )
+    return True
+
+
 def reconcile_fact_supersession(
     conn: AnyConnection, new_fact_id: int
 ) -> list[int]:
@@ -237,7 +310,9 @@ def reconcile_fact_supersession(
 
     Looks for facts with the same ``(subject, predicate)``, a different
     ``object``, and an overlapping ``event_time`` (per granularity).
-    Marks each match as superseded by ``new_fact_id``.
+    The fact with the **later** ``event_time`` (or ``valid_at``) always
+    wins — making contradiction resolution order-independent regardless
+    of which fact was inserted first.
 
     Returns a list of superseded fact IDs.  Idempotent: re-running on
     an already-reconciled fact is a no-op (candidates are already
@@ -262,13 +337,14 @@ def reconcile_fact_supersession(
     Called from ``index_facts_for_memory`` after each fact INSERT.
     """
     new = conn.execute(
-        "SELECT subject, predicate, object, event_time, event_time_granularity "
+        "SELECT subject, predicate, object, event_time, event_time_granularity, "
+        "       valid_at "
         "FROM kg_facts WHERE id = ?",
         (new_fact_id,),
     ).fetchone()
     if not new:
         return []
-    new_subj, new_pred, new_obj, new_event_time, new_granularity = new
+    new_subj, new_pred, new_obj, new_event_time, new_granularity, new_valid_at = new
 
     # T11: resolve LLM-scoring flag (off by default to avoid cost on every save)
     use_llm = _temporal_llm_scoring_enabled()
@@ -276,7 +352,7 @@ def reconcile_fact_supersession(
 
     # Find candidates: same S+P, different O, not already superseded, not self.
     candidates = conn.execute(
-        "SELECT id, object, event_time, event_time_granularity "
+        "SELECT id, object, event_time, event_time_granularity, valid_at "
         "FROM kg_facts "
         "WHERE subject = ? AND predicate = ? AND object != ? "
         "AND superseded_by IS NULL AND id != ?",
@@ -284,7 +360,13 @@ def reconcile_fact_supersession(
     ).fetchall()
 
     superseded: list[int] = []
-    for cand_id, cand_obj, cand_event_time, cand_granularity in candidates:
+    for (
+        cand_id,
+        cand_obj,
+        cand_event_time,
+        cand_granularity,
+        cand_valid_at,
+    ) in candidates:
         if not detect_fact_contradiction(
             new_subj,
             new_pred,
@@ -298,17 +380,60 @@ def reconcile_fact_supersession(
             cand_granularity,
         ):
             continue
-        # Deterministic pre-filter passed.  If LLM scoring is enabled,
-        # ask the model for a confidence score and gate the supersession
-        # on the threshold.  On any LLM error, fall back to 1.0 (the
-        # pre-T11 deterministic behavior).
+        # Sprint 2: order-independent winner selection.
+        # The fact with the later event_time (or valid_at fallback) always
+        # wins.  If neither has a time, the new fact wins by default.
+        def _fact_time(evt, vat):
+            if evt is not None:
+                return ("event_time", evt)
+            if vat is not None:
+                return ("valid_at", vat)
+            return ("none", None)
+
+        new_time_type, new_time_val = _fact_time(new_event_time, new_valid_at)
+        cand_time_type, cand_time_val = _fact_time(cand_event_time, cand_valid_at)
+
+        new_wins = True
+        if new_time_val is not None and cand_time_val is not None:
+            new_wins = new_time_val >= cand_time_val
+        elif cand_time_val is not None and new_time_val is None:
+            new_wins = False  # candidate has a time, new doesn't
+
+        if not new_wins:
+            # Existing fact is chronologically later; mark the new fact
+            # as superseded without touching the winner's supersedes column.
+            if _mark_fact_superseded(
+                conn, new_fact_id, cand_id, "contradicted", score=1.0
+            ):
+                superseded.append(new_fact_id)
+                logger.info(
+                    "fact_temporal: new fact %d superseded by existing %d "
+                    "(%s/%s/%s -> %s) via order-independent check",
+                    new_fact_id,
+                    cand_id,
+                    new_subj,
+                    new_pred,
+                    new_obj,
+                    cand_obj,
+                )
+            # New fact is now superseded; stop processing further candidates.
+            break
+
+        # Deterministic pre-filter passed with new fact winning.
+        # If LLM scoring is enabled, ask the model for a confidence score
+        # and gate the supersession on the threshold.  On any LLM error,
+        # fall back to 1.0 (the pre-T11 deterministic behavior).
         score = 1.0
         if use_llm:
             try:
+                from config import get_config
+
+                llm_tier = get_config().temporal_kg_llm_tier
                 from llm_extraction import score_fact_contradiction_via_llm
 
                 llm_score = score_fact_contradiction_via_llm(
-                    new_subj, new_pred, new_obj, new_subj, new_pred, cand_obj
+                    new_subj, new_pred, new_obj, new_subj, new_pred, cand_obj,
+                    tier=llm_tier,
                 )
                 if llm_score is not None:
                     score = llm_score
@@ -335,7 +460,15 @@ def reconcile_fact_supersession(
                     exc,
                 )
                 score = 1.0
-        if supersede_fact(conn, cand_id, new_fact_id, "contradicted", score=score):
+        winner_valid_at = new_event_time if new_event_time is not None else cand_event_time
+        if supersede_fact(
+            conn,
+            cand_id,
+            new_fact_id,
+            "contradicted",
+            score=score,
+            winner_valid_at=winner_valid_at,
+        ):
             superseded.append(cand_id)
             logger.info(
                 "fact_temporal: fact %d superseded by %d (%s/%s/%s -> %s) score=%.2f",
@@ -347,33 +480,143 @@ def reconcile_fact_supersession(
                 new_obj,
                 score,
             )
+    # Sprint 4: cascade supersession to sibling facts on the same entity.
+    # De-duplicate by tracking already-propagated fact IDs across all
+    # superseded facts to avoid double-processing.
+    all_propagated: list[int] = []
+    _already_propagated: set[int] = set()
+    for old_id in superseded:
+        if old_id in _already_propagated:
+            continue
+        propagated = propagate_entity_supersession(conn, old_id, new_fact_id)
+        all_propagated.extend(propagated)
+        _already_propagated.update(propagated)
     return superseded
 
 
-def _temporal_llm_scoring_enabled() -> bool:
-    """T11: Resolve the ``MEMORY_TEMPORAL_KG_LLM`` kill switch.
+def propagate_entity_supersession(
+    conn: AnyConnection,
+    superseded_fact_id: int,
+    new_fact_id: int,
+) -> list[int]:
+    """Sprint 4: cascade supersession to other facts sharing the same entity.
 
-    Returns True only when the flag is explicitly set to ``1``.  Off
-    by default because the LLM call is synchronous and adds ~100-500ms
-    per contradiction-candidate pair.
+    When a fact is superseded, other active facts that share the same
+    ``subject_entity_id`` or ``object_entity_id`` and have a **different**
+    predicate may now be stale.  This function scans those facts and
+    marks them as superseded (reason="propagated") if their event_time
+    overlaps with the new fact's event_time.
+
+    Returns a list of propagated fact IDs.  Returns [] if the
+    superseded fact has no entity ids or there are no matching
+    candidates.
     """
-    return os.environ.get("MEMORY_TEMPORAL_KG_LLM") == "1"
+    row = conn.execute(
+        "SELECT subject, predicate, object, event_time, event_time_granularity, "
+        "       subject_entity_id, object_entity_id "
+        "FROM kg_facts WHERE id = ?",
+        (superseded_fact_id,),
+    ).fetchone()
+    if not row:
+        return []
+    (
+        _subj,
+        _pred,
+        _obj,
+        evt_time,
+        evt_gran,
+        subj_ent,
+        obj_ent,
+    ) = row
+
+    new_row = conn.execute(
+        "SELECT event_time, event_time_granularity FROM kg_facts WHERE id = ?",
+        (new_fact_id,),
+    ).fetchone()
+    if not new_row:
+        return []
+    new_evt_time, new_evt_gran = new_row
+
+    entity_ids = {e for e in (subj_ent, obj_ent) if e is not None}
+    if not entity_ids:
+        return []
+
+    propagated: list[int] = []
+    for ent_id in entity_ids:
+        candidates = conn.execute(
+            "SELECT id, predicate, subject, object, "
+            "       event_time, event_time_granularity, "
+            "       valid_at, invalid_at "
+            "FROM kg_facts "
+            "WHERE (subject_entity_id = ? OR object_entity_id = ?) "
+            "AND id != ? AND id != ? "
+            "AND superseded_by IS NULL AND invalid_at IS NULL "
+            "AND predicate != ?",
+            (ent_id, ent_id, superseded_fact_id, new_fact_id, _pred),
+        ).fetchall()
+        for (
+            c_id,
+            c_pred,
+            c_subj,
+            c_obj,
+            c_evt,
+            c_gran,
+            _c_valid_at,
+            _c_invalid_at,
+        ) in candidates:
+            # Sprint 4 propagation uses time overlap only (no S+P+O check —
+            # propagation is entity-driven, not contradiction-driven).
+            if not _event_times_match(c_evt, c_gran, new_evt_time, new_evt_gran):
+                continue
+            if supersede_fact(
+                conn,
+                c_id,
+                new_fact_id,
+                "propagated",
+                score=1.0,
+                winner_valid_at=new_evt_time,
+            ):
+                propagated.append(c_id)
+                logger.info(
+                    "fact_temporal: propagated supersession from fact %d "
+                    "to fact %d (entity %d, pred %s -> %s)",
+                    superseded_fact_id,
+                    c_id,
+                    ent_id,
+                    _pred,
+                    c_pred,
+                )
+    return propagated
+
+
+def _temporal_llm_scoring_enabled() -> bool:
+    """T11 Sprint 3: Resolve the feature_temporal_kg_llm flag.
+
+    Returns True by default (LLM scoring ON).  Use
+    ``MEMORY_TEMPORAL_KG_LLM=0`` or set ``feature_temporal_kg_llm = false``
+    in memory.toml to disable and avoid the ~100-500ms LLM latency on
+    every fact save.
+    """
+    from config import get_config
+
+    return get_config().feature_temporal_kg_llm
 
 
 def _contradiction_score_threshold() -> float:
-    """T11: Resolve the ``MEMORY_TEMPORAL_KG_LLM_THRESHOLD`` setting.
+    """T11 Sprint 3: Resolve the threshold for LLM contradiction scores.
 
-    Facts with an LLM contradiction score below this threshold are
-    treated as refinements, not contradictions, and are NOT auto-superseded.
-    Default 0.7.
+    The threshold is tier-aware:
+      * "light" → 0.5 (more permissive; fewer misses on subtle contradictions)
+      * "heavy" → 0.7 (conservative; only high-confidence supersessions)
+      * fallback → 0.5
     """
-    try:
-        v = os.environ.get("MEMORY_TEMPORAL_KG_LLM_THRESHOLD")
-        if v:
-            return float(v)
-    except ValueError:
-        pass
-    return 0.7
+    from config import get_config
+
+    cfg = get_config()
+    tier = cfg.temporal_kg_llm_tier
+    if tier == "heavy":
+        return 0.7
+    return 0.5
 
 
 # ---------------------------------------------------------------------------

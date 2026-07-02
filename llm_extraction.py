@@ -125,11 +125,12 @@ def score_fact_contradiction_via_llm(
     subj_b: str,
     pred_b: str,
     obj_b: str,
+    tier: str = "heavy",
 ) -> float | None:
-    """T11: Score contradiction confidence in [0.0, 1.0] using the LLM.
+    """T11 Sprint 3: Score contradiction confidence in [0.0, 1.0] using the LLM.
 
     Used by ``reconcile_fact_supersession`` (in fact_temporal.py) when
-    ``MEMORY_TEMPORAL_KG_LLM=1`` is set.  Returns None on any failure
+    ``feature_temporal_kg_llm=true``.  Returns None on any failure
     (LLM unavailable, model not loaded, output unparseable).  The caller
     should fall back to a deterministic 1.0 score when None is returned.
 
@@ -141,6 +142,10 @@ def score_fact_contradiction_via_llm(
     ``detect_fact_contradiction`` has confirmed the facts share subject +
     predicate and have different objects + overlapping event_time.  This
     LLM call is the disambiguator, not the gate.
+
+    Tiers:
+      * "light" → max_new_tokens=4, cheaper, faster
+      * "heavy" → max_new_tokens=8, thorough (default)
     """
     if not is_llm_extraction_available():
         return None
@@ -152,6 +157,7 @@ def score_fact_contradiction_via_llm(
     fact_a = f"{subj_a} {pred_a} {obj_a}"
     fact_b = f"{subj_b} {pred_b} {obj_b}"
     prompt = _CONTRADICTION_PROMPT.format(fact_a=fact_a, fact_b=fact_b)
+    max_new = 4 if tier == "light" else 8
 
     try:
         import torch
@@ -168,7 +174,7 @@ def score_fact_contradiction_via_llm(
         with torch.no_grad():
             outputs = extractor._model.generate(
                 **inputs,
-                max_new_tokens=8,  # 1-2 tokens — a single float
+                max_new_tokens=max_new,  # tier-aware: light=4, heavy=8
                 do_sample=False,
                 temperature=None,
                 top_p=None,
@@ -951,11 +957,13 @@ def score_fact_contradiction_via_llm_v2(
     subj_b: str,
     pred_b: str,
     obj_b: str,
+    tier: str = "heavy",
 ) -> float | None:
-    """S3: score contradiction using the provider abstraction."""
+    """S3 Sprint 3: score contradiction using the provider abstraction."""
     if not is_llm_extraction_available_via_provider():
         return score_fact_contradiction_via_llm(
-            subj_a, pred_a, obj_a, subj_b, pred_b, obj_b
+            subj_a, pred_a, obj_a, subj_b, pred_b, obj_b,
+            tier=tier,
         )
     try:
         from fact.llm_providers import get_provider
@@ -968,8 +976,9 @@ def score_fact_contradiction_via_llm_v2(
     fact_a = f"{subj_a} {pred_a} {obj_a}"
     fact_b = f"{subj_b} {pred_b} {obj_b}"
     prompt = _CONTRADICTION_PROMPT.format(fact_a=fact_a, fact_b=fact_b)
+    max_new = 4 if tier == "light" else 8
     try:
-        raw = provider.generate(prompt, max_tokens=8, temperature=0.0)
+        raw = provider.generate(prompt, max_tokens=max_new, temperature=0.0)
     except Exception:
         return None
     return _parse_contradiction_score(raw)

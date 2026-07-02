@@ -131,16 +131,26 @@ def _reciprocal_rank_fusion(
 
 
 def _temporal_decay_factor(
-    created: str, now_ts: Optional[float] = None, last_accessed: Optional[str] = None
+    created: str,
+    now_ts: Optional[float] = None,
+    last_accessed: Optional[str] = None,
+    as_of: Optional[float] = None,
 ) -> float:
     """Compute a temporal decay factor for a note.
 
-    When MEMORY_FORGETTING_CURVE=1, uses last_accessed (Ebbinghaus forgetting curve).
-    Otherwise, uses created timestamp (standard temporal decay).
-    Returns a value in [0, 1] where 1 = brand new, 0 = very old.
+    Sprint 5: ``as_of`` is a time-travel anchor.  When set, it replaces
+    ``time.time()`` for computing the note's age, so decay reflects what
+    the note's recency would have been at that past (or future) moment.
+
+    When ``MEMORY_FORGETTING_CURVE=1``, uses last_accessed (Ebbinghaus
+    forgetting curve).  Otherwise, uses created timestamp (standard
+    temporal decay).  Returns a value in [0, 1] where 1 = brand new,
+    0 = very old.
     """
     if _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential") == "off":
         return 1.0
+    if as_of is not None:
+        now_ts = as_of
     if now_ts is None:
         now_ts = time.time()
 
@@ -273,8 +283,16 @@ def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
     return modified
 
 
-def _apply_temporal_decay(scored_results: list, decay_weight: float = 0.15) -> list:
+def _apply_temporal_decay(
+    scored_results: list,
+    decay_weight: float = 0.15,
+    as_of: Optional[float] = None,
+) -> list:
     """Apply temporal decay to scored results as a post-retrieval modifier.
+
+    Sprint 5: ``as_of`` is forwarded to ``_temporal_decay_factor`` so
+    recency is calculated relative to the time-travel anchor instead of
+    ``time.time()``.
 
     Multiplies each result's final_score by (1 - decay_weight + decay_weight * decay_factor).
     This boosts recent notes and gently penalizes old ones without
@@ -291,7 +309,7 @@ def _apply_temporal_decay(scored_results: list, decay_weight: float = 0.15) -> l
             pass
     if _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential") == "off" or decay_weight <= 0:
         return scored_results
-    now_ts = time.time()
+    now_ts = time.time() if as_of is None else as_of
     modified = []
     for r in scored_results:
         (
@@ -308,7 +326,9 @@ def _apply_temporal_decay(scored_results: list, decay_weight: float = 0.15) -> l
         ) = r[:10]
         last_accessed = r[10] if len(r) > 10 else None
         metadata_json = r[11] if len(r) > 11 else None
-        decay = _temporal_decay_factor(created, now_ts, last_accessed=last_accessed)
+        decay = _temporal_decay_factor(
+            created, now_ts, last_accessed=last_accessed, as_of=as_of
+        )
         adjusted = final_score * (1.0 - decay_weight + decay_weight * decay)
         modified.append(
             (

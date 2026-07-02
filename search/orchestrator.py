@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import math
@@ -650,13 +652,18 @@ def _search_kg_facts(
     fts_query: str,
     limit: int,
     include_invalid: bool,
+    as_of: float | None = None,
 ) -> list[dict]:
-    """T10: search the knowledge-graph fact index for facts relevant to the query.
+    """T10 + Sprint 5: search the knowledge-graph fact index for facts relevant to the query.
 
     Surfaces structured facts (``subject --[predicate]--> object``) alongside
     the memory results.  Uses the same FTS5 query string as the memories
     search so tokenization is consistent.  Superseded and invalidated facts
     are excluded by default (``include_invalid=False``).
+
+    ``as_of`` is Sprint 5 time-travel: when set, only facts valid at the
+    given epoch are returned (via the temporal validity filter from
+    ``fact_temporal._temporal_fact_clause``).
 
     Returns a list of dicts sorted by FTS5 BM25 rank (best first).  Returns
     an empty list if the kg_facts table is missing or empty — never raises.
@@ -669,10 +676,18 @@ def _search_kg_facts(
         ).fetchone():
             return []
         invalid_filter = ""
-        if not include_invalid:
+        if not include_invalid and as_of is None:
             invalid_filter = (
                 " AND (kf.invalid_at IS NULL OR kf.invalid_at = '')"
                 " AND kf.superseded_by IS NULL"
+            )
+        elif as_of is not None:
+            from fact.fact_temporal import _temporal_fact_clause
+
+            clause, params = _temporal_fact_clause(as_of)
+            invalid_filter = (
+                f" AND (kf.superseded_by IS NULL)"
+                + clause.replace("f.", "kf.")
             )
         rows = db.execute(
             "SELECT kf.id, kf.subject, kf.predicate, kf.object, kf.confidence, "
@@ -683,7 +698,7 @@ def _search_kg_facts(
             f"WHERE kg_facts_fts MATCH ?{invalid_filter} "
             "ORDER BY kg_facts_fts.rank "
             "LIMIT ?",
-            (fts_query, limit),
+            (fts_query, *([] if as_of is None else params), limit),
         ).fetchall()
     except Exception:
         # FTS5 syntax errors, missing table, etc. — never break the search.
@@ -1096,6 +1111,7 @@ def _rerank_results(
     recency_weight,
     limit,
     deep_rerank,
+    as_of: float | None = None,
 ):
     """Phase 9 of search_memories: compute final scores and rerank.
 
@@ -1140,7 +1156,7 @@ def _rerank_results(
             )
         if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
             return _apply_neural_forget_curve(out, query), None
-        return _apply_temporal_decay(out), None
+        return _apply_temporal_decay(out, as_of=as_of), None
 
     _qtype = _detect_query_type(query)
     _qweights = _weights_for_query_type(_qtype)
@@ -1175,6 +1191,7 @@ def _rerank_results(
                 boost_pinned=boost_pinned,
                 recency_weight=recency_weight,
                 weights=_qweights,
+                now_ts=as_of,
             )
         )
         importance_val = importance if importance is not None else 3
@@ -1208,7 +1225,7 @@ def _rerank_results(
     if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
         out = _apply_neural_forget_curve(out, query)
     else:
-        out = _apply_temporal_decay(out)
+        out = _apply_temporal_decay(out, as_of=as_of)
     return out[:limit], _qweights
 
 
@@ -1748,6 +1765,7 @@ def search_memories(
     fact_limit: int = 5,
     tenant_id: str = "default",
     light: bool = False,
+    as_of: float | None = None,
 ) -> dict:
     if not db_path.exists():
         return {
@@ -1794,6 +1812,7 @@ def search_memories(
         )
         + f":sw={int(safety_wiring)}:dr={int(deep_rerank)}:sf={int(skill_first)}"
         + f":if={int(include_facts)}:fl={int(fact_limit)}"
+        + f":as_of={as_of}"
     )
     now = time.time()
     if cache_key in _search_cache:
@@ -1846,7 +1865,7 @@ def search_memories(
         related_facts: list[dict] = []
         if include_facts:
             _t0 = time.time()
-            related_facts = _search_kg_facts(db, fts_query, fact_limit, include_invalid)
+            related_facts = _search_kg_facts(db, fts_query, fact_limit, include_invalid, as_of=as_of)
             _record_phase_latency("kg_facts", _t0)
 
         # Phase 5: Fallback to embeddings
@@ -1891,14 +1910,38 @@ def search_memories(
             _record_phase_latency("hybrid_fusion", _t0)
 
         # Phase 7: Temporal filtering
-        if not include_invalid:
+        if not include_invalid or as_of is not None:
             if "valid_to" in cols:
-                valid_ids = {
-                    row[0]
-                    for row in db.execute(
-                        "SELECT id FROM tenant_memories WHERE valid_to IS NULL OR valid_to = ''"
-                    ).fetchall()
-                }
+                if as_of is not None:
+                    as_of_iso = time.strftime(
+                        "%Y-%m-%dT%H:%M:%S", time.gmtime(as_of)
+                    )
+                    if "valid_from" in cols:
+                        valid_ids = {
+                            row[0]
+                            for row in db.execute(
+                                "SELECT id FROM tenant_memories "
+                                "WHERE (valid_from IS NULL OR valid_from = '' OR valid_from <= ?) "
+                                "AND (valid_to IS NULL OR valid_to = '' OR valid_to > ?)",
+                                (as_of_iso, as_of_iso),
+                            ).fetchall()
+                        }
+                    else:
+                        valid_ids = {
+                            row[0]
+                            for row in db.execute(
+                                "SELECT id FROM tenant_memories "
+                                "WHERE valid_to IS NULL OR valid_to = '' OR valid_to >= ?",
+                                (as_of_iso,),
+                            ).fetchall()
+                        }
+                else:
+                    valid_ids = {
+                        row[0]
+                        for row in db.execute(
+                            "SELECT id FROM tenant_memories WHERE valid_to IS NULL OR valid_to = ''"
+                        ).fetchall()
+                    }
                 results = [r for r in results if r[0] in valid_ids]
                 if not results:
                     return _build_empty_result_with_hint(
@@ -1926,6 +1969,7 @@ def search_memories(
             recency_weight=recency_weight,
             limit=limit,
             deep_rerank=deep_rerank,
+            as_of=as_of,
         )
         _record_phase_latency("rerank", _t0)
 

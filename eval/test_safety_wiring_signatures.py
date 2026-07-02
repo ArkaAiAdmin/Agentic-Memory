@@ -72,8 +72,11 @@ class TestSafetyWiringSignatures(unittest.TestCase):
             "demote pass runs in production search paths by default",
         )
         param = sig.parameters["safety_wiring"]
+        annotation = param.annotation
+        if isinstance(annotation, str):
+            annotation = eval(annotation)  # noqa: S307 - forward-ref from __future__ annotations
         self.assertIn(
-            param.annotation, (bool, inspect.Parameter.empty),
+            annotation, (bool, inspect.Parameter.empty),
             f"safety_wiring should be typed as bool, got {param.annotation!r}",
         )
 
@@ -89,8 +92,11 @@ class TestSafetyWiringSignatures(unittest.TestCase):
             "contradiction check runs in production save paths by default",
         )
         param = sig.parameters["safety_wiring"]
+        annotation = param.annotation
+        if isinstance(annotation, str):
+            annotation = eval(annotation)  # noqa: S307 - forward-ref from __future__ annotations
         self.assertIn(
-            param.annotation, (bool, inspect.Parameter.empty),
+            annotation, (bool, inspect.Parameter.empty),
             f"safety_wiring should be typed as bool, got {param.annotation!r}",
         )
 

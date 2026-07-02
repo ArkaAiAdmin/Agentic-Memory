@@ -268,9 +268,10 @@ class TestLLMScoreWrapper(unittest.TestCase):
         import inspect
 
         sig = inspect.signature(score_fact_contradiction_via_llm)
-        self.assertEqual(len(sig.parameters), 6)
+        self.assertEqual(len(sig.parameters), 7)
         self.assertIn("subj_a", sig.parameters)
         self.assertIn("obj_b", sig.parameters)
+        self.assertIn("tier", sig.parameters)
         # Return-type annotation is Optional[float] (i.e. float | None)
         self.assertIn("float", str(sig.return_annotation))
 

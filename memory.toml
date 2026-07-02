@@ -55,6 +55,8 @@ crdt_enabled = true                   # MEMORY_CRDT_ENABLED — version vector t
 legacy_note_crdt = false              # MEMORY_LEGACY_NOTE_CRDT — bump legacy note-level version vector on save. Deprecated: per-field CRDT is the source of truth. Warns when enabled.
 llm_extraction = true                # MEMORY_LLM_EXTRACTION — use local LLM for fact/entity extraction (hook subprocesses are excluded automatically)
 feature_temporal_kg = true            # MEMORY_TEMPORAL_KG (T8, 2026-06-23) — fact-level temporal KG: event_time extraction, contradiction detection, supersession, edit invalidation. Default ON. Set to false to disable the entire temporal subsystem (reverts to plain fact extraction with no temporal logic).
+feature_temporal_kg_llm = true        # MEMORY_TEMPORAL_KG_LLM (T11, 2026-06-30) — use LLM to score contradiction confidence in [0.0, 1.0]. OFF by default to avoid ~100-500ms per candidate. Set to false to disable LLM scoring and revert to deterministic 1.0.
+temporal_kg_llm_tier = "light"        # MEMORY_TEMPORAL_KG_LLM_TIER — "light" (max_new_tokens=4, threshold=0.5, cheaper) or "heavy" (max_new_tokens=8, threshold=0.7, thorough). Default "light".
 
 [cache]
 fts5_cache = true                     # MEMORY_FTS5_CACHE — LRU result cache for search

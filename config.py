@@ -340,6 +340,12 @@ class MemoryConfig:
     # MEMORY_TEMPORAL_KG=0 to disable (reverts to plain fact extraction
     # with no event_time / supersession / invalidation logic).
     feature_temporal_kg: bool = True
+    # T11 (2026-06-30): LLM-scored contradiction detection.
+    # feature_temporal_kg_llm gates the LLM scoring step inside
+    # reconcile_fact_supersession. temporal_kg_llm_tier controls cost:
+    # "light" => max_new_tokens=4, threshold=0.5; "heavy" => 8, 0.7.
+    feature_temporal_kg_llm: bool = True
+    temporal_kg_llm_tier: str = "light"
     session_memory: bool = False
     session_decision_llm: bool = False
 
@@ -832,6 +838,20 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         feature_temporal_kg=_b(
             "MEMORY_TEMPORAL_KG", "features.feature_temporal_kg", True, bool, toml_data
+        ),
+        feature_temporal_kg_llm=_b(
+            "MEMORY_TEMPORAL_KG_LLM",
+            "features.feature_temporal_kg_llm",
+            True,
+            bool,
+            toml_data,
+        ),
+        temporal_kg_llm_tier=_b(
+            "MEMORY_TEMPORAL_KG_LLM_TIER",
+            "features.temporal_kg_llm_tier",
+            "light",
+            str,
+            toml_data,
         ),
         session_memory=_b(
             "MEMORY_SESSION_MEMORY", "session_memory.enabled", False, bool, toml_data
