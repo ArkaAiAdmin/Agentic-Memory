@@ -17,8 +17,6 @@ from typing import Optional
 
 from mcp_common import (
     _resolve_memory_dir,
-    connection_pool,
-    safe_close_db,
     _err,
     ErrorCode,
     with_audit,
@@ -159,72 +157,69 @@ def memory_list_drift_alarms(
             "alarm_level must be one of info|warning|critical",
         )
 
-    conn = connection_pool.get(str(db_path), timeout=30.0)
     try:
-        # 1. Acknowledge first, if requested (atomic with the read).
-        acked_now = 0
-        if acknowledge_ids:
-            now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            placeholders = ",".join("?" * len(acknowledge_ids))
-            params = [now_iso, acknowledged_by, notes] + list(acknowledge_ids)
-            cur = conn.execute(
-                f"UPDATE drift_alarms "
-                f"SET acknowledged_at = ?, acknowledged_by = ?, notes = ? "
-                f"WHERE id IN ({placeholders}) AND acknowledged_at IS NULL",
-                params,
+        from infra.db import open_db
+        with open_db(db_path, timeout=30.0, pooled=True, write=True) as conn:
+            # 1. Acknowledge first, if requested (atomic with the read).
+            acked_now = 0
+            if acknowledge_ids:
+                now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                placeholders = ",".join("?" * len(acknowledge_ids))
+                params = [now_iso, acknowledged_by, notes] + list(acknowledge_ids)
+                cur = conn.execute(
+                    f"UPDATE drift_alarms "
+                    f"SET acknowledged_at = ?, acknowledged_by = ?, notes = ? "
+                    f"WHERE id IN ({placeholders}) AND acknowledged_at IS NULL",
+                    params,
+                )
+                acked_now = cur.rowcount
+                conn.commit()
+
+            # 2. Build the SELECT.
+            where = []
+            params = []
+            if alarm_level:
+                where.append("alarm_level = ?")
+                params.append(alarm_level)
+            if acknowledged is True:
+                where.append("acknowledged_at IS NOT NULL")
+            elif acknowledged is False:
+                where.append("acknowledged_at IS NULL")
+            query = "SELECT id, memory_id, concept, drift_score, threshold, alarm_level, detected_at, acknowledged_at, acknowledged_by, notes FROM drift_alarms"
+            if where:
+                query += " WHERE " + " AND ".join(where)
+            query += " ORDER BY detected_at DESC LIMIT ?"
+            params.append(limit)
+
+            rows = conn.execute(query, params).fetchall()
+
+            total_unack = conn.execute(
+                "SELECT COUNT(*) FROM drift_alarms WHERE acknowledged_at IS NULL"
+            ).fetchone()[0]
+
+            alarms = [
+                {
+                    "id": r[0],
+                    "memory_id": r[1],
+                    "concept": r[2],
+                    "drift_score": r[3],
+                    "threshold": r[4],
+                    "alarm_level": r[5],
+                    "detected_at": r[6],
+                    "acknowledged_at": r[7],
+                    "acknowledged_by": r[8],
+                    "notes": r[9],
+                }
+                for r in rows
+            ]
+            return json.dumps(
+                {
+                    "alarms": alarms,
+                    "count": len(alarms),
+                    "total_unacknowledged": total_unack,
+                    "acknowledged_now": acked_now,
+                }
             )
-            acked_now = cur.rowcount
-            conn.commit()
-
-        # 2. Build the SELECT.
-        where = []
-        params_list: list = []
-        if acknowledged is True:
-            where.append("acknowledged_at IS NOT NULL")
-        elif acknowledged is False:
-            where.append("acknowledged_at IS NULL")
-        if alarm_level:
-            where.append("alarm_level = ?")
-            params_list.append(alarm_level)
-        where_clause = ("WHERE " + " AND ".join(where)) if where else ""
-        params_list.append(limit)
-
-        rows = conn.execute(
-            f"SELECT id, memory_id, concept, drift_score, threshold, "
-            f"alarm_level, detected_at, acknowledged_at, acknowledged_by, "
-            f"notes "
-            f"FROM drift_alarms {where_clause} "
-            f"ORDER BY detected_at DESC LIMIT ?",
-            params_list,
-        ).fetchall()
-
-        total_unack = conn.execute(
-            "SELECT COUNT(*) FROM drift_alarms WHERE acknowledged_at IS NULL"
-        ).fetchone()[0]
-
-        alarms = [
-            {
-                "id": r[0],
-                "memory_id": r[1],
-                "concept": r[2],
-                "drift_score": r[3],
-                "threshold": r[4],
-                "alarm_level": r[5],
-                "detected_at": r[6],
-                "acknowledged_at": r[7],
-                "acknowledged_by": r[8],
-                "notes": r[9],
-            }
-            for r in rows
-        ]
-        return json.dumps(
-            {
-                "alarms": alarms,
-                "count": len(alarms),
-                "total_unacknowledged": total_unack,
-                "acknowledged_now": acked_now,
-            }
-        )
     except sqlite3.OperationalError as e:
         # drift_alarms doesn't exist (pre-v15 DB). The migration
         # should have created it; surface the error so the operator
@@ -237,5 +232,3 @@ def memory_list_drift_alarms(
         return _err(ErrorCode.DB_ERROR, str(e))
     except Exception as e:
         return _err(ErrorCode.DB_ERROR, str(e))
-    finally:
-        safe_close_db(conn)

@@ -410,13 +410,10 @@ def quality_stats(conn: sqlite3.Connection) -> dict:
 
 def quality_stats_db(db_path: str | Path) -> dict:
     """quality_stats with connection lifecycle managed."""
-    from infra.memory_common import connection_pool, safe_close_db
+    from infra.db import open_db
 
-    conn = connection_pool.get(str(db_path))
-    try:
+    with open_db(db_path, pooled=True, write=False) as conn:
         return quality_stats(conn)
-    finally:
-        safe_close_db(conn)
 
 
 from infra.memory_common import make_lazy_getattr

@@ -33,7 +33,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from infra.memory_common import (
-    connection_pool,
     safe_close_db,
     acquire_flock_with_retry,
     release_flock,
@@ -237,24 +236,22 @@ def _detect_schema_features(db_path, conn=None) -> dict:
                 pass
     if cache_key not in _pragma_cache:
         # Cache miss: open a short-lived pooled connection.
-        pool_conn = connection_pool.get(str(db_path), timeout=5.0)
+        from infra.db import open_db
         try:
-            try:
-                pool_conn.execute("PRAGMA busy_timeout = 5000;")
-            except Exception:
-                logger.warning("PRAGMA busy_timeout failed for %s", db_path)
-            try:
-                cols = {
-                    row[1]
-                    for row in pool_conn.execute(
-                        "PRAGMA table_info(memories)"
-                    ).fetchall()
-                }
-            except Exception:
-                logger.warning("PRAGMA table_info failed for %s", db_path)
-                cols = set()
-        finally:
-            safe_close_db(pool_conn)
+            with open_db(db_path, timeout=5.0, pooled=True, write=False) as pool_conn:
+                try:
+                    cols = {
+                        row[1]
+                        for row in pool_conn.execute(
+                            "PRAGMA table_info(memories)"
+                        ).fetchall()
+                    }
+                except Exception:
+                    logger.warning("PRAGMA table_info failed for %s", db_path)
+                    cols = set()
+        except Exception as exc:
+            logger.warning("Failed to open connection to %s: %s", db_path, exc)
+            cols = set()
         with _pragma_cache_lock:
             # Another caller may have populated the cache while we were
             # blocked on the pool; their value is fine, just keep theirs.

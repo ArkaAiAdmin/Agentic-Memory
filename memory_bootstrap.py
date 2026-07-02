@@ -106,7 +106,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # needs to force a feature on for the bootstrap pass, they can set the
 # env var explicitly before importing this module.
 
-from infra.memory_common import safe_close_db, connection_pool
+from infra.memory_common import safe_close_db
 
 
 def get_preferences(conn):
@@ -380,14 +380,13 @@ def get_bootstrap_summary(db_path: str | None = None) -> str:
     if not resolved.exists():
         return "No memory.db found."
 
-    conn = connection_pool.get(str(resolved), timeout=30.0)
-    conn.execute("PRAGMA busy_timeout = 30000;")
-    project_root = None
-    try:
-        project_root = Path.cwd()
-    except Exception:
-        pass
-    try:
+    from infra.db import open_db
+    with open_db(resolved, timeout=30.0, pooled=True, write=False) as conn:
+        project_root = None
+        try:
+            project_root = Path.cwd()
+        except Exception:
+            pass
         pinned = get_pinned_notes(conn)
         high_importance = get_high_importance(conn)
         recent = get_recent_notes(conn)
@@ -439,8 +438,6 @@ def get_bootstrap_summary(db_path: str | None = None) -> str:
             summary = header + compaction + "\n\n" + summary
 
         return summary
-    finally:
-        safe_close_db(conn)
 
 
 def main(db_path: str | None = None):
@@ -463,9 +460,8 @@ def main(db_path: str | None = None):
         print("No memory.db found.")
         sys.exit(1)
 
-    conn = connection_pool.get(str(resolved), timeout=30.0)
-    conn.execute("PRAGMA busy_timeout = 30000;")
-    try:
+    from infra.db import open_db
+    with open_db(resolved, timeout=30.0, pooled=True, write=False) as conn:
         pinned = get_pinned_notes(conn)
         high_importance = get_high_importance(conn)
         recent = get_recent_notes(conn)
@@ -493,8 +489,6 @@ def main(db_path: str | None = None):
                 print(n["content"])
         else:
             print(format_summary(pinned, high_importance, recent, stats, preferences))
-    finally:
-        safe_close_db(conn)
 
 
 if __name__ == "__main__":

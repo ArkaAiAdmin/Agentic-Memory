@@ -9,8 +9,6 @@ sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
 from config import resolve_db_path
 from infra.memory_common import (
     atomic_write,
-    connection_pool,
-    safe_close_db,
 )
 from infra.memory_config import get_memory_paths
 
@@ -29,12 +27,11 @@ def rewrite_wikilinks(dry_run: bool = False, db_path: Path | None = None):
             "Error: Database not found. Run rebuild_index.py first to build the global note maps."
         )
         return
-    # Get all active note mappings from database
-    db = connection_pool.get(str(db_path))
-    cursor = db.cursor()
-    cursor.execute("SELECT id, source_file FROM memories")
-    note_maps = {row[0]: row[1] for row in cursor.fetchall()}
-    safe_close_db(db)
+    from infra.db import open_db
+    with open_db(db_path, pooled=True, write=False) as db:
+        cursor = db.cursor()
+        cursor.execute("SELECT id, source_file FROM memories")
+        note_maps = {row[0]: row[1] for row in cursor.fetchall()}
     # Process all markdown files
     notes_files = list(local_mem.glob("**/*.md"))
     modified_count = 0

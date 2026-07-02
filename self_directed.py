@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from infra.memory_common import connection_pool, safe_close_db
+from infra.memory_common import safe_close_db
 
 __all__ = [
     "SELF_DIRECTED_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -688,13 +688,9 @@ def tier_stats(conn: sqlite3.Connection) -> dict:
 
 def tier_stats_db(db_path: str | Path) -> dict:
     """tier_stats with connection lifecycle managed."""
-
-    conn = connection_pool.get(str(db_path), timeout=10)
-    conn.execute("PRAGMA busy_timeout = 10000;")
-    try:
+    from infra.db import open_db
+    with open_db(db_path, timeout=10.0, pooled=True, write=False) as conn:
         return tier_stats(conn)
-    finally:
-        safe_close_db(conn)
 
 
 from infra.memory_common import make_lazy_getattr

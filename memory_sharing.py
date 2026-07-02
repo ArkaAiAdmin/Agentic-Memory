@@ -32,7 +32,7 @@ from typing import Any
 from config import resolve_db_path
 
 from infra.db_write_queue import sqlite_write_queue
-from infra.memory_common import safe_close_db, connection_pool
+from infra.memory_common import safe_close_db
 
 __all__ = [
     "MULTI_AGENT_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -224,8 +224,8 @@ def list_shared_memories(
             return {"enabled": True, "error": "memory_common not found"}
 
     try:
-        conn = connection_pool.get(db)
-        try:
+        from infra.db import open_db
+        with open_db(db, pooled=True, write=True) as conn:
             _ensure_shared_table(conn)
 
             query = f"SELECT id, agent_id, content, category, tags, shared_at, source_note_id FROM {_SHARED_TABLE}"
@@ -260,8 +260,6 @@ def list_shared_memories(
                 }
                 for r in rows
             ]
-        finally:
-            safe_close_db(conn)
     except Exception:
         logger.warning("Failed to get pending shared memories")
         return []
@@ -663,8 +661,8 @@ def list_share_candidates(
             return {"error": "memory_common not found"}
 
     try:
-        conn = connection_pool.get(db)
-        try:
+        from infra.db import open_db
+        with open_db(db, pooled=True, write=True) as conn:
             _ensure_shared_table(conn)
             rows = conn.execute(
                 """
@@ -693,8 +691,6 @@ def list_share_candidates(
                 }
                 for r in rows
             ]
-        finally:
-            safe_close_db(conn)
     except Exception as e:
         logger.warning("list_share_candidates failed: %s", e)
         return {"error": str(e)}

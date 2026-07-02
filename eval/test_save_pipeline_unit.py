@@ -483,8 +483,8 @@ class TestEnsureDbExists(_TempDbTestMixin, unittest.TestCase):
         from save_pipeline import _ensure_db_exists
         from unittest.mock import patch
 
-        with patch("save_pipeline.connection_pool") as mock_pool:
-            mock_pool.get.side_effect = Exception("DB error")
+        with patch("save_pipeline.open_db") as mock_open:
+            mock_open.side_effect = Exception("DB error")
             result = _ensure_db_exists(Path("/nonexistent/db.sqlite"))
             # Should return False on error, not raise
             self.assertFalse(result, "Should return False on error")

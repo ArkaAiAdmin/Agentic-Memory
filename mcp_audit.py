@@ -15,9 +15,7 @@ from mcp_common import (
     _err,
     ErrorCode,
     GLOBAL_MEM_DIR,
-    connection_pool,
     run_db_migrations,
-    safe_close_db,
     logger,
     with_audit,
 )
@@ -35,14 +33,12 @@ def memory_audit() -> str:
             f"No memory database found. Looked at:\n  - local:  {db_path} (cwd resolves to a project with no `memory/`)\n  - global: {GLOBAL_MEM_DIR / 'memory.db'}\nRun memory_rebuild first, or pass is_global=True to memory_save.",
         )
     try:
-        db = connection_pool.get(str(db_path), timeout=30.0)
-        db.execute("PRAGMA busy_timeout = 30000;")
-        run_db_migrations(db)
-        db.row_factory = sqlite3.Row
-        rows = db.execute(
-            "SELECT id, content, created_at, updated_at, access_count, pinned FROM memories"
-        ).fetchall()
-        safe_close_db(db)
+        from infra.db import open_db
+        with open_db(db_path, timeout=30.0, pooled=True, row_factory=sqlite3.Row, write=True) as db:
+            run_db_migrations(db)
+            rows = db.execute(
+                "SELECT id, content, created_at, updated_at, access_count, pinned FROM memories"
+            ).fetchall()
         if not rows:
             return "No memories found to audit."
         now = datetime.now(timezone.utc)

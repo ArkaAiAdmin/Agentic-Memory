@@ -14,7 +14,7 @@ from collections import Counter
 from pathlib import Path
 
 from config import resolve_db_path
-from infra.memory_common import safe_close_db, connection_pool, GLOBAL_MEM_DIR
+from infra.memory_common import safe_close_db, GLOBAL_MEM_DIR
 
 __all__ = [
     "SUMMARIZATION_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -378,8 +378,8 @@ def summarization_stats(db_path: str | None = None) -> dict:
             return {"enabled": True, "error": "memory_common not found"}
 
     try:
-        conn = connection_pool.get(db)
-        try:
+        from infra.db import open_db
+        with open_db(db, pooled=True, write=False) as conn:
             total = conn.execute(
                 "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
             ).fetchone()[0]
@@ -399,8 +399,6 @@ def summarization_stats(db_path: str | None = None) -> dict:
                 "already_summarized": summarized,
                 "min_content_length": _MIN_CONTENT_LENGTH,
             }
-        finally:
-            safe_close_db(conn)
     except Exception:
         return {"enabled": True, "error": "stats unavailable"}
 
