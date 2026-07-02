@@ -66,12 +66,13 @@ def jaccard_similarity(set1: set, set2: set) -> float:
     return intersection / union if union > 0 else 0.0
 
 
-def consolidate_memory_facts(db_path: Path | None = None):
+def consolidate_memory_facts(db_path: Path | str | None = None):
     if db_path is None:
         _, local_mem, _ = get_memory_paths()
         db_path = local_mem / "memory.db"
     else:
-        local_mem = resolve_db_path(str(db_path)).parent
+        db_path = Path(db_path)
+        local_mem = resolve_db_path(db_path).parent
 
     print(f"=== Running System 2 Memory Consolidation: {local_mem.parent} ===")
 

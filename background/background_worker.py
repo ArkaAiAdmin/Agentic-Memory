@@ -103,9 +103,10 @@ def handle_fact_consolidation(
 ) -> str:
     """Run fact consolidation (merge similar SPO triples)."""
     try:
+        from pathlib import Path as _P
         from fact.consolidate_facts import consolidate_memory_facts
 
-        consolidate_memory_facts(db_path=db_path)
+        consolidate_memory_facts(db_path=_P(db_path))
         return "fact consolidation completed"
     except Exception as e:
         raise RuntimeError(f"fact_consolidation failed: {e}") from e

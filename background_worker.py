@@ -37,3 +37,6 @@ if __name__ in sys.modules:
     _shim = sys.modules[__name__]
     _shim.__class__ = _ShimModule
     object.__setattr__(_shim, '_real', _real)
+
+if __name__ == '__main__':
+    raise SystemExit(_real.main())
