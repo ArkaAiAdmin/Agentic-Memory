@@ -52,7 +52,9 @@ DEFAULT_THRESHOLD = 0.15
 # so all alerts (DRIFT, BASELINE, ERROR) flow through here. Verbose
 # per-event detail only prints when --verbose is set, keeping the
 # default cron log readable.
-logger = logging.getLogger("cron_concept_drift")
+from infra.log import setup_logging
+
+logger = setup_logging("cron_concept_drift")
 
 
 def _get_threshold() -> float:
@@ -122,9 +124,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # Default cron log level is WARNING (errors and drift alerts only).
     # --verbose promotes to INFO so the OK/DRIFT/BASELINE lines print.
-    logging.basicConfig(
-        level=logging.INFO if args.verbose else logging.WARNING,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    setup_logging(
+        "cron_concept_drift",
+        level="INFO" if args.verbose else "WARNING",
+        fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
 

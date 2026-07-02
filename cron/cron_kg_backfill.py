@@ -70,10 +70,9 @@ sys.path.insert(0, _parent)
 from infra.memory_common import open_db
 from infra.infrastructure import resolve_active_memory_dir
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
-)
-logger = logging.getLogger("cron_kg_backfill")
+from infra.log import setup_logging
+
+logger = setup_logging("cron_kg_backfill", level="INFO", fmt="%(asctime)s [%(levelname)s] %(message)s")
 
 
 # Hard-coded cron defaults — Sunday 03:00, after FTS rebuild at 02:30.

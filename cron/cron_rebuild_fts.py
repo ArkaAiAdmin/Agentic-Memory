@@ -29,10 +29,9 @@ sys.path.insert(0, _parent)
 from infra.memory_common import open_db
 from infra.infrastructure import resolve_active_memory_dir
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
-)
-logger = logging.getLogger("cron_rebuild_fts")
+from infra.log import setup_logging
+
+logger = setup_logging("cron_rebuild_fts", level="INFO", fmt="%(asctime)s [%(levelname)s] %(message)s")
 
 
 def _fts_tables(conn: sqlite3.Connection) -> list[str]:

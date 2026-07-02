@@ -21,7 +21,14 @@ from _flock import acquire_lock_or_exit
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
+_parent = os.path.dirname(os.path.abspath(__file__))
+if os.path.basename(_parent) == "cron":
+    _parent = os.path.dirname(_parent)
+if _parent not in sys.path:
+    sys.path.insert(0, _parent)
+
+from infra.log import setup_logging
+logger = setup_logging(__name__)
 
 _DAYS = 30
 _MIN_EXAMPLES = 10
@@ -129,7 +136,7 @@ def _sgd_train(X: np.ndarray, y: np.ndarray, epochs: int = _EPOCHS, lr: float = 
 
 def main() -> int:
     os.chdir(str(Path(__file__).resolve().parent.parent))
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    setup_logging(__name__, level="INFO", fmt="%(asctime)s %(levelname)s %(message)s")
     acquire_lock_or_exit("cron_train_forget_model")
 
     db_path = _db_path()

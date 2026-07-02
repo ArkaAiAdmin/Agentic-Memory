@@ -19,11 +19,13 @@ import sys
 import time
 from pathlib import Path
 
-logger = logging.getLogger("cron_health_check")
-
 os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from infra.log import setup_logging
+
+logger = setup_logging("cron_health_check")
 
 from infra.memory_common import GLOBAL_MEM_DIR
 from infra.infrastructure import resolve_active_memory_dir

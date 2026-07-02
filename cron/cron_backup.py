@@ -27,15 +27,15 @@ import subprocess
 import time
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
-
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
 from infra.memory_common import GLOBAL_MEM_DIR, safe_close_db
 from infra.infrastructure import resolve_active_memory_dir
+from infra.log import setup_logging
+
+logger = setup_logging(__name__)
 
 BACKUP_DIR_NAME = "backups"
 MAX_BACKUPS = 3  # Keep 3 daily backups (compressed, ~50MB each)

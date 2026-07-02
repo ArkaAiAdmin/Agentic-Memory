@@ -17,15 +17,17 @@ Usage (in crontab, every 5 minutes):
 
 from __future__ import annotations
 
-import logging
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-logger = logging.getLogger("cron_daemon_watchdog")
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+
+from infra.log import setup_logging
+logger = setup_logging("cron_daemon_watchdog")
 LOG_FILE = REPO / "memory" / "watchdog-daemon.log"
 
 
@@ -76,7 +78,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    setup_logging("cron_daemon_watchdog", level="INFO", fmt="%(asctime)s %(name)s %(levelname)s %(message)s")
     try:
         from _flock import acquire_lock_or_exit
 

@@ -1,0 +1,19 @@
+- `[x]` Create a new branch `refactor/logging-consolidation`
+- `[x]` Create the new helper module `infra/log.py`
+- `[x]` Refactor cron scripts to use `setup_logging`:
+  - `[x]` `cron_auto_share.py`
+  - `[x]` `cron_backup.py`
+  - `[x]` `cron_backup_validate.py`
+  - `[x]` `cron_concept_drift.py`
+  - `[x]` `cron_crdt_sync.py`
+  - `[x]` `cron_daemon_watchdog.py`
+  - `[x]` `cron_embedding_recompute.py`
+  - `[x]` `cron_health_check.py`
+  - `[x]` `cron_kg_backfill.py`
+  - `[x]` `cron_rebuild_fts.py`
+  - `[x]` `cron_sync.py`
+  - `[x]` `cron_tier_migration.py`
+  - `[x]` `cron_train_forget_model.py`
+- `[x]` Create a unit test `eval/test_infra_log.py`
+- `[/]` Run all tests to verify the suite passes
+- `[ ]` Merge the changes to main and push

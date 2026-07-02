@@ -41,14 +41,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _flock import acquire_lock_or_exit  # noqa: E402
 
-import logging
-logger = logging.getLogger(__name__)
-
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
 from infra.memory_common import GLOBAL_MEM_DIR, safe_close_db
+from infra.log import setup_logging
+
+logger = setup_logging(__name__)
 
 BACKUP_DIR_NAME = "backups"
 CURRENT_SCHEMA_VERSION = 23
@@ -249,7 +249,7 @@ def main() -> int:
         print(__doc__.strip(), file=sys.stderr)
         return 0
 
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    setup_logging(__name__, level="INFO", fmt="%(message)s")
 
     if "--install-cron" in sys.argv:
         res = install_cron()
