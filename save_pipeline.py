@@ -539,8 +539,8 @@ def _upsert_memory_row(
                 f"INSERT INTO file_mtimes ({fm_path_col}, mtime, content_hash) VALUES (?, strftime('%s', 'now'), '') ON CONFLICT({fm_path_col}) DO UPDATE SET mtime = excluded.mtime",
                 (source_file,),
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("file_mtimes update skipped for %s: %s", source_file, e)
 
 
 def upsert_row(
@@ -1097,8 +1097,8 @@ def _acquire_db_connection(db_path_obj, category, title_slug, start_time, tenant
                 latency_ms=(time.time() - start_time) * 1000.0,
                 error=str(e)[:500],
             )
-        except Exception:
-            pass
+        except Exception as audit_exc:
+            logger.warning("audit.enqueue_audit failed after DB error: %s", audit_exc)
         return _err(ErrorCode.DB_ERROR, f"saving memory: {e}")
 
 

@@ -89,8 +89,9 @@ async def async_memory_save_batch(items: list) -> list[tuple[str, float]]:
     for r in done:
         if isinstance(r, BaseException):
             results.append((f"Error: {r}", elapsed / len(items)))
+        elif not isinstance(r, str):
+            results.append((f"Error: unexpected type {type(r).__name__}", elapsed / len(items)))
         else:
-            assert isinstance(r, str)
             results.append((r, elapsed / len(items)))
     return results
 
@@ -117,7 +118,8 @@ async def async_memory_search_batch(queries: list) -> list[tuple[str, float]]:
     for r in done:
         if isinstance(r, BaseException):
             results.append((f"Error: {r}", elapsed / len(queries)))
+        elif not isinstance(r, str):
+            results.append((f"Error: unexpected type {type(r).__name__}", elapsed / len(queries)))
         else:
-            assert isinstance(r, str)
             results.append((r, elapsed / len(queries)))
     return results
