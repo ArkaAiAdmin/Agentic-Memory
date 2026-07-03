@@ -310,6 +310,32 @@ def crdt_save(
 
     db_path = Path(db_path)
 
+    # P0-1 fix (2026-07-03): scan remote content for prompt injection
+    # before any DB mutation. This closes the CRDT injection bypass where
+    # pull_from_peer feeds unvalidated remote content directly into
+    # crdt_save, bypassing the 8-layer injection-defense in save_memory.
+    try:
+        from save_pipeline import _scan_for_injection_or_skip
+
+        inj_result = _scan_for_injection_or_skip(content, category or "", note_id)
+        if inj_result is not None:
+            logger.warning(
+                "crdt_save: rejected injection-suspicious content from %s for %s: %s",
+                remote_agent_id,
+                note_id,
+                inj_result,
+            )
+            return {
+                "applied": False,
+                "rejected": True,
+                "conflict": False,
+                "policy_used": None,
+                "archived_id": None,
+                "conflict_id": None,
+            }
+    except Exception as _inject_exc:
+        logger.debug("crdt_save: injection scan failed (benign): %s", _inject_exc)
+
     # 2026-06-20 (v13): if the memory_field_crdt table exists, use
     # the field-level LWWES path. This is a CRDT-correct merge:
     # concurrent edits to different fields both win. The legacy

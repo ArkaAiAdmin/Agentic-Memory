@@ -640,6 +640,33 @@ def crdt_field_save(
         db_path_obj = Path(cast(str | Path, db_path))
         conn_context = open_db(db_path_obj, timeout=10.0)
 
+    # P0-1 fix (2026-07-03): scan remote content for prompt injection
+    # before any DB mutation. Closes the CRDT injection bypass where
+    # remote peer content enters via pull_from_peer → crdt_field_save
+    # without passing through the injection-defense layer.
+    try:
+        from save_pipeline import _scan_for_injection_or_skip
+
+        inj_result = _scan_for_injection_or_skip(content, category or "", note_id)
+        if inj_result is not None:
+            logger.warning(
+                "crdt_field_save: rejected injection-suspicious content from %s for %s: %s",
+                remote_agent_id,
+                note_id,
+                inj_result,
+            )
+            return {
+                "applied": False,
+                "rejected": True,
+                "conflict": False,
+                "policy_used": None,
+                "fields_applied": [],
+                "archived_id": None,
+                "conflict_id": None,
+            }
+    except Exception as _inject_exc:
+        logger.debug("crdt_field_save: injection scan failed (benign): %s", _inject_exc)
+
     now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
     tags = tags or "[]"
 
