@@ -416,25 +416,29 @@ def compile_concept(
     # Persist a row in memories so the concept is searchable.
     try:
         existing = conn.execute(
-            "SELECT id FROM memories WHERE note_id = ?",
+            "SELECT id FROM memories WHERE id = ?",
             (concept_id,),
         ).fetchone()
         if existing:
             conn.execute(
-                "UPDATE memories SET content = ?, updated_at = ? WHERE note_id = ?",
+                "UPDATE memories SET content = ?, updated_at = ? WHERE id = ?",
                 (md, time.time(), concept_id),
             )
         else:
             conn.execute(
                 """
                 INSERT INTO memories
-                    (note_id, category, content, tags, pinned,
-                     is_global, created_at, updated_at, importance, metadata)
-                VALUES (?, 'concepts', ?, '', 0, 0, ?, ?, 3, ?)
+                    (id, source_file, category, content, tags, pinned,
+                     created_at, updated_at, observed_at, importance, metadata)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 3, ?)
                 """,
                 (
                     concept_id,
+                    f"concepts/{slug}.md",
+                    "concepts",
                     md,
+                    "[]",
+                    time.time(),
                     time.time(),
                     time.time(),
                     json.dumps({
@@ -542,13 +546,13 @@ def enrich_existing_skill(
         conn.execute(
             """
             INSERT OR IGNORE INTO memories
-                (note_id, category, content, tags, pinned,
-                 is_global, created_at, updated_at, importance, metadata)
-            VALUES (?, ?, ?, '', 0, 0, ?, ?, 3, ?)
+                (id, source_file, category, content, tags, pinned,
+                 created_at, updated_at, observed_at, importance, metadata)
+            VALUES (?, ?, ?, '', 0, ?, ?, ?, 3, ?)
             """,
             (
-                note_id, subdir, md,
-                time.time(), time.time(),
+                note_id, str(out_file), subdir, md,
+                time.time(), time.time(), time.time(),
                 json.dumps({"derived_from": [memory_id], "kind": kind}),
             ),
         )

@@ -63,8 +63,9 @@ class TestConceptCompilation:
         ids = []
         for i in range(count):
             slug = f"{prefix}-{i}"
+            name = f"Concept {chr(65 + i)}"
             save_memory(
-                content=f"# Memory {i}\n\nThis is about {' and '.join(f'concept_{chr(97+j)}' for j in range(i + 1))}.",
+                content=f"# Memory {i}\n\n{name} is a kind of knowledge.",
                 title_slug=slug, category="lessons", db_path=p,
             )
             ids.append(f"lessons/{slug}")
@@ -80,16 +81,18 @@ class TestConceptCompilation:
         with open_db(db_path_str, timeout=10.0) as db:
             result = compile_concept(db, db_path_str, memory_ids=ids)
 
-        # compile_concept returns None if no facts are gathered
-        if result is None:
-            pytest.skip("no facts to compile (compilation needs entity extraction which may be empty)")
+        assert result is not None, (
+            "compile_concept returned None — no facts gathered. "
+            "Verify _index_all_facts creates kg_facts with source_memory matching memory_ids."
+        )
 
-        from infra.db import open_db
         with open_db(db_path_str, timeout=10.0) as db:
             concepts = db.execute(
                 "SELECT id FROM memories WHERE id LIKE 'concepts/%'"
             ).fetchall()
-            assert len(concepts) >= 1
+            assert len(concepts) >= 1, (
+                f"Expected at least 1 concept row, got {len(concepts)}"
+            )
 
     def test_concept_entry_carries_derived_from(self, db_path_str):
         ids = self._save(db_path_str, count=3, prefix="derived-test")
@@ -101,8 +104,10 @@ class TestConceptCompilation:
         with open_db(db_path_str, timeout=10.0) as db:
             result = compile_concept(db, db_path_str, memory_ids=ids)
 
-        if result is None:
-            pytest.skip("no facts to compile")
+        assert result is not None, (
+            "compile_concept returned None — no facts gathered. "
+            "Verify _index_all_facts creates kg_facts with source_memory matching memory_ids."
+        )
 
         with open_db(db_path_str, timeout=10.0) as db:
             concept = db.execute(
