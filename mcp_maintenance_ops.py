@@ -159,6 +159,8 @@ def _get_domain_tools() -> dict:
             memory_facts_list,
             memory_facts_stats,
             memory_graph_stats,
+            memory_graph_insights,
+            memory_graph_evolution,
             memory_facts_search,
             memory_graph_search,
         )
@@ -180,6 +182,8 @@ def _get_domain_tools() -> dict:
             "memory_agent_list": memory_agent_list,
             "memory_graph_shortest_path": memory_graph_shortest_path,
             "memory_graph_traverse": memory_graph_traverse,
+            "memory_graph_insights": memory_graph_insights,
+            "memory_graph_evolution": memory_graph_evolution,
             "memory_sdk_demo": memory_sdk_demo,
             "memory_auto_share": memory_auto_share,
             "memory_share": memory_share,
@@ -447,6 +451,12 @@ def _get_handlers() -> dict:
             ),
             MaintenanceOp.FACTS_STATS: lambda **_: t["memory_facts_stats"](),
             MaintenanceOp.GRAPH_STATS: lambda **_: t["memory_graph_stats"](),
+            MaintenanceOp.GRAPH_INSIGHTS: lambda *, sample_size=20, include_bridge=True, **_: t[
+                "memory_graph_insights"
+            ](sample_size=sample_size, include_bridge=include_bridge),
+            MaintenanceOp.GRAPH_EVOLUTION: lambda *, since="24h", limit=5, **_: t[
+                "memory_graph_evolution"
+            ](since=since, limit=limit),
             MaintenanceOp.PROFILE_STATS: lambda **_: t["memory_profile_stats"](),
             MaintenanceOp.LLM_UNLOAD: lambda **_: t["memory_llm_unload"](),
             MaintenanceOp.ADAPTIVE_RETENTION: lambda *, dry_run=False, **_: t[

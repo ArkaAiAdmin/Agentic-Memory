@@ -94,6 +94,10 @@ class TestSarcasmContradiction(unittest.TestCase):
         self.assertGreater(neg2, 0)
 
     def test_sarcasm_contradiction_semantic(self):
+        from infra.embedding_search import get_embedding_search
+        if get_embedding_search().model is None:
+            raise unittest.SkipTest("model2vec not available")
+
         # Insert a note claiming the script works fine.
         _insert_note(
             self.db_path,

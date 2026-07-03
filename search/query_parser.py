@@ -432,9 +432,9 @@ def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
     These terms are added to the FTS query to boost recall for notes
     that mention KG-related entities but don't contain the original query tokens.
 
-    The Graph-RAG config flags are read from search_pipeline's lazy
-    __getattr__ to keep this module decoupled from the orchestrator's
-    config-resolution machinery.
+    Sprint 4 community-aware mode: when a query entity has a non-zero
+    community_id in kg_entities, prefer expansion terms from the same
+    community to reduce cross-topic false positives.
     """
     import search_pipeline
 
@@ -466,21 +466,61 @@ def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
         with open_db(db_path) as conn:
             all_related = []
             combined_query = " ".join(name for name, _ in query_entities[:5])
+
+            query_entity_ids: set[int] = set()
+            for name, _ in query_entities[:3]:
+                try:
+                    rows = conn.execute(
+                        "SELECT id, community_id FROM kg_entities WHERE lower(name) = ? AND community_id IS NOT NULL AND community_id != 0 LIMIT 1",
+                        (name.lower(),),
+                    ).fetchall()
+                    if rows:
+                        query_entity_ids.add(int(rows[0][0]))
+                except Exception:
+                    pass
+
             results = _graph_search(
                 conn,
                 combined_query,
                 limit=10,
                 max_hops=getattr(search_pipeline, "_GRAPH_RAG_MAX_HOPS", 3),
             )
+            entity_communities: dict[str, int] = {}
+            for entity in results.get("entities", []):
+                eid = entity.get("id")
+                comm = entity.get("community_id")
+                if eid is not None and comm:
+                    entity_communities[str(eid)] = int(comm)
+
+            same_community_terms: list[str] = []
+            other_terms: list[str] = []
             for entity in results.get("entities", []):
                 display = entity.get("name", "")
-                if display and display.lower() not in {
-                    n.lower() for n, _ in query_entities
-                }:
-                    all_related.append(display)
+                if not display or display.lower() in {n.lower() for n, _ in query_entities}:
+                    continue
+                eid = entity.get("id")
+                comm = entity.get("community_id")
+                if query_entity_ids and eid is not None and comm:
+                    eid_int = int(eid)
+                    try:
+                        in_same_community = any(
+                            conn.execute(
+                                "SELECT 1 FROM kg_entities WHERE id = ? AND community_id = (SELECT community_id FROM kg_entities WHERE id = ? LIMIT 1)",
+                                (eid_int, qid),
+                            ).fetchone()
+                            for qid in query_entity_ids
+                        )
+                    except Exception:
+                        in_same_community = False
+                    if in_same_community:
+                        same_community_terms.append(display)
+                        continue
+                other_terms.append(display)
+
+            combined = same_community_terms + other_terms
             seen = set()
             expanded = []
-            for name in all_related:
+            for name in combined:
                 key = name.lower()
                 if key not in seen:
                     seen.add(key)

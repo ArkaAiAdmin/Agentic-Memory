@@ -18,17 +18,11 @@ from infra.memory_common import open_db, connection_pool  # noqa: E402
 from infra.embedding_search import get_embedding_search  # noqa: E402
 from kg.contradiction_detector import detect_contradictions_semantic  # noqa: E402
 
+_HAVE_EMBEDDING = get_embedding_search().model is not None
 
+
+@unittest.skipIf(not _HAVE_EMBEDDING, "model2vec not available; skipping semantic contradiction tests")
 class TestAntonymContradictions(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        # Warm the singleton model to verify it's available
-        cls.es = get_embedding_search()
-        if cls.es.model is None:
-            raise unittest.SkipTest(
-                "model2vec/numpy not available in venv; skipping semantic contradiction tests"
-            )
-
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp(prefix="antonym_contradiction_test_")
         self.db_path = Path(self.tmpdir) / "memory.db"

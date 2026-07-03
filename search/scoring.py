@@ -589,6 +589,95 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
     return modified
 
 
+def _apply_centrality_boost(scored_results: list, db_path: Path) -> list:
+    """Sprint 4 read path: boost results whose linked entities include high-centrality nodes.
+
+    Reads avg entity centrality from kg_entities.centrality for entities
+    attached to each memory via metadata.entities.  Multiplies final_score
+    by a small factor (up to 1.25× for the highest-centrality entities).
+
+    Gated behind config flag MEMORY_GRAPH_CENTRALITY_BOOST=1.
+
+    Best-effort: failures degrade to no-op.
+    """
+    if not scored_results:
+        return scored_results
+    try:
+        from infra._lazy_imports import get_config
+        if str(get_config().graph_centrality_boost).lower() not in ("1", "true", "yes"):
+            return scored_results
+    except Exception:
+        return scored_results
+
+    try:
+        from infra._lazy_imports import connection_pool
+
+        db = connection_pool.get(str(db_path), timeout=5.0)
+    except Exception:
+        return scored_results
+
+    try:
+        centrality_rows = db.execute(
+            "SELECT id, centrality FROM kg_entities WHERE centrality IS NOT NULL"
+        ).fetchall()
+    except Exception:
+        return scored_results
+    finally:
+        try:
+            connection_pool.put(db)
+        except Exception:
+            pass
+
+    if not centrality_rows:
+        return scored_results
+
+    centrality_map: dict[int, float] = {int(eid): float(score) for eid, score in centrality_rows}
+    max_centrality = max(centrality_map.values()) if centrality_map else 1.0
+
+    _CENTRALITY_BOOST_FACTOR = 1.25
+    _CENTRALITY_BOOST_MAX = 1.25
+
+    modified = []
+    for r in scored_results:
+        (
+            note_id,
+            content,
+            source_file,
+            tags_json,
+            created,
+            rank,
+            final_score,
+            fitness,
+            importance,
+            pinned,
+        ) = r[:10]
+        last_accessed = r[10] if len(r) > 10 else None
+        metadata_json = r[11] if len(r) > 11 else None
+        boosted = float(final_score or 0.0)
+
+        entity_centralities: list[float] = []
+        try:
+            meta = json.loads(metadata_json) if isinstance(metadata_json, str) else (metadata_json or {})
+            result_entities = [int(e) for e in (meta.get("entities") or []) if e is not None]
+            for eid in result_entities:
+                if eid in centrality_map:
+                    entity_centralities.append(centrality_map[eid])
+        except Exception:
+            pass
+
+        if entity_centralities:
+            avg_centrality = sum(entity_centralities) / len(entity_centralities)
+            normalized = avg_centrality / max(max_centrality, 1e-9)
+            boost = 1.0 + normalized * (_CENTRALITY_BOOST_FACTOR - 1.0)
+            boosted *= min(boost, _CENTRALITY_BOOST_MAX)
+
+        new_r = list(r)
+        if len(new_r) >= 7:
+            new_r[6] = boosted
+        modified.append((tuple(new_r) if isinstance(r, tuple) else new_r))
+    return modified
+
+
 def compute_channel_weights(db_path: Path) -> Optional[dict]:
     """Compute channel weights from CTR feedback data.
 

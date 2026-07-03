@@ -5,6 +5,18 @@ and graph traversal.  Root-level shims re-export everything here
 for backward compatibility.
 """
 
+from kg.graph_analytics import (  # noqa: F401
+    compute_pagerank,
+    update_graph_analytics,
+    compute_betweenness,
+    update_betweenness,
+)
+from kg.graph_communities import (  # noqa: F401
+    connected_components,
+    louvain_communities,
+    compute_communities,
+    write_community_ids,
+)
 from kg.contradiction_detector import (  # noqa: F401
     detect_contradictions,
     detect_contradictions_semantic,
@@ -42,6 +54,16 @@ from kg.temporal_resolver import (  # noqa: F401
 )
 
 __all__ = [
+    # graph_analytics
+    "compute_pagerank",
+    "update_graph_analytics",
+    "compute_betweenness",
+    "update_betweenness",
+    # graph_communities
+    "connected_components",
+    "louvain_communities",
+    "compute_communities",
+    "write_community_ids",
     # contradiction_detector
     "detect_contradictions",
     "detect_contradictions_semantic",

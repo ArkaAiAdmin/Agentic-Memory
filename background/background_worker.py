@@ -393,11 +393,84 @@ def _lazy_skill_enrichment(payload: dict, conn: AnyConnection, db_path: Path) ->
     return handle_skill_enrichment(payload, conn, db_path)
 
 
+def _lazy_graph_communities(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from kg.graph_communities import compute_communities, write_community_ids
+
+    algorithm = payload.get("algorithm", "louvain")
+    resolution = float(payload.get("resolution", 1.0))
+    min_component_size = int(payload.get("min_component_size", 1))
+    membership = compute_communities(
+        conn, algorithm=algorithm, resolution=resolution,
+        min_component_size=min_component_size,
+    )
+    updated = write_community_ids(conn, membership)
+    conn.commit()
+    return f"graph_communities ({algorithm}): {updated} entities assigned to communities"
+
+
+def _lazy_graph_snapshots(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from kg.graph_analytics import compute_pagerank
+    from kg.graph_communities import connected_components
+    import json as _json
+    import time as _time
+
+    now = _time.time()
+    entity_count = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
+    edge_count = conn.execute(
+        "SELECT COUNT(*) FROM kg_edges WHERE invalid_at IS NULL OR invalid_at = ''"
+    ).fetchone()[0]
+
+    cc = connected_components(conn)
+    community_count = len(set(cc.values()))
+
+    pr = compute_pagerank(conn)
+    all_centralities = list(pr.values())
+    avg_centrality = sum(all_centralities) / len(all_centralities) if all_centralities else 0.0
+
+    top_entities = []
+    for eid, score in sorted(pr.items(), key=lambda x: x[1], reverse=True)[:10]:
+        name_row = conn.execute("SELECT name FROM kg_entities WHERE id = ?", (eid,)).fetchone()
+        top_entities.append({"name": name_row[0] if name_row else str(eid), "centrality": round(score, 6)})
+
+    last_snapshot = conn.execute(
+        "SELECT new_entities, removed_entities FROM graph_snapshots ORDER BY captured_at DESC LIMIT 1"
+    ).fetchone()
+    new_entities: list[str] = []
+    removed_entities: list[str] = []
+    if last_snapshot:
+        try:
+            new_entities = _json.loads(last_snapshot[0]) if last_snapshot[0] else []
+            removed_entities = _json.loads(last_snapshot[1]) if last_snapshot[1] else []
+        except Exception:
+            pass
+
+    conn.execute(
+        """INSERT INTO graph_snapshots
+           (captured_at, entity_count, edge_count, community_count,
+            avg_centrality, top_entities, new_entities, removed_entities)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            now,
+            entity_count,
+            edge_count,
+            community_count,
+            round(avg_centrality, 12),
+            _json.dumps(top_entities),
+            _json.dumps(new_entities),
+            _json.dumps(removed_entities),
+        ),
+    )
+    conn.commit()
+    return f"graph_snapshot: entities={entity_count}, edges={edge_count}, communities={community_count}"
+
+
 HANDLERS.update(
     {
         "entailment_chains": _lazy_entailment_chains,
         "concept_compilation": _lazy_concept_compilation,
         "skill_enrichment": _lazy_skill_enrichment,
+        "graph_communities": _lazy_graph_communities,
+        "graph_snapshots": _lazy_graph_snapshots,
     }
 )
 

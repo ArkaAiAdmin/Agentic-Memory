@@ -21,14 +21,13 @@ import infra.embedding_search as embedding_search  # noqa: E402
 from infra.embedding_search import EmbeddingSearch, get_embedding_search  # noqa: E402
 import numpy as np
 
+_HAVE_EMBEDDING = get_embedding_search().model is not None
 
+
+@unittest.skipIf(not _HAVE_EMBEDDING, "model2vec not available; skipping embedding tests")
 class TestEmbeddingSingleton(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Warm the singleton once so individual tests measure steady-state
-        # behavior. The warmup is paid in setUpClass rather than setUp so
-        # the timing test (test_get_singleton_warm_start_under_50ms) sees a
-        # cached instance.
         cls.singleton = get_embedding_search()
         if cls.singleton.model is None:
             raise unittest.SkipTest(

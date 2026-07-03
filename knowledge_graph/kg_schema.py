@@ -92,6 +92,16 @@ def ensure_kg_schema(conn: AnyConnection) -> None:
         }
         if "centrality" not in cols_entities:
             conn.execute("ALTER TABLE kg_entities ADD COLUMN centrality REAL DEFAULT 0.0")
+        if "community_id" not in cols_entities:
+            try:
+                conn.execute("ALTER TABLE kg_entities ADD COLUMN community_id INTEGER DEFAULT 0")
+            except Exception:
+                pass
+        if "betweenness" not in cols_entities:
+            try:
+                conn.execute("ALTER TABLE kg_entities ADD COLUMN betweenness REAL DEFAULT 0.0")
+            except Exception:
+                pass
     except Exception as exc:
         logger.debug("KG schema migration (ALTER TABLE) skipped: %s", exc)
 

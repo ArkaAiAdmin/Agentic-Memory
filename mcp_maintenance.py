@@ -818,6 +818,8 @@ class MaintenanceOp(str, Enum):
     FACTS_LIST = "facts_list"
     FACTS_STATS = "facts_stats"
     GRAPH_STATS = "graph_stats"
+    GRAPH_INSIGHTS = "graph_insights"
+    GRAPH_EVOLUTION = "graph_evolution"
     PROFILE_STATS = "profile_stats"
     LLM_UNLOAD = "llm_unload"
     ADAPTIVE_RETENTION = "adaptive_retention"

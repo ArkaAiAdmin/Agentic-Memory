@@ -86,7 +86,10 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # memory_chunk_vec_idx, memory_chunk_vec_keys).
 # 2026-07-03: bumped to 26 for belief_assertions table + kg_facts.fact_type
 # (Sprint 1 fact/belief separation).
-SCHEMA_VERSION = 28
+# 2026-07-03: bumped to 28 for entailment_chains + memory_revision_log (Sprint 3).
+# 2026-07-03: bumped to 29 for graph_snapshots table (Sprint 4 graph analytics).
+# 2026-07-03: bumped to 30 for community_id + betweenness on kg_entities (Sprint 4).
+SCHEMA_VERSION = 30
 
 
 def _parse_sql_file(path: Path) -> list[str]:

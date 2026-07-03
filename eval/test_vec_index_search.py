@@ -101,6 +101,13 @@ class _TestBase(unittest.TestCase):
     the prod DB (see pinned lesson `lessons/bench-against-test-db-not-prod`).
     """
 
+    @classmethod
+    def setUpClass(cls):
+        from infra.embedding_search import EmbeddingSearch
+        _es = EmbeddingSearch()
+        if _es.model is None:
+            raise unittest.SkipTest("Embedding model unavailable")
+
     def setUp(self):
         super().setUp()
         import memory_mcp
