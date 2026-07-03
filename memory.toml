@@ -58,6 +58,11 @@ feature_temporal_kg = true            # MEMORY_TEMPORAL_KG (T8, 2026-06-23) — 
 feature_temporal_kg_llm = true        # MEMORY_TEMPORAL_KG_LLM (T11, 2026-06-30) — use LLM to score contradiction confidence in [0.0, 1.0]. OFF by default to avoid ~100-500ms per candidate. Set to false to disable LLM scoring and revert to deterministic 1.0.
 temporal_kg_llm_tier = "light"        # MEMORY_TEMPORAL_KG_LLM_TIER — "light" (max_new_tokens=4, threshold=0.5, cheaper) or "heavy" (max_new_tokens=8, threshold=0.7, thorough). Default "light".
 feature_belief_layer = true           # MEMORY_BELIEF_LAYER (Sprint 1, 2026-07-03) — fact/belief separation. Creates belief_assertions for every kg_facts row. Default ON. Set to false to disable belief assertion creation (reverts to plain kg_facts with no belief layer).
+self_editing = true                   # MEMORY_SELF_EDITING (Sprint 2, 2026-07-03) — patch, supersede, revert_supersede actions. Default ON. Set to false to disable the self-editing tool surface.
+knowledge_compilation = true          # MEMORY_KNOWLEDGE_COMPILATION (Sprint 3, 2026-07-03) — concepts/ corpus, entailment chains, skill enrichment. Default ON. Set to false to disable background compilation tasks.
+graph_centrality_boost = true         # MEMORY_GRAPH_CENTRALITY_BOOST (Sprint 4, 2026-07-03) — centrality-boosted search scoring. Default ON. Set to false to disable centrality weighting in search.
+graph_communities = true              # MEMORY_GRAPH_COMMUNITIES (Sprint 4, 2026-07-03) — community detection (connected components + Louvain). Default ON. Set to false to disable background community detection tasks.
+graph_evolution_tracking = true       # MEMORY_GRAPH_EVOLUTION_TRACKING (Sprint 4, 2026-07-03) — graph snapshot and evolution diff tracking. Default ON. Set to false to disable snapshot capture.
 
 [cache]
 fts5_cache = true                     # MEMORY_FTS5_CACHE — LRU result cache for search

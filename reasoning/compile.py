@@ -109,7 +109,7 @@ def infer_entailment_chains(
     by_object: dict[tuple[str, int | None], list] = {}
     for r in rows:
         fact_id, subject, predicate, obj, conf, subj_eid, obj_eid, src_mem, subj_name, obj_name = r
-        key = (obj.lower().strip() if obj else "", subj_eid)
+        key = (obj.lower().strip() if obj else "", obj_eid)
         by_object.setdefault(key, []).append(r)
 
     # Collect derived fact tuples before insertion to avoid SQLite

@@ -18,6 +18,7 @@ surface. The 80+ legacy tools are callable through memory_advanced.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from mcp_common import (
@@ -169,14 +170,16 @@ def memory_review_beliefs(
             cutoff = time.time() - (older_than_days * 86400)
             beliefs = get_active_beliefs(
                 db,
-                min_confidence=min_confidence,
+                min_confidence=0,
                 belief_status=belief_status,
-                limit=limit,
+                limit=limit * 2,
             )
-            # Apply older_than_days filter: last_reviewed_at < cutoff OR never reviewed
+            # Filter: return beliefs BELOW min_confidence (needs agent attention)
+            # AND older_than_days: last_reviewed_at < cutoff OR never reviewed
             candidates = [
                 b for b in beliefs
-                if b.get("last_reviewed_at") is None or b["last_reviewed_at"] < cutoff
+                if b.get("confidence", 1.0) < min_confidence
+                and (b.get("last_reviewed_at") is None or b["last_reviewed_at"] < cutoff)
             ]
             if not candidates:
                 return "No beliefs need review at this time."
@@ -422,6 +425,8 @@ def memory_note(
             )
             return str(result)
         elif action == "supersede":
+            if not rationale:
+                return "error: rationale is required for supersede (INVALID_PARAMS)"
             from save_pipeline import memory_supersede_db
             from pathlib import Path
 
@@ -435,6 +440,8 @@ def memory_note(
             )
             return str(ok) if ok else str(err)
         elif action == "patch":
+            if not rationale:
+                return "error: rationale is required for patch (INVALID_PARAMS)"
             from save_pipeline import patch_memory
             from pathlib import Path
 

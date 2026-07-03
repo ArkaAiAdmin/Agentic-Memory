@@ -346,6 +346,16 @@ class MemoryConfig:
     # "light" => max_new_tokens=4, threshold=0.5; "heavy" => 8, 0.7.
     feature_temporal_kg_llm: bool = True
     temporal_kg_llm_tier: str = "light"
+    # Sprint 1 (2026-07-03): belief/fact separation. Default ON.
+    feature_belief_layer: bool = True
+    # Sprint 2 (2026-07-03): self-editing — patch, supersede, revert, review.
+    self_editing: bool = True
+    # Sprint 3 (2026-07-03): knowledge compilation — concepts/, entailment chains.
+    knowledge_compilation: bool = True
+    # Sprint 4 (2026-07-03): graph analytics — community detection, centrality, evolution.
+    graph_centrality_boost: bool = True
+    graph_communities: bool = True
+    graph_evolution_tracking: bool = True
     session_memory: bool = False
     session_decision_llm: bool = False
 
@@ -853,6 +863,48 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             str,
             toml_data,
         ),
+        feature_belief_layer=_b(
+            "MEMORY_BELIEF_LAYER",
+            "features.feature_belief_layer",
+            True,
+            bool,
+            toml_data,
+        ),
+        self_editing=_b(
+            "MEMORY_SELF_EDITING",
+            "features.self_editing",
+            True,
+            bool,
+            toml_data,
+        ),
+        knowledge_compilation=_b(
+            "MEMORY_KNOWLEDGE_COMPILATION",
+            "features.knowledge_compilation",
+            True,
+            bool,
+            toml_data,
+        ),
+        graph_centrality_boost=_b(
+            "MEMORY_GRAPH_CENTRALITY_BOOST",
+            "features.graph_centrality_boost",
+            True,
+            bool,
+            toml_data,
+        ),
+        graph_communities=_b(
+            "MEMORY_GRAPH_COMMUNITIES",
+            "features.graph_communities",
+            True,
+            bool,
+            toml_data,
+        ),
+        graph_evolution_tracking=_b(
+            "MEMORY_GRAPH_EVOLUTION_TRACKING",
+            "features.graph_evolution_tracking",
+            True,
+            bool,
+            toml_data,
+        ),
         session_memory=_b(
             "MEMORY_SESSION_MEMORY", "session_memory.enabled", False, bool, toml_data
         ),
@@ -1354,6 +1406,42 @@ def get_feature_flags() -> dict:
             cfg.feature_temporal_kg,
             "MEMORY_TEMPORAL_KG",
             "features.feature_temporal_kg",
+            True,
+        ),
+        "feature_belief_layer": _flag(
+            cfg.feature_belief_layer,
+            "MEMORY_BELIEF_LAYER",
+            "features.feature_belief_layer",
+            True,
+        ),
+        "self_editing": _flag(
+            cfg.self_editing,
+            "MEMORY_SELF_EDITING",
+            "features.self_editing",
+            True,
+        ),
+        "knowledge_compilation": _flag(
+            cfg.knowledge_compilation,
+            "MEMORY_KNOWLEDGE_COMPILATION",
+            "features.knowledge_compilation",
+            True,
+        ),
+        "graph_centrality_boost": _flag(
+            cfg.graph_centrality_boost,
+            "MEMORY_GRAPH_CENTRALITY_BOOST",
+            "features.graph_centrality_boost",
+            True,
+        ),
+        "graph_communities": _flag(
+            cfg.graph_communities,
+            "MEMORY_GRAPH_COMMUNITIES",
+            "features.graph_communities",
+            True,
+        ),
+        "graph_evolution_tracking": _flag(
+            cfg.graph_evolution_tracking,
+            "MEMORY_GRAPH_EVOLUTION_TRACKING",
+            "features.graph_evolution_tracking",
             True,
         ),
         "fts5_cache": _flag(

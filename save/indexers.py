@@ -144,8 +144,10 @@ def _index_facts(db, note_id: str, content: str, belief_status: str = "active",
                                            belief_status=belief_status,
                                            epistemic_source=epistemic_source,
                                            fact_type=fact_type)
-            # Create belief_assertions for each extracted fact
-            if isinstance(facts, list):
+            # Create belief_assertions for each extracted fact (Sprint 1)
+            from infra._lazy_imports import get_config
+
+            if get_config().feature_belief_layer and isinstance(facts, list):
                 for fact in facts:
                     fid = fact.get("id") if isinstance(fact, dict) else None
                     if fid is not None:
