@@ -139,16 +139,16 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v23, 23 migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v30, 30 migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
-- **96 MCP tools** (13 CORE + 83 ADMIN).
+- **101 MCP tools** (14 CORE + 84 ADMIN + 3 DEPRECATED).
   Single source of truth: `tool_registry.py`.
-- **31 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
+- **36 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.
-- **6 lifecycle hooks** in `hooks/` — session start/end,
+- **7 lifecycle hooks** in `hooks/` — session start/end,
   precompact snapshot, proactive context, recall,
   search-on-demand. See `~/.claude/settings.json` and `opencode.jsonc` for wiring.
   `_log_error.py` is a log helper, not a lifecycle hook.

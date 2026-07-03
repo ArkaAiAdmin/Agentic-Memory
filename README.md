@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-2881%20passed-brightgreen)](#testing)
 [![SQLite FTS5](https://img.shields.io/badge/sqlite-FTS5-orange.svg)](https://www.sqlite.org/fts5.html)
-[![MCP Tools](https://img.shields.io/badge/MCP-96%20tools_(13%20CORE%20%2B%2083%20ADMIN)-purple.svg)](docs/reference/mcp-tools.md)
+[![MCP Tools](https://img.shields.io/badge/MCP-101%20tools_(14%20CORE%20%2B%2084%20ADMIN%20%2B%203%20DEPRECATED)-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
 [![Temporal KG](https://img.shields.io/badge/Temporal-KG-brightgreen)](docs/concepts/temporal-kg.md)
 [![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)

@@ -894,11 +894,11 @@ agentic-memory/                              ← repo root
 ├── mcp_dashboard.py mcp_sdk.py
 │
 ├── CRON ─────────────────────────────────────────────────────────────────────
-├── cron/                                     ← 25 scripts + install_crontab.sh
+├── cron/                                     ← 36 scripts + install_crontab.sh
 ├── background_worker.py                      ← also a cron entry
 │
 ├── EVAL ─────────────────────────────────────────────────────────────────────
-├── eval/                                     ← 183 test files, 3,494 test functions
+├── eval/                                     ← ~231 test files, ~3,967 test functions
 │
 └── DOCS ─────────────────────────────────────────────────────────────────────
     ├── docs/architecture.md
