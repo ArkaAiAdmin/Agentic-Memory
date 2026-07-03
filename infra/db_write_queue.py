@@ -332,7 +332,7 @@ class SQLiteWriteQueue:
                                 future.set_result(True)
                                 while True:
                                     try:
-                                        cmd = cmd_queue.get(timeout=10.0)
+                                        cmd = cmd_queue.get(timeout=3600.0)
                                     except queue.Empty:
                                         try:
                                             conn.rollback()
