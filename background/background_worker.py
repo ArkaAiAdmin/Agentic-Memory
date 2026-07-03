@@ -430,10 +430,12 @@ def _lazy_graph_snapshots(payload: dict, conn: AnyConnection, db_path: Path) -> 
     import time as _time
 
     now = _time.time()
-    entity_count = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
-    edge_count = conn.execute(
+    row = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()
+    entity_count = row[0] if row else 0
+    row2 = conn.execute(
         "SELECT COUNT(*) FROM kg_edges WHERE invalid_at IS NULL OR invalid_at = ''"
-    ).fetchone()[0]
+    ).fetchone()
+    edge_count = row2[0] if row2 else 0
 
     cc = connected_components(conn)
     community_count = len(set(cc.values()))
