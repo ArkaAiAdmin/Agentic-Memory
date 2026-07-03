@@ -812,6 +812,7 @@ class TestMCPTools:
 
     def test_memory_recall_context_with_query(self, tmp_path, monkeypatch):
         """memory_recall_context with query parameter."""
+        monkeypatch.delenv("MEMORY_DB_PATH", raising=False)
         db_path = _create_test_db(tmp_path)
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys = ON;")

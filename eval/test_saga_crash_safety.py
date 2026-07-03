@@ -288,6 +288,15 @@ class TestSagaFallbackPolicy(unittest.TestCase):
     future refactors cannot silently change the default.
     """
 
+    def setUp(self):
+        self._saved_saga_fallback = os.environ.pop("MEMORY_SAGA_FALLBACK", None)
+
+    def tearDown(self):
+        if self._saved_saga_fallback is None:
+            os.environ.pop("MEMORY_SAGA_FALLBACK", None)
+        else:
+            os.environ["MEMORY_SAGA_FALLBACK"] = self._saved_saga_fallback
+
     def test_default_is_raise(self):
         """No env var → fallback is the strict "raise" path."""
         from os import getenv

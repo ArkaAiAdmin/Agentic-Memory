@@ -164,6 +164,7 @@ class TestLiveMCPRateLimit(unittest.TestCase):
         reset_rate_limiter()
 
     def setUp(self):
+        reset_rate_limiter()
         self.tmpdir = tempfile.mkdtemp()
         self._orig_db, self._orig_resolve = _setup_test_env(self.tmpdir)
 
