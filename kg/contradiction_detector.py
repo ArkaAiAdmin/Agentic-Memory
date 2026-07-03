@@ -1005,16 +1005,16 @@ def detect_contradictions_semantic(memory_dir, threshold=SEMANTIC_THRESHOLD):
         return []
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from infra.embedding_search import EmbeddingSearch
+        from infra.embedding_search import get_embedding_search
     except ImportError as e:
         logger.error("embedding_search.py not found on path: %s", e)
         return []
     try:
-        search = EmbeddingSearch()
-        model = search.model
-        if model is None:
+        search = get_embedding_search()
+        if not search.wait_for_model(timeout_s=60.0):
             logger.error("Embedding model not loaded (model2vec may not be installed)")
             return []
+        model = search.model
     except Exception as e:
         logger.error("Failed to load embedding model: %s", e)
         return []

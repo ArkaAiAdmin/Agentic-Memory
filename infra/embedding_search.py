@@ -354,6 +354,24 @@ class EmbeddingSearch:
             self._model_load_failed = True
             self.model = None
 
+    def wait_for_model(self, timeout_s: float = 60.0) -> bool:
+        """Block until the model finishes loading or loading is declared failed.
+
+        Returns True if the model is ready, False if loading failed or timed
+        out.  Safe to call from tests and CLI entry points that require the
+        model before proceeding.
+        """
+        import time
+
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if self._model_loaded:
+                return True
+            if self._model_load_failed:
+                return False
+            time.sleep(0.05)
+        return self._model_loaded
+
     def encode(self, texts) -> np.ndarray | None:
         if self.model is None or getattr(self, "np", None) is None:
             return None

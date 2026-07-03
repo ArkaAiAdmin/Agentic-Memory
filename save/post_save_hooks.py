@@ -250,6 +250,20 @@ def _recalculate_fitness_scores(
                 pass
 
 
+def _hook_invalidate_search_cache(note_id):
+    """Invalidate the search cache for the just-saved note.
+
+    Best-effort: falls back to a full cache clear on any failure so
+    the save never blocks on cache maintenance.
+    """
+    try:
+        from infra.cache import invalidate_cache_for_note
+
+        invalidate_cache_for_note(note_id)
+    except Exception:
+        _search_cache.clear()
+
+
 def _hook_update_memory_md_index(target_base, category, title_slug):
     """Refresh the per-repo MEMORY.md pointer for the just-saved note.
 
@@ -589,12 +603,7 @@ def _run_post_save_hooks(
     """
     deferred_writes = []
     _hook_update_memory_md_index(target_base, category, title_slug)
-    try:
-        from infra.cache import invalidate_cache_for_note
-
-        invalidate_cache_for_note(note_id)
-    except Exception:
-        _search_cache.clear()
+    _hook_invalidate_search_cache(note_id)
     if safety_wiring:
         contradictions = _hook_run_contradiction_check(db_path_obj, content, note_id)
         _hook_audit_contradictions(db_path_obj, content, note_id, contradictions)

@@ -95,8 +95,13 @@ class TestSarcasmContradiction(unittest.TestCase):
 
     def test_sarcasm_contradiction_semantic(self):
         from infra.embedding_search import get_embedding_search
-        if get_embedding_search().model is None:
-            raise unittest.SkipTest("model2vec not available")
+
+        search = get_embedding_search()
+        if not search.wait_for_model(timeout_s=60.0):
+            raise unittest.SkipTest("model2vec not available or failed to load")
+
+        if search.model is None:
+            raise unittest.SkipTest("embedding model is None after wait")
 
         # Insert a note claiming the script works fine.
         _insert_note(
