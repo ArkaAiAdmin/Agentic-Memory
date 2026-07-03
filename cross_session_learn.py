@@ -170,6 +170,8 @@ def scan_sessions_and_learn(
         if any(kw in text_lower for kw in ["workflow", "steps"]):
             tags.append("workflow")
 
+        tags = tags + ["auto-lesson", "cross-session"]
+
         if not dry_run:
             from uuid import uuid4
 
@@ -191,6 +193,7 @@ def scan_sessions_and_learn(
                 category="lessons",
                 pinned=False,
                 tier="warm",
+                importance=2,
             )
             # Run save-pipeline indexing for the new lesson
             try:

@@ -599,6 +599,32 @@ def main():
     p_tc.add_argument("--result-preview", default="", help="Truncated result text")
     p_tc.add_argument("--ts", default=None, help="Override timestamp (ISO)")
 
+    p_cd = sub.add_parser(
+        "capture-draft",
+        help="Save a high-signal tool event as an auto-capture draft (Phase 2)",
+    )
+    p_cd.add_argument("--tool", required=True, help="Tool name (e.g. Write)")
+    p_cd.add_argument("--params", default="", help="JSON-serialised params")
+    p_cd.add_argument("--result-preview", default="", help="Truncated result text")
+    p_cd.add_argument("--ts", default=None, help="Override timestamp (ISO)")
+    p_cd.add_argument(
+        "--category",
+        default="lessons",
+        help="Target category (default: lessons)",
+    )
+    p_cd.add_argument(
+        "--importance",
+        type=int,
+        default=1,
+        help="Importance score 1-5 (default: 1 — draft tier)",
+    )
+    p_cd.add_argument(
+        "--tag",
+        action="append",
+        default=None,
+        help="Extra tag (repeatable; defaults: auto-capture, draft)",
+    )
+
     p_dd = sub.add_parser(
         "daily-digest", help="Roll up auto-saves for a date into a daily note"
     )
@@ -633,6 +659,23 @@ def main():
     if args.cmd == "tool-complete":
         result = tool_complete(args.tool, args.params, args.result_preview, args.ts)
         # Print errors to stderr to avoid leaking into OpenCode TUI
+        if result.get("error"):
+            print(json.dumps(result), file=sys.stderr)
+        else:
+            print(json.dumps(result))
+        sys.exit(0)
+    elif args.cmd == "capture-draft":
+        tags = list((args.tag or []) + ["auto-capture", "draft"])
+        tags = [t for t in tags if t]
+        result = tool_complete(
+            args.tool,
+            args.params,
+            args.result_preview,
+            args.ts,
+            category=args.category,
+            importance=args.importance,
+            extra_tags=tags,
+        )
         if result.get("error"):
             print(json.dumps(result), file=sys.stderr)
         else:

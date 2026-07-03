@@ -135,6 +135,67 @@ def _update_tool_count(tool_name: str = "") -> dict:
     return marker
 
 
+def _try_promote_session_drafts() -> None:
+    """Phase 3: lightweight per-session promotion scan.
+
+    Scans ``memories`` for auto-capture drafts (lessons/, importance <= 2)
+    that have at least one retrieval event in this session's time window
+    (last 2 h).  Promotes qualifying notes to importance=4 with
+    ``promoted`` + ``curated`` tags.
+
+    Best-effort: swallowed errors never propagate to the caller so the
+    session-end save is never blocked.
+    """
+    try:
+        import json as _json
+        import sqlite3 as _sqlite3
+        from pathlib import Path as _Path
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _tdelta
+
+        sys_path = str(_Path(__file__).resolve().parent.parent)
+        if sys_path not in sys.path:
+            sys.path.insert(0, sys_path)
+        from infra.infrastructure import resolve_active_memory_dir as _resolvedir
+
+        db_path = _resolvedir() / "memory.db"
+        if not db_path.exists():
+            return
+
+        conn = _sqlite3.connect(str(db_path), timeout=5)
+        try:
+            cutoff_iso = (_dt.now(_tz.utc) - _tdelta(hours=2)).isoformat()
+            rows = conn.execute(
+                "SELECT id FROM memories WHERE category='lessons' AND importance<=2 "
+                "AND tags LIKE '%auto-capture%' AND tags NOT LIKE '%promoted%' "
+                "AND created_at >= ? ORDER BY created_at DESC LIMIT 10",
+                (cutoff_iso,),
+            ).fetchall()
+            promoted_any = False
+            now_ts = _dt.now(_tz.utc).timestamp()
+            for (nid,) in rows:
+                cnt = conn.execute(
+                    "SELECT COUNT(*) FROM user_access_log WHERE note_id=? "
+                    "AND access_ts >= ?",
+                    (nid, now_ts - 7200),
+                ).fetchone()[0]
+                if cnt >= 1:
+                    now_iso = _dt.now(_tz.utc).isoformat()
+                    conn.execute(
+                        "UPDATE memories SET importance=4, tags = "
+                        "json_insert(COALESCE(tags,'[]'), '$[#]', 'promoted'), "
+                        "metadata = json_set(COALESCE(metadata,'{}'), '$.promoted_at', ?), "
+                        "updated_at=? WHERE id=?",
+                        (now_iso, now_iso, nid),
+                    )
+                    promoted_any = True
+            if promoted_any:
+                conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
 def _maybe_auto_save() -> dict:
     """If no session save has happened recently, auto-save one.
 
@@ -158,6 +219,11 @@ def _maybe_auto_save() -> dict:
     try:
         # We import here to avoid startup cost if not needed
         from mcp_memory import memory_save
+
+        # Phase 3: lightweight promotion scan for auto-capture drafts
+        # from the current session. Runs best-effort; never blocks the
+        # session-end save.
+        _try_promote_session_drafts()
 
         # Build a summary of the session from available context
         tool_count_str = str(tool_count)

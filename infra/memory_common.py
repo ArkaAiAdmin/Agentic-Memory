@@ -599,6 +599,7 @@ def _resolve_tags(
     *,
     context: str = "generic",
     tool_slug: str = "",
+    extra_tags: list[str] | None = None,
 ) -> list[str]:
     """Centralise all tag-policy decisions so callers cannot diverge.
 
@@ -609,6 +610,7 @@ def _resolve_tags(
     3. MCP memory_save: when caller passes nothing and category is
        lessons or decisions, default to [category].
     4. All inputs are normalised (None → [], str → split, list → strip).
+    5. extra_tags: caller-supplied list appended at the tail (no dedup).
     """
     if caller_tags is None:
         base: list[str] = []
@@ -624,7 +626,9 @@ def _resolve_tags(
 
     if context == "auto-save":
         slug = tool_slug.strip() if tool_slug else "unknown"
-        return ["auto-save", "hook", "tool-log", slug] + base
+        auto_tags = ["auto-save", "hook", "tool-log", slug]
+        extra = [str(t).strip() for t in (extra_tags or []) if t]
+        return auto_tags + base + extra
     if context == "mcp" and not base and category in ("lessons", "decisions"):
         return [category]
     return base
