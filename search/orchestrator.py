@@ -1795,6 +1795,7 @@ def search_memories(
     epistemic_source: str | None = None,
     fact_type: str | None = None,
     memory_source: str | None = None,
+    category: str = "",
 ) -> dict:
     if not db_path.exists():
         return {
@@ -1881,12 +1882,23 @@ def search_memories(
         if memory_source is not None:
             source_map = {
                 "agent": "m.source_file LIKE 'agents/%' OR m.source_file LIKE 'lessons/%'",
-                "auto_save": "m.source_file LIKE 'auto_saves/%'",
+                "auto_save": "m.source_file LIKE 'sessions/auto%'",
                 "import": "m.source_file LIKE 'imported/%'",
             }
             clause = source_map.get(memory_source)
             if clause:
                 repo_filter = f"{repo_filter} AND ({clause})" if repo_filter else f" AND ({clause})"
+
+        # Phase 1a: default category bias — exclude noisy auto-save session
+        # transcripts from recall unless the caller explicitly requests a
+        # category. The agent can opt back in via category='sessions' or
+        # memory_source='auto_save'. The constraint is appended to
+        # repo_filter so both FTS and embedding fallback paths inherit it
+        # through _fetch_rows_by_ids.
+        if category:
+            repo_filter = f"{repo_filter} AND m.category = '{category}'"
+        else:
+            repo_filter = f"{repo_filter} AND m.category != 'sessions'"
 
         # Phase 4: FTS search
         _t0 = time.time()

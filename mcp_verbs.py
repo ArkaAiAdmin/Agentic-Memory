@@ -95,6 +95,7 @@ def memory_search(
             epistemic_source=epistemic_source,
             fact_type=fact_type,
             memory_source=memory_source,
+            category=category,
         )
         return str(result.get("results_blob", str(result)))
     except Exception as e:
