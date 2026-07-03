@@ -106,6 +106,20 @@ def handle_fact_consolidation(
         from pathlib import Path as _P
         from fact.consolidate_facts import consolidate_memory_facts
 
+        # Guard: skip if corpus is too large (>2000 notes) — consolidate_facts
+        # uses O(n²) contradiction detection and will return immediately with
+        # a warning, but the module-level imports (llm_extraction, sentence
+        # transformers) still happen at import time and can load a 3B LLM
+        # consuming 6-8GB. Check + short-circuit here to skip the expensive
+        # import entirely when the guard would immediately return.
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL").fetchone()
+            n = int(row[0]) if row else 0
+            if n > 2000:
+                return f"fact consolidation skipped: corpus {n} notes exceeds guard (2000)"
+        except Exception:
+            pass
+
         consolidate_memory_facts(db_path=_P(db_path))
         return "fact consolidation completed"
     except Exception as e:
@@ -368,6 +382,7 @@ def handle_run_script(
 HANDLERS = {
     "entity_resolution": handle_entity_resolution,
     "fact_consolidation": handle_fact_consolidation,
+    "compact": handle_fact_consolidation,
     "embedding_index": handle_embedding_index,
     "kg_and_fact_index": handle_kg_and_fact_index,
     "semantic_backlinks": handle_semantic_backlinks,
@@ -974,6 +989,24 @@ def run_worker(
     from infra.db_write_queue import sqlite_write_queue
     conn = sqlite_write_queue.start_session(db_path)
     try:
+        # Process-level safety timeout: kill the entire process if any
+        # mode (drain, once, interval) runs longer than this cap.
+        # Prevents zombie workers from holding the flock lock forever.
+        _PROCESS_TIMEOUT_S = int(
+            os.environ.get("MEMORY_WORKER_PROCESS_TIMEOUT_S", "3600")
+        )
+        import signal as _proc_sig
+
+        def _process_killer(signum, frame):
+            logger.error(
+                "worker: process exceeded %ds timeout — force-exiting",
+                _PROCESS_TIMEOUT_S,
+            )
+            os._exit(1)
+
+        _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
+        _proc_sig.alarm(_PROCESS_TIMEOUT_S)
+
         if drain:
             _DRAIN_MAX_WALL_S = int(
                 os.environ.get("MEMORY_WORKER_DRAIN_MAX_WALL_S", "600")
@@ -1008,6 +1041,12 @@ def run_worker(
                 elapsed,
                 processed / elapsed if elapsed > 0 else 0,
             )
+            # Force exit to kill any lingering non-daemon threads (loky,
+            # ThreadPoolExecutor, etc.) that keep the process alive and
+            # hold the background_worker.lock — preventing subsequent
+            # workers from running.
+            logger.info("worker: drain complete — forcing exit")
+            os._exit(0)
         else:
             while not _shutdown:
                 processed = process_one_task(conn, db_path, task_type=task_type)
@@ -1026,6 +1065,9 @@ def run_worker(
         except Exception:
             pass
         logger.info("worker: stopped")
+        # Safety net: force exit to ensure no lingering threads/processes
+        # keep the worker alive (and holding the flock lock).
+        os._exit(0)
 
 
 # ---------------------------------------------------------------------------
