@@ -38,18 +38,18 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",
 ]
 
 [project.optional-dependencies]
 embeddings = [
-    "model2vec>=0.8.0",
-    "numpy>=2.0.0",
-    "usearch>=2.0.0",
+    "model2vec>=0.8.0,<1",
+    "numpy>=2.0.0,<3",
+    "usearch>=2.0.0,<3",
 ]
 reranker = [
-    "torch>=2.0.0",
-    "transformers>=4.0.0",
+    "torch>=2.0.0,<3",
+    "transformers>=4.0.0,<5",
 ]
 dev = [
     "pytest>=7.0.0",
