@@ -767,6 +767,27 @@ def _update_memory_index_incremental(
     When ``defer_expensive`` is True, skip embedding, KG, fact extraction, and
     context enrichment — these are enqueued as background tasks by the caller
     so the synchronous path stays fast.
+
+    Sequential SQL statements per call (non-deferred, ``defer_expensive=False``):
+      1.  _upsert_memory_row            → 1 INSERT/UPDATE
+      2.  _crdt_bump_version            → 1 UPDATE
+      3.  _index_backlinks              → 2–4 (DELETE + INSERT backlink rows)
+      4.  _index_chunks                 → 2–3 (DELETE old chunks + INSERT new)
+      5.  _index_chunk_embeddings       → 1 INSERT
+      6.  _index_embedding              → 1 INSERT into memory_embeddings
+      7.  _index_kg                     → 2–3 (INSERT entities + edges)
+      8.  _index_facts                  → 3–5 (INSERT facts + FTS triggers)
+      9.  _enrich_context               → 1–2 context-enrichment INSERTs
+      10. _auto_semantic_backlinks      → 2 (semantic edge INSERTs)
+      11. _auto_fts_backlinks           → 1 FTS backlink UPDATE
+      12. _index_adaptive_retention     → 1 retention UPDATE
+      13. file_mtimes INSERT/UPDATE     → 1 (in _upsert_memory_row finally block)
+      ~Total non-deferred: 18–25 sequential conn.execute calls
+
+    With ``defer_expensive=True`` (default for MCP memory_save since 2026-06-22):
+      ~Total deferred: 8–10 sequential conn.execute calls
+      Remaining 8–15 calls enqueued as background tasks (embedding_index,
+      kg_and_fact_index, semantic_backlinks).
     """
     external_db = db is not None
     if not external_db:

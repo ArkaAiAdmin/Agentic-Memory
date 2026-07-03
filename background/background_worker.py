@@ -61,6 +61,16 @@ logger = logging.getLogger(__name__)
 # Graceful shutdown flag
 _shutdown = False
 
+# Default batch size for the non-drain worker loop.  Each cron tick
+# processes up to this many tasks before sleeping for ``interval``
+# seconds again.  The previous behaviour was exactly 1 task per tick,
+# which meant a 12K backlog took ~500 hours to drain at the default
+# 300-second poll interval.  The batch size is bounded by the
+# per-process timeout (default 3600s) and the per-task watchdog
+# (default 120s), so 20 tasks × 120s worst-case = 2400s, well inside
+# the hour-long safety cap.
+_DEFAULT_BATCH_SIZE = int(os.environ.get("MEMORY_WORKER_BATCH_SIZE", "20"))
+
 # Module-level keep-alive for the inline flock fd (H-fix 2026-06-22).
 # See the ImportError fallback in main() — if cron._flock isn't on
 # path, we acquire fcntl.flock directly and must keep the fd alive
@@ -1051,11 +1061,17 @@ def run_worker(
             _proc_sig.alarm(0)
             return
         else:
+            batch_size = _DEFAULT_BATCH_SIZE
             while not _shutdown:
-                processed = process_one_task(conn, db_path, task_type=task_type)
+                batch_processed = 0
+                while batch_processed < batch_size:
+                    ok = process_one_task(conn, db_path, task_type=task_type)
+                    if not ok:
+                        break
+                    batch_processed += 1
                 if once:
                     break
-                if not processed:
+                if batch_processed == 0:
                     for _ in range(interval):
                         if _shutdown:
                             break
