@@ -62,7 +62,8 @@ def get_local_ip() -> str:
         ip: str = s.getsockname()[0]
         s.close()
         return ip
-    except Exception:
+    except Exception as _ip_exc:
+        logger.debug("get_local_ip failed, falling back to 127.0.0.1: %s", _ip_exc)
         return "127.0.0.1"
 
 
@@ -181,8 +182,8 @@ class MDNSAdvertiser:
         if self.sock:
             try:
                 self.sock.close()
-            except Exception:
-                pass
+            except Exception as _close_exc:
+                logger.debug("MDNSAdvertiser.sock.close() failed: %s", _close_exc)
         if self.thread:
             self.thread.join(timeout=2.0)
 
@@ -194,8 +195,9 @@ class MDNSBrowser:
         self.stop_event = threading.Event()
         self.thread: Optional[threading.Thread] = None
         self.sock: Optional[socket.socket] = None
-        self.discovered_peers: Dict[str, Tuple[str, int, float]] = {}  # agent_id -> (ip, port, last_seen)
+        self.discovered_peers: Dict[str, Tuple[str, int, float]] = {}
         self._lock = threading.Lock()
+        self._MAX_DISCOVERED_PEERS = 200
 
     def start(self) -> None:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -313,6 +315,9 @@ class MDNSBrowser:
             resolved_ip = a_ip or "127.0.0.1"
             if srv_port:
                 with self._lock:
+                    if resolved_agent_id not in self.discovered_peers and len(self.discovered_peers) >= self._MAX_DISCOVERED_PEERS:
+                        oldest = min(self.discovered_peers.items(), key=lambda item: item[1][2])
+                        self.discovered_peers.pop(oldest[0])
                     self.discovered_peers[resolved_agent_id] = (resolved_ip, srv_port, time.time())
 
     def get_peers(self) -> List[Dict[str, Any]]:
@@ -337,7 +342,7 @@ class MDNSBrowser:
         if self.sock:
             try:
                 self.sock.close()
-            except Exception:
-                pass
+            except Exception as _close_exc:
+                logger.debug("MDNSBrowser.sock.close() failed: %s", _close_exc)
         if self.thread:
             self.thread.join(timeout=2.0)

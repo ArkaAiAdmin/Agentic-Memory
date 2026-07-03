@@ -79,26 +79,34 @@ def _get_threshold() -> float:
 
 
 def _compute_centroid(conn: AnyConnection) -> Optional[npt.NDArray[np.float32]]:
-    """Stack all embeddings into a numpy array and return the centroid.
+    """Compute the embedding centroid using Welford's online algorithm.
+
+    Streams all embeddings from the DB without materializing the full list
+    in memory.  This replaces the previous ``np.stack(vectors).mean()``
+    implementation which loaded every embedding blob into a list first —
+    O(N) memory and CPU, with OOM risk above ~100K notes.
 
     Returns None if there are no embeddings or numpy is missing.
     """
-    rows = conn.execute("SELECT embedding FROM memory_embeddings").fetchall()
-    if not rows:
-        return None
-    vectors: list[npt.NDArray[np.float32]] = []
-    for (blob,) in rows:
+    cursor = conn.execute("SELECT embedding FROM memory_embeddings")
+    count = 0
+    mean: npt.NDArray[np.float32] | None = None
+    for (blob,) in cursor:
         if not blob:
             continue
         try:
-            vec: npt.NDArray[np.float32] = np.frombuffer(blob, dtype=np.float32).copy()
-            vectors.append(vec)
+            vec = np.frombuffer(blob, dtype=np.float32)
         except Exception:
             continue
-    if not vectors:
+        count += 1
+        if mean is None:
+            mean = vec.astype(np.float32).copy()
+        else:
+            delta = vec.astype(np.float32) - mean
+            mean += delta / count
+    if mean is None or count == 0:
         return None
-    centroid_arr: npt.NDArray[np.float32] = np.stack(vectors).mean(axis=0)
-    return centroid_arr
+    return mean
 
 
 def main(argv: list[str] | None = None) -> int:

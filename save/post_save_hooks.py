@@ -589,7 +589,12 @@ def _run_post_save_hooks(
     """
     deferred_writes = []
     _hook_update_memory_md_index(target_base, category, title_slug)
-    _search_cache.clear()
+    try:
+        from infra.cache import invalidate_cache_for_note
+
+        invalidate_cache_for_note(note_id)
+    except Exception:
+        _search_cache.clear()
     if safety_wiring:
         contradictions = _hook_run_contradiction_check(db_path_obj, content, note_id)
         _hook_audit_contradictions(db_path_obj, content, note_id, contradictions)

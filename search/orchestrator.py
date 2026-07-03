@@ -1417,10 +1417,22 @@ def _cache_store_result(cache_key: str, result: dict) -> None:
     — if SEARCH_CACHE_MAX is ever changed (e.g. per-deployment tuning)
     this is the only spot to touch.
     """
+    note_ids = [
+        item.get("id", "")
+        for item in (result.get("results") or result.get("result_items") or [])
+        if item.get("id")
+    ]
     _search_cache[cache_key] = (time.time(), result)
     _search_cache.move_to_end(cache_key)
     if len(_search_cache) > SEARCH_CACHE_MAX:
         _search_cache.popitem(last=False)
+    if note_ids:
+        try:
+            from infra.cache import register_cache_note_ids
+
+            register_cache_note_ids(cache_key, note_ids)
+        except Exception:
+            pass
 
 
 def _build_empty_result_with_hint(

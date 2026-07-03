@@ -702,8 +702,8 @@ def _release_serialize_lock(lock_file) -> None:
         from infra._lazy_imports import release_flock
 
         release_flock(lock_file)
-    except Exception:
-        pass
+    except Exception as _release_exc:
+        logger.debug("release_flock failed in _build_save_memory_steps: %s", _release_exc)
 
 
 def _capture_pre_existing(conn, note_id: str):
@@ -719,8 +719,8 @@ def _capture_pre_existing(conn, note_id: str):
         ).fetchone()
         if row is not None:
             return (row[0], row[1])
-    except Exception:
-        pass
+    except Exception as _capture_exc:
+        logger.debug("_capture_pre_existing failed for %s: %s", note_id, _capture_exc)
     return None
 
 
@@ -754,7 +754,8 @@ def _build_save_memory_steps(
     try:
         if file_path.exists():
             pre_existing_file = file_path.read_text(encoding="utf-8")
-    except Exception:
+    except Exception as _read_exc:
+        logger.debug("pre-existing file read failed for %s: %s", file_path, _read_exc)
         pre_existing_file = None
     params = _SaveMemoryParams(
         note_id=note_id,
@@ -825,9 +826,11 @@ def _build_save_memory_steps(
                     encoding="utf-8",
                     expected_existing=params.initial_file_content,
                 )
-            except Exception:
-                # Fall back to the regular write path on any error
-                # so the save still succeeds.
+            except Exception as _atomic_exc:
+                logger.warning(
+                    "safe_atomic_write failed in saga _do_file, falling back to regular write: %s",
+                    _atomic_exc,
+                )
                 do_write_file()
         else:
             # No pre-existing file → no conflict possible.
@@ -847,7 +850,8 @@ def _build_save_memory_steps(
         """
         try:
             return file_path.read_text(encoding="utf-8")
-        except Exception:
+        except Exception as _read_exc:
+            logger.debug("_read_new_content_for_file failed for %s: %s", file_path, _read_exc)
             return ""
 
     def _undo_file() -> None:

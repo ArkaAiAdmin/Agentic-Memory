@@ -181,8 +181,15 @@ def memory_supersede(old_id: str, new_id: str, valid_to: Optional[str] = None) -
                     "(DB will still mark as superseded): %s",
                     old_md_path,
                     _e,
-                )
-        _search_cache.clear()
+                 )
+        try:
+            from infra.cache import invalidate_cache_for_note
+
+            invalidate_cache_for_note(old_id)
+            if new_id:
+                invalidate_cache_for_note(new_id)
+        except Exception:
+            _search_cache.clear()
         return (
             f"Superseded: {old_id} is now valid_to={valid_to}, superseded_by={new_id}."
         )
@@ -221,7 +228,12 @@ def memory_auto_save_hook(
         try:
             data = json.loads(out)
             if data.get("saved"):
-                _search_cache.clear()
+                try:
+                    from infra.cache import invalidate_cache_for_note
+
+                    invalidate_cache_for_note(data["note_id"])
+                except Exception:
+                    _search_cache.clear()
                 return f"Auto-saved: {data['note_id']}"
             return f"Auto-save failed: {data.get('error', out[:200])}"
         except (json.JSONDecodeError, KeyError):
@@ -368,13 +380,19 @@ def memory_reinforce(memory_ids: list, success: bool) -> str:
             hits = reinforce_memories_db(Path(db_path_key), ids, delta)
             hits_per_db[str(db_path_key)] = hits
             updated_total += hits
-        _search_cache.clear()
+        try:
+            from infra.cache import invalidate_cache_for_note
+
+            all_ids = [mid for ids in by_db.values() for mid in ids]
+            for nid in all_ids:
+                invalidate_cache_for_note(nid)
+        except Exception:
+            _search_cache.clear()
         scope_note = []
         for db_path_key, hits in hits_per_db.items():
             if hits:
                 label = "global" if str(GLOBAL_MEM_DIR) in str(db_path_key) else "local"
                 scope_note.append(f"{hits} in {label}")
-        _search_cache.clear()
         return (
             f"Successfully reinforced {updated_total} memories with outcome success={success} "
             f"({', '.join(scope_note) or 'no matches'}; fitness scores recalculated)."

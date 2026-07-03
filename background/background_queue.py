@@ -173,6 +173,7 @@ def enqueue_task(
                 import time as _time
 
                 deadline = _time.monotonic() + BLOCK_TIMEOUT_S
+                sleep_s = 0.05
                 while pending >= _max_qs:
                     if _time.monotonic() > deadline:
                         return {
@@ -182,7 +183,8 @@ def enqueue_task(
                             "max_queue_size": _max_qs,
                             "retry_after": 0.0,
                         }
-                    _time.sleep(0.05)
+                    _time.sleep(sleep_s)
+                    sleep_s = min(sleep_s * 2, BLOCK_TIMEOUT_S)
                     pending_row = conn.execute(
                         "SELECT COUNT(*) FROM task_queue WHERE status = 'pending'"
                     ).fetchone()

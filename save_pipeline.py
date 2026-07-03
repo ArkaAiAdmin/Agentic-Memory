@@ -374,8 +374,8 @@ def _acquire_lock(db_path: Path):
             )
             try:
                 lock_file.close()
-            except Exception:
-                pass
+            except Exception as close_exc:
+                logger.debug("lock_file.close() failed for stale lock %s: %s", lock_path, close_exc)
             try:
                 lock_path.unlink()
             except Exception as e:
@@ -399,8 +399,8 @@ def _acquire_lock(db_path: Path):
     except Exception as e:
         try:
             lock_file.close()
-        except Exception:
-            pass
+        except Exception as close_exc:
+            logger.debug("lock_file.close() failed during flock error: %s", close_exc)
         logger.warning(
             "Could not acquire flock for lock file %s: %s", lock_path, e
         )
@@ -442,7 +442,8 @@ def _upsert_memory_row(
                 row[1]
                 for row in db.execute("PRAGMA table_info(memories)").fetchall()
             }
-        except Exception:
+        except Exception as _pragma_exc:
+            logger.debug("PRAGMA table_info(memories) failed: %s", _pragma_exc)
             cols = set()
     has_tenant = "tenant_id" in cols
     importance = max(1, min(5, int(importance)))
@@ -891,8 +892,8 @@ def _update_memory_index_incremental(
         if local_db is not None:
             try:
                 local_db.close()
-            except Exception:
-                pass
+            except Exception as _close_exc:
+                logger.debug("local_db.close() failed in _update_memory_index_incremental: %s", _close_exc)
 
 
 def _defer_indexing_background_tasks(
@@ -957,8 +958,8 @@ def _defer_indexing_background_tasks(
         if conn is None and bq_conn is not None:
             try:
                 bq_conn.close()
-            except Exception:
-                pass
+            except Exception as _bq_close_exc:
+                logger.debug("bq_conn.close() failed in _defer_indexing_background_tasks: %s", _bq_close_exc)
 
 
 def _validate_save_params(content, category, title_slug, tags):
@@ -1309,8 +1310,8 @@ def _persist_to_db(
         if not _conn_is_shared:
             try:
                 conn.rollback()
-            except Exception:
-                pass
+            except Exception as _rb_exc:
+                logger.debug("conn.rollback() failed in _persist_to_db: %s", _rb_exc)
             safe_close_db(conn)
         return _err(ErrorCode.DB_ERROR, f"saving memory: {e}")
 
@@ -1454,8 +1455,8 @@ def _apply_saga_fallback_policy(category, title_slug):
         from infra.saga import _saga_fallback_counter
 
         _saga_fallback_counter.inc()
-    except Exception:
-        pass
+    except Exception as _ctr_exc:
+        logger.debug("_saga_fallback_counter.inc() failed (benign): %s", _ctr_exc)
     raise RuntimeError(
         f"saga_save_memory failed for {category}/{title_slug}; "
         f"refusing to fall back silently.  Set "
@@ -1603,8 +1604,8 @@ def _audit_save_failure(db_path_obj, note_id, category, title_slug, _start_time)
             latency_ms=(time.time() - _start_time) * 1000.0,
             error=note_id[:500] if isinstance(note_id, str) else "",
         )
-    except Exception:
-        pass
+    except Exception as _capture_exc:
+        logger.debug("_capture_pre_state_main audit enqueue failed (benign): %s", _capture_exc)
 
 
 def save_memory(
@@ -2008,8 +2009,8 @@ def memory_supersede_db(
                         "UPDATE memories SET metadata = ? WHERE id = ?",
                         (json.dumps(meta), old_id),
                     )
-                except Exception:
-                    pass
+                except Exception as _supersede_meta_exc:
+                    logger.debug("supersession metadata update failed for %s: %s", old_id, _supersede_meta_exc)
             return (True, None)
     except Exception as e:
         return (False, str(e))
