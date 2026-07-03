@@ -1898,7 +1898,7 @@ def search_memories(
         if category:
             repo_filter = f"{repo_filter} AND m.category = '{category}'"
         else:
-            repo_filter = f"{repo_filter} AND m.category != 'sessions'"
+            repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
 
         # Phase 4: FTS search
         _t0 = time.time()

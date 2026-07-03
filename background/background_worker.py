@@ -1043,12 +1043,13 @@ def run_worker(
                 elapsed,
                 processed / elapsed if elapsed > 0 else 0,
             )
-            # Force exit to kill any lingering non-daemon threads (loky,
-            # ThreadPoolExecutor, etc.) that keep the process alive and
-            # hold the background_worker.lock — preventing subsequent
-            # workers from running.
-            logger.info("worker: drain complete — forcing exit")
-            os._exit(0)
+            # Return cleanly so callers (e.g. tests) are not killed.
+            # The write-queue thread is a daemon and does not need a
+            # force-exit; pytest/cron will close the connection pool on
+            # teardown.  Cancel the process-watchdog alarm so it does
+            # not fire after we return.
+            _proc_sig.alarm(0)
+            return
         else:
             while not _shutdown:
                 processed = process_one_task(conn, db_path, task_type=task_type)
@@ -1062,14 +1063,12 @@ def run_worker(
                             break
                         time.sleep(1)
     finally:
+        _proc_sig.alarm(0)
         try:
             conn.close()
         except Exception:
             pass
         logger.info("worker: stopped")
-        # Safety net: force exit to ensure no lingering threads/processes
-        # keep the worker alive (and holding the flock lock).
-        os._exit(0)
 
 
 # ---------------------------------------------------------------------------

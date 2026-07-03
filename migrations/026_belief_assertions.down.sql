@@ -28,6 +28,22 @@ CREATE TABLE kg_facts (
     mention_count INTEGER DEFAULT 1,
     source_memory TEXT,
     context TEXT,
+    subject_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+    object_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+    event_time REAL,
+    event_time_granularity TEXT,
+    transaction_time REAL,
+    valid_at REAL,
+    invalid_at REAL,
+    superseded_by INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL,
+    supersedes INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL,
+    contradiction_score REAL DEFAULT 0.0,
+    invalidation_reason TEXT,
+    belief_status TEXT DEFAULT 'active',
+    epistemic_source TEXT DEFAULT 'agent',
+    asserting_agent_id TEXT,
+    evidence_chain TEXT,
+    embedding BLOB,
     UNIQUE(subject, predicate, object)
 );
 

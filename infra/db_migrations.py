@@ -836,6 +836,10 @@ def run_schema_setup(conn: AnyConnection) -> None:
 
     # No need to mark the conn — the schema_version table is the
     # canonical fast-path. See the gate at the top of this function.
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+    except Exception:
+        pass
 
 
 def run_db_migrations(conn) -> None:

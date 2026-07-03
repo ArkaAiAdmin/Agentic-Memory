@@ -272,21 +272,22 @@ class TestMCPToolAudit:
         import infra.infrastructure as infrastructure
 
         monkeypatch.setattr(infrastructure, "_resolve_active_db_path", lambda: db_path)
-        # Monkeypatch get_memory_paths at the mcp_common level before mcp_tools
-        # imports modules that bind the reference
         import mcp_common
 
         monkeypatch.setattr(
             mcp_common,
             "get_memory_paths",
-            lambda: (None, db_path.parent, db_path.parent),
+            lambda: (db_path.parent, db_path.parent, db_path.parent),
         )
 
         from mcp_tools import memory_search
 
+        # Drain the audit queue (which may hold rows from prior tests in
+        # the same session) before running the action we want to verify.
+        audit.flush_audit(timeout=30)
         memory_search(query="test query")
 
-        audit.flush_audit(timeout=5)
+        audit.flush_audit(timeout=30)
 
         conn = sqlite3.connect(str(db_path))
         rows = conn.execute(

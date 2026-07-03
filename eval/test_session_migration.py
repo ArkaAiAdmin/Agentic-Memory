@@ -89,6 +89,10 @@ def test_down_migration_restores_clean_schema(tmp_path):
     run_migrations(conn)
     conn.close()
     conn = _conn(db)
+    # Ensure KG schema exists before rolling back, as down migrations
+    # reference kg_entities in FK constraints
+    from knowledge_graph.kg_schema import ensure_kg_schema
+    ensure_kg_schema(conn)
     migrate_down(conn, target_version=21)
     for table in ("sessions", "decision_threads", "thread_events", "session_compaction_log"):
         row = conn.execute(

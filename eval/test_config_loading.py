@@ -72,8 +72,10 @@ class TestMemoryConfigDefaults:
         # 2026-07-01 config merge: exploration_mode, neural_forget_mode/weights,
         # temporal_ssm_enabled/weights, session_decision_llm, rate_limits → 114.
         # 2026-07-02 Sprint 3: feature_temporal_kg_llm + temporal_kg_llm_tier → 116.
-        assert len(fields) == 116, (
-            f"Expected 116 fields, got {len(fields)}: {[f.name for f in fields]}"
+        # 2026-07-03 sync server fields (6: sync_enable_server/host/port/peers/interval_minutes,
+        # auto_save_health_check_minutes) → 122.
+        assert len(fields) == 122, (
+            f"Expected 122 fields, got {len(fields)}: {[f.name for f in fields]}"
         )
 
     def test_default_db_path(self):

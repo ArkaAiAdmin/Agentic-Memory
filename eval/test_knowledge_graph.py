@@ -17,6 +17,12 @@ from knowledge_graph.kg_extract import extract_relations
 
 # Force re-read of the env var after import
 kg.KG_ENABLED = True
+# Clear KG cache between tests to prevent state pollution
+@pytest.fixture(autouse=True)
+def clear_kg_cache():
+    yield
+    kg._clear_kg_enabled_cache()
+
 
 
 class TestEntityExtraction:

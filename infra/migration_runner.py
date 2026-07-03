@@ -264,8 +264,8 @@ def run_migrations(conn: AnyConnection) -> None:
         "  )"
     )
 
-    # Step 2: Ensure base schema (memories table) exists.
-    # The numbered SQL migrations assume this table is present.
+    # Step 2: Ensure base schema (memories table) and KG tables exist.
+    # The numbered SQL migrations assume these tables are present.
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS memories (
@@ -292,6 +292,12 @@ def run_migrations(conn: AnyConnection) -> None:
         )
         """
     )
+    try:
+        from infra.db_migrations import _migrate_kg_tables
+
+        _migrate_kg_tables(conn)
+    except Exception:
+        pass
 
     # Step 3: Read applied migrations
     applied = _get_applied_migrations(conn)
@@ -423,6 +429,11 @@ def run_migrations(conn: AnyConnection) -> None:
     except Exception as e:
         logger.error("Migration failed: %s", e)
         raise
+    finally:
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass
 
 
 def migrate_down(conn: AnyConnection, target_version: int) -> None:
@@ -475,6 +486,11 @@ def migrate_down(conn: AnyConnection, target_version: int) -> None:
     except Exception as e:
         logger.error("Down-migration failed: %s", e)
         raise
+    finally:
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
