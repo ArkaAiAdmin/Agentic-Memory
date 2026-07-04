@@ -1,4 +1,4 @@
-"""12-verb agent surface for agentic memory.
+"""14-verb agent surface for agentic memory.
 
 Each verb is a thin @mcp.tool() wrapper around existing functionality
 with sensible defaults so the agent can call it with 1-2 params.
@@ -6,13 +6,13 @@ with sensible defaults so the agent can call it with 1-2 params.
 The underlying ADMIN tools are still accessible via
 memory_advanced(operation="...") for power users.
 
-Verbs (12 + 1 escape hatch):
+Verbs (14 + 1 escape hatch):
   memory_search, memory_save, memory_delete, memory_recall, memory_note,
   memory_learn, memory_audit, memory_organize, memory_share,
-  memory_graph, memory_profile, memory_session_start,
-  memory_advanced
+  memory_graph, memory_profile, memory_session_start, memory_review_beliefs,
+  memory_curate_autosave, memory_advanced
 
-Phase A (2026-07-01): These 13 tools are the entire agent-facing MCP
+Phase A (2026-07-01): These 15 tools are the entire agent-facing MCP
 surface. The 80+ legacy tools are callable through memory_advanced.
 """
 from __future__ import annotations
@@ -401,7 +401,6 @@ def memory_note(
                 try:
                     from save_pipeline import _record_revision_log
                     from infra.db import open_db
-                    from pathlib import Path
 
                     with open_db(_resolve_db_path(), timeout=10.0) as db:
                         _record_revision_log(db, note_id, "delete", rationale=rationale)
@@ -428,7 +427,6 @@ def memory_note(
             if not rationale:
                 return "error: rationale is required for supersede (INVALID_PARAMS)"
             from save_pipeline import memory_supersede_db
-            from pathlib import Path
 
             db_path = _resolve_db_path()
             new_note_id = title_slug or note_id
@@ -443,7 +441,6 @@ def memory_note(
             if not rationale:
                 return "error: rationale is required for patch (INVALID_PARAMS)"
             from save_pipeline import patch_memory
-            from pathlib import Path
 
             patch_result = patch_memory(
                 db_path=_resolve_db_path(),

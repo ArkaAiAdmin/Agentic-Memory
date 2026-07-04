@@ -139,21 +139,21 @@ class TestFeatureBLateInteraction(unittest.TestCase):
         """Same tokens -> high score."""
         from search_pipeline import _late_interaction_score
 
-        score = _late_interaction_score("hello world test", "hello world test")
+        score, _ = _late_interaction_score("hello world test", "hello world test")
         self.assertGreater(score, 0.5)
 
     def test_late_interaction_score_no_overlap(self):
         """No shared tokens -> zero score."""
         from search_pipeline import _late_interaction_score
 
-        score = _late_interaction_score("alpha beta gamma", "xyz xyz xyz")
+        score, _ = _late_interaction_score("alpha beta gamma", "xyz xyz xyz")
         self.assertEqual(score, 0.0)
 
     def test_late_interaction_score_partial(self):
         """Partial overlap -> score between 0 and 1."""
         from search_pipeline import _late_interaction_score
 
-        score = _late_interaction_score("the quick brown fox", "the quick red fox")
+        score, _ = _late_interaction_score("the quick brown fox", "the quick red fox")
         self.assertGreater(score, 0.0)
         self.assertLess(score, 1.0)
 
@@ -161,8 +161,10 @@ class TestFeatureBLateInteraction(unittest.TestCase):
         """Empty input returns 0."""
         from search_pipeline import _late_interaction_score
 
-        self.assertEqual(_late_interaction_score("", "test"), 0.0)
-        self.assertEqual(_late_interaction_score("test", ""), 0.0)
+        score, _ = _late_interaction_score("", "test")
+        self.assertEqual(score, 0.0)
+        score, _ = _late_interaction_score("test", "")
+        self.assertEqual(score, 0.0)
 
     def test_late_interaction_enabled_by_default(self):
         """Late interaction is on by default (memory.toml)."""
@@ -355,6 +357,8 @@ class TestFeatureDAsyncPipeline(unittest.TestCase):
         tmpdir = tempfile.mkdtemp()
         memory_mcp.resolve_active_memory_dir = lambda **_: Path(tmpdir)
         memory_mcp.get_memory_paths = lambda: (Path(tmpdir), Path(tmpdir), Path(tmpdir))
+        prev_db_path = os.environ.get("MEMORY_DB_PATH")
+        os.environ["MEMORY_DB_PATH"] = str(Path(tmpdir) / "memory.db")
         memory_mcp._search_cache.clear()
         try:
             queries = [
@@ -370,6 +374,10 @@ class TestFeatureDAsyncPipeline(unittest.TestCase):
             memory_mcp.resolve_active_memory_dir = orig_resolve
             memory_mcp.get_memory_paths = orig_paths
             memory_mcp._search_cache.clear()
+            if prev_db_path is not None:
+                os.environ["MEMORY_DB_PATH"] = prev_db_path
+            else:
+                os.environ.pop("MEMORY_DB_PATH", None)
 
 
 if __name__ == "__main__":

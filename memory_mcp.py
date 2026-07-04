@@ -227,14 +227,20 @@ import tool_registry  # noqa: E402
 # Phase A: explicitly import the verb surface so tool registration is intentional.
 import mcp_verbs  # noqa: E402, F401
 
+# Import additional MCP modules so their tools are registered before the
+# removal loop below — this prevents orphans appearing/disappearing
+# depending on the entry point.
+import mcp_kg  # noqa: E402, F401 — graph_insights/evolution (ADMIN_TOOLS)
+import mcp_maintenance  # noqa: E402, F401 — memory_maintenance + admin tools
+
 # Keep memory_maintenance (the router) visible; hide individual admin tools.
 for _admin_name in tool_registry.ADMIN_TOOLS:
     if _admin_name == "memory_maintenance":
         continue
     try:
         mcp.remove_tool(_admin_name)
-    except Exception:
-        pass  # tool not registered yet, or FastMCP version doesn't support it
+    except Exception as e:
+        logger.warning("tool_registry vs registered-tools mismatch: cannot remove '%s' (%s)", _admin_name, e)
 
 
 if __name__ == "__main__":

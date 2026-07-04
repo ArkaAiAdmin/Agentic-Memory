@@ -1,11 +1,14 @@
 """Tool registry: defines tool visibility tiers for the MCP server.
 
-Phase A (2026-07-01): 12 verbs + 1 escape hatch.
+Phase A (2026-07-01): 14 verbs + 1 escape hatch (memory_advanced).
 
-CORE_TOOLS:    13 tools the agent sees directly (12 verbs + memory_session_start).
-                Everything else is accessible via memory_advanced(operation=...).
-ADMIN_TOOLS:   Legacy tools callable via memory_maintenance / memory_advanced.
-DEPRECATED:    Tools superseded by verbs (for audit/logging only).
+CORE_TOOLS:    14 verbs + memory_session_start (14 tools total) — all
+                visible directly on the MCP surface. Everything else is
+                accessible via memory_maintenance(operation="...") or
+                memory_advanced(operation="...").
+ADMIN_TOOLS:    Legacy tools callable via memory_maintenance / memory_advanced.
+DEPRECATED:     Tools superseded by verbs (also present in ADMIN_TOOLS;
+                listed here for audit/logging only).
 """
 
 CORE_TOOLS = [
@@ -23,9 +26,12 @@ CORE_TOOLS = [
     "memory_session_start",
     "memory_advanced",
     "memory_review_beliefs",
+    "memory_curate_autosave",
 ]
 
 ADMIN_TOOLS = [
+    "memory_graph_insights",
+    "memory_graph_evolution",
     "memory_maintenance",
     "memory_adaptive_retention",
     "memory_arc_stats",
@@ -56,8 +62,7 @@ ADMIN_TOOLS = [
     "memory_reinforce",
     "memory_retention_stats",
     "memory_review_schedule",
-    "memory_curate_autosave",
-    "memory_rewrite_links",
+
     "memory_restore",
     "memory_rebuild",
     "memory_supersede",

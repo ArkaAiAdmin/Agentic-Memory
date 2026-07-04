@@ -564,24 +564,24 @@ class TestLateInteractionScore(unittest.TestCase):
     """Kill: late_interaction_score return_none mutation."""
 
     def test_returns_float(self):
-        result = _late_interaction_score("test query", "test content")
-        self.assertIsInstance(result, float)
+        score, _ = _late_interaction_score("test query", "test content")
+        self.assertIsInstance(score, float)
 
     def test_empty_query(self):
-        result = _late_interaction_score("", "test content")
-        self.assertEqual(result, 0.0)
+        score, _ = _late_interaction_score("", "test content")
+        self.assertEqual(score, 0.0)
 
     def test_empty_content(self):
-        result = _late_interaction_score("test query", "")
-        self.assertEqual(result, 0.0)
+        score, _ = _late_interaction_score("test query", "")
+        self.assertEqual(score, 0.0)
 
     def test_both_empty(self):
-        result = _late_interaction_score("", "")
-        self.assertEqual(result, 0.0)
+        score, _ = _late_interaction_score("", "")
+        self.assertEqual(score, 0.0)
 
     def test_perfect_match(self):
-        result = _late_interaction_score("test", "test")
-        self.assertGreater(result, 0.0)
+        score, _ = _late_interaction_score("test", "test")
+        self.assertGreater(score, 0.0)
 
 
 class TestComputeFinalScore(unittest.TestCase):

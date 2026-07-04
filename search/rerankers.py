@@ -185,13 +185,14 @@ def _apply_cross_encoder_rerank(
     query: str, scored_results: list, top_k: int, deep_rerank: bool = False
 ) -> list:
     """QW4: rerank the top `top_k` results using the cross-encoder, then
-    return the full list (rest untouched). Each result is a 10-tuple
+    return the full list (rest untouched). Each result is a 12-tuple
     matching the shape produced by the rerank block in search_memories:
         (id, content, source_file, tags, created, rank, final_score,
-         fitness, importance, pinned)
+         fitness, importance, pinned, last_accessed, avg_dist)
     The cross-encoder multiplies final_score by
     (1 - blend) + blend * ce_score, so a doc with ce=0 still keeps
-    50% of its channel-based score.
+    50% of its channel-based score. avg_dist is None (CE does not
+    produce a positional-coherence signal).
 
     deep_rerank=False (default): use the lightweight hand-rolled weak CE
     (IDF + bigram). Sub-millisecond, no extra deps.
@@ -258,6 +259,7 @@ def _apply_cross_encoder_rerank(
             pinned,
         ) = r[:10]
         last_accessed = r[10] if len(r) > 10 else None
+        avg_dist = r[11] if len(r) > 11 else None
         adjusted = final_score * (1.0 - blend + blend * ce)
         reranked.append(
             (
@@ -272,18 +274,21 @@ def _apply_cross_encoder_rerank(
                 importance,
                 pinned,
                 last_accessed,
+                avg_dist,
             )
         )
     reranked.sort(key=lambda x: x[6], reverse=True)
     return reranked + tail
 
 
-def _late_interaction_score(query: str, content: str) -> float:
+def _late_interaction_score(query: str, content: str) -> tuple[float, float]:
     """Compute a late-interaction similarity score between query and content.
 
     For each query token, find the best-matching document token (by
     character overlap + positional proximity) and accumulate the score.
-    Returns a score in [0, 1].
+    Returns ``(score, avg_best_dist)`` where score is in [0, 1] and
+    avg_best_dist is the mean positional distance (in tokens) of each
+    query token's best match — a proxy for topical coherence.
 
     This is a lightweight approximation of real late interaction (e.g.
     ColBERT) that doesn't require loading a neural model. It uses
@@ -291,11 +296,11 @@ def _late_interaction_score(query: str, content: str) -> float:
     positional distance as a proxy for attention.
     """
     if not query or not content:
-        return 0.0
+        return 0.0, len(_tokenize_for_ce(content))
     q_tokens = _tokenize_for_ce(query)
     c_tokens = _tokenize_for_ce(content)
     if not q_tokens or not c_tokens:
-        return 0.0
+        return 0.0, len(c_tokens)
     c_ngrams: list = []
     for tok in c_tokens:
         if len(tok) < 3:
@@ -303,6 +308,7 @@ def _late_interaction_score(query: str, content: str) -> float:
         else:
             c_ngrams.append({tok[i : i + 3] for i in range(len(tok) - 2)})
     total_score = 0.0
+    total_dist = 0
     max_possible = 0.0
     for qi, q_tok in enumerate(q_tokens):
         if len(q_tok) < 3:
@@ -324,9 +330,11 @@ def _late_interaction_score(query: str, content: str) -> float:
                 best_sim = weighted
                 best_dist = dist
         total_score += best_sim
+        total_dist += best_dist
     if max_possible <= 0:
-        return 0.0
-    return min(1.0, total_score / max_possible)
+        return 0.0, float(len(c_tokens))
+    avg_dist = total_dist / max_possible
+    return min(1.0, total_score / max_possible), avg_dist
 
 
 def _precompute_query_ngrams(query: str) -> list:
@@ -350,20 +358,24 @@ def _precompute_query_ngrams(query: str) -> list:
 
 def _late_interaction_score_batch(
     query_ngrams: list, c_tokens: list, c_ngrams: list
-) -> float:
+) -> tuple[float, float]:
     """Late-interaction score using pre-computed query ngrams.
 
     B15 fix: removes the per-call query ngram recomputation.
+    Returns ``(score, avg_best_dist)`` for callers that want the
+    positional-coherence signal alongside the similarity score.
     """
     if not query_ngrams or not c_tokens or not c_ngrams:
-        return 0.0
+        return 0.0, float(len(c_tokens))
     total_score = 0.0
+    total_dist = 0
     max_possible = 0.0
     for qi, q_ngrams in enumerate(query_ngrams):
         if not q_ngrams:
             continue
         max_possible += 1.0
         best_sim = 0.0
+        best_dist = len(c_tokens)
         for ci, c_ng in enumerate(c_ngrams):
             if not c_ng or not q_ngrams:
                 continue
@@ -375,10 +387,13 @@ def _late_interaction_score_batch(
             weighted = sim * proximity
             if weighted > best_sim:
                 best_sim = weighted
+                best_dist = dist
         total_score += best_sim
+        total_dist += best_dist
     if max_possible <= 0:
-        return 0.0
-    return min(1.0, total_score / max_possible)
+        return 0.0, float(len(c_tokens))
+    avg_dist = total_dist / max_possible
+    return min(1.0, total_score / max_possible), avg_dist
 
 
 def _apply_late_interaction_rerank(
@@ -388,7 +403,12 @@ def _apply_late_interaction_rerank(
 
     Blends the late interaction score with the existing final_score
     using _LATE_INTERACTION_BLEND. Returns the full list with adjusted
-    scores for the top_k, rest untouched.
+    scores for the top_k, rest untouched.  Each result is a 12-tuple:
+        (id, content, source_file, tags, created, rank, final_score,
+         fitness, importance, pinned, last_accessed, avg_dist)
+    avg_dist [float | None] is the mean token-position distance of
+    each query token's best match in the document — a proxy for
+    topical coherence (lower = tighter co-occurrence).
     """
 
     # 2026-06-23: Query the config singleton directly to avoid import cycles.
@@ -425,9 +445,10 @@ def _apply_late_interaction_rerank(
                     c_ngrams.append({tok[i : i + 3] for i in range(len(tok) - 2)})
                 else:
                     c_ngrams.append(set())
-            li_score = _late_interaction_score_batch(q_ngrams, c_tokens, c_ngrams)
+            li_score, li_avg_dist = _late_interaction_score_batch(q_ngrams, c_tokens, c_ngrams)
         else:
             li_score = 0.0
+            li_avg_dist = float(len(_tokenize_for_ce(content or "")))
         adjusted = final_score * (1.0 - blend) + li_score * blend
         reranked.append(
             (
@@ -442,6 +463,7 @@ def _apply_late_interaction_rerank(
                 importance,
                 pinned,
                 last_accessed,
+                li_avg_dist,
             )
         )
     reranked.sort(key=lambda x: x[6], reverse=True)

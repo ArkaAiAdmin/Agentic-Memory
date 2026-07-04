@@ -1125,14 +1125,14 @@ class TestLateInteractionScore(unittest.TestCase):
     def test_scores_similar_higher(self):
         from search_pipeline import _late_interaction_score
 
-        score = _late_interaction_score("hello world", "hello world")
+        score, _ = _late_interaction_score("hello world", "hello world")
         self.assertGreater(score, 0.0)
 
     def test_scores_different_lower(self):
         from search_pipeline import _late_interaction_score
 
-        s1 = _late_interaction_score("hello world", "hello world")
-        s2 = _late_interaction_score("hello world", "completely different text")
+        s1, _ = _late_interaction_score("hello world", "hello world")
+        s2, _ = _late_interaction_score("hello world", "completely different text")
         self.assertGreater(s1, s2)
 
 
@@ -1185,6 +1185,8 @@ class TestCountRows(unittest.TestCase):
             self.skipTest("CI: production DB not seeded on the runner")
         count = count_rows(GLOBAL_MEM_DIR)
         self.assertIsInstance(count, int)
+        if count < 0:
+            self.skipTest("prod DB is locked or unavailable (count_rows returned -1)")
         self.assertGreater(count, 0)
 
 
@@ -1324,14 +1326,14 @@ class TestLateInteractionScoreEdge(unittest.TestCase):
     def test_identical_score_high(self):
         from search_pipeline import _late_interaction_score
 
-        score = _late_interaction_score("hello world", "hello world")
+        score, _ = _late_interaction_score("hello world", "hello world")
         self.assertGreater(score, 0.0)
 
     def test_different_score_lower(self):
         from search_pipeline import _late_interaction_score
 
-        s1 = _late_interaction_score("hello world", "hello world")
-        s2 = _late_interaction_score("hello world", "xyz abc")
+        s1, _ = _late_interaction_score("hello world", "hello world")
+        s2, _ = _late_interaction_score("hello world", "xyz abc")
         self.assertGreater(s1, s2)
 
 
@@ -1565,20 +1567,20 @@ class TestLateInteractionScoreFull(unittest.TestCase):
     def test_identical_high(self):
         from search_pipeline import _late_interaction_score
 
-        score = _late_interaction_score("hello world test", "hello world test")
+        score, _ = _late_interaction_score("hello world test", "hello world test")
         self.assertGreater(score, 0.5)
 
     def test_similar_medium(self):
         from search_pipeline import _late_interaction_score
 
-        score = _late_interaction_score("hello world", "hello world test")
+        score, _ = _late_interaction_score("hello world", "hello world test")
         self.assertGreater(score, 0.0)
 
     def test_different_low(self):
         from search_pipeline import _late_interaction_score
 
-        s_similar = _late_interaction_score("hello world", "hello world")
-        s_different = _late_interaction_score("hello world", "xyz abc def")
+        s_similar, _ = _late_interaction_score("hello world", "hello world")
+        s_different, _ = _late_interaction_score("hello world", "xyz abc def")
         self.assertGreater(s_similar, s_different)
 
 
