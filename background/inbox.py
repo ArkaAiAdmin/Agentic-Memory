@@ -428,7 +428,7 @@ def _start_daemon_if_needed() -> bool:
     # so it's the authoritative liveness signal.
     if _is_daemon_lock_held():
         return True
-    script = Path(__file__).resolve()
+    script = Path(__file__).resolve().parent.parent / "auto_save.py"
     try:
         # Detach from the parent so the opencode hook doesn't block
         # waiting for the daemon's pipes to close.
