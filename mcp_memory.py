@@ -530,7 +530,7 @@ def memory_trash(include_expired: bool = False) -> str:
 
 @mcp.tool()
 @with_audit("memory_purge_expired")
-def memory_purge_expired() -> str:
+def memory_purge_expired(dry_run: bool = False) -> str:
     """Hard-delete all soft-deleted memories older than 30 days. Returns count."""
     try:
         from memory_delete import purge_expired
@@ -547,7 +547,9 @@ def memory_purge_expired() -> str:
                 ErrorCode.DB_ERROR,
                 f"memory.db not found at {db_path} -- run memory_rebuild first.",
             )
-        n = purge_expired(db_path)
+        n = purge_expired(db_path, dry_run=dry_run)
+        if dry_run:
+            return f"[DRY RUN] Would purge {n} expired note(s)."
         return f"Purged {n} expired note(s)."
     except Exception:
         logger.exception("memory_purge_expired failed")

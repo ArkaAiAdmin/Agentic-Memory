@@ -105,6 +105,16 @@ def _get_memories_columns(db: AnyConnection) -> set[str]:
 # Safe characters: spaces, alphanumeric, SQL punctuation (AND/OR/NOT/=, etc.)
 # Ban semicolons to prevent multi-statement injection.
 _SQL_SAFE_FILTER_RE = re.compile(r"^[ A-Za-z0-9_.,=<>!()'\"%\-/]+$")
+_SQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_sql_columns(columns: str) -> bool:
+    """Validate that a comma-separated column list contains only safe identifiers."""
+    for col in columns.split(","):
+        col = col.strip().split(" AS ")[0].strip()  # strip alias
+        if not _SQL_IDENT_RE.match(col):
+            return False
+    return True
 
 
 def _fetch_rows_by_ids(
@@ -119,6 +129,12 @@ def _fetch_rows_by_ids(
     Chunks at 500 IDs per query to stay under SQLite's ~999 variable limit.
     """
     if not ids:
+        return {}
+    if not _validate_sql_columns(columns):
+        logger.warning("_fetch_rows_by_ids: rejecting unsafe columns=%r", columns)
+        return {}
+    if not _SQL_IDENT_RE.match(table.split()[0]):
+        logger.warning("_fetch_rows_by_ids: rejecting unsafe table=%r", table)
         return {}
     if extra_filter and not _SQL_SAFE_FILTER_RE.match(extra_filter):
         logger.warning(
@@ -1501,12 +1517,15 @@ def _record_last_accessed(db, result_items) -> None:
         import datetime as _dt
 
         now_iso = _dt.datetime.now().isoformat(timespec="seconds")
-        placeholders = ",".join(("?" for _ in result_items))
         ids = [r["id"] for r in result_items]
-        db.execute(
-            f"UPDATE memories SET last_accessed = ? WHERE id IN ({placeholders})",
-            [now_iso] + ids,
-        )
+        _CHUNK_SIZE = 998  # 1 slot reserved for the timestamp param
+        for i in range(0, len(ids), _CHUNK_SIZE):
+            chunk = ids[i : i + _CHUNK_SIZE]
+            placeholders = ",".join("?" for _ in chunk)
+            db.execute(
+                f"UPDATE memories SET last_accessed = ? WHERE id IN ({placeholders})",
+                [now_iso] + chunk,
+            )
         db.commit()
     except Exception as e:
         _phase_inc("search.record_last_accessed", e)

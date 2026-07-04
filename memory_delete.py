@@ -682,7 +682,7 @@ def list_trash(db_path, include_expired: bool = False) -> List[dict]:
         return []
 
 
-def purge_expired(db_path) -> int:
+def purge_expired(db_path, dry_run: bool = False) -> int:
     """Hard-delete all soft-deleted notes whose 30-day window has elapsed.
 
     Full cascade removal per note:
@@ -713,6 +713,8 @@ def purge_expired(db_path) -> int:
             expired_ids = [r[0] for r in cur.fetchall()]
             if not expired_ids:
                 return 0
+            if dry_run:
+                return len(expired_ids)
             placeholders = ",".join("?" for _ in expired_ids)
 
             # ── 1. Backlinks ───────────────────────────────────

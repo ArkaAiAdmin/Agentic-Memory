@@ -322,8 +322,11 @@ def _ensure_db_exists(db_path: Path):
         except Exception as e:
             logger.error("_ensure_db_exists: could not initialize DB at %s: %s", db_path, e)
             return False
-    # Invalidate PRAGMA cache after migration (M1 fix)
-    clear_pragma_cache()
+    # A5 fix: only invalidate pragma cache for this specific db_path,
+    # not all databases (clear_pragma_cache was called unconditionally
+    # on every save, destroying the PRAGMA table_info cache for all DBs).
+    with _pragma_cache_lock:
+        _pragma_cache.pop(str(db_path), None)
     return True
 
 

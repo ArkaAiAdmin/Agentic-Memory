@@ -96,7 +96,7 @@ def memory_search(
             memory_source=memory_source,
             category=category,
         )
-        return str(result.get("results_blob", str(result)))
+        return str(result.get("output", str(result)))
     except Exception as e:
         logger.exception("in memory_search verb")
         return _err(ErrorCode.DB_ERROR, f"memory_search: {e}")
@@ -351,7 +351,7 @@ def memory_recall(query: str = "", session_id: str = "", tenant_id: str = "defau
             include_global=True,
             tenant_id=tenant_id,
         )
-        return str(result.get("results_blob", str(result)))
+        return str(result.get("output", str(result)))
     except Exception as e:
         logger.exception("in memory_recall verb")
         return _err(ErrorCode.DB_ERROR, f"memory_recall: {e}")
@@ -392,7 +392,7 @@ def memory_note(
             result = search_memories(
                 db_path=_resolve_db_path(), query=note_id, limit=1
             )
-            return str(result.get("results_blob", str(result)))
+            return str(result.get("output", str(result)))
         elif action == "delete":
             from mcp_memory import memory_delete
 
@@ -502,6 +502,8 @@ def memory_learn(
             tags=tags or ["learned"],
             importance=4,
         )
+        if isinstance(result, str) and result.startswith("Error ["):
+            return str(result)
         if as_skill and skill_name:
             skill_result = memory_compile_skill(
                 lesson_slug=skill_name,
@@ -591,7 +593,7 @@ def memory_organize(
                 ("consolidate", memory_consolidate()),
                 ("rewrite_links", memory_rewrite_links()),
                 ("backfill", memory_backfill_all(backfill_mode="health")),
-                ("purge_expired", memory_purge_expired()),
+                ("purge_expired", memory_purge_expired(dry_run=dry_run)),
                 ("dedup", memory_duplicates(threshold=0.85)),
             ]
         elif target == "compact":
