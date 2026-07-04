@@ -370,7 +370,7 @@ class EmbeddingSearch:
             if self._model_load_failed:
                 return False
             time.sleep(0.05)
-        return self._model_loaded
+        return bool(self._model_loaded)
 
     def encode(self, texts) -> np.ndarray | None:
         if self.model is None or getattr(self, "np", None) is None:

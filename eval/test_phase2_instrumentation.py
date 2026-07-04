@@ -8,12 +8,13 @@ Verifies:
 - individual phase failures do not break the search pipeline
 """
 
+import atexit
+import shutil
 import sys
 import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path.home() / ".config" / "agentic-memory"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -27,7 +28,14 @@ from search.orchestrator import (
     _record_last_accessed,
 )
 
-PROD_DB = Path.home() / ".config" / "agentic-memory" / "memory" / "memory.db"
+_TEST_TMPDIR = Path(tempfile.mkdtemp())
+PROD_DB = _TEST_TMPDIR / "memory.db"
+
+def _cleanup() -> None:
+    if _TEST_TMPDIR.exists():
+        shutil.rmtree(str(_TEST_TMPDIR), ignore_errors=True)
+
+atexit.register(_cleanup)
 
 
 class TestErrorCounterBasic(unittest.TestCase):

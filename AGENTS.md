@@ -74,6 +74,8 @@ agentic-memory/
 14. **Saga rollback cleans up dependent rows.** `save.saga.undo_upsert` calls `save.cleanup.cleanup_memory_relations()` (covers kg_facts, orphan kg_edges, backlinks).
 15. **Update docs after code changes.** Stale docs are a maintenance hazard — fix them in the same commit.
 16. **Use one persistent worktree for active development.** Reuse it for all ongoing feature work; do not create a new worktree per branch or per commit. Verify security and tests in the worktree before merging to main. Keep worktrees minimal and remove them when no longer needed.
+17. **Fix every LSP error in every file you touch.** Every file you read or edit must exit with zero LSP errors (pyright). No `# type: ignore` comments, no `# noqa` for type errors, no silent `except` swallowing of type-correctness issues. Fix the type annotation at the source (function signature, variable declaration) so the error is resolved correctly. Pre-existing errors in files you didn't modify are exempt, but any file you edit must be left fully clean.
+18. **Run mypy + ruff before every commit.** Before committing any changes, run `./venv/bin/python -m mypy <any file you modified>` and `./venv/bin/python -m ruff check <any file you modified>`. Fix all errors and warnings. Do not commit with outstanding mypy or ruff issues. This applies even to test files.
 
 ---
 

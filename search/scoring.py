@@ -28,6 +28,7 @@ import math
 import os
 import re
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -68,6 +69,7 @@ _RERANK_TOKEN_RE = re.compile("\\b[A-Za-z][A-Za-z\\-_/]{2,}\\b")
 _STRONG_BM25_THRESHOLD = 0.95  # bm25_score = 1/(1+exp(rank))
 
 _CTR_WEIGHTS_CACHE: Optional[tuple[float, Any, bool]] = None
+_CTR_WEIGHTS_CACHE_LOCK = threading.RLock()
 _CTR_WEIGHTS_TTL = 300  # 5 minutes
 
 

@@ -115,7 +115,6 @@ def facts_search(
 
     # Apply belief filters if specified
     if rows and (belief_status is not None or epistemic_source is not None or fact_type is not None):
-        filtered = []
         ids = [r[0] for r in rows]
         if not ids:
             rows = []

@@ -149,52 +149,8 @@ __all__ = [
     "_QW5_CHUNKS_SCHEMA_SQL",
     "_QW5_CHUNKS_TRIGGERS_SQL",
 ]
-import json
-import logging
-import math
-import threading
-import os
-import re
-import sqlite3
-import time
-import uuid
-from collections import OrderedDict, namedtuple
-from typing import NamedTuple, Optional, cast
-from datetime import datetime, timezone
-from pathlib import Path
-from dataclasses import dataclass
-from infra.memory_common import (
-    open_db,
-    count_rows,
-    safe_call,
-    connection_pool,
-    safe_close_db,
-    acquire_flock_with_retry,
-    release_flock,
-    atomic_write,
-    get_memory_paths,
-    parse_frontmatter,
-)
-from infra.infrastructure import (
-    _normalize_unicode,
-    _resolve_active_db_path,
-    _try_extract_result_meta,
-    with_audit,
-    _err,
-    ErrorCode,
-    resolve_active_memory_dir,
-    resolve_db_for_memory_id,
-    add_link_to_memory_md_content,
-    update_memory_md_locked,
-    GLOBAL_MEM_DIR,
-)
-from infra.cache import (
-    _search_cache,
-    SEARCH_CACHE_MAX,
-    SEARCH_CACHE_TTL,
-    SEARCH_CACHE_TTL_ENABLED,
-    make_cache_key,
-)
+from infra.memory_common import get_memory_paths  # noqa: F401
+from infra.infrastructure import GLOBAL_MEM_DIR, resolve_active_memory_dir  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Cross-encoder + late-interaction rerank primitives
@@ -293,7 +249,7 @@ from search.chunk_index import (  # noqa: E402, F401
     _QW5_CHUNKS_TRIGGERS_SQL,
 )
 
-from search.query_parser import (
+from search.query_parser import (  # noqa: F401
     _QUERY_EXPANSIONS,
     _QUERY_EXPANSION_REVERSE,
     _QUERY_TYPE_WEIGHTS,
@@ -315,7 +271,7 @@ from search.query_parser import (
     _graph_rag_expand,
 )
 
-from search.orchestrator import (
+from search.orchestrator import (  # noqa: F401
     search_memories,
     _get_memories_columns,
     _fetch_rows_by_ids,

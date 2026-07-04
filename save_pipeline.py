@@ -24,7 +24,7 @@ __all__ = [
     "_is_legacy_note_crdt_enabled",
     "_crdt_bump_version",
 ]
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import hashlib
 import json
 import logging
@@ -49,7 +49,7 @@ from infra.infrastructure import (
     resolve_active_memory_dir,
     GLOBAL_MEM_DIR,
 )
-from infra.db import open_db  # noqa: E402,F401 — backward compat re-export
+from infra.db import AnyConnection, open_db  # noqa: E402,F401 — backward compat re-export
 import infra.audit as audit
 from self_directed import _assign_tier as assign_tier
 from backfill.orchestrator import auto_backfill
@@ -317,7 +317,7 @@ def _ensure_db_exists(db_path: Path):
     """Create the DB and run migrations if it doesn't exist yet."""
     if not db_path.exists():
         try:
-            with open_db(db_path, timeout=30.0) as db:
+            with open_db(db_path, timeout=30.0):
                 pass
         except Exception as e:
             logger.error("_ensure_db_exists: could not initialize DB at %s: %s", db_path, e)
@@ -1954,7 +1954,7 @@ def _record_revision_log(
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (memory_id, revision_type, old_content, new_content, rationale, metadata_json, agent_id, now),
         )
-        return int(cur.lastrowid)
+        return int(cur.lastrowid) if cur.lastrowid is not None else None
     except Exception as e:
         logger.warning("Failed to record revision log for %s/%s: %s", memory_id, revision_type, e)
         return None

@@ -81,7 +81,7 @@ def ensure_belief_assertion(
                 now,
             ),
         )
-        return int(cur.lastrowid)
+        return int(cur.lastrowid) if cur.lastrowid is not None else None
     except Exception as e:
         logger.warning("Failed to ensure belief_assertion for fact %s: %s", fact_id, e)
         return None
@@ -128,7 +128,7 @@ def get_active_beliefs(
 ) -> list[dict]:
     """List belief assertions with optional filters."""
     clauses = ["1=1"]
-    params = []
+    params: list[str | int | float] = []
     if belief_status is not None:
         clauses.append("ba.belief_status = ?")
         params.append(belief_status)

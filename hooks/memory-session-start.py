@@ -148,7 +148,8 @@ def _read_current_session() -> dict:
     if not _CURRENT_SESSION_FILE.exists():
         return {}
     try:
-        return json.loads(_CURRENT_SESSION_FILE.read_text())
+        result: dict = json.loads(_CURRENT_SESSION_FILE.read_text())
+        return result
     except (json.JSONDecodeError, OSError):
         return {}
 

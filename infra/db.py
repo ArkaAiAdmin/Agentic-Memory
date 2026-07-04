@@ -751,6 +751,16 @@ def open_db(
     from infra.db_path_flock import db_path_flock
 
     path = Path(path)
+    if str(path) != ":memory:":
+        try:
+            if not path.exists():
+                path.touch(mode=0o600)
+            elif path.stat().st_mode & 0o777 != 0o600:
+                path.chmod(0o600)
+        except OSError:
+            logger.debug("Could not set permissions on %s", path)
+        except Exception as exc:
+            logger.warning("Unexpected error on %s: %s", path, exc)
     if write:
         from infra.db_write_queue import sqlite_write_queue
 

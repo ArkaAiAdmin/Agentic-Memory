@@ -29,7 +29,23 @@ from infra.memory_common import (
 )
 from infra.infrastructure import GLOBAL_MEM_DIR
 
-PROD_DB = Path(os.environ.get("MEMORY_DB_PATH", str(GLOBAL_MEM_DIR / "memory.db")))
+import atexit
+import shutil
+
+from _fixtures import bootstrap_temp_db_clean
+
+_SESSION_TMPDIR = Path(tempfile.mkdtemp())
+_SESSION_DB = _SESSION_TMPDIR / "memory.db"
+bootstrap_temp_db_clean(_SESSION_DB)
+os.environ["MEMORY_DB_PATH"] = str(_SESSION_DB)
+
+PROD_DB = _SESSION_DB
+
+def _cleanup() -> None:
+    if _SESSION_TMPDIR.exists():
+        shutil.rmtree(str(_SESSION_TMPDIR), ignore_errors=True)
+
+atexit.register(_cleanup)
 
 
 class TestConnectionPool(unittest.TestCase):

@@ -59,7 +59,8 @@ def _read_current_session() -> dict:
     if not _CURRENT_SESSION_FILE.exists():
         return {}
     try:
-        return json.loads(_CURRENT_SESSION_FILE.read_text())
+        result: dict = json.loads(_CURRENT_SESSION_FILE.read_text())
+        return result
     except (json.JSONDecodeError, OSError):
         return {}
 
@@ -109,7 +110,8 @@ def _end_session_via_manager(session_id: str, marker: dict) -> dict:
 def _load_marker() -> dict:
     if _MARKER_FILE.exists():
         try:
-            return json.loads(_MARKER_FILE.read_text())
+            result: dict = json.loads(_MARKER_FILE.read_text())
+            return result
         except (json.JSONDecodeError, OSError):
             pass
     return {}
@@ -147,7 +149,6 @@ def _try_promote_session_drafts() -> None:
     session-end save is never blocked.
     """
     try:
-        import json as _json
         import sqlite3 as _sqlite3
         from pathlib import Path as _Path
         from datetime import datetime as _dt, timezone as _tz, timedelta as _tdelta
@@ -236,11 +237,10 @@ def _maybe_auto_save() -> dict:
 
         result = memory_save(
             content=content,
-            category=_SESSION_SAVE_CATEGORY,
+            category="sessions",
             title_slug=f"auto-session-end-{session_id[:8] if session_id else 'unknown'}",
             tags=["auto-session-end", "rule-7"],
             importance=2,
-            epistemic_source="hook",
         )
         # Mark as saved
         marker["saved_at"] = now

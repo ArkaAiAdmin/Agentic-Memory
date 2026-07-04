@@ -99,7 +99,7 @@ def _extract_user_prompt(events_path: Path) -> str:
                             if isinstance(part, dict):
                                 patch = part.get("patch", "")
                                 if patch.strip():
-                                    return patch.strip()[:500]
+                                    return str(patch.strip()[:500])
 
     return ""
 

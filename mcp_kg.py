@@ -236,10 +236,12 @@ def memory_graph_insights(
 
         out = ["**Graph Analytics Insights**"]
         with open_db(db_path, row_factory=None) as conn:
-            entity_count = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
-            edge_count = conn.execute(
+            entity_row = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()
+            entity_count = int(entity_row[0]) if entity_row and entity_row[0] is not None else 0
+            edge_row = conn.execute(
                 "SELECT COUNT(*) FROM kg_edges WHERE invalid_at IS NULL OR invalid_at = ''"
-            ).fetchone()[0]
+            ).fetchone()
+            edge_count = int(edge_row[0]) if edge_row and edge_row[0] is not None else 0
             max_edges = max(entity_count * (entity_count - 1) / 2, 1e-9)
             density = min(edge_count / max_edges, 1.0)
 
@@ -273,7 +275,7 @@ def memory_graph_insights(
                     for i in range(min(len(sample_ids) - 1, sample_size)):
                         try:
                             dist = find_shortest_path(
-                                conn, source=str(sample_ids[i]), target=str(sample_ids[i + 1]), max_depth=4
+                                conn, source_name=str(sample_ids[i]), target_name=str(sample_ids[i + 1]), max_depth=4
                             )
                             if dist is not None:
                                 sampled_paths.append(dist)
@@ -282,7 +284,7 @@ def memory_graph_insights(
             except Exception:
                 sampled_paths = []
 
-            avg_path = sum(sampled_paths) / len(sampled_paths) if sampled_paths else None
+            avg_path = sum(len(p) for p in sampled_paths) / len(sampled_paths) if sampled_paths else None
 
             top_pr_names: list[tuple[int, float, str | None]] = []
             for eid, score in top_pr[:10]:

@@ -34,7 +34,8 @@ from save_pipeline import (
     _build_memory_file,
 )
 
-PROD_DB = Path(os.environ.get("MEMORY_DB_PATH", str(GLOBAL_MEM_DIR / "memory.db")))
+_DEFAULT_TEST_DB = Path(tempfile.mkstemp(suffix=".db", prefix="default_test_")[1])
+PROD_DB = Path(os.environ["MEMORY_DB_PATH"]) if "MEMORY_DB_PATH" in os.environ else _DEFAULT_TEST_DB
 
 _TEMP_DB_PATHS: list[Path] = []
 
@@ -58,7 +59,7 @@ def setUpModule():
     shutil.copy2(str(_MODULE_DB), str(_MODULE_TMPDIR / "memory" / "memory.db"))
     import sys as _sys
 
-    _sys.modules[__name__].PROD_DB = _MODULE_DB
+    setattr(_sys.modules[__name__], "PROD_DB", _MODULE_DB)
     _SAVED_CWD = os.getcwd()
     os.chdir(str(_MODULE_TMPDIR))
 
@@ -69,7 +70,7 @@ def tearDownModule():
         del os.environ["MEMORY_DB_PATH"]
     import sys as _sys
 
-    _sys.modules[__name__].PROD_DB = _ORIGINAL_PROD_DB
+    setattr(_sys.modules[__name__], "PROD_DB", _ORIGINAL_PROD_DB)
     if _SAVED_CWD:
         os.chdir(_SAVED_CWD)
         _SAVED_CWD = None
@@ -124,7 +125,7 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _hard_delete(db_path, note_id):
+def _hard_delete(db_path: Path, note_id: str) -> None:
     with open_db(db_path) as db:
         row = db.execute("SELECT rowid FROM memories WHERE id=?", (note_id,)).fetchone()
         if row:
@@ -134,7 +135,7 @@ def _hard_delete(db_path, note_id):
                 pass
         db.execute("DELETE FROM memories WHERE id=?", (note_id,))
         db.commit()
-    (Path(PROD_DB).parent / f"{note_id}.md").unlink(missing_ok=True)
+    (db_path.parent / f"{note_id}.md").unlink(missing_ok=True)
 
 
 class TestSaveMemoryReturnValues(unittest.TestCase):

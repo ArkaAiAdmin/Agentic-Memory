@@ -25,10 +25,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # Counters
 # ---------------------------------------------------------------------------
 
-def count_search_phases() -> tuple[int, list[str]]:
-    """Return (unique_phase_count, phase_names_in_order)."""
+def count_search_phases() -> tuple[int, list[str], list[str]]:
+    """Return (unique_phase_count, phase_numbers_in_order, phase_names_in_order)."""
     path = Path("search/orchestrator.py")
-    seen: dict[str, int] = {}  # name -> first occurrence index
+    seen: dict[str, tuple[str, int]] = {}
     for lineno, line in enumerate(path.read_text().splitlines()):
         m = re.search(
             r"#\s*Phase\s+(\d+[b]?)\s*:\s*(.+)", line, re.IGNORECASE
@@ -36,9 +36,13 @@ def count_search_phases() -> tuple[int, list[str]]:
         if m:
             num = m.group(1).strip()
             name = m.group(2).strip().rstrip(".")
-            seen.setdefault(name, lineno)
-    ordered = [name for _, name in sorted((ln, n) for n, ln in seen.items())]
-    return len(ordered), ordered
+            seen.setdefault(name, (num, lineno))
+    entries: list[tuple[str, str]] = [
+        (num, name) for name, (num, _ln) in sorted(seen.items(), key=lambda kv: kv[1][1])
+    ]
+    phase_nums = [num for num, _name in entries]
+    phase_names = [name for _num, name in entries]
+    return len(entries), phase_nums, phase_names
 
 
 def count_tools() -> dict[str, int]:
@@ -107,7 +111,7 @@ def generate_doc() -> str:
     version = count_schema_version()
     n_cron = count_cron_scripts()
     n_hooks = count_hooks()
-    n_phases, phase_names = count_search_phases()
+    n_phases, phase_nums, phase_names = count_search_phases()
 
     save_steps = count_core_save_steps()
 
@@ -161,7 +165,9 @@ User/Agent
 The search orchestrator (`search_memories` in `search/orchestrator.py`)
 runs the following **{n_phases} phases** in order:
 
-{_numbered_list(phase_names if phase_names else PHASE_TRANSITIONS[:n_phases])}
+> **Pipeline flow:** {phase_arrow}
+
+{_numbered_list(phase_names if phase_names else [name for _, name in PHASE_TRANSITIONS[:n_phases]])}
 
 ## Save Pipeline
 

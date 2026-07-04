@@ -30,6 +30,12 @@ class SearchResults:
     synthesis: str = ""
     query: str = ""
 
+    def __len__(self) -> int:
+        return len(self.results)
+
+    def __iter__(self):
+        return iter(self.results)
+
 
 @dataclass
 class Entity:

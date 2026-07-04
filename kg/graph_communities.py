@@ -12,8 +12,8 @@ No external dependencies required.
 from __future__ import annotations
 
 import logging
-import sqlite3
-from typing import Any
+
+from infra.db import AnyConnection
 
 logger = logging.getLogger(__name__)
 
@@ -300,5 +300,5 @@ def write_community_ids(
             "UPDATE kg_entities SET community_id = ? WHERE id = ?",
             (community_id, entity_id),
         )
-        updated += cur.rowcount
+        updated += cur.rowcount if cur.rowcount is not None else 0
     return updated

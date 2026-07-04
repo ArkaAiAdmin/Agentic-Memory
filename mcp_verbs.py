@@ -17,7 +17,6 @@ surface. The 80+ legacy tools are callable through memory_advanced.
 """
 from __future__ import annotations
 
-import logging
 import time
 from pathlib import Path
 
@@ -263,7 +262,7 @@ def memory_curate_autosave(
             elif action == "promote":
                 if not note_ids:
                     return _err(ErrorCode.INVALID_PARAMS, "note_ids required for promote")
-                import json, datetime
+                import datetime
                 promoted = 0
                 for nid in note_ids:
                     row = db.execute(
@@ -446,25 +445,24 @@ def memory_note(
             from save_pipeline import patch_memory
             from pathlib import Path
 
-            result = patch_memory(
+            patch_result = patch_memory(
                 db_path=_resolve_db_path(),
                 note_id=note_id,
                 additions=additions,
                 deletions=deletions,
                 rationale=rationale,
             )
-            return str(result)
+            return str(patch_result)
         elif action == "revert_supersede":
             from save_pipeline import revert_supersede
-            from pathlib import Path
 
-            result = revert_supersede(
+            revert_result = revert_supersede(
                 db_path=_resolve_db_path(),
                 note_id=note_id,
                 target_note_id=title_slug or None,
                 rationale=rationale,
             )
-            return str(result)
+            return str(revert_result)
         else:
             return _err(
                 ErrorCode.INVALID_PARAMS,

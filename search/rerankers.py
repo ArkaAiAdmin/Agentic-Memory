@@ -125,7 +125,7 @@ def _get_late_interaction_blend() -> float:
         return _LATE_INTERACTION_BLEND
 
 
-def _tokenize_for_ce(text: str) -> list:
+def _tokenize_for_ce(text: str | None) -> list:
     """QW4: lowercase + split on non-word chars, keep short tokens.
 
     Returns a list of tokens in original order. Duplicates are preserved
@@ -390,7 +390,6 @@ def _apply_late_interaction_rerank(
     using _LATE_INTERACTION_BLEND. Returns the full list with adjusted
     scores for the top_k, rest untouched.
     """
-    import sys
 
     # 2026-06-23: Query the config singleton directly to avoid import cycles.
     from infra._lazy_imports import get_config

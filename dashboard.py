@@ -5,6 +5,7 @@ Run:
     cd ~/.config/agentic-memory
     venv/bin/streamlit run dashboard.py
 """
+import html
 import json
 import struct
 import sqlite3
@@ -433,7 +434,7 @@ def _render_memory_content(mid: str, expanded: bool = True):
             break
     meta.get("tags", "")
     with st.expander(f"**{title or mid}**", expanded=expanded):
-        st.markdown(f"`{mid}`", unsafe_allow_html=True)
+        st.markdown(f"`{html.escape(str(mid))}`", unsafe_allow_html=True)
         cols = st.columns(4)
         if meta.get("created"):
             cols[0].caption(f"\U0001f4c5 {meta['created'][:10]}")
@@ -808,6 +809,7 @@ with kg_tab:
         st.info("No entities")
         st.stop()
 
+    assert ent is not None
     eid_list = [int(x) for x in ent["id"].values]
     name_map = dict(zip(ent["id"], ent["name"]))
     type_map = dict(zip(ent["id"], ent["entity_type"]))
@@ -825,6 +827,7 @@ with kg_tab:
         st.info("No edges connect top entities. Increase count or check data.")
         st.stop()
 
+    assert edges_df is not None
     G = nx.Graph()
     for _, r in edges_df.iterrows():
         G.add_edge(
@@ -1330,7 +1333,7 @@ with facts_tab:
                     conf_badge = f'<span style="background:{conf_col};color:#fff;padding:0.15rem 0.5rem;border-radius:999px;font-size:0.7rem;font-weight:600;">{r["confidence"]:.2f}</span>'
                     lock_badge = _badge_html("warning" if r.get("locked") else "ok", "LOCKED" if r.get("locked") else "OPEN")
                     with st.expander(f"{r['subject'][:35]} → {r['predicate'][:25]} → {r['object'][:50]}"):
-                        st.markdown(f"{lock_badge} &nbsp; {conf_badge} &nbsp; **{r['subject'][:35]}** → **{r['predicate'][:25]}** → **{r['object'][:50]}**", unsafe_allow_html=True)
+                        st.markdown(f"{lock_badge} &nbsp; {conf_badge} &nbsp; **{html.escape(str(r['subject'])[:35])}** → **{html.escape(str(r['predicate'])[:25])}** → **{html.escape(str(r['object'])[:50])}**", unsafe_allow_html=True)
                         c1, c2, c3 = st.columns(3)
                         c1.markdown(f"**Subject**\n\n`{r['subject']}`")
                         c2.markdown(f"**Predicate**\n\n`{r['predicate']}`")
@@ -1467,7 +1470,7 @@ with drift_tab:
                 )
                 ack_label = _badge_html("ok" if ack else "warning", "ACK" if ack else "PENDING")
                 with st.expander(f"drift={r['drift_score']:.3f} &nbsp;·&nbsp; {r['memory_id'][:50]}"):
-                    st.markdown(f"{alarm_badge} &nbsp; {ack_label} &nbsp; **Concept**: {r.get('concept', '—')}", unsafe_allow_html=True)
+                    st.markdown(f"{alarm_badge} &nbsp; {ack_label} &nbsp; **Concept**: {html.escape(str(r.get('concept', '—')))}", unsafe_allow_html=True)
                     st.markdown(f"**Drift Score**: {r['drift_score']:.3f} (threshold: {r['threshold']})")
                     st.markdown(f"**Detected**: {r.get('detected_at', '—')}")
                     if ack:
@@ -1555,7 +1558,7 @@ with ctr_tab:
                     )
                     ts = r["returned"].strftime("%Y-%m-%d %H:%M") if pd.notna(r["returned"]) else "?"
                 with st.expander(f"`{r['query_id'][:24]}` &nbsp;·&nbsp; {ts} &nbsp;·&nbsp; src={r['source']}"):
-                    st.markdown(f"{status_badge} **Query ID**: `{r['query_id']}`", unsafe_allow_html=True)
+                    st.markdown(f"{status_badge} **Query ID**: `{html.escape(str(r['query_id']))}`", unsafe_allow_html=True)
                     st.markdown(f"**Source**: {r['source']}")
                     st.markdown(f"**Status**: {r['status']}")
                     if pd.notna(r["returned_at"]):

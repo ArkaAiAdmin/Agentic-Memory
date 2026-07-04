@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import builtins
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 __version__: str
 
@@ -257,6 +257,8 @@ class SearchResults:
         synthesis: str = "",
         query: str = "",
     ) -> None: ...
+    def __len__(self) -> int: ...
+    def __iter__(self) -> Iterator[MemoryResult]: ...
 
 class Stats:
     memories: int

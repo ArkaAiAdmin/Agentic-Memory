@@ -252,6 +252,7 @@ def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
     if not _flaky_items:
         return
     try:
+        import tempfile
         from pathlib import Path
 
         root = Path(__file__).resolve().parent.parent
@@ -259,18 +260,25 @@ def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
         if sys_path not in sys.path:
             sys.path.insert(0, sys_path)
         from save_pipeline import save_memory  # noqa: E402
+        from infra.db_migrations import run_schema_setup
+        import sqlite3
 
         lines = [f"- {nodeid} ({when})" for nodeid, when in _flaky_items]
         content = "Flaky tests detected in pytest session:\n" + "\n".join(lines)
-        db_path = root / "memory" / "memory.db"
-        if db_path.exists():
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_db = Path(tmpdir) / "memory.db"
+            conn = sqlite3.connect(str(tmp_db))
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            run_schema_setup(conn)
+            conn.close()
             save_memory(
                 content=content,
                 category="lessons",
                 title_slug="flaky-tests-detected",
                 tags=["flaky"],
                 pinned=True,
-                db_path=str(db_path),
+                db_path=str(tmp_db),
             )
     except Exception:
         pass
@@ -315,7 +323,6 @@ def reset_auto_save_state():
     """
     try:
         from background.auto_save import _auto_save_reset_state, _AUTO_SAVE_STATE
-        from background.auto_save import _cleanup_auto_save_daemon
 
         _cleanup_auto_save_daemon()
         _auto_save_reset_state()
@@ -326,7 +333,7 @@ def reset_auto_save_state():
         pass
     yield
     try:
-        from background.auto_save import _auto_save_reset_state, _cleanup_auto_save_daemon
+        from background.auto_save import _auto_save_reset_state
 
         _cleanup_auto_save_daemon()
         _auto_save_reset_state()

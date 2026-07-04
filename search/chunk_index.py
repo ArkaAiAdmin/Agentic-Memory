@@ -166,7 +166,7 @@ END;
 """
 
 
-def _qw5_extract_keywords(text: str) -> set[str]:
+def _qw5_extract_keywords(text: str | None) -> set[str]:
     """Extract keywords from text for topic similarity comparison.
 
     Returns a set of lowercase words (3+ chars, excluding stopwords).

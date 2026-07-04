@@ -464,7 +464,6 @@ def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
         from infra._lazy_imports import open_db
 
         with open_db(db_path) as conn:
-            all_related = []
             combined_query = " ".join(name for name, _ in query_entities[:5])
 
             query_entity_ids: set[int] = set()

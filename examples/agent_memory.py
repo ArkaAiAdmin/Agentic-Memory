@@ -63,13 +63,13 @@ def main() -> int:
         results = coder.search("frontend", limit=5)
         print(f"  coder sees {len(results)} result(s):")
         for r in results:
-            print(f"    - {r.get('id', '?'):60s}  score={r.get('score', 0):.3f}")
+            print(f"    - {r.id:60s}  score={r.score:.3f}")
 
         print("\n[4] Writer searches 'docs' (should see its own note)...")
         results = writer.search("docs", limit=5)
         print(f"  writer sees {len(results)} result(s):")
         for r in results:
-            print(f"    - {r.get('id', '?'):60s}  score={r.get('score', 0):.3f}")
+            print(f"    - {r.id:60s}  score={r.score:.3f}")
 
         print(
             "\n[5] Cross-agent isolation: writer should NOT see the coder's "
@@ -77,7 +77,7 @@ def main() -> int:
         )
         results = writer.search("React", limit=5)
         for r in results:
-            print(f"    - {r.get('id', '?'):60s}  score={r.get('score', 0):.3f}")
+            print(f"    - {r.id:60s}  score={r.score:.3f}")
 
         print("\nDone. Agent scoping is working.")
         return 0

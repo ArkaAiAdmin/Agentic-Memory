@@ -82,7 +82,7 @@ def next_due(entry: dict, now_ts: float, last_run: float) -> float:
     interval_s = entry["interval_minutes"] * 60
     if last_run == 0:
         return now_ts
-    return last_run + interval_s
+    return float(last_run + interval_s)
 
 
 def main() -> int:
