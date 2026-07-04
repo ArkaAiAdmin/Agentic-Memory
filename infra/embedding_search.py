@@ -254,7 +254,7 @@ class EmbeddingSearch:
         _load_thread = threading.Thread(target=self._load_model, daemon=True)
         _load_thread.start()
 
-    def _embed_query(self, query: str) -> Any:
+    def _embed_query(self, query: str, category: str = "", tags: Optional[list] = None, source_file: str = "") -> Any:
         """Get query embedding with optional LRU cache."""
         if self.model is None or getattr(self, "np", None) is None:
             return None
@@ -263,7 +263,8 @@ class EmbeddingSearch:
                 self._query_cache.move_to_end(query)
                 return self._query_cache[query]
         # Cache miss or disabled — encode and optionally cache.
-        query_vec = self.model.encode([query])
+        text = _embed_text_with_context(query, category=category, tags=tags, source_file=source_file)
+        query_vec = self.model.encode([text])
         if query_vec.ndim == 1:
             query_vec = query_vec.reshape(1, -1)
         query_vec = query_vec[0]  # shape (dim,)
@@ -644,7 +645,7 @@ class EmbeddingSearch:
         self._vec_index_cache[cache_key] = (idx, meta)
         return idx, meta
 
-    def _search_via_index(self, idx, meta, db, query, limit) -> str | list[dict] | None:
+    def _search_via_index(self, idx, meta, db, query, limit, category="", tags=None, source_file="") -> str | list[dict] | None:
         """ANN top-K + FP32 rerank. Returns list[dict] like _search_full_scan,
         or None if the indexed path should fall back (any error inside).
 
@@ -669,7 +670,7 @@ class EmbeddingSearch:
         # DB the candidate set is bounded.
         ann_k = min(200, n_vectors)
 
-        query_vec = self._embed_query(query)
+        query_vec = self._embed_query(query, category=category, tags=tags, source_file=source_file)
 
         try:
             matches = idx.search(query_vec, ann_k)
@@ -853,7 +854,7 @@ class EmbeddingSearch:
             )
         return results
 
-    def _search_full_scan(self, db, query, limit) -> str | list[dict]:
+    def _search_full_scan(self, db, query, limit, category="", tags=None, source_file="") -> str | list[dict]:
         """The pre-Sprint-4 search path: encode every memory and dot-product.
 
         Used as the fallback whenever the index is absent, corrupt, or
@@ -946,7 +947,7 @@ class EmbeddingSearch:
 
         # Encode the query and guard the ndim so a 1-row DB doesn't
         # collapse similarities into a scalar.
-        query_vec = self._embed_query(query)
+        query_vec = self._embed_query(query, category=category, tags=tags, source_file=source_file)
 
         if content_vecs.shape[0] == 0:
             return []
@@ -1124,7 +1125,7 @@ class EmbeddingSearch:
             results.append({"id": mid, "score": sim, "preview": ""})
         return results
 
-    def search(self, query, db_path, limit=5) -> str | list[dict]:
+    def search(self, query, db_path, limit=5, category="", tags=None, source_file="") -> str | list[dict]:
         if self.model is None:
             return "Embedding search unavailable. Install model2vec: pip install model2vec numpy"
 
@@ -1134,8 +1135,8 @@ class EmbeddingSearch:
         # O(N) over all embeddings; caching helps when an agent issues
         # the same query many times in a loop. TTL is short (30s) so
         # newly-added memories are reflected quickly.
-
-        cache_key = (str(db_path), query, limit)
+        _cache_extras = (category, tuple(tags or []), source_file)
+        cache_key = (str(db_path), query, limit, _cache_extras)
         cached = _vec_cache_get(cache_key)
         if cached is not None:
             return cached  # type: ignore[no-any-return]
@@ -1152,7 +1153,7 @@ class EmbeddingSearch:
             idx, meta = self._load_vec_index(db_path, db)
             if idx is not None and meta is not None and meta.get("n_vectors", 0) > 0:
                 try:
-                    indexed_result = self._search_via_index(idx, meta, db, query, limit)
+                    indexed_result = self._search_via_index(idx, meta, db, query, limit, category=category, tags=tags, source_file=source_file)
                     if indexed_result is not None:
                         # P0 fix #4: record each non-empty result as a
                         # recent hit on the T1/T2 side of ARC, so the
@@ -1166,7 +1167,7 @@ class EmbeddingSearch:
                     logger.warning(
                         "indexed search failed, falling back to full scan: %s", e
                     )
-            result = self._search_full_scan(db, query, limit)
+            result = self._search_full_scan(db, query, limit, category=category, tags=tags, source_file=source_file)
             if isinstance(result, list):
                 self._arc_track_hits(result, db_path)
             _vec_cache_put(cache_key, result)
@@ -1299,14 +1300,14 @@ class EmbeddingSearch:
         self._chunk_index_cache[cache_key] = (idx, meta)
         return idx, meta
 
-    def _search_chunks_via_index(self, idx, meta, db, query, limit) -> list[dict] | None:
+    def _search_chunks_via_index(self, idx, meta, db, query, limit, category="", tags=None, source_file="") -> list[dict] | None:
         if self.model is None or self.np is None:
             return None
         n_vectors = meta["n_vectors"]
         if n_vectors == 0:
             return []
         ann_k = min(200, n_vectors)
-        query_vec = self._embed_query(query)
+        query_vec = self._embed_query(query, category=category, tags=tags, source_file=source_file)
         if query_vec is None:
             return None
         try:
@@ -1340,7 +1341,7 @@ class EmbeddingSearch:
         ranked = sorted(mid_scores.values(), key=lambda x: x["score"], reverse=True)[:limit]
         return ranked
 
-    def _search_chunks_full_scan(self, db, query, limit) -> list[dict]:
+    def _search_chunks_full_scan(self, db, query, limit, category="", tags=None, source_file="") -> list[dict]:
         if self.model is None or self.np is None:
             return []
         try:
@@ -1352,7 +1353,7 @@ class EmbeddingSearch:
             return []
         if not rows:
             return []
-        query_vec = self._embed_query(query)
+        query_vec = self._embed_query(query, category=category, tags=tags, source_file=source_file)
         if query_vec is None:
             return []
         dim_val = int(self.model.dim)

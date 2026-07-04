@@ -802,13 +802,14 @@ def _fallback_embedding_search(
     db_path: Path,
     limit: int,
     repo_filter: str,
+    category: str = "",
 ) -> list:
     """Try embedding search as fallback when FTS returns nothing."""
     try:
         from infra._lazy_imports import get_embedding_search
 
         _es = get_embedding_search()
-        _es_results = _es.search(normalized_query, db_path, limit=limit * 2)
+        _es_results = _es.search(normalized_query, db_path, limit=limit * 2, category=category)
         if not isinstance(_es_results, list) or not _es_results:
             return []
 
@@ -1964,7 +1965,7 @@ def search_memories(
                 import search_pipeline
                 _t0 = time.time()
                 results = search_pipeline._fallback_embedding_search(
-                    db, normalized_query, db_path, limit, repo_filter
+                    db, normalized_query, db_path, limit, repo_filter, category
                 )
                 _record_phase_latency("embedding_fallback", _t0)
             if not results:
