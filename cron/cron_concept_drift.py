@@ -25,9 +25,7 @@ is no prior). Cosine distance > threshold → write a row.
 from _flock import acquire_lock_or_exit
 import argparse
 import json
-import logging
 import os
-import sqlite3
 import sys
 import time
 import traceback

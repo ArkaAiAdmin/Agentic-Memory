@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from tool_registry import CORE_TOOLS, ADMIN_TOOLS, DEPRECATED as _DEPRECATED
+from tool_registry import CORE_TOOLS, ADMIN_TOOLS
 
 
 def count_mcp_tools() -> int:
@@ -170,7 +170,7 @@ def main() -> int:
     actual_cron_jobs = _count_crontab_jobs()
     actual_migrations = count_migrations()
 
-    print(f"Actual counts:")
+    print("Actual counts:")
     print(f"  MCP tools: {actual_tools}")
     print(f"  Hooks: {actual_hooks}")
     print(f"  Cron scripts: {actual_cron}")

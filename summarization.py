@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import resolve_db_path
-from infra.memory_common import safe_close_db, GLOBAL_MEM_DIR
+from infra.memory_config import GLOBAL_MEM_DIR
 
 logger = logging.getLogger(__name__)
 

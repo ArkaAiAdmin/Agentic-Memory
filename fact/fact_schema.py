@@ -7,7 +7,6 @@ and sync triggers.  Idempotent — safe to call on every connection open.
 from __future__ import annotations
 
 import logging
-import sqlite3
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

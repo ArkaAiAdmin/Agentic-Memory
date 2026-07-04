@@ -20,7 +20,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from infra.memory_common import safe_close_db
 
 __all__ = [
     "SELF_DIRECTED_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__

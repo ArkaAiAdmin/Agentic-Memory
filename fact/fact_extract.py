@@ -707,9 +707,9 @@ def index_facts_for_memory(
     # Determine effective fact_type based on caller specification and
     # extraction method.  If the caller explicitly set fact_type, honour
     # it; otherwise infer from the extraction method.
-    used_llm = False
     effective_fact_type = fact_type
     use_llm = _should_use_llm_for_memory(conn, memory_id)
+    used_llm = False
 
     facts: list[tuple[str, str, str, float, str | None, str]] = []
     if use_llm:
@@ -729,6 +729,9 @@ def index_facts_for_memory(
 
     if not facts:
         facts = extract_facts(content)
+
+    if effective_fact_type == "observation" and used_llm:
+        effective_fact_type = "agent_inference"
 
     # T8 (temporal-kg plan): gate the entire temporal subsystem
     # (event_time extraction, contradiction reconciliation, edit

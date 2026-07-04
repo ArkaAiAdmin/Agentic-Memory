@@ -106,7 +106,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # needs to force a feature on for the bootstrap pass, they can set the
 # env var explicitly before importing this module.
 
-from infra.memory_common import safe_close_db
 
 
 def get_preferences(conn):

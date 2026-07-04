@@ -13,7 +13,6 @@ Inspired by cron_integrity_check.py pattern.
 """
 
 import json
-import logging
 import os
 import sys
 import time

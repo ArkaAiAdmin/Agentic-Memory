@@ -25,7 +25,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import sqlite3
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -34,10 +33,6 @@ from typing import TYPE_CHECKING, Callable, Any
 if TYPE_CHECKING:
     from infra.db import AnyConnection
 
-from infra.memory_common import (
-    connection_pool,
-    safe_close_db,
-)
 from infra.infrastructure import update_memory_md_locked
 from infra.cache import _search_cache
 import infra.audit as audit

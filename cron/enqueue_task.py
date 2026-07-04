@@ -16,7 +16,6 @@ import json
 import os
 import sys
 import time
-import sqlite3
 import datetime as _dt
 from pathlib import Path
 os.chdir(os.path.dirname(os.path.abspath(__file__)))

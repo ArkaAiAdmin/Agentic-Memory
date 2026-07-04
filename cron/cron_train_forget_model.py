@@ -12,7 +12,6 @@ Existing oracle weights are preserved on failure (write is atomic).
 from __future__ import annotations
 
 import json
-import logging
 import os
 import sys
 import time

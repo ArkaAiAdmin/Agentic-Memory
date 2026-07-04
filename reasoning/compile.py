@@ -126,7 +126,7 @@ def infer_entailment_chains(
         key = (subject.lower().strip() if subject else "", subj_eid)
         for r2 in by_object.get(key, []):
             f2_id = r2[0]
-            f2_subject = r2[1]
+            _f2_subject = r2[1]
             f2_predicate = r2[2]
             f2_object = r2[3]
             f2_conf = r2[4] or 1.0

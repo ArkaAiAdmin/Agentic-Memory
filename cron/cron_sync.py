@@ -22,7 +22,6 @@ from __future__ import annotations
 from _flock import acquire_lock_or_exit
 import os
 import sys
-import logging
 from pathlib import Path
 
 os.environ.setdefault("MEMORY_CRDT_ENABLED", "1")

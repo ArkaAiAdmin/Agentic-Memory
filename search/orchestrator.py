@@ -711,7 +711,7 @@ def _search_kg_facts(
 
             clause, t_params = _temporal_fact_clause(as_of)
             invalid_filter = (
-                f" AND (kf.superseded_by IS NULL)"
+                " AND (kf.superseded_by IS NULL)"
                 + clause.replace("f.", "kf.")
             )
             belief_params = t_params

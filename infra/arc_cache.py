@@ -36,7 +36,6 @@ from __future__ import annotations
 import datetime
 import logging
 import os
-import sqlite3
 import sys
 from contextlib import contextmanager
 from infra.db_write_queue import sqlite_write_queue

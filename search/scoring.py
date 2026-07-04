@@ -273,7 +273,7 @@ def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
                 importance,
                 pinned,
             ) = r[:10]
-            last_accessed = r[10] if len(r) > 10 else None
+            _ = r[10] if len(r) > 10 else None
             adjusted = final_score * penalty
             new_r = list(r)
             if len(new_r) >= 7:
@@ -554,11 +554,11 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
             importance,
             pinned,
         ) = r[:10]
-        last_accessed = r[10] if len(r) > 10 else None
+        _ = r[10] if len(r) > 10 else None
         metadata_json = r[11] if len(r) > 11 else None
-        access_count = r[12] if len(r) > 12 else 1
+        _ = r[12] if len(r) > 12 else 1
         boosted = float(final_score or 0.0)
-        concept_match = False
+        _concept_match = False
         try:
             meta = json.loads(metadata_json) if isinstance(metadata_json, str) else (metadata_json or {})
             result_entities = {int(e) for e in (meta.get("entities") or []) if e is not None}
@@ -568,11 +568,11 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
         for cid, centities in concept_entities.items():
             if note_id == cid or cid in (source_file or ""):
                 boosted *= _CONCEPT_BOOST
-                concept_match = True
+                _concept_match = True
                 break
             if result_entities and centities and (result_entities & centities):
                 boosted *= _CONCEPT_MEMBERSHIP_BOOST
-                concept_match = True
+                _concept_match = True
                 break
 
         if q_tokens:
@@ -653,7 +653,7 @@ def _apply_centrality_boost(scored_results: list, db_path: Path) -> list:
             importance,
             pinned,
         ) = r[:10]
-        last_accessed = r[10] if len(r) > 10 else None
+        _last_accessed = r[10] if len(r) > 10 else None
         metadata_json = r[11] if len(r) > 11 else None
         boosted = float(final_score or 0.0)
 

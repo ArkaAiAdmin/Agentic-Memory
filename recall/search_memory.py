@@ -20,7 +20,7 @@ itself a thin alias of the canonical, so the import chain now reads
 intermediate re-implementations.
 """
 
-import os
+import os  # noqa: F401 — kept for test mocking (test_search_memory_cli patches search_memory.os)
 import sys
 from pathlib import Path
 

@@ -46,7 +46,6 @@ _DEFAULT_THRESHOLD = 2          # minimum retrieval count for promotion
 
 _CATEGORY_FILTER = "lessons"
 _MAX_CANDIDATES_PER_RUN = 20
-_DEFAULT_THRESHOLD = 2
 
 
 def _get_db_path(cli_override: str | None) -> Path:
@@ -214,7 +213,7 @@ def main() -> int:
     acquire_lock_or_exit("cron_promote_drafts")
     t0 = time.time()
     try:
-        result = promote_drafts(db_path, threshold=args.threshold, dry_run=args.dry_run)
+        result = promote_drafts(db_path, threshold=retrieval_threshold, dry_run=args.dry_run)
         elapsed = time.time() - t0
         n_promoted = len(result["promoted"])
         n_skipped = len(result["skipped"])

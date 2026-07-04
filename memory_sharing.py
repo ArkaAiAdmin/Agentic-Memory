@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,7 +35,6 @@ from typing import Any
 from config import resolve_db_path
 
 from infra.db_write_queue import sqlite_write_queue
-from infra.memory_common import safe_close_db
 
 __all__ = [
     "MULTI_AGENT_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -486,7 +484,6 @@ def import_shared_memory(
 
     try:
         conn = sqlite_write_queue.start_session(Path(db))
-        work_succeeded = False
         try:
             _ensure_shared_table(conn)
 
@@ -556,7 +553,6 @@ def import_shared_memory(
             )
 
             conn.commit()
-            work_succeeded = True
             return {
                 "enabled": True,
                 "new_note_id": new_id,

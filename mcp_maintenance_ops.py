@@ -685,7 +685,6 @@ def _op_memory_stats() -> str:
 
             if db_path:
                 from infra.db import open_db
-                from pathlib import Path
                 with open_db(Path(db_path)) as qconn:
                     init_task_queue(qconn)
                     queue_depth = pending_count(qconn)

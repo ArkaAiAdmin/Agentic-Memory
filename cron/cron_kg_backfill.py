@@ -54,7 +54,6 @@ from __future__ import annotations
 
 from _flock import acquire_lock_or_exit
 import json
-import logging
 import os
 import sqlite3
 import subprocess

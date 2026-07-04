@@ -19,8 +19,6 @@ The 4 main functions are:
 from __future__ import annotations
 
 import logging
-import os
-import sqlite3
 import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING

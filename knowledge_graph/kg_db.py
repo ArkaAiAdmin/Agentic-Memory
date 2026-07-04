@@ -196,7 +196,6 @@ def _upsert_edge(
 
 def invalidate_edge(conn: AnyConnection, edge_id: int) -> bool:
     """Mark an edge as invalid (soft delete). Returns True if an edge was invalidated."""
-    now = time.time()
     try:
         cur = conn.execute(
             "UPDATE kg_edges SET invalid_at = datetime('now') WHERE id = ? AND invalid_at IS NULL",
@@ -259,8 +258,6 @@ def index_kg_for_memory(conn: AnyConnection, memory_id: str, content: str) -> di
     appear in the same sentence, a ``co_occurs`` edge is created between
     them.
     """
-    import sys
-
     if not sys.modules["knowledge_graph"].KG_ENABLED:
         # Backwards-compatible return shape for the disabled branch.
         # Existing callers (and tests) compare against the original
@@ -363,7 +360,6 @@ def index_kg_for_memory(conn: AnyConnection, memory_id: str, content: str) -> di
                 s = item[0]
                 p = item[1]
                 o = item[2]
-                c = float(item[3])
                 # Clean and upsert subject & object entities
                 sid = _upsert_entity(conn, s, "concept", now)
                 oid = _upsert_entity(conn, o, "concept", now)

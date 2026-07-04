@@ -12,7 +12,9 @@ What this does:
 """
 
 import os
+import signal
 import sys
+import time
 from pathlib import Path
 
 # Prevent libomp / torch OpenMP segfaults on macOS when multiple
@@ -48,7 +50,13 @@ import pytest
 # session can interfere with flcok-based test DB operations.
 # ---------------------------------------------------------------------------
 def _cleanup_auto_save_daemon() -> None:
-    """Best-effort: stop the auto-save daemon for the default memory dir."""
+    """Best-effort: stop the auto-save daemon for the default memory dir.
+
+    Sends SIGTERM and waits up to 5 s for the process to exit before
+    escalating to SIGKILL.  Without the wait, a stale daemon can hold
+    the production flock across test runs and cause cascade failures.
+    """
+    killed: list[int] = []
     try:
         manifest_path = (
             Path(os.environ.get("MEMORY_CONFIG_DIR", Path.home() / ".config" / "agentic-memory"))
@@ -62,12 +70,27 @@ def _cleanup_auto_save_daemon() -> None:
                 if pid > 0:
                     try:
                         os.kill(pid, 0)
-                        os.kill(pid, 15)
+                        os.kill(pid, signal.SIGTERM)
+                        killed.append(pid)
                     except (OSError, ProcessLookupError):
                         pass
             manifest_path.write_text("{}")
     except Exception:
         pass
+
+    deadline = time.time() + 5.0
+    for pid in killed:
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except (OSError, ProcessLookupError):
+                break
+            time.sleep(0.05)
+        else:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                pass
 
 _cleanup_auto_save_daemon()
 
@@ -248,7 +271,11 @@ def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
     except Exception:
         pass
 
-    # 3. Auto-save a pinned lessons memory for any flaky tests found.
+    # 3. Stop the auto-save daemon (if still running) before the flaky-test
+    #    early-return so we don't leave a stale daemon holding the flock.
+    _cleanup_auto_save_daemon()
+
+    # 4. Auto-save a pinned lessons memory for any flaky tests found.
     if not _flaky_items:
         return
     try:

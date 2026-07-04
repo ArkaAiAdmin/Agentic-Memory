@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import re
 import time
-import sqlite3
 from typing import Optional
 from typing import TYPE_CHECKING
 

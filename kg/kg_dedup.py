@@ -17,11 +17,9 @@ __all__ = [
 ]
 import os
 import sys
-import sqlite3
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from infra.memory_common import safe_close_db
 from infra.infrastructure import resolve_active_memory_dir
 from typing import TYPE_CHECKING, Callable, Any
 

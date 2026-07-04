@@ -45,7 +45,6 @@ from infra.embedding_search import (
     _chunk_cache_text,
     _chunk_content_hash,
     _content_hash,
-    chunk_memory,
     get_embedding_search,
 )
 from typing import TYPE_CHECKING

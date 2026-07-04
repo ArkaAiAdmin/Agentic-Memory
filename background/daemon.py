@@ -25,6 +25,7 @@ from background.inbox import (
     _drain_inbox,
     _process_inbox_batch,
     _register_in_daemon_manifest,
+    _unregister_from_daemon_manifest,
     _write_pid_file,
 )
 
@@ -356,6 +357,10 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
             if fd is not None:
                 release_flock(fd)
             lock_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            _unregister_from_daemon_manifest()
         except Exception:
             pass
         _log_structured("info", "auto_save_daemon_stopped", pid=os.getpid())

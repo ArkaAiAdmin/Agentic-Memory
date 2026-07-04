@@ -17,7 +17,6 @@ Usage (in crontab, every 5 minutes):
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import time

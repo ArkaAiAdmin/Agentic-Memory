@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import collections
 import logging
-import sqlite3
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:

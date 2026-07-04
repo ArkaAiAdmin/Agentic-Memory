@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from typing import Optional
 from pathlib import Path
 from typing import TYPE_CHECKING

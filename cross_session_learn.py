@@ -11,7 +11,6 @@ Usage:
 
 import os
 import sys
-import sqlite3
 import logging
 
 logger = logging.getLogger(__name__)

@@ -62,7 +62,7 @@ def check(db_path: Path) -> list[str]:
                     last_completed, "%Y-%m-%d %H:%M:%S"
                 ).replace(tzinfo=_dt.timezone.utc)
                 completed_ts = completed_dt.timestamp()
-                age = time.time() - completed_ts
+                age = now - completed_ts
                 if age > WARN_STALE_SECONDS:
                     hours = age / 3600
                     warnings.append(

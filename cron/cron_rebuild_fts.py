@@ -16,7 +16,6 @@ Usage:
 """
 
 from _flock import acquire_lock_or_exit
-import logging
 import os
 import sqlite3
 import sys

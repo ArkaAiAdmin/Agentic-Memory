@@ -1,5 +1,4 @@
 import logging
-import sqlite3
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

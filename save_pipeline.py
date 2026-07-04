@@ -106,12 +106,6 @@ def _write_vec_key(db, note_id: str) -> int:
     return key
 
 
-parse_version_vector: Callable[..., Any] | None = None
-try:
-    from crdt.crdt_merge import parse_version_vector
-except ImportError:  # FLAVOR_A: optional dependency guard
-    pass
-
 logger = logging.getLogger(__name__)
 
 # Try to import saga coordinator; fall back gracefully if unavailable.

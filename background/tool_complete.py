@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import time
-from typing import Optional, TypedDict
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ def _async_enqueue_or_fallback(
     tool: str, params: str, result_preview: str, ts: Optional[str]
 ) -> dict:
 
-    from background.auto_save import _now_iso, _slugify, _is_daemon_running, _start_daemon_if_needed, _enqueue_to_inbox, _get_sessions_dir, _tool_complete_inner, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale, _get_dedup_lock_dir  # noqa: E402
+    from background.auto_save import _now_iso, _slugify, _is_daemon_running, _start_daemon_if_needed, _enqueue_to_inbox, _get_sessions_dir, _tool_complete_inner, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale, _get_dedup_lock_dir  # noqa: E402,F401
     """Async path: enqueue to the inbox and start the daemon if needed.
 
     Returns a "queued" envelope on success, or invokes the inline
@@ -538,7 +538,8 @@ def tool_complete(
             cb["next_backoff"],
         )
         try:
-            import os, json as _json, datetime as _dt
+            import json as _json
+            import datetime as _dt
             from pathlib import Path
             _am_dir = Path(__file__).resolve().parent.parent
             _err_path = _am_dir / "memory" / "hook-errors.jsonl"
