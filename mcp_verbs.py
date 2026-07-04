@@ -135,6 +135,7 @@ def memory_save(
             pinned=pinned,
             importance=importance,
             is_global=is_global,
+            defer_expensive=True,
         )
         return str(result)
     except Exception as e:
