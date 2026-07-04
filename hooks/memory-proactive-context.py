@@ -10,6 +10,7 @@ Output: Relevant memory context to stdout
 Hooks that do the same thing: the on-demand and session-start hooks also call ``search_memories``. Querying is performed directly on every hook execution as SQLite query execution is fast.
 """
 
+import hashlib
 import os
 import sys
 import time
@@ -320,7 +321,7 @@ def main(db_path: Path | None = None):
 
         cache_file = _get_cache_file()
         db_mtime = db_path.stat().st_mtime if db_path.exists() else 0.0
-        query_hash = str(hash(query))
+        query_hash = hashlib.md5(query.encode()).hexdigest()
         cached_items = _file_cache_get(query_hash, cache_file, db_mtime)
         if cached_items is not None:
             items = cached_items

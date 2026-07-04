@@ -165,7 +165,9 @@ def _index_facts(db, note_id: str, content: str, belief_status: str = "active",
         logger.warning("Fact indexing skipped for %s: %s", note_id, fe)
 
 
-def _index_adaptive_retention(db, note_id: str, db_path: str | None = None):
+def _index_adaptive_retention(
+    db, note_id: str, db_path: str | None = None, tags: list | None = None
+):
     """Create adaptive retention schema and record a 'save' access event.
 
     Also performs the companion writes that are part of the same save
@@ -204,7 +206,7 @@ def _index_adaptive_retention(db, note_id: str, db_path: str | None = None):
             "INSERT INTO user_profile_access_log "
             "(note_id, source, category, tags, accessed_at) "
             "VALUES (?, ?, ?, ?, ?)",
-            (note_id, "save", None, _json.dumps([]), _time.time()),
+            (note_id, "save", None, _json.dumps(tags or []), _time.time()),
         )
     except Exception as _up_e:
         logger.debug("user_profile_access_log on save failed: %s", _up_e)

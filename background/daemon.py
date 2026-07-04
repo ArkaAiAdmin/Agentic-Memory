@@ -148,6 +148,32 @@ except ImportError:
     _inotify_add_watch = None  # type: ignore[assignment]
 
 
+
+def _cleanup_stale_processing_files(max_age_s: float = 3600.0) -> None:
+    """Delete orphan .processing.{pid} files older than max_age_s.
+
+    SIGKILL between inbox rename and unlink can leave stale processing
+    files around.  The daemon is idempotent (ON CONFLICT on upsert)
+    so re-processing is safe, but the file clutter is confusing and
+    can mask real inbox issues.  Clean up on startup so we start
+    fresh.
+    """
+    import time as _time
+    try:
+        inbox = get_auto_save_inbox_path()
+        now = _time.time()
+        for p in inbox.parent.glob(f"{inbox.name}.processing.*"):
+            try:
+                age = now - p.stat().st_mtime
+                if age > max_age_s:
+                    p.unlink(missing_ok=True)
+                    logger.info("auto-save daemon: removed stale %s (age=%.0fs)", p.name, age)
+            except Exception as _ce:
+                logger.debug("auto-save daemon: could not clean %s: %s", p.name, _ce)
+    except Exception as _e:
+        logger.debug("auto-save daemon: cleanup_stale_processing_files failed: %s", _e)
+
+
 def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa: F821
     """Long-running daemon: tail the inbox, process in batches.
 
@@ -214,6 +240,7 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
     # would release, letting a second daemon start).
     _DAEMON_LOCKS["auto_save_daemon"] = lock_fd
     try:
+        _cleanup_stale_processing_files()
         _write_pid_file()
         _register_in_daemon_manifest()
         _log_structured("info", "auto_save_daemon_started", pid=os.getpid())

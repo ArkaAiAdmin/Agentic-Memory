@@ -698,21 +698,22 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
     # the cache. Otherwise we'd return a stale result from before the
     # flag flipped. (Discovered during audit; testing tooling toggles
     # the env var between sessions.)
-    env_now = os.environ.get("MEMORY_CTR_TUNING") == "1"
-    global _CTR_WEIGHTS_CACHE
+    with _CTR_WEIGHTS_CACHE_LOCK:
+        env_now = os.environ.get("MEMORY_CTR_TUNING") == "1"
+        global _CTR_WEIGHTS_CACHE
 
-    if _CTR_WEIGHTS_CACHE is not None:
-        ts, cached, cached_env = _CTR_WEIGHTS_CACHE
-        if cached_env != env_now or time.time() - ts >= _CTR_WEIGHTS_TTL:
-            _CTR_WEIGHTS_CACHE = None
+        if _CTR_WEIGHTS_CACHE is not None:
+            ts, cached, cached_env = _CTR_WEIGHTS_CACHE
+            if cached_env != env_now or time.time() - ts >= _CTR_WEIGHTS_TTL:
+                _CTR_WEIGHTS_CACHE = None
 
-    if _CTR_WEIGHTS_CACHE is not None:
-        ts, cached, _cached_env = _CTR_WEIGHTS_CACHE
-        return _apply_exploration(cached)
+        if _CTR_WEIGHTS_CACHE is not None:
+            ts, cached, _cached_env = _CTR_WEIGHTS_CACHE
+            return _apply_exploration(cached)
 
-    if not env_now:
-        _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
-        return None
+        if not env_now:
+            _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
+            return None
 
     try:
         from infra._lazy_imports import connection_pool
@@ -726,7 +727,8 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
                 ).fetchall()
             }
             if "memory_ctr_feedback" not in tables:
-                _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
+                with _CTR_WEIGHTS_CACHE_LOCK:
+                    _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
                 return None
 
             from config import get_config
@@ -745,7 +747,8 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
             ).fetchall()
 
             if len(rows) < 10:
-                _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
+                with _CTR_WEIGHTS_CACHE_LOCK:
+                    _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
                 return None
 
             alphas = {ch: 1.0 for ch in _RERANK_WEIGHTS}
@@ -771,7 +774,8 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
                 total_weight += ctr
 
             if total_weight <= 0:
-                _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
+                with _CTR_WEIGHTS_CACHE_LOCK:
+                    _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
                 return None
 
             adjusted = {ch: channel_sums[ch] / total_weight for ch in _RERANK_WEIGHTS}
@@ -782,13 +786,15 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
                 adjusted = _RERANK_WEIGHTS
 
             stats = (alphas, betas, adjusted)
-            _CTR_WEIGHTS_CACHE = (time.time(), stats, env_now)
+            with _CTR_WEIGHTS_CACHE_LOCK:
+                _CTR_WEIGHTS_CACHE = (time.time(), stats, env_now)
             return _apply_exploration(stats)
         finally:
             connection_pool.put(db)
     except Exception:
         logger.warning("Failed to compute CTR weights from feedback")
-        _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
+        with _CTR_WEIGHTS_CACHE_LOCK:
+            _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
         return None
 
 

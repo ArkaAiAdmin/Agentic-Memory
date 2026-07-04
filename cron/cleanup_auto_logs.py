@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+import datetime
+import re
 import time
 import traceback
 from pathlib import Path
@@ -30,31 +32,60 @@ from infra.db_write_queue import sqlite_write_queue  # noqa: E402
 DEFAULT_MAX_AGE_DAYS = 30
 
 
-def _parse_auto_ts(path: Path):
-    """Extract datetime from auto-*.md filename, or None if unparseable."""
+def _parse_auto_ts(path: Path, default_tz: datetime.timezone | None = None) -> float | None:
+    """Extract UTC timestamp from auto-*.md filename, or None if unparseable.
+
+    The filename embeds the original creation timestamp with an optional
+    timezone offset (e.g. +00-00 for UTC, +05-30 for IST).  We parse
+    the offset when present so the age calculation is correct regardless
+    of the creator's timezone.  When the offset is absent (legacy
+    filenames), ``default_tz`` is used; if that is also None we fall
+    back to UTC so the comparison against the UTC-based cutoff stays
+    consistent.
+    """
     name = path.stem  # "auto-2026-06-15_19-29-44+00-00-bash"
     parts = name.split("-", 1)
     if len(parts) < 2:
         return None
     rest = parts[1]  # "2026-06-15_19-29-44+00-00-bash"
-    date_time = rest.rsplit("-", 1)[0]  # "2026-06-15_19-29-44+00-00"
-    # Replace dashes in time portion to recover ISO-ish format
-    # Format: YYYY-MM-DD_HH-MM-SS[+HH-MM]
+    # Split off the tool slug first so we can see the full datetime+tz
+    tool_slug = rest.rsplit("-", 1)[-1]  # "bash"
+    datetime_part = rest[: -len(tool_slug) - 1]  # "2026-06-15_19-29-44+00-00"
+    # Extract timezone offset if present: +/-HH-MM
+    tz_match = re.search(r"([+\-]\d{2})-(\d{2})$", datetime_part)
+    tz_offset = None
+    if tz_match:
+        tz_hours = int(tz_match.group(1)[1:])
+        if tz_hours <= 23:  # valid timezone offset (max +23:00)
+            tz_sign = 1 if tz_match.group(1)[0] == "+" else -1
+            tz_minutes = int(tz_match.group(2))
+            tz_offset = datetime.timezone(
+                datetime.timedelta(hours=tz_sign * tz_hours, minutes=tz_sign * tz_minutes)
+            )
+            datetime_part = datetime_part[:tz_match.start()]
+    # Replace dashes in time portion: YYYY-MM-DD_HH-MM-SS -> YYYY-MM-DD HH:MM:SS
     try:
-        date_part, time_part = date_time.split("_", 1)
+        date_part, time_part = datetime_part.split("_", 1)
         time_clean = time_part.replace("-", ":")
-        # Strip tz offset for fromisoformat (Python 3.7+)
-        tz_pos = time_clean.find("+")
-        if tz_pos != -1:
-            time_clean = time_clean[:tz_pos]
-        return time.mktime(
-            time.strptime(f"{date_part} {time_clean}", "%Y-%m-%d %H:%M:%S")
+        dt = datetime.datetime.strptime(
+            f"{date_part} {time_clean}", "%Y-%m-%d %H:%M:%S"
         )
+        if tz_offset is not None:
+            dt = dt.replace(tzinfo=tz_offset)
+        elif default_tz is not None:
+            dt = dt.replace(tzinfo=default_tz)
+        else:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.timestamp()
     except Exception:
         return None
 
 
-def cleanup_auto_logs(dry_run: bool = False, max_age_days: int = DEFAULT_MAX_AGE_DAYS) -> dict:
+def cleanup_auto_logs(
+    dry_run: bool = False,
+    max_age_days: int = DEFAULT_MAX_AGE_DAYS,
+    default_tz: datetime.timezone | None = None,
+) -> dict:
     db_path = get_db_path()
     if not db_path.exists():
         return {"error": "no database found", "moved": 0}
@@ -66,7 +97,7 @@ def cleanup_auto_logs(dry_run: bool = False, max_age_days: int = DEFAULT_MAX_AGE
     candidates = sorted(sessions_dir.glob("auto-*.md"))
     to_move = []
     for path in candidates:
-        ts = _parse_auto_ts(path)
+        ts = _parse_auto_ts(path, default_tz=default_tz)
         if ts is None or ts < cutoff:
             to_move.append(path)
 
@@ -130,16 +161,32 @@ def main() -> int:
 
     dry_run = "--dry-run" in sys.argv[1:]
     max_age = DEFAULT_MAX_AGE_DAYS
+    default_tz = None
     for i, arg in enumerate(sys.argv[1:], 1):
         if arg == "--max-age-days" and i < len(sys.argv):
             try:
                 max_age = int(sys.argv[i + 1])
             except (ValueError, IndexError):
                 pass
+        elif arg == "--default-tz" and i < len(sys.argv):
+            tz_val = sys.argv[i + 1]
+            if tz_val.lower() in ("utc", "local"):
+                default_tz = datetime.timezone.utc if tz_val.lower() == "utc" else None
+            else:
+                try:
+                    sign = 1 if tz_val[0] == "+" else -1
+                    parts = tz_val[1:].split(":")
+                    hours = int(parts[0])
+                    minutes = int(parts[1]) if len(parts) > 1 else 0
+                    default_tz = datetime.timezone(
+                        datetime.timedelta(hours=sign * hours, minutes=sign * minutes)
+                    )
+                except Exception:
+                    print(f"WARNING: ignoring invalid --default-tz={tz_val}", file=sys.stderr)
 
     acquire_lock_or_exit("cron_cleanup_auto_logs")
     try:
-        result = cleanup_auto_logs(dry_run=dry_run, max_age_days=max_age)
+        result = cleanup_auto_logs(dry_run=dry_run, max_age_days=max_age, default_tz=default_tz)
         print(json.dumps(result, indent=2))
         if "error" in result:
             sys.exit(1)

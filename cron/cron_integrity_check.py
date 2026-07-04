@@ -34,6 +34,7 @@ def main() -> int:
     if not db_path.exists():
         print(f"ERROR: no memory.db at {db_path}")
         sys.exit(1)
+    acquire_lock_or_exit("cron_integrity_check")
     report = check_index_integrity(db_path, deep=False)
     print(f"Integrity: {report['summary']}")
     for f in report["findings"][:10]:
@@ -52,7 +53,6 @@ def main() -> int:
             f"kg_entities={repair_result['deleted_kg_entities']}, "
             f"backlinks={repair_result['deleted_backlinks']}"
         )
-    acquire_lock_or_exit("cron_integrity_check")
     return 0
 
 

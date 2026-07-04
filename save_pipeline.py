@@ -890,7 +890,7 @@ def _update_memory_index_incremental(
             _enrich_context(conn, note_id, content, category, tags)
             _auto_semantic_backlinks(conn, note_id, content, db_path=str(db_path))
         _auto_fts_backlinks(conn, note_id, content)
-        _index_adaptive_retention(conn, note_id, db_path=str(db_path))
+        _index_adaptive_retention(conn, note_id, db_path=str(db_path), tags=tags)
         if defer_expensive:
             _defer_indexing_background_tasks(db_path, note_id, content, source_file,
                                              belief_status=belief_status,

@@ -37,7 +37,7 @@ def _run(script: str, args: list[str] | None = None) -> None:
     if not os.path.exists(script_path):
         script_path = os.path.join(SCRIPTS, "cron", script)
     cmd: list[str] = [PYTHON, script_path] + (args or [])
-    subprocess.run(cmd, timeout=300)
+    subprocess.run(cmd, timeout=300, check=True)
 
 
 def server_main() -> None:
