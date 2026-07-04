@@ -2,10 +2,9 @@
 
 Phase A (2026-07-01): 14 verbs + 1 escape hatch (memory_advanced).
 
-CORE_TOOLS:    14 verbs + memory_session_start (14 tools total) — all
-                visible directly on the MCP surface. Everything else is
-                accessible via memory_maintenance(operation="...") or
-                memory_advanced(operation="...").
+CORE_TOOLS:    15 tools total — all visible directly on the MCP surface.
+                Everything else is accessible via memory_maintenance(operation="...")
+                or memory_advanced(operation="...").
 ADMIN_TOOLS:    Legacy tools callable via memory_maintenance / memory_advanced.
 DEPRECATED:     Tools superseded by verbs (also present in ADMIN_TOOLS;
                 listed here for audit/logging only).

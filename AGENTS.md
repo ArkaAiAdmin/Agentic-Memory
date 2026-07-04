@@ -31,7 +31,7 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.confi
 | 7 | Before ending session | `agentic-memory_memory_save(category="sessions")` |
 | 8 | After large file ops | `token-optimizer_optimize_session` |
 | 9 | .md/DB drift | `python memory_integrity.py <db> --recover-orphan-files` |
-| 10 | KG/backlinks orphans | `python memory_integr️.py <db> --repair-kg-orphans` |
+| 10 | KG/backlinks orphans | `python memory_integrity.py <db> --repair-kg-orphans` |
 | 11 | Auto-save history | `agentic-memory_memory_circuit_breaker_status()` |
 | 12 | Temporal KG misbehaving | Set `MEMORY_TEMPORAL_KG=0` |
 | 13 | Every significant milestone or decision | `memory_save` a **context-rich periodic note** — captures goal, approach, rationale, improvements, semantic relationships. Not a timestamped log line: it should carry enough context to be useful weeks later. Category: `projects`. Tags: include decision/subsystem context. Importance: 4. |
@@ -47,13 +47,22 @@ agentic-memory/
 ├── save_pipeline.py + save/    ← write path (saga, FTS5, embeddings, KG, audit)
 ├── search_pipeline.py + search/ ← read path (FTS5 + usearch + KG fusion)
 ├── mcp_maintenance.py           ← admin tools + memory_maintenance router
-├── tool_registry.py             ← 14 CORE + 84 ADMIN + 3 DEPRECATED (single source of truth)
+├── tool_registry.py             ← 15 CORE + 84 ADMIN + 3 DEPRECATED (single source of truth)
+├── plugin/
+│   ├── index.ts                 ← OpenCode adapter (event → TS handler)
+│   └── agentic-memory-hooks.ts ← hook implementations (TS → Python subprocess)
 ├── hooks/                       ← 7 lifecycle hooks + 1 log helper
+├── background/
+│   ├── auto_save.py             ← async inbox+daemon entry point
+│   ├── inbox.py                 ← inbox management + daemon lifecycle
+│   ├── daemon.py                ← long-lived inbox drainer
+│   ├── tool_complete.py         ← hook → save_memory pipeline
+│   └── circuit_breaker.py       ← auto-save failure gating
 ├── cron/                        ← 36 scheduled jobs + install_crontab.sh
 ├── mcp_*.py (28 modules)        ← domain-split MCP tools
 ├── memory/                      ← live store (gitignored)
 ├── docs/MCP_SURFACE.md          ← MCP tool reference for agents
-└── eval/                        ← ~231 test files, ~3,967 test functions
+└── eval/                        ← 233 test files, 4000+ test functions
 ```
 
 ---
@@ -79,6 +88,40 @@ agentic-memory/
 17. **Fix every LSP error in every file you touch.** Every file you read or edit must exit with zero LSP errors (pyright). No `# type: ignore` comments, no `# noqa` for type errors, no silent `except` swallowing of type-correctness issues. Fix the type annotation at the source (function signature, variable declaration) so the error is resolved correctly. Pre-existing errors in files you didn't modify are exempt, but any file you edit must be left fully clean.
 18. **Run mypy + ruff before every commit.** Before committing any changes, run `./venv/bin/python -m mypy <any file you modified>` and `./venv/bin/python -m ruff check <any file you modified>`. Fix all errors and warnings. Do not commit with outstanding mypy or ruff issues. This applies even to test files.
 19. **Maintenance is automated.** Most maintenance is handled by cron jobs and the background worker (see `cron/install_crontab.sh`). The agent should exercise `memory_organize`, `memory_maintenance`, or individual MCP tools **only when cron is not running or immediate results are needed**. Do not run maintenance tools as a default post-task ritual.
+
+---
+
+## When to Ask vs Act
+
+**Act without asking:**
+- Bug fixes where the correct behavior is unambiguous (e.g., fixing a typo, correcting a wrong variable name, fixing a broken import)
+- Documentation updates that match existing code behavior or stated intent
+- Test additions that lock in existing behavior
+- Refactoring that preserves behavior (rename, extract, reorganize)
+- Running existing commands in AGENTS.md (mypy, ruff, pytest, memory_integrity)
+- Reverting your own changes when you discover they broke something
+
+**Stop and ask the user:**
+- Any change to behavior, defaults, or user-facing output
+- Architectural decisions (e.g., "should we switch from fire-and-forget to blocking here?")
+- Adding or removing features, hooks, cron jobs, MCP tools
+- Decisions where multiple valid approaches exist with different tradeoffs
+- Anything that costs money, sends data externally, or modifies user data irreversibly
+- When you're uncertain which of two or more correct answers is intended
+
+**How to ask:**
+Give 2–4 named options with tradeoffs. Do not ask open-ended questions.
+
+Good:
+> The daemon spawn path uses `inbox.py` (broken) vs `auto_save.py` (correct). Should I:
+> A) Fix to `auto_save.py` now
+> B) Leave it and flag for review
+> C) Ask you to confirm before changing
+
+Bad:
+> What should I do about the daemon?
+
+If you find yourself saying "it depends" or "either approach could work," that's a signal to ask. If the answer is already specified in AGENTS.md, a doc, or a previous decision, act.
 
 ---
 
@@ -121,7 +164,26 @@ different tool surface. Do not rely on its auto-registration behavior.
 
 ## Hook Wiring
 
-Four lifecycle hooks (PreToolUse, SessionStart, Stop/PostToolUse, plus log helper `_log_error.py` is not a lifecycle hook). All lifecycle hooks write to STDOUT. See `~/.claude/settings.json` for wiring. `auto_save.py on_tool_complete` is wired via `opencode.jsonc`.
+OpenCode fires lifecycle events. The **TypeScript plugin** (`plugin/index.ts` adapter + `plugin/agentic-memory-hooks.ts` implementations) receives them and spawns Python scripts as subprocesses. The TS plugin runs its own circuit breaker (10 failures / 5 min cooldown) before spawning.
+
+| OpenCode Event | TS Handler | Python Script | Mode | Purpose |
+|---|---|---|---|---|
+| `session.created` | `startSession` | `memory-recall-session.py` + `memory-session-start.py` | blocking (Promise.all) | Load session context before first tool |
+| `tool.execute.before` | `beforeTool` | `memory-proactive-context.py` | blocking per-call | Search relevant memories before each tool |
+| `tool.execute.after` | `onToolAfter` | `context_monitor.py track` + `auto_save.py tool-complete` | fire-and-forget | Record tool call + auto-save |
+| `session.idle` | `onIdle` | `context_monitor.py idle` | fire-and-forget | Session idle checkpoint |
+| `session.deleted` | `endSession` | `context_monitor.py end` (blocking) + `memory-session-end.py` (blocking, 10s timeout) | mixed | Flush final summary + save session |
+| `experimental.chat.system.transform` | `injectSystemPrompt` | N/A (in-process) | inline | Pushes collected context into system prompt |
+| `experimental.session.compacting` | `onCompacting` | `memory-precompact-snapshot.py` (blocking) + `context_monitor.py compact` (blocking) | blocking | Snapshot + context save before compaction |
+
+**Key behaviors:**
+- **Session context** (`state.sessionContext`): one-time bootstrap from recall + session-start. Injected once at session creation, then cleared.
+- **Proactive context** (`state.proactiveContext`): per-tool search result from `beforeTool`. Injected into the next LLM call via `experimental.chat.system.transform`, then cleared. The agent always sees the latest proactive context via stdout on every tool call.
+- **Fire-and-forget** (`tool.execute.after`, `session.idle`): no completion signal to the agent. Failures go to `hook-errors.jsonl` + `hooks.log`.
+- **Blocking** (`session.created`, `tool.execute.before`, `session.deleted`, `experimental.session.compacting`): agent waits. Errors are surfaced via the TS circuit breaker log callback.
+- **Python hooks** (`hooks/*.py`) are standalone scripts — they read JSON from stdin or CLI args, write results to stdout, and handle all exceptions internally (`except BaseException → log_error() → sys.exit(0)`). They never crash the agent.
+
+See `opencode.jsonc` for plugin registration. The TS plugin is the single wiring layer — don't call Python hooks directly unless debugging.
 
 ---
 
@@ -156,19 +218,25 @@ See `memory.toml` for all 17 feature flags.
 
 ---
 
-## Current Status (2026-07-04)
+## Current Status (2026-07-05 snapshot)
 
 - **Schema v30**: 30 migrations applied (100% down-migration coverage). Chunk-level multi-vector search active.
-- **Phase 1 (Docs/Drift)**: `tool_drift_check.py`, `doc_drift_check.py`, `schema_version_check.py` in CI. Tool count reconciled: 101 total (14 CORE + 84 ADMIN + 3 DEPRECATED; 15 verbs surfaced directly including `memory_curate_autosave`).
+- **Phase 1 (Docs/Drift)**: `tool_drift_check.py`, `doc_drift_check.py`, `schema_version_check.py` in CI. Tool count reconciled: 102 total (15 CORE + 84 ADMIN + 3 DEPRECATED; 15 verbs surfaced directly including `memory_curate_autosave`).
 - **Phase 2 (Search Observability)**: 6 search phases instrumented with `infra.error_counter`. Failures return `<call>_phase_inc("<phase>", e)` + `logger.warning`. `search_memories` adds `phase_errors` to result envelope when counter is non-empty.
 - **Phase 1 tools**: `memory_flags_status`, `memory_phase_errors` admin ops added.
 - **Circuit-breaker fixed**: 5 handler lambda signatures corrected.
 - **Tool surface cleanup**: `mcp_kg.py` orphans (`memory_graph_insights`, `memory_graph_evolution`) added to `ADMIN_TOOLS`. Silent `remove_tool` failures now log a warning. Bulk-removal loop in `memory_mcp.py` reinforced with explicit `mcp_kg` and `mcp_maintenance` pre-imports.
 - **best_dist wired**: `_late_interaction_score` and `_late_interaction_score_batch` now return `(score, avg_best_dist)`. Positional coherence surfaced as 12th tuple element in late-interaction rerank results. Cross-encoder rerank also carries 12th element (None) for consistent shape.
 - **Rule enforcement**: `memory-session-end.py` (Rule #7), `cron_health_check.py` (Rules #5, #9-11), `memory_compliance_check` MCP tool.
+- **Plugin wiring**: `plugin/index.ts` (OpenCode adapter) + `plugin/agentic-memory-hooks.ts` (hook implementations). 7 lifecycle event handlers with TS-level circuit breaker.
+- **Daemon fix**: `_start_daemon_if_needed()` now correctly spawns `auto_save.py daemon` (was incorrectly spawning `inbox.py`). Daemon auto-spawns on first auto-save hook call.
+- **Contextual retrieval symmetry**: Query embeddings now receive the same `[category|tags]` prefix as document embeddings when `MEMORY_CONTEXTUAL_RETRIEVAL=1`.
 - **Cron**: 36 scheduled jobs. `background_worker` every 15 min with flock protection.
 - **Auto-save**: Async inbox+daemon (2-5ms enqueue). Default since 2026-06-22.
 - **Deferred indexing**: MCP `memory_save` defers embedding/KG/facts to background worker — returns <200ms, never times out.
 - **MCP reference doc**: `docs/MCP_SURFACE.md` — complete verb reference, decision tree, admin ops table, common workflows.
 - **Mypy**: 0 errors. **Coverage**: 70% gate.
-- **Test command**: `./venv/bin/python -m pytest eval/ --timeout=15 -q` (in-process runner; all 3879 tests pass, 0 failures) **|** Full suite with xdist parallelism: `./venv/bin/python -m pytest eval/ -n 3 --timeout=15 -q` **|** Subprocess-per-file runner (avoids parallel torch/OpenMP crashes): `./venv/bin/python eval/run_full_suite.py`
+- **Tests**: 233 test files, 4000+ test functions.
+- **Test command**: `./venv/bin/python -m pytest eval/ --timeout=15 -q` (in-process runner) **|** Full suite with xdist parallelism: `./venv/bin/python -m pytest eval/ -n 3 --timeout=15 -q` **|** Subprocess-per-file runner (avoids parallel torch/OpenMP crashes): `./venv/bin/python eval/run_full_suite.py`
+
+> Note: Current Status is a point-in-time snapshot. It will drift. For authoritative counts, query the codebase directly.
