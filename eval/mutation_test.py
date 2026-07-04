@@ -36,6 +36,9 @@ TARGET_MODULES = {
     "consolidation": INSTALL_DIR / "consolidation.py",
     "backfill_all": INSTALL_DIR / "backfill_all.py",
     "memory_injection": INSTALL_DIR / "memory_injection.py",
+    "cron_promote_drafts": INSTALL_DIR / "cron" / "cron_promote_drafts.py",
+    "monitor_task_queue": INSTALL_DIR / "cron" / "monitor_task_queue.py",
+    "fact_extract": INSTALL_DIR / "fact" / "fact_extract.py",
 }
 
 

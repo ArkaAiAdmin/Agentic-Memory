@@ -151,7 +151,8 @@ def _extract_decision_candidates(
                 rfc_title = line.strip("# ").strip()[:120]
                 break
         claim = _first_sentence(content, 500)
-        _add(rfc_title, claim, "question", 0.7)
+        alts = _extract_alternatives(content)
+        _add(rfc_title, claim, "question", 0.7, alts)
 
     # Pattern 4: tradeoff table header
     if _TRADEOFF_TABLE_RE.search(content):

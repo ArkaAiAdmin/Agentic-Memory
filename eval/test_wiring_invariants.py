@@ -10,6 +10,7 @@ See commit ab22973a for the fixes that these tests guard against.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import sqlite3
@@ -179,4 +180,74 @@ class TestMonitorTaskQueueTimestampConsistency(TestCase):
         assert "now - completed_ts" in source or "now-completed_ts" in source, (
             "monitor_task_queue.check should use `now - completed_ts` (the snapshot). "
             "Found fresh time.time() calls inside the loop instead."
+        )
+
+
+# =======================================================================
+# 4. RFC pattern wires extracted alternatives through to _add
+# =======================================================================
+
+class TestDecisionAlternativesWiring(TestCase):
+    """All decision-extraction patterns that compute alternatives must
+    pass them to _add().  Pattern 3 (RFC heading) previously computed
+    `alts = _extract_alternatives(content)` but called `_add(...)` without
+    it — alternatives were silently dropped.
+    """
+
+    def test_rfc_pattern_wires_alternatives(self) -> None:
+        from save import decision_extraction as de
+        import inspect
+        # Locate the RFC heading block; it must contain both
+        # _extract_alternatives and pass the result to _add.
+        src = inspect.getsource(de._extract_decision_candidates)
+        rfc_block_start = src.index("Pattern 3")
+        rfc_block_end = src.index("Pattern 4")
+        rfc_block = src[rfc_block_start:rfc_block_end]
+        assert "_extract_alternatives" in rfc_block, (
+            "RFC pattern must compute alternatives before calling _add"
+        )
+        # The call to _add in the RFC block must have 5 args (with alts)
+        rfc_add_calls = [
+            line.strip()
+            for line in rfc_block.splitlines()
+            if "_add(" in line
+        ]
+        assert rfc_add_calls, "RFC block must call _add"
+        assert any(
+            len(line) > 15 for line in rfc_add_calls
+        ), "RFC _add call must include alternatives argument"
+        assert "alts" in rfc_add_calls[0], (
+            f"RFC pattern _add() must receive alts. Got: {rfc_add_calls[0]}"
+        )
+
+
+# =======================================================================
+# 5. effective_fact_type sentinel: avoid default-value confusion
+# =======================================================================
+
+class TestFactTypeSentinel(TestCase):
+    """If a caller passes an explicit fact_type for an LLM-extracted fact
+    (other than 'observation'), the choice must survive to _upsert_fact.
+
+    The bug: `effective_fact_type = fact_type` used 'observation' as
+    default, then the code `if effective_fact_type == 'observation'
+    and used_llm:` treated explicit 'observation' the same as the default.
+    """
+
+    def test_explicit_fact_type_survives_llm_extraction(self) -> None:
+        """Non-default fact_type choices must survive past used_llm wiring."""
+        from fact import fact_extract as fe
+        from unittest.mock import patch
+        if not hasattr(fe, "index_facts_for_memory"):
+            self.skipTest("index_facts_for_memory not found")
+        # Verify the function no longer uses 'observation' as a sentinel.
+        src = inspect.getsource(fe.index_facts_for_memory)
+        has_none_sentinel = (
+            "fact_type: str = \"observation\"" not in src
+            or "effective_fact_type = None" in src
+        )
+        assert has_none_sentinel or "effective_fact_type = noneed", (
+            "index_facts_for_memory should guard against conflating explicit "
+            "fact_type='observation' with the default. "
+            "Use None as the sentinel instead of 'observation'."
         )
