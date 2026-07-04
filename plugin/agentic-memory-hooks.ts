@@ -173,6 +173,10 @@ export function startSession(log: (msg: string) => void): Promise<void> {
 }
 
 async function runSessionStart(log: (msg: string) => void): Promise<void> {
+  // Session context is a one-time bootstrap: recall + pinned/high-
+  // importance notes. It's injected once at session creation and then
+  // cleared. Proactive context (per-tool) is a separate mechanism
+  // handled by beforeTool + injectSystemPrompt.
   if (!hookEnabled("session:start", ["minimal", "standard", "strict"])) return
 
   const contexts: Promise<string>[] = []
@@ -201,6 +205,11 @@ export function onToolAfter(tool: string, args: Record<string, unknown> | undefi
 }
 
 export function beforeTool(tool: string, args: Record<string, unknown> | undefined, log: (msg: string) => void): Promise<void> {
+  // Proactive context is captured here and injected into the system
+  // prompt on the NEXT LLM call (via injectSystemPrompt). If no LLM
+  // call occurs before the next tool, the context is overwritten by
+  // the next beforeTool call. The agent always sees the latest
+  // proactive context in this hook's stdout stream regardless.
   return captureOutput([PROACTIVE_CONTEXT], JSON.stringify({ tool_name: tool, tool_input: args ?? {} }), "memory-proactive-context", log).then((out) => {
     if (out.trim()) state.proactiveContext = out.trim()
   })
@@ -225,20 +234,52 @@ export function endSession(sessionId: string, log: (msg: string) => void): Promi
     })
     child.on("error", reject)
   }).then(() => {
-    // Fire-and-forget: save session memory note (Rule #7 compliance).
-    // Script reads session_id from stdin JSON and MEMORY_HOOK_EVENT env.
-    const sessionChild = spawn(VENV, [MEMORY_SESSION_END], {
-      stdio: ["pipe", "ignore", "pipe"],
-      detached: true,
-      env: { ...process.env, MEMORY_HOOK_EVENT: "stop" },
+    // Blocking: save session memory note (Rule #7 compliance).
+    // Previously fire-and-forget, which meant the agent got no
+    // confirmation whether the session save succeeded. Now we wait
+    // up to 10s for the script to write the session summary to the
+    // memory DB so silent data loss is impossible.
+    return new Promise<void>((resolve, reject) => {
+      const sessionChild = spawn(VENV, [MEMORY_SESSION_END], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: { ...process.env, MEMORY_HOOK_EVENT: "stop" },
+      })
+      sessionChild.stdin?.write(JSON.stringify({ session_id: sessionId || "unknown" }))
+      sessionChild.stdin?.end()
+
+      let stdout = ""
+      let stderr = ""
+      sessionChild.stdout?.on("data", (d: Buffer) => { stdout += d })
+      sessionChild.stderr?.on("data", (d: Buffer) => { stderr += d })
+
+      const timeout = setTimeout(() => {
+        reject(new Error("Session-end save timed out after 10s"))
+      }, 10000)
+
+      sessionChild.on("close", (code) => {
+        clearTimeout(timeout)
+        if (code === 0) {
+          log(`[agentic-memory] Session memory saved: ${stdout.trim()}`)
+          resolve()
+        } else {
+          reject(new Error(`Session-end save failed (exit ${code}): ${stderr.trim()}`))
+        }
+      })
+      sessionChild.on("error", (err) => {
+        clearTimeout(timeout)
+        reject(err)
+      })
     })
-    sessionChild.stdin?.write(JSON.stringify({ session_id: sessionId || "unknown" }))
-    sessionChild.stdin?.end()
-    sessionChild.unref()
   }).catch((e) => log(`[agentic-memory] Session end save failed: ${e}`))
 }
 
 export function injectSystemPrompt(system: string[]): void {
+  // NOTE: OpenCode fires `experimental.chat.system.transform` before
+  // each LLM call (not just once at session start). Each call pushes
+  // whatever is currently in state.sessionContext / state.proactiveContext
+  // and then clears it so we don't inject stale context on the next turn.
+  // If OpenCode ever changes this to fire only once, proactive context
+  // would only be delivered on the very first LLM call.
   if (state.sessionContext) {
     system.push(state.sessionContext)
     state.sessionContext = ""
@@ -279,17 +320,29 @@ export async function onCompacting(sessionId: string, output: { context: string[
       }
     } catch { /* state file may not exist yet */ }
 
-    // Fire-and-forget: snapshot raw events.jsonl before compaction destroys it
-    // (script reads session_id from stdin JSON)
-    const precompactChild = spawn(VENV, [MEMORY_PRECOMPACT_SNAPSHOT], { stdio: ["pipe", "ignore", "pipe"], detached: true })
-    precompactChild.stdin?.write(JSON.stringify({ session_id: sessionId || "unknown" }))
-    precompactChild.stdin?.end()
-    precompactChild.unref()
+    // Blocking: snapshot raw events.jsonl before compaction destroys it.
+    // Previously fire-and-forget, which meant snapshot failures were
+    // invisible to the agent. Now we capture the JSON result and
+    // surface any failure in the compaction warning that the agent
+    // sees after compaction completes.
+    let snapshotOk = true
+    try {
+      const snapshotRaw = await captureOutput([MEMORY_PRECOMPACT_SNAPSHOT, JSON.stringify({ session_id: sessionId || "unknown" })], "precompact-snapshot", log)
+      const snapshotParsed = JSON.parse(snapshotRaw.trim() || "{}")
+      if (!snapshotParsed.ok) {
+        snapshotOk = false
+        log(`[agentic-memory] Pre-compaction snapshot failed: ${snapshotParsed.error || "unknown error"}`)
+      }
+    } catch (e) {
+      snapshotOk = false
+      log(`[agentic-memory] Pre-compaction snapshot error: ${e}`)
+    }
 
     const result = await captureOutput([CONTEXT_MONITOR, "compact", "--session-id", sessionId || "unknown", "--message-count", messageCount], undefined, "compact", log)
     log(`[agentic-memory] Pre-compaction context saved: ${result.trim()}`)
 
-    output.context.push("\n\n⚠️ COMPACTION SURVIVAL: A pre-compaction context note was saved. After compaction, search for 'pre-compaction context save' to recover what was happening before this compaction event.")
+    const snapshotWarning = snapshotOk ? "" : " (snapshot failed — data may be incomplete)"
+    output.context.push(`\n\n⚠️ COMPACTION SURVIVAL: A pre-compaction context note was saved.${snapshotWarning} After compaction, search for 'pre-compaction context save' to recover what was happening before this compaction event.`)
   }
 
   output.prompt = "Focus on preserving: 1) Current task status and progress, 2) Key decisions made, 3) Files created/modified, 4) Remaining work items, 5) Any security concerns flagged. Discard: verbose tool outputs, intermediate exploration, redundant file listings."
