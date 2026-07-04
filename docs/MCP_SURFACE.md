@@ -1,7 +1,72 @@
 # Agentic Memory — MCP Surface Reference
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
-> Last updated: 2026-07-04. Schema v30.
+> Last updated: 2026-07-05. Schema v30.
+
+---
+
+## Mandatory Workflow
+
+> **All agents must follow this workflow. Do not improvise your own save/search flow.**
+
+### Every session MUST do this:
+
+```
+1. memory_session_start(query="<current subsystem or task>")
+   ↓ Gets context from previous sessions
+
+2. [Do your work]
+
+3. memory_save(category="sessions|lessons|decisions", ...)
+   ↓ Save what you learned BEFORE ending the session
+```
+
+### The only save tool
+
+**There is exactly one `memory_save` MCP tool.** It is registered as a CORE verb.
+Always call it by name from the MCP surface. Do not call `save_pipeline.save_memory` directly.
+
+### Default search behavior
+
+- `memory_search(query="...")` is the **default for ALL memory lookups**.
+- Do NOT call `memory_maintenance` for search. It is admin-only.
+- Default mode is `hybrid` (FTS5 + vector + KG fusion). Only change mode if hybrid returns bad results.
+
+### When to use memory_maintenance
+
+**Never call memory_maintenance as a default post-task ritual.** The system maintains itself via cron.
+Only call it when:
+- You need a specific admin operation NOT available as a CORE verb
+- You are debugging and need diagnostics
+- You need an immediate result that cron hasn't produced yet
+
+### When to save
+
+| Trigger | Tool to call | Category |
+|---------|-------------|----------|
+| Learned a lesson / fixed a bug | `memory_save` | `lessons` |
+| Made an architecture decision | `memory_save` | `decisions` |
+| Completed a project milestone | `memory_save` | `projects` |
+| User stated a preference | `memory_save` | `preferences` |
+| End of session | `memory_save` | `sessions` |
+| Flaky test found | `memory_save` | `lessons` (pinned=True) |
+| Significant milestone | `memory_save` | `projects` (importance=4) |
+
+### When to search
+
+| Trigger | Tool to call |
+|---------|-------------|
+| Starting any task | `memory_search(query="<topic>")` |
+| Before making a decision | `memory_search(query="<feature> decisions")` |
+| Before pushing write-path code | `memory_search(query="save_pipeline saga safety")` |
+| Debugging | `memory_search(query="<error> <subsystem>")` |
+
+### When NOT to call a tool
+
+- Do NOT call `memory_organize` unless cron is **not running** or you need an immediate result.
+- Do NOT call `memory_maintenance` for routine cleanup.
+- Do NOT call `save_pipeline.save_memory` directly — use the MCP verb.
+- Do NOT call Python hooks directly — use the MCP surface.
 
 ---
 
@@ -10,7 +75,7 @@
 Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 `~/.config/agentic-memory/memory/` (SQLite + markdown files + vector index).
 
-**Surface: 14 CORE verbs + `memory_maintenance` router (escape hatch)**
+**Surface: 15 CORE verbs + `memory_maintenance` router (escape hatch)**
 
 - CORE tools: visible directly — call them by name.
 - `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.
@@ -19,6 +84,11 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 > **Important:** 80+ legacy ADMIN tools were pruned from the direct surface in Phase A
 > (2026-07-01). They are **not gone** — they are accessible via the router. Calling
 > `memory_maintenance` with an operation name is the supported path.
+
+> **There is exactly one `memory_save` MCP tool.** It is registered as a CORE verb in
+> `mcp_verbs.py` and exported through `memory_mcp.py`. Do not call `save_pipeline.save_memory`
+> directly from agent code — always use the MCP verb so deferred indexing, audit logging,
+> and circuit-breaking are applied.
 
 ---
 

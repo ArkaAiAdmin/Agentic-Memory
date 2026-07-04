@@ -40,6 +40,26 @@ Minimum: do #1, #7, and #13. Run #8 opportunistically. Use `memory_maintenance(o
 
 ---
 
+## MCP Workflow Hard Rules
+
+1. **Use the MCP surface verb for all saves and searches.** The only save tool is `memory_save`. The only
+   search tool is `memory_search`. Do not call `save_pipeline.save_memory` directly.
+2. **Session start is mandatory.** Call `agentic-memory_memory_session_start(query="<subsystem>")` at the
+   start of every new session or task to load prior context.
+3. **Session end is mandatory.** Call `agentic-memory_memory_save(category="sessions")` before ending a
+   session to capture the summary.
+4. **Search before you act.** Call `memory_search` before designing a feature or making a decision.
+5. **Save what you learn.** Call `memory_save` after any bug fix, decision, or significant event.
+6. **Maintenance is automated.** The cron/background worker handles index updates, FTS5 compaction,
+   dedup, etc. Do NOT call `memory_organize` or `memory_maintenance` as a default post-task ritual.
+   Only call them when cron is not running or you need an immediate result.
+7. **mcp_verbs.py is the canonical CORE verb surface.** `mcp_memory.py` is the backward-compatible
+   wrapper. Do not add new CORE tools in `mcp_memory.py` — add them in `mcp_verbs.py`.
+8. **ADMIN tools are hidden by design.** They are accessible only via `memory_maintenance(operation="...")`.
+   If you need an admin op, use the router. Do not try to call ADMIN tool names directly.
+
+**Reference:** `docs/MCP_SURFACE.md` has the full verb reference, decision tree, and parameter tables.
+
 ## Critical Path
 
 ```
@@ -221,6 +241,10 @@ See `memory.toml` for all 17 feature flags.
 ## Current Status (2026-07-05 snapshot)
 
 - **Schema v30**: 30 migrations applied (100% down-migration coverage). Chunk-level multi-vector search active.
+- **MCP Workflow rules codified**: `docs/MCP_SURFACE.md` has mandatory workflow, decision tree, and tool selection guide. `AGENTS.md` has 8 hard rules.
+- **MCP verb canonical**: `mcp_verbs.py` is the single CORE verb surface. `mcp_memory.py` is backward-compat only.
+- **Deferred indexing fix**: `mcp_verbs.py` `memory_save` now passes `defer_expensive=True` — stops MCP server from loading Qwen2.5-3B on every save call. Returns <200ms.
+- **Circuit-breaker coordination**: Python CB writes `.auto_save_circuit_sentinel`; TS plugin checks it before spawning subprocesses.
 - **Phase 1 (Docs/Drift)**: `tool_drift_check.py`, `doc_drift_check.py`, `schema_version_check.py` in CI. Tool count reconciled: 102 total (15 CORE + 84 ADMIN + 3 DEPRECATED; 15 verbs surfaced directly including `memory_curate_autosave`).
 - **Phase 2 (Search Observability)**: 6 search phases instrumented with `infra.error_counter`. Failures return `<call>_phase_inc("<phase>", e)` + `logger.warning`. `search_memories` adds `phase_errors` to result envelope when counter is non-empty.
 - **Phase 1 tools**: `memory_flags_status`, `memory_phase_errors` admin ops added.
@@ -233,8 +257,7 @@ See `memory.toml` for all 17 feature flags.
 - **Contextual retrieval symmetry**: Query embeddings now receive the same `[category|tags]` prefix as document embeddings when `MEMORY_CONTEXTUAL_RETRIEVAL=1`.
 - **Cron**: 36 scheduled jobs. `background_worker` every 15 min with flock protection.
 - **Auto-save**: Async inbox+daemon (2-5ms enqueue). Default since 2026-06-22.
-- **Deferred indexing**: MCP `memory_save` defers embedding/KG/facts to background worker — returns <200ms, never times out.
-- **MCP reference doc**: `docs/MCP_SURFACE.md` — complete verb reference, decision tree, admin ops table, common workflows.
+- **MCP reference doc**: `docs/MCP_SURFACE.md` — mandatory workflow, decision tree, verb reference, admin ops table, common workflows.
 - **Mypy**: 0 errors. **Coverage**: 70% gate.
 - **Tests**: 233 test files, 4000+ test functions.
 - **Test command**: `./venv/bin/python -m pytest eval/ --timeout=15 -q` (in-process runner) **|** Full suite with xdist parallelism: `./venv/bin/python -m pytest eval/ -n 3 --timeout=15 -q` **|** Subprocess-per-file runner (avoids parallel torch/OpenMP crashes): `./venv/bin/python eval/run_full_suite.py`
