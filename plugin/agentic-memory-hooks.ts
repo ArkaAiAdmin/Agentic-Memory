@@ -174,6 +174,14 @@ const DISABLED_HOOKS = new Set(
 const profileOrder: Record<string, number> = { minimal: 0, standard: 1, strict: 2 }
 const ECC_HOOK_PROFILE = process.env.ECC_HOOK_PROFILE || "standard"
 
+// Throttle auto-saves: at most one per tool per AUTO_SAVE_THROTTLE_MS.
+// Prevents bash/edit/read spam from flooding the sessions category.
+const _lastAutoSaveTime = new Map<string, number>()
+const AUTO_SAVE_THROTTLE_MS = (() => {
+  const env = parseInt(process.env.AUTO_SAVE_THROTTLE_MS || "", 10)
+  return Number.isFinite(env) && env > 0 ? env : 60000
+})()
+
 function hookEnabled(id: string, required: string | string[] = "standard"): boolean {
   if (DISABLED_HOOKS.has(id)) return false
   const req = Array.isArray(required) ? required : [required]
@@ -227,8 +235,6 @@ export function onToolAfter(tool: string, args: Record<string, unknown> | undefi
   if (!hookEnabled("post:memory:auto-save", ["minimal"])) return
   if (!isAutoSaveAllowed(tool)) return
 
-  // Surface any errors from previous fire-and-forget calls so the
-  // agent sees failures instead of silent drops.
   surfaceRecentHookErrors(log)
 
   const paramsJson = JSON.stringify(args ?? {}).slice(0, 2000)
@@ -236,6 +242,13 @@ export function onToolAfter(tool: string, args: Record<string, unknown> | undefi
 
   fireAndForget([CONTEXT_MONITOR, "track", "--tool", tool, "--params", paramsJson, "--result-preview", preview], "track", log)
   if (!isAutoSaveCircuitOpen(log)) {
+    const now = Date.now()
+    const last = _lastAutoSaveTime.get(tool) || 0
+    if (now - last < AUTO_SAVE_THROTTLE_MS) {
+      log(`[agentic-memory] auto-save throttled for ${tool} (${now - last}ms since last)`)
+      return
+    }
+    _lastAutoSaveTime.set(tool, now)
     fireAndForget([AUTO_SAVE, "tool-complete", "--tool", tool, "--params", paramsJson, "--result-preview", preview], "auto-save", log)
   }
 }
