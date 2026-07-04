@@ -41,6 +41,32 @@ _AUTO_SAVE_STATE: _AutoSaveState = {
 }
 _AUTO_SAVE_STATE_LOCK = threading.Lock()
 
+# Sentinel file for cross-process TS ↔ Python circuit breaker coordination.
+# Written when the Python CB opens, removed when it closes. The TS plugin
+# checks for this file before spawning auto_save.py subprocesses.
+_CIRCUIT_SENTINEL_NAME = ".auto_save_circuit_sentinel"
+
+
+def _get_sentinel_path() -> Path:
+    """Path to the circuit-breaker sentinel file in the memory directory."""
+    return _get_db_path().parent / _CIRCUIT_SENTINEL_NAME
+
+
+def _write_circuit_sentinel() -> None:
+    """Write the sentinel file to signal that the Python CB is open."""
+    try:
+        _get_sentinel_path().write_text("open")
+    except Exception:
+        pass
+
+
+def _remove_circuit_sentinel() -> None:
+    """Remove the sentinel file to signal that the Python CB is closed."""
+    try:
+        _get_sentinel_path().unlink(missing_ok=True)
+    except Exception:
+        pass
+
 # Module-level keep-alive for the daemon's flock FD.
 _DAEMON_LOCKS: dict[str, Any] = {}
 
@@ -119,6 +145,7 @@ def _check_circuit_timeout_expiry() -> None:
         else:
             should_persist = False
     if should_persist:
+        _remove_circuit_sentinel()
         _persist_circuit_state(
             "close",
             details={
@@ -173,6 +200,7 @@ def _auto_save_record_failure_and_maybe_trip() -> dict:
             cb_seconds,
         )
     if transitioned_to_open:
+        _write_circuit_sentinel()
         _persist_circuit_state(
             "open",
             details={
@@ -205,6 +233,7 @@ def _auto_save_record_success() -> None:
         _AUTO_SAVE_STATE["circuit_open_until"] = 0.0
         _AUTO_SAVE_STATE["last_backoff_seconds"] = 0.0
     if was_open:
+        _remove_circuit_sentinel()
         _persist_circuit_state(
             "close",
             details={
@@ -315,9 +344,11 @@ def _load_circuit_state_from_audit() -> None:
                                 now - window + i * (window / n_failures)
                                 for i in range(n_failures)
                             ]
+                            _write_circuit_sentinel()
                         else:
                             _AUTO_SAVE_STATE["circuit_open_until"] = 0.0
                             _AUTO_SAVE_STATE["failure_times"] = []
+                            _remove_circuit_sentinel()
                             _persist_circuit_state(
                                 "close",
                                 details={
@@ -329,6 +360,7 @@ def _load_circuit_state_from_audit() -> None:
                     elif latest_tool == "auto_save_circuit_close":
                         _AUTO_SAVE_STATE["circuit_open_until"] = 0.0
                         _AUTO_SAVE_STATE["failure_times"] = []
+                        _remove_circuit_sentinel()
         finally:
             try:
                 from infra.memory_common import safe_close_db

@@ -44,6 +44,7 @@ const MEMORY_SESSION_END = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-sessio
 const MEMORY_PRECOMPACT_SNAPSHOT = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-precompact-snapshot.py")
 const STATE_FILE = path.join(AGENTIC_MEMORY_DIR, "memory", "sessions", ".context_monitor_state.json")
 const ERROR_LOG = path.join(AGENTIC_MEMORY_DIR, "memory", "hook-errors.jsonl")
+const CIRCUIT_SENTINEL = path.join(AGENTIC_MEMORY_DIR, "memory", ".auto_save_circuit_sentinel")
 
 // ── Circuit breaker ──────────────────────────────────────────────────────────
 
@@ -65,6 +66,16 @@ function recordSuccess(label: string): void {
     failureCounts.set(label, 0)
     circuitOpenTimes.delete(label)
   }
+}
+
+function isAutoSaveCircuitOpen(log: (msg: string) => void): boolean {
+  if (!fs.existsSync(CIRCUIT_SENTINEL)) return false
+  if (isCircuitOpen("auto-save")) {
+    log(`[agentic-memory] Circuit OPEN for auto-save (TS + sentinel) — skipping`)
+    return true
+  }
+  log(`[agentic-memory] Circuit OPEN for auto-save (Python CB via sentinel) — skipping`)
+  return true
 }
 
 function recordFailure(log: (msg: string) => void, label: string, err: unknown, extra?: Record<string, unknown>): void {
@@ -201,7 +212,9 @@ export function onToolAfter(tool: string, args: Record<string, unknown> | undefi
   const preview = typeof output === "string" ? output.slice(0, 200) : ""
 
   fireAndForget([CONTEXT_MONITOR, "track", "--tool", tool, "--params", paramsJson, "--result-preview", preview], "track", log)
-  fireAndForget([AUTO_SAVE, "tool-complete", "--tool", tool, "--params", paramsJson, "--result-preview", preview], "auto-save", log)
+  if (!isAutoSaveCircuitOpen(log)) {
+    fireAndForget([AUTO_SAVE, "tool-complete", "--tool", tool, "--params", paramsJson, "--result-preview", preview], "auto-save", log)
+  }
 }
 
 export function beforeTool(tool: string, args: Record<string, unknown> | undefined, log: (msg: string) => void): Promise<void> {
