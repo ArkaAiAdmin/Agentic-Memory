@@ -48,18 +48,13 @@ Limitations
 import argparse
 import json
 import os
-import socket
 import re
 import sys
-import shutil
 import time
 import datetime
 import logging
-import sqlite3
-import subprocess
-import threading
 from pathlib import Path
-from typing import Optional, Any, Protocol
+from typing import Any, Protocol
 
 # C15 fix (2026-06-27): set OMP env vars early to prevent MPS kernel crashes
 # when multiple subprocesses load sentence-transformers concurrently on Apple
@@ -75,7 +70,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cron"))
 from _flock import acquire_lock_or_exit  # noqa: E402  # type: ignore[import]
 
 # H1 fix: configure root logging (idempotent).
-from infra.memory_common import (
+from infra.memory_common import (  # noqa: F401 — some names re-exported for other modules
     configure_logging,
     atomic_write,
     safe_close_db,
@@ -84,7 +79,7 @@ from infra.memory_common import (
 )
 
 # Phase 3: circuit breaker is now in its own module.
-from background.circuit_breaker import (
+from background.circuit_breaker import (  # noqa: F401 — re-exported for tests + tool_complete
     _AutoSaveState,
     _AUTO_SAVE_STATE,
     _AUTO_SAVE_STATE_LOCK,
@@ -103,7 +98,7 @@ from background.circuit_breaker import (
 )
 
 # Phase 4: config and tool-policy helpers moved to background/config.py.
-from background.config import (
+from background.config import (  # noqa: F401 — re-exported for daemon + tests
     _batch_interval,
     _daemon_idle_seconds,
     _preview_max,
@@ -417,8 +412,9 @@ def _truncate(s: str, n: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Phase 3: extracted modules.
-from background.inbox import (
+# Phase 3: extracted modules.  These are re-exported so that other
+# subcommands / modules can import them via `background.auto_save`.
+from background.inbox import (  # noqa: F401
     get_auto_save_inbox_path,
     get_auto_save_pid_path,
     get_auto_save_lock_path,
@@ -438,10 +434,10 @@ from background.inbox import (
     _start_daemon_if_needed,
     _process_inbox_batch,
 )
-from background.daemon import run_daemon, _wait_for_file_modification
-from background.tool_complete import tool_complete
-from background.daily_digest import daily_digest, _build_daily_sections
-from background.purge import purge_auto_saves
+from background.daemon import run_daemon, _wait_for_file_modification  # noqa: F401
+from background.tool_complete import tool_complete  # noqa: F401
+from background.daily_digest import daily_digest, _build_daily_sections  # noqa: F401
+from background.purge import purge_auto_saves  # noqa: F401
 
 # Subcommand: status
 # ---------------------------------------------------------------------------
@@ -729,20 +725,18 @@ def main():
 
 
 
-# Re-export extracted symbols for backward compatibility
-from background.tool_complete import (
+# Re-export extracted symbols for backward compatibility.
+from background.tool_complete import (  # noqa: F401
     _upsert_memory,
     _scan_content_for_injection,
     _tool_complete_inner,
     _fast_path_enqueue,
     _async_enqueue_or_fallback,
 )
-from background.daily_digest import (
+from background.daily_digest import (  # noqa: F401
     _get_tool_counts_from_db,
     _archive_one_autosave,
     _sweep_orphan_rows,
-    _build_daily_sections,
-    daily_digest,
 )
 
 if __name__ == "__main__":
