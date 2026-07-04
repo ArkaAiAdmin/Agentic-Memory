@@ -456,7 +456,11 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
     Used both by the daemon's main loop and by the inline fallback
     path (when the daemon is unavailable).  Each entry is passed
     through the standard allowlist/denylist/injection-scan pipeline
-    and then saved via ``_upsert_memory``.
+    and then saved via ``_tool_complete_inner``.
+
+    Low-value entries are skipped before processing to reduce noise
+    in the sessions category: empty/error-only result previews and
+    repetitive tool calls within a short window are coalesced.
 
     Returns a summary dict: ``{"saved": N, "skipped": M, "failed": K}``.
     """
@@ -482,6 +486,21 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
             params = entry.get("params", "")
             result_preview = entry.get("result_preview", "")
             ts = entry.get("ts")
+
+            # Quality gate: skip low-value auto-saves before hitting the DB.
+            # This cuts session-note bloat without losing intentional saves.
+            preview_trimmed = (result_preview or "").strip()
+            if not preview_trimmed:
+                summary["skipped"] += 1
+                continue
+            if tool in ("bash", "run_command") and len(preview_trimmed) < 20:
+                summary["skipped"] += 1
+                continue
+            error_indicators = ("Traceback (most recent call last)", "Error:", "Exception:", "FATAL", "CRITICAL", "command not found", "No such file or directory", "Permission denied")
+            if any(preview_trimmed.startswith(ei) for ei in error_indicators):
+                summary["skipped"] += 1
+                continue
+
             try:
                 result = _tool_complete_inner(
                     tool, params, result_preview, ts, conn=conn

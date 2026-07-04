@@ -45,8 +45,16 @@ def log(msg: str) -> None:
 
 def is_daemon_running() -> bool:
     sys.path.insert(0, str(REPO / "background"))
-    from inbox import _is_daemon_running
+    from inbox import _is_daemon_running, _is_daemon_lock_held
 
+    # Use flock as the primary liveness signal. The PID file has a race
+    # window: between writing the PID and the daemon actually starting,
+    # the watchdog can see a stale or missing PID and spawn a duplicate.
+    # The flock is held immediately at daemon startup, so it is the
+    # authoritative signal. Only fall back to PID check if the flock
+    # file doesn't exist yet (no daemon ever started).
+    if _is_daemon_lock_held():
+        return True
     return cast(bool, _is_daemon_running())
 
 

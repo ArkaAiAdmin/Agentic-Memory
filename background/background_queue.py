@@ -408,3 +408,39 @@ def cleanup_old_tasks(conn: AnyConnection, max_age_days: int = 7) -> int:
         conn.commit()
         logger.debug("cleaned up %d old tasks", deleted)
     return deleted
+
+
+def reset_stuck_processing_tasks(conn: AnyConnection, max_age_minutes: int = 10) -> int:
+    """Reset tasks stuck in 'processing' status back to 'pending'.
+
+    Workers can crash or be killed while processing a task, leaving it
+    stuck in 'processing' forever. Since dequeue only picks up 'pending'
+    tasks, a single stuck task blocks all subsequent tasks in the queue.
+
+    Args:
+        conn: Database connection.
+        max_age_minutes: Tasks processing longer than this are reset.
+
+    Returns:
+        Number of tasks reset.
+    """
+    cur = conn.execute(
+        "UPDATE task_queue "
+        "SET status = 'pending', started_at = NULL, error = ? "
+        "WHERE status = 'processing' "
+        "AND started_at IS NOT NULL "
+        "AND started_at < datetime('now', ?)",
+        (
+            f"reset after {max_age_minutes}m stuck (worker likely crashed)",
+            f"-{max_age_minutes} minutes",
+        ),
+    )
+    reset_count = cur.rowcount or 0
+    if reset_count:
+        conn.commit()
+        logger.warning(
+            "reset %d stuck processing tasks (older than %dm)",
+            reset_count,
+            max_age_minutes,
+        )
+    return reset_count

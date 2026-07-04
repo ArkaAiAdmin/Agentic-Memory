@@ -35,7 +35,7 @@ try:
     from _flock import acquire_lock_or_exit
 except ImportError:
 
-    def acquire_lock_or_exit(name):  # type: ignore[misc]
+    def acquire_lock_or_exit(name: str, max_attempts: int = 5) -> None:
         logger.error("cron_health_check: _flock module not available, cannot acquire lock")
         sys.exit(1)
 
@@ -199,6 +199,26 @@ def main() -> int:
             f"[WARNING auto_save] healthy=False, recent_autos={ash.get('auto_save_recent', '?')}, "
             f"db_error={ash.get('db_error', 'none')}"
         )
+
+    # 4. Task queue watchdog — reset stuck processing tasks
+    try:
+        from background.background_queue import reset_stuck_processing_tasks
+        import sqlite3 as _sqlite3_q
+
+        with _sqlite3_q.connect(str(db_path)) as _qconn:
+            _qconn.row_factory = _sqlite3_q.Row
+            _stuck = reset_stuck_processing_tasks(_qconn, max_age_minutes=10)
+        if _stuck:
+            report["alerts"].append(
+                f"[WARNING task_queue] reset {_stuck} stuck processing tasks"
+            )
+        report["checks"]["task_queue"] = {
+            "status": "ok" if _stuck == 0 else "warning",
+            "stuck_reset": _stuck,
+        }
+    except Exception as _tq_err:
+        report["checks"]["task_queue"] = {"status": "error", "message": str(_tq_err)}
+        report["alerts"].append(f"[ERROR task_queue] {_tq_err}")
 
     # 5. Semantic search probe
     ss = _check_semantic_search()

@@ -92,6 +92,25 @@ function recordFailure(log: (msg: string) => void, label: string, err: unknown, 
   } catch { /* ignore */ }
 }
 
+function surfaceRecentHookErrors(log: (msg: string) => void, maxAgeMs: number = 5 * 60 * 1000): void {
+  if (!fs.existsSync(ERROR_LOG)) return
+  const cutoff = Date.now() - maxAgeMs
+  try {
+    const lines = fs.readFileSync(ERROR_LOG, "utf8").split("\n").filter(Boolean)
+    const recent = lines.filter(line => {
+      try {
+        const entry = JSON.parse(line)
+        return entry.ts >= cutoff
+      } catch {
+        return false
+      }
+    })
+    if (recent.length > 0) {
+      log(`[agentic-memory] ${recent.length} recent hook error(s) — check hook-errors.jsonl for details`)
+    }
+  } catch { /* ignore */ }
+}
+
 // ── Subprocess helpers ───────────────────────────────────────────────────────
 
 async function captureOutput(
@@ -207,6 +226,10 @@ async function runSessionStart(log: (msg: string) => void): Promise<void> {
 export function onToolAfter(tool: string, args: Record<string, unknown> | undefined, output: unknown, log: (msg: string) => void): void {
   if (!hookEnabled("post:memory:auto-save", ["minimal"])) return
   if (!isAutoSaveAllowed(tool)) return
+
+  // Surface any errors from previous fire-and-forget calls so the
+  // agent sees failures instead of silent drops.
+  surfaceRecentHookErrors(log)
 
   const paramsJson = JSON.stringify(args ?? {}).slice(0, 2000)
   const preview = typeof output === "string" ? output.slice(0, 200) : ""
