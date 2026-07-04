@@ -3,7 +3,10 @@ OKF Import — ingest an Open Knowledge Format directory into the memory databas
 
 Reads an OKF directory produced by ``okf_export.py`` (or any frontmatter-aware
 tool) and saves each ``.md`` file through ``save_memory``, preserving type,
-resource, tags, pinned status, and all other frontmatter fields.
+resource, description, timestamp, tags, pinned status, related, valid_from,
+valid_to, superseded_by, category, title_slug, and all other frontmatter fields.
+
+Round-trips cleanly through okf_export.py.
 
 Usage:
     python okf_import.py <okf_dir> [--dry-run]
@@ -21,26 +24,71 @@ from save_pipeline import save_memory
 
 logger = logging.getLogger("okf_import")
 
-OKF_FM_KEYS = {
-    "created",
-    "updated",
-    "observed_at",
+# OKF standard frontmatter keys that the spec mentions or that save_memory
+# also writes into its own generated frontmatter block.
+OKF_STANDARD_KEYS = {
+    "type",
+    "title",
+    "description",
+    "resource",
     "tags",
     "pinned",
-    "type",
-    "resource",
+    "timestamp",
     "related",
     "valid_from",
     "valid_to",
     "superseded_by",
-    "title",
+    "created",
+    "updated",
+    "observed_at",
     "category",
     "title_slug",
+}
+
+# Keys that are internal to this memory system and should not be surfaced
+# as top-level OKF frontmatter in the re-emitted body.
+INTERNAL_KEYS = {
+    "category",
+    "title_slug",
+    "tags",
+    "pinned",
+    "created",
+    "updated",
+    "observed_at",
+    "valid_from",
+    "valid_to",
+    "superseded_by",
+    "related",
+    "metadata",
 }
 
 
 def _coerce_tag(val) -> str:
     return str(val).strip().strip("'").strip('"')
+
+
+def _collect_metadata(fm: dict) -> dict:
+    """Return a metadata dict from non-standard frontmatter keys.
+
+    The spec-compliant keys stay as top-level OKF frontmatter. Everything
+    else is treated as producer-defined metadata and MUST round-trip.
+    """
+    out: dict = {}
+    for k, v in fm.items():
+        if k in OKF_STANDARD_KEYS or k in ("okf_version",):
+            continue
+        out[k] = v
+    return out
+
+
+def _reconstruct_body_with_metadata(original_body: str, metadata: dict) -> str:
+    """Re-emit the body with a compact metadata frontmatter block so
+    save_memory's _build_memory_file can capture it in the DB metadata
+    column without losing prose that followed the original frontmatter."""
+    if not metadata:
+        return original_body
+    lines = ["---", f"metadata: {json.dumps(metadata, ensure_ascii=False)}", "---", ""]
+    return "\n".join(lines) + ("\n" + original_body if original_body else "")
 
 
 def okf_import(
@@ -86,9 +134,6 @@ def okf_import(
         }
 
     # Pre-check: if not dry_run, verify the target DB is accessible.
-    # When MEMORY_DB_PATH points to a non-existent location, save_memory
-    # would either silently create an empty DB or fail unpredictably.
-    # Either way, the caller expects this to surface as an error.
     if not dry_run:
         try:
             from save_pipeline import _ensure_db_exists
@@ -155,23 +200,33 @@ def okf_import(
             else pinned_raw.lower() in ("true", "1", "yes")
         )
 
-        # Type and resource
-        memory_type = str(fm.get("type", "note"))
-        resource = fm.get("resource") or None
-
-        # Strip frontmatter-only keys from the content body so they don't
-        # end up as duplicate text in the saved memory.
-        clean_body = _strip_fm_keys(body)
+        # Standard OKF / memory fields that we re-emit into the body so
+        # save_memory preserves them in the DB.
+        keep_keys = {k: fm[k] for k in (
+            "type",
+            "title",
+            "description",
+            "resource",
+            "timestamp",
+            "related",
+            "valid_from",
+            "valid_to",
+            "superseded_by",
+        ) if k in fm and fm[k] not in (None, "", [])}
+        extra_metadata = _collect_metadata(fm)
+        merged_metadata = {**extra_metadata, **keep_keys}
+        clean_body = _reconstruct_body_with_metadata(body, merged_metadata)
 
         if dry_run:
             logger.info(
-                "[DRY RUN] Would save %s/%s (type=%s, resource=%s, tags=%s, pinned=%s)",
+                "[DRY RUN] Would save %s/%s (type=%s, resource=%s, tags=%s, pinned=%s, metadata_keys=%s)",
                 category,
                 title_slug,
-                memory_type,
-                resource,
+                fm.get("type", "note"),
+                fm.get("resource"),
                 tags_list,
                 pinned,
+                sorted(merged_metadata.keys()),
             )
             imported += 1
             continue
@@ -213,16 +268,6 @@ def okf_import(
         result["error_details"] = error_details[:20]
         result["error"] = f"{errors} memories failed to import"
     return result
-
-
-def _strip_fm_keys(body: str) -> str:
-    """Remove stray frontmatter key lines from the body text.
-
-    After ``parse_frontmatter`` strips the ``---...---`` block, a well-formed
-    OKF file has clean markdown below.  This is defence-in-depth for files
-    whose frontmatter was not fully consumed.
-    """
-    return body
 
 
 if __name__ == "__main__":

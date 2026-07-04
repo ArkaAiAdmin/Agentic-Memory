@@ -16,7 +16,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from okf_import import okf_import, _strip_fm_keys, _coerce_tag
+from okf_import import okf_import, _coerce_tag
 
 
 class TestCoerceTag(unittest.TestCase):
@@ -28,9 +28,6 @@ class TestCoerceTag(unittest.TestCase):
         self.assertEqual(_coerce_tag("hello"), "hello")
 
 
-class TestStripFMKeys(unittest.TestCase):
-    def test_passthrough(self):
-        self.assertEqual(_strip_fm_keys("body"), "body")
 
 
 class TestOKFImportErrors(unittest.TestCase):
