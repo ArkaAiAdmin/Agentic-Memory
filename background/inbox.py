@@ -20,7 +20,9 @@ AUTO_SAVE_INBOX_FILENAME = ".auto_save_inbox.jsonl"
 AUTO_SAVE_PID_FILENAME = ".auto_save_daemon.pid"
 AUTO_SAVE_LOCK_FILENAME = ".auto_save_daemon.lock"
 AUTO_SAVE_MANIFEST_FILENAME = ".auto_save_daemon_manifest.json"
+AUTO_SAVE_RESULTS_FILENAME = ".auto_save_results.jsonl"
 _DEFAULT_INBOX_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
+
 
 
 def _get_memory_dir() -> Path:
@@ -35,6 +37,41 @@ def get_auto_save_inbox_path() -> Path:
     workspace-vs-global resolution as the memory store itself.
     """
     return _get_memory_dir() / AUTO_SAVE_INBOX_FILENAME
+
+
+def get_auto_save_results_path() -> Path:
+    """Path to the JSONL result file written by the auto-save daemon.
+
+    Each line is a JSON object for one processed inbox entry:
+    ``{ts, tool, note_id, status, error?, note_path?}``.
+    The TS plugin and agent can read this file to get a lightweight
+    callback signal beyond the fire-and-forget hook contract.
+    """
+    return _get_memory_dir() / AUTO_SAVE_RESULTS_FILENAME
+
+
+def write_auto_save_result(
+    tool: str,
+    note_id: str,
+    status: str,
+    error: str = "",
+    note_path: str = "",
+) -> None:
+    """Append a single result entry to the daemon's result file."""
+    path = get_auto_save_results_path()
+    try:
+        entry = {
+            "ts": int(time.time() * 1000),
+            "tool": tool,
+            "note_id": note_id,
+            "status": status,
+            "error": error,
+            "note_path": note_path,
+        }
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.debug("auto-save daemon: failed to write result file: %s", exc)
 
 
 def get_auto_save_pid_path() -> Path:
@@ -523,6 +560,12 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
             except Exception as e:
                 logger.warning("auto-save daemon: entry failed: %s", e)
                 summary["failed"] += 1
+                write_auto_save_result(
+                    tool=tool or "unknown",
+                    note_id="",
+                    status="failed",
+                    error=str(e),
+                )
                 if conn is not None:
                     try:
                         conn.rollback()
@@ -531,6 +574,12 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
                 continue
             if result.get("saved"):
                 summary["saved"] += 1
+                write_auto_save_result(
+                    tool=tool,
+                    note_id=result.get("note_id", ""),
+                    status="saved",
+                    note_path=result.get("path", ""),
+                )
             elif result.get("skipped"):
                 summary["skipped"] += 1
             else:

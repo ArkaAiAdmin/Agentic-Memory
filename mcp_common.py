@@ -37,6 +37,7 @@ from infra.cache import _search_cache  # noqa: E402,F401
 from infra.infrastructure import (  # noqa: E402,F401
     ErrorCode,
     _err,
+    classify_exception,
     resolve_active_memory_dir,
     with_audit,
     with_memory_connection,

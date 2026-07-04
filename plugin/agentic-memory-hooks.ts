@@ -44,6 +44,7 @@ const MEMORY_SESSION_END = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-sessio
 const MEMORY_PRECOMPACT_SNAPSHOT = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-precompact-snapshot.py")
 const STATE_FILE = path.join(AGENTIC_MEMORY_DIR, "memory", "sessions", ".context_monitor_state.json")
 const ERROR_LOG = path.join(AGENTIC_MEMORY_DIR, "memory", "hook-errors.jsonl")
+const AUTO_SAVE_RESULTS = path.join(AGENTIC_MEMORY_DIR, "memory", ".auto_save_results.jsonl")
 const CIRCUIT_SENTINEL = path.join(AGENTIC_MEMORY_DIR, "memory", ".auto_save_circuit_sentinel")
 
 // ── Circuit breaker ──────────────────────────────────────────────────────────
@@ -108,6 +109,45 @@ function surfaceRecentHookErrors(log: (msg: string) => void, maxAgeMs: number = 
     if (recent.length > 0) {
       log(`[agentic-memory] ${recent.length} recent hook error(s) — check hook-errors.jsonl for details`)
     }
+  } catch { /* ignore */ }
+}
+
+function surfaceRecentAutoSaveResults(log: (msg: string) => void, maxAgeMs: number = 5 * 60 * 1000): void {
+  if (!fs.existsSync(AUTO_SAVE_RESULTS)) return
+  const cutoff = Date.now() - maxAgeMs
+  try {
+    const lines = fs.readFileSync(AUTO_SAVE_RESULTS, "utf8").split("\n").filter(Boolean)
+    const recent = lines.filter(line => {
+      try {
+        const entry = JSON.parse(line)
+        return entry.ts >= cutoff
+      } catch {
+        return false
+      }
+    })
+    const failed = recent.filter(e => e.status === "failed")
+    const saved = recent.filter(e => e.status === "saved")
+    if (failed.length > 0) {
+      const previews = failed.slice(0, 3).map((e: any) => e.error || e.tool).join(", ")
+      log(`[agentic-memory] ${failed.length} auto-save failure(s) recently: ${previews}`)
+    }
+    if (saved.length > 0) {
+      log(`[agentic-memory] ${saved.length} auto-save note(s) confirmed`)
+    }
+    // Trim old entries to bound file size.
+    try {
+      const kept = lines.filter(line => {
+        try {
+          const entry = JSON.parse(line)
+          return entry.ts >= cutoff
+        } catch {
+          return false
+        }
+      })
+      if (kept.length < lines.length) {
+        fs.writeFileSync(AUTO_SAVE_RESULTS, kept.join("\n") + (kept.length ? "\n" : ""))
+      }
+    } catch { /* ignore */ }
   } catch { /* ignore */ }
 }
 
@@ -236,6 +276,7 @@ export function onToolAfter(tool: string, args: Record<string, unknown> | undefi
   if (!isAutoSaveAllowed(tool)) return
 
   surfaceRecentHookErrors(log)
+  surfaceRecentAutoSaveResults(log)
 
   const paramsJson = JSON.stringify(args ?? {}).slice(0, 2000)
   const preview = typeof output === "string" ? output.slice(0, 200) : ""

@@ -23,6 +23,7 @@ from pathlib import Path
 from mcp_common import (
     GLOBAL_MEM_DIR,
     _err,
+    classify_exception,
     ErrorCode,
     get_memory_paths,
     logger,
@@ -43,6 +44,12 @@ def _resolve_db_path(is_global: bool = False, db_path: str | None = None):
         return GLOBAL_MEM_DIR / "memory.db"
     _, local_mem, _ = get_memory_paths()
     return local_mem / "memory.db"
+
+
+def _wrap_db_error(verb_name: str, e: Exception) -> str:
+    """Classify a DB exception and return a structured error envelope."""
+    code = classify_exception(e)
+    return _err(code, f"{verb_name}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +106,7 @@ def memory_search(
         return str(result.get("output", str(result)))
     except Exception as e:
         logger.exception("in memory_search verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_search: {e}")
+        return _wrap_db_error("memory_search", e)
 
 
 @mcp.tool()
@@ -140,7 +147,7 @@ def memory_save(
         return str(result)
     except Exception as e:
         logger.exception("in memory_save verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_save: {e}")
+        return _wrap_db_error("memory_save", e)
 
 
 @mcp.tool()
@@ -206,7 +213,7 @@ def memory_review_beliefs(
             return "\n".join(lines)
     except Exception as e:
         logger.exception("in memory_review_beliefs")
-        return _err(ErrorCode.DB_ERROR, f"memory_review_beliefs: {e}")
+        return _wrap_db_error("memory_review_beliefs", e)
 
 
 @mcp.tool()
@@ -304,7 +311,7 @@ def memory_curate_autosave(
                 return _err(ErrorCode.INVALID_PARAMS, "action must be 'list', 'promote', or 'discard'")
     except Exception as e:
         logger.exception("in memory_curate_autosave")
-        return _err(ErrorCode.DB_ERROR, f"memory_curate_autosave: {e}")
+        return _wrap_db_error("memory_curate_autosave", e)
 
 
 @mcp.tool()
@@ -325,7 +332,7 @@ def memory_delete(
         return str(_delete(note_id=note_id, hard=hard))
     except Exception as e:
         logger.exception("in memory_delete verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_delete: {e}")
+        return _wrap_db_error("memory_delete", e)
 
 
 @mcp.tool()
@@ -355,7 +362,7 @@ def memory_recall(query: str = "", session_id: str = "", tenant_id: str = "defau
         return str(result.get("output", str(result)))
     except Exception as e:
         logger.exception("in memory_recall verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_recall: {e}")
+        return _wrap_db_error("memory_recall", e)
 
 
 @mcp.tool()
@@ -468,7 +475,7 @@ def memory_note(
             )
     except Exception as e:
         logger.exception("in memory_note verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_note: {e}")
+        return _wrap_db_error("memory_note", e)
 
 
 @mcp.tool()
@@ -515,7 +522,7 @@ def memory_learn(
         return str(result)
     except Exception as e:
         logger.exception("in memory_learn verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_learn: {e}")
+        return _wrap_db_error("memory_learn", e)
 
 
 @mcp.tool()
@@ -552,7 +559,7 @@ def memory_audit(
         return f"## Recent Activity\n{audit}\n\n## Circuit Breaker\n{cb}"
     except Exception as e:
         logger.exception("in memory_audit verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_audit: {e}")
+        return _wrap_db_error("memory_audit", e)
 
 
 @mcp.tool()
@@ -615,7 +622,7 @@ def memory_organize(
         return "\n".join(lines)
     except Exception as e:
         logger.exception("in memory_organize verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_organize: {e}")
+        return _wrap_db_error("memory_organize", e)
 
 
 @mcp.tool()
@@ -654,7 +661,7 @@ def memory_share(
             return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'")
     except Exception as e:
         logger.exception("in memory_share verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_share: {e}")
+        return _wrap_db_error("memory_share", e)
 
 
 @mcp.tool()
@@ -693,7 +700,7 @@ def memory_graph(
             return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'")
     except Exception as e:
         logger.exception("in memory_graph verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_graph: {e}")
+        return _wrap_db_error("memory_graph", e)
 
 
 @mcp.tool()
@@ -732,7 +739,7 @@ def memory_profile(
             return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'")
     except Exception as e:
         logger.exception("in memory_profile verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_profile: {e}")
+        return _wrap_db_error("memory_profile", e)
 
 
 @mcp.tool()
@@ -749,7 +756,7 @@ def memory_session_start(query: str = "") -> str:
         return str(_session_start(query=query))
     except Exception as e:
         logger.exception("in memory_session_start verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_session_start: {e}")
+        return _wrap_db_error("memory_session_start", e)
 
 
 @mcp.tool()
@@ -769,4 +776,4 @@ def memory_advanced(operation: str, **kwargs: str) -> str:
         return str(memory_maintenance(operation=operation, **kwargs))
     except Exception as e:
         logger.exception("in memory_advanced verb")
-        return _err(ErrorCode.DB_ERROR, f"memory_advanced: {e}")
+        return _wrap_db_error("memory_advanced", e)

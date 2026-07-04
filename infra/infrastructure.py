@@ -16,6 +16,7 @@ __all__ = [
     "with_memory_connection",
     "_err",
     "ErrorCode",
+    "classify_exception",
     "_normalize_unicode",
     "_resolve_active_db_path",
     "_try_extract_result_meta",
@@ -252,6 +253,9 @@ def with_memory_connection(func):
 
 class ErrorCode(Enum):
     DB_ERROR = "DB_ERROR"
+    DB_LOCK = "DB_LOCK"
+    DB_TIMEOUT = "DB_TIMEOUT"
+    DB_CONNECTION = "DB_CONNECTION"
     NOT_FOUND = "NOT_FOUND"
     INVALID_PARAMS = "INVALID_PARAMS"
     TIMEOUT = "TIMEOUT"
@@ -275,9 +279,96 @@ class ErrorCode(Enum):
     INJECTION_DETECTED = "INJECTION_DETECTED"
 
 
-def _err(code: ErrorCode, message: str) -> str:
-    """Return a structured error envelope: f"Error [{code.value}]: {message}" """
-    return f"Error [{code.value}]: {message}"
+_HINT_BY_CODE: dict[ErrorCode, tuple[str, str]] = {
+    ErrorCode.DB_LOCK: (
+        "Database is locked by another writer (e.g. compaction). Wait a few seconds and retry.",
+        "retry",
+    ),
+    ErrorCode.DB_TIMEOUT: (
+        "DB write timed out. Check for contention or retry with a longer timeout.",
+        "retry",
+    ),
+    ErrorCode.DB_CONNECTION: (
+        "Could not connect to the memory DB. Verify the store is accessible.",
+        "wait",
+    ),
+    ErrorCode.TIMEOUT: (
+        "Operation timed out. Check system load or retry.",
+        "retry",
+    ),
+    ErrorCode.RATE_LIMITED: (
+        "Rate limited. Wait before retrying.",
+        "retry",
+    ),
+    ErrorCode.SCHEMA_MISSING: (
+        "Schema is missing or corrupt. Run memory_maintenance(operation=\"check_integrity\").",
+        "report",
+    ),
+    ErrorCode.CONTENT_TOO_LARGE: (
+        "Content exceeds the maximum allowed size. Reduce content length.",
+        "abort",
+    ),
+    ErrorCode.INJECTION_DETECTED: (
+        "Potential injection detected in input. Review the content.",
+        "abort",
+    ),
+}
+
+
+def _err(
+    code: ErrorCode,
+    message: str,
+    hint: str | None = None,
+    action: str | None = None,
+) -> str:
+    """Return a structured error envelope with recovery hint.
+
+    Format::
+
+        Error [CODE]: message
+        Hint: <recovery hint>
+        Action: <retry|wait|abort|report>
+
+    The ``Hint`` and ``Action`` lines are suppressed when the hint is not
+    provided and the code has no default hint or an overridden action.
+    """
+    lines: list[str] = [f"Error [{code.value}]: {message}"]
+    effective_hint = hint or (_HINT_BY_CODE.get(code, ("", ""))[0] if code in _HINT_BY_CODE else "")
+    effective_action = action or (_HINT_BY_CODE.get(code, ("", ""))[1] if code in _HINT_BY_CODE else "")
+    if effective_hint:
+        lines.append(f"Hint: {effective_hint}")
+    if effective_action:
+        lines.append(f"Action: {effective_action}")
+    return "\n".join(lines)
+
+
+_LOCK_KEYWORDS = (
+    "database is locked",
+    "database table is locked",
+    "database disk image is malformed",
+)
+_TIMEOUT_KEYWORDS = ("timeout", "timed out", "deadline")
+_CONNECTION_KEYWORDS = (
+    "unable to open database file",
+    "disk i/o error",
+    "access denied",
+    "connection",
+)
+
+
+def classify_exception(e: Exception) -> ErrorCode:
+    """Best-effort classification of common memory/DB errors.
+
+    Falls back to ``ErrorCode.DB_ERROR`` for unrecognized exceptions.
+    """
+    msg = str(e).lower()
+    if any(kw in msg for kw in _LOCK_KEYWORDS):
+        return ErrorCode.DB_LOCK
+    if any(kw in msg for kw in _TIMEOUT_KEYWORDS):
+        return ErrorCode.DB_TIMEOUT
+    if any(kw in msg for kw in _CONNECTION_KEYWORDS):
+        return ErrorCode.DB_CONNECTION
+    return ErrorCode.DB_ERROR
 
 
 # ---------------------------------------------------------------------------
