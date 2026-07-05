@@ -11,9 +11,6 @@ import tempfile
 import shutil
 from pathlib import Path
 
-import pytest
-from conftest import embedding_available
-
 # --- Test setup ---
 PROJ = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJ))
@@ -91,7 +88,6 @@ def test_A1_save_and_vec():
 run("A1: save creates memory row", test_A1_save_and_vec)
 
 
-@pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
 def test_A2_vec_search_returns_saved():
     sp.save_memory(
         content="Unique phrase: quantum entanglement of photons",

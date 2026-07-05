@@ -26,9 +26,6 @@ import time as _time
 import unittest
 from pathlib import Path
 
-import pytest
-from conftest import embedding_available
-
 def _temp_db() -> Path:
     from eval._fixtures import bootstrap_temp_db_clean
 
@@ -166,7 +163,6 @@ class TestCtrQueryId(unittest.TestCase):
         int(qid, 16)
         os.remove(db)
 
-    @pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
     def test_search_emits_returned_ctr_event(self):
         from search_pipeline import search_memories
 
@@ -333,6 +329,7 @@ class TestKgExtractionStats(unittest.TestCase):
     """P2a.2: kg_extraction_stats table exists and is populated on save."""
 
     def _temp_db(self) -> Path:
+
         from eval._fixtures import bootstrap_temp_db_clean
 
         p = Path(tempfile.mktemp(suffix=".db"))

@@ -39,8 +39,6 @@ if str(EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(EVAL_DIR))
 
 from _fixtures import bootstrap_temp_db_clean
-import pytest
-from conftest import embedding_available
 
 
 # =============================================================================
@@ -167,7 +165,6 @@ class TestIndexChunksWrapper(unittest.TestCase):
 # =============================================================================
 
 
-@pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
 class TestIndexEmbeddingWrapper(unittest.TestCase):
     """Wrapper contract for _index_embedding.
 

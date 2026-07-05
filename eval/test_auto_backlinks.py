@@ -3,8 +3,6 @@ semantic similarity edges."""
 import sqlite3
 import unittest
 import unittest.mock
-import pytest
-from conftest import embedding_available
 
 
 def _make_test_db() -> sqlite3.Connection:
@@ -243,7 +241,6 @@ This project builds on [[meeting-notes-2026-06-09]] decisions.
 # _auto_semantic_backlinks tests
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
 class TestAutoSemanticBacklinks(unittest.TestCase):
     """Semantic similarity edge creation tests."""
 
@@ -484,7 +481,6 @@ class TestBacklinksIntegration(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
-    @pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
     def test_both_features_coexist(self):
         """Wiki-links and semantic edges don't interfere."""
         import numpy as np

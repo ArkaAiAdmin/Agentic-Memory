@@ -25,10 +25,6 @@ sys.path.insert(0, str(INSTALL_DIR))
 import infra.memory_common as memory_common
 from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 import rebuild_vec_index  # noqa: E402
-import pytest
-from conftest import embedding_available
-
-pytestmark = pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
 
 
 def _init_db(db_path: Path) -> None:

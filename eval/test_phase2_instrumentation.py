@@ -27,10 +27,8 @@ from search.orchestrator import (
     _hybrid_fusion,
     _record_last_accessed,
 )
-import pytest
 from typing import cast as _tcast
 from infra.db import AnyConnection as _AnyConn
-from conftest import embedding_available
 
 _TEST_TMPDIR = Path(tempfile.mkdtemp())
 PROD_DB = _TEST_TMPDIR / "memory.db"
@@ -187,7 +185,6 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
             f"Expected safety_demoting phase call, got: {calls}",
         )
 
-    @pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
     def test_hybrid_fusion_calls_phase_inc_on_bad_db(self):
         import search.orchestrator as orch
         original_inc = orch._phase_inc

@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 from _fixtures import bootstrap_temp_db_clean
-from conftest import embedding_available
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +146,6 @@ def _populate_test_data(db_path: Path, source_dir: Path | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
 class TestRebuildPreservesSubsystems:
     """rebuild_index preserves core tables; subsystem tables are ephemeral.
 

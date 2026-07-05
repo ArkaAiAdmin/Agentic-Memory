@@ -28,8 +28,7 @@ from unittest.mock import patch
 
 from _fixtures import bootstrap_temp_db_clean
 
-import pytest
-from conftest import embedding_available
+
 
 # Ensure cron/ scripts (cron_backup, etc.) are importable when this
 # file is run directly (not via pytest+conftest, which also adds it).
@@ -120,7 +119,6 @@ def _has_table(db: sqlite3.Connection, name: str) -> bool:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
 class TestSavePipelineWritesAllSubsystems:
     """Verify that _update_memory_index_incremental writes to every subsystem."""
 
@@ -1234,7 +1232,6 @@ class TestGraphRAGExpansion:
         connection_pool._migrated.clear()
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    @pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
     def test_graph_rag_finds_connected_entities(self):
         """_graph_rag_expand returns memories connected via KG edges."""
         db = _make_db(self.db_path)
