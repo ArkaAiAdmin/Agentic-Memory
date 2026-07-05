@@ -11,7 +11,7 @@ You are an agent working on the **agentic-memory** codebase at the repo root. Th
 
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
-- **Surface**: 15 CORE verbs + `memory_maintenance` router (85 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 36 cron scripts + 11 CLI commands
+  - **Surface**: 15 CORE verbs + `memory_maintenance` router (84 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 36 cron scripts + 11 CLI commands
  - **Schema**: v32, ~62 tables
 - **Code**: ~175k LOC (production + test); see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. Read it whenever you need to call an MCP tool and aren't sure which one or how.
@@ -92,9 +92,9 @@ agentic-memory/
 1. **All writes go through `save_memory`** (`save_pipeline.save_memory`). Hooks and auto-save delegate to it. Don't re-implement.
 2. **Connection pool is per-DB-path.** `connection_pool.get(str(db_path))` returns stale connections if the path doesn't exist. Active connections cannot be evicted.
 3. **Vec keys/index drift after warm-up.** Run `rebuild_vec_index.py` after warm-up chains, not before.
-4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **30**. Never edit live DB schema by hand.
-5. **Default search is `include_global=True`** with blended RRF. Don't override "for safety."
-6. **15 CORE tools are user-facing**; 85 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
+ 4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **32**. Never edit live DB schema by hand.
+ 5. **Default search is `include_global=True`** with blended RRF. Don't override "for safety."
+ 6. **15 CORE tools are user-facing**; 84 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
 7. **Use `--incremental` / `--full` with backfill.** Bare args create 22 MB garbage DBs at repo root.
 8. **Tests hitting prod DB must use `_ProdDBGuarded` mixin.** See `eval/test_safety_wiring.py:60-109`.
 9. **Lock order: file lock first, then conn.** Both `save_memory` and `_update_memory_index_incremental` follow this order.
@@ -156,7 +156,7 @@ Binds to `127.0.0.1:9877`. Key env vars: `MEMORY_SYNC_TOKEN` (required), `MEMORY
 ## MCP Surface Contract
 
 **Source of truth for the MCP tool surface: `docs/MCP_SURFACE.md` + `tool_registry.py`**. The MCP
-server exposes **15 CORE tools** directly plus **1 `memory_maintenance` router**; 85 ADMIN + 3 DEPRECATED are hidden behind it
+server exposes **15 CORE tools** directly plus **1 `memory_maintenance` router**; 84 ADMIN + 3 DEPRECATED are hidden behind it
 `memory_maintenance(operation="...")`.
 
 | Tier | Count | Access |
@@ -245,13 +245,18 @@ See `memory.toml` for all 17 feature flags.
 - **MCP verb canonical**: `mcp_verbs.py` is the single CORE verb surface. `mcp_memory.py` is backward-compat only.
 - **Deferred indexing fix**: `mcp_verbs.py` `memory_save` now passes `defer_expensive=True` — stops MCP server from loading Qwen2.5-3B on every save call. Returns <200ms.
 - **Circuit-breaker coordination**: Python CB writes `.auto_save_circuit_sentinel`; TS plugin checks it before spawning subprocesses.
-- **Phase 1 (Docs/Drift)**: `tool_drift_check.py`, `doc_drift_check.py`, `schema_version_check.py` in CI. Tool count reconciled: 16 MCP tools visible to agents (15 CORE + 1 maintenance router); 85 ADMIN + 3 DEPRECATED routed through memory_maintenance; 15 verbs surfaced directly including `memory_curate_autosave`).
+- **Phase 1 (Docs/Drift)**: `tool_drift_check.py`, `doc_drift_check.py`, `schema_version_check.py` in CI. Tool count reconciled: 16 MCP tools visible to agents (15 CORE + 1 maintenance router); 84 ADMIN + 3 DEPRECATED routed through memory_maintenance.
 - **Phase 2 (Search Observability)**: 6 search phases instrumented with `infra.error_counter`. Failures return `<call>_phase_inc("<phase>", e)` + `logger.warning`. `search_memories` adds `phase_errors` to result envelope when counter is non-empty.
 - **Phase 1 tools**: `memory_flags_status`, `memory_phase_errors` admin ops added.
 - **Circuit-breaker fixed**: 5 handler lambda signatures corrected.
 - **Tool surface cleanup**: `mcp_kg.py` orphans (`memory_graph_insights`, `memory_graph_evolution`) added to `ADMIN_TOOLS`. Silent `remove_tool` failures now log a warning. Bulk-removal loop in `memory_mcp.py` reinforced with explicit `mcp_kg` and `mcp_maintenance` pre-imports.
 - **best_dist wired**: `_late_interaction_score` and `_late_interaction_score_batch` now return `(score, avg_best_dist)`. Positional coherence surfaced as 12th tuple element in late-interaction rerank results. Cross-encoder rerank also carries 12th element (None) for consistent shape.
 - **Rule enforcement**: `memory-session-end.py` (Rule #7), `cron_health_check.py` (Rules #5, #9-11), `memory_compliance_check` MCP tool.
+- **Recall remediation (Tiers A–C2)**:
+  - **Tier A**: `session_recap()` rewritten to 4-tier policy (Key Context → Relevant → Known Facts → Recent Activity, ~800-token budget). `hooks/memory-recall-session.py` passes `query=` from session.created JSON.
+  - **Tiers B1-B2**: Keyword heuristic routes high-signal tool invocations to `category=lessons`. `cron_promote_drafts` runs every 6h, scans both `lessons` and `sessions` categories for `auto-capture,draft` tags.
+  - **Tier C1**: `memory_recall_status` admin op returns recall config + tier metadata.
+  - **Tier C2**: `session_recap()` emits JSONL trace events to `memory/recall_trace.jsonl` (recall_start / recall_complete / recall_truncated), self-pruning at 50k lines. `memory_recall_trace` admin op reads back trace. Config-driven tuning via `[recall]` section in `memory.toml` → `MemoryConfig`.
 - **Plugin wiring**: `plugin/index.ts` (OpenCode adapter) + `plugin/agentic-memory-hooks.ts` (hook implementations). 7 lifecycle event handlers with TS-level circuit breaker.
 - **Daemon fix**: `_start_daemon_if_needed()` now correctly spawns `auto_save.py daemon` (was incorrectly spawning `inbox.py`). Daemon auto-spawns on first auto-save hook call.
 - **Contextual retrieval symmetry**: Query embeddings now receive the same `[category|tags]` prefix as document embeddings when `MEMORY_CONTEXTUAL_RETRIEVAL=1`.
