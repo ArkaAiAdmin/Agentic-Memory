@@ -124,6 +124,7 @@ def _fetch_rows_by_ids(
     table: str = "memories",
     columns: str = "id, content, source_file, tags, created_at, fitness_score, importance, pinned, last_accessed, metadata, access_count",
     extra_filter: str = "",
+    extra_params: tuple = (),
 ) -> dict:
     """Batch-fetch rows by IDs to avoid N+1 queries. Returns {id: row_tuple}.
 
@@ -149,7 +150,7 @@ def _fetch_rows_by_ids(
         placeholders = ",".join("?" * len(chunk))
         query = f"SELECT {columns} FROM {table} m WHERE m.id IN ({placeholders}) AND m.deleted_at IS NULL{extra_filter}"
         try:
-            rows = db.execute(query, chunk).fetchall()
+            rows = db.execute(query, [*chunk, *extra_params]).fetchall()
             result.update({row[0]: row for row in rows})
         except Exception:
             logger.warning("_fetch_rows_by_ids: chunk of %d ids failed", len(chunk))
@@ -772,9 +773,12 @@ def _fts_search(
     limit: int,
     has_fitness: bool,
     repo_filter: str,
+    category: str | None = None,
 ) -> list:
-    """Execute FTS5 search and return raw result rows."""
     if has_fitness:
+        params: tuple = (fts_query,)
+        if category:
+            params = (fts_query, category)
         return db.execute(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count\n"
@@ -783,8 +787,11 @@ def _fts_search(
             f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{repo_filter}\n"
             "          ORDER BY fts.rank\n"
             "          LIMIT ?",
-            (fts_query, limit * 3),
+            (*params, limit * 3),
         ).fetchall()
+    params = (fts_query,)
+    if category:
+        params = (fts_query, category)
     return db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count\n"
@@ -793,7 +800,7 @@ def _fts_search(
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{repo_filter}\n"
         "      ORDER BY fts.rank\n"
         "      LIMIT ?",
-        (fts_query, limit),
+        (*params, limit),
     ).fetchall()
 
 
@@ -822,7 +829,7 @@ def _fallback_embedding_search(
         if not _es_results:
             return []
         hit_ids = [hit.get("id") for hit in _es_results if hit.get("id")]
-        rows_map = _fetch_rows_by_ids(db, hit_ids, extra_filter=repo_filter)
+        rows_map = _fetch_rows_by_ids(db, hit_ids, extra_filter=repo_filter, extra_params=(category,) if category else ())
 
         fb_rows = []
         for hit in _es_results:
@@ -873,6 +880,7 @@ def _hybrid_fusion(
     db_path: Path,
     limit: int,
     repo_filter: str,
+    category: str | None = None,
 ) -> list:
     """Merge FTS and semantic results using reciprocal rank fusion."""
     try:
@@ -898,7 +906,7 @@ def _hybrid_fusion(
             for h in _es_results
             if h.get("id") and h.get("id") not in existing_ids
         ]
-        new_hit_rows = _fetch_rows_by_ids(db, new_hit_ids, extra_filter=repo_filter)
+        new_hit_rows = _fetch_rows_by_ids(db, new_hit_ids, extra_filter=repo_filter, extra_params=(category,) if category else ())
         semantic_only = []
         for hit in _es_results:
             hit_id = hit.get("id")
@@ -959,6 +967,7 @@ def _enhance_with_chunks(
     limit: int,
     include_invalid: bool,
     repo_filter: str,
+    category: str | None = None,
 ) -> list:
     """Add chunk-level matches to results."""
     try:
@@ -968,7 +977,7 @@ def _enhance_with_chunks(
         merged = _merge_chunk_hits(chunk_hits)
         seen_ids = {r[0] for r in results}
         chunk_parent_ids = [p_id for p_id, _, _, _, _ in merged if p_id not in seen_ids]
-        chunk_rows = _fetch_rows_by_ids(db, chunk_parent_ids, extra_filter=repo_filter)
+        chunk_rows = _fetch_rows_by_ids(db, chunk_parent_ids, extra_filter=repo_filter, extra_params=(category,) if category else ())
         # P0-6 fix (2026-06-23): batch the valid_to check instead of
         # one query per chunk hit. Previously we ran a separate
         # ``SELECT valid_to FROM memories WHERE id = ?`` inside the
@@ -1931,7 +1940,7 @@ def search_memories(
         if category:
             if not re.match(r'^[A-Za-z0-9_-]+$', category):
                 category = "lessons"
-            repo_filter = f"{repo_filter} AND m.category = '{category}'"
+            repo_filter = f"{repo_filter} AND m.category = ?"
         else:
             repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
 
@@ -1957,7 +1966,7 @@ def search_memories(
                     return _fts_search(
                         conn, fts_query,
                         limit * 3 if _effective_rerank else limit,
-                        has_fitness, repo_filter,
+                        has_fitness, repo_filter, category=category or None,
                     )
                 finally:
                     connection_pool.put(conn)
@@ -1984,7 +1993,7 @@ def search_memories(
                 _record_phase_latency("kg_facts", _t0)
         else:
             results = _fts_search(
-                db, fts_query, limit * 3 if _effective_rerank else limit, has_fitness, repo_filter
+                db, fts_query, limit * 3 if _effective_rerank else limit, has_fitness, repo_filter, category=category or None,
             )
             _record_phase_latency("fts", _t0)
             if include_facts:
@@ -2035,7 +2044,7 @@ def search_memories(
         if hybrid and results:
             _t0 = time.time()
             results = _hybrid_fusion(
-                db, results, normalized_query, db_path, limit, repo_filter
+                db, results, normalized_query, db_path, limit, repo_filter, category=category or None,
             )
             _record_phase_latency("hybrid_fusion", _t0)
 
@@ -2084,7 +2093,7 @@ def search_memories(
 
         # Phase 8: Chunk enhancement
         results = _enhance_with_chunks(
-            db, results, fts_query, limit, include_invalid, repo_filter
+            db, results, fts_query, limit, include_invalid, repo_filter, category=category or None,
         )
 
         # Phase 9: Reranking
