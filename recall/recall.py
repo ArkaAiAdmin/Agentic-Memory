@@ -36,6 +36,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Module-level search_memories reference — tests patch this attribute on this
+# module (`recall.recall.search_memories`) to intercept calls without needing
+# to know the lazy-import plumbing. First real call boots the lazy import.
+search_memories = None
+
+
+
+
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -236,16 +245,53 @@ def format_briefing(data: dict) -> str:
     return "\n".join(lines)
 
 
-def session_recap(db_path: str | None = None, session_id: str = "") -> str:
-    """Lightweight session-only summary for quick continuity.
+SESSION_RECAP_MAX_TOKENS = 800
+RECALL_FALLBACK_THRESHOLD = 5
+MAX_TIER1 = 5
+MAX_TIER2 = 5
+MAX_TIER3 = 3
+MAX_TIER4 = 3
+TIER1_HOT_DAYS = 7
+
+
+def session_recap(
+    db_path: str | Path | None = None,
+    session_id: str = "",
+    query: str = "",
+) -> str:
+    """4-tier recall policy for session-start context injection.
+
+    Tier 1 — Hot/curated (max 5):
+        Pinned or high-importance notes created in the last 7 days.
+        Section header: "## Key Context"
+
+    Tier 2 — Semantic search (max 5):
+        search_memories(query, light=True) for project-relevant content.
+        Only fires when a non-empty query is provided.
+        Section header: "## Relevant to this session"
+
+    Tier 3 — KG facts (max 3):
+        Known facts from the knowledge graph for the current namespace.
+        Section header: "## Known Facts"
+
+    Tier 4 — Recent sessions (max 3, fallback only):
+        Only if tiers 1-3 returned fewer than RECALL_FALLBACK_THRESHOLD items.
+        Excludes auto-saved tool logs.
+        Section header: "## Recent Activity"
+
+    Total token budget: SESSION_RECAP_MAX_TOKENS (~800 tokens).
+    Falls back gracefully at every tier.
 
     Args:
         db_path: Path to the memory database (string). If None, resolves
                  from CWD via resolve_active_memory_dir().
-        session_id: Optional specific session date (YYYY-MM-DD).
+        session_id: Optional specific session identifier (reserved for
+                    future per-session scoping; currently unused).
+        query: Optional natural-language query for contextual recall.
+               Extracted from session-start hook data (prompt, task, cwd).
 
     Returns:
-        Summary string of recent session activity.
+        Formatted markdown string suitable for agent context injection.
     """
     if db_path is None:
         active_dir = resolve_active_memory_dir()
@@ -263,45 +309,60 @@ def session_recap(db_path: str | None = None, session_id: str = "") -> str:
         return "Database connection failed."
 
     try:
-        # Get recent auto-save notes (last 3 days)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
         from agent_context import get_agent
         ctx = get_agent()
         namespace = ctx.namespace
-        if namespace != "default":
-            rows = conn.execute(
-                """SELECT id, content, source_file, created_at
-                   FROM memories
-                   WHERE deleted_at IS NULL
-                     AND source_file LIKE ?
-                     AND created_at > ?
-                   ORDER BY created_at DESC
-                   LIMIT 10""",
-                (f"agents/{namespace}/sessions/%", cutoff),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """SELECT id, content, source_file, created_at
-                   FROM memories
-                   WHERE deleted_at IS NULL
-                     AND source_file LIKE 'sessions/%'
-                     AND source_file NOT LIKE 'agents/%'
-                     AND created_at > ?
-                   ORDER BY created_at DESC
-                   LIMIT 10""",
-                (cutoff,),
-            ).fetchall()
 
-        if not rows:
-            return "No recent session activity found."
+        tier1 = _fetch_curated(conn, namespace, limit=5)
+        tier2 = _fetch_relevant_light(db_path_resolved, namespace, query, limit=5) if query else []
+        tier3 = _fetch_kg_facts(conn, namespace, limit=3)
+        tier4_total = len(tier1) + len(tier2) + len(tier3)
+        tier4 = _fetch_recent_sessions(conn, namespace, limit=3) if tier4_total < RECALL_FALLBACK_THRESHOLD else []
+
+        sections = []
+        if tier1:
+            sections.append(("## Key Context", tier1))
+        if tier2:
+            sections.append(("## Relevant to this session", tier2))
+        if tier3:
+            sections.append(("## Known Facts", tier3))
+        if tier4:
+            sections.append(("## Recent Activity", tier4))
+
+        if not sections:
+            return "No relevant context found for this session."
 
         lines = ["**Session Recap**", ""]
-        for row in rows:
-            content = row[1][:100] if row[1] else ""
-            created = row[3][:10] if row[3] else ""
-            lines.append(f"- {created}: {content}")
+        for header, items in sections:
+            lines.append(header)
+            lines.append("")
+            for item in items:
+                content = item.get("content", "")[:120]
+                created = item.get("created_at", "")[:10]
+                meta = _item_meta(item)
+                lines.append(f"- {created}: {content}{meta}")
+            lines.append("")
 
-        return "\n".join(lines)
+        text = "\n".join(lines).rstrip()
+        token_est = _estimate_tokens(text)
+        if token_est > SESSION_RECAP_MAX_TOKENS:
+            lines_out = ["**Session Recap**", ""]
+            budget_per_section = SESSION_RECAP_MAX_TOKENS // max(len(sections), 1)
+            for header, items in sections:
+                lines_out.append(header)
+                lines_out.append("")
+                chars_left = budget_per_section * 4
+                used = 0
+                for item in items:
+                    entry = f"- {item.get('created_at', '')[:10]}: {item.get('content', '')[:80]}{_item_meta(item)}"
+                    if used + len(entry) > chars_left:
+                        break
+                    lines_out.append(entry)
+                    used += len(entry)
+                lines_out.append("")
+            text = "\n".join(lines_out).rstrip()
+
+        return text
     finally:
         conn.close()
 
@@ -309,6 +370,166 @@ def session_recap(db_path: str | None = None, session_id: str = "") -> str:
 # ---------------------------------------------------------------------------
 # Internal fetch helpers
 # ---------------------------------------------------------------------------
+
+
+def _fetch_curated(conn: AnyConnection, namespace: str, limit: int) -> list[dict]:
+    """Tier 1: Hot/curated notes — pinned or high-importance, last 7 days."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=TIER1_HOT_DAYS)).isoformat()
+    ns_filter = f"agents/{namespace}/%" if namespace != "default" else None
+    if namespace != "default":
+        rows = conn.execute(
+            """SELECT id, content, source_file, tags, created_at,
+                      fitness_score, importance, pinned
+               FROM memories
+               WHERE deleted_at IS NULL
+                 AND (pinned = 1 OR importance >= ?)
+                 AND created_at > ?
+                 AND source_file NOT LIKE ?
+                 AND id NOT LIKE 'agents/%'
+                 AND (id LIKE ? OR id NOT LIKE 'agents/%')
+               ORDER BY pinned DESC, importance DESC, fitness_score DESC
+               LIMIT ?""",
+            (HIGH_IMPORTANCE_THRESHOLD, cutoff, "sessions/auto-%", ns_filter, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT id, content, source_file, tags, created_at,
+                      fitness_score, importance, pinned
+               FROM memories
+               WHERE deleted_at IS NULL
+                 AND (pinned = 1 OR importance >= ?)
+                 AND created_at > ?
+                 AND source_file NOT LIKE 'sessions/auto-%'
+                 AND id NOT LIKE 'agents/%'
+               ORDER BY pinned DESC, importance DESC, fitness_score DESC
+               LIMIT ?""",
+            (HIGH_IMPORTANCE_THRESHOLD, cutoff, limit),
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def _fetch_relevant_light(
+    db_path: Path, namespace: str, query: str, limit: int
+) -> list[dict]:
+    """Tier 2: Lightweight semantic search for session context."""
+    try:
+        sm = search_memories
+        if sm is None:
+            from infra._lazy_imports import search_memories as _sm
+
+            globals()["search_memories"] = _sm
+            sm = _sm
+        tenant_id = namespace if namespace != "default" else "default"
+        result = sm(
+            db_path=db_path,
+            query=query,
+            limit=limit,
+            rerank=True,
+            boost_pinned=True,
+            recency_weight=0.1,
+            include_global=True,
+            safety_wiring=True,
+            deep_rerank=False,
+            light=True,
+            tenant_id=tenant_id,
+        )
+        raw_results = result.get("raw_results", result.get("results", []))
+        converted = []
+        for row in raw_results:
+            if isinstance(row, dict):
+                converted.append(row)
+            elif isinstance(row, tuple) and len(row) >= 8:
+                converted.append(
+                    {
+                        "id": row[0],
+                        "content": row[1] or "",
+                        "source_file": row[2] or "",
+                        "tags": _parse_tags(row[3]),
+                        "created_at": row[4] or "",
+                        "fitness_score": float(row[5] or 0.0),
+                        "importance": row[8] if len(row) > 8 else 0,
+                        "pinned": bool(row[9]) if len(row) > 9 else False,
+                    }
+                )
+        return [i for i in converted if not _is_auto_save(i)][:limit]
+    except Exception as e:
+        logger.debug("search_memories light failed for session_recap: %s", e)
+        return []
+
+
+def _fetch_kg_facts(conn: AnyConnection, namespace: str, limit: int) -> list[dict]:
+    """Tier 3: Known facts from the knowledge graph for the current namespace."""
+    ns_filter = f"agents/{namespace}/%" if namespace != "default" else None
+    try:
+        if namespace != "default":
+            rows = conn.execute(
+                """SELECT id, entity, predicate, obj, confidence, valid_at
+                   FROM kg_facts
+                   WHERE deleted_at IS NULL
+                     AND (memory_id LIKE ? OR memory_id NOT LIKE 'agents/%')
+                   ORDER BY confidence DESC, valid_at DESC
+                   LIMIT ?""",
+                (ns_filter, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT id, entity, predicate, obj, confidence, valid_at
+                   FROM kg_facts
+                   WHERE deleted_at IS NULL
+                     AND memory_id NOT LIKE 'agents/%'
+                   ORDER BY confidence DESC, valid_at DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "id": r[0],
+                "content": f"{r[1]} {r[2]} {r[3]}" if r[3] else f"{r[1]} {r[2]}",
+                "source_file": "kg_facts",
+                "tags": [],
+                "created_at": (r[5] or "")[:10],
+                "fitness_score": float(r[4] or 0.0),
+                "importance": int(r[4] * 5) if r[4] else 0,
+                "pinned": False,
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.debug("kg_facts fetch failed for session_recap: %s", e)
+        return []
+
+
+def _fetch_recent_sessions(conn: AnyConnection, namespace: str, limit: int) -> list[dict]:
+    """Tier 4 (fallback): Recent non-auto session notes, last 3 days."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    if namespace != "default":
+        rows = conn.execute(
+            """SELECT id, content, source_file, tags, created_at,
+                      fitness_score, importance, pinned
+               FROM memories
+               WHERE deleted_at IS NULL
+                 AND source_file LIKE ?
+                 AND source_file NOT LIKE ?
+                 AND created_at > ?
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (f"agents/{namespace}/sessions/%", f"agents/{namespace}/sessions/auto-%", cutoff, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT id, content, source_file, tags, created_at,
+                      fitness_score, importance, pinned
+               FROM memories
+               WHERE deleted_at IS NULL
+                 AND source_file LIKE 'sessions/%'
+                 AND source_file NOT LIKE 'sessions/auto-%'
+                 AND source_file NOT LIKE 'agents/%'
+                 AND created_at > ?
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (cutoff, limit),
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
 
 
 def _fetch_pinned(conn: AnyConnection, limit: int) -> list[dict]:

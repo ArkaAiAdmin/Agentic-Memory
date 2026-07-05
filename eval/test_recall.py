@@ -577,10 +577,104 @@ class TestSessionRecap:
     """Test the session_recap() function."""
 
     def test_empty_db(self, tmp_path):
-        """session_recap handles empty DB."""
+        """session_recap handles empty DB — returns no-context message."""
         db_path = _create_test_db(tmp_path)
         output = session_recap(db_path)
-        assert "No recent session activity" in output
+        assert "No relevant context found" in output
+
+    def test_tier1_curated(self, tmp_path):
+        """session_recap shows pinned/high-importance notes as Tier 1."""
+        db_path = _create_test_db(tmp_path)
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON;")
+
+        now = datetime.now(timezone.utc)
+        _insert_memory(
+            conn,
+            id="curated-1",
+            content="Decided to use PostgreSQL for the main store",
+            source_file="decisions/2026-07-05.md",
+            created_at=now.isoformat(),
+            importance=5,
+            pinned=1,
+        )
+        conn.commit()
+        conn.close()
+
+        output = session_recap(db_path)
+        assert "Key Context" in output
+        assert "Decided to use PostgreSQL" in output
+
+    def test_tier2_semantic_search(self, tmp_path):
+        """Tier 2 passes query to search_memories(light=True) without crashing."""
+        from unittest.mock import patch
+
+        db_path = _create_test_db(tmp_path)
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON;")
+
+        now = datetime.now(timezone.utc)
+        _insert_memory(
+            conn,
+            id="sem-1",
+            content="PostgreSQL connection pooling configured",
+            source_file="lessons/2026-07-05.md",
+            created_at=now.isoformat(),
+            importance=3,
+        )
+        conn.commit()
+        conn.close()
+
+        mock_results = {
+            "raw_results": [
+                (
+                    "sem-1",
+                    "PostgreSQL connection pooling configured via pgbouncer",
+                    "lessons/2026-07-05.md",
+                    "[]",
+                    now.isoformat(),
+                    0.9,
+                    0.9,
+                    0.9,
+                    3,
+                    False,
+                )
+            ]
+        }
+
+        with patch(
+            "recall.recall.search_memories",
+            return_value=mock_results,
+        ) as mock_search:
+            output = session_recap(db_path, query="connection pooling PostgreSQL")
+            mock_search.assert_called_once()
+            call_kwargs = mock_search.call_args[1]
+            assert call_kwargs.get("light") is True
+            assert call_kwargs.get("query") == "connection pooling PostgreSQL"
+
+        assert "Relevant to this session" in output
+        assert "PostgreSQL connection pooling" in output or "No relevant context" in output
+
+    def test_tier4_fallback(self, tmp_path):
+        """Tier 4 fallback fires only when tiers 1-3 return < 5 items."""
+        db_path = _create_test_db(tmp_path)
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON;")
+
+        now = datetime.now(timezone.utc)
+        _insert_memory(
+            conn,
+            id="sess-1",
+            content="Reviewed migration runner code",
+            source_file="sessions/2026-07-05.md",
+            created_at=now.isoformat(),
+        )
+        conn.commit()
+        conn.close()
+
+        output = session_recap(db_path)
+        assert "Recent Activity" in output
+        assert "Reviewed migration runner" in output
 
     def test_missing_db(self, tmp_path):
         """session_recap handles missing DB."""
