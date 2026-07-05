@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from agentic_memory.models import Entity, Relation, Fact
 from agentic_memory.utils import resolve_db_path, get_db_connection, safe_close_db
@@ -26,7 +26,12 @@ def _as_list(data: Any) -> list[dict[str, Any]]:
             return []
         data = json.loads(data)
     if isinstance(data, dict):
-        return data.get("results", data.get("data", []))
+        results = data.get("results")
+        if results is None:
+            results = data.get("data", [])
+        if results is None:
+            return []
+        return cast(list[dict[str, Any]], results)
     if isinstance(data, list):
         return data
     return []

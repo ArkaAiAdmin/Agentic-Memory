@@ -6,6 +6,7 @@ import json
 import time
 from pathlib import Path
 from typing import Any
+import builtins
 
 from agentic_memory.exceptions import (
     ValidationError,
@@ -307,11 +308,18 @@ class MemoryClient:
         from mcp_safety import memory_scan_injection
 
         raw = memory_scan_injection(content=content)
-        return json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(raw, str):
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        return {}
 
     def check_contradictions(
         self, content: str, top_n: int = 20
-    ) -> list[dict[str, Any]]:
+    ) -> builtins.list[dict[str, Any]]:
         """Check content for phrase-level contradictions."""
         from mcp_safety import memory_check_contradictions
 
@@ -326,7 +334,14 @@ class MemoryClient:
         from mcp_profile import memory_user_profile
 
         raw = memory_user_profile()
-        return json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(raw, str):
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        return {}
 
     def record_access(
         self,
@@ -354,11 +369,13 @@ class MemoryClient:
         raw = memory_check_integrity(deep=deep)
         data = json.loads(raw) if isinstance(raw, str) else raw
         if isinstance(data, dict):
+            passed_raw = data.get("passed", data.get("healthy", True))
+            errors_raw = data.get("errors", data.get("issues", []))
             return IntegrityReport(
-                passed=data.get("passed", data.get("healthy", True)),
-                errors=data.get("errors", data.get("issues", [])),
-                warnings=data.get("warnings", []),
-                stats=data.get("stats", {}),
+                passed=bool(passed_raw) if passed_raw is not None else True,
+                errors=list(errors_raw) if isinstance(errors_raw, list) else [str(errors_raw)],
+                warnings=list(data.get("warnings", [])),
+                stats=dict(data.get("stats", {})),
             )
         return IntegrityReport(
             passed=bool(data),
@@ -370,18 +387,29 @@ class MemoryClient:
         from mcp_audit import memory_audit
 
         raw = memory_audit()
-        return json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(raw, str):
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        return {}
 
     # ── Facts ─────────────────────────────────────────────────────────
 
-    def search_facts(self, query: str, limit: int = 10) -> list[Fact]:
+    def search_facts(self, query: str, limit: int = 10) -> builtins.list[Fact]:
         """Search extracted facts (SPO triples)."""
         from mcp_kg import memory_facts_search
 
         raw = memory_facts_search(query=query, limit=limit)
-        items = json.loads(raw) if isinstance(raw, str) else raw
-        if isinstance(items, dict):
-            items = items.get("results", items.get("data", []))
+        if isinstance(raw, str):
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                raw = parsed.get("results", parsed.get("data", []))
+            else:
+                raw = parsed
+        items = raw if isinstance(raw, list) else []
         return [
             Fact(
                 id=f.get("id", ""),
@@ -400,10 +428,10 @@ class MemoryClient:
                 contradiction_score=float(f.get("contradiction_score", 0.0)),
                 locked=bool(f.get("locked", False)),
             )
-            for f in (items if isinstance(items, list) else [])
+            for f in items
         ]
 
-    def list_facts(self, limit: int = 50, offset: int = 0) -> list[Fact]:
+    def list_facts(self, limit: int = 50, offset: int = 0) -> builtins.list[Fact]:
         """List recent facts."""
         conn = get_db_connection(self._db_path)
         try:
@@ -448,12 +476,17 @@ class MemoryClient:
 
     # ── Quality ────────────────────────────────────────────────────────
 
-    def quality_filter(self, query: str, limit: int = 50) -> list[dict[str, Any]]:
+    def quality_filter(self, query: str, limit: int = 50) -> builtins.list[dict[str, Any]]:
         """Search with quality gates (validation + deduplication)."""
         from mcp_quality import memory_quality_filter
 
         raw = memory_quality_filter(query=query, limit=limit)
-        return json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(raw, str):
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, list) else []
+        if isinstance(raw, list):
+            return raw
+        return []
 
     def quality_stats(self) -> dict[str, Any]:
         """Return quality gate statistics."""
@@ -462,10 +495,15 @@ class MemoryClient:
         raw = memory_quality_stats()
         if isinstance(raw, str):
             try:
-                return json.loads(raw)
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    return parsed
+                return {}
             except (json.JSONDecodeError, ValueError):
                 return {"raw": raw}
-        return raw
+        if isinstance(raw, dict):
+            return raw
+        return {}
 
     # ── Summarization ─────────────────────────────────────────────────
 

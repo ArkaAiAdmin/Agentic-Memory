@@ -64,5 +64,10 @@ class Admin:
 
         raw = _cb(limit=limit, since_ts=since_ts)
         if isinstance(raw, str):
-            return json.loads(raw)
-        return dict(raw)
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        return {}

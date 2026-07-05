@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from agentic_memory.exceptions import ConfigError
 
@@ -82,7 +82,12 @@ def parse_search_results(raw: Any) -> list[dict[str, Any]]:
             return []
         raw = json.loads(raw)
     if isinstance(raw, dict):
-        return raw.get("results", raw.get("data", []))
+        results = raw.get("results")
+        if results is None:
+            results = raw.get("data", [])
+        if results is None:
+            return []
+        return cast(list[dict[str, Any]], results)
     if isinstance(raw, list):
         return raw
     return []

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from agentic_memory.exceptions import (
     NotFoundError,
@@ -73,7 +73,12 @@ class TemporalKG:
         """Extract the ``rows`` list from a temporal query response."""
         data = TemporalKG._parse_json(payload)
         if isinstance(data, dict):
-            return data.get("rows", data.get("data", []))
+            rows = data.get("rows")
+        if rows is None:
+            rows = data.get("data", [])
+        if rows is None:
+            return []
+        return cast(list[dict[str, Any]], rows)
         if isinstance(data, list):
             return data
         return []

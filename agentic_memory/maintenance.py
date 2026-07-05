@@ -378,7 +378,10 @@ class Maintenance:
         from mcp_maintenance import memory_maintenance
 
         try:
-            return memory_maintenance(operation=operation, **kwargs)
+            result = memory_maintenance(operation=operation, **kwargs)
+            if isinstance(result, str):
+                return result
+            return str(result)
         except Exception as e:
             raise MaintenanceError(
                 f"Maintenance operation '{operation}' failed: {e}"
@@ -593,7 +596,10 @@ class Maintenance:
             if isinstance(parsed, list):
                 return parsed
             if isinstance(parsed, dict) and "contradictions" in parsed:
-                return parsed["contradictions"]
+                raw = parsed["contradictions"]
+                if isinstance(raw, list):
+                    return raw
+                return list(raw) if raw is not None else []
             return []
         except Exception as e:
             raise MaintenanceError(f"Contradiction detection failed: {e}") from e
