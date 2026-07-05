@@ -260,7 +260,6 @@ def _get_handlers() -> dict:
         _maintenance_op_cls = MaintenanceOp
         t = _tools()
         from session_manager import reconcile_audit as _reconcile_audit
-        from cron.cron_train_forget_model import main as _train_forget_model
         _MAINTENANCE_HANDLERS = {
             MaintenanceOp.HEARTBEAT: lambda *, dry_run=False, **_: t[
                 "memory_heartbeat"
@@ -520,7 +519,7 @@ def _get_handlers() -> dict:
                 _reconcile_audit(db_path=Path(db_path) if db_path else None)
             ),
             MaintenanceOp.TRAIN_FORGET_MODEL: lambda **_: (
-                _train_forget_model()
+                __import__("cron.cron_train_forget_model", fromlist=["main"]).main()
             ),
             MaintenanceOp.SEMANTIC_SEARCH: lambda *, query, **_: t["memory_semantic_search"](query=query),
             MaintenanceOp.FACTS_SEARCH: lambda *, query, **_: t["memory_facts_search"](query=query),

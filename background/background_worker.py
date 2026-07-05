@@ -191,6 +191,23 @@ def handle_wal_checkpoint(
         raise RuntimeError(f"wal_checkpoint failed: {e}") from e
 
 
+def handle_chunk_embedding_index(
+    payload: dict, conn: AnyConnection, db_path: Path
+) -> str:
+    """Embed all chunks for a memory and persist to memory_chunk_embeddings (deferred from save)."""
+    try:
+        from save.indexers import _index_chunk_embeddings
+
+        memory_id = payload.get("memory_id", "")
+        if not memory_id:
+            return "skipped: no memory_id in payload"
+        _index_chunk_embeddings(conn, memory_id)
+        conn.commit()
+        return f"chunk embeddings indexed for {memory_id}"
+    except Exception as e:
+        raise RuntimeError(f"chunk_embedding_index failed: {e}") from e
+
+
 def handle_embedding_index(
     payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
@@ -404,6 +421,7 @@ HANDLERS = {
     "fact_consolidation": handle_fact_consolidation,
     "compact": handle_fact_consolidation,
     "embedding_index": handle_embedding_index,
+    "chunk_embedding_index": handle_chunk_embedding_index,
     "kg_and_fact_index": handle_kg_and_fact_index,
     "semantic_backlinks": handle_semantic_backlinks,
     "vec_index_rebuild": handle_vec_index_rebuild,
