@@ -231,7 +231,7 @@ class TestSaveMemoryReturnValues(unittest.TestCase):
             "save_pipeline.parse_frontmatter",
             return_value=({"metadata": datetime.now()}, ""),
         ):
-            with self.assertLogs("save_pipeline", level="WARNING") as cm:
+            with self.assertLogs("save.pipeline", level="WARNING") as cm:
                 md, _fm_meta, _ts, meta_json = _build_memory_file(
                     content, "lessons", "foo", ["t"], False, note_id="lessons/foo"
                 )
