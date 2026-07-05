@@ -155,12 +155,16 @@ class TestLiveMCPRateLimit(unittest.TestCase):
     def setUpClass(cls):
         os.environ["MEMORY_RATE_LIMIT_MEMORY_SEARCH"] = "60,60"
         reset_config()
+        from infra.rate_limiter import configure_rate_limits
+        configure_rate_limits()
         reset_rate_limiter()
 
     @classmethod
     def tearDownClass(cls):
         os.environ.pop("MEMORY_RATE_LIMIT_MEMORY_SEARCH", None)
         reset_config()
+        from infra.rate_limiter import configure_rate_limits
+        configure_rate_limits()
         reset_rate_limiter()
 
     def setUp(self):
@@ -170,6 +174,11 @@ class TestLiveMCPRateLimit(unittest.TestCase):
 
     def tearDown(self):
         _restore_test_env(self._orig_db, self._orig_resolve)
+        try:
+            from infra.audit import flush_audit
+            flush_audit(timeout=5.0)
+        except Exception:
+            pass
         import shutil
 
         shutil.rmtree(self.tmpdir, ignore_errors=True)

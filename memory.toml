@@ -173,3 +173,11 @@ memory_delete = 50                      # MEMORY_RATE_LIMIT_MEMORY_DELETE
 memory_supersede = 50                   # MEMORY_RATE_LIMIT_MEMORY_SUPERSEDE
 memory_maintenance = 30                 # MEMORY_RATE_LIMIT_MEMORY_MAINTENANCE
 default = 600                           # catch-all for tools without an explicit entry
+
+[api]
+# REST & WebSocket API Server settings.
+enable_server = false                   # MEMORY_API_ENABLE_SERVER — start API server
+listen_host = "127.0.0.1"              # MEMORY_API_LISTEN_HOST
+listen_port = 9878                      # MEMORY_API_LISTEN_PORT
+token = ""                              # MEMORY_API_TOKEN — Authorization Bearer token (empty = no token required for loopback)
+

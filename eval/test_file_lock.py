@@ -13,9 +13,6 @@ import unittest
 from pathlib import Path
 import subprocess
 
-INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
-sys.path.insert(0, str(INSTALL_DIR))
-
 from infra.file_lock import (
     acquire_flock_with_retry,
     release_flock,

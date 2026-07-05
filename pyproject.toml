@@ -95,6 +95,8 @@ agentic-memory-status = "cli:status_main"
 agentic-memory-version = "cli:version_main"
 agentic-memory-install-mcp = "cli:install_mcp_main"
 agentic-memory-dashboard = "cli:dashboard_main"
+agentic-memory-api = "cli:api_server_main"
+
 
 [project.urls]
 Homepage = "https://github.com/ArkaAiAdmin/Agentic-Memory"

@@ -293,6 +293,8 @@ class EmbeddingSearch:
                 from huggingface_hub import snapshot_download
 
                 # Only use the pinned revision for the default model
+                from huggingface_hub.utils import disable_progress_bars
+                disable_progress_bars()
                 local_path = snapshot_download(
                     repo_id=model_id,
                     revision=model_revision if model_id == MODEL_ID else None,

@@ -91,7 +91,9 @@ class MemoryClient:
             pinned=pinned,
             is_global=is_global,
             importance=importance,
+            db_path=str(self._db_path),
         )
+
         return str(note_id)
 
     def search(

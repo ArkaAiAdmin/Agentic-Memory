@@ -228,7 +228,11 @@ class TestMigrationIdempotency(unittest.TestCase):
             id TEXT PRIMARY KEY,
             content TEXT DEFAULT '',
             tags TEXT DEFAULT '[]',
-            pinned INTEGER DEFAULT 0
+            pinned INTEGER DEFAULT 0,
+            category TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT '',
+            deleted_at TEXT
         )""")
         conn.commit()
         conn.close()
@@ -671,6 +675,8 @@ class TestSavePipelineEndToEnd(unittest.TestCase):
         self.db_path = os.path.join(self.tmp, "e2e_test.db")
         bare = _make_bare_db(self.db_path)
         bare.close()
+        from infra.embedding_search import get_embedding_search
+        get_embedding_search().wait_for_model(timeout_s=30.0)
 
     def tearDown(self):
         import shutil
