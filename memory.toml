@@ -154,6 +154,14 @@ batch_size = 50                       # AUTO_SAVE_BATCH_SIZE
 daemon_idle_seconds = 3600           # AUTO_SAVE_DAEMON_IDLE_S
 async_enabled = true                 # MEMORY_ASYNC_AUTOSAVE (1=enabled, 0=disabled)
 inbox_max_bytes = 104857600          # AUTO_SAVE_INBOX_MAX_BYTES (100 MB)
+keyword_routing = true               # MEMORY_AUTO_SAVE_KEYWORD_ROUTING — enable keyword heuristic to route high-signal tool invocations to category=lessons (with auto-capture+draft tags). Set to false to disable routing; all saves go to sessions/.
+always_sessions = false              # MEMORY_AUTO_SAVE_ALWAYS_SESSIONS — override keyword heuristic: force every auto-save into category=sessions. Set to true to bypass routing regardless of keyword_routing.
+
+[recall]
+# Tier A recall policy (session_recap rewritten v2026-07-05).
+max_tokens = 800                     # MEMORY_RECALL_MAX_TOKENS — approximate token budget for session_recap output (truncates later tiers when exceeded).
+tier1_hot_days = 7                   # MEMORY_RECALL_TIER1_DAYS — lookback window for Tier 1 (pinned/importance>=4) in session_recap.
+tier_fallback_threshold = 5           # MEMORY_RECALL_TIER_FALLBACK_THRESHOLD — total items from tiers 1-3 below which Tier 4 (recent sessions) is activated.
 
 [session_memory]
 enabled = false                         # MEMORY_SESSION_MEMORY — enable session/thread/compaction tracking (v22). Off by default.
