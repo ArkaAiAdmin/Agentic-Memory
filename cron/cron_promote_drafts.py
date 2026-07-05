@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Phase 3 promotion engine: promote auto-capture drafts to curated tier.
 
-Scans ``memories`` for lessons marked ``auto-capture`` at importance ≤ 2,
+Scans ``memories`` for notes marked ``auto-capture`` at importance ≤ 2,
 evaluates retrieval signals (user_access_log counts, KG/backlink presence),
 and promotes qualifying notes to importance=4 with ``promoted`` + ``curated``
 tags and ``promoted_at`` metadata.
 
 Wiring
------
-This cron is designed to run on a schedule (e.g. every 12 h via crontab).
+------
+This cron is designed to run on a schedule (e.g. every 6 h via crontab).
 A lightweight promotion scan is also triggered at session-end by the
 ``memory-session-end`` hook so drafts created during the current session
 have a chance to be promoted without waiting for the next cron window.
@@ -19,6 +19,14 @@ A note is promoted when **≥ 2 retrieval events** are recorded, or when the
 note has both KG facts AND semantic/FTS backlinks.  Strict cross-session
 lessons (tag ``cross-session``, no ``auto-capture``) are skipped — they are
 already at their final tier (importance=2 via cron_cross_session_learn).
+
+Category scope (B2 extension):
+  ``category='lessons'`` — high-signal notes auto-routed by the keyword
+    heuristic in tool_complete.py (Tier B1).
+  ``category='sessions'`` — session transcript notes that also carry the
+    ``auto-capture`` tag (manually or otherwise flagged for promotion).
+  Both categories are scanned; the ``auto-capture`` tag is the common
+  signal that the note has promotion potential.
 
 Usage
 -----
@@ -44,7 +52,7 @@ from infra.infrastructure import resolve_active_memory_dir
 _ACQUIRE_WITH_BACKLINKS = 1    # ≥ 1 access + KG/backlinks → eligible
 _DEFAULT_THRESHOLD = 2          # minimum retrieval count for promotion
 
-_CATEGORY_FILTER = "lessons"
+_CATEGORY_FILTER = ("lessons", "sessions")
 _MAX_CANDIDATES_PER_RUN = 20
 
 
@@ -107,7 +115,7 @@ def _has_kg_or_backlinks(conn: sqlite3.Connection, note_id: str) -> bool:
 
 
 def _is_eligible(note: dict, conn, threshold: int = 2) -> tuple[bool, str]:
-    if note.get("category") != _CATEGORY_FILTER:
+    if note.get("category") not in _CATEGORY_FILTER:
         return False, "category_mismatch"
     if note.get("importance", 0) > 2:
         return False, "already_curated"
@@ -135,11 +143,11 @@ def promote_drafts(db_path: Path, threshold: int = 2, dry_run: bool = False) -> 
     try:
         rows = conn.execute(
             "SELECT id FROM memories "
-            "WHERE category = ? AND importance <= 2 "
+            "WHERE category IN (?, ?) AND importance <= 2 "
             "AND tags LIKE '%auto-capture%' "
             "AND tags NOT LIKE '%promoted%' "
             "ORDER BY created_at DESC LIMIT ?",
-            (_CATEGORY_FILTER, _MAX_CANDIDATES_PER_RUN),
+            _CATEGORY_FILTER + (_MAX_CANDIDATES_PER_RUN,),
         ).fetchall()
         candidates = [r[0] for r in rows]
 
