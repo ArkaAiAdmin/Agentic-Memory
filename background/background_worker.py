@@ -565,6 +565,7 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_auto_summarize": "cron/cron_auto_summarize.py",
     "cron_retention_stats": "cron/cron_retention_stats.py",
     "cron_auto_share": "cron/cron_auto_share.py",
+    "cron_promote_drafts": "cron/cron_promote_drafts.py",
 }
 
 

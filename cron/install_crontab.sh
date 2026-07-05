@@ -118,6 +118,13 @@ $BLOCK_BEGIN
 # Phase B: enqueue via worker task queue
 0  0  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_daily_digest --payload '{"args": ["daily-digest"]}' >> $LOG_DIR/digest.log 2>&1
 
+# Promote auto-capture drafts — scan lessons tagged auto-capture+draft and
+# promote qualifying notes to curated tier (importance=4, promoted tag).
+# Runs every 6 hours so drafts created in the morning session have a chance
+# to be promoted the same day.
+# Phase B: enqueue via worker task queue
+0  */6 *  *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_promote_drafts >> $LOG_DIR/promote-drafts.log 2>&1
+
 # Purge auto-save inbox — clean stale pending auto-saves (daily 00:30)
 # Phase B: enqueue via worker task queue
 30 0  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_purge_auto_saves >> $LOG_DIR/purge-auto-saves.log 2>&1
