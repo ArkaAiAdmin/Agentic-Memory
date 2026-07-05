@@ -280,7 +280,35 @@ export const state = {
 // Each function is a self-contained unit: plain args, plain return value,
 // no framework dependencies. Callable from any harness.
 
-export function startSession(log: (msg: string) => void): Promise<void> {
+export async function startSession(log: (msg: string) => void): Promise<void> {
+  // ── Phase 3: Auto-bootstrap on first run ────────────────────────────────
+  // If the memory DB hasn't been created yet, run init silently so the
+  // agent can start using memory without manual setup. Idempotent: the
+  // init script skips steps whose outputs already exist.
+  try {
+    const memDir = path.join(AGENTIC_MEMORY_DIR, "memory")
+    const dbPath = path.join(memDir, "memory.db")
+    if (!fs.existsSync(dbPath)) {
+      log("[agentic-memory] First run detected — auto-initializing memory directory...")
+      const initScript = path.join(AGENTIC_MEMORY_DIR, "cli.py")
+      const result = await captureOutput(
+        [VENV, initScript, "init", "--no-install"],
+        undefined,
+        "auto-init",
+        log
+      )
+      const firstLine = result.trim().split("\n")[0]
+      if (firstLine) {
+        log(`[agentic-memory] Init: ${firstLine}`)
+      } else {
+        log("[agentic-memory] Init complete")
+      }
+    }
+  } catch (e) {
+    log(`[agentic-memory] Auto-init skipped: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  // ── End auto-bootstrap ───────────────────────────────────────────────────
+
   return runSessionStart(log)
 }
 

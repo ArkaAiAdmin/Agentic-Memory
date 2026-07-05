@@ -39,12 +39,12 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=1.0.0,<2",
+    "numpy>=2.0.0,<3",
 ]
 
 [project.optional-dependencies]
 embeddings = [
     "model2vec>=0.8.0,<1",
-    "numpy>=2.0.0,<3",
     "usearch>=2.0.0,<3",
 ]
 reranker = [
@@ -92,6 +92,8 @@ agentic-memory-sync = "cli:sync_main"
 agentic-memory-init = "cli:init_main"
 agentic-memory-doctor = "cli:doctor_main"
 agentic-memory-status = "cli:status_main"
+agentic-memory-version = "cli:version_main"
+agentic-memory-install-mcp = "cli:install_mcp_main"
 agentic-memory-dashboard = "cli:dashboard_main"
 
 [project.urls]
@@ -101,13 +103,9 @@ Repository = "https://github.com/ArkaAiAdmin/Agentic-Memory"
 Issues = "https://github.com/ArkaAiAdmin/Agentic-Memory/issues"
 Changelog = "https://github.com/ArkaAiAdmin/Agentic-Memory/blob/main/CHANGELOG.md"
 
-# setuptools package config: the SDK lives in the `agentic_memory/`
-# subpackage. The repo root is also part of the install so legacy
-# top-level imports (`from sdk import Memory`, `from config import
-# get_config`, etc.) keep working.
-[tool.setuptools.packages.find]
-include = ["agentic_memory*"]
-where = ["."]
+# Package discovery is handled by setup.py, which auto-discovers
+# both root-level .py modules and top-level packages (infra/, save/,
+# search/, cron/, hooks/, etc.) needed for the full MCP server install.
 
 [tool.coverage.run]
 source = ["."]

@@ -4,6 +4,8 @@
 *.pyc
 __pycache__/
 agentic_memory.egg-info/
+dist/
+build/
 uv.lock
 venv/
 memory/

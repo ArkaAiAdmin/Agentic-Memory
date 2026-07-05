@@ -15,6 +15,8 @@ Usage:
     python cli.py init          — One-command project bootstrap
     python cli.py doctor        — Comprehensive health check + report
     python cli.py status        — One-line health snapshot
+    python cli.py version       — Print installed version, check PyPI
+    python cli.py install-mcp   — Register MCP server in harness configs
     python cli.py dashboard     — Launch / stop / check Streamlit dashboard
 """
 
@@ -339,8 +341,8 @@ def doctor_main() -> None:
 
     def add_check(name: str, severity: str, detail: str, fixable: bool = False) -> None:
         nonlocal worst
-        rank = {"ok": 0, "warning": 1, "failure": 2}
-        if rank[severity] > rank[worst]:
+        rank = {"ok": 0, "info": 0, "warning": 1, "failure": 2}
+        if rank.get(severity, 0) > rank.get(worst, 0):
             worst = severity
         checks.append(
             {
@@ -621,7 +623,7 @@ def doctor_main() -> None:
         if fix_applied:
             print("Repairs applied. Re-run 'agentic-memory doctor' to verify.")
 
-    sys.exit({"ok": 0, "warning": 1, "failure": 2}[worst])
+    sys.exit({"ok": 0, "info": 0, "warning": 1, "failure": 2}.get(worst, 0))
 
 
 def _print_doctor_report(report: dict) -> None:
@@ -741,6 +743,134 @@ def status_main() -> None:
         parts.append("allowlist=?")
 
     print(" | ".join(parts))
+
+
+def version_main() -> None:
+    """Print the installed version and check PyPI for updates."""
+    try:
+        from importlib.metadata import version as _pkg_version
+
+        installed = _pkg_version("agentic-memory")
+    except Exception:
+        installed = "dev (unknown)"
+
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen(
+            "https://pypi.org/pypi/agentic-memory/json", timeout=5
+        ) as resp:
+            data = __import__("json").loads(resp.read())
+        latest = data["info"]["version"]
+
+        if installed == latest:
+            print(f"agentic-memory {installed} (latest)")
+        else:
+            try:
+                from packaging.version import Version
+
+                if Version(installed) < Version(latest):
+                    print(
+                        f"agentic-memory {installed} (update available: {latest})"
+                    )
+                else:
+                    print(f"agentic-memory {installed} (newer than PyPI {latest})")
+            except Exception:
+                print(f"agentic-memory {installed} (PyPI: {latest})")
+    except Exception:
+        print(f"agentic-memory {installed}")
+
+
+def install_mcp_main() -> None:
+    """Register agentic-memory as an MCP server in harness config files.
+
+    Updates:
+      OpenCode   ~/.opencode/mcp-configs/mcp-servers.json
+      Claude Desktop  ~/Library/Application Support/Claude/claude_desktop_config.json
+      Claude Code     ~/.claude.json  or  ~/.claude/settings.json
+
+    The entry uses ``agentic-memory-server`` when available, otherwise
+    falls back to ``python -m memory_mcp``.
+    """
+    import json
+
+    # Resolve launch command: prefer installed console script, fall back to
+    # venv python + module, then system python.
+    am_dir = Path.home() / ".config" / "agentic-memory"
+    command: str
+    args: list[str]
+    cli_path = shutil.which("agentic-memory-server")
+    if cli_path:
+        command = cli_path
+        args = []
+    else:
+        for venv_name in ["venv", ".venv"]:
+            candidate = am_dir / venv_name / "bin" / "python"
+            if candidate.exists():
+                command = str(candidate)
+                args = ["-m", "memory_mcp"]
+                break
+        else:
+            command = sys.executable
+            args = ["-m", "memory_mcp"]
+
+    entry: dict[str, object] = {
+        "command": command,
+        "args": args,
+        "description": "Agentic Memory: local-first hybrid agent memory system",
+    }
+    updated: list[str] = []
+
+    def _update(path: Path) -> bool:
+        data = json.loads(path.read_text())
+        servers = data.setdefault("mcpServers", {})
+        if "agentic-memory" in servers:
+            return False
+        servers["agentic-memory"] = entry
+        path.write_text(json.dumps(data, indent=4) + "\n")
+        return True
+
+    # OpenCode
+    oc_mcp = Path.home() / ".opencode" / "mcp-configs" / "mcp-servers.json"
+    if oc_mcp.exists():
+        try:
+            if _update(oc_mcp):
+                updated.append(str(oc_mcp))
+        except Exception as exc:
+            print(f"warning: {oc_mcp}: {exc}", file=sys.stderr)
+
+    # Claude Desktop
+    cd_cfg = (
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "Claude"
+        / "claude_desktop_config.json"
+    )
+    if cd_cfg.exists():
+        try:
+            if _update(cd_cfg):
+                updated.append(str(cd_cfg))
+        except Exception as exc:
+            print(f"warning: {cd_cfg}: {exc}", file=sys.stderr)
+
+    # Claude Code
+    for cc_cfg in [Path.home() / ".claude.json", Path.home() / ".claude" / "settings.json"]:
+        if cc_cfg.exists():
+            try:
+                if _update(cc_cfg):
+                    updated.append(str(cc_cfg))
+            except Exception as exc:
+                print(f"warning: {cc_cfg}: {exc}", file=sys.stderr)
+
+    if updated:
+        print(f"Registered agentic-memory in {len(updated)} config(s):")
+        for p in updated:
+            print(f"  {p}")
+    else:
+        print("No harness config found. Add this to your MCP config:\n")
+        print(json.dumps({"agentic-memory": entry}, indent=4))
+    print("\nRestart your harness to pick up the new MCP server.")
 
 
 def dashboard_main() -> None:
@@ -873,6 +1003,8 @@ COMMANDS: dict[str, Callable[[], int | None]] = {
     "init": init_main,
     "doctor": doctor_main,
     "status": status_main,
+    "version": version_main,
+    "install-mcp": install_mcp_main,
     "dashboard": dashboard_main,
 }
 
