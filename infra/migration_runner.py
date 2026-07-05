@@ -90,7 +90,8 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-03: bumped to 29 for graph_snapshots table (Sprint 4 graph analytics).
 # 2026-07-03: bumped to 30 for community_id + betweenness on kg_entities (Sprint 4).
 # 2026-07-05: bumped to 31 for outbox memory_events table and triggers (REST/WS API).
-SCHEMA_VERSION = 31
+# 2026-07-05: bumped to 32 for scoped outbox update trigger (semantic columns only).
+SCHEMA_VERSION = 32
 
 
 

@@ -12,16 +12,14 @@ import json
 import logging
 import os
 import socket
-import sqlite3
 import threading
 import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Optional, Dict, Set, Tuple
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse, parse_qs
 
 from agentic_memory.client import MemoryClient
-from infra.db_write_queue import sqlite_write_queue
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +51,8 @@ def _is_loopback(host: str) -> bool:
 class APIRequestHandler(BaseHTTPRequestHandler):
     """Handles REST HTTP routes and upgrades to WebSockets."""
 
+    server: APIServer
+
     def log_message(self, format: str, *args) -> None:
         logger.debug("api_server: " + format, *args)
 
@@ -80,18 +80,34 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         peer = self.client_address[0]
         if _is_loopback(peer):
             return True
-        if not API_AUTH_TOKEN:
+        token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
+        if not token:
             self._error("Auth required: set MEMORY_API_TOKEN or request locally", 401)
             return False
         auth = self.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             self._error("Authorization required: Bearer <token>", 401)
             return False
-        token = auth[7:]
-        if token != API_AUTH_TOKEN:
+        if auth[7:] != token:
             self._error("Invalid token", 403)
             return False
         return True
+
+    def _require_auth_ws(self) -> bool:
+        """Auth check for WebSocket upgrades (no loopback bypass for remote clients)."""
+        token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
+        if not token:
+            return True
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer ") and auth[7:] == token:
+            return True
+        parsed = urlparse(self.path)
+        qs = parse_qs(parsed.query)
+        ws_token = qs.get("token", [""])[0]
+        if ws_token and ws_token == token:
+            return True
+        self._error("Unauthorized: provide token in Authorization header or ?token= query", 401)
+        return False
 
     def do_OPTIONS(self) -> None:
         """CORS preflight handling."""
@@ -250,9 +266,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_search_memories_post(self) -> None:
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length)
-            req = json.loads(body.decode("utf-8"))
+            req = self._read_json_body()
             query = req.get("query", "")
             if not query:
                 self._error("Missing query field in request body", 400)
@@ -282,19 +296,19 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         try:
             client = MemoryClient(db_path=self.server.db_path)
             stats = client.stats()
-            # Serialize Stats dataclass
             self._write_json({
                 "memories": stats.memories,
                 "vector_keys": stats.vector_keys,
-                "chunks": stats.chunks
+                "chunks": stats.chunks,
+                "facts": stats.facts,
+                "entities": stats.entities,
+                "relations": stats.relations,
             })
         except Exception as e:
             self._error(f"Failed to retrieve stats: {e}", 500)
 
     def _handle_get_memory(self, note_id: str) -> None:
         try:
-            client = MemoryClient(db_path=self.server.db_path)
-            # Query db for memory details directly
             from infra._lazy_imports import connection_pool, safe_close_db
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
@@ -319,18 +333,29 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     "tags": tags,
                     "category": row[3],
                     "created_at": row[4],
-                    "updated_at": row[5]
+                    "updated_at": row[5],
+                    "deleted_at": row[6],
                 })
             finally:
                 safe_close_db(conn)
         except Exception as e:
             self._error(f"Failed to retrieve memory: {e}", 500)
 
+    def _read_json_body(self) -> Any:
+        length = int(self.headers.get("Content-Length", 0))
+        if length <= 0:
+            self._error("Empty request body", 400)
+            raise ValueError("empty body")
+        body = self.rfile.read(length)
+        try:
+            return json.loads(body.decode("utf-8"))
+        except json.JSONDecodeError:
+            self._error("Invalid JSON body", 400)
+            raise
+
     def _handle_add_memory(self) -> None:
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length)
-            req = json.loads(body.decode("utf-8"))
+            req = self._read_json_body()
             content = req.get("content", "")
             if not content:
                 self._error("Missing content field", 400)
@@ -374,24 +399,28 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _handle_rebuild(self) -> None:
         try:
             client = MemoryClient(db_path=self.server.db_path)
-            client.maintenance.rebuild_indices()
+            client.rebuild(scope="active")
             self._write_json({"success": True})
         except Exception as e:
             self._error(f"Rebuild index failed: {e}", 500)
 
     def _handle_compact(self) -> None:
         try:
-            client = MemoryClient(db_path=self.server.db_path)
-            client.maintenance.compact()
-            self._write_json({"success": True})
+            from agentic_memory.maintenance import Maintenance
+            maint = Maintenance(db_path=self.server.db_path)
+            result = maint.compact()
+            self._write_json({"success": True, "result": str(result)})
         except Exception as e:
             self._error(f"Compaction failed: {e}", 500)
 
     def _handle_integrity(self) -> None:
         try:
             client = MemoryClient(db_path=self.server.db_path)
-            errors = client.maintenance.check_integrity()
-            self._write_json({"success": len(errors) == 0, "errors": errors})
+            report = client.check_integrity(deep=False)
+            self._write_json({
+                "success": not report.errors,
+                "errors": report.errors,
+            })
         except Exception as e:
             self._error(f"Integrity check failed: {e}", 500)
 
@@ -448,6 +477,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_ws_handshake(self) -> None:
         """RFC 6455 WebSocket Handshake and protocol upgrade."""
+        if not self._require_auth_ws():
+            return
         key = self.headers.get("Sec-WebSocket-Key")
         if not key:
             self.send_error(400, "Sec-WebSocket-Key required")
@@ -546,7 +577,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                                     "score": r.score,
                                     "tags": r.tags,
                                     "category": r.category,
-                                    "created_at": r.created_at
+                                    "created_at": r.created_at,
                                 }
                                 for r in res.results
                             ]
@@ -570,11 +601,19 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 class APIServer(ThreadingHTTPServer):
     """REST and WebSocket server wrapper."""
 
-    def __init__(self, db_path: str | Path, agent_id: str, host: str = "127.0.0.1", port: int = 9878):
+    def __init__(
+        self,
+        db_path: str | Path,
+        agent_id: str,
+        host: str = "127.0.0.1",
+        port: int = 9878,
+        token: str = "",
+    ):
         self.db_path = Path(db_path)
         self.agent_id = agent_id
         self.host = host
         self.port = port
+        self.token = token
         
         self._ws_clients: Dict[str, socket.socket] = {}
         self._ws_lock = threading.Lock()
@@ -663,40 +702,43 @@ class APIServer(ThreadingHTTPServer):
 
     def _outbox_loop(self) -> None:
         """Polls SQLite memory_events outbox and broadcasts them."""
-        # Find maximum existing event ID to avoid broadcasting historical events
         last_seen_id = 0
         try:
-            conn = sqlite3.connect(str(self.db_path), timeout=5.0)
-            row = conn.execute("SELECT MAX(id) FROM memory_events").fetchone()
-            if row and row[0] is not None:
-                last_seen_id = row[0]
-            conn.close()
+            from infra._lazy_imports import connection_pool, safe_close_db
+
+            conn = connection_pool.get(str(self.db_path), timeout=5.0)
+            try:
+                row = conn.execute("SELECT MAX(id) FROM memory_events").fetchone()
+                if row and row[0] is not None:
+                    last_seen_id = row[0]
+            finally:
+                safe_close_db(conn)
         except Exception as e:
             logger.warning(f"Failed to query max event id: {e}")
 
         while not self._stop_event.is_set():
             try:
-                time.sleep(0.2)  # poll every 200ms
-                
-                # Fetch new events
-                conn = sqlite3.connect(str(self.db_path), timeout=5.0)
+                time.sleep(0.2)
+
+                from infra._lazy_imports import connection_pool, safe_close_db
+
+                conn = connection_pool.get(str(self.db_path), timeout=5.0)
                 try:
                     rows = conn.execute(
                         "SELECT id, event_type, note_id, payload, created_at "
                         "FROM memory_events WHERE id > ? ORDER BY id ASC",
                         (last_seen_id,),
                     ).fetchall()
-                    
+
                     for row in rows:
                         event_id, event_type, note_id, payload_str, created_at = row
                         last_seen_id = event_id
-                        
+
                         try:
                             payload = json.loads(payload_str)
                         except Exception:
                             payload = payload_str
-                            
-                        # Broadcast
+
                         msg = json.dumps({
                             "event": "memory_event",
                             "data": {
@@ -704,12 +746,12 @@ class APIServer(ThreadingHTTPServer):
                                 "event_type": event_type,
                                 "note_id": note_id,
                                 "payload": payload,
-                                "created_at": created_at
-                            }
+                                "created_at": created_at,
+                            },
                         })
                         self.broadcast(msg)
                 finally:
-                    conn.close()
+                    safe_close_db(conn)
             except Exception as e:
                 logger.debug(f"Outbox polling error: {e}")
 
@@ -728,6 +770,7 @@ def start_server_from_config(db_path: str | Path) -> Optional[APIServer]:
         agent_id=agent_id,
         host=getattr(cfg, "api_listen_host", "127.0.0.1"),
         port=getattr(cfg, "api_listen_port", 9878),
+        token=getattr(cfg, "api_token", ""),
     )
     server.start()
     return server

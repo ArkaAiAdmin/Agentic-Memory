@@ -1,7 +1,7 @@
 # Agentic Memory — MCP Surface Reference
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
-> Last updated: 2026-07-05. Schema v30.
+> Last updated: 2026-07-05. Schema v32.
 
 ---
 
@@ -540,4 +540,4 @@ memory_maintenance(operation="duplicates", threshold=0.85)
 
 ## Schema Version
 
-Current: **v30** (30 migrations, 100% down-migration coverage)
+Current: **v32** (32 migrations, 100% down-migration coverage)

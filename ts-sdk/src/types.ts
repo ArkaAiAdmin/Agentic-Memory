@@ -10,9 +10,9 @@ export interface MemoryResult {
   content: string;
   tags?: string[];
   category?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  deletedAt?: string;
+  created_at?: string;
+  updated_at?: string;
+  deleted_at?: string;
 }
 
 export interface SearchResult {
@@ -41,6 +41,9 @@ export interface Stats {
   memories: number;
   vector_keys: number;
   chunks: number;
+  facts: number;
+  entities: number;
+  relations: number;
 }
 
 export interface MemoryEvent {

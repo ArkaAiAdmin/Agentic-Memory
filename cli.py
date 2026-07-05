@@ -1022,9 +1022,10 @@ def api_server_main() -> None:
     cfg = get_config()
     host = parsed.host or getattr(cfg, "api_listen_host", "127.0.0.1")
     port = parsed.port or getattr(cfg, "api_listen_port", 9878)
+    api_token = getattr(cfg, "api_token", "") or os.environ.get("MEMORY_API_TOKEN", "")
     agent_id = _crdt_agent_id()
 
-    server = APIServer(db_path=db_path, agent_id=agent_id, host=host, port=port)
+    server = APIServer(db_path=db_path, agent_id=agent_id, host=host, port=port, token=api_token)
     server.start()
     print(f"API server running on http://{host}:{port}")
     try:

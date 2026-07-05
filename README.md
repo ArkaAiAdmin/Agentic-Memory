@@ -170,7 +170,7 @@ agentic-memory dashboard                                 # web UI
 - SQLite is derived and rebuildable
 - No cloud dependency — all data stays local
 - `safe_atomic_write` with conflict file preservation
-- ~60 tables at schema v30, 30 versioned migrations
+- ~62 tables at schema v32, 32 versioned migrations
 
 ### MCP Surface — 16 Tools (15 CORE + 1 maintenance router)
 
@@ -220,11 +220,11 @@ agentic-memory/                          # Repo root
 ├── mcp_*.py (28 modules)                # Domain-split MCP tools
 ├── auto_save.py                         # Tool-call auto-save + daemon
 ├── background_worker.py                 # Async task processor
-├── migration_runner.py                  # Schema v30, 30 migrations
+├── migration_runner.py                  # Schema v32, 32 migrations
 └── db.py                                # Connection pool + WAL
 ```
 
-**Production stats (2026-06-27):** ~90k LOC production, 234 test files, ~3,988 test functions, ~60-table SQLite schema at v30, 102 MCP tools, 36 cron jobs, 6 lifecycle hooks.
+**Production stats (2026-06-27):** ~90k LOC production, 234 test files, ~3,988 test functions, ~62-table SQLite schema at v32, 102 MCP tools, 36 cron jobs, 6 lifecycle hooks.
 
 See [docs/architecture.md](docs/architecture.md) for full detail.
 
@@ -245,7 +245,7 @@ See [docs/architecture.md](docs/architecture.md) for full detail.
 | **36 cron jobs** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Circuit breakers** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Field-level CRDT** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Schema migrations** | ✅ (v30) | ❌ | ❌ | ❌ | ❌ |
+| **Schema migrations** | ✅ (v32) | ❌ | ❌ | ❌ | ❌ |
 | **Test suite** | 3,988 tests | moderate | moderate | moderate | minimal |
 | **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 

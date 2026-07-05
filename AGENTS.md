@@ -12,7 +12,7 @@ You are an agent working on the **agentic-memory** codebase at the repo root. Th
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
 - **Surface**: 15 CORE verbs + `memory_maintenance` router (85 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 36 cron scripts + 11 CLI commands
-- **Schema**: v30, ~60 tables
+ - **Schema**: v32, ~62 tables
 - **Code**: ~175k LOC (production + test); see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. Read it whenever you need to call an MCP tool and aren't sure which one or how.
 
@@ -240,7 +240,7 @@ See `memory.toml` for all 17 feature flags.
 
 ## Current Status (2026-07-05 snapshot)
 
-- **Schema v30**: 30 migrations applied (100% down-migration coverage). Chunk-level multi-vector search active.
+- **Schema v32**: 32 migrations applied (100% down-migration coverage). Chunk-level multi-vector search active; scoped outbox events for REST/WS streaming APIs.
 - **MCP Workflow rules codified**: `docs/MCP_SURFACE.md` has mandatory workflow, decision tree, and tool selection guide. `AGENTS.md` has 8 hard rules.
 - **MCP verb canonical**: `mcp_verbs.py` is the single CORE verb surface. `mcp_memory.py` is backward-compat only.
 - **Deferred indexing fix**: `mcp_verbs.py` `memory_save` now passes `defer_expensive=True` — stops MCP server from loading Qwen2.5-3B on every save call. Returns <200ms.
