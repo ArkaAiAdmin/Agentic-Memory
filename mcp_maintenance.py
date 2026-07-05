@@ -863,6 +863,7 @@ class MaintenanceOp(str, Enum):
     SCAN_INJECTION = "scan_injection"
     PROFILE_ACCESS = "profile_access"
     FLAGS_STATUS = "flags_status"
+    RECALL_STATUS = "recall_status"
     PHASE_ERRORS = "phase_errors"
 
     @classmethod

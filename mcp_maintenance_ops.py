@@ -533,6 +533,7 @@ def _get_handlers() -> dict:
             MaintenanceOp.SCAN_INJECTION: lambda *, content, **_: t["memory_scan_injection"](content=content),
             MaintenanceOp.PROFILE_ACCESS: lambda *, note_id, **_: t["memory_profile_access"](note_id=note_id),
             MaintenanceOp.FLAGS_STATUS: lambda **_: _op_flags_status(),
+            MaintenanceOp.RECALL_STATUS: lambda **_: _op_recall_status(),
             MaintenanceOp.PHASE_ERRORS: lambda *, since_ts=None, until_ts=None, limit=50, **_: _op_phase_errors(
                 since_ts=since_ts, until_ts=until_ts, limit=limit
             ),
@@ -856,6 +857,65 @@ def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = Non
 
         return json.dumps(
             get_counts(since_ts=since_ts, until_ts=until_ts, limit=limit), indent=2
+        )
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def _op_recall_status() -> str:
+    """Return session_recap recall policy configuration and tier metadata.
+
+    Returns:
+        JSON with:
+          config: effective recall tuning values (from MemoryConfig or defaults)
+          tiers: list of tier descriptors (name, description, max_items, source)
+    """
+    try:
+        from recall.recall import _get_recall_cfg
+
+        cfg = _get_recall_cfg()
+        tiers = [
+            {
+                "name": "tier1_hot_curated",
+                "description": "Pinned or high-importance (>=4) notes created in the last 7 days",
+                "max_items": 5,
+                "section_header": "## Key Context",
+                "source": "memories table (pinned=1 OR importance>=4)",
+            },
+            {
+                "name": "tier2_semantic_search",
+                "description": "search_memories(query, light=True) for project-relevant content",
+                "max_items": 5,
+                "section_header": "## Relevant to this session",
+                "source": "search_memories (light=True)",
+                "requires_query": True,
+            },
+            {
+                "name": "tier3_kg_facts",
+                "description": "Known facts from the knowledge graph for the current namespace",
+                "max_items": 3,
+                "section_header": "## Known Facts",
+                "source": "kg_facts table",
+            },
+            {
+                "name": "tier4_recent_sessions",
+                "description": "Recent non-auto session notes (last 3 days), fallback only",
+                "max_items": 3,
+                "section_header": "## Recent Activity",
+                "source": "memories table (sessions/* excluding auto-*)",
+                "fallback_trigger": "activates only when tiers 1-3 return fewer than 5 total items",
+            },
+        ]
+        return json.dumps(
+            {
+                "config": {
+                    "max_tokens": int(cfg.get("max_tokens", 800)),
+                    "tier1_hot_days": int(cfg.get("tier1_hot_days", 7)),
+                    "tier_fallback_threshold": int(cfg.get("tier_fallback_threshold", 5)),
+                },
+                "tiers": tiers,
+            },
+            indent=2,
         )
     except Exception as e:
         return json.dumps({"error": str(e)})
