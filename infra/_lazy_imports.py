@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Central registry for lazy/deferred imports.
 
 Function-body ``from X import Y`` is used throughout the codebase to

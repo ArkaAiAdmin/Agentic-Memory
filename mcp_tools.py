@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 MCP tool registry — auto-discovery + dynamic re-export.
 

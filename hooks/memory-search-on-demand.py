@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """On-demand memory search — CLI script and lazy import target.
 
 This is a CLI / importable helper, NOT a Claude Code lifecycle hook.

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """One-shot backfill: clean up orphaned KG, chunks, embeddings, and vec_keys.
 
 Runs the same cascade logic as hard_delete_note() across the entire DB:

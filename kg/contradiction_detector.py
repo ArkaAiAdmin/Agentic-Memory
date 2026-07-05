@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Contradiction detector for Agentic Memory.
 
 Phase 1 improvements over the original:

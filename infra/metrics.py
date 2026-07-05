@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Metrics collection and Prometheus export for Agentic Memory.
 
 Tracks: save/search/delete latency, error rates, throughput.

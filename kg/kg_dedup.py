@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Cron wrapper: kg_dedup — auto-merge duplicate KG entities.
 
 Merges entities with the same normalized name and type, plus fuzzy

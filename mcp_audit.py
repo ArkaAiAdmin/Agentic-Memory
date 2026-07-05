@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Audit subsystem MCP tools — audit, audit_query, check_integrity.
 

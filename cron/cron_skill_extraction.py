@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Cron wrapper: skill extraction — turn procedural memories into reusable skills.
 
 Scans all live memories, runs is_skill_worthy + extract_skill_from_memory on

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 CTR feedback and concept drift MCP tools — memory_record_ctr_feedback,
 memory_check_concept_drift, memory_list_drift_alarms.

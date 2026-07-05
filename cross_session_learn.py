@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Cron wrapper: cross_session_learn — extract reusable patterns from sessions.
 
 Scans recent session notes, identifies patterns worth saving as

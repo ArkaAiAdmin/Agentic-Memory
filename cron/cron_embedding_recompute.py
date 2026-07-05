@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Cron wrapper: embedding_recompute — detect model change, auto-rebuild vec index.
 
 Compares the current embedding model config against the stored vec

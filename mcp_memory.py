@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Memory CRUD MCP tools — save, superseede, delete, restore, trash, purge, auto_save*, daily_digest, reinforce.
 """

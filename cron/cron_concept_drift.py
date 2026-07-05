@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Cron wrapper: concept drift detection (2026-06-19, 2026-06-22 refactor).
 
 Runs the memory_check_concept_drift logic on a schedule. Before this

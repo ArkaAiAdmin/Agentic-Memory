@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Per-operation dispatcher handlers for the memory_maintenance router.
 
 Extracted from mcp_maintenance.py to keep that file focused on the

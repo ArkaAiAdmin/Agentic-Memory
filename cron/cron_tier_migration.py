@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Cron wrapper: tier migration — consolidate warm sessions, archive cold files.
 
 Hot tier:  <7 days, full-content files, indexed at full resolution.

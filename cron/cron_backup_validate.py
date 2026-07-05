@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Cron wrapper: backup validation — test-restore + integrity check.
 
 Verifies that the most recent (or a specified) .db.gz backup is

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Maintenance/system MCP tools — heartbeat, tier_stats, duplicates, merge_suggestions,
 consolidate, rewrite_links, detect_contradictions, arc_stats, review_schedule,

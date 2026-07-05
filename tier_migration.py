@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """File-system lifecycle management for agentic-memory."""
 import logging
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Proactive context hook — searches memory before tool execution.
 
 Usage: Called as PreToolUse hook. Extracts query from tool input,

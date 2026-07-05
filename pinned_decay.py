@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Pinned-note auto-decay check.
 
 Reads the active memory DB, identifies pinned notes that are drifting,

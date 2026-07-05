@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Memory recall mechanism for agent cold-start and session continuity.
 
 Assembles a structured briefing from multiple memory sources so that

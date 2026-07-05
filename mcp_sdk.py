@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 MCP tool: memory_sdk_demo.
 

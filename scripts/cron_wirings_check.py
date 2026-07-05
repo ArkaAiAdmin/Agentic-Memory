@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """cron_wirings_check.py — verify cron scripts actually call the right
 entry points and the target functions exist.
 

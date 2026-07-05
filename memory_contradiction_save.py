@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Save-time contradiction detection for Agentic Memory.
 
 When ``memory_save`` is about to commit a new note, this module scans

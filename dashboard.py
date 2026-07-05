@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Agentic Memory Dashboard — state-of-the-art local observability.
 
 Run:

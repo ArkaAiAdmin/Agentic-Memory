@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Shared infrastructure for MCP tool domain modules.
 

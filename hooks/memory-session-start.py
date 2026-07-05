@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 SessionStart hook: auto-load memory context at session start.
 

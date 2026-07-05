@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Auto-save hook + daily digest for Agentic Memory.
 
 Two CLI subcommands:

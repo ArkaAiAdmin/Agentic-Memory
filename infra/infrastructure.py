@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Infrastructure utilities for the memory system.
 
 Shared helpers used across save, search, and tool layers:

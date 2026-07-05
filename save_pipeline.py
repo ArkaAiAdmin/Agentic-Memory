@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Save-related functions extracted from memory_mcp.py.
 
 Contains _update_memory_index_incremental, _recalculate_fitness_scores,

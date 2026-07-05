@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Agentic Memory — Local-first persistent memory for AI agents.
 
 This package is the canonical, pip-installable surface of the agentic-memory

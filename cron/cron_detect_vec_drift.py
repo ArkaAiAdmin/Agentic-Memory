@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Detect drift between vec_keys and embeddings in a memory DB."""
 
 from _flock import acquire_lock_or_exit

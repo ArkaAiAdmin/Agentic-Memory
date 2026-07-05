@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Cron wrapper: lightweight FTS5 index rebuild.
 
 Runs ``INSERT INTO fts(fts) VALUES('rebuild')`` on every FTS5 virtual

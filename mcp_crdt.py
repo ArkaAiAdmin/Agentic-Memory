@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 CRDT sync subsystem MCP tools — crdt_sync, crdt_status.
 

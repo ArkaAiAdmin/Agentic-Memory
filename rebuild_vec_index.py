@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Sprint 4 / 8.2: rebuild the usearch HNSW vector index in-place.
 
 Mirrors ``rebuild_index.py`` (the FTS5 + MEMORY.md regen script), but for

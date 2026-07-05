@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Knowledge Graph MCP tools — graph_search, graph_stats, facts_search, facts_list, facts_stats,
 graph_insights, graph_evolution.

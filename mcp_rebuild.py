@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Rebuild subsystem MCP tools — rebuild, backfill_all, compact.
 

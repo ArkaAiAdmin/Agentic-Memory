@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Sync invariant checker — detects drift across memory subsystems.
 
 Compares row counts between the memories table and its satellite tables

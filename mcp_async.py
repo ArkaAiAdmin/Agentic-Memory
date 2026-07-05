@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Async wrappers for save/search pipeline.
 
 Extracted from memory_mcp.py on 2026-06-21 to reduce the
