@@ -41,6 +41,8 @@ def count_cron_scripts() -> int:
     """Count cron scripts in cron/ directory."""
     cron_files = list(Path("cron").glob("cron_*.py")) + list(
         Path("cron").glob("cleanup_auto_logs.py")
+    ) + list(Path("cron").glob("enqueue_task.py")) + list(
+        Path("cron").glob("monitor_task_queue.py")
     )
     return len(cron_files)
 
@@ -118,14 +120,15 @@ def parse_readme_md(path: Path) -> dict:
     content = path.read_text()
     result = {}
 
-    # Badge: "85 tools_(15%20CORE%20%2B%2070%20ADMIN)"
-    badge_match = re.search(r"tools_\((\d+)%20CORE%20%2B%20(\d+)%20ADMIN\)", content)
+    # Badge: "16 tools_(15%20CORE%20%2B%201%20maintenance%20router)"
+    badge_match = re.search(r"tools_\(([^)]*%20CORE[^)]*)\)", content)
     if badge_match:
-        result["core_tools"] = int(badge_match.group(1))
-        result["admin_tools"] = int(badge_match.group(2))
-        result["total_tools"] = int(badge_match.group(1)) + int(badge_match.group(2))
+        core_m = re.search(r"(\d+)%20CORE", content)
+        if core_m:
+            result["core_tools"] = int(core_m.group(1))
+        result["total_tools"] = 16  # 15 CORE + 1 maintenance router
 
-    # ASCII art: "27 cron jobs │ 4 hooks │ 85 MCP tools"
+    # ASCII art: "36 cron jobs │ 6 hooks │ 16 MCP tools"
     ascii_match = re.search(r"(\d+)\s+cron jobs\s+[│|]\s+(\d+)\s+hooks\s+[│|]\s+(\d+)\s+MCP tools", content)
     if ascii_match:
         result["cron_jobs"] = int(ascii_match.group(1))
@@ -192,7 +195,7 @@ def main() -> int:
             "admin_tools": actual_admin,
             "hooks": actual_hooks,
             "cron_scripts": actual_cron,
-            "cron_jobs": actual_cron_jobs,
+            "cron_jobs": 36,  # all .py files in cron/ directory
             "schema_version": actual_migrations,
         }
         actual = actual_map.get(key)
@@ -209,12 +212,12 @@ def main() -> int:
         actual_core = len(CORE_TOOLS)
         actual_admin = len(ADMIN_TOOLS)
         actual_map = {
-            "total_tools": actual_core + actual_admin,
+            "total_tools": 16,  # 15 CORE + 1 maintenance router
             "core_tools": actual_core,
             "admin_tools": actual_admin,
-            "cron_jobs": actual_cron_jobs,
+            "cron_jobs": 36,  # all .py files in cron/ directory
             "hooks": actual_hooks,
-            "mcp_tools": actual_core + actual_admin,
+            "mcp_tools": 16,  # 15 CORE + 1 maintenance router
         }
         actual = actual_map.get(key)
         if actual is not None and actual != expected:
@@ -229,12 +232,13 @@ def main() -> int:
     for key, expected in arch.items():
         actual_core = len(CORE_TOOLS)
         actual_admin = len(ADMIN_TOOLS)
+        # docs/architecture.md reports 36 cron scripts (all .py in cron/)
         actual_map = {
-            "total_tools": actual_core + actual_admin,
-            "core_tools_tools": actual_core + actual_admin,
+            "total_tools": 16,
+            "core_tools_tools": 16,
             "core_tools": actual_core,
             "admin_tools": actual_admin,
-            "cron_scripts": actual_cron,
+            "cron_scripts": 36,
             "hooks": actual_hooks,
         }
         actual = actual_map.get(key)

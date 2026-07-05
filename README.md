@@ -2,9 +2,9 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-4032%20passed-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-3988%20passed-brightgreen)](#testing)
 [![SQLite FTS5](https://img.shields.io/badge/sqlite-FTS5-orange.svg)](https://www.sqlite.org/fts5.html)
-[![MCP Tools](https://img.shields.io/badge/MCP-101%20tools_(14%20CORE%20%2B%2084%20ADMIN%20%2B%203%20DEPRECATED)-purple.svg)](docs/reference/mcp-tools.md)
+[![MCP Tools](https://img.shields.io/badge/MCP-16%20tools_(15%20CORE%20%2B%201%20maintenance%20router)-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
 [![Temporal KG](https://img.shields.io/badge/Temporal-KG-brightgreen)](docs/concepts/temporal-kg.md)
 [![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
@@ -35,7 +35,7 @@ Built for **Claude Code**, **OpenCode**, and any MCP-compatible agent harness.
 │  │  (Git-ready) │    │  Graph (KG)  │    │  Reranker     │  │
 │  └──────────────┘    └──────────────┘    └───────────────┘  │
 │                                                               │
-│  34 cron jobs │ 6 hooks │ 96 MCP tools │ CRDT sync │ Arc cache │
+│  36 cron jobs │ 6 hooks │ 16 MCP tools │ CRDT sync │ Arc cache │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,7 +111,7 @@ Add to your MCP config (`~/.opencode/mcp-servers.json` or Claude Code `settings.
 }
 ```
 
-That's it — your agent now has 15 core memory tools: `memory_save`, `memory_search`, `memory_semantic_search`, `memory_facts_search`, `memory_graph_search`, `memory_recall_context`, `memory_session_start`, `memory_user_profile`, `memory_delete`, `memory_restore`, `memory_check_contradictions`, `memory_scan_injection`, `memory_rebuild`, `memory_supersede`, `memory_profile_access`. Plus `memory_maintenance` for 70 admin operations.
+That's it — your agent now has 15 CORE MCP tools: `memory_search`, `memory_save`, `memory_delete`, `memory_recall`, `memory_note`, `memory_learn`, `memory_audit`, `memory_organize`, `memory_share`, `memory_graph`, `memory_profile`, `memory_session_start`, `memory_advanced`, `memory_review_beliefs`, `memory_curate_autosave`. Plus `memory_maintenance` for 84 admin + 3 deprecated operations.
 
 ### Step 5 — Use it (ongoing)
 
@@ -157,7 +157,7 @@ agentic-memory dashboard                                 # web UI
 - Contradiction detection (phrase + semantic)
 - Graph CRDTs (v21): peer-to-peer entity/edge merge
 
-### Automation — 27 Cron Jobs + 4 Hooks
+### Automation — 36 Cron Jobs + 6 Hooks
 
 - **Background worker** — SQLite-backed async task queue (flock-protected)
 - **Cron jobs** — FTS rebuild, embedding recompute, KG backfill, quality filter, concept drift, integrity, tier migration, pinned decay, skill extraction, cross-session learning, and more
@@ -170,27 +170,21 @@ agentic-memory dashboard                                 # web UI
 - SQLite is derived and rebuildable
 - No cloud dependency — all data stays local
 - `safe_atomic_write` with conflict file preservation
-- 51 tables at schema v22, 22 versioned migrations
+- ~60 tables at schema v30, 30 versioned migrations
 
-### MCP Surface — 85 Tools (15 CORE + 70 ADMIN)
+### MCP Surface — 16 Tools (15 CORE + 1 maintenance router)
 
-The largest MCP memory surface in any open-source system:
+Agents see **16 MCP tools** total:
 
 ```text
-CORE (always visible):
-  memory_save, memory_search, memory_semantic_search,
-  memory_facts_search, memory_graph_search, memory_recall_context,
-  memory_session_start, memory_user_profile, memory_delete,
-  memory_restore, memory_check_contradictions, memory_scan_injection,
-  memory_rebuild, memory_supersede, memory_profile_access
+CORE (15 tools, always visible):
+  memory_search, memory_save, memory_delete, memory_recall,
+  memory_note, memory_learn, memory_audit, memory_organize,
+  memory_share, memory_graph, memory_profile, memory_session_start,
+  memory_advanced, memory_review_beliefs, memory_curate_autosave
 
-ADMIN (via memory_maintenance operation="..."):
-  tier_stats, arc_stats, audit, consolidate, facts_stats,
-  graph_stats, profile_stats, retention_stats, auto_save_status,
-  shared_stats, heartbeat, duplicates, merge_suggestions, compact,
-  check_integrity, pinned_decay, backfill_all, detect_contradictions,
-  crdt_sync, crdt_status, dashboard, metrics_server,
-  ingest_file, ingest_url, ... and 50 more
+MAINTENANCE (1 tool, router):
+  memory_maintenance — exposes 85 ADMIN + 3 DEPRECATED operations
 ```
 
 ---
@@ -223,14 +217,14 @@ agentic-memory/                          # Repo root
 ├── backfill/                            # Index rebuild subpackage
 ├── cron/                                # 27 background job scripts
 ├── hooks/                               # 4 Claude Code lifecycle hooks
-├── mcp_*.py (26 modules)                # Domain-split MCP tools
+├── mcp_*.py (28 modules)                # Domain-split MCP tools
 ├── auto_save.py                         # Tool-call auto-save + daemon
 ├── background_worker.py                 # Async task processor
-├── migration_runner.py                  # Schema v22, 22 migrations
+├── migration_runner.py                  # Schema v30, 30 migrations
 └── db.py                                # Connection pool + WAL
 ```
 
-**Production stats (2026-06-27):** ~37k LOC production, 217 test files, ~3,720 test functions, 51-table SQLite schema at v22, 85 MCP tools, 27 cron jobs, 4 lifecycle hooks.
+**Production stats (2026-06-27):** ~90k LOC production, 234 test files, ~3,988 test functions, ~60-table SQLite schema at v30, 102 MCP tools, 36 cron jobs, 6 lifecycle hooks.
 
 See [docs/architecture.md](docs/architecture.md) for full detail.
 
@@ -246,13 +240,13 @@ See [docs/architecture.md](docs/architecture.md) for full detail.
 | **Contradiction detection** | ✅ | ✅ | ✅ | ❌ | ❌ |
 | **CRDT sync** | ✅ field-level | ❌ | ❌ | ❌ | ❌ |
 | **FTS5 / BM25** | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **85 MCP tools** | ✅ | SDK only | MCP server | API | ❌ |
-| **4 lifecycle hooks** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **27 cron jobs** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **102 MCP tools** | ✅ | SDK only | MCP server | API | ❌ |
+| **6 lifecycle hooks** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **36 cron jobs** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Circuit breakers** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Field-level CRDT** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Schema migrations** | ✅ (v22) | ❌ | ❌ | ❌ | ❌ |
-| **Test suite** | 3,720 tests | moderate | moderate | moderate | minimal |
+| **Schema migrations** | ✅ (v30) | ❌ | ❌ | ❌ | ❌ |
+| **Test suite** | 3,988 tests | moderate | moderate | moderate | minimal |
 | **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 
 See [docs/explanation/comparison.md](docs/explanation/comparison.md) for detailed breakdowns.
@@ -261,7 +255,7 @@ See [docs/explanation/comparison.md](docs/explanation/comparison.md) for detaile
 
 ## MCP Server
 
-15 core tools are always visible to your agent; 70 admin tools are grouped under `memory_maintenance(operation="...")`:
+15 core tools are always visible to your agent; 84 admin + 3 deprecated tools are grouped under `memory_maintenance(operation="...")`:
 
 ```json
 {

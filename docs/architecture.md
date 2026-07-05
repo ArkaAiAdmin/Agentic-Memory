@@ -38,23 +38,26 @@ User/Agent
 ## Search Pipeline
 
 The search orchestrator (`search_memories` in `search/orchestrator.py`)
-runs the following **15 phases** in order:
+runs the following **18 phases** in order:
 
 1. Parse query
 2. Skill-first lookup (if requested)
 3. Cache check
 4. DB setup
-5. FTS search
-6. T10 — KG fact search (independent of memory results)
-7. Fallback to embeddings
-8. Hybrid fusion
-9. Temporal filtering
-10. Chunk enhancement
-11. Reranking
-12. Build output
-13. Safety demoting
-14. Quality gates
-15. Record access
+5. Namespace / repo filtering
+6. FTS search
+7. T10 — KG fact search (independent of memory results)
+8. Fallback to embeddings
+9. Hybrid fusion
+10. Temporal filtering
+11. Chunk enhancement
+12. Reranking
+13. Build output
+14. Safety demoting
+15. Quality gates
+16. Record access
+17. Cache update
+18. Audit logging
 
 ## Save Pipeline
 
@@ -121,7 +124,7 @@ agentic-memory/                    # Repo root
 ├── embedding_search.py             # Semantic search via model2vec
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
-├── migration_runner.py             # Schema migrations (current v23)
+├── migration_runner.py             # Schema migrations (current v30)
 └── ... (118 modules total)
 ```
 
@@ -143,8 +146,13 @@ agentic-memory/                    # Repo root
 
 ## Surface: MCP tools, cron jobs, hooks
 
-- **101 MCP tools** (14 CORE + 84 ADMIN + 3 DEPRECATED).
-  Single source of truth: `tool_registry.py`.
+- **16 MCP tools** (15 CORE + 1 maintenance router)
+- **36 cron scripts** in `cron/`
+- **6 lifecycle hooks** in `hooks/`
+- Single source of truth: `tool_registry.py`
+
+- **103 MCP tools** (15 CORE + 84 ADMIN + 3 DEPRECATED).
+  Single source of truth: `tool_registry.py`. The maintenance router exposes 85 ADMIN + 3 DEPRECATED operations.
 - **36 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.
