@@ -100,6 +100,8 @@ ADMIN_TOOLS = [
     "memory_graph_shortest_path",
     "memory_graph_traverse",
     "memory_circuit_breaker_status",
+    "memory_recall_status",
+    "memory_recall_trace",
     "memory_temporal_contradictions",
     "memory_temporal_query",
     "memory_compliance_check",

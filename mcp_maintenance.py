@@ -864,6 +864,7 @@ class MaintenanceOp(str, Enum):
     PROFILE_ACCESS = "profile_access"
     FLAGS_STATUS = "flags_status"
     RECALL_STATUS = "recall_status"
+    RECALL_TRACE = "recall_trace"  # C2: retrieve recall trace JSONL entries
     PHASE_ERRORS = "phase_errors"
 
     @classmethod

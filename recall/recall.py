@@ -266,6 +266,75 @@ def _get_recall_cfg() -> dict[str, int | bool]:
     except Exception:
         return dict(_RECALL_DEFAULTS)
 
+
+def _trace_event(
+    event: str,
+    *,
+    query: str = "",
+    tier_counts: dict[str, int] | None = None,
+    token_estimate: int = 0,
+    truncated: bool = False,
+    db_path: Path | None = None,
+) -> None:
+    """Append one trace event to ``memory/recall_trace.jsonl``.
+
+    Each line is a JSON object with the event name, timestamp, query
+    snippet, per-tier item counts, and the final token estimate.  The
+    file is append-only and self-pruning — capped at 50 000 lines to
+    prevent unbounded growth on a long-running system.
+
+    Failures are silently swallowed: tracing must never break recall.
+    """
+    try:
+        if db_path is None:
+            active_dir = resolve_active_memory_dir()
+            trace_path = active_dir / "recall_trace.jsonl"
+        else:
+            trace_path = db_path.parent / "recall_trace.jsonl"
+        line = json.dumps(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "event": event,
+                "query": (query or "")[:200],
+                "tier_counts": tier_counts or {},
+                "token_estimate": int(token_estimate),
+                "truncated": bool(truncated),
+            },
+            ensure_ascii=False,
+        )
+        with open(trace_path, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+            fh.flush()
+        _maybe_prune_trace(trace_path, max_lines=50_000)
+    except Exception:
+        pass
+
+
+def _maybe_prune_trace(trace_path: Path, max_lines: int = 50_000) -> None:
+    """If trace file exceeds max_lines, keep only the most recent half."""
+    try:
+        if not trace_path.exists():
+            return
+        with open(trace_path, "rb") as fh:
+            total = sum(1 for _ in fh)
+        if total <= max_lines:
+            return
+        keep = max_lines // 2
+        lines: list[bytes] = []
+        with open(trace_path, "rb") as fh:
+            for i, line in enumerate(fh):
+                if i >= total - keep:
+                    lines.append(line)
+        tmp = trace_path.with_suffix(".jsonl.tmp")
+        with open(tmp, "wb") as fh:
+            fh.writelines(lines)
+        tmp.replace(trace_path)
+    except Exception:
+        pass
+
+
+
+
 def session_recap(
     db_path: str | Path | None = None,
     session_id: str = "",
@@ -329,6 +398,12 @@ def session_recap(
         _tier1_days = int(_rcfg.get("tier1_hot_days", 7))
         _fallback_threshold = int(_rcfg.get("tier_fallback_threshold", 5))
 
+        _trace_event(
+            "recall_start",
+            query=query,
+            db_path=db_path_resolved,
+        )
+
         tier1 = _fetch_curated(conn, namespace, limit=5)
         tier2 = _fetch_relevant_light(db_path_resolved, namespace, query, limit=5) if query else []
         tier3 = _fetch_kg_facts(conn, namespace, limit=3)
@@ -346,6 +421,13 @@ def session_recap(
             sections.append(("## Recent Activity", tier4))
 
         if not sections:
+            _trace_event(
+                "recall_complete",
+                query=query,
+                tier_counts={"tier1": 0, "tier2": 0, "tier3": 0, "tier4": 0},
+                token_estimate=0,
+                db_path=db_path_resolved,
+            )
             return "No relevant context found for this session."
 
         lines = ["**Session Recap**", ""]
@@ -361,7 +443,21 @@ def session_recap(
 
         text = "\n".join(lines).rstrip()
         token_est = _estimate_tokens(text)
+        truncated = False
         if token_est > _max_tokens:
+            truncated = True
+            _trace_event(
+                "recall_truncated",
+                query=query,
+                tier_counts={
+                    "tier1": len(tier1),
+                    "tier2": len(tier2),
+                    "tier3": len(tier3),
+                    "tier4": len(tier4),
+                },
+                token_estimate=token_est,
+                db_path=db_path_resolved,
+            )
             lines_out = ["**Session Recap**", ""]
             budget_per_section = _max_tokens // max(len(sections), 1)
             for header, items in sections:
@@ -378,6 +474,19 @@ def session_recap(
                 lines_out.append("")
             text = "\n".join(lines_out).rstrip()
 
+        _trace_event(
+            "recall_complete",
+            query=query,
+            tier_counts={
+                "tier1": len(tier1),
+                "tier2": len(tier2),
+                "tier3": len(tier3),
+                "tier4": len(tier4),
+            },
+            token_estimate=token_est,
+            truncated=truncated,
+            db_path=db_path_resolved,
+        )
         return text
     finally:
         conn.close()

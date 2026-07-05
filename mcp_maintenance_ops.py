@@ -534,6 +534,9 @@ def _get_handlers() -> dict:
             MaintenanceOp.PROFILE_ACCESS: lambda *, note_id, **_: t["memory_profile_access"](note_id=note_id),
             MaintenanceOp.FLAGS_STATUS: lambda **_: _op_flags_status(),
             MaintenanceOp.RECALL_STATUS: lambda **_: _op_recall_status(),
+            MaintenanceOp.RECALL_TRACE: lambda *, limit=50, event="", since_ts="", **__: _op_recall_trace(
+                limit=limit, event=event, since_ts=since_ts
+            ),
             MaintenanceOp.PHASE_ERRORS: lambda *, since_ts=None, until_ts=None, limit=50, **_: _op_phase_errors(
                 since_ts=since_ts, until_ts=until_ts, limit=limit
             ),
@@ -857,6 +860,59 @@ def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = Non
 
         return json.dumps(
             get_counts(since_ts=since_ts, until_ts=until_ts, limit=limit), indent=2
+        )
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def _op_recall_trace(
+    limit: int = 50,
+    event: str = "",
+    since_ts: str = "",
+) -> str:
+    """Return recent recall trace JSONL entries.
+
+    Reads ``memory/recall_trace.jsonl`` from the active memory directory
+    and returns the last `limit` matching events.
+
+    Args:
+        limit: Max entries to return (default 50, max 500).
+        event: Filter by event name (e.g. ``recall_complete``, ``recall_truncated``).
+               Empty = no filter.
+        since_ts: ISO datetime filter — only entries at or after this timestamp.
+                  Empty = no filter.
+
+    Returns:
+        JSON array of trace entry dicts, newest last.
+    """
+    try:
+        from infra.infrastructure import resolve_active_memory_dir
+
+        trace_path = resolve_active_memory_dir() / "recall_trace.jsonl"
+        if not trace_path.exists():
+            return json.dumps({"entries": [], "count": 0, "path": str(trace_path)})
+
+        limit = max(1, min(int(limit), 500))
+        entries: list[dict] = []
+        with open(trace_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if event and obj.get("event") != event:
+                    continue
+                if since_ts and obj.get("ts", "") < since_ts:
+                    continue
+                entries.append(obj)
+
+        entries = entries[-limit:]
+        return json.dumps(
+            {"entries": entries, "count": len(entries), "path": str(trace_path)},
+            indent=2,
         )
     except Exception as e:
         return json.dumps({"error": str(e)})
