@@ -89,7 +89,9 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-03: bumped to 28 for entailment_chains + memory_revision_log (Sprint 3).
 # 2026-07-03: bumped to 29 for graph_snapshots table (Sprint 4 graph analytics).
 # 2026-07-03: bumped to 30 for community_id + betweenness on kg_entities (Sprint 4).
-SCHEMA_VERSION = 30
+# 2026-07-05: bumped to 31 for outbox memory_events table and triggers (REST/WS API).
+SCHEMA_VERSION = 31
+
 
 
 def _parse_sql_file(path: Path) -> list[str]:

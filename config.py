@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import sys
+sys.path = [p for p in sys.path if not (str(p).endswith("/.config/agentic-memory") or str(p).endswith("/.config/agentic-memory/"))]
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -433,6 +434,13 @@ class MemoryConfig:
     sync_listen_port: int = 9877
     sync_peers: tuple = field(default_factory=tuple)
     sync_interval_minutes: int = 5
+
+    # api (REST & WebSocket server)
+    api_enable_server: bool = False
+    api_listen_host: str = "127.0.0.1"
+    api_listen_port: int = 9878
+    api_token: str = ""
+
 
     # auto-save hook (backoff / circuit breaker)
     # When tool_complete() fails, retry with exponential backoff and trip
@@ -1144,6 +1152,20 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             toml_data,
         ),
         sync_peers=_resolve_sync_peers(toml_data),
+        # --- api ---
+        api_enable_server=_b(
+            "MEMORY_API_ENABLE_SERVER", "api.enable_server", False, bool, toml_data
+        ),
+        api_listen_host=_b(
+            "MEMORY_API_LISTEN_HOST", "api.listen_host", "127.0.0.1", str, toml_data
+        ),
+        api_listen_port=_b(
+            "MEMORY_API_LISTEN_PORT", "api.listen_port", 9878, int, toml_data
+        ),
+        api_token=_b(
+            "MEMORY_API_TOKEN", "api.token", "", str, toml_data
+        ),
+
         # --- auto_save ---
         auto_save_max_retries=_b(
             "MEMORY_AUTO_SAVE_MAX_RETRIES", "auto_save.max_retries", 3, int, toml_data

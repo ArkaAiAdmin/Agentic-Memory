@@ -987,6 +987,51 @@ def dashboard_main() -> None:
         else:
             print("Dashboard not running")
 
+def api_server_main() -> None:
+    """Run the REST & WebSocket API server standalone."""
+    import argparse
+    import threading
+    import sqlite3
+    from pathlib import Path
+    from config import get_config
+    from infra.api_server import APIServer
+    from save_pipeline import _crdt_agent_id
+
+    parser = argparse.ArgumentParser(description="REST and WebSocket API server")
+    parser.add_argument("--port", type=int, help="Port to run on (overrides config)")
+    parser.add_argument("--host", help="Host to run on (overrides config)")
+    parser.add_argument("--db", help="Path to memory.db (overrides config)")
+    
+    # Handle sys.argv correctly
+    args_slice = sys.argv[2:] if len(sys.argv) > 1 and sys.argv[1] == "api" else sys.argv[1:]
+    parsed = parser.parse_args(args_slice)
+
+    db_path = parsed.db
+    if not db_path:
+        db_path = get_config().db_path
+
+    db_path_obj = Path(db_path)
+    if not db_path_obj.exists():
+        db_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        from infra.db_migrations import run_schema_setup
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys=ON")
+        run_schema_setup(conn)
+        conn.close()
+
+    cfg = get_config()
+    host = parsed.host or getattr(cfg, "api_listen_host", "127.0.0.1")
+    port = parsed.port or getattr(cfg, "api_listen_port", 9878)
+    agent_id = _crdt_agent_id()
+
+    server = APIServer(db_path=db_path, agent_id=agent_id, host=host, port=port)
+    server.start()
+    print(f"API server running on http://{host}:{port}")
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        server.stop()
+
 
 COMMANDS: dict[str, Callable[[], int | None]] = {
     "server": server_main,
@@ -1006,6 +1051,7 @@ COMMANDS: dict[str, Callable[[], int | None]] = {
     "version": version_main,
     "install-mcp": install_mcp_main,
     "dashboard": dashboard_main,
+    "api": api_server_main,
 }
 
 

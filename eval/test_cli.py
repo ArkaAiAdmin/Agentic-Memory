@@ -33,6 +33,7 @@ class TestCliCommands(unittest.TestCase):
             "version",
             "install-mcp",
             "dashboard",
+            "api",
         }
         self.assertEqual(set(COMMANDS), expected)
 

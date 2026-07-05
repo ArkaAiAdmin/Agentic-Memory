@@ -75,8 +75,9 @@ class TestMemoryConfigDefaults:
         # 2026-07-03 sync server fields (6: sync_enable_server/host/port/peers/interval_minutes,
         # auto_save_health_check_minutes) → 122.
         # 2026-07-05 P2: db_pool_size, search_parallel_enabled, ner_spacy_enabled → 125.
-        assert len(fields) == 125, (
-            f"Expected 122 fields, got {len(fields)}: {[f.name for f in fields]}"
+        # 2026-07-05 Packaging API: api_enable_server, api_listen_host, api_listen_port, api_token → 129.
+        assert len(fields) == 129, (
+            f"Expected 129 fields, got {len(fields)}: {[f.name for f in fields]}"
         )
 
     def test_default_db_path(self):
