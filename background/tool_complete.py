@@ -89,6 +89,20 @@ def _should_route_to_lessons(content: str) -> tuple[bool, str]:
     return False, ""
 
 
+def _get_auto_save_cfg() -> dict[str, bool]:
+    """Load auto_save tuning values from MemoryConfig, falling back to defaults."""
+    try:
+        from infra._lazy_imports import get_config
+
+        cfg = get_config()
+        return {
+            "keyword_routing": bool(getattr(cfg, "auto_save_keyword_routing", True)),
+            "always_sessions": bool(getattr(cfg, "auto_save_always_sessions", False)),
+        }
+    except Exception:
+        return {"keyword_routing": True, "always_sessions": False}
+
+
 def _should_skip_similar(content: str, ttl_hours: int = 24) -> bool:
     """Return True if a recent session note has the same normalized content.
 
@@ -453,33 +467,35 @@ superseded_by: null
     # Runs after the markdown body is built (so the heuristic sees the
     # full content) but before dedup (so dedup still works correctly
     # regardless of which category the note is routed to).
-    if category == "sessions" and os.environ.get("MEMORY_AUTO_SAVE_ALWAYS_SESSIONS") != "1":
-        heuristic_content = f"{tool}\n{params_str}\n{result_preview}"
-        should_route, kw = _should_route_to_lessons(heuristic_content)
-        if should_route:
-            category = "lessons"
-            importance = max(importance, 2)
-            if extra_tags is None:
-                extra_tags = []
-            for et in ("auto-capture", "draft"):
-                if et not in extra_tags:
-                    extra_tags.append(et)
-            merged_tags = _resolve_tags(
-                category, None, context="auto-save", tool_slug=tool_slug, extra_tags=extra_tags
-            )
-            tag_list_str = ", ".join(merged_tags)
-            footer = (
-                "*Auto-drafted by auto_save.py — staged in `lessons/`. "
-                "Promote via promotion cron.*"
-            )
-            # Regenerate note_id and file_path for new category
-            target_dir = memory_dir / "lessons"
-            target_dir.mkdir(parents=True, exist_ok=True)
-            file_name = f"auto-{ts_compact}-{tool_slug}.md"
-            note_id = f"lessons/{file_name}"
-            file_path = target_dir / file_name
-            # Rebuild markdown with updated footer/tags
-            markdown = f"""---
+    if category == "sessions":
+        _as_cfg = _get_auto_save_cfg()
+        if _as_cfg.get("keyword_routing", True) and not _as_cfg.get("always_sessions", False):
+            heuristic_content = f"{tool}\n{params_str}\n{result_preview}"
+            should_route, kw = _should_route_to_lessons(heuristic_content)
+            if should_route:
+                category = "lessons"
+                importance = max(importance, 2)
+                if extra_tags is None:
+                    extra_tags = []
+                for et in ("auto-capture", "draft"):
+                    if et not in extra_tags:
+                        extra_tags.append(et)
+                merged_tags = _resolve_tags(
+                    category, None, context="auto-save", tool_slug=tool_slug, extra_tags=extra_tags
+                )
+                tag_list_str = ", ".join(merged_tags)
+                footer = (
+                    "*Auto-drafted by auto_save.py — staged in `lessons/`. "
+                    "Promote via promotion cron.*"
+                )
+                # Regenerate note_id and file_path for new category
+                target_dir = memory_dir / "lessons"
+                target_dir.mkdir(parents=True, exist_ok=True)
+                file_name = f"auto-{ts_compact}-{tool_slug}.md"
+                note_id = f"lessons/{file_name}"
+                file_path = target_dir / file_name
+                # Rebuild markdown with updated footer/tags
+                markdown = f"""---
 created: {ts}
 updated: {ts}
 observed_at: {ts}

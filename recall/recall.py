@@ -245,14 +245,26 @@ def format_briefing(data: dict) -> str:
     return "\n".join(lines)
 
 
-SESSION_RECAP_MAX_TOKENS = 800
-RECALL_FALLBACK_THRESHOLD = 5
-MAX_TIER1 = 5
-MAX_TIER2 = 5
-MAX_TIER3 = 3
-MAX_TIER4 = 3
-TIER1_HOT_DAYS = 7
+_RECALL_DEFAULTS: dict[str, int | bool] = {
+    "max_tokens": 800,
+    "tier1_hot_days": 7,
+    "tier_fallback_threshold": 5,
+}
 
+
+def _get_recall_cfg() -> dict[str, int | bool]:
+    """Load recall tuning values from MemoryConfig, falling back to defaults."""
+    try:
+        from infra._lazy_imports import get_config
+
+        cfg = get_config()
+        return {
+            "max_tokens": int(getattr(cfg, "recall_max_tokens", _RECALL_DEFAULTS["max_tokens"])),
+            "tier1_hot_days": int(getattr(cfg, "recall_tier1_hot_days", _RECALL_DEFAULTS["tier1_hot_days"])),
+            "tier_fallback_threshold": int(getattr(cfg, "recall_tier_fallback_threshold", _RECALL_DEFAULTS["tier_fallback_threshold"])),
+        }
+    except Exception:
+        return dict(_RECALL_DEFAULTS)
 
 def session_recap(
     db_path: str | Path | None = None,
@@ -312,12 +324,16 @@ def session_recap(
         from agent_context import get_agent
         ctx = get_agent()
         namespace = ctx.namespace
+        _rcfg = _get_recall_cfg()
+        _max_tokens = int(_rcfg.get("max_tokens", 800))
+        _tier1_days = int(_rcfg.get("tier1_hot_days", 7))
+        _fallback_threshold = int(_rcfg.get("tier_fallback_threshold", 5))
 
         tier1 = _fetch_curated(conn, namespace, limit=5)
         tier2 = _fetch_relevant_light(db_path_resolved, namespace, query, limit=5) if query else []
         tier3 = _fetch_kg_facts(conn, namespace, limit=3)
         tier4_total = len(tier1) + len(tier2) + len(tier3)
-        tier4 = _fetch_recent_sessions(conn, namespace, limit=3) if tier4_total < RECALL_FALLBACK_THRESHOLD else []
+        tier4 = _fetch_recent_sessions(conn, namespace, limit=3) if tier4_total < _fallback_threshold else []
 
         sections = []
         if tier1:
@@ -345,9 +361,9 @@ def session_recap(
 
         text = "\n".join(lines).rstrip()
         token_est = _estimate_tokens(text)
-        if token_est > SESSION_RECAP_MAX_TOKENS:
+        if token_est > _max_tokens:
             lines_out = ["**Session Recap**", ""]
-            budget_per_section = SESSION_RECAP_MAX_TOKENS // max(len(sections), 1)
+            budget_per_section = _max_tokens // max(len(sections), 1)
             for header, items in sections:
                 lines_out.append(header)
                 lines_out.append("")
@@ -374,7 +390,8 @@ def session_recap(
 
 def _fetch_curated(conn: AnyConnection, namespace: str, limit: int) -> list[dict]:
     """Tier 1: Hot/curated notes — pinned or high-importance, last 7 days."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=TIER1_HOT_DAYS)).isoformat()
+    tier1_days = _get_recall_cfg().get("tier1_hot_days", 7)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=int(tier1_days))).isoformat()
     ns_filter = f"agents/{namespace}/%" if namespace != "default" else None
     if namespace != "default":
         rows = conn.execute(

@@ -76,8 +76,10 @@ class TestMemoryConfigDefaults:
         # auto_save_health_check_minutes) → 122.
         # 2026-07-05 P2: db_pool_size, search_parallel_enabled, ner_spacy_enabled → 125.
         # 2026-07-05 Packaging API: api_enable_server, api_listen_host, api_listen_port, api_token → 129.
-        assert len(fields) == 129, (
-            f"Expected 129 fields, got {len(fields)}: {[f.name for f in fields]}"
+        # 2026-07-05 Recall remediation: auto_save_keyword_routing, auto_save_always_sessions,
+        # recall_max_tokens, recall_tier1_hot_days, recall_tier_fallback_threshold → 134.
+        assert len(fields) == 134, (
+            f"Expected 134 fields, got {len(fields)}: {[f.name for f in fields]}"
         )
 
     def test_default_db_path(self):
@@ -338,15 +340,15 @@ class TestMissingConfigFile:
     def test_missing_toml_returns_defaults(self, tmp_path):
         """When memory.toml doesn't exist, all fields should be defaults."""
         reset_config()
-        original = _config_mod._TOML_PATH
+        original = getattr(_config_mod, "_TOML_PATH")
         # Save ALL MEMORY_* env vars (the system has many more than the
         # 5 originally listed; leaving any set will override defaults)
         saved = {}
         for key in list(os.environ):
             if key.startswith("MEMORY_"):
                 saved[key] = os.environ.pop(key)
-        _config_mod._TOML_PATH = tmp_path / "nonexistent.toml"
-        _config_mod._instance = None
+        setattr(_config_mod, "_TOML_PATH", tmp_path / "nonexistent.toml")
+        setattr(_config_mod, "_instance", None)
         try:
             cfg = _config_mod.get_config()
             # db_path is anchored at package root (H20 fix) — verify it ends with the default
@@ -360,8 +362,8 @@ class TestMissingConfigFile:
             assert cfg.multi_agent is True
             assert cfg.fts5_cache is True
         finally:
-            _config_mod._TOML_PATH = original
-            _config_mod._instance = None
+            setattr(_config_mod, "_TOML_PATH", original)
+            setattr(_config_mod, "_instance", None)
             for key, val in saved.items():
                 if val is not None:
                     os.environ[key] = val
@@ -388,13 +390,13 @@ class TestLoadFromToml:
             summarization = true
         """,
         )
-        original = _config_mod._TOML_PATH
+        original = getattr(_config_mod, "_TOML_PATH")
         saved_env = {}
         for key in list(os.environ):
             if key.startswith("MEMORY_"):
                 saved_env[key] = os.environ.pop(key)
-        _config_mod._TOML_PATH = toml_path
-        _config_mod._instance = None
+        setattr(_config_mod, "_TOML_PATH", toml_path)
+        setattr(_config_mod, "_instance", None)
         try:
             cfg = _config_mod.get_config()
             assert cfg.db_path == "/custom/db.sqlite"
@@ -404,8 +406,8 @@ class TestLoadFromToml:
             assert cfg.multi_agent is True
             assert cfg.summarization is True
         finally:
-            _config_mod._TOML_PATH = original
-            _config_mod._instance = None
+            setattr(_config_mod, "_TOML_PATH", original)
+            setattr(_config_mod, "_instance", None)
             os.environ.update(saved_env)
 
     def test_partial_toml_fills_defaults(self, tmp_path):
@@ -417,13 +419,13 @@ class TestLoadFromToml:
             temporal_half_life = 30.0
         """,
         )
-        original = _config_mod._TOML_PATH
+        original = getattr(_config_mod, "_TOML_PATH")
         saved_env = {}
         for key in list(os.environ):
             if key.startswith("MEMORY_"):
                 saved_env[key] = os.environ.pop(key)
-        _config_mod._TOML_PATH = toml_path
-        _config_mod._instance = None
+        setattr(_config_mod, "_TOML_PATH", toml_path)
+        setattr(_config_mod, "_instance", None)
         try:
             cfg = _config_mod.get_config()
             # Overridden
@@ -434,8 +436,8 @@ class TestLoadFromToml:
             # H10 fix: _resolve default is True (matches dataclass)
             assert cfg.multi_agent is True
         finally:
-            _config_mod._TOML_PATH = original
-            _config_mod._instance = None
+            setattr(_config_mod, "_TOML_PATH", original)
+            setattr(_config_mod, "_instance", None)
             os.environ.update(saved_env)
 
 
@@ -446,7 +448,7 @@ class TestEnvVarOverrides:
         saved = os.environ.get("MEMORY_DB_PATH")
         os.environ["MEMORY_DB_PATH"] = "/env/custom.db"
         try:
-            _config_mod._instance = None
+            setattr(_config_mod, "_instance", None)
             cfg = _config_mod.get_config()
             assert cfg.db_path == "/env/custom.db"
         finally:
@@ -454,37 +456,37 @@ class TestEnvVarOverrides:
                 os.environ["MEMORY_DB_PATH"] = saved
             else:
                 os.environ.pop("MEMORY_DB_PATH", None)
-            _config_mod._instance = None
+            setattr(_config_mod, "_instance", None)
 
     def test_bool_override(self):
         os.environ["MEMORY_KNOWLEDGE_GRAPH"] = "1"
         try:
-            _config_mod._instance = None
+            setattr(_config_mod, "_instance", None)
             cfg = _config_mod.get_config()
             assert cfg.knowledge_graph is True
         finally:
             os.environ.pop("MEMORY_KNOWLEDGE_GRAPH", None)
-            _config_mod._instance = None
+            setattr(_config_mod, "_instance", None)
 
     def test_int_override(self):
         os.environ["MEMORY_GRAPH_RAG_HOPS"] = "7"
         try:
-            _config_mod._instance = None
+            setattr(_config_mod, "_instance", None)
             cfg = _config_mod.get_config()
             assert cfg.graph_rag_hops == 7
         finally:
             os.environ.pop("MEMORY_GRAPH_RAG_HOPS", None)
-            _config_mod._instance = None
+            setattr(_config_mod, "_instance", None)
 
     def test_float_override(self):
         os.environ["MEMORY_TEMPORAL_HALF_LIFE"] = "45.5"
         try:
-            _config_mod._instance = None
+            setattr(_config_mod, "_instance", None)
             cfg = _config_mod.get_config()
             assert cfg.temporal_half_life == 45.5
         finally:
             os.environ.pop("MEMORY_TEMPORAL_HALF_LIFE", None)
-            _config_mod._instance = None
+            setattr(_config_mod, "_instance", None)
 
 
 class TestResetConfig:
@@ -514,7 +516,7 @@ class TestTomlIntegration:
         from infra.memory_common import reset_all_lazy_config_attrs
 
         reset_all_lazy_config_attrs()
-        original_toml = _config_mod._TOML_PATH
+        original_toml = getattr(_config_mod, "_TOML_PATH")
 
         # Write TOML with feature flags enabled
         toml_path = _write_toml(
@@ -545,8 +547,8 @@ class TestTomlIntegration:
             if key.startswith("MEMORY_"):
                 saved_env[key] = os.environ.pop(key)
 
-        _config_mod._TOML_PATH = toml_path
-        _config_mod._instance = None
+        setattr(_config_mod, "_TOML_PATH", toml_path)
+        setattr(_config_mod, "_instance", None)
 
         try:
             # Force config reload
@@ -623,8 +625,8 @@ class TestTomlIntegration:
             # MEMORY_RERANKER_DISABLED=1.
             import config as _force_cfg
 
-            _force_cfg._instance = None
-            _force_cfg._TOML_PATH = toml_path
+            setattr(_force_cfg, "_instance", None)
+            setattr(_force_cfg, "_TOML_PATH", toml_path)
             _cfg = _force_cfg.get_config()
             assert _cfg.reranker_disabled is False
             # The canonical assertion. Safe now that make_lazy_getattr
@@ -633,8 +635,8 @@ class TestTomlIntegration:
             assert infra.reranker.RERANKER_ENABLED is True
 
         finally:
-            _config_mod._TOML_PATH = original_toml
-            _config_mod._instance = None
+            setattr(_config_mod, "_TOML_PATH", original_toml)
+            setattr(_config_mod, "_instance", None)
             os.environ.update(saved_env)
 
 

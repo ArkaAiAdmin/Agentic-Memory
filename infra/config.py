@@ -467,6 +467,13 @@ class MemoryConfig:
     auto_save_preview_max: int = 200
     auto_save_params_max: int = 2000
     auto_save_health_check_minutes: int = 5
+    # Tier B1: keyword heuristic category routing
+    auto_save_keyword_routing: bool = True
+    auto_save_always_sessions: bool = False
+    # Tier A: session_recap recall policy
+    recall_max_tokens: int = 800
+    recall_tier1_hot_days: int = 7
+    recall_tier_fallback_threshold: int = 5
 
 
 DECISION_CATEGORIES = frozenset({"decisions", "lessons", "projects", "architecture"})
@@ -1283,6 +1290,41 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         auto_save_health_check_minutes=_b(
             "MEMORY_AUTO_SAVE_HEALTH_CHECK_MINUTES",
             "auto_save.health_check_minutes",
+            5,
+            int,
+            toml_data,
+        ),
+        auto_save_keyword_routing=_b(
+            "MEMORY_AUTO_SAVE_KEYWORD_ROUTING",
+            "auto_save.keyword_routing",
+            True,
+            bool,
+            toml_data,
+        ),
+        auto_save_always_sessions=_b(
+            "MEMORY_AUTO_SAVE_ALWAYS_SESSIONS",
+            "auto_save.always_sessions",
+            False,
+            bool,
+            toml_data,
+        ),
+        recall_max_tokens=_b(
+            "MEMORY_RECALL_MAX_TOKENS",
+            "recall.max_tokens",
+            800,
+            int,
+            toml_data,
+        ),
+        recall_tier1_hot_days=_b(
+            "MEMORY_RECALL_TIER1_DAYS",
+            "recall.tier1_hot_days",
+            7,
+            int,
+            toml_data,
+        ),
+        recall_tier_fallback_threshold=_b(
+            "MEMORY_RECALL_TIER_FALLBACK_THRESHOLD",
+            "recall.tier_fallback_threshold",
             5,
             int,
             toml_data,
