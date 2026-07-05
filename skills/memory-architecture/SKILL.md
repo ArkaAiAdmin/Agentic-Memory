@@ -16,7 +16,7 @@ A one-page mental model of the agentic-memory system, sized for someone about to
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │ LAYER 3 — SURFACE                                                     │
-│   85 MCP tools (15 CORE + 70 ADMIN under `memory_maintenance`)         │
+│   102 registered tools (15 CORE + 84 ADMIN + 3 DEPRECATED; 16 visible via memory_maintenance)         │
 │   4 user-facing hooks in hooks/ + 1 log helper module (_log_error.py) │
 │   25 cron scripts / 26 scheduled jobs (all in `cron/` subdirectory)    │
 │   11 CLI commands                                                      │
@@ -46,7 +46,7 @@ A one-page mental model of the agentic-memory system, sized for someone about to
                                    │
                                    ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│ LAYER 1 — STORAGE (SQLite at memory/memory.db, Schema v21)           │
+│ LAYER 1 — STORAGE (SQLite at memory/memory.db, Schema v32)           │
 │                                                                      │
 │   memories / memories_fts / memory_chunks / memory_chunks_fts       │
 │   memory_embeddings (BLOB, dim=256, f16, ssm_state)                  │
@@ -87,7 +87,7 @@ A one-page mental model of the agentic-memory system, sized for someone about to
 | `memory_injection.py` | 353 | 4-category prompt-injection scan | New injection patterns |
 | `quality_gates.py` | 435 | O(N log N) sliding-window near-dup dedup | Quality thresholds |
 | `tier_migration.py` | 471 | Hot/warm/cold tier assignment | Tier-lifecycle bugs |
-| `mcp_tools.py` | 243 | Canonical tool inventory (85 MCP tools) | Adding/removing a tool |
+| `mcp_tools.py` | 243 | Canonical tool inventory (102 registered tools) | Adding/removing a tool |
 | `memory_mcp.py` | 268 | FastMCP server, tool registration | Server lifecycle, tool filtering |
 | `embedding_incremental.py` | 268 | Streaming / partial-embedding state (v15) | Embedding recompute bugs |
 | `arc_cache.py` | 339 | Adaptive Replacement Cache w/ ghost lists (v14) | Eviction / ghost list bugs |
@@ -142,10 +142,10 @@ Re-run before relying on these:
 - All 17 features ON by default (`memory.toml`)
 - 25 cron scripts / 26 scheduled jobs (all in `cron/` subdirectory, incl. `_flock.py` support module)
 - 4 user-facing hooks in hooks/ + 1 log helper module (`_log_error.py`)
-- 85 MCP tools: 15 CORE + 70 ADMIN (routed through `memory_maintenance`)
+- 102 registered tools: 15 CORE + 84 ADMIN + 3 DEPRECATED (routed through `memory_maintenance`)
 - 26 `mcp_*.py` modules + 2 sync modules (`sync_server.py`, `sync_client.py`)
 - 71,357 LOC production (all subdirs), 75,299 LOC in tests
-- Schema v21
+- Schema v32, 32 migrations, ~62 tables
 - `memory_skills` 607 rows, `drift_alarms` 10 rows, `concept_drift` 1 row
 - `task_queue` drained 12,026 → ~297 pending
 - Rule reliability: `memory-session-end.py` (Rule #7), `cron_health_check.py` (Rules #5, #9-11), `memory_compliance_check` MCP tool

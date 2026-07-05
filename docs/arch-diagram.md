@@ -1,6 +1,6 @@
 # Agentic Memory — Complete Architecture
 
-> Schema v21 · 85 MCP tools (15 CORE + 70 ADMIN) · ~51 SQLite tables (~31 user-visible) · ~27 cron schedule entries · 5 hooks · 102 production modules · ~56,799 LOC production + ~69,155 LOC tests
+> Schema v32 · 102 registered tools (15 CORE + 84 ADMIN + 3 DEPRECATED; 16 visible to agents) · ~62 SQLite tables (~31 user-visible) · 36 cron schedule entries · 7 lifecycle hooks · 175+ production modules
 
 ---
 
@@ -758,7 +758,7 @@
 
 ```
  ┌────────────────────────────────────────────────────────────────────┐
-  │                       85 MCP TOOLS                                  │
+   │                       102 REGISTERED TOOLS (16 VISIBLE)                                │
  │                                                                     │
  │  CORE (15) — Always exposed                                         │
  │  ┌──────────────────────────────────────────────────────────────┐  │
@@ -812,7 +812,7 @@ agentic-memory/                              ← repo root
 ├── memory_mcp.py                           ← MCP server entry (thin orchestrator)
 ├── memory.toml                              ← centralized config + feature flags
 ├── config.py                                ← config singleton dataclass
-├── tool_registry.py                         ← 15 CORE + 70 ADMIN (single source of truth)
+├── tool_registry.py                         ← 15 CORE + 84 ADMIN + 3 DEPRECATED (single source of truth)
 │
 ├── WRITE PATH ──────────────────────────────────────────────────────────────
 ├── save_pipeline.py                         ← write path shim (1,359 LOC) → save/
@@ -910,4 +910,4 @@ agentic-memory/                              ← repo root
 
 ---
 
-*Generated: 2026-06-25 · Schema v21 · 102 modules · ~126,954 LOC total (56,799 production + 69,155 tests)*
+*Generated: 2026-07-05 · Schema v32 · 175+ modules · ~175k LOC total*

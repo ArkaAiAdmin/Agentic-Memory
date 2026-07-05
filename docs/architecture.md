@@ -151,8 +151,8 @@ agentic-memory/                    # Repo root
 - **6 lifecycle hooks** in `hooks/`
 - Single source of truth: `tool_registry.py`
 
-- **103 MCP tools** (15 CORE + 84 ADMIN + 3 DEPRECATED).
-  Single source of truth: `tool_registry.py`. The maintenance router exposes 85 ADMIN + 3 DEPRECATED operations.
+- **102 registered tools** (15 CORE + 84 ADMIN + 3 DEPRECATED).
+  Single source of truth: `tool_registry.py`. The maintenance router exposes 84 ADMIN + 3 DEPRECATED operations.
 - **36 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.

@@ -13,7 +13,7 @@ How Agentic Memory compares to other memory systems.
 | **Cloud option** | Planned | Yes | Yes | Yes |
 | **LLM required** | No (optional) | Yes | Yes | Yes |
 | **Privacy** | Local-first | Configurable | Configurable | Configurable |
-| **MCP support** | Yes (85 tools: 15 CORE + 70 ADMIN) | Yes | Yes | No |
+| **MCP support** | Yes (102 tools: 15 CORE + 84 ADMIN + 3 DEPRECATED) | Yes | Yes | No |
 | **Open source** | Apache 2.0 | Apache 2.0 | MIT | Apache 2.0 |
 
 ## Detailed Comparison

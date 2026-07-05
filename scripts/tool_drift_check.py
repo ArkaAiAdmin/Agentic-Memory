@@ -8,6 +8,16 @@ from pathlib import Path
 import re
 import sys
 
+# Tools registered in ADMIN_TOOLS but intentionally routed through
+# memory_maintenance without their own @mcp.tool() decorator.
+# These are not missing from the MCP surface — they are reachable via
+# memory_maintenance(operation="...") just like memory_graph_insights
+# and memory_graph_evolution.
+ADMIN_ROUTED_TOOLS = {
+    "memory_recall_status",
+    "memory_recall_trace",
+}
+
 
 def extract_mcp_tools_from_files() -> set[str]:
     """Extract all @mcp.tool() function names from mcp_*.py files."""
@@ -32,7 +42,7 @@ def main() -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from tool_registry import CORE_TOOLS, ADMIN_TOOLS
 
-    registered = set(CORE_TOOLS + ADMIN_TOOLS)
+    registered = set(CORE_TOOLS + ADMIN_TOOLS) - ADMIN_ROUTED_TOOLS
 
     # Extract tools from source files
     defined = extract_mcp_tools_from_files()
