@@ -40,6 +40,55 @@ def _content_hash(content: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
 
+def _should_route_to_lessons(content: str) -> tuple[bool, str]:
+    """Heuristic: does this tool-invocation content represent a high-signal lesson?
+
+    Returns (should_route, reason_tag).  Should_route is True when the
+    content contains keywords that indicate a design decision, architecture
+    change, root-cause finding, or reusable pattern — signals that the
+    content should be promoted to ``category="lessons"`` (auto-captured draft)
+    rather than left as a raw session transcript entry.
+
+    The heuristic is intentionally conservative: false positives only cost
+    a ``lessons`` draft note (the promotion cron only promotes ``importance <= 2``
+    notes, so over-classified drafts self-correct on the next promotion run).
+
+    Keywords checked (case-insensitive, word-boundary anchored):
+
+    Decisions / architecture
+        "decided", "decision:", "architecture", "we chose", "chose to",
+        "approaches tried", "tradeoff", "trade-off", "rationale:"
+
+    Fixes / root cause
+        "fixed by", "root cause", "caused by", "workaround:", "solution:",
+        "bug was caused", "regression from"
+
+    Patterns / lessons
+        "lesson:", "lessons learned", "lesson learned", "pattern:",
+        "best practice", "anti-pattern"
+
+    Explicit auto-capture signals
+        "auto-capture", "save as lesson", "note for next time",
+        "worth remembering", "keep in mind"
+    """
+    lower = content.lower()
+    _LESSON_KEYWORDS = [
+        r"\bdecided\b", r"\bdecision\b", r"\barchitecture\b",
+        r"\bwe chose\b", r"\bchose to\b", r"\bapproaches tried\b",
+        r"\btradeoff\b", r"\btrade-off\b", r"\brationale\b",
+        r"\bfixed by\b", r"\broot cause\b", r"\bcaused by\b",
+        r"\bworkaround\b", r"\bsolution\b", r"\bbug was caused\b",
+        r"\bregression from\b", r"\bles?son\b", r"\bpattern\b",
+        r"\bbest practice\b", r"\banti-pattern\b",
+        r"\bauto-capture\b", r"\bsave as lesson\b", r"\bnote for next time\b",
+        r"\bworth remembering\b", r"\bkeep in mind\b",
+    ]
+    for kw in _LESSON_KEYWORDS:
+        if re.search(kw, lower):
+            return True, kw
+    return False, ""
+
+
 def _should_skip_similar(content: str, ttl_hours: int = 24) -> bool:
     """Return True if a recent session note has the same normalized content.
 
@@ -398,6 +447,70 @@ superseded_by: null
 {footer}
 """
 
+    # ------------------------------------------------------------------
+    # Tier B1: keyword-based category routing
+    # ------------------------------------------------------------------
+    # Runs after the markdown body is built (so the heuristic sees the
+    # full content) but before dedup (so dedup still works correctly
+    # regardless of which category the note is routed to).
+    if category == "sessions" and os.environ.get("MEMORY_AUTO_SAVE_ALWAYS_SESSIONS") != "1":
+        heuristic_content = f"{tool}\n{params_str}\n{result_preview}"
+        should_route, kw = _should_route_to_lessons(heuristic_content)
+        if should_route:
+            category = "lessons"
+            importance = max(importance, 2)
+            if extra_tags is None:
+                extra_tags = []
+            for et in ("auto-capture", "draft"):
+                if et not in extra_tags:
+                    extra_tags.append(et)
+            merged_tags = _resolve_tags(
+                category, None, context="auto-save", tool_slug=tool_slug, extra_tags=extra_tags
+            )
+            tag_list_str = ", ".join(merged_tags)
+            footer = (
+                "*Auto-drafted by auto_save.py — staged in `lessons/`. "
+                "Promote via promotion cron.*"
+            )
+            # Regenerate note_id and file_path for new category
+            target_dir = memory_dir / "lessons"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            file_name = f"auto-{ts_compact}-{tool_slug}.md"
+            note_id = f"lessons/{file_name}"
+            file_path = target_dir / file_name
+            # Rebuild markdown with updated footer/tags
+            markdown = f"""---
+created: {ts}
+updated: {ts}
+observed_at: {ts}
+tags: [{tag_list_str}]
+pinned: false
+related: []
+valid_from: {ts}
+valid_to: null
+superseded_by: null
+---
+
+# Auto-save: {tool} @ {ts_compact}
+
+**Tool**: `{tool}`
+**Timestamp**: {ts}
+
+## Params
+```json
+{params_str}
+```
+
+## Result (preview)
+{result_str}
+
+---
+{footer}
+"""
+
+    # ------------------------------------------------------------------
+    # Phase 1c: dedup (unchanged)
+    # ------------------------------------------------------------------
     dkey = _dedup_key(tool, params, result_preview)
     if _should_skip_dedup(dkey):
         return {
