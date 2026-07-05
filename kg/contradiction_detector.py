@@ -36,7 +36,8 @@ from typing import Any, Callable
 
 get_config: Callable[[], Any] | None = None
 try:
-    from config import get_config
+    from config import get_config as _gc
+    get_config = _gc
 except Exception:
     logging.getLogger(__name__).warning("Failed to import get_config")
 

@@ -597,7 +597,7 @@ def _temporal_llm_scoring_enabled() -> bool:
     """
     from config import get_config
 
-    return get_config().feature_temporal_kg_llm
+    return bool(get_config().feature_temporal_kg_llm)
 
 
 def _contradiction_score_threshold() -> float:

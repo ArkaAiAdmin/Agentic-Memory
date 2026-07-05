@@ -44,7 +44,8 @@ logger = logging.getLogger(__name__)
 
 _get_config: Callable[[], Any] | None = None
 try:
-    from config import get_config as _get_config
+    from config import get_config as _gc
+    _get_config = _gc
 except ImportError:  # FLAVOR_A: optional dependency guard
     pass
 
