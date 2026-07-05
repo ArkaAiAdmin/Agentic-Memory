@@ -22,7 +22,7 @@ def _should_redirect(p) -> bool:
     p_str = str(p)
     if ".venv" in p_str or "site-packages" in p_str:
         return False
-    return "/.config/agentic-memory" in p_str and "agentic-memory-wt-packaging" not in p_str
+    return (p_str.endswith("/.config/agentic-memory") or p_str.endswith("/.config/agentic-memory/")) and "agentic-memory-wt-packaging" not in p_str
 
 class PathRedirector(list):
     def insert(self, index, value):
