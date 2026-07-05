@@ -419,16 +419,23 @@ class SQLiteWriteQueue:
             finally:
                 self._queue.task_done()
 
-    def stop(self, timeout: float = 15.0) -> None:
+    def stop(self, timeout: float = 30.0) -> None:
         """Gracefully stop the background worker thread.
 
-        Sets a shutdown flag so the main loop can break out even if it's
-        currently blocked on a session's inner cmd_queue (10s timeout).
-        Then drains any remaining tasks before joining.  Pending writes
-        resolve normally; a timed-out join means the daemon thread will
-        be reaped by the OS at process exit.
+        Sets a shutdown flag so the main loop can break out after the
+        current task.  Drains any remaining tasks first so the sentinel
+        is processed next, then joins with a generous timeout for the
+        in-flight task to complete and release its flock/connection.
         """
         self._shutdown.set()
+        drained = 0
+        while True:
+            try:
+                self._queue.get_nowait()
+                self._queue.task_done()
+                drained += 1
+            except queue.Empty:
+                break
         try:
             self._queue.put(None)
         except Exception:

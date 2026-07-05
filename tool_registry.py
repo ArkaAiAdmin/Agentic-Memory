@@ -114,6 +114,7 @@ ADMIN_TOOLS = [
     "memory_check_contradictions",
     "memory_scan_injection",
     "memory_profile_access",
+    "memory_rewrite_links",
 ]
 
 DEPRECATED = [

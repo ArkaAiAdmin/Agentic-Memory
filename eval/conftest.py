@@ -246,28 +246,26 @@ def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
     gives the thread a chance to drain pending writes and release the
     flock before the process exits.
     """
-    # 1. Drain the singleton write queue and join its thread.
+    # 1. Close every connection the pool is still holding FIRST so any
+    #    WAL-mode locks held by pool connections are released before we
+    #    ask the write queue to stop.
+    try:
+        from infra.db import connection_pool
+        connection_pool.close_all()
+    except Exception:
+        pass
+    # 2. Drain the singleton write queue and join its thread.
     try:
         from infra import db_write_queue
 
         q = getattr(db_write_queue, "sqlite_write_queue", None)
         if q is not None and hasattr(q, "stop"):
             try:
-                q.stop(timeout=5.0)
+                q.stop(timeout=30.0)
             except TypeError:
-                # Older signature without timeout.
                 q.stop()
             except Exception:
                 pass
-    except Exception:
-        pass
-    # 2. Close every connection the pool is still holding. The pool's
-    #    __del__ may not run in time on worker shutdown, leaving WAL-mode
-    #    file locks held across processes.
-    try:
-        from infra.db import connection_pool
-
-        connection_pool.close_all()
     except Exception:
         pass
 
