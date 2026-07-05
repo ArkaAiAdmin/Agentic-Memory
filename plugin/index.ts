@@ -27,7 +27,7 @@ export default async function AgenticMemoryPlugin(
 
   return {
     "tool.execute.after": async (input: { tool: string; args?: Record<string, unknown> }, output: unknown) => {
-      onToolAfter(input.tool, input.args, output, log)
+      await onToolAfter(input.tool, input.args, output, log)
     },
 
     "tool.execute.before": async (input: { tool: string; args?: Record<string, unknown> }) => {

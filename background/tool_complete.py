@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import time
 from typing import Optional
@@ -79,7 +80,7 @@ def _should_skip_similar(content: str, ttl_hours: int = 24) -> bool:
 
 
 def _async_enqueue_or_fallback(
-    tool: str, params: str, result_preview: str, ts: Optional[str]
+    tool: str, params: str, result_preview: str, ts: Optional[str], entry_id: str = ""
 ) -> dict:
 
     from background.auto_save import _now_iso, _slugify, _is_daemon_running, _start_daemon_if_needed, _enqueue_to_inbox, _get_sessions_dir, _tool_complete_inner, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale, _get_dedup_lock_dir  # noqa: E402,F401
@@ -96,6 +97,8 @@ def _async_enqueue_or_fallback(
     ts_compact = ts.replace(":", "-").replace("T", "_").split(".")[0]
     tool_slug = _slugify(tool, max_len=40)
     note_id = f"sessions/auto-{ts_compact}-{tool_slug}"
+    if not entry_id:
+        entry_id = f"{os.getpid()}-{int(time.time() * 1000)}-{id(tool)}"
 
     # Best-effort: ensure the daemon is alive.  If the spawn fails
     # we fall through to the sync path.
@@ -107,6 +110,7 @@ def _async_enqueue_or_fallback(
         "tool": tool,
         "params": params,
         "result_preview": result_preview,
+        "entry_id": entry_id,
     }
     if _enqueue_to_inbox(entry):
         return {
@@ -114,6 +118,7 @@ def _async_enqueue_or_fallback(
             "note_id": note_id,
             "path": str(_get_sessions_dir() / f"auto-{ts_compact}-{tool_slug}.md"),
             "timestamp": ts,
+            "entry_id": entry_id,
         }
     # Fallback: the inbox write failed.  Run the sync path so the
     # caller's data isn't lost.
@@ -479,9 +484,10 @@ def tool_complete(
     category: str = "sessions",
     importance: int = 1,
     extra_tags: Optional[list[str]] = None,
+    entry_id: str = "",
 ) -> dict:
 
-    from background.auto_save import _check_circuit_timeout_expiry, _auto_save_circuit_open, _AUTO_SAVE_STATE, _async_autosave_enabled, _fast_path_enqueue, _tool_complete_inner, _auto_save_record_failure_and_maybe_trip, _auto_save_record_success  # noqa: E402
+    from background.auto_save import _check_circuit_timeout_expiry, _auto_save_circuit_open, _AUTO_SAVE_STATE, _async_autosave_enabled, _fast_path_enqueue, _tool_complete_inner, _auto_save_record_failure_and_maybe_trip, _auto_save_record_success  # noqa: E402,F401
     """Save one tool invocation as a memory note, with backoff + circuit
     breaker on failure.
 
@@ -494,9 +500,6 @@ def tool_complete(
     Returns a dict with 'saved' (bool), 'note_id' (str), 'path' (str), and
     on failure 'error', 'backoff_seconds', and possibly 'circuit_open'.
     """
-    # P0-11 fix (2026-06-23): check for circuit timeout expiry before
-    # checking the open state. This ensures the close event is
-    # persisted when the circuit transitions from open to closed.
     _check_circuit_timeout_expiry()
     if _auto_save_circuit_open():
         return {
@@ -504,20 +507,10 @@ def tool_complete(
             "skipped": True,
             "reason": "circuit_breaker_open",
             "circuit_open_until": _AUTO_SAVE_STATE["circuit_open_until"],
+            "entry_id": entry_id,
         }
-    # Async/background-batch path (2026-06-22).  When enabled, the
-    # actual save runs in a long-running daemon.  The hook returns
-    # immediately with a "queued" envelope, so per-call latency drops
-    # from ~100-200ms (Python subprocess + sync work) to ~2-5ms
-    # (just the inbox append + daemon liveness check).
-    #
-    # The fast path handles allowlist/denylist/injection at enqueue
-    # time, so the daemon doesn't have to re-filter — the entry
-    # already passed the gates.  A failure to enqueue (or to start
-    # the daemon) falls through to the inline sync path so no
-    # data is lost.
     if _async_autosave_enabled():
-        async_envelope = _fast_path_enqueue(tool, params, result_preview, ts)
+        async_envelope = _fast_path_enqueue(tool, params, result_preview, ts, entry_id=entry_id)
         if async_envelope is not None:
             return async_envelope
         # Fall through to the sync path on enqueue/daemon failure.
@@ -562,13 +555,14 @@ def tool_complete(
             "backoff_seconds": cb["next_backoff"],
             "n_failures": cb["n_failures"],
             "circuit_open": _auto_save_circuit_open(),
+            "entry_id": entry_id,
         }
     if result.get("saved"):
         _auto_save_record_success()
     return result
 
 def _fast_path_enqueue(
-    tool: str, params: str, result_preview: str, ts: Optional[str]
+    tool: str, params: str, result_preview: str, ts: Optional[str], entry_id: str = ""
 ) -> Optional[dict]:
 
     from background.auto_save import _resolve_allowlist, _tool_name_matches, _resolve_denylist, _scan_content_for_injection, _async_enqueue_or_fallback  # noqa: E402
@@ -604,7 +598,7 @@ def _fast_path_enqueue(
         injection_check = _scan_content_for_injection(tool, params, result_preview)
         if injection_check is not None:
             return injection_check
-        return _async_enqueue_or_fallback(tool, params, result_preview, ts)
+        return _async_enqueue_or_fallback(tool, params, result_preview, ts, entry_id=entry_id)
     except Exception as e:
         # Any unexpected failure on the fast path must not block the
         # save — fall through to the sync path.

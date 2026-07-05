@@ -151,6 +151,40 @@ function surfaceRecentAutoSaveResults(log: (msg: string) => void, maxAgeMs: numb
   } catch { /* ignore */ }
 }
 
+function getAutoSaveResult(entryId: string): any | null {
+  if (!fs.existsSync(AUTO_SAVE_RESULTS)) return null
+  try {
+    const lines = fs.readFileSync(AUTO_SAVE_RESULTS, "utf8").split("\n").filter(Boolean)
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const entry = JSON.parse(lines[i])
+        if (entry.entry_id === entryId) return entry
+      } catch {
+        continue
+      }
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+async function waitForAutoSave(
+  entryId: string,
+  timeoutMs: number,
+  log: (msg: string) => void
+): Promise<any | null> {
+  const deadline = Date.now() + timeoutMs
+  let last: any = null
+  while (Date.now() < deadline) {
+    last = getAutoSaveResult(entryId)
+    if (last !== null) break
+    await new Promise(r => setTimeout(r, 50))
+  }
+  if (last === null) {
+    log(`[agentic-memory] auto-save wait timed out after ${timeoutMs}ms for ${entryId}`)
+  }
+  return last
+}
+
 // ── Subprocess helpers ───────────────────────────────────────────────────────
 
 async function captureOutput(
@@ -271,7 +305,7 @@ async function runSessionStart(log: (msg: string) => void): Promise<void> {
   }
 }
 
-export function onToolAfter(tool: string, args: Record<string, unknown> | undefined, output: unknown, log: (msg: string) => void): void {
+export async function onToolAfter(tool: string, args: Record<string, unknown> | undefined, output: unknown, log: (msg: string) => void): Promise<void> {
   if (!hookEnabled("post:memory:auto-save", ["minimal"])) return
   if (!isAutoSaveAllowed(tool)) return
 
@@ -290,7 +324,31 @@ export function onToolAfter(tool: string, args: Record<string, unknown> | undefi
       return
     }
     _lastAutoSaveTime.set(tool, now)
-    fireAndForget([AUTO_SAVE, "tool-complete", "--tool", tool, "--params", paramsJson, "--result-preview", preview], "auto-save", log)
+
+    const waitTimeoutMs = parseInt(process.env.AUTO_SAVE_WAIT_TIMEOUT_MS || "", 10)
+    const blocking = Number.isFinite(waitTimeoutMs) && waitTimeoutMs > 0
+    const entryId = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+    if (blocking) {
+      try {
+        const result = await captureOutput(
+          [AUTO_SAVE, "tool-complete", "--tool", tool, "--params", paramsJson, "--result-preview", preview, "--entry-id", entryId, "--wait-timeout", String(waitTimeoutMs / 1000)],
+          undefined,
+          "auto-save-wait",
+          log
+        )
+        const parsed = result ? JSON.parse(result) : {}
+        if (parsed.status === "saved" || parsed.saved === true) {
+          log(`[agentic-memory] auto-save confirmed for ${entryId}`)
+        } else if (parsed.status === "timeout") {
+          log(`[agentic-memory] auto-save wait timed out for ${entryId}`)
+        }
+      } catch (e) {
+        log(`[agentic-memory] auto-save blocking call failed: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    } else {
+      fireAndForget([AUTO_SAVE, "tool-complete", "--tool", tool, "--params", paramsJson, "--result-preview", preview, "--entry-id", entryId], "auto-save", log)
+    }
   }
 }
 

@@ -153,11 +153,10 @@ except ImportError:
 def _cleanup_stale_processing_files(max_age_s: float = 3600.0) -> None:
     """Delete orphan .processing.{pid} files older than max_age_s.
 
-    SIGKILL between inbox rename and unlink can leave stale processing
-    files around.  The daemon is idempotent (ON CONFLICT on upsert)
-    so re-processing is safe, but the file clutter is confusing and
-    can mask real inbox issues.  Clean up on startup so we start
-    fresh.
+    Legacy cleanup (2026-06-22).  New code uses .pending files and
+    the at-least-once re-queue path in ``_reprocess_orphaned_pending_files``.
+    This function is retained for backward compatibility with any
+    leftover .processing.* files from older daemon versions.
     """
     import time as _time
     try:
@@ -173,6 +172,20 @@ def _cleanup_stale_processing_files(max_age_s: float = 3600.0) -> None:
                 logger.debug("auto-save daemon: could not clean %s: %s", p.name, _ce)
     except Exception as _e:
         logger.debug("auto-save daemon: cleanup_stale_processing_files failed: %s", _e)
+
+
+def _reprocess_orphaned_pending_files(max_age_s: float = 30.0) -> int:
+    """Re-process any orphaned .pending files left by a crashed daemon.
+
+    Scans the auto-save directory for ``.auto_save_inbox.jsonl.pending.*``
+    files older than ``max_age_s``.  For each orphaned file, the entries
+    are appended back to the inbox so the current daemon can process
+    them normally.  The pending file is then deleted.
+
+    Returns the number of orphaned entries re-queued.
+    """
+    from background.inbox import _reprocess_orphaned_pending_files as _reprocess
+    return _reprocess(max_age_s=max_age_s)
 
 
 def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa: F821
@@ -242,6 +255,7 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
     _DAEMON_LOCKS["auto_save_daemon"] = lock_fd
     try:
         _cleanup_stale_processing_files()
+        _reprocess_orphaned_pending_files(max_age_s=30.0)
         _write_pid_file()
         _register_in_daemon_manifest()
         _log_structured("info", "auto_save_daemon_started", pid=os.getpid())
@@ -253,6 +267,7 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
         interval = _batch_interval_s()
         size_cap = _batch_size()
         idle_limit = _daemon_idle_s()
+        pending_files: list[Path] = []
 
         while True:
             # 1. Stop requested?
@@ -288,7 +303,20 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
 
             # 3. Drain any new entries from the inbox.
             try:
+                inbox_path = get_auto_save_inbox_path()
+                before_pending = set()
+                try:
+                    before_pending = set(inbox_path.parent.glob(f"{inbox_path.name}.pending.*"))
+                except Exception:
+                    pass
                 entries = _drain_inbox()
+                after_pending = set()
+                try:
+                    after_pending = set(inbox_path.parent.glob(f"{inbox_path.name}.pending.*"))
+                except Exception:
+                    pass
+                new_pending = after_pending - before_pending
+                pending_files.extend(new_pending)
             except Exception as exc:
                 logger.warning("auto-save daemon: drain failed: %s", exc)
                 entries = []
@@ -311,6 +339,16 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
                         failed=summary.get("failed", 0),
                         buffer_size=0,
                     )
+                    # At-least-once: delete pending files only after the
+                    # batch is successfully committed.  If the daemon
+                    # crashes before this point, pending files survive
+                    # and are re-processed on the next startup.
+                    for pf in list(pending_files):
+                        try:
+                            pf.unlink(missing_ok=True)
+                        except Exception as _pf_e:
+                            logger.debug("auto-save daemon: failed to delete pending %s: %s", pf.name, _pf_e)
+                    pending_files = []
                 except Exception as exc:
                     logger.warning(
                         "auto-save daemon: batch flush failed: %s", exc

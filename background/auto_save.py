@@ -600,6 +600,8 @@ def main():
     p_tc.add_argument("--params", default="", help="JSON-serialised params")
     p_tc.add_argument("--result-preview", default="", help="Truncated result text")
     p_tc.add_argument("--ts", default=None, help="Override timestamp (ISO)")
+    p_tc.add_argument("--entry-id", default=None, help="Entry ID for blocking wait")
+    p_tc.add_argument("--wait-timeout", type=float, default=None, help="Block up to N seconds for the entry to be processed (requires --entry-id)")
 
     p_cd = sub.add_parser(
         "capture-draft",
@@ -659,7 +661,35 @@ def main():
 
     args = p.parse_args()
     if args.cmd == "tool-complete":
-        result = tool_complete(args.tool, args.params, args.result_preview, args.ts)
+        result = tool_complete(args.tool, args.params, args.result_preview, args.ts, entry_id=args.entry_id or "")
+        # Blocking confirmation path for critical saves.
+        # If --entry-id and --wait-timeout are provided, poll the
+        # results file until the entry appears or the timeout expires.
+        if args.entry_id and args.wait_timeout is not None:
+            from background.inbox import get_auto_save_result
+            deadline = time.time() + args.wait_timeout
+            last_result = None
+            while time.time() < deadline:
+                last_result = get_auto_save_result(args.entry_id)
+                if last_result is not None:
+                    break
+                time.sleep(0.05)
+            if last_result is not None:
+                result = {
+                    "saved": last_result.get("status") == "saved",
+                    "entry_id": args.entry_id,
+                    "note_id": last_result.get("note_id", ""),
+                    "status": last_result.get("status", ""),
+                    "error": last_result.get("error", ""),
+                    "note_path": last_result.get("note_path", ""),
+                }
+            else:
+                result = {
+                    "saved": False,
+                    "entry_id": args.entry_id,
+                    "status": "timeout",
+                    "error": f"Timed out waiting for entry to be processed after {args.wait_timeout}s",
+                }
         # Print errors to stderr to avoid leaking into OpenCode TUI
         if result.get("error"):
             print(json.dumps(result), file=sys.stderr)

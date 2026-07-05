@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ def write_auto_save_result(
     status: str,
     error: str = "",
     note_path: str = "",
+    entry_id: str = "",
 ) -> None:
     """Append a single result entry to the daemon's result file."""
     path = get_auto_save_results_path()
@@ -67,11 +69,31 @@ def write_auto_save_result(
             "status": status,
             "error": error,
             "note_path": note_path,
+            "entry_id": entry_id,
         }
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as exc:
         logger.debug("auto-save daemon: failed to write result file: %s", exc)
+
+
+def get_auto_save_result(entry_id: str) -> dict | None:
+    """Return the most recent result for a given entry_id, or None."""
+    path = get_auto_save_results_path()
+    if not path.exists():
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for line in reversed(lines):
+            try:
+                entry: dict[str, Any] = json.loads(line)
+                if entry.get("entry_id") == entry_id:
+                    return entry
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
 
 
 def get_auto_save_pid_path() -> Path:
@@ -279,10 +301,16 @@ def _drain_inbox() -> list[dict]:
     (or a concurrent enqueue after read but before truncate) lost
     entries.  The fix uses the rename-and-process pattern:
 
-      1. Atomically rename ``inbox`` → ``inbox.processing.{pid}``
+      1. Atomically rename ``inbox`` → ``inbox.pending.{pid}``
       2. Read and parse the renamed file (entries are now safe
          even if the process dies)
-      3. Delete the renamed file when done
+      3. Keep the renamed file as a .pending file until the batch
+         is successfully committed to the DB
+
+    If the daemon crashes after step 2 but before committing the
+    batch, the .pending file remains on disk.  The next daemon
+    startup re-processes any orphaned .pending files, giving us
+    at-least-once delivery.
 
     New enqueues go to the new (empty) ``inbox`` file, so they
     are never lost.  The renamed file's content is stable because
@@ -300,14 +328,15 @@ def _drain_inbox() -> list[dict]:
     inbox = get_auto_save_inbox_path()
     if not inbox.exists():
         return []
-    # P1-2 fix: rename inbox to a per-pid temp file.  This is
-    # atomic on POSIX, so no entries can be lost between read and
-    # rename.  New enqueues go to the new (empty) inbox.
+    # P1-2 + at-least-once fix: rename inbox to a per-pid pending file.
+    # We do NOT delete it here.  The daemon's main loop deletes it after
+    # the batch is successfully committed.  If the daemon crashes before
+    # commit, the pending file survives and gets re-processed on restart.
     import os as _os
 
-    processing = inbox.with_suffix(f"{inbox.suffix}.processing.{_os.getpid()}")
+    pending = inbox.with_suffix(f"{inbox.suffix}.pending.{_os.getpid()}")
     try:
-        inbox.rename(processing)
+        inbox.rename(pending)
     except FileNotFoundError:
         # Inbox was deleted between exists() check and rename.
         # Nothing to drain.
@@ -317,11 +346,11 @@ def _drain_inbox() -> list[dict]:
         return []
     entries: list[dict] = []
     try:
-        raw = processing.read_text(encoding="utf-8")
+        raw = pending.read_text(encoding="utf-8")
     except Exception as e:
         logger.warning("auto-save daemon: failed to read inbox: %s", e)
         try:
-            processing.unlink(missing_ok=True)
+            pending.unlink(missing_ok=True)
         except Exception:
             pass
         return []
@@ -335,16 +364,60 @@ def _drain_inbox() -> list[dict]:
             logger.warning(
                 "auto-save daemon: dropped malformed inbox line %d: %s", ln, e
             )
-    # Delete the processing file.  Entries are now safely in our
-    # in-memory buffer; even if the daemon crashes here, the worst
-    # case is the next drain re-reads these entries (the daemon
-    # is idempotent on note_id via save_pipeline.upsert_row's
-    # ON CONFLICT clause).
-    try:
-        processing.unlink(missing_ok=True)
-    except Exception as e:
-        logger.warning("auto-save daemon: failed to delete processing file: %s", e)
+    # Keep the pending file.  The daemon's main loop deletes it after
+    # the batch is committed.  If the daemon crashes, the pending file
+    # remains and is re-processed on the next startup.
     return entries
+
+
+def _reprocess_orphaned_pending_files(max_age_s: float = 30.0) -> int:
+    """Re-process any orphaned .pending files left by a crashed daemon.
+
+    Scans the auto-save directory for ``.auto_save_inbox.jsonl.pending.*``
+    files older than ``max_age_s``.  For each orphaned file, the entries
+    are appended back to the inbox so the current daemon can process
+    them normally.  The pending file is then deleted.
+
+    Returns the number of orphaned entries re-queued.
+    """
+    inbox = get_auto_save_inbox_path()
+    try:
+        pending_files = sorted(inbox.parent.glob(f"{inbox.name}.pending.*"))
+    except Exception as e:
+        logger.debug("auto-save daemon: failed to list pending files: %s", e)
+        return 0
+    cutoff = time.time() - max_age_s
+    requeued = 0
+    for pf in pending_files:
+        try:
+            if pf.stat().st_mtime > cutoff:
+                continue  # Too recent; current daemon is likely handling it.
+            raw = pf.read_text(encoding="utf-8")
+            entries: list[dict] = []
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except Exception:
+                    pass
+            if not entries:
+                pf.unlink(missing_ok=True)
+                continue
+            with open(inbox, "a", encoding="utf-8") as f:
+                for entry in entries:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            requeued += len(entries)
+            pf.unlink(missing_ok=True)
+            logger.info(
+                "auto-save daemon: re-queued %d entries from orphaned %s",
+                len(entries),
+                pf.name,
+            )
+        except Exception as e:
+            logger.debug("auto-save daemon: failed to re-process %s: %s", pf.name, e)
+    return requeued
 
 def _is_daemon_lock_held() -> bool:
     """True if the daemon's flock file is held by another process.
@@ -565,6 +638,7 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
                     note_id="",
                     status="failed",
                     error=str(e),
+                    entry_id=entry.get("entry_id", ""),
                 )
                 if conn is not None:
                     try:
@@ -579,6 +653,7 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
                     note_id=result.get("note_id", ""),
                     status="saved",
                     note_path=result.get("path", ""),
+                    entry_id=entry.get("entry_id", ""),
                 )
             elif result.get("skipped"):
                 summary["skipped"] += 1
