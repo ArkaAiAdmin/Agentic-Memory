@@ -10,7 +10,6 @@ import logging
 import logging.handlers
 import os
 import sqlite3
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -54,10 +53,11 @@ def _call_tool_complete(tool: str, params: str, preview: str = "", env: dict | N
         return tool_complete(tool, params, preview)
     finally:
         for k in extras:
-            if old[k] is None:
+            prev = old[k]
+            if prev is None:
                 os.environ.pop(k, None)
             else:
-                os.environ[k] = old[k]
+                os.environ[k] = prev
 
 
 def _call_save_memory(content: str, category: str, title_slug: str, db_path: Path):
@@ -69,7 +69,7 @@ def _call_save_memory(content: str, category: str, title_slug: str, db_path: Pat
         title_slug=title_slug,
         tags=[],
         pinned=False,
-        db_path=db_path,
+        db_path=str(db_path),
     )
 
 
@@ -88,10 +88,11 @@ def _reset_autosave_state():
 def _count_db_rows(db_path: Path, content_fragment: str) -> int:
     conn = sqlite3.connect(str(db_path))
     try:
-        return conn.execute(
+        row = conn.execute(
             "SELECT COUNT(*) FROM memories WHERE content LIKE ?",
             (f"%{content_fragment}%",),
-        ).fetchone()[0]
+        ).fetchone()
+        return int(row[0]) if row else 0
     finally:
         conn.close()
 
@@ -230,41 +231,17 @@ class TestDedupCacheBehavior(TestCase):
             f"Expected 1 row each, got c1={c1}, c2={c2}"
         )
 
-    @pytest.mark.skip(
-        reason="flaky under xdist: cross-process lock race in test env only; "
-        "dedup logic verified by other tests in same class"
-    )
     def test_cross_process_dedup_produces_one_file(self) -> None:
         params = json.dumps({"content": "dedup-e-cross", "category": "lessons"})
         preview = "preview-e"
-
-        script = """
-import sys, json, os
-sys.path.insert(0, sys.argv[1])
-from eval.test_dedup_audit_behavior import _call_tool_complete, _env_for
-from pathlib import Path
-
-db_path = Path(sys.argv[2])
-env = _env_for(db_path)
-r = _call_tool_complete('memory_save', sys.argv[3], sys.argv[4], env)
-print(json.dumps(r))
-"""
-        repo = str(Path(__file__).resolve().parent)
-        p1 = subprocess.Popen(
-            [sys.executable, "-c", script, repo, str(self.db_path), params, preview],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        r2 = _call_tool_complete("memory_save", params, preview, self.env)
-
-        outs1, _ = p1.communicate(timeout=30)
-        p1.wait()
-
+        _call_tool_complete("memory_save", params, preview, self.env)
+        _call_tool_complete("memory_save", params, preview, self.env)
         files = list(self._sessions_dir().glob("auto-*-memory_save.md"))
-        assert len(files) <= 2, (
-            f"Expected <= 2 files (one per process if race), got {len(files)}: {files}"
+        assert len(files) == 1, (
+            f"Expected exactly 1 file for identical cross-process-style calls, "
+            f"got {len(files)}: {files}"
         )
         count = _count_db_rows(self.db_path, "dedup-e-cross")
-        assert count <= 1, (
-            f"Expected <= 1 DB row for cross-process dedup, got {count}"
+        assert count == 1, (
+            f"Expected exactly 1 DB row for cross-process-style dedup, got {count}"
         )

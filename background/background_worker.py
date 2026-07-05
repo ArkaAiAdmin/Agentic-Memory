@@ -71,6 +71,16 @@ _shutdown = False
 # the hour-long safety cap.
 _DEFAULT_BATCH_SIZE = int(os.environ.get("MEMORY_WORKER_BATCH_SIZE", "20"))
 
+
+def _get_effective_batch_size() -> int:
+    """Return the worker batch size, capped by the DB connection pool size."""
+    try:
+        from infra._lazy_imports import get_config
+        pool_size: int = int(get_config().db_pool_size)
+        return int(min(_DEFAULT_BATCH_SIZE, max(1, pool_size - 4)))
+    except Exception:
+        return _DEFAULT_BATCH_SIZE
+
 # Module-level keep-alive for the inline flock fd (H-fix 2026-06-22).
 # See the ImportError fallback in main() — if cron._flock isn't on
 # path, we acquire fcntl.flock directly and must keep the fd alive
@@ -1061,7 +1071,7 @@ def run_worker(
             _proc_sig.alarm(0)
             return
         else:
-            batch_size = _DEFAULT_BATCH_SIZE
+            batch_size = _get_effective_batch_size()
             while not _shutdown:
                 batch_processed = 0
                 while batch_processed < batch_size:

@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
@@ -607,8 +608,8 @@ def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15, tenant_
         if prev and prev[0]:
             try:
                 prev_centroid = _np.array(json.loads(prev[0]))
-            except Exception:
-                pass
+            except Exception as _de:
+                logger.warning("concept_drift: failed to parse drifted_dimensions: %s", _de)
         if prev_centroid is not None and len(prev_centroid) == len(centroid):
             cos_sim = float(
                 _np.dot(centroid, prev_centroid)
@@ -1306,8 +1307,8 @@ def _build_result_items(*, db, results_to_display, query, rerank):
                 result_ids,
             ).fetchall():
                 backlinks_map.setdefault(row[0], []).append(row[1])
-        except Exception:
-            pass
+        except Exception as _oe:
+            logger.warning("backlinks fetch failed: %s", _oe)
     for r in results_to_display:
         (
             note_id,
@@ -1418,8 +1419,8 @@ def _apply_strong_match_boost(
                 result_items,
                 backlinks_map,
             )
-        except Exception:
-            pass
+        except Exception as _oe:
+            logger.warning("_format_search_results failed: %s", _oe)
         return result_items, output, results_to_display
     except Exception:
         return result_items, output, results_to_display
@@ -1797,8 +1798,8 @@ def _apply_save_hint_floater(
             result_items,
             backlinks_map,
         )
-    except Exception:
-        pass
+    except Exception as _oe:
+        logger.warning("_format_search_results (fallback) failed: %s", _oe)
     return result_items, output
 
 
@@ -1934,31 +1935,68 @@ def search_memories(
         else:
             repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
 
-        # Phase 4: FTS search
+        # Phase 4 + Phase 4b: FTS + KG fact search
+        # When search_parallel_enabled is on (default), run FTS and KG fact
+        # lookup concurrently — they hit different tables and are independent.
+        # When off (or if the feature flag is unavailable), fall back to the
+        # original sequential order.
         _t0 = time.time()
-        results = _fts_search(
-            db, fts_query, limit * 3 if _effective_rerank else limit, has_fitness, repo_filter
-        )
-        _record_phase_latency("fts", _t0)
-
-        # Phase 4b: T10 — KG fact search (independent of memory results).
-        # Facts are surfaced in the output as a "Related facts" section and
-        # included in the result envelope.  Failure to find any facts is not
-        # an error — it's the common case (KG may be disabled, or no facts
-        # match the query).  We always run this regardless of whether
-        # `results` is empty so users with no memory hits can still see
-        # matching facts.
+        results: list[Any] = []
         related_facts: list[dict] = []
-        if include_facts:
-            _t0 = time.time()
-            related_facts = _search_kg_facts(
-                db, fts_query, fact_limit, include_invalid,
-                as_of=as_of,
-                belief_status=belief_status,
-                epistemic_source=epistemic_source,
-                fact_type=fact_type,
+        _search_parallel: bool = False
+        try:
+            from infra._lazy_imports import get_config
+            _search_parallel = bool(getattr(get_config(), "search_parallel_enabled", True))
+        except Exception:
+            _search_parallel = True
+
+        if _search_parallel and include_facts:
+            def _fts_worker() -> list:
+                conn = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
+                try:
+                    return _fts_search(
+                        conn, fts_query,
+                        limit * 3 if _effective_rerank else limit,
+                        has_fitness, repo_filter,
+                    )
+                finally:
+                    connection_pool.put(conn)
+
+            def _kg_worker() -> list:
+                conn = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
+                try:
+                    return _search_kg_facts(
+                        conn, fts_query, fact_limit, include_invalid,
+                        as_of=as_of,
+                        belief_status=belief_status,
+                        epistemic_source=epistemic_source,
+                        fact_type=fact_type,
+                    )
+                finally:
+                    connection_pool.put(conn)
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                fts_future = executor.submit(_fts_worker)
+                kg_future = executor.submit(_kg_worker)
+                results = fts_future.result()
+                _record_phase_latency("fts", _t0)
+                related_facts = kg_future.result()
+                _record_phase_latency("kg_facts", _t0)
+        else:
+            results = _fts_search(
+                db, fts_query, limit * 3 if _effective_rerank else limit, has_fitness, repo_filter
             )
-            _record_phase_latency("kg_facts", _t0)
+            _record_phase_latency("fts", _t0)
+            if include_facts:
+                _t0_kg = time.time()
+                related_facts = _search_kg_facts(
+                    db, fts_query, fact_limit, include_invalid,
+                    as_of=as_of,
+                    belief_status=belief_status,
+                    epistemic_source=epistemic_source,
+                    fact_type=fact_type,
+                )
+                _record_phase_latency("kg_facts", _t0_kg)
 
         # Phase 5: Fallback to embeddings
         if not results:

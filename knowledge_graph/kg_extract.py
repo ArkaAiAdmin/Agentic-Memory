@@ -768,6 +768,17 @@ def extract_entities(text: str, min_occurrences: int = 2) -> list[tuple[str, str
         seen.add(key)
         unique.append((name, etype))
 
+    # Optional spaCy NER augmentation (P2: off by default).
+    # Augments regex-extracted entities with spaCy PERSON/ORG/GPE/
+    # PRODUCT/FAC entities when MEMORY_NER_SPACY=1.
+    try:
+        from infra._lazy_imports import get_config
+        if get_config().ner_spacy_enabled:
+            from knowledge_graph.ner_spacy import augment_entities
+            unique = augment_entities(cleaned, unique)
+    except Exception:
+        pass
+
     return unique
 
 

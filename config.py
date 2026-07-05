@@ -275,6 +275,7 @@ class MemoryConfig:
     wal_checkpoint_interval_s: int = 300  # S4.5: 2026-06-23 — 5min default
     mmap_size: int = 268_435_456  # S4.1: 2026-06-23 — 256 MiB default mmap
     unindexed_safety_net_limit: int = 1000
+    db_pool_size: int = 24
     agent_id: str = ""
 
     # search
@@ -289,6 +290,7 @@ class MemoryConfig:
     rerank_weights: str = ""
     query_type_weights: str = ""
     query_cache: bool = True
+    search_parallel_enabled: bool = True
     reranker_disabled: bool = (
         False  # Qwen3-0.6B primary, BGE-m3 fallback (MPS-safe, verified 2026-06-15)
     )
@@ -356,6 +358,10 @@ class MemoryConfig:
     graph_centrality_boost: bool = True
     graph_communities: bool = True
     graph_evolution_tracking: bool = True
+    # P2: optional spaCy NER augmentation for entity extraction.
+    # Off by default. When enabled, augments regex-based extraction with
+    # spaCy PERSON/ORG/GPE/PRODUCT/FAC entities.
+    ner_spacy_enabled: bool = False
     session_memory: bool = False
     session_decision_llm: bool = False
 
@@ -564,6 +570,13 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             int,
             toml_data,
         ),
+        db_pool_size=_b(
+            "MEMORY_DB_POOL_SIZE",
+            "general.db_pool_size",
+            24,
+            int,
+            toml_data,
+        ),
         agent_id=_b("MEMORY_AGENT_ID", "general.agent_id", "", str, toml_data),
         # --- search ---
         temporal_half_life=_b(
@@ -626,6 +639,13 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         query_cache=_b(
             "MEMORY_QUERY_CACHE", "search.query_cache", True, bool, toml_data
+        ),
+        search_parallel_enabled=_b(
+            "MEMORY_SEARCH_PARALLEL",
+            "search.search_parallel_enabled",
+            True,
+            bool,
+            toml_data,
         ),
         reranker_disabled=_b(
             "MEMORY_RERANKER_DISABLED",
@@ -902,6 +922,13 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "MEMORY_GRAPH_EVOLUTION_TRACKING",
             "features.graph_evolution_tracking",
             True,
+            bool,
+            toml_data,
+        ),
+        ner_spacy_enabled=_b(
+            "MEMORY_NER_SPACY",
+            "features.ner_spacy_enabled",
+            False,
             bool,
             toml_data,
         ),
@@ -1443,6 +1470,12 @@ def get_feature_flags() -> dict:
             "MEMORY_GRAPH_EVOLUTION_TRACKING",
             "features.graph_evolution_tracking",
             True,
+        ),
+        "ner_spacy_enabled": _flag(
+            cfg.ner_spacy_enabled,
+            "MEMORY_NER_SPACY",
+            "features.ner_spacy_enabled",
+            False,
         ),
         "fts5_cache": _flag(
             cfg.fts5_cache, "MEMORY_FTS5_CACHE", "cache.fts5_cache", True

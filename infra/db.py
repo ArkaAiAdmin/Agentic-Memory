@@ -55,7 +55,9 @@ class _ConnectionPool:
     silently replaced. Enforces a max pool size with LRU eviction.
     """
 
-    def __init__(self, max_size: int = 10) -> None:
+    def __init__(self, max_size: int | None = None) -> None:
+        if max_size is None:
+            max_size = int(os.environ.get("MEMORY_DB_POOL_SIZE", "24"))
         self._lock = threading.Lock()
         self._pool: dict[tuple[str, int], sqlite3.Connection] = {}
         self._pooled_ids: set[int] = set()

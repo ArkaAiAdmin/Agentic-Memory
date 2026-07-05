@@ -8,6 +8,7 @@ wal_checkpoint_startup = true          # MEMORY_WAL_CHECKPOINT_STARTUP — run a
 wal_checkpoint_interval_s = 300         # MEMORY_WAL_CHECKPOINT_INTERVAL_S — periodic debounced WAL checkpoint inside background_worker (S4.5, 2026-06-23). 0 to disable.
 mmap_size = 268435456                  # MEMORY_SQLITE_MMAP_SIZE — SQLite mmap_size in BYTES (S4.1, 2026-06-23). Default 256 MiB. Set to 0 to disable mmap. See docs/perf.md for tradeoffs.
 unindexed_safety_net_limit = 1000     # MEMORY_UNINDEXED_SAFETY_NET_LIMIT
+db_pool_size = 24                      # MEMORY_DB_POOL_SIZE — max concurrent SQLite connections
 agent_id = ""                          # MEMORY_AGENT_ID — CRDT agent identifier (auto-detected from hostname if empty)
 
 [search]
@@ -18,6 +19,7 @@ knowledge_graph = true                # MEMORY_KNOWLEDGE_GRAPH
 graph_rag_hops = 3                    # MEMORY_GRAPH_RAG_HOPS
 graph_rag_expansions = 5              # MEMORY_GRAPH_RAG_EXPANSIONS
 query_cache = true                    # MEMORY_QUERY_CACHE
+search_parallel_enabled = true        # MEMORY_SEARCH_PARALLEL — run FTS + KG fact search in parallel when both are requested
 reranker_disabled = false             # MEMORY_RERANKER_DISABLED — Qwen3-0.6B primary, BGE-m3 fallback (both MPS-safe, verified 2026-06-15). Set to true to disable.
 deep_rerank_timeout = 30              # MEMORY_DEEP_RERANK_TIMEOUT — wall-clock seconds before the deep reranker subprocess is killed (2026-06-19 MPS hang insurance). Set to 0 to disable the timeout (run in-process, fast but no kill switch on hang).
 contextual_retrieval = true           # MEMORY_CONTEXTUAL_RETRIEVAL — prepend category+tags context to embeddings
@@ -63,6 +65,7 @@ knowledge_compilation = true          # MEMORY_KNOWLEDGE_COMPILATION (Sprint 3, 
 graph_centrality_boost = true         # MEMORY_GRAPH_CENTRALITY_BOOST (Sprint 4, 2026-07-03) — centrality-boosted search scoring. Default ON. Set to false to disable centrality weighting in search.
 graph_communities = true              # MEMORY_GRAPH_COMMUNITIES (Sprint 4, 2026-07-03) — community detection (connected components + Louvain). Default ON. Set to false to disable background community detection tasks.
 graph_evolution_tracking = true       # MEMORY_GRAPH_EVOLUTION_TRACKING (Sprint 4, 2026-07-03) — graph snapshot and evolution diff tracking. Default ON. Set to false to disable snapshot capture.
+ner_spacy_enabled = false             # MEMORY_NER_SPACY — optional spaCy NER augmentation. Requires pip install agentic-memory[ner].
 
 [cache]
 fts5_cache = true                     # MEMORY_FTS5_CACHE — LRU result cache for search

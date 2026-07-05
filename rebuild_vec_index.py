@@ -602,7 +602,7 @@ def main() -> int:
     )
 
     requested = {s.strip() for s in args.subsystems.split(",") if s.strip()}
-    valid = {"fts5", "embeddings", "kg", "backlinks", "chunks", "audit", "vec_idx"}
+    valid = {"fts5", "embeddings", "kg", "backlinks", "chunks", "audit", "vec_idx", "chunk_vec_idx"}
     bad = requested - valid
     if bad:
         print(

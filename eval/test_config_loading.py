@@ -74,7 +74,8 @@ class TestMemoryConfigDefaults:
         # 2026-07-02 Sprint 3: feature_temporal_kg_llm + temporal_kg_llm_tier → 116.
         # 2026-07-03 sync server fields (6: sync_enable_server/host/port/peers/interval_minutes,
         # auto_save_health_check_minutes) → 122.
-        assert len(fields) == 122, (
+        # 2026-07-05 P2: db_pool_size, search_parallel_enabled, ner_spacy_enabled → 125.
+        assert len(fields) == 125, (
             f"Expected 122 fields, got {len(fields)}: {[f.name for f in fields]}"
         )
 

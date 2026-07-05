@@ -307,14 +307,14 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
                 before_pending = set()
                 try:
                     before_pending = set(inbox_path.parent.glob(f"{inbox_path.name}.pending.*"))
-                except Exception:
-                    pass
+                except Exception as _ce:
+                    logger.warning("daemon glob (before_pending) failed: %s", _ce)
                 entries = _drain_inbox()
                 after_pending = set()
                 try:
                     after_pending = set(inbox_path.parent.glob(f"{inbox_path.name}.pending.*"))
-                except Exception:
-                    pass
+                except Exception as _ce:
+                    logger.warning("daemon glob (after_pending) failed: %s", _ce)
                 new_pending = after_pending - before_pending
                 pending_files.extend(new_pending)
             except Exception as exc:
@@ -387,18 +387,18 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
         try:
             pid_path = get_auto_save_pid_path()
             pid_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as _ce:
+            logger.debug("daemon cleanup (pid_path): %s", _ce)
         try:
             lock_path = get_auto_save_lock_path()
             fd = _DAEMON_LOCKS.pop("auto_save_daemon", None)
             if fd is not None:
                 release_flock(fd)
             lock_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as _ce:
+            logger.debug("daemon cleanup (lock_path): %s", _ce)
         try:
             _unregister_from_daemon_manifest()
-        except Exception:
-            pass
+        except Exception as _ce:
+            logger.debug("daemon cleanup (manifest): %s", _ce)
         _log_structured("info", "auto_save_daemon_stopped", pid=os.getpid())
