@@ -45,7 +45,7 @@ Complete API and configuration documentation.
 | Page | Description |
 |------|-------------|
 | [API Reference](api-reference.md) | All public functions and classes |
-| [MCP Tools](reference/mcp-tools.md) | 102 tools (15 CORE + 84 ADMIN + 3 DEPRECATED; 16 visible) for agent integration |
+| [MCP Tools](reference/mcp-tools.md) | 102 tools (15 CORE + 87 ADMIN + 3 DEPRECATED; 16 visible) for agent integration |
 | [Configuration](reference/configuration.md) | Environment variables and `memory.toml` |
 | [Database Schema](reference/schema.md) | Tables, indexes, and migration history (current: v21) |
 

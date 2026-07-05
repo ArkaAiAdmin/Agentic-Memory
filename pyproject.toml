@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentic-memory"
 version = "1.1.0"
-description = "Local-first persistent memory for AI agents — markdown-native, MCP server with 102 tools (15 CORE + 84 ADMIN + 3 DEPRECATED; 16 visible), temporal KG, CRDT sync, hybrid search. Apache 2.0."
+description = "Local-first persistent memory for AI agents — markdown-native, MCP server with 102 tools (15 CORE + 87 ADMIN + 3 DEPRECATED; 16 visible), temporal KG, CRDT sync, hybrid search. Apache 2.0."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}

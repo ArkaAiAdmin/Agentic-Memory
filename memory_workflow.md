@@ -15,7 +15,7 @@ Local-first semantic memory for AI agents. All data at `~/.config/agentic-memory
 | SQLite DB | `memory/memory.db` |
 | Memory notes | `memory/<category>/<slug>.md` |
 | Config (TOML) | `memory.toml` (env var overridable via `config.py`) |
-| Tool registry | `tool_registry.py` — 15 CORE + 84 ADMIN + 3 DEPRECATED (single source of truth) |
+| Tool registry | `tool_registry.py` — 15 CORE + 87 ADMIN + 3 DEPRECATED (single source of truth) |
 | Python env | `venv/` |
 | MCP entry | `memory_mcp.py` — delegates to 26 mcp_*.py modules (85 total tools) |
 

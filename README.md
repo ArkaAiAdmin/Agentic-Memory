@@ -111,7 +111,7 @@ Add to your MCP config (`~/.opencode/mcp-servers.json` or Claude Code `settings.
 }
 ```
 
-That's it — your agent now has 15 CORE MCP tools: `memory_search`, `memory_save`, `memory_delete`, `memory_recall`, `memory_note`, `memory_learn`, `memory_audit`, `memory_organize`, `memory_share`, `memory_graph`, `memory_profile`, `memory_session_start`, `memory_advanced`, `memory_review_beliefs`, `memory_curate_autosave`. Plus `memory_maintenance` for 84 ADMIN + 3 DEPRECATED operations.
+That's it — your agent now has 15 CORE MCP tools: `memory_search`, `memory_save`, `memory_delete`, `memory_recall`, `memory_note`, `memory_learn`, `memory_audit`, `memory_organize`, `memory_share`, `memory_graph`, `memory_profile`, `memory_session_start`, `memory_advanced`, `memory_review_beliefs`, `memory_curate_autosave`. Plus `memory_maintenance` for 87 ADMIN + 3 DEPRECATED operations.
 
 ### Step 5 — Use it (ongoing)
 
@@ -184,7 +184,7 @@ CORE (15 tools, always visible):
   memory_advanced, memory_review_beliefs, memory_curate_autosave
 
 MAINTENANCE (1 tool, router):
-  memory_maintenance — exposes 84 ADMIN + 3 DEPRECATED operations
+  memory_maintenance — exposes 87 ADMIN + 3 DEPRECATED operations
 ```
 
 ---

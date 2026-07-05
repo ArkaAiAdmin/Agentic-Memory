@@ -119,7 +119,7 @@ This creates the memory directory structure and appends agent instructions to yo
 
 ## CLI Commands
 
-After installation, 11 CLI commands are available on all platforms (the table below has 12 rows because `agentic-memory-worker` is listed twice — see the note after the table):
+After installation, ~18 CLI commands are available on all platforms:
 
 | Command | Description |
 |---------|-------------|
@@ -186,6 +186,6 @@ Then use the `memory_save` and `memory_search` tools from your agent.
 ## What's Next?
 
 - [Architecture](architecture.md) — How the system works
-- [MCP Tools](reference/mcp-tools.md) — All 102 tools explained (15 CORE + 84 ADMIN + 3 DEPRECATED)
+- [MCP Tools](reference/mcp-tools.md) — All 102 tools explained (15 CORE + 87 ADMIN + 3 DEPRECATED)
 - [Configuration](reference/configuration.md) — Environment variables and options
 - [Self-Hosting](self-hosting.md) — Docker and deployment

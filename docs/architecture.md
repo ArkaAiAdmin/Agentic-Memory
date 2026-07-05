@@ -87,7 +87,7 @@ agentic-memory/                    # Repo root
 ├── agentic_memory/                # Python package (pip installable; 2 files)
 │   ├── __init__.py                 # Re-exports Memory, AgentMemory, main
 │   └── __main__.py                 # python -m agentic_memory
-├── cli.py                          # 11 CLI entry points
+├── cli.py                          # ~18 CLI entry points
 ├── memory_mcp.py                   # MCP server (thin orchestrator)
 ├── save_pipeline.py                # Write path shim → save/
 ├── save/                           # Write path subpackage
@@ -151,8 +151,8 @@ agentic-memory/                    # Repo root
 - **6 lifecycle hooks** in `hooks/`
 - Single source of truth: `tool_registry.py`
 
-- **102 registered tools** (15 CORE + 84 ADMIN + 3 DEPRECATED).
-  Single source of truth: `tool_registry.py`. The maintenance router exposes 84 ADMIN + 3 DEPRECATED operations.
+- **102 registered tools** (15 CORE + 87 ADMIN + 3 DEPRECATED).
+  Single source of truth: `tool_registry.py`. The maintenance router exposes 87 ADMIN + 3 DEPRECATED operations.
 - **36 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.

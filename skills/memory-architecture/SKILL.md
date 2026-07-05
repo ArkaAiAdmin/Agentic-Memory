@@ -16,10 +16,10 @@ A one-page mental model of the agentic-memory system, sized for someone about to
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │ LAYER 3 — SURFACE                                                     │
-│   102 registered tools (15 CORE + 84 ADMIN + 3 DEPRECATED; 16 visible via memory_maintenance)         │
+│   102 registered tools (15 CORE + 87 ADMIN + 3 DEPRECATED; 16 visible via memory_maintenance)         │
 │   4 user-facing hooks in hooks/ + 1 log helper module (_log_error.py) │
 │   25 cron scripts / 26 scheduled jobs (all in `cron/` subdirectory)    │
-│   11 CLI commands                                                      │
+│   ~18 CLI commands                                                      │
 └──────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
@@ -142,7 +142,7 @@ Re-run before relying on these:
 - All 17 features ON by default (`memory.toml`)
 - 25 cron scripts / 26 scheduled jobs (all in `cron/` subdirectory, incl. `_flock.py` support module)
 - 4 user-facing hooks in hooks/ + 1 log helper module (`_log_error.py`)
-- 102 registered tools: 15 CORE + 84 ADMIN + 3 DEPRECATED (routed through `memory_maintenance`)
+- 102 registered tools: 15 CORE + 87 ADMIN + 3 DEPRECATED (routed through `memory_maintenance`)
 - 26 `mcp_*.py` modules + 2 sync modules (`sync_server.py`, `sync_client.py`)
 - 71,357 LOC production (all subdirs), 75,299 LOC in tests
 - Schema v32, 32 migrations, ~62 tables
