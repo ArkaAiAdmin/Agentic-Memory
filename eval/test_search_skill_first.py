@@ -33,6 +33,7 @@ def _bootstrap_db(db_path: Path, memories: list[tuple[str, str]]) -> None:
             id TEXT PRIMARY KEY,
             content TEXT NOT NULL,
             source_file TEXT NOT NULL,
+            category TEXT DEFAULT '',
             tags TEXT DEFAULT '[]',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,

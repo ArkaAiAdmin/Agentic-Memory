@@ -29,6 +29,8 @@ sys.path.insert(0, str(AGENTIC))
 
 import memory_mcp
 from _fixtures import bootstrap_temp_db_clean
+import pytest
+from conftest import embedding_available
 
 
 class TestExtractTerms(unittest.TestCase):
@@ -139,6 +141,7 @@ class TestE2EHistoryResolution(unittest.TestCase):
     def tearDown(self):
         memory_mcp._bb2_clear_history()
         shutil.rmtree(self.tmp, ignore_errors=True)
+    @pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
     def test_13_reference_finds_rate(self):
         memory_mcp._search_cache.clear()
         # First turn: literal query finds the rate note

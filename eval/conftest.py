@@ -26,6 +26,16 @@ faulthandler.enable()
 faulthandler.dump_traceback_later(15, repeat=True)
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
+
+
+def embedding_available() -> bool:
+    """Check if the embedding model (model2vec) is loaded and usable."""
+    try:
+        from infra.embedding_search import get_embedding_search
+        es = get_embedding_search()
+        return es.model is not None
+    except Exception:
+        return False
 # NOTE: KMP_DUPLICATE_LIB_OK and OMP_NUM_THREADS stay at module level
 # because they must be set before torch is first imported. All other
 # test env vars are in the session-scoped _test_env fixture below.
@@ -185,8 +195,8 @@ def project_venv_python(project_root) -> Path:
     if not venv_py.exists():
         venv_py = project_root / ".venv" / "bin" / "python"
     if not venv_py.exists():
-        venv_py = Path(sys.executable)
-    return venv_py
+        venv_py = Path(str(sys.executable))
+    return Path(venv_py)
 
 
 @pytest.fixture

@@ -25,6 +25,10 @@ sys.path.insert(0, str(INSTALL_DIR))
 import infra.memory_common as memory_common
 from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 import rebuild_vec_index  # noqa: E402
+import pytest
+from conftest import embedding_available
+
+pytestmark = pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
 
 
 def _init_db(db_path: Path) -> None:
@@ -51,7 +55,7 @@ def _insert_memories(db_path: Path, items) -> None:
 
 def _read_singleton(db_path: Path):
     with memory_common.open_db(db_path, timeout=5.0) as conn:
-        row = conn.execute(
+        fetched = conn.execute(
             "SELECT n_vectors, dim, metric, quantization, connectivity, "
             "       expansion_add, expansion_search, length(index_blob), key_count "
             "FROM memory_vec_idx WHERE id=1"
@@ -59,16 +63,18 @@ def _read_singleton(db_path: Path):
         keys = conn.execute(
             "SELECT key, memory_id FROM memory_vec_keys"
         ).fetchall()
-    return row, keys
+    return fetched, keys
 
 
 def _load_index_from_db(db_path: Path):
     from usearch.index import Index
     with memory_common.open_db(db_path, timeout=5.0) as conn:
-        dim, metric, dtype, conn_, exp_a, exp_s, blob = conn.execute(
+        fetched = conn.execute(
             "SELECT dim, metric, quantization, connectivity, expansion_add, "
             "       expansion_search, index_blob FROM memory_vec_idx WHERE id=1"
         ).fetchone()
+    assert fetched is not None
+    dim, metric, dtype, conn_, exp_a, exp_s, blob = fetched
     idx = Index(
         ndim=dim, metric=metric, dtype=dtype,
         connectivity=conn_, expansion_add=exp_a, expansion_search=exp_s,

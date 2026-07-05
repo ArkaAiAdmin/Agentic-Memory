@@ -21,6 +21,8 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+from conftest import embedding_available
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -249,10 +251,11 @@ class TestMigrationIdempotency(unittest.TestCase):
             )
             db.commit()
         with open_db(Path(self.db_path)) as db:
-            row = db.execute(
+            fetched = db.execute(
                 "SELECT content FROM memories WHERE id = ?", ("m1",)
             ).fetchone()
-            self.assertIsNotNone(row)
+            assert fetched is not None
+            row = fetched
             self.assertEqual(row[0], "content 1")
 
     def test_migration_preserves_data(self):
@@ -265,9 +268,11 @@ class TestMigrationIdempotency(unittest.TestCase):
             )
             db.commit()
         with open_db(Path(self.db_path)) as db:
-            row = db.execute(
+            fetched = db.execute(
                 "SELECT content, tags FROM memories WHERE id = ?", ("m1",)
             ).fetchone()
+            assert fetched is not None
+            row = fetched
             self.assertEqual(row[0], "test content")
             self.assertEqual(row[1], '["tag1"]')
 
@@ -695,6 +700,7 @@ class TestSavePipelineEndToEnd(unittest.TestCase):
             metadata_json="{}",
         )
 
+    @pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
     def test_save_indexes_all_subsystems(self):
         """After save_pipeline, data exists in memories, embeddings, KG."""
         self._save("e2e/note-1", "This is test content about Python programming.")
@@ -741,6 +747,7 @@ class TestSavePipelineEndToEnd(unittest.TestCase):
             1,
         )
 
+    @pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
     def test_upsert_preserves_all_subsystem_data(self):
         """Re-saving the same note preserves all subsystem data."""
         self._save("e2e/upsert", "Original content.", tags=["v1"])

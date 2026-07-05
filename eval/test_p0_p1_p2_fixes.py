@@ -26,6 +26,8 @@ import time as _time
 import unittest
 from pathlib import Path
 
+import pytest
+from conftest import embedding_available
 
 def _temp_db() -> Path:
     from eval._fixtures import bootstrap_temp_db_clean
@@ -164,6 +166,7 @@ class TestCtrQueryId(unittest.TestCase):
         int(qid, 16)
         os.remove(db)
 
+    @pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
     def test_search_emits_returned_ctr_event(self):
         from search_pipeline import search_memories
 
@@ -837,9 +840,11 @@ class TestUpsertColumnDrift(unittest.TestCase):
                     db_path=db_path,
                 )
                 conn.commit()
-                row = conn.execute(
+                fetched = conn.execute(
                     "SELECT metadata FROM memories WHERE id = ?", (test_id,)
                 ).fetchone()
+            assert fetched is not None
+            row = fetched
             self.assertIsNotNone(row, "row not found")
             md = _json.loads(row[0]) if row[0] else {}
             self.assertEqual(

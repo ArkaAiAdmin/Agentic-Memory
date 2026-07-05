@@ -39,6 +39,8 @@ if str(EVAL_DIR) not in sys.path:
     sys.path.insert(0, str(EVAL_DIR))
 
 from _fixtures import bootstrap_temp_db_clean
+import pytest
+from conftest import embedding_available
 
 
 # =============================================================================
@@ -74,7 +76,9 @@ def _insert_memory(
 
 
 def _count_rows(conn: sqlite3.Connection, table: str) -> int:
-    return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+    assert row is not None, f"COUNT(*) from {table} returned None"
+    return int(row[0])
 
 
 # =============================================================================
@@ -153,7 +157,8 @@ class TestIndexChunksWrapper(unittest.TestCase):
         self.conn.commit()
         from save.indexers import _index_chunks
 
-        _index_chunks(self.conn, "test/m1", None)
+        from typing import cast
+        _index_chunks(self.conn, "test/m1", cast("str", None))
         # Should not raise
 
 
@@ -162,6 +167,7 @@ class TestIndexChunksWrapper(unittest.TestCase):
 # =============================================================================
 
 
+@pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
 class TestIndexEmbeddingWrapper(unittest.TestCase):
     """Wrapper contract for _index_embedding.
 
@@ -279,9 +285,11 @@ class TestIndexKGWrapper(unittest.TestCase):
 
     def test_disabled_kg_skips_indexing(self):
         import knowledge_graph
+        from typing import Any as _Any
 
-        old = knowledge_graph.KG_ENABLED
-        knowledge_graph.KG_ENABLED = False
+        _kg_mod: _Any = knowledge_graph
+        old = _kg_mod.KG_ENABLED
+        _kg_mod.KG_ENABLED = False
         try:
             _insert_memory(self.conn, "test/m1", "John Smith works at OpenAI.")
             self.conn.commit()
@@ -292,7 +300,7 @@ class TestIndexKGWrapper(unittest.TestCase):
             count = _count_rows(self.conn, "kg_entities")
             self.assertEqual(count, 0)
         finally:
-            knowledge_graph.KG_ENABLED = old
+            _kg_mod.KG_ENABLED = old
 
     def test_handles_empty_content(self):
         from save.indexers import _index_kg
@@ -340,9 +348,11 @@ class TestIndexFactsWrapper(unittest.TestCase):
 
     def test_disabled_kg_skips_fact_indexing(self):
         import knowledge_graph
+        from typing import Any as _Any
 
-        old = knowledge_graph.KG_ENABLED
-        knowledge_graph.KG_ENABLED = False
+        _kg_mod: _Any = knowledge_graph
+        old = _kg_mod.KG_ENABLED
+        _kg_mod.KG_ENABLED = False
         try:
             _insert_memory(self.conn, "test/m1", "Alice is an engineer.")
             self.conn.commit()
@@ -353,7 +363,7 @@ class TestIndexFactsWrapper(unittest.TestCase):
             count = _count_rows(self.conn, "kg_facts")
             self.assertEqual(count, 0)
         finally:
-            knowledge_graph.KG_ENABLED = old
+            _kg_mod.KG_ENABLED = old
 
     def test_handles_empty_content(self):
         from save.indexers import _index_facts

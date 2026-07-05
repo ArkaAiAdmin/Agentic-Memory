@@ -11,6 +11,9 @@ import tempfile
 import shutil
 from pathlib import Path
 
+import pytest
+from conftest import embedding_available
+
 # --- Test setup ---
 PROJ = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJ))
@@ -31,7 +34,8 @@ import rebuild_index as ri
 import adaptive_retention as ar
 import infra.audit as audit
 
-results = []
+from typing import Any as _TAny
+results: list[dict[str, _TAny]] = []
 
 
 def run(name, fn, deps=None):
@@ -69,7 +73,7 @@ def test_A1_save_and_vec():
         title_slug="test-apples",
         category="test",
         tags=["fruit"],
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     assert note, "save_memory returned nothing"
     # save_memory returns note_id like "test/test-apples"
@@ -87,19 +91,20 @@ def test_A1_save_and_vec():
 run("A1: save creates memory row", test_A1_save_and_vec)
 
 
+@pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
 def test_A2_vec_search_returns_saved():
     sp.save_memory(
         content="Unique phrase: quantum entanglement of photons",
         title_slug="test-quantum",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     es_instance = es.get_embedding_search()
     if es_instance is None:
         raise RuntimeError(
             "get_embedding_search returned None (model2vec not installed?)"
         )
-    results_vec = es_instance.search("quantum entanglement", db_path=TEST_DB, limit=3)
+    results_vec = es_instance.search("quantum entanglement", db_path=str(TEST_DB), limit=3)
     if isinstance(results_vec, str):
         raise RuntimeError(f"search returned error: {results_vec}")
     # Vec search returns 'preview' not 'content'
@@ -116,7 +121,7 @@ def test_A3_save_unicode():
         content="日本語テスト: こんにちは世界 🎉",
         title_slug="test-unicode",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     with mc.open_db(TEST_DB) as conn:
         row = conn.execute(
@@ -138,7 +143,7 @@ def test_B1_save_indexes_entities():
         content="Elon Musk founded SpaceX in 2002. SpaceX launches rockets.",
         title_slug="test-spacex",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     with mc.open_db(TEST_DB) as conn:
         entities = conn.execute("SELECT name FROM kg_entities").fetchall()
@@ -166,7 +171,7 @@ def test_B2_kg_search():
             content="Elon Musk founded SpaceX in 2002. SpaceX launches rockets.",
             title_slug="test-spacex",
             category="test",
-            db_path=TEST_DB,
+            db_path=str(TEST_DB),
         )
         with mc.open_db(TEST_DB) as conn:
             entities = conn.execute(
@@ -198,7 +203,7 @@ def test_C1_save_extracts_facts():
         content="Python was created by Guido van Rossum in 1991. Python is used for web development.",
         title_slug="test-python-facts",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     with mc.open_db(TEST_DB) as conn:
         facts = conn.execute("SELECT * FROM kg_facts").fetchall()
@@ -241,7 +246,7 @@ def test_D1_wikilinks_create_backlinks():
         content="This note references [[test-spacex]] and mentions it.",
         title_slug="test-backlink-src",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     with mc.open_db(TEST_DB) as conn:
         bl = conn.execute(
@@ -262,7 +267,7 @@ def test_D2_backlink_cascade_delete():
         content="Elon Musk founded SpaceX in 2002. SpaceX launches rockets.",
         title_slug="test-spacex",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     # Delete the target, backlinks should be cleaned up
     # hard_delete requires soft-delete first
@@ -288,7 +293,7 @@ def test_E1_access_recorded():
         content="Adaptive retention test memory",
         title_slug="test-retention",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     note_id = "test/test-retention"
     with mc.open_db(TEST_DB) as conn:
@@ -307,7 +312,7 @@ def test_E2_halflife_computed():
         content="Another retention test",
         title_slug="test-halflife",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     note_id = "test/test-halflife"
     with mc.open_db(TEST_DB) as conn:
@@ -331,7 +336,7 @@ def test_F1_fts_search():
         content="Searchable unique term: blueelephant",
         title_slug="test-blueelephant",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     # memories_fts is created by rebuild_index, not by save_memory
     # Test search pipeline handles missing FTS gracefully
@@ -374,7 +379,7 @@ def test_G1_soft_delete():
         content="Soft delete test",
         title_slug="test-softdel",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     md.soft_delete_note(TEST_DB, "test/test-softdel")
     with mc.open_db(TEST_DB) as conn:
@@ -406,7 +411,7 @@ def test_G3_hard_delete():
         content="Hard delete test",
         title_slug="test-harddel",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     # hard_delete_note requires soft-delete first or >30 days old
     md.soft_delete_note(TEST_DB, "test/test-harddel")
@@ -432,7 +437,7 @@ def test_H1_rebuild_preserves_core_tables():
         content="Rebuild preserve test with Elon Musk SpaceX reference",
         title_slug="test-rebuild",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     # Record access
     with mc.open_db(TEST_DB) as conn:
@@ -440,7 +445,9 @@ def test_H1_rebuild_preserves_core_tables():
 
     # Snapshot counts before rebuild
     with mc.open_db(TEST_DB) as conn:
-        before_memories = conn.execute("SELECT count(*) FROM memories").fetchone()[0]
+        bc = conn.execute("SELECT count(*) FROM memories").fetchone()
+        assert bc is not None
+        before_memories = bc[0]
 
     # Rebuild from the test memory dir (where save_memory wrote .md files)
     memory_dir = Path(TEST_DB).parent
@@ -448,7 +455,9 @@ def test_H1_rebuild_preserves_core_tables():
 
     # Verify memories count didn't drop
     with mc.open_db(TEST_DB) as conn:
-        after_memories = conn.execute("SELECT count(*) FROM memories").fetchone()[0]
+        ac = conn.execute("SELECT count(*) FROM memories").fetchone()
+        assert ac is not None
+        after_memories = ac[0]
 
     assert after_memories >= before_memories, (
         f"memories: {before_memories} -> {after_memories} (lost data during rebuild)"
@@ -467,7 +476,7 @@ def test_H2_vec_rebuild():
     if es_instance is None:
         print("  SKIP  H2: model2vec not installed")
         return
-    results_vec = es_instance.search("apples", db_path=TEST_DB, limit=3)
+    results_vec = es_instance.search("apples", db_path=str(TEST_DB), limit=3)
     assert len(results_vec) >= 1, "vec search empty after rebuild"
 
 
@@ -484,7 +493,7 @@ def test_I1_multiple_accesses_increase_score():
         content="Retention increase test",
         title_slug="test-retention-up",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     note_id = "test/test-retention-up"
     with mc.open_db(TEST_DB) as conn:
@@ -516,7 +525,7 @@ def test_J1_graph_rag_expand():
         content="Tesla was founded by Elon Musk. Tesla makes electric cars.",
         title_slug="test-tesla",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     res = search.search_memories(TEST_DB, "Tesla founder", limit=3)
     assert isinstance(res, dict), f"graph_rag search returned: {type(res)}"
@@ -609,7 +618,7 @@ print("\n=== L. EDGE CASES ===")
 def test_L1_empty_content():
     try:
         sp.save_memory(
-            content="", title_slug="test-empty", category="test", db_path=TEST_DB
+            content="", title_slug="test-empty", category="test", db_path=str(TEST_DB)
         )
     except Exception as e:
         # If it raises, that's acceptable as long as it's not an unhandled crash
@@ -626,7 +635,7 @@ def test_L2_very_long_content():
     # Max content size is 50KB
     long = "x" * 40_000
     note_id = sp.save_memory(
-        content=long, title_slug="test-long", category="test", db_path=TEST_DB
+        content=long, title_slug="test-long", category="test", db_path=str(TEST_DB)
     )
     assert note_id, "save_memory returned nothing"
     with mc.open_db(TEST_DB) as conn:
@@ -644,7 +653,7 @@ def test_L3_special_chars():
         content="'; DROP TABLE memories; -- <script>alert(1)</script>",
         title_slug="test-sqli",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     with mc.open_db(TEST_DB) as conn:
         row = conn.execute(
@@ -686,7 +695,7 @@ def test_N1_importance_computed():
         content="Self directed test",
         title_slug="test-selfdir",
         category="test",
-        db_path=TEST_DB,
+        db_path=str(TEST_DB),
     )
     with mc.open_db(TEST_DB) as conn:
         row = conn.execute(
@@ -755,9 +764,9 @@ run("O1: audit log entry written", test_O1_audit_entry_written)
 # SUMMARY
 # ============================================================
 print("\n" + "=" * 60)
-passed = sum(1 for r in results if r.get("ok"))
-failed = sum(1 for r in results if not r.get("ok") and not r.get("skip"))
-skipped = sum(1 for r in results if r.get("skip"))
+passed = sum(1 for r in results if bool(r.get("ok")))
+failed = sum(1 for r in results if not bool(r.get("ok")) and not bool(r.get("skip")))
+skipped = sum(1 for r in results if bool(r.get("skip")))
 print(
     f"RESULTS: {passed} passed, {failed} failed, {skipped} skipped out of {len(results)} total"
 )

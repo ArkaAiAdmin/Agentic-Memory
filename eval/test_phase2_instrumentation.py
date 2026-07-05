@@ -27,6 +27,10 @@ from search.orchestrator import (
     _hybrid_fusion,
     _record_last_accessed,
 )
+import pytest
+from typing import cast as _tcast
+from infra.db import AnyConnection as _AnyConn
+from conftest import embedding_available
 
 _TEST_TMPDIR = Path(tempfile.mkdtemp())
 PROD_DB = _TEST_TMPDIR / "memory.db"
@@ -123,7 +127,7 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
             "quality_gates",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("qg boom")),
         )
-        broken_mod.QUALITY_GATES_ENABLED = True
+        setattr(broken_mod, "QUALITY_GATES_ENABLED", True)
         try:
             _apply_quality_gates(
                 result_items=[{"id": "x"}],
@@ -151,7 +155,7 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
             "user_profile",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("up boom")),
         )
-        broken_mod.PROFILE_ENABLED = True
+        setattr(broken_mod, "PROFILE_ENABLED", True)
         try:
             _apply_user_profiling(
                 result_items=[{"id": "x"}],
@@ -160,7 +164,7 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
                 query="test",
                 rerank=False,
                 backlinks_map={},
-                db_path=PROD_DB,
+                db_path=str(PROD_DB),
             )
         except Exception:
             pass
@@ -176,19 +180,20 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
         original_inc = orch._phase_inc
         calls = []
         orch._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
-        _apply_safety_demoting("not_a_list", [], [])
+        _apply_safety_demoting(_tcast("list", "not_a_list"), [], [])
         orch._phase_inc = original_inc
         self.assertTrue(
             any("safety_demoting" in c[0] for c in calls),
             f"Expected safety_demoting phase call, got: {calls}",
         )
 
+    @pytest.mark.skipif(not embedding_available(), reason="embedding model not loaded")
     def test_hybrid_fusion_calls_phase_inc_on_bad_db(self):
         import search.orchestrator as orch
         original_inc = orch._phase_inc
         calls = []
         orch._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
-        _hybrid_fusion("not_a_db", [], "test", Path("/tmp"), 5, "")
+        _hybrid_fusion(_tcast(_AnyConn, "not_a_db"), [], "test", Path("/tmp"), 5, "")
         orch._phase_inc = original_inc
         self.assertTrue(
             any("hybrid_fusion" in c[0] for c in calls),
@@ -200,7 +205,7 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
         original_inc = orch._phase_inc
         calls = []
         orch._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
-        _record_last_accessed("not_a_db", [{"id": "x"}])
+        _record_last_accessed(_tcast(_AnyConn, "not_a_db"), [{"id": "x"}])
         orch._phase_inc = original_inc
         self.assertTrue(
             any("record_last_accessed" in c[0] for c in calls),
