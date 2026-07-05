@@ -11,6 +11,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+import subprocess
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -163,17 +164,27 @@ class TestSavePipelineAcquireLock(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             db_path.touch()
-            # Hold the lock from another fd to simulate contention.
-            holder = open(db_path.parent / ".rebuild.lock", "w")
+            lock_path = db_path.parent / ".rebuild.lock"
+            # Hold the lock in a subprocess so stale-lock detection
+            # unambiguously sees a live foreign-PID holder.
+            script = (
+                "import fcntl, time, sys; "
+                "f = open(sys.argv[1], 'w'); "
+                "fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB); "
+                "time.sleep(10)"
+            )
+            proc = subprocess.Popen(
+                [sys.executable, "-c", script, str(lock_path)],
+                close_fds=True,
+            )
             try:
-                acquire_flock_with_retry(
-                    holder, max_attempts=1, initial_backoff=0.05, strict=True
-                )
+                import time as _time
+                _time.sleep(0.3)
                 with self.assertRaises(FileLockError):
                     _acquire_lock(db_path)
             finally:
-                release_flock(holder)
-                holder.close()
+                proc.terminate()
+                proc.wait()
 
     def test_returns_lock_file_on_success(self):
         """_acquire_lock must return the lock_file when no contention."""

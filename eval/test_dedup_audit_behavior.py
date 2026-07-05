@@ -143,9 +143,10 @@ class TestAuditRedirectBehavior(TestCase):
         )
 
     def test_audit_slug_warning_is_logged(self) -> None:
-        logger = logging.getLogger("save_pipeline")
+        logger = logging.getLogger("save.pipeline")
         handler = logging.handlers.MemoryHandler(capacity=100)
         logger.addHandler(handler)
+        logger.setLevel(logging.WARNING)
 
         _call_save_memory(
             content="audit-behavior-test-c",
