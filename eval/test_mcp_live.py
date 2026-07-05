@@ -184,14 +184,20 @@ class TestLiveMCPRateLimit(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_burst_returns_rate_limited(self):
-        for _ in range(60):
-            memory_mcp.memory_search(query="rate limit test", limit=1)
+        os.environ["MEMORY_RATE_LIMIT_MEMORY_SEARCH"] = "3600,60"
+        reset_rate_limiter()
+        try:
+            for _ in range(60):
+                memory_mcp.memory_search(query="rate limit test", limit=1)
 
-        result = memory_mcp.memory_search(query="rate limit test", limit=1)
-        self.assertTrue(
-            result.startswith("Error") or "RATE_LIMITED" in result,
-            f"Expected rate limit error, got: {result[:200]}",
-        )
+            result = memory_mcp.memory_search(query="rate limit test", limit=1)
+            self.assertTrue(
+                result.startswith("Error") or "RATE_LIMITED" in result,
+                f"Expected rate limit error, got: {result[:200]}",
+            )
+        finally:
+            os.environ.pop("MEMORY_RATE_LIMIT_MEMORY_SEARCH", None)
+            reset_rate_limiter()
 
 
 class TestLiveMCPCacheStats(unittest.TestCase):

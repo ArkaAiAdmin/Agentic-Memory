@@ -888,6 +888,7 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
         from infra._lazy_imports import get_embedding_search
 
         es = get_embedding_search()
+        es.wait_for_model(timeout_s=30.0)
         if es.model is not None:
             items = [(nid, note["body"]) for nid, note in active_notes.items()]
             written = es.index_embeddings_batch(db, items)

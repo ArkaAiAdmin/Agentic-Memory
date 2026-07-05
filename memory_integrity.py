@@ -595,7 +595,7 @@ def check_index_integrity(db_path: str | Path, deep: bool = False) -> dict[str, 
         }
 
     try:
-        with open_db(db_path) as db:
+        with open_db(db_path, write=False) as db:
             tables = _get_table_names(db)
 
             _add_required_table_findings(tables, findings)
@@ -753,7 +753,7 @@ def repair_fts_drift(db_path: Path, *, dry_run: bool = False) -> dict[str, Any]:
     }
     if not db_path.exists():
         return result
-    with open_db(db_path) as db:
+    with open_db(db_path, write=False) as db:
         tables = _get_table_names(db)
         if "memories" not in tables or "memories_fts" not in tables:
             return result
@@ -1005,7 +1005,7 @@ def recover_orphan_files(
     failed: list[tuple[str, str]] = []
     if not db_path.exists():
         return {"recovered": [], "failed": [], "orphans": []}
-    with open_db(db_path) as db:
+    with open_db(db_path, write=False) as db:
         orphans = find_orphan_files(db, memory_root)
     for orphan in orphans:
         mid = orphan["memory_id"]
@@ -1190,7 +1190,7 @@ def repair_kg_orphans(db_path: Path, *, dry_run: bool = False) -> dict[str, Any]
     }
     if not db_path.exists():
         return result
-    with open_db(db_path) as db:
+    with open_db(db_path, write=not dry_run) as db:
         orphans = find_kg_orphans(db)
         result["orphans"] = orphans
         if not any(orphans.values()):

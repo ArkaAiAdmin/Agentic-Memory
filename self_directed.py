@@ -203,6 +203,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
             from infra._lazy_imports import get_embedding_search
 
             es = get_embedding_search()
+            es.wait_for_model(timeout_s=30.0)
             count = 0
             for nid, content in note_contents.items():
                 if content:

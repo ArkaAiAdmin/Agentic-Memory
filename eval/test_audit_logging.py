@@ -218,34 +218,13 @@ class TestMCPToolAudit:
 
     def test_memory_save_creates_audit(self, tmp_path, monkeypatch):
         """memory_save triggers audit logging."""
+        from infra.memory_common import reset_rate_limiter
+        reset_rate_limiter()
         db_path = _create_test_db(tmp_path)
 
-        import infra.infrastructure as infrastructure
-
-        monkeypatch.setattr(infrastructure, "_resolve_active_db_path", lambda: db_path)
-        # Monkeypatch get_memory_paths at the mcp_common level before mcp_tools
-        # imports modules that bind the reference
-        import mcp_common
-
-        # 2026-06-20: project_root is now typed as Path (not Path | None).
-        # The previous lambda passed None for the first tuple element,
-        # which the tightened type rejects. Use db_path.parent as a
-        # safe Path fallback.
-        monkeypatch.setattr(
-            mcp_common,
-            "get_memory_paths",
-            lambda: (db_path.parent, db_path.parent, db_path.parent),
-        )
-        import save_pipeline
-
-        monkeypatch.setattr(
-            save_pipeline, "resolve_active_memory_dir", lambda **_: db_path.parent
-        )
-        monkeypatch.setattr(
-            save_pipeline,
-            "get_memory_paths",
-            lambda: (db_path.parent, db_path.parent, db_path.parent),
-        )
+        # Force all modules (no matter when they were imported) to resolve
+        # to the test database.
+        monkeypatch.setenv("MEMORY_DB_PATH", str(db_path))
 
         from mcp_tools import memory_save
 
@@ -267,18 +246,13 @@ class TestMCPToolAudit:
 
     def test_memory_search_creates_audit(self, tmp_path, monkeypatch):
         """memory_search triggers audit logging."""
+        from infra.memory_common import reset_rate_limiter
+        reset_rate_limiter()
         db_path = _create_test_db(tmp_path)
 
-        import infra.infrastructure as infrastructure
-
-        monkeypatch.setattr(infrastructure, "_resolve_active_db_path", lambda: db_path)
-        import mcp_common
-
-        monkeypatch.setattr(
-            mcp_common,
-            "get_memory_paths",
-            lambda: (db_path.parent, db_path.parent, db_path.parent),
-        )
+        # Force all modules (no matter when they were imported) to resolve
+        # to the test database.
+        monkeypatch.setenv("MEMORY_DB_PATH", str(db_path))
 
         from mcp_tools import memory_search
 

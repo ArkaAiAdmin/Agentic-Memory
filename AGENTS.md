@@ -67,7 +67,7 @@ agentic-memory/
 ├── save_pipeline.py + save/    ← write path (saga, FTS5, embeddings, KG, audit)
 ├── search_pipeline.py + search/ ← read path (FTS5 + usearch + KG fusion)
 ├── mcp_maintenance.py           ← admin tools + memory_maintenance router
-├── tool_registry.py             ← 15 CORE + 85 ADMIN + 3 DEPRECATED (single source of truth; ADMIN/DEPRECATED routed through memory_maintenance)
+├── tool_registry.py             ← 15 CORE + 84 ADMIN + 3 DEPRECATED (single source of truth; ADMIN/DEPRECATED routed through memory_maintenance)
 ├── plugin/
 │   ├── index.ts                 ← OpenCode adapter (event → TS handler)
 │   └── agentic-memory-hooks.ts ← hook implementations (TS → Python subprocess)

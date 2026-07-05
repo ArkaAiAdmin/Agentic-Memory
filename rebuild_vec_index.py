@@ -204,6 +204,7 @@ def rebuild_vec_index(db_path, *, force: bool = False) -> dict:
     try:
         t0 = time.time()
         es = get_embedding_search()
+        es.wait_for_model(timeout_s=30.0)
         if es.model is None:
             raise RuntimeError(
                 "Embedding model unavailable. Run with venv python + model2vec installed."
@@ -408,6 +409,7 @@ def rebuild_chunk_vec_index(db_path, *, force: bool = False) -> dict:
     try:
         t0 = time.time()
         es = get_embedding_search()
+        es.wait_for_model(timeout_s=30.0)
         if es.model is None:
             raise RuntimeError("Embedding model unavailable. Run with venv python + model2vec installed.")
         dim = int(es.model.dim)

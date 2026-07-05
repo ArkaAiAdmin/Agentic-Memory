@@ -357,45 +357,46 @@ def _acquire_lock(db_path: Path):
     # exceptions (e.g. OSError from a stale lock file) are caught
     # and converted to None so the caller can proceed without a
     # lock in the case of an infrastructure error, not contention.
-    from infra._lazy_imports import FileLockError
+    attempts = int(os.environ.get("MEMORY_DB_LOCK_ATTEMPTS", "20"))
     try:
         acquire_flock_with_retry(
-            lock_file, max_attempts=5, initial_backoff=0.05, strict=True
+            lock_file, max_attempts=attempts, initial_backoff=0.05, strict=True
         )
         return lock_file
-    except FileLockError:
-        from infra.file_lock import _is_stale_lock
-
-        if _is_stale_lock(lock_path):
-            logger.info(
-                "Removing stale lock %s (no live flock holder detected)",
-                lock_path,
-            )
-            try:
-                lock_file.close()
-            except Exception as close_exc:
-                logger.debug("lock_file.close() failed for stale lock %s: %s", lock_path, close_exc)
-            try:
-                lock_path.unlink()
-            except Exception as e:
-                logger.debug("Could not remove stale lock %s: %s", lock_path, e)
-                raise
-            try:
-                lock_file = open(lock_path, "w")
-            except Exception as e:
-                logger.warning(
-                    "Could not reopen lock file after stale cleanup: %s", e
-                )
-                raise
-            try:
-                acquire_flock_with_retry(
-                    lock_file, max_attempts=3, initial_backoff=0.02, strict=True
-                )
-                return lock_file
-            except FileLockError:
-                raise
-        raise
     except Exception as e:
+        if type(e).__name__ == "FileLockError":
+            from infra.file_lock import _is_stale_lock
+
+            if _is_stale_lock(lock_path):
+                logger.info(
+                    "Removing stale lock %s (no live flock holder detected)",
+                    lock_path,
+                )
+                try:
+                    lock_file.close()
+                except Exception as close_exc:
+                    logger.debug("lock_file.close() failed for stale lock %s: %s", lock_path, close_exc)
+                try:
+                    lock_path.unlink()
+                except Exception as unlink_exc:
+                    logger.debug("Could not remove stale lock %s: %s", lock_path, unlink_exc)
+                    raise
+                try:
+                    lock_file = open(lock_path, "w")
+                except Exception as reopen_exc:
+                    logger.warning(
+                        "Could not reopen lock file after stale cleanup: %s", reopen_exc
+                    )
+                    raise
+                try:
+                    acquire_flock_with_retry(
+                        lock_file, max_attempts=3, initial_backoff=0.02, strict=True
+                    )
+                    return lock_file
+                except Exception as re_exc:
+                    raise re_exc
+            raise e
+
         try:
             lock_file.close()
         except Exception as close_exc:

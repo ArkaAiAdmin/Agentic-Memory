@@ -16,8 +16,7 @@ os.environ["MEMORY_DB_PATH"] = f"{INSTALL_ROOT}/memory/memory.db"
 DB = os.environ["MEMORY_DB_PATH"]
 
 import config as cfg
-import infra.db_migrations
-import infra.migration_runner  # type: ignore
+from infra import db_migrations, migration_runner
 import adaptive_retention
 from save_pipeline import save_memory
 from search_pipeline import search_memories, ScoreContext, _compute_final_score
@@ -49,7 +48,7 @@ class TestAllRegression(unittest.TestCase):
         # B24 fix: clean up orphans from background auto-save hooks and SDK
         # memory writes that don't cascade-deletes. The test creates memories
         # as part of its run; pre-cleaning ensures the FK check is meaningful.
-        with sqlite3.connect(DB) as con:
+        with sqlite3.connect(DB, timeout=30.0) as con:
             con.execute("PRAGMA foreign_keys=OFF")
             for table, col in [
                 ("user_access_log", "note_id"),
@@ -58,10 +57,11 @@ class TestAllRegression(unittest.TestCase):
                 ("memory_chunks", "parent_id"),
                 ("memory_vec_keys", "memory_id"),
                 ("kg_facts", "source_memory"),
+                ("memory_field_crdt", "memory_id"),
             ]:
                 con.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM memories)")
             con.commit()
-        with sqlite3.connect(DB) as con:
+        with sqlite3.connect(DB, timeout=30.0) as con:
             ver = con.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
             self.assertTrue(ver >= 5, f"schema version {ver} < 5")
             self.assertEqual(len(list(con.execute("PRAGMA foreign_key_check"))), 0)
@@ -84,7 +84,7 @@ class TestAllRegression(unittest.TestCase):
             env={**os.environ, "MEMORY_DB_PATH": DB},
         )
         self.assertEqual(r.returncode, 0, f"rebuild failed: {r.stderr}")
-        with sqlite3.connect(DB) as con:
+        with sqlite3.connect(DB, timeout=30.0) as con:
             miss = con.execute("""
                 SELECT COUNT(*) FROM memories m
                 WHERE m.deleted_at IS NULL
@@ -218,7 +218,7 @@ class TestAllRegression(unittest.TestCase):
         ids = [r.get("id", "") for r in res.get("results", [])]
         self.assertTrue(any(tid in n for n in ids), f"roundtrip failed: {ids}")
         ok("saved note found via FTS roundtrip")
-        with sqlite3.connect(DB) as con:
+        with sqlite3.connect(DB, timeout=30.0) as con:
             con.execute("DELETE FROM memories WHERE id = ?", (f"tests/{tid}",))
             con.commit()
 
@@ -232,7 +232,7 @@ class TestAllRegression(unittest.TestCase):
 
         # K
         section("K", "memory_integrity --deep: 0 critical")
-        with sqlite3.connect(DB) as con:
+        with sqlite3.connect(DB, timeout=30.0) as con:
             con.execute("PRAGMA foreign_keys=OFF")
             for table, col in [
                 ("user_access_log", "note_id"),
@@ -241,6 +241,7 @@ class TestAllRegression(unittest.TestCase):
                 ("memory_chunks", "parent_id"),
                 ("memory_vec_keys", "memory_id"),
                 ("kg_facts", "source_memory"),
+                ("memory_field_crdt", "memory_id"),
             ]:
                 con.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM memories)")
             con.commit()
@@ -254,6 +255,7 @@ class TestAllRegression(unittest.TestCase):
             capture_output=True,
             text=True,
             cwd=INSTALL_ROOT,
+            env={**os.environ, "MEMORY_DB_FLOCK": "0"},
         )
         self.assertIn("0 critical", r.stdout, f"CRITICAL findings: {r.stdout}")
         ok()

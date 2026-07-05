@@ -177,8 +177,12 @@ class TestSavePipelineAcquireLock(unittest.TestCase):
             try:
                 import time as _time
                 _time.sleep(0.3)
-                with self.assertRaises(FileLockError):
-                    _acquire_lock(db_path)
+                os.environ["MEMORY_DB_LOCK_ATTEMPTS"] = "2"
+                try:
+                    with self.assertRaises(FileLockError):
+                        _acquire_lock(db_path)
+                finally:
+                    os.environ.pop("MEMORY_DB_LOCK_ATTEMPTS", None)
             finally:
                 proc.terminate()
                 proc.wait()

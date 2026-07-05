@@ -74,11 +74,11 @@ class TemporalKG:
         data = TemporalKG._parse_json(payload)
         if isinstance(data, dict):
             rows = data.get("rows")
-        if rows is None:
-            rows = data.get("data", [])
-        if rows is None:
-            return []
-        return cast(list[dict[str, Any]], rows)
+            if rows is None:
+                rows = data.get("data", [])
+            if rows is None:
+                return []
+            return cast(list[dict[str, Any]], rows)
         if isinstance(data, list):
             return data
         return []

@@ -533,7 +533,10 @@ class _ConnectionPool:
             return 0
 
 
-connection_pool = _ConnectionPool()
+import sys
+if not hasattr(sys, "_agentic_memory_connection_pool"):
+    sys._agentic_memory_connection_pool = _ConnectionPool()
+connection_pool = sys._agentic_memory_connection_pool
 
 
 def _resolve_mmap_size() -> int:
