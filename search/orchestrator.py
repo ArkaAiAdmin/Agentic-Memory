@@ -1928,6 +1928,8 @@ def search_memories(
         # repo_filter so both FTS and embedding fallback paths inherit it
         # through _fetch_rows_by_ids.
         if category:
+            if not re.match(r'^[A-Za-z0-9_-]+$', category):
+                category = "lessons"
             repo_filter = f"{repo_filter} AND m.category = '{category}'"
         else:
             repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
