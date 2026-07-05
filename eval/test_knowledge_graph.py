@@ -6,18 +6,26 @@ graph stats, schema creation.
 
 import os
 import sys
+import importlib
 import sqlite3
 
 import pytest
+
+sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 
 import knowledge_graph as kg
 from knowledge_graph.kg_extract import extract_relations
 
 # Force re-read of the env var after import
-kg._KG_ENABLED_CACHE = True
-# Clear KG cache between tests to prevent state pollution
+setattr(kg, "KG_ENABLED", True)
+
 @pytest.fixture(autouse=True)
-def clear_kg_cache():
+def reset_kg_module():
+    """Re-import knowledge_graph to pick up any reload() from prior tests."""
+    global kg
+    import knowledge_graph
+    kg = importlib.reload(knowledge_graph)
+    setattr(kg, "KG_ENABLED", True)
     yield
     kg._clear_kg_enabled_cache()
 
@@ -139,11 +147,11 @@ class TestKGIndexing:
         # Relations may be 0 if patterns don't match, but entities should exist
 
     def test_index_kg_disabled(self):
-        old_val = kg._KG_ENABLED_CACHE
-        kg._KG_ENABLED_CACHE = False
+        old_val = getattr(kg, "KG_ENABLED", True)
+        setattr(kg, "KG_ENABLED", False)
         result = kg.index_kg_for_memory(self.conn, "test/memory1", "some content")
         assert result == {"entities": 0, "relations": 0}
-        kg._KG_ENABLED_CACHE = old_val
+        setattr(kg, "KG_ENABLED", old_val)
 
     def test_entity_mentions_increment(self):
         content1 = "John Smith likes Python. John Smith loves Python."
@@ -178,11 +186,11 @@ class TestGraphSearch:
         assert len(result["entities"]) == 0
 
     def test_graph_search_disabled(self):
-        old_val = kg._KG_ENABLED_CACHE
-        kg._KG_ENABLED_CACHE = False
+        old_val = getattr(kg, "KG_ENABLED", True)
+        setattr(kg, "KG_ENABLED", False)
         result = kg.graph_search(self.conn, "John")
         assert result == {"entities": [], "edges": []}
-        kg._KG_ENABLED_CACHE = old_val
+        setattr(kg, "KG_ENABLED", old_val)
 
 
 class TestGraphStats:
