@@ -78,7 +78,7 @@ def _upsert_entity(
         
         # Check existing entity names
         candidates = conn.execute(
-            "SELECT id, name FROM kg_entities WHERE entity_type = ?",
+            "SELECT id, name FROM kg_entities WHERE entity_type = ? ORDER BY mentions DESC LIMIT 500",
             (entity_type,)
         ).fetchall()
         for cid, cname in candidates:
@@ -92,7 +92,8 @@ def _upsert_entity(
             alias_candidates = conn.execute(
                 "SELECT a.entity_id, a.alias "
                 "FROM kg_entity_aliases a JOIN kg_entities e ON a.entity_id = e.id "
-                "WHERE e.entity_type = ?",
+                "WHERE e.entity_type = ? "
+                "ORDER BY e.mentions DESC LIMIT 500",
                 (entity_type,)
             ).fetchall()
             for cid, calias in alias_candidates:

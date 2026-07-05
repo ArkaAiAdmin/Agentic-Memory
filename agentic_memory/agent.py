@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, List
 
 from agentic_memory.client import MemoryClient
 from agentic_memory.models import AgentInfo, MemoryResult, SearchResults
@@ -130,7 +130,7 @@ class AgentMemory:
 
     # ── List / Clear ───────────────────────────────────────────────────
 
-    def list(self, limit: int = 50) -> list[MemoryResult]:
+    def list(self, limit: int = 50) -> List[MemoryResult]:
         """List recent memories scoped to this agent.
 
         Direct DB query filtered by the agent's namespace prefix.
@@ -138,22 +138,27 @@ class AgentMemory:
         from agent_context import get_agent
 
         ctx = get_agent()
-        if ctx.namespace == "default" or ctx.namespace is None:
-            filter_sql = "1=1"
-        else:
-            prefix = f"agents/{ctx.namespace}/"
-            filter_sql = f"m.source_file LIKE '{prefix}%'"
-
         conn = get_db_connection(self._db_path)
         try:
-            rows = conn.execute(
-                f"SELECT m.id, m.content, m.tags, m.category, "
-                f"       m.created_at, m.pinned, m.importance "
-                f"FROM memories m "
-                f"WHERE m.deleted_at IS NULL AND {filter_sql} "
-                f"ORDER BY m.created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            if ctx.namespace == "default" or ctx.namespace is None:
+                rows = conn.execute(
+                    "SELECT m.id, m.content, m.tags, m.category, "
+                    "       m.created_at, m.pinned, m.importance "
+                    "FROM memories m "
+                    "WHERE m.deleted_at IS NULL "
+                    "ORDER BY m.created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            else:
+                prefix = f"agents/{ctx.namespace}/"
+                rows = conn.execute(
+                    "SELECT m.id, m.content, m.tags, m.category, "
+                    "       m.created_at, m.pinned, m.importance "
+                    "FROM memories m "
+                    "WHERE m.deleted_at IS NULL AND m.source_file LIKE ? "
+                    "ORDER BY m.created_at DESC LIMIT ?",
+                    (f"{prefix}%", limit),
+                ).fetchall()
             return [
                 MemoryResult(
                     id=r[0],
@@ -186,14 +191,14 @@ class AgentMemory:
                 (f"{prefix}%",),
             ).rowcount
             conn.commit()
-            return int(n)
+            return int(n) if n is not None else 0
         finally:
             conn.close()
 
     # ── Static helpers ─────────────────────────────────────────────────
 
     @staticmethod
-    def list_agents() -> list[AgentInfo]:
+    def list_agents() -> List[AgentInfo]:
         """List all registered agent contexts.
 
         Returns:
