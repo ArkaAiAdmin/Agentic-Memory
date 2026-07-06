@@ -558,7 +558,7 @@ def merge_skills(a: dict, b: dict) -> dict:
     merged["hit_vector"] = json.dumps(merged_hit_vector)
     merged["last_used_vector"] = json.dumps(merged_luv)
     merged["hit_count"] = sum(merged_hit_vector.values())
-    merged["last_used_at"] = max(merged_hit_vector.values()) if merged_hit_vector else merged.get("last_used_at", time.time())
+    merged["last_used_at"] = max(merged_luv.values()) if merged_luv else merged.get("last_used_at", time.time())
     cl_a = a.get("logical_clock") or 0
     cl_b = b.get("logical_clock") or 0
     merged["logical_clock"] = max(cl_a, cl_b) + 1

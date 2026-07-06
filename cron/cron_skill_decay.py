@@ -46,7 +46,7 @@ def _get_db_path(cli_override: str | None) -> Path:
 
 def _decayed_skills(
     conn, max_age_days: float, decay_factor: float, delete_threshold: float
-) -> tuple[list[tuple[int, str, int, dict]], list[str]]:
+) -> tuple[list[tuple[int, str, int, dict, dict, float]], list[str]]:
     """Return (decayed_list, deleted_list) using per-agent hit_vector decay.
 
     Per-agent rule:
@@ -60,7 +60,7 @@ def _decayed_skills(
       value if the vector is now empty)
       ``logical_clock += 1``
 
-    decayed_list: [(id, name, new_hit_count, new_hit_vector)] — kept.
+    decayed_list: [(id, name, new_hit_count, new_hit_vector, new_last_used_vector, new_last_used_at)] — kept.
     deleted_list: [name] for skills whose hit_count fell to 0 after decay.
     """
     import json
@@ -69,7 +69,7 @@ def _decayed_skills(
         "SELECT id, name, hit_vector, last_used_vector, hit_count, last_used_at, logical_clock FROM memory_skills"
     ).fetchall()
 
-    decayed: list[tuple[int, str, int, dict]] = []
+    decayed: list[tuple[int, str, int, dict, dict, float]] = []
     deleted: list[str] = []
 
     for sid, name, hid_vec, luv_vec, _old_hit, _old_lu, _lc in rows:
@@ -101,21 +101,26 @@ def _decayed_skills(
         if new_hit_count < delete_threshold:
             deleted.append(name)
         else:
-            decayed.append((sid, name, new_hit_count, new_hv))
+            new_luv = {agent: luv[agent] for agent in new_hv if agent in luv}
+            try:
+                new_lu = float(max(new_luv.values())) if new_luv else (float(_old_lu) if _old_lu else time.time())
+            except (ValueError, TypeError):
+                new_lu = time.time()
+            decayed.append((sid, name, new_hit_count, new_hv, new_luv, new_lu))
 
     return decayed, deleted
 
 
-def _apply_decay(conn, decayed: list[tuple[int, str, int, dict]]) -> int:
-    """Write decayed hit_vector / hit_count / last_used_at / logical_clock."""
+def _apply_decay(conn, decayed: list[tuple[int, str, int, dict, dict, float]]) -> int:
+    """Write decayed hit_vector / last_used_vector / hit_count / last_used_at / logical_clock."""
     import json
     now_ts = time.time()
-    for sid, _name, new_hit, new_hv in decayed:
+    for sid, _name, new_hit, new_hv, new_luv, new_lu in decayed:
         conn.execute(
             """UPDATE memory_skills
-               SET hit_vector = ?, hit_count = ?, last_used_at = ?, logical_clock = ?, updated_at = ?
+               SET hit_vector = ?, last_used_vector = ?, hit_count = ?, last_used_at = ?, logical_clock = ?, updated_at = ?
                WHERE id = ?""",
-            (json.dumps(new_hv), new_hit, now_ts, _lc_update(new_hv), now_ts, sid),
+            (json.dumps(new_hv), json.dumps(new_luv), new_hit, new_lu, _lc_update(new_hv), now_ts, sid),
         )
     conn.commit()
     return len(decayed)
@@ -169,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
                     f"{len(deleted)} would delete"
                 )
                 if decayed:
-                    for _sid, name, new_hit, _hv in decayed[:10]:
+                    for _sid, name, new_hit, _hv, *extra in decayed[:10]:
                         print(f"  decay: {name} -> hit_count={new_hit}")
                     if len(decayed) > 10:
                         print(f"  ... and {len(decayed) - 10} more")

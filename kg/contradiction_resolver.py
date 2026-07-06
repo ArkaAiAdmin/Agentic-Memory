@@ -131,14 +131,17 @@ def _apply_resolution(
         )
         merged_id = f"merged/{note_a}__{note_b}"
         try:
-            save_memory(
+            actual_merged_id = save_memory(
                 content=merged_content,
                 category="merged",
                 title_slug=merged_id.split("/")[-1],
                 tags=["merged", "auto-merge"],
                 importance=3,
                 defer_expensive=True,
+                db_path=str(db_path),
             )
+            if isinstance(actual_merged_id, str) and (actual_merged_id.startswith("{") or "error" in actual_merged_id.lower()):
+                return {"action": "error", "error": f"save merged note failed: {actual_merged_id}", "source": note_a, "target": note_b}
         except Exception as e:
             return {"action": "error", "error": f"save merged note failed: {e}", "source": note_a, "target": note_b}
 
@@ -166,4 +169,8 @@ _LLM_PROMPT = (
 
 def _get_provider() -> Any | None:
     """Return the configured LLM provider or None."""
-    return None
+    try:
+        from fact.llm_providers import get_provider
+        return get_provider()
+    except ImportError:
+        return None

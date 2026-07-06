@@ -1067,7 +1067,7 @@ def memory_list_federated_skills(
             key=lambda x: x["hits"],
             reverse=True,
         )
-        if agent_filter and agent_filter not in (name or ""):
+        if agent_filter and not any(agent_filter.lower() in agent.lower() for agent in hv):
             continue
         results.append({
             "id": hid,
