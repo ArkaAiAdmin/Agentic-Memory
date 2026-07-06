@@ -533,10 +533,17 @@ class _ConnectionPool:
             return 0
 
 
-import sys
-if not hasattr(sys, "_agentic_memory_connection_pool"):
-    sys._agentic_memory_connection_pool = _ConnectionPool()
-connection_pool = sys._agentic_memory_connection_pool
+_connection_pool: _ConnectionPool | None = None
+
+
+def _get_connection_pool() -> _ConnectionPool:
+    global _connection_pool
+    if _connection_pool is None:
+        _connection_pool = _ConnectionPool()
+    return _connection_pool
+
+
+connection_pool = _get_connection_pool()
 
 
 def _resolve_mmap_size() -> int:

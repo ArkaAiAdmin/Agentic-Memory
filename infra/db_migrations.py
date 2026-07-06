@@ -855,6 +855,26 @@ def run_schema_setup(conn: AnyConnection) -> None:
             )
             pass
 
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS search_phase_stats (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    query_id    TEXT NOT NULL,
+                    phase_name  TEXT NOT NULL,
+                    latency_ms  REAL NOT NULL,
+                    created_at  REAL NOT NULL
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_search_phase_stats_query "
+                "ON search_phase_stats(query_id, created_at)"
+            )
+        except Exception:
+            logger.warning(
+                "Failed to create search_phase_stats table during migration"
+            )
+            pass
+
         # ------------------------------------------------------------------
         # 2. Run numbered SQL migrations.  All tables they reference are
         #    already in place from step 1, so CREATE INDEX / ALTER TABLE

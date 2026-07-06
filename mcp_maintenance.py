@@ -866,6 +866,7 @@ class MaintenanceOp(str, Enum):
     RECALL_STATUS = "recall_status"
     RECALL_TRACE = "recall_trace"  # C2: retrieve recall trace JSONL entries
     PHASE_ERRORS = "phase_errors"
+    SEARCH_PHASE_STATS = "search_phase_stats"  # P6: per-phase latency aggregation
 
     @classmethod
     def all_values(cls) -> list[str]:

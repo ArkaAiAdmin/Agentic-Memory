@@ -540,6 +540,9 @@ def _get_handlers() -> dict:
             MaintenanceOp.PHASE_ERRORS: lambda *, since_ts=None, until_ts=None, limit=50, **_: _op_phase_errors(
                 since_ts=since_ts, until_ts=until_ts, limit=limit
             ),
+            MaintenanceOp.SEARCH_PHASE_STATS: lambda *, since_ts=None, until_ts=None, phase_name="", limit=200, **__: _op_search_phase_stats(
+                since_ts=since_ts, until_ts=until_ts, phase_name=phase_name, limit=limit
+            ),
         }
     return _MAINTENANCE_HANDLERS
 
@@ -861,6 +864,73 @@ def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = Non
         return json.dumps(
             get_counts(since_ts=since_ts, until_ts=until_ts, limit=limit), indent=2
         )
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def _op_search_phase_stats(
+    since_ts: float | None = None,
+    until_ts: float | None = None,
+    phase_name: str = "",
+    limit: int = 200,
+) -> str:
+    """Return per-phase latency stats from the search_phase_stats table.
+
+    Aggregates latency_ms by phase_name, returning min/avg/max/p95 and
+    sample count. Optional time-window filter via since_ts/until_ts.
+    """
+    try:
+        from infra.infrastructure import resolve_active_memory_dir
+        import sqlite3
+
+        db_path = resolve_active_memory_dir() / "memory.db"
+        if not db_path.exists():
+            return json.dumps({"error": f"No memory.db at {db_path}"})
+        conn = sqlite3.connect(str(db_path), timeout=10)
+        try:
+            where: list[str] = []
+            params: list[object] = []
+            if since_ts is not None:
+                where.append("created_at >= ?")
+                params.append(since_ts)
+            if until_ts is not None:
+                where.append("created_at <= ?")
+                params.append(until_ts)
+            if phase_name:
+                where.append("phase_name = ?")
+                params.append(phase_name)
+            where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+
+            rows = conn.execute(
+                f"SELECT phase_name, COUNT(*), MIN(latency_ms), AVG(latency_ms), "
+                f"MAX(latency_ms) FROM search_phase_stats {where_sql} "
+                f"GROUP BY phase_name ORDER BY phase_name",
+                params,
+            ).fetchall()
+            p95_rows = conn.execute(
+                f"SELECT phase_name, latency_ms FROM search_phase_stats {where_sql}",
+                params,
+            ).fetchall()
+            p95_map: dict[str, list[float]] = {}
+            for pname, lat in p95_rows:
+                p95_map.setdefault(pname, []).append(lat)
+            results = []
+            for pname, count, mn, avg, mx in rows:
+                vals = sorted(p95_map.get(pname, []))
+                p95 = vals[int(len(vals) * 0.95)] if vals else avg
+                results.append({
+                    "phase": pname,
+                    "count": count,
+                    "min_ms": round(mn, 2),
+                    "avg_ms": round(avg, 2),
+                    "p95_ms": round(p95, 2),
+                    "max_ms": round(mx, 2),
+                })
+            return json.dumps(
+                {"phases": results, "count": len(results)}, indent=2
+            )
+        finally:
+            conn.close()
     except Exception as e:
         return json.dumps({"error": str(e)})
 

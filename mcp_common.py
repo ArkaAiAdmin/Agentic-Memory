@@ -44,8 +44,20 @@ from infra.infrastructure import (  # noqa: E402,F401
     with_memory_connection,
 )
 
-from config import GLOBAL_SCRIPTS_DIR, AGENTS_SKILLS_DIR
+from infra.config import GLOBAL_SCRIPTS_DIR, AGENTS_SKILLS_DIR
+GLOBAL_SCRIPTS_DIR = GLOBAL_SCRIPTS_DIR  # re-export for downstream MCP modules
 from infra.memory_config import GLOBAL_MEM_DIR, get_memory_paths  # noqa: E402,F401
+
+__all__ = [
+    "GLOBAL_SCRIPTS_DIR",
+    "GLOBAL_MEM_DIR",
+    "get_memory_paths",
+    "AGENTS_SKILLS_DIR",
+    "_bootstrap_path",
+    "_resolve_memory_dir",
+    "_run_subprocess_output",
+    "recompile_skills_catalog",
+]
 
 logger = logging.getLogger(__name__)
 

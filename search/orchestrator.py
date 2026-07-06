@@ -1733,6 +1733,30 @@ def _record_search_telemetry(*, db, query_id, result_items, ctr_weights) -> None
         logger.warning("record_search_telemetry failed: %s", e)
 
 
+def _record_search_phase_latencies(*, db, query_id: str, phase_latencies: dict[str, float]) -> None:
+    """Persist per-phase latency to the search_phase_stats table.
+
+    Best-effort: never propagates. Writes one row per phase with the
+    latency in milliseconds and a UTC ISO timestamp for aggregation.
+    """
+    try:
+        if not phase_latencies:
+            return
+        now_ts = time.time()
+        rows = [
+            (query_id, name, latency_ms, now_ts)
+            for name, latency_ms in phase_latencies.items()
+        ]
+        db.executemany(
+            "INSERT INTO search_phase_stats (query_id, phase_name, latency_ms, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            rows,
+        )
+        db.commit()
+    except Exception as e:
+        logger.warning("_record_search_phase_latencies failed: %s", e)
+
+
 def _apply_save_hint_floater(
     *, db, db_path, result_items, output, query, rerank, backlinks_map
 ):
@@ -2208,6 +2232,11 @@ def search_memories(
             query_id=result["query_id"],
             result_items=result_items,
             ctr_weights=_search_ctr_weights,
+        )
+        _record_search_phase_latencies(
+            db=db,
+            query_id=result["query_id"],
+            phase_latencies=dict(_phase_latencies),
         )
         return result
     except Exception as e:

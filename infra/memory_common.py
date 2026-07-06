@@ -404,9 +404,9 @@ def get_default_limiter() -> RateLimiter:
     Reads per-tool limits from ``get_config().rate_limits`` when
     available so operators get the configured defaults without extra code.
     """
-    import sys
+    global _default_limiter
     with _default_limiter_lock:
-        if not hasattr(sys, "_agentic_memory_default_limiter") or sys._agentic_memory_default_limiter is None:
+        if _default_limiter is None:
             per_tool: dict[str, tuple[int, float]] = {}
             try:
                 from config import get_config
@@ -418,7 +418,6 @@ def get_default_limiter() -> RateLimiter:
                     for tool in known_tools:
                         limits = _resolve_tool_limits(tool, toml_limits)
                         per_tool[tool] = (limits["burst"], 60.0)
-                    # also populate the catch-all
                     _resolve_tool_limits("_default", toml_limits)
                 except Exception:
                     for tool, entry in toml_limits.items():
@@ -428,8 +427,8 @@ def get_default_limiter() -> RateLimiter:
                             per_tool[tool] = (burst, 60.0)
             except Exception:
                 pass
-            sys._agentic_memory_default_limiter = RateLimiter(max_calls=60, window_seconds=60.0, per_tool_limits=per_tool)
-        return sys._agentic_memory_default_limiter
+            _default_limiter = RateLimiter(max_calls=60, window_seconds=60.0, per_tool_limits=per_tool)
+        return _default_limiter
 
 
 def rate_limit_check(name: str) -> bool:
@@ -445,10 +444,9 @@ def rate_limit_check(name: str) -> bool:
 
 def reset_rate_limiter() -> None:
     """Reset the default rate limiter (for tests)."""
-    import sys
+    global _default_limiter
     with _default_limiter_lock:
-        if hasattr(sys, "_agentic_memory_default_limiter"):
-            sys._agentic_memory_default_limiter = None
+        _default_limiter = None
 
 
 # ---------------------------------------------------------------------------
