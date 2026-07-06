@@ -42,6 +42,7 @@ const MEMORY_RECALL = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-recall-sess
 const PROACTIVE_CONTEXT = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-proactive-context.py")
 const MEMORY_SESSION_END = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-session-end.py")
 const MEMORY_PRECOMPACT_SNAPSHOT = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-precompact-snapshot.py")
+const AGENT_CONTRACT_FILE = path.join(AGENTIC_MEMORY_DIR, "AGENT_CONTRACT.md")
 const STATE_FILE = path.join(AGENTIC_MEMORY_DIR, "memory", "sessions", ".context_monitor_state.json")
 const ERROR_LOG = path.join(AGENTIC_MEMORY_DIR, "memory", "hook-errors.jsonl")
 const AUTO_SAVE_RESULTS = path.join(AGENTIC_MEMORY_DIR, "memory", ".auto_save_results.jsonl")
@@ -276,6 +277,20 @@ export const state = {
   proactiveContext: "",
 }
 
+// Cached agent contract content — read once from disk, injected on every LLM call.
+let _agentContractContent: string | null = null
+
+function loadAgentContract(): string {
+  if (_agentContractContent === null) {
+    try {
+      _agentContractContent = fs.readFileSync(AGENT_CONTRACT_FILE, "utf8").trim()
+    } catch {
+      _agentContractContent = ""
+    }
+  }
+  return _agentContractContent
+}
+
 // ── Hook implementations ─────────────────────────────────────────────────────
 // Each function is a self-contained unit: plain args, plain return value,
 // no framework dependencies. Callable from any harness.
@@ -456,6 +471,13 @@ export function injectSystemPrompt(system: string[]): void {
   // and then clears it so we don't inject stale context on the next turn.
   // If OpenCode ever changes this to fire only once, proactive context
   // would only be delivered on the very first LLM call.
+
+  // Agent contract: injected on every LLM call as a persistent reminder.
+  const contract = loadAgentContract()
+  if (contract) {
+    system.push(contract)
+  }
+
   if (state.sessionContext) {
     system.push(state.sessionContext)
     state.sessionContext = ""

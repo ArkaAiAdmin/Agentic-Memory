@@ -1,9 +1,10 @@
 # AGENTS.md — Agentic Memory System (Maintainer Edition)
 
-You are an agent working on the **agentic-memory** codebase at the repo root. This file is your operating contract.
+You are an agent working on the **agentic-memory** codebase at the repo root.
 
-> If you are an agent that *uses* this memory system (working in another project with agentic-memory installed), you want the user-facing skill instead:
-> `~/.opencode/skills/agentic-memory/SKILL.md`
+**If you are an agent using this system** (not maintaining it): read `AGENT_CONTRACT.md` — 5 rules for every session.
+
+**If you are maintaining this codebase**: everything below this line is for you. The Reliability Rules table has the quick-reference; the Hard Rules have the detail.
 
 ---
 
@@ -37,48 +38,6 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.confi
 | 13 | Every significant milestone or decision | `agentic-memory_memory_save` a **context-rich periodic note** — captures goal, approach, rationale, improvements, semantic relationships. Not a timestamped log line: it should carry enough context to be useful weeks later. Category: `projects`. Tags: include decision/subsystem context. Importance: 4. |
 
 Minimum: do #1, #7, and #13. Run #8 opportunistically. Use `agentic-memory_memory_maintenance(operation="compliance_check")` to audit.
-
----
-
-## Session Lifecycle
-
-Every session follows the same three phases:
-
-### Start
-1. `agentic-memory_memory_session_start(query="<subsystem>")` — loads prior context
-2. `agentic-memory_memory_search(query="<feature> <subsystem> design rationale")` — retrieves relevant past decisions
-
-### Work (apply as needed during the session)
-3. `agentic-memory_memory_search(query="<topic>")` before designing features or making decisions
-4. `agentic-memory_memory_save(category="lessons")` after bug fixes
-5. `agentic-memory_memory_save(category="decisions")` after architectural decisions
-6. `agentic-memory_memory_save(category="projects", importance=4)` at every significant milestone (context-rich periodic note)
-7. If the task is a significant feature/refactor, follow the Significant Feature Workflow below
-
-### End
-8. `agentic-memory_memory_save(category="sessions")` — captures the session summary
-9. `token-optimizer_optimize_session` — compresses if large file ops occurred
-10. `agentic-memory_memory_maintenance(operation="compliance_check")` — run this before ending to audit
-
----
-
-## MCP Workflow Hard Rules
-
-1. **Use the MCP surface verb for all saves and searches.** The only save tool is `agentic-memory_memory_save`. The only
-   search tool is `agentic-memory_memory_search`. Do not call `save_pipeline.save_memory` directly.
-2. **Session start is mandatory.** Call `agentic-memory_memory_session_start(query="<subsystem>")` at the
-   start of every new session or task to load prior context.
-3. **Session end is mandatory.** Call `agentic-memory_memory_save(category="sessions")` before ending a
-   session to capture the summary.
-4. **Search before you act.** Call `agentic-memory_memory_search` before designing a feature or making a decision.
-5. **Save what you learn.** Call `agentic-memory_memory_save` after any bug fix, decision, or significant event.
-6. **Maintenance is automated.** The cron/background worker handles index updates, FTS5 compaction,
-   dedup, etc. Do NOT call `memory_organize` or `memory_maintenance` as a default post-task ritual.
-   Only call them when cron is not running or you need an immediate result.
-7. **mcp_verbs.py is the canonical CORE verb surface.** `mcp_memory.py` is the backward-compatible
-   wrapper. Do not add new CORE tools in `mcp_memory.py` — add them in `mcp_verbs.py`.
-8. **ADMIN tools are hidden by design.** They are accessible only via `memory_maintenance(operation="...")`.
-   If you need an admin op, use the router. Do not try to call ADMIN tool names directly.
 
 **Reference:** `docs/MCP_SURFACE.md` has the full verb reference, decision tree, and parameter tables.
 
