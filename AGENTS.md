@@ -11,9 +11,9 @@ You are an agent working on the **agentic-memory** codebase at the repo root. Th
 
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
-  - **Surface**: 15 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + ~36 cron jobs + ~18 CLI commands
-  - **Schema**: v32, ~62 tables
- - **Code**: ~60k LOC production, ~87k test LOC; see `docs/architecture.md`
+- **Surface**: 15 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + ~36 cron jobs + ~18 CLI commands
+- **Schema**: v32, ~62 tables
+- **Code**: ~60k LOC production, ~87k test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. Read it whenever you need to call an MCP tool and aren't sure which one or how.
 
 ---
@@ -30,26 +30,48 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.confi
 | 6 | Before pushing write-path code | `agentic-memory_memory_search(query="save_pipeline saga transaction safety")` |
 | 7 | Before ending session | `agentic-memory_memory_save(category="sessions")` |
 | 8 | After large file ops | `token-optimizer_optimize_session` |
-| 9 | .md/DB drift | `python memory_integrity.py <db> --recover-orphan-files` |
-| 10 | KG/backlinks orphans | `python memory_integrity.py <db> --repair-kg-orphans` |
-| 11 | Auto-save history | `agentic-memory_memory_circuit_breaker_status()` |
+| 9 | .md/DB drift | `venv/bin/python memory_integrity.py <db> --recover-orphan-files` |
+| 10 | KG/backlinks orphans | `venv/bin/python memory_integrity.py <db> --repair-kg-orphans` |
+| 11 | Auto-save history | `agentic-memory_memory_maintenance(operation="circuit_breaker_status")` |
 | 12 | Temporal KG misbehaving | Set `MEMORY_TEMPORAL_KG=0` |
-| 13 | Every significant milestone or decision | `memory_save` a **context-rich periodic note** — captures goal, approach, rationale, improvements, semantic relationships. Not a timestamped log line: it should carry enough context to be useful weeks later. Category: `projects`. Tags: include decision/subsystem context. Importance: 4. |
+| 13 | Every significant milestone or decision | `agentic-memory_memory_save` a **context-rich periodic note** — captures goal, approach, rationale, improvements, semantic relationships. Not a timestamped log line: it should carry enough context to be useful weeks later. Category: `projects`. Tags: include decision/subsystem context. Importance: 4. |
 
-Minimum: do #1, #7, and #13. Run #8 opportunistically. Use `memory_maintenance(operation="compliance_check")` to audit.
+Minimum: do #1, #7, and #13. Run #8 opportunistically. Use `agentic-memory_memory_maintenance(operation="compliance_check")` to audit.
+
+---
+
+## Session Lifecycle
+
+Every session follows the same three phases:
+
+### Start
+1. `agentic-memory_memory_session_start(query="<subsystem>")` — loads prior context
+2. `agentic-memory_memory_search(query="<feature> <subsystem> design rationale")` — retrieves relevant past decisions
+
+### Work (apply as needed during the session)
+3. `agentic-memory_memory_search(query="<topic>")` before designing features or making decisions
+4. `agentic-memory_memory_save(category="lessons")` after bug fixes
+5. `agentic-memory_memory_save(category="decisions")` after architectural decisions
+6. `agentic-memory_memory_save(category="projects", importance=4)` at every significant milestone (context-rich periodic note)
+7. If the task is a significant feature/refactor, follow the Significant Feature Workflow below
+
+### End
+8. `agentic-memory_memory_save(category="sessions")` — captures the session summary
+9. `token-optimizer_optimize_session` — compresses if large file ops occurred
+10. `agentic-memory_memory_maintenance(operation="compliance_check")` — run this before ending to audit
 
 ---
 
 ## MCP Workflow Hard Rules
 
-1. **Use the MCP surface verb for all saves and searches.** The only save tool is `memory_save`. The only
-   search tool is `memory_search`. Do not call `save_pipeline.save_memory` directly.
+1. **Use the MCP surface verb for all saves and searches.** The only save tool is `agentic-memory_memory_save`. The only
+   search tool is `agentic-memory_memory_search`. Do not call `save_pipeline.save_memory` directly.
 2. **Session start is mandatory.** Call `agentic-memory_memory_session_start(query="<subsystem>")` at the
    start of every new session or task to load prior context.
 3. **Session end is mandatory.** Call `agentic-memory_memory_save(category="sessions")` before ending a
    session to capture the summary.
-4. **Search before you act.** Call `memory_search` before designing a feature or making a decision.
-5. **Save what you learn.** Call `memory_save` after any bug fix, decision, or significant event.
+4. **Search before you act.** Call `agentic-memory_memory_search` before designing a feature or making a decision.
+5. **Save what you learn.** Call `agentic-memory_memory_save` after any bug fix, decision, or significant event.
 6. **Maintenance is automated.** The cron/background worker handles index updates, FTS5 compaction,
    dedup, etc. Do NOT call `memory_organize` or `memory_maintenance` as a default post-task ritual.
    Only call them when cron is not running or you need an immediate result.
@@ -91,11 +113,11 @@ agentic-memory/
 
 1. **All writes go through `save_memory`** (`save_pipeline.save_memory`). Hooks and auto-save delegate to it. Don't re-implement.
 2. **Connection pool is per-DB-path.** `connection_pool.get(str(db_path))` returns stale connections if the path doesn't exist. Active connections cannot be evicted.
-3. **Vec keys/index drift after warm-up.** Run `rebuild_vec_index.py` after warm-up chains, not before.
- 4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **32**. Never edit live DB schema by hand.
- 5. **Default search is `include_global=True`** with blended RRF. Don't override "for safety."
- 6. **15 CORE tools are user-facing**; 87 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
-7. **Use `--incremental` / `--full` with backfill.** Bare args create 22 MB garbage DBs at repo root.
+3. **Vec keys/index drift after warm-up.** Run `venv/bin/python rebuild_vec_index.py` after warm-up chains, not before.
+4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **32**. Never edit live DB schema by hand.
+5. **Default search is `include_global=True`** with blended RRF. Don't override "for safety."
+6. **15 CORE tools are user-facing**; 87 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
+7. **Use `venv/bin/python backfill_all.py` (incremental default) or `venv/bin/python backfill_all.py --full` (full rebuild).** Bare args create 22 MB garbage DBs at repo root.
 8. **Tests hitting prod DB must use `_ProdDBGuarded` mixin.** See `eval/test_safety_wiring.py:60-109`.
 9. **Lock order: file lock first, then conn.** Both `save_memory` and `_update_memory_index_incremental` follow this order.
 10. **Concurrent .md writes preserve losers.** `safe_atomic_write(path, content, expected_existing=...)` saves conflicting on-disk content as `<path>.conflict-<pid>-<ts>`.
@@ -106,7 +128,7 @@ agentic-memory/
 15. **Update docs after code changes.** Stale docs are a maintenance hazard — fix them in the same commit.
 16. **Use one persistent worktree for active development.** Reuse it for all ongoing feature work; do not create a new worktree per branch or per commit. Verify security and tests in the worktree before merging to main. Keep worktrees minimal and remove them when no longer needed.
 17. **Fix every LSP error in every file you touch.** Every file you read or edit must exit with zero LSP errors (pyright). No `# type: ignore` comments, no `# noqa` for type errors, no silent `except` swallowing of type-correctness issues. Fix the type annotation at the source (function signature, variable declaration) so the error is resolved correctly. Pre-existing errors in files you didn't modify are exempt, but any file you edit must be left fully clean.
-18. **Run mypy + ruff before every commit.** Before committing any changes, run `./venv/bin/python -m mypy <any file you modified>` and `./venv/bin/python -m ruff check <any file you modified>`. Fix all errors and warnings. Do not commit with outstanding mypy or ruff issues. This applies even to test files.
+18. **Run mypy + ruff before every commit.** Before committing any changes, run `venv/bin/python -m mypy <any file you modified>` and `venv/bin/python -m ruff check <any file you modified>`. Fix all errors and warnings. Do not commit with outstanding mypy or ruff issues. This applies even to test files.
 19. **Maintenance is automated.** Most maintenance is handled by cron jobs and the background worker (see `cron/install_crontab.sh`). The agent should exercise `memory_organize`, `memory_maintenance`, or individual MCP tools **only when cron is not running or immediate results are needed**. Do not run maintenance tools as a default post-task ritual.
 
 ---
@@ -155,7 +177,7 @@ When the task is a significant feature, refactor, or any change that affects sch
 | 2 | Build | Implement the change on the feature branch |
 | 3 | Validate | Run individual test files for affected areas during development |
 | 4 | Full suite | Before merging, run `make test` (in-process, all 4,000+ tests) and confirm 0 failures |
-| 5 | Merge local | Merge feature branch into `main` (local) |
+| 5 | Merge local | `git checkout main && git merge feat/my-feature` |
 | 6 | Push | `git push origin main` |
 
 **Rules:**
@@ -169,8 +191,6 @@ When the task is a significant feature, refactor, or any change that affects sch
 ## Sync Server Security
 
 Binds to `127.0.0.1:9877`. Key env vars: `MEMORY_SYNC_TOKEN` (required), `MEMORY_SYNC_HMAC_SECRET` (optional), `MEMORY_SYNC_TLS_CERT`/`MEMORY_SYNC_TLS_KEY` (native TLS), `MEMORY_SYNC_TLS_CLIENT_CA` (mTLS). Empty `MEMORY_SYNC_CORS_ORIGINS` means no CORS. Non-loopback without TLS logs a warning.
-
----
 
 ---
 
@@ -256,6 +276,26 @@ See `memory.toml` for all 17 feature flags.
 3. Check cron logs: `memory/worker.log`, `memory/heartbeat.log`, `memory/integrity.log`.
 4. Run integrity check: `venv/bin/python memory_integrity.py memory/memory.db`. 0 critical = OK.
 5. Stuck? Read `eval/test_*.py` for the regression net.
+
+---
+
+## Constitution
+
+These principles govern every decision in this codebase. They override convenience.
+
+1. **Schema changes must be reversible.** Every `.sql` migration must have a matching `.down.sql`. A change that can't be rolled back is not a migration — it's a data loss incident waiting to happen.
+
+2. **All schema changes go through numbered migrations.** Never `ALTER TABLE` or `CREATE TABLE` directly in Python code unless the table is ephemeral (cache/temp). If a Python setup function needs a persistent table, create it as a numbered migration so the down-up round-trip is provably correct.
+
+3. **All writes go through `save_memory`.** Hooks, auto-save, CLI tools — all delegate to `save_pipeline.save_memory`. A write that bypasses the saga is a write that can't be rolled back.
+
+4. **Write idempotent SQL.** Every `CREATE` must use `IF NOT EXISTS`. Every `DROP` must use `IF EXISTS`. Idempotency is the difference between a safe retry and a silent corruption.
+
+5. **Every architectural decision goes into memory.** If it's not saved as a `decisions` or `lessons` note, it didn't happen. The note must answer: what was the problem, what were the options, why was this one chosen, and what are the tradeoffs?
+
+6. **Test both the happy path and the failure path.** If a migration silently skips a statement (expected table missing, duplicate column), there must be a test that proves the final schema is identical regardless of the order operations ran.
+
+7. **When in doubt, ask with named options.** Never ask "what should I do?" Give 2-4 concrete alternatives with tradeoffs. The user's time is valuable — don't waste it on open-ended questions.
 
 ---
 
