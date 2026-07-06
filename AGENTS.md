@@ -151,7 +151,7 @@ When the task is a significant feature, refactor, or any change that affects sch
 
 | # | Step | Action |
 |---|---|---|
-| 1 | Branch | Create a feature branch off `main` before writing code |
+| 1 | Branch | `git checkout -b feat/my-feature` off `main` before writing code |
 | 2 | Build | Implement the change on the feature branch |
 | 3 | Validate | Run individual test files for affected areas during development |
 | 4 | Full suite | Before merging, run `make test` (in-process, all 4,000+ tests) and confirm 0 failures |
