@@ -94,6 +94,30 @@ agentic-memory/
 
 ---
 
+## Constitution
+
+These principles govern every decision in this codebase. They override convenience.
+
+1. **Schema changes must be reversible.** Every `.sql` migration must have a matching `.down.sql`. A change that can't be rolled back is not a migration — it's a data loss incident waiting to happen.
+
+2. **All schema changes go through numbered migrations.** Never `ALTER TABLE` or `CREATE TABLE` directly in Python code unless the table is ephemeral (cache/temp). If a Python setup function needs a persistent table, create it as a numbered migration so the down-up round-trip is provably correct.
+
+3. **All writes go through `save_memory`.** Hooks, auto-save, CLI tools — all delegate to `save_pipeline.save_memory`. A write that bypasses the saga is a write that can't be rolled back.
+
+4. **Write idempotent SQL.** Every `CREATE` must use `IF NOT EXISTS`. Every `DROP` must use `IF EXISTS`. Idempotency is the difference between a safe retry and a silent corruption.
+
+5. **Every architectural decision goes into memory.** If it's not saved as a `decisions` or `lessons` note, it didn't happen. The note must answer: what was the problem, what were the options, why was this one chosen, and what are the tradeoffs?
+
+6. **Test both the happy path and the failure path.** If a migration silently skips a statement (expected table missing, duplicate column), there must be a test that proves the final schema is identical regardless of the order operations ran.
+
+7. **When in doubt, ask with named options.** Never ask "what should I do?" Give 2-4 concrete alternatives with tradeoffs. The user's time is valuable — don't waste it on open-ended questions.
+
+8. **Security by default.** This system handles private human memories. Treat all external input — file content, MCP arguments, HTTP payloads — as hostile. Never log, return, or embed credentials, tokens, internal paths, or schema details in user-facing responses; strip or mask before surfacing externally.
+
+9. **Data preservation is mandatory.** Every schema or code change must migrate existing data automatically. Default to additive migrations; a change that requires manual data repair, causes silent data loss, or breaks reads of older rows is not acceptable. Migration tests must assert zero data loss both up and down.
+
+---
+
 ## When to Ask vs Act
 
 **Act without asking:**
@@ -237,26 +261,6 @@ See `memory.toml` for all 17 feature flags.
 3. Check cron logs: `memory/worker.log`, `memory/heartbeat.log`, `memory/integrity.log`.
 4. Run integrity check: `venv/bin/python memory_integrity.py memory/memory.db`. 0 critical = OK.
 5. Stuck? Read `eval/test_*.py` for the regression net.
-
----
-
-## Constitution
-
-These principles govern every decision in this codebase. They override convenience.
-
-1. **Schema changes must be reversible.** Every `.sql` migration must have a matching `.down.sql`. A change that can't be rolled back is not a migration — it's a data loss incident waiting to happen.
-
-2. **All schema changes go through numbered migrations.** Never `ALTER TABLE` or `CREATE TABLE` directly in Python code unless the table is ephemeral (cache/temp). If a Python setup function needs a persistent table, create it as a numbered migration so the down-up round-trip is provably correct.
-
-3. **All writes go through `save_memory`.** Hooks, auto-save, CLI tools — all delegate to `save_pipeline.save_memory`. A write that bypasses the saga is a write that can't be rolled back.
-
-4. **Write idempotent SQL.** Every `CREATE` must use `IF NOT EXISTS`. Every `DROP` must use `IF EXISTS`. Idempotency is the difference between a safe retry and a silent corruption.
-
-5. **Every architectural decision goes into memory.** If it's not saved as a `decisions` or `lessons` note, it didn't happen. The note must answer: what was the problem, what were the options, why was this one chosen, and what are the tradeoffs?
-
-6. **Test both the happy path and the failure path.** If a migration silently skips a statement (expected table missing, duplicate column), there must be a test that proves the final schema is identical regardless of the order operations ran.
-
-7. **When in doubt, ask with named options.** Never ask "what should I do?" Give 2-4 concrete alternatives with tradeoffs. The user's time is valuable — don't waste it on open-ended questions.
 
 ---
 
