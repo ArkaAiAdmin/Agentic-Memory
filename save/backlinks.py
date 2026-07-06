@@ -108,6 +108,8 @@ def _auto_semantic_backlinks(
         from infra._lazy_imports import get_embedding_search
 
         es = get_embedding_search()
+        if es.model is None and not es._model_load_failed:
+            es.wait_for_model(timeout_s=5.0)
         if es.model is None:
             return
 

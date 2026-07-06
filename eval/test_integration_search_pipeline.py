@@ -69,6 +69,7 @@ def _embedding_available():
         from infra.embedding_search import get_embedding_search
 
         es = get_embedding_search()
+        es.wait_for_model(timeout_s=10.0)
         return es.model is not None
     except Exception:
         return False

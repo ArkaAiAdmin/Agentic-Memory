@@ -100,6 +100,7 @@ def test_A2_vec_search_returns_saved():
         raise RuntimeError(
             "get_embedding_search returned None (model2vec not installed?)"
         )
+    es_instance.wait_for_model(timeout_s=10.0)
     results_vec = es_instance.search("quantum entanglement", db_path=str(TEST_DB), limit=3)
     if isinstance(results_vec, str):
         raise RuntimeError(f"search returned error: {results_vec}")

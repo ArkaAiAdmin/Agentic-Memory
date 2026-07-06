@@ -1,28 +1,19 @@
-Total: 4009 passed, 28 failed, 62 skipped, 0 xfailed
-Passed files: 222
-Failed/segfault files: 11
+Total: 4082 passed, 0 failed, 45 skipped, 0 xfailed
+Passed files: 234
+Failed/segfault files: 0
 
-  FAILED: test_auto_backlinks.py
-  FAILED: test_bb2_history.py
-  FAILED: test_cascade_preserve.py
-  FAILED: test_db_drift.py
-  FAILED: test_indexers.py
-  FAILED: test_phase2_instrumentation.py
-  FAILED: test_p0_p1_p2_fixes.py
-  FAILED: test_pipelines_aj.py
-  FAILED: test_pipeline_integration.py
-  FAILED: test_search_skill_first.py
-  FAILED: test_vec_index.py
 
-  PASSED: test_add_flock_to_crons.py
   PASSED: test_adaptive_retention.py
+  PASSED: test_add_flock_to_crons.py
   PASSED: test_agent_scoping_hooks.py
   PASSED: test_antonym_contradictions.py
+  PASSED: test_api_server.py
+  PASSED: test_advanced_features.py
   PASSED: test_arc_cache.py
   PASSED: test_atomic_write_coverage.py
-  PASSED: test_advanced_features.py
-  PASSED: test_audit_log.py
   PASSED: test_audit_logging.py
+  PASSED: test_audit_log.py
+  PASSED: test_auto_backlinks.py
   PASSED: test_auto_save_integration.py
   PASSED: test_b7_shared_memory_injection.py
   PASSED: test_auto_save_unit.py
@@ -30,19 +21,21 @@ Failed/segfault files: 11
   PASSED: test_backfill_safety.py
   PASSED: test_background_queue.py
   PASSED: test_background_worker_unit.py
-  PASSED: test_backfill_all.py
   PASSED: test_backpressure.py
   PASSED: test_bb1_synthesis.py
+  PASSED: test_backfill_all.py
   PASSED: test_bb3_rrf.py
   PASSED: test_belief_behavior.py
+  PASSED: test_bb2_history.py
+  PASSED: test_cascade_preserve.py
+  PASSED: test_adversarial_e2e.py
   PASSED: test_cli.py
   PASSED: test_compaction_synthesis.py
-  PASSED: test_adversarial_e2e.py
   PASSED: test_circuit_breaker_telemetry.py
   PASSED: test_compliance_rate_limit.py
   PASSED: test_concurrent.py
-  PASSED: test_config_loading.py
   PASSED: test_compilation_behavior.py
+  PASSED: test_config_loading.py
   PASSED: test_config_log_resolution.py
   PASSED: test_consolidation.py
   PASSED: test_context_window.py
@@ -58,8 +51,8 @@ Failed/segfault files: 11
   PASSED: test_crdt_saga.py
   PASSED: test_crewai_tool.py
   PASSED: test_cron_behavior.py
-  PASSED: test_crdt_sync.py
   PASSED: test_cron_concept_drift.py
+  PASSED: test_crdt_sync.py
   PASSED: test_cron_crdt_sync.py
   PASSED: test_cron_coverage.py
   PASSED: test_crewai_memory.py
@@ -67,57 +60,59 @@ Failed/segfault files: 11
   PASSED: test_cron_kg_backfill.py
   PASSED: test_cron_kg_backfill_monitor.py
   PASSED: test_cron_skill_extraction.py
-  PASSED: test_cron_model_lock.py
   PASSED: test_cron_train_forget_model.py
+  PASSED: test_cron_model_lock.py
   PASSED: test_cron_watchdog.py
   PASSED: test_cross_process_safety.py
-  PASSED: test_cross_session_learn.py
   PASSED: test_cron_integration.py
+  PASSED: test_cross_session_learn.py
   PASSED: test_ctr_feedback.py
   PASSED: test_db_path_flock.py
   PASSED: test_db_write_queue.py
   PASSED: test_decision_extraction.py
+  PASSED: test_db_drift.py
   PASSED: test_doc_drift.py
-  PASSED: test_docker_cron_runner.py
   PASSED: test_dist_lock.py
+  PASSED: test_docker_cron_runner.py
   PASSED: test_drift_alarms.py
   PASSED: test_embedding_cache.py
-  PASSED: test_embedding_recompute.py
-  PASSED: test_embedding_search_unit.py
-  PASSED: test_embedding_singleton.py
   PASSED: test_dedup_audit_behavior.py
+  PASSED: test_embedding_search_unit.py
   PASSED: test_e2e_validation.py
-  PASSED: test_eval_judge.py
+  PASSED: test_embedding_singleton.py
   PASSED: test_enqueue_task_behavior.py
   PASSED: test_event_time_extraction.py
-  PASSED: test_feature_flags.py
+  PASSED: test_eval_judge.py
   PASSED: test_fact_extraction.py
+  PASSED: test_embedding_recompute.py
+  PASSED: test_feature_flags.py
   PASSED: test_fact_temporal.py
-  PASSED: test_forgetting_curve.py
   PASSED: test_frontmatter.py
+  PASSED: test_forgetting_curve.py
   PASSED: test_fts.py
   PASSED: test_fts_unit.py
-  PASSED: test_h21_fixture_smoke.py
   PASSED: test_file_lock.py
+  PASSED: test_h21_fixture_smoke.py
   PASSED: test_hybrid_strategy.py
-  PASSED: test_graph_behavior.py
-  PASSED: test_infra_log.py
   PASSED: test_hook_resilience.py
+  PASSED: test_graph_behavior.py
+  PASSED: test_indexers.py
+  PASSED: test_infra_log.py
   PASSED: test_injection.py
   PASSED: test_install_crontab_lock.py
   PASSED: test_integration_lifecycle.py
   PASSED: test_integration_integrity.py
-  PASSED: test_integration_edge_cases.py
-  PASSED: test_integrations_shared.py
-  PASSED: test_integrity.py
-  PASSED: test_isolation_guard.py
-  PASSED: test_kg_crdt.py
-  PASSED: test_kg_dedup.py
   PASSED: test_integration_save_pipeline.py
-  PASSED: test_kg_dedup_semantic.py
-  PASSED: test_kg_enhancements.py
-  PASSED: test_kg_entity_filter.py
+  PASSED: test_integrations_shared.py
   PASSED: test_integration_search_pipeline.py
+  PASSED: test_isolation_guard.py
+  PASSED: test_integrity.py
+  PASSED: test_kg_crdt.py
+  PASSED: test_integration_edge_cases.py
+  PASSED: test_kg_dedup.py
+  PASSED: test_kg_enhancements.py
+  PASSED: test_kg_dedup_semantic.py
+  PASSED: test_kg_entity_filter.py
   PASSED: test_kg_facts_fts.py
   PASSED: test_kg_traversal.py
   PASSED: test_kg_orphan_recovery.py
@@ -130,12 +125,12 @@ Failed/segfault files: 11
   PASSED: test_langchain_retriever.py
   PASSED: test_llm_summarization.py
   PASSED: test_mcp_instance.py
-  PASSED: test_mcp_maintenance_dispatch.py
   PASSED: test_mcp_live.py
   PASSED: test_mcp_maintenance_ops_unit.py
+  PASSED: test_mcp_maintenance_dispatch.py
   PASSED: test_mcp_skill_ops.py
-  PASSED: test_llm_providers.py
   PASSED: test_mcp_verbs.py
+  PASSED: test_llm_providers.py
   PASSED: test_memory_common_extras.py
   PASSED: test_mcp_wrappers.py
   PASSED: test_memory_common_unit.py
@@ -150,22 +145,26 @@ Failed/segfault files: 11
   PASSED: test_observability.py
   PASSED: test_okf_export.py
   PASSED: test_okf_import.py
-  PASSED: test_no_silent_search_failures.py
   PASSED: test_okf_roundtrip.py
-  PASSED: test_memory_common_mutation_killers.py
+  PASSED: test_no_silent_search_failures.py
   PASSED: test_p2_share_and_sync_wireup.py
   PASSED: test_phase1_debt_fixes.py
+  PASSED: test_memory_common_mutation_killers.py
   PASSED: test_phase2_3_smoke.py
   PASSED: test_phase2_debt_fixes.py
   PASSED: test_phase4_debt_fixes.py
-  PASSED: test_pool_inode_reopen.py
+  PASSED: test_phase2_instrumentation.py
+  PASSED: test_p0_p1_p2_fixes.py
   PASSED: test_phase9.py
-  PASSED: test_quality_gates.py
+  PASSED: test_pool_inode_reopen.py
+  PASSED: test_pipeline_integration.py
+  PASSED: test_pipelines_aj.py
   PASSED: test_quirk_fixes_e2e.py
+  PASSED: test_quality_gates.py
   PASSED: test_query_cache.py
   PASSED: test_qw3_query_types.py
-  PASSED: test_qw2_query_expansion.py
   PASSED: test_qw4_cross_encoder.py
+  PASSED: test_qw2_query_expansion.py
   PASSED: test_rate_limiter.py
   PASSED: test_rate_limit_mcp.py
   PASSED: test_qw5_chunk_indexing.py
@@ -179,10 +178,10 @@ Failed/segfault files: 11
   PASSED: test_recall.py
   PASSED: test_reranker_unit.py
   PASSED: test_retention_coordinator.py
-  PASSED: test_rich_survival_note.py
   PASSED: test_reranker.py
   PASSED: test_safe_call.py
   PASSED: test_safe_close_db.py
+  PASSED: test_rich_survival_note.py
   PASSED: test_safety_wiring.py
   PASSED: test_safety_wiring_signatures.py
   PASSED: test_saga_crash_safety.py
@@ -192,233 +191,52 @@ Failed/segfault files: 11
   PASSED: test_sdk.py
   PASSED: test_sdk_p2.py
   PASSED: test_sdk_p3.py
-  PASSED: test_sdk_p1.py
-  PASSED: test_search_kg_facts.py
-  PASSED: test_search_memory_cli.py
   PASSED: test_save_pipeline_unit.py
+  PASSED: test_search_kg_facts.py
+  PASSED: test_sdk_p1.py
+  PASSED: test_search_memory_cli.py
   PASSED: test_search_mutation_killers.py
   PASSED: test_search_pipeline_unit.py
+  PASSED: test_search_skill_first.py
   PASSED: test_search_pipeline_validation.py
   PASSED: test_security_sync_auth.py
+  PASSED: test_search_temporal_as_of.py
   PASSED: test_self_directed.py
   PASSED: test_self_directed_validation.py
   PASSED: test_self_editing_behavior.py
   PASSED: test_semantic_correctness.py
   PASSED: test_search_integration.py
-  PASSED: test_session_admin.py
   PASSED: test_session_migration.py
-  PASSED: test_session_manager.py
+  PASSED: test_session_admin.py
   PASSED: test_shared_memory_state.py
-  PASSED: test_session_search.py
   PASSED: test_six_channel.py
   PASSED: test_skill_extractor.py
   PASSED: test_skill_extractor_full.py
+  PASSED: test_session_search.py
+  PASSED: test_session_manager.py
   PASSED: test_spaced_repetition.py
-  PASSED: test_soft_delete.py
   PASSED: test_subpackage_public_api.py
   PASSED: test_sync_check.py
   PASSED: test_sync_layer.py
+  PASSED: test_soft_delete.py
   PASSED: test_sync_server_tls.py
   PASSED: test_temporal_facts.py
   PASSED: test_temporal_ssm_v2.py
   PASSED: test_tier_migration.py
   PASSED: test_tier_migration_assign_tier.py
-  PASSED: test_search_temporal_as_of.py
+  PASSED: test_sql_safety.py
   PASSED: test_tool_routing.py
+  PASSED: test_unicode_normalization.py
   PASSED: test_uncovered_dedicated.py
   PASSED: test_transformer_opt_in.py
-  PASSED: test_unicode_normalization.py
   PASSED: test_vec_index_search.py
   PASSED: test_vector_store.py
-  PASSED: test_sql_safety.py
+  PASSED: test_vec_index.py
   PASSED: test_wave2c.py
   PASSED: test_wiring_invariants.py
-  PASSED: test_wal_checkpoint.py
   PASSED: test_zero_result_ux.py
+  PASSED: test_wal_checkpoint.py
   PASSED: test_wal_mode.py
 
 
 Failure details:
-
-=== test_auto_backlinks.py ===
- call -------------------------------
-WARNING  infra.embedding_search:embedding_search.py:103 For semantic search, run with the venv python: /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/infra/embedding_search.py <query>
-/Users/arka/.config/agentic-memory/eval/test_auto_backlinks.py:420: TypeError: 'NoneType' object is not subscriptable
-E   AssertionError: 0 != 2
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 0 != 2
-E   AssertionError: 'a' not found in set()
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: 'a' not found in set()
-E   AssertionError: unexpectedly None
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: unexpectedly None
-E   AssertionError: 0 != 2
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 0 != 2
-E   AssertionError: ('mem-0', 'mem-1') not found in set()
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: ('mem-0', 'mem-1') not found in set()
-=========================== short test summary info ============================
-FAILED eval/test_auto_backlinks.py::TestAutoSemanticBacklinks::test_bidirectional_edges_both_exist
-FAILED eval/test_auto_backlinks.py::TestAutoSemanticBacklinks::test_idempotent
-FAILED eval/test_auto_backlinks.py::TestAutoSemanticBacklinks::test_memory_entities_created
-FAILED eval/test_auto_backlinks.py::TestAutoSemanticBacklinks::test_relation_entity_created
-FAILED eval/test_auto_backlinks.py::TestAutoSemanticBacklinks::test_single_candidate_creates_edges
-FAILED eval/test_auto_backlinks.py::TestBacklinksIntegration::test_both_features_coexist
-6 failed, 21 passed in 0.19s
-
-
-=== test_bb2_history.py ===
-............F                                                            [100%]
-=================================== FAILURES ===================================
-E   AssertionError: 0 not greater than 0
------------------------------- Captured log call -------------------------------
-WARNING  infra.embedding_search:embedding_search.py:103 For semantic search, run with the venv python: /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/infra/embedding_search.py <query>
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: 0 not greater than 0
-=========================== short test summary info ============================
-FAILED eval/test_bb2_history.py::TestE2EHistoryResolution::test_13_reference_finds_rate
-1 failed, 12 passed in 0.29s
-
-
-=== test_cascade_preserve.py ===
-.F...F............                                                       [100%]
-=================================== FAILURES ===================================
-E   AssertionError: Expected 5 embeddings, got 0
-    assert 0 == 5
------------------------------ Captured stdout call -----------------------------
-Successfully indexed 5 memories in SQLite database: /var/folders/dj/vpjmm5lj7396z81xszrbt7680000gn/T/tmpv6trirh8/test.db
-Memory corpus size: ~159 tokens (636 characters).
-/Users/arka/.config/agentic-memory/eval/test_cascade_preserve.py:192: AssertionError: Expected 5 embeddings, got 0
-E   RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
------------------------------ Captured stdout call -----------------------------
-Successfully indexed 5 memories in SQLite database: /var/folders/dj/vpjmm5lj7396z81xszrbt7680000gn/T/tmpvva9mz20/test.db
-Memory corpus size: ~159 tokens (636 characters).
-/Users/arka/.config/agentic-memory/rebuild_vec_index.py:208: RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-=========================== short test summary info ============================
-FAILED eval/test_cascade_preserve.py::TestRebuildPreservesSubsystems::test_core_embeddings_preserved
-FAILED eval/test_cascade_preserve.py::TestRebuildPreservesSubsystems::test_vec_keys_rebuilt
-2 failed, 16 passed in 1.23s
-
-
-=== test_db_drift.py ===
-.........................F.F.......                                      [100%]
-=================================== FAILURES ===================================
-E   AssertionError: 0 != 1
------------------------------- Captured log call -------------------------------
-WARNING  infra.embedding_search:embedding_search.py:103 For semantic search, run with the venv python: /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/infra/embedding_search.py <query>
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 0 != 1
-E   AssertionError: 0 != 1
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 0 != 1
-=========================== short test summary info ============================
-FAILED eval/test_db_drift.py::TestSavePipelineEndToEnd::test_save_indexes_all_subsystems
-FAILED eval/test_db_drift.py::TestSavePipelineEndToEnd::test_upsert_preserves_all_subsystem_data
-2 failed, 33 passed in 0.98s
-Failed to load embedding model: [Errno 9] Bad file descriptor
-
-
-=== test_indexers.py ===
-.......FF.............                                                   [100%]
-=================================== FAILURES ===================================
-E   TypeError: 'NoneType' object is not subscriptable
-/Users/arka/.config/agentic-memory/eval/test_indexers.py:207: TypeError: 'NoneType' object is not subscriptable
-E   AssertionError: 0 != 1
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 0 != 1
-=========================== short test summary info ============================
-FAILED eval/test_indexers.py::TestIndexEmbeddingWrapper::test_overwrites_on_content_change
-FAILED eval/test_indexers.py::TestIndexEmbeddingWrapper::test_writes_embedding_row
-2 failed, 20 passed in 0.81s
-
-
-=== test_phase2_instrumentation.py ===
-..........F.                                                             [100%]
-=================================== FAILURES ===================================
-E   AssertionError: False is not true : Expected hybrid_fusion phase call, got: []
------------------------------- Captured log call -------------------------------
-WARNING  infra.embedding_search:embedding_search.py:103 For semantic search, run with the venv python: /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/infra/embedding_search.py <query>
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:762: AssertionError: False is not true : Expected hybrid_fusion phase call, got: []
-=========================== short test summary info ============================
-FAILED eval/test_phase2_instrumentation.py::TestInstrumentedPhaseFunctions::test_hybrid_fusion_calls_phase_inc_on_bad_db
-1 failed, 11 passed in 0.09s
-Failed to load embedding model: can't register atexit after shutdown
-
-
-=== test_p0_p1_p2_fixes.py ===
-......F...............s.s...........                                     [100%]
-=================================== FAILURES ===================================
-E   KeyError: 'query_id'
------------------------------- Captured log call -------------------------------
-WARNING  infra.embedding_search:embedding_search.py:103 For semantic search, run with the venv python: /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/infra/embedding_search.py <query>
-/Users/arka/.config/agentic-memory/eval/test_p0_p1_p2_fixes.py:179: KeyError: 'query_id'
-=========================== short test summary info ============================
-FAILED eval/test_p0_p1_p2_fixes.py::TestCtrQueryId::test_search_emits_returned_ctr_event
-1 failed, 33 passed, 2 skipped in 0.87s
-
-
-=== test_pipelines_aj.py ===
-.F............................                                           [100%]
-=================================== FAILURES ===================================
-E   RuntimeError: search returned error: Embedding search unavailable. Install model2vec: pip install model2vec numpy
-/Users/arka/.config/agentic-memory/eval/test_pipelines_aj.py:104: RuntimeError: search returned error: Embedding search unavailable. Install model2vec: pip install model2vec numpy
-=========================== short test summary info ============================
-FAILED eval/test_pipelines_aj.py::test_A2_vec_search_returns_saved - RuntimeE...
-1 failed, 29 passed in 1.18s
-
-
-=== test_pipeline_integration.py ===
-F.......................F..........                              [100%]
-=================================== FAILURES ===================================
-E   AssertionError: assert 0 == 1
-     +  where 0 = _count(<sqlite3.Connection object at 0x10a8bc220>, 'memory_embeddings', 'memory_id = ?', ('lessons/test-emb',))
-/Users/arka/.config/agentic-memory/eval/test_pipeline_integration.py:196: AssertionError: assert 0 == 1
-E   AssertionError: assert 0 == 1
-     +  where 0 = _count(<sqlite3.Connection object at 0x109a80400>, 'memory_embeddings', 'memory_id = ?', ('lessons/test-vec',))
-/Users/arka/.config/agentic-memory/eval/test_pipeline_integration.py:325: AssertionError: assert 0 == 1
-E   assert 0 == 1
-/Users/arka/.config/agentic-memory/eval/test_pipeline_integration.py:349: assert 0 == 1
-E   AssertionError: Graph-RAG found no connected memories
-    assert 0 >= 1
-     +  where 0 = len([])
------------------------------- Captured log setup ------------------------------
-WARNING  infra.audit:audit.py:190 audit flush failed for /var/folders/dj/vpjmm5lj7396z81xszrbt7680000gn/T/tmp0w24rejf/test.db (1 rows dropped): unable to open database file
-WARNING  infra.audit:audit.py:190 audit flush failed for /var/folders/dj/vpjmm5lj7396z81xszrbt7680000gn/T/tmp5qqx5b0c/test.db (1 rows dropped): unable to open database file
-/Users/arka/.config/agentic-memory/eval/test_pipeline_integration.py:1271: AssertionError: Graph-RAG found no connected memories
-=========================== short test summary info ============================
-FAILED eval/test_pipeline_integration.py::TestSavePipelineWritesAllSubsystems::test_save_writes_embeddings
-FAILED eval/test_pipeline_integration.py::TestSavePipelineWritesAllSubsystems::test_save_writes_vec_keys
-FAILED eval/test_pipeline_integration.py::TestSavePipelineWritesAllSubsystems::test_save_upsert_does_not_cascade_delete
-FAILED eval/test_pipeline_integration.py::TestGraphRAGExpansion::test_graph_rag_finds_connected_entities
-4 failed, 39 passed in 2.38s
-
-
-=== test_search_skill_first.py ===
-.F....                                                                   [100%]
-=================================== FAILURES ===================================
-E   AssertionError: 0 not greater than 0
------------------------------- Captured log call -------------------------------
-WARNING  infra.migration_runner:migration_runner.py:424 Migration 013: backfill failed (non-fatal; will retry on next save via _seed_note_into_field_crdt): no such column: version_vector
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: 0 not greater than 0
-=========================== short test summary info ============================
-FAILED eval/test_search_skill_first.py::TestSkillFirstSearch::test_skill_first_false_runs_normal_rag
-1 failed, 5 passed in 0.32s
-Failed to load embedding model: [Errno 9] Bad file descriptor
-
-
-=== test_vec_index.py ===
-ding model unavailable. Run with venv python + model2vec installed.
-E   RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-/Users/arka/.config/agentic-memory/rebuild_vec_index.py:208: RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-E   RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-/Users/arka/.config/agentic-memory/rebuild_vec_index.py:208: RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-E   RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-/Users/arka/.config/agentic-memory/rebuild_vec_index.py:208: RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-E   RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-/Users/arka/.config/agentic-memory/rebuild_vec_index.py:208: RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-E   RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-/Users/arka/.config/agentic-memory/rebuild_vec_index.py:208: RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
-=========================== short test summary info ============================
-FAILED eval/test_vec_index.py::TestBuildIndex::test_builds_index_for_populated_db
-FAILED eval/test_vec_index.py::TestBuildIndex::test_persisted_index_is_searchable
-FAILED eval/test_vec_index.py::TestIdempotent::test_deletes_old_keys_on_rebuild
-FAILED eval/test_vec_index.py::TestIdempotent::test_rerun_replaces_in_place
-FAILED eval/test_vec_index.py::TestEdgeCases::test_empty_db_no_memories - Run...
-FAILED eval/test_vec_index.py::TestKeyDerivation::test_key_lookup_round_trip
-FAILED eval/test_vec_index.py::TestKeyDerivation::test_md5_keys_unique_for_distinct_ids
-7 failed, 3 passed in 0.60s
-Failed to load embedding model: [Errno 9] Bad file descriptor
-

@@ -149,6 +149,11 @@ class TestAutoSaveDenylist(unittest.TestCase):
 class TestCtrQueryId(unittest.TestCase):
     """P1.1, P1.2: search returns query_id and emits returned CTR event."""
 
+    @classmethod
+    def setUpClass(cls):
+        from infra.embedding_search import get_embedding_search
+        get_embedding_search().wait_for_model(timeout_s=10.0)
+
     def test_search_returns_query_id(self):
         from search_pipeline import search_memories
 

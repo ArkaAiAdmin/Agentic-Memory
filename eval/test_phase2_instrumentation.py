@@ -106,6 +106,11 @@ class TestPhaseErrorsInEnvelope(unittest.TestCase):
 class TestInstrumentedPhaseFunctions(unittest.TestCase):
     """Directly test that instrumented phase functions call _phase_inc on failure."""
 
+    @classmethod
+    def setUpClass(cls):
+        from infra.embedding_search import get_embedding_search
+        get_embedding_search().wait_for_model(timeout_s=10.0)
+
     def setUp(self):
         _reset_counter()
 

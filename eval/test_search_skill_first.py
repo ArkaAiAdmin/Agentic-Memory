@@ -69,6 +69,11 @@ def _bootstrap_db(db_path: Path, memories: list[tuple[str, str]]) -> None:
 
 
 class TestSkillFirstSearch(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from infra.embedding_search import get_embedding_search
+        get_embedding_search().wait_for_model(timeout_s=10.0)
+
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="skill_search_"))
         self.db_path = self.tmpdir / "memory.db"

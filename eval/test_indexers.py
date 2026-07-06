@@ -171,6 +171,11 @@ class TestIndexEmbeddingWrapper(unittest.TestCase):
     Core embedding logic is tested in ``test_embedding_cache.py``.
     """
 
+    @classmethod
+    def setUpClass(cls):
+        from infra.embedding_search import get_embedding_search
+        get_embedding_search().wait_for_model(timeout_s=10.0)
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="idx_emb_")
         self.db_path = Path(self.tmp) / "memory.db"

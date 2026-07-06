@@ -21,7 +21,9 @@ import infra.embedding_search as embedding_search  # noqa: E402
 from infra.embedding_search import EmbeddingSearch, get_embedding_search  # noqa: E402
 import numpy as np
 
-_HAVE_EMBEDDING = get_embedding_search().model is not None
+_es = get_embedding_search()
+_es.wait_for_model(timeout_s=10.0)
+_HAVE_EMBEDDING = _es.model is not None
 
 
 @unittest.skipIf(not _HAVE_EMBEDDING, "model2vec not available; skipping embedding tests")
@@ -114,6 +116,7 @@ class TestEmbeddingSingleton(unittest.TestCase):
         # singleton's model, then monkeypatch its model.encode to return
         # a vector that is clearly not unit-norm.
         es = EmbeddingSearch()
+        es.wait_for_model(timeout_s=10.0)
         if es.model is None:
             self.skipTest("model not loaded")
         # L2 norm of [2,2,2,...] with 256 dims = 32 — far from 1.0.
@@ -132,6 +135,7 @@ class TestEmbeddingSingleton(unittest.TestCase):
         # all do `EmbeddingSearch()` directly. Make sure that path still
         # returns a usable object with the attributes they rely on.
         es = EmbeddingSearch()
+        es.wait_for_model(timeout_s=10.0)
         self.assertIsNotNone(es)
         self.assertIsNotNone(es.model, "direct construction must still load the model")
         self.assertIsNotNone(es.np, "direct construction must still expose numpy as .np")

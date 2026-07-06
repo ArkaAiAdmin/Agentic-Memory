@@ -26,7 +26,11 @@ if INSTALL_ENV:
 else:
     INSTALL = Path(__file__).parent.parent.resolve()
 
-VENV = Path(sys.executable)
+VENV = INSTALL / "venv" / "bin" / "python"
+if not VENV.exists():
+    VENV = INSTALL / ".venv" / "bin" / "python"
+if not VENV.exists():
+    VENV = Path(sys.executable)
 PROD_DB_PATH = INSTALL / "memory" / "memory.db"
 
 

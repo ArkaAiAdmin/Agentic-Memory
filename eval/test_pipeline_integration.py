@@ -122,6 +122,11 @@ def _has_table(db: sqlite3.Connection, name: str) -> bool:
 class TestSavePipelineWritesAllSubsystems:
     """Verify that _update_memory_index_incremental writes to every subsystem."""
 
+    @classmethod
+    def setup_class(cls):
+        from infra.embedding_search import get_embedding_search
+        get_embedding_search().wait_for_model(timeout_s=10.0)
+
     def setup_method(self):
         self.tmpdir = Path(tempfile.mkdtemp())
         self.db_path = self.tmpdir / "test.db"
@@ -1214,6 +1219,11 @@ class TestGraphRAGExpansion:
 
     NOTE: _graph_rag_expand(query, db_path) — query first, db_path second.
     """
+
+    @classmethod
+    def setup_class(cls):
+        from infra.embedding_search import get_embedding_search
+        get_embedding_search().wait_for_model(timeout_s=10.0)
 
     def setup_method(self):
         self.tmpdir = Path(tempfile.mkdtemp())

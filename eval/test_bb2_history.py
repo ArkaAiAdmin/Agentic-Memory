@@ -116,6 +116,12 @@ class TestBuffer(unittest.TestCase):
 class TestE2EHistoryResolution(unittest.TestCase):
     """End-to-end: record turn via search, then a follow-up reference query
     should find content the bare reference would not match."""
+
+    @classmethod
+    def setUpClass(cls):
+        from infra.embedding_search import get_embedding_search
+        get_embedding_search().wait_for_model(timeout_s=10.0)
+
     def setUp(self):
         memory_mcp._bb2_clear_history()
         self.tmp = tempfile.mkdtemp(prefix="bb2_e2e_")

@@ -533,17 +533,13 @@ class _ConnectionPool:
             return 0
 
 
-_connection_pool: _ConnectionPool | None = None
-
-
-def _get_connection_pool() -> _ConnectionPool:
-    global _connection_pool
-    if _connection_pool is None:
-        _connection_pool = _ConnectionPool()
-    return _connection_pool
-
-
-connection_pool = _get_connection_pool()
+# 2026-07-06: Use sys attribute to guarantee a single process-wide connection
+# pool even if the module is imported under different names (e.g. infra.db vs
+# agentic_memory.infra.db). Use setattr/getattr to satisfy type checkers.
+import sys
+if not hasattr(sys, "_agentic_memory_connection_pool"):
+    setattr(sys, "_agentic_memory_connection_pool", _ConnectionPool())
+connection_pool = cast(_ConnectionPool, getattr(sys, "_agentic_memory_connection_pool"))
 
 
 def _resolve_mmap_size() -> int:
