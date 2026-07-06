@@ -314,40 +314,16 @@ def _apply_temporal_decay(
     now_ts = time.time() if as_of is None else as_of
     modified = []
     for r in scored_results:
-        (
-            note_id,
-            content,
-            source_file,
-            tags_json,
-            created,
-            rank,
-            final_score,
-            fitness,
-            importance,
-            pinned,
-        ) = r[:10]
+        created = r[4]
+        final_score = r[6]
         last_accessed = r[10] if len(r) > 10 else None
-        metadata_json = r[11] if len(r) > 11 else None
         decay = _temporal_decay_factor(
             created, now_ts, last_accessed=last_accessed, as_of=as_of
         )
         adjusted = final_score * (1.0 - decay_weight + decay_weight * decay)
-        modified.append(
-            (
-                note_id,
-                content,
-                source_file,
-                tags_json,
-                created,
-                rank,
-                adjusted,
-                fitness,
-                importance,
-                pinned,
-                last_accessed,
-                metadata_json,
-            )
-        )
+        new_r = list(r)
+        new_r[6] = adjusted
+        modified.append(tuple(new_r))
     return modified
 
 

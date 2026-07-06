@@ -1079,7 +1079,7 @@ def _format_search_results(
             importance_val,
             pinned,
         ) = r[:10]
-        metadata_json = r[10] if len(r) > 10 else None
+        metadata_json = r[11] if len(r) > 11 else None
         try:
             tags = json.loads(tags_json) if tags_json else []
         except (json.JSONDecodeError, TypeError):
@@ -1202,6 +1202,7 @@ def _rerank_results(
                     last_accessed_col,
                     metadata_json,
                     access_count,
+                    None,
                 )
             )
         if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
@@ -1261,6 +1262,7 @@ def _rerank_results(
                 last_accessed,
                 metadata_json,
                 access_count,
+                None,
             )
         )
 
@@ -1331,7 +1333,8 @@ def _build_result_items(*, db, results_to_display, query, rerank):
             importance_val,
             pinned,
         ) = r[:10]
-        metadata_json = r[10] if len(r) > 10 else None
+        last_accessed = r[10] if len(r) > 10 else None
+        metadata_json = r[11] if len(r) > 11 else None
         try:
             tags = json.loads(tags_json) if tags_json else []
         except (json.JSONDecodeError, TypeError):

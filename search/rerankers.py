@@ -246,37 +246,11 @@ def _apply_cross_encoder_rerank(
         ce_scores = [_cross_encoder_score(query, d) for d in docs]
     reranked = []
     for r, ce in zip(head, ce_scores):
-        (
-            note_id,
-            content,
-            source_file,
-            tags_json,
-            created,
-            rank,
-            final_score,
-            fitness,
-            importance,
-            pinned,
-        ) = r[:10]
-        last_accessed = r[10] if len(r) > 10 else None
-        avg_dist = r[11] if len(r) > 11 else None
+        final_score = r[6]
         adjusted = final_score * (1.0 - blend + blend * ce)
-        reranked.append(
-            (
-                note_id,
-                content,
-                source_file,
-                tags_json,
-                created,
-                rank,
-                adjusted,
-                fitness,
-                importance,
-                pinned,
-                last_accessed,
-                avg_dist,
-            )
-        )
+        new_r = list(r)
+        new_r[6] = adjusted
+        reranked.append(tuple(new_r))
     reranked.sort(key=lambda x: x[6], reverse=True)
     return reranked + tail
 
@@ -423,19 +397,8 @@ def _apply_late_interaction_rerank(
     q_ngrams = _precompute_query_ngrams(query)
     reranked = []
     for r in head:
-        (
-            note_id,
-            content,
-            source_file,
-            tags_json,
-            created,
-            rank,
-            final_score,
-            fitness,
-            importance,
-            pinned,
-        ) = r[:10]
-        last_accessed = r[10] if len(r) > 10 else None
+        content = r[1]
+        final_score = r[6]
         # Use pre-computed query ngrams to avoid O(n²) recomputation
         if q_ngrams and content:
             c_tokens = _tokenize_for_ce(content or "")
@@ -450,21 +413,10 @@ def _apply_late_interaction_rerank(
             li_score = 0.0
             li_avg_dist = float(len(_tokenize_for_ce(content or "")))
         adjusted = final_score * (1.0 - blend) + li_score * blend
-        reranked.append(
-            (
-                note_id,
-                content,
-                source_file,
-                tags_json,
-                created,
-                rank,
-                adjusted,
-                fitness,
-                importance,
-                pinned,
-                last_accessed,
-                li_avg_dist,
-            )
-        )
+        new_r = list(r)
+        new_r[6] = adjusted
+        if len(new_r) > 13:
+            new_r[13] = li_avg_dist
+        reranked.append(tuple(new_r))
     reranked.sort(key=lambda x: x[6], reverse=True)
     return reranked + tail
