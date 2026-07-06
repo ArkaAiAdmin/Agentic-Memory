@@ -23,6 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from _flock import acquire_lock_or_exit
+
 from infra.infrastructure import resolve_active_memory_dir
 from infra.log import setup_logging
 
@@ -108,6 +110,8 @@ def main(argv: list[str] | None = None) -> int:
     if not db_path.exists():
         print(f"ERROR: no memory.db at {db_path}")
         return 1
+
+    acquire_lock_or_exit("cron_skill_decay")
 
     t0 = time.time()
     try:
