@@ -46,43 +46,83 @@ def _get_db_path(cli_override: str | None) -> Path:
 
 def _decayed_skills(
     conn, max_age_days: float, decay_factor: float, delete_threshold: float
-) -> tuple[list[tuple[int, str, int]], list[str]]:
-    """Return (decayed_list, deleted_list).
+) -> tuple[list[tuple[int, str, int, dict]], list[str]]:
+    """Return (decayed_list, deleted_list) using per-agent hit_vector decay.
 
-    decayed_list: [(id, name, new_hit_count)] for skills whose hit_count
-        was decayed but still above the delete threshold.
+    Per-agent rule:
+      If ``last_used_vector[agent_id]`` is older than ``cutoff``, halve that
+      agent's ``hit_vector`` count (floor 0). Entries with count 0 are
+      dropped from the vector.
+
+    Global recomputation:
+      ``hit_count = sum(hit_vector.values())``
+      ``last_used_at = max(last_used_vector.values())`` (or the existing
+      value if the vector is now empty)
+      ``logical_clock += 1``
+
+    decayed_list: [(id, name, new_hit_count, new_hit_vector)] — kept.
     deleted_list: [name] for skills whose hit_count fell to 0 after decay.
     """
+    import json
     cutoff = time.time() - max_age_days * 86400
     rows = conn.execute(
-        "SELECT id, name, hit_count, last_used_at, updated_at FROM memory_skills"
+        "SELECT id, name, hit_vector, last_used_vector, hit_count, last_used_at, logical_clock FROM memory_skills"
     ).fetchall()
 
-    decayed: list[tuple[int, str, int]] = []
+    decayed: list[tuple[int, str, int, dict]] = []
     deleted: list[str] = []
 
-    for sid, name, hit_count, last_used_at, updated_at in rows:
-        ref_ts = last_used_at if last_used_at else updated_at
-        if ref_ts is None or ref_ts > cutoff:
-            continue
-        new_hit = int(hit_count * decay_factor) if hit_count else 0
-        if new_hit < delete_threshold:
+    for sid, name, hid_vec, luv_vec, _old_hit, _old_lu, _lc in rows:
+        try:
+            hv = json.loads(hid_vec or "{}")
+            if not isinstance(hv, dict):
+                hv = {}
+        except (json.JSONDecodeError, TypeError):
+            hv = {}
+        try:
+            luv = json.loads(luv_vec or "{}")
+            if not isinstance(luv, dict):
+                luv = {}
+        except (json.JSONDecodeError, TypeError):
+            luv = {}
+
+        new_hv = {}
+        for agent, count in hv.items():
+            last_used = luv.get(agent, 0)
+            if last_used and last_used < cutoff:
+                new_count = int(count * decay_factor)
+                if new_count > 0:
+                    new_hv[agent] = new_count
+            else:
+                new_hv[agent] = count
+
+        new_hit_count = sum(new_hv.values())
+
+        if new_hit_count < delete_threshold:
             deleted.append(name)
         else:
-            decayed.append((sid, name, new_hit))
+            decayed.append((sid, name, new_hit_count, new_hv))
+
     return decayed, deleted
 
 
-def _apply_decay(conn, decayed: list[tuple[int, str, int]]) -> int:
-    """Write decayed hit_count. Returns count updated."""
+def _apply_decay(conn, decayed: list[tuple[int, str, int, dict]]) -> int:
+    """Write decayed hit_vector / hit_count / last_used_at / logical_clock."""
+    import json
     now_ts = time.time()
-    for sid, _name, new_hit in decayed:
+    for sid, _name, new_hit, new_hv in decayed:
         conn.execute(
-            "UPDATE memory_skills SET hit_count = ?, updated_at = ? WHERE id = ?",
-            (new_hit, now_ts, sid),
+            """UPDATE memory_skills
+               SET hit_vector = ?, hit_count = ?, last_used_at = ?, logical_clock = ?, updated_at = ?
+               WHERE id = ?""",
+            (json.dumps(new_hv), new_hit, now_ts, _lc_update(new_hv), now_ts, sid),
         )
     conn.commit()
     return len(decayed)
+
+
+def _lc_update(hit_vector: dict) -> int:
+    return int(sum(hit_vector.values()))
 
 
 def _delete_skills(conn, names: list[str]) -> int:
@@ -129,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
                     f"{len(deleted)} would delete"
                 )
                 if decayed:
-                    for _sid, name, new_hit in decayed[:10]:
+                    for _sid, name, new_hit, _hv in decayed[:10]:
                         print(f"  decay: {name} -> hit_count={new_hit}")
                     if len(decayed) > 10:
                         print(f"  ... and {len(decayed) - 10} more")

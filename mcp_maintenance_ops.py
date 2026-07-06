@@ -76,6 +76,8 @@ def _get_local_tools() -> dict:
             memory_pinned_decay_check,
             memory_compile_skill,
             memory_llm_unload,
+            memory_resolve_contradiction,
+            memory_list_federated_skills,
         )
 
         _local_tools = {
@@ -109,6 +111,8 @@ def _get_local_tools() -> dict:
             "memory_crdt_sync": memory_crdt_sync,
             "memory_crdt_status": memory_crdt_status,
             "memory_compliance_check": memory_compliance_check,
+            "memory_resolve_contradiction": memory_resolve_contradiction,
+            "memory_list_federated_skills": memory_list_federated_skills,
         }
     return _local_tools
 
@@ -543,6 +547,12 @@ def _get_handlers() -> dict:
             MaintenanceOp.SEARCH_PHASE_STATS: lambda *, since_ts=None, until_ts=None, phase_name="", limit=200, **__: _op_search_phase_stats(
                 since_ts=since_ts, until_ts=until_ts, phase_name=phase_name, limit=limit
             ),
+            MaintenanceOp.RESOLVE_CONTRADICTION: lambda *, source_note_id="", target_note_id="", strategy="auto", **_: t[
+                "memory_resolve_contradiction"
+            ](source_note_id=source_note_id, target_note_id=target_note_id, strategy=strategy),
+            MaintenanceOp.LIST_FEDERATED_SKILLS: lambda *, limit=50, agent_filter="", **_: t[
+                "memory_list_federated_skills"
+            ](limit=limit, agent_filter=agent_filter),
         }
     return _MAINTENANCE_HANDLERS
 

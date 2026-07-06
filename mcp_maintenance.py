@@ -867,6 +867,8 @@ class MaintenanceOp(str, Enum):
     RECALL_TRACE = "recall_trace"  # C2: retrieve recall trace JSONL entries
     PHASE_ERRORS = "phase_errors"
     SEARCH_PHASE_STATS = "search_phase_stats"  # P6: per-phase latency aggregation
+    RESOLVE_CONTRADICTION = "resolve_contradiction"  # next-frontier: LLM-assisted contradiction resolution
+    LIST_FEDERATED_SKILLS = "list_federated_skills"  # next-frontier: cross-agent skill corpus view
 
     @classmethod
     def all_values(cls) -> list[str]:
@@ -1011,3 +1013,152 @@ def memory_llm_unload() -> str:
         )
     except Exception as e:
         return json.dumps({"unloaded": False, "error": str(e)})
+
+
+@mcp.tool()
+@with_audit("memory_list_federated_skills")
+@with_memory_connection
+def memory_list_federated_skills(
+    conn,
+    limit: int = 50,
+    agent_filter: str = "",
+) -> str:
+    """List skills with federated hit-vector stats across agents.
+
+    Returns skill name, total hit_count, active agent count, and a
+    per-agent breakdown of hits and last-used timestamps.
+    """
+    try:
+        rows = conn.execute(
+            """SELECT id, name, topic, description, hit_count, last_used_at,
+                      hit_vector, last_used_vector, logical_clock, created_at, updated_at
+               FROM memory_skills
+               ORDER BY hit_count DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    except Exception as e:
+        return _err(ErrorCode.DB_ERROR, f"Failed to query skills: {e}")
+    results = []
+    for row in rows:
+        hid, name, topic, description, hit_count, last_used_at, hid_vec, luv_vec, lc, _, _ = row
+        try:
+            hv = json.loads(hid_vec or "{}")
+            if not isinstance(hv, dict):
+                hv = {}
+        except (json.JSONDecodeError, TypeError):
+            hv = {}
+        try:
+            luv = json.loads(luv_vec or "{}")
+            if not isinstance(luv, dict):
+                luv = {}
+        except (json.JSONDecodeError, TypeError):
+            luv = {}
+        active_agents = len({a for a, ts in luv.items() if ts})
+        agents_breakdown = sorted(
+            [
+                {
+                    "agent_id": a,
+                    "hits": hv.get(a, 0),
+                    "last_used_at": luv.get(a),
+                }
+                for a in hv
+            ],
+            key=lambda x: x["hits"],
+            reverse=True,
+        )
+        if agent_filter and agent_filter not in (name or ""):
+            continue
+        results.append({
+            "id": hid,
+            "name": name,
+            "topic": topic or "",
+            "description": description or "",
+            "hit_count": hit_count or 0,
+            "last_used_at": last_used_at,
+            "active_agents": active_agents,
+            "logical_clock": lc or 0,
+            "agents": agents_breakdown,
+        })
+    return json.dumps({"skills": results, "count": len(results)}, indent=2)
+
+
+@mcp.tool()
+@with_audit("memory_resolve_contradiction")
+@with_memory_connection
+def memory_resolve_contradiction(
+    conn,
+    source_note_id: str,
+    target_note_id: str,
+    strategy: str = "auto",
+) -> str:
+    """Explicitly resolve a detected contradiction between two notes.
+
+    Strategies:
+      - auto: pick deterministic resolution (newer supersedes older).
+      - merge: attempt to merge both notes (requires LLM).
+      - supersede_source: supersede the source note with the target.
+      - supersede_target: supersede the target note with the source.
+      - keep_both: no action (diverse perspectives).
+    """
+    from save.pipeline import memory_supersede_db
+
+    try:
+        src = conn.execute(
+            "SELECT id, content, created_at, updated_at FROM memories WHERE id = ?",
+            (source_note_id,),
+        ).fetchone()
+        tgt = conn.execute(
+            "SELECT id, content, created_at, updated_at FROM memories WHERE id = ?",
+            (target_note_id,),
+        ).fetchone()
+    except Exception as e:
+        return _err(ErrorCode.DB_ERROR, f"Failed to load notes: {e}")
+    if not src or not tgt:
+        return _err(
+            ErrorCode.NOT_FOUND,
+            f"Note(s) not found: source={src is not None}, target={tgt is not None}",
+        )
+    if strategy == "auto":
+        strategy = "supersede_target" if (tgt[2] or 0) >= (src[2] or 0) else "supersede_source"
+    if strategy == "supersede_target":
+        ok, err = memory_supersede_db(
+            _resolve_memory_dir() / "memory.db",
+            source_note_id,
+            target_note_id,
+        )
+        if not ok:
+            return _err(ErrorCode.DB_ERROR, f"Supersede failed: {err}")
+        return json.dumps({
+            "action": "superseded",
+            "superseded": source_note_id,
+            "by": target_note_id,
+        })
+    if strategy == "supersede_source":
+        ok, err = memory_supersede_db(
+            _resolve_memory_dir() / "memory.db",
+            target_note_id,
+            source_note_id,
+        )
+        if not ok:
+            return _err(ErrorCode.DB_ERROR, f"Supersede failed: {err}")
+        return json.dumps({
+            "action": "superseded",
+            "superseded": target_note_id,
+            "by": source_note_id,
+        })
+    if strategy == "keep_both":
+        return json.dumps({"action": "kept_both", "source": source_note_id, "target": target_note_id})
+    if strategy == "merge":
+        llm_summary = "(LLM merge not available — set MEMORY_CONTRADICTION_AUTO_RESOLVE_LLM=1 to enable merging)"
+        return json.dumps({
+            "action": "merge_skipped",
+            "reason": "LLM merge not enabled",
+            "source": source_note_id,
+            "target": target_note_id,
+            "llm_summary": llm_summary,
+        })
+    return _err(
+        ErrorCode.INVALID_PARAMS,
+        f"Unknown strategy {strategy!r}. Use auto|merge|supersede_source|supersede_target|keep_both.",
+    )

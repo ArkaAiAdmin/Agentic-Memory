@@ -240,6 +240,9 @@ class _SyncHandler(BaseHTTPRequestHandler):
         elif path == "/crdt/kg/changes":
             # S2 (2026-06-23): sync KG CRDT ops to peers.
             self._handle_kg_changes(parse_qs(parsed.query))
+        elif path == "/skills/changes":
+            # Next-frontier: sync skills CRDT state to peers.
+            self._handle_skill_changes(parse_qs(parsed.query))
         elif path == "/sync/peers":
             self._handle_get_peers()
         else:
@@ -256,6 +259,10 @@ class _SyncHandler(BaseHTTPRequestHandler):
             self._handle_kg_push()
         elif path == "/sync/peers/gossip":
             self._handle_gossip_peers()
+        elif path == "/skills/changes":
+            self._handle_skill_changes(parse_qs(parsed.query))
+        elif path == "/skills/push":
+            self._handle_skill_push()
         else:
             self._error("Not found", 404)
 
@@ -731,6 +738,140 @@ class _SyncHandler(BaseHTTPRequestHandler):
                     int(data_list[4]),
                 )
         return notes
+
+    def _handle_skill_changes(self, query: dict) -> None:
+        """GET /skills/changes — return skills updated since a given timestamp.
+
+        Query params:
+          ``since``  — Unix epoch. Only return skills with updated_at > since.
+          ``agent``  — Agent id for context (unused in filter, reserved for future use).
+          ``limit``  — Max skills to return (default 500, capped at 5000).
+        """
+        if not self._require_auth():
+            return
+        if not self._check_replay():
+            return
+
+        since = self._parse_since(query.get("since", [None])[0] or "")
+        agent = (query.get("agent", [""])[0] or "").strip()
+        limit = 500
+        raw_limit = query.get("limit", [None])[0]
+        if raw_limit:
+            try:
+                limit = max(1, min(int(raw_limit), 5000))
+            except (TypeError, ValueError):
+                pass
+
+        try:
+            conn = _open_server_db(self.db_path)
+            try:
+                from skill_extractor import ensure_skill_schema
+                ensure_skill_schema(conn)
+                params: tuple = (since,) if since is not None else (0.0,)
+                where = "WHERE updated_at > ?" if since is not None else ""
+                rows = conn.execute(
+                    f"""SELECT id, name, source_memory_id, topic, description,
+                               triggers, steps, content_hash, hit_count,
+                               last_used_at, hit_vector, last_used_vector,
+                               logical_clock, created_at, updated_at
+                        FROM memory_skills
+                        {where}
+                        ORDER BY updated_at ASC
+                        LIMIT ?""",
+                    params + (limit,),
+                ).fetchall()
+                skill_cols = [
+                    "id", "name", "source_memory_id", "topic", "description",
+                    "triggers", "steps", "content_hash", "hit_count",
+                    "last_used_at", "hit_vector", "last_used_vector",
+                    "logical_clock", "created_at", "updated_at",
+                ]
+                skills = []
+                for row in rows:
+                    skill: dict = {}
+                    for col_name, raw_val in zip(skill_cols, row):
+                        if col_name in ("hit_vector", "last_used_vector") and raw_val is not None:
+                            try:
+                                skill[col_name] = json.loads(raw_val)
+                            except (json.JSONDecodeError, TypeError):
+                                skill[col_name] = {}
+                        elif col_name == "triggers" and raw_val is not None:
+                            try:
+                                skill[col_name] = json.loads(raw_val)
+                            except (json.JSONDecodeError, TypeError):
+                                skill[col_name] = []
+                        elif col_name == "steps" and raw_val is not None:
+                            try:
+                                skill[col_name] = json.loads(raw_val)
+                            except (json.JSONDecodeError, TypeError):
+                                skill[col_name] = []
+                        else:
+                            skill[col_name] = raw_val
+                    skills.append(skill)
+                self._json_response({"skills": skills, "agent": agent, "ts": time.time()})
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error("sync_server: skill changes failed: %s", e)
+            self._error(str(e), 500)
+
+    def _handle_skill_push(self) -> None:
+        """POST /skills/push — receive skill CRDT updates from a peer.
+
+        Body: ``{"skills": [{...skill dict...}, ...]}``
+
+        Each skill is merged into the local database via
+        ``merge_and_save_skill`` (idempotent LWW + G-Counter merge).
+        Returns ``{"applied": N, "skipped": M}``.
+        """
+        if not self._require_auth():
+            return
+        if not self._check_replay():
+            return
+        body = self._read_body()
+        if not body:
+            self._error("Empty request body")
+            return
+        if not self._check_hmac(body):
+            return
+
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as e:
+            self._error(f"Invalid JSON: {e}")
+            return
+
+        try:
+            from skill_extractor import ensure_skill_schema, merge_and_save_skill
+            ensure_skill_schema(_open_server_db(self.db_path))
+            db_path = self.db_path
+            conn = _open_server_db(db_path)
+            try:
+                applied = 0
+                skipped = 0
+                for skill in data.get("skills", []):
+                    if not skill.get("name"):
+                        skipped += 1
+                        continue
+                    try:
+                        merge_and_save_skill(conn, skill)
+                        applied += 1
+                    except Exception as merge_err:
+                        logger.warning("sync_server: skill merge skip %s: %s", skill.get("name"), merge_err)
+                        skipped += 1
+                conn.commit()
+                self._json_response({"applied": applied, "skipped": skipped})
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error("sync_server: skill push failed: %s", e)
+            self._error(str(e), 500)
 
 
 # ---------------------------------------------------------------------------

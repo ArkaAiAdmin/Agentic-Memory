@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from datetime import date, datetime, timezone
@@ -558,22 +559,42 @@ def _hook_resolve_contradictions(db_path_obj, note_id, contradictions):
 
     for old_id in old_ids:
         try:
-            ok, err = memory_supersede_db(db_path_obj, old_id, note_id)
-            if ok:
-                logger.info(
-                    "save_memory: resolved contradiction — closed %s (superseded by %s)",
-                    old_id, note_id,
-                )
+            if os.environ.get("MEMORY_CONTRADICTION_AUTO_RESOLVE_LLM") == "1":
+                _resolve_with_llm(db_path_obj, old_id, note_id)
             else:
-                logger.warning(
-                    "save_memory: contradiction resolution failed for %s: %s",
-                    old_id, err,
-                )
+                ok, err = memory_supersede_db(db_path_obj, old_id, note_id)
+                if ok:
+                    logger.info(
+                        "save_memory: resolved contradiction — closed %s (superseded by %s)",
+                        old_id, note_id,
+                    )
+                else:
+                    logger.warning(
+                        "save_memory: contradiction resolution failed for %s: %s",
+                        old_id, err,
+                    )
         except Exception as e:
             logger.warning(
                 "save_memory: contradiction resolution error for %s: %s",
                 old_id, e,
             )
+
+
+def _resolve_with_llm(db_path: str, source_note_id: str, target_note_id: str) -> None:
+    """Attempt LLM-assisted contradiction resolution (best-effort, never raises)."""
+    try:
+        from kg.contradiction_resolver import auto_resolve_contradiction_pair
+        result = auto_resolve_contradiction_pair(db_path, source_note_id, target_note_id)
+        logger.info(
+            "save_memory: LLM contradiction resolution — %s | action=%s",
+            source_note_id,
+            result.get("action") if isinstance(result, dict) else result,
+        )
+    except Exception as e:
+        logger.warning(
+            "save_memory: LLM contradiction resolution skipped for %s: %s",
+            source_note_id, e,
+        )
 
 
 def _run_post_save_hooks(

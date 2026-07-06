@@ -31,7 +31,7 @@ import time
 import urllib.request
 import urllib.error
 from pathlib import Path
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +142,42 @@ def _get_last_pull_timestamp(db_path: str | Path, peer_name: str) -> float:
             conn.close()
     except Exception:
         return 0.0
+
+
+def _open_conn(db_path: str | Path) -> Any:
+    import sqlite3
+
+    return sqlite3.connect(str(db_path), timeout=10)
+
+
+def _query_skills_since(db_path: str | Path, since: float, limit: int) -> list:
+    """Return skill rows modified after `since` for skill sync."""
+    import sqlite3
+
+    db = Path(db_path)
+    if not db.exists() or since <= 0:
+        return []
+    conn = sqlite3.connect(str(db), timeout=10)
+    try:
+        try:
+            from skill_extractor import ensure_skill_schema
+            ensure_skill_schema(conn)
+        except ImportError:
+            pass
+        rows = conn.execute(
+            """SELECT id, name, source_memory_id, topic, description,
+                      triggers, steps, content_hash, hit_count,
+                      last_used_at, hit_vector, last_used_vector,
+                      logical_clock, created_at, updated_at
+               FROM memory_skills
+               WHERE updated_at > ?
+               ORDER BY updated_at ASC
+               LIMIT ?""",
+            (since, limit),
+        ).fetchall()
+        return list(rows)
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -458,6 +494,18 @@ def sync_with_peer(
         limit=limit,
     )
 
+    try:
+        skill_sync_result = sync_skills_with_peer(
+            db_path,
+            peer_url,
+            peer_name,
+            peer_agent_id,
+            local_agent_id,
+            limit=max(limit, 500),
+        )
+    except Exception as e:
+        skill_sync_result = {"error": str(e), "success": False}
+
     duration = int((time.time() - start) * 1000)
     success = ("error" not in push_result or not push_result.get("error")) and (
         "error" not in pull_result or not pull_result.get("error")
@@ -481,8 +529,99 @@ def sync_with_peer(
     return {
         "push": push_result,
         "pull": pull_result,
+        "skills": skill_sync_result,
         "duration_ms": duration,
         "success": success,
+    }
+
+
+def sync_skills_with_peer(
+    db_path: str | Path,
+    peer_url: str,
+    peer_name: str,
+    peer_agent_id: str,
+    local_agent_id: str,
+    limit: int = 500,
+) -> dict:
+    """Two-way skills sync using CRDT merge (pull remote changes, push local changes).
+
+    Returns applied/skipped counts for both directions.
+    """
+    try:
+        from skill_extractor import ensure_skill_schema, merge_and_save_skill
+    except ImportError as e:
+        return {"error": f"skill_extractor not available: {e}"}
+
+    start = time.time()
+    ensure_skill_schema(_open_conn(db_path))
+
+    since_pull = _get_last_pull_timestamp(db_path, peer_name)
+    since_push = _get_last_push_timestamp(db_path, peer_name)
+
+    pull_url = (
+        f"{peer_url.rstrip('/')}/skills/changes"
+        f"?since={int(since_pull)}&agent={local_agent_id}&limit={limit}"
+    )
+    resp = _json_get(pull_url)
+    if resp is None:
+        return {"error": f"Failed to fetch skill changes from {peer_url}"}
+
+    remote_skills = resp.get("skills", [])
+    applied = skipped = 0
+    for skill_dict in remote_skills:
+        try:
+            merge_and_save_skill(_open_conn(db_path), skill_dict)
+            applied += 1
+        except Exception:
+            skipped += 1
+
+    local_rows = _query_skills_since(db_path, since_push, limit)
+    local_skills = []
+    cols = ["id", "name", "source_memory_id", "topic", "description",
+            "triggers", "steps", "content_hash", "hit_count",
+            "last_used_at", "hit_vector", "last_used_vector",
+            "logical_clock", "created_at", "updated_at"]
+    for row in local_rows:
+        skill: dict = {}
+        for col, val in zip(cols, row):
+            if col in ("hit_vector", "last_used_vector") and val is not None:
+                try:
+                    skill[col] = json.loads(val)
+                except (json.JSONDecodeError, TypeError):
+                    skill[col] = {}
+            elif col in ("triggers", "steps") and val is not None:
+                try:
+                    skill[col] = json.loads(val)
+                except (json.JSONDecodeError, TypeError):
+                    skill[col] = [] if col == "triggers" else []
+            else:
+                skill[col] = val
+        local_skills.append(skill)
+
+    push_url = f"{peer_url.rstrip('/')}/skills/push"
+    push_resp = _json_post(push_url, {"skills": local_skills})
+    push_applied = push_resp.get("applied", 0) if push_resp else 0
+    push_skipped = push_resp.get("skipped", 0) if push_resp else 0
+
+    duration = int((time.time() - start) * 1000)
+    _log_sync_result(
+        db_path,
+        peer_name,
+        peer_url,
+        peer_agent_id,
+        "skill_sync",
+        True,
+        changes_pulled=applied,
+        changes_pushed=push_applied,
+        duration_ms=duration,
+    )
+    return {
+        "pull_applied": applied,
+        "pull_skipped": skipped,
+        "push_applied": push_applied,
+        "push_skipped": push_skipped,
+        "duration_ms": duration,
+        "success": True,
     }
 
 

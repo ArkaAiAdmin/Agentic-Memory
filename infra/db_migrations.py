@@ -165,6 +165,25 @@ def _migrate_ensure_columns(conn, existing_cols: set) -> None:
                 pass
 
 
+def _migrate_ensure_skill_columns(conn) -> None:
+    """Idempotently add CRDT columns to memory_skills if they are missing."""
+    desired = (
+        ("hit_vector", "TEXT DEFAULT '{}'"),
+        ("last_used_vector", "TEXT DEFAULT '{}'"),
+        ("logical_clock", "INTEGER DEFAULT 0"),
+    )
+    try:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(memory_skills)").fetchall()}
+    except sqlite3.OperationalError:
+        return
+    for col_name, col_type in desired:
+        if col_name not in existing:
+            try:
+                conn.execute(f"ALTER TABLE memory_skills ADD COLUMN {col_name} {col_type}")
+            except sqlite3.OperationalError:
+                pass
+
+
 def _migrate_ensure_backlinks_table(conn) -> None:
     """Create the backlinks table for bidirectional wiki-links and semantic edges."""
     try:
@@ -815,6 +834,7 @@ def run_schema_setup(conn: AnyConnection) -> None:
         _migrate_kg_tables(conn)
         _migrate_kg_extraction_stats(conn)
         _migrate_ensure_chunks_table(conn)
+        _migrate_ensure_skill_columns(conn)
 
         try:
             from memory_sharing import _ensure_shared_table

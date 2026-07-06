@@ -28,6 +28,7 @@ Zero dependencies on other memory modules. Pure Python.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from typing import Optional
@@ -58,7 +59,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 _SKILL_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS memory_skills (
+CREATE TABLE IF NOT EXISTS "memory_skills" (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT NOT NULL UNIQUE,
     source_memory_id TEXT,
@@ -72,8 +73,8 @@ CREATE TABLE IF NOT EXISTS memory_skills (
     created_at      REAL NOT NULL,
     updated_at      REAL NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_memory_skills_topic ON memory_skills(topic);
-CREATE INDEX IF NOT EXISTS idx_memory_skills_hit ON memory_skills(hit_count DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_skills_topic ON "memory_skills"(topic);
+CREATE INDEX IF NOT EXISTS idx_memory_skills_hit ON "memory_skills"(hit_count DESC);
 """
 
 
@@ -456,14 +457,202 @@ def search_skills(conn: AnyConnection, query: str, limit: int = 5) -> list[dict]
 
 
 def record_skill_hit(conn: AnyConnection, skill_id: int) -> None:
-    """Record that a skill was used. Increments hit_count and updates last_used_at."""
+    """Record a skill hit using G-Counter on hit_vector and LWW on last_used_vector."""
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(memory_skills)").fetchall()}
+    except Exception:
+        cols = set()
+    if "hit_vector" not in cols or "last_used_vector" not in cols or "logical_clock" not in cols:
+        conn.execute(
+            "UPDATE memory_skills SET hit_count = hit_count + 1, last_used_at = ? WHERE id = ?",
+            (time.time(), skill_id),
+        )
+        conn.commit()
+        return
+
+    now = time.time()
+    row = conn.execute(
+        "SELECT hit_vector, last_used_vector, logical_clock FROM memory_skills WHERE id = ?",
+        (skill_id,),
+    ).fetchone()
+    if row is None:
+        return
+    hit_vector: dict[str, int]
+    last_used_vector: dict[str, float]
+    try:
+        hit_vector = json.loads(row[0] or "{}")
+        if not isinstance(hit_vector, dict):
+            hit_vector = {}
+    except (json.JSONDecodeError, TypeError):
+        hit_vector = {}
+    try:
+        last_used_vector = json.loads(row[1] or "{}")
+        if not isinstance(last_used_vector, dict):
+            last_used_vector = {}
+    except (json.JSONDecodeError, TypeError):
+        last_used_vector = {}
+    agent_id = _resolve_skill_agent_id()
+    hit_vector[agent_id] = hit_vector.get(agent_id, 0) + 1
+    last_used_vector[agent_id] = now
+    hit_count = sum(hit_vector.values())
+    last_used_at = max(last_used_vector.values()) if last_used_vector else now
+    logical_clock = (row[2] or 0) + 1
     conn.execute(
         """UPDATE memory_skills
-           SET hit_count = hit_count + 1, last_used_at = ?
+           SET hit_vector = ?, last_used_vector = ?, hit_count = ?,
+               last_used_at = ?, logical_clock = ?
            WHERE id = ?""",
-        (time.time(), skill_id),
+        (json.dumps(hit_vector), json.dumps(last_used_vector),
+         hit_count, last_used_at, logical_clock, skill_id),
     )
     conn.commit()
+
+
+def _resolve_skill_agent_id() -> str:
+    """Resolve the local agent id for skill hit-vector keys."""
+    import os
+    agent_id = os.environ.get("MEMORY_AGENT_ID", "").strip()
+    if not agent_id:
+        try:
+            import socket
+            agent_id = socket.gethostname()
+        except Exception:
+            agent_id = "local"
+    return agent_id or "local"
+
+
+def merge_skills(a: dict, b: dict) -> dict:
+    """Merge two skill records using G-Counter (hit_vector) + LWW (other fields).
+
+    Both ``a`` and ``b`` are dicts with the same schema as ``memory_skills`` rows
+    (including serialized ``hit_vector`` and ``last_used_vector`` JSON strings).
+    Returns a single merged skill dict.
+    """
+    merged = dict(a)
+    hv_a: dict[str, int] = {}
+    hv_b: dict[str, int] = {}
+    luv_a: dict[str, float] = {}
+    luv_b: dict[str, float] = {}
+    for key, raw in (("hit_vector", a.get("hit_vector")), ("last_used_vector", a.get("last_used_vector"))):
+        try:
+            parsed = json.loads(raw or "{}")
+            if isinstance(parsed, dict):
+                if key == "hit_vector":
+                    hv_a = parsed
+                else:
+                    luv_a = parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    for key, raw in (("hit_vector", b.get("hit_vector")), ("last_used_vector", b.get("last_used_vector"))):
+        try:
+            parsed = json.loads(raw or "{}")
+            if isinstance(parsed, dict):
+                if key == "hit_vector":
+                    hv_b = parsed
+                else:
+                    luv_b = parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    merged_hit_vector = {k: max(hv_a.get(k, 0), hv_b.get(k, 0)) for k in set(hv_a) | set(hv_b)}
+    merged_luv = {k: max(luv_a.get(k, 0.0), luv_b.get(k, 0.0)) for k in set(luv_a) | set(luv_b)}
+    merged["hit_vector"] = json.dumps(merged_hit_vector)
+    merged["last_used_vector"] = json.dumps(merged_luv)
+    merged["hit_count"] = sum(merged_hit_vector.values())
+    merged["last_used_at"] = max(merged_hit_vector.values()) if merged_hit_vector else merged.get("last_used_at", time.time())
+    cl_a = a.get("logical_clock") or 0
+    cl_b = b.get("logical_clock") or 0
+    merged["logical_clock"] = max(cl_a, cl_b) + 1
+    ts_a = (a.get("updated_at") or 0)
+    ts_b = (b.get("updated_at") or 0)
+    winner = a if ts_a >= ts_b else b
+    loser = b if winner is a else a
+    for field in ("description", "triggers", "steps", "content_hash", "topic",
+                  "source_memory_id", "name"):
+        wv = winner.get(field)
+        lv = loser.get(field)
+        if wv in (None, "") and lv not in (None, ""):
+            merged[field] = lv
+        elif wv not in (None, ""):
+            merged[field] = wv
+    merged["updated_at"] = time.time()
+    return merged
+
+
+def merge_and_save_skill(conn: AnyConnection, incoming: dict) -> dict:
+    """Merge an incoming skill from sync into the local database.
+
+    Looks up the skill by ``name``; if found, merges with existing record;
+    otherwise inserts the incoming record. Returns the merged skill dict.
+    """
+    ensure_skill_schema(conn)
+    row = conn.execute(
+        "SELECT * FROM memory_skills WHERE name = ?",
+        (incoming.get("name"),),
+    ).fetchone()
+    if row:
+        cols = [d[1] for d in conn.execute("PRAGMA table_info(memory_skills)").fetchall()]
+        existing = dict(zip(cols, row))
+        merged = merge_skills(existing, incoming)
+        conn.execute(
+            """UPDATE memory_skills
+               SET topic = ?, description = ?, triggers = ?, steps = ?,
+                   content_hash = ?, source_memory_id = ?,
+                   hit_vector = ?, last_used_vector = ?,
+                   hit_count = ?, last_used_at = ?, logical_clock = ?,
+                   updated_at = ?
+               WHERE id = ?""",
+            (
+                merged.get("topic"),
+                merged.get("description"),
+                merged.get("triggers"),
+                merged.get("steps"),
+                merged.get("content_hash"),
+                merged.get("source_memory_id"),
+                merged.get("hit_vector"),
+                merged.get("last_used_vector"),
+                merged.get("hit_count"),
+                merged.get("last_used_at"),
+                merged.get("logical_clock"),
+                time.time(),
+                merged.get("id"),
+            ),
+        )
+        conn.commit()
+        return merged
+    incoming.setdefault("created_at", time.time())
+    incoming.setdefault("updated_at", time.time())
+    incoming.setdefault("hit_count", 0)
+    incoming.setdefault("logical_clock", 0)
+    incoming["hit_vector"] = incoming.get("hit_vector") or json.dumps({})
+    incoming["last_used_vector"] = incoming.get("last_used_vector") or json.dumps({})
+    conn.execute(
+        """INSERT INTO memory_skills
+           (name, source_memory_id, topic, description, triggers, steps,
+            content_hash, hit_count, last_used_at, created_at, updated_at,
+            hit_vector, last_used_vector, logical_clock)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            incoming.get("name"),
+            incoming.get("source_memory_id"),
+            incoming.get("topic"),
+            incoming.get("description"),
+            incoming.get("triggers"),
+            incoming.get("steps"),
+            incoming.get("content_hash"),
+            incoming.get("hit_count", 0),
+            incoming.get("last_used_at"),
+            incoming.get("created_at", time.time()),
+            incoming.get("updated_at", time.time()),
+            incoming.get("hit_vector"),
+            incoming.get("last_used_vector"),
+            incoming.get("logical_clock", 0),
+        ),
+    )
+    conn.commit()
+    added_cols = [d[1] for d in conn.execute("PRAGMA table_info(memory_skills)").fetchall()]
+    _row = conn.execute("SELECT * FROM memory_skills WHERE name = ?", (incoming.get("name"),)).fetchone()
+    populated = dict(zip(added_cols, _row)) if _row else {}
+    return populated
 
 
 def list_skills(conn: AnyConnection, limit: int = 50) -> list[dict]:
