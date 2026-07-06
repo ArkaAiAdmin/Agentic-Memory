@@ -567,6 +567,7 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_auto_share": "cron/cron_auto_share.py",
     "cron_promote_drafts": "cron/cron_promote_drafts.py",
     "cron_semantic_clusters": "cron/cron_semantic_clusters.py",
+    "cron_skill_decay": "cron/cron_skill_decay.py",
 }
 
 
