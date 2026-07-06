@@ -517,12 +517,6 @@ class _ConnectionPool:
                 "idle": idle,
                 "max_size": self._max_size,
             }
-            self._pool.clear()
-            self._pooled_ids.clear()
-            self._lru.clear()
-            self._migrated.clear()
-            self._depth.clear()
-            self._inodes.clear()
 
     def get_depth(self, conn: AnyConnection) -> int:
         """Return current checkout depth for a connection."""
