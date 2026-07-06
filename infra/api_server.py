@@ -267,6 +267,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _handle_search_memories_post(self) -> None:
         try:
             req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
             query = req.get("query", "")
             if not query:
                 self._error("Missing query field in request body", 400)
@@ -344,18 +348,20 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _read_json_body(self) -> Any:
         length = int(self.headers.get("Content-Length", 0))
         if length <= 0:
-            self._error("Empty request body", 400)
-            raise ValueError("empty body")
+            raise ValueError("empty request body")
         body = self.rfile.read(length)
         try:
             return json.loads(body.decode("utf-8"))
-        except json.JSONDecodeError:
-            self._error("Invalid JSON body", 400)
-            raise
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid JSON: {exc}") from exc
 
     def _handle_add_memory(self) -> None:
         try:
             req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
             content = req.get("content", "")
             if not content:
                 self._error("Missing content field", 400)
