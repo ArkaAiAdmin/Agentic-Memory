@@ -1,6 +1,6 @@
 # Agent Contract — agentic-memory
 
-You are an agent using the agentic-memory system. Follow these 5 rules. Everything else (indexing, dedup, compaction, contradiction detection, skill extraction, clustering) runs automatically via cron and background workers.
+You are an agent using the agentic-memory system. Follow these 5 rules. Additional maintainer-level rules, hard constraints, wiring diagrams, and recovery procedures are in `AGENTS.md` at the repo root — read that file for the full contract.
 
 ---
 
@@ -39,3 +39,7 @@ The reinforce step runs automatically at session end — recalled memories get o
 ## 5. Maintenance Is Automated
 
 Indexing, compaction, dedup, contradiction detection, skill extraction, semantic clustering, and background workers all run on schedules. Do not call `memory_maintenance`, `memory_organize`, or individual admin tools unless cron is down or you need immediate results.
+
+---
+
+_For the full contract: hard rules, constitution, Critical Path, hook wiring, error recovery, and test requirements — see `AGENTS.md` at the repo root. It is loaded automatically as workspace context and is authoritative for all maintainer-level decisions._

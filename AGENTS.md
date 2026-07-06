@@ -12,9 +12,9 @@ You are an agent working on the **agentic-memory** codebase at the repo root.
 
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
-- **Surface**: 15 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 34 cron jobs + ~18 CLI commands
-- **Schema**: v32, ~62 tables
-- **Code**: ~60k LOC production, ~87k test LOC; see `docs/architecture.md`
+- **Surface**: 15 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 35+ cron jobs + ~18 CLI commands
+- **Schema**: v33, ~62 tables
+- **Code**: ~60k LOC production, ~87k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. Read it whenever you need to call an MCP tool and aren't sure which one or how.
 
 ---
@@ -45,26 +45,24 @@ Minimum: do #1, #7, and #13. Run #8 opportunistically. Use `agentic-memory_memor
 
 ```
 agentic-memory/
-├── save_pipeline.py + save/    ← write path (saga, FTS5, embeddings, KG, audit)
-├── search_pipeline.py + search/ ← read path (FTS5 + usearch + KG fusion)
-├── mcp_maintenance.py           ← admin tools + memory_maintenance router
-├── tool_registry.py             ← 15 CORE + 87 ADMIN + 3 DEPRECATED (single source of truth; ADMIN/DEPRECATED routed through memory_maintenance)
-├── plugin/
-│   ├── index.ts                 ← OpenCode adapter (event → TS handler)
-│   └── agentic-memory-hooks.ts ← hook implementations (TS → Python subprocess)
-├── hooks/                       ← 7 lifecycle hooks + 1 log helper
+├── save/ (save/pipeline.py)          ← write path (saga, FTS5, chunks, embeddings, KG, facts, audit, CRDT)
+├── search/ (search/orchestrator.py)  ← read path (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve)
+├── infra/ (tool_registry.py)         ← 15 CORE + 87 ADMIN + 3 DEPRECATED (single source of truth; tool_registry.py + memory_mcp.py + mcp_maintenance.py)
+├── hooks/                            ← 6 lifecycle hook implementations + 1 log helper
 ├── background/
-│   ├── auto_save.py             ← async inbox+daemon entry point
-│   ├── inbox.py                 ← inbox management + daemon lifecycle
-│   ├── daemon.py                ← long-lived inbox drainer
-│   ├── tool_complete.py         ← hook → save_memory pipeline
-│   └── circuit_breaker.py       ← auto-save failure gating
-├── cron/                        ← 34 scheduled jobs + install_crontab.sh
-├── mcp_*.py (28 modules)        ← domain-split MCP tools
-├── memory/                      ← live store (gitignored)
-├── docs/MCP_SURFACE.md          ← MCP tool reference for agents
-└── eval/                        ← 236 test files, ~4,067 test functions
+│   ├── auto_save.py                  ← async inbox+daemon entry point
+│   ├── inbox.py                      ← inbox management + daemon lifecycle
+│   ├── daemon.py                     ← long-lived inbox drainer
+│   ├── tool_complete.py              ← hook → save_memory pipeline
+│   └── circuit_breaker.py            ← auto-save failure gating
+├── cron/                             ← 35+ scheduled jobs + install_crontab.sh
+├── mcp_*.py (28 modules)             ← domain-split MCP tools
+├── memory/                           ← live store (gitignored)
+├── docs/MCP_SURFACE.md               ← MCP tool reference for agents
+└── eval/                             ← 237 test files, 4,072+ test functions
 ```
+
+**Message contract:** All CORE tool responses are user-facing JSON. Admin tools (87 ADMIN + 3 DEPRECATED) are routed exclusively through `memory_maintenance(operation="...")` — never call an ADMIN tool name directly. All writes go through `save_memory`; the saga ensures crash-consistent rollback with dependent-row cleanup. `defer_expensive=True` by default — returns <200ms.
 
 ---
 
@@ -73,7 +71,7 @@ agentic-memory/
 1. **All writes go through `save_memory`** (`save_pipeline.save_memory`). Hooks and auto-save delegate to it. Don't re-implement.
 2. **Connection pool is per-DB-path.** `connection_pool.get(str(db_path))` returns stale connections if the path doesn't exist. Active connections cannot be evicted.
 3. **Vec keys/index drift after warm-up.** Run `venv/bin/python rebuild_vec_index.py` after warm-up chains, not before.
-4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **32**. Never edit live DB schema by hand.
+4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **33**. Never edit live DB schema by hand.
 5. **Default search is `include_global=True`** with blended RRF. Don't override "for safety."
 6. **15 CORE tools are user-facing**; 87 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
 7. **Use `venv/bin/python backfill_all.py` (incremental default) or `venv/bin/python backfill_all.py --full` (full rebuild).** Bare args create 22 MB garbage DBs at repo root.
@@ -91,6 +89,7 @@ agentic-memory/
 19. **Maintenance is automated.** Most maintenance is handled by cron jobs and the background worker (see `cron/install_crontab.sh`). The agent should exercise `memory_organize`, `memory_maintenance`, or individual MCP tools **only when cron is not running or immediate results are needed**. Do not run maintenance tools as a default post-task ritual.
 20. **Full-suite test runs must be backgrounded and monitored.** Any `pytest eval/` or full-suite invocation must be run with `nohup` in the background, with the log file polled every 15–30 seconds until completion. Do not run the full suite as a blocking foreground call — it will exceed the shell timeout and you will miss failures. Always tail the log file and confirm `0 failures` before declaring the suite green.
 21. **Pre-existing bugs and test failures must be fixed, not ignored.** If you discover a pre-existing bug, failing test, or broken behavior while working on any task, you must fix it, add or update tests to cover it, verify the fix with the affected test(s) or full suite, and report the fix back to the user. Leaving known-broken code or known-failing tests behind is not acceptable.
+22. **Update AGENTS.md when critical agent-facing information changes.** If you change any of the following, update the corresponding sections in AGENTS.md in the same commit: schema version, table counts, MCP tool surface counts (CORE/ADMIN/DEPRECATED totals), channel/key names in search weights, hook wiring, CLI commands, Critical Path diagram, or any information agents rely on to call tools correctly. Stale AGENTS.md is as harmful as stale code.
 
 ---
 
