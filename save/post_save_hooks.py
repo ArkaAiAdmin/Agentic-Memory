@@ -536,7 +536,7 @@ def _hook_record_recent_save(db_path_obj, note_id):
         logger.warning("Failed to record recent-save hint for %s", note_id)
 
 
-def _hook_resolve_contradictions(db_path_obj, note_id, contradictions):
+def _hook_resolve_contradictions(db_path_obj, note_id, contradictions, conn=None):
     """Close the time window on notes that contradict the new note.
 
     For each contradictory old note discovered by
@@ -560,9 +560,9 @@ def _hook_resolve_contradictions(db_path_obj, note_id, contradictions):
     for old_id in old_ids:
         try:
             if os.environ.get("MEMORY_CONTRADICTION_AUTO_RESOLVE_LLM") == "1":
-                _resolve_with_llm(db_path_obj, old_id, note_id)
+                _resolve_with_llm(db_path_obj, old_id, note_id, conn=conn)
             else:
-                ok, err = memory_supersede_db(db_path_obj, old_id, note_id)
+                ok, err = memory_supersede_db(db_path_obj, old_id, note_id, conn=conn)
                 if ok:
                     logger.info(
                         "save_memory: resolved contradiction — closed %s (superseded by %s)",
@@ -580,11 +580,11 @@ def _hook_resolve_contradictions(db_path_obj, note_id, contradictions):
             )
 
 
-def _resolve_with_llm(db_path: str, source_note_id: str, target_note_id: str) -> None:
+def _resolve_with_llm(db_path: str, source_note_id: str, target_note_id: str, conn=None) -> None:
     """Attempt LLM-assisted contradiction resolution (best-effort, never raises)."""
     try:
         from kg.contradiction_resolver import auto_resolve_contradiction_pair
-        result = auto_resolve_contradiction_pair(db_path, source_note_id, target_note_id)
+        result = auto_resolve_contradiction_pair(db_path, source_note_id, target_note_id, conn=conn)
         logger.info(
             "save_memory: LLM contradiction resolution — %s | action=%s",
             source_note_id,
@@ -624,7 +624,7 @@ def _run_post_save_hooks(
     if safety_wiring:
         contradictions = _hook_run_contradiction_check(db_path_obj, content, note_id)
         _hook_audit_contradictions(db_path_obj, content, note_id, contradictions)
-        _hook_resolve_contradictions(db_path_obj, note_id, contradictions)
+        _hook_resolve_contradictions(db_path_obj, note_id, contradictions, conn=conn)
     backlink_writes = _hook_auto_backlink_with_flush(db_path_obj, note_id, category, title_slug, conn)
     if backlink_writes:
         deferred_writes.extend(backlink_writes)

@@ -1913,6 +1913,11 @@ def _save_memory_core(
                     )
             if conn is not None and _conn is None:
                 try:
+                    if _save_errored:
+                        try:
+                            conn.rollback()
+                        except Exception as _rb_err:
+                            logger.debug("save_memory: rollback failed: %s", _rb_err)
                     conn.close()
                     if not _save_errored and deferred_writes:
                         from infra.memory_common import safe_atomic_write
@@ -1967,6 +1972,7 @@ def _record_revision_log(
 def memory_supersede_db(
     db_path: Path, old_id: str, new_id: str, valid_to: Optional[str] = None,
     rationale: str = "",
+    conn: Optional[AnyConnection] = None,
 ) -> tuple[bool, Optional[str]]:
     """Mark a memory as superseded by another memory.
 
@@ -1991,7 +1997,8 @@ def memory_supersede_db(
     try:
         from infra.db import open_db
 
-        with open_db(db_path, timeout=30.0) as db:
+        if conn is not None:
+            db = conn
             features = _detect_schema_features(db_path, conn=db)
             if not features["has_temporal"]:
                 return (False, "memory schema does not have temporal columns")
@@ -2037,6 +2044,53 @@ def memory_supersede_db(
                 except Exception as _supersede_meta_exc:
                     logger.debug("supersession metadata update failed for %s: %s", old_id, _supersede_meta_exc)
             return (True, None)
+        else:
+            with open_db(db_path, timeout=30.0) as db:
+                features = _detect_schema_features(db_path, conn=db)
+                if not features["has_temporal"]:
+                    return (False, "memory schema does not have temporal columns")
+                old_row = db.execute(
+                    "SELECT id FROM memories WHERE id = ?", (old_id,)
+                ).fetchone()
+                if not old_row:
+                    return (False, f"old_id '{old_id}' not found")
+                new_row = db.execute(
+                    "SELECT id FROM memories WHERE id = ?", (new_id,)
+                ).fetchone()
+                if not new_row:
+                    return (False, f"new_id '{new_id}' not found")
+                old_content = db.execute(
+                    "SELECT content FROM memories WHERE id = ?", (old_id,)
+                ).fetchone()
+                db.execute(
+                    """UPDATE memories
+                       SET valid_to = ?, superseded_by = ?, updated_at = ?
+                       WHERE id = ?""",
+                    (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
+                )
+                _record_revision_log(
+                    db, old_id, "supersede", rationale=rationale,
+                    old_content=old_content[0] if old_content else None,
+                    metadata_json=json.dumps({"superseded_by": new_id}),
+                )
+                # Store rationale in metadata if provided
+                if rationale:
+                    try:
+                        meta_row = db.execute(
+                            "SELECT metadata FROM memories WHERE id = ?", (old_id,)
+                        ).fetchone()
+                        if meta_row and meta_row[0]:
+                            meta = json.loads(meta_row[0])
+                        else:
+                            meta = {}
+                        meta["supersession_rationale"] = rationale
+                        db.execute(
+                            "UPDATE memories SET metadata = ? WHERE id = ?",
+                            (json.dumps(meta), old_id),
+                        )
+                    except Exception as _supersede_meta_exc:
+                        logger.debug("supersession metadata update failed for %s: %s", old_id, _supersede_meta_exc)
+                return (True, None)
     except Exception as e:
         return (False, str(e))
 

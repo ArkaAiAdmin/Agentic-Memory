@@ -23,6 +23,7 @@ def auto_resolve_contradiction_pair(
     db_path: str | Path,
     note_a: str,
     note_b: str,
+    conn: Optional[AnyConnection] = None,
 ) -> dict[str, Any]:
     """Resolve a single contradiction pair and apply the chosen action.
 
@@ -36,14 +37,24 @@ def auto_resolve_contradiction_pair(
 
     try:
         rows: dict[str, tuple] = {}
-        with open_db(db_path_obj, timeout=30.0) as db:
+        if conn is not None:
+            db = conn
             for nid in (note_a, note_b):
                 row = db.execute(
-                    "SELECT id, content, title, created_at, updated_at, metadata FROM memories WHERE id = ?",
+                    "SELECT id, content, source_file, created_at, updated_at, metadata FROM memories WHERE id = ?",
                     (nid,),
                 ).fetchone()
                 if row:
                     rows[nid] = row
+        else:
+            with open_db(db_path_obj, timeout=30.0) as db:
+                for nid in (note_a, note_b):
+                    row = db.execute(
+                        "SELECT id, content, source_file, created_at, updated_at, metadata FROM memories WHERE id = ?",
+                        (nid,),
+                    ).fetchone()
+                    if row:
+                        rows[nid] = row
     except Exception as e:
         return {"action": "error", "error": str(e), "source": note_a, "target": note_b}
 
@@ -51,7 +62,7 @@ def auto_resolve_contradiction_pair(
         return {"action": "error", "error": "note(s) not found", "source": note_a, "target": note_b}
 
     strategy = _pick_strategy(rows[note_a], rows[note_b])
-    return _apply_resolution(db_path_obj, note_a, note_b, strategy, now_iso)
+    return _apply_resolution(db_path_obj, note_a, note_b, strategy, now_iso, conn=conn)
 
 
 def _pick_strategy(row_a: tuple, row_b: tuple) -> str:
@@ -94,6 +105,7 @@ def _apply_resolution(
     note_b: str,
     strategy: str,
     now_iso: str,
+    conn: Optional[AnyConnection] = None,
 ) -> dict[str, Any]:
     """Execute the chosen resolution against the SQLite database."""
     from save.pipeline import memory_supersede_db, save_memory
@@ -103,14 +115,14 @@ def _apply_resolution(
 
     if strategy == "supersede_b_with_a":
         ok, err = memory_supersede_db(
-            db_path, note_b, note_a, valid_to=now_iso, rationale=rationale,
+            db_path, note_b, note_a, valid_to=now_iso, rationale=rationale, conn=conn,
         )
         if not ok:
             return {"action": "error", "error": err, "source": note_a, "target": note_b}
         return {"action": "superseded", "superseded": note_b, "by": note_a, "strategy": strategy}
     if strategy == "supersede_a_with_b":
         ok, err = memory_supersede_db(
-            db_path, note_a, note_b, valid_to=now_iso, rationale=rationale,
+            db_path, note_a, note_b, valid_to=now_iso, rationale=rationale, conn=conn,
         )
         if not ok:
             return {"action": "error", "error": err, "source": note_a, "target": note_b}
@@ -119,9 +131,14 @@ def _apply_resolution(
         return {"action": "kept_both", "source": note_a, "target": note_b, "strategy": strategy}
     if strategy == "merge":
         row_a, row_b = None, None
-        with open_db(db_path, timeout=30.0) as db:
+        if conn is not None:
+            db = conn
             row_a = db.execute("SELECT * FROM memories WHERE id=?", (note_a,)).fetchone()
             row_b = db.execute("SELECT * FROM memories WHERE id=?", (note_b,)).fetchone()
+        else:
+            with open_db(db_path, timeout=30.0) as db:
+                row_a = db.execute("SELECT * FROM memories WHERE id=?", (note_a,)).fetchone()
+                row_b = db.execute("SELECT * FROM memories WHERE id=?", (note_b,)).fetchone()
         if not row_a or not row_b:
             return {"action": "error", "error": "notes not found for merge", "source": note_a, "target": note_b}
         merged_content = (
@@ -139,14 +156,15 @@ def _apply_resolution(
                 importance=3,
                 defer_expensive=True,
                 db_path=str(db_path),
+                _conn=conn,
             )
             if isinstance(actual_merged_id, str) and (actual_merged_id.startswith("{") or "error" in actual_merged_id.lower()):
                 return {"action": "error", "error": f"save merged note failed: {actual_merged_id}", "source": note_a, "target": note_b}
         except Exception as e:
             return {"action": "error", "error": f"save merged note failed: {e}", "source": note_a, "target": note_b}
 
-        memory_supersede_db(db_path, note_a, merged_id, valid_to=now_iso, rationale="merged")
-        memory_supersede_db(db_path, note_b, merged_id, valid_to=now_iso, rationale="merged")
+        memory_supersede_db(db_path, note_a, merged_id, valid_to=now_iso, rationale="merged", conn=conn)
+        memory_supersede_db(db_path, note_b, merged_id, valid_to=now_iso, rationale="merged", conn=conn)
         return {
             "action": "merged",
             "merged_note_id": merged_id,

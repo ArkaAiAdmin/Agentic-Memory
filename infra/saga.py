@@ -314,7 +314,29 @@ class Saga:
                                     self.conn.execute("RELEASE SAVEPOINT saga_sp")
                             except Exception as sp_err:
                                 logger.warning("saga rollback failed: %r", sp_err)
+                        else:
+                            # Proxy connection: rollback the partial writes
+                            # from the failed transaction, then start a new
+                            # transaction for the compensating undo writes.
+                            try:
+                                self.conn.rollback()
+                            except Exception as proxy_rb_err:
+                                logger.warning("saga proxy rollback failed: %r", proxy_rb_err)
+                    # Mark the failed step as "ran" so _rollback calls its
+                    # undo (and any prior steps' undo). Without this, the
+                    # sentinel check in _rollback skips all undo callables
+                    # when a step raises, leaving compensating writes
+                    # (e.g. DELETE FROM memories) unexecuted.
+                    self._records[idx].do_result = True
                     rollback_errors = self._rollback(idx)
+                    # For proxy connections: commit the compensating undo
+                    # writes so they survive the caller's conn.rollback().
+                    if self.conn is not None and self.mode == SagaMode.DEFERRED:
+                        if self._is_proxy(self.conn):
+                            try:
+                                self.conn.commit()
+                            except Exception as proxy_commit_err:
+                                logger.warning("saga proxy undo commit failed: %r", proxy_commit_err)
                     raise SagaError(
                         f"Saga {self.name!r} failed at step {step.name!r}: {exc!r}",
                         saga_name=self.name,
@@ -347,8 +369,20 @@ class Saga:
                             self.conn.execute("RELEASE SAVEPOINT saga_sp")
                     except Exception as sp_err:
                         logger.warning("saga rollback on external exception failed: %r", sp_err)
+                else:
+                    try:
+                        self.conn.rollback()
+                    except Exception as proxy_rb_err:
+                        logger.warning("saga proxy rollback on external exception failed: %r", proxy_rb_err)
                 _set_saga_deferred(self.conn, False)
             self._rollback(len(self._records) - 1)
+            # Commit compensating undo writes on proxy connections.
+            if self.conn is not None and self.mode == SagaMode.DEFERRED:
+                if self._is_proxy(self.conn):
+                    try:
+                        self.conn.commit()
+                    except Exception as proxy_commit_err:
+                        logger.warning("saga proxy undo commit on external exception failed: %r", proxy_commit_err)
             raise
         return self
 
@@ -380,7 +414,19 @@ class Saga:
                                     self.conn.execute("RELEASE SAVEPOINT saga_sp")
                             except Exception as sp_err:
                                 logger.warning("saga rollback in exit failed: %r", sp_err)
+                        else:
+                            try:
+                                self.conn.rollback()
+                            except Exception as proxy_rb_err:
+                                logger.warning("saga proxy rollback in exit failed: %r", proxy_rb_err)
                      self._rollback(last_completed)
+                     # Commit compensating undo writes on proxy connections.
+                     if self.conn is not None and self.mode == SagaMode.DEFERRED:
+                        if self._is_proxy(self.conn):
+                            try:
+                                self.conn.commit()
+                            except Exception as proxy_commit_err:
+                                logger.warning("saga proxy undo commit in exit failed: %r", proxy_commit_err)
             # Do not swallow the exception.
             return False
         if self.conn is not None and self.mode == SagaMode.DEFERRED:
@@ -563,11 +609,19 @@ class _SaveMemoryParams:
 
 
 def _delete_memory_row(conn: AnyConnection, note_id: str) -> None:
-    """Best-effort delete of a single memory row. Logs and swallows."""
+    """Delete a single memory row as part of saga rollback.
+
+    Always commits the DELETE so it survives the saga's own
+    conn.rollback() (which already undid the failed INSERT).
+    The prior ``_is_saga_deferred`` guard prevented the commit,
+    leaving the row in place after the saga raised.
+    """
     try:
         conn.execute("DELETE FROM memories WHERE id = ?", (note_id,))
-        if not _is_saga_deferred(conn):
+        try:
             conn.commit()
+        except Exception as commit_exc:
+            logger.debug("saga undo: DELETE commit for %s failed: %r", note_id, commit_exc)
     except Exception as exc:
         logger.warning(
             "saga undo: DELETE FROM memories for %s failed: %r", note_id, exc
