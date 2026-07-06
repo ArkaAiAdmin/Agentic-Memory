@@ -35,7 +35,7 @@ Built for **Claude Code**, **OpenCode**, and any MCP-compatible agent harness.
 │  │  (Git-ready) │    │  Graph (KG)  │    │  Reranker     │  │
 │  └──────────────┘    └──────────────┘    └───────────────┘  │
 │                                                               │
-│  36 cron jobs │ 6 hooks │ 16 MCP tools │ CRDT sync │ Arc cache │
+│  37 cron jobs │ 6 hooks │ 16 MCP tools │ CRDT sync │ Arc cache │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -224,7 +224,7 @@ agentic-memory/                          # Repo root
 └── db.py                                # Connection pool + WAL
 ```
 
-**Production stats (2026-06-27):** ~90k LOC production, 234 test files, ~3,988 test functions, ~62-table SQLite schema at v32, 102 MCP tools, 36 cron jobs, 6 lifecycle hooks.
+**Production stats (2026-07-06):** ~90k LOC production, 236 test files, ~4,031 test functions, ~62-table SQLite schema at v32, 102 MCP tools, 37 cron jobs, 6 lifecycle hooks.
 
 See [docs/architecture.md](docs/architecture.md) for full detail.
 
@@ -242,11 +242,11 @@ See [docs/architecture.md](docs/architecture.md) for full detail.
 | **FTS5 / BM25** | ✅ | ✅ | ❌ | ❌ | ❌ |
 | **102 MCP tools** | ✅ | SDK only | MCP server | API | ❌ |
 | **6 lifecycle hooks** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **36 cron jobs** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **37 cron jobs** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Circuit breakers** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Field-level CRDT** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Schema migrations** | ✅ (v32) | ❌ | ❌ | ❌ | ❌ |
-| **Test suite** | 3,988 tests | moderate | moderate | moderate | minimal |
+| **Test suite** | 4,031 tests | moderate | moderate | moderate | minimal |
 | **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 
 See [docs/explanation/comparison.md](docs/explanation/comparison.md) for detailed breakdowns.

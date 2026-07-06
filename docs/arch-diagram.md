@@ -1,6 +1,6 @@
 # Agentic Memory — Complete Architecture
 
-> Schema v32 · 102 registered tools (15 CORE + 87 ADMIN + 3 DEPRECATED; 16 visible to agents) · ~62 SQLite tables (~31 user-visible) · ~36 cron schedule entries · 6 lifecycle hooks · 175+ production modules
+> Schema v32 · 102 registered tools (15 CORE + 87 ADMIN + 3 DEPRECATED; 16 visible to agents) · ~62 SQLite tables (~31 user-visible) · ~37 cron schedule entries · 6 lifecycle hooks · 175+ production modules
 
 ---
 
@@ -898,7 +898,7 @@ agentic-memory/                              ← repo root
 ├── background_worker.py                      ← also a cron entry
 │
 ├── EVAL ─────────────────────────────────────────────────────────────────────
-├── eval/                                     ← ~231 test files, ~3,967 test functions
+├── eval/                                     ← 236 test files, ~4,031 test functions
 │
 └── DOCS ─────────────────────────────────────────────────────────────────────
     ├── docs/architecture.md

@@ -12,7 +12,7 @@ You are an agent working on the **agentic-memory** codebase at the repo root.
 
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
-- **Surface**: 15 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + ~36 cron jobs + ~18 CLI commands
+- **Surface**: 15 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 37 cron jobs + ~18 CLI commands
 - **Schema**: v32, ~62 tables
 - **Code**: ~60k LOC production, ~87k test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. Read it whenever you need to call an MCP tool and aren't sure which one or how.
@@ -63,7 +63,7 @@ agentic-memory/
 ├── mcp_*.py (28 modules)        ← domain-split MCP tools
 ├── memory/                      ← live store (gitignored)
 ├── docs/MCP_SURFACE.md          ← MCP tool reference for agents
-└── eval/                        ← 236 test files, ~4,019 test functions
+└── eval/                        ← 236 test files, ~4,031 test functions
 ```
 
 ---
@@ -266,7 +266,7 @@ These principles govern every decision in this codebase. They override convenien
 - **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + late-interaction ColBERT + cross-encoder + temporal decay + neural forget curve + concept/centrality boost). Phase-level error counters.
 - **KG/Temporal**: Entity extraction with Jaccard fuzzy match, temporal KG with contradiction detection and fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save with circuit breaker, TS plugin coordination, cron-driven maintenance.
-- **Testing**: 236 test files, ~4,019 test functions, ~87k test LOC. Subprocess-per-file runner for torch-safe parallelism.
+- **Testing**: 236 test files, ~4,031 test functions, ~87k test LOC. Subprocess-per-file runner for torch-safe parallelism.
 - **Canonical references**: `docs/architecture.md` (architecture), `docs/MCP_SURFACE.md` (MCP workflow), `docs/reference/mcp-tools.md` (tool catalog), `skills/memory-architecture/SKILL.md` (agent walkthrough).
 
 > Note: For authoritative counts, query `tool_registry.py` and `infra/migration_runner.py` directly.
