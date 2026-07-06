@@ -17,6 +17,7 @@ surface. The 80+ legacy tools are callable through memory_advanced.
 """
 from __future__ import annotations
 
+import hashlib
 import time
 from pathlib import Path
 
@@ -44,6 +45,13 @@ def _resolve_db_path(is_global: bool = False, db_path: str | None = None):
         return GLOBAL_MEM_DIR / "memory.db"
     _, local_mem, _ = get_memory_paths()
     return local_mem / "memory.db"
+
+
+def _auto_slug(content: str) -> str:
+    """Generate a short slug from content for auto-naming."""
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    h = hashlib.md5(content.encode()).hexdigest()[:4]
+    return f"auto-{ts}-{h}"
 
 
 def _wrap_db_error(verb_name: str, e: Exception) -> str:
@@ -134,10 +142,11 @@ def memory_save(
     try:
         from save_pipeline import save_memory
 
+        slug = title_slug or _auto_slug(content)
         result = save_memory(
             content=content,
             category=category,
-            title_slug=title_slug,
+            title_slug=slug,
             tags=tags or [],
             pinned=pinned,
             importance=importance,
