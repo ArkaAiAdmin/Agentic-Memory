@@ -110,11 +110,10 @@ describe('AgentMemory namespace isolation', () => {
     expect(body.is_global).toBe(false);
   });
 
-  it('should filter search results by agent tag namespace', async () => {
+  it('should pass agent tag to server for namespace scoping', async () => {
     const mockResponse = {
       results: [
         { id: '1', content: 'Agent specific info', tags: ['agent-alpha-agent'] },
-        { id: '2', content: 'Global public info', tags: ['general'] },
       ]
     };
     (global.fetch as jest.Mock).mockResolvedValue({
@@ -125,6 +124,10 @@ describe('AgentMemory namespace isolation', () => {
     const results = await agentMemory.search('info');
     expect(results).toHaveLength(1);
     expect(results[0].content).toBe('Agent specific info');
+
+    const fetchArgs = (global.fetch as jest.Mock).mock.calls[0];
+    const body = JSON.parse(fetchArgs[1].body);
+    expect(body.tags).toEqual(['agent-alpha-agent']);
   });
 });
 
