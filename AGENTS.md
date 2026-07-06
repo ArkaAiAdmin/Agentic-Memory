@@ -145,6 +145,27 @@ If you find yourself saying "it depends" or "either approach could work," that's
 
 ---
 
+## Significant Feature Workflow
+
+When the task is a significant feature, refactor, or any change that affects schema, migrations, core write/read paths, or spans multiple files:
+
+| # | Step | Action |
+|---|---|---|
+| 1 | Branch | Create a feature branch off `main` before writing code |
+| 2 | Build | Implement the change on the feature branch |
+| 3 | Validate | Run individual test files for affected areas during development |
+| 4 | Full suite | Before merging, run `make test` (in-process, all 4,000+ tests) and confirm 0 failures |
+| 5 | Merge local | Merge feature branch into `main` (local) |
+| 6 | Push | `git push origin main` |
+
+**Rules:**
+- Never commit significant work directly to `main`. Always use a feature branch.
+- "Significant" means schema changes, migration additions/repairs, write-path modifications, search pipeline changes, MCP tool surface changes, or anything that touches 3+ source files.
+- The full `make test` suite must pass with 0 failures before merging to local `main`.
+- Small unambiguous fixes (typos, single-file bugs, test-only changes) may go directly to `main` without branching.
+
+---
+
 ## Sync Server Security
 
 Binds to `127.0.0.1:9877`. Key env vars: `MEMORY_SYNC_TOKEN` (required), `MEMORY_SYNC_HMAC_SECRET` (optional), `MEMORY_SYNC_TLS_CERT`/`MEMORY_SYNC_TLS_KEY` (native TLS), `MEMORY_SYNC_TLS_CLIENT_CA` (mTLS). Empty `MEMORY_SYNC_CORS_ORIGINS` means no CORS. Non-loopback without TLS logs a warning.
