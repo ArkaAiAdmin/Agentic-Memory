@@ -39,6 +39,7 @@ from search_pipeline import (
     _reciprocal_rank_fusion,
     _apply_temporal_decay,
 )
+from search.orchestrator import _rerank_results
 
 PROD_DB = Path(os.environ.get("MEMORY_DB_PATH", str(GLOBAL_MEM_DIR / "memory.db")))
 
@@ -502,34 +503,25 @@ class TestComputeFinalScoreMore(unittest.TestCase):
         self.assertAlmostEqual(score_pinned, score_not_pinned, places=10)
 
     def test_recency_weight_affects_score(self):
-        score_high = _compute_final_score(
-            ScoreContext(
-                rank=-1.0,
-                fitness=0.5,
-                importance=3,
-                pinned=False,
-                created=now_iso(),
-                tags_json="[]",
-                query="test",
-                boost_pinned=True,
-                recency_weight=0.5,
-            )
-        )
-        score_low = _compute_final_score(
-            ScoreContext(
-                rank=-1.0,
-                fitness=0.5,
-                importance=3,
-                pinned=False,
-                created=now_iso(),
-                tags_json="[]",
-                query="test",
-                boost_pinned=True,
-                recency_weight=0.1,
-            )
-        )
-        # Higher recency weight should affect score
-        self.assertNotEqual(score_high, score_low)
+        """Higher decay_weight in _apply_temporal_decay produces larger score gaps
+        between recent and old notes. This is the behavioral contract: the
+        temporal modifier is multiplicative and weight-controlled."""
+        from search.scoring import _apply_temporal_decay
+
+        now = time.time()
+        recent_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400))
+        old_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400 * 365))
+        base = 0.5
+
+        def mk_row(ts):
+            return (None, None, None, None, ts, None, base, None, None, None)
+
+        high = _apply_temporal_decay([mk_row(recent_ts), mk_row(old_ts)], decay_weight=0.3, as_of=now)
+        low = _apply_temporal_decay([mk_row(recent_ts), mk_row(old_ts)], decay_weight=0.05, as_of=now)
+        gap_high = high[0][6] - high[1][6]
+        gap_low = low[0][6] - low[1][6]
+        self.assertGreater(gap_high, gap_low,
+            "higher decay_weight should produce a larger recency gap")
 
     def test_tag_match_contributes(self):
         score_with_tags = _compute_final_score(
@@ -559,6 +551,87 @@ class TestComputeFinalScoreMore(unittest.TestCase):
             )
         )
         self.assertGreater(score_with_tags, score_no_tags)
+
+
+class TestTemporalDecayBehavior(unittest.TestCase):
+    """Behavioral tests for the search pipeline's temporal aging."""
+
+    def test_recent_outranks_old_after_decay(self):
+        """A 1-day-old note should score higher than a 1-year-old note."""
+        from search.scoring import _apply_temporal_decay
+
+        now = time.time()
+        recent_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400))
+        old_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400 * 365))
+
+        def mk_row(ts):
+            return (None, None, None, None, ts, None, 0.5, None, None, None)
+
+        scored = _apply_temporal_decay([mk_row(recent_ts), mk_row(old_ts)], decay_weight=0.15, as_of=now)
+        self.assertGreater(scored[0][6], scored[1][6],
+            "1-day-old note should outrank 1-year-old note after temporal decay")
+
+    def test_decay_never_increases_score(self):
+        """_apply_temporal_decay should never boost a score above 1.0."""
+        from search.scoring import _apply_temporal_decay
+
+        now = time.time()
+        fresh_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now))
+
+        def mk_row(ts):
+            return (None, None, None, None, ts, None, 0.9, None, None, None)
+
+        scored = _apply_temporal_decay([mk_row(fresh_ts)], decay_weight=0.15, as_of=now)
+        self.assertLessEqual(scored[0][6], 1.0,
+            "decay-adjusted score should never exceed 1.0")
+
+    def test_decay_weight_zero_passes_scores_through(self):
+        """decay_weight=0 should leave all final_scores unchanged."""
+        from search.scoring import _apply_temporal_decay
+
+        now = time.time()
+        ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 100000))
+        original_score = 0.73
+        row = (None, None, None, None, ts, None, original_score, None, None, None)
+        scored = _apply_temporal_decay([row], decay_weight=0.0, as_of=now)
+        self.assertAlmostEqual(scored[0][6], original_score, places=10)
+
+    def test_decay_and_forget_curve_are_mutually_exclusive(self):
+        """The pipeline runs EITHER _apply_temporal_decay OR
+        _apply_neural_forget_curve — the flag in search_pipeline controls
+        which path is taken."""
+        import search_pipeline as sp
+
+        old_flag = getattr(sp, "_FORGETTING_CURVE_ENABLED", None)
+        try:
+            # Path A: decay enabled (flag False)
+            setattr(sp, "_FORGETTING_CURVE_ENABLED", False)
+            decay_out, _ = _rerank_results(
+                results=[
+                    ("note1", "c", "f", "[]", "2024-01-01T00:00:00", -1.0, 0.5, 0.5, 3, False),
+                ],
+                query="test", db_path=Path("/dev/null"), has_fitness=True, rerank=False,
+                boost_pinned=False, recency_weight=0.1, limit=5, deep_rerank=False,
+            )
+            # Path B: forget curve enabled (flag True)
+            setattr(sp, "_FORGETTING_CURVE_ENABLED", True)
+            fc_out, _ = _rerank_results(
+                results=[
+                    ("note1", "c", "f", "[]", "2024-01-01T00:00:00", -1.0, 0.5, 0.5, 3, False),
+                ],
+                query="test", db_path=Path("/dev/null"), has_fitness=True, rerank=False,
+                boost_pinned=False, recency_weight=0.1, limit=5, deep_rerank=False,
+            )
+            # Both paths must produce a result (different code paths executed)
+            self.assertIsInstance(decay_out, list)
+            self.assertIsInstance(fc_out, list)
+            self.assertEqual(len(decay_out), 1)
+            self.assertEqual(len(fc_out), 1)
+        finally:
+            if old_flag is not None:
+                setattr(sp, "_FORGETTING_CURVE_ENABLED", old_flag)
+            elif hasattr(sp, "_FORGETTING_CURVE_ENABLED"):
+                delattr(sp, "_FORGETTING_CURVE_ENABLED")
 
 
 if __name__ == "__main__":

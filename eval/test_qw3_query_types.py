@@ -22,6 +22,7 @@ Verifies that:
 from __future__ import annotations
 
 import sys
+import time
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -214,48 +215,22 @@ class TestFinalScoreWithWeights(unittest.TestCase):
         self.assertAlmostEqual(s, 0.7310585786300049, delta=1e-6)
 
     def test_15_temporal_weights_boost_recent_note(self):
-        # Two notes identical except for created date. Temporal weights
-        # should rank the recent one higher.
-        now = datetime.now()
-        old_date = (now - timedelta(days=365)).isoformat()
-        new_date = (now - timedelta(days=1)).isoformat()
-        temporal = memory_mcp._weights_for_query_type("temporal")
-        general = memory_mcp._weights_for_query_type("general")
-        # Use the same recency_weight for both to isolate the weight
-        # effect (recency_weight is multiplied *10 internally and capped
-        # at 1.0, so the recency factor saturates for both).
-        kwargs = dict(
-            rank=-1.0,
-            fitness=1.0,
-            importance=3,
-            pinned=False,
-            tags_json="[]",
-            query="recent update",
-            boost_pinned=True,
-            recency_weight=0.3,
-        )
-        # Old note
-        s_old_temp = memory_mcp._compute_final_score(
-            ScoreContext(created=old_date, weights=temporal, **kwargs)
-        )
-        s_old_gen = memory_mcp._compute_final_score(
-            ScoreContext(created=old_date, weights=general, **kwargs)
-        )
-        # New note
-        s_new_temp = memory_mcp._compute_final_score(
-            ScoreContext(created=new_date, weights=temporal, **kwargs)
-        )
-        s_new_gen = memory_mcp._compute_final_score(
-            ScoreContext(created=new_date, weights=general, **kwargs)
-        )
-        # Temporal should show a bigger gap between new and old than general does.
-        gap_temp = s_new_temp - s_old_temp
-        gap_gen = s_new_gen - s_old_gen
-        self.assertGreater(
-            gap_temp,
-            gap_gen,
-            f"temporal gap ({gap_temp}) should be larger than general gap ({gap_gen})",
-        )
+        # Two notes identical except for created date. Temporal decay
+        # should rank the recent one higher (multiplicative modifier).
+        from search.scoring import _apply_temporal_decay
+
+        now = time.time()
+        old_ts = (now - 86400 * 365)
+        new_ts = (now - 86400)
+        base_score = 0.5
+        recent_row = (None, None, None, None, _iso(old_ts), None, base_score, None, None, None)
+        old_row = (None, None, None, None, _iso(old_ts - 86400 * 365), None, base_score, None, None, None)
+        scored = _apply_temporal_decay([recent_row, old_row], decay_weight=0.15, as_of=now)
+        self.assertGreater(scored[0][6], scored[1][6],
+            "recent note should outrank old note after temporal decay")
+
+def _iso(ts):
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(ts))
 
 
 if __name__ == "__main__":

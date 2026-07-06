@@ -574,48 +574,28 @@ class TestRecencyWeight(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_recency_weight_default_0point1(self):
-        """Default recency_weight should be 0.1, not 10."""
+        """Default decay_weight should boost recent notes over old ones.
+
+        Behavioral: recent notes outrank old notes via _apply_temporal_decay
+        as a multiplicative modifier (not an additive channel).
+        """
+        from search.scoring import _apply_temporal_decay
+
         now_ts = time.time()
-        # Brand new note: recency_factor ≈ 1.0
-        # contribution = recency_weight * 1.0 = 0.1 * 1.0 = 0.1
-        score_new = _compute_final_score(
-            ScoreContext(
-                rank=-1.0,
-                fitness=0.5,
-                importance=3,
-                pinned=False,
-                created=datetime.now(timezone.utc).isoformat(),
-                tags_json="[]",
-                query="test",
-                boost_pinned=False,
-                recency_weight=0.1,
-                now_ts=now_ts,
-            )
-        )
-        # Very old note: recency_factor ≈ 0
-        old_date = "2020-01-01T00:00:00+00:00"
-        score_old = _compute_final_score(
-            ScoreContext(
-                rank=-1.0,
-                fitness=0.5,
-                importance=3,
-                pinned=False,
-                created=old_date,
-                tags_json="[]",
-                query="test",
-                boost_pinned=False,
-                recency_weight=0.1,
-                now_ts=now_ts,
-            )
-        )
-        # New should score higher than old
+        recent_ts = datetime.now(timezone.utc).isoformat()
+        old_ts = "2020-01-01T00:00:00+00:00"
+        base_score = 0.5
+        recent_row = (None, None, None, None, recent_ts, None, base_score, None, None, None)
+        old_row = (None, None, None, None, old_ts, None, base_score, None, None, None)
+        scored = _apply_temporal_decay([recent_row, old_row], decay_weight=0.15, as_of=now_ts)
+        score_new = scored[0][6]
+        score_old = scored[1][6]
         self.assertGreater(
             score_new, score_old, "new note should score higher than old note"
         )
-        # Difference should be bounded (recency weight is 0.1, so max diff ≈ 0.1)
         diff = score_new - score_old
         self.assertLess(
-            diff, 0.2, f"recency diff {diff} seems too large for weight=0.1"
+            diff, 0.2, f"recency diff {diff} seems too large for weight=0.15"
         )
 
     def test_recency_weight_zero_removes_recency(self):
@@ -657,42 +637,24 @@ class TestRecencyWeight(unittest.TestCase):
         )
 
     def test_recency_not_multiplied_by_10(self):
-        """Verify recency_factor is applied via weight, not a raw *10 hack."""
+        """Verify decay is a multiplicative modifier, not additive scalars.
+
+        Behavioral: a ×0.15 decay_weight produces a proportionally smaller
+        score gap between recent and old notes than ×0.3 — bounded, not a
+        hacked constant multiplier.
+        """
+        from search.scoring import _apply_temporal_decay
+
         now_ts = time.time()
-        created = datetime.now(timezone.utc).isoformat()
-        score_w1 = _compute_final_score(
-            ScoreContext(
-                rank=-1.0,
-                fitness=0.5,
-                importance=3,
-                pinned=False,
-                created=created,
-                tags_json="[]",
-                query="test",
-                boost_pinned=False,
-                recency_weight=0.1,
-                now_ts=now_ts,
-            )
-        )
-        score_w2 = _compute_final_score(
-            ScoreContext(
-                rank=-1.0,
-                fitness=0.5,
-                importance=3,
-                pinned=False,
-                created=created,
-                tags_json="[]",
-                query="test",
-                boost_pinned=False,
-                recency_weight=0.2,
-                now_ts=now_ts,
-            )
-        )
-        # Doubling recency weight should increase score, but not by
-        # more than 0.2 (since max recency contribution = 0.2 * 1.0 = 0.2)
-        diff = score_w2 - score_w1
+        recent_ts = datetime.now(timezone.utc).isoformat()
+        old_ts = "2020-01-01T00:00:00+00:00"
+        base_score = 0.5
+        row = lambda ts: (None, None, None, None, ts, None, base_score, None, None, None)
+        w1 = _apply_temporal_decay([row(recent_ts), row(old_ts)], decay_weight=0.1, as_of=now_ts)
+        w2 = _apply_temporal_decay([row(recent_ts), row(old_ts)], decay_weight=0.2, as_of=now_ts)
+        diff = w2[0][6] - w2[1][6] - (w1[0][6] - w1[1][6])
         self.assertGreater(diff, 0.0)
-        self.assertLess(diff, 0.3, f"weight difference {diff} suggests a *10 hack")
+        self.assertLess(diff, 0.3, f"weight difference {diff} suggests a constant hack")
 
 
 class TestBacklinks(unittest.TestCase):
@@ -1030,9 +992,13 @@ class TestComputeFinalScore(unittest.TestCase):
             total, 1.0, places=10, msg=f"weights should sum to 1.0, got {total}"
         )
 
-    def test_all_six_channels_present(self):
-        """Weight dict should have all six channel keys."""
-        expected = {"bm25", "fitness", "importance", "pinned", "recency", "tag_match"}
+    def test_all_five_channels_present(self):
+        """Weight dict should have the five additive scoring channel keys.
+
+        Note: recency/temporal decay is applied by _apply_temporal_decay
+        AFTER _compute_final_score, so it is intentionally absent here.
+        """
+        expected = {"bm25", "fitness", "importance", "pinned", "tag_match"}
         self.assertEqual(set(_RERANK_WEIGHTS.keys()), expected)
 
     def test_bm25_uses_sigmoid(self):
@@ -1051,11 +1017,11 @@ class TestComputeFinalScore(unittest.TestCase):
                 now_ts=time.time(),
             )
         )
-        # rank=0 → sigmoid(0)=0.5 → bm25=0.4*0.5=0.2
-        # fitness=0.2*0.0=0, importance=0.15*0.6=0.09
-        # pinned=0, recency=0, tag=0
-        # total = 0.2 + 0 + 0.09 = 0.29
-        self.assertAlmostEqual(score, 0.29, places=2)
+        # rank=0 → sigmoid(0)=0.5 → bm25=0.45*0.5=0.225
+        # fitness=0.25*0.0=0, importance=0.15*0.6=0.09
+        # pinned=0, tag=0
+        # total = 0.225 + 0 + 0.09 = 0.315
+        self.assertAlmostEqual(score, 0.315, places=2)
 
     def test_pinned_boost(self):
         """Pinned note with boost_pinned=True should score higher."""

@@ -268,16 +268,19 @@ def _get_embedding_score_threshold() -> float:
 
 # Cache for skill-first lookups to prevent double-incrementing hit_count
 # Bounded LRU via OrderedDict; evicts oldest entries past MAX_SKILL_CACHE.
+# Thread-safe: all cache reads and writes are protected by _skill_cache_lock.
 _SKILL_CACHE_MAX = 512
-_skill_cache: dict = {}
-_skill_cache_order: list = []
+_skill_cache: dict[tuple[str, tuple[str, ...], int], dict] = {}
+_skill_cache_order: list[tuple[str, tuple[str, ...], int]] = []
+_skill_cache_lock = threading.Lock()
 
 
 def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: str = "default") -> dict | None:
     """Look up skills in memory_skills table matching the query terms."""
     cache_key = (str(db_path), tuple(sorted(terms)), limit)
-    if cache_key in _skill_cache:
-        return _skill_cache[cache_key]  # type: ignore[no-any-return]
+    with _skill_cache_lock:
+        if cache_key in _skill_cache:
+            return _skill_cache[cache_key]
 
     try:
         from infra._lazy_imports import connection_pool, safe_close_db
@@ -358,11 +361,12 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: 
             "count": len(results),
             "output": output,
         }
-        _skill_cache[cache_key] = result
-        _skill_cache_order.append(cache_key)
-        if len(_skill_cache) > _SKILL_CACHE_MAX:
-            _oldest = _skill_cache_order.pop(0)
-            _skill_cache.pop(_oldest, None)
+        with _skill_cache_lock:
+            _skill_cache[cache_key] = result
+            _skill_cache_order.append(cache_key)
+            if len(_skill_cache) > _SKILL_CACHE_MAX:
+                _oldest = _skill_cache_order.pop(0)
+                _skill_cache.pop(_oldest, None)
         return result
     finally:
         try:
@@ -1365,6 +1369,7 @@ def _build_result_items(*, db, results_to_display, query, rerank):
                 "importance": importance_val,
                 "pinned": pinned,
                 "backlinks": backlinks,
+                "last_accessed": last_accessed,
                 "summary": auto_summary,
             }
         )

@@ -13,9 +13,12 @@ Patterns detected:
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -207,7 +210,8 @@ def _enrich_candidates_with_llm(
 
         if not get_config().session_decision_llm:
             return candidates
-    except Exception:
+    except Exception as exc:
+        logger.debug("session_decision_llm config unavailable: %s", exc)
         return candidates
 
     try:
@@ -258,9 +262,9 @@ def _enrich_candidates_with_llm(
                             confidence=max(0.0, min(1.0, conf)),
                             thread_slug=slug,
                             alternatives=alts,
-                        )
                     )
-    except Exception:
-        pass
+                )
+    except Exception as exc:
+        logger.warning("decision_extraction: failed to persist candidate: %s", exc)
 
     return candidates

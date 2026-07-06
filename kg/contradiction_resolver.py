@@ -78,7 +78,7 @@ def _pick_strategy(row_a: tuple, row_b: tuple) -> str:
         )
         raw = response.get("content", "").strip()
         parsed = json.loads(raw)
-        action = parsed.get("action", "")
+        action: str = parsed.get("action", "")
         if action in ("supersede_b_with_a", "supersede_a_with_b", "merge", "keep_both"):
             return action
     except Exception:

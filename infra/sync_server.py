@@ -268,20 +268,11 @@ class _SyncHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         self.send_response(204)
-        # Y1 fix: use the same CORS allowlist as the actual endpoints.
-        # SEC-1 fix (2026-06-22): do NOT fall back to "*" when the
-        # allowlist is empty.  The previous behaviour silently
-        # allowed any website to hit the sync endpoint (Bearer
-        # token still required, but the surface is broader than
-        # the user might expect).  Now an empty allowlist means
-        # "no CORS" — browsers will block cross-origin requests,
-        # but same-origin and direct-curl clients are unaffected.
         origin = self.headers.get("Origin", "")
         if origin and origin in SYNC_CORS_ORIGINS:
             self.send_header("Access-Control-Allow-Origin", origin)
-        # No Access-Control-Allow-Origin header → browser blocks.
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
     # ------------------------------------------------------------------

@@ -40,11 +40,10 @@ logger = logging.getLogger(__name__)
 
 _RRF_K = 60
 _RERANK_WEIGHTS = {
-    "bm25": 0.4,
-    "fitness": 0.2,
+    "bm25": 0.45,
+    "fitness": 0.25,
     "importance": 0.15,
     "pinned": 0.1,
-    "recency": 0.1,
     "tag_match": 0.05,
 }
 
@@ -86,9 +85,6 @@ def _sp_lazy(name: str, default: object = None) -> object:
     return getattr(sp, name, default)
 
 
-_RERANK_HALF_LIFE_DAYS = _sp_lazy("_RERANK_HALF_LIFE_DAYS", 180)
-
-
 def _get_rerank_half_life_days() -> float:
     """Resolve rerank_half_life_days from config; falls back to 180.0."""
     try:
@@ -97,6 +93,9 @@ def _get_rerank_half_life_days() -> float:
         return float(get_config().rerank_half_life_days)
     except Exception:
         return 180.0
+
+
+_RERANK_HALF_LIFE_DAYS = _get_rerank_half_life_days()
 
 
 def _reciprocal_rank_fusion(
@@ -349,20 +348,18 @@ def _strong_match_float(rows):
 
 
 def _compute_final_score(ctx) -> float:
-    """Combine six retrieval channels into a single final score.
+    """Combine five retrieval channels into a single final score.
 
     Channels (default weights, sum to 1.0):
-        bm25:       0.40  text relevance, FTS5 rank negated
-        fitness:    0.20  success/recency score from ARC
+        bm25:       0.45  text relevance, FTS5 rank negated
+        fitness:    0.25  success/recency score from ARC
         importance: 0.15  user-set importance 1-5, /5
         pinned:     0.10  always-on boost, scaled by boost_pinned
-        recency:    0.10  days-since-created, exp decay, half-life 180d
         tag_match:  0.05  fraction of query tokens present in tags
 
-    QW3: pass ``weights`` to override per-channel weights (e.g. for
-    query-type-adaptive scoring). The override must contain all six
-    channel keys and should sum to 1.0; missing keys inherit from
-    ``_RERANK_WEIGHTS``.
+    Temporal decay / forgetting curve is applied AFTER this step by
+    ``_apply_temporal_decay`` or ``_apply_neural_forget_curve``.
+    Recency is intentionally excluded here to avoid double-counting age.
 
     ``now_ts`` is injectable for deterministic tests.
     """
@@ -387,15 +384,6 @@ def _compute_final_score(ctx) -> float:
     importance_val = ctx.importance if ctx.importance is not None else 3
     importance_normalized = importance_val / 5.0
     pinned_bonus = 1.0 if ctx.pinned and ctx.boost_pinned else 0.0
-    recency_factor = 0.0
-    if ctx.created:
-        try:
-            c_ts = datetime.fromisoformat(ctx.created).timestamp()
-            age_days = max(0.0, (now_ts - c_ts) / 86400.0)
-            recency_factor = 0.5 ** (age_days / _get_rerank_half_life_days())
-        except (ValueError, TypeError):
-            recency_factor = 0.0
-    recency_factor *= ctx.recency_weight
     tag_match = 0.0
     query_tokens = {
         t.lower() for t in _RERANK_TOKEN_RE.findall(ctx.query) if len(t) >= 3
@@ -413,14 +401,13 @@ def _compute_final_score(ctx) -> float:
             if tag_tokens:
                 hits = len(query_tokens & tag_tokens)
                 tag_match = min(1.0, hits / max(1, len(query_tokens)))
-    return (  # type: ignore[no-any-return]
-        weights.get("bm25", _get_rerank_weights()["bm25"]) * bm25_score
-        + weights.get("fitness", _get_rerank_weights()["fitness"]) * fitness_score
-        + weights.get("importance", _get_rerank_weights()["importance"])
+    return (
+        float(weights.get("bm25", _get_rerank_weights()["bm25"])) * bm25_score
+        + float(weights.get("fitness", _get_rerank_weights()["fitness"])) * fitness_score
+        + float(weights.get("importance", _get_rerank_weights()["importance"]))
         * importance_normalized
-        + weights.get("pinned", _get_rerank_weights()["pinned"]) * pinned_bonus
-        + weights.get("recency", _get_rerank_weights()["recency"]) * recency_factor
-        + weights.get("tag_match", _get_rerank_weights()["tag_match"]) * tag_match
+        + float(weights.get("pinned", _get_rerank_weights()["pinned"])) * pinned_bonus
+        + float(weights.get("tag_match", _get_rerank_weights()["tag_match"])) * tag_match
     )
 
 

@@ -102,8 +102,8 @@ def _get_query_type_weights() -> dict:
             parsed = json.loads(raw)
             if isinstance(parsed, dict):
                 return parsed
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("query_type_weights config unavailable: %s", exc)
     return _QUERY_TYPE_WEIGHTS
 
 
@@ -453,7 +453,8 @@ def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
             from infra._lazy_imports import get_config
 
             _min_occ_q = int(get_config().entity_min_occurrences)
-        except Exception:
+        except Exception as exc:
+            logger.debug("entity_min_occurrences config unavailable: %s", exc)
             _min_occ_q = 2
     except ImportError:
         return []
@@ -474,9 +475,9 @@ def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
                         (name.lower(),),
                     ).fetchall()
                     if rows:
-                        query_entity_ids.add(int(rows[0][0]))
-                except Exception:
-                    pass
+                         query_entity_ids.add(int(rows[0][0]))
+                except Exception as exc:
+                    logger.debug("kg_entities lookup failed for %r: %s", name, exc)
 
             results = _graph_search(
                 conn,
@@ -508,8 +509,9 @@ def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
                                 (eid_int, qid),
                             ).fetchone()
                             for qid in query_entity_ids
-                        )
-                    except Exception:
+                         )
+                    except Exception as exc:
+                        logger.debug("community check failed for entity %s: %s", eid_int, exc)
                         in_same_community = False
                     if in_same_community:
                         same_community_terms.append(display)

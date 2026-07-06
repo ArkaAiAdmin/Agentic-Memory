@@ -20,13 +20,10 @@ class TestWeightsConfiguration(unittest.TestCase):
     def test_weights_sum_to_one(self):
         w = memory_mcp._RERANK_WEIGHTS
         self.assertAlmostEqual(sum(w.values()), 1.0, places=6)
-        # All weights are non-negative.
         for k, v in w.items():
             self.assertGreaterEqual(v, 0.0, f"weight {k} must be non-negative")
-        # Six channels expected.
-        self.assertEqual(len(w), 6)
-        # All five original channels still present.
-        for required in ("bm25", "fitness", "importance", "pinned", "recency", "tag_match"):
+        self.assertEqual(len(w), 5)
+        for required in ("bm25", "fitness", "importance", "pinned", "tag_match"):
             self.assertIn(required, w)
 
 
@@ -94,37 +91,37 @@ class TestPinnedBoost(unittest.TestCase):
 
 
 class TestRecencyDecay(unittest.TestCase):
+    """Recency is now applied by _apply_temporal_decay as a multiplicative
+    post-step, not as an additive channel inside _compute_final_score."""
+
     def test_recent_ranks_higher_than_old(self):
+        """A fresh note's final_score is boosted relative to an old note
+        after _apply_temporal_decay is applied."""
+        from search.scoring import _apply_temporal_decay
+
         now = time.time()
-        recent = memory_mcp._compute_final_score(ScoreContext(
-            rank=-1.0, fitness=1.0, importance=3, pinned=False,
-            created=time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400)),
-            tags_json="[]", query="x",
-            boost_pinned=False, recency_weight=0.1, now_ts=now,
-        ))
-        old = memory_mcp._compute_final_score(ScoreContext(
-            rank=-1.0, fitness=1.0, importance=3, pinned=False,
-            created=time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400 * 365)),
-            tags_json="[]", query="x",
-            boost_pinned=False, recency_weight=0.1, now_ts=now,
-        ))
-        self.assertGreater(recent, old, "fresh note should outrank year-old note")
+        recent_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400))
+        old_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400 * 365))
+        base_score = 0.5
+        recent_row = (None, None, None, None, recent_ts, None, base_score, None, None, None)
+        old_row = (None, None, None, None, old_ts, None, base_score, None, None, None)
+        scored = _apply_temporal_decay([recent_row, old_row], decay_weight=0.15, as_of=now)
+        self.assertGreater(scored[0][6], scored[1][6],
+            "fresh note should outrank year-old note after temporal decay")
 
     def test_recency_weight_zero_disables(self):
+        """decay_weight=0.0 in _apply_temporal_decay leaves scores unchanged."""
+        from search.scoring import _apply_temporal_decay
+
         now = time.time()
-        recent = memory_mcp._compute_final_score(ScoreContext(
-            rank=-1.0, fitness=1.0, importance=3, pinned=False,
-            created=time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400)),
-            tags_json="[]", query="x",
-            boost_pinned=False, recency_weight=0.0, now_ts=now,
-        ))
-        old = memory_mcp._compute_final_score(ScoreContext(
-            rank=-1.0, fitness=1.0, importance=3, pinned=False,
-            created=time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400 * 365)),
-            tags_json="[]", query="x",
-            boost_pinned=False, recency_weight=0.0, now_ts=now,
-        ))
-        self.assertEqual(recent, old, "recency_weight=0 should make recency channel inert")
+        recent_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400))
+        old_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 86400 * 365))
+        base_score = 0.5
+        recent_row = (None, None, None, None, recent_ts, None, base_score, None, None, None)
+        old_row = (None, None, None, None, old_ts, None, base_score, None, None, None)
+        scored = _apply_temporal_decay([recent_row, old_row], decay_weight=0.0, as_of=now)
+        self.assertEqual(scored[0][6], base_score,
+            "decay_weight=0 should leave final_score unchanged")
 
 
 class TestTagMatch(unittest.TestCase):
