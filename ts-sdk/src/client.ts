@@ -1,4 +1,4 @@
-import { MemoryResult, SearchResult, MemoryOptions, KGEntity, KGRelation, Stats } from './types';
+import { MemoryResult, SearchResult, MemoryOptions, SearchOptions, KGEntity, KGRelation, Stats } from './types';
 
 export class MemoryClient {
   private baseUrl: string;
@@ -47,11 +47,12 @@ export class MemoryClient {
     return res.id;
   }
 
-  async search(query: string, options: { limit?: number; rerank?: boolean } = {}): Promise<SearchResult[]> {
+  async search(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
     const res = await this.request<{ results: SearchResult[] }>('/api/v1/memories/search', 'POST', {
       query,
       limit: options.limit || 10,
       rerank: options.rerank !== false,
+      tags: options.tags,
     });
     return res.results;
   }

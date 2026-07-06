@@ -1838,6 +1838,7 @@ def search_memories(
     fact_type: str | None = None,
     memory_source: str | None = None,
     category: str = "",
+    tags: list[str] | None = None,
 ) -> dict:
     if not db_path.exists():
         return {
@@ -1886,6 +1887,7 @@ def search_memories(
         + f":if={int(include_facts)}:fl={int(fact_limit)}"
         + f":as_of={as_of}"
         + f":bs={belief_status or ''}:es={epistemic_source or ''}:ft={fact_type or ''}:ms={memory_source or ''}"
+        + (f":tags={','.join(sorted(tags))}" if tags else "")
     )
     now = time.time()
     if cache_key in _search_cache:
@@ -1943,6 +1945,16 @@ def search_memories(
             repo_filter = f"{repo_filter} AND m.category = ?"
         else:
             repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
+
+        # Sprint 3: tags filter — JSON array exact match via LIKE
+        if tags:
+            safe_tags = [re.sub(r'[^\w@.#+\-]', '', t) for t in tags]
+            safe_tags = [t for t in safe_tags if t]
+            if safe_tags:
+                like_clauses = ' AND '.join(
+                    f"m.tags LIKE '%\"{t}\"%'" for t in safe_tags
+                )
+                repo_filter = f"{repo_filter} AND ({like_clauses})"
 
         # Phase 4 + Phase 4b: FTS + KG fact search
         # When search_parallel_enabled is on (default), run FTS and KG fact

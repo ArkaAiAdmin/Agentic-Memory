@@ -27,9 +27,9 @@ export class AgentMemory {
   }
 
   async search(query: string, options: { limit?: number } = {}): Promise<SearchResult[]> {
-    const results = await this.client.search(query, {
+    return this.client.search(query, {
       limit: options.limit || 10,
+      tags: [`agent-${this.agentId}`],
     });
-    return results.filter(r => r.tags?.includes(`agent-${this.agentId}`));
   }
 }

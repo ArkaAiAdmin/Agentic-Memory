@@ -15,6 +15,12 @@ export interface MemoryResult {
   deleted_at?: string;
 }
 
+export interface SearchOptions {
+  limit?: number;
+  rerank?: boolean;
+  tags?: string[];
+}
+
 export interface SearchResult {
   id: string;
   content: string;

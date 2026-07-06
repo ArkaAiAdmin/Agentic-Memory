@@ -245,8 +245,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 return
             limit = int(query_params.get("limit", ["10"])[0])
             rerank = query_params.get("rerank", ["true"])[0].lower() == "true"
+            tags_str = query_params.get("tags", [None])[0]
+            tags = tags_str.split(",") if tags_str else None
             client = MemoryClient(db_path=self.server.db_path)
-            results = client.search(query, limit=limit, rerank=rerank)
+            results = client.search(query, limit=limit, rerank=rerank, tags=tags)
             
             # Serialize SearchResults object
             results_list = [
@@ -277,8 +279,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 return
             limit = req.get("limit", 10)
             rerank = req.get("rerank", True)
+            tags = req.get("tags", None)
             client = MemoryClient(db_path=self.server.db_path)
-            results = client.search(query, limit=limit, rerank=rerank)
+            results = client.search(query, limit=limit, rerank=rerank, tags=tags)
             
             # Serialize SearchResults object
             results_list = [

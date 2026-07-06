@@ -109,6 +109,7 @@ class MemoryClient:
         fact_limit: int = 5,
         synthesize: bool = False,
         max_synthesis_sentences: int = 5,
+        tags: list[str] | None = None,
     ) -> SearchResults:
         """Search memories by semantic relevance.
 
@@ -129,6 +130,7 @@ class MemoryClient:
             fact_limit=fact_limit,
             synthesize=synthesize,
             max_synthesis_sentences=max_synthesis_sentences,
+            tags=tags,
         )
 
         items = parse_search_results(raw)
