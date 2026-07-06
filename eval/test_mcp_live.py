@@ -22,10 +22,13 @@ from infra.memory_common import reset_rate_limiter
 from rebuild_index import rebuild_index
 
 try:
-    from config import reset_config
+    from infra.config import reset_config
 except ImportError:
-    def reset_config():  # type: ignore[misc]
-        pass
+    try:
+        from config import reset_config
+    except ImportError:
+        def reset_config():  # type: ignore[misc]
+            pass
 
 
 def _setup_test_env(tmpdir: str):
@@ -185,6 +188,7 @@ class TestLiveMCPRateLimit(unittest.TestCase):
 
     def test_burst_returns_rate_limited(self):
         os.environ["MEMORY_RATE_LIMIT_MEMORY_SEARCH"] = "3600,60"
+        reset_config()
         reset_rate_limiter()
         try:
             for _ in range(60):
@@ -197,6 +201,7 @@ class TestLiveMCPRateLimit(unittest.TestCase):
             )
         finally:
             os.environ.pop("MEMORY_RATE_LIMIT_MEMORY_SEARCH", None)
+            reset_config()
             reset_rate_limiter()
 
 

@@ -200,7 +200,8 @@ def with_audit(tool_name: str):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            if not rate_limit_check(tool_name):
+            from infra.memory_common import rate_limit_check as real_rl_check
+            if not real_rl_check(tool_name):
                 from infra.rate_limiter import get_retry_after
                 retry_after = get_retry_after(tool_name)
                 return _err(
