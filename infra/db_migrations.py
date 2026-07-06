@@ -428,6 +428,20 @@ def _migrate_add_fk_constraints(conn) -> None:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_kg_facts_spo ON kg_facts(subject, predicate, object)"
                 )
+            elif table == "shared_memories":
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_shared_agent ON shared_memories(agent_id)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_shared_category ON shared_memories(category)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_shared_memories_shared_at ON shared_memories(shared_at)"
+                )
+            elif table == "user_profile_access_log":
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_user_profile_note ON user_profile_access_log(note_id)"
+                )
     # B4 fix: removed inner conn.commit(). The outer with conn: in
     # run_schema_setup provides transaction atomicity.
 
@@ -783,7 +797,16 @@ def run_schema_setup(conn: AnyConnection) -> None:
         return
 
     with conn:
-        _run_sql_migrations(conn)  # type: ignore[arg-type]
+        # ------------------------------------------------------------------
+        # 1. Ensure ALL dynamic tables exist BEFORE numbered SQL migrations
+        #    run.  Numbered migrations (e.g. 006, 010) create indexes and
+        #    constraints on tables like memory_embeddings, shared_memories,
+        #    etc.  If these tables don't exist yet, the migrations silently
+        #    skip the CREATE INDEX statements ("no such table" caught in the
+        #    forward-DDL handler), producing a different schema than when
+        #    the same migrations are re-applied after a rollback (where the
+        #    tables persist from the initial setup).
+        # ------------------------------------------------------------------
         _migrate_ensure_columns(conn, cols)
         _migrate_ensure_indexes(conn)
         _migrate_memory_embeddings(conn)
@@ -791,18 +814,16 @@ def run_schema_setup(conn: AnyConnection) -> None:
         _migrate_memory_vec_idx(conn)
         _migrate_kg_tables(conn)
         _migrate_kg_extraction_stats(conn)
-        from infra.fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
-        _cast_conn = cast("sqlite3.Connection", conn)
-        _migrate_fts5_porter_tokenizer(_cast_conn)
-        _migrate_ensure_fts_triggers(_cast_conn)
-        _migrate_memory_ctr_feedback(conn)
-        _migrate_concept_drift(conn)
-        _migrate_add_fk_constraints(conn)
         _migrate_ensure_chunks_table(conn)
-        _migrate_fix_kg_edges_fk(conn)
-        _migrate_schema_version(conn)
 
-        # 2. Dynamic subsystem setups (best-effort, lazy loaded to prevent circular imports)
+        try:
+            from memory_sharing import _ensure_shared_table
+
+            _ensure_shared_table(conn)
+        except Exception:
+            logger.warning("Failed to ensure memory_sharing table during migration")
+            pass
+
         try:
             from adaptive_retention import ensure_adaptive_schema
 
@@ -811,14 +832,6 @@ def run_schema_setup(conn: AnyConnection) -> None:
             logger.warning(
                 "Failed to ensure adaptive retention schema during migration"
             )
-            pass
-
-        try:
-            from memory_sharing import _ensure_shared_table
-
-            _ensure_shared_table(conn)
-        except Exception:
-            logger.warning("Failed to ensure memory_sharing table during migration")
             pass
 
         try:
@@ -841,6 +854,27 @@ def run_schema_setup(conn: AnyConnection) -> None:
                 "Failed to create user_profile_access_log table during migration"
             )
             pass
+
+        # ------------------------------------------------------------------
+        # 2. Run numbered SQL migrations.  All tables they reference are
+        #    already in place from step 1, so CREATE INDEX / ALTER TABLE
+        #    etc. succeed rather than being silently skipped.
+        # ------------------------------------------------------------------
+        _run_sql_migrations(conn)  # type: ignore[arg-type]
+
+        # ------------------------------------------------------------------
+        # 3. Post-migration setup: FTS5, FK constraints, etc.
+        # ------------------------------------------------------------------
+        from infra.fts import _migrate_fts5_porter_tokenizer, _migrate_ensure_fts_triggers
+
+        _cast_conn = cast("sqlite3.Connection", conn)
+        _migrate_fts5_porter_tokenizer(_cast_conn)
+        _migrate_ensure_fts_triggers(_cast_conn)
+        _migrate_memory_ctr_feedback(conn)
+        _migrate_concept_drift(conn)
+        _migrate_add_fk_constraints(conn)
+        _migrate_fix_kg_edges_fk(conn)
+        _migrate_schema_version(conn)
 
     # No need to mark the conn — the schema_version table is the
     # canonical fast-path. See the gate at the top of this function.

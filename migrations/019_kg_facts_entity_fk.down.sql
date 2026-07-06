@@ -56,12 +56,14 @@ DROP INDEX IF EXISTS idx_kg_facts_object_entity;
 DROP TABLE kg_facts;
 ALTER TABLE kg_facts_orig RENAME TO kg_facts;
 
-REINDEX idx_kg_facts_subject ON kg_facts;
-REINDEX idx_kg_facts_predicate ON kg_facts;
-REINDEX idx_kg_facts_object ON kg_facts;
-REINDEX idx_kg_facts_spo ON kg_facts;
-REINDEX idx_kg_facts_validity ON kg_facts;
-REINDEX idx_kg_facts_superseded_by ON kg_facts;
-REINDEX idx_kg_facts_event_time ON kg_facts;
+CREATE INDEX IF NOT EXISTS idx_kg_facts_subject ON kg_facts(subject);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_predicate ON kg_facts(predicate);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_object ON kg_facts(object);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_spo ON kg_facts(subject, predicate, object);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_subject_entity ON kg_facts(subject_entity_id);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_object_entity ON kg_facts(object_entity_id);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_validity ON kg_facts(valid_at, invalid_at);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_superseded_by ON kg_facts(superseded_by);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_event_time ON kg_facts(event_time);
 
 PRAGMA foreign_keys = ON;

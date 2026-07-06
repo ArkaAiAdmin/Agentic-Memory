@@ -576,5 +576,125 @@ class TestMigrationDryRun(unittest.TestCase):
             conn.close()
 
 
+class TestDownUpRoundTripSchema(unittest.TestCase):
+    """CI regression guard: migrate_down(N-1) then run_migrations() must
+    restore an identical schema (same tables, columns, indexes, triggers,
+    views).
+
+    Runs for three representative migration boundaries: the first pair
+    (001), a middle pair (016), and the last pair (SCHEMA_VERSION-1).
+    """
+
+    @staticmethod
+    def _capture_schema(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
+        """Return sorted (type, name, normalized-sql) tuples from sqlite_master.
+
+        Normalizes SQL whitespace by collapsing all runs of whitespace into
+        a single space and stripping leading/trailing whitespace.  This
+        ensures that semantically identical schema objects created via
+        different paths (e.g. migration 001's ``CREATE TABLE`` followed
+        by ``ALTER TABLE ADD COLUMN`` vs. ``migrate_down``'s direct
+        ``CREATE TABLE``) compare as equal.
+
+        Excludes FTS5 internal tables (*_fts_*, *_content, *_segments,
+        *_segdir, *_docsize, *_config) whose page numbers are
+        non-deterministic, and the auto-generated ``sqlite_sequence``
+        table used by AUTOINCREMENT.
+        """
+        return sorted(
+            (
+                (r[0], r[1], TestDownUpRoundTripSchema._normalize_sql(r[2]))
+                for r in conn.execute(
+                    "SELECT type, name, sql FROM sqlite_master "
+                    "WHERE sql IS NOT NULL"
+                ).fetchall()
+                if not any(
+                    name in r[1]
+                    for name in (
+                        "sqlite_sequence",
+                    )
+                )
+                and not r[1].endswith(
+                    (
+                        "_fts_data",
+                        "_fts_idx",
+                        "_fts_content",
+                        "_fts_docsize",
+                        "_fts_config",
+                    )
+                )
+            ),
+            key=lambda x: (x[0], x[1]),
+        )
+
+    @staticmethod
+    def _normalize_sql(sql: str) -> str:
+        """Collapse whitespace then normalize punctuation spacing.
+
+        Removes whitespace before punctuation characters (commas,
+        parentheses, semicolons) so that ``CREATE ... , checksums``
+        and ``CREATE ... ,checksums`` both become ``CREATE ..., checksums``.
+        """
+        import re
+
+        return re.sub(r"\s+([,();])", r"\1", " ".join(sql.split()))
+
+    @staticmethod
+    def _verify_round_trip(
+        conn: sqlite3.Connection,
+        target: int,
+        test_case: unittest.TestCase,
+    ) -> None:
+        """Roll back to *target*, re-apply, and assert schema identity.
+
+        Uses the same ``run_schema_setup`` entry point as the initial
+        setup to ensure all setup functions (e.g. FK removal on
+        ``backlinks``) run identically in both passes.
+        """
+        schema_before = TestDownUpRoundTripSchema._capture_schema(conn)
+        migration_runner.migrate_down(conn, target)
+        db_migrations.run_schema_setup(conn)
+        schema_after = TestDownUpRoundTripSchema._capture_schema(conn)
+        test_case.assertEqual(
+            schema_before,
+            schema_after,
+            f"schema mismatch after rollback to version {target} and re-apply",
+        )
+
+    def test_last_migration_pair(self):
+        """Round-trip the most recent (N-1 → N) migration pair."""
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            self._verify_round_trip(
+                conn, migration_runner.SCHEMA_VERSION - 1, self
+            )
+        finally:
+            conn.close()
+
+    def test_middle_migration_pair_016(self):
+        """Round-trip migration 016 (concept_drift — a representative table-
+        creating migration in the middle of the sequence)."""
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            self._verify_round_trip(conn, 15, self)
+        finally:
+            conn.close()
+
+    def test_early_migration_pair_001(self):
+        """Round-trip migration 001 (schema_version — the very first .sql
+        migration, which runs before most base tables exist)."""
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            self._verify_round_trip(conn, 0, self)
+        finally:
+            conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -190,6 +190,11 @@ def _get_applied_migrations(conn: AnyConnection) -> set[int]:
         if row is None:
             return set()
         version = row[0]
+        # A version of 0 means "no migrations applied" (fresh DB or
+        # fully rolled back via migrate_down).  Return empty so all
+        # available migrations are re-applied.
+        if version <= 0:
+            return set()
         # Backward compat: old schema_version=4 means migrations 1-4
         # are already applied (they correspond to the old inline helpers).
         if version <= 4:
@@ -556,7 +561,15 @@ def migrate_down(conn: AnyConnection, target_version: int, dry_run: bool = False
                     conn.execute(stmt)
 
             # Remove checksums for rolled-back migrations, then write
-            # version + checksums to schema_version.
+            # version + checksums to schema_version.  Recreate the table
+            # if a down-migration (e.g. 001) dropped it.
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_version ("
+                "  id INTEGER PRIMARY KEY CHECK (id = 1),"
+                "  version INTEGER NOT NULL"
+                ")"
+            )
+            _ensure_checksums_column(conn)
             checksums = _get_checksums(conn)
             for num in to_rollback:
                 checksums.pop(str(num), None)
