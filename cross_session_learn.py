@@ -195,6 +195,14 @@ def scan_sessions_and_learn(
                 tier="warm",
                 importance=2,
             )
+            # Attempt skill extraction from the newly saved lesson
+            try:
+                from skill_extractor import extract_skill_for_memory
+
+                extract_skill_for_memory(conn, note_id, lesson_content, category="lessons")
+            except Exception as _se:
+                logger.debug("Skill extraction skipped for %s: %s", note_id, _se)
+
             # Run save-pipeline indexing for the new lesson
             try:
                 from save.indexers import (
