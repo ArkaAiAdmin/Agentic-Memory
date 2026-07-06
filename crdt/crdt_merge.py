@@ -69,8 +69,13 @@ def parse_version_vector(raw: Optional[str]) -> dict[str, int]:
 
 
 def dominates(v1: dict[str, int], v2: dict[str, int]) -> bool:
-    """Return True if v1 dominates v2 (all v1 counters ≥ all v2 counters)."""
+    """Return True if v1 dominates v2 (all v1 counters ≥ all v2 counters).
+
+    Two empty version vectors are never concurrent — neither dominates.
+    """
     all_keys = set(v1) | set(v2)
+    if not all_keys:
+        return False
     for k in all_keys:
         if v1.get(k, 0) < v2.get(k, 0):
             return False

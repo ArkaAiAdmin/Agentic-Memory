@@ -1764,3 +1764,43 @@ class TestUpsertRowMetadataGuard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPartialCommitRollback(unittest.TestCase):
+    """Bug 1 fix: _update_memory_index_incremental must rollback the
+    write-queue session when a post-upsert indexing step raises, so no
+    partial row is left in the DB."""
+
+    def setUp(self):
+        self.tmp_dir = Path(tempfile.mkdtemp())
+        self.db_path = self.tmp_dir / "memory.db"
+        from infra.memory_common import open_db
+        with open_db(self.db_path) as conn:
+            from infra.db_migrations import run_schema_setup
+            run_schema_setup(conn)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_no_partial_row_on_indexing_failure(self):
+        from save_pipeline import _update_memory_index_incremental
+
+        with patch("save_pipeline._index_chunks", side_effect=RuntimeError("boom")):
+            ret = _update_memory_index_incremental(
+                self.db_path,
+                category="test",
+                title_slug="x",
+                content="hello world",
+                tags=[],
+                pinned=False,
+                now_iso="2025-01-01T00:00:00+00:00",
+                is_global=False,
+            )
+        self.assertIsNone(ret)
+        from infra.memory_common import open_db
+        with open_db(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT id FROM memories WHERE id=?", ("test/x",)
+            ).fetchone()
+        self.assertIsNone(row, "Partial row should not persist after indexing failure")

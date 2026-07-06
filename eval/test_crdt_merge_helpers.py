@@ -145,7 +145,7 @@ class TestDominates(unittest.TestCase):
         self.assertFalse(dominates(v2, v1))
 
     def test_empty_dominates_empty(self):
-        self.assertTrue(dominates({}, {}))
+        self.assertFalse(dominates({}, {}))
 
     def test_empty_does_not_dominate_nonempty(self):
         self.assertFalse(dominates({}, {"a": 1}))

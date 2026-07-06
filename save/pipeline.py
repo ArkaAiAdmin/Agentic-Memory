@@ -899,6 +899,10 @@ def _update_memory_index_incremental(
     except Exception as e:
         if external_db:
             raise
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         logger.error("Error in incremental update: %s", e)
     else:
         if not external_db:

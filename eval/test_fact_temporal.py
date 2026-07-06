@@ -1629,3 +1629,81 @@ class TestPropagateEntitySupersession:
         ).fetchone()
         assert works_row[0] is not None, "works_at NYC should be propagated superseded"
         assert works_row[1] == "propagated"
+
+
+
+class TestPropagateEntitySupersessionNoneTime:
+    """Bug 3 fix: propagate_entity_supersession must not cascade to
+    sibling facts when the new (superseding) fact has event_time=None."""
+
+    def test_no_propagation_when_new_fact_has_none_event_time(self):
+        conn = _fresh_db()
+        old_id = _upsert(
+            conn, "X", "likes", "ice_cream", 0.9,
+            time.time(), "mem_a", "ctx",
+            event_time=None, event_time_granularity=None,
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
+            (old_id,),
+        )
+        new_id = _upsert(
+            conn, "X", "likes", "pizza", 0.9,
+            time.time(), "mem_b", "ctx",
+            event_time=None, event_time_granularity=None,
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
+            (new_id,),
+        )
+        sibling_id = _upsert(
+            conn, "X", "knows", "Y", 0.9,
+            time.time(), "mem_c", "ctx",
+            event_time=_epoch(2024), event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
+            (sibling_id,),
+        )
+        propagated = ft.propagate_entity_supersession(conn, old_id, new_id)
+        assert sibling_id not in propagated, (
+            "Sibling fact should not be superseded when new fact has event_time=None"
+        )
+        sibling = conn.execute(
+            "SELECT superseded_by FROM kg_facts WHERE id=?", (sibling_id,)
+        ).fetchone()
+        assert sibling[0] is None
+
+    def test_propagation_still_works_with_concrete_event_time(self):
+        conn = _fresh_db()
+        old_id = _upsert(
+            conn, "X", "likes", "ice_cream", 0.9,
+            time.time(), "mem_a", "ctx",
+            event_time=_epoch(2024), event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
+            (old_id,),
+        )
+        new_id = _upsert(
+            conn, "X", "likes", "pizza", 0.9,
+            time.time(), "mem_b", "ctx",
+            event_time=_epoch(2024), event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
+            (new_id,),
+        )
+        sibling_id = _upsert(
+            conn, "X", "knows", "Y", 0.9,
+            time.time(), "mem_c", "ctx",
+            event_time=_epoch(2024), event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
+            (sibling_id,),
+        )
+        propagated = ft.propagate_entity_supersession(conn, old_id, new_id)
+        assert sibling_id in propagated, (
+            "Sibling fact SHOULD be superseded when new fact has concrete event_time"
+        )

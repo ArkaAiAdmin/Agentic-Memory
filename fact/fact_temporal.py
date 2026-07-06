@@ -535,6 +535,9 @@ def propagate_entity_supersession(
         return []
     new_evt_time, new_evt_gran = new_row
 
+    if new_evt_time is None:
+        return []
+
     entity_ids = {e for e in (subj_ent, obj_ent) if e is not None}
     if not entity_ids:
         return []
