@@ -150,17 +150,20 @@ def resolve_db_for_memory_id(
         db = base / "memory.db"
         if not db.exists():
             continue
+        conn = None
         try:
             conn = connection_pool.get(str(db), timeout=5.0)
             row = conn.execute(
                 "SELECT 1 FROM memories WHERE id=? LIMIT 1", (memory_id,)
             ).fetchone()
-            safe_close_db(conn)
             if row:
                 return db
         except Exception:
             logger.warning("Failed to probe memory %s in database %s", memory_id, db)
             continue
+        finally:
+            if conn is not None:
+                safe_close_db(conn)
     return None
 
 
@@ -239,8 +242,8 @@ def with_memory_connection(func):
         db_path = _resolve_active_db_path()
         tenant_id = kwargs.get("tenant_id", "default")
         conn = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
-        conn.execute("PRAGMA busy_timeout = 30000;")
         try:
+            conn.execute("PRAGMA busy_timeout = 30000;")
             return func(conn, *args, **kwargs)
         finally:
             safe_close_db(conn)
