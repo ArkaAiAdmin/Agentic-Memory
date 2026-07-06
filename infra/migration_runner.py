@@ -20,6 +20,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import logging
 import re
 import sqlite3
@@ -243,7 +245,60 @@ def _get_down_migrations() -> list[tuple[int, Path]]:
     return sorted(migrations)
 
 
-def run_migrations(conn: AnyConnection) -> None:
+def _ensure_checksums_column(conn: AnyConnection) -> None:
+    """Add checksums column to schema_version if it doesn't exist."""
+    try:
+        conn.execute(
+            "ALTER TABLE schema_version ADD COLUMN checksums TEXT DEFAULT '{}'"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
+def _get_checksums(conn: AnyConnection) -> dict[str, str]:
+    """Read stored migration file checksums from schema_version.
+
+    Returns {migration_number_str: sha256_hex}. Returns empty dict if
+    the column or row is missing.
+    """
+    try:
+        row = conn.execute(
+            "SELECT checksums FROM schema_version WHERE id=1"
+        ).fetchone()
+        if row and row[0]:
+            parsed = json.loads(row[0])
+            if isinstance(parsed, dict):
+                return parsed
+    except (sqlite3.OperationalError, json.JSONDecodeError, TypeError):
+        pass
+    return {}
+
+
+def verify_checksums(conn: AnyConnection) -> list[tuple[int, str, str, str]]:
+    """Verify on-disk migration file checksums against stored hashes.
+
+    Returns a list of (migration_number, filename, stored_hash, actual_hash)
+    tuples for every file whose hash does not match. An empty list means
+    all applied migrations pass integrity check. Unapplied migrations and
+    migration files without a stored checksum are not reported.
+    """
+    stored = _get_checksums(conn)
+    if not stored:
+        return []
+    available = {num: path for num, path in _get_available_migrations()}
+    mismatches: list[tuple[int, str, str, str]] = []
+    for num_str, stored_hash in stored.items():
+        num = int(num_str)
+        path = available.get(num)
+        if path is None:
+            continue
+        actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual_hash != stored_hash:
+            mismatches.append((num, path.name, stored_hash, actual_hash))
+    return mismatches
+
+
+def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
     """Apply all pending migrations.
 
     This is the forward-only entry point for schema evolution. It
@@ -266,6 +321,7 @@ def run_migrations(conn: AnyConnection) -> None:
         "  version INTEGER NOT NULL"
         "  )"
     )
+    _ensure_checksums_column(conn)
 
     # Step 2: Ensure base schema (memories table) and KG tables exist.
     # The numbered SQL migrations assume these tables are present.
@@ -312,7 +368,18 @@ def run_migrations(conn: AnyConnection) -> None:
     pending = [(num, path) for num, path in available if num not in applied]
 
     if not pending:
-        # Fast path: already at current version
+        return
+
+    if dry_run:
+        print(f"[DRY RUN] Would apply {len(pending)} migration(s):\n")
+        for num, path in pending:
+            stmts = _parse_sql_file(path)
+            print(f"  {num:03d}: {path.name} ({len(stmts)} statement(s))")
+            for stmt in stmts:
+                for line in stmt.split("\n"):
+                    print(f"    {line}")
+            print()
+        print(f"  schema_version would advance to {SCHEMA_VERSION}")
         return
 
     # Step 6: Apply pending migrations in a single transaction
@@ -382,22 +449,16 @@ def run_migrations(conn: AnyConnection) -> None:
                             )
                             raise
 
-            # 2026-06-22 (D8 fix): bump the schema_version after each
-            # individual migration rather than once at the end of the
-            # loop.  The previous "set to SCHEMA_VERSION after the
-            # loop" was a single-write contract — if a mid-loop
-            # migration raised, the transaction rolled back, and the
-            # version row never advanced.  By writing the version
-            # *during* the loop, after each successful migration, a
-            # partially-applied run still leaves an accurate record
-            # of which migrations have committed.  The final write
-            # to SCHEMA_VERSION below is now the cap value (== the
-            # highest applied migration's number) rather than the
-            # only write.
+            # Build checksums for newly applied migrations, then write
+            # version + checksums to schema_version.
+            checksums = _get_checksums(conn)
+            for num, path in pending:
+                checksums[str(num)] = hashlib.sha256(path.read_bytes()).hexdigest()
+
             highest_applied = max(num for num, _ in pending)
             conn.execute(
-                "INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)",
-                (highest_applied,),
+                "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
+                (highest_applied, json.dumps(checksums)),
             )
             # If the cap SCHEMA_VERSION is higher than the highest
             # applied migration in this run (e.g., a migration was
@@ -406,8 +467,8 @@ def run_migrations(conn: AnyConnection) -> None:
             # cap.  This is idempotent.
             if SCHEMA_VERSION > highest_applied:
                 conn.execute(
-                    "INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)",
-                    (SCHEMA_VERSION,),
+                    "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
+                    (SCHEMA_VERSION, json.dumps(checksums)),
                 )
 
         # Post-migration hooks. Run AFTER the transaction commits so
@@ -439,7 +500,7 @@ def run_migrations(conn: AnyConnection) -> None:
             pass
 
 
-def migrate_down(conn: AnyConnection, target_version: int) -> None:
+def migrate_down(conn: AnyConnection, target_version: int, dry_run: bool = False) -> None:
     """Rollback migrations to target_version.
 
     Applies down-migrations in reverse order (highest to lowest) for
@@ -454,6 +515,7 @@ def migrate_down(conn: AnyConnection, target_version: int) -> None:
         "  version INTEGER NOT NULL"
         "  )"
     )
+    _ensure_checksums_column(conn)
 
     applied = _get_applied_migrations(conn)
     down_migrations = _get_down_migrations()
@@ -472,6 +534,18 @@ def migrate_down(conn: AnyConnection, target_version: int) -> None:
         )
         return
 
+    if dry_run:
+        print(f"[DRY RUN] Would roll back {len(to_rollback)} migration(s):")
+        for num in to_rollback:
+            path = down_map[num]
+            stmts = _parse_sql_file(path)
+            print(f"\n  {num:03d}: {path.name} ({len(stmts)} statement(s))")
+            for stmt in stmts:
+                for line in stmt.split("\n"):
+                    print(f"    {line}")
+        print(f"\n  schema_version would regress to {target_version}")
+        return
+
     try:
         with conn:
             for num in to_rollback:
@@ -481,10 +555,14 @@ def migrate_down(conn: AnyConnection, target_version: int) -> None:
                 for stmt in statements:
                     conn.execute(stmt)
 
-            # Update schema_version to target_version
+            # Remove checksums for rolled-back migrations, then write
+            # version + checksums to schema_version.
+            checksums = _get_checksums(conn)
+            for num in to_rollback:
+                checksums.pop(str(num), None)
             conn.execute(
-                "INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)",
-                (target_version,),
+                "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
+                (target_version, json.dumps(checksums)),
             )
     except Exception as e:
         logger.error("Down-migration failed: %s", e)
@@ -510,10 +588,20 @@ if __name__ == "__main__":
         default=None,
         help="Path to the SQLite database file",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show pending migrations and SQL without executing",
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Verify migration file checksums against stored hashes",
+    )
     args = parser.parse_args()
 
     if args.db is None:
-        print("Usage: python migration_runner.py --db <path> [--target-version <N>]")
+        print("Usage: python migration_runner.py --db <path> [--target-version <N>] [--dry-run] [--verify]")
         sys.exit(1)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -521,9 +609,20 @@ if __name__ == "__main__":
     conn = sqlite3.connect(args.db)
     conn.execute("PRAGMA foreign_keys=ON")
     try:
-        if args.target_version is not None:
-            migrate_down(conn, args.target_version)
+        if args.verify:
+            mismatches = verify_checksums(conn)
+            if not mismatches:
+                print("All migration checksums match.")
+            else:
+                print(f"Checksum mismatch(es) detected ({len(mismatches)}):")
+                for num, fname, stored, actual in mismatches:
+                    print(f"  {num:03d} {fname}")
+                    print(f"    stored: {stored}")
+                    print(f"    actual: {actual}")
+                sys.exit(1)
+        elif args.target_version is not None:
+            migrate_down(conn, args.target_version, dry_run=args.dry_run)
         else:
-            run_migrations(conn)
+            run_migrations(conn, dry_run=args.dry_run)
     finally:
         conn.close()

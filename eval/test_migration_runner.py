@@ -26,6 +26,8 @@ the test file for every number.  Now there's a single source of
 truth.
 """
 
+import hashlib
+import json
 import sqlite3
 import sys
 import tempfile
@@ -401,6 +403,175 @@ class TestSchemaVersionIntegration(unittest.TestCase):
                 set(),
                 f"fully-migrated DB is missing expected tables: {sorted(missing)}",
             )
+        finally:
+            conn.close()
+
+
+class TestMigrationChecksums(unittest.TestCase):
+    """Migration file checksums detect post-apply tampering."""
+
+    def test_checksums_stored_after_fresh_migration(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            checksums = migration_runner._get_checksums(conn)
+            self.assertGreater(len(checksums), 0)
+            # Every applied migration should have a stored checksum.
+            available = migration_runner._get_available_migrations()
+            for num, path in available:
+                expected_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+                self.assertEqual(
+                    checksums.get(str(num)),
+                    expected_hash,
+                    f"checksum mismatch for migration {num:03d}",
+                )
+        finally:
+            conn.close()
+
+    def test_verify_checksums_passes_on_clean_db(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            mismatches = migration_runner.verify_checksums(conn)
+            self.assertEqual(mismatches, [])
+        finally:
+            conn.close()
+
+    def test_verify_checksums_detects_tampering(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            # Manually corrupt a stored checksum.
+            checksums = migration_runner._get_checksums(conn)
+            first_key = next(iter(checksums))
+            checksums[first_key] = "0000000000000000000000000000000000000000000000000000000000000000"
+            conn.execute(
+                "UPDATE schema_version SET checksums = ? WHERE id = 1",
+                (json.dumps(checksums),),
+            )
+            mismatches = migration_runner.verify_checksums(conn)
+            self.assertEqual(len(mismatches), 1)
+            self.assertEqual(mismatches[0][2], "0" * 64)
+        finally:
+            conn.close()
+
+    def test_checksums_removed_on_rollback(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            # Roll back by 1.
+            target = migration_runner.SCHEMA_VERSION - 1
+            migration_runner.migrate_down(conn, target)
+            checksums = migration_runner._get_checksums(conn)
+            # The most recent migration should no longer have a checksum.
+            self.assertNotIn(str(target + 1), checksums)
+        finally:
+            conn.close()
+
+    def test_verify_checksums_empty_on_fresh_db(self):
+        """A DB with no applied migrations has no checksums to verify."""
+        conn = _new_db()
+        try:
+            mismatches = migration_runner.verify_checksums(conn)
+            self.assertEqual(mismatches, [])
+        finally:
+            conn.close()
+
+    def test_checksums_column_added_to_existing_table(self):
+        """An existing schema_version table gets the checksums column."""
+        conn = _new_db()
+        try:
+            conn.execute(
+                "CREATE TABLE schema_version ("
+                "  id INTEGER PRIMARY KEY CHECK(id=1),"
+                "  version INTEGER NOT NULL"
+                ")"
+            )
+            conn.execute(
+                "INSERT INTO schema_version (id, version) VALUES (1, 4)"
+            )
+            conn.commit()
+            migration_runner._ensure_checksums_column(conn)
+            # Read column info to confirm it exists.
+            cols = {
+                r[1]
+                for r in conn.execute("PRAGMA table_info(schema_version)").fetchall()
+            }
+            self.assertIn("checksums", cols)
+        finally:
+            conn.close()
+
+
+class TestMigrationDryRun(unittest.TestCase):
+    """Dry-run mode shows pending SQL without executing."""
+
+    def test_dry_run_does_not_apply_migrations(self):
+        conn = _new_db()
+        try:
+            # Create the minimum tables that run_migrations needs, set a
+            # low schema_version so there are pending migrations, then
+            # verify dry-run leaves version unchanged.
+            conn.execute(
+                "CREATE TABLE memories ("
+                "  id TEXT PRIMARY KEY, content TEXT NOT NULL,"
+                "  source_file TEXT NOT NULL, tags TEXT DEFAULT '[]',"
+                "  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,"
+                "  observed_at TEXT NOT NULL"
+                ")"
+            )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_version ("
+                "  id INTEGER PRIMARY KEY CHECK (id = 1),"
+                "  version INTEGER NOT NULL"
+                ")"
+            )
+            conn.execute(
+                "INSERT INTO schema_version (id, version) VALUES (1, 20)"
+            )
+            conn.commit()
+            migration_runner.run_migrations(conn, dry_run=True)
+            row = conn.execute(
+                "SELECT version FROM schema_version WHERE id=1"
+            ).fetchone()
+            # Version must remain unchanged — dry-run must not apply
+            # pending migrations (21..SCHEMA_VERSION).
+            self.assertEqual(row[0], 20)
+        finally:
+            conn.close()
+
+    def test_dry_run_on_fully_migrated_db_is_noop(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            version_before = conn.execute(
+                "SELECT version FROM schema_version WHERE id=1"
+            ).fetchone()[0]
+            migration_runner.run_migrations(conn, dry_run=True)
+            version_after = conn.execute(
+                "SELECT version FROM schema_version WHERE id=1"
+            ).fetchone()[0]
+            self.assertEqual(version_after, version_before)
+        finally:
+            conn.close()
+
+    def test_dry_run_rollback_does_not_modify_db(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            version_before = conn.execute(
+                "SELECT version FROM schema_version WHERE id=1"
+            ).fetchone()[0]
+            migration_runner.migrate_down(conn, 0, dry_run=True)
+            version_after = conn.execute(
+                "SELECT version FROM schema_version WHERE id=1"
+            ).fetchone()[0]
+            self.assertEqual(version_after, version_before)
         finally:
             conn.close()
 

@@ -11,6 +11,7 @@ there so ``from memory_common import _migrate_*`` still works for the
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 
@@ -53,9 +54,16 @@ def _migrate_schema_version(conn) -> None:
         "  id      INTEGER PRIMARY KEY CHECK (id = 1),"
         "  version INTEGER NOT NULL)"
     )
+    # Preserve any existing checksums that migration_runner may have
+    # stored — _migrate_schema_version runs AFTER run_migrations and
+    # would otherwise clobber them with the column default.
+    from infra.migration_runner import _ensure_checksums_column, _get_checksums
+
+    _ensure_checksums_column(conn)
+    checksums = json.dumps(_get_checksums(conn))
     conn.execute(
-        "INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)",
-        (SCHEMA_VERSION,),
+        "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
+        (SCHEMA_VERSION, checksums),
     )
 
 
