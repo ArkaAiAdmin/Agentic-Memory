@@ -268,7 +268,7 @@ These principles govern every decision in this codebase. They override convenien
 - **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + late-interaction ColBERT + cross-encoder + temporal decay + neural forget curve + concept/centrality boost). Phase-level error counters.
 - **KG/Temporal**: Entity extraction with Jaccard fuzzy match, temporal KG with contradiction detection and fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save with circuit breaker, TS plugin coordination, cron-driven maintenance.
-- **Testing**: 236 test files, ~4,067 test functions, ~87k test LOC. Subprocess-per-file runner for torch-safe parallelism.
+- **Testing**: 237 test files, ~4,072+ test functions, ~87k+ test LOC. Subprocess-per-file runner for torch-safe parallelism.
 - **Canonical references**: `docs/architecture.md` (architecture), `docs/MCP_SURFACE.md` (MCP workflow), `docs/reference/mcp-tools.md` (tool catalog), `skills/memory-architecture/SKILL.md` (agent walkthrough).
 
 > Note: For authoritative counts, query `tool_registry.py` and `infra/migration_runner.py` directly.
