@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""PostToolUse / Stop hook: auto-save session memory if not already saved.
+"""PostToolUse / Stop hook: auto-save + auto-reinforce session memory.
 
 This hook makes Rule #7 (save session memory before ending) automatic.
 It tracks whether a session-end save has happened in the current session
 and auto-saves one if the agent forgets.
+
+Phase 6: auto-reinforce (P2) — after a productive session, queries
+user_access_log for memories accessed and applies +0.5 delta to their
+success_score, so frequently-retrieved memories get a boost.
 
 Hook wiring (to be added in opencode hooks config):
   PostToolUse: post:memory-session-end
@@ -251,6 +255,66 @@ def _maybe_auto_save() -> dict:
         return {"saved": False, "reason": f"auto_save_failed: {e}"}
 
 
+def _collect_session_memory_ids(marker: dict) -> list[str]:
+    """Query user_access_log for memory IDs accessed since first_tool_at.
+
+    Returns the list of distinct note_id values accessed in this session.
+    Best-effort: returns empty list on any error.
+    """
+    first_tool_at = marker.get("first_tool_at")
+    if not first_tool_at:
+        return []
+    try:
+        from infra.infrastructure import resolve_active_memory_dir
+        import sqlite3
+
+        db_path = resolve_active_memory_dir() / "memory.db"
+        if not db_path.exists():
+            return []
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT note_id FROM user_access_log "
+                "WHERE access_ts >= ? ORDER BY note_id",
+                (first_tool_at,),
+            ).fetchall()
+            return [r[0] for r in rows]
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def _auto_reinforce(marker: dict) -> dict:
+    """Apply outcome feedback: reinforce memories accessed this session.
+
+    Success signal: auto-save completed or was already saved this session
+    (meaning the session had enough activity to be productive).
+    Delta: +0.5 for productive sessions (gentle boost).
+    Best-effort: never blocks the session end.
+    """
+    saved_at = marker.get("saved_at", 0)
+    tool_count = marker.get("tool_count", 0)
+    if not saved_at or tool_count < _TOOL_THRESHOLD:
+        return {"reinforced": False, "reason": "insufficient_activity"}
+    memory_ids = _collect_session_memory_ids(marker)
+    if not memory_ids:
+        return {"reinforced": False, "reason": "no_memories_accessed"}
+    try:
+        sys_path = str(Path(__file__).resolve().parent.parent)
+        if sys_path not in sys.path:
+            sys.path.insert(0, sys_path)
+        from save.pipeline import reinforce_memories_db
+        from infra.infrastructure import resolve_active_memory_dir
+
+        db_path = resolve_active_memory_dir() / "memory.db"
+        updated = reinforce_memories_db(db_path, memory_ids, delta=0.5)
+        return {"reinforced": True, "updated_count": updated, "session_ids": len(memory_ids)}
+    except Exception as e:
+        log_error(e, context="memory-session-end._auto_reinforce")
+        return {"reinforced": False, "reason": f"error: {e}"}
+
+
 def _compliance_gate() -> dict:
     """Phase 5 pre-stop: lightweight compliance score on session end.
 
@@ -307,11 +371,14 @@ def main():
             result = _maybe_auto_save()
             # Phase 5: pre-stop compliance gate
             compliance = _compliance_gate()
+            # Phase 6: reinforce memories accessed this productive session
+            reinforce_result = _auto_reinforce(marker)
             combined = {
                 "session_end": session_end_result,
                 "auto_saved": result.get("saved", False),
                 "reason": result.get("reason", ""),
                 "compliance": compliance,
+                "reinforce": reinforce_result,
             }
             if result.get("saved"):
                 combined["detail"] = result
