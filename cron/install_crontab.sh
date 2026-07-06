@@ -253,6 +253,9 @@ $BLOCK_BEGIN
 # Phase B: enqueue via worker task queue
 15 *  *   *   *    MEMORY_MULTI_AGENT=1 MEMORY_CRDT_ENABLED=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_crdt_sync >> $LOG_DIR/crdt-sync.log 2>&1
 
+# Semantic clustering — assign cluster labels to memories (weekly, Sunday 22:00)
+0  22  *   *   0    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_semantic_clusters >> $LOG_DIR/semantic-clusters.log 2>&1
+
 # Watchdog — periodic health assertion and daemon uptime check
 # (Staggered at :25 and :55 to avoid overlapping background_worker at :00/:15/:30/:45)
 25,55 *  *   *   *    $VENV_PY $ROOT/cron/cron_watchdog.py >> $LOG_DIR/watchdog.log 2>&1
