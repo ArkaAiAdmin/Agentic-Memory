@@ -121,8 +121,8 @@ class TestQueryTypeWeights(unittest.TestCase):
                 total, 1.0, delta=1e-9, msg=f"{qt} weights sum to {total}, not 1.0"
             )
 
-    def test_09_weights_have_all_six_channels(self):
-        required = {"bm25", "fitness", "importance", "pinned", "recency", "tag_match"}
+    def test_09_weights_have_all_five_channels(self):
+        required = {"bm25", "fitness", "importance", "pinned", "tag_match"}
         for qt, w in memory_mcp._QUERY_TYPE_WEIGHTS.items():
             self.assertEqual(
                 set(w.keys()),
@@ -139,22 +139,22 @@ class TestQueryTypeWeights(unittest.TestCase):
             w2["bm25"], 0.99, "_weights_for_query_type returned a reference, not a copy"
         )
 
-    def test_11_temporal_boosts_recency(self):
+    def test_11_temporal_boosts_fitness(self):
         temp = memory_mcp._weights_for_query_type("temporal")
         gen = memory_mcp._weights_for_query_type("general")
         self.assertGreater(
-            temp["recency"],
-            gen["recency"],
-            "temporal should boost recency weight vs general",
+            temp["fitness"],
+            gen["fitness"],
+            "temporal should boost fitness weight vs general",
         )
 
-    def test_12_code_boosts_tag_match(self):
+    def test_12_code_boosts_pinned(self):
         code = memory_mcp._weights_for_query_type("code")
         gen = memory_mcp._weights_for_query_type("general")
         self.assertGreater(
-            code["tag_match"],
-            gen["tag_match"],
-            "code should boost tag_match weight vs general",
+            code["pinned"],
+            gen["pinned"],
+            "code should boost pinned weight vs general",
         )
 
     def test_13_factual_boosts_bm25(self):

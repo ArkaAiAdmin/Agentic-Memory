@@ -406,7 +406,6 @@ class TestWeightsForQueryType(unittest.TestCase):
             "fitness",
             "importance",
             "pinned",
-            "recency",
             "tag_match",
         }
         self.assertEqual(set(result.keys()), expected_keys)
@@ -419,7 +418,7 @@ class TestWeightsForQueryType(unittest.TestCase):
     def test_unknown_type_returns_general(self):
         result = _weights_for_query_type("nonexistent_type")
         self.assertIsInstance(result, dict)
-        self.assertEqual(len(result), 6)
+        self.assertEqual(len(result), 5)
 
 
 class TestExpandQueryMore(unittest.TestCase):

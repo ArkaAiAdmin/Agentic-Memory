@@ -535,12 +535,11 @@ class TestComputeFinalScore(unittest.TestCase):
 
     def test_default_weights(self):
         weights = _QUERY_TYPE_WEIGHTS['general']
-        self.assertEqual(weights['bm25'], 0.40)
+        self.assertEqual(weights['bm25'], 0.45)
         self.assertEqual(weights['fitness'], 0.20)
         self.assertEqual(weights['importance'], 0.15)
         self.assertEqual(weights['pinned'], 0.10)
-        self.assertEqual(weights['recency'], 0.10)
-        self.assertEqual(weights['tag_match'], 0.05)
+        self.assertEqual(weights['tag_match'], 0.10)
 
 
 # ─── _weights_for_query_type ──────────────────────────────────────────
@@ -560,7 +559,6 @@ class TestWeightsForQueryType(unittest.TestCase):
             self.assertIn('fitness', result)
             self.assertIn('importance', result)
             self.assertIn('pinned', result)
-            self.assertIn('recency', result)
             self.assertIn('tag_match', result)
 
     def test_weights_sum_to_one(self):
@@ -572,7 +570,7 @@ class TestWeightsForQueryType(unittest.TestCase):
     def test_unknown_type_returns_general(self):
         result = _weights_for_query_type('nonexistent')
         self.assertIsInstance(result, dict)
-        self.assertEqual(result['bm25'], 0.40)
+        self.assertEqual(result['bm25'], 0.45)
 
 
 # ─── _build_zero_result_suggestions ───────────────────────────────────

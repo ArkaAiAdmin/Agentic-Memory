@@ -51,27 +51,24 @@ _QUERY_TYPE_FACTUAL_RE = re.compile(
 
 _QUERY_TYPE_WEIGHTS: dict[str, dict[str, float]] = {
     "temporal": {
-        "bm25": 0.3,
-        "fitness": 0.2,
-        "importance": 0.1,
-        "pinned": 0.05,
-        "recency": 0.3,
-        "tag_match": 0.05,
+        "bm25": 0.4,
+        "fitness": 0.25,
+        "importance": 0.15,
+        "pinned": 0.1,
+        "tag_match": 0.1,
     },
     "multihop": {
         "bm25": 0.3,
         "fitness": 0.35,
         "importance": 0.2,
         "pinned": 0.1,
-        "recency": 0.0,
         "tag_match": 0.05,
     },
     "code": {
-        "bm25": 0.4,
+        "bm25": 0.45,
         "fitness": 0.15,
         "importance": 0.15,
         "pinned": 0.15,
-        "recency": 0.05,
         "tag_match": 0.1,
     },
     "factual": {
@@ -79,16 +76,14 @@ _QUERY_TYPE_WEIGHTS: dict[str, dict[str, float]] = {
         "fitness": 0.1,
         "importance": 0.15,
         "pinned": 0.15,
-        "recency": 0.0,
         "tag_match": 0.05,
     },
     "general": {
-        "bm25": 0.4,
+        "bm25": 0.45,
         "fitness": 0.2,
         "importance": 0.15,
         "pinned": 0.1,
-        "recency": 0.1,
-        "tag_match": 0.05,
+        "tag_match": 0.1,
     },
 }
 

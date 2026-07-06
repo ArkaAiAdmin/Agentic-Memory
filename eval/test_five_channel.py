@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Unit tests for QW1 6-channel retrieval fusion (memory_mcp._compute_final_score).
+"""Unit tests for QW1 5-channel retrieval fusion (memory_mcp._compute_final_score).
 
 Run with:
-    ~/.config/agentic-memory/venv/bin/python eval/test_six_channel.py
+    ~/.config/agentic-memory/venv/bin/python eval/test_five_channel.py
 """
 import sys
 import time
@@ -31,7 +31,7 @@ class TestBm25Dominant(unittest.TestCase):
     def test_better_bm25_wins_when_other_channels_equal(self):
         """When all other channels are equal, a note with better (lower)
         rank should win. This is a sanity check that bm25 still contributes
-        monotonically; the 6-channel fusion is allowed to override bm25
+        monotonically; the 5-channel fusion is allowed to override bm25
         when other signals differ."""
         now = time.time()
         # Better rank (more negative rank → higher score in our formula)
@@ -49,7 +49,7 @@ class TestBm25Dominant(unittest.TestCase):
         self.assertGreater(s1, s2, "lower (more negative) rank should score higher")
 
     def test_bm25_channel_weight_is_largest(self):
-        """bm25 has the highest weight in the 6-channel fusion."""
+        """bm25 has the highest weight in the 5-channel fusion."""
         w = memory_mcp._RERANK_WEIGHTS
         bm25 = w["bm25"]
         for k, v in w.items():
