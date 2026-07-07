@@ -4,7 +4,7 @@
 -- Metadata columns have json_valid CHECK constraints
 -- Thread events have both thread_id and session_id FK
 
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     started_at TEXT NOT NULL,
     ended_at TEXT,
@@ -17,7 +17,7 @@ CREATE TABLE sessions (
     metadata JSON DEFAULT '{}' CHECK (json_valid(metadata))
 );
 
-CREATE TABLE decision_threads (
+CREATE TABLE IF NOT EXISTS decision_threads (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions(id),
     title TEXT NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE decision_threads (
     metadata JSON DEFAULT '{}' CHECK (json_valid(metadata))
 );
 
-CREATE TABLE thread_events (
+CREATE TABLE IF NOT EXISTS thread_events (
     id TEXT PRIMARY KEY,
     thread_id TEXT NOT NULL REFERENCES decision_threads(id),
     session_id TEXT NOT NULL REFERENCES sessions(id),
@@ -44,7 +44,7 @@ CREATE TABLE thread_events (
     UNIQUE(thread_id, seq)
 );
 
-CREATE TABLE session_compaction_log (
+CREATE TABLE IF NOT EXISTS session_compaction_log (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions(id),
     compacted_at TEXT NOT NULL,

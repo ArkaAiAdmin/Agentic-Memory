@@ -27,7 +27,7 @@ INSERT OR IGNORE INTO task_queue_old
     SELECT id, task_type, payload, status, priority, created_at, started_at,
            completed_at, error, attempts, max_attempts, source_note_id
     FROM task_queue;
-DROP TABLE task_queue;
+DROP TABLE IF EXISTS task_queue;
 ALTER TABLE task_queue_old RENAME TO task_queue;
 CREATE INDEX IF NOT EXISTS idx_task_queue_status ON task_queue(status);
 CREATE INDEX IF NOT EXISTS idx_task_queue_task_type ON task_queue(task_type);

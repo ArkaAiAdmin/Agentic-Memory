@@ -24,7 +24,7 @@ INSERT OR IGNORE INTO kg_edges_orig
            valid_at, invalid_at
     FROM kg_edges;
 
-DROP TABLE kg_edges;
+DROP TABLE IF EXISTS kg_edges;
 ALTER TABLE kg_edges_orig RENAME TO kg_edges;
 
 CREATE INDEX IF NOT EXISTS idx_kg_edges_source ON kg_edges(source_id);
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS backlinks_orig (
 INSERT OR IGNORE INTO backlinks_orig
     SELECT source_id, target_id FROM backlinks;
 
-DROP TABLE backlinks;
+DROP TABLE IF EXISTS backlinks;
 ALTER TABLE backlinks_orig RENAME TO backlinks;
 
 CREATE INDEX IF NOT EXISTS idx_backlinks_target_id ON backlinks(target_id);

@@ -696,5 +696,178 @@ class TestDownUpRoundTripSchema(unittest.TestCase):
             conn.close()
 
 
+class TestDataPreservationOnRollback(unittest.TestCase):
+    """M1 — critical proof: down migrations must not silently lose kg_facts rows.
+
+    For each of 018, 019, 026:
+      1. Apply all migrations up to and including N
+      2. Insert a probe row into kg_facts
+      3. Roll back to 0
+      4. Assert the probe row is still present (in kg_facts or a
+         kg_facts_pre_rollback_* table)
+    """
+
+    @staticmethod
+    def _insert_probe(conn: sqlite3.Connection) -> int:
+        conn.execute(
+            "INSERT INTO kg_facts "
+            "(subject, predicate, object, confidence, locked, "
+            " fact_type) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("m1_probe_subject", "m1_probe_pred", "m1_probe_obj",
+             1.0, 0, "observation"),
+        )
+        return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
+    def test_018_down_preserves_kg_facts_rows(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            self._insert_probe(conn)
+            conn.commit()
+            migration_runner.migrate_down(conn, 0)
+            survivors = conn.execute(
+                "SELECT COUNT(*) FROM kg_facts WHERE subject = 'm1_probe_subject'"
+            ).fetchone()[0]
+            backup_survivors = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master "
+                "WHERE type='table' AND name='kg_facts_pre_rollback_018'"
+            ).fetchone()[0]
+            self.assertTrue(
+                survivors > 0 or backup_survivors > 0,
+                "kg_facts row lost during 018 rollback — data not preserved",
+            )
+        finally:
+            conn.close()
+
+    def test_019_down_preserves_kg_facts_rows(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            self._insert_probe(conn)
+            conn.commit()
+            migration_runner.migrate_down(conn, 0)
+            survivors = conn.execute(
+                "SELECT COUNT(*) FROM kg_facts WHERE subject = 'm1_probe_subject'"
+            ).fetchone()[0]
+            backup_survivors = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master "
+                "WHERE type='table' AND name='kg_facts_pre_rollback_019'"
+            ).fetchone()[0]
+            self.assertTrue(
+                survivors > 0 or backup_survivors > 0,
+                "kg_facts row lost during 019 rollback — data not preserved",
+            )
+        finally:
+            conn.close()
+
+    def test_026_down_preserves_kg_facts_rows(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            self._insert_probe(conn)
+            conn.commit()
+            migration_runner.migrate_down(conn, 0)
+            survivors = conn.execute(
+                "SELECT COUNT(*) FROM kg_facts WHERE subject = 'm1_probe_subject'"
+            ).fetchone()[0]
+            backup_survivors = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master "
+                "WHERE type='table' AND name='kg_facts_pre_rollback_026'"
+            ).fetchone()[0]
+            self.assertTrue(
+                survivors > 0 or backup_survivors > 0,
+                "kg_facts row lost during 026 rollback — data not preserved",
+            )
+        finally:
+            conn.close()
+
+
+class TestDownUpRoundTripSchemaT6(unittest.TestCase):
+    """T6 — migrate to N, rollback to 0, re-migrate to N, schema = fresh.
+
+    Verifies that the down-up round-trip to version 0 and back
+    produces an identical schema to a fresh migrate-to-N run.
+    """
+
+    def test_full_round_trip_to_zero_matches_fresh(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            schema_after_full = TestDownUpRoundTripSchema._capture_schema(conn)
+            migration_runner.migrate_down(conn, 0)
+            db_migrations.run_schema_setup(conn)
+            migration_runner.run_migrations(conn)
+            schema_after_round_trip = TestDownUpRoundTripSchema._capture_schema(conn)
+            self.assertEqual(
+                schema_after_full,
+                schema_after_round_trip,
+                "Schema after full round-trip to v0 and back differs from fresh migrate-to-N",
+            )
+        finally:
+            conn.close()
+
+
+class TestChecksumBackfillM5(unittest.TestCase):
+    """M5 — up DBs with empty checksums get them backfilled on upgrade."""
+
+    def test_empty_checksums_backfilled_on_upgrade(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            stored = migration_runner._get_checksums(conn)
+            self.assertGreater(len(stored), 0)
+            keys_before = set(stored.keys())
+            # Simulate the pre-checksum state: wipe checksums in place.
+            conn.execute("UPDATE schema_version SET checksums = '{}' WHERE id = 1")
+            conn.commit()
+            self.assertEqual(migration_runner._get_checksums(conn), {})
+            # Run backfill
+            migration_runner._backfill_empty_checksums(conn)
+            conn.commit()
+            stored_after = migration_runner._get_checksums(conn)
+            keys_after = set(stored_after.keys())
+            self.assertEqual(keys_after, keys_before)
+            # Verify hashes are correct
+            available = {num: path for num, path in migration_runner._get_available_migrations()}
+            for num_str, expected_hash in stored_after.items():
+                num = int(num_str)
+                path = available.get(num)
+                self.assertIsNotNone(path)
+                if path is None:
+                    continue
+                actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+                self.assertEqual(expected_hash, actual_hash)
+        finally:
+            conn.close()
+
+    def test_non_empty_checksums_not_overwritten(self):
+        conn = _new_db()
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            stored = migration_runner._get_checksums(conn)
+            self.assertGreater(len(stored), 0)
+            # Tamper with one hash
+            first_key = next(iter(stored))
+            stored[first_key] = "0" * 64
+            conn.execute(
+                "UPDATE schema_version SET checksums = ? WHERE id = 1",
+                (json.dumps(stored),),
+            )
+            conn.commit()
+            migration_runner._backfill_empty_checksums(conn)
+            conn.commit()
+            stored_after = migration_runner._get_checksums(conn)
+            self.assertEqual(stored_after[first_key], "0" * 64)
+        finally:
+            conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()

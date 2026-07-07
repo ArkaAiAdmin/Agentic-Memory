@@ -259,6 +259,10 @@ def crdt_save(
     - Remote dominates local: write is rejected (stale data).
     - Concurrent: depends on ``conflict_policy``:
         - ``supersede`` (default): LWW via highest (logical_clock, agent_id).
+          **Note:** the default ``supersede``/LWW policy loses one side of a
+          same-field concurrent edit. To preserve both versions (keeping
+          a ``__conflict_<remote_agent_id>`` copy of the loser), use the
+          ``coexist`` policy.
         - ``replace``: Winning version replaces the note; old content is
           archived with ``valid_to`` and the new note's ``supersedes``
           column links to the archived version.
