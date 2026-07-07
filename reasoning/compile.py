@@ -81,6 +81,13 @@ def infer_entailment_chains(
         {"derived": int, "skipped": int, "errors": int}
     """
     db_path = Path(db_path)
+
+    # A2.3: clean up stale (orphan) chains before deriving new ones.
+    # Fact supersessions or retractions that occurred since the last
+    # inference run leave derived facts dangling with invalid sources;
+    # revalidate first so they are invalidated before fresh derivation.
+    revalidate_entailment_chains(conn, db_path, batch_size=batch_size)
+
     derived_count = 0
     skipped_count = 0
     error_count = 0

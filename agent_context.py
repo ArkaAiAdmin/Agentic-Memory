@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 _AGENT_CONTEXT: threading.local = threading.local()
 _AGENT_LOCK = threading.Lock()
 _AGENT_REGISTRY: dict[str, dict] = {}  # agent_id -> metadata
+_default_fallback_emitted = False
 
 
 @dataclass(frozen=True)
@@ -87,12 +88,26 @@ def get_agent() -> AgentContext:
             return val
         raise AttributeError
     except AttributeError:
+        global _default_fallback_emitted
+        if not _default_fallback_emitted:
+            logger.warning(
+                "agent_context: no agent set in this thread, "
+                "falling back to 'default'. Call init_agent() to set a real agent. "
+                "This warning is emitted once per process."
+            )
+            _default_fallback_emitted = True
         env_agent = os.environ.get("MEMORY_AGENT_ID")
         if env_agent and env_agent.strip():
             ctx = AgentContext(agent_id=env_agent, namespace=env_agent)
         else:
             ctx = AgentContext(agent_id="default", namespace="default")
         _AGENT_CONTEXT.current = ctx
+        _AGENT_REGISTRY[ctx.agent_id] = {
+            "display_name": ctx.agent_id,
+            "parent_agent": None,
+            "namespace": ctx.namespace,
+            "created_at": __import__("time").time(),
+        }
         return ctx
 
 

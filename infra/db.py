@@ -355,6 +355,7 @@ class _ConnectionPool:
                         )
                         pass
                     self._pooled_ids.discard(conn_id)
+                    self._migrated.discard((key[0], conn_id))
                     self._pool.pop(key, None)
                     self._depth.pop(key, None)
                     self._inodes.pop(key, None)
@@ -375,6 +376,7 @@ class _ConnectionPool:
                         except Exception:
                             pass
                         self._pooled_ids.discard(conn_id)
+                        self._migrated.discard((key[0], conn_id))
                         self._pool.pop(key, None)
                         self._depth.pop(key, None)
                         self._inodes.pop(key, None)
@@ -399,6 +401,7 @@ class _ConnectionPool:
                     orphan = self._pool.pop(other_key)
                     orphan_id = id(orphan)
                     self._pooled_ids.discard(orphan_id)
+                    self._migrated.discard((other_key[0], orphan_id))
                     self._depth.pop(other_key, None)
                     self._inodes.pop(other_key, None)
                     try:

@@ -175,11 +175,6 @@ def cleanup_memory_relations(conn: AnyConnection, note_id: str) -> dict[str, int
     too aggressive.  Use ``memory_integrity.repair_kg_orphans`` to
     remove entities that are truly unreferenced by any note.
 
-    We do NOT delete ``kg_entities`` here — entities are shared across
-    notes, and deleting them based on a single note's relationship is
-    too aggressive.  Use ``memory_integrity.repair_kg_orphans`` to
-    remove entities that are truly unreferenced by any note.
-
     We do NOT delete ``memory_chunks``, ``memory_embeddings``,
     ``memory_vec_keys`` here — they are only orphaned during an
     UPDATE-style saga rollback (where the row is restored, not deleted),

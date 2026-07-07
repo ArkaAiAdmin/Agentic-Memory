@@ -100,6 +100,8 @@ def ensure_facts_schema(conn: AnyConnection) -> None:
         conn.execute("ALTER TABLE kg_facts ADD COLUMN asserting_agent_id TEXT")
     if "evidence_chain" not in cols:
         conn.execute("ALTER TABLE kg_facts ADD COLUMN evidence_chain TEXT")
+    if "is_entailed" not in cols:
+        conn.execute("ALTER TABLE kg_facts ADD COLUMN is_entailed BOOLEAN DEFAULT 0")
     if "fact_type" not in cols:
         conn.execute("ALTER TABLE kg_facts ADD COLUMN fact_type TEXT DEFAULT 'observation'")
     if "embedding" not in cols:
@@ -148,20 +150,24 @@ def ensure_facts_schema(conn: AnyConnection) -> None:
     conn.execute(
         "CREATE TRIGGER IF NOT EXISTS kg_facts_fts_ai AFTER INSERT ON kg_facts BEGIN "
         "INSERT INTO kg_facts_fts(rowid, subject, predicate, object, context) "
-        "VALUES (new.id, new.subject, new.predicate, new.object, new.context); "
+        "VALUES (new.id, COALESCE(new.subject, ''), COALESCE(new.predicate, ''), "
+        "COALESCE(new.object, ''), COALESCE(new.context, '')); "
         "END"
     )
     conn.execute(
         "CREATE TRIGGER IF NOT EXISTS kg_facts_fts_ad AFTER DELETE ON kg_facts BEGIN "
         "INSERT INTO kg_facts_fts(kg_facts_fts, rowid, subject, predicate, object, context) "
-        "VALUES('delete', old.id, old.subject, old.predicate, old.object, old.context); "
+        "VALUES('delete', old.id, COALESCE(old.subject, ''), COALESCE(old.predicate, ''), "
+        "COALESCE(old.object, ''), COALESCE(old.context, '')); "
         "END"
     )
     conn.execute(
         "CREATE TRIGGER IF NOT EXISTS kg_facts_fts_au AFTER UPDATE ON kg_facts BEGIN "
         "INSERT INTO kg_facts_fts(kg_facts_fts, rowid, subject, predicate, object, context) "
-        "VALUES('delete', old.id, old.subject, old.predicate, old.object, old.context); "
+        "VALUES('delete', old.id, COALESCE(old.subject, ''), COALESCE(old.predicate, ''), "
+        "COALESCE(old.object, ''), COALESCE(old.context, '')); "
         "INSERT INTO kg_facts_fts(rowid, subject, predicate, object, context) "
-        "VALUES (new.id, new.subject, new.predicate, new.object, new.context); "
+        "VALUES (new.id, COALESCE(new.subject, ''), COALESCE(new.predicate, ''), "
+        "COALESCE(new.object, ''), COALESCE(new.context, '')); "
         "END"
     )
