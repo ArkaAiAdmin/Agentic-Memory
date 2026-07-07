@@ -929,6 +929,8 @@ def _fallback_embedding_search(
     limit: int,
     repo_filter: str,
     category: str = "",
+    tag_filter_sql: str = "",
+    tag_filter_params: tuple = (),
 ) -> list:
     """Try embedding search as fallback when FTS returns nothing."""
     try:
@@ -947,7 +949,9 @@ def _fallback_embedding_search(
         if not _es_results:
             return []
         hit_ids = [hit.get("id") for hit in _es_results if hit.get("id")]
-        rows_map = _fetch_rows_by_ids(db, hit_ids, extra_filter=repo_filter, extra_params=(category,) if category else ())
+        _base_filter = repo_filter + tag_filter_sql
+        _params = ((category,) if category else ()) + tag_filter_params
+        rows_map = _fetch_rows_by_ids(db, hit_ids, extra_filter=_base_filter, extra_params=_params)
 
         fb_rows = []
         for hit in _es_results:
@@ -2218,7 +2222,8 @@ def search_memories(
                 import search_pipeline
                 _t0 = time.time()
                 results = search_pipeline._fallback_embedding_search(
-                    db, normalized_query, db_path, limit, repo_filter, category
+                    db, normalized_query, db_path, limit, repo_filter, category,
+                    tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
                 )
                 _record_phase_latency("embedding_fallback", _t0)
             if not results:

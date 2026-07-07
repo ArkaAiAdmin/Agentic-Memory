@@ -1,6 +1,6 @@
 {
   "description": "Golden dataset for retrieval regression tests",
-  "version": 3,
+  "version": 1,
   "memories": [
     {
       "note_id": "lessons/docker-basics",
