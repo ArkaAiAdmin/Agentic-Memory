@@ -25,6 +25,7 @@ from save_pipeline import (
     _recalculate_fitness_scores,
     _auto_backlink_multi_part,
     save_memory,
+    SaveValidationError,
 )
 
 # ─── search_pipeline imports ──────────────────────────────────────────
@@ -324,49 +325,49 @@ class TestSaveMemoryReturnsErrorDict(unittest.TestCase):
         shutil.rmtree(self._tmp_dir, ignore_errors=True)
 
     def test_content_not_string(self):
-        result = save_memory(123, "test", "note")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory(123, "test", "note")
+        self.assertIn("content must be a string", str(ctx.exception))
 
     def test_content_too_large(self):
-        result = save_memory("x" * 50001, "test", "note")
-        self.assertIsInstance(result, str)
-        self.assertIn("CONTENT_TOO_LARGE", result)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory("x" * 50001, "test", "note")
+        self.assertIn("CONTENT_TOO_LARGE", str(ctx.exception))
 
     def test_invalid_category_empty(self):
-        result = save_memory("content", "", "note")
-        self.assertIsInstance(result, str)
-        self.assertIn("INVALID_CATEGORY", result)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory("content", "", "note")
+        self.assertIn("INVALID_CATEGORY", str(ctx.exception))
 
     def test_invalid_category_dots(self):
-        result = save_memory("content", ".", "note")
-        self.assertIsInstance(result, str)
-        self.assertIn("INVALID_CATEGORY", result)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory("content", ".", "note")
+        self.assertIn("INVALID_CATEGORY", str(ctx.exception))
 
     def test_invalid_category_slash(self):
-        result = save_memory("content", "a/b", "note")
-        self.assertIsInstance(result, str)
-        self.assertIn("INVALID_CATEGORY", result)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory("content", "a/b", "note")
+        self.assertIn("INVALID_CATEGORY", str(ctx.exception))
 
     def test_invalid_slug_slash(self):
-        result = save_memory("content", "test", "a/b")
-        self.assertIsInstance(result, str)
-        self.assertIn("INVALID_SLUG", result)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory("content", "test", "a/b")
+        self.assertIn("INVALID_SLUG", str(ctx.exception))
 
     def test_category_too_long(self):
-        result = save_memory("content", "x" * 65, "note")
-        self.assertIsInstance(result, str)
-        self.assertIn("INVALID_CATEGORY", result)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory("content", "x" * 65, "note")
+        self.assertIn("INVALID_CATEGORY", str(ctx.exception))
 
     def test_slug_too_long(self):
-        result = save_memory("content", "test", "x" * 129)
-        self.assertIsInstance(result, str)
-        self.assertIn("INVALID_SLUG", result)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory("content", "test", "x" * 129)
+        self.assertIn("INVALID_SLUG", str(ctx.exception))
 
     def test_tags_not_string_or_list(self):
-        result = save_memory("content", "test", "note", tags=123)
-        self.assertIsInstance(result, str)
-        self.assertIn("INVALID_PARAMS", result)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory("content", "test", "note", tags=123)
+        self.assertIn("INVALID_PARAMS", str(ctx.exception))
 
     def test_tags_string_accepted(self):
         result = save_memory("content", "test", "note", tags="tag1")

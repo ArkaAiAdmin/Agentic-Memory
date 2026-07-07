@@ -48,7 +48,7 @@ _BG_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _BG_DIR)
 _REPO_ROOT = os.path.dirname(_BG_DIR)
 sys.path.insert(0, _REPO_ROOT)
-from background.background_queue import init_task_queue, dequeue_task, complete_task, fail_task
+from background.background_queue import init_task_queue, dequeue_task, complete_task, fail_task, reset_stuck_processing_tasks
 from infra.infrastructure import resolve_active_memory_dir
 from typing import TYPE_CHECKING
 
@@ -918,11 +918,18 @@ class WorkerPool:
         conn = sqlite_write_queue.start_session(self._db_path)
         processed = 0
         t_drain = time.time()
+        last_reset_time = time.time()
         try:
             _DRAIN_MAX_WALL_S = int(
                 os.environ.get("MEMORY_WORKER_DRAIN_MAX_WALL_S", "600")
             )
             while not _shutdown:
+                if time.time() - last_reset_time >= 60.0:
+                    try:
+                        reset_stuck_processing_tasks(conn)
+                    except Exception as _reset_exc:
+                        logger.debug("worker pool: stuck task reset failed: %s", _reset_exc)
+                    last_reset_time = time.time()
                 ok = process_one_task(conn, self._db_path, task_type=self._task_type)
                 if not ok:
                     if drain:
@@ -1031,6 +1038,7 @@ def run_worker(
     # Single-threaded path
     from infra.db_write_queue import sqlite_write_queue
     conn = sqlite_write_queue.start_session(db_path)
+    last_reset_time = time.time()
     try:
         # Process-level safety timeout: kill the entire process if any
         # mode (drain, once, interval) runs longer than this cap.
@@ -1057,6 +1065,12 @@ def run_worker(
             processed = 0
             t_drain = time.time()
             while not _shutdown and processed < max_tasks:
+                if time.time() - last_reset_time >= 60.0:
+                    try:
+                        reset_stuck_processing_tasks(conn)
+                    except Exception as _reset_exc:
+                        logger.debug("worker: stuck task reset failed: %s", _reset_exc)
+                    last_reset_time = time.time()
                 if time.time() - t_drain > _DRAIN_MAX_WALL_S:
                     logger.warning(
                         "worker: drain hit wall-clock cap of %ds after %d tasks — exiting",
@@ -1094,6 +1108,12 @@ def run_worker(
         else:
             batch_size = _get_effective_batch_size()
             while not _shutdown:
+                if time.time() - last_reset_time >= 60.0:
+                    try:
+                        reset_stuck_processing_tasks(conn)
+                    except Exception as _reset_exc:
+                        logger.debug("worker: stuck task reset failed: %s", _reset_exc)
+                    last_reset_time = time.time()
                 batch_processed = 0
                 while batch_processed < batch_size:
                     ok = process_one_task(conn, db_path, task_type=task_type)

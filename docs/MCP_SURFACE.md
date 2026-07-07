@@ -365,8 +365,7 @@ All legacy/diagnostic tools are accessible via `memory_maintenance(operation="..
 | `graph_stats` | KG graph stats | — |
 | `profile_stats` | Memory profile stats | — |
 | `retention_stats` | Retention stats | — |
-| `duplicates` | Find duplicate notes | threshold |
-| `merge_suggestions` | Merge suggestions | threshold |
+| `dedup` | Find near-duplicates or suggest merges | action, threshold |
 | `backfill_all` | Rebuild indexes | backfill_mode, source |
 | `check_integrity` | DB integrity check | deep |
 | `compact` | FTS5 compact | dry_run |
@@ -377,8 +376,7 @@ All legacy/diagnostic tools are accessible via `memory_maintenance(operation="..
 | `purge_auto_saves` | Purge stale auto-saves | — |
 | `reinforce` | Reinforce beliefs | memory_ids, success |
 | `compile_skill` | Compile a skill from memory | lesson_slug, skill_name |
-| `ingest_file` | Ingest a file | file_path, category, tags |
-| `ingest_url` | Ingest a URL | url, category, tags |
+| `ingest` | Ingest a file or web page URL | file_path, url, category, tags |
 | `check_concept_drift` | Detect embedding drift | threshold |
 | `flags_status` | Feature flags status | — |
 | `phase_errors` | Search phase errors | — |
@@ -389,6 +387,9 @@ All legacy/diagnostic tools are accessible via `memory_maintenance(operation="..
 | `list_drift_alarms` | List concept drift alarms | acknowledged, alarm_level, limit |
 | `temporal_contradictions` | Temporal contradictions | since_ts, until_ts, limit |
 | `temporal_query` | Query KG as of a time | as_of, fact_id, query, limit |
+| `session_admin_stats` | Database stats for sessions/threads/compactions | type |
+| `recall_stats` | Retrieve recall context, trace, or status | action, query, limit |
+| `background_task_status` | Status of deferred background tasks | memory_id |
 
 **Full list with all parameters:** Call `memory_maintenance(operation="help")` to get a
 parameter reference for any admin operation.

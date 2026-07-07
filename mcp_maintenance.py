@@ -32,6 +32,7 @@ from mcp_common import (
     logger,
     _err,
     ErrorCode,
+    classify_exception,
     with_audit,
     with_memory_connection,
     atomic_write,
@@ -273,73 +274,65 @@ def memory_tier_stats(conn) -> str:
 
 
 @mcp.tool()
-@with_audit("memory_duplicates")
+@with_audit("memory_dedup")
 @with_memory_connection
-def memory_duplicates(conn, threshold: float = 0.85) -> str:
-    """Find near-duplicate notes using content similarity.
+def memory_dedup(conn, action: str = "duplicates", threshold: float | None = None) -> str:
+    """Find near-duplicate notes or suggest merges to collapse duplicate notes.
 
-    Returns pairs of notes with Jaccard similarity above threshold.
-    Requires MEMORY_CONSOLIDATION=1.
-
-    G2 fix (2026-06-22): the default 0.85 is intentionally lower
-    than ``memory_merge_suggestions`` (default 0.90).  A *duplicate*
-    is anything that looks like it could be a copy (a wider net, so
-    the operator can decide), while a *merge suggestion* is a
-    recommendation to actually collapse the pair (a narrower net,
-    because merging loses information).  The two thresholds are
-    documented in the docstring rather than aligned to a single
-    number, because the underlying consolidation logic in
-    ``consolidation.py`` uses the same value for both gating steps
-    in the same pipeline.
+    Args:
+        action: "duplicates" (find near-duplicates) or "merge_suggestions" (recommends merges).
+        threshold: Content similarity threshold. Defaults: 0.85 for duplicates, 0.90 for merge_suggestions.
     """
-    from consolidation import CONSOLIDATION_ENABLED, detect_duplicates as _detect
-
+    from consolidation import CONSOLIDATION_ENABLED
     if not CONSOLIDATION_ENABLED:
         return "Consolidation disabled. Set MEMORY_CONSOLIDATION=1 to enable."
-    try:
-        dupes = _detect(conn, threshold=threshold)
-        if not dupes:
-            return "No duplicates found."
-        lines = [f"**Duplicates** ({len(dupes)} pairs, threshold={threshold}):"]
-        for d in dupes[:20]:
-            lines.append(
-                f"  {d['id_a']} <-> {d['id_b']} (sim={d['similarity']:.3f}, {d['type']})"
-            )
-        return "\n".join(lines)
-    except Exception:
-        logger.exception("in memory_duplicates")
-        return _err(ErrorCode.DB_ERROR, "in memory_duplicates")
+
+    if action == "duplicates":
+        from consolidation import detect_duplicates as _detect
+        t = threshold if threshold is not None else 0.85
+        try:
+            dupes = _detect(conn, threshold=t)
+            if not dupes:
+                return "No duplicates found."
+            lines = [f"**Duplicates** ({len(dupes)} pairs, threshold={t}):"]
+            for d in dupes[:20]:
+                lines.append(
+                    f"  {d['id_a']} <-> {d['id_b']} (sim={d['similarity']:.3f}, {d['type']})"
+                )
+            return "\n".join(lines)
+        except Exception:
+            logger.exception("in memory_dedup:duplicates")
+            return _err(ErrorCode.DB_ERROR, "in memory_dedup:duplicates")
+    elif action == "merge_suggestions":
+        from consolidation import merge_suggestions as _suggest
+        t = threshold if threshold is not None else 0.90
+        try:
+            suggestions = _suggest(conn, duplicate_threshold=t)
+            if not suggestions:
+                return "No merge suggestions."
+            lines = [f"**Merge Suggestions** ({len(suggestions)}, threshold={t}):"]
+            for s in suggestions[:20]:
+                lines.append(
+                    f"  KEEP: {s['keep']}  MERGE: {s['merge']}  (sim={s['similarity']:.3f})"
+                )
+            return "\n".join(lines)
+        except Exception:
+            logger.exception("in memory_dedup:merge_suggestions")
+            return _err(ErrorCode.DB_ERROR, "in memory_dedup:merge_suggestions")
+    else:
+        return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'. Valid: duplicates, merge_suggestions")
 
 
 @mcp.tool()
-@with_audit("memory_merge_suggestions")
-@with_memory_connection
-def memory_merge_suggestions(conn, threshold: float = 0.90) -> str:
-    """Suggest merges for near-duplicate notes.
+@with_audit("memory_session_admin_stats")
+def memory_session_admin_stats(type: str = "all") -> str:
+    """Retrieve database statistics on sessions, decision threads, or compaction logs.
 
-    Recommends which note to keep based on access count and pin status.
-    Requires MEMORY_CONSOLIDATION=1.
-
-    G2 fix (2026-06-22): see the docstring of ``memory_duplicates``
-    for the rationale behind the 0.85 vs 0.90 split.
+    Args:
+        type: "all", "session", "thread", or "compaction".
     """
-    from consolidation import CONSOLIDATION_ENABLED, merge_suggestions as _suggest
-
-    if not CONSOLIDATION_ENABLED:
-        return "Consolidation disabled. Set MEMORY_CONSOLIDATION=1 to enable."
-    try:
-        suggestions = _suggest(conn, duplicate_threshold=threshold)
-        if not suggestions:
-            return "No merge suggestions."
-        lines = [f"**Merge Suggestions** ({len(suggestions)}):"]
-        for s in suggestions[:20]:
-            lines.append(
-                f"  KEEP: {s['keep']}  MERGE: {s['merge']}  (sim={s['similarity']:.3f})"
-            )
-        return "\n".join(lines)
-    except Exception:
-        logger.exception("in memory_merge_suggestions")
-        return _err(ErrorCode.DB_ERROR, "in memory_merge_suggestions")
+    from mcp_maintenance_ops import MAINTENANCE_HANDLERS
+    return MAINTENANCE_HANDLERS[MaintenanceOp.SESSION_ADMIN_STATS](type=type)
 
 
 @mcp.tool()
@@ -779,8 +772,7 @@ class MaintenanceOp(str, Enum):
     TIER_MIGRATION = "tier_migration"
     EMBEDDING_MODEL_CHECK = "embedding_model_check"
     INCREMENTAL_UPDATE = "incremental_update"
-    DUPLICATES = "duplicates"
-    MERGE_SUGGESTIONS = "merge_suggestions"
+    DEDUP = "dedup"
     REBUILD = "rebuild"
     AUDIT = "audit"
     AUDIT_QUERY = "audit_query"
@@ -828,8 +820,7 @@ class MaintenanceOp(str, Enum):
     LLM_UNLOAD = "llm_unload"
     ADAPTIVE_RETENTION = "adaptive_retention"
     RETENTION_STATS = "retention_stats"
-    INGEST_FILE = "ingest_file"
-    INGEST_URL = "ingest_url"
+    INGEST = "ingest"
     DASHBOARD = "dashboard"
     METRICS_SERVER = "metrics_server"
     MEMORY_STATS = "memory_stats"
@@ -839,9 +830,7 @@ class MaintenanceOp(str, Enum):
     )
     TEMPORAL_QUERY = "temporal_query"  # T4.5: at_time / chain / changed_since
     COMPLIANCE_CHECK = "compliance_check"  # P1: AGENTS.md rule compliance audit
-    SESSION_STATS = "session_stats"  # Sprint 7
-    THREAD_STATS = "thread_stats"  # Sprint 7
-    COMPACTION_STATS = "compaction_stats"  # Sprint 7
+    SESSION_ADMIN_STATS = "session_admin_stats"  # Sprint 7
     LIST_ACTIVE_THREADS = "list_active_threads"  # Sprint 7
     RECOVER_SESSION = "recover_session"  # Sprint 7
     AGENT_INIT = "agent_init"
@@ -857,7 +846,6 @@ class MaintenanceOp(str, Enum):
     SEMANTIC_SEARCH = "semantic_search"
     FACTS_SEARCH = "facts_search"
     GRAPH_SEARCH = "graph_search"
-    RECALL_CONTEXT = "recall_context"
     THREAD_CONTEXT = "thread_context"
     LIST_THREADS = "list_threads"
     RESOLVE_THREAD = "resolve_thread"
@@ -866,12 +854,12 @@ class MaintenanceOp(str, Enum):
     SCAN_INJECTION = "scan_injection"
     PROFILE_ACCESS = "profile_access"
     FLAGS_STATUS = "flags_status"
-    RECALL_STATUS = "recall_status"
-    RECALL_TRACE = "recall_trace"  # C2: retrieve recall trace JSONL entries
     PHASE_ERRORS = "phase_errors"
     SEARCH_PHASE_STATS = "search_phase_stats"  # P6: per-phase latency aggregation
     RESOLVE_CONTRADICTION = "resolve_contradiction"  # next-frontier: LLM-assisted contradiction resolution
     LIST_FEDERATED_SKILLS = "list_federated_skills"  # next-frontier: cross-agent skill corpus view
+    RECALL_STATS = "recall_stats"
+    BACKGROUND_TASK_STATUS = "background_task_status"
 
     @classmethod
     def all_values(cls) -> list[str]:
@@ -1015,7 +1003,7 @@ def memory_llm_unload() -> str:
             }
         )
     except Exception as e:
-        return json.dumps({"unloaded": False, "error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 @mcp.tool()
@@ -1165,3 +1153,15 @@ def memory_resolve_contradiction(
         ErrorCode.INVALID_PARAMS,
         f"Unknown strategy {strategy!r}. Use auto|merge|supersede_source|supersede_target|keep_both.",
     )
+
+
+@mcp.tool()
+@with_audit("memory_background_task_status")
+def memory_background_task_status(memory_id: str) -> str:
+    """Query the status of deferred background tasks for a given memory_id.
+
+    Args:
+        memory_id: The note ID (e.g. "lessons/topic-slug") to poll background extraction status for.
+    """
+    from mcp_maintenance_ops import MAINTENANCE_HANDLERS
+    return MAINTENANCE_HANDLERS[MaintenanceOp.BACKGROUND_TASK_STATUS](memory_id=memory_id)

@@ -136,9 +136,9 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
 
         with patch("mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
-                MaintenanceOp.DUPLICATES: capture,
+                MaintenanceOp.DEDUP: capture,
             }
-            result = memory_maintenance("duplicates", dry_run=True, threshold=0.9)
+            result = memory_maintenance("dedup", dry_run=True, threshold=0.9)
         self.assertEqual(result, "ok")
         self.assertEqual(captured["dry_run"], True)
         self.assertEqual(captured["threshold"], 0.9)

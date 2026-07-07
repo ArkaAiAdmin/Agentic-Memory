@@ -42,4 +42,4 @@ Indexing, compaction, dedup, contradiction detection, skill extraction, semantic
 
 ---
 
-_For the full contract: hard rules, constitution, Critical Path, hook wiring, error recovery, and test requirements — see `AGENTS.md` at the repo root. It is loaded automatically as workspace context and is authoritative for all maintainer-level decisions._
+_For a quick setup, core tool cheatsheet, and disaster recovery procedures, see [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md). For the full contract: hard rules, constitution, Critical Path, hook wiring, and test requirements — see `AGENTS.md` at the repo root. It is loaded automatically as workspace context and is authoritative for all maintainer-level decisions._

@@ -254,8 +254,9 @@ def memory_semantic_search(query: str, limit: int = 5) -> str:
 
 
 @mcp.tool()
-@with_audit("memory_recall_context")
-def memory_recall_context(
+@with_audit("memory_recall_stats")
+def memory_recall_stats(
+    action: str = "context",
     query: str = "",
     limit: int = 15,
     include_pinned: bool = True,
@@ -264,41 +265,59 @@ def memory_recall_context(
     include_user_profile: bool = True,
     days_recent: int = 7,
     deep_rerank: bool = False,
+    event: str = "",
+    since_ts: str = "",
 ) -> str:
-    """Assemble a structured memory recall briefing for agent cold-start or session continuity.
+    """Retrieve recall context, trace log entries, or policy configuration/tier metadata.
 
-    deep_rerank: when True, runs the Qwen3-0.6B / BGE-m3 deep reranker on
-    the relevant-memories section (1-5s extra CPU, best ranking quality).
-    Default False so the briefing is bounded to <100ms. ON APPLE SILICON
-    (MPS) the deep reranker can hang indefinitely in a PyTorch MPS kernel
-    (2026-06-19 incident: PIDs 68335, 10086). If you don't need the
-    best-quality ranking, leave this False. If you do need it and the call
-    hangs, set the MEMORY_RERANKER_DISABLED env var or
-    `reranker_disabled = true` in memory.toml to fully disable the
-    reranker (falls back to the lightweight weak cross-encoder).
+    Args:
+        action: "context" (default, generates briefings), "status" (policy configuration), "trace" (trace log entries).
+        query: Search query for context retrieval.
+        limit: Max items to return (applies to context or trace).
+        include_pinned: Include pinned notes in context.
+        include_recent_digests: Include recent session digests in context.
+        include_high_importance: Include high importance notes in context.
+        include_user_profile: Include user profile notes in context.
+        days_recent: Range of days for recent activity fallback in context.
+        deep_rerank: Run deep cross-encoder reranker for best ranking.
+        event: Filter trace logs by event name.
+        since_ts: ISO datetime timestamp filter for trace logs.
     """
-    from recall.recall import recall_context
+    if action == "context":
+        from recall.recall import recall_context
 
-    target_base = _resolve_memory_dir()
-    db_path = target_base / "memory.db"
-    if not db_path.exists():
-        return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
-    try:
-        result = recall_context(
-            db_path=str(db_path),
-            query=query,
-            limit=limit,
-            include_pinned=include_pinned,
-            include_recent_digests=include_recent_digests,
-            include_high_importance=include_high_importance,
-            include_user_profile=include_user_profile,
-            days_recent=days_recent,
-            deep_rerank=deep_rerank,
+        target_base = _resolve_memory_dir()
+        db_path = target_base / "memory.db"
+        if not db_path.exists():
+            return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
+        try:
+            result = recall_context(
+                db_path=str(db_path),
+                query=query,
+                limit=limit,
+                include_pinned=include_pinned,
+                include_recent_digests=include_recent_digests,
+                include_high_importance=include_high_importance,
+                include_user_profile=include_user_profile,
+                days_recent=days_recent,
+                deep_rerank=deep_rerank,
+            )
+            return cast(str, result.get("formatted", "No recall available."))
+        except Exception:
+            logger.exception("Recall failed")
+            return _err(ErrorCode.RECALL_ERROR, "Recall failed")
+    elif action == "status":
+        from mcp_maintenance_ops import MAINTENANCE_HANDLERS
+        from mcp_maintenance import MaintenanceOp
+        return MAINTENANCE_HANDLERS[MaintenanceOp.RECALL_STATS](action="status")
+    elif action == "trace":
+        from mcp_maintenance_ops import MAINTENANCE_HANDLERS
+        from mcp_maintenance import MaintenanceOp
+        return MAINTENANCE_HANDLERS[MaintenanceOp.RECALL_STATS](
+            action="trace", limit=limit, event=event, since_ts=since_ts
         )
-        return cast(str, result.get("formatted", "No recall available."))
-    except Exception:
-        logger.exception("Recall failed")
-        return _err(ErrorCode.RECALL_ERROR, "Recall failed")
+    else:
+        return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'. Valid: context, status, trace")
 
 
 @with_audit("memory_session_start")

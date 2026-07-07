@@ -40,7 +40,7 @@ from infra.memory_common import (
     acquire_flock_with_retry,
     release_flock,
 )
-from save_pipeline import save_memory, clear_pragma_cache
+from save_pipeline import save_memory, clear_pragma_cache, SaveValidationError
 from search_pipeline import search_memories
 from memory_delete import soft_delete_note
 
@@ -197,20 +197,15 @@ class TestMaxContentSize:
     def test_50kb_plus_1_rejected(self, fresh_db):
         content = "x" * 50001
         slug = _unique_slug("maxfail")
-        result = save_memory(
-            content=content,
-            category="test",
-            title_slug=slug,
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str)
-        assert result.startswith("Error"), (
-            f"50KB+1 content should be rejected, got: {result}"
-        )
-        assert "CONTENT_TOO_LARGE" in result, (
-            f"Expected CONTENT_TOO_LARGE error, got: {result}"
-        )
+        with pytest.raises(SaveValidationError) as excinfo:
+            save_memory(
+                content=content,
+                category="test",
+                title_slug=slug,
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
+        assert "CONTENT_TOO_LARGE" in str(excinfo.value)
 
 
 # ===================================================================
@@ -295,19 +290,23 @@ class TestSpecialCharTitles:
     )
     def test_special_char_titles(self, fresh_db, char, title):
         _unique_slug(f"spec_{char}")
-        result = save_memory(
-            content=f"Testing title with {char}",
-            category="test",
-            title_slug=title,
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
         if char in ("forward_slash", "backslash"):
-            # Slash/backslash in title_slug is rejected (must be single segment)
-            assert isinstance(result, str) and result.startswith("Error"), (
-                f"Slash/backslash in title should be rejected, got: {result}"
-            )
+            with pytest.raises(SaveValidationError):
+                save_memory(
+                    content=f"Testing title with {char}",
+                    category="test",
+                    title_slug=title,
+                    db_path=fresh_db,
+                    safety_wiring=False,
+                )
         else:
+            result = save_memory(
+                content=f"Testing title with {char}",
+                category="test",
+                title_slug=title,
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
             assert isinstance(result, str) and not result.startswith("Error"), (
                 f"Save failed: {result}"
             )
@@ -338,18 +337,16 @@ class TestVeryLongTags:
     def test_51_tags_rejected(self, fresh_db):
         tags = [f"tag{i:04d}" for i in range(51)]
         slug = _unique_slug("too_many_tags")
-        result = save_memory(
-            content="Testing max tags limit exceeded",
-            category="test",
-            title_slug=slug,
-            tags=tags,
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str) and result.startswith("Error"), (
-            f"51 tags should be rejected, got: {result}"
-        )
-        assert "Too many tags" in result, f"Wrong error: {result}"
+        with pytest.raises(SaveValidationError) as excinfo:
+            save_memory(
+                content="Testing max tags limit exceeded",
+                category="test",
+                title_slug=slug,
+                tags=tags,
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
+        assert "Too many tags" in str(excinfo.value)
 
 
 # ===================================================================
@@ -515,17 +512,14 @@ class TestNonexistentDbPath:
     def test_save_to_nonexistent_db(self, tmp_path):
         nonexistent = tmp_path / "no_such_dir" / "memory.db"
         slug = _unique_slug("nodb")
-        result = save_memory(
-            content="test",
-            category="test",
-            title_slug=slug,
-            db_path=nonexistent,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str)
-        assert result.startswith("Error"), (
-            f"Expected error for nonexistent DB path, got: {result}"
-        )
+        with pytest.raises(SaveValidationError):
+            save_memory(
+                content="test",
+                category="test",
+                title_slug=slug,
+                db_path=nonexistent,
+                safety_wiring=False,
+            )
 
     def test_search_nonexistent_db(self, tmp_path):
         nonexistent = tmp_path / "no_such_dir" / "memory.db"
@@ -914,64 +908,54 @@ class TestSearchBooleanOperators:
 
 class TestInvalidCategorySlug:
     def test_empty_category(self, fresh_db):
-        result = save_memory(
-            content="test",
-            category="",
-            title_slug="test_slug",
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str) and result.startswith("Error"), (
-            f"Empty category should error, got: {result}"
-        )
+        with pytest.raises(SaveValidationError):
+            save_memory(
+                content="test",
+                category="",
+                title_slug="test_slug",
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
 
     def test_dot_category(self, fresh_db):
-        result = save_memory(
-            content="test",
-            category=".",
-            title_slug="test_slug",
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str) and result.startswith("Error"), (
-            f"Dot category should error, got: {result}"
-        )
+        with pytest.raises(SaveValidationError):
+            save_memory(
+                content="test",
+                category=".",
+                title_slug="test_slug",
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
 
     def test_category_with_slash(self, fresh_db):
-        result = save_memory(
-            content="test",
-            category="a/b",
-            title_slug="test_slug",
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str) and result.startswith("Error"), (
-            f"Category with slash should error, got: {result}"
-        )
+        with pytest.raises(SaveValidationError):
+            save_memory(
+                content="test",
+                category="a/b",
+                title_slug="test_slug",
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
 
     def test_null_content(self, fresh_db):
-        result = save_memory(
-            content=None,
-            category="test",
-            title_slug="test_slug",
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str) and result.startswith("Error"), (
-            f"Null content should error, got: {result}"
-        )
+        with pytest.raises(SaveValidationError):
+            save_memory(
+                content=None,
+                category="test",
+                title_slug="test_slug",
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
 
     def test_empty_title_slug(self, fresh_db):
-        result = save_memory(
-            content="test",
-            category="test",
-            title_slug="",
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str) and result.startswith("Error"), (
-            f"Empty title_slug should error, got: {result}"
-        )
+        with pytest.raises(SaveValidationError):
+            save_memory(
+                content="test",
+                category="test",
+                title_slug="",
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
 
 
 # ===================================================================
@@ -988,6 +972,7 @@ class TestLongTitleSlug:
             title_slug=slug,
             db_path=fresh_db,
             safety_wiring=False,
+            tags=["longslug"],
         )
         assert isinstance(result, str) and not result.startswith("Error"), (
             f"128-char slug should be accepted, got: {result}"
@@ -995,16 +980,14 @@ class TestLongTitleSlug:
 
     def test_title_129_chars_rejected(self, fresh_db):
         slug = "a" * 129
-        result = save_memory(
-            content="test",
-            category="test",
-            title_slug=slug,
-            db_path=fresh_db,
-            safety_wiring=False,
-        )
-        assert isinstance(result, str) and result.startswith("Error"), (
-            f"129-char slug should be rejected, got: {result}"
-        )
+        with pytest.raises(SaveValidationError):
+            save_memory(
+                content="test",
+                category="test",
+                title_slug=slug,
+                db_path=fresh_db,
+                safety_wiring=False,
+            )
 
 
 # ===================================================================

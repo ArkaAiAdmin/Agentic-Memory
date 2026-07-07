@@ -34,6 +34,7 @@ sys.path.insert(0, str(INSTALL_DIR))
 from infra.memory_common import open_db, connection_pool
 from save_pipeline import (
     save_memory,
+    SaveValidationError,
     _recalculate_fitness_scores,
 )
 
@@ -263,13 +264,8 @@ class TestSaveMemoryValidation(SavePipelineFixture, unittest.TestCase):
 
     def test_oversized_content_returns_error(self):
         body = "x" * 51000
-        result, _ = self.save(content=body)
-        self.assertIsInstance(result, str)
-        self.assertIn(
-            "error",
-            result.lower() if isinstance(result, str) else "",
-            msg="Oversized content should return error envelope",
-        )
+        with self.assertRaises(SaveValidationError):
+            self.save(content=body)
 
     def test_50kb_boundary_accepted(self):
         body = "x" * 49500
@@ -279,54 +275,45 @@ class TestSaveMemoryValidation(SavePipelineFixture, unittest.TestCase):
 
     def test_non_string_content_rejected(self):
         bad_content = 123  # type: ignore[assignment]
-        result = save_memory(
-            content=bad_content, category="lessons", title_slug="test-nonstr"
-        )  # type: ignore[arg-type]
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            save_memory(
+                content=bad_content, category="lessons", title_slug="test-nonstr"
+            )  # type: ignore[arg-type]
 
     def test_none_content_rejected(self):
-        result = save_memory(content=None, category="lessons", title_slug="test-none")  # type: ignore[arg-type]
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            save_memory(content=None, category="lessons", title_slug="test-none")  # type: ignore[arg-type]
 
     def test_invalid_category_dot_rejected(self):
-        result, _ = self.save(category=".")
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            self.save(category=".")
 
     def test_invalid_category_double_dot_rejected(self):
-        result, _ = self.save(category="..")
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            self.save(category="..")
 
     def test_invalid_category_with_slash_rejected(self):
-        result, _ = self.save(category="foo/bar")
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            self.save(category="foo/bar")
 
     def test_invalid_slug_with_slash_rejected(self):
-        result = save_memory(content="test", category="lessons", title_slug="foo/bar")
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            save_memory(content="test", category="lessons", title_slug="foo/bar")
 
     def test_long_slug_rejected(self):
-        result = save_memory(content="test", category="lessons", title_slug="x" * 129)
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            save_memory(content="test", category="lessons", title_slug="x" * 129)
 
     def test_long_category_rejected(self):
-        result = save_memory(
-            content="test", category="x" * 65, title_slug="test-longcat"
-        )
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            save_memory(
+                content="test", category="x" * 65, title_slug="test-longcat"
+            )
 
     def test_too_many_tags_rejected(self):
         many_tags = [f"tag{i}" for i in range(51)]
-        result, _ = self.save(tags=many_tags)
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            self.save(tags=many_tags)
 
 
 class TestSaveMemoryUnicode(SavePipelineFixture, unittest.TestCase):
@@ -1024,29 +1011,27 @@ class TestSaveMemoryErrors(SavePipelineFixture, unittest.TestCase):
     """Error paths through the save pipeline."""
 
     def test_save_returns_error_on_bad_db_path(self):
-        result = save_memory(
-            content="test",
-            category="lessons",
-            title_slug="err-test",
-            tags=[],
-            pinned=False,
-            is_global=False,
-            db_path=Path("/nonexistent/deep/db.sqlite"),
-        )
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            save_memory(
+                content="test",
+                category="lessons",
+                title_slug="err-test",
+                tags=[],
+                pinned=False,
+                is_global=False,
+                db_path=Path("/nonexistent/deep/db.sqlite"),
+            )
 
     def test_save_handles_unicode_slug_rejection(self):
-        result = save_memory(
-            content="test",
-            category="lessons",
-            title_slug="\u0000null-byte",
-            tags=[],
-            pinned=False,
-            is_global=False,
-        )
-        self.assertIsInstance(result, str)
-        self.assertIn("error", result.lower())
+        with self.assertRaises(SaveValidationError):
+            save_memory(
+                content="test",
+                category="lessons",
+                title_slug="\u0000null-byte",
+                tags=[],
+                pinned=False,
+                is_global=False,
+            )
 
     def test_save_single_char_slug(self):
         result, slug = self.save(title_slug="a")

@@ -8,6 +8,7 @@ _auto_backlink_multi_part, and save_memory.
 __all__ = [
     "SaveRequest",
     "save_memory",
+    "SaveValidationError",
     "upsert_row",
     "memory_supersede_db",
     "reinforce_memories_db",
@@ -53,6 +54,23 @@ from infra.db import AnyConnection, open_db  # noqa: E402,F401 — backward comp
 import infra.audit as audit
 from self_directed import _assign_tier as assign_tier
 from backfill.orchestrator import auto_backfill
+
+
+class SaveValidationError(ValueError):
+    """Raised when save_memory parameters fail validation or paths cannot be resolved."""
+
+    def __init__(
+        self,
+        code: ErrorCode,
+        message: str,
+        hint: str | None = None,
+        action: str | None = None,
+    ):
+        self.code = code
+        self.message = message
+        self.hint = hint
+        self.action = action
+        super().__init__(_err(code, message, hint, action))
 
 
 @dataclass(frozen=True)
@@ -988,12 +1006,12 @@ def _defer_indexing_background_tasks(
 
 def _validate_save_params(content, category, title_slug, tags):
     if not isinstance(content, str):
-        return _err(ErrorCode.INVALID_PARAMS, "content must be a string.")
+        raise SaveValidationError(ErrorCode.INVALID_PARAMS, "content must be a string.")
     from infra._lazy_imports import get_config
 
     max_content = get_config().save_max_content_bytes
     if len(content) > max_content:
-        return _err(
+        raise SaveValidationError(
             ErrorCode.CONTENT_TOO_LARGE,
             f"Content too large ({len(content)} bytes). Maximum is {max_content // 1024}KB.",
         )
@@ -1004,7 +1022,7 @@ def _validate_save_params(content, category, title_slug, tags):
         or ("\\" in category)
         or category.startswith("~")
     ):
-        return _err(
+        raise SaveValidationError(
             ErrorCode.INVALID_CATEGORY,
             "Invalid category. Must be a non-empty single segment like 'lessons' or 'decisions'.",
         )
@@ -1021,17 +1039,17 @@ def _validate_save_params(content, category, title_slug, tags):
         or "\\" in title_slug
         or (len(title_slug) > max_slug)
     ):
-        return _err(
+        raise SaveValidationError(
             ErrorCode.INVALID_SLUG,
             f"Invalid title_slug. Must be a non-empty single segment up to {max_slug} chars (no slashes).",
         )
     if len(category) > max_category:
-        return _err(
+        raise SaveValidationError(
             ErrorCode.INVALID_CATEGORY,
             f"Invalid category. Must be up to {max_category} chars.",
         )
     if tags is not None and (not isinstance(tags, (str, list))):
-        return _err(
+        raise SaveValidationError(
             ErrorCode.INVALID_PARAMS, "tags must be a string or a list of strings."
         )
     if isinstance(tags, str):
@@ -1041,7 +1059,7 @@ def _validate_save_params(content, category, title_slug, tags):
     else:
         tags_list = []
     if len(tags_list) > max_tags:
-        return _err(
+        raise SaveValidationError(
             ErrorCode.INVALID_PARAMS,
             f"Too many tags ({len(tags_list)}). Maximum is {max_tags}.",
         )
@@ -1050,10 +1068,10 @@ def _validate_save_params(content, category, title_slug, tags):
 
 def _scan_for_injection_or_skip(
     content: str, category: str, title_slug: str
-) -> Optional[str]:
-    """Run the prompt-injection scan. Return an error string if the
-    save should be rejected (high-risk content); return ``None`` if
-    the save is allowed to proceed (clean content OR a scan failure).
+) -> None:
+    """Run the prompt-injection scan. Raise SaveValidationError if the
+    save should be rejected (high-risk content); returns None if the
+    save is allowed to proceed (clean content OR a scan failure).
 
     Extracted from save_memory() (2026-06-22) so the orchestrator
     stays readable. H9: runs on every save path since both the MCP
@@ -1073,7 +1091,7 @@ def _scan_for_injection_or_skip(
                 inj["category"],
                 inj["matches"],
             )
-            return _err(
+            raise SaveValidationError(
                 ErrorCode.INJECTION_DETECTED,
                 f"Content rejected: injection risk score {inj['risk_score']:.2f} "
                 f"(category: {inj['category']}). "
@@ -1088,6 +1106,8 @@ def _scan_for_injection_or_skip(
                 inj["risk_score"],
                 inj["matches"],
             )
+    except SaveValidationError:
+        raise
     except Exception as _ie:
         logger.debug("save_memory: injection scan failed (benign): %s", _ie)
     return None
@@ -1124,7 +1144,7 @@ def _acquire_db_connection(db_path_obj, category, title_slug, start_time, tenant
             )
         except Exception as audit_exc:
             logger.warning("audit.enqueue_audit failed after DB error: %s", audit_exc)
-        return _err(ErrorCode.DB_ERROR, f"saving memory: {e}")
+        raise SaveValidationError(ErrorCode.DB_ERROR, f"saving memory: {e}")
 
 
 def _resolve_save_paths(category, title_slug, is_global, db_path):
@@ -1143,7 +1163,7 @@ def _resolve_save_paths(category, title_slug, is_global, db_path):
         )
     if not target_base.exists():
         if is_global:
-            return _err(
+            raise SaveValidationError(
                 ErrorCode.NOT_FOUND,
                 f"Target memory directory {target_base} does not exist.",
             )
@@ -1161,7 +1181,7 @@ def _resolve_save_paths(category, title_slug, is_global, db_path):
             )
         )
         if not has_project_marker and (not (project_root / "memory").exists()):
-            return _err(
+            raise SaveValidationError(
                 ErrorCode.NOT_FOUND,
                 f"No project context found at {project_root}. Run from inside a project (with .git, .agents, AGENTS.md, CLAUDE.md, package.json, or pyproject.toml) or pass is_global=True. To bootstrap a new project, run setup_memory.sh first.",
             )
@@ -1175,7 +1195,7 @@ def _resolve_save_paths(category, title_slug, is_global, db_path):
                     encoding="utf-8",
                 )
         except Exception as e:
-            return _err(
+            raise SaveValidationError(
                 ErrorCode.DB_ERROR,
                 f"Target memory directory {target_base} does not exist and could not be created: {e}",
             )
@@ -1201,24 +1221,26 @@ def _resolve_save_paths(category, title_slug, is_global, db_path):
         # below is the one that catches an empty/identity category. Split the
         # two conditions into distinct error messages for debuggability.
         if not category_dir.is_relative_to(target_base_resolved):
-            return _err(
+            raise SaveValidationError(
                 ErrorCode.TRAVERSAL,
                 f"Category path '{category}' escapes the target base directory.",
             )
         if category_dir == target_base_resolved:
-            return _err(
+            raise SaveValidationError(
                 ErrorCode.TRAVERSAL,
                 "Category resolves to the target base itself; an empty or "
                 "identity category is not allowed.",
             )
         file_path = (category_dir / f"{title_slug}.md").resolve()
         if not file_path.is_relative_to(category_dir):
-            return _err(
+            raise SaveValidationError(
                 ErrorCode.TRAVERSAL,
                 f"Title slug '{title_slug}' escapes the category directory.",
             )
+    except SaveValidationError:
+        raise
     except Exception as e:
-        return _err(ErrorCode.INVALID_PARAMS, f"validating paths: {e}")
+        raise SaveValidationError(ErrorCode.INVALID_PARAMS, f"validating paths: {e}")
     category_dir.mkdir(parents=True, exist_ok=True)
     return target_base, file_path, category_dir, project_root, effective_category
 
@@ -1585,10 +1607,7 @@ def _save_memory_core(
     _local_state.in_save_pipeline = True
     try:
         _start_time = time.time()
-        result = _validate_save_params(content, category, title_slug, tags)
-        if isinstance(result, str):
-            return result
-        tags_list, _tags_str = result
+        tags_list, _tags_str = _validate_save_params(content, category, title_slug, tags)
         if note_id and "/" in note_id:
             _derived_cat, _derived_slug = note_id.split("/", 1)
             if not category:
@@ -1600,13 +1619,10 @@ def _save_memory_core(
         tags_list = _resolve_tags(category, tags_list, context=context)
         # H9: Prompt-injection scan — pure regex, no side effects, runs on every
         # path (MCP tool + hook) since both delegate to save_memory.
-        inj_result = _scan_for_injection_or_skip(content, category, title_slug)
-        if inj_result is not None:
-            return inj_result
-        result = _resolve_save_paths(category, title_slug, is_global, db_path)
-        if isinstance(result, str):
-            return result
-        target_base, file_path, _category_dir, _project_root, effective_category = result
+        _scan_for_injection_or_skip(content, category, title_slug)
+        target_base, file_path, _category_dir, _project_root, effective_category = _resolve_save_paths(
+            category, title_slug, is_global, db_path
+        )
         original_category = category
         if effective_category != category:
             category = effective_category
@@ -1657,21 +1673,22 @@ def _save_memory_core(
                 _fle,
             )
             lock_file = None
-        if _conn is not None:
-            conn = _conn
-        else:
-            conn = _acquire_db_connection(
-                db_path_obj, category, title_slug, _start_time, tenant_id=tenant_id
-            )
-            if isinstance(conn, str):
-                if lock_file is not None:
-                    try:
-                        release_flock(lock_file)
-                    except Exception as _rfl_err:
-                        logger.debug(
-                            "save_memory: release_flock in early return: %s", _rfl_err
-                        )
-                return conn
+        try:
+            if _conn is not None:
+                conn = _conn
+            else:
+                conn = _acquire_db_connection(
+                    db_path_obj, category, title_slug, _start_time, tenant_id=tenant_id
+                )
+        except Exception:
+            if lock_file is not None:
+                try:
+                    release_flock(lock_file)
+                except Exception as _rfl_err:
+                    logger.debug(
+                        "save_memory: release_flock in early return: %s", _rfl_err
+                    )
+            raise
         # P0-1 fix (2026-06-22): the previous version of this function never
         # called safe_close_db on the saga-path conn, so the pool's depth
         # counter grew unbounded and the pool eventually exhausted in a

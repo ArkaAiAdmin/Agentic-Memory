@@ -28,7 +28,7 @@ from mcp_common import (
     resolve_db_for_memory_id,
 )
 from mcp_instance import mcp
-from save_pipeline import save_memory
+from save_pipeline import save_memory, SaveValidationError
 
 
 @with_audit("memory_save")
@@ -68,23 +68,24 @@ def memory_save(
     A status string indicating whether the write succeeded and the path of the saved memory file.
     """
     if len(content) > 100_000:
-        return f"Error: content exceeds 100,000 character limit ({len(content)} chars)"
+        return _err(ErrorCode.INVALID_PARAMS, f"content exceeds 100,000 character limit ({len(content)} chars)")
 
-    result = save_memory(
-        content=content,
-        category=category,
-        title_slug=title_slug,
-        tags=tags,
-        pinned=pinned,
-        is_global=is_global,
-        safety_wiring=True,
-        importance=importance,
-        context="mcp",
-        note_id="",
-        defer_expensive=True,
-    )
-    if isinstance(result, str) and result.startswith("Error "):
-        return result
+    try:
+        result = save_memory(
+            content=content,
+            category=category,
+            title_slug=title_slug,
+            tags=tags,
+            pinned=pinned,
+            is_global=is_global,
+            safety_wiring=True,
+            importance=importance,
+            context="mcp",
+            note_id="",
+            defer_expensive=True,
+        )
+    except SaveValidationError as e:
+        return str(e)
     # B2 fix (2026-06-22): KG indexing is now invoked by
     # ``save_pipeline._update_memory_index_incremental`` via
     # ``_index_kg`` (see save/indexers.py). The previous inline call
@@ -236,9 +237,9 @@ def memory_auto_save_hook(
                 except Exception:
                     _search_cache.clear()
                 return f"Auto-saved: {data['note_id']}"
-            return f"Auto-save failed: {data.get('error', out[:200])}"
+            return _err(ErrorCode.DB_ERROR, f"Auto-save failed: {data.get('error', out[:200])}")
         except (json.JSONDecodeError, KeyError):
-            return f"Auto-save returned: {out[:200]}"
+            return _err(ErrorCode.INVALID_PARAMS, f"Auto-save returned: {out[:200]}")
     except subprocess.TimeoutExpired:
         return _err(
             ErrorCode.TIMEOUT, "auto_save.py tool-complete timed out after 10s."

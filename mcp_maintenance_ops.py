@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import cast
 
 from config import get_feature_flags
+from mcp_common import _err, ErrorCode, classify_exception
 
 
 
@@ -63,8 +64,8 @@ def _get_local_tools() -> dict:
             memory_run_tier_migration,
             memory_check_embedding_model,
             memory_incremental_update,
-            memory_duplicates,
-            memory_merge_suggestions,
+            memory_dedup,
+            memory_session_admin_stats,
             memory_consolidate,
             memory_rewrite_links,
             memory_detect_contradictions,
@@ -86,8 +87,8 @@ def _get_local_tools() -> dict:
             "memory_run_tier_migration": memory_run_tier_migration,
             "memory_check_embedding_model": memory_check_embedding_model,
             "memory_incremental_update": memory_incremental_update,
-            "memory_duplicates": memory_duplicates,
-            "memory_merge_suggestions": memory_merge_suggestions,
+            "memory_dedup": memory_dedup,
+            "memory_session_admin_stats": memory_session_admin_stats,
             "memory_rebuild": memory_rebuild,
             "memory_audit": memory_audit,
             "memory_audit_query": memory_audit_query,
@@ -174,10 +175,10 @@ def _get_domain_tools() -> dict:
             memory_graph_traverse,
         )
         from mcp_profile import memory_profile_stats, memory_user_profile, memory_profile_access
-        from mcp_multi_modal import memory_ingest_file, memory_ingest_url
+        from mcp_multi_modal import memory_ingest
         from mcp_dashboard import memory_dashboard
         from mcp_metrics import memory_metrics_server
-        from mcp_search import memory_semantic_search, memory_recall_context
+        from mcp_search import memory_semantic_search, memory_recall_stats
         from mcp_session import memory_thread_context, memory_list_threads, memory_resolve_thread
         from mcp_safety import memory_check_contradictions, memory_scan_injection
 
@@ -219,14 +220,13 @@ def _get_domain_tools() -> dict:
             "memory_facts_stats": memory_facts_stats,
             "memory_graph_stats": memory_graph_stats,
             "memory_profile_stats": memory_profile_stats,
-            "memory_ingest_file": memory_ingest_file,
-            "memory_ingest_url": memory_ingest_url,
+            "memory_ingest": memory_ingest,
             "memory_dashboard": memory_dashboard,
             "memory_metrics_server": memory_metrics_server,
             "memory_semantic_search": memory_semantic_search,
             "memory_facts_search": memory_facts_search,
             "memory_graph_search": memory_graph_search,
-            "memory_recall_context": memory_recall_context,
+            "memory_recall_stats": memory_recall_stats,
             "memory_thread_context": memory_thread_context,
             "memory_list_threads": memory_list_threads,
             "memory_resolve_thread": memory_resolve_thread,
@@ -280,12 +280,9 @@ def _get_handlers() -> dict:
                     memory_id=memory_id, new_content=new_content, old_state=old_state
                 )
             ),
-            MaintenanceOp.DUPLICATES: lambda *, threshold=0.85, **_: t[
-                "memory_duplicates"
-            ](threshold=threshold),
-            MaintenanceOp.MERGE_SUGGESTIONS: lambda *, threshold=0.90, **_: t[
-                "memory_merge_suggestions"
-            ](threshold=threshold),
+            MaintenanceOp.DEDUP: lambda *, action="duplicates", threshold=None, **_: t[
+                "memory_dedup"
+            ](action=action, threshold=threshold),
             MaintenanceOp.REBUILD: lambda *, scope="active", **_: t["memory_rebuild"](
                 scope=scope
             ),
@@ -467,15 +464,9 @@ def _get_handlers() -> dict:
                 "memory_adaptive_retention"
             ](dry_run=dry_run),
             MaintenanceOp.RETENTION_STATS: lambda **_: t["memory_retention_stats"](),
-            MaintenanceOp.INGEST_FILE: lambda *, file_path, category="sessions", tags="", **_: (
-                t["memory_ingest_file"](
+            MaintenanceOp.INGEST: lambda *, file_path=None, url=None, category="sessions", tags="", **_: (
+                t["memory_ingest"](
                     file_path=file_path,
-                    category=category,
-                    tags=tags,
-                )
-            ),
-            MaintenanceOp.INGEST_URL: lambda *, url, category="sessions", tags="", **_: (
-                t["memory_ingest_url"](
                     url=url,
                     category=category,
                     tags=tags,
@@ -488,9 +479,9 @@ def _get_handlers() -> dict:
                 "memory_metrics_server"
             ](action=action, port=port),
             MaintenanceOp.MEMORY_STATS: lambda **_: _op_memory_stats(),
-            MaintenanceOp.SESSION_STATS: lambda **_: _op_session_stats(),
-            MaintenanceOp.THREAD_STATS: lambda **_: _op_thread_stats(),
-            MaintenanceOp.COMPACTION_STATS: lambda **_: _op_compaction_stats(),
+            MaintenanceOp.SESSION_ADMIN_STATS: lambda *, type="all", **_: _op_session_admin_stats(
+                type=type
+            ),
             MaintenanceOp.LIST_ACTIVE_THREADS: lambda *, project_root="", status="", limit=20, **_: (
                 _op_list_active_threads(
                     project_root=project_root, status=status, limit=limit
@@ -528,7 +519,22 @@ def _get_handlers() -> dict:
             MaintenanceOp.SEMANTIC_SEARCH: lambda *, query, **_: t["memory_semantic_search"](query=query),
             MaintenanceOp.FACTS_SEARCH: lambda *, query, **_: t["memory_facts_search"](query=query),
             MaintenanceOp.GRAPH_SEARCH: lambda *, query, **_: t["memory_graph_search"](query=query),
-            MaintenanceOp.RECALL_CONTEXT: lambda *, query="", **_: t["memory_recall_context"](query=query),
+            MaintenanceOp.RECALL_STATS: lambda *, action="status", query="", limit=50, event="", since_ts="", **_: (
+                t["memory_recall_stats"](
+                    action=action,
+                    query=query,
+                    limit=limit,
+                    event=event,
+                    since_ts=since_ts,
+                ) if action == "context" else (
+                    _op_recall_status() if action == "status" else _op_recall_trace(
+                        limit=limit, event=event, since_ts=since_ts
+                    )
+                )
+            ),
+            MaintenanceOp.BACKGROUND_TASK_STATUS: lambda *, memory_id, **_: _op_background_task_status(
+                memory_id=memory_id
+            ),
             MaintenanceOp.THREAD_CONTEXT: lambda *, session_id, **_: t["memory_thread_context"](session_id=session_id),
             MaintenanceOp.LIST_THREADS: lambda *, session_id, **_: t["memory_list_threads"](session_id=session_id),
             MaintenanceOp.RESOLVE_THREAD: lambda *, session_id, thread_id, resolution, **_: t["memory_resolve_thread"](session_id=session_id, thread_id=thread_id, resolution=resolution),
@@ -537,10 +543,6 @@ def _get_handlers() -> dict:
             MaintenanceOp.SCAN_INJECTION: lambda *, content, **_: t["memory_scan_injection"](content=content),
             MaintenanceOp.PROFILE_ACCESS: lambda *, note_id, **_: t["memory_profile_access"](note_id=note_id),
             MaintenanceOp.FLAGS_STATUS: lambda **_: _op_flags_status(),
-            MaintenanceOp.RECALL_STATUS: lambda **_: _op_recall_status(),
-            MaintenanceOp.RECALL_TRACE: lambda *, limit=50, event="", since_ts="", **__: _op_recall_trace(
-                limit=limit, event=event, since_ts=since_ts
-            ),
             MaintenanceOp.PHASE_ERRORS: lambda *, since_ts=None, until_ts=None, limit=50, **_: _op_phase_errors(
                 since_ts=since_ts, until_ts=until_ts, limit=limit
             ),
@@ -615,7 +617,7 @@ def _op_session_stats() -> str:
         finally:
             safe_close_db(conn)
     except Exception as e:
-        return _json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_thread_stats() -> str:
@@ -635,7 +637,7 @@ def _op_thread_stats() -> str:
         finally:
             safe_close_db(conn)
     except Exception as e:
-        return _json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_compaction_stats() -> str:
@@ -670,7 +672,7 @@ def _op_compaction_stats() -> str:
         finally:
             safe_close_db(conn)
     except Exception as e:
-        return _json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_memory_stats() -> str:
@@ -730,7 +732,7 @@ def _op_memory_stats() -> str:
             }
         )
     except Exception as e:
-        return _json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_list_active_threads(
@@ -777,7 +779,7 @@ def _op_list_active_threads(
         finally:
             safe_close_db(conn)
     except Exception as e:
-        return _json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
@@ -795,7 +797,7 @@ def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
             from mcp_maintenance import memory_extract_skills
             return cast(str, memory_extract_skills(conn, memory_id=memory_id, dry_run=dry_run))
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_list_skills(limit: int = 50) -> str:
@@ -813,7 +815,7 @@ def _op_list_skills(limit: int = 50) -> str:
             from mcp_maintenance import memory_list_skills
             return cast(str, memory_list_skills(conn, limit=limit))
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_recover_session(session_id: str) -> str:
@@ -853,7 +855,7 @@ def _op_recover_session(session_id: str) -> str:
             current = row[1] or ""
         return _json.dumps({"chain": chain})
     except Exception as e:
-        return _json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_flags_status() -> str:
@@ -863,7 +865,7 @@ def _op_flags_status() -> str:
 
         return json.dumps(get_feature_flags(), indent=2)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = None, limit: int = 50) -> str:
@@ -875,7 +877,7 @@ def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = Non
             get_counts(since_ts=since_ts, until_ts=until_ts, limit=limit), indent=2
         )
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_search_phase_stats(
@@ -895,7 +897,7 @@ def _op_search_phase_stats(
 
         db_path = resolve_active_memory_dir() / "memory.db"
         if not db_path.exists():
-            return json.dumps({"error": f"No memory.db at {db_path}"})
+            return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
         conn = sqlite3.connect(str(db_path), timeout=10)
         try:
             where: list[str] = []
@@ -942,7 +944,7 @@ def _op_search_phase_stats(
         finally:
             conn.close()
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_recall_trace(
@@ -995,7 +997,7 @@ def _op_recall_trace(
             indent=2,
         )
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
 
 
 def _op_recall_status() -> str:
@@ -1054,7 +1056,133 @@ def _op_recall_status() -> str:
             indent=2,
         )
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return _err(classify_exception(e), str(e))
+
+
+def _op_session_admin_stats(type: str = "all") -> str:
+    try:
+        from pathlib import Path
+        from session_manager import SessionManager
+        from infra.db import safe_close_db
+
+        db_path = os.environ.get("MEMORY_DB_PATH")
+        mgr = SessionManager(db_path=Path(db_path)) if db_path else SessionManager()
+        conn = mgr._conn()
+        try:
+            result = {}
+            if type in ("session", "all"):
+                rows = conn.execute(
+                    "SELECT status, COUNT(*) FROM sessions GROUP BY status"
+                ).fetchall()
+                total = sum(r[1] for r in rows)
+                result["sessions"] = {
+                    "total": total,
+                    "by_status": {r[0]: r[1] for r in rows},
+                }
+            if type in ("thread", "all"):
+                rows = conn.execute(
+                    "SELECT status, COUNT(*) FROM decision_threads GROUP BY status"
+                ).fetchall()
+                result["decision_threads"] = {"by_status": {r[0]: r[1] for r in rows}}
+            if type in ("compaction", "all"):
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM session_compaction_log"
+                ).fetchone()[0]
+                avg_delta = conn.execute(
+                    "SELECT AVG(COALESCE(tokens_before,0) - COALESCE(tokens_after,0)) "
+                    "FROM session_compaction_log"
+                ).fetchone()[0]
+                zombies = conn.execute(
+                    "SELECT COUNT(*) FROM sessions s "
+                    "WHERE s.status='active' AND s.started_at < datetime('now', '-24 hours') "
+                    "AND NOT EXISTS (SELECT 1 FROM session_compaction_log c WHERE c.session_id=s.id)"
+                ).fetchone()[0]
+                result["compactions"] = {
+                    "total_compactions": total,
+                    "avg_token_delta": round(avg_delta or 0, 1),
+                    "zombie_sessions": zombies,
+                }
+
+            if not result:
+                return _err(ErrorCode.INVALID_PARAMS, f"Unknown type '{type}'. Valid: all, session, thread, compaction")
+
+            return _json.dumps(result)
+        finally:
+            safe_close_db(conn)
+    except Exception as e:
+        return _err(classify_exception(e), str(e))
+
+
+def _op_background_task_status(memory_id: str) -> str:
+    """Query the status of deferred background tasks for a given memory_id."""
+    try:
+        from pathlib import Path
+        from infra.db import open_db, safe_close_db
+
+        db_path_env = os.environ.get("MEMORY_DB_PATH")
+        db_path = Path(db_path_env) if db_path_env else Path.home() / ".config" / "agentic-memory" / "memory.db"
+        if not db_path.exists():
+            return json.dumps({"status": "not_found", "message": f"Database not found at {db_path}"})
+
+        conn = open_db(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT status, started_at, completed_at, error, attempts, task_type, payload "
+                "FROM task_queue WHERE payload LIKE ?",
+                (f"%{memory_id}%",)
+            ).fetchall()
+
+            if not rows:
+                return json.dumps({"status": "not_found", "message": "No background tasks found for memory_id."})
+
+            status_summary = "completed"
+            last_attempt = None
+            max_attempts = 0
+            errors = []
+
+            any_pending = False
+            any_failed = False
+
+            for row in rows:
+                status, started, completed, err, attempts, task_type, payload_str = row
+                try:
+                    payload = json.loads(payload_str)
+                except Exception:
+                    payload = {}
+                if payload.get("memory_id") != memory_id:
+                    continue
+
+                max_attempts = max(max_attempts, attempts)
+                if status in ("pending", "processing"):
+                    any_pending = True
+                elif status == "failed":
+                    any_failed = True
+                    if err:
+                        errors.append(f"{task_type}: {err}")
+
+                ts = completed or started
+                if ts and (not last_attempt or ts > last_attempt):
+                    last_attempt = ts
+
+            if any_pending:
+                status_summary = "pending"
+            elif any_failed:
+                status_summary = "failed"
+            elif not max_attempts:
+                return json.dumps({"status": "not_found", "message": "No background tasks found for memory_id."})
+
+            res = {
+                "status": status_summary,
+                "last_attempt": last_attempt,
+                "retries": max(0, max_attempts - 1),
+            }
+            if errors:
+                res["error"] = "; ".join(errors)
+            return json.dumps(res)
+        finally:
+            safe_close_db(conn)
+    except Exception as e:
+        return _err(classify_exception(e), str(e))
 
 
 MAINTENANCE_HANDLERS = _MaintenanceHandlersProxy()

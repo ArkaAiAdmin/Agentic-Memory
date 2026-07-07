@@ -100,5 +100,4 @@ def test_maintenance_handlers_registration():
     assert MaintenanceOp.HEARTBEAT in MAINTENANCE_HANDLERS
     assert MaintenanceOp.DASHBOARD in MAINTENANCE_HANDLERS
     assert MaintenanceOp.METRICS_SERVER in MAINTENANCE_HANDLERS
-    assert MaintenanceOp.INGEST_FILE in MAINTENANCE_HANDLERS
-    assert MaintenanceOp.INGEST_URL in MAINTENANCE_HANDLERS
+    assert MaintenanceOp.INGEST in MAINTENANCE_HANDLERS

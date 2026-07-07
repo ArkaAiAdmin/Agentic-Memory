@@ -33,7 +33,7 @@ from infra.memory_common import (
     open_db,
     connection_pool,
 )
-from save_pipeline import save_memory
+from save_pipeline import save_memory, SaveValidationError
 from search_pipeline import search_memories
 from rebuild_index import rebuild_index
 
@@ -482,18 +482,16 @@ class TestAdversarialPhase2(unittest.TestCase):
         slug = f"adv-2-8b-{int(time.time())}"
         nid = f"lessons/{slug}"
         huge_text = "B" * 60000
-        result = save_memory(
-            content=f"---\ncategory: lessons\ntitle_slug: {slug}\ntags: [overlimit]\nvalid_from: {now_iso()}\n---\n\n{huge_text}",
-            category="lessons",
-            title_slug=slug,
-            tags=["overlimit"],
-            pinned=False,
-            is_global=False,
-            safety_wiring=False,
-        )
-        self.assertTrue(
-            result is None or isinstance(result, str), f"Unexpected: {type(result)}"
-        )
+        with self.assertRaises(SaveValidationError):
+            save_memory(
+                content=f"---\ncategory: lessons\ntitle_slug: {slug}\ntags: [overlimit]\nvalid_from: {now_iso()}\n---\n\n{huge_text}",
+                category="lessons",
+                title_slug=slug,
+                tags=["overlimit"],
+                pinned=False,
+                is_global=False,
+                safety_wiring=False,
+            )
         with open_db(self.db_path) as db:
             row = db.execute("SELECT id FROM memories WHERE id=?", (nid,)).fetchone()
         self.assertIsNone(row, "Over-limit content was saved (should be rejected)")

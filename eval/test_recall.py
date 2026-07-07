@@ -884,7 +884,7 @@ class TestMCPTools:
     """Test MCP tool wrappers for recall."""
 
     def test_memory_recall_context(self, tmp_path, monkeypatch):
-        """memory_recall_context returns formatted string."""
+        """memory_recall_stats returns formatted string."""
         monkeypatch.delenv("MEMORY_DB_PATH", raising=False)
         db_path = _create_test_db(tmp_path)
         conn = sqlite3.connect(str(db_path))
@@ -897,15 +897,15 @@ class TestMCPTools:
         conn.close()
 
         monkeypatch.setenv("MEMORY_DB_PATH", str(db_path))
-        from mcp_tools import memory_recall_context
+        from mcp_tools import memory_recall_stats
 
-        result = memory_recall_context()
+        result = memory_recall_stats(action="context")
 
         assert "Memory Recall Briefing" in result
         assert "MCP test note" in result
 
     def test_memory_recall_context_with_query(self, tmp_path, monkeypatch):
-        """memory_recall_context with query parameter."""
+        """memory_recall_stats with query parameter."""
         monkeypatch.delenv("MEMORY_DB_PATH", raising=False)
         db_path = _create_test_db(tmp_path)
         conn = sqlite3.connect(str(db_path))
@@ -920,9 +920,9 @@ class TestMCPTools:
 
         monkeypatch.setenv("MEMORY_DB_PATH", str(db_path))
 
-        from mcp_tools import memory_recall_context
+        from mcp_tools import memory_recall_stats
 
-        result = memory_recall_context(query="Python coding")
+        result = memory_recall_stats(action="context", query="Python coding")
 
         assert "Memory Recall Briefing" in result
 

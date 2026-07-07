@@ -195,7 +195,7 @@ def gen_what_this_system_is(data: dict[str, Any]) -> str:
         f"- **Surface**: {tc['core']} CORE verbs + `memory_maintenance` router ({admin_label} behind router) + {data['hook_count']} lifecycle hooks + {data['cron_job_count']}+ cron jobs",
         f"- **Schema**: v{data['schema_version']}, ~{data['table_count']} tables",
         f"- **Code**: ~60k LOC production, ~{data['test_loc'] // 1000}k+ test LOC; see `docs/architecture.md`",
-        "- **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools.",
+        "- **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).",
     ])
 
 

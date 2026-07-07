@@ -277,14 +277,14 @@ class TestRecallContextDeepRerankParam(unittest.TestCase):
         self.assertIn("deep_rerank", sig.parameters)
         self.assertEqual(sig.parameters["deep_rerank"].default, False)
 
-    def test_memory_recall_context_mcp_tool_has_deep_rerank_param(self):
+    def test_memory_recall_stats_mcp_tool_has_deep_rerank_param(self):
         """The MCP tool signature must expose deep_rerank as a kwarg with
         default False so clients can opt in to the deep rerank and the
         default recall briefing stays bounded to <100ms."""
         import inspect
-        from mcp_search import memory_recall_context
+        from mcp_search import memory_recall_stats
 
-        sig = inspect.signature(memory_recall_context)
+        sig = inspect.signature(memory_recall_stats)
         self.assertIn("deep_rerank", sig.parameters)
         self.assertEqual(sig.parameters["deep_rerank"].default, False)
 

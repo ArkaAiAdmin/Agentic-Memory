@@ -232,16 +232,20 @@ def okf_import(
             continue
 
         try:
-            save_result = save_memory(
-                content=clean_body,
-                category=category,
-                title_slug=title_slug,
-                tags=tags_list,
-                pinned=pinned,
-                is_global=is_global,
-                safety_wiring=False,
-                db_path=os.environ.get("MEMORY_DB_PATH"),
-            )
+            from save_pipeline import SaveValidationError
+            try:
+                save_result = save_memory(
+                    content=clean_body,
+                    category=category,
+                    title_slug=title_slug,
+                    tags=tags_list,
+                    pinned=pinned,
+                    is_global=is_global,
+                    safety_wiring=False,
+                    db_path=os.environ.get("MEMORY_DB_PATH"),
+                )
+            except SaveValidationError as e:
+                save_result = str(e)
             if isinstance(save_result, str) and save_result.startswith("Error "):
                 logger.error(
                     "save_memory failed for %s/%s: %s",

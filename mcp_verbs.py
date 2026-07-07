@@ -1,4 +1,4 @@
-"""14-verb agent surface for agentic memory.
+"""15-verb agent surface for agentic memory.
 
 Each verb is a thin @mcp.tool() wrapper around existing functionality
 with sensible defaults so the agent can call it with 1-2 params.
@@ -6,13 +6,13 @@ with sensible defaults so the agent can call it with 1-2 params.
 The underlying ADMIN tools are still accessible via
 memory_advanced(operation="...") for power users.
 
-Verbs (14 + 1 escape hatch):
+Verbs (15 + 1 escape hatch):
   memory_search, memory_save, memory_delete, memory_recall, memory_note,
   memory_learn, memory_audit, memory_organize, memory_share,
   memory_graph, memory_profile, memory_session_start, memory_review_beliefs,
-  memory_curate_autosave, memory_advanced
+  memory_curate_autosave, memory_health_check, memory_advanced
 
-Phase A (2026-07-01): These 15 tools are the entire agent-facing MCP
+Phase A (2026-07-01): These 16 tools are the entire agent-facing MCP
 surface. The 80+ legacy tools are callable through memory_advanced.
 """
 from __future__ import annotations
@@ -140,20 +140,23 @@ def memory_save(
         is_global: Save to global memory (default False).
     """
     try:
-        from save_pipeline import save_memory
+        from save_pipeline import save_memory, SaveValidationError
 
         slug = title_slug or _auto_slug(content)
-        result = save_memory(
-            content=content,
-            category=category,
-            title_slug=slug,
-            tags=tags or [],
-            pinned=pinned,
-            importance=importance,
-            is_global=is_global,
-            defer_expensive=True,
-        )
-        return str(result)
+        try:
+            result = save_memory(
+                content=content,
+                category=category,
+                title_slug=slug,
+                tags=tags or [],
+                pinned=pinned,
+                importance=importance,
+                is_global=is_global,
+                defer_expensive=True,
+            )
+            return str(result)
+        except SaveValidationError as e:
+            return str(e)
     except Exception as e:
         logger.exception("in memory_save verb")
         return _wrap_db_error("memory_save", e)
@@ -430,19 +433,22 @@ def memory_note(
             result = memory_restore(note_id)
             return str(result)
         elif action == "update":
-            from save_pipeline import save_memory
+            from save_pipeline import save_memory, SaveValidationError
 
-            result = save_memory(
-                content=content,
-                category=category or "lessons",
-                title_slug=title_slug or note_id.split("/")[-1],
-                tags=tags or [],
-                db_path=None,
-            )
-            return str(result)
+            try:
+                result = save_memory(
+                    content=content,
+                    category=category or "lessons",
+                    title_slug=title_slug or note_id.split("/")[-1],
+                    tags=tags or [],
+                    db_path=None,
+                )
+                return str(result)
+            except SaveValidationError as e:
+                return str(e)
         elif action == "supersede":
             if not rationale:
-                return "error: rationale is required for supersede (INVALID_PARAMS)"
+                return _err(ErrorCode.INVALID_PARAMS, "rationale is required for supersede")
             from save_pipeline import memory_supersede_db
 
             db_path = _resolve_db_path()
@@ -456,7 +462,7 @@ def memory_note(
             return str(ok) if ok else str(err)
         elif action == "patch":
             if not rationale:
-                return "error: rationale is required for patch (INVALID_PARAMS)"
+                return _err(ErrorCode.INVALID_PARAMS, "rationale is required for patch")
             from save_pipeline import patch_memory
 
             patch_result = patch_memory(
@@ -508,19 +514,20 @@ def memory_learn(
         tags: Additional tags.
     """
     try:
-        from save_pipeline import save_memory
+        from save_pipeline import save_memory, SaveValidationError
         from mcp_maintenance import memory_compile_skill
 
         # Save the memory
-        result = save_memory(
-            content=content,
-            category=category,
-            title_slug=skill_name or "",
-            tags=tags or ["learned"],
-            importance=4,
-        )
-        if isinstance(result, str) and result.startswith("Error ["):
-            return str(result)
+        try:
+            result = save_memory(
+                content=content,
+                category=category,
+                title_slug=skill_name or "",
+                tags=tags or ["learned"],
+                importance=4,
+            )
+        except SaveValidationError as e:
+            return str(e)
         if as_skill and skill_name:
             skill_result = memory_compile_skill(
                 lesson_slug=skill_name,
@@ -595,7 +602,7 @@ def memory_organize(
         from mcp_maintenance import (
             memory_consolidate,
             memory_rewrite_links,
-            memory_duplicates,
+            memory_dedup,
         )
 
         if target == "safe_default":
@@ -611,12 +618,12 @@ def memory_organize(
                 ("rewrite_links", memory_rewrite_links()),
                 ("backfill", memory_backfill_all(backfill_mode="health")),
                 ("purge_expired", memory_purge_expired(dry_run=dry_run)),
-                ("dedup", memory_duplicates(threshold=0.85)),
+                ("dedup", memory_dedup(action="duplicates", threshold=0.85)),
             ]
         elif target == "compact":
             return str(memory_compact(dry_run=dry_run))
         elif target == "dedup":
-            return str(memory_duplicates(threshold=0.85))
+            return str(memory_dedup(action="duplicates", threshold=0.85))
         else:
             return _err(
                 ErrorCode.INVALID_PARAMS,

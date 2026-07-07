@@ -29,6 +29,7 @@ from infra.memory_common import open_db, count_rows
 from infra.infrastructure import GLOBAL_MEM_DIR
 from save_pipeline import (
     save_memory,
+    SaveValidationError,
     _recalculate_fitness_scores,
     _auto_backlink_multi_part,
     _build_memory_file,
@@ -358,18 +359,16 @@ class TestBoundaryConditions(unittest.TestCase):
     def test_content_over_50kb_rejected(self):
         slug = f"unit-over-{int(time.time())}"
         body_content = "x" * 51000  # Over 50KB
-        result = save_memory(
-            content=f"---\ncategory: lessons\ntitle_slug: {slug}\ntags: [unit-test]\nvalid_from: {now_iso()}\n---\n\n{body_content}",
-            category="lessons",
-            title_slug=slug,
-            tags=["unit-test"],
-            pinned=False,
-            is_global=False,
-            safety_wiring=False,
-        )
-        # Should return error dict for oversized content
-        if isinstance(result, dict):
-            self.assertIn("error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory(
+                content=f"---\ncategory: lessons\ntitle_slug: {slug}\ntags: [unit-test]\nvalid_from: {now_iso()}\n---\n\n{body_content}",
+                category="lessons",
+                title_slug=slug,
+                tags=["unit-test"],
+                pinned=False,
+                is_global=False,
+                safety_wiring=False,
+            )
 
     def test_unicode_content(self):
         slug = f"unit-unicode-{int(time.time())}"
@@ -452,16 +451,17 @@ class TestAuditIntegration(unittest.TestCase):
 
         slug = f"unit-err-{int(time.time())}"
         with patch("infra.db_write_queue.sqlite_write_queue.start_session", side_effect=Exception("DB error")):
-            save_memory(
-                content=f"---\ncategory: lessons\ntitle_slug: {slug}\ntags: []\nvalid_from: {now_iso()}\n---\n\nError path.",
-                category="lessons",
-                title_slug=slug,
-                tags=[],
-                pinned=False,
-                is_global=False,
-                safety_wiring=False,
-                db_path=str(PROD_DB),
-            )
+            with self.assertRaises(SaveValidationError):
+                save_memory(
+                    content=f"---\ncategory: lessons\ntitle_slug: {slug}\ntags: []\nvalid_from: {now_iso()}\n---\n\nError path.",
+                    category="lessons",
+                    title_slug=slug,
+                    tags=[],
+                    pinned=False,
+                    is_global=False,
+                    safety_wiring=False,
+                    db_path=str(PROD_DB),
+                )
         audit_db = PROD_DB
         from infra.audit import flush_audit
 
@@ -633,69 +633,56 @@ class TestSaveMemoryValidationReturnNone(unittest.TestCase):
     """Kill return_none mutations on save_memory validation (L240-281)."""
 
     def test_non_string_content_returns_error(self):
-        result = save_memory(123, "lessons", "test")  # type: ignore[arg-type]
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory(123, "lessons", "test")  # type: ignore[arg-type]
 
     def test_too_large_content_returns_error(self):
-        result = save_memory("x" * 50001, "lessons", "test")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("x" * 50001, "lessons", "test")
 
     def test_empty_category_returns_error(self):
-        result = save_memory("hello", "", "test")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "", "test")
 
     def test_dot_category_returns_error(self):
-        result = save_memory("hello", ".", "test")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", ".", "test")
 
     def test_dotdot_category_returns_error(self):
-        result = save_memory("hello", "..", "test")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "..", "test")
 
     def test_slash_category_returns_error(self):
-        result = save_memory("hello", "a/b", "test")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "a/b", "test")
 
     def test_backslash_category_returns_error(self):
-        result = save_memory("hello", "a\\b", "test")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "a\\b", "test")
 
     def test_tilde_category_returns_error(self):
-        result = save_memory("hello", "~foo", "test")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "~foo", "test")
 
     def test_empty_slug_returns_error(self):
-        result = save_memory("hello", "lessons", "")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "lessons", "")
 
     def test_slash_slug_returns_error(self):
-        result = save_memory("hello", "lessons", "a/b")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "lessons", "a/b")
 
     def test_backslash_slug_returns_error(self):
-        result = save_memory("hello", "lessons", "a\\b")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "lessons", "a\\b")
 
     def test_long_category_returns_error(self):
-        result = save_memory("hello", "x" * 65, "test")
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "x" * 65, "test")
 
     def test_invalid_tags_type_returns_error(self):
-        result = save_memory("hello", "lessons", "test", tags=123)  # type: ignore[arg-type]
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "lessons", "test", tags=123)  # type: ignore[arg-type]
 
 
 class TestSaveMemoryCompareMutations(unittest.TestCase):
@@ -737,9 +724,8 @@ class TestSaveMemoryCompareMutations(unittest.TestCase):
                 pass
 
     def test_slug_129_chars_rejected(self):
-        result = save_memory("hello", "lessons", "a" * 129)
-        self.assertIsInstance(result, str)
-        self.assertIn("Error", result)
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "lessons", "a" * 129)
 
     def test_category_exactly_64_chars_accepted(self):
         cat = "x" * 64
@@ -1255,16 +1241,16 @@ class TestSaveMemoryValidationEdge(unittest.TestCase):
     """Kill L242 compare, L247 compare/int, L249 compare, L259 not, L260 not."""
 
     def test_content_exactly_50001_rejected(self):
-        result = save_memory("x" * 50001, "lessons", "test-mut-50k-rej")
-        self.assertIn("Error", str(result))
+        with self.assertRaises(SaveValidationError):
+            save_memory("x" * 50001, "lessons", "test-mut-50k-rej")
 
     def test_slug_129_rejected(self):
-        result = save_memory("hello", "lessons", "a" * 129)
-        self.assertIn("Error", str(result))
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "lessons", "a" * 129)
 
     def test_category_65_rejected(self):
-        result = save_memory("hello", "x" * 65, "test-mut-cat65")
-        self.assertIn("Error", str(result))
+        with self.assertRaises(SaveValidationError):
+            save_memory("hello", "x" * 65, "test-mut-cat65")
 
 
 class TestSaveMemoryErrorPaths(unittest.TestCase):
@@ -1272,11 +1258,19 @@ class TestSaveMemoryErrorPaths(unittest.TestCase):
 
     def test_global_not_found(self):
         # is_global=True with non-existent global path
-        result = save_memory(
-            "test", "nonexistent_category_xyz", "test-mut-nf", is_global=True
-        )
-        # Should return error or note_id depending on whether dir exists
-        self.assertIsInstance(result, str)
+        try:
+            result = save_memory(
+                "test", "nonexistent_category_xyz", "test-mut-nf", is_global=True
+            )
+            self.assertIsInstance(result, str)
+            # Clean up if it succeeded
+            try:
+                (GLOBAL_MEM_DIR / "nonexistent_category_xyz" / "test-mut-nf.md").unlink(missing_ok=True)
+                (GLOBAL_MEM_DIR / "nonexistent_category_xyz").rmdir()
+            except Exception:
+                pass
+        except SaveValidationError:
+            pass
 
     def test_file_write_error_path(self):
         # Hard to trigger file write error without mocking, but ensure no crash

@@ -171,16 +171,21 @@ def agent_save(content: str, category: str, title_slug: str, **kwargs):
     _now_iso = kwargs.pop("_now_iso", None)
     _conn = kwargs.pop("_conn", None)
     kwargs.pop("metadata_json", None)
-    return save_memory(
-        SaveRequest(
-            content=content,
-            category=category,
-            title_slug=scoped_slug,
-            **kwargs,
-        ),
-        _now_iso=_now_iso,
-        _conn=_conn,
-    )
+    from save_pipeline import SaveValidationError
+
+    try:
+        return save_memory(
+            SaveRequest(
+                content=content,
+                category=category,
+                title_slug=scoped_slug,
+                **kwargs,
+            ),
+            _now_iso=_now_iso,
+            _conn=_conn,
+        )
+    except SaveValidationError as e:
+        return str(e)
 
 
 def agent_search(query: str, limit: int = 5, rerank: bool = True) -> dict:

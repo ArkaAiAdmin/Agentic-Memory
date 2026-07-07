@@ -353,7 +353,13 @@ def fail_task(conn: AnyConnection, task_id: int, error: str) -> None:
             "UPDATE task_queue SET status = 'failed', error = ? WHERE id = ?",
             (error, task_id),
         )
-        logger.error("task %d permanently failed: %s", task_id, error)
+        attempts_limit = row[1] if row else 0
+        logger.warning(
+            "task %d has been permanently failed after exhausting all %d retry attempts: %s",
+            task_id,
+            attempts_limit,
+            error,
+        )
     conn.commit()
 
 

@@ -124,8 +124,8 @@ class TestSessionStats:
         mgr = SessionManager(db_path=db)
         ctx = mgr.start_session("/tmp/proj", agent_id="a1")
         assert ctx is not None
-        raw = memory_maintenance("session_stats")
-        data = json.loads(raw)
+        raw = memory_maintenance("session_admin_stats", type="session")
+        data = json.loads(raw)["sessions"]
         assert "total" in data
         assert "by_status" in data
         assert data["total"] >= 1
@@ -148,8 +148,8 @@ class TestThreadStats:
         )
         conn.commit()
         conn.close()
-        raw = memory_maintenance("thread_stats")
-        data = json.loads(raw)
+        raw = memory_maintenance("session_admin_stats", type="thread")
+        data = json.loads(raw)["decision_threads"]
         assert "by_status" in data
         assert "open" in data["by_status"]
 
@@ -162,8 +162,8 @@ class TestCompactionStats:
         mgr = SessionManager(db_path=db)
         ctx = mgr.start_session("/tmp/proj", agent_id="a1")
         _seed_compaction(db, ctx.session.id)
-        raw = memory_maintenance("compaction_stats")
-        data = json.loads(raw)
+        raw = memory_maintenance("session_admin_stats", type="compaction")
+        data = json.loads(raw)["compactions"]
         assert "total_compactions" in data
         assert "avg_token_delta" in data
         assert "zombie_sessions" in data

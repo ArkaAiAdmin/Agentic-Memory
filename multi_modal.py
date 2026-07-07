@@ -88,18 +88,21 @@ def ingest_file(
         return {"note_id": "", "format": fmt, "error": "No content extracted"}
 
     # Save through the standard pipeline
-    from infra._lazy_imports import save_memory
+    from save_pipeline import SaveValidationError
 
     title_slug = _slugify(path.stem)
-    note_id = save_memory(
-        content=content,
-        category=category,
-        title_slug=title_slug,
-        tags=tags or [fmt[1:], "ingested"],
-        pinned=False,
-        is_global=False,
-        safety_wiring=True,
-    )
+    try:
+        note_id = save_memory(
+            content=content,
+            category=category,
+            title_slug=title_slug,
+            tags=tags or [fmt[1:], "ingested"],
+            pinned=False,
+            is_global=False,
+            safety_wiring=True,
+        )
+    except SaveValidationError as e:
+        return {"note_id": "", "format": fmt, "error": str(e)}
 
     return {
         "note_id": note_id,
@@ -261,21 +264,29 @@ def _extract_audio(path: Path) -> str:
 
 def _save_content(content: str, category: str, tags: list, title_slug: str) -> dict:
     """Save content through the standard pipeline."""
-    from infra._lazy_imports import save_memory
+    from save_pipeline import SaveValidationError
 
-    note_id = save_memory(
-        content=content,
-        category=category,
-        title_slug=title_slug,
-        tags=tags,
-        pinned=False,
-        is_global=True,
-    )
-    return {
-        "note_id": note_id,
-        "content_preview": content[:200],
-        "tags": tags,
-    }
+    try:
+        note_id = save_memory(
+            content=content,
+            category=category,
+            title_slug=title_slug,
+            tags=tags,
+            pinned=False,
+            is_global=True,
+        )
+        return {
+            "note_id": note_id,
+            "content_preview": content[:200],
+            "tags": tags,
+        }
+    except SaveValidationError as e:
+        return {
+            "note_id": "",
+            "content_preview": "",
+            "tags": tags,
+            "error": str(e),
+        }
 
 
 def _slugify(text: str, max_len: int = 60) -> str:
