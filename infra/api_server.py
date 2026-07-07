@@ -76,9 +76,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _require_auth(self) -> bool:
-        """Enforces authentication unless loopback client is active."""
+        """Enforce authentication.
+
+        The loopback auth bypass is gated behind ``insecure_loopback``. When
+        it is True (dev-only escape hatch), loopback clients skip token
+        checks. When False (the secure default), ALL clients — including
+        loopback — must present a valid bearer token.
+        """
         peer = self.client_address[0]
-        if _is_loopback(peer):
+        if getattr(self.server, "insecure_loopback", False) and _is_loopback(peer):
             return True
         token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
         if not token:
@@ -617,12 +623,14 @@ class APIServer(ThreadingHTTPServer):
         host: str = "127.0.0.1",
         port: int = 9878,
         token: str = "",
+        insecure_loopback: bool = False,
     ):
         self.db_path = Path(db_path)
         self.agent_id = agent_id
         self.host = host
         self.port = port
         self.token = token
+        self.insecure_loopback = insecure_loopback
         
         self._ws_clients: Dict[str, socket.socket] = {}
         self._ws_lock = threading.Lock()
@@ -780,6 +788,7 @@ def start_server_from_config(db_path: str | Path) -> Optional[APIServer]:
         host=getattr(cfg, "api_listen_host", "127.0.0.1"),
         port=getattr(cfg, "api_listen_port", 9878),
         token=getattr(cfg, "api_token", ""),
+        insecure_loopback=getattr(cfg, "api_insecure_loopback", False),
     )
     server.start()
     return server

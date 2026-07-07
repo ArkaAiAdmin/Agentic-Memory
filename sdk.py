@@ -63,10 +63,23 @@ class Memory:
         self._user_id = user_id
         self._config = config or {}
 
-    def add(self, content: str, tags: Optional[list[str]] = None) -> str:
+    def add(
+        self,
+        content: str,
+        tags: Optional[list[str]] = None,
+        is_global: bool = False,
+    ) -> str:
         """Add a memory and return its note ID.
 
         Compatible with Mem0's ``m.add("text")`` API.
+
+        Args:
+            content: The memory text.
+            tags: Optional list of tags.
+            is_global: If True, saves to the global (cross-project) memory
+                scope visible to all workspaces. Defaults to False so SDK
+                saves stay scoped to the current project unless explicitly
+                opted in.
         """
         from infra._lazy_imports import save_memory
 
@@ -81,7 +94,7 @@ class Memory:
                 title_slug=title_slug,
                 tags=tags or [],
                 pinned=False,
-                is_global=True,
+                is_global=is_global,
             )
             return str(note_id)
         except SaveValidationError as e:
@@ -145,26 +158,47 @@ class Memory:
         finally:
             safe_close_db(conn)
 
-    def clear(self) -> int:
+    def clear(self, confirm: bool = False, dry_run: bool = False) -> int:
         """Clear all SDK-created memories. Returns count cleared.
 
-        P1-11 fix: route through the connection pool instead of opening a
-        raw sqlite3.connect() + bare conn.close(). The previous version
-        also did an uncascaded DELETE, leaving orphan rows in
-        memory_embeddings, memory_chunks, memory_vec_keys, user_access_log,
-        and kg_facts. We now rely on the FK trigger to cascade, and we
-        use the pool so the connection is properly returned.
+        Destructive operation: by default this is a no-op unless
+        ``confirm=True`` is explicitly passed, protecting against
+        accidental data loss (OWASP A01-003). When ``confirm`` is False,
+        no rows are deleted — if ``dry_run`` is True the count that *would*
+        be deleted is returned, otherwise 0 is returned.
+
+        The scope is limited to SDK-created memories via
+        ``source_file LIKE 'sdk-%'``.
+
+        Args:
+            confirm: Must be True to actually execute the DELETE. Otherwise
+                no deletion occurs.
+            dry_run: When True (and confirm is False), return the count that
+                would be deleted without deleting anything.
         """
         from infra.db_write_queue import sqlite_write_queue
 
         conn = sqlite_write_queue.start_session(Path(self._db_path))
         try:
             conn.execute("PRAGMA foreign_keys=ON")
+            pending_row = conn.execute(
+                "SELECT COUNT(*) FROM memories WHERE source_file LIKE 'sdk-%'"
+            ).fetchone()
+            pending = pending_row[0] if pending_row is not None else 0
+            if not confirm:
+                logger.warning(
+                    "Memory.clear() called without confirm=True; "
+                    "no SDK memories were deleted (would have cleared %d).",
+                    int(pending),
+                )
+                return int(pending) if dry_run else 0
             n = conn.execute(
                 "DELETE FROM memories WHERE source_file LIKE 'sdk-%'"
             ).rowcount
             conn.commit()
-            return int(n) if n is not None else 0
+            cleared = int(n) if n is not None else 0
+            logger.info("Memory.clear() confirmed: cleared %d SDK memories.", cleared)
+            return cleared
         finally:
             conn.close()
 
@@ -218,8 +252,20 @@ class AgentMemory:
         )
         self._mem = Memory(db_path=db_path)
 
-    def save(self, content: str, tags: Optional[list[str]] = None) -> str:
-        """Save a memory scoped to this agent."""
+    def save(
+        self,
+        content: str,
+        tags: Optional[list[str]] = None,
+        is_global: bool = False,
+    ) -> str:
+        """Save a memory scoped to this agent.
+
+        Args:
+            content: The memory text.
+            tags: Optional list of tags.
+            is_global: If True, saves to the global (cross-project) memory
+                scope. Defaults to False to keep agent memories scoped.
+        """
         from agent_context import agent_save
 
         return str(agent_save(
@@ -227,6 +273,7 @@ class AgentMemory:
             category="agents",
             title_slug=f"auto-{time.strftime('%Y%m%d_%H%M%S')}",
             tags=tags or [],
+            is_global=is_global,
         ))
 
     def search(self, query: str, limit: int = 10) -> list[dict]:

@@ -78,8 +78,10 @@ class TestMemoryConfigDefaults:
         # 2026-07-05 Packaging API: api_enable_server, api_listen_host, api_listen_port, api_token → 129.
         # 2026-07-05 Recall remediation: auto_save_keyword_routing, auto_save_always_sessions,
         # recall_max_tokens, recall_tier1_hot_days, recall_tier_fallback_threshold → 134.
-        assert len(fields) == 135, (
-            f"Expected 134 fields, got {len(fields)}: {[f.name for f in fields]}"
+        # 2026-07 Security health-check fixes: llm_allow_remote_code, api_insecure_loopback,
+        # dashboard_address → 138.
+        assert len(fields) == 138, (
+            f"Expected 138 fields, got {len(fields)}: {[f.name for f in fields]}"
         )
 
     def test_default_db_path(self):

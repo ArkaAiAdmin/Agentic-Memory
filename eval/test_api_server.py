@@ -69,7 +69,14 @@ class TestAPIServer(unittest.TestCase):
 
         cls.port = _get_free_port()
         cls.host = "127.0.0.1"
-        cls.server = APIServer(db_path=cls.db_path, agent_id="test-agent", host=cls.host, port=cls.port)
+        cls.token = "test-api-token-0123456789abcdef"
+        cls.server = APIServer(
+            db_path=cls.db_path,
+            agent_id="test-agent",
+            host=cls.host,
+            port=cls.port,
+            token=cls.token,
+        )
         cls.server.start()
         _wait_for_server(cls.host, cls.port)
 
@@ -93,11 +100,12 @@ class TestAPIServer(unittest.TestCase):
         conn.commit()
         conn.close()
 
-    def _http_request(self, path: str, method: str = "GET", body: dict = None) -> Tuple[int, dict]:
+    def _http_request(self, path: str, method: str = "GET", body: dict | None = None) -> Tuple[int, dict]:
         url = f"http://{self.host}:{self.port}{path}"
         data = json.dumps(body).encode("utf-8") if body else None
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Content-Type", "application/json")
+        req.add_header("Authorization", f"Bearer {self.token}")
         try:
             with urllib.request.urlopen(req, timeout=3.0) as res:
                 return res.status, json.loads(res.read().decode("utf-8"))
@@ -194,6 +202,7 @@ class TestAPIServer(unittest.TestCase):
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
             f"Sec-WebSocket-Key: {key}\r\n"
+            f"Authorization: Bearer {self.token}\r\n"
             "Sec-WebSocket-Version: 13\r\n\r\n"
         )
         sock.sendall(handshake.encode("utf-8"))

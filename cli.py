@@ -27,8 +27,11 @@ import signal
 import sys
 import os
 import subprocess
+import logging
 from pathlib import Path
 from typing import Callable, NoReturn
+
+logger = logging.getLogger(__name__)
 
 SCRIPTS: str = os.path.dirname(os.path.abspath(__file__))
 PYTHON: str = sys.executable
@@ -877,7 +880,7 @@ def dashboard_main() -> None:
     """Launch, stop, or check the Streamlit dashboard.
 
     Usage:
-        agentic-memory dashboard start [--port 8501]
+        agentic-memory dashboard start [--port 8501] [--address 127.0.0.1]
         agentic-memory dashboard stop
         agentic-memory dashboard status
     """
@@ -896,6 +899,11 @@ def dashboard_main() -> None:
         type=int,
         default=8501,
         help="HTTP port (default: 8501)",
+    )
+    parser.add_argument(
+        "--address",
+        default=None,
+        help="Bind address for the dashboard (default: 127.0.0.1, loopback only)",
     )
     parsed = parser.parse_args(sys.argv[2:])
 
@@ -924,6 +932,21 @@ def dashboard_main() -> None:
         )
         sys.exit(1)
 
+    # Resolve the dashboard bind address. Default to loopback (127.0.0.1) so
+    # the UI is never exposed on all interfaces. The operator may override
+    # via the --address flag or the api.dashboard_address config value
+    # (MEMORY_DASHBOARD_ADDRESS). We never fall back to 0.0.0.0.
+    bind_address = parsed.address
+    if not bind_address:
+        try:
+            from config import get_config
+
+            bind_address = get_config().dashboard_address or "127.0.0.1"
+        except Exception:
+            bind_address = "127.0.0.1"
+    if bind_address in (None, "", "0.0.0.0"):
+        bind_address = "127.0.0.1"
+
     _DASHBOARD_PID_FILE = (
         Path.home() / ".config" / "agentic-memory" / "memory" / ".dashboard.pid"
     )
@@ -948,7 +971,7 @@ def dashboard_main() -> None:
                 "--server.port",
                 str(parsed.port),
                 "--server.address",
-                "0.0.0.0",
+                bind_address,
                 "--server.headless",
                 "true",
             ],
@@ -1023,9 +1046,38 @@ def api_server_main() -> None:
     host = parsed.host or getattr(cfg, "api_listen_host", "127.0.0.1")
     port = parsed.port or getattr(cfg, "api_listen_port", 9878)
     api_token = getattr(cfg, "api_token", "") or os.environ.get("MEMORY_API_TOKEN", "")
+    api_insecure_loopback = getattr(cfg, "api_insecure_loopback", False)
+
+    # A02-001: never run the API server without a token. If none is
+    # configured (and loopback bypass is disabled), generate a secure
+    # random token, persist it, and log it once.
+    if not api_token and not api_insecure_loopback:
+        import secrets
+
+        api_token = secrets.token_hex(32)
+        token_path = (
+            Path(getattr(cfg, "db_path", "memory/memory.db")).resolve().parent
+            / ".api_token"
+        )
+        try:
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            token_path.write_text(api_token)
+            os.chmod(token_path, 0o600)
+        except OSError as exc:
+            logger.warning(f"Failed to persist API token to {token_path}: {exc}")
+        print(f"API server token (auto-generated): {api_token}")
+        print(f"Token persisted at {token_path} (mode 0600)")
+
     agent_id = _crdt_agent_id()
 
-    server = APIServer(db_path=db_path, agent_id=agent_id, host=host, port=port, token=api_token)
+    server = APIServer(
+        db_path=db_path,
+        agent_id=agent_id,
+        host=host,
+        port=port,
+        token=api_token,
+        insecure_loopback=api_insecure_loopback,
+    )
     server.start()
     print(f"API server running on http://{host}:{port}")
     try:

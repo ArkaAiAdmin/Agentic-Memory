@@ -42,11 +42,14 @@ logger = logging.getLogger(__name__)
 
 # Primary: Qwen3-Reranker-0.6B (Apache 2.0). LLM-based yes/no scoring.
 PRIMARY_MODEL_ID = "Qwen/Qwen3-Reranker-0.6B"
-PRIMARY_REVISION = "main"
+# Pinned to an explicit commit hash (OWASP LLM03-001): never use a moving
+# branch ref. SHA is the current HEAD of the model repo
+# (verified via the HuggingFace Hub API "sha" field).
+PRIMARY_REVISION = "e61197ed45024b0ed8a2d74b80b4d909f1255473"
 
 # Fallback: BAAI/bge-reranker-v2-m3 (MIT). Plain cross-encoder.
 FALLBACK_MODEL_ID = "BAAI/bge-reranker-v2-m3"
-FALLBACK_REVISION = "main"
+FALLBACK_REVISION = "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e"
 
 # Legacy aliases (pre-2026-06-15 module pointed at jina-reranker-v3). Kept
 # as module attributes so any third-party code that imported them still

@@ -18,6 +18,7 @@ surface. The 80+ legacy tools are callable through memory_advanced.
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 from pathlib import Path
 
@@ -384,15 +385,32 @@ def memory_curate_autosave(
 def memory_delete(
     note_id: str,
     hard: bool = False,
+    confirm: bool = False,
 ) -> str:
     """Delete a memory note by ID. Soft-delete by default (recoverable for 30 days).
 
     Args:
         note_id: The note ID (e.g. "lessons/my-note").
         hard: If True, permanently delete immediately (default False).
+        confirm: Required to be True to allow a hard (permanent) delete. This is a
+            safety gate: hard deletes cannot be recovered, so they must be explicitly
+            confirmed. Soft-deletes (hard=False, the default) are unaffected.
     """
     try:
         from mcp_memory import memory_delete as _delete
+
+        if hard and not confirm:
+            logger.warning(
+                "Refused permanent (hard) delete of '%s' without explicit confirm=True. "
+                "To permanently remove this note, call again with confirm=True.",
+                note_id,
+            )
+            return _err(
+                ErrorCode.INVALID_PARAMS,
+                f"Refusing hard (permanent) delete of '{note_id}' without confirmation. "
+                f"This would permanently remove the note and cannot be recovered. "
+                f"Pass confirm=True to proceed with permanent deletion.",
+            )
 
         return str(_delete(note_id=note_id, hard=hard))
     except Exception as e:

@@ -19,14 +19,139 @@ without them (returns a note explaining that a format isn't supported).
 
 from __future__ import annotations
 
-from html.parser import HTMLParser
+import ipaddress
 import logging
+import os
+import socket
+import urllib.request
+from html.parser import HTMLParser
 import re
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Security configuration
+# ---------------------------------------------------------------------------
+
+# SSRF guard (OWASP A10-001).
+# If non-empty, ONLY these hosts (verified after DNS resolution and after every
+# redirect) are permitted. An empty set means "any host that is not loopback,
+# link-local, or private".
+ALLOWED_HOSTS: frozenset[str] = frozenset()
+
+# Path containment (OWASP A04-002).
+# Files may only be ingested if their resolved real path stays within this
+# directory. Override with the AGENTIC_MEMORY_INGEST_DIR env var.
+INGEST_ALLOWED_DIR = Path(
+    os.environ.get("AGENTIC_MEMORY_INGEST_DIR", str(Path(__file__).resolve().parent))
+).resolve()
+
+# Ranges that must never be fetched (metadata services, internal networks).
+_BLOCKED_NETWORKS = (
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+)
+
+
+# ---------------------------------------------------------------------------
+# SSRF guard (OWASP A10-001)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_ip(hostname: str) -> list[str]:
+    """Resolve a hostname to its IP addresses via socket.getaddrinfo."""
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as exc:
+        raise ValueError(f"SSRF guard: could not resolve host {hostname!r}: {exc}") from exc
+    ips: list[str] = []
+    for info in infos:
+        addr = str(info[4][0])
+        if "%" in addr:  # strip IPv6 scope id
+            addr = addr.split("%", 1)[0]
+        if addr not in ips:
+            ips.append(addr)
+    if not ips:
+        raise ValueError(f"SSRF guard: no addresses resolved for {hostname!r}")
+    return ips
+
+
+def _ssrf_block_private(ip: str) -> None:
+    """Reject loopback, link-local, private, reserved, and metadata addresses."""
+    if ip == "169.254.169.254":
+        raise ValueError("SSRF guard: cloud metadata endpoint 169.254.169.254 is blocked")
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError as exc:
+        raise ValueError(f"SSRF guard: invalid resolved IP {ip!r}") from exc
+    if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved or addr.is_multicast:
+        raise ValueError(f"SSRF guard: blocked address {ip} (private/loopback/link-local)")
+    for net in _BLOCKED_NETWORKS:
+        if addr in net:
+            raise ValueError(f"SSRF guard: blocked network address {ip} ({net})")
+
+
+def _ssrf_validate_host(hostname: str) -> None:
+    """Validate a host: optional allowlist, then resolve + reject private IPs."""
+    if not hostname:
+        raise ValueError("SSRF guard: missing host")
+    if ALLOWED_HOSTS and hostname.lower() not in ALLOWED_HOSTS:
+        raise ValueError(f"SSRF guard: host {hostname!r} not in allowlist {sorted(ALLOWED_HOSTS)}")
+    for ip in _resolve_ip(hostname):
+        _ssrf_block_private(ip)
+
+
+def _ssrf_validate_url(target_url: str) -> None:
+    """Validate scheme + host of a URL before fetching (and on each redirect)."""
+    parsed = urlparse(target_url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"SSRF guard: only http/https allowed, got {parsed.scheme!r}")
+    if not parsed.hostname:
+        raise ValueError("SSRF guard: URL has no host")
+    _ssrf_validate_host(parsed.hostname)
+
+
+class _SSRFRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-validate the host on every redirect hop before following it."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _ssrf_validate_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_opener = urllib.request.build_opener(_SSRFRedirectHandler())
+
+
+# ---------------------------------------------------------------------------
+# Path containment (OWASP A04-002)
+# ---------------------------------------------------------------------------
+
+
+def _enforce_path_containment(raw_path: Path) -> Path:
+    """Resolve a path and ensure it stays within INGEST_ALLOWED_DIR.
+
+    Rejects absolute paths and symlink/hardlink escapes that resolve outside
+    the allowed root.
+    """
+    resolved = raw_path.resolve()
+    if not resolved.is_relative_to(INGEST_ALLOWED_DIR):
+        raise ValueError(
+            f"Path containment: {raw_path} resolves to {resolved} "
+            f"which is outside the allowed directory {INGEST_ALLOWED_DIR}"
+        )
+    return resolved
+
 
 # ---------------------------------------------------------------------------
 # Entry point API
@@ -67,6 +192,11 @@ def ingest_file(
         Dict with keys: note_id, format, content_preview, error (if failed).
     """
     path = Path(file_path)
+    try:
+        path = _enforce_path_containment(path)
+    except ValueError as e:
+        return {"note_id": "", "format": "", "error": str(e)}
+
     if not path.exists():
         return {"note_id": "", "format": "", "error": f"File not found: {path}"}
 
@@ -89,6 +219,7 @@ def ingest_file(
 
     # Save through the standard pipeline
     from save_pipeline import SaveValidationError
+    from infra._lazy_imports import save_memory
 
     title_slug = _slugify(path.stem)
     try:
@@ -126,6 +257,12 @@ def ingest_url(
     if not parsed.scheme or not parsed.netloc:
         return {"note_id": "", "error": f"Invalid URL: {url}"}
 
+    # SSRF guard (OWASP A10-001): reject internal/metadata addresses before fetch.
+    try:
+        _ssrf_validate_url(url)
+    except ValueError as e:
+        return {"note_id": "", "error": str(e)}
+
     title = parsed.netloc
     content = f"# Web page: {url}\n\n"
     content += f"**Source:** {url}\n**Fetched:** {__import__('datetime').datetime.now().isoformat()}\n\n---\n\n"
@@ -137,7 +274,7 @@ def ingest_url(
         import html2text
 
         req = urllib.request.Request(url, headers={"User-Agent": "AgenticMemory/1.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with _opener.open(req, timeout=30) as resp:
             html = resp.read().decode("utf-8", errors="replace")
 
         doc = readability.Document(html)
@@ -177,7 +314,7 @@ def ingest_url(
             req = urllib.request.Request(
                 url, headers={"User-Agent": "AgenticMemory/1.0"}
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with _opener.open(req, timeout=30) as resp:
                 html = resp.read().decode("utf-8", errors="replace")
             extractor = _TextExtractor()
             extractor.feed(html)
@@ -265,6 +402,7 @@ def _extract_audio(path: Path) -> str:
 def _save_content(content: str, category: str, tags: list, title_slug: str) -> dict:
     """Save content through the standard pipeline."""
     from save_pipeline import SaveValidationError
+    from infra._lazy_imports import save_memory
 
     try:
         note_id = save_memory(
