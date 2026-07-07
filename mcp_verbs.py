@@ -21,6 +21,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
+from typing import cast
 
 from mcp_common import (
     GLOBAL_MEM_DIR,
@@ -115,7 +116,7 @@ def memory_search(
             memory_source=memory_source,
             category=category,
         )
-        output = result.get("output", str(result))
+        output = cast(str, result.get("output", str(result)))
         results = result.get("results", [])
         if not results:
             pending = _supplement_with_pending(db_path, query, limit)

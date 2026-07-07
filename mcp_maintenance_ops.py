@@ -18,7 +18,7 @@ from mcp_common import _bootstrap_path  # noqa: E402,F401
 import json
 import os
 from pathlib import Path
-from typing import cast
+from typing import Any, Callable, cast
 
 from config import get_feature_flags
 from mcp_common import _err, ErrorCode, classify_exception
@@ -565,9 +565,10 @@ def _get_handlers() -> dict:
 #   from mcp_maintenance_ops import MAINTENANCE_HANDLERS
 #   handler = MAINTENANCE_HANDLERS[op_enum]
 # which works with this proxy.
+
 class _MaintenanceHandlersProxy:
-    def __getitem__(self, key):
-        return _get_handlers()[key]
+    def __getitem__(self, key: Any) -> Callable[..., str]:
+        return cast(Callable[..., str], _get_handlers()[key])
 
     def __iter__(self):
         return iter(_get_handlers())
@@ -575,7 +576,7 @@ class _MaintenanceHandlersProxy:
     def __len__(self):
         return len(_get_handlers())
 
-    def __contains__(self, key):
+    def __contains__(self, key: object) -> bool:
         return key in _get_handlers()
 
     def keys(self):
@@ -1037,15 +1038,14 @@ def _op_background_task_status(memory_id: str) -> str:
     """Query the status of deferred background tasks for a given memory_id."""
     try:
         from pathlib import Path
-        from infra.db import open_db, safe_close_db
+        from infra.db import open_db
 
         db_path_env = os.environ.get("MEMORY_DB_PATH")
         db_path = Path(db_path_env) if db_path_env else Path.home() / ".config" / "agentic-memory" / "memory.db"
         if not db_path.exists():
             return json.dumps({"status": "not_found", "message": f"Database not found at {db_path}"})
 
-        conn = open_db(db_path)
-        try:
+        with open_db(db_path) as conn:
             rows = conn.execute(
                 "SELECT status, started_at, completed_at, error, attempts, task_type, payload "
                 "FROM task_queue WHERE payload LIKE ?",
@@ -1099,8 +1099,6 @@ def _op_background_task_status(memory_id: str) -> str:
             if errors:
                 res["error"] = "; ".join(errors)
             return json.dumps(res)
-        finally:
-            safe_close_db(conn)
     except Exception as e:
         return _err(classify_exception(e), str(e))
 

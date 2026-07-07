@@ -6,6 +6,8 @@ from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 
+from typing import cast
+
 from mcp_instance import mcp
 from mcp_common import _err, ErrorCode, with_audit
 from multi_modal import ingest_file, ingest_url
@@ -39,7 +41,7 @@ def memory_ingest(
     if file_path:
         result = ingest_file(file_path=file_path, category=category, tags=tag_list)
     else:
-        result = ingest_url(url=url, category=category, tags=tag_list)
+        result = ingest_url(url=cast(str, url), category=category, tags=tag_list)
 
     if "error" in result and result["error"]:
         return _err(ErrorCode.INVALID_PARAMS, result["error"])
