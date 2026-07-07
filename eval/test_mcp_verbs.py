@@ -126,7 +126,7 @@ class TestVerbDeleteBehavior:
     def test_delete_hard(self):
         with mock.patch("mcp_memory.memory_delete") as md:
             md.return_value = "Purged: lessons/test-note"
-            result = memory_delete(note_id="lessons/test-note", hard=True)
+            result = memory_delete(note_id="lessons/test-note", hard=True, confirm=True)
             assert "Purged" in result
             md.assert_called_once_with(note_id="lessons/test-note", hard=True)
 

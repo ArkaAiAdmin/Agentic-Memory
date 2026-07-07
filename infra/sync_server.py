@@ -157,6 +157,11 @@ class _SyncHandler(BaseHTTPRequestHandler):
         peer = getattr(self, "host", None) or getattr(self, "client_address", ("127.0.0.1",))[0]
         if not SYNC_AUTH_TOKEN:
             if not _is_loopback(peer):
+                logger.warning(
+                    "sync_server: auth rejected (no token configured, non-loopback peer=%s): "
+                    "401",
+                    peer,
+                )
                 self._error(
                     "Auth required: set MEMORY_SYNC_TOKEN or bind to 127.0.0.1",
                     401,
@@ -165,10 +170,18 @@ class _SyncHandler(BaseHTTPRequestHandler):
             return True
         auth = self.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
+            logger.warning(
+                "sync_server: auth rejected (missing Bearer scheme, peer=%s): 401",
+                peer,
+            )
             self._error("Authorization required: Bearer <token>", 401)
             return False
         token = auth[7:]
         if token != SYNC_AUTH_TOKEN:
+            logger.warning(
+                "sync_server: auth rejected (invalid token, peer=%s): 403",
+                peer,
+            )
             self._error("Invalid token", 403)
             return False
         return True

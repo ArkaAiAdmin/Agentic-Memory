@@ -189,7 +189,8 @@ class TestSavePipelineAcquireLock(unittest.TestCase):
 
     def test_returns_lock_file_on_success(self):
         """_acquire_lock must return the lock_file when no contention."""
-        from save_pipeline import _acquire_lock, release_flock
+        from save_pipeline import _acquire_lock
+        from infra.file_lock import release_flock
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"

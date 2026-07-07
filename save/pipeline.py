@@ -40,7 +40,6 @@ from pathlib import Path
 from typing import Optional, Callable, Any
 from infra.memory_common import (
     acquire_flock_with_retry,
-    release_flock,
     atomic_write,
     get_memory_paths,
     parse_frontmatter,
@@ -814,7 +813,6 @@ def _update_memory_index_incremental(
     source_file = f"{category}/{title_slug}.md"
     note_id = f"{category}/{title_slug}"
     tags_json = json.dumps(tags)
-    lock_file = None
     local_db = None
     try:
         if external_db:
@@ -1070,8 +1068,10 @@ def _scan_for_injection_or_skip(
     except SaveValidationError:
         raise
     except Exception as _ie:
-        logger.debug("save_memory: injection scan failed (benign): %s", _ie)
-    return None
+        # Fail closed: a scanner error must not let content through
+        # unvalidated. Re-raise so the save is rejected/quarantined.
+        logger.warning("save_memory: injection scan raised (fail-closed): %s", _ie)
+        raise
 
 
 def _acquire_db_connection(db_path_obj, category, title_slug, start_time, tenant_id: str = "default"):
@@ -1512,21 +1512,6 @@ def save_memory(
     return _save_memory_core(req, _now_iso=_now_iso, _conn=_conn)
 
 
-def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn=None) -> None:
-    """Best-effort: project the committed SQL row into memory_field_crdt."""
-    try:
-        from crdt.crdt_field import project_sql_to_crdt as _proj
-        from infra.db import open_db
-
-        if conn is not None:
-            _proj(conn, note_id, _crdt_agent_id())
-        else:
-            with open_db(db_path_obj, timeout=5.0) as c:
-                _proj(c, note_id, _crdt_agent_id())
-    except Exception as _e:
-        logger.debug("save_memory: CRDT SQL projection skipped: %s", _e)
-
-
 # ---------------------------------------------------------------------------
 # CQRS write-journal path (2026-07-07)
 # ---------------------------------------------------------------------------
@@ -1643,7 +1628,17 @@ def materialize_journal_entry(
     target_base: Path,
 ) -> str:
     """Apply a single journal entry through the saga write path."""
-    from infra.write_journal import mark_applied, mark_failed
+    from infra.write_journal import mark_applied, mark_failed, materialize_security_scan
+
+    # Re-run the prompt-injection scan at materialization time. The enqueue
+    # path already scanned, but the rule set can change while the entry sits
+    # pending. Raises SaveValidationError -> caught below and quarantined via
+    # mark_failed. A scanner crash also fails closed (quarantined).
+    materialize_security_scan(
+        entry.get("content", ""),
+        entry.get("category", ""),
+        entry.get("title_slug", ""),
+    )
 
     req = SaveRequest(
         content=entry.get("content", ""),
@@ -1702,7 +1697,7 @@ def materialize_journal_entry(
                 _project_sql_to_crdt(Path(db_path_obj), note_id, conn=conn)
             mark_applied(journal_path, entry["id"])
             logger.info("materialize_journal_entry: applied %s", note_id_out)
-            return note_id_out
+            return str(note_id_out)
         except Exception:
             _save_errored = True
             raise
@@ -1710,10 +1705,13 @@ def materialize_journal_entry(
             if conn is not None:
                 try:
                     if _save_errored:
-                        try: conn.rollback()
-                        except Exception: pass
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
                     conn.close()
-                except Exception: pass
+                except Exception:
+                    pass
     except SaveValidationError as e:
         mark_failed(journal_path, entry["id"], str(e))
         raise
@@ -1809,7 +1807,6 @@ def _save_memory_core(
         with _pragma_cache_lock:
             _pragma_cache.pop(str(db_path_obj), None)
         # No flock — SQLite WAL + BEGIN IMMEDIATE handle serialization.
-        lock_file = None
         try:
             if _conn is not None:
                 conn = _conn

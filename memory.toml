@@ -188,5 +188,6 @@ default = 600                           # catch-all for tools without an explici
 enable_server = false                   # MEMORY_API_ENABLE_SERVER — start API server
 listen_host = "127.0.0.1"              # MEMORY_API_LISTEN_HOST
 listen_port = 9878                      # MEMORY_API_LISTEN_PORT
-token = ""                              # MEMORY_API_TOKEN — Authorization Bearer token (empty = no token required for loopback)
+token = ""                              # MEMORY_API_TOKEN — Authorization Bearer token. Empty = auto-generated at runtime via secrets.token_hex(32) and persisted to memory/.api_token (mode 0600). All clients (including loopback) must present this token.
+insecure_loopback = false              # MEMORY_API_INSECURE_LOOPBACK — DEV-ONLY escape hatch. When true, loopback clients bypass the bearer token check. MUST be false in any shared/prod deployment; a real token is required instead.
 

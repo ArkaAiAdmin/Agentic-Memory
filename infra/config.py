@@ -24,6 +24,25 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # ---------------------------------------------------------------------------
+# Integrity-critical flag monitoring (OWASP A05-002)
+# ---------------------------------------------------------------------------
+# When one of these ``MEMORY_*`` env vars overrides a flag that underpins
+# crash-consistency / data integrity, we MUST surface a WARNING at startup
+# so an operator knows the integrity guarantee is being downgraded. The
+# warning is emitted only when the env override actively DISABLES the flag
+# (resolved value is explicitly False), which is the dangerous case.
+logger = logging.getLogger("agentic_memory.config")
+
+_INTEGRITY_CRITICAL_FLAGS: frozenset[str] = frozenset(
+    {
+        "MEMORY_SAGA_ENABLED",
+        "MEMORY_CRDT_ENABLED",
+        "MEMORY_WRITE_JOURNAL_ENABLED",
+        "MEMORY_QUALITY_GATES",
+    }
+)
+
+# ---------------------------------------------------------------------------
 # TOML parsing — tomllib (3.11+) with tomli fallback
 # ---------------------------------------------------------------------------
 
@@ -177,15 +196,29 @@ def _resolve(
     env_val = os.environ.get(env_key)
     if env_val is not None:
         try:
+            resolved: Any
             if parser is not None:
-                return parser(env_val)
-            if isinstance(default, bool):
-                return _parse_bool(env_val)
-            if isinstance(default, int):
-                return _parse_int(env_val)
-            if isinstance(default, float):
-                return _parse_float(env_val)
-            return env_val
+                resolved = parser(env_val)
+            elif isinstance(default, bool):
+                resolved = _parse_bool(env_val)
+            elif isinstance(default, int):
+                resolved = _parse_int(env_val)
+            elif isinstance(default, float):
+                resolved = _parse_float(env_val)
+            else:
+                resolved = env_val
+            # OWASP A05-002: an env override that DISABLES an
+            # integrity-critical flag silently weakens crash-consistency /
+            # data-integrity guarantees. Surface it loudly.
+            if env_key in _INTEGRITY_CRITICAL_FLAGS and resolved is False:
+                logger.warning(
+                    "SECURITY: integrity-critical flag %s overridden via env to "
+                    "disabled — crash-consistency / integrity guarantees are being "
+                    "downgraded. This bypasses the saga write path, CRDT merge "
+                    "safety, the CQRS write journal, and/or quality gates.",
+                    env_key,
+                )
+            return resolved
         except (ValueError, TypeError) as e:
             # 2026-06-22 (C7 fix): warn instead of silently swallowing
             # so the operator can see the typo.
@@ -294,6 +327,10 @@ class MemoryConfig:
     reranker_disabled: bool = (
         False  # Qwen3-0.6B primary, BGE-m3 fallback (MPS-safe, verified 2026-06-15)
     )
+    # OWASP LLM03-001: allow trust_remote_code when loading local HuggingFace
+    # models. Off by default — executing arbitrary code from a model repo is a
+    # supply-chain risk. Only enable for trusted, self-hosted model_weights.
+    llm_allow_remote_code: bool = False
     deep_rerank_timeout: float = 30.0  # seconds; wall-clock kill for the deep rerank subprocess (2026-06-19 MPS hang). 0 = in-process, no kill.
     contextual_retrieval: bool = True
     contextual_enrichment: bool = True
@@ -440,6 +477,9 @@ class MemoryConfig:
     api_listen_host: str = "127.0.0.1"
     api_listen_port: int = 9878
     api_token: str = ""
+    api_insecure_loopback: bool = False
+    # dashboard (Streamlit) bind address — default loopback only; never 0.0.0.0
+    dashboard_address: str = "127.0.0.1"
     # auto-save hook (backoff / circuit breaker)
     # When tool_complete() fails, retry with exponential backoff and trip
     # a circuit breaker after N failures within the cooldown window.
@@ -663,6 +703,13 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         reranker_disabled=_b(
             "MEMORY_RERANKER_DISABLED",
             "search.reranker_disabled",
+            False,
+            bool,
+            toml_data,
+        ),
+        llm_allow_remote_code=_b(
+            "MEMORY_LLM_ALLOW_REMOTE_CODE",
+            "features.llm_allow_remote_code",
             False,
             bool,
             toml_data,
@@ -1177,6 +1224,20 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         api_token=_b(
             "MEMORY_API_TOKEN", "api.token", "", str, toml_data
         ),
+        api_insecure_loopback=_b(
+            "MEMORY_API_INSECURE_LOOPBACK",
+            "api.insecure_loopback",
+            False,
+            bool,
+            toml_data,
+        ),
+        dashboard_address=_b(
+            "MEMORY_DASHBOARD_ADDRESS",
+            "api.dashboard_address",
+            "127.0.0.1",
+            str,
+            toml_data,
+        ),
         # --- auto_save ---
         auto_save_max_retries=_b(
             "MEMORY_AUTO_SAVE_MAX_RETRIES", "auto_save.max_retries", 3, int, toml_data
@@ -1561,6 +1622,12 @@ def get_feature_flags() -> dict:
             cfg.reranker_disabled,
             "MEMORY_RERANKER_DISABLED",
             "search.reranker_disabled",
+            False,
+        ),
+        "llm_allow_remote_code": _flag(
+            cfg.llm_allow_remote_code,
+            "MEMORY_LLM_ALLOW_REMOTE_CODE",
+            "features.llm_allow_remote_code",
             False,
         ),
         "contextual_retrieval": _flag(

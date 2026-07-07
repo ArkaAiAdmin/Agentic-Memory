@@ -236,10 +236,22 @@ def memory_search(
     return resolution_note + "No memories matched the query."
 
 
+# A10-002: cap query length before it is passed to the subprocess as a CLI
+# argument, preventing oversized/abusive inputs from propagating to the shell.
+MAX_QUERY_LENGTH = 4096
+
+
 @mcp.tool()
 @with_audit("memory_semantic_search")
 def memory_semantic_search(query: str, limit: int = 5) -> str:
     """Semantic search using embeddings alongside FTS5."""
+
+    if len(query) > MAX_QUERY_LENGTH:
+        return _err(
+            ErrorCode.INVALID_PARAMS,
+            f"Query too long ({len(query)} chars; max {MAX_QUERY_LENGTH}). "
+            f"Truncate the query and retry.",
+        )
 
     script = GLOBAL_SCRIPTS_DIR / "embedding_search.py"
     if not script.exists():

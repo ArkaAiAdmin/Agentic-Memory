@@ -308,6 +308,31 @@ def verify_checksums(conn: AnyConnection) -> list[tuple[int, str, str, str]]:
     return mismatches
 
 
+def _enforce_checksum_integrity(conn: AnyConnection) -> None:
+    """Verify stored checksums of applied migrations against current files.
+
+    On subsequent runs, every already-applied migration file is hashed and
+    compared to the SHA256 recorded when it was applied. If any file has
+    been modified (tampered, edited, or rolled back incompletely), this
+    raises a ``RuntimeError`` and refuses to apply further migrations until
+    the schema integrity is restored. This is the OWASP A08-002 control.
+    """
+    mismatches = verify_checksums(conn)
+    if mismatches:
+        lines = [
+            f"  {num:03d} {fname}: stored={stored} current={actual}"
+            for num, fname, stored, actual in mismatches
+        ]
+        raise RuntimeError(
+            "Migration checksum verification FAILED. The following applied "
+            "migration file(s) no longer match the SHA256 recorded when they "
+            "were applied:\n"
+            + "\n".join(lines)
+            + "\nRefusing to apply further migrations. Restore the original "
+            "migration file(s), or roll back and re-apply them cleanly."
+        )
+
+
 def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
     """Apply all pending migrations.
 
@@ -370,6 +395,11 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
 
     # Step 3: Read applied migrations
     applied = _get_applied_migrations(conn)
+
+    # Step 3.5: Integrity gate — refuse to apply further migrations if any
+    # already-applied migration file's SHA256 no longer matches the stored
+    # checksum (OWASP A08-002).
+    _enforce_checksum_integrity(conn)
 
     # Step 4: Discover available migrations
     available = _get_available_migrations()

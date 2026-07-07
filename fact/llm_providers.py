@@ -71,6 +71,46 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Pinned to an explicit commit hash (OWASP LLM03-001): never load a HuggingFace
+# model from a moving branch ref like "main". SHA is the current HEAD of the
+# model repo (verified via the HuggingFace Hub API "sha" field). The model id
+# itself is configurable via MEMORY_LLM_EXTRACTION_MODEL_ID, but the revision
+# must always be an immutable commit hash, not a branch name.
+EXTRACTION_REVISION = "aa8e72537993ba99e69dfaafa59ed015b17504d1"
+
+# Environment/config override for the pinned revision, in case an operator
+# needs to pin to a different immutable commit. Empty = use EXTRACTION_REVISION.
+EXTRACTION_REVISION_ENV = "MEMORY_LLM_EXTRACTION_REVISION"
+
+
+def _extraction_revision() -> str:
+    """Return the pinned commit hash to load the extraction model from."""
+    return os.environ.get(EXTRACTION_REVISION_ENV, "") or EXTRACTION_REVISION
+
+
+def _allow_remote_code() -> bool:
+    """Return whether trust_remote_code is permitted for local HF models.
+
+    OWASP LLM03-001: enabling remote code execution runs arbitrary code from
+    the model repo at load time. It is OFF by default and must be explicitly
+    opted in via the ``llm_allow_remote_code`` config key (env
+    MEMORY_LLM_ALLOW_REMOTE_CODE / config features.llm_allow_remote_code).
+    """
+    env = os.environ.get("MEMORY_LLM_ALLOW_REMOTE_CODE", "").strip().lower()
+    if env in ("1", "true", "yes", "on"):
+        return True
+    if env in ("0", "false", "no", "off", ""):
+        if env == "":
+            # Fall back to the system config flag if present.
+            try:
+                from config import get_config
+
+                return bool(get_config().llm_allow_remote_code)
+            except Exception:
+                return False
+        return False
+    return False
+
 
 # ---------------------------------------------------------------------------
 # Base interface
@@ -347,12 +387,20 @@ class HuggingFaceProvider(BaseLLMProvider):
                     else:
                         self.device = "cpu"
                 self._tokenizer = AutoTokenizer.from_pretrained(
-                    self.model_id, trust_remote_code=True
-                )
-                model_loaded: Any = AutoModelForCausalLM.from_pretrained(
                     self.model_id,
-                    dtype=torch.float16,
-                    trust_remote_code=True,
+                    revision=_extraction_revision(),
+                )
+                model_kwargs: dict[str, Any] = {
+                    "dtype": torch.float16,
+                    "revision": _extraction_revision(),
+                }
+                # trust_remote_code executes arbitrary code from the model
+                # repo; only enable it when explicitly opted in (OWASP
+                # LLM03-001). Default is False.
+                if _allow_remote_code():
+                    model_kwargs["trust_remote_code"] = True
+                model_loaded: Any = AutoModelForCausalLM.from_pretrained(
+                    self.model_id, **model_kwargs
                 )
                 self._model = model_loaded.to(self.device).eval()
                 self._resolved_device = self.device

@@ -54,6 +54,12 @@ from save.pipeline import SaveRequest
 
 logger = logging.getLogger(__name__)
 
+# Maximum journal DB size (bytes). When the on-disk journal DB (including
+# its WAL/SHM sidecars) exceeds this, the enqueue/init guards prune applied
+# entries or refuse new enqueues to prevent unbounded growth
+# (OWASP LLM10-001). Configurable module constant.
+JOURNAL_MAX_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
+
 # Thread-local connections to the journal DB — zero lock contention.
 _local = threading.local()
 
@@ -63,14 +69,15 @@ def _get_journal_conn(journal_path: Path, timeout: float = 10.0) -> sqlite3.Conn
     key = str(journal_path)
     if not hasattr(_local, "conns"):
         _local.conns = {}
-    conn = _local.conns.get(key)
+    conn: sqlite3.Connection | None = _local.conns.get(key)
     if conn is None:
-        conn = sqlite3.connect(str(journal_path), timeout=timeout)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.row_factory = sqlite3.Row
-        _local.conns[key] = conn
+        new_conn: sqlite3.Connection = sqlite3.connect(str(journal_path), timeout=timeout)
+        new_conn.execute("PRAGMA journal_mode=WAL")
+        new_conn.execute("PRAGMA busy_timeout=5000")
+        new_conn.execute("PRAGMA synchronous=NORMAL")
+        new_conn.row_factory = sqlite3.Row
+        _local.conns[key] = new_conn
+        conn = new_conn
     return conn
 
 
@@ -116,6 +123,90 @@ def init_journal_db(journal_path: Path) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_journal_status ON write_journal(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_journal_agent ON write_journal(agent_id)")
     conn.commit()
+    # Size guard: prune applied entries if the DB has grown past the limit.
+    _enforce_journal_size_limit(journal_path, conn=conn)
+
+
+def _journal_file_size(journal_path: Path) -> int:
+    """Return current on-disk size of the journal DB + WAL/SHM sidecars."""
+    total = 0
+    for suffix in ("", "-wal", "-shm"):
+        sidecar = journal_path.parent / (journal_path.name + suffix)
+        try:
+            total += sidecar.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def _enforce_journal_size_limit(
+    journal_path: Path,
+    conn: sqlite3.Connection | None = None,
+    size_limit: int = JOURNAL_MAX_SIZE_BYTES,
+) -> None:
+    """Keep the journal DB under ``size_limit`` by pruning applied entries.
+
+    Oldest applied entries are deleted first (safe to drop — they have
+    already been materialized into the main DB by the daemon). This never
+    touches pending/processing rows, so the lock-free enqueue design is
+    preserved. Stops when under ``size_limit`` or when no applied rows
+    remain.
+    """
+    if _journal_file_size(journal_path) <= size_limit:
+        return
+    local_conn = conn if conn is not None else _get_journal_conn(journal_path)
+    deleted = 0
+    while _journal_file_size(journal_path) > size_limit:
+        cur = local_conn.execute(
+            "SELECT id FROM write_journal WHERE status='applied' "
+            "AND processed_at IS NOT NULL ORDER BY processed_at ASC LIMIT 500"
+        ).fetchall()
+        if not cur:
+            break
+        ids = [r["id"] for r in cur]
+        placeholders = ",".join("?" * len(ids))
+        local_conn.execute(
+            f"DELETE FROM write_journal WHERE id IN ({placeholders})", ids
+        )
+        deleted += len(ids)
+    if deleted:
+        local_conn.commit()
+        logger.info("write_journal: pruned %d applied entries to stay under size limit", deleted)
+
+
+def materialize_security_scan(content: str, category: str, title_slug: str) -> None:
+    """Re-run prompt-injection validation on a journal entry before the
+    reconciliation daemon materializes it into the main memory DB.
+
+    The enqueue path (``save_memory_journal``) already scans content once,
+    but a journal entry can sit ``pending`` for a long time and the rule set
+    or model can change in the meantime, so we re-validate at materialization
+    time. Raises :class:`SaveValidationError` to quarantine the entry
+    (``mark_failed`` inside ``materialize_journal_entry``) when it fails.
+
+    Fails closed: if the scanner itself raises a non-validation error the
+    exception propagates and the entry is quarantined rather than persisted.
+    """
+    from infra._lazy_imports import scan_for_injection
+    from save.pipeline import SaveValidationError, ErrorCode
+
+    inj = scan_for_injection(content)
+    if inj["is_suspicious"] and inj["risk_score"] >= 0.5:
+        raise SaveValidationError(
+            ErrorCode.INJECTION_DETECTED,
+            f"Journal entry rejected: injection risk score {inj['risk_score']:.2f} "
+            f"(category: {inj['category']}). "
+            f"If this is legitimate, rephrase to avoid instruction-like patterns.",
+        )
+    elif inj["is_suspicious"]:
+        logger.info(
+            "write_journal: low-risk injection patterns in %s/%s "
+            "(risk_score=%.2f, matches=%s) — allowing materialization",
+            category,
+            title_slug,
+            inj["risk_score"],
+            inj["matches"],
+        )
 
 
 def _note_id(category: str, title_slug: str) -> str:
@@ -149,6 +240,21 @@ def enqueue_write(
     """
     note_id = f"{req.category}/{req.title_slug}"
     conn = _get_journal_conn(journal_path)
+    # Size guard: refuse new enqueues if the journal DB is still over the
+    # limit after pruning applied entries. This bounds disk usage and
+    # surfaces the condition with a clear error instead of silently
+    # growing without bound (OWASP LLM10-001).
+    if _journal_file_size(journal_path) > JOURNAL_MAX_SIZE_BYTES:
+        _enforce_journal_size_limit(journal_path, conn=conn)
+        if _journal_file_size(journal_path) > JOURNAL_MAX_SIZE_BYTES:
+            current = _journal_file_size(journal_path)
+            raise RuntimeError(
+                f"write_journal is full: size {current} bytes exceeds "
+                f"JOURNAL_MAX_SIZE_BYTES ({JOURNAL_MAX_SIZE_BYTES}). "
+                "Refusing new enqueue. Drain pending entries via the "
+                "reconciliation daemon, raise JOURNAL_MAX_SIZE_BYTES, or "
+                "rebuild the journal DB."
+            )
     conn.execute(
         """INSERT OR IGNORE INTO write_journal
            (note_id, agent_id, category, title_slug, content, tags,
