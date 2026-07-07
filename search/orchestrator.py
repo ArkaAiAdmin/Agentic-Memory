@@ -1045,8 +1045,9 @@ def _enhance_with_chunks(
                 )
             )
             seen_ids.add(parent_id)
-    except Exception:
-        pass
+    except Exception as _chunk_exc:
+        _phase_inc("search.chunk_enhancement", _chunk_exc)
+        logger.debug("chunk_enhancement failed: %s", _chunk_exc)
     return results
 
 
@@ -2012,6 +2013,10 @@ def search_memories(
                         limit * 3 if _effective_rerank else limit,
                         has_fitness, repo_filter, category=category or None,
                     )
+                except Exception as _fts_exc:
+                    _phase_inc("search.fts", _fts_exc)
+                    logger.debug("fts_worker failed: %s", _fts_exc)
+                    return []
                 finally:
                     connection_pool.put(conn)
 
@@ -2025,6 +2030,10 @@ def search_memories(
                         epistemic_source=epistemic_source,
                         fact_type=fact_type,
                     )
+                except Exception as _kg_exc:
+                    _phase_inc("search.kg_facts", _kg_exc)
+                    logger.debug("kg_worker failed: %s", _kg_exc)
+                    return []
                 finally:
                     connection_pool.put(conn)
 
@@ -2142,18 +2151,39 @@ def search_memories(
 
         # Phase 9: Reranking
         _t0 = time.time()
-        results_to_display, _search_ctr_weights = _rerank_results(
-            results=results,
-            query=query,
-            db_path=db_path,
-            has_fitness=has_fitness,
-            rerank=_effective_rerank,
-            boost_pinned=boost_pinned if not light else False,
-            recency_weight=recency_weight,
-            limit=limit,
-            deep_rerank=deep_rerank,
-            as_of=as_of,
-        )
+        try:
+            results_to_display, _search_ctr_weights = _rerank_results(
+                results=results,
+                query=query,
+                db_path=db_path,
+                has_fitness=has_fitness,
+                rerank=_effective_rerank,
+                boost_pinned=boost_pinned if not light else False,
+                recency_weight=recency_weight,
+                limit=limit,
+                deep_rerank=deep_rerank,
+                as_of=as_of,
+            )
+        except Exception as _rerank_exc:
+            _phase_inc("search.rerank", _rerank_exc)
+            logger.warning(
+                "rerank degraded (falling back to FTS-ranked results): %s", _rerank_exc
+            )
+            _search_ctr_weights = None
+            if has_fitness and _effective_rerank:
+                last_accessed_col = results[0][9] if results and len(results[0]) > 9 else None
+                metadata_col = results[0][10] if results and len(results[0]) > 10 else None
+                access_count = results[0][11] if results and len(results[0]) > 11 else 1
+                results_to_display = [
+                    (
+                        r[0], r[1], r[2], r[3], r[4], r[5],
+                        -r[5], None, None, None,
+                        last_accessed_col, metadata_col, access_count, None,
+                    )
+                    for r in results
+                ]
+            else:
+                results_to_display = list(results)
         _record_phase_latency("rerank", _t0)
 
         # Phase 10: Build output

@@ -24,15 +24,182 @@ from mcp_common import (
 )
 from mcp_instance import mcp
 from search_pipeline import search_memories as _search_memories_impl
-from search_pipeline import _bb2_resolve, _bb2_record_turn
+from search_pipeline import (
+    _bb2_resolve,
+    _bb2_record_turn,
+    _reciprocal_rank_fusion,
+)
+import json as _json
+
+
+def _search_row_to_item(r) -> dict:
+    """Convert a raw result tuple (results_to_display) to a result-items dict."""
+    tags_json = r[3]
+    try:
+        tags = _json.loads(tags_json) if tags_json else []
+    except Exception:
+        tags = []
+    metadata_json = r[11] if len(r) > 11 else None
+    auto_summary = None
+    if metadata_json:
+        try:
+            meta = (
+                _json.loads(metadata_json)
+                if isinstance(metadata_json, str)
+                else metadata_json
+            )
+            if meta and meta.get("auto_summary"):
+                auto_summary = meta["auto_summary"]
+        except Exception:
+            pass
+    return {
+        "id": r[0],
+        "content": r[1],
+        "source_file": r[2],
+        "tags": tags,
+        "created": r[4],
+        "rank": r[5],
+        "final_score": r[6],
+        "fitness_score": r[7],
+        "importance": r[8],
+        "pinned": r[9],
+        "backlinks": [],
+        "last_accessed": r[10] if len(r) > 10 else None,
+        "summary": auto_summary,
+    }
+
+
+def _format_merged_results(merged_rtd, query: str, rerank: bool) -> tuple[str, list[dict]]:
+    """Format raw merged result tuples into (output_string, result_items).
+
+    Inline version of the formatting steps from _build_result_items +
+    _format_search_results.  Avoids importing _build_result_items (which
+    would trigger a circular module-init path).
+    """
+    result_items = [_search_row_to_item(r) for r in merged_rtd]
+    output_lines = [
+        f"Search results for: '{query}' (Re-ranked)"
+        if rerank
+        else f"Search results for: '{query}'"
+    ]
+    for i, r in enumerate(merged_rtd, 1):
+        (
+            note_id,
+            content,
+            source_file,
+            tags_json,
+            created,
+            rank,
+            final_score,
+            fitness_score,
+            importance_val,
+            pinned,
+        ) = r[:10]
+        try:
+            tags = _json.loads(tags_json) if tags_json else []
+        except Exception:
+            tags = []
+        tags_str = ", ".join(tags) if tags else "none"
+        score_info = (
+            f"(Relevance: {final_score:.2f})" if rerank else f"(Rank: {-rank:.2f})"
+        )
+        if fitness_score is not None:
+            score_info += f" | Fitness: {fitness_score:.2f} | Importance: {importance_val} | Pinned: {('yes' if pinned else 'no')}"
+        output_lines.append(
+            f"[{i}] {note_id} {score_info}\n"
+            f"    Source: memory/{source_file}\n"
+            f"    Tags: {tags_str}\n"
+            f"    Backlinks: none\n"
+            f"    Created: {created}\n"
+            f"    Content:\n    {content.strip()}"
+        )
+    return "\n".join(output_lines), result_items
+
+
+def _rrf_fuse_local_global(
+    local_raw: list,
+    global_raw: list,
+    k: int = 60,
+) -> tuple[list[str], dict]:
+    """RRF-fuse local and global raw_results into a single merged ranking.
+
+    Returns (merged_ids, rrf_scores) where merged_ids is ordered by
+    descending RRF score.  Falls back to local-only if global is empty.
+    """
+    def _ordered_ids(raw):
+        seen: set = set()
+        ordered: list = []
+        for r_item in raw:
+            doc_id = r_item[0] if r_item else None
+            if doc_id is None or doc_id in seen:
+                continue
+            seen.add(doc_id)
+            ordered.append(doc_id)
+        return ordered
+
+    local_ids = _ordered_ids(local_raw)
+    global_ids = _ordered_ids(global_raw)
+    if not local_ids and not global_ids:
+        return [], {}
+    if not global_ids:
+        return local_ids, {}
+    if not local_ids:
+        return global_ids, {}
+    rrf = _reciprocal_rank_fusion([local_ids, global_ids], k=k)
+    sorted_ids = sorted(rrf, key=lambda doc_id: rrf.get(doc_id, 0.0), reverse=True)
+    return sorted_ids, rrf
+
+
+def _rebuild_output_for_ids(
+    merged_ids: list[str],
+    local_results: dict,
+    global_results: dict,
+    local_db,
+    global_db,
+    query: str,
+    rerank: bool,
+    limit: int,
+) -> tuple[str, list[dict]] | None:
+    """Build merged output string + result_items for the given ordered IDs.
+
+    Maps merged_ids back to raw results from both searches, formats output
+    in RRF order.  Returns None on failure (caller falls back to
+    concatenation path).
+    """
+    if not merged_ids:
+        return None
+    id_to_raw: dict = {}
+    for r_item in local_results.get("raw_results", []):
+        if r_item and r_item[0]:
+            id_to_raw.setdefault(r_item[0], r_item)
+    for r_item in global_results.get("raw_results", []):
+        if r_item and r_item[0]:
+            id_to_raw.setdefault(r_item[0], r_item)
+
+    merged_rtd: list = []
+    seen_rtd: set = set()
+    for doc_id in merged_ids:
+        if doc_id in seen_rtd:
+            continue
+        raw = id_to_raw.get(doc_id)
+        if raw is None:
+            continue
+        merged_rtd.append(raw)
+        seen_rtd.add(doc_id)
+        if len(merged_rtd) >= limit:
+            break
+
+    if not merged_rtd:
+        return None
+    try:
+        return _format_merged_results(merged_rtd, query, rerank)
+    except Exception:
+        return None
+
 
 # B1 fix (2026-06-22): alias the canonical implementation so
 # ``from mcp_search import search_memories`` resolves to the same
 # function object as ``from search_pipeline import search_memories``.
-# Earlier this module re-implemented the wrapper in-place (with the
-# same signature), which silently shadowed any monkey-patch applied to
-# the canonical function. The two definitions were identical but the
-# identity wasn't shared, breaking ``is`` checks in tests.
 search_memories = _search_memories_impl
 
 
@@ -71,6 +238,18 @@ def _record_spaced_repetition(db_path: Path, result_items: list, query: str) -> 
 # function object. Earlier this was a fresh function with the same
 # signature, so identity checks (``is``) in tests silently failed and
 # monkey-patches applied to the canonical function were bypassed.
+
+
+# R1: shared query-length cap for both memory_search and
+# memory_semantic_search (was previously only in memory_semantic_search).
+MAX_QUERY_LENGTH = 4096
+
+
+def _cap_query(query: str) -> str:
+    """Return query truncated to MAX_QUERY_LENGTH chars."""
+    if len(query) > MAX_QUERY_LENGTH:
+        return query[:MAX_QUERY_LENGTH]
+    return query
 
 
 @with_audit("memory_search")
@@ -118,6 +297,14 @@ def memory_search(
     RETURNS:
     A human-readable formatted string listing the ranked memories, their content, category, tags, and related facts.
     """
+    # R1: gate query length before any processing
+    if len(query) > MAX_QUERY_LENGTH:
+        return _err(
+            ErrorCode.INVALID_PARAMS,
+            f"Query too long ({len(query)} chars; max {MAX_QUERY_LENGTH}). "
+            f"Truncate the query and retry.",
+        )
+
     resolution_note = ""
     expanded_query = query
     try:
@@ -128,6 +315,10 @@ def memory_search(
     except Exception as exc:
         logger.debug("BB2 resolve failed for %r: %s", query, exc)
         expanded_query = query
+
+    # R1: re-cap after BB2 expansion (expansion can grow the query)
+    expanded_query = _cap_query(expanded_query)
+
     active_dir = _resolve_memory_dir()
     if os.environ.get("MEMORY_DB_PATH"):
         local_mem = active_dir
@@ -185,8 +376,44 @@ def memory_search(
             )
         except Exception as exc:
             logger.warning("Global search failed for query %r: %s", expanded_query, exc)
-            global_results = {"results": [], "count": 0, "output": ""}
-        if global_results["count"] > 0:
+            global_results = {"results": [], "count": 0, "output": "", "raw_results": []}
+
+        if global_results.get("count", 0) > 0:
+            # R3: RRF-blend the two result sets instead of concatenating.
+            # This prevents a local document ranked #1 and a global document
+            # also ranked #1 from both appearing at the top; RRF merges the
+            # union into a single unified relevance ranking.
+            local_raw = local_results.get("raw_results", [])
+            global_raw = global_results.get("raw_results", [])
+            merged_ids, _rrf_scores = _rrf_fuse_local_global(local_raw, global_raw)
+            fused_output = None
+            if merged_ids:
+                fused_output = _rebuild_output_for_ids(
+                    merged_ids=merged_ids,
+                    local_results=local_results,
+                    global_results=global_results,
+                    local_db=local_db,
+                    global_db=global_db,
+                    query=query,
+                    rerank=rerank,
+                    limit=limit,
+                )
+            if fused_output is not None:
+                out, merged_items = fused_output
+                try:
+                    _bb2_record_turn(
+                        query,
+                        local_raw + global_raw,
+                    )
+                except Exception as exc:
+                    logger.debug("BB2 record_turn failed: %s", exc)
+                _record_spaced_repetition(
+                    local_db if local_db.exists() else global_db,
+                    merged_items or local_results.get("results", []) + global_results.get("results", []),
+                    query,
+                )
+                return (resolution_note + out) if resolution_note else out
+            # Fusion failed — fall back to the original concatenation path
             sep = (
                 "\n\n---\nGLOBAL MEMORY RESULTS:\n"
                 if local_results["output"]
@@ -234,11 +461,6 @@ def memory_search(
         query,
     )
     return resolution_note + "No memories matched the query."
-
-
-# A10-002: cap query length before it is passed to the subprocess as a CLI
-# argument, preventing oversized/abusive inputs from propagating to the shell.
-MAX_QUERY_LENGTH = 4096
 
 
 @mcp.tool()

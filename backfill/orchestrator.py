@@ -186,20 +186,20 @@ def health_check(db_path: str | Path | None = None) -> dict:
                     reason = "empty — needs backfill"
                 elif (
                     table == "memory_vec_keys"
-                    and memories_count > 0
-                    and count != memories_count
+                    and active_count > 0
+                    and count != active_count
                 ):
                     ok = False
                     reason = (
-                        f"mismatch: {count} keys vs {memories_count} total memories"
+                        f"mismatch: {count} keys vs {active_count} active memories"
                     )
                 elif (
                     table == "memory_embeddings"
-                    and memories_count > 0
-                    and count != memories_count
+                    and active_count > 0
+                    and count != active_count
                 ):
                     ok = False
-                    reason = f"mismatch: {count} embeddings vs {memories_count} total memories"
+                    reason = f"mismatch: {count} embeddings vs {active_count} active memories"
                 elif (
                     table == "memories_fts"
                     and active_count > 0

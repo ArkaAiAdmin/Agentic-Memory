@@ -215,7 +215,9 @@ def rebuild_vec_index(db_path, *, force: bool = False) -> dict:
         conn = _open_db_for_rebuild(db_path)
         try:
             _ensure_schema(conn)
-            memory_rows = conn.execute("SELECT id, content FROM memories").fetchall()
+            memory_rows = conn.execute(
+                "SELECT id, content FROM memories WHERE deleted_at IS NULL"
+            ).fetchall()
             cached = _load_cached_embeddings(conn)
         finally:
             safe_close_db(conn)
