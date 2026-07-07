@@ -79,6 +79,17 @@ def clear_vec_cache() -> None:
         _vec_cache.clear()
 
 
+def reset_embedding_search() -> None:
+    """Drop the EmbeddingSearch singleton so the next get_embedding_search()
+    call creates a fresh instance that re-reads env vars + config.
+
+    Useful for tests that change MEMORY_EMBEDDING_* env vars mid-process
+    and need the new settings picked up.
+    """
+    global _es_singleton
+    _es_singleton = None
+
+
 __all__ = [
     "MODEL_ID",
     "MODEL_REVISION",
@@ -285,6 +296,7 @@ class EmbeddingSearch:
         self.model = None
         self.np = None
         self.is_transformer = False
+        self._model_revision = MODEL_REVISION  # resolved at _load_model time
         # Per-process cache of loaded usearch Indexes. Keyed by db_path;
         # value is (Index, meta_dict). The cache is invalidated when the
         # singleton row's built_at or blob length changes (i.e. a rebuild
@@ -358,10 +370,13 @@ class EmbeddingSearch:
                 if cfg_model_id and not os.environ.get("MEMORY_EMBEDDING_MODEL_ID"):
                     model_id = cfg_model_id
 
-            model_revision = os.environ.get(
-                "MEMORY_EMBEDDING_MODEL_REVISION",
-                getattr(cfg, "embedding_model_revision", "") or MODEL_REVISION if cfg is not None else MODEL_REVISION,
-            )
+            model_revision = os.environ.get("MEMORY_EMBEDDING_MODEL_REVISION")
+            if model_revision is None:
+                model_revision = getattr(cfg, "embedding_model_revision", "")
+            # "auto"/empty → None: let HuggingFace Hub pick the default branch.
+            # Only a non-empty explicit value overrides the default.
+            if not model_revision:
+                model_revision = None
 
             if backend == "model2vec":
                 from model2vec import StaticModel
@@ -379,6 +394,7 @@ class EmbeddingSearch:
                 self.model = SentenceTransformer(model_id, revision=model_revision or None)
                 self.model.dim = self.model.get_sentence_embedding_dimension()
                 self.is_transformer = True
+                self._model_revision = model_id  # sentence-transformers: model_id is the authority
             elif backend == "transformers":
                 from transformers import AutoTokenizer, AutoModel
                 model_kwargs: dict[str, Any] = {}
@@ -388,6 +404,7 @@ class EmbeddingSearch:
                 model = AutoModel.from_pretrained(model_id, **model_kwargs)
                 self.model = _TransformerModelWrapper(tokenizer, model)
                 self.is_transformer = True
+                self._model_revision = model_id  # transformers: model_id is the authority
             else:
                 if "potion" in model_id or "model2vec" in model_id:
                     from model2vec import StaticModel
@@ -406,12 +423,14 @@ class EmbeddingSearch:
                         self.model = SentenceTransformer(model_id)
                         self.model.dim = self.model.get_sentence_embedding_dimension()
                         self.is_transformer = True
+                        self._model_revision = model_id  # sentence-transformers path: model_id is the authority
                     except ImportError:
                         from transformers import AutoTokenizer, AutoModel
                         tokenizer = AutoTokenizer.from_pretrained(model_id)
                         model = AutoModel.from_pretrained(model_id)
                         self.model = _TransformerModelWrapper(tokenizer, model)
                         self.is_transformer = True
+                        self._model_revision = model_id  # transformers backstop: model_id is the authority
             self._model_loaded = True
         except Exception as e:
             logger.error("Failed to load embedding model [%s]: %s", backend, e)
@@ -505,7 +524,7 @@ class EmbeddingSearch:
             existing = db.execute(
                 "SELECT 1 FROM memory_embeddings "
                 "WHERE content_hash = ? AND model_revision = ?",
-                (chash, MODEL_REVISION),
+                (chash, getattr(self, "_model_revision", MODEL_REVISION)),
             ).fetchone()
             if existing:
                 return
@@ -518,7 +537,7 @@ class EmbeddingSearch:
                     memory_id,
                     chash,
                     vec.tobytes(),
-                    MODEL_REVISION,
+                    getattr(self, "_model_revision", MODEL_REVISION),
                     int(self.model.dim),
                     time.time(),
                 ),
@@ -581,7 +600,7 @@ class EmbeddingSearch:
                     mid,
                     ch,
                     vec.tobytes(),
-                    MODEL_REVISION,
+                    getattr(self, "_model_revision", MODEL_REVISION),
                     int(self.model.dim),
                     time.time(),
                 )
@@ -869,7 +888,7 @@ class EmbeddingSearch:
             chash = _content_hash(text)
             entry = cached.get(mid)
             vec = None
-            if entry is not None and entry[0] == chash and entry[2] == MODEL_REVISION:
+            if entry is not None and entry[0] == chash and entry[2] == getattr(self, "_model_revision", MODEL_REVISION):
                 try:
                     v = self.np.frombuffer(entry[1], dtype=self.np.float32)
                     if v.size == dim:
@@ -915,7 +934,7 @@ class EmbeddingSearch:
                         "(memory_id, content_hash, embedding, model_revision, dim, updated_at) "
                         "VALUES (?, ?, ?, ?, ?, ?)",
                         [
-                            (mid, chash, vec.tobytes(), MODEL_REVISION, dim, now)
+                            (mid, chash, vec.tobytes(), getattr(self, "_model_revision", MODEL_REVISION), dim, now)
                             for mid, chash, vec, dim in to_save
                         ],
                     )
@@ -975,7 +994,7 @@ class EmbeddingSearch:
             text = _cache_text(content)
             chash = _content_hash(text)
             entry = cached.get(mid)
-            if entry is not None and entry[0] == chash and entry[2] == MODEL_REVISION:
+            if entry is not None and entry[0] == chash and entry[2] == getattr(self, "_model_revision", MODEL_REVISION):
                 # Cache hit: load bytes straight into a 1-D float32 vector.
                 vec = self.np.frombuffer(entry[1], dtype=self.np.float32)
                 if vec.size != self.model.dim:
@@ -1015,7 +1034,7 @@ class EmbeddingSearch:
                             "(memory_id, content_hash, embedding, model_revision, dim, updated_at) "
                             "VALUES (?, ?, ?, ?, ?, ?)",
                             [
-                                (mid, chash, vec.tobytes(), MODEL_REVISION, dim, now)
+                                (mid, chash, vec.tobytes(), getattr(self, "_model_revision", MODEL_REVISION), dim, now)
                                 for mid, chash, vec, dim in to_save
                             ],
                         )
@@ -1316,7 +1335,7 @@ class EmbeddingSearch:
                     c["parent_id"],
                     ch,
                     vec.tobytes(),
-                    MODEL_REVISION,
+                    getattr(self, "_model_revision", MODEL_REVISION),
                     int(self.model.dim),
                     now,
                 )
@@ -1332,7 +1351,7 @@ class EmbeddingSearch:
                         c["parent_id"],
                         ch,
                         vec.tobytes(),
-                        MODEL_REVISION,
+                        getattr(self, "_model_revision", MODEL_REVISION),
                         int(self.model.dim),
                         now,
                     )

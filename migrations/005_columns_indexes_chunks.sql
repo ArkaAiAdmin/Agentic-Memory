@@ -16,6 +16,25 @@ ALTER TABLE memories ADD COLUMN category TEXT;
 ALTER TABLE memories ADD COLUMN tier TEXT;
 ALTER TABLE memories ADD COLUMN importance_score REAL;
 ALTER TABLE memories ADD COLUMN metadata TEXT;
+ALTER TABLE memories ADD COLUMN repo_id TEXT;
+ALTER TABLE memories ADD COLUMN consolidation_state TEXT DEFAULT 'working';
+ALTER TABLE memories ADD COLUMN pinned INTEGER DEFAULT 0;
+ALTER TABLE memories ADD COLUMN importance INTEGER DEFAULT 3;
+ALTER TABLE memories ADD COLUMN decay TEXT DEFAULT 'none';
+ALTER TABLE memories ADD COLUMN score REAL DEFAULT 1.0;
+ALTER TABLE memories ADD COLUMN supersedes TEXT;
+ALTER TABLE memories ADD COLUMN access_count INTEGER DEFAULT 1;
+ALTER TABLE memories ADD COLUMN success_score REAL DEFAULT 0.0;
+ALTER TABLE memories ADD COLUMN fitness_score REAL DEFAULT 1.0;
+ALTER TABLE memories ADD COLUMN conflict_policy TEXT DEFAULT 'supersede';
+ALTER TABLE memories ADD COLUMN version_vector TEXT DEFAULT '{}';
+ALTER TABLE memories ADD COLUMN logical_clock INTEGER DEFAULT 0;
+ALTER TABLE memories ADD COLUMN observed_at TEXT;
+ALTER TABLE memories ADD COLUMN content TEXT;
+ALTER TABLE memories ADD COLUMN source_file TEXT;
+ALTER TABLE memories ADD COLUMN tags TEXT DEFAULT '[]';
+ALTER TABLE memories ADD COLUMN created_at TEXT;
+ALTER TABLE memories ADD COLUMN updated_at TEXT;
 
 -- === Indexes ===
 CREATE INDEX IF NOT EXISTS idx_memories_repo_id ON memories(repo_id);

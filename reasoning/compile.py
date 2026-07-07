@@ -148,9 +148,9 @@ def infer_entailment_chains(
                 skipped_count += 1
                 continue
 
-            derived_subject = subject
-            derived_predicate = f2_predicate
-            derived_object = f2_object
+            derived_subject = _f2_subject
+            derived_predicate = predicate if f2_predicate == "is_a" else f2_predicate
+            derived_object = obj
             derivation_type = "transitive"
             source_ids_json = json.dumps([fact_id, f2_id])
             to_insert.append({
@@ -158,8 +158,8 @@ def infer_entailment_chains(
                 "predicate": derived_predicate,
                 "object": derived_object,
                 "confidence": round(raw_conf, 4),
-                "subject_entity_id": subj_eid,
-                "object_entity_id": r2[6],
+                "subject_entity_id": r2[5],
+                "object_entity_id": obj_eid,
                 "source_memory": src_mem,
                 "belief_status": "active",
                 "epistemic_source": "inferred",
@@ -171,6 +171,7 @@ def infer_entailment_chains(
                 "confidence": round(raw_conf, 4),
             })
             derived_count += 1
+
 
         # ---- conjunctive inference: f1(X->A) + f1(X->B) -> f2(X related_to B) ----
         subj_key = (subject.strip().lower() if subject else "", subj_eid)
@@ -288,6 +289,8 @@ def infer_entailment_chains(
                 if not derived:
                     continue
                 d_subj, d_pred, d_obj, d_conf = derived
+                if d_pred in _ENTAILMENT_PREDICATES:
+                    continue
                 existing = conn.execute(
                     "SELECT id, confidence FROM kg_facts "
                     "WHERE subject = ? AND predicate = ? AND object != ? "

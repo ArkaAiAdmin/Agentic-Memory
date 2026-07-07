@@ -172,9 +172,10 @@ def _propagate_entailment_invalidation(conn: AnyConnection, superseded_fact_id: 
     """
     try:
         rows = conn.execute(
-            "SELECT id, source_fact_ids, derived_fact_id FROM entailment_chains "
-            "WHERE valid = 1 AND source_fact_ids LIKE ?",
-            (f'%"{superseded_fact_id}"%',),
+            "SELECT ec.id, ec.source_fact_ids, ec.derived_fact_id "
+            "FROM entailment_chains ec, json_each(ec.source_fact_ids) "
+            "WHERE ec.valid = 1 AND json_each.value = ?",
+            (superseded_fact_id,),
         ).fetchall()
     except Exception as exc:
         logger.debug("entailment_invalidation: chain lookup failed: %s", exc)

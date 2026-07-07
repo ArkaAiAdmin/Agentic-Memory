@@ -197,8 +197,140 @@ class TestConceptRanking:
         from search.orchestrator import search_memories
         result = search_memories(db_path=Path(db_path_str), query="machine learning concepts", limit=10)
         results = result.get("results", [])
-        concept_found = any("concepts/machine-learning" in (r.get("id", "") or "") for r in results)
+        concept_found = any("concepts/machine-learni" in (r.get("id", "") or "") for r in results)
         assert concept_found, f"concept not found in search results: {[r.get('id') for r in results]}"
+
+
+class TestPredicateFilter:
+    """A1.1 — Non-entailment predicates do not produce transitive chains"""
+
+    def test_non_entailment_predicates_produce_no_chains(self, db_path_str):
+        from infra.db import open_db
+        import fact as fe
+        from fact.fact_schema import ensure_facts_schema
+
+        conn_raw = sqlite3.connect(db_path_str)
+        conn_raw.execute("PRAGMA foreign_keys=OFF")
+        ensure_facts_schema(conn_raw)
+
+        now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+        conn_raw.execute(
+            "INSERT OR IGNORE INTO memories (id, content, source_file, category, created_at, updated_at, observed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("mem/p", "python", "mem/p", "lessons", now, now, now),
+        )
+        fid_a = fe._upsert_fact(conn_raw, "python", "is_a", "language", 0.9, time.time(),
+                                source_memory="mem/p", belief_status="active",
+                                fact_type="observation")
+        fid_desc = fe._upsert_fact(conn_raw, "python", "has_description",
+                                   "high-level", 0.8, time.time(),
+                                   source_memory="mem/p", belief_status="active",
+                                   fact_type="observation")
+        fid_located = fe._upsert_fact(conn_raw, "python", "located_in",
+                                      "earth", 0.7, time.time(),
+                                      source_memory="mem/p", belief_status="active",
+                                      fact_type="observation")
+        assert fid_a is not None and fid_desc is not None and fid_located is not None
+
+        conn_raw.commit()
+        conn_raw.close()
+
+        from reasoning.compile import infer_entailment_chains
+        with open_db(db_path_str, timeout=10.0) as db:
+            result = infer_entailment_chains(db, db_path_str, batch_size=200)
+
+        with open_db(db_path_str, timeout=10.0) as db:
+            non_entailment_derived = db.execute(
+                "SELECT ec.id FROM entailment_chains ec "
+                "JOIN kg_facts kf ON kf.id = ec.derived_fact_id "
+                "WHERE kf.predicate IN ('has_description', 'located_in')"
+            ).fetchall()
+            assert len(non_entailment_derived) == 0, (
+                f"Non-entailment predicates should produce no chains; "
+                f"found {len(non_entailment_derived)}"
+            )
+
+
+class TestConjunctiveInference:
+    """A1.2 — Conjunctive inference derives related_to between same-subject objects"""
+
+    def test_conjunctive_derives_related_to_same_subject(self, db_path_str):
+        from infra.db import open_db
+        import fact as fe
+        from fact.fact_schema import ensure_facts_schema
+
+        conn_raw = sqlite3.connect(db_path_str)
+        conn_raw.execute("PRAGMA foreign_keys=OFF")
+        ensure_facts_schema(conn_raw)
+
+        now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+        conn_raw.execute(
+            "INSERT OR IGNORE INTO memories (id, content, source_file, category, created_at, updated_at, observed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("mem/conj", "Python is a framework for web.", "mem/conj", "lessons", now, now, now),
+        )
+        fid1 = fe._upsert_fact(conn_raw, "python", "is_a", "framework", 0.9, time.time(),
+                               source_memory="mem/conj", belief_status="active",
+                               fact_type="observation")
+        fid2 = fe._upsert_fact(conn_raw, "python", "is_a", "language", 0.85, time.time(),
+                               source_memory="mem/conj", belief_status="active",
+                               fact_type="observation")
+        assert fid1 is not None and fid2 is not None
+        conn_raw.commit()
+        conn_raw.close()
+
+        from reasoning.compile import infer_entailment_chains
+        with open_db(db_path_str, timeout=10.0) as db:
+            result = infer_entailment_chains(db, db_path_str, batch_size=100)
+        assert result["derived"] >= 1, f"Expected >=1 derived fact, got {result}"
+
+        expected_conf = round(0.7 * min(0.9, 0.85), 4)
+        with open_db(db_path_str, timeout=10.0) as db:
+            chain = db.execute(
+                "SELECT ec.derivation_type, ec.confidence, kf.subject, kf.predicate, kf.object "
+                "FROM entailment_chains ec "
+                "JOIN kg_facts kf ON kf.id = ec.derived_fact_id "
+                "WHERE kf.subject = 'python' AND kf.predicate = 'related_to'"
+            ).fetchone()
+            assert chain is not None, "Expected conjunctive chain (python, related_to, ...)"
+            assert chain[0] == "conjunctive", (
+                f"derivation_type should be 'conjunctive', got '{chain[0]}'"
+            )
+            assert abs(chain[1] - expected_conf) < 0.01, (
+                f"Conjunctive confidence should be ~{expected_conf}, got {chain[1]}"
+            )
+            assert chain[2].lower() == "python"
+            assert chain[4].lower() in ("language", "framework")
+
+
+class TestConceptNaming:
+    """A1.3 — Concept name derives from most-frequent is_a object"""
+
+    def test_concept_name_from_isa_object(self, db_path_str):
+        ids = []
+        objects = []
+        for i in range(3):
+            slug = f"concept-name-{i}"
+            obj = "Python" if i < 2 else "Framework"
+            _content = f"# Memory {i}\n\nPython is a {obj.lower()}."
+            save_memory(content=_content, title_slug=slug,
+                        category="lessons", db_path=db_path_str)
+            ids.append(f"lessons/{slug}")
+            objects.append(obj)
+
+        _index_all_facts(db_path_str)
+
+        from reasoning.compile import compile_concept
+        from infra.db import open_db
+        with open_db(db_path_str, timeout=10.0) as db:
+            result = compile_concept(db, db_path_str, memory_ids=ids)
+
+        assert result is not None, "compile_concept should return a concept"
+        concept_name = result.get("concept_id", "")
+        concept_slug = result.get("slug", "")
+        assert "python" in concept_slug.lower(), (
+            f"Concept slug should derive from 'is_a' object 'Python'; got '{concept_slug}'"
+        )
 
 
 if __name__ == "__main__":

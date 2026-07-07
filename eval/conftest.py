@@ -18,6 +18,21 @@ from pathlib import Path
 
 WORKTREE_ROOT = str(Path(__file__).resolve().parent.parent)
 
+# ---------------------------------------------------------------------------
+# Test embedding config — activates when MEMORY_TEST_EMBEDDING=1
+# ---------------------------------------------------------------------------
+# Set env vars BEFORE any infra module imports so that get_config() picks
+# them up on first call (including from background threads in
+# EmbeddingSearch._load_model).  These are no-ops unless MEMORY_TEST_EMBEDDING=1.
+_TEST_EMBEDDING = os.environ.get("MEMORY_TEST_EMBEDDING", "0") == "1"
+_TEST_MODEL_ID = "intfloat/e5-small-v2"
+
+if _TEST_EMBEDDING:
+    os.environ.setdefault("MEMORY_EMBEDDING_BACKEND", "sentence-transformers")
+    os.environ.setdefault("MEMORY_EMBEDDING_MODEL_ID", _TEST_MODEL_ID)
+    os.environ.setdefault("MEMORY_EMBEDDING_MODEL_REVISION", "")
+
+
 def _should_redirect(p) -> bool:
     p_str = str(p)
     if ".venv" in p_str or "site-packages" in p_str:
@@ -174,6 +189,36 @@ _TEST_ENV_VARS = {
     "MEMORY_LLM_HYBRID": "0",
     "MEMORY_QUALITY_GATES": "1",
 }
+
+@pytest.fixture(scope="session", autouse=False)
+def _test_embedding_setup():
+    """Activate the test embedding model (intfloat/e5-small-v2) for embedding tests.
+
+    When MEMORY_TEST_EMBEDDING=1: sets env vars + resets the config singleton
+    so EmbeddingSearch._load_model picks up sentence-transformers + e5-small-v2.
+    When MEMORY_TEST_EMBEDDING is not set: no-op (embedding tests are skipped).
+
+    Embedding test files opt in with:
+        @pytest.mark.usefixtures("_test_embedding_setup")
+    """
+    if not _TEST_EMBEDDING:
+        yield
+        return
+    os.environ["MEMORY_EMBEDDING_BACKEND"] = "sentence-transformers"
+    os.environ["MEMORY_EMBEDDING_MODEL_ID"] = _TEST_MODEL_ID
+    os.environ["MEMORY_EMBEDDING_MODEL_REVISION"] = ""
+    try:
+        from config import reset_config
+        reset_config()
+    except Exception:
+        pass
+    try:
+        from infra.embedding_search import reset_embedding_search
+        reset_embedding_search()
+    except Exception:
+        pass
+    yield
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _test_session_env():

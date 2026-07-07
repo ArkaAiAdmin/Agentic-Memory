@@ -89,6 +89,14 @@ def _ensure_shared_table(conn: AnyConnection) -> None:
             shared_with TEXT DEFAULT NULL
         )
     """)
+    try:
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({_SHARED_TABLE})").fetchall()}
+        if "target_agent_id" not in cols:
+            conn.execute(f"ALTER TABLE {_SHARED_TABLE} ADD COLUMN target_agent_id TEXT DEFAULT NULL")
+        if "shared_with" not in cols:
+            conn.execute(f"ALTER TABLE {_SHARED_TABLE} ADD COLUMN shared_with TEXT DEFAULT NULL")
+    except Exception:
+        pass
     conn.execute(
         f"CREATE INDEX IF NOT EXISTS idx_shared_agent ON {_SHARED_TABLE}(agent_id)"
     )
