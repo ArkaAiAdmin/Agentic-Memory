@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import sys
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -92,6 +93,7 @@ __all__ = [
     "saga_save_memory",
     "SAGA_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
 ]
+
 
 
 # Feature gate. Default ON so crash-consistent triple-store writes are
@@ -945,9 +947,7 @@ def saga_save_memory(
     file_path = Path(file_path)
     db_path = Path(db_path)
 
-    import sys
-
-    if not sys.modules[__name__].SAGA_ENABLED:
+    if not SAGA_ENABLED:
         # Fast path: identical to the pre-saga behavior. No rollback
         # guarantees; same as a bare try/except around the three calls.
         do_upsert_db()
@@ -1025,3 +1025,18 @@ if TYPE_CHECKING:
 
 
 __getattr__ = make_lazy_getattr({"SAGA_ENABLED": "saga_enabled"})
+
+# Pin the SAGA_ENABLED gate as a real module attribute at import time.
+# make_lazy_getattr (infra/memory_common.py) caches resolved values into its
+# OWN globals, not this module's, so a bare `SAGA_ENABLED` reference inside
+# saga_save_memory would never resolve. More importantly, the old code read
+# it via sys.modules[__name__].SAGA_ENABLED, which raised KeyError whenever
+# this module had been removed from sys.modules (test_graph_behavior.py
+# deletes every infra.* entry at import time). Pinning the resolved bool
+# here means the value lives in __dict__ and survives sys.modules removal
+# (the module object persists in memory via references). This is consistent
+# with the documented "read once at import time" semantics.
+try:
+    SAGA_ENABLED = bool(sys.modules[__name__].SAGA_ENABLED)
+except Exception:
+    SAGA_ENABLED = True
