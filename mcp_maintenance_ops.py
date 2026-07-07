@@ -340,12 +340,13 @@ def _get_handlers() -> dict:
                     overwrite=overwrite,
                 )
             ),
-            MaintenanceOp.OKF_IMPORT: lambda *, input_dir, is_global=False, dry_run=False, overwrite=False, **_: (
+            MaintenanceOp.OKF_IMPORT: lambda *, input_dir, is_global=False, dry_run=False, overwrite=False, confirm=False, **_: (
                 t["memory_okf_import"](
                     input_dir=input_dir,
                     is_global=is_global,
                     dry_run=dry_run,
                     overwrite=overwrite,
+                    confirm=confirm,
                 )
             ),
             MaintenanceOp.REINFORCE: lambda *, memory_ids, success, **_: t[

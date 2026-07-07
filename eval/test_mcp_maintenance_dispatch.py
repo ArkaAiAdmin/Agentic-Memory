@@ -138,7 +138,9 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
             mock_h.return_value = {
                 MaintenanceOp.DEDUP: capture,
             }
-            result = memory_maintenance("dedup", dry_run=True, threshold=0.9)
+            result = memory_maintenance(
+                "dedup", dry_run=True, threshold=0.9, confirm=True
+            )
         self.assertEqual(result, "ok")
         self.assertEqual(captured["dry_run"], True)
         self.assertEqual(captured["threshold"], 0.9)

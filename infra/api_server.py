@@ -100,10 +100,27 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         return True
 
     def _require_auth_ws(self) -> bool:
-        """Auth check for WebSocket upgrades (no loopback bypass for remote clients)."""
+        """Auth check for WebSocket upgrades.
+
+        S8 — empty-token access is NOT allowed by default. The token may be
+        unset only in a deliberate dev opt-in: when the server was started
+        with ``insecure_loopback`` (the same flag that relaxes REST auth for
+        loopback clients). Otherwise a valid bearer token (header or
+        ``?token=`` query) is required, matching ``_require_auth``.
+        """
         token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
         if not token:
-            return True
+            # Dev opt-in only: the REST layer already gates the loopback
+            # bypass behind insecure_loopback; reuse it for WS so empty-token
+            # access is never the default.
+            if getattr(self.server, "insecure_loopback", False):
+                return True
+            self._error(
+                "Auth required: set MEMORY_API_TOKEN or start the server with "
+                "insecure_loopback=True for local dev only",
+                401,
+            )
+            return False
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and auth[7:] == token:
             return True

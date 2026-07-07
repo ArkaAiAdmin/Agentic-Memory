@@ -867,6 +867,11 @@ def memory_advanced(operation: str, **kwargs: str) -> str:
     Args:
         operation: Any memory_maintenance operation name.
         **kwargs: Operation-specific parameters.
+
+    Security: this delegates to ``memory_maintenance``, so the confirmation
+    gate on destructive operations applies here too. A destructive op
+    (e.g. ``purge_expired``, ``okf_export``, ``crdt_sync``) called without
+    ``confirm=True`` is refused; pass ``confirm=True`` to proceed.
     """
     try:
         from mcp_maintenance import memory_maintenance
