@@ -85,6 +85,7 @@ class _ConnectionPool:
             time.sleep(30)
             with self._lock:
                 keys = list(self._pool.keys())
+                stale: list[tuple[tuple[str, int], sqlite3.Connection]] = []
                 for key in keys:
                     if key not in self._pool:
                         continue
@@ -100,11 +101,15 @@ class _ConnectionPool:
                         self._pooled_ids.discard(conn_id)
                         self._migrated.discard(key)
                         self._inodes.pop(key, None)
-                        try:
-                            conn.close()
-                            logger.info("db pool: evicted connection for %s in background due to inode drift", key[0])
-                        except Exception:
-                            pass
+                        stale.append((key, conn))
+            # C5: close OUTSIDE the lock so get()/put() callers aren't
+            # stalled behind a (potentially slow) socket/OS close.
+            for key, conn in stale:
+                try:
+                    conn.close()
+                    logger.info("db pool: evicted connection for %s in background due to inode drift", key[0])
+                except Exception:
+                    pass
 
     @staticmethod
     def _inode_of(path: str) -> int:
@@ -287,7 +292,13 @@ class _ConnectionPool:
             except Exception as exc:
                 logger.warning("db: schema ensure_failed: %s", exc)
 
-    def get(self, path: str, timeout: float = 30.0, tenant_id: str | None = None) -> sqlite3.Connection:
+    def get(
+        self,
+        path: str,
+        timeout: float = 30.0,
+        tenant_id: str | None = None,
+        create: bool = True,
+    ) -> sqlite3.Connection:
         """Return a live connection for *path*, creating one if needed.
 
         Connections are keyed by ``(path, thread_ident)`` so different
@@ -295,9 +306,28 @@ class _ConnectionPool:
         repeated calls return the same connection — callers must
         ``put()`` it back before calling ``get()`` again for the same
         path.
+
+        Args:
+            path: Path to the SQLite database file.
+            timeout: Busy timeout (seconds).
+            tenant_id: Tenant routing id (see ``tenant_memories`` view).
+            create: If True (default), an absent file is created via
+                ``sqlite3.connect`` (legacy behaviour, kept for backward
+                compatibility with the many call sites that open a DB for
+                the first time).  If False, an absent file raises
+                :class:`FileNotFoundError` instead of silently creating an
+                empty database — use this on read/critical paths where a
+                missing DB means misconfiguration, not first-run.  The
+                bootstrap/migration path always passes ``create=True``.
         """
         current_thread = threading.current_thread().ident or 0
         key = (path, current_thread)
+        if not create and not Path(path).exists():
+            raise FileNotFoundError(
+                f"Database file does not exist: {path!r}. Refusing to "
+                "create an empty database — pass create=True from the "
+                "bootstrap/migration path if this is a first-run."
+            )
         with self._lock:
             conn = self._pool.get(key)
             if conn is not None:
@@ -359,7 +389,11 @@ class _ConnectionPool:
                         except Exception:
                             pass
                         return conn
-            # Close any orphaned connection from another thread holding the same path
+            # C4: Close at most ONE idle same-path orphan (the evicted key)
+            # rather than scanning every other thread's connections while
+            # holding the lock.  _evict_lru() below handles global eviction
+            # when the pool is full; we only opportunistically reclaim a
+            # duplicate idle connection for this path to bound fd growth.
             for other_key in list(self._pool):
                 if other_key[0] == path and self._depth.get(other_key, 0) == 0:
                     orphan = self._pool.pop(other_key)
@@ -374,6 +408,7 @@ class _ConnectionPool:
                             "Failed to close orphaned connection during pool get"
                         )
                         pass
+                    break
             self._evict_lru()
             conn = sqlite3.connect(path, timeout=timeout)
             conn.execute("PRAGMA journal_mode=WAL")
@@ -731,6 +766,44 @@ def safe_close_db(conn: AnyConnection, *, should_commit: bool = True) -> None:
         pass
 
 
+_STARTUP_DB_CHECK_DONE = False
+
+
+def _startup_db_path_sanity_check() -> None:
+    """C2: validate the configured MEMORY_DB_PATH at first DB access.
+
+    Runs once per process.  If ``MEMORY_DB_PATH`` is set:
+      * a missing *parent directory* is a misconfiguration (not a first
+        run) — raise immediately so the operator sees a clear error
+        rather than an empty DB silently created under a wrong path;
+      * a missing *file* under an existing parent is a normal first run
+        and is allowed (``open_db`` creates it).
+
+    When ``MEMORY_DB_PATH`` is unset (the common per-project default),
+    this is a no-op.
+    """
+    global _STARTUP_DB_CHECK_DONE
+    if _STARTUP_DB_CHECK_DONE:
+        return
+    _STARTUP_DB_CHECK_DONE = True
+    env = os.environ.get("MEMORY_DB_PATH")
+    if not env:
+        return
+    p = Path(env)
+    if p.exists():
+        return
+    if not p.parent.exists():
+        raise RuntimeError(
+            f"MEMORY_DB_PATH is misconfigured: {env!r} does not exist and "
+            f"its parent directory {str(p.parent)!r} is missing. Refusing "
+            "to create an empty database under a wrong path."
+        )
+    logger.info(
+        "MEMORY_DB_PATH %s does not exist yet; will be created on first open (first run).",
+        env,
+    )
+
+
 @contextmanager
 def open_db(
     path: Path,
@@ -746,6 +819,14 @@ def open_db(
     """
     from infra.db_migrations import run_schema_setup
     from contextlib import nullcontext
+
+    # C2: one-shot startup sanity check that a configured MEMORY_DB_PATH
+    # resolves to a sane location.  A missing parent directory means the
+    # path is misconfigured (not a legitimate first run) — fail fast with
+    # a clear error instead of silently creating an empty DB under a wrong
+    # path.  A missing file under an existing parent is a normal first run
+    # and is allowed (open_db touches/creates it below).
+    _startup_db_path_sanity_check()
 
     # B-3 follow-up (2026-06-22): cross-process serialisation.  The
     # flock is acquired on entry and released on exit.  When the

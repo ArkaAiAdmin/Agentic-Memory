@@ -71,6 +71,34 @@ def memory_save(
         return _err(ErrorCode.INVALID_PARAMS, f"content exceeds 100,000 character limit ({len(content)} chars)")
 
     try:
+        # C1: route through the durable CQRS write-journal when the
+        # feature flag is enabled.  The journal path performs a lock-free
+        # INSERT into journal.db (WAL) and returns the note_id
+        # immediately; the reconciliation daemon (the single writer to
+        # memory.db) materializes it asynchronously.  This keeps the MCP
+        # verb off the direct memory.db write path, which would race the
+        # daemon.  When the flag is off, fall back to the direct
+        # save_memory (local/single-writer) for backward compatibility.
+        from config import get_config
+        from save_pipeline import save_memory_journal
+
+        cfg = get_config()
+        if getattr(cfg, "write_journal", False):
+            result = save_memory_journal(
+                content=content,
+                category=category,
+                title_slug=title_slug,
+                tags=tags or [],
+                pinned=pinned,
+                is_global=is_global,
+                importance=importance,
+                context="mcp",
+                note_id="",
+                defer_expensive=True,
+            )
+            # save_memory_journal returns the note_id (or an _err
+            # envelope string on hard failure).  Preserve that semantics.
+            return str(result)
         result = save_memory(
             content=content,
             category=category,

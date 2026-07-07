@@ -1086,6 +1086,27 @@ def run_worker(
 
         _check_and_reconcile_vec_drift(init_conn, db_path)
 
+        # W1: self-heal partial save state at startup.  A crash between
+        # the saga's .md write and the DB commit can leave a forward
+        # orphan (.md with no DB row); a crash after commit but before
+        # the file write leaves a backward orphan (DB row, missing .md).
+        # Reconciling both directions means no partial memory survives a
+        # restart of the daemon (the single writer to memory.db).
+        try:
+            from memory_integrity import reconcile_orphan_files
+
+            reconcile = reconcile_orphan_files(db_path, db_path.parent)
+            n_back = len(reconcile.get("backward_recovered", []))
+            n_fwd = len(reconcile.get("forward_reaped", []))
+            if n_back or n_fwd:
+                logger.info(
+                    "worker: orphan reconciliation healed %d backward / reaped %d forward",
+                    n_back,
+                    n_fwd,
+                )
+        except Exception as _orph_exc:
+            logger.debug("worker: orphan reconciliation failed: %s", _orph_exc)
+
         try:
             from background.corpus_budget_guard import run_corpus_budget_guard
 

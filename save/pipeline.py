@@ -1627,13 +1627,81 @@ def materialize_journal_entry(
     entry: dict,
     target_base: Path,
 ) -> str:
-    """Apply a single journal entry through the saga write path."""
-    from infra.write_journal import mark_applied, mark_failed, materialize_security_scan
+    """Apply a single journal entry through the saga write path.
+
+    W6: verifies the row's stored ``content_hash`` against a fresh SHA256
+    of the content before materializing.  A mismatch means the journal row
+    was corrupted on disk and is dead-lettered (never materialized).
+    W3: transient materialization failures are retried with exponential
+    backoff up to ``JOURNAL_MAX_RETRIES``; permanent failures (validation /
+    injection) and exhausted retries are dead-lettered to ``journal_failed``
+    with an alert logged so the save is never silently dropped.
+    """
+    from infra.write_journal import (
+        JOURNAL_MAX_RETRIES,
+        mark_dead_letter,
+        mark_retry,
+        verify_content_hash,
+    )
+
+    note_id = entry.get("note_id", "")
+    journal_path = target_base / "journal.db"
+
+    # W6: row-level integrity check before we touch memory.db.
+    if not verify_content_hash(entry.get("content", ""), entry.get("content_hash")):
+        msg = f"content_hash mismatch (journal row corruption) for {note_id}"
+        logger.error("ALERT write_journal: %s — dead-lettering entry", msg)
+        mark_dead_letter(journal_path, entry["id"], msg)
+        raise RuntimeError(msg)
+
+    # W3: retry loop.  Re-run the (potentially rule-set-changing) injection
+    # scan inside the loop so a retried entry is validated against the
+    # current scanner.  Permanent failures (SaveValidationError) and
+    # exhausted retries are dead-lettered; everything else is transient.
+    last_err: BaseException | None = None
+    for _attempt in range(max(1, JOURNAL_MAX_RETRIES)):
+        try:
+            return _materialize_journal_once(entry, target_base, note_id, journal_path)
+        except SaveValidationError as e:
+            # Permanent: injection / validation rejection.  Do not retry.
+            logger.error(
+                "ALERT write_journal: permanent validation failure for %s: %s — dead-lettering",
+                note_id,
+                e,
+            )
+            mark_dead_letter(journal_path, entry["id"], str(e))
+            raise
+        except Exception as e:  # transient
+            last_err = e
+            retry_count = mark_retry(journal_path, entry["id"], f"transient: {e}")
+            logger.warning(
+                "write_journal: transient materialization failure for %s "
+                "(attempt %d/%d): %s",
+                note_id,
+                retry_count,
+                JOURNAL_MAX_RETRIES,
+                e,
+            )
+            if retry_count >= JOURNAL_MAX_RETRIES:
+                break
+            # Exponential backoff before the next in-loop retry.
+            time.sleep(min(0.1 * (2 ** retry_count), 2.0))
+    msg = f"materialization failed after {JOURNAL_MAX_RETRIES} retries: {last_err}"
+    logger.error("ALERT write_journal: %s — dead-lettering entry %s", msg, note_id)
+    mark_dead_letter(journal_path, entry["id"], msg)
+    raise RuntimeError(msg)
+
+
+def _materialize_journal_once(
+    entry: dict, target_base: Path, note_id: str, journal_path: Path
+) -> str:
+    """Single materialization attempt for one journal entry (no retry)."""
+    from infra.write_journal import mark_applied, materialize_security_scan
 
     # Re-run the prompt-injection scan at materialization time. The enqueue
     # path already scanned, but the rule set can change while the entry sits
-    # pending. Raises SaveValidationError -> caught below and quarantined via
-    # mark_failed. A scanner crash also fails closed (quarantined).
+    # pending. Raises SaveValidationError -> caught by the caller and
+    # dead-lettered. A scanner crash also fails closed (dead-lettered).
     materialize_security_scan(
         entry.get("content", ""),
         entry.get("category", ""),
@@ -1673,52 +1741,47 @@ def materialize_journal_entry(
 
     try:
         conn = _acquire_db_connection(db_path_obj, req.category, req.title_slug, time.time(), tenant_id=req.tenant_id)
-        _save_errored = False
-        try:
-            note_id_out, conn = _persist_via_saga(
-                conn=conn, db_path_obj=Path(db_path_obj),
-                category=req.category, title_slug=req.title_slug,
-                content=req.content, tags_list=tags_list, pinned=req.pinned,
-                now_iso=now_iso, is_global=req.is_global, metadata_json=metadata_json,
-                file_path=file_path, markdown_content=_markdown, importance=req.importance,
-                defer_expensive=req.defer_expensive, tenant_id=req.tenant_id,
-                epistemic_source=req.epistemic_source, belief_status=req.belief_status,
-                asserting_agent_id=req.asserting_agent_id, fact_type=req.fact_type,
-            )
-            _run_post_save_hooks(
-                target_mem, Path(db_path_obj), note_id_out,
-                req.category, req.title_slug, req.content, req.tags or [],
-                req.pinned, req.is_global,
-                (req.safety_wiring and not req.defer_expensive),
-                time.time(), conn=conn,
-            )
-            _enqueue_background_tasks(Path(db_path_obj), note_id_out, conn=conn)
-            if _is_crdt_enabled():
-                _project_sql_to_crdt(Path(db_path_obj), note_id, conn=conn)
-            mark_applied(journal_path, entry["id"])
-            logger.info("materialize_journal_entry: applied %s", note_id_out)
-            return str(note_id_out)
-        except Exception:
-            _save_errored = True
-            raise
-        finally:
-            if conn is not None:
-                try:
-                    if _save_errored:
-                        try:
-                            conn.rollback()
-                        except Exception:
-                            pass
-                    conn.close()
-                except Exception:
-                    pass
-    except SaveValidationError as e:
-        mark_failed(journal_path, entry["id"], str(e))
+    except Exception:
         raise
-    except Exception as e:
-        mark_failed(journal_path, entry["id"], f"materialize: {e}")
-        logger.exception("materialize_journal_entry: %s failed: %s", note_id, e)
+    _save_errored = False
+    try:
+        note_id_out, conn = _persist_via_saga(
+            conn=conn, db_path_obj=Path(db_path_obj),
+            category=req.category, title_slug=req.title_slug,
+            content=req.content, tags_list=tags_list, pinned=req.pinned,
+            now_iso=now_iso, is_global=req.is_global, metadata_json=metadata_json,
+            file_path=file_path, markdown_content=_markdown, importance=req.importance,
+            defer_expensive=req.defer_expensive, tenant_id=req.tenant_id,
+            epistemic_source=req.epistemic_source, belief_status=req.belief_status,
+            asserting_agent_id=req.asserting_agent_id, fact_type=req.fact_type,
+        )
+        _run_post_save_hooks(
+            target_mem, Path(db_path_obj), note_id_out,
+            req.category, req.title_slug, req.content, req.tags or [],
+            req.pinned, req.is_global,
+            (req.safety_wiring and not req.defer_expensive),
+            time.time(), conn=conn,
+        )
+        _enqueue_background_tasks(Path(db_path_obj), note_id_out, conn=conn)
+        if _is_crdt_enabled():
+            _project_sql_to_crdt(Path(db_path_obj), note_id, conn=conn)
+        mark_applied(journal_path, entry["id"])
+        logger.info("materialize_journal_entry: applied %s", note_id_out)
+        return str(note_id_out)
+    except Exception:
+        _save_errored = True
         raise
+    finally:
+        if conn is not None:
+            try:
+                if _save_errored:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                conn.close()
+            except Exception:
+                pass
 
 
 def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn=None) -> None:
@@ -1797,6 +1860,16 @@ def _save_memory_core(
         db_path_obj = (
             Path(db_path) if db_path is not None else target_base / "memory.db"
         )
+        # C2: fail gracefully (not with an uncaught OSError from a flock/
+        # open mkdir) when the db_path's parent directory does not exist.
+        # The memory directory is always expected to exist; a missing
+        # parent means a misconfigured/garbage path. Raise SaveValidationError
+        # so callers (and the test contract) get a clean, typed error.
+        if db_path is not None and not db_path_obj.parent.exists():
+            raise SaveValidationError(
+                ErrorCode.INVALID_PARAMS,
+                f"db_path parent directory does not exist: {db_path_obj.parent}",
+            )
         # Scenario 5 fix (2026-06-22): invalidate the per-db-path pragma
         # cache on every save.  Without this, an in-flight save that
         # started before a migration could write to a column the
@@ -1806,7 +1879,21 @@ def _save_memory_core(
         # to refresh.
         with _pragma_cache_lock:
             _pragma_cache.pop(str(db_path_obj), None)
-        # No flock — SQLite WAL + BEGIN IMMEDIATE handle serialization.
+        # C3: serialize the direct (non-journal) save path with the
+        # per-DB-path flock (db_path_flock acquired in open_db).  When the
+        # write-journal is disabled, this is the only writer path to
+        # memory.db besides the reconciliation daemon; the flock prevents
+        # two concurrent direct writers (or a direct writer racing the
+        # daemon) from interleaving writes.  It is re-entrant per process,
+        # so a caller that already holds the flock is unaffected.  The
+        # saga additionally uses WAL BEGIN IMMEDIATE to claim the batch
+        # atomically.  (See AGENTS.md Hard Rule 9.)
+        from infra.db_path_flock import (
+            acquire_db_path_flock,
+            release_db_path_flock,
+        )
+
+        acquire_db_path_flock(db_path_obj)
         try:
             if _conn is not None:
                 conn = _conn
@@ -1815,6 +1902,7 @@ def _save_memory_core(
                     db_path_obj, category, title_slug, _start_time, tenant_id=tenant_id
                 )
         except Exception:
+            release_db_path_flock(db_path_obj)
             raise
         # P0-1 fix (2026-06-22): the previous version of this function never
         # called safe_close_db on the saga-path conn, so the pool's depth
@@ -1887,6 +1975,8 @@ def _save_memory_core(
             _save_errored = True
             raise
         finally:
+            # C3: release the per-DB-path flock acquired above.
+            release_db_path_flock(db_path_obj)
             if conn is not None and _conn is None:
                 try:
                     if _save_errored:

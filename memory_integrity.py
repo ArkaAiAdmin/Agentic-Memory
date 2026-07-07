@@ -1046,6 +1046,111 @@ def recover_orphan_files(
     }
 
 
+def find_forward_orphan_files(
+    db: AnyConnection, memory_root: Path
+) -> list[dict[str, Any]]:
+    """Return .md files on disk whose memories row no longer exists.
+
+    A "forward orphan" is the mirror image of ``find_orphan_files``: a
+    ``.md`` file present on disk but with no corresponding ``memories``
+    row.  This is exactly the partial-state window W1 closes — a crash
+    between the saga's ``.md`` write and the DB transaction commit can
+    leave a dangling ``.md`` with no DB row.  These are safe to delete
+    because the DB is the canonical source of truth.
+
+    MEMORY.md (the human index) and ``.conflict-*`` / ``.flock`` files
+    are never reported.
+    """
+    if "memories" not in _get_table_names(db):
+        return []
+    findings: list[dict[str, Any]] = []
+    try:
+        rows = db.execute(
+            "SELECT id FROM memories WHERE deleted_at IS NULL"
+        ).fetchall()
+    except sqlite3.DatabaseError:
+        return findings
+    live_ids = {r[0] for r in rows}
+    if not memory_root.exists():
+        return findings
+    for md_path in memory_root.rglob("*.md"):
+        rel = md_path.relative_to(memory_root).as_posix()
+        name = md_path.name
+        # Skip the human index and conflict/lock sidecar files.
+        if name == "MEMORY.md" or ".conflict" in name or md_path.suffix == ".lock":
+            continue
+        # Only consider files that look like category/title_slug.md.
+        parts = rel.split("/")
+        if len(parts) != 2:
+            continue
+        note_id = f"{parts[0]}/{md_path.stem}"
+        if note_id not in live_ids:
+            findings.append({"note_id": note_id, "md_path": str(md_path)})
+    return findings
+
+
+def reap_forward_orphan_files(
+    db_path: Path,
+    memory_root: Path,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Delete .md files that have no corresponding memories row (W1).
+
+    Safe to run at startup: a ``.md`` without a DB row is by definition
+    not a real memory, so removing it cannot lose committed data.  The
+    canonical DB row, if it exists, is untouched.
+    """
+    db_path = Path(db_path)
+    memory_root = Path(memory_root)
+    reaped: list[str] = []
+    failed: list[tuple[str, str]] = []
+    if not db_path.exists():
+        return {"reaped": reaped, "failed": failed, "orphans": []}
+    with open_db(db_path, write=False) as db:
+        orphans = find_forward_orphan_files(db, memory_root)
+    for orphan in orphans:
+        p = Path(orphan["md_path"])
+        if dry_run:
+            logger.info("reap_forward_orphans: would delete %s", p)
+            continue
+        try:
+            p.unlink()
+            reaped.append(orphan["note_id"])
+            logger.info("reap_forward_orphans: deleted %s", p)
+        except Exception as e:
+            failed.append((orphan["note_id"], f"{type(e).__name__}: {e}"))
+            logger.warning("reap_forward_orphans: failed to delete %s: %s", p, e)
+    return {"reaped": reaped, "failed": failed, "orphans": orphans}
+
+
+def reconcile_orphan_files(
+    db_path: Path,
+    memory_root: Path,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Self-heal partial save state at startup (W1).
+
+    Combines the two directions:
+      * backward orphans (DB row, missing ``.md``) are re-created from
+        the DB via ``recover_orphan_files``;
+      * forward orphans (``.md`` on disk, no DB row — the crash window
+        between the saga's file write and DB commit) are reaped.
+
+    After this runs, no partial memory survives a crash: either the DB
+    row and ``.md`` both exist, or neither does.
+    """
+    backward = recover_orphan_files(db_path, memory_root, dry_run=dry_run)
+    forward = reap_forward_orphan_files(db_path, memory_root, dry_run=dry_run)
+    return {
+        "backward_recovered": backward.get("recovered", []),
+        "backward_failed": backward.get("failed", []),
+        "forward_reaped": forward.get("reaped", []),
+        "forward_failed": forward.get("failed", []),
+    }
+
+
 # ---------------------------------------------------------------------------
 # B-3 fix (2026-06-22 follow-up): KG / backlinks orphan detection + repair
 # ---------------------------------------------------------------------------

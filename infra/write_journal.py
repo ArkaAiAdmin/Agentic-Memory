@@ -42,8 +42,10 @@ SQLite WAL mode handles concurrent INSERTs with minimal serialisation.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -59,6 +61,18 @@ logger = logging.getLogger(__name__)
 # entries or refuse new enqueues to prevent unbounded growth
 # (OWASP LLM10-001). Configurable module constant.
 JOURNAL_MAX_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
+
+# W5: threshold (seconds) after which an entry stuck in 'processing' is
+# re-dispatched.  Bumped from the original 60s to 120s so a legitimate but
+# slow materialization (large embedding batch, KG extraction, etc.) is not
+# mistaken for a crashed daemon and re-enqueued mid-flight.  Re-dispatch is
+# gated on ``started_at`` (set when the entry is claimed), not just
+# ``processed_at``.
+STUCK_PROCESSING_MAX_AGE_SECONDS = int(os.environ.get("MEMORY_JOURNAL_STUCK_AGE", "120"))
+
+# W3: maximum number of transient-failure retries before an entry is
+# dead-lettered to ``journal_failed``.
+JOURNAL_MAX_RETRIES = int(os.environ.get("MEMORY_JOURNAL_MAX_RETRIES", "3"))
 
 # Thread-local connections to the journal DB — zero lock contention.
 _local = threading.local()
@@ -122,9 +136,73 @@ def init_journal_db(journal_path: Path) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_journal_status ON write_journal(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_journal_agent ON write_journal(agent_id)")
+    # W3/W5/W6: migration-safe schema extensions.  The journal DB is a
+    # separate SQLite file (not the main memory.db, so it is NOT covered
+    # by the numbered SQL migration runner in infra/migration_runner.py).
+    # All journal schema evolution happens here, idempotently, so an older
+    # journal.db transparently gains the new columns on first open.
+    _ensure_journal_columns(conn)
     conn.commit()
     # Size guard: prune applied entries if the DB has grown past the limit.
     _enforce_journal_size_limit(journal_path, conn=conn)
+
+
+def _ensure_journal_columns(conn: sqlite3.Connection) -> None:
+    """Idempotently add the W3/W5/W6 columns + dead-letter table.
+
+    The journal DB is a separate SQLite file (``journal.db``) that is NOT
+    managed by the numbered SQL migration runner in
+    ``infra/migration_runner.py`` (that runner only targets the main
+    ``memory.db``).  All journal schema evolution happens here so an
+    existing journal.db transparently gains the new columns on first
+    open, and a fresh one gets them at creation.  Every statement is
+    guarded by a ``PRAGMA table_info`` column-existence check so the
+    function is safe to call on every ``init_journal_db``.
+    """
+    cols = {
+        r[1]
+        for r in conn.execute("PRAGMA table_info(write_journal)").fetchall()
+    }
+    if "retry_count" not in cols:
+        conn.execute(
+            "ALTER TABLE write_journal ADD COLUMN retry_count INTEGER DEFAULT 0"
+        )
+    if "content_hash" not in cols:
+        conn.execute("ALTER TABLE write_journal ADD COLUMN content_hash TEXT")
+    if "started_at" not in cols:
+        # W5: set when an entry is claimed for materialization.  Re-dispatch
+        # of stuck entries is gated on this timestamp so a genuinely slow
+        # (but live) materialization is not reset mid-flight.
+        conn.execute("ALTER TABLE write_journal ADD COLUMN started_at TEXT")
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS journal_failed (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            original_id     INTEGER,
+            note_id         TEXT NOT NULL,
+            agent_id        TEXT NOT NULL,
+            category        TEXT NOT NULL,
+            title_slug      TEXT NOT NULL,
+            content         TEXT NOT NULL,
+            tags            TEXT,
+            pinned          INTEGER DEFAULT 0,
+            is_global       INTEGER DEFAULT 0,
+            importance      INTEGER DEFAULT 3,
+            tenant_id       TEXT DEFAULT 'default',
+            epistemic_source TEXT DEFAULT 'agent',
+            belief_status   TEXT DEFAULT 'active',
+            asserting_agent_id TEXT DEFAULT '',
+            fact_type       TEXT DEFAULT 'observation',
+            defer_expensive INTEGER DEFAULT 1,
+            context         TEXT DEFAULT 'generic',
+            error           TEXT,
+            retry_count     INTEGER DEFAULT 0,
+            content_hash    TEXT,
+            failed_at       TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_journal_failed_note ON journal_failed(note_id)"
+    )
 
 
 def _journal_file_size(journal_path: Path) -> int:
@@ -255,13 +333,17 @@ def enqueue_write(
                 "reconciliation daemon, raise JOURNAL_MAX_SIZE_BYTES, or "
                 "rebuild the journal DB."
             )
+    # W6: per-row SHA256 integrity.  Stored at enqueue time and verified
+    # at materialization so a corrupted journal row is detected (and
+    # dead-lettered) rather than silently materialized into memory.db.
+    content_hash = hashlib.sha256(req.content.encode("utf-8")).hexdigest()
     conn.execute(
         """INSERT OR IGNORE INTO write_journal
            (note_id, agent_id, category, title_slug, content, tags,
-            pinned, is_global, importance, tenant_id,
-            epistemic_source, belief_status, asserting_agent_id, fact_type,
-            defer_expensive, context)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             pinned, is_global, importance, tenant_id,
+             epistemic_source, belief_status, asserting_agent_id, fact_type,
+             defer_expensive, context, content_hash, retry_count)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
         (
             note_id,
             agent_id,
@@ -279,6 +361,7 @@ def enqueue_write(
             req.fact_type,
             1 if req.defer_expensive else 0,
             req.context,
+            content_hash,
         ),
     )
     conn.commit()
@@ -312,7 +395,8 @@ def dequeue_pending(
         ids = [r["id"] for r in rows]
         placeholders = ",".join("?" * len(ids))
         conn.execute(
-            f"UPDATE write_journal SET status='processing', processed_at=datetime('now') WHERE id IN ({placeholders})",
+            f"UPDATE write_journal SET status='processing', processed_at=datetime('now'), "
+            f"started_at=datetime('now') WHERE id IN ({placeholders})",
             ids,
         )
     conn.commit()
@@ -335,13 +419,81 @@ def mark_applied(journal_path: Path, entry_id: int) -> None:
 
 
 def mark_failed(journal_path: Path, entry_id: int, error: str) -> None:
-    """Mark a journal entry as failed with an error message."""
+    """Mark a journal entry as failed with an error message.
+
+    Kept for backward compatibility.  New callers should prefer
+    :func:`mark_retry` (transient) or :func:`mark_dead_letter` (permanent)
+    so the entry is either retried or moved to ``journal_failed`` rather
+    than left in a terminal ``failed`` state that the daemon never
+    re-visits (W3).
+    """
     conn = _get_journal_conn(journal_path)
     conn.execute(
         "UPDATE write_journal SET status='failed', error=? WHERE id=?",
         (error[:500], entry_id),
     )
     conn.commit()
+
+
+def mark_retry(journal_path: Path, entry_id: int, error: str) -> int:
+    """Record a transient failure and return the new retry_count.
+
+    Increments ``retry_count`` and resets the entry to ``pending`` so the
+    reconciliation loop picks it up again (W3).  The daemon applies
+    backoff between attempts based on the returned count.
+    """
+    conn = _get_journal_conn(journal_path)
+    conn.execute(
+        "UPDATE write_journal SET status='pending', error=?, "
+        "retry_count = retry_count + 1, started_at=NULL, "
+        "processed_at=datetime('now') WHERE id=?",
+        (error[:500], entry_id),
+    )
+    row = conn.execute(
+        "SELECT retry_count FROM write_journal WHERE id=?", (entry_id,)
+    ).fetchone()
+    conn.commit()
+    return int(row["retry_count"]) if row is not None else 0
+
+
+def mark_dead_letter(journal_path: Path, entry_id: int, error: str) -> None:
+    """Permanently fail an entry: copy it to ``journal_failed`` and remove it.
+
+    Used when an entry exhausts its retries (W3) or fails a hard
+    validation (e.g. content-hash mismatch in W6).  The original row is
+    deleted so it is never re-dispatched; the copy in ``journal_failed``
+    preserves the payload + error for operator inspection.  The material
+    caller is responsible for emitting the alert (see
+    ``materialize_journal_entry``).
+    """
+    conn = _get_journal_conn(journal_path)
+    conn.execute(
+        """INSERT INTO journal_failed
+           (original_id, note_id, agent_id, category, title_slug, content,
+            tags, pinned, is_global, importance, tenant_id,
+            epistemic_source, belief_status, asserting_agent_id, fact_type,
+            defer_expensive, context, error, retry_count, content_hash)
+           SELECT id, note_id, agent_id, category, title_slug, content,
+                  tags, pinned, is_global, importance, tenant_id,
+                  epistemic_source, belief_status, asserting_agent_id, fact_type,
+                  defer_expensive, context, ?, retry_count, content_hash
+           FROM write_journal WHERE id=?""",
+        (error[:500], entry_id),
+    )
+    conn.execute("DELETE FROM write_journal WHERE id=?", (entry_id,))
+    conn.commit()
+
+
+def verify_content_hash(content: str, stored_hash: str | None) -> bool:
+    """Return True if *content*'s SHA256 matches *stored_hash* (W6).
+
+    A ``None``/empty stored hash (legacy rows written before W6) is
+    treated as a pass so we don't dead-letter historical entries that
+    were never hashed.
+    """
+    if not stored_hash:
+        return True
+    return hashlib.sha256(content.encode("utf-8")).hexdigest() == stored_hash
 
 
 def get_pending_by_agent(journal_path: Path, agent_id: str) -> list[dict[str, Any]]:
@@ -412,26 +564,40 @@ def wait_for_note_id(
     raise TimeoutError(f"save {note_id} not applied within {timeout}s")
 
 
-def reset_stuck_processing(journal_path: Path, max_age_seconds: int = 60) -> int:
+def reset_stuck_processing(
+    journal_path: Path, max_age_seconds: int | None = None
+) -> int:
     """Reset entries stuck in 'processing' back to 'pending'.
 
-    Handles the case where the daemon crashes mid-batch.  Entries
-    that have been 'processing' longer than ``max_age_seconds``
-    are reset so a new daemon can pick them up.
+    Handles the case where the daemon crashes mid-batch.  Entries whose
+    ``started_at`` timestamp is older than ``max_age_seconds`` are reset
+    so a new daemon can pick them up.
+
+    W5: gated on ``started_at`` (set when the entry is claimed) rather
+    than ``processed_at`` so a legitimate but slow materialization is not
+    re-dispatched while it is still making progress.  The default
+    threshold is :data:`STUCK_PROCESSING_MAX_AGE_SECONDS` (120s), raised
+    from the original 60s.
 
     Returns the number of entries reset.
     """
+    if max_age_seconds is None:
+        max_age_seconds = STUCK_PROCESSING_MAX_AGE_SECONDS
     conn = _get_journal_conn(journal_path)
     reset = conn.execute(
-        "UPDATE write_journal SET status='pending', error=NULL "
+        "UPDATE write_journal SET status='pending', error=NULL, started_at=NULL "
         "WHERE status='processing' "
-        "AND (processed_at IS NULL OR "
-        "datetime(processed_at, ?) <= datetime('now'))",
+        "AND (started_at IS NULL "
+        "OR datetime(started_at, ?) <= datetime('now'))",
         (f"+{max_age_seconds} seconds",),
     ).rowcount
     if reset:
         conn.commit()
-        logger.info("write_journal: reset %d stuck processing entries", reset)
+        logger.info(
+            "write_journal: reset %d stuck processing entries (age>=%ds)",
+            reset,
+            max_age_seconds,
+        )
     return reset
 
 
