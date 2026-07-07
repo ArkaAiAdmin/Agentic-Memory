@@ -1296,23 +1296,21 @@ class TestSaveMemoryConnectionLeak(SavePipelineFixture, unittest.TestCase):
 
 
 class TestSaveMemoryLockOrder(SavePipelineFixture, unittest.TestCase):
-    """Regression test for the lock-order inversion (P0-2, 2026-06-22).
+    """CQRS migration test (2026-07-07): confirms save_memory no longer
+    acquires a process-wide file lock.
 
-    Before the fix, save_memory acquired the DB conn before the file
-    lock, while _update_memory_index_incremental acquired the file
-    lock before the conn.  This is a classic lock-order inversion
-    that can deadlock if the conn ever becomes process-wide.
+    The old lock-order test (P0-2) verified that file-lock came before
+    conn.  The CQRS refactor removes the file lock entirely from the
+    write path: the write_journal is append-only (no cross-process
+    contention), and the reconciliation daemon is the single writer to
+    the main DB via the saga + SQLite WAL.
 
-    The fix: save_memory now acquires the file lock first, then the
-    conn, matching the incremental path's order.
-
-    This test monkey-patches _acquire_lock and connection_pool.get to
-    record the order of calls and asserts the file lock is acquired
-    before the conn.
+    This test now asserts that ``_acquire_lock`` is NOT called on the
+    agent-facing save path, and that a DB connection IS still acquired.
     """
 
-    def test_file_lock_acquired_before_conn(self):
-        """save_memory must call _acquire_lock before connection_pool.get."""
+    def test_file_lock_not_acquired_on_save(self):
+        """CQRS: save_memory must NOT call _acquire_lock on the write path."""
         import save_pipeline as sp
 
         call_order = []
@@ -1321,7 +1319,6 @@ class TestSaveMemoryLockOrder(SavePipelineFixture, unittest.TestCase):
 
         def mock_acquire_lock(db_path):
             call_order.append(("file_lock", time.time()))
-            # Return None to skip the lock — we only care about order.
             return None
 
         def mock_pool_get(path, timeout=30.0, **kwargs):
@@ -1332,35 +1329,23 @@ class TestSaveMemoryLockOrder(SavePipelineFixture, unittest.TestCase):
             sp._acquire_lock = mock_acquire_lock
             connection_pool.get = mock_pool_get
             result, _slug = self.save(
-                content="P0-2 lock-order test",
-                title_slug="p02-lock-order",
+                content="CQRS no-flock test",
+                title_slug="cqrs-no-flock",
             )
         finally:
             sp._acquire_lock = original_acquire_lock
             connection_pool.get = original_pool_get
 
-        # Find the indices of the first file_lock and first conn calls
-        try:
-            lock_idx = next(
-                i for i, (kind, _) in enumerate(call_order) if kind == "file_lock"
-            )
-        except StopIteration:
-            self.fail(f"save_memory did not call _acquire_lock; calls: {call_order}")
-        try:
-            conn_idx = next(
-                i for i, (kind, _) in enumerate(call_order) if kind == "conn"
-            )
-        except StopIteration:
-            self.fail(
-                f"save_memory did not call connection_pool.get; calls: {call_order}"
-            )
-
-        self.assertLess(
-            lock_idx,
-            conn_idx,
-            f"File lock must be acquired BEFORE conn (lock-order inversion). "
-            f"file_lock at index {lock_idx}, conn at index {conn_idx}. "
-            f"Full call order: {call_order}",
+        lock_calls = [c for c in call_order if c[0] == "file_lock"]
+        conn_calls = [c for c in call_order if c[0] == "conn"]
+        self.assertEqual(
+            lock_calls, [],
+            f"save_memory must NOT call _acquire_lock under CQRS; "
+            f"got {lock_calls} calls",
+        )
+        self.assertTrue(
+            len(conn_calls) >= 1,
+            f"save_memory must still acquire a DB conn; got {call_order}",
         )
 
         # Sanity: save still succeeded

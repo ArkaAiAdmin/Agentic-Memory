@@ -78,6 +78,7 @@ __all__ = [
     # Orchestrator — defined in save_pipeline shim, proxied here
     # via __getattr__ so that ``from save import save_memory`` works.
     "save_memory",
+    "save_memory_journal",
     "memory_supersede_db",
     "reinforce_memories_db",
 ]
@@ -88,6 +89,10 @@ def __getattr__(name: str):
         from infra._lazy_imports import save_memory
 
         return save_memory
+    if name == "save_memory_journal":
+        from save_pipeline import save_memory_journal
+
+        return save_memory_journal
     if name == "memory_supersede_db":
         from save_pipeline import memory_supersede_db
 

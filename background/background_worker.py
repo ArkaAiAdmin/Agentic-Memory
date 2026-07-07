@@ -91,6 +91,7 @@ _BACKGROUND_WORKER_LOCK_FD = None
 def _handle_signal(signum, frame):
     global _shutdown
     _shutdown = True
+    _RECONCILER_SHUTDOWN.set()
     logger.info("worker: received signal %d, shutting down after current task", signum)
 
 
@@ -710,6 +711,78 @@ def _check_and_reconcile_vec_drift(conn: AnyConnection, db_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# CQRS write-journal reconciliation loop (2026-07-07)
+# ---------------------------------------------------------------------------
+
+
+_RECONCILER_SHUTDOWN = threading.Event()
+
+
+def _reconciliation_loop(journal_path: Path, target_base: Path) -> None:
+    """Continuous loop: poll the write journal and apply pending entries.
+
+    This is the ONLY writer to the main DB.  It serialises journal
+    entries through ``materialize_journal_entry`` which runs the
+    existing saga (DB upsert + vec key + file write + post-save hooks).
+
+    The loop polls every 100ms.  On shutdown signal it finishes the
+    current batch and returns.
+    """
+    from save.pipeline import materialize_journal_entry
+
+    while not _RECONCILER_SHUTDOWN.is_set():
+        try:
+            from infra.write_journal import (
+                dequeue_pending,
+                reset_stuck_processing,
+            )
+
+            # Reset stuck entries first (handles daemon crash mid-batch)
+            reset_stuck_processing(journal_path)
+
+            entries = dequeue_pending(journal_path, batch_size=10)
+            if not entries:
+                # No work → sleep 100ms before next poll
+                _RECONCILER_SHUTDOWN.wait(0.1)
+                continue
+
+            for entry in entries:
+                if _RECONCILER_SHUTDOWN.is_set():
+                    break
+                try:
+                    materialize_journal_entry(entry, target_base)
+                except Exception as exc:
+                    logger.exception(
+                        "reconciliation: entry %d (%s) failed: %s",
+                        entry.get("id"),
+                        entry.get("note_id", "?"),
+                        exc,
+                    )
+                # Yield to the scheduler between entries so the shutdown
+                # signal is observed promptly during large batch drains.
+                _RECONCILER_SHUTDOWN.wait(0.001)
+        except Exception as loop_exc:
+            logger.error("reconciliation loop error: %s", loop_exc)
+            _RECONCILER_SHUTDOWN.wait(1.0)
+
+    logger.info("reconciliation loop: stopped")
+
+
+def _start_reconciler(journal_path: Path, target_base: Path) -> threading.Thread:
+    """Start the reconciliation daemon thread."""
+    _RECONCILER_SHUTDOWN.clear()
+    thread = threading.Thread(
+        target=_reconciliation_loop,
+        args=(journal_path, target_base),
+        daemon=True,
+        name="journal-reconciler",
+    )
+    thread.start()
+    logger.info("reconciliation loop: started (journal=%s, target=%s)", journal_path, target_base)
+    return thread
+
+
+# ---------------------------------------------------------------------------
 # Worker loop
 # ---------------------------------------------------------------------------
 
@@ -1029,10 +1102,18 @@ def run_worker(
 
         _maybe_run_wal_checkpoint(init_conn, db_path)
 
+    # Start the CQRS write-journal reconciliation daemon (daemon thread).
+    # This runs alongside the task-processing loop — it polls the journal
+    # every 100ms and applies pending writes to the main DB.
+    journal_path = db_path.parent / "journal.db"
+    reconciler_thread = _start_reconciler(journal_path, db_path.parent)
+
     # Delegate to WorkerPool when n_workers > 1
     if n_workers > 1:
         pool = WorkerPool(db_path, n_workers=n_workers, task_type=task_type)
         pool.run(drain=drain, max_tasks=max_tasks)
+        _RECONCILER_SHUTDOWN.set()
+        reconciler_thread.join(timeout=5)
         return
 
     # Single-threaded path
@@ -1131,6 +1212,13 @@ def run_worker(
                         time.sleep(1)
     finally:
         _proc_sig.alarm(0)
+        _RECONCILER_SHUTDOWN.set()
+        try:
+            reconciler_thread.join(timeout=5)
+        except NameError:
+            pass
+        except Exception:
+            pass
         try:
             conn.close()
         except Exception:

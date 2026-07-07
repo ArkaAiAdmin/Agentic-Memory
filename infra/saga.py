@@ -548,13 +548,6 @@ class Saga:
 # the saga gate is enabled. The undo callables below undo exactly
 # the side effects that this function's do callables produce — they
 # are NOT a general undo for save_pipeline.save_memory.
-#
-# LOCKING NOTE: The saga path now acquires the .rebuild.lock file
-# lock via _acquire_write_lock (same as save_pipeline).  Two concurrent
-# saga saves (or a saga save concurrent with a save_pipeline save) are
-# serialized by the lock file.  SQLite WAL mode + BEGIN IMMEDIATE still
-# provides DB-level protection; the lock guards the usearch vec index
-# and markdown file writes.
 
 
 @dataclass
@@ -699,39 +692,6 @@ def _unlink_file(path: Path) -> None:
             path.unlink()
     except Exception as exc:
         logger.warning("saga undo: unlink %s failed: %r", path, exc)
-
-
-def _acquire_serialize_lock(db_path: Path) -> object | None:
-    """Acquire the ``.rebuild.lock`` file lock for saga writes.
-
-    On failure (lock held by another writer) the saga still proceeds
-    best-effort; the race window is narrow and SQLite WAL + BEGIN
-    IMMEDIATE handle DB-level safety. Returns the open file handle
-    (or ``None`` if lock acquisition failed).
-    """
-    from infra._lazy_imports import FileLockError, acquire_flock_with_retry
-
-    try:
-        lock_path = db_path.parent / ".rebuild.lock"
-        lock_file = open(lock_path, "w")
-        acquire_flock_with_retry(
-            lock_file, max_attempts=5, initial_backoff=0.05, strict=True
-        )
-        return lock_file
-    except (FileLockError, OSError):
-        return None
-
-
-def _release_serialize_lock(lock_file) -> None:
-    """Best-effort release of the saga serialize lock. Errors are swallowed."""
-    if lock_file is None:
-        return
-    try:
-        from infra._lazy_imports import release_flock
-
-        release_flock(lock_file)
-    except Exception as _release_exc:
-        logger.debug("release_flock failed in _build_save_memory_steps: %s", _release_exc)
 
 
 def _capture_pre_existing(conn, note_id: str):
@@ -904,7 +864,6 @@ def saga_save_memory(
     do_upsert_db,
     do_write_vec_key,
     do_write_file,
-    lock_already_held: bool = False,
 ) -> str:
     """Triple-store save wrapped in a saga. Returns ``note_id`` on success.
 
@@ -921,13 +880,6 @@ def saga_save_memory(
         do_write_file: Callable that writes the markdown file (use
             ``atomic_write`` for the same crash-safety properties the
             rest of the codebase already relies on).
-        lock_already_held: P0-2 fix (2026-06-22).  When True, skip
-            the internal file-lock acquisition.  save_memory acquires
-            the file lock first (before the conn) to standardize the
-            lock order with _update_memory_index_incremental (which
-            also does file lock -> conn).  Without this, the saga path
-            would double-acquire the same flock from the same process
-            on a different fd, which blocks forever.
 
     Returns:
         The ``note_id`` on success.
@@ -948,22 +900,11 @@ def saga_save_memory(
     db_path = Path(db_path)
 
     if not SAGA_ENABLED:
-        # Fast path: identical to the pre-saga behavior. No rollback
-        # guarantees; same as a bare try/except around the three calls.
         do_upsert_db()
         do_write_vec_key()
         do_write_file()
         return note_id
 
-    # P0-2 fix (2026-06-22): allow caller to pass a pre-acquired
-    # file lock.  Skipping the internal acquisition avoids a
-    # same-process double-acquire (which would block forever on a
-    # different fd for the same file).  The caller is responsible
-    # for releasing the lock after the saga returns.
-    if lock_already_held:
-        lock_file = None
-    else:
-        lock_file = _acquire_serialize_lock(db_path)
     steps, _params = _build_save_memory_steps(
         conn=conn,
         note_id=note_id,
@@ -976,8 +917,6 @@ def saga_save_memory(
 
     try:
         with Saga(name="save_memory", steps=steps, conn=conn, mode=SagaMode.DEFERRED) as saga:
-            # ``saga.results[0]`` is the note_id, ``saga.results[1]`` is
-            # the vec key (or 0), ``saga.results[2]`` is the file path.
             result = saga.results[0]
             return result if result is not None else note_id
     except SagaError:
@@ -989,12 +928,6 @@ def saga_save_memory(
             failed_step="<unknown>",
             original_error=exc,
         ) from exc
-    finally:
-        _release_serialize_lock(lock_file)
-    # Unreachable; the ``raise`` branches above never return. The
-    # explicit fallback satisfies static analyzers that don't track
-    # ``raise`` inside ``except`` as terminating.
-    return note_id  # pragma: no cover
 
 
 # ----------------------------------------------------------------------

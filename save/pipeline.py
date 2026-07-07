@@ -8,6 +8,7 @@ _auto_backlink_multi_part, and save_memory.
 __all__ = [
     "SaveRequest",
     "save_memory",
+    "save_memory_journal",
     "SaveValidationError",
     "upsert_row",
     "memory_supersede_db",
@@ -813,45 +814,7 @@ def _update_memory_index_incremental(
     source_file = f"{category}/{title_slug}.md"
     note_id = f"{category}/{title_slug}"
     tags_json = json.dumps(tags)
-    # P0-5 fix (2026-06-22): _acquire_lock now re-raises FileLockError
-    # on contention.  Catch it here so a contended lock doesn't crash
-    # the caller — log and proceed without the lock.  The pool's
-    # per-thread connection keys still serialise intra-process writes
-    # on the same path, so this is a defence-in-depth fallback rather
-    # than a primary correctness mechanism.
-    from infra._lazy_imports import FileLockError
-
-    if external_db:
-        lock_file = None
-    else:
-        # C2 fix (2026-06-24): retry lock acquisition with backoff instead of
-        # proceeding lockless. Cross-process writes must serialize via flock.
-        # Intra-process writes are already serialized by pool's per-thread keys.
-        max_attempts = 3
-        base_backoff = 0.1
-        for attempt in range(max_attempts):
-            try:
-                lock_file = _acquire_lock(db_path)
-                break
-            except FileLockError as _fle:
-                if attempt == max_attempts - 1:
-                    logger.error(
-                        "incremental update: write lock contended for %s after %d attempts, failing: %s",
-                        db_path,
-                        max_attempts,
-                        _fle,
-                    )
-                    raise
-                wait_time = base_backoff * (2**attempt)
-                logger.warning(
-                    "incremental update: write lock contended for %s (attempt %d/%d), retrying in %.2fs: %s",
-                    db_path,
-                    attempt + 1,
-                    max_attempts,
-                    wait_time,
-                    _fle,
-                )
-                time.sleep(wait_time)
+    lock_file = None
     local_db = None
     try:
         if external_db:
@@ -929,8 +892,6 @@ def _update_memory_index_incremental(
             except Exception as _e:
                 logger.warning("Auto-backfill skipped: %s", _e)
     finally:
-        if lock_file:
-            release_flock(lock_file)
         if local_db is not None:
             try:
                 local_db.close()
@@ -1343,7 +1304,6 @@ def _try_saga_persist(
     file_path,
     markdown_content,
     importance,
-    lock_already_held: bool = False,
     defer_expensive: bool = False,
     tenant_id: str = "default",
     epistemic_source: str = "agent",
@@ -1358,9 +1318,6 @@ def _try_saga_persist(
     expects and forwards to it.      Returns the note_id on success.
     Propagates whatever exception the saga raises — the caller decides
     whether to fall back or to surface the error.
-
-    ``lock_already_held`` (P0-2 fix, 2026-06-22): when True, the saga
-    skips its internal file-lock acquisition.  See ``_persist_via_saga``.
     """
     assert _saga_save_memory is not None, "caller must check _is_saga_enabled() first"
 
@@ -1401,7 +1358,6 @@ def _try_saga_persist(
         do_upsert_db=_do_upsert_db,
         do_write_vec_key=_do_write_vec_key,
         do_write_file=_do_write_file,
-        lock_already_held=lock_already_held,
     )
 
 
@@ -1420,7 +1376,6 @@ def _persist_via_saga(
     file_path,
     markdown_content,
     importance,
-    lock_already_held: bool = False,
     defer_expensive: bool = False,
     tenant_id: str = "default",
     epistemic_source: str = "agent",
@@ -1438,12 +1393,6 @@ def _persist_via_saga(
     Returns a ``(note_id, conn)`` tuple.  ``conn`` is the same
     connection that was passed in — the saga owns commit/close and the
     caller continues to use the connection for post-save hooks.
-
-    ``lock_already_held`` (P0-2 fix, 2026-06-22): when True, the saga
-    skips its internal file-lock acquisition.  save_memory acquires the
-    file lock before the conn and passes True so the saga doesn't try
-    to double-acquire the same flock (which would block forever on a
-    different fd for the same file).
     """
     if not _is_saga_enabled():
         raise RuntimeError(
@@ -1463,7 +1412,6 @@ def _persist_via_saga(
         file_path=file_path,
         markdown_content=markdown_content,
         importance=importance,
-        lock_already_held=lock_already_held,
         defer_expensive=defer_expensive,
         tenant_id=tenant_id,
         epistemic_source=epistemic_source,
@@ -1579,11 +1527,222 @@ def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn=None) -> None:
         logger.debug("save_memory: CRDT SQL projection skipped: %s", _e)
 
 
+# ---------------------------------------------------------------------------
+# CQRS write-journal path (2026-07-07)
+# ---------------------------------------------------------------------------
+
+_JOURNAL_PATH: Path | None = None
+
+
+def _get_journal_path() -> Path:
+    """Resolve the path to the write journal DB (``journal.db``)."""
+    global _JOURNAL_PATH
+    if _JOURNAL_PATH is None:
+        from infra.infrastructure import resolve_active_memory_dir
+        _JOURNAL_PATH = resolve_active_memory_dir() / "journal.db"
+    return _JOURNAL_PATH
+
+
+def save_memory_journal(
+    content: str | SaveRequest,
+    category: str | None = None,
+    title_slug: str | None = None,
+    tags: Optional[list] = None,
+    pinned: bool = False,
+    is_global: bool = False,
+    safety_wiring: bool = True,
+    db_path: str | None = None,
+    importance: int = 3,
+    note_id: str = "",
+    context: str = "generic",
+    defer_expensive: bool = False,
+    tenant_id: str = "default",
+    epistemic_source: str = "agent",
+    belief_status: str = "active",
+    asserting_agent_id: str = "",
+    evidence_chain: list | None = None,
+    fact_type: str = "observation",
+) -> str:
+    """Write a memory note via the CQRS write journal.
+
+    Validates parameters, enqueues the write to the journal, and returns
+    the pre-allocated note_id immediately.  The actual DB + file write
+    is performed asynchronously by the reconciliation daemon.
+
+    Two calling conventions (same as ``save_memory``):
+
+    1. **New (preferred):** ``save_memory_journal(SaveRequest(...))``
+    2. **Legacy:** ``save_memory_journal(content, category, title_slug, ...)``
+
+    Returns:
+        The canonical note_id string on success, or an ``_err`` envelope
+        string on failure.
+    """
+    if isinstance(content, SaveRequest):
+        req = content
+    else:
+        req = SaveRequest(
+            content=content,
+            category=category or "",
+            title_slug=title_slug or "",
+            tags=tags,
+            pinned=pinned,
+            is_global=is_global,
+            safety_wiring=safety_wiring,
+            db_path=db_path,
+            importance=importance,
+            note_id=note_id,
+            context=context,
+            defer_expensive=defer_expensive,
+            tenant_id=tenant_id,
+            epistemic_source=epistemic_source,
+            belief_status=belief_status,
+            asserting_agent_id=asserting_agent_id,
+            evidence_chain=evidence_chain,
+            fact_type=fact_type,
+        )
+
+    _start_time = time.time()
+
+    # Validate synchronously — reject bad input immediately
+    tags_list, _tags_str = _validate_save_params(req.content, req.category, req.title_slug, req.tags)
+    from infra.memory_common import _resolve_tags
+    tags_list = _resolve_tags(req.category, tags_list, context=req.context)
+    _scan_for_injection_or_skip(req.content, req.category, req.title_slug)
+    target_base, file_path, _category_dir, _project_root, effective_category = _resolve_save_paths(
+        req.category, req.title_slug, req.is_global, req.db_path
+    )
+
+    if req.db_path is not None:
+        db_path_obj = Path(req.db_path)
+    else:
+        db_path_obj = target_base / "memory.db"
+    journal_path = db_path_obj.parent / "journal.db"
+
+    from infra.write_journal import enqueue_write, init_journal_db
+    init_journal_db(journal_path)
+    agent_id = _crdt_agent_id()
+    resolved_note_id = enqueue_write(
+        journal_path=journal_path,
+        req=req,
+        agent_id=agent_id,
+    )
+
+    logger.info(
+        "save_memory_journal: enqueued %s (category=%s, slug=%s, latency=%.1fms)",
+        resolved_note_id,
+        req.category,
+        req.title_slug,
+        (time.time() - _start_time) * 1000,
+    )
+    return resolved_note_id
+
+
+def materialize_journal_entry(
+    entry: dict,
+    target_base: Path,
+) -> str:
+    """Apply a single journal entry through the saga write path."""
+    from infra.write_journal import mark_applied, mark_failed
+
+    req = SaveRequest(
+        content=entry.get("content", ""),
+        category=entry.get("category", ""),
+        title_slug=entry.get("title_slug", ""),
+        tags=json.loads(entry.get("tags", "[]")) if entry.get("tags") else None,
+        pinned=bool(entry.get("pinned", 0)),
+        is_global=bool(entry.get("is_global", 0)),
+        importance=int(entry.get("importance", 3)),
+        context=entry.get("context", "generic"),
+        defer_expensive=bool(entry.get("defer_expensive", 1)),
+        tenant_id=entry.get("tenant_id", "default"),
+        epistemic_source=entry.get("epistemic_source", "agent"),
+        belief_status=entry.get("belief_status", "active"),
+        asserting_agent_id=entry.get("asserting_agent_id", ""),
+        fact_type=entry.get("fact_type", "observation"),
+    )
+    note_id = entry.get("note_id", "")
+
+    from infra.memory_common import get_memory_paths
+    _, _, global_mem = get_memory_paths()
+    target_mem = global_mem if req.is_global else target_base
+    file_path = (target_mem / req.category / f"{req.title_slug}.md").resolve()
+    db_path_obj = str(target_mem / "memory.db")
+    journal_path = target_mem / "journal.db"
+
+    from infra.memory_common import _resolve_tags
+    tags_list = _resolve_tags(req.category, req.tags or [], context=req.context)
+    _markdown, _fm_meta, now_iso, metadata_json = _build_memory_file(
+        req.content, req.category, req.title_slug, tags_list, req.pinned, note_id=note_id,
+    )
+
+    try:
+        conn = _acquire_db_connection(db_path_obj, req.category, req.title_slug, time.time(), tenant_id=req.tenant_id)
+        _save_errored = False
+        try:
+            note_id_out, conn = _persist_via_saga(
+                conn=conn, db_path_obj=Path(db_path_obj),
+                category=req.category, title_slug=req.title_slug,
+                content=req.content, tags_list=tags_list, pinned=req.pinned,
+                now_iso=now_iso, is_global=req.is_global, metadata_json=metadata_json,
+                file_path=file_path, markdown_content=_markdown, importance=req.importance,
+                defer_expensive=req.defer_expensive, tenant_id=req.tenant_id,
+                epistemic_source=req.epistemic_source, belief_status=req.belief_status,
+                asserting_agent_id=req.asserting_agent_id, fact_type=req.fact_type,
+            )
+            _run_post_save_hooks(
+                target_mem, Path(db_path_obj), note_id_out,
+                req.category, req.title_slug, req.content, req.tags or [],
+                req.pinned, req.is_global,
+                (req.safety_wiring and not req.defer_expensive),
+                time.time(), conn=conn,
+            )
+            _enqueue_background_tasks(Path(db_path_obj), note_id_out, conn=conn)
+            if _is_crdt_enabled():
+                _project_sql_to_crdt(Path(db_path_obj), note_id, conn=conn)
+            mark_applied(journal_path, entry["id"])
+            logger.info("materialize_journal_entry: applied %s", note_id_out)
+            return note_id_out
+        except Exception:
+            _save_errored = True
+            raise
+        finally:
+            if conn is not None:
+                try:
+                    if _save_errored:
+                        try: conn.rollback()
+                        except Exception: pass
+                    conn.close()
+                except Exception: pass
+    except SaveValidationError as e:
+        mark_failed(journal_path, entry["id"], str(e))
+        raise
+    except Exception as e:
+        mark_failed(journal_path, entry["id"], f"materialize: {e}")
+        logger.exception("materialize_journal_entry: %s failed: %s", note_id, e)
+        raise
+
+
+def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn=None) -> None:
+    """Best-effort: project the committed SQL row into memory_field_crdt."""
+    try:
+        from crdt.crdt_field import project_sql_to_crdt as _proj
+        from infra.db import open_db
+
+        if conn is not None:
+            _proj(conn, note_id, _crdt_agent_id())
+        else:
+            with open_db(db_path_obj, timeout=5.0) as c:
+                _proj(c, note_id, _crdt_agent_id())
+    except Exception as _e:
+        logger.debug("save_memory: CRDT SQL projection skipped: %s", _e)
+
+
 def _save_memory_core(
-    req: SaveRequest,
-    _now_iso: str | None = None,
-    _conn=None,
-):
+        req: SaveRequest,
+        _now_iso: str | None = None,
+        _conn=None,
+    ):
     """Internal implementation of save_memory."""
     content = req.content
     category = req.category
@@ -1649,32 +1808,8 @@ def _save_memory_core(
         # to refresh.
         with _pragma_cache_lock:
             _pragma_cache.pop(str(db_path_obj), None)
-        # P0-2 fix (2026-06-22): acquire the file lock BEFORE the conn so
-        # the save_memory path matches the incremental path's lock order
-        # (file lock -> DB conn, in _update_memory_index_incremental).  The
-        # previous order (conn -> file lock) was a lock-order inversion that
-        # could deadlock if the conn ever became process-wide.  We pass
-        # ``lock_already_held=True`` to the saga so it skips its internal
-        # file-lock acquisition — double-acquiring the same flock from the
-        # same process on a different fd would block forever.
-        #
-        # P0-5 fix (2026-06-22): _acquire_lock now re-raises FileLockError
-        # (per its strict=True contract).  We catch it here and proceed
-        # without the lock so a contended lock doesn't fail the save —
-        # the pool's per-thread conn still gives intra-process isolation,
-        # and intra-process callers using the same path from different
-        # threads are already serialized via the pool's per-thread keys.
-        from infra._lazy_imports import FileLockError
-
-        try:
-            lock_file = _acquire_lock(db_path_obj)
-        except FileLockError as _fle:
-            logger.warning(
-                "save_memory: write lock contended for %s, proceeding without it: %s",
-                db_path_obj,
-                _fle,
-            )
-            lock_file = None
+        # No flock — SQLite WAL + BEGIN IMMEDIATE handle serialization.
+        lock_file = None
         try:
             if _conn is not None:
                 conn = _conn
@@ -1683,13 +1818,6 @@ def _save_memory_core(
                     db_path_obj, category, title_slug, _start_time, tenant_id=tenant_id
                 )
         except Exception:
-            if lock_file is not None:
-                try:
-                    release_flock(lock_file)
-                except Exception as _rfl_err:
-                    logger.debug(
-                        "save_memory: release_flock in early return: %s", _rfl_err
-                    )
             raise
         # P0-1 fix (2026-06-22): the previous version of this function never
         # called safe_close_db on the saga-path conn, so the pool's depth
@@ -1724,7 +1852,6 @@ def _save_memory_core(
                 file_path=file_path,
                 markdown_content=_markdown,
                 importance=importance,
-                lock_already_held=(lock_file is not None),
                 defer_expensive=defer_expensive,
                 epistemic_source=epistemic_source,
                 belief_status=belief_status,
@@ -1763,13 +1890,6 @@ def _save_memory_core(
             _save_errored = True
             raise
         finally:
-            if lock_file is not None:
-                try:
-                    release_flock(lock_file)
-                except Exception as _rfl_err2:
-                    logger.debug(
-                        "save_memory: release_flock in finally failed: %s", _rfl_err2
-                    )
             if conn is not None and _conn is None:
                 try:
                     if _save_errored:
