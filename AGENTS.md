@@ -12,10 +12,12 @@ You are an agent working on the **agentic-memory** codebase at the repo root.
 
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
-- **Surface**: 15 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 35+ cron jobs + ~18 CLI commands
-- **Schema**: v33, ~62 tables
-- **Code**: ~60k LOC production, ~87k+ test LOC; see `docs/architecture.md`
-- **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. Read it whenever you need to call an MCP tool and aren't sure which one or how.
+<!--AUTO-GEN:START key="what_this_system_is"-->
+- **Surface**: 15 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 39+ cron jobs
+- **Schema**: v33, ~42 tables
+- **Code**: ~60k LOC production, ~79k+ test LOC; see `docs/architecture.md`
+- **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools.
+<!--AUTO-GEN:END key="what_this_system_is"-->
 
 ---
 
@@ -43,7 +45,7 @@ Minimum: do #1, #7, and #13. Run #8 opportunistically. Use `agentic-memory_memor
 
 ## Critical Path
 
-```
+<!--AUTO-GEN:START key="critical_path"-->
 agentic-memory/
 ├── save/ (save/pipeline.py)          ← write path (saga, FTS5, chunks, embeddings, KG, facts, audit, CRDT)
 ├── search/ (search/orchestrator.py)  ← read path (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve)
@@ -55,12 +57,12 @@ agentic-memory/
 │   ├── daemon.py                     ← long-lived inbox drainer
 │   ├── tool_complete.py              ← hook → save_memory pipeline
 │   └── circuit_breaker.py            ← auto-save failure gating
-├── cron/                             ← 35+ scheduled jobs + install_crontab.sh
+├── cron/                             ← 39+ scheduled jobs + install_crontab.sh
 ├── mcp_*.py (28 modules)             ← domain-split MCP tools
 ├── memory/                           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md               ← MCP tool reference for agents
-└── eval/                             ← 237 test files, 4,072+ test functions
-```
+└── eval/                             ← 239 test files, 4045+ test functions
+<!--AUTO-GEN:END key="critical_path"-->
 
 **Message contract:** All CORE tool responses are user-facing JSON. Admin tools (87 ADMIN + 3 DEPRECATED) are routed exclusively through `memory_maintenance(operation="...")` — never call an ADMIN tool name directly. All writes go through `save_memory`; the saga ensures crash-consistent rollback with dependent-row cleanup. `defer_expensive=True` by default — returns <200ms.
 
@@ -71,9 +73,13 @@ agentic-memory/
 1. **All writes go through `save_memory`** (`save_pipeline.save_memory`). Hooks and auto-save delegate to it. Don't re-implement.
 2. **Connection pool is per-DB-path.** `connection_pool.get(str(db_path))` returns stale connections if the path doesn't exist. Active connections cannot be evicted.
 3. **Vec keys/index drift after warm-up.** Run `venv/bin/python rebuild_vec_index.py` after warm-up chains, not before.
-4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **33**. Never edit live DB schema by hand.
+4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **<!--AUTO-GEN:START key="hard_rule_4"-->
+33
+<!--AUTO-GEN:END key="hard_rule_4"-->**. Never edit live DB schema by hand.
 5. **Default search is `include_global=True`** with blended RRF. Don't override "for safety."
-6. **15 CORE tools are user-facing**; 87 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
+6. <!--AUTO-GEN:START key="hard_rule_6"-->
+**15 CORE tools are user-facing**; 87 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
+<!--AUTO-GEN:END key="hard_rule_6"-->
 7. **Use `venv/bin/python backfill_all.py` (incremental default) or `venv/bin/python backfill_all.py --full` (full rebuild).** Bare args create 22 MB garbage DBs at repo root.
 8. **Tests hitting prod DB must use `_ProdDBGuarded` mixin.** See `eval/test_safety_wiring.py:60-109`.
 9. **Lock order: file lock first, then conn.** Both `save_memory` and `_update_memory_index_incremental` follow this order.
@@ -89,7 +95,7 @@ agentic-memory/
 19. **Maintenance is automated.** Most maintenance is handled by cron jobs and the background worker (see `cron/install_crontab.sh`). The agent should exercise `memory_organize`, `memory_maintenance`, or individual MCP tools **only when cron is not running or immediate results are needed**. Do not run maintenance tools as a default post-task ritual.
 20. **Full-suite test runs must be backgrounded and monitored.** Any `pytest eval/` or full-suite invocation must be run with `nohup` in the background, with the log file polled every 15–30 seconds until completion. Do not run the full suite as a blocking foreground call — it will exceed the shell timeout and you will miss failures. Always tail the log file and confirm `0 failures` before declaring the suite green.
 21. **Pre-existing bugs and test failures must be fixed, not ignored.** If you discover a pre-existing bug, failing test, or broken behavior while working on any task, you must fix it, add or update tests to cover it, verify the fix with the affected test(s) or full suite, and report the fix back to the user. Leaving known-broken code or known-failing tests behind is not acceptable.
-22. **Update AGENTS.md when critical agent-facing information changes.** If you change any of the following, update the corresponding sections in AGENTS.md in the same commit: schema version, table counts, MCP tool surface counts (CORE/ADMIN/DEPRECATED totals), channel/key names in search weights, hook wiring, CLI commands, Critical Path diagram, or any information agents rely on to call tools correctly. Stale AGENTS.md is as harmful as stale code.
+22. **Update AGENTS.md when critical agent-facing information changes.** If you change any of the following, run `make update-agents-md` in the same commit to regenerate AUTO-GEN sections: schema version, table counts, MCP tool surface counts (CORE/ADMIN/DEPRECATED totals), channel/key names in search weights, hook wiring, CLI commands, Critical Path diagram, or any information agents rely on to call tools correctly. Stale AGENTS.md is as harmful as stale code.
 
 ---
 
@@ -180,6 +186,7 @@ Binds to `127.0.0.1:9877`. Key env vars: `MEMORY_SYNC_TOKEN` (required), `MEMORY
 
 ## MCP Surface Contract
 
+<!--AUTO-GEN:START key="mcp_surface_contract"-->
 **Source of truth for the MCP tool surface: `docs/MCP_SURFACE.md` + `tool_registry.py`**. The MCP
 server exposes **15 CORE tools** directly plus **1 `memory_maintenance` router**; 87 ADMIN + 3 DEPRECATED are hidden behind it
 `memory_maintenance(operation="...")`.
@@ -187,8 +194,9 @@ server exposes **15 CORE tools** directly plus **1 `memory_maintenance` router**
 | Tier | Count | Access |
 |------|-------|--------|
 | CORE verbs | 15 | Direct MCP tool call |
-| ADMIN (legacy) | 84 | `memory_maintenance(operation="...")` or `memory_advanced(operation="...")` |
+| ADMIN (legacy) | 87 | `memory_maintenance(operation="...")` or `memory_advanced(operation="...")` |
 | DEPRECATED | 3 | Same as ADMIN (also listed in ADMIN_TOOLS; tracked for audit) |
+<!--AUTO-GEN:END key="mcp_surface_contract"-->
 
 **When to use which:**
 - Use a **CORE verb** if one covers the task (see `docs/MCP_SURFACE.md` for the full verb reference).
@@ -265,13 +273,20 @@ See `memory.toml` for all 17 feature flags.
 
 ## Current State
 
-- **Schema v32**: 32 migrations, 100% down-migration coverage, ~62 tables.
+<!--AUTO-GEN:START key="current_state"-->
+- **Schema v33**: 33 migrations (100% down-migration coverage), ~42 tables.
 - **MCP surface**: 15 CORE verbs + 1 `memory_maintenance` router (87 ADMIN + 3 DEPRECATED). Agents see 16 tools. See `docs/MCP_SURFACE.md` for verb reference.
 - **Write path**: Saga transaction (DB + vec_key + .md file) with flock-based cross-process locking, crash-consistent rollback, and dependent-row cleanup. `defer_expensive=True` by default — returns <200ms.
-- **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + late-interaction ColBERT + cross-encoder + temporal decay + neural forget curve + concept/centrality boost). Phase-level error counters.
+- **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + cross-encoder + temporal decay + neural forget curve + concept/centrality boost). Phase-level error counters.
 - **KG/Temporal**: Entity extraction with Jaccard fuzzy match, temporal KG with contradiction detection and fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save with circuit breaker, TS plugin coordination, cron-driven maintenance.
-- **Testing**: 237 test files, ~4,072+ test functions, ~87k+ test LOC. Subprocess-per-file runner for torch-safe parallelism.
+- **Testing**: 239 test files, 4045+ test functions, ~79k+ test LOC. Subprocess-per-file runner for torch-safe parallelism.
+- **Canonical references**: `docs/architecture.md` (architecture), `docs/MCP_SURFACE.md` (MCP workflow), `docs/reference/mcp-tools.md` (tool catalog), `skills/memory-architecture/SKILL.md` (agent walkthrough).
+
+> Note: For authoritative counts, query `tool_registry.py` and `infra/migration_runner.py` directly.
+
+> Note: Current Status is a point-in-time snapshot. It will drift. For authoritative counts, query the codebase directly.
+<!--AUTO-GEN:END key="current_state"-->
 - **Canonical references**: `docs/architecture.md` (architecture), `docs/MCP_SURFACE.md` (MCP workflow), `docs/reference/mcp-tools.md` (tool catalog), `skills/memory-architecture/SKILL.md` (agent walkthrough).
 
 > Note: For authoritative counts, query `tool_registry.py` and `infra/migration_runner.py` directly.

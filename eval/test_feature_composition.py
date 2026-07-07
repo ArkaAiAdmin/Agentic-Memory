@@ -19,17 +19,13 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Resolve paths
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 sys.path.insert(0, str(INSTALL_DIR / "eval"))
 
-import memory_mcp
-import save_pipeline
-import search_pipeline
-import mcp_tools
 from infra.memory_common import connection_pool, open_db
 from save_pipeline import save_memory, reinforce_memories_db
 from consolidation import cluster_related
@@ -57,6 +53,8 @@ class CompositionTestBase(unittest.TestCase):
     def setUp(self):
         self.db_path = self.__class__._db_path
         self.tmpdir = self.__class__._tmpdir
+        connection_pool._pool.clear()
+        connection_pool._pooled_ids.clear()
         # Clear out tables before each test
         with open_db(self.db_path) as conn:
             conn.execute("DELETE FROM memories")
@@ -207,23 +205,25 @@ class TestSagaRollbackPreservesKGConsistency(CompositionTestBase):
 
     def test_saga_rollback_completeness(self):
         slug = "saga-fail-test"
-        nid = f"lessons/{slug}"
 
-        # 1. Mock _index_facts to raise an exception mid-save
-        with patch("save.pipeline._index_facts", side_effect=ValueError("Simulated indexing error")):
-            try:
-                save_memory(
-                    content="Procedural notes: 1. Setup server. 2. Verify config works.",
-                    category="lessons",
-                    title_slug=slug,
-                    tags=["test"],
-                    pinned=False,
-                    is_global=False,
-                    safety_wiring=True,
-                    db_path=str(self.db_path),
-                )
-            except Exception:
-                pass
+        # 1. Mock _index_facts to raise an exception mid-save.
+        # Pin MEMORY_SAGA_FALLBACK=raise so prior-test env leakage can't
+        # cause _persist_to_db to silently insert a row.
+        with patch.dict(os.environ, {"MEMORY_SAGA_FALLBACK": "raise"}):
+            with patch("save.pipeline._index_facts", side_effect=ValueError("Simulated indexing error")):
+                try:
+                    save_memory(
+                        content="Procedural notes: 1. Setup server. 2. Verify config works.",
+                        category="lessons",
+                        title_slug=slug,
+                        tags=["test"],
+                        pinned=False,
+                        is_global=False,
+                        safety_wiring=True,
+                        db_path=str(self.db_path),
+                    )
+                except Exception:
+                    pass
 
         # 2. Verify all tables are rolled back and empty
         with open_db(self.db_path) as conn:
@@ -303,20 +303,21 @@ class TestFullWriteChainUnderPartialFailure(CompositionTestBase):
         ]
 
         for stage in stages:
-            with patch(stage, side_effect=RuntimeError(f"Failure at {stage}")):
-                try:
-                    save_memory(
-                        content="Some robust procedurals: 1. Do step A. 2. Verify outcome.",
-                        category="lessons",
-                        title_slug="stage-failure-test",
-                        tags=["failure-test"],
-                        pinned=False,
-                        is_global=False,
-                        safety_wiring=True,
-                        db_path=str(self.db_path),
-                    )
-                except Exception:
-                    pass
+            with patch.dict(os.environ, {"MEMORY_SAGA_FALLBACK": "raise"}):
+                with patch(stage, side_effect=RuntimeError(f"Failure at {stage}")):
+                    try:
+                        save_memory(
+                            content="Some robust procedurals: 1. Do step A. 2. Verify outcome.",
+                            category="lessons",
+                            title_slug="stage-failure-test",
+                            tags=["failure-test"],
+                            pinned=False,
+                            is_global=False,
+                            safety_wiring=True,
+                            db_path=str(self.db_path),
+                        )
+                    except Exception:
+                        pass
 
                 # Check total database state is fully rolled back
                 with open_db(self.db_path) as conn:

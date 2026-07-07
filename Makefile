@@ -1,4 +1,4 @@
-.PHONY: test test-quick test-file test-clean test-results help
+.PHONY: test test-quick test-file test-clean test-results update-agents-md help
 
 PYTHON := ./venv/bin/python
 
@@ -20,6 +20,9 @@ test-file: ## Run a single test file: make test-file FILE=eval/test_foo.py
 
 test-results: ## Show last full-suite results
 	@cat eval/results/full_suite_results.txt 2>/dev/null || echo "No results yet — run 'make test'"
+
+update-agents-md: ## Regenerate AUTO-GEN sections in AGENTS.md from live codebase
+	$(PYTHON) infra/agents_md_generator.py
 
 test-clean: ## Clear pytest cache + temp junit XML
 	rm -rf eval/.pytest_cache eval/__pycache__ /tmp/junit_*.xml /tmp/full_suite*.log

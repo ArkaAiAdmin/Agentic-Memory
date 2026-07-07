@@ -16,7 +16,9 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+from infra.db import AnyConnection
 
 
 def auto_resolve_contradiction_pair(
