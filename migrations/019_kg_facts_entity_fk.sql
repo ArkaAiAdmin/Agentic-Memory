@@ -93,7 +93,7 @@ DROP TABLE IF EXISTS kg_facts;
 -- 3. Recreate with ON DELETE SET NULL on the entity FKs
 -- ---------------------------------------------------------------------------
 
-CREATE TABLE kg_facts (
+CREATE TABLE IF NOT EXISTS kg_facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     subject TEXT NOT NULL,
     predicate TEXT NOT NULL,
@@ -130,15 +130,15 @@ INSERT INTO kg_facts SELECT * FROM kg_facts_backup_019;
 -- 5. Recreate the indexes (autoindex 1 covers the UNIQUE constraint)
 -- ---------------------------------------------------------------------------
 
-CREATE INDEX idx_kg_facts_subject ON kg_facts(subject);
-CREATE INDEX idx_kg_facts_predicate ON kg_facts(predicate);
-CREATE INDEX idx_kg_facts_object ON kg_facts(object);
-CREATE INDEX idx_kg_facts_spo ON kg_facts(subject, predicate, object);
-CREATE INDEX idx_kg_facts_subject_entity ON kg_facts(subject_entity_id);
-CREATE INDEX idx_kg_facts_object_entity ON kg_facts(object_entity_id);
-CREATE INDEX idx_kg_facts_validity ON kg_facts(valid_at, invalid_at);
-CREATE INDEX idx_kg_facts_superseded_by ON kg_facts(superseded_by);
-CREATE INDEX idx_kg_facts_event_time ON kg_facts(event_time);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_subject ON kg_facts(subject);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_predicate ON kg_facts(predicate);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_object ON kg_facts(object);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_spo ON kg_facts(subject, predicate, object);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_subject_entity ON kg_facts(subject_entity_id);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_object_entity ON kg_facts(object_entity_id);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_validity ON kg_facts(valid_at, invalid_at);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_superseded_by ON kg_facts(superseded_by);
+CREATE INDEX IF NOT EXISTS idx_kg_facts_event_time ON kg_facts(event_time);
 
 -- ---------------------------------------------------------------------------
 -- 6. Drop the backup

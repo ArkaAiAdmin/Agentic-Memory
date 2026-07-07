@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 _install_root = os.environ.get("MEMORY_INSTALL_ROOT") or str(
@@ -18,6 +19,7 @@ from _fixtures import bootstrap_temp_db_clean
 from infra.memory_common import open_db
 from memory_integrity import (
     check_index_integrity,
+    find_kg_orphans,
     find_orphan_files,
     recover_orphan_files,
 )
@@ -521,7 +523,9 @@ class TestFts5DriftRepair(unittest.TestCase):
             )
             db.commit()
             # Verify drift exists.
-            mem_count = db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+            row = db.execute("SELECT COUNT(*) FROM memories").fetchone()
+            assert row is not None
+            mem_count = int(row[0])
             self.assertEqual(mem_count, 2)
 
         result = repair_fts_drift(db_path)
@@ -540,6 +544,120 @@ class TestFts5DriftRepair(unittest.TestCase):
         )
         # FTS count must now match memories count.
         self.assertEqual(result["indexed_after"], 2)
+
+
+# ===========================================================================
+# M3 (2026-07-07): find_kg_orphans — AND semantics and bridge-edge exclusion
+# ===========================================================================
+
+
+class TestFindKgOrphansM3(unittest.TestCase):
+    """Regression tests for the find_kg_orphans M3 fix.
+
+    M3 changes two things:
+    1. Both endpoints of a kg_edges row must be fact-less (was OR).
+    2. An entity reachable via kg_edges from an entity in kg_facts is
+       not an orphan, and a kg_edges row whose endpoints are both
+       reachable from the fact graph (a "bridge" edge) must NOT be
+       reported as an orphan.
+    """
+
+    def setUp(self) -> None:
+        self.tmp_dir = Path(tempfile.mkdtemp(prefix="kg_orphans_test_"))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _seed_fully_connected_graph(self, db: Any) -> None:
+        """Insert a 3-entity graph:
+        - e_fact appears in kg_facts (so it is NOT an orphan)
+        - e_isolated doesn't appear in kg_facts and has no kg_edges
+          (so it IS an orphan)
+        - e_bridge doesn't appear in kg_facts but has a kg_edges row
+          to/from e_fact (bridge: preserved by M3)
+        """
+        db.execute(
+            "INSERT INTO kg_entities (id, name, entity_type) "
+            "VALUES (1, 'e_fact', 'entity'), (2, 'e_bridge', 'entity'), "
+            "(3, 'e_isolated', 'entity')"
+        )
+        db.execute(
+            "INSERT INTO kg_edges (source_id, target_id, relation) "
+            "VALUES (2, 1, 'links_to')"
+        )
+        db.execute(
+            "INSERT INTO kg_facts (subject, predicate, object) "
+            "VALUES ('e_fact', 'is_a', 'entity')"
+        )
+        db.commit()
+
+    def test_bridge_edge_is_not_orphan(self) -> None:
+        """A kg_edges row whose one endpoint is reachable from the
+        fact graph (via another edge) must NOT be reported."""
+        db_path = self.tmp_dir / "memory.db"
+        bootstrap_temp_db_clean(db_path)
+        with open_db(db_path) as db:
+            self._seed_fully_connected_graph(db)
+        with open_db(db_path) as db:
+            orphans = find_kg_orphans(db)
+        bridge_edge_ids = {e["id"] for e in orphans["kg_edges"]}
+        self.assertNotIn(1, bridge_edge_ids, "bridge edge should not be an orphan")
+
+    def test_isolated_entity_is_orphan(self) -> None:
+        """An entity with no kg_facts and no kg_edges IS an orphan."""
+        db_path = self.tmp_dir / "memory.db"
+        bootstrap_temp_db_clean(db_path)
+        with open_db(db_path) as db:
+            self._seed_fully_connected_graph(db)
+        with open_db(db_path) as db:
+            orphans = find_kg_orphans(db)
+        orphan_entity_ids = {e["id"] for e in orphans["kg_entities"]}
+        self.assertIn(3, orphan_entity_ids, "isolated entity should be an orphan")
+
+    def test_fact_connected_entity_not_orphan(self) -> None:
+        """An entity that appears directly in kg_facts is NOT an orphan."""
+        db_path = self.tmp_dir / "memory.db"
+        bootstrap_temp_db_clean(db_path)
+        with open_db(db_path) as db:
+            self._seed_fully_connected_graph(db)
+        with open_db(db_path) as db:
+            orphans = find_kg_orphans(db)
+        orphan_entity_ids = {e["id"] for e in orphans["kg_entities"]}
+        self.assertNotIn(1, orphan_entity_ids)
+
+    def test_both_endpoints_must_be_factless(self) -> None:
+        """An edge whose target IS in kg_facts must not be an orphan
+        even if its source is fact-less (AND semantics)."""
+        db_path = self.tmp_dir / "memory.db"
+        bootstrap_temp_db_clean(db_path)
+        db = sqlite3.connect(str(db_path))
+        db.execute("PRAGMA foreign_keys = ON")
+        try:
+            db.execute(
+                "INSERT INTO kg_entities (id, name, entity_type) "
+                "VALUES (10, 'e_connected_target', 'entity'), "
+                "(11, 'e_factless_source', 'entity')"
+            )
+            # e_connected_target appears in kg_facts; e_factless_source does not.
+            db.execute(
+                "INSERT INTO kg_edges (source_id, target_id, relation) "
+                "VALUES (11, 10, 'points_to')"
+            )
+            db.execute(
+                "INSERT INTO kg_facts (subject, predicate, object) "
+                "VALUES ('e_connected_target', 'x', 'y')"
+            )
+            db.commit()
+        finally:
+            db.close()
+        with open_db(db_path) as db:  # type: ignore[assignment]
+            orphans = find_kg_orphans(db)
+        edge_ids = {e["id"] for e in orphans["kg_edges"]}
+        self.assertNotIn(
+            1, edge_ids,
+            "edge whose target IS in kg_facts must not be an orphan "
+            "(AND semantics: both endpoints must be fact-less)",
+        )
 
 
 if __name__ == "__main__":

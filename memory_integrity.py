@@ -1184,6 +1184,12 @@ def find_kg_orphans(db: AnyConnection) -> dict[str, list[dict[str, Any]]]:
       - "kg_entities": list of {id, name, entity_type}
       - "backlinks":  list of {source_id, target_id}
 
+    An entity is an orphan when it has **no kg_facts reference** AND
+    **no kg_edges reference** — both must be empty.  An edge is an
+    orphan only when **both** endpoints are fact-less AND neither
+    endpoint is connected (via any chain of kg_edges) to an entity
+    that appears in kg_facts (bridge edges are preserved).
+
     Each list contains the rows that would be deleted by
     ``repair_kg_orphans``.  Pure read-only — no side effects.
     """
@@ -1201,17 +1207,28 @@ def find_kg_orphans(db: AnyConnection) -> dict[str, list[dict[str, Any]]]:
                 SELECT id, source_id, target_id, relation
                 FROM kg_edges
                 WHERE source_id IN (
-                    SELECT e.id FROM kg_entities e
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM kg_facts f
-                        WHERE f.subject = e.name OR f.object = e.name
-                    )
-                ) OR target_id IN (
-                    SELECT e.id FROM kg_entities e
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM kg_facts f
-                        WHERE f.subject = e.name OR f.object = e.name
-                    )
+                    SELECT id FROM kg_entities
+                    WHERE name NOT IN (SELECT subject FROM kg_facts WHERE subject IS NOT NULL)
+                       AND name NOT IN (SELECT object FROM kg_facts WHERE object IS NOT NULL)
+                       AND id NOT IN (
+                           SELECT DISTINCT e1.id FROM kg_entities e1
+                           JOIN kg_edges e2 ON e2.source_id = e1.id OR e2.target_id = e1.id
+                           JOIN kg_entities mid ON mid.id = e2.source_id OR mid.id = e2.target_id
+                           WHERE mid.name IN (SELECT subject FROM kg_facts WHERE subject IS NOT NULL)
+                              OR mid.name IN (SELECT object FROM kg_facts WHERE object IS NOT NULL)
+                       )
+                )
+                AND target_id IN (
+                    SELECT id FROM kg_entities
+                    WHERE name NOT IN (SELECT subject FROM kg_facts WHERE subject IS NOT NULL)
+                       AND name NOT IN (SELECT object FROM kg_facts WHERE object IS NOT NULL)
+                       AND id NOT IN (
+                           SELECT DISTINCT e1.id FROM kg_entities e1
+                           JOIN kg_edges e2 ON e2.source_id = e1.id OR e2.target_id = e1.id
+                           JOIN kg_entities mid ON mid.id = e2.source_id OR mid.id = e2.target_id
+                           WHERE mid.name IN (SELECT subject FROM kg_facts WHERE subject IS NOT NULL)
+                              OR mid.name IN (SELECT object FROM kg_facts WHERE object IS NOT NULL)
+                       )
                 )
                 """
             ).fetchall()
@@ -1235,7 +1252,10 @@ def find_kg_orphans(db: AnyConnection) -> dict[str, list[dict[str, Any]]]:
                 )
                 AND NOT EXISTS (
                     SELECT 1 FROM kg_edges e2
+                    JOIN kg_entities mid ON mid.id = e2.source_id OR mid.id = e2.target_id
                     WHERE e2.source_id = e.id OR e2.target_id = e.id
+                      AND (mid.name IN (SELECT subject FROM kg_facts WHERE subject IS NOT NULL)
+                           OR mid.name IN (SELECT object FROM kg_facts WHERE object IS NOT NULL))
                 )
                 """
             ).fetchall()

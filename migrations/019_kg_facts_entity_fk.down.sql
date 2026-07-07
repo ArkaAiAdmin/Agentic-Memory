@@ -4,11 +4,18 @@
 -- Reverts subject_entity_id and object_entity_id FKs back to plain
 -- REFERENCES (no ON DELETE clause).
 --
+-- Data preservation: kg_facts is renamed to kg_facts_pre_rollback_019
+-- before recreation, so all rows survive the FK-clause reversal.
+--
 -- Idempotent: uses IF NOT EXISTS guards and INSERT OR IGNORE.
 
 PRAGMA foreign_keys = OFF;
 
-CREATE TABLE IF NOT EXISTS kg_facts_orig (
+-- Step 1: back up via rename (data-safe; never DROP TABLE kg_facts)
+ALTER TABLE kg_facts RENAME TO kg_facts_pre_rollback_019;
+
+-- Step 2: create the authoritative pre-019 schema (plain REFERENCES, no ON DELETE)
+CREATE TABLE IF NOT EXISTS kg_facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     subject TEXT NOT NULL,
     predicate TEXT NOT NULL,
@@ -35,7 +42,8 @@ CREATE TABLE IF NOT EXISTS kg_facts_orig (
     FOREIGN KEY (source_memory) REFERENCES memories(id) ON DELETE SET NULL
 );
 
-INSERT OR IGNORE INTO kg_facts_orig
+-- Step 3: restore all rows (bulk-insert bypasses deferred FK checks)
+INSERT INTO kg_facts
     (id, subject, predicate, object, confidence, locked,
      first_seen, last_seen, mention_count, source_memory, context,
      subject_entity_id, object_entity_id,
@@ -49,12 +57,12 @@ SELECT
     event_time, event_time_granularity, transaction_time,
     valid_at, invalid_at, superseded_by, supersedes,
     contradiction_score, invalidation_reason
-FROM kg_facts;
+FROM kg_facts_pre_rollback_019;
 
+-- Step 4: drop backup and recreate indexes
+DROP TABLE IF EXISTS kg_facts_pre_rollback_019;
 DROP INDEX IF EXISTS idx_kg_facts_subject_entity;
 DROP INDEX IF EXISTS idx_kg_facts_object_entity;
-DROP TABLE kg_facts;
-ALTER TABLE kg_facts_orig RENAME TO kg_facts;
 
 CREATE INDEX IF NOT EXISTS idx_kg_facts_subject ON kg_facts(subject);
 CREATE INDEX IF NOT EXISTS idx_kg_facts_predicate ON kg_facts(predicate);

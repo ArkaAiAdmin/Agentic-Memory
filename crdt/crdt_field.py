@@ -591,6 +591,14 @@ def crdt_field_save(
     not yet have field-level state (back-compat path for notes
     saved before v13).
 
+    **LWW semantics note:** under the default ``supersede``/LWW policy,
+    two agents that concurrently write the *same field* (same logical
+    clock, divergent version vectors) will resolve by total-order
+    tiebreaker — one side wins and the other's new value is dropped.
+    To keep both versions instead, use the ``coexist`` policy, which
+    appends a ``__conflict_<remote_agent_id>`` copy of the losing value
+    as a separate note so neither edit is silently lost.
+
     Remediation #5 (2026-06-22): every successful merge also
     writes the merged content to the .md file on disk (the system
     treats markdown as the source of truth, so a stale .md after

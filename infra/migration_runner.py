@@ -11,6 +11,12 @@ Design:
   - Idempotent: re-running on a fully-migrated DB is a no-op
   - Backward compatible: existing DBs with schema_version=4 are treated
     as having migrations 001-004 already applied
+  - Checksums: each applied migration stores a SHA256 of its file in
+    schema_version.checksums so post-apply tampering is detected on
+    the next run. DBs that were upgraded before checksums were added
+    get backfilled on first post-upgrade access.
+
+Current schema version: 33.
 
 Usage:
     from infra.migration_runner import run_migrations
@@ -284,6 +290,39 @@ def _get_checksums(conn: AnyConnection) -> dict[str, str]:
     return {}
 
 
+def _backfill_empty_checksums(conn: AnyConnection) -> None:
+    """Backfill empty checksums on upgraded DBs (M5).
+
+    DBs that were migrated before the checksums column existed will
+    have schema_version.version >= current applied set but an empty
+    checksums dict (the column's DEFAULT '{}' kicked in). We
+    backfill only when the column already exists AND the stored
+    dict is empty/None — once a DB has any checksum written, the
+    fail-closed integrity gate kicks in for all future runs.
+    """
+    try:
+        col_check = conn.execute(
+            "PRAGMA table_info(schema_version)"
+        ).fetchall()
+        has_checksums_col = any(r[1] == "checksums" for r in col_check)
+    except sqlite3.OperationalError:
+        return
+    if not has_checksums_col:
+        return
+    existing = _get_checksums(conn)
+    if existing:
+        return  # fail-closed: once checksums are present, never overwrite
+    available = {num: path for num, path in _get_available_migrations()}
+    new_checksums: dict[str, str] = {}
+    for num, path in available.items():
+        new_checksums[str(num)] = hashlib.sha256(path.read_bytes()).hexdigest()
+    if new_checksums:
+        conn.execute(
+            "UPDATE schema_version SET checksums = ? WHERE id = 1",
+            (json.dumps(new_checksums),),
+        )
+
+
 def verify_checksums(conn: AnyConnection) -> list[tuple[int, str, str, str]]:
     """Verify on-disk migration file checksums against stored hashes.
 
@@ -357,6 +396,7 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
         "  )"
     )
     _ensure_checksums_column(conn)
+    _backfill_empty_checksums(conn)
 
     # Step 2: Ensure base schema (memories table) and KG tables exist.
     # The numbered SQL migrations assume these tables are present.

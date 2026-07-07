@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS backlinks_new (
 INSERT OR IGNORE INTO backlinks_new
     SELECT source_id, target_id FROM backlinks;
 
-DROP TABLE backlinks;
+DROP TABLE IF EXISTS backlinks;
 ALTER TABLE backlinks_new RENAME TO backlinks;
 
 CREATE INDEX IF NOT EXISTS idx_backlinks_target_id ON backlinks(target_id);
