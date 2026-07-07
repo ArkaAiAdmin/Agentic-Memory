@@ -32,6 +32,11 @@ concept_drift_threshold = 0.15       # MEMORY_CONCEPT_DRIFT_THRESHOLD — cosine
 entity_min_occurrences = 2           # MEMORY_ENTITY_MIN_OCCURRENCES — min occurrences for regex entity extraction (tight=2, legacy=1)
 ctr_data_window_days = 90            # MEMORY_CTR_DATA_WINDOW_DAYS — CTR feedback lookback window
 
+# Rerank channel weights (JSON). Override via MEMORY_RERANK_WEIGHTS env var.
+# Empty string (default) falls back to built-in weights below.
+# Keys: bm25, fitness, importance, pinned, tag_match — must sum to 1.0.
+rerank_weights = ""                           # MEMORY_RERANK_WEIGHTS
+
 # Rerank / blend / threshold tunables (P3-32)
 rerank_half_life_days = 180          # MEMORY_RERANK_HALF_LIFE_DAYS
 cross_encoder_blend = 0.6            # MEMORY_CROSS_ENCODER_BLEND
