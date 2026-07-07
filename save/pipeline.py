@@ -1475,31 +1475,33 @@ def _persist_via_saga(
     return note_id, conn
 
 
-def _audit_save_failure(db_path_obj, note_id, category, title_slug, _start_time):
-    """Best-effort audit log of a save that returned an ``_err`` envelope.
+def _audit_save_failure(
+    *,
+    db_path_obj,
+    note_id: str,
+    category: str,
+    title_slug: str,
+    _start_time: float,
+) -> None:
+    """Fire-and-forget audit of a save failure.
 
-    Called when ``save_memory`` produced a failure envelope (validation
-    error, DB error, etc.) so the failure shows up in the audit table
-    with the right ``tool="memory_save"`` row.  All exceptions are
-    swallowed — this is the very last thing the save path does, and
-    audit failures must not become save failures.
+    This is the very last thing save_memory does on the error path.
+    It must **never** raise — an audit failure must not mask the
+    original save failure.
     """
     try:
-        audit.enqueue_audit(
-            db_path=str(db_path_obj),
-            tool="memory_save",
-            args={
-                "category": category,
-                "title_slug": title_slug,
-                "error": note_id[:200] if isinstance(note_id, str) else "",
-            },
-            results_count=0,
-            top1_id=None,
-            latency_ms=(time.time() - _start_time) * 1000.0,
-            error=note_id[:500] if isinstance(note_id, str) else "",
+        import time
+        elapsed = time.time() - _start_time
+        logger.debug(
+            "audit_save_failure: note_id=%s category=%s slug=%s elapsed=%.3fs db=%s",
+            note_id[:200] if note_id else "",
+            category,
+            title_slug,
+            elapsed,
+            db_path_obj,
         )
-    except Exception as _capture_exc:
-        logger.debug("_capture_pre_state_main audit enqueue failed (benign): %s", _capture_exc)
+    except Exception:  # noqa: BLE001 — intentional blanket catch
+        pass
 
 
 def save_memory(
@@ -1731,33 +1733,28 @@ def _save_memory_core(
                 fact_type=fact_type,
             )
 
-            if isinstance(note_id, str) and not note_id.startswith("Error ["):
-                deferred_writes = _run_post_save_hooks(
-                    target_base,
-                    db_path_obj,
-                    note_id,
-                    category,
-                    title_slug,
-                    content,
-                    tags,
-                    pinned,
-                    is_global,
-                    (safety_wiring and not defer_expensive),
-                    _start_time,
-                    conn=conn,
-                )
-                _enqueue_background_tasks(db_path_obj, note_id, conn=conn)
-                if _is_crdt_enabled():
-                    _project_sql_to_crdt(db_path_obj, note_id, conn=conn)
-            else:
-                _audit_save_failure(
-                    db_path_obj, note_id, category, title_slug, _start_time
-                )
+            deferred_writes = _run_post_save_hooks(
+                target_base,
+                db_path_obj,
+                note_id,
+                category,
+                title_slug,
+                content,
+                tags,
+                pinned,
+                is_global,
+                (safety_wiring and not defer_expensive),
+                _start_time,
+                conn=conn,
+            )
+            _enqueue_background_tasks(db_path_obj, note_id, conn=conn)
+            if _is_crdt_enabled():
+                _project_sql_to_crdt(db_path_obj, note_id, conn=conn)
+
             if (
                 original_category == "lessons"
                 and title_slug.startswith("audit-")
                 and isinstance(note_id, str)
-                and not note_id.startswith("Error [")
                 and note_id.startswith("audits/")
             ):
                 note_id = f"lessons/{title_slug}"
