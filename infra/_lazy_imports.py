@@ -28,6 +28,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     # write path
     "SaveRequest": ("save_pipeline", "SaveRequest"),
     "save_memory": ("save_pipeline", "save_memory"),
+    "save_memory_journal": ("save_pipeline", "save_memory_journal"),
     # read path
     "search_memories": ("search.orchestrator", "search_memories"),
     # config

@@ -82,6 +82,9 @@ def memory_search(
     """Search memories by semantic + FTS5 hybrid search.
 
     The primary recall tool. Returns ranked memories matching the query.
+    When the CQRS write journal is enabled, pending (not-yet-materialized)
+    entries are also checked and surfaced as a supplement when the main
+    search returns no results.
 
     Args:
         query: Natural-language search query (required).
@@ -111,10 +114,55 @@ def memory_search(
             memory_source=memory_source,
             category=category,
         )
-        return str(result.get("output", str(result)))
+        output = result.get("output", str(result))
+        results = result.get("results", [])
+        if not results:
+            pending = _supplement_with_pending(db_path, query, limit)
+            if pending:
+                rows = "\n".join(
+                    f"- [{r.get('category','')}/{r.get('title_slug','')}] {r.get('content','')[:120]}"
+                    for r in pending
+                )
+                output = (output or "") + (
+                    f"\n\nPending writes (not yet materialized — CQRS journal):\n{rows}"
+                )
+        return output
     except Exception as e:
         logger.exception("in memory_search verb")
         return _wrap_db_error("memory_search", e)
+
+
+def _supplement_with_pending(db_path: Path, query: str, limit: int) -> list[dict]:
+    """Return recent pending journal entries matching query for read-your-writes visibility."""
+    journal_path = db_path.parent / "journal.db"
+    if not journal_path.exists():
+        return []
+    try:
+        import sqlite3 as _sqlite3
+        _conn = _sqlite3.connect(str(journal_path))
+        _conn.row_factory = _sqlite3.Row
+        _rows = _conn.execute(
+            "SELECT note_id, content, category, title_slug, tags, importance, created_at "
+            "FROM write_journal WHERE status='pending' AND content LIKE ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (f"%{query}%", limit),
+        ).fetchall()
+        _conn.close()
+        return [
+            {
+                "note_id": r["note_id"],
+                "content": r["content"],
+                "category": r["category"],
+                "title_slug": r["title_slug"],
+                "tags": json.loads(r["tags"]) if r["tags"] else [],
+                "importance": r["importance"],
+                "created_at": r["created_at"],
+                "_pending": True,
+            }
+            for r in _rows
+        ]
+    except Exception:
+        return []
 
 
 @mcp.tool()
@@ -140,11 +188,16 @@ def memory_save(
         is_global: Save to global memory (default False).
     """
     try:
-        from save_pipeline import save_memory, SaveValidationError
+        from config import get_config
+        from infra._lazy_imports import save_memory_journal, save_memory
+        from save_pipeline import SaveValidationError
+
+        cfg = get_config()
+        _save_fn = save_memory_journal if cfg.write_journal else save_memory
 
         slug = title_slug or _auto_slug(content)
         try:
-            result = save_memory(
+            result = _save_fn(
                 content=content,
                 category=category,
                 title_slug=slug,
@@ -433,15 +486,21 @@ def memory_note(
             result = memory_restore(note_id)
             return str(result)
         elif action == "update":
-            from save_pipeline import save_memory, SaveValidationError
+            from config import get_config
+            from infra._lazy_imports import save_memory_journal, save_memory
+            from save_pipeline import SaveValidationError
+
+            cfg = get_config()
+            _save_fn = save_memory_journal if cfg.write_journal else save_memory
 
             try:
-                result = save_memory(
+                result = _save_fn(
                     content=content,
                     category=category or "lessons",
                     title_slug=title_slug or note_id.split("/")[-1],
                     tags=tags or [],
-                    db_path=None,
+                    importance=3,
+                    is_global=False,
                 )
                 return str(result)
             except SaveValidationError as e:
@@ -514,12 +573,17 @@ def memory_learn(
         tags: Additional tags.
     """
     try:
-        from save_pipeline import save_memory, SaveValidationError
+        from config import get_config
+        from infra._lazy_imports import save_memory_journal, save_memory
+        from save_pipeline import SaveValidationError
         from mcp_maintenance import memory_compile_skill
+
+        cfg = get_config()
+        _save_fn = save_memory_journal if cfg.write_journal else save_memory
 
         # Save the memory
         try:
-            result = save_memory(
+            result = _save_fn(
                 content=content,
                 category=category,
                 title_slug=skill_name or "",

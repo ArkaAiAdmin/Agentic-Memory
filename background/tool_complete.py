@@ -235,6 +235,26 @@ def _upsert_memory(
         else:
             tags_list = []
 
+        from config import get_config
+        cfg = get_config()
+        if cfg.write_journal:
+            from infra._lazy_imports import save_memory_journal
+            from infra.write_journal import init_journal_db
+            journal_path = Path(db).parent / "journal.db"
+            init_journal_db(journal_path)
+            result = save_memory_journal(
+                content=content,
+                category=category,
+                title_slug=title_slug,
+                tags=tags_list,
+                pinned=bool(pinned),
+                is_global=False,
+                importance=importance,
+                note_id=note_id,
+                epistemic_source="auto_save",
+            )
+            return isinstance(result, str) and not result.startswith("Error")
+
         from infra._lazy_imports import save_memory as _save_memory
 
         result = _save_memory(

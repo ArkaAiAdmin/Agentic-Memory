@@ -321,6 +321,7 @@ class MemoryConfig:
     # explicitly. The previous off-by-default posture was an
     # over-cautious "ship empty" decision; the audit + verification
     # confirmed each feature is stable enough for production.
+    write_journal: bool = False
     multi_agent: bool = True
     summarization: bool = True
     user_profile: bool = True
@@ -810,6 +811,13 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             toml_data,
         ),
         # --- features ---
+        write_journal=_b(
+            "MEMORY_WRITE_JOURNAL_ENABLED",
+            "features.write_journal",
+            False,
+            bool,
+            toml_data,
+        ),
         multi_agent=_b(
             "MEMORY_MULTI_AGENT", "features.multi_agent", True, bool, toml_data
         ),
@@ -1435,6 +1443,12 @@ def get_feature_flags() -> dict:
 
     cfg = get_config()
     return {
+        "write_journal": _flag(
+            cfg.write_journal,
+            "MEMORY_WRITE_JOURNAL_ENABLED",
+            "features.write_journal",
+            False,
+        ),
         "multi_agent": _flag(
             cfg.multi_agent, "MEMORY_MULTI_AGENT", "features.multi_agent", True
         ),

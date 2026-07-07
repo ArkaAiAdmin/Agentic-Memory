@@ -64,13 +64,13 @@ agentic-memory/
 └── eval/                             ← 240 test files, 4061+ test functions
 <!--AUTO-GEN:END key="critical_path"-->
 
-**Message contract:** All CORE tool responses are user-facing JSON. Admin tools (87 ADMIN + 3 DEPRECATED) are routed exclusively through `memory_maintenance(operation="...")` — never call an ADMIN tool name directly. All writes go through `save_memory`; the saga ensures crash-consistent rollback with dependent-row cleanup. `defer_expensive=True` by default — returns <200ms.
+**Message contract:** All CORE tool responses are user-facing JSON. Admin tools (87 ADMIN + 3 DEPRECATED) are routed exclusively through `memory_maintenance(operation="...")` — never call an ADMIN tool name directly. All writes go through `save_memory` (direct) or `save_memory_journal` (CQRS journal, gated by `MEMORY_WRITE_JOURNAL_ENABLED`); the saga ensures crash-consistent rollback with dependent-row cleanup. `defer_expensive=True` by default — returns <200ms.
 
 ---
 
 ## Hard Rules
 
-1. **All writes go through `save_memory`** (`save_pipeline.save_memory`). Hooks and auto-save delegate to it. Don't re-implement.
+1. **All writes go through `save_memory` or `save_memory_journal`.** Hooks, auto-save, and MCP verbs delegate to one of these two entry points. The `save_memory_journal` path (gated by `MEMORY_WRITE_JOURNAL_ENABLED`) enqueues writes to the CQRS journal for async materialization by the reconciliation daemon. A write that bypasses both is a write that can't be rolled back.
 2. **Connection pool is per-DB-path.** `connection_pool.get(str(db_path))` returns stale connections if the path doesn't exist. Active connections cannot be evicted.
 3. **Vec keys/index drift after warm-up.** Run `venv/bin/python rebuild_vec_index.py` after warm-up chains, not before.
 4. **Schema migrations go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **<!--AUTO-GEN:START key="hard_rule_4"-->
@@ -86,7 +86,7 @@ agentic-memory/
 10. **Concurrent .md writes preserve losers.** `safe_atomic_write(path, content, expected_existing=...)` saves conflicting on-disk content as `<path>.conflict-<pid>-<ts>`.
 11. **CRDT merges write to .md files.** Markdown is the source of truth; stale .md after a merge is silent drift.
 12. **Signal handlers installed BEFORE flock check** in `auto_save.py`. Otherwise daemon returns without handlers and ignores SIGTERM.
-13. **Cross-process writes are single-writer.** Long-lived daemons hold a `flock`; cron scripts hold per-cron `flock`. Add a `flock` to any new long-lived writer.
+13. **Cross-process writes are single-writer on the main DB.** The reconciliation daemon (`background_worker.py`) is the single writer to the main memory DB — it drains the CQRS write journal (`journal.db`) sequentially. Multiple agent processes enqueue concurrently via `save_memory_journal` (lock-free `INSERT` with WAL). Add a `flock` only to new long-lived writers that touch the journal or rebuild indexes, not to individual agent save calls.
 14. **Saga rollback cleans up dependent rows.** `save.saga.undo_upsert` calls `save.cleanup.cleanup_memory_relations()` (covers kg_facts, orphan kg_edges, backlinks).
 15. **Update docs after code changes.** Stale docs are a maintenance hazard — fix them in the same commit.
 16. **Use one persistent worktree for active development.** Reuse it for all ongoing feature work; do not create a new worktree per branch or per commit. Verify security and tests in the worktree before merging to main. Keep worktrees minimal and remove them when no longer needed.
@@ -243,7 +243,8 @@ See `opencode.jsonc` for plugin registration. The TS plugin is the single wiring
 ## Feature Flags
 
 | Flag | Default | Notes |
-||---|---|
+|---|---|
+| `MEMORY_WRITE_JOURNAL_ENABLED` | OFF | CQRS write journal (lock-free multi-writer). Requires background_worker daemon. When enabled, `save_memory_journal` is used instead of `save_memory`; writes are enqueued to journal and materialized asynchronously. |
 | `MEMORY_TEMPORAL_KG` | ON | Event-time extraction, contradiction detection, supersession. Set `0` to disable if false contradictions or edit invalidation are too aggressive. `kg_facts.locked = 1` prevents per-fact supersession. |
 
 See `memory.toml` for all 17 feature flags.
