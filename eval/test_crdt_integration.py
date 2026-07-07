@@ -289,12 +289,18 @@ class TestMemoryCrdtSyncTool(unittest.TestCase):
         self.db_path = _fresh_db()
         self.orig_path = os.environ.get("MEMORY_DB_PATH")
         os.environ["MEMORY_DB_PATH"] = str(self.db_path)
+        self.orig_trusted = os.environ.get("MEMORY_CRDT_TRUSTED_PEERS")
+        os.environ["MEMORY_CRDT_TRUSTED_PEERS"] = "test-syncer"
 
     def tearDown(self):
         if self.orig_path is not None:
             os.environ["MEMORY_DB_PATH"] = self.orig_path
         else:
             os.environ.pop("MEMORY_DB_PATH", None)
+        if self.orig_trusted is not None:
+            os.environ["MEMORY_CRDT_TRUSTED_PEERS"] = self.orig_trusted
+        else:
+            os.environ.pop("MEMORY_CRDT_TRUSTED_PEERS", None)
         connection_pool.clear()
 
     @mock.patch("mcp_crdt._resolve_memory_dir")

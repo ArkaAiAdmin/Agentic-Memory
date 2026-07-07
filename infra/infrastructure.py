@@ -40,6 +40,7 @@ from infra.memory_common import (
     connection_pool,
     acquire_flock_with_retry,
     release_flock,
+    rate_limit_check,  # noqa: F401 — re-exported; patched by tests at infra.infrastructure.rate_limit_check
     get_memory_paths,
     GLOBAL_MEM_DIR,
 )
