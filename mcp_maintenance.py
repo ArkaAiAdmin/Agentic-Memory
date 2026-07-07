@@ -419,7 +419,7 @@ def memory_arc_stats(conn) -> str:
     try:
         db_path = Path(str(_resolve_memory_dir())) / "memory.db"
         if not db_path.exists():
-            return f"No memory.db found at {db_path}; ARC stats unavailable."
+            return _err(ErrorCode.DB_ERROR, f"No memory.db found at {db_path}; ARC stats unavailable.")
         # Refresh the eviction_pressure / ghost_hit_rate / total_ghosts
         # keys so the table is consistent before we read it.
         try:

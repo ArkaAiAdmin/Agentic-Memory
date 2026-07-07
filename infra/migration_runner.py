@@ -99,7 +99,8 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-03: bumped to 30 for community_id + betweenness on kg_entities (Sprint 4).
 # 2026-07-05: bumped to 31 for outbox memory_events table and triggers (REST/WS API).
 # 2026-07-05: bumped to 32 for scoped outbox update trigger (semantic columns only).
-SCHEMA_VERSION = 33
+# 2026-07-08: bumped to 34 for entailment validation (is_entailed on kg_facts).
+SCHEMA_VERSION = 34
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the
@@ -504,7 +505,7 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                                 "trigger already exists",
                             )
                         ):
-                            logger.debug(
+                            logger.warning(
                                 "Migration %03d statement failed (idempotent, "
                                 "object already exists): %s",
                                 num,
@@ -512,20 +513,26 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                             )
                         elif any(
                             re.search(rf"\b{re.escape(kw)}\b", msg)
-                            for kw in (
-                                "no such table",
-                                "no such column",
-                            )
+                            for kw in ("no such table",)
                         ):
-                            # The referenced object will be created by a
-                            # later migration (forward DDL reference). This
-                            # is expected structural noise — log at debug
-                            # so tests stay clean, but emit one summary
-                            # warning the first time it fires per migration.
-                            logger.debug(
+                            logger.warning(
                                 "Migration %03d statement references object "
                                 "created by a later migration (%s); "
                                 "this is expected.",
+                                num,
+                                e,
+                            )
+                        elif any(
+                            re.search(rf"\b{re.escape(kw)}\b", msg)
+                            for kw in ("no such column",)
+                            if re.search(
+                                r"(duplicate column|duplicate column name|already exists)",
+                                msg,
+                            )
+                        ):
+                            logger.warning(
+                                "Migration %03d ADD COLUMN failed (idempotent, "
+                                "column already exists): %s",
                                 num,
                                 e,
                             )

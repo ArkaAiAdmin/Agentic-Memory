@@ -96,6 +96,8 @@ def infer_entailment_chains(
          WHERE f.belief_status = 'active'
            AND f.locked = 0
            AND f.invalid_at IS NULL
+           AND f.predicate IN ('is_a','is_type_of','subclass_of','instance_of',
+                               'part_of','has_part','located_in')
          LIMIT ?
         """,
         (batch_size,),
@@ -111,6 +113,16 @@ def infer_entailment_chains(
         fact_id, subject, predicate, obj, conf, subj_eid, obj_eid, src_mem, subj_name, obj_name = r
         key = (obj.lower().strip() if obj else "", obj_eid)
         by_object.setdefault(key, []).append(r)
+
+    # Build lookup by subject for conjunctive inference.
+    # Index on (lower(subject), subject_entity_id) with pre-normalised object for fast dedup.
+    by_subject: dict[tuple[str, int | None], list[tuple[Any, str]]] = {}
+    for r in rows:
+        r_subject = r[1]
+        r_subj_eid = r[5]
+        r_obj_norm = (r[3] or "").strip().lower()
+        subj_key = (r_subject.strip().lower() if r_subject else "", r_subj_eid)
+        by_subject.setdefault(subj_key, []).append((r, r_obj_norm))
 
     # Collect derived fact tuples before insertion to avoid SQLite
     # locking conflicts inside the loop.
@@ -160,8 +172,39 @@ def infer_entailment_chains(
             })
             derived_count += 1
 
-        # Skip self-loops (X -> X)
-        # Already filtered implicitly by by_object key (subject != object in meaningful chains)
+        # ---- conjunctive inference: f1(X->A) + f1(X->B) -> f2(X related_to B) ----
+        subj_key = (subject.strip().lower() if subject else "", subj_eid)
+        same_subject_facts = by_subject.get(subj_key, [])
+        for (r_other, obj_other_norm) in same_subject_facts:
+            other_fid = r_other[0]
+            other_obj = r_other[3]
+            other_conf = r_other[4] or 1.0
+            if obj_other_norm == (obj.strip().lower() if obj else ""):
+                continue
+            raw_conf = _CONFIDENCE_CONJUNCTIVE * min(conf, other_conf)
+            if raw_conf < min_confidence:
+                skipped_count += 1
+                continue
+            derived_predicate = "related_to"
+            source_ids_json = json.dumps([fact_id, other_fid])
+            to_insert.append({
+                "subject": subject,
+                "predicate": derived_predicate,
+                "object": other_obj,
+                "confidence": round(raw_conf, 4),
+                "subject_entity_id": subj_eid,
+                "object_entity_id": r_other[6],
+                "source_memory": src_mem,
+                "belief_status": "active",
+                "epistemic_source": "inferred",
+                "fact_type": "inferred",
+            })
+            to_log.append({
+                "source_fact_ids": source_ids_json,
+                "derivation_type": "conjunctive",
+                "confidence": round(raw_conf, 4),
+            })
+            derived_count += 1
 
     if not to_insert:
         return {"derived": derived_count, "skipped": skipped_count, "errors": error_count}
@@ -178,8 +221,10 @@ def infer_entailment_chains(
                     (subject, predicate, object, confidence, locked,
                      first_seen, last_seen, mention_count,
                      subject_entity_id, object_entity_id,
-                     source_memory, belief_status, epistemic_source, fact_type)
-                VALUES (?, ?, ?, ?, 0, ?, ?, 1, ?, ?, ?, 'active', 'inferred', 'inferred')
+                     source_memory, belief_status, epistemic_source,
+                     fact_type, is_entailed)
+                VALUES (?, ?, ?, ?, 0, ?, ?, 1, ?, ?, ?, 'active', 'inferred',
+                        'inferred', 1)
                 """,
                 (
                     row["subject"], row["predicate"], row["object"],
@@ -192,7 +237,6 @@ def infer_entailment_chains(
             if fid:
                 inserted_ids.append(fid)
             else:
-                # Duplicate — skip this row
                 skipped_count += 1
         except Exception as exc:
             logger.debug("entailment: insert failed for %s: %s", row["subject"], exc)
@@ -228,6 +272,45 @@ def infer_entailment_chains(
         except Exception as exc:
             logger.debug("entailment: log insert failed: %s", exc)
             error_count += len(log_rows)
+
+    # A2.4: validation pass — retract derived facts that contradict
+    # an existing active fact (same subject+predicate, different object)
+    # with higher confidence.  This prevents contradictory inferences
+    # from surviving when a ground-truth fact already exists.
+    if inserted_ids:
+        try:
+            for fid in inserted_ids:
+                derived = conn.execute(
+                    "SELECT subject, predicate, object, confidence "
+                    "FROM kg_facts WHERE id = ?",
+                    (fid,),
+                ).fetchone()
+                if not derived:
+                    continue
+                d_subj, d_pred, d_obj, d_conf = derived
+                existing = conn.execute(
+                    "SELECT id, confidence FROM kg_facts "
+                    "WHERE subject = ? AND predicate = ? AND object != ? "
+                    "AND belief_status = 'active' AND invalid_at IS NULL "
+                    "AND is_entailed = 0 "
+                    "ORDER BY confidence DESC LIMIT 1",
+                    (d_subj, d_pred, d_obj),
+                ).fetchone()
+                if existing and existing[1] > d_conf:
+                    conn.execute(
+                        "UPDATE kg_facts SET belief_status = 'retracted', "
+                        "is_entailed = 0 WHERE id = ?",
+                        (fid,),
+                    )
+                    conn.execute(
+                        "UPDATE entailment_chains SET valid = 0 "
+                        "WHERE derived_fact_id = ?",
+                        (fid,),
+                    )
+                    skipped_count += 1
+        except Exception as exc:
+            logger.debug("entailment: validation pass failed: %s", exc)
+            error_count += 1
 
     return {
         "derived": derived_count,
@@ -348,15 +431,16 @@ def compile_concept(
     if not facts:
         return None
 
-    # Derive concept name from most common entity if not supplied.
+    # Derive concept name from most common (predicate, object) pattern if not supplied.
     if concept_name is None:
-        subj_counts: dict[str, int] = {}
+        pred_obj_counts: dict[str, int] = {}
         for f in facts:
-            subj_counts[f["subject"]] = subj_counts.get(f["subject"], 0) + 1
-        if not subj_counts:
+            key = f"{f['predicate']}:{f['object']}"
+            pred_obj_counts[key] = pred_obj_counts.get(key, 0) + 1
+        if not pred_obj_counts:
             return None
-        best = max(subj_counts.items(), key=lambda x: x[1])[0]
-        concept_name = best.replace("_", " ").title()
+        best = max(pred_obj_counts.items(), key=lambda x: x[1])[0]
+        concept_name = best.split(":", 1)[1].replace("_", " ").title()
 
     slug = _slugify(concept_name)
     concepts_dir = db_path.parent / _CONCEPTS_DIR_NAME
@@ -577,13 +661,13 @@ def handle_entailment_chains(
     batch_size = int(payload.get("batch_size", 200))
     if not memory_ids:
         # Wildcard: scan all pending facts.
-        try:
-            count_row = conn.execute(
-                "SELECT COUNT(*) FROM kg_facts WHERE belief_status='active' AND invalid_at IS NULL"
-            ).fetchone()
-            memory_ids = [str(count_row[0])] if count_row else []
-        except Exception:
-            memory_ids = []
+        result = infer_entailment_chains(
+            conn, db_path, batch_size=batch_size, min_confidence=0.3
+        )
+        return (
+            f"entailment_chains: derived={result['derived']} "
+            f"skipped={result['skipped']} errors={result['errors']}"
+        )
     result = infer_entailment_chains(
         conn, db_path, batch_size=batch_size, min_confidence=0.3
     )

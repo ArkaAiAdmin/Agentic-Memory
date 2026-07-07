@@ -228,6 +228,7 @@ class ScoreContext:
     recency_weight: float
     now_ts: Optional[float] = None
     weights: Optional[dict] = None
+    is_entailed: Optional[int] = None
 
 
 class MemoryResultRow(NamedTuple):
@@ -681,9 +682,7 @@ def _search_kg_facts(
     epistemic_source: str | None = None,
     fact_type: str | None = None,
 ) -> list[dict]:
-    """T10 + Sprint 5 + Sprint 1: search the knowledge-graph fact index.
-
-    Surfaces structured facts (``subject --[predicate]--> object``) alongside
+    """Surfaces structured facts (``subject --[predicate]--> object``) alongside
     the memory results.  Uses the same FTS5 query string as the memories
     search so tokenization is consistent.  Superseded and invalidated facts
     are excluded by default (``include_invalid=False``).
@@ -697,6 +696,10 @@ def _search_kg_facts(
     - ``epistemic_source``: if set, only return facts from this source (agent, auto_save, hook, import, cron)
     - ``fact_type``: if set, only return facts of this type (observation, agent_inference, external_stated, hypothesis, derived)
 
+    A3.3: derived facts (is_entailed=1) are discounted in confidence (×0.8)
+    so directly observed facts outrank inferred ones.  is_entailed=0 facts
+    are excluded entirely (they were invalidated by a superseded source).
+
     Returns a list of dicts sorted by FTS5 BM25 rank (best first).  Returns
     an empty list if the kg_facts table is missing or empty — never raises.
     """
@@ -705,6 +708,12 @@ def _search_kg_facts(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='kg_facts'"
         ).fetchone():
             return []
+        # A3.3: is_entailed is added by migration 034; skip the discount logic
+        # when the column is absent (e.g. pre-migration test DBs).
+        _has_is_entailed = any(
+            row[1] == "is_entailed"
+            for row in db.execute("PRAGMA table_info(kg_facts)").fetchall()
+        )
         invalid_filter = ""
         belief_params: list = []
         if not include_invalid and as_of is None:
@@ -731,12 +740,25 @@ def _search_kg_facts(
         if fact_type is not None:
             belief_filter += " AND kf.fact_type = ?"
             belief_params.append(fact_type)
+        _is_entailed_idx = 14  # default offset when is_entailed is NOT selected
+        if _has_is_entailed:
+            _is_entailed_idx = 15
+            select_cols = (
+                "kf.id, kf.subject, kf.predicate, kf.object, kf.confidence, "
+                "kf.mention_count, kf.first_seen, kf.last_seen, kf.event_time, "
+                "kf.event_time_granularity, kf.contradiction_score, kg_facts_fts.rank, "
+                "kf.belief_status, kf.epistemic_source, kf.fact_type, "
+                "kf.is_entailed "
+            )
+        else:
+            select_cols = (
+                "kf.id, kf.subject, kf.predicate, kf.object, kf.confidence, "
+                "kf.mention_count, kf.first_seen, kf.last_seen, kf.event_time, "
+                "kf.event_time_granularity, kf.contradiction_score, kg_facts_fts.rank, "
+                "kf.belief_status, kf.epistemic_source, kf.fact_type "
+            )
         rows = db.execute(
-            "SELECT kf.id, kf.subject, kf.predicate, kf.object, kf.confidence, "
-            "kf.mention_count, kf.first_seen, kf.last_seen, kf.event_time, "
-            "kf.event_time_granularity, kf.contradiction_score, kg_facts_fts.rank, "
-            "kf.belief_status, kf.epistemic_source, kf.fact_type "
-            "FROM kg_facts_fts "
+            "SELECT " + select_cols + "FROM kg_facts_fts "
             "JOIN kg_facts kf ON kf.rowid = kg_facts_fts.rowid "
             f"WHERE kg_facts_fts MATCH ?{invalid_filter}{belief_filter} "
             "ORDER BY kg_facts_fts.rank "
@@ -749,26 +771,113 @@ def _search_kg_facts(
 
     results = []
     for r in rows:
-        results.append(
-            {
-                "id": r[0],
-                "subject": r[1],
-                "predicate": r[2],
-                "object": r[3],
-                "confidence": r[4],
-                "mention_count": r[5],
-                "first_seen": r[6],
-                "last_seen": r[7],
-                "event_time": r[8],
-                "event_time_granularity": r[9],
-                "contradiction_score": r[10],
-                "fts_rank": r[11],
-                "belief_status": r[12],
-                "epistemic_source": r[13],
-                "fact_type": r[14],
-            }
-        )
+        is_entailed = 0
+        if _has_is_entailed and len(r) > _is_entailed_idx:
+            is_entailed = 1 if r[_is_entailed_idx] else 0
+        # A3.3: discount inferred (is_entailed=1) facts by 0.8 so directly
+        # observed facts outrank derived knowledge.  Direct facts
+        # (is_entailed=0) pass through unchanged.
+        confidence = r[4] or 0.0
+        if is_entailed == 1:
+            confidence = round(confidence * 0.8, 4)
+        result_entry: dict = {
+            "id": r[0],
+            "subject": r[1],
+            "predicate": r[2],
+            "object": r[3],
+            "confidence": confidence,
+            "mention_count": r[5],
+            "first_seen": r[6],
+            "last_seen": r[7],
+            "event_time": r[8],
+            "event_time_granularity": r[9],
+            "contradiction_score": r[10],
+            "fts_rank": r[11],
+            "belief_status": r[12],
+            "epistemic_source": r[13],
+            "fact_type": r[14],
+        }
+        if _has_is_entailed:
+            result_entry["is_entailed"] = is_entailed
+        results.append(result_entry)
     return results
+
+
+def _reasoning_expand(db_path: Path, query: str, limit: int = 5) -> list[str]:
+    """A3.1: expand a natural-language query using entailment-chain objects.
+
+    When the query contains an entailment-predicate keyword (``is a``,
+    ``type of``, ``part of``, ``instance of``, ``subclass of``,
+    ``located in``, or ``has part``), look up KG facts that were derived
+    via ``entailment_chains`` and return their ``object`` terms as
+    expansion tokens.
+
+    Returns ``[]`` (no expansion) when no entailment predicate is detected
+    or when the DB lookup yields nothing.
+    """
+    _ENTAILMENT_PREDICATES = (
+        "is_a",
+        "is_type_of",
+        "subclass_of",
+        "instance_of",
+        "part_of",
+        "has_part",
+        "located_in",
+    )
+    # Normalize query lower-case for predicate detection.
+    q_lower = query.lower()
+    matched_predicate: str | None = None
+    for pred in _ENTAILMENT_PREDICATES:
+        # Support both with and without internal underscores in the user query.
+        readable = pred.replace("_", " ")
+        if readable in q_lower:
+            matched_predicate = pred
+            break
+    if matched_predicate is None:
+        return []
+    # Extract entity term: take the longest word sequence around the predicate.
+    parts = re.split(
+        r"\b(?:is a|is type of|subclass of|instance of|part of|has part|located in)\b",
+        q_lower,
+        flags=re.IGNORECASE,
+    )
+    entity_candidates = [
+        p.strip()
+        for p in parts
+        if p.strip() and not re.fullmatch(r"[A-Za-z ]{1,4}", p.strip())
+    ]
+    entity_term = max(entity_candidates, key=len) if entity_candidates else query
+    # Collapse multi-word entity into a single LIKE token set.
+    tokens = re.findall(r"[A-Za-z][A-Za-z\-_/]+", entity_term)
+    like_pattern = "%" + "%".join(t for t in tokens if len(t) > 2) + "%" if tokens else "%" + entity_term + "%"
+    try:
+        from infra._lazy_imports import connection_pool
+
+        conn = connection_pool.get(str(db_path), timeout=10.0)
+        try:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT kf.object
+                FROM kg_facts kf
+                JOIN entailment_chains ec ON ec.derived_fact_id = kf.id
+                WHERE kf.predicate IN ('is_a','is_type_of','instance_of',
+                                       'part_of','has_part','located_in','subclass_of')
+                  AND kf.belief_status = 'active'
+                  AND kf.is_entailed = 1
+                  AND (kf.subject LIKE ? OR kf.object LIKE ?)
+                LIMIT ?
+                """,
+                (like_pattern, like_pattern, limit),
+            ).fetchall()
+            return [row[0] for row in rows if row[0]]
+        finally:
+            try:
+                connection_pool.put(conn)
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.debug("reasoning_expand failed: %s", exc)
+        return []
 
 
 def _fts_search(
@@ -1889,6 +1998,13 @@ def search_memories(
         query, db_path
     )
     _record_phase_latency("parse_query", _t0)
+    # A3.2: Reasoning expansion — append entailment-chain objects as OR terms
+    # before the cache key is computed so the expanded query is cached.
+    _reasoning_t0 = time.time()
+    expansion_terms = _reasoning_expand(db_path, query)
+    if expansion_terms:
+        fts_query = f"{fts_query} OR {' OR '.join(expansion_terms[:5])}"
+    _record_phase_latency("reasoning_expand", _reasoning_t0)
     terms = re.findall("[\\w@\\#\\.\\+\\-]+", fts_query, flags=re.UNICODE)
     if not terms:
         return {

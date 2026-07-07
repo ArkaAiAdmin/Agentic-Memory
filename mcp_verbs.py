@@ -73,7 +73,7 @@ def memory_search(
     query: str,
     category: str = "",
     limit: int = 10,
-    include_global: bool = True,
+    include_global: bool | None = None,
     mode: str = "hybrid",
     tenant_id: str = "default",
     belief_status: str | None = None,
@@ -92,7 +92,8 @@ def memory_search(
         query: Natural-language search query (required).
         category: Filter to a category (e.g. "lessons", "decisions").
         limit: Max results (default 10).
-        include_global: Include global memories (default True).
+        include_global: Include global memories (default True for default agent,
+            scoped for non-default agents).
         mode: "hybrid" (default), "semantic", "fts", "facts", "graph".
         belief_status: Filter KG facts by belief status (active, retracted, deprecated, unconfirmed).
         epistemic_source: Filter KG facts by epistemic source (agent, auto_save, hook, import, cron).
@@ -100,6 +101,13 @@ def memory_search(
         memory_source: Filter memories by source type ("agent", "auto_save", "import"). Only returns
             memories whose source file category matches the given type.
     """
+    if include_global is None:
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            include_global = _ctx.namespace == "default"
+        except (ImportError, Exception):
+            include_global = True
     try:
         from search.orchestrator import search_memories
 
@@ -436,11 +444,17 @@ def memory_recall(query: str = "", session_id: str = "", tenant_id: str = "defau
 
         db_path = _resolve_db_path()
         q = query or "recent session activity"
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            _include_global = _ctx.namespace == "default"
+        except (ImportError, Exception):
+            _include_global = True
         result = search_memories(
             db_path=db_path,
             query=q,
             limit=5,
-            include_global=True,
+            include_global=_include_global,
             tenant_id=tenant_id,
         )
         return str(result.get("output", str(result)))

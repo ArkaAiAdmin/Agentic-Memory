@@ -18,6 +18,7 @@ The 4 main functions are:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -158,6 +159,49 @@ def detect_fact_contradiction(
     return _event_times_match(event_time_a, granularity_a, event_time_b, granularity_b)
 
 
+def _propagate_entailment_invalidation(conn: AnyConnection, superseded_fact_id: int) -> None:
+    """A2.3: invalidate derived facts whose source chain includes a
+    superseded fact.
+
+    Scans ``entailment_chains`` for rows where ``source_fact_ids`` (JSON
+    array) contains ``superseded_fact_id`` and ``valid = 1``.  For each
+    matching row, sets ``is_entailed = 0`` on the derived fact and
+    ``valid = 0`` on the chain entry.
+
+    Best-effort: errors are logged but never raised.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT id, source_fact_ids, derived_fact_id FROM entailment_chains "
+            "WHERE valid = 1 AND source_fact_ids LIKE ?",
+            (f'%"{superseded_fact_id}"%',),
+        ).fetchall()
+    except Exception as exc:
+        logger.debug("entailment_invalidation: chain lookup failed: %s", exc)
+        return
+    for chain_id, source_ids_json, derived_fid in rows:
+        try:
+            source_ids = json.loads(source_ids_json)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if superseded_fact_id not in source_ids:
+            continue
+        try:
+            conn.execute(
+                "UPDATE kg_facts SET is_entailed = 0 WHERE id = ?",
+                (derived_fid,),
+            )
+            conn.execute(
+                "UPDATE entailment_chains SET valid = 0 WHERE id = ?",
+                (chain_id,),
+            )
+        except Exception as exc:
+            logger.debug(
+                "entailment_invalidation: failed for chain %d fact %d: %s",
+                chain_id, derived_fid, exc,
+            )
+
+
 def supersede_fact(
     conn: AnyConnection,
     old_id: int,
@@ -183,17 +227,9 @@ def supersede_fact(
       * old_id is missing, locked, or already superseded
       * new_id is missing
 
-    The ``invalid_at`` defaults to the new fact's event_time if known,
-    otherwise to now.  This represents "the moment the new fact took
-    effect" — which is the natural interpretation of "the old fact was
-    no longer true at this time."
-
-    The ``score`` parameter (T11) is the contradiction confidence.  The
-    default 1.0 preserves the pre-T11 deterministic behavior.  Callers
-    using LLM scoring pass the score from
-    ``score_fact_contradiction_via_llm``.  The column stores the score
-    verbatim so the audit trail shows whether the supersession was
-    deterministic or LLM-scored (and at what confidence).
+    After superseding, any derived facts in ``entailment_chains`` that
+    depend on the old fact are marked ``is_entailed=0`` and their chain
+    entries are marked ``valid=0``.
     """
     if old_id == new_id:
         return False
@@ -236,6 +272,7 @@ def supersede_fact(
         "UPDATE kg_facts SET supersedes = ? WHERE id = ?",
         (old_id, new_id),
     )
+    _propagate_entailment_invalidation(conn, old_id)
     return True
 
 
@@ -298,6 +335,7 @@ def _mark_fact_superseded(
             "UPDATE kg_facts SET valid_at = COALESCE(valid_at, ?) WHERE id = ?",
             (winner[1], winner_id),
         )
+    _propagate_entailment_invalidation(conn, fact_id)
     return True
 
 

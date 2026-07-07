@@ -1074,7 +1074,7 @@ def _scan_for_injection_or_skip(
         raise
 
 
-def _acquire_db_connection(db_path_obj, category, title_slug, start_time, tenant_id: str = "default"):
+def _acquire_db_connection(db_path_obj, category, title_slug, start_time):
     """Acquire a write-serialized SQLite connection via the write queue.
     Returns the connection on success, or a string error message if
     acquisition failed (the message is already audit-logged).
@@ -1423,35 +1423,6 @@ def _persist_via_saga(
     return note_id, conn
 
 
-def _audit_save_failure(
-    *,
-    db_path_obj,
-    note_id: str,
-    category: str,
-    title_slug: str,
-    _start_time: float,
-) -> None:
-    """Fire-and-forget audit of a save failure.
-
-    This is the very last thing save_memory does on the error path.
-    It must **never** raise — an audit failure must not mask the
-    original save failure.
-    """
-    try:
-        import time
-        elapsed = time.time() - _start_time
-        logger.debug(
-            "audit_save_failure: note_id=%s category=%s slug=%s elapsed=%.3fs db=%s",
-            note_id[:200] if note_id else "",
-            category,
-            title_slug,
-            elapsed,
-            db_path_obj,
-        )
-    except Exception:  # noqa: BLE001 — intentional blanket catch
-        pass
-
-
 def save_memory(
     content: str | SaveRequest,
     category: str | None = None,
@@ -1467,7 +1438,7 @@ def save_memory(
     note_id: str = "",
     context: str = "generic",
     defer_expensive: bool = False,
-    tenant_id: str = "default",
+    tenant_id: str | None = None,
     epistemic_source: str = "agent",
     belief_status: str = "active",
     asserting_agent_id: str = "",
@@ -1489,6 +1460,16 @@ def save_memory(
     """
     if isinstance(content, SaveRequest):
         return _save_memory_core(content, _now_iso=_now_iso, _conn=_conn)
+    if tenant_id is None:
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            if _ctx.agent_id and _ctx.agent_id != "default":
+                tenant_id = _ctx.agent_id
+            else:
+                tenant_id = "default"
+        except (ImportError, Exception):
+            tenant_id = "default"
     req = SaveRequest(
         content=content,
         category=category or "",
@@ -1541,7 +1522,7 @@ def save_memory_journal(
     note_id: str = "",
     context: str = "generic",
     defer_expensive: bool = False,
-    tenant_id: str = "default",
+    tenant_id: str | None = None,
     epistemic_source: str = "agent",
     belief_status: str = "active",
     asserting_agent_id: str = "",
@@ -1566,6 +1547,16 @@ def save_memory_journal(
     if isinstance(content, SaveRequest):
         req = content
     else:
+        if tenant_id is None:
+            try:
+                from agent_context import get_agent
+                _ctx = get_agent()
+                if _ctx.agent_id and _ctx.agent_id != "default":
+                    tenant_id = _ctx.agent_id
+                else:
+                    tenant_id = "default"
+            except (ImportError, Exception):
+                tenant_id = "default"
         req = SaveRequest(
             content=content,
             category=category or "",
@@ -1740,7 +1731,9 @@ def _materialize_journal_once(
     )
 
     try:
-        conn = _acquire_db_connection(db_path_obj, req.category, req.title_slug, time.time(), tenant_id=req.tenant_id)
+        conn = _acquire_db_connection(
+            db_path_obj, req.category, req.title_slug, time.time()
+        )
     except Exception:
         raise
     _save_errored = False
@@ -1818,6 +1811,14 @@ def _save_memory_core(
     defer_expensive = req.defer_expensive
     safety_wiring = req.safety_wiring
     tenant_id = req.tenant_id
+    if tenant_id == "default" and not is_global:
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            if _ctx.agent_id and _ctx.agent_id != "default":
+                tenant_id = _ctx.agent_id
+        except (ImportError, Exception):
+            pass
     epistemic_source = req.epistemic_source
     belief_status = req.belief_status
     asserting_agent_id = req.asserting_agent_id
@@ -1899,7 +1900,7 @@ def _save_memory_core(
                 conn = _conn
             else:
                 conn = _acquire_db_connection(
-                    db_path_obj, category, title_slug, _start_time, tenant_id=tenant_id
+                    db_path_obj, category, title_slug, _start_time
                 )
         except Exception:
             release_db_path_flock(db_path_obj)

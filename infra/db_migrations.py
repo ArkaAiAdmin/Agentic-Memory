@@ -343,6 +343,24 @@ def _migrate_add_fk_constraints(conn) -> None:
                 mention_count INTEGER DEFAULT 1,
                 source_memory TEXT,
                 context TEXT,
+                subject_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+                object_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+                event_time REAL,
+                event_time_granularity TEXT,
+                transaction_time REAL,
+                valid_at REAL,
+                invalid_at REAL,
+                superseded_by INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL,
+                supersedes INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL,
+                contradiction_score REAL DEFAULT 0.0,
+                invalidation_reason TEXT,
+                belief_status TEXT DEFAULT 'active',
+                epistemic_source TEXT DEFAULT 'agent',
+                asserting_agent_id TEXT,
+                evidence_chain TEXT,
+                embedding BLOB,
+                fact_type TEXT DEFAULT 'observation',
+                is_entailed BOOLEAN DEFAULT 0,
                 UNIQUE(subject, predicate, object),
                 FOREIGN KEY (source_memory) REFERENCES memories(id) ON DELETE SET NULL
             )
@@ -447,6 +465,34 @@ def _migrate_add_fk_constraints(conn) -> None:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_kg_facts_spo ON kg_facts(subject, predicate, object)"
                 )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kg_facts_subject_entity ON kg_facts(subject_entity_id)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kg_facts_object_entity ON kg_facts(object_entity_id)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kg_facts_validity ON kg_facts(valid_at, invalid_at)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kg_facts_superseded_by ON kg_facts(superseded_by)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kg_facts_event_time ON kg_facts(event_time)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kg_facts_belief_status ON kg_facts(belief_status)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kg_facts_epistemic_source ON kg_facts(epistemic_source)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kg_facts_fact_type ON kg_facts(fact_type)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_kg_facts_entailed ON kg_facts(is_entailed) WHERE is_entailed = 1"
+                )
+                _ensure_kg_facts_fts(conn)
             elif table == "shared_memories":
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_shared_agent ON shared_memories(agent_id)"
@@ -586,6 +632,44 @@ def _migrate_ensure_chunks_table(conn) -> None:
 
         traceback.print_exc()
         logger.warning("_migrate_ensure_chunks_table failed: %s", e)
+
+
+def _ensure_kg_facts_fts(conn) -> None:
+    """Create kg_facts_fts FTS5 index and sync triggers if absent.
+
+    Always recreates triggers idempotently: a table rebuild drops triggers
+    but preserves the FTS5 virtual table, so checking ``sqlite_master``
+    alone would skip trigger recreation.  ``CREATE TRIGGER IF NOT EXISTS``
+    is safe to call repeatedly.
+    """
+    try:
+        fts_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='kg_facts_fts'"
+        ).fetchone()
+        if not fts_exists:
+            conn.execute(
+                "CREATE VIRTUAL TABLE kg_facts_fts USING fts5("
+                "subject, predicate, object, context, content='kg_facts', content_rowid='id')"
+            )
+        conn.execute(
+            "CREATE TRIGGER IF NOT EXISTS kg_facts_fts_ai AFTER INSERT ON kg_facts BEGIN"
+            " INSERT INTO kg_facts_fts(rowid, subject, predicate, object, context)"
+            " VALUES (new.id, new.subject, new.predicate, new.object, new.context); END"
+        )
+        conn.execute(
+            "CREATE TRIGGER IF NOT EXISTS kg_facts_fts_ad AFTER DELETE ON kg_facts BEGIN"
+            " INSERT INTO kg_facts_fts(kg_facts_fts, rowid, subject, predicate, object, context)"
+            " VALUES('delete', old.id, old.subject, old.predicate, old.object, old.context); END"
+        )
+        conn.execute(
+            "CREATE TRIGGER IF NOT EXISTS kg_facts_fts_au AFTER UPDATE ON kg_facts BEGIN"
+            " INSERT INTO kg_facts_fts(kg_facts_fts, rowid, subject, predicate, object, context)"
+            " VALUES('delete', old.id, old.subject, old.predicate, old.object, old.context);"
+            " INSERT INTO kg_facts_fts(rowid, subject, predicate, object, context)"
+            " VALUES (new.id, new.subject, new.predicate, new.object, new.context); END"
+        )
+    except Exception as exc:
+        logger.warning("_ensure_kg_facts_fts failed: %s", exc)
 
 
 def _migrate_kg_tables(conn) -> None:
@@ -769,13 +853,39 @@ def run_schema_setup(conn: AnyConnection) -> None:
 
     from infra.migration_runner import run_migrations as _run_sql_migrations
 
-    # 1. SQL migrations version check (the correct fast-path)
+    # Fast-path: skip migrations if already at current schema version.
     try:
         row = conn.execute("SELECT version FROM schema_version WHERE id=1").fetchone()
         if row is not None and row[0] >= SCHEMA_VERSION:
             return
     except sqlite3.OperationalError:
         pass
+
+    # Fresh or stale DBs need all migrations up to SCHEMA_VERSION, but
+    # SCHEMA_STABLE=True in migration_runner would reject any migration
+    # number > the hard-coded SCHEMA_VERSION snapshot.  Bypass that guard
+    # only for the fresh-DB setup path; do NOT propagate to normal
+    # production paths.
+    _stable_snapshot = None
+    try:
+        import infra.migration_runner as _mr
+
+        _stable_snapshot = _mr.SCHEMA_STABLE
+        if _stable_snapshot:
+            _mr.SCHEMA_STABLE = False
+    except Exception:
+        pass
+
+    try:
+        _run_sql_migrations(conn)
+    finally:
+        if _stable_snapshot is not None:
+            try:
+                import infra.migration_runner as _mr2
+
+                _mr2.SCHEMA_STABLE = _stable_snapshot
+            except Exception:
+                pass
 
     # Ensure the core memories table exists.
     conn.execute(

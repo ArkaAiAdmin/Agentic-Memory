@@ -401,7 +401,11 @@ def _compute_final_score(ctx) -> float:
             if tag_tokens:
                 hits = len(query_tokens & tag_tokens)
                 tag_match = min(1.0, hits / max(1, len(query_tokens)))
-    return (
+    # A3.3: discount inferred (is_entailed=1) fact scores so directly
+    # observed facts outrank derived knowledge.  is_entailed defaults to
+    # 0 (direct fact) when absent on memory rows.
+    _entailment_factor = 0.8 if getattr(ctx, "is_entailed", None) == 1 else 1.0
+    raw = (
         float(weights.get("bm25", _get_rerank_weights()["bm25"])) * bm25_score
         + float(weights.get("fitness", _get_rerank_weights()["fitness"])) * fitness_score
         + float(weights.get("importance", _get_rerank_weights()["importance"]))
@@ -409,6 +413,7 @@ def _compute_final_score(ctx) -> float:
         + float(weights.get("pinned", _get_rerank_weights()["pinned"])) * pinned_bonus
         + float(weights.get("tag_match", _get_rerank_weights()["tag_match"])) * tag_match
     )
+    return raw * _entailment_factor
 
 
 def _apply_exploration(cached_stats) -> Optional[dict]:
