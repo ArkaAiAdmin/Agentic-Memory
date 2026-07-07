@@ -259,7 +259,7 @@ def memory_search(
     rerank: bool = True,
     boost_pinned: bool = True,
     recency_weight: float = 0.2,
-    include_global: bool = True,
+    include_global: bool | None = None,
     include_invalid: bool = True,
     deep_rerank: bool = False,
     include_facts: bool = True,
@@ -318,6 +318,13 @@ def memory_search(
 
     # R1: re-cap after BB2 expansion (expansion can grow the query)
     expanded_query = _cap_query(expanded_query)
+
+    if include_global is None:
+        try:
+            from agent_context import get_agent as _get_agent
+            include_global = _get_agent().namespace == "default"
+        except (ImportError, Exception):
+            include_global = True
 
     active_dir = _resolve_memory_dir()
     if os.environ.get("MEMORY_DB_PATH"):

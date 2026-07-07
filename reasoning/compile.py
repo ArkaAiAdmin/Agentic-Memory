@@ -39,6 +39,7 @@ _ENTAILMENT_PREDICATES = frozenset({
     "is_a", "is_type_of", "subclass_of", "instance_of",
     "part_of", "has_part", "located_in",
 })
+_ENTAILMENT_PREDICATES_LIST = sorted(_ENTAILMENT_PREDICATES)
 
 
 # ---------------------------------------------------------------------------
@@ -96,11 +97,10 @@ def infer_entailment_chains(
          WHERE f.belief_status = 'active'
            AND f.locked = 0
            AND f.invalid_at IS NULL
-           AND f.predicate IN ('is_a','is_type_of','subclass_of','instance_of',
-                               'part_of','has_part','located_in')
-         LIMIT ?
-        """,
-        (batch_size,),
+            AND f.predicate IN ({})
+          LIMIT ?
+        """.format(",".join("?" for _ in _ENTAILMENT_PREDICATES_LIST)),
+        (*_ENTAILMENT_PREDICATES_LIST, batch_size,),
     ).fetchall()
 
     if not rows:
@@ -307,7 +307,7 @@ def infer_entailment_chains(
                         "WHERE derived_fact_id = ?",
                         (fid,),
                     )
-                    skipped_count += 1
+                    derived_count -= 1
         except Exception as exc:
             logger.debug("entailment: validation pass failed: %s", exc)
             error_count += 1
@@ -316,6 +316,162 @@ def infer_entailment_chains(
         "derived": derived_count,
         "skipped": skipped_count,
         "errors": error_count,
+    }
+
+
+def revalidate_entailment_chains(
+    conn: Any,
+    db_path: str | Path,
+    *,
+    dry_run: bool = False,
+    batch_size: int = 500,
+) -> dict[str, Any]:
+    """A2.3: periodic revalidation of entailment chains.
+
+    Scans ``entailment_chains`` for rows where ``valid = 1``, checks
+    whether every source fact listed in ``source_fact_ids`` is still
+    ``active`` and ``invalid_at IS NULL`` in ``kg_facts``, and
+    invalidates any chain (and its derived fact) whose sources have
+    become stale since the chain was built.
+
+    This is the periodic sweep that complements the per-supersession
+    propagation in ``fact_temporal._propagate_entailment_invalidation``.
+    It catches chains whose sources were invalidated by means other
+    than supersession (e.g., belief_status='retracted', hard delete).
+
+    Uses JSON parsing of ``source_fact_ids`` rather than LIKE-based
+    matching, so it is correct for multi-digit fact IDs.
+
+    Args:
+        conn:      Open database connection (not closed here).
+        db_path:   Path to the memory database.
+        dry_run:   If True, report without writing updates.
+        batch_size: Max chains to check per invocation.
+
+    Returns:
+        {"checked": int, "invalidated": int, "errors": int, "details": list}
+        ``details`` is a list of dicts with keys ``chain_id``,
+        ``derived_fact_id``, and ``invalid_source_id`` for every
+        chain that was (or would be) invalidated.
+    """
+    db_path = Path(db_path)
+
+    rows = conn.execute(
+        """
+        SELECT id, source_fact_ids, derived_fact_id
+          FROM entailment_chains
+         WHERE valid = 1
+         LIMIT ?
+        """,
+        (batch_size,),
+    ).fetchall()
+
+    if not rows:
+        return {"checked": 0, "invalidated": 0, "errors": 0, "details": []}
+
+    checked = 0
+    invalidated = 0
+    errors = 0
+    details: list[dict[str, Any]] = []
+
+    chains_to_invalidate: list[tuple[int, int, int]] = []
+    derived_fids_to_demark: set[int] = set()
+
+    for chain_id, source_ids_json, derived_fid in rows:
+        checked += 1
+        try:
+            source_ids = json.loads(source_ids_json)
+        except (json.JSONDecodeError, TypeError):
+            errors += 1
+            continue
+
+        if not source_ids:
+            errors += 1
+            continue
+
+        placeholders = ",".join("?" for _ in source_ids)
+        try:
+            source_rows = conn.execute(
+                f"""
+                SELECT id, belief_status, invalid_at
+                  FROM kg_facts
+                 WHERE id IN ({placeholders})
+                """,
+                list(source_ids),
+            ).fetchall()
+        except Exception as exc:
+            logger.debug(
+                "revalidate: source fact lookup failed for chain %d: %s",
+                chain_id, exc,
+            )
+            errors += 1
+            continue
+
+        found_facts: dict[int, tuple] = {row[0]: row for row in source_rows}
+
+        invalid_source_id: int | None = None
+        for sid in source_ids:
+            if sid not in found_facts:
+                invalid_source_id = sid
+                break
+            _, belief_status, invalid_at = found_facts[sid]
+            if belief_status != "active" or invalid_at is not None:
+                invalid_source_id = sid
+                break
+
+        if invalid_source_id is not None:
+            chains_to_invalidate.append((chain_id, derived_fid, invalid_source_id))
+            derived_fids_to_demark.add(derived_fid)
+            invalidated += 1
+
+    if not dry_run and chains_to_invalidate:
+        try:
+            conn.executemany(
+                "UPDATE entailment_chains SET valid = 0 WHERE id = ?",
+                [(cid,) for cid, _, _ in chains_to_invalidate],
+            )
+        except Exception as exc:
+            logger.debug("revalidate: chain bulk update failed: %s", exc)
+            errors += len(chains_to_invalidate)
+
+        if derived_fids_to_demark:
+            valid_derived_ids: list[int] = []
+            for fid in derived_fids_to_demark:
+                try:
+                    row = conn.execute(
+                        "SELECT id FROM kg_facts WHERE id = ?",
+                        (fid,),
+                    ).fetchone()
+                    if row:
+                        valid_derived_ids.append(fid)
+                except Exception:
+                    pass
+            if valid_derived_ids:
+                try:
+                    conn.executemany(
+                        "UPDATE kg_facts SET is_entailed = 0 WHERE id = ?",
+                        [(fid,) for fid in valid_derived_ids],
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "revalidate: derived fact bulk update failed: %s", exc
+                    )
+                    errors += len(valid_derived_ids)
+
+    details = [
+        {
+            "chain_id": cid,
+            "derived_fact_id": dfid,
+            "invalid_source_id": sid,
+        }
+        for cid, dfid, sid in chains_to_invalidate
+    ]
+
+    return {
+        "checked": checked,
+        "invalidated": invalidated,
+        "errors": errors,
+        "details": details,
     }
 
 

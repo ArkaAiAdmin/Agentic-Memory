@@ -47,12 +47,18 @@ async def async_memory_search(
     rerank: bool = True,
     boost_pinned: bool = True,
     recency_weight: float = 0.1,
-    include_global: bool = True,
+    include_global: bool | None = None,
     include_invalid: bool = True,
     deep_rerank: bool = False,
     tenant_id: str = "default",
 ) -> str:
     """Async wrapper around memory_search."""
+    if include_global is None:
+        try:
+            from agent_context import get_agent as _get_agent
+            include_global = _get_agent().namespace == "default"
+        except (ImportError, Exception):
+            include_global = True
     return await asyncio.to_thread(
         _memory_search,
         query=query,

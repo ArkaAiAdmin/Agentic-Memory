@@ -520,6 +520,22 @@ def _lazy_graph_snapshots(payload: dict, conn: AnyConnection, db_path: Path) -> 
     return f"graph_snapshot: entities={entity_count}, edges={edge_count}, communities={community_count}"
 
 
+def _lazy_revalidate_entailments(
+    payload: dict, conn: AnyConnection, db_path: Path
+) -> str:
+    from reasoning.compile import revalidate_entailment_chains
+
+    dry_run = bool(payload.get("dry_run", False))
+    batch_size = int(payload.get("batch_size", 500))
+    result = revalidate_entailment_chains(
+        conn, db_path, dry_run=dry_run, batch_size=batch_size
+    )
+    return (
+        f"revalidate_entailments: checked={result['checked']} "
+        f"invalidated={result['invalidated']} errors={result['errors']}"
+    )
+
+
 HANDLERS.update(
     {
         "entailment_chains": _lazy_entailment_chains,
@@ -527,6 +543,7 @@ HANDLERS.update(
         "skill_enrichment": _lazy_skill_enrichment,
         "graph_communities": _lazy_graph_communities,
         "graph_snapshots": _lazy_graph_snapshots,
+        "revalidate_entailments": _lazy_revalidate_entailments,
     }
 )
 
@@ -865,6 +882,7 @@ def process_one_task(
             "entailment_chains": "reasoning.compile.handle_entailment_chains",
             "concept_compilation": "reasoning.compile.handle_concept_compilation",
             "skill_enrichment": "reasoning.compile.handle_skill_enrichment",
+            "revalidate_entailments": "reasoning.compile.revalidate_entailment_chains",
         }
         _mod_path = _lazy_map.get(ttype)
         if _mod_path:

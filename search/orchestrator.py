@@ -1729,6 +1729,11 @@ def _build_search_result_envelope(
             result["synthesis"] = synth
         except Exception:
             pass
+    try:
+        from agent_context import get_agent
+        result["agent_scope"] = get_agent().namespace
+    except (ImportError, Exception):
+        result["agent_scope"] = "default"
     return result
 
 
