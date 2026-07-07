@@ -32,14 +32,13 @@ or generate the Markdown report::
 from __future__ import annotations
 
 import ast
-import json
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set
-
-import pytest
+from typing import List, Optional, Set
+from unittest.mock import patch
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -129,7 +128,7 @@ class SecurityFinding:
 # of these is present, the suite is RED. Accepted-risk findings (local-first
 # trust boundary) are intentionally NOT in this set.
 BLOCKING_IDS: Set[str] = {
-    "A01-001", "A01-003", "A02-001", "A05-001", "A05-002",
+    "A01-001", "A01-003", "A01-004", "A02-001", "A05-001", "A05-002",
     "A03-001", "A03-002", "A03-003", "A03-004", "A04-002", "A04-004",
     "A06-001", "A08-001", "A08-002", "A09-001", "A10-001", "A10-002",
     "LLM01-002", "LLM03-001", "LLM10-001",
@@ -348,6 +347,7 @@ def _scan_A01_broken_access_control() -> List[SecurityFinding]:
     findings: List[SecurityFinding] = []
     verbs_src = _read(MCP_VERBS_PY)
     sdk_src = _read(SDK_PY)
+    maintenance_src = _read(REPO_ROOT / "mcp_maintenance.py")
 
     # A01-001: hard delete without a confirmation gate.
     if "hard=True" in verbs_src and "confirm" not in verbs_src:
@@ -381,6 +381,40 @@ def _scan_A01_broken_access_control() -> List[SecurityFinding]:
             remediation=(
                 "Add a dry_run=True default and require explicit confirm=True; "
                 "return the count that would be deleted."
+            ),
+        ))
+
+    # A01-004: maintenance surface must gate destructive ops behind confirm.
+    # The router must declare DESTRUCTIVE_MAINTENANCE_OPS and refuse those
+    # ops unless confirm=True is supplied.
+    gate_present = (
+        "DESTRUCTIVE_MAINTENANCE_OPS" in maintenance_src
+        and "confirm" in maintenance_src
+        and bool(
+            re.search(
+                r"DESTRUCTIVE_MAINTENANCE_OPS\s+and\s+not\s+.*confirm",
+                maintenance_src,
+                re.DOTALL,
+            )
+        )
+    )
+    if not gate_present:
+        findings.append(SecurityFinding(
+            id="A01-004",
+            severity="HIGH",
+            owasp="A01",
+            component="mcp_maintenance.py",
+            finding=(
+                "The maintenance router (memory_maintenance) does not gate "
+                "destructive operations (rebuild, purge_expired, trash, crdt_sync, "
+                "okf_export/import, share family, agent_clear, dedup) behind an "
+                "explicit confirm=True. A single unauthenticated MCP call can "
+                "delete, overwrite, exfiltrate, or merge remote data."
+            ),
+            remediation=(
+                "Declare a DESTRUCTIVE_MAINTENANCE_OPS frozenset and refuse any "
+                "of those ops in memory_maintenance unless kwargs['confirm'] is "
+                "truthy; memory_advanced inherits the gate by delegation."
             ),
         ))
 
@@ -439,23 +473,52 @@ def _scan_A02_crypto_failures() -> List[SecurityFinding]:
 
 
 def _find_committed_secrets() -> List[str]:
-    """Scan production files for obviously hardcoded secrets."""
+    """Scan production files for obviously hardcoded secrets.
+
+    S9: broadened to catch env-default placeholder patterns and common
+    non-standard key names (``apikey``, ``passwd``, ``client_secret``,
+    ``private_key``) in addition to the canonical ones. Placeholder values
+    such as ``"changeme"`` / ``"your-token-here"`` are also flagged so a
+    committed default secret is caught.
+    """
     hits: List[str] = []
-    patterns = [
+    # Canonical key names with a literal value of meaningful length.
+    key_names = (
+        r"api_key|apikey|secret|client_secret|private_key|passwd|password|"
+        r"token|access_key|auth_token"
+    )
+    literal_pat = rf'(?<![\w])({key_names})\s*=\s*["\'][A-Za-z0-9_\-]{{12,}}["\']'
+    # Placeholder/default env values (committed default secrets).
+    placeholder_pat = (
+        rf'(?<![\w])({key_names})\s*=\s*["\']'
+        rf'(changeme|change-me|your[-_][a-z]+|xxx+|placeholder|example|'
+        rf'default[-_][a-z]+|insert[-_][a-z]+|todo|fixme)["\']'
+    )
+    for path in _PRODUCTION_FILES:
+        src = _read(path)
+        if not src:
+            continue
+        for pat, label in (
+            (literal_pat, "key literal"),
+            (placeholder_pat, "placeholder secret"),
+        ):
+            for m in re.finditer(pat, src):
+                key = m.group(1)
+                hits.append(f"{path.name}:{key} {label}")
+                break  # one per file per pattern is enough
+    # OpenAI-style key and sync-token literals (format-driven, no key name).
+    format_patterns = [
         (r'(?<![\w])sk-[A-Za-z0-9]{20,}', "OpenAI-style sk- key"),
-        (r'(?<![\w])api_key\s*=\s*["\'][A-Za-z0-9_\-]{24,}["\']', "api_key literal"),
         (r'(?<![\w])MEMORY_SYNC_TOKEN\s*=\s*["\'][^"\']{12,}["\']', "sync token literal"),
-        (r'(?<![\w])secret\s*=\s*["\'][A-Za-z0-9_\-]{20,}["\']', "secret literal"),
-        (r'(?<![\w])password\s*=\s*["\'][^"\']{8,}["\']', "password literal"),
     ]
     for path in _PRODUCTION_FILES:
         src = _read(path)
         if not src:
             continue
-        for pat, label in patterns:
+        for pat, label in format_patterns:
             for m in re.finditer(pat, src):
                 hits.append(f"{path.name}:{label}")
-                break  # one per file per pattern is enough
+                break
     return hits
 
 
@@ -926,7 +989,7 @@ class TestSecurityHealthCheck:
 
     def test_A01_no_unconfirmed_destructive_ops(self) -> None:
         findings = _scan_A01_broken_access_control()
-        blocking = [f for f in findings if f.id in ("A01-001", "A01-003")]
+        blocking = [f for f in findings if f.id in ("A01-001", "A01-003", "A01-004")]
         assert not blocking, "Destructive ops without confirmation: " + "; ".join(
             f"{f.id}: {f.finding}" for f in blocking
         )
@@ -1040,6 +1103,103 @@ class TestSecurityHealthCheck:
     def test_positive_control_ssrf_detected(self) -> None:
         sample = "import urllib.request\nurllib.request.urlopen(url)\n"
         assert not _ssrf_guard_present(sample), "Guard check should be False for unguarded sample"
+
+    # ---- S7: maintenance-surface confirmation gate (positive controls) ----
+
+    def test_maintenance_requires_confirm_for_destructive_ops(self) -> None:
+        from mcp_maintenance import (
+            memory_maintenance,
+            DESTRUCTIVE_MAINTENANCE_OPS,
+            MaintenanceOp,
+        )
+        from mcp_common import ErrorCode
+
+        # The constant must exist and enumerate the destructive ops.
+        assert DESTRUCTIVE_MAINTENANCE_OPS, "DESTRUCTIVE_MAINTENANCE_OPS is empty"
+        assert MaintenanceOp.AGENT_CLEAR in DESTRUCTIVE_MAINTENANCE_OPS
+        assert MaintenanceOp.OKF_EXPORT in DESTRUCTIVE_MAINTENANCE_OPS
+        assert MaintenanceOp.CRDT_SYNC in DESTRUCTIVE_MAINTENANCE_OPS
+
+        # Without confirm=True the destructive op is refused (error envelope).
+        refused = memory_maintenance("agent_clear")
+        assert ErrorCode.INVALID_PARAMS.value in refused, refused
+        assert "confirm" in refused.lower(), refused
+
+        # With confirm=True the op is dispatched (here to a stub handler).
+        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+            mock_h.return_value = {
+                MaintenanceOp.AGENT_CLEAR: lambda **_: "AGENT_CLEAR_OK",
+            }
+            ran = memory_maintenance("agent_clear", confirm=True)
+        assert ran == "AGENT_CLEAR_OK", ran
+
+    def test_memory_advanced_covered_by_confirm_gate(self) -> None:
+        from mcp_maintenance import MaintenanceOp
+        from mcp_common import ErrorCode
+        from mcp_verbs import memory_advanced
+
+        # memory_advanced delegates to memory_maintenance, so the same gate
+        # applies. Without confirm -> refused.
+        refused = memory_advanced(operation="okf_export", output_dir="/tmp/x")
+        assert ErrorCode.INVALID_PARAMS.value in refused, refused
+        assert "confirm" in refused.lower(), refused
+
+        # With confirm + stub handler -> proceeds.
+        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+            mock_h.return_value = {
+                MaintenanceOp.OKF_EXPORT: lambda **_: "OKF_EXPORT_OK",
+            }
+            ran = memory_advanced(
+                operation="okf_export", output_dir="/tmp/x", confirm=True
+            )
+        assert ran == "OKF_EXPORT_OK", ran
+
+    def test_crdt_sync_rejects_unauthenticated_remote_json(self) -> None:
+        from mcp_crdt import memory_crdt_sync
+        from mcp_common import ErrorCode
+
+        token = "test-sync-token-1234567890abcdef"
+        with patch.dict(os.environ, {"MEMORY_SYNC_TOKEN": token,
+                                     "MEMORY_CRDT_TRUSTED_PEERS": ""}):
+            # No token supplied -> rejected, remote JSON never merged.
+            refused = memory_crdt_sync(
+                agent_id="peer-x", remote_notes_json="{}"
+            )
+            assert ErrorCode.INVALID_PARAMS.value in refused, refused
+            assert "sync_token" in refused.lower(), refused
+
+            # Correct token -> authorized (handler runs; crdt_sync_all stubbed
+            # so we don't touch the real DB).
+            with patch("crdt.crdt_merge.crdt_sync_all",
+                       return_value={"applied": 0, "total": 0}) as m:
+                ok = memory_crdt_sync(
+                    agent_id="peer-x",
+                    remote_notes_json="{}",
+                    sync_token=token,
+                )
+            assert "applied" in ok, ok
+            assert m.called, "authorized crdt_sync must call crdt_sync_all"
+
+    def test_crdt_sync_trusted_peer_allowlist(self) -> None:
+        from mcp_crdt import memory_crdt_sync
+
+        with patch.dict(os.environ, {
+                "MEMORY_SYNC_TOKEN": "",
+                "MEMORY_CRDT_TRUSTED_PEERS": "peer-trusted,other",
+        }):
+            with patch("crdt.crdt_merge.crdt_sync_all",
+                       return_value={"applied": 0, "total": 0}) as m:
+                ok = memory_crdt_sync(
+                    agent_id="peer-trusted",
+                    remote_notes_json="{}",
+                )
+            assert "applied" in ok, ok
+            assert m.called, "trusted peer must be allowed without a token"
+
+            refused = memory_crdt_sync(
+                agent_id="peer-unknown", remote_notes_json="{}"
+            )
+            assert "sync_token" in refused.lower(), refused
 
     # ---- Report generation (structure only; findings may be 0 after fixes) ----
 

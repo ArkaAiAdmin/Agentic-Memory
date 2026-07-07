@@ -15,6 +15,27 @@ from mcp_common import _err, ErrorCode, logger, with_audit
 from mcp_instance import mcp
 
 
+def _enforce_okf_export_containment(output_dir: str) -> Path:
+    """S5 — ensure the OKF export target stays within the memory root.
+
+    The export operation writes the entire corpus (a data-exfiltration
+    surface) to ``output_dir``. We require the resolved path to remain
+    inside the active memory directory so a caller cannot redirect the
+    full corpus to an arbitrary filesystem location.
+    """
+    from infra.infrastructure import resolve_active_memory_dir
+
+    root = resolve_active_memory_dir().resolve()
+    target = Path(output_dir).resolve()
+    # Accept the memory root itself or any subdirectory beneath it.
+    if target != root and not target.is_relative_to(root):
+        raise ValueError(
+            f"OKF export path containment: {output_dir} resolves to {target} "
+            f"which is outside the memory root {root}"
+        )
+    return target
+
+
 @mcp.tool()
 @with_audit("memory_okf_export")
 def memory_okf_export(
@@ -35,12 +56,20 @@ def memory_okf_export(
     ----------
     output_dir : str
         Directory to write OKF files into (created if it doesn't exist).
+        Must resolve within the active memory directory (S5 path
+        containment).
     include_deleted : bool
         Also export soft-deleted memories (default: false).
     overwrite : bool
         Overwrite existing files without skipping (default: false).
     """
     import okf_export as oe
+
+    try:
+        target = _enforce_okf_export_containment(output_dir)
+    except ValueError as ve:
+        return _err(ErrorCode.INVALID_PARAMS, str(ve))
+
     from infra.infrastructure import resolve_active_memory_dir
 
     db_path = resolve_active_memory_dir() / "memory.db"
@@ -68,6 +97,7 @@ def memory_okf_import(
     is_global: bool = False,
     dry_run: bool = False,
     overwrite: bool = False,
+    confirm: bool = False,
 ) -> str:
     """Import memories from an OKF (Open Knowledge Format) directory.
 
@@ -85,7 +115,18 @@ def memory_okf_import(
         Preview what would be imported without writing (default: false).
     overwrite : bool
         Overwrite existing memories if they already exist (default: false).
+        Requires ``confirm=True`` (S6) in addition to the router-level
+        destructive-operation confirmation gate.
+    confirm : bool
+        Explicit confirmation required when ``overwrite=True`` (S6).
     """
+    # S6: overwrite is a destructive merge; require explicit confirmation.
+    if overwrite and not confirm:
+        return _err(
+            ErrorCode.INVALID_PARAMS,
+            "OKF import with overwrite=True requires confirm=True.",
+        )
+
     import okf_import as oi
 
     source = Path(input_dir)

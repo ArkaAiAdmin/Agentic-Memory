@@ -866,6 +866,48 @@ class MaintenanceOp(str, Enum):
         return [m.value for m in cls]
 
 
+# ---------------------------------------------------------------------------
+# S1 / S4: destructive-operation confirmation gate
+# ---------------------------------------------------------------------------
+# Operations that delete, overwrite, exfiltrate, or merge remote/peer data.
+# Any call to ``memory_maintenance`` for one of these MUST pass
+# ``confirm=True`` or it is refused before the handler runs. Read-only and
+# diagnostic ops (stats, audit, search, status) are intentionally excluded.
+#
+# Member justification (each is a ``MaintenanceOp`` enum member):
+#   PURGE_EXPIRED   — permanently deletes expired/soft-deleted memories.
+#   TRASH           — moves memories to the trash (deletion path).
+#   AGENT_CLEAR     — wipes all data for an agent scope.
+#   REBUILD         — drops and rebuilds indexes (data-loss / heavy rewrite).
+#   OKF_EXPORT      — writes the full corpus to an arbitrary output dir
+#                     (exfiltration surface; gated by S5 path containment too).
+#   OKF_IMPORT      — merges an external OKF directory into the store
+#                     (overwrite/data-injection surface; gated by S6 too).
+#   CRDT_SYNC       — merges remote agent JSON into the local store
+#                     (untrusted-data merge; gated by S3 peer auth too).
+#   SHARE           — publishes a local note to another agent.
+#   SHARED_IMPORT   — pulls a remote/shared note into the local store.
+#   AUTO_SHARE      — bulk-publishes memories to other agents.
+#   DEDUP           — destructive when action="merge_suggestions" (collapses
+#                     notes) and action="duplicates" (drives purge); both
+#                     merge/delete paths are covered by gating the op.
+DESTRUCTIVE_MAINTENANCE_OPS: frozenset["MaintenanceOp"] = frozenset(
+    {
+        MaintenanceOp.PURGE_EXPIRED,
+        MaintenanceOp.TRASH,
+        MaintenanceOp.AGENT_CLEAR,
+        MaintenanceOp.REBUILD,
+        MaintenanceOp.OKF_EXPORT,
+        MaintenanceOp.OKF_IMPORT,
+        MaintenanceOp.CRDT_SYNC,
+        MaintenanceOp.SHARE,
+        MaintenanceOp.SHARED_IMPORT,
+        MaintenanceOp.AUTO_SHARE,
+        MaintenanceOp.DEDUP,
+    }
+)
+
+
 # Per-operation dispatchers (the _op_* functions and MAINTENANCE_HANDLERS
 # dict) live in mcp_maintenance_ops.py to keep this file focused on the
 # high-level @mcp.tool() definitions and the router below.
@@ -971,6 +1013,16 @@ def memory_maintenance(
             ErrorCode.INVALID_PARAMS,
             f"Unknown maintenance operation '{op}'. Known: {', '.join(sorted(MaintenanceOp.all_values()))}{hint}",
         )
+    # S1 / S4: refuse destructive operations unless explicitly confirmed.
+    # This single gate covers the destructive MAINTENANCE_HANDLERS (rebuild,
+    # purge_expired, trash, crdt_sync, okf_* import/export, share family,
+    # agent_clear, dedup). Read-only/diagnostic ops stay ungated.
+    if op_enum in DESTRUCTIVE_MAINTENANCE_OPS and not kwargs.get("confirm"):
+        return _err(
+            ErrorCode.INVALID_PARAMS,
+            f"Operation '{op}' is destructive and requires confirm=True.",
+        )
+
     handler = MAINTENANCE_HANDLERS[op_enum]
     raw = handler(**kwargs)
     return str(raw) if not isinstance(raw, str) else raw
