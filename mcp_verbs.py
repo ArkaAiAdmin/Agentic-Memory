@@ -80,6 +80,7 @@ def memory_search(
     epistemic_source: str | None = None,
     fact_type: str | None = None,
     memory_source: str | None = None,
+    shared_with_me: bool = False,
 ) -> str:
     """Search memories by semantic + FTS5 hybrid search.
 
@@ -100,6 +101,8 @@ def memory_search(
         fact_type: Filter KG facts by type (observation, agent_inference, external_stated, hypothesis, derived).
         memory_source: Filter memories by source type ("agent", "auto_save", "import"). Only returns
             memories whose source file category matches the given type.
+        shared_with_me: If True, also include memories explicitly shared with
+            the current agent (via the shared pool's target_agent_id).
     """
     if include_global is None:
         try:
@@ -123,6 +126,7 @@ def memory_search(
             fact_type=fact_type,
             memory_source=memory_source,
             category=category,
+            shared_with_me=shared_with_me,
         )
         output = cast(str, result.get("output", str(result)))
         results = result.get("results", [])
@@ -761,11 +765,26 @@ def memory_share(
         )
 
         if action == "list":
-            return str(memory_shared_list())
+            try:
+                from agent_context import get_agent as _share_list_agent
+                _current_agent = _share_list_agent().agent_id
+            except (ImportError, Exception):
+                _current_agent = "default"
+            return str(memory_shared_list(agent_id=_current_agent, category="", limit=50))
         elif action == "share":
             if not share_with:
                 return _err(ErrorCode.INVALID_PARAMS, "share_with required for action=share")
-            return str(_share_to_pool(note_id=note_id, agent_id=share_with))
+            try:
+                from agent_context import get_agent as _share_action_agent
+                _sharer = _share_action_agent().agent_id
+            except (ImportError, Exception):
+                _sharer = "default"
+            return str(_share_to_pool(
+                note_id=note_id,
+                agent_id=_sharer,
+                target_agent_id=share_with,
+                shared_with=share_with,
+            ))
         elif action == "import":
             return str(memory_shared_import(shared_id=note_id, target_agent_id=share_with))
         elif action == "stats":

@@ -84,7 +84,9 @@ def _ensure_shared_table(conn: AnyConnection) -> None:
             tags TEXT,
             shared_at REAL NOT NULL,
             source_note_id TEXT,
-            metadata TEXT
+            metadata TEXT,
+            target_agent_id TEXT DEFAULT NULL,
+            shared_with TEXT DEFAULT NULL
         )
     """)
     conn.execute(
@@ -93,14 +95,28 @@ def _ensure_shared_table(conn: AnyConnection) -> None:
     conn.execute(
         f"CREATE INDEX IF NOT EXISTS idx_shared_category ON {_SHARED_TABLE}(category)"
     )
+    conn.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_shared_target_agent ON {_SHARED_TABLE}(target_agent_id)"
+    )
+    conn.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_shared_shared_with ON {_SHARED_TABLE}(shared_with)"
+    )
 
 
-def share_memory(note_id: str, agent_id: str, db_path: str | None = None) -> dict:
+def share_memory(
+    note_id: str,
+    agent_id: str,
+    target_agent_id: str | None = None,
+    shared_with: str | None = None,
+    db_path: str | None = None,
+) -> dict:
     """Share a memory from one agent's workspace to the shared pool.
 
     Args:
         note_id: the note to share
-        agent_id: identifier of the agent sharing this memory
+        agent_id: identifier of the agent sharing this memory (sharer)
+        target_agent_id: if set, store the target agent id (directed share).
+        shared_with: human-readable target label; mirrors target_agent_id.
         db_path: optional path to memory.db
 
     Returns:
@@ -165,12 +181,14 @@ def share_memory(note_id: str, agent_id: str, db_path: str | None = None) -> dic
                 shared_id = f"shared:{agent_id}:{note_id}"
                 conn.execute(
                     f"INSERT INTO {_SHARED_TABLE} "
-                    f"(id, agent_id, content, category, tags, shared_at, source_note_id, metadata) "
-                    f"VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                    f"(id, agent_id, content, category, tags, shared_at, source_note_id, metadata, "
+                    f"target_agent_id, shared_with) "
+                    f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                     f"ON CONFLICT(id) DO UPDATE SET "
                     f"content=excluded.content, category=excluded.category, "
                     f"tags=excluded.tags, shared_at=excluded.shared_at, "
-                    f"source_note_id=excluded.source_note_id, metadata=excluded.metadata",
+                    f"source_note_id=excluded.source_note_id, metadata=excluded.metadata, "
+                    f"target_agent_id=excluded.target_agent_id, shared_with=excluded.shared_with",
                     (
                         shared_id,
                         agent_id,
@@ -180,6 +198,8 @@ def share_memory(note_id: str, agent_id: str, db_path: str | None = None) -> dic
                         time.time(),
                         note_id,
                         meta_json,
+                        target_agent_id,
+                        shared_with or target_agent_id,
                     ),
                 )
                 conn.commit()
@@ -197,6 +217,7 @@ def list_shared_memories(
     agent_id: str | None = None,
     category: str | None = None,
     limit: int = 50,
+    shared_with_me: bool = False,
     db_path: str | None = None,
 ) -> list[dict] | dict:
     """List memories in the shared pool.
@@ -205,6 +226,8 @@ def list_shared_memories(
         agent_id: filter by sharing agent
         category: filter by category
         limit: max results
+        shared_with_me: if True, restrict to rows where target_agent_id or
+            shared_with matches the current agent (directed shares only).
         db_path: optional path to memory.db
 
     Returns:
@@ -214,6 +237,14 @@ def list_shared_memories(
 
     if not sys.modules[__name__].MULTI_AGENT_ENABLED:
         return []
+
+    current_agent: str | None = None
+    if shared_with_me:
+        try:
+            from agent_context import get_agent as _gwa
+            current_agent = _gwa().agent_id
+        except (ImportError, Exception):
+            pass
 
     if db_path is not None:
         db = db_path
@@ -231,7 +262,11 @@ def list_shared_memories(
         with open_db(Path(db), pooled=True, write=True) as conn:
             _ensure_shared_table(conn)
 
-            query = f"SELECT id, agent_id, content, category, tags, shared_at, source_note_id FROM {_SHARED_TABLE}"
+            query = (
+                f"SELECT id, agent_id, content, category, tags, shared_at, "
+                f"source_note_id, target_agent_id, shared_with "
+                f"FROM {_SHARED_TABLE}"
+            )
             params: list = []
             conditions = []
             if agent_id:
@@ -240,6 +275,11 @@ def list_shared_memories(
             if category:
                 conditions.append("category = ?")
                 params.append(category)
+            if shared_with_me and current_agent:
+                conditions.append(
+                    "(target_agent_id = ? OR shared_with = ?)"
+                )
+                params.extend([current_agent, current_agent])
             this_mod = sys.modules[__name__]
             if this_mod._SHARED_POOL_TTL_DAYS > 0:
                 cutoff = time.time() - (this_mod._SHARED_POOL_TTL_DAYS * 86400)
@@ -260,6 +300,8 @@ def list_shared_memories(
                     "tags": r[4],
                     "shared_at": r[5],
                     "source_note_id": r[6],
+                    "target_agent_id": r[7],
+                    "shared_with": r[8],
                 }
                 for r in rows
             ]

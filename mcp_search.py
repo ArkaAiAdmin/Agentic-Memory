@@ -270,6 +270,7 @@ def memory_search(
     epistemic_source: str | None = None,
     fact_type: str | None = None,
     memory_source: str | None = None,
+    shared_with_me: bool = False,
 ) -> str:
     """Perform FTS5 (full-text) and semantic hybrid search across local and global memories.
 
@@ -356,6 +357,7 @@ def memory_search(
                 epistemic_source=epistemic_source,
                 fact_type=fact_type,
                 memory_source=memory_source,
+                shared_with_me=shared_with_me,
             )
         except Exception as exc:
             logger.warning("Local search failed for query %r: %s", expanded_query, exc)
@@ -380,6 +382,7 @@ def memory_search(
                 epistemic_source=epistemic_source,
                 fact_type=fact_type,
                 memory_source=memory_source,
+                shared_with_me=shared_with_me,
             )
         except Exception as exc:
             logger.warning("Global search failed for query %r: %s", expanded_query, exc)

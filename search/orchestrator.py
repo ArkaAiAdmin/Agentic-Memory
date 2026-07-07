@@ -1986,6 +1986,7 @@ def search_memories(
     memory_source: str | None = None,
     category: str = "",
     tags: list[str] | None = None,
+    shared_with_me: bool = False,
 ) -> dict:
     if not db_path.exists():
         return {
@@ -2042,6 +2043,7 @@ def search_memories(
         + f":as_of={as_of}"
         + f":bs={belief_status or ''}:es={epistemic_source or ''}:ft={fact_type or ''}:ms={memory_source or ''}"
         + (f":tags={','.join(sorted(tags))}" if tags else "")
+        + f":swm={int(shared_with_me)}"
     )
     now = time.time()
     if cache_key in _search_cache:
@@ -2370,6 +2372,69 @@ def search_memories(
 
         # Phase 12: Record access
         _record_last_accessed(db, result_items)
+
+        # B3.1: shared_with_me post-filter — append shared memories whose
+        # source_note_id matches a result and target_agent_id is the
+        # current agent, de-duplicating by id.
+        if shared_with_me:
+            _swm_t0 = time.time()
+            try:
+                from infra._lazy_imports import get_agent as _swm_get_agent
+                _swm_agent_id = _swm_get_agent().agent_id
+            except (ImportError, Exception):
+                _swm_agent_id = None
+            if _swm_agent_id:
+                _seen_ids = {r[0] for r in results_to_display}
+                try:
+                    _swm_rows = db.execute(
+                        "SELECT source_note_id FROM shared_memories "
+                        "WHERE target_agent_id = ? AND source_note_id IS NOT NULL",
+                        (_swm_agent_id,),
+                    ).fetchall()
+                    _swm_source_ids = {r[0] for r in _swm_rows}
+                    _new_ids = _swm_source_ids - _seen_ids
+                    if _new_ids:
+                        _swm_extra = db.execute(
+                            f"SELECT id, content, source_file, tags, created_at, "
+                            f"importance, category, fitness_score, last_accessed, "
+                            f"metadata "
+                            f"FROM tenant_memories WHERE id IN ({','.join('?'*len(_new_ids))})",
+                            tuple(_new_ids),
+                        ).fetchall()
+                        if _swm_extra:
+                            results_to_display = list(results_to_display) + list(_swm_extra)
+                except Exception as _swm_exc:
+                    _phase_inc("search.shared_with_me", _swm_exc)
+                    logger.debug("shared_with_me filter failed: %s", _swm_exc)
+            _record_phase_latency("shared_with_me", _swm_t0)
+
+        # B3.2: Cross-namespace audit logging — fires after search completes
+        # when include_global=True and the calling agent is NOT the default namespace.
+        _ns_audit_t0 = time.time()
+        if include_global:
+            try:
+                from infra._lazy_imports import get_agent as _ns_audit_agent
+                _ns_ctx = _ns_audit_agent()
+                if _ns_ctx.namespace not in (None, "default"):
+                    try:
+                        from infra.audit import enqueue_audit as _ns_enqueue
+                        _ns_enqueue(
+                            db_path=str(db_path),
+                            tool="memory_search",
+                            args={
+                                "query": query,
+                                "include_global": True,
+                                "agent_namespace": _ns_ctx.namespace,
+                                "shared_with_me": shared_with_me,
+                            },
+                            results_count=len(result_items),
+                            latency_ms=(time.time() - _ns_audit_t0) * 1000.0,
+                        )
+                    except Exception:
+                        pass
+            except (ImportError, Exception):
+                pass
+        _record_phase_latency("namespace_audit", _ns_audit_t0)
 
         result = _build_search_result_envelope(
             result_items=result_items,

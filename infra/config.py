@@ -516,6 +516,10 @@ class MemoryConfig:
     recall_tier1_hot_days: int = 7
     recall_tier_fallback_threshold: int = 5
 
+    # embedding backend
+    embedding_backend: str = "auto"  # "model2vec" | "sentence-transformers" | "transformers" | "auto"
+    embedding_model_id: str = "minishlab/potion-base-8M"
+    embedding_model_revision: str = ""  # git revision for model2vec; empty = latest/default
 
 DECISION_CATEGORIES = frozenset({"decisions", "lessons", "projects", "architecture"})
 
@@ -1404,6 +1408,28 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "session_memory.decision_llm",
             False,
             bool,
+            toml_data,
+        ),
+        # --- embedding ---
+        embedding_backend=_b(
+            "MEMORY_EMBEDDING_BACKEND",
+            "embedding.backend",
+            "auto",
+            str,
+            toml_data,
+        ),
+        embedding_model_id=_b(
+            "MEMORY_EMBEDDING_MODEL_ID",
+            "embedding.model_id",
+            "minishlab/potion-base-8M",
+            str,
+            toml_data,
+        ),
+        embedding_model_revision=_b(
+            "MEMORY_EMBEDDING_MODEL_REVISION",
+            "embedding.model_revision",
+            "",
+            str,
             toml_data,
         ),
         # --- rate_limits ---

@@ -13,7 +13,7 @@ from mcp_instance import mcp
 
 
 @with_audit("memory_share")
-def memory_share(note_id: str, agent_id: str) -> str:
+def memory_share(note_id: str, agent_id: str, target_agent_id: str = "", shared_with: str = "") -> str:
     """Share a memory to the cross-agent shared pool.
 
     Opt-in via MEMORY_MULTI_AGENT=1.
@@ -25,7 +25,12 @@ def memory_share(note_id: str, agent_id: str) -> str:
             {"enabled": False, "message": "Set MEMORY_MULTI_AGENT=1 to enable."}
         )
     try:
-        result = ma.share_memory(note_id, agent_id)
+        result = ma.share_memory(
+            note_id,
+            agent_id,
+            target_agent_id=target_agent_id or None,
+            shared_with=shared_with or None,
+        )
         return json.dumps(result, indent=2)
     except Exception:
         logger.exception("Share failed")

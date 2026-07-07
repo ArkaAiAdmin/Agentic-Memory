@@ -222,6 +222,61 @@ def _embed_text_with_context(
     return prefix + base[:max_base]
 
 
+# ---------------------------------------------------------------------------
+# Module-level helpers shared across backends
+# ---------------------------------------------------------------------------
+
+
+class _TransformerModelWrapper:
+    """Pure-transformers mean-pooling wrapper (shared by the transformers and
+    auto-detect fallback paths so the class body lives once at module scope).
+    """
+
+    def __init__(self, tokenizer, model) -> None:
+        self.tokenizer = tokenizer
+        self.model = model
+        self.dim = self.model.config.hidden_size
+
+    def encode(self, texts) -> Any:
+        import torch
+
+        inputs = self.tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+        )
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        attention_mask = inputs["attention_mask"]
+        token_embeddings = outputs[0]
+        input_mask_expanded = (
+            attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        )
+        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        embeddings = sum_embeddings / sum_mask
+        embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+        return embeddings.cpu().numpy()
+
+
+def _disable_hf_progress_bars() -> None:
+    """Silence huggingface_hub download progress bars (version-tolerant)."""
+    try:
+        from huggingface_hub.utils.tqdm import disable_progress_bars  # type: ignore[attr-defined]
+        disable_progress_bars()
+    except ImportError:
+        try:
+            from huggingface_hub.utils import disable_progress_bars  # type: ignore[attr-defined]
+            disable_progress_bars()
+        except ImportError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Search class
+# ---------------------------------------------------------------------------
+
 class EmbeddingSearch:
     model: Any
     np: Any
@@ -275,85 +330,91 @@ class EmbeddingSearch:
                 self._query_cache.popitem(last=False)
         return query_vec
 
-    def _load_model(self) -> None:
+    def _load_model(self, config=None) -> None:
         try:
             import numpy as np
 
             self.np = np
 
-            # Resolve model ID and revision from environment (opt-in)
+            cfg = config
+            if cfg is None:
+                try:
+                    from infra._lazy_imports import get_config
+                    cfg = get_config()
+                except Exception:
+                    cfg = None
+
+            backend = "auto"
+            if cfg is not None:
+                resolved = getattr(cfg, "embedding_backend", "auto") or "auto"
+                if resolved.lower() not in ("", "auto", "model2vec", "sentence-transformers", "transformers"):
+                    logger.warning("embedding.backend=%r unrecognised, falling back to auto", resolved)
+                    resolved = "auto"
+                backend = resolved.lower()
+
             model_id = os.environ.get("MEMORY_EMBEDDING_MODEL_ID", MODEL_ID)
+            if cfg is not None:
+                cfg_model_id = getattr(cfg, "embedding_model_id", None)
+                if cfg_model_id and not os.environ.get("MEMORY_EMBEDDING_MODEL_ID"):
+                    model_id = cfg_model_id
+
             model_revision = os.environ.get(
-                "MEMORY_EMBEDDING_MODEL_REVISION", MODEL_REVISION
+                "MEMORY_EMBEDDING_MODEL_REVISION",
+                getattr(cfg, "embedding_model_revision", "") or MODEL_REVISION if cfg is not None else MODEL_REVISION,
             )
 
-            # Check if this is the default Model2Vec model (potion) or model2vec requested
-            if "potion" in model_id or "model2vec" in model_id:
+            if backend == "model2vec":
                 from model2vec import StaticModel
                 from huggingface_hub import snapshot_download
 
-                # Only use the pinned revision for the default model
-                from huggingface_hub.utils import disable_progress_bars
-                disable_progress_bars()
+                _disable_hf_progress_bars()
                 local_path = snapshot_download(
                     repo_id=model_id,
-                    revision=model_revision if model_id == MODEL_ID else None,
+                    revision=model_revision if model_id == MODEL_ID else (model_revision or None),
                 )
                 self.model = StaticModel.from_pretrained(local_path)
                 self.is_transformer = False
+            elif backend == "sentence-transformers":
+                from sentence_transformers import SentenceTransformer
+                self.model = SentenceTransformer(model_id, revision=model_revision or None)
+                self.model.dim = self.model.get_sentence_embedding_dimension()
+                self.is_transformer = True
+            elif backend == "transformers":
+                from transformers import AutoTokenizer, AutoModel
+                model_kwargs: dict[str, Any] = {}
+                if model_revision:
+                    model_kwargs["revision"] = model_revision
+                tokenizer = AutoTokenizer.from_pretrained(model_id, **model_kwargs)
+                model = AutoModel.from_pretrained(model_id, **model_kwargs)
+                self.model = _TransformerModelWrapper(tokenizer, model)
+                self.is_transformer = True
             else:
-                # Load via sentence-transformers or pure transformers/torch
-                try:
-                    from sentence_transformers import SentenceTransformer
+                if "potion" in model_id or "model2vec" in model_id:
+                    from model2vec import StaticModel
+                    from huggingface_hub import snapshot_download
 
-                    self.model = SentenceTransformer(model_id)
-                    # Set dim attribute
-                    self.model.dim = self.model.get_sentence_embedding_dimension()
-                    self.is_transformer = True
-                except ImportError:
-                    # Fallback to pure transformers/torch
-                    import torch
-                    from transformers import AutoTokenizer, AutoModel
-
-                    class TransformerModelWrapper:
-                        def __init__(self, model_name):
-                            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-                            self.model = AutoModel.from_pretrained(model_name)
-                            self.dim = self.model.config.hidden_size
-
-                        def encode(self, texts) -> torch.Tensor:
-                            # Mean Pooling implementation
-                            inputs = self.tokenizer(
-                                texts,
-                                padding=True,
-                                truncation=True,
-                                return_tensors="pt",
-                            )
-                            with torch.no_grad():
-                                outputs = self.model(**inputs)
-                            attention_mask = inputs["attention_mask"]
-                            token_embeddings = outputs[0]
-                            input_mask_expanded = (
-                                attention_mask.unsqueeze(-1)
-                                .expand(token_embeddings.size())
-                                .float()
-                            )
-                            sum_embeddings = torch.sum(
-                                token_embeddings * input_mask_expanded, 1
-                            )
-                            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-                            embeddings = sum_embeddings / sum_mask
-                            # L2 Normalize
-                            embeddings = torch.nn.functional.normalize(
-                                embeddings, p=2, dim=1
-                            )
-                            return embeddings.cpu().numpy()  # type: ignore[return-value]
-
-                    self.model = TransformerModelWrapper(model_id)
-                    self.is_transformer = True
+                    _disable_hf_progress_bars()
+                    local_path = snapshot_download(
+                        repo_id=model_id,
+                        revision=model_revision if model_id == MODEL_ID else None,
+                    )
+                    self.model = StaticModel.from_pretrained(local_path)
+                    self.is_transformer = False
+                else:
+                    try:
+                        from sentence_transformers import SentenceTransformer
+                        self.model = SentenceTransformer(model_id)
+                        self.model.dim = self.model.get_sentence_embedding_dimension()
+                        self.is_transformer = True
+                    except ImportError:
+                        from transformers import AutoTokenizer, AutoModel
+                        tokenizer = AutoTokenizer.from_pretrained(model_id)
+                        model = AutoModel.from_pretrained(model_id)
+                        self.model = _TransformerModelWrapper(tokenizer, model)
+                        self.is_transformer = True
             self._model_loaded = True
         except Exception as e:
-            logger.error("Failed to load embedding model: %s", e)
+            logger.error("Failed to load embedding model [%s]: %s", backend, e)
             self._model_load_failed = True
             self.model = None
 
@@ -574,7 +635,8 @@ class EmbeddingSearch:
         try:
             row = db.execute(
                 "SELECT n_vectors, dim, metric, quantization, connectivity, "
-                "       expansion_add, expansion_search, built_at, length(index_blob) "
+                "       expansion_add, expansion_search, built_at, length(index_blob), "
+                "       COALESCE(model_id, '') "
                 "FROM memory_vec_idx WHERE id=1"
             ).fetchone()
         except sqlite3.OperationalError:
@@ -591,6 +653,7 @@ class EmbeddingSearch:
             exp_s,
             built_at,
             blob_len,
+            stored_model_id,
         ) = row
         meta = {
             "n_vectors": n_vectors,
@@ -602,18 +665,34 @@ class EmbeddingSearch:
             "expansion_search": exp_s,
             "built_at": built_at,
             "blob_len": blob_len,
+            "model_id": stored_model_id,
         }
 
         # Cache hit? Only reuse if both the timestamp AND the BLOB
         # length are stable. (Two rebuilds within the same second can
         # produce the same built_at; the BLOB length is the tiebreaker.)
+        # Also reject the cache when the embedding model changed — the
+        # persisted vectors are stale if model_id differs.
+        current_model_id = os.environ.get("MEMORY_EMBEDDING_MODEL_ID", MODEL_ID)
         cached = self._vec_index_cache.get(cache_key)
         if (
             cached is not None
             and cached[1]["built_at"] == built_at
             and cached[1]["blob_len"] == blob_len
+            and cached[1].get("model_id") == stored_model_id
         ):
             return cached  # type: ignore[no-any-return]
+
+        # Model_id drift: embeddings were built with a different model.
+        # Invalidate the index so the caller falls back to full scan /
+        # rebuild.
+        if stored_model_id and self.model is not None and stored_model_id != current_model_id:
+            logger.warning(
+                "vec index model_id drift: stored=%r current=%r — index invalidated",
+                stored_model_id,
+                current_model_id,
+            )
+            return None, None
 
         # Dim mismatch between persisted index and current model —
         # refuse to use the index. Caller will fall back to full scan.
@@ -716,7 +795,8 @@ class EmbeddingSearch:
                 "WHERE m.deleted_at IS NULL "
                 "AND NOT EXISTS "
                 "  (SELECT 1 FROM memory_vec_keys k WHERE k.memory_id = m.id) "
-                f"LIMIT {UNINDEXED_SAFETY_NET_LIMIT}"
+                "LIMIT ?",
+                (UNINDEXED_SAFETY_NET_LIMIT,),
             ).fetchall()
         except sqlite3.OperationalError:
             unindexed = []

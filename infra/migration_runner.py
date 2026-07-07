@@ -99,8 +99,9 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-03: bumped to 30 for community_id + betweenness on kg_entities (Sprint 4).
 # 2026-07-05: bumped to 31 for outbox memory_events table and triggers (REST/WS API).
 # 2026-07-05: bumped to 32 for scoped outbox update trigger (semantic columns only).
-# 2026-07-08: bumped to 34 for entailment validation (is_entailed on kg_facts).
-SCHEMA_VERSION = 34
+# 2026-07-08: bumped to 35 for shared_memories target_agent_id + shared_with columns (B3.1).
+# 2026-07-08: bumped to 36 for embedding model tracking in memory_vec_idx (C4.3).
+SCHEMA_VERSION = 36
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the

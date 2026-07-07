@@ -196,3 +196,13 @@ listen_port = 9878                      # MEMORY_API_LISTEN_PORT
 token = ""                              # MEMORY_API_TOKEN — Authorization Bearer token. Empty = auto-generated at runtime via secrets.token_hex(32) and persisted to memory/.api_token (mode 0600). All clients (including loopback) must present this token.
 insecure_loopback = false              # MEMORY_API_INSECURE_LOOPBACK — DEV-ONLY escape hatch. When true, loopback clients bypass the bearer token check. MUST be false in any shared/prod deployment; a real token is required instead.
 
+[embedding]
+# Embedding backend selection.
+# "model2vec"   → StaticModel.from_pretrained (potion, model2vec models)
+# "sentence-transformers" → SentenceTransformer
+# "transformers" → raw transformers/torch AutoModel + mean-pooling
+# "auto"        → detect from model_id string (current default behaviour)
+backend = "auto"                        # MEMORY_EMBEDDING_BACKEND
+model_id = "minishlab/potion-base-8M"   # MEMORY_EMBEDDING_MODEL_ID
+model_revision = ""                      # MEMORY_EMBEDDING_MODEL_REVISION — git revision/tag for model2vec backends; empty = latest
+

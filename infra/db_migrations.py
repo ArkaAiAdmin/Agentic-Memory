@@ -375,6 +375,8 @@ def _migrate_add_fk_constraints(conn) -> None:
                 shared_at REAL NOT NULL,
                 source_note_id TEXT,
                 metadata TEXT,
+                target_agent_id TEXT DEFAULT NULL,
+                shared_with TEXT DEFAULT NULL,
                 FOREIGN KEY (source_note_id) REFERENCES memories(id) ON DELETE SET NULL
             )
         """,
@@ -502,6 +504,12 @@ def _migrate_add_fk_constraints(conn) -> None:
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_shared_memories_shared_at ON shared_memories(shared_at)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_shared_target_agent ON shared_memories(target_agent_id)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_shared_shared_with ON shared_memories(shared_with)"
                 )
             elif table == "user_profile_access_log":
                 conn.execute(

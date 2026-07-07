@@ -23,6 +23,7 @@ Usage:
 
 import hashlib
 import logging
+import os
 import sqlite3
 import sys
 import time
@@ -41,6 +42,7 @@ import numpy as np
 from usearch.index import Index as USearchIndex
 
 from infra.embedding_search import (
+    MODEL_ID,
     MODEL_REVISION,
     _cache_text,
     _chunk_cache_text,
@@ -52,6 +54,27 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from infra.db import AnyConnection
+
+
+def _resolve_rebuild_model_id() -> str:
+    """Resolve the effective embedding model_id for the rebuild row.
+
+    Env var overrides the module constant; config.toml is the next fallback.
+    Mirrors the resolution in ``EmbeddingSearch._load_model`` so the
+    ``memory_vec_idx.model_id`` column always matches what the searcher
+    actually uses.
+    """
+    env_id = os.environ.get("MEMORY_EMBEDDING_MODEL_ID")
+    if env_id:
+        return env_id
+    try:
+        from infra._lazy_imports import get_config
+        cfg_id = getattr(get_config(), "embedding_model_id", None)
+        if cfg_id:
+            return str(cfg_id)
+    except Exception:
+        pass
+    return MODEL_ID
 
 
 # Index settings. These are written into the memory_vec_idx singleton
@@ -324,8 +347,8 @@ def rebuild_vec_index(db_path, *, force: bool = False) -> dict:
                 conn.execute(
                     "INSERT INTO memory_vec_idx "
                     "(id, n_vectors, dim, metric, quantization, connectivity, "
-                    " expansion_add, expansion_search, built_at, index_blob, key_count) "
-                    "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " expansion_add, expansion_search, built_at, index_blob, key_count, model_id) "
+                    "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         n,
                         dim,
@@ -337,6 +360,7 @@ def rebuild_vec_index(db_path, *, force: bool = False) -> dict:
                         time.time(),
                         serialized,
                         len(key_to_id),
+                        _resolve_rebuild_model_id(),
                     ),
                 )
                 conn.executemany(
