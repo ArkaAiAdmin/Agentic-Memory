@@ -15,7 +15,7 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.confi
 <!--AUTO-GEN:START key="what_this_system_is"-->
 - **Surface**: 16 CORE verbs + `memory_maintenance` router (86 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 39+ cron jobs
 - **Schema**: v33, ~42 tables
-- **Code**: ~60k LOC production, ~79k+ test LOC; see `docs/architecture.md`
+- **Code**: ~95k LOC production, ~81k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 
@@ -61,7 +61,7 @@ agentic-memory/
 ├── mcp_*.py (28 modules)             ← domain-split MCP tools
 ├── memory/                           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md               ← MCP tool reference for agents
-└── eval/                             ← 240 test files, 4061+ test functions
+└── eval/                             ← 241 test files, 4088+ test functions
 <!--AUTO-GEN:END key="critical_path"-->
 
 **Message contract:** All CORE tool responses are user-facing JSON. Admin tools (87 ADMIN + 3 DEPRECATED) are routed exclusively through `memory_maintenance(operation="...")` — never call an ADMIN tool name directly. All writes go through `save_memory` (direct) or `save_memory_journal` (CQRS journal, gated by `MEMORY_WRITE_JOURNAL_ENABLED`); the saga ensures crash-consistent rollback with dependent-row cleanup. `defer_expensive=True` by default — returns <200ms.
@@ -281,7 +281,7 @@ See `memory.toml` for all 17 feature flags.
 - **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + cross-encoder + temporal decay + neural forget curve + concept/centrality boost). Phase-level error counters.
 - **KG/Temporal**: Entity extraction with Jaccard fuzzy match, temporal KG with contradiction detection and fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save with circuit breaker, TS plugin coordination, cron-driven maintenance.
-- **Testing**: 240 test files, 4061+ test functions, ~79k+ test LOC. Subprocess-per-file runner for torch-safe parallelism.
+- **Testing**: 241 test files, 4088+ test functions, ~81k+ test LOC. Subprocess-per-file runner for torch-safe parallelism.
 - **Canonical references**: `docs/architecture.md` (architecture), `docs/MCP_SURFACE.md` (MCP workflow), `docs/reference/mcp-tools.md` (tool catalog), `skills/memory-architecture/SKILL.md` (agent walkthrough).
 
 > Note: For authoritative counts, query `tool_registry.py` and `infra/migration_runner.py` directly.

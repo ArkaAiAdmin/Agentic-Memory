@@ -142,10 +142,49 @@ def _count_tables_in_schema() -> int:
     return len(table_names)
 
 
+_EXCLUDE_DIRS = {
+    "eval",
+    "memory",
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".devfleet-worktrees",
+    "dist",
+    "node_modules",
+    ".opencode",
+    ".github",
+    "ts-sdk",
+}
+
+
 def _compute_test_loc() -> int:
     """Approximate test LOC by summing Python file lines."""
     total = 0
     for f in (REPO / "eval").glob("test_*.py"):
+        try:
+            total += f.read_text(encoding="utf-8", errors="replace").count("\n")
+        except OSError:
+            pass
+    return total
+
+
+def _compute_production_loc() -> int:
+    """Approximate production LOC by summing Python file lines.
+
+    Excludes tests (eval/), the live memory store (memory/), virtualenvs,
+    caches, and tooling/SDK dirs so the number tracks real source code.
+    """
+    total = 0
+    for f in REPO.rglob("*.py"):
+        rel = f.relative_to(REPO)
+        if any(part in _EXCLUDE_DIRS for part in rel.parts):
+            continue
+        if any(part.startswith(".") for part in rel.parts):
+            continue
         try:
             total += f.read_text(encoding="utf-8", errors="replace").count("\n")
         except OSError:
@@ -176,6 +215,7 @@ def gather() -> dict[str, Any]:
         "test_file_count": test_files,
         "test_function_count": test_functions,
         "test_loc": _compute_test_loc(),
+        "production_loc": _compute_production_loc(),
         "cron_job_count": cron_count,
         "hook_count": hook_count,
         "mcp_module_count": mcp_modules,
@@ -194,7 +234,7 @@ def gen_what_this_system_is(data: dict[str, Any]) -> str:
     return "\n".join([
         f"- **Surface**: {tc['core']} CORE verbs + `memory_maintenance` router ({admin_label} behind router) + {data['hook_count']} lifecycle hooks + {data['cron_job_count']}+ cron jobs",
         f"- **Schema**: v{data['schema_version']}, ~{data['table_count']} tables",
-        f"- **Code**: ~60k LOC production, ~{data['test_loc'] // 1000}k+ test LOC; see `docs/architecture.md`",
+        f"- **Code**: ~{data['production_loc'] // 1000}k LOC production, ~{data['test_loc'] // 1000}k+ test LOC; see `docs/architecture.md`",
         "- **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).",
     ])
 
