@@ -885,19 +885,23 @@ def _fts_search(
     fts_query: str,
     limit: int,
     has_fitness: bool,
-    repo_filter: str,
+    repo_filter: str = "",
+    tag_filter_sql: str = "",
+    tag_filter_params: tuple = (),
     category: str | None = None,
 ) -> list:
+    _base_filter = repo_filter + tag_filter_sql
     if has_fitness:
         params: tuple = (fts_query,)
         if category:
             params = (fts_query, category)
+        params = params + tag_filter_params
         return db.execute(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count\n"
             "          FROM memories_fts fts\n"
             "          JOIN memories m ON m.rowid = fts.rowid\n"
-            f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{repo_filter}\n"
+            f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
             "          ORDER BY fts.rank\n"
             "          LIMIT ?",
             (*params, limit * 3),
@@ -905,12 +909,13 @@ def _fts_search(
     params = (fts_query,)
     if category:
         params = (fts_query, category)
+    params = params + tag_filter_params
     return db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count\n"
         "      FROM memories_fts fts\n"
         "      JOIN memories m ON m.rowid = fts.rowid\n"
-        f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{repo_filter}\n"
+        f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
         "      ORDER BY fts.rank\n"
         "      LIMIT ?",
         (*params, limit),
@@ -1625,6 +1630,7 @@ def _build_empty_result_with_hint(
         "count": 0,
         "output": output,
         "suggestions": _build_zero_result_suggestions(db_path, query),
+        "agent_scope": _get_agent_scope(),
     }
     if related_facts:
         result["related_facts"] = related_facts
@@ -1959,6 +1965,14 @@ def _apply_save_hint_floater(
     return result_items, output
 
 
+def _get_agent_scope() -> str:
+    try:
+        from agent_context import get_agent
+        return get_agent().namespace or "default"
+    except (ImportError, Exception):
+        return "default"
+
+
 def search_memories(
     db_path: Path,
     query: str,
@@ -1996,6 +2010,7 @@ def search_memories(
                 ErrorCode.DB_ERROR,
                 f"Memory database not found in current directory ({db_path}). Run memory_rebuild tool first.",
             ),
+            "agent_scope": _get_agent_scope(),
         }
 
     # Phase 1: Parse query
@@ -2018,6 +2033,7 @@ def search_memories(
             "count": 0,
             "output": f"No memories matched the query: '{query}'",
             "suggestions": _build_zero_result_suggestions(db_path, query),
+            "agent_scope": _get_agent_scope(),
         }
 
     # Phase 1b: Skill-first lookup (if requested)
@@ -2102,15 +2118,20 @@ def search_memories(
         else:
             repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
 
-        # Sprint 3: tags filter — JSON array exact match via LIKE
+        # Sprint 3: tags filter — JSON array exact match via LIKE.
+        # Parameterised to prevent SQL injection (was: f-string interpolation
+        # of user-supplied tag strings directly into the SQL clause).
+        _tag_filter_clauses: list[str] = []
+        _tag_filter_params: list[str] = []
         if tags:
             safe_tags = [re.sub(r'[^\w@.#+\-]', '', t) for t in tags]
             safe_tags = [t for t in safe_tags if t]
-            if safe_tags:
-                like_clauses = ' AND '.join(
-                    f"m.tags LIKE '%\"{t}\"%'" for t in safe_tags
-                )
-                repo_filter = f"{repo_filter} AND ({like_clauses})"
+            for t in safe_tags:
+                _tag_filter_clauses.append("m.tags LIKE ?")
+                _tag_filter_params.append(f'%"{t}"%')
+        _tag_filter_sql = ""
+        if _tag_filter_clauses:
+            _tag_filter_sql = " AND (" + " AND ".join(_tag_filter_clauses) + ")"
 
         # Phase 4 + Phase 4b: FTS + KG fact search
         # When search_parallel_enabled is on (default), run FTS and KG fact
@@ -2134,7 +2155,10 @@ def search_memories(
                     return _fts_search(
                         conn, fts_query,
                         limit * 3 if _effective_rerank else limit,
-                        has_fitness, repo_filter, category=category or None,
+                        has_fitness, repo_filter,
+                        tag_filter_sql=_tag_filter_sql,
+                        tag_filter_params=tuple(_tag_filter_params),
+                        category=category or None,
                     )
                 except Exception as _fts_exc:
                     _phase_inc("search.fts", _fts_exc)
@@ -2169,7 +2193,11 @@ def search_memories(
                 _record_phase_latency("kg_facts", _t0)
         else:
             results = _fts_search(
-                db, fts_query, limit * 3 if _effective_rerank else limit, has_fitness, repo_filter, category=category or None,
+                db, fts_query, limit * 3 if _effective_rerank else limit, has_fitness,
+                repo_filter,
+                tag_filter_sql=_tag_filter_sql,
+                tag_filter_params=tuple(_tag_filter_params),
+                category=category or None,
             )
             _record_phase_latency("fts", _t0)
             if include_facts:

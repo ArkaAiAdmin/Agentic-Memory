@@ -1,0 +1,328 @@
+{
+  "description": "Golden dataset for retrieval regression tests",
+  "version": 3,
+  "memories": [
+    {
+      "note_id": "lessons/docker-basics",
+      "category": "lessons",
+      "tags": ["docker", "containers"],
+      "content": "Docker containers package applications with their dependencies into portable units that run consistently across environments. Use docker build to create an image, then docker run to launch a container instance from that image."
+    },
+    {
+      "note_id": "lessons/container-orchestration",
+      "category": "lessons",
+      "tags": ["kubernetes", "containers"],
+      "content": "Kubernetes orchestrates container deployments at scale using pods, services, and deployments. It manages rolling updates, health checks, and self-healing across a cluster of nodes."
+    },
+    {
+      "note_id": "lessons/python-testing",
+      "category": "lessons",
+      "tags": ["python", "testing"],
+      "content": "Python pytest enables test-driven development with fixtures, parametrize decorators, and assertion rewriting. Use conftest.py for shared fixtures."
+    },
+    {
+      "note_id": "lessons/continuous-integration",
+      "category": "lessons",
+      "tags": ["ci-cd", "automation"],
+      "content": "CI pipelines automate testing and deployment. Configure CI workflows to run tests on each push and deploy on merge. Use GitHub Actions for continuous integration."
+    },
+    {
+      "note_id": "lessons/database-indexing",
+      "category": "lessons",
+      "tags": ["databases", "performance"],
+      "content": "Database indexes accelerate query performance by maintaining sorted lookup trees. Create indexes on frequently filtered columns."
+    },
+    {
+      "note_id": "lessons/git-workflows",
+      "category": "lessons",
+      "tags": ["git", "collaboration"],
+      "content": "Git branching workflows enable team collaboration via trunk-based or feature-branch models. Use pull requests for branch review and merge. Git commands for daily workflow: branch, pull request, merge."
+    },
+    {
+      "note_id": "lessons/logging-observability",
+      "category": "lessons",
+      "tags": ["observability", "logging"],
+      "content": "Structured logging enables observability by emitting machine-parseable JSON records. Include request IDs and severity levels for effective debugging in production."
+    },
+    {
+      "note_id": "decisions/choose-vector-database",
+      "category": "decisions",
+      "tags": ["architecture", "ai"],
+      "content": "Architecture decision: we chose a vector database for semantic memory retrieval to support approximate nearest neighbor search at scale."
+    },
+    {
+      "note_id": "decisions/adopt-saga-pattern",
+      "category": "decisions",
+      "tags": ["architecture", "reliability"],
+      "content": "Architecture decision: we adopted the saga orchestration pattern for multi-step write transactions. This ensures crash-consistent rollback across DB writes."
+    },
+    {
+      "note_id": "decisions/containerize-services",
+      "category": "decisions",
+      "tags": ["docker", "deployment"],
+      "content": "Deployment decision: we decided to containerize all services using Docker for reproducible deployments across environments."
+    },
+    {
+      "note_id": "decisions/k8s-orchestration-strategy",
+      "category": "decisions",
+      "tags": ["kubernetes", "deployment"],
+      "content": "Deployment decision: we selected Kubernetes for orchestrating containerized services, enabling auto-scaling and rolling updates."
+    },
+    {
+      "note_id": "decisions/python-serialization",
+      "category": "decisions",
+      "tags": ["python", "serialization"],
+      "content": "Python serialization decision: we standardised on JSON for memory serialization to ensure cross-language compatibility."
+    },
+    {
+      "note_id": "projects/memory-system-migration",
+      "category": "projects",
+      "tags": ["migration", "database"],
+      "content": "Project: migrate the memory database from SQLite to PostgreSQL for concurrent access. Schema migration validated with zero data loss."
+    },
+    {
+      "note_id": "projects/search-performance",
+      "category": "projects",
+      "tags": ["performance", "search"],
+      "content": "Project: optimise search pipeline performance. Introduced connection pooling, query caching, and parallel FTS plus KG fact lookups. Achieved sub-200ms latency in staging."
+    },
+    {
+      "note_id": "projects/build-graph-reasoning",
+      "category": "projects",
+      "tags": ["knowledge-graph", "reasoning"],
+      "content": "Project: build knowledge graph reasoning using entailment chains. Delivered transitive inference, contradiction detection, and supersession tracking across entities."
+    },
+    {
+      "note_id": "projects/semantic-search-implementation",
+      "category": "projects",
+      "tags": ["embedding", "search"],
+      "content": "Project: implement semantic search using the Potion 8M embedding model with hybrid RRF fusion over FTS5 results."
+    },
+    {
+      "note_id": "projects/observability-dashboard",
+      "category": "projects",
+      "tags": ["observability", "monitoring"],
+      "content": "Project: build an observability dashboard using Grafana to surface search pipeline latency, circuit breaker state, and system health."
+    },
+    {
+      "note_id": "lessons/networking-fundamentals",
+      "category": "lessons",
+      "tags": ["networking", "protocols"],
+      "content": "TCP/IP protocols govern network communication. The transport layer handles reliable delivery via TCP while the network layer routes packets via IP."
+    },
+    {
+      "note_id": "lessons/api-design",
+      "category": "lessons",
+      "tags": ["api", "design"],
+      "content": "REST API design principles emphasize consistent resource naming, proper HTTP status codes, and versioned endpoints."
+    },
+    {
+      "note_id": "lessons/microservices-patterns",
+      "category": "lessons",
+      "tags": ["microservices", "architecture"],
+      "content": "Microservices communicate via asynchronous message queues or REST calls. Use circuit breakers and retries to handle partial failures."
+    }
+  ],
+  "test_cases": [
+    {
+      "query": "docker container",
+      "expected_note_ids": ["lessons/docker-basics", "decisions/containerize-services", "lessons/container-orchestration"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.4,
+      "min_recall_at_5": 0.4
+    },
+    {
+      "query": "kubernetes",
+      "expected_note_ids": ["lessons/container-orchestration", "decisions/k8s-orchestration-strategy"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "python pytest test fixtures",
+      "expected_note_ids": ["lessons/python-testing", "decisions/python-serialization"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "CI deploy tests",
+      "expected_note_ids": ["lessons/continuous-integration"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.4,
+      "min_recall_at_5": 0.4
+    },
+    {
+      "query": "docker package applications",
+      "expected_note_ids": ["lessons/docker-basics", "decisions/containerize-services"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.4,
+      "min_recall_at_5": 0.4
+    },
+    {
+      "query": "git pull request merge",
+      "expected_note_ids": ["lessons/git-workflows"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.4,
+      "min_recall_at_5": 0.4
+    },
+    {
+      "query": "observability logging",
+      "expected_note_ids": ["lessons/logging-observability", "projects/observability-dashboard"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.4,
+      "min_recall_at_5": 0.4
+    },
+    {
+      "query": "index performance queries",
+      "expected_note_ids": ["lessons/database-indexing", "projects/search-performance"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.4,
+      "min_recall_at_5": 0.4
+    },
+    {
+      "query": "cluster self-healing pods",
+      "expected_note_ids": ["lessons/container-orchestration", "decisions/k8s-orchestration-strategy"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.4,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "search pipeline performance",
+      "expected_note_ids": ["projects/search-performance"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.4,
+      "min_recall_at_5": 0.4
+    },
+    {
+      "query": "observability",
+      "expected_note_ids": ["lessons/logging-observability", "projects/observability-dashboard"],
+      "category": "",
+      "tags": ["observability"],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "docker",
+      "expected_note_ids": ["lessons/docker-basics", "decisions/containerize-services"],
+      "category": "",
+      "tags": ["docker"],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "kubernetes cluster",
+      "expected_note_ids": ["lessons/container-orchestration", "decisions/k8s-orchestration-strategy"],
+      "category": "",
+      "tags": ["kubernetes"],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "python",
+      "expected_note_ids": ["lessons/python-testing", "decisions/python-serialization"],
+      "category": "",
+      "tags": ["python"],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "performance search",
+      "expected_note_ids": ["lessons/database-indexing", "projects/search-performance"],
+      "category": "",
+      "tags": ["performance"],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "architecture",
+      "expected_note_ids": ["decisions/choose-vector-database", "decisions/adopt-saga-pattern"],
+      "category": "decisions",
+      "tags": [],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "vector database",
+      "expected_note_ids": ["decisions/choose-vector-database"],
+      "category": "decisions",
+      "tags": [],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "project",
+      "expected_note_ids": ["projects/memory-system-migration", "projects/search-performance", "projects/build-graph-reasoning", "projects/semantic-search-implementation"],
+      "category": "projects",
+      "tags": [],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "observability dashboard",
+      "expected_note_ids": ["projects/observability-dashboard"],
+      "category": "projects",
+      "tags": [],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "saga rollback crash",
+      "expected_note_ids": ["decisions/adopt-saga-pattern"],
+      "category": "decisions",
+      "tags": [],
+      "min_precision_at_5": 0.5,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "what type of infrastructure management system orchestrates containers",
+      "expected_note_ids": ["lessons/container-orchestration", "decisions/k8s-orchestration-strategy"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.3,
+      "min_recall_at_5": 0.4
+    },
+    {
+      "query": "docker type of container platform",
+      "expected_note_ids": ["lessons/docker-basics", "decisions/containerize-services"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.3,
+      "min_recall_at_5": 0.4
+    },
+    {
+      "query": "python quality assurance testing",
+      "expected_note_ids": ["lessons/python-testing", "lessons/continuous-integration"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.33,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "what database index performance query",
+      "expected_note_ids": ["lessons/database-indexing", "projects/search-performance"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.33,
+      "min_recall_at_5": 0.5
+    },
+    {
+      "query": "log structured JSON severity debugging",
+      "expected_note_ids": ["lessons/logging-observability"],
+      "category": "",
+      "tags": [],
+      "min_precision_at_5": 0.4,
+      "min_recall_at_5": 0.4
+    }
+  ]
+}
