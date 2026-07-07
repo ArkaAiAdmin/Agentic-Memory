@@ -1,24 +1,11 @@
-Total: 4191 passed, 57 failed, 55 skipped, 0 xfailed
-Passed files: 231
-Failed/segfault files: 14
+Total: 4247 passed, 1 failed, 55 skipped, 0 xfailed
+Passed files: 244
+Failed/segfault files: 1
 
-  FAILED: test_audit_logging.py
-  FAILED: test_b7_shared_memory_injection.py
-  FAILED: test_config_loading.py
-  FAILED: test_contextual_retrieval.py
-  FAILED: test_cron_coverage.py
-  FAILED: test_db_drift.py
-  FAILED: test_mutation_killers.py
-  FAILED: test_phase9.py
-  FAILED: test_quirk_fixes_e2e.py
-  FAILED: test_rebuild_vec_index.py
-  FAILED: test_recall.py
-  FAILED: test_refactor_helpers.py
-  FAILED: test_transformer_opt_in.py
-  FAILED: test_zero_result_ux.py
+  FAILED: test_search_memory_cli.py
 
-  PASSED: test_adaptive_retention.py
   PASSED: test_add_flock_to_crons.py
+  PASSED: test_adaptive_retention.py
   PASSED: test_agent_scoping_hooks.py
   PASSED: test_advanced_features.py
   PASSED: test_antonym_contradictions.py
@@ -26,19 +13,21 @@ Failed/segfault files: 14
   PASSED: test_arc_cache.py
   PASSED: test_atomic_write_coverage.py
   PASSED: test_audit_log.py
+  PASSED: test_audit_logging.py
   PASSED: test_auto_backlinks.py
-  PASSED: test_auto_save_integration.py
-  PASSED: test_agents_md_generator.py
   PASSED: test_adversarial_e2e.py
+  PASSED: test_agents_md_generator.py
+  PASSED: test_auto_save_integration.py
+  PASSED: test_b7_shared_memory_injection.py
   PASSED: test_auto_save_unit.py
-  PASSED: test_backfill_orphans.py
   PASSED: test_backfill_safety.py
+  PASSED: test_backfill_orphans.py
   PASSED: test_background_queue.py
-  PASSED: test_backpressure.py
   PASSED: test_background_worker_unit.py
+  PASSED: test_backpressure.py
   PASSED: test_bb1_synthesis.py
-  PASSED: test_bb3_rrf.py
   PASSED: test_bb2_history.py
+  PASSED: test_bb3_rrf.py
   PASSED: test_belief_behavior.py
   PASSED: test_backfill_all.py
   PASSED: test_cli.py
@@ -46,11 +35,13 @@ Failed/segfault files: 14
   PASSED: test_cascade_preserve.py
   PASSED: test_compliance_rate_limit.py
   PASSED: test_concurrent.py
+  PASSED: test_config_loading.py
   PASSED: test_circuit_breaker_telemetry.py
-  PASSED: test_consolidation.py
   PASSED: test_config_log_resolution.py
+  PASSED: test_consolidation.py
   PASSED: test_context_window.py
   PASSED: test_contextual_enrichment.py
+  PASSED: test_contextual_retrieval.py
   PASSED: test_contradiction_detector_unit.py
   PASSED: test_compilation_behavior.py
   PASSED: test_crdt_field.py
@@ -65,6 +56,7 @@ Failed/segfault files: 14
   PASSED: test_cron_concept_drift.py
   PASSED: test_crdt_sync.py
   PASSED: test_cron_crdt_sync.py
+  PASSED: test_cron_coverage.py
   PASSED: test_crewai_memory.py
   PASSED: test_cron_cross_session_learn.py
   PASSED: test_cron_kg_backfill.py
@@ -80,27 +72,28 @@ Failed/segfault files: 14
   PASSED: test_db_path_flock.py
   PASSED: test_db_write_queue.py
   PASSED: test_decision_extraction.py
+  PASSED: test_db_drift.py
   PASSED: test_doc_drift.py
-  PASSED: test_dist_lock.py
   PASSED: test_docker_cron_runner.py
+  PASSED: test_dist_lock.py
   PASSED: test_drift_alarms.py
   PASSED: test_embedding_cache.py
-  PASSED: test_embedding_recompute.py
   PASSED: test_dedup_audit_behavior.py
+  PASSED: test_embedding_recompute.py
   PASSED: test_embedding_search_unit.py
   PASSED: test_e2e_validation.py
-  PASSED: test_entailment_validation.py
   PASSED: test_embedding_singleton.py
+  PASSED: test_entailment_validation.py
   PASSED: test_enqueue_task_behavior.py
   PASSED: test_event_time_extraction.py
   PASSED: test_fact_extraction.py
   PASSED: test_eval_judge.py
   PASSED: test_fact_temporal.py
   PASSED: test_feature_flags.py
-  PASSED: test_file_lock.py
   PASSED: test_five_channel.py
-  PASSED: test_frontmatter.py
+  PASSED: test_file_lock.py
   PASSED: test_forgetting_curve.py
+  PASSED: test_frontmatter.py
   PASSED: test_feature_composition.py
   PASSED: test_fts.py
   PASSED: test_fts_unit.py
@@ -123,23 +116,23 @@ Failed/segfault files: 14
   PASSED: test_kg_dedup_semantic.py
   PASSED: test_kg_enhancements.py
   PASSED: test_kg_entity_filter.py
-  PASSED: test_kg_facts_fts.py
   PASSED: test_integration_search_pipeline.py
+  PASSED: test_kg_facts_fts.py
   PASSED: test_kg_traversal.py
   PASSED: test_integration_save_pipeline.py
   PASSED: test_kg_orphan_recovery.py
-  PASSED: test_kg_validation.py
   PASSED: test_knowledge_graph.py
+  PASSED: test_kg_validation.py
   PASSED: test_langchain_tool.py
   PASSED: test_llm_contradiction.py
   PASSED: test_llm_extraction_max_tokens.py
   PASSED: test_langchain_history.py
-  PASSED: test_llm_summarization.py
   PASSED: test_langchain_retriever.py
+  PASSED: test_llm_summarization.py
   PASSED: test_mcp_instance.py
   PASSED: test_mcp_live.py
-  PASSED: test_mcp_maintenance_ops_unit.py
   PASSED: test_mcp_maintenance_dispatch.py
+  PASSED: test_mcp_maintenance_ops_unit.py
   PASSED: test_mcp_skill_ops.py
   PASSED: test_mcp_verbs.py
   PASSED: test_llm_providers.py
@@ -151,6 +144,7 @@ Failed/segfault files: 14
   PASSED: test_multi_agent_unit.py
   PASSED: test_migration_runner.py
   PASSED: test_multi_vector.py
+  PASSED: test_mutation_killers.py
   PASSED: test_neural_forget_model.py
   PASSED: test_neural_forget_unit.py
   PASSED: test_namespace_isolation.py
@@ -160,18 +154,20 @@ Failed/segfault files: 14
   PASSED: test_memory_common_mutation_killers.py
   PASSED: test_okf_import.py
   PASSED: test_no_silent_search_failures.py
-  PASSED: test_okf_roundtrip.py
-  PASSED: test_phase1_debt_fixes.py
   PASSED: test_p2_share_and_sync_wireup.py
+  PASSED: test_phase1_debt_fixes.py
+  PASSED: test_okf_roundtrip.py
   PASSED: test_phase2_3_smoke.py
   PASSED: test_phase2_debt_fixes.py
-  PASSED: test_p0_p1_p2_fixes.py
   PASSED: test_phase4_debt_fixes.py
+  PASSED: test_p0_p1_p2_fixes.py
   PASSED: test_phase2_instrumentation.py
-  PASSED: test_pool_inode_reopen.py
+  PASSED: test_phase9.py
   PASSED: test_pipelines_aj.py
-  PASSED: test_query_cache.py
+  PASSED: test_pool_inode_reopen.py
   PASSED: test_quality_gates.py
+  PASSED: test_query_cache.py
+  PASSED: test_quirk_fixes_e2e.py
   PASSED: test_qw3_query_types.py
   PASSED: test_qw2_query_expansion.py
   PASSED: test_qw4_cross_encoder.py
@@ -182,12 +178,15 @@ Failed/segfault files: 14
   PASSED: test_reasoning_expansion.py
   PASSED: test_rebuild_concurrency.py
   PASSED: test_rebuild_index.py
+  PASSED: test_rebuild_vec_index.py
   PASSED: test_recent_save_hint.py
+  PASSED: test_recall.py
   PASSED: test_relational_storage.py
+  PASSED: test_refactor_helpers.py
   PASSED: test_reranker.py
-  PASSED: test_reranker_security.py
-  PASSED: test_retention_coordinator.py
   PASSED: test_reranker_unit.py
+  PASSED: test_retention_coordinator.py
+  PASSED: test_reranker_security.py
   PASSED: test_retrieval_regression_embedding.py
   PASSED: test_rich_survival_note.py
   PASSED: test_safe_call.py
@@ -195,8 +194,8 @@ Failed/segfault files: 14
   PASSED: test_safety_wiring.py
   PASSED: test_safety_wiring_signatures.py
   PASSED: test_saga_crash_safety.py
-  PASSED: test_sarcasm_contradiction.py
   PASSED: test_retrieval_regression.py
+  PASSED: test_sarcasm_contradiction.py
   PASSED: test_save_pipeline_unit.py
   PASSED: test_save_pipeline_behavioral.py
   PASSED: test_save_skill_extraction.py
@@ -205,15 +204,14 @@ Failed/segfault files: 14
   PASSED: test_sdk_p3.py
   PASSED: test_sdk_p1.py
   PASSED: test_search_kg_facts.py
-  PASSED: test_search_memory_cli.py
   PASSED: test_search_mutation_killers.py
   PASSED: test_search_pipeline_unit.py
-  PASSED: test_search_pipeline_validation.py
-  PASSED: test_search_skill_first.py
   PASSED: test_search_integration.py
+  PASSED: test_search_skill_first.py
+  PASSED: test_search_pipeline_validation.py
   PASSED: test_security_health_check.py
-  PASSED: test_security_sync_auth.py
   PASSED: test_search_temporal_as_of.py
+  PASSED: test_security_sync_auth.py
   PASSED: test_self_directed.py
   PASSED: test_self_directed_validation.py
   PASSED: test_self_editing_behavior.py
@@ -223,22 +221,23 @@ Failed/segfault files: 14
   PASSED: test_session_manager.py
   PASSED: test_shared_memory_state.py
   PASSED: test_skill_extractor.py
-  PASSED: test_skill_extractor_full.py
   PASSED: test_session_search.py
+  PASSED: test_skill_extractor_full.py
   PASSED: test_spaced_repetition.py
-  PASSED: test_soft_delete.py
+  PASSED: test_pipeline_integration.py
   PASSED: test_subpackage_public_api.py
   PASSED: test_sync_check.py
-  PASSED: test_sql_safety.py
   PASSED: test_sync_layer.py
-  PASSED: test_pipeline_integration.py
+  PASSED: test_soft_delete.py
   PASSED: test_temporal_facts.py
   PASSED: test_temporal_ssm_v2.py
   PASSED: test_tier_migration.py
-  PASSED: test_tier_migration_assign_tier.py
   PASSED: test_sync_server_tls.py
+  PASSED: test_sql_safety.py
+  PASSED: test_tier_migration_assign_tier.py
   PASSED: test_tool_routing.py
   PASSED: test_unicode_normalization.py
+  PASSED: test_transformer_opt_in.py
   PASSED: test_uncovered_dedicated.py
   PASSED: test_vec_index_search.py
   PASSED: test_vector_store.py
@@ -247,277 +246,25 @@ Failed/segfault files: 14
   PASSED: test_wiring_invariants.py
   PASSED: test_wal_checkpoint.py
   PASSED: test_write_journal.py
+  PASSED: test_zero_result_ux.py
   PASSED: test_wal_mode.py
 
 
 Failure details:
 
-=== test_audit_logging.py ===
-nfra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: valid_to
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: superseded_by
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_at
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: category
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: metadata
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: consolidation_state
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: consolidation_state
-/Users/arka/.config/agentic-memory/infra/migration_runner.py:483: sqlite3.OperationalError: no such column: consolidation_state
-=========================== short test summary info ============================
-FAILED eval/test_audit_logging.py::TestAuditContext::test_audit_writes_log_entry
-FAILED eval/test_audit_logging.py::TestAuditContext::test_audit_records_latency
-FAILED eval/test_audit_logging.py::TestAuditContext::test_audit_records_error
-FAILED eval/test_audit_logging.py::TestAuditContext::test_audit_flush_blocks_until_complete
-FAILED eval/test_audit_logging.py::TestMCPToolAudit::test_memory_save_creates_audit
-FAILED eval/test_audit_logging.py::TestMCPToolAudit::test_memory_search_creates_audit
-FAILED eval/test_audit_logging.py::TestAuditSchema::test_audit_table_exists
-FAILED eval/test_audit_logging.py::TestAuditSchema::test_audit_indexes_exist
-FAILED eval/test_audit_logging.py::TestAuditSchema::test_audit_row_schema - s...
-9 failed, 1 passed in 0.11s
-
-
-=== test_b7_shared_memory_injection.py ===
-tured log call -------------------------------
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: valid_from
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: last_accessed
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_at
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: category
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: tier
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: importance_score
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: metadata
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: consolidation_state
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: consolidation_state
-/Users/arka/.config/agentic-memory/infra/db_write_queue.py:349: sqlite3.OperationalError: no such column: consolidation_state
-=========================== short test summary info ============================
-FAILED eval/test_b7_shared_memory_injection.py::TestImportSharedMemorySanitization::test_content_reaches_db_when_trusted
-FAILED eval/test_b7_shared_memory_injection.py::TestImportSharedMemorySanitization::test_high_risk_content_rejected
-FAILED eval/test_b7_shared_memory_injection.py::TestImportSharedMemoryRollback::test_indexer_failure_rolls_back_memories_row
-3 failed, 4 passed in 0.07s
-
-
-=== test_config_loading.py ===
-tent_length', 'quality_max_duplicate_similarity', 'quality_min_relevance_score', 'shared_pool_ttl_days', 'shared_pool_max_size', 'llm_provider', 'rate_limits', 'ollama_host', 'ollama_model', 'ollama_timeout_s', 'llama_cpp_host', 'llama_cpp_model', 'llama_cpp_timeout_s', 'llm_extraction_model_id', 'llm_extraction_max_tokens', 'llm_extraction_hybrid_threshold', 'llm_extraction_force', 'idle_unload_seconds', 'max_claims_semantic', 'semantic_threshold', 'kg_dedup_threshold', 'hybrid_fts_weight', 'hybrid_semantic_weight', 'hybrid_rrf_k', 'hybrid_semantic_overfetch', 'hybrid_rank_proxy_scale', 'rerank_half_life_days', 'cross_encoder_blend', 'late_interaction_blend', 'topic_similarity_threshold', 'concept_drift_threshold', 'temporal_decay_weight', 'vec_cache_max', 'vec_cache_ttl_s', 'user_profile_window_days', 'user_profile_max_size', 'user_profile_recency_half_life_days', 'sync_enable_server', 'sync_listen_host', 'sync_listen_port', 'sync_peers', 'sync_interval_minutes', 'api_enable_server', 'api_listen_host', 'api_listen_port', 'api_token', 'api_insecure_loopback', 'dashboard_address', 'auto_save_max_retries', 'auto_save_backoff_base_seconds', 'auto_save_backoff_cap_seconds', 'auto_save_circuit_breaker_seconds', 'auto_save_failure_window_seconds', 'auto_save_allowlist', 'auto_save_denylist', 'save_max_content_bytes', 'save_max_tags', 'save_max_category_len', 'save_max_slug_len', 'auto_save_batch_interval_seconds', 'auto_save_batch_size', 'auto_save_daemon_idle_seconds', 'auto_save_inbox_max_bytes', 'auto_save_preview_max', 'auto_save_params_max', 'auto_save_health_check_minutes', 'auto_save_keyword_routing', 'auto_save_always_sessions', 'recall_max_tokens', 'recall_tier1_hot_days', 'recall_tier_fallback_threshold', 'embedding_backend', 'embedding_model_id', 'embedding_model_revision']
-=========================== short test summary info ============================
-FAILED eval/test_config_loading.py::TestMemoryConfigDefaults::test_field_count
-1 failed, 51 passed in 0.14s
-
-
-=== test_contextual_retrieval.py ===
-.........F.                                                              [100%]
-=================================== FAILURES ===================================
-E   sqlite3.OperationalError: no such column: repo_id
------------------------------- Captured log call -------------------------------
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: repo_id
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: repo_id
-/Users/arka/.config/agentic-memory/infra/migration_runner.py:483: sqlite3.OperationalError: no such column: repo_id
-=========================== short test summary info ============================
-FAILED eval/test_contextual_retrieval.py::TestContextPrefixColumn::test_column_exists_after_migration
-1 failed, 10 passed in 0.06s
-
-
-=== test_cron_coverage.py ===
-e column name: deleted_by
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: repo_id
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: repo_id
-WARNING  memory_delete:memory_delete.py:862 purge_expired failed: no such column: repo_id
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py:1042: FileNotFoundError: [Errno 2] No such file or directory: '/var/folders/dj/vpjmm5lj7396z81xszrbt7680000gn/T/cron_purge_wyslpbpx/memory.db-shm'
-E   FileNotFoundError: [Errno 2] No such file or directory: '/var/folders/dj/vpjmm5lj7396z81xszrbt7680000gn/T/cron_purge_lz5wxe42/memory.db-shm'
------------------------------- Captured log call -------------------------------
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_at
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_by
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: repo_id
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: repo_id
-WARNING  memory_delete:memory_delete.py:862 purge_expired failed: no such column: repo_id
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py:1042: FileNotFoundError: [Errno 2] No such file or directory: '/var/folders/dj/vpjmm5lj7396z81xszrbt7680000gn/T/cron_purge_lz5wxe42/memory.db-shm'
-=========================== short test summary info ============================
-FAILED eval/test_cron_coverage.py::TestCronPurgeExpired::test_main_empty_db
-FAILED eval/test_cron_coverage.py::TestCronPurgeExpired::test_main_no_deleted_notes
-2 failed, 51 passed in 0.26s
-
-
-=== test_db_drift.py ===
-...........                                      [100%]
-=================================== FAILURES ===================================
-E   sqlite3.OperationalError: no such column: repo_id
------------------------------- Captured log call -------------------------------
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_at
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: category
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: repo_id
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: repo_id
-/Users/arka/.config/agentic-memory/infra/db_write_queue.py:349: sqlite3.OperationalError: no such column: repo_id
-E   sqlite3.OperationalError: no such column: repo_id
------------------------------- Captured log call -------------------------------
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_at
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: category
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: repo_id
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: repo_id
-/Users/arka/.config/agentic-memory/infra/db_write_queue.py:349: sqlite3.OperationalError: no such column: repo_id
-=========================== short test summary info ============================
-FAILED eval/test_db_drift.py::TestMigrationIdempotency::test_double_migration_no_error
-FAILED eval/test_db_drift.py::TestMigrationIdempotency::test_migration_preserves_data
-2 failed, 33 passed in 1.55s
-
-
-=== test_mutation_killers.py ===
-------
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: valid_from
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: valid_to
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: superseded_by
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: category
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: consolidation_state
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: consolidation_state
-/Users/arka/.config/agentic-memory/infra/db_write_queue.py:349: sqlite3.OperationalError: no such column: consolidation_state
-E   AssertionError: -1 != 1
------------------------------- Captured log call -------------------------------
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: repo_id
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: repo_id
-WARNING  infra.db:db.py:965 db: row_count_failed in /var/folders/dj/vpjmm5lj7396z81xszrbt7680000gn/T/tmphdo12vyb/memory.db
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: -1 != 1
-=========================== short test summary info ============================
-FAILED eval/test_mutation_killers.py::TestAutoBacklinkMultiPart::test_multi_part_updates_content
-FAILED eval/test_mutation_killers.py::TestAutoBacklinkMultiPart::test_single_part_returns_none
-FAILED eval/test_mutation_killers.py::TestCountRows::test_returns_int - Asser...
-3 failed, 90 passed in 0.90s
-
-
-=== test_phase9.py ===
-:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: valid_to
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: superseded_by
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: last_accessed
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_at
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: category
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: tier
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: importance_score
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: metadata
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: consolidation_state
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: consolidation_state
-WARNING  memory_sharing:memory_sharing.py:309 Failed to get pending shared memories
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: 'test:shared1' not found in []
-=========================== short test summary info ============================
-FAILED eval/test_phase9.py::TestMultiAgentIntegration::test_share_and_list_memory
-1 failed, 20 passed in 0.40s
-Failed to load embedding model [auto]: cannot schedule new futures after interpreter shutdown
-
-
-=== test_quirk_fixes_e2e.py ===
-id_to
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: superseded_by
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: last_accessed
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_at
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: category
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: tier
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: importance_score
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: metadata
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: consolidation_state
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: consolidation_state
-/Users/arka/.config/agentic-memory/infra/db_write_queue.py:349: sqlite3.OperationalError: no such column: consolidation_state
-=========================== short test summary info ============================
-FAILED eval/test_quirk_fixes_e2e.py::TestQuirk2FTSDeleteFilter::test_active_note_appear_in_fts
-FAILED eval/test_quirk_fixes_e2e.py::TestQuirk2FTSDeleteFilter::test_all_deleted_returns_empty
-FAILED eval/test_quirk_fixes_e2e.py::TestQuirk2FTSDeleteFilter::test_restore_makes_note_searchable_again
-FAILED eval/test_quirk_fixes_e2e.py::TestQuirk2FTSDeleteFilter::test_soft_deleted_note_excluded_from_fts
-4 failed, 4 passed in 0.09s
-
-
-=== test_rebuild_vec_index.py ===
-e column name: deleted_at
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: category
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: repo_id
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: repo_id
-/Users/arka/.config/agentic-memory/infra/migration_runner.py:483: sqlite3.OperationalError: no such column: repo_id
-E   sqlite3.OperationalError: no such column: repo_id
------------------------------- Captured log call -------------------------------
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: valid_to
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: superseded_by
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_at
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: category
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: repo_id
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: repo_id
-/Users/arka/.config/agentic-memory/infra/migration_runner.py:483: sqlite3.OperationalError: no such column: repo_id
-=========================== short test summary info ============================
-FAILED eval/test_rebuild_vec_index.py::TestEnsureSchema::test_creates_vec_tables
-FAILED eval/test_rebuild_vec_index.py::TestLoadCachedEmbeddings::test_empty_db
-FAILED eval/test_rebuild_vec_index.py::TestLoadCachedEmbeddings::test_with_embeddings
-3 failed, 4 passed, 6 skipped in 0.19s
-
-
-=== test_recall.py ===
-: repo_id
-/Users/arka/.config/agentic-memory/infra/migration_runner.py:483: sqlite3.OperationalError: no such column: repo_id
-=========================== short test summary info ============================
-FAILED eval/test_recall.py::TestRecallContext::test_empty_db - sqlite3.Operat...
-FAILED eval/test_recall.py::TestRecallContext::test_pinned_notes_included - s...
-FAILED eval/test_recall.py::TestRecallContext::test_recent_digests_included
-FAILED eval/test_recall.py::TestRecallContext::test_high_importance_included
-FAILED eval/test_recall.py::TestRecallContext::test_query_triggers_relevant
-FAILED eval/test_recall.py::TestRecallContext::test_token_estimate_populated
-FAILED eval/test_recall.py::TestRecallContext::test_total_memories_count - sq...
-FAILED eval/test_recall.py::TestRecallContext::test_limit_respected - sqlite3...
-FAILED eval/test_recall.py::TestRecallContext::test_disabled_sections - sqlit...
-FAILED eval/test_recall.py::TestSessionRecap::test_empty_db - sqlite3.Operati...
-FAILED eval/test_recall.py::TestSessionRecap::test_tier1_curated - sqlite3.Op...
-FAILED eval/test_recall.py::TestSessionRecap::test_tier2_semantic_search - sq...
-FAILED eval/test_recall.py::TestSessionRecap::test_tier4_fallback - sqlite3.O...
-FAILED eval/test_recall.py::TestSessionRecap::test_recent_sessions - sqlite3....
-FAILED eval/test_recall.py::TestHelpers::test_count_memories - sqlite3.Operat...
-FAILED eval/test_recall.py::TestHelpers::test_fetch_pinned_empty - sqlite3.Op...
-FAILED eval/test_recall.py::TestHelpers::test_fetch_pinned_sorted - sqlite3.O...
-FAILED eval/test_recall.py::TestHelpers::test_fetch_high_importance - sqlite3...
-FAILED eval/test_recall.py::TestHelpers::test_fetch_recent_digests - sqlite3....
-FAILED eval/test_recall.py::TestMCPTools::test_memory_recall_context - sqlite...
-FAILED eval/test_recall.py::TestMCPTools::test_memory_recall_context_with_query
-FAILED eval/test_recall.py::TestMCPTools::test_memory_session_start - sqlite3...
-22 failed, 13 passed in 0.19s
-
-
-=== test_refactor_helpers.py ===
-...........................FF...............................             [100%]
-=================================== FAILURES ===================================
-E   AttributeError: module 'save.pipeline' has no attribute '_audit_save_failure'
-/Users/arka/.config/agentic-memory/infra/_shim.py:29: AttributeError: module 'save.pipeline' has no attribute '_audit_save_failure'
-E   AttributeError: module 'save.pipeline' has no attribute '_audit_save_failure'
-/Users/arka/.config/agentic-memory/infra/_shim.py:29: AttributeError: module 'save.pipeline' has no attribute '_audit_save_failure'
-=========================== short test summary info ============================
-FAILED eval/test_refactor_helpers.py::TestSavePipelineSagaHelpers::test_audit_save_failure_swallows_exceptions
-FAILED eval/test_refactor_helpers.py::TestSavePipelineSagaHelpers::test_audit_save_failure_truncates_long_envelope
-2 failed, 58 passed in 0.79s
-
-
-=== test_transformer_opt_in.py ===
-G  infra.migration_runner:migration_runner.py:519 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:519 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:519 Migration 006 statement references object created by a later migration (no such table: main.backlinks); this is expected.
+=== test_search_memory_cli.py ===
+ration 006 statement references object created by a later migration (no such table: main.backlinks); this is expected.
 WARNING  infra.migration_runner:migration_runner.py:519 Migration 006 statement references object created by a later migration (no such table: main.shared_memories); this is expected.
 WARNING  infra.migration_runner:migration_runner.py:519 Migration 017 statement references object created by a later migration (no such table: backlinks); this is expected.
 WARNING  infra.migration_runner:migration_runner.py:519 Migration 035 statement references object created by a later migration (no such table: shared_memories); this is expected.
 WARNING  infra.migration_runner:migration_runner.py:519 Migration 035 statement references object created by a later migration (no such table: shared_memories); this is expected.
 WARNING  infra.migration_runner:migration_runner.py:519 Migration 035 statement references object created by a later migration (no such table: main.shared_memories); this is expected.
 WARNING  infra.migration_runner:migration_runner.py:519 Migration 035 statement references object created by a later migration (no such table: main.shared_memories); this is expected.
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:965: AssertionError: Expected 'from_pretrained' to have been called once. Called 0 times.
+WARNING  infra.embedding_search:embedding_search.py:114 For semantic search, run with the venv python: /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/infra/embedding_search.py <query>
+WARNING  search.scoring:scoring.py:395 Failed to parse tags JSON for tag scoring
+WARNING  search.orchestrator:orchestrator.py:1671 _record_last_accessed failed: table memories_fts has no column named category
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: 0 not greater than 0
 =========================== short test summary info ============================
-FAILED eval/test_transformer_opt_in.py::TestTransformerOptIn::test_transformer_opt_in_loading
-1 failed in 0.98s
-
-
-=== test_zero_result_ux.py ===
-18: AssertionError: 0 != 2
-E   AssertionError: 0 != 2
------------------------------- Captured log call -------------------------------
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_at
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: repo_id
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: repo_id
-WARNING  infra.db:db.py:280 _ensure_full_schema failed: no such column: repo_id
-WARNING  search.query_parser:query_parser.py:350 Failed to query recent source files for suggestions
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 0 != 2
-E   AssertionError: 0 != 1
------------------------------- Captured log call -------------------------------
-WARNING  infra.migration_runner:migration_runner.py:509 Migration 005 statement failed (idempotent, object already exists): duplicate column name: deleted_at
-ERROR    infra.migration_runner:migration_runner.py:541 Migration 005 statement failed (non-idempotent): no such column: repo_id
-ERROR    infra.migration_runner:migration_runner.py:590 Migration failed: no such column: repo_id
-WARNING  infra.db:db.py:280 _ensure_full_schema failed: no such column: repo_id
-WARNING  search.query_parser:query_parser.py:309 Failed to query recent tags for suggestions
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 0 != 1
-=========================== short test summary info ============================
-FAILED eval/test_zero_result_ux.py::TestZeroResultUX::test_top_recent_notes
-FAILED eval/test_zero_result_ux.py::TestZeroResultUX::test_top_recent_source_files
-FAILED eval/test_zero_result_ux.py::TestZeroResultUX::test_top_recent_tags - ...
-3 failed, 7 passed in 0.29s
+FAILED eval/test_search_memory_cli.py::TestSearchMemoriesIntegration::test_access_count_incremented
+1 failed, 48 passed in 1.00s
 

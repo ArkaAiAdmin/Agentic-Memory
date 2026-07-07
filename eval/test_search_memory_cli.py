@@ -468,7 +468,7 @@ class TestSearchMemoriesIntegration(unittest.TestCase):
         try:
             conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
-                USING fts5(id, content, tags, tokenize='porter unicode61')
+                USING fts5(id, content, tags, category, tokenize='porter unicode61')
             """)
         except Exception:
             pass
