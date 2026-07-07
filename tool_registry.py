@@ -26,6 +26,7 @@ CORE_TOOLS = [
     "memory_advanced",
     "memory_review_beliefs",
     "memory_curate_autosave",
+    "memory_health_check",
 ]
 
 ADMIN_TOOLS = [
@@ -65,7 +66,6 @@ ADMIN_TOOLS = [
     "memory_restore",
     "memory_rebuild",
     "memory_supersede",
-    "memory_health_check",
     "memory_shared_import",
     "memory_shared_list",
     "memory_shared_stats",

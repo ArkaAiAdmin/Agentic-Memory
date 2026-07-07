@@ -37,7 +37,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Callable, Any
 from infra.memory_common import (
-    safe_close_db,
     acquire_flock_with_retry,
     release_flock,
     atomic_write,
@@ -1273,72 +1272,7 @@ def _build_memory_file(
     return markdown_content, fm_metadata, now_iso, metadata_json
 
 
-def _persist_to_db(
-    conn,
-    db_path_obj,
-    category,
-    title_slug,
-    content,
-    tags_list,
-    pinned,
-    now_iso,
-    is_global,
-    metadata_json,
-    file_path,
-    markdown_content,
-    importance: int = 3,
-    _conn_is_shared: bool = False,
-    defer_expensive: bool = False,
-    tenant_id: str = "default",
-    epistemic_source: str = "agent",
-    belief_status: str = "active",
-    asserting_agent_id: str = "",
-    evidence_chain: list | None = None,
-    fact_type: str = "observation",
-):
-    try:
-        _update_memory_index_incremental(
-            db_path_obj,
-            category,
-            title_slug,
-            content,
-            tags_list,
-            pinned,
-            now_iso,
-            is_global,
-            metadata_json=metadata_json,
-            db=conn,
-            importance=importance,
-            defer_expensive=defer_expensive,
-            tenant_id=tenant_id,
-            epistemic_source=epistemic_source,
-            belief_status=belief_status,
-            asserting_agent_id=asserting_agent_id,
-            evidence_chain=evidence_chain,
-            fact_type=fact_type,
-        )
-        try:
-            atomic_write(file_path, markdown_content, encoding="utf-8")
-        except Exception as file_err:
-            if not _conn_is_shared:
-                conn.rollback()
-                safe_close_db(conn)
-            logger.error("save_memory: file write failed after DB insert: %s", file_err)
-            return _err(
-                ErrorCode.DB_ERROR, f"file write failed after DB insert: {file_err}"
-            )
-        if not _conn_is_shared:
-            conn.commit()
-            safe_close_db(conn)
-        return f"{category}/{title_slug}"
-    except Exception as e:
-        if not _conn_is_shared:
-            try:
-                conn.rollback()
-            except Exception as _rb_exc:
-                logger.debug("conn.rollback() failed in _persist_to_db: %s", _rb_exc)
-            safe_close_db(conn)
-        return _err(ErrorCode.DB_ERROR, f"saving memory: {e}")
+
 
 
 # ---------------------------------------------------------------------------
@@ -1347,13 +1281,9 @@ def _persist_to_db(
 # The save-memory orchestrator used to contain a 112-line inline block
 # that (1) tried the saga path, (2) decided whether to fall back based
 # on MEMORY_SAGA_FALLBACK, and (3) called the legacy _persist_to_db on
-# fallback. That block mixed three concerns — saga call wiring, the
-# fallback policy decision, and the legacy persist — and made the
-# orchestrator hard to read.
-#
-# The helpers below split those concerns apart. The orchestrator now
-# reads as a single call to _persist_via_saga_or_fallback() plus a
-# single call to _audit_save_failure() on the error path.
+# fallback.  As of 2026-07-07 the saga is the *only* write path — the
+# fallback policy and _persist_to_db were removed.  A failed saga always
+# raises, guaranteeing no partial data is silently committed.
 # ---------------------------------------------------------------------------
 
 
@@ -1408,7 +1338,7 @@ def _try_saga_persist(
     whether to fall back or to surface the error.
 
     ``lock_already_held`` (P0-2 fix, 2026-06-22): when True, the saga
-    skips its internal file-lock acquisition.  See _persist_via_saga_or_fallback.
+    skips its internal file-lock acquisition.  See ``_persist_via_saga``.
     """
     assert _saga_save_memory is not None, "caller must check _is_saga_enabled() first"
 
@@ -1453,44 +1383,7 @@ def _try_saga_persist(
     )
 
 
-def _apply_saga_fallback_policy(category, title_slug):
-    """Decide what to do when the saga path raises.
-
-    Saga-failure policy (C3 fix, 2026-06-22): the saga path is the
-    crash-consistent default.  A failed saga raises ``RuntimeError``
-    by default rather than silently dropping the write.  Operators can
-    opt into the legacy best-effort fallback by setting
-    ``MEMORY_SAGA_FALLBACK=allow``.
-
-    On the default (raise) path, this function:
-      1. Increments ``_saga_fallback_counter`` for telemetry, if available.
-      2. Raises ``RuntimeError`` with a message that tells the operator
-         how to switch to the legacy path.
-
-    On the allow path, this function returns silently — the caller then
-    routes through ``_persist_to_db``.
-    """
-    import os
-
-    if os.environ.get("MEMORY_SAGA_FALLBACK", "raise") == "allow":
-        return
-    # S2 fix: counter for telemetry.  Even when fallback is allowed,
-    # the operator should know it happened.
-    try:
-        from infra.saga import _saga_fallback_counter
-
-        _saga_fallback_counter.inc()
-    except Exception as _ctr_exc:
-        logger.debug("_saga_fallback_counter.inc() failed (benign): %s", _ctr_exc)
-    raise RuntimeError(
-        f"saga_save_memory failed for {category}/{title_slug}; "
-        f"refusing to fall back silently.  Set "
-        f"MEMORY_SAGA_FALLBACK=allow to opt into the legacy "
-        f"non-saga path.  Original error: see logs."
-    ) from None
-
-
-def _persist_via_saga_or_fallback(
+def _persist_via_saga(
     *,
     conn,
     db_path_obj,
@@ -1506,9 +1399,7 @@ def _persist_via_saga_or_fallback(
     markdown_content,
     importance,
     lock_already_held: bool = False,
-    _conn_is_shared: bool = False,
     defer_expensive: bool = False,
-    note_id: str = "",
     tenant_id: str = "default",
     epistemic_source: str = "agent",
     belief_status: str = "active",
@@ -1516,21 +1407,15 @@ def _persist_via_saga_or_fallback(
     evidence_chain: list | None = None,
     fact_type: str = "observation",
 ):
-    """Persist a memory via the saga path, with policy-driven fallback.
+    """Persist a memory via the saga-wrapped write path.
 
-    Tries the saga-wrapped path first.  If the saga raises, the failure
-    is logged and the policy in ``_apply_saga_fallback_policy`` decides
-    whether to fall back to ``_persist_to_db`` (legacy) or to raise.
+    Tries the saga path.  If the saga raises, the exception propagates
+    — the saga guarantees crash-consistent rollback, and there is no
+    fallback path that could silently commit partial data.
 
-    Returns a ``(note_id, conn_after)`` tuple:
-
-    * ``note_id`` is the canonical note id on success, or an ``_err``
-      envelope string on legacy-path failure.
-    * ``conn_after`` is the connection the caller should pass into
-      ``_run_post_save_hooks`` — ``None`` when the saga path committed
-      (the saga owns commit/close) or the legacy ``_persist_to_db``
-      closed the connection (B7: post-hooks re-acquire if they need
-      the conn).
+    Returns a ``(note_id, conn)`` tuple.  ``conn`` is the same
+    connection that was passed in — the saga owns commit/close and the
+    caller continues to use the connection for post-save hooks.
 
     ``lock_already_held`` (P0-2 fix, 2026-06-22): when True, the saga
     skips its internal file-lock acquisition.  save_memory acquires the
@@ -1538,71 +1423,33 @@ def _persist_via_saga_or_fallback(
     to double-acquire the same flock (which would block forever on a
     different fd for the same file).
     """
-    saga_ok = False
-    if _is_saga_enabled():
-        try:
-            note_id = _try_saga_persist(
-                conn=conn,
-                db_path_obj=db_path_obj,
-                category=category,
-                title_slug=title_slug,
-                content=content,
-                tags_list=tags_list,
-                pinned=pinned,
-                now_iso=now_iso,
-                is_global=is_global,
-                metadata_json=metadata_json,
-                file_path=file_path,
-                markdown_content=markdown_content,
-                importance=importance,
-                lock_already_held=lock_already_held,
-                defer_expensive=defer_expensive,
-                tenant_id=tenant_id,
-                epistemic_source=epistemic_source,
-                belief_status=belief_status,
-                asserting_agent_id=asserting_agent_id,
-                evidence_chain=evidence_chain,
-                fact_type=fact_type,
-            )
-            saga_ok = True
-        except Exception as saga_exc:
-            logger.warning(
-                "saga_save_memory failed for %s/%s, considering fallback: %s",
-                category,
-                title_slug,
-                saga_exc,
-            )
-
-    if not saga_ok:
-        # Saga raised or was disabled.  Decide whether to fall back.
-        _apply_saga_fallback_policy(category, title_slug)
-        note_id = _persist_to_db(
-            conn,
-            db_path_obj,
-            category,
-            title_slug,
-            content,
-            tags_list,
-            pinned,
-            now_iso,
-            is_global,
-            metadata_json,
-            file_path,
-            markdown_content,
-            importance,
-            _conn_is_shared=_conn_is_shared,
-            defer_expensive=defer_expensive,
-            tenant_id=tenant_id,
-            epistemic_source=epistemic_source,
-            belief_status=belief_status,
-            asserting_agent_id=asserting_agent_id,
-            evidence_chain=evidence_chain,
-            fact_type=fact_type,
+    if not _is_saga_enabled():
+        raise RuntimeError(
+            f"Saga is disabled — cannot persist {category}/{title_slug}"
         )
-        if not _conn_is_shared:
-            conn = (
-                None  # B7: _persist_to_db closed conn; post-hooks re-acquire if needed
-            )
+    note_id = _try_saga_persist(
+        conn=conn,
+        db_path_obj=db_path_obj,
+        category=category,
+        title_slug=title_slug,
+        content=content,
+        tags_list=tags_list,
+        pinned=pinned,
+        now_iso=now_iso,
+        is_global=is_global,
+        metadata_json=metadata_json,
+        file_path=file_path,
+        markdown_content=markdown_content,
+        importance=importance,
+        lock_already_held=lock_already_held,
+        defer_expensive=defer_expensive,
+        tenant_id=tenant_id,
+        epistemic_source=epistemic_source,
+        belief_status=belief_status,
+        asserting_agent_id=asserting_agent_id,
+        evidence_chain=evidence_chain,
+        fact_type=fact_type,
+    )
     return note_id, conn
 
 
@@ -1838,14 +1685,13 @@ def _save_memory_core(
         _save_errored = False
         deferred_writes = []
         try:
-            # Persist via the saga path.  _persist_via_saga_or_fallback() handles
-            # both the saga call and the MEMORY_SAGA_FALLBACK policy; on the
-            # default policy, a saga failure raises (C3 fix 2026-06-22) and we
-            # never silently lose a write.  The auto-save hook
-            # (auto_save._upsert_memory) catches the raise, logs it, and
-            # returns False so the Claude Code tool-complete event continues
-            # normally — the two surfaces are intentionally decoupled.
-            note_id, conn = _persist_via_saga_or_fallback(
+            # Persist via the saga-wrapped write path.  The saga guarantees
+            # crash-consistent rollback — on failure it raises and no partial
+            # data is committed.  The auto-save hook (auto_save._upsert_memory)
+            # catches the raise, logs it, and returns False so the Claude Code
+            # tool-complete event continues normally — the two surfaces are
+            # intentionally decoupled.
+            note_id, conn = _persist_via_saga(
                 conn=conn,
                 db_path_obj=db_path_obj,
                 category=category,
@@ -1860,7 +1706,6 @@ def _save_memory_core(
                 markdown_content=_markdown,
                 importance=importance,
                 lock_already_held=(lock_file is not None),
-                _conn_is_shared=(_conn is not None),
                 defer_expensive=defer_expensive,
                 epistemic_source=epistemic_source,
                 belief_status=belief_status,

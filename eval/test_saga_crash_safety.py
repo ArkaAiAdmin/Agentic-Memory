@@ -190,13 +190,13 @@ class TestSagaCrashSafety(unittest.TestCase):
             )
 
 
-class TestSagaFallbackBehaviour(unittest.TestCase):
-    """S1 fix: saga fallback is now opt-in via env var."""
+class TestSagaFailureRaises(unittest.TestCase):
+    """A failed saga always raises RuntimeError — no fallback path exists."""
 
     def setUp(self):
         from _fixtures import bootstrap_temp_db_clean
 
-        self._tmp_dir = tempfile.mkdtemp(prefix="saga_fallback_")
+        self._tmp_dir = tempfile.mkdtemp(prefix="saga_failure_")
         self._db_path = Path(self._tmp_dir) / "memory.db"
         bootstrap_temp_db_clean(self._db_path)
 
@@ -205,114 +205,25 @@ class TestSagaFallbackBehaviour(unittest.TestCase):
 
         shutil.rmtree(self._tmp_dir, ignore_errors=True)
 
-    def test_fallback_raises_by_default(self):
-        """Without MEMORY_SAGA_FALLBACK=allow, save_memory raises when
-        the saga fails."""
-        from save_pipeline import save_memory
-        import save_pipeline
+    def test_saga_failure_raises(self):
+        """When the saga fails, save_memory raises RuntimeError."""
+        import save.pipeline as real_save_pipeline
 
-        # The saga is imported into save_pipeline as _saga_save_memory.
-        # Patch the *save_pipeline* binding, not the saga module.
         with mock.patch.object(
-            save_pipeline, "_saga_save_memory", side_effect=RuntimeError("boom")
+            real_save_pipeline, "_saga_save_memory", side_effect=RuntimeError("saga boom")
         ):
-            with mock.patch.dict(os.environ, {"MEMORY_SAGA_FALLBACK": "raise"}):
-                with self.assertRaises(RuntimeError) as ctx:
-                    save_memory(
-                        content="x" * 10,
-                        category="test",
-                        title_slug="fallback_test",
-                        is_global=False,
-                        safety_wiring=False,
-                        db_path=str(self._db_path),
-                    )
-                self.assertIn("saga_save_memory failed", str(ctx.exception))
+            from save_pipeline import save_memory
 
-    def test_fallback_allowed_when_env_set(self):
-        """With MEMORY_SAGA_FALLBACK=allow, the save proceeds via the
-        non-saga path."""
-        from save_pipeline import save_memory
-        import save_pipeline
-        from infra.saga import _saga_fallback_counter, reset_saga_fallback_counter
-
-        reset_saga_fallback_counter()
-        with mock.patch.object(
-            save_pipeline, "_saga_save_memory", side_effect=RuntimeError("boom")
-        ):
-            with mock.patch.dict(os.environ, {"MEMORY_SAGA_FALLBACK": "allow"}):
-                # Just exercise the path; the exact DB persistence is
-                # tested elsewhere.  The counter should increment.
-                try:
-                    save_memory(
-                        content="x" * 10,
-                        category="test",
-                        title_slug="fallback_allowed",
-                        is_global=False,
-                        safety_wiring=False,
-                        db_path=str(self._db_path),
-                    )
-                except Exception:
-                    pass  # Other errors are fine; we just check the counter
-        self.assertGreaterEqual(_saga_fallback_counter.value, 0)
-
-
-class TestSagaFallbackCounter(unittest.TestCase):
-    """S2 fix: counter for saga fallbacks."""
-
-    def test_counter_increments(self):
-        from infra.saga import _saga_fallback_counter, reset_saga_fallback_counter
-
-        reset_saga_fallback_counter()
-        self.assertEqual(_saga_fallback_counter.value, 0)
-        _saga_fallback_counter.inc()
-        self.assertEqual(_saga_fallback_counter.value, 1)
-        _saga_fallback_counter.inc()
-        _saga_fallback_counter.inc()
-        self.assertEqual(_saga_fallback_counter.value, 3)
-
-    def test_counter_reset(self):
-        from infra.saga import _saga_fallback_counter, reset_saga_fallback_counter
-
-        _saga_fallback_counter.inc()
-        _saga_fallback_counter.inc()
-        reset_saga_fallback_counter()
-        self.assertEqual(_saga_fallback_counter.value, 0)
-
-
-class TestSagaFallbackPolicy(unittest.TestCase):
-    """C3 fix: verify the saga fallback policy (raise vs allow).
-
-    The saga fallback default is ``raise`` — a failed saga aborts the
-    write.  Operators who want the legacy best-effort behaviour set
-    ``MEMORY_SAGA_FALLBACK=allow``.  These tests pin both branches so
-    future refactors cannot silently change the default.
-    """
-
-    def setUp(self):
-        self._saved_saga_fallback = os.environ.pop("MEMORY_SAGA_FALLBACK", None)
-
-    def tearDown(self):
-        if self._saved_saga_fallback is None:
-            os.environ.pop("MEMORY_SAGA_FALLBACK", None)
-        else:
-            os.environ["MEMORY_SAGA_FALLBACK"] = self._saved_saga_fallback
-
-    def test_default_is_raise(self):
-        """No env var → fallback is the strict "raise" path."""
-        from os import getenv
-
-        # Sanity: the helper that the save path uses must default to "raise".
-        self.assertEqual(getenv("MEMORY_SAGA_FALLBACK", "raise"), "raise")
-
-    def test_allow_overrides_default(self):
-        """Explicit ``MEMORY_SAGA_FALLBACK=allow`` is honored."""
-        from os import getenv
-
-        with mock.patch.dict(os.environ, {"MEMORY_SAGA_FALLBACK": "allow"}):
-            self.assertEqual(getenv("MEMORY_SAGA_FALLBACK", "raise"), "allow")
-        # After the patch is removed, the helper reverts to its default.
-        with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(getenv("MEMORY_SAGA_FALLBACK", "raise"), "raise")
+            with self.assertRaises(RuntimeError) as ctx:
+                save_memory(
+                    content="x" * 10,
+                    category="test",
+                    title_slug="failure_test",
+                    is_global=False,
+                    safety_wiring=False,
+                    db_path=str(self._db_path),
+                )
+            self.assertIn("saga", str(ctx.exception).lower())
 
     def test_auto_save_hook_catches_saga_runtime_error(self):
         """The auto-save hook tool_complete catches saga RuntimeError,

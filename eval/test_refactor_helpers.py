@@ -360,43 +360,22 @@ class TestSavePipelineSagaHelpers(unittest.TestCase):
 
     * _is_saga_enabled() — config check
     * _try_saga_persist() — saga call wiring
-    * _apply_saga_fallback_policy() — fallback decision
-    * _persist_via_saga_or_fallback() — orchestrator
     * _audit_save_failure() — error audit
+
+    The fallback policy (_apply_saga_fallback_policy) and legacy
+    _persist_to_db were removed 2026-07-07 — a failed saga always
+    raises.
     """
 
     def setUp(self):
-        # Save the env so we can mutate and restore it.
         import save_pipeline
 
-        self._saved_env = os.environ.get("MEMORY_SAGA_FALLBACK")
         self._sp = save_pipeline
-
-    def tearDown(self):
-        if self._saved_env is None:
-            os.environ.pop("MEMORY_SAGA_FALLBACK", None)
-        else:
-            os.environ["MEMORY_SAGA_FALLBACK"] = self._saved_env
 
     def test_is_saga_enabled_returns_bool(self):
         """_is_saga_enabled() returns a boolean without raising."""
         result = self._sp._is_saga_enabled()
         self.assertIsInstance(result, bool)
-
-    def test_apply_fallback_policy_default_raises(self):
-        """With MEMORY_SAGA_FALLBACK unset, the policy raises RuntimeError."""
-        os.environ.pop("MEMORY_SAGA_FALLBACK", None)
-        with self.assertRaises(RuntimeError) as ctx:
-            self._sp._apply_saga_fallback_policy("lessons", "foo")
-        msg = str(ctx.exception)
-        self.assertIn("lessons/foo", msg)
-        self.assertIn("MEMORY_SAGA_FALLBACK", msg)
-
-    def test_apply_fallback_policy_allow_returns_none(self):
-        """With MEMORY_SAGA_FALLBACK=allow, the policy is a no-op."""
-        os.environ["MEMORY_SAGA_FALLBACK"] = "allow"
-        result = self._sp._apply_saga_fallback_policy("lessons", "foo")
-        self.assertIsNone(result)
 
     def test_audit_save_failure_swallows_exceptions(self):
         """_audit_save_failure must not raise even if audit fails.
@@ -427,15 +406,12 @@ class TestSavePipelineSagaHelpers(unittest.TestCase):
             _start_time=0.0,
         )
 
-    def test_persist_via_saga_or_fallback_signature(self):
+    def test_persist_via_saga_signature(self):
         """The helper takes only keyword args, no positional surprises."""
         import inspect
 
-        sig = inspect.signature(self._sp._persist_via_saga_or_fallback)
+        sig = inspect.signature(self._sp._persist_via_saga)
         params = sig.parameters
-        # All params should be keyword-only (or keyword-or-positional)
-        # — this prevents the call site from mis-ordering the many
-        # string args (category, title_slug, content, etc.).
         for name in [
             "conn",
             "db_path_obj",

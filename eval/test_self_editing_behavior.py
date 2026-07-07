@@ -23,10 +23,6 @@ sys.path.insert(0, str(install_root()))
 import pytest
 from save_pipeline import patch_memory, memory_supersede_db, revert_supersede
 
-# Allow saga fallback so save_memory works in test DBs without full migration schema
-os.environ.setdefault("MEMORY_SAGA_FALLBACK", "allow")
-
-
 def _ensure_memory(conn, note_id: str, content: str, category: str = "lessons"):
     now = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     conn.execute(

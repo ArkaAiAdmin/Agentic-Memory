@@ -75,7 +75,7 @@ Only call it when:
 Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 `~/.config/agentic-memory/memory/` (SQLite + markdown files + vector index).
 
-**Surface: 15 CORE verbs + `memory_maintenance` router (escape hatch)**
+**Surface: 16 CORE verbs + `memory_maintenance` router (escape hatch)**
 
 - CORE tools: visible directly — call them by name.
 - `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.
@@ -111,6 +111,7 @@ What do you want to do?
 ├─ Explore knowledge graph?  → memory_graph(query, action="explore|traverse|shortest_path|stats", ...)
 ├─ View profile/stats?       → memory_profile(action="stats|user|agents|skills|arc")
 ├─ Start a session?          → memory_session_start(query)
+├─ Check system health?      → memory_health_check
 └─ Advanced / power user?    → memory_advanced(operation="any_admin_operation", **kwargs)
                               or memory_maintenance(operation="any_admin_operation", **kwargs)
 ```
@@ -318,6 +319,15 @@ Retrieve the session startup briefing.
 | query | str | No | "" | Optional topic filter |
 
 ---
+
+### memory_health_check
+Unified health-check: returns a JSON dict summarising subsystem state.
+
+Checks DB availability, row counts, vec-index drift, FTS sync status,
+connection-pool depth, background-worker liveness, disk space, and
+schema version.
+
+**Args:** None.
 
 ### memory_advanced (escape hatch)
 Power user escape hatch — pass through to any memory_maintenance operation.

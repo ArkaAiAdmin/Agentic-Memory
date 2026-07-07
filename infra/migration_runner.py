@@ -95,6 +95,11 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-05: bumped to 32 for scoped outbox update trigger (semantic columns only).
 SCHEMA_VERSION = 33
 
+# Schema is locked at the version above. Set to False when a new
+# migration is intentionally added, then back to True once the
+# new migration is committed.
+SCHEMA_STABLE = True
+
 
 
 def _parse_sql_file(path: Path) -> list[str]:
@@ -374,6 +379,14 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
 
     if not pending:
         return
+
+    if SCHEMA_STABLE and any(num > SCHEMA_VERSION for num, _ in pending):
+        offending = sorted({num for num, _ in pending if num > SCHEMA_VERSION})
+        raise RuntimeError(
+            f"Schema is locked at v{SCHEMA_VERSION} (SCHEMA_STABLE=True). "
+            f"Cannot apply migration(s) > {SCHEMA_VERSION}: {offending}. "
+            "Set SCHEMA_STABLE = False in migration_runner.py to add new migrations."
+        )
 
     if dry_run:
         print(f"[DRY RUN] Would apply {len(pending)} migration(s):\n")

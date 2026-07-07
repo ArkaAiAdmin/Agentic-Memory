@@ -1,7 +1,4 @@
-"""Phase 2+3 smoke tests — run via:
-   AUTO_SAVE_TOOL_ALLOWLIST='*' MEMORY_SAGA_FALLBACK=allow
-   pytest eval/test_phase2_3_smoke.py -v
-"""
+"""Phase 2+3 smoke tests."""
 import json
 import os
 import shutil

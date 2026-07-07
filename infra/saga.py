@@ -91,35 +91,7 @@ __all__ = [
     "SagaMode",
     "saga_save_memory",
     "SAGA_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
-    "_saga_fallback_counter",
-    "reset_saga_fallback_counter",
 ]
-
-
-# S2 fix: lightweight in-process counter for saga fallbacks.  Tests and
-# observability code can inspect this; production should prefer the
-# structured log emitted by save_pipeline on fallback.
-class _SagaFallbackCounter:
-    def __init__(self) -> None:
-        self._n = 0
-
-    def inc(self, by: int = 1) -> None:
-        self._n += by
-
-    @property
-    def value(self) -> int:
-        return self._n
-
-    def reset(self) -> None:
-        self._n = 0
-
-
-_saga_fallback_counter = _SagaFallbackCounter()
-
-
-def reset_saga_fallback_counter() -> None:
-    """Reset the saga fallback counter.  Call from tests."""
-    _saga_fallback_counter.reset()
 
 
 # Feature gate. Default ON so crash-consistent triple-store writes are
@@ -128,7 +100,7 @@ def reset_saga_fallback_counter() -> None:
 # SAGA_ENABLED is dynamically resolved via __getattr__
 
 
-class SagaError(Exception):
+class SagaError(RuntimeError):
     """Raised when a saga step fails and rollback is exhausted.
 
     Carries:

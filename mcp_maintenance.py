@@ -87,10 +87,13 @@ def memory_health_check(conn) -> str:
     from mcp_common import get_memory_paths
     from infra.memory_common import connection_pool
 
+    from infra.migration_runner import SCHEMA_VERSION
+
     status: dict = {"db": {}, "vec_index": {}, "fts": {}, "pool": {}, "disk": {}}
+    status["schema_version"] = SCHEMA_VERSION
 
     try:
-        db_path = conn.execute("PRAGMA database_list").fetchone()["file"]
+        db_path = conn.execute("PRAGMA database_list").fetchone()[2]
         row_count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         status["db"] = {
             "path": str(db_path),

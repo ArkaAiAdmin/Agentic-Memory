@@ -11,7 +11,6 @@ Verifies the composition and interaction of:
 """
 
 import json
-import os
 import shutil
 import sqlite3
 import sys
@@ -207,23 +206,20 @@ class TestSagaRollbackPreservesKGConsistency(CompositionTestBase):
         slug = "saga-fail-test"
 
         # 1. Mock _index_facts to raise an exception mid-save.
-        # Pin MEMORY_SAGA_FALLBACK=raise so prior-test env leakage can't
-        # cause _persist_to_db to silently insert a row.
-        with patch.dict(os.environ, {"MEMORY_SAGA_FALLBACK": "raise"}):
-            with patch("save.pipeline._index_facts", side_effect=ValueError("Simulated indexing error")):
-                try:
-                    save_memory(
-                        content="Procedural notes: 1. Setup server. 2. Verify config works.",
-                        category="lessons",
-                        title_slug=slug,
-                        tags=["test"],
-                        pinned=False,
-                        is_global=False,
-                        safety_wiring=True,
-                        db_path=str(self.db_path),
-                    )
-                except Exception:
-                    pass
+        with patch("save.pipeline._index_facts", side_effect=ValueError("Simulated indexing error")):
+            try:
+                save_memory(
+                    content="Procedural notes: 1. Setup server. 2. Verify config works.",
+                    category="lessons",
+                    title_slug=slug,
+                    tags=["test"],
+                    pinned=False,
+                    is_global=False,
+                    safety_wiring=True,
+                    db_path=str(self.db_path),
+                )
+            except Exception:
+                pass
 
         # 2. Verify all tables are rolled back and empty
         with open_db(self.db_path) as conn:
@@ -303,21 +299,20 @@ class TestFullWriteChainUnderPartialFailure(CompositionTestBase):
         ]
 
         for stage in stages:
-            with patch.dict(os.environ, {"MEMORY_SAGA_FALLBACK": "raise"}):
-                with patch(stage, side_effect=RuntimeError(f"Failure at {stage}")):
-                    try:
-                        save_memory(
-                            content="Some robust procedurals: 1. Do step A. 2. Verify outcome.",
-                            category="lessons",
-                            title_slug="stage-failure-test",
-                            tags=["failure-test"],
-                            pinned=False,
-                            is_global=False,
-                            safety_wiring=True,
-                            db_path=str(self.db_path),
-                        )
-                    except Exception:
-                        pass
+            with patch(stage, side_effect=RuntimeError(f"Failure at {stage}")):
+                try:
+                    save_memory(
+                        content="Some robust procedurals: 1. Do step A. 2. Verify outcome.",
+                        category="lessons",
+                        title_slug="stage-failure-test",
+                        tags=["failure-test"],
+                        pinned=False,
+                        is_global=False,
+                        safety_wiring=True,
+                        db_path=str(self.db_path),
+                    )
+                except Exception:
+                    pass
 
                 # Check total database state is fully rolled back
                 with open_db(self.db_path) as conn:
