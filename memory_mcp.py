@@ -254,6 +254,27 @@ if __name__ == "__main__":
     except Exception as e:
         logger.info("sync server not started: %s", e)
 
+    # Phase 2: auto-start the CQRS write-journal reconciler when enabled.
+    try:
+        from config import get_config
+        _cfg = get_config()
+        if getattr(_cfg, "write_journal", False):
+            from background.background_worker import _start_reconciler
+            from infra.write_journal import reset_stuck_processing
+            _target_base = resolve_active_memory_dir()
+            _journal_path = _target_base / "journal.db"
+            # Stuck-entry self-heal: unstick entries from prior crashes.
+            if _journal_path.exists():
+                _unstuck = reset_stuck_processing(_journal_path)
+                if _unstuck:
+                    logger.info("write_journal: unstuck %d entries at startup", _unstuck)
+            _start_reconciler(_journal_path, _target_base)
+            logger.info(
+                "write_journal reconciler: auto-started (journal=%s)", _journal_path
+            )
+    except Exception as e:
+        logger.warning("write_journal reconciler: auto-start skipped: %s", e)
+
     signal.signal(signal.SIGPIPE, signal.SIG_IGN)
     try:
         mcp.run()

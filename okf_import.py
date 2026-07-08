@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 
 from infra.frontmatter import parse_frontmatter
-from save_pipeline import save_memory
+from save_pipeline import save_memory_auto
 
 logger = logging.getLogger("okf_import")
 
@@ -234,7 +234,7 @@ def okf_import(
         try:
             from save_pipeline import SaveValidationError
             try:
-                save_result = save_memory(
+                save_result = save_memory_auto(
                     content=clean_body,
                     category=category,
                     title_slug=title_slug,

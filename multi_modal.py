@@ -219,11 +219,11 @@ def ingest_file(
 
     # Save through the standard pipeline
     from save_pipeline import SaveValidationError
-    from infra._lazy_imports import save_memory
+    from infra._lazy_imports import save_memory_auto
 
     title_slug = _slugify(path.stem)
     try:
-        note_id = save_memory(
+        note_id = save_memory_auto(
             content=content,
             category=category,
             title_slug=title_slug,
@@ -402,10 +402,10 @@ def _extract_audio(path: Path) -> str:
 def _save_content(content: str, category: str, tags: list, title_slug: str) -> dict:
     """Save content through the standard pipeline."""
     from save_pipeline import SaveValidationError
-    from infra._lazy_imports import save_memory
+    from infra._lazy_imports import save_memory_auto
 
     try:
-        note_id = save_memory(
+        note_id = save_memory_auto(
             content=content,
             category=category,
             title_slug=title_slug,

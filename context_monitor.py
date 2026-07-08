@@ -356,9 +356,9 @@ with a manual summary of decisions, progress, and next steps.
     # Also save to DB so it's searchable
     try:
         sys.path.insert(0, str(Path(__file__).parent))
-        from infra._lazy_imports import save_memory
+        from infra._lazy_imports import save_memory_auto
 
-        save_memory(
+        save_memory_auto(
             content=content,
             category="sessions",
             title_slug=f"idle-{date_str}_{ts_str}",
@@ -427,9 +427,9 @@ This is the final session summary. The agent should add:
     # Also save to DB so it's searchable
     try:
         sys.path.insert(0, str(Path(__file__).parent))
-        from infra._lazy_imports import save_memory
+        from infra._lazy_imports import save_memory_auto
 
-        save_memory(
+        save_memory_auto(
             content=content,
             category="sessions",
             title_slug=f"end-{date_str}_{ts_str}",
@@ -1183,9 +1183,9 @@ def _write_compaction_note(
     # compaction note survives future purges — they're critical.
     try:
         sys.path.insert(0, str(Path(__file__).parent))
-        from infra._lazy_imports import save_memory
+        from infra._lazy_imports import save_memory_auto
 
-        save_memory(
+        save_memory_auto(
             content=content,
             category="sessions",
             title_slug=f"compaction-save-{date_str}_{ts_str}",

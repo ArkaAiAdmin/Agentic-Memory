@@ -81,14 +81,14 @@ class Memory:
                 saves stay scoped to the current project unless explicitly
                 opted in.
         """
-        from infra._lazy_imports import save_memory
+        from infra._lazy_imports import save_memory_auto
 
         ts = time.strftime("%Y%m%d_%H%M%S")
         title_slug = f"sdk-auto-{ts}-{hash(content) & 0xFFFF:04x}"
         from save_pipeline import SaveValidationError
 
         try:
-            note_id = save_memory(
+            note_id = save_memory_auto(
                 content=content,
                 category="sdk",
                 title_slug=title_slug,

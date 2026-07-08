@@ -80,7 +80,8 @@ def memory_health_check(conn) -> str:
     """Unified health-check: returns a JSON dict summarising subsystem state.
 
     Checks DB availability, row counts, vec-index drift, FTS sync status,
-    connection-pool depth, background-worker liveness, and disk space.
+    connection-pool depth, background-worker liveness, disk space, and
+    CQRS write-journal health.
     """
     import shutil
     from pathlib import Path
@@ -90,7 +91,10 @@ def memory_health_check(conn) -> str:
 
     from infra.migration_runner import SCHEMA_VERSION
 
-    status: dict = {"db": {}, "vec_index": {}, "fts": {}, "pool": {}, "disk": {}}
+    status: dict = {
+        "db": {}, "vec_index": {}, "fts": {}, "pool": {},
+        "disk": {}, "journal": {},
+    }
     status["schema_version"] = SCHEMA_VERSION
 
     try:
@@ -157,6 +161,45 @@ def memory_health_check(conn) -> str:
         }
     except Exception as exc:
         status["disk"] = {"error": str(exc)[:200]}
+
+    # CQRS write-journal health (Phase 3, 2026-07-08)
+    try:
+        from config import get_config
+        _cfg = get_config()
+        _enabled = getattr(_cfg, "write_journal", False)
+        status["journal"] = {"enabled": _enabled}
+        if _enabled:
+            _, mem_dir, _ = get_memory_paths()
+            j_path = Path(mem_dir) / "journal.db"
+            if j_path.exists():
+                import sqlite3 as _sqlite3
+                _jc = _sqlite3.connect(str(j_path))
+                _pending = _jc.execute(
+                    "SELECT COUNT(*) FROM write_journal WHERE status='pending'"
+                ).fetchone()[0]
+                _processing = _jc.execute(
+                    "SELECT COUNT(*) FROM write_journal WHERE status='processing'"
+                ).fetchone()[0]
+                _failed = _jc.execute(
+                    "SELECT COUNT(*) FROM journal_failed"
+                ).fetchone()[0] if _jc.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='journal_failed'"
+                ).fetchone() else 0
+                _jc.close()
+                status["journal"].update({
+                    "path": str(j_path),
+                    "pending": _pending,
+                    "processing": _processing,
+                    "failed": _failed,
+                })
+            # Reconciler thread liveness: check via our own thread objects
+            _threads = [t for t in __import__("threading").enumerate()
+                        if t.name == "journal-reconciler"]
+            status["journal"]["reconciler_alive"] = (
+                _threads[0].is_alive() if _threads else False
+            )
+    except Exception as exc:
+        status["journal"]["error"] = str(exc)[:200]
 
     degraded = bool(
         status["db"].get("accessible") is False

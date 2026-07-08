@@ -205,10 +205,13 @@ def _mark_audit_pending(
         return
     pk = _TABLE_DML[table][0]
     path = str(db_path) if db_path else str(Path.cwd() / "memory" / "memory.db")
+    _dbp = Path(path)
     conn = None
     try:
         from infra.db import connection_pool
+        from infra.db_path_flock import acquire_db_path_flock, release_db_path_flock
 
+        acquire_db_path_flock(_dbp)
         conn = connection_pool.get(path, timeout=10.0)
         conn.execute(
             f"UPDATE {table} SET audit_status='pending' WHERE {pk}=?",
@@ -226,6 +229,7 @@ def _mark_audit_pending(
             from infra.db import safe_close_db
 
             safe_close_db(conn)
+        release_db_path_flock(_dbp)
 
 
 def reconcile_audit(db_path: Optional[Path] = None) -> str:
@@ -294,13 +298,23 @@ def _save_system_record(
     # ------------------------------------------------------------------
     conn = None
     saved = False
+    # Strip summary_note_id when async journal is enabled (the referenced
+    # memories row hasn't been materialized yet and would violate FK).
+    try:
+        from config import get_config
+        _cfg = get_config()
+    except Exception:
+        _cfg = None
+    _row_for_v22 = {**row, "id": row_id}
+    if getattr(_cfg, "write_journal", False) and "summary_note_id" in _row_for_v22:
+        _row_for_v22.pop("summary_note_id")
     try:
         from infra.db import connection_pool
 
         path = str(db_path) if db_path else str(Path.cwd() / "memory" / "memory.db")
         conn = connection_pool.get(path, timeout=30.0)
         conn.execute("PRAGMA foreign_keys = ON")
-        _upsert_v22_table(conn, table, {**row, "id": row_id})
+        _upsert_v22_table(conn, table, _row_for_v22)
         conn.commit()
         saved = True
     except Exception as exc:
@@ -328,13 +342,13 @@ def _save_system_record(
         **{k: v for k, v in row.items() if k != "id"},
     }
     try:
-        from save_pipeline import save_memory
+        from save_pipeline import save_memory_auto
     except ImportError:
         return row_id  # v22 row written, no audit trail available
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
         slug = row_id.replace("/", "_").replace(" ", "_")[:64]
-        note_id = save_memory(
+        note_id = save_memory_auto(
             content=json.dumps(payload, default=str),
             category="system",
             title_slug=f"{table[:4]}_{slug}",
@@ -642,9 +656,9 @@ class SessionManager:
         # Save summary as a live memory note (via canonical save path).
         summary_note_id: Optional[str] = None
         try:
-            from save_pipeline import save_memory
+            from save_pipeline import save_memory_auto
 
-            note_id = save_memory(
+            note_id = save_memory_auto(
                 content=summary or f"Session {session_id} ended.",
                 category="sessions",
                 title_slug=f"session_{session_id[-8:]}",

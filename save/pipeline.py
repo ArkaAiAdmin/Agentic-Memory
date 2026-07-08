@@ -1643,6 +1643,29 @@ def save_memory_journal(
     return resolved_note_id
 
 
+# ── config-aware routing ──────────────────────────────────────────────
+
+
+def save_memory_auto(*args, **kwargs):
+    """Route to save_memory_journal or save_memory based on cfg.write_journal.
+
+    Same signature as save_memory / save_memory_journal (both calling
+    conventions work — SaveRequest positional or keyword args).  Reads
+    the feature flag once per call via the cached config.
+
+    Internal params (_now_iso, _conn) are forwarded only to save_memory;
+    they are stripped for the journal path since materialization time
+    is determined by the reconciler, not the enqueue time.
+    """
+    from config import get_config
+    cfg = get_config()
+    if getattr(cfg, "write_journal", False):
+        kwargs.pop("_now_iso", None)
+        kwargs.pop("_conn", None)
+        return save_memory_journal(*args, **kwargs)
+    return save_memory(*args, **kwargs)
+
+
 def materialize_journal_entry(
     entry: dict,
     target_base: Path,
@@ -1759,16 +1782,22 @@ def _materialize_journal_once(
         req.content, req.category, req.title_slug, tags_list, req.pinned, note_id=note_id,
     )
 
+    from infra.db_path_flock import (
+        acquire_db_path_flock,
+        release_db_path_flock,
+    )
     try:
         conn = _acquire_db_connection(
             db_path_obj, req.category, req.title_slug, time.time()
         )
     except Exception:
         raise
+    _db_path_parsed = Path(db_path_obj)
+    acquire_db_path_flock(_db_path_parsed)
     _save_errored = False
     try:
         note_id_out, conn = _persist_via_saga(
-            conn=conn, db_path_obj=Path(db_path_obj),
+            conn=conn, db_path_obj=_db_path_parsed,
             category=req.category, title_slug=req.title_slug,
             content=req.content, tags_list=tags_list, pinned=req.pinned,
             now_iso=now_iso, is_global=req.is_global, metadata_json=metadata_json,
@@ -1778,15 +1807,15 @@ def _materialize_journal_once(
             asserting_agent_id=req.asserting_agent_id, fact_type=req.fact_type,
         )
         _run_post_save_hooks(
-            target_mem, Path(db_path_obj), note_id_out,
+            target_mem, _db_path_parsed, note_id_out,
             req.category, req.title_slug, req.content, req.tags or [],
             req.pinned, req.is_global,
             (req.safety_wiring and not req.defer_expensive),
             time.time(), conn=conn,
         )
-        _enqueue_background_tasks(Path(db_path_obj), note_id_out, conn=conn)
+        _enqueue_background_tasks(_db_path_parsed, note_id_out, conn=conn)
         if _is_crdt_enabled():
-            _project_sql_to_crdt(Path(db_path_obj), note_id, conn=conn)
+            _project_sql_to_crdt(_db_path_parsed, note_id, conn=conn)
         mark_applied(journal_path, entry["id"])
         logger.info("materialize_journal_entry: applied %s", note_id_out)
         return str(note_id_out)
@@ -1794,6 +1823,7 @@ def _materialize_journal_once(
         _save_errored = True
         raise
     finally:
+        release_db_path_flock(_db_path_parsed)
         if conn is not None:
             try:
                 if _save_errored:

@@ -15,7 +15,7 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.confi
 <!--AUTO-GEN:START key="what_this_system_is"-->
 - **Surface**: 16 CORE verbs + `memory_maintenance` router (86 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 40+ cron jobs
 - **Schema**: v36, ~44 tables
-- **Code**: ~97k LOC production, ~82k+ test LOC; see `docs/architecture.md`
+- **Code**: ~98k LOC production, ~82k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 
@@ -55,6 +55,7 @@ agentic-memory/
 │   ├── auto_save.py                  ← async inbox+daemon entry point
 │   ├── inbox.py                      ← inbox management + daemon lifecycle
 │   ├── daemon.py                     ← long-lived inbox drainer
+│   ├── background_worker.py           ← CQRS write-journal reconciler daemon
 │   ├── tool_complete.py              ← hook → save_memory pipeline
 │   └── circuit_breaker.py            ← auto-save failure gating
 ├── cron/                             ← 40+ scheduled jobs + install_crontab.sh

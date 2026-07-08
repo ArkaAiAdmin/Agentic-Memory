@@ -129,9 +129,12 @@ def memory_search(
             shared_with_me=shared_with_me,
         )
         output = cast(str, result.get("output", str(result)))
-        results = result.get("results", [])
-        if not results:
-            pending = _supplement_with_pending(db_path, query, limit)
+        from config import get_config
+        if getattr(get_config(), "write_journal", False):
+            try:
+                pending = _supplement_with_pending(db_path, query, limit)
+            except Exception:
+                pending = []
             if pending:
                 rows = "\n".join(
                     f"- [{r.get('category','')}/{r.get('title_slug','')}] {r.get('content','')[:120]}"
@@ -150,6 +153,9 @@ def _supplement_with_pending(db_path: Path, query: str, limit: int) -> list[dict
     """Return recent pending journal entries matching query for read-your-writes visibility."""
     journal_path = db_path.parent / "journal.db"
     if not journal_path.exists():
+        return []
+    from config import get_config
+    if not getattr(get_config(), "write_journal", False):
         return []
     try:
         import sqlite3 as _sqlite3
@@ -548,36 +554,42 @@ def memory_note(
             from save_pipeline import memory_supersede_db
 
             db_path = _resolve_db_path()
-            new_note_id = title_slug or note_id
-            ok, err = memory_supersede_db(
-                db_path=db_path,
-                old_id=note_id,
-                new_id=new_note_id,
-                rationale=rationale,
-            )
+            from infra.db_path_flock import db_path_flock
+            with db_path_flock(db_path):
+                new_note_id = title_slug or note_id
+                ok, err = memory_supersede_db(
+                    db_path=db_path,
+                    old_id=note_id,
+                    new_id=new_note_id,
+                    rationale=rationale,
+                )
             return str(ok) if ok else str(err)
         elif action == "patch":
             if not rationale:
                 return _err(ErrorCode.INVALID_PARAMS, "rationale is required for patch")
             from save_pipeline import patch_memory
-
-            patch_result = patch_memory(
-                db_path=_resolve_db_path(),
-                note_id=note_id,
-                additions=additions,
-                deletions=deletions,
-                rationale=rationale,
-            )
+            from infra.db_path_flock import db_path_flock
+            db_path = _resolve_db_path()
+            with db_path_flock(db_path):
+                patch_result = patch_memory(
+                    db_path=db_path,
+                    note_id=note_id,
+                    additions=additions,
+                    deletions=deletions,
+                    rationale=rationale,
+                )
             return str(patch_result)
         elif action == "revert_supersede":
             from save_pipeline import revert_supersede
-
-            revert_result = revert_supersede(
-                db_path=_resolve_db_path(),
-                note_id=note_id,
-                target_note_id=title_slug or None,
-                rationale=rationale,
-            )
+            from infra.db_path_flock import db_path_flock
+            db_path = _resolve_db_path()
+            with db_path_flock(db_path):
+                revert_result = revert_supersede(
+                    db_path=db_path,
+                    note_id=note_id,
+                    target_note_id=title_slug or None,
+                    rationale=rationale,
+                )
             return str(revert_result)
         else:
             return _err(

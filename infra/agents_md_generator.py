@@ -286,6 +286,7 @@ def gen_critical_path(data: dict[str, Any]) -> str:
         "│   ├── auto_save.py                  ← async inbox+daemon entry point",
         "│   ├── inbox.py                      ← inbox management + daemon lifecycle",
         "│   ├── daemon.py                     ← long-lived inbox drainer",
+        "│   ├── background_worker.py           ← CQRS write-journal reconciler daemon",
         "│   ├── tool_complete.py              ← hook → save_memory pipeline",
         "│   └── circuit_breaker.py            ← auto-save failure gating",
         f"├── cron/                             ← {data['cron_job_count']}+ scheduled jobs + install_crontab.sh",

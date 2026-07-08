@@ -109,8 +109,10 @@ class TestVerbSaveBehavior:
     def test_save_returns_success(self):
         with mock.patch("save_pipeline.save_memory") as ms:
             ms.return_value = "Successfully saved memory: memory/lessons/test.md"
-            result = memory_save(content="x", category="lessons")
-            assert "Successfully saved" in result
+            with mock.patch("save_pipeline.save_memory_journal") as msj:
+                msj.return_value = "Successfully saved memory: memory/lessons/test.md"
+                result = memory_save(content="x", category="lessons")
+                assert "Successfully saved" in result
 
 
 class TestVerbDeleteBehavior:
@@ -159,10 +161,12 @@ class TestVerbNoteBehavior:
     def test_note_update(self):
         with mock.patch("save_pipeline.save_memory") as ms:
             ms.return_value = "Updated"
-            result = memory_note(
-                note_id="lessons/my-note", action="update", content="new"
-            )
-            assert "Updated" in result
+            with mock.patch("save_pipeline.save_memory_journal") as msj:
+                msj.return_value = "Updated"
+                result = memory_note(
+                    note_id="lessons/my-note", action="update", content="new"
+                )
+                assert "Updated" in result
 
     def test_note_unknown_action_returns_error(self):
         result = memory_note(note_id="x", action="invalid")
@@ -175,8 +179,10 @@ class TestVerbLearnBehavior:
     def test_learn_saves_lesson(self):
         with mock.patch("save_pipeline.save_memory") as ms:
             ms.return_value = "saved"
-            result = memory_learn(content="lesson")
-            assert "saved" in result
+            with mock.patch("save_pipeline.save_memory_journal") as msj:
+                msj.return_value = "saved"
+                result = memory_learn(content="lesson")
+                assert "saved" in result
 
     def test_learn_with_skill(self):
         with (

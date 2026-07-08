@@ -47,7 +47,7 @@ temporal_decay_weight = 0.15         # MEMORY_TEMPORAL_DECAY_WEIGHT
 [features]
 # All features on by default so the agent gets the richest possible
 # context automatically. Set any to false to opt out.
-write_journal = false                   # MEMORY_WRITE_JOURNAL_ENABLED — CQRS write journal (lock-free multi-writer). Requires background_worker daemon. Off by default for safe rollout.
+write_journal = true                    # MEMORY_WRITE_JOURNAL_ENABLED — CQRS write journal (lock-free multi-writer). Requires background_worker daemon.
 multi_agent = true                    # MEMORY_MULTI_AGENT — cross-agent memory sharing via shared_memories table
 summarization = true                  # MEMORY_SUMMARIZATION — auto-summarize long notes via TF-IDF
 user_profile = true                   # MEMORY_USER_PROFILE — personalize recall ranking from access history

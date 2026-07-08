@@ -188,6 +188,10 @@ _TEST_ENV_VARS = {
     "MEMORY_ADAPTIVE_RETENTION": "1",
     "MEMORY_LLM_HYBRID": "0",
     "MEMORY_QUALITY_GATES": "1",
+    # CQRS journal disabled in tests (overrides memory.toml). Most tests
+    # directly read memory.db after writes and expect synchronous behavior.
+    # Dedicated write-journal integration tests opt in via their own config.
+    "MEMORY_WRITE_JOURNAL_ENABLED": "0",
 }
 
 @pytest.fixture(scope="session", autouse=False)

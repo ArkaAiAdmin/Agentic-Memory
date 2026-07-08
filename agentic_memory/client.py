@@ -81,10 +81,10 @@ class MemoryClient:
         if importance < 1 or importance > 5:
             raise ValidationError("Importance must be between 1 and 5")
 
-        from infra._lazy_imports import save_memory
+        from infra._lazy_imports import save_memory_auto
 
         slug = title_slug or _auto_slug(content)
-        note_id = save_memory(
+        note_id = save_memory_auto(
             content=content,
             category=category,
             title_slug=slug,

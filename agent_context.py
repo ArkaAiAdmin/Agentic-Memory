@@ -180,7 +180,7 @@ def agent_save(content: str, category: str, title_slug: str, **kwargs):
 
     Wraps ``save_pipeline.save_memory`` with automatic note ID scoping.
     """
-    from infra._lazy_imports import save_memory, SaveRequest
+    from infra._lazy_imports import save_memory_auto, SaveRequest
 
     scoped_slug = scope_note_id(title_slug)
     _now_iso = kwargs.pop("_now_iso", None)
@@ -189,7 +189,7 @@ def agent_save(content: str, category: str, title_slug: str, **kwargs):
     from save_pipeline import SaveValidationError
 
     try:
-        return save_memory(
+        return save_memory_auto(
             SaveRequest(
                 content=content,
                 category=category,

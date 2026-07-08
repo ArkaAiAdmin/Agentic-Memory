@@ -463,19 +463,21 @@ def memory_delete(note_id: str, hard: bool = False) -> str:
                 ErrorCode.DB_ERROR,
                 f"memory.db not found at {db_path} -- run memory_rebuild first.",
             )
-        if hard:
-            ok = hard_delete_note(db_path, note_id)
+        from infra.db_path_flock import db_path_flock
+        with db_path_flock(db_path):
+            if hard:
+                ok = hard_delete_note(db_path, note_id)
+                return (
+                    f"Hard-deleted {note_id}"
+                    if ok
+                    else _err(ErrorCode.NOT_FOUND, f"{note_id} not found or still active")
+                )
+            ok = soft_delete_note(db_path, note_id, deleted_by="user")
             return (
-                f"Hard-deleted {note_id}"
+                f"Soft-deleted {note_id} (30-day restore window)"
                 if ok
-                else _err(ErrorCode.NOT_FOUND, f"{note_id} not found or still active")
+                else _err(ErrorCode.NOT_FOUND, f"{note_id} not found or already deleted")
             )
-        ok = soft_delete_note(db_path, note_id, deleted_by="user")
-        return (
-            f"Soft-deleted {note_id} (30-day restore window)"
-            if ok
-            else _err(ErrorCode.NOT_FOUND, f"{note_id} not found or already deleted")
-        )
     except ValueError as ve:
         return _err(ErrorCode.INVALID_PARAMS, str(ve))
     except Exception:
@@ -513,12 +515,14 @@ def memory_restore(note_id: str) -> str:
                 ErrorCode.DB_ERROR,
                 f"memory.db not found at {db_path} -- run memory_rebuild first.",
             )
-        ok = restore_note(db_path, note_id)
-        return (
-            f"Restored {note_id}"
-            if ok
-            else _err(ErrorCode.NOT_FOUND, f"{note_id} not found or not deleted")
-        )
+        from infra.db_path_flock import db_path_flock
+        with db_path_flock(db_path):
+            ok = restore_note(db_path, note_id)
+            return (
+                f"Restored {note_id}"
+                if ok
+                else _err(ErrorCode.NOT_FOUND, f"{note_id} not found or not deleted")
+            )
     except ValueError as ve:
         return _err(ErrorCode.INVALID_PARAMS, str(ve))
     except Exception:

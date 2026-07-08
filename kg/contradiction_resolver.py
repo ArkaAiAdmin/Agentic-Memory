@@ -110,7 +110,7 @@ def _apply_resolution(
     conn: Optional[AnyConnection] = None,
 ) -> dict[str, Any]:
     """Execute the chosen resolution against the SQLite database."""
-    from save.pipeline import memory_supersede_db, save_memory
+    from save.pipeline import memory_supersede_db, save_memory_auto
     from infra.db import open_db
 
     rationale = f"auto_resolve ({strategy})"
@@ -150,7 +150,7 @@ def _apply_resolution(
         )
         merged_id = f"merged/{note_a}__{note_b}"
         try:
-            actual_merged_id = save_memory(
+            actual_merged_id = save_memory_auto(
                 content=merged_content,
                 category="merged",
                 title_slug=merged_id.split("/")[-1],

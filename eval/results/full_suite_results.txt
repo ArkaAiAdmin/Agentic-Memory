@@ -1,8 +1,7 @@
-Total: 4247 passed, 1 failed, 55 skipped, 0 xfailed
-Passed files: 244
-Failed/segfault files: 1
+Total: 4248 passed, 0 failed, 55 skipped, 0 xfailed
+Passed files: 245
+Failed/segfault files: 0
 
-  FAILED: test_search_memory_cli.py
 
   PASSED: test_add_flock_to_crons.py
   PASSED: test_adaptive_retention.py
@@ -15,19 +14,19 @@ Failed/segfault files: 1
   PASSED: test_audit_log.py
   PASSED: test_audit_logging.py
   PASSED: test_auto_backlinks.py
-  PASSED: test_adversarial_e2e.py
   PASSED: test_agents_md_generator.py
-  PASSED: test_auto_save_integration.py
+  PASSED: test_adversarial_e2e.py
   PASSED: test_b7_shared_memory_injection.py
-  PASSED: test_auto_save_unit.py
-  PASSED: test_backfill_safety.py
+  PASSED: test_auto_save_integration.py
   PASSED: test_backfill_orphans.py
+  PASSED: test_auto_save_unit.py
   PASSED: test_background_queue.py
-  PASSED: test_background_worker_unit.py
+  PASSED: test_backfill_safety.py
   PASSED: test_backpressure.py
+  PASSED: test_background_worker_unit.py
   PASSED: test_bb1_synthesis.py
-  PASSED: test_bb2_history.py
   PASSED: test_bb3_rrf.py
+  PASSED: test_bb2_history.py
   PASSED: test_belief_behavior.py
   PASSED: test_backfill_all.py
   PASSED: test_cli.py
@@ -37,8 +36,8 @@ Failed/segfault files: 1
   PASSED: test_concurrent.py
   PASSED: test_config_loading.py
   PASSED: test_circuit_breaker_telemetry.py
-  PASSED: test_config_log_resolution.py
   PASSED: test_consolidation.py
+  PASSED: test_config_log_resolution.py
   PASSED: test_context_window.py
   PASSED: test_contextual_enrichment.py
   PASSED: test_contextual_retrieval.py
@@ -62,8 +61,8 @@ Failed/segfault files: 1
   PASSED: test_cron_kg_backfill.py
   PASSED: test_cron_kg_backfill_monitor.py
   PASSED: test_cron_skill_extraction.py
-  PASSED: test_cron_model_lock.py
   PASSED: test_cron_train_forget_model.py
+  PASSED: test_cron_model_lock.py
   PASSED: test_cron_watchdog.py
   PASSED: test_cross_process_safety.py
   PASSED: test_cross_session_learn.py
@@ -82,9 +81,9 @@ Failed/segfault files: 1
   PASSED: test_embedding_recompute.py
   PASSED: test_embedding_search_unit.py
   PASSED: test_e2e_validation.py
-  PASSED: test_embedding_singleton.py
   PASSED: test_entailment_validation.py
   PASSED: test_enqueue_task_behavior.py
+  PASSED: test_embedding_singleton.py
   PASSED: test_event_time_extraction.py
   PASSED: test_fact_extraction.py
   PASSED: test_eval_judge.py
@@ -92,17 +91,17 @@ Failed/segfault files: 1
   PASSED: test_feature_flags.py
   PASSED: test_five_channel.py
   PASSED: test_file_lock.py
-  PASSED: test_forgetting_curve.py
-  PASSED: test_frontmatter.py
   PASSED: test_feature_composition.py
+  PASSED: test_frontmatter.py
+  PASSED: test_forgetting_curve.py
   PASSED: test_fts.py
   PASSED: test_fts_unit.py
   PASSED: test_h21_fixture_smoke.py
   PASSED: test_hybrid_strategy.py
   PASSED: test_graph_behavior.py
   PASSED: test_hook_resilience.py
-  PASSED: test_infra_log.py
   PASSED: test_indexers.py
+  PASSED: test_infra_log.py
   PASSED: test_injection.py
   PASSED: test_install_crontab_lock.py
   PASSED: test_integration_lifecycle.py
@@ -131,8 +130,8 @@ Failed/segfault files: 1
   PASSED: test_llm_summarization.py
   PASSED: test_mcp_instance.py
   PASSED: test_mcp_live.py
-  PASSED: test_mcp_maintenance_dispatch.py
   PASSED: test_mcp_maintenance_ops_unit.py
+  PASSED: test_mcp_maintenance_dispatch.py
   PASSED: test_mcp_skill_ops.py
   PASSED: test_mcp_verbs.py
   PASSED: test_llm_providers.py
@@ -154,13 +153,13 @@ Failed/segfault files: 1
   PASSED: test_memory_common_mutation_killers.py
   PASSED: test_okf_import.py
   PASSED: test_no_silent_search_failures.py
-  PASSED: test_p2_share_and_sync_wireup.py
-  PASSED: test_phase1_debt_fixes.py
   PASSED: test_okf_roundtrip.py
+  PASSED: test_phase1_debt_fixes.py
+  PASSED: test_p2_share_and_sync_wireup.py
   PASSED: test_phase2_3_smoke.py
   PASSED: test_phase2_debt_fixes.py
-  PASSED: test_phase4_debt_fixes.py
   PASSED: test_p0_p1_p2_fixes.py
+  PASSED: test_phase4_debt_fixes.py
   PASSED: test_phase2_instrumentation.py
   PASSED: test_phase9.py
   PASSED: test_pipelines_aj.py
@@ -168,8 +167,8 @@ Failed/segfault files: 1
   PASSED: test_quality_gates.py
   PASSED: test_query_cache.py
   PASSED: test_quirk_fixes_e2e.py
-  PASSED: test_qw3_query_types.py
   PASSED: test_qw2_query_expansion.py
+  PASSED: test_qw3_query_types.py
   PASSED: test_qw4_cross_encoder.py
   PASSED: test_qw5_chunk_indexing.py
   PASSED: test_rate_limit_mcp.py
@@ -204,11 +203,12 @@ Failed/segfault files: 1
   PASSED: test_sdk_p3.py
   PASSED: test_sdk_p1.py
   PASSED: test_search_kg_facts.py
+  PASSED: test_search_memory_cli.py
   PASSED: test_search_mutation_killers.py
   PASSED: test_search_pipeline_unit.py
   PASSED: test_search_integration.py
-  PASSED: test_search_skill_first.py
   PASSED: test_search_pipeline_validation.py
+  PASSED: test_search_skill_first.py
   PASSED: test_security_health_check.py
   PASSED: test_search_temporal_as_of.py
   PASSED: test_security_sync_auth.py
@@ -231,14 +231,14 @@ Failed/segfault files: 1
   PASSED: test_soft_delete.py
   PASSED: test_temporal_facts.py
   PASSED: test_temporal_ssm_v2.py
-  PASSED: test_tier_migration.py
-  PASSED: test_sync_server_tls.py
   PASSED: test_sql_safety.py
+  PASSED: test_sync_server_tls.py
   PASSED: test_tier_migration_assign_tier.py
+  PASSED: test_tier_migration.py
   PASSED: test_tool_routing.py
   PASSED: test_unicode_normalization.py
-  PASSED: test_transformer_opt_in.py
   PASSED: test_uncovered_dedicated.py
+  PASSED: test_transformer_opt_in.py
   PASSED: test_vec_index_search.py
   PASSED: test_vector_store.py
   PASSED: test_vec_index.py
@@ -251,20 +251,3 @@ Failed/segfault files: 1
 
 
 Failure details:
-
-=== test_search_memory_cli.py ===
-ration 006 statement references object created by a later migration (no such table: main.backlinks); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:519 Migration 006 statement references object created by a later migration (no such table: main.shared_memories); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:519 Migration 017 statement references object created by a later migration (no such table: backlinks); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:519 Migration 035 statement references object created by a later migration (no such table: shared_memories); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:519 Migration 035 statement references object created by a later migration (no such table: shared_memories); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:519 Migration 035 statement references object created by a later migration (no such table: main.shared_memories); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:519 Migration 035 statement references object created by a later migration (no such table: main.shared_memories); this is expected.
-WARNING  infra.embedding_search:embedding_search.py:114 For semantic search, run with the venv python: /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/infra/embedding_search.py <query>
-WARNING  search.scoring:scoring.py:395 Failed to parse tags JSON for tag scoring
-WARNING  search.orchestrator:orchestrator.py:1671 _record_last_accessed failed: table memories_fts has no column named category
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: 0 not greater than 0
-=========================== short test summary info ============================
-FAILED eval/test_search_memory_cli.py::TestSearchMemoriesIntegration::test_access_count_incremented
-1 failed, 48 passed in 1.00s
-
