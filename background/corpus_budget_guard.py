@@ -123,25 +123,57 @@ def check_corpus_budget(db_path: Path, conn=None) -> dict:
     }
 
 
+def _is_compaction_already_queued(conn) -> bool:
+    row = conn.execute(
+        "SELECT COUNT(*) FROM task_queue WHERE task_type = 'compact' AND status IN ('pending', 'processing')"
+    ).fetchone()
+    return bool(row and row[0] > 0)
+
+
 def _enqueue_compaction(db_path: Path, conn) -> bool:
-    try:
-        import json as _json
-        payload = _json.dumps({
-            "type": "compact",
-            "reason": "corpus_budget_exceeded",
-            "tokens": _estimate_corpus_tokens(db_path),
-        })
-        conn.execute(
-            "INSERT INTO task_queue (task_type, payload, status, created_at) "
-            "VALUES ('compact', ?, 'pending', ?)",
-            (payload, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())),
-        )
-        conn.commit()
-        logger.info("corpus_budget_guard: enqueued compaction task")
-        return True
-    except Exception as exc:
-        logger.error("corpus_budget_guard: failed to enqueue compaction: %s", exc)
+    if _is_compaction_already_queued(conn):
+        logger.info("corpus_budget_guard: compaction already pending, skipping")
         return False
+
+    # Guard: don't enqueue a compact task if the corpus is already too
+    # large for `handle_fact_consolidation` to process. The O(n²)
+    # contradiction detection would immediately bail, wasting a queue
+    # slot. The daily `cron_compact` (02:30) uses `cron_consolidate.py`,
+    # which handles large corpora with a lightweight SHA256+Jaccard
+    # approach. We rely on that scheduled run for corpora > 2000.
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
+        ).fetchone()
+        corpus_n = int(row[0]) if row else 0
+        if corpus_n > 2000:
+            logger.info(
+                "corpus_budget_guard: corpus %d notes exceeds compact guard "
+                "(2000); skipping enqueue, daily cron_compact will handle it",
+                corpus_n,
+            )
+            return False
+    except Exception as _count_exc:
+        logger.debug("corpus_budget_guard: corpus count check failed: %s", _count_exc)
+
+    try:
+        from infra.config import get_config
+        cfg = get_config()
+        max_qs = getattr(cfg, "task_queue_max_size", 500)
+    except Exception:
+        max_qs = 500
+
+    from background.background_queue import enqueue_task
+    payload = {"type": "compact", "reason": "corpus_budget_exceeded"}
+    result = enqueue_task(conn, "compact", payload=payload, max_queue_size=max_qs)
+    if isinstance(result, dict) and not result.get("queued", True):
+        logger.info(
+            "corpus_budget_guard: compaction enqueue rejected (queue full, pending=%s)",
+            result.get("pending", "?"),
+        )
+        return False
+    logger.info("corpus_budget_guard: enqueued compaction task (id=%s)", result)
+    return True
 
 
 def run_corpus_budget_guard(db_path: Path, conn=None) -> dict:

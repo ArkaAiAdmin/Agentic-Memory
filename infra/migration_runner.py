@@ -523,20 +523,16 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                                 num,
                                 e,
                             )
-                        elif any(
-                            re.search(rf"\b{re.escape(kw)}\b", msg)
-                            for kw in ("no such column",)
-                            if re.search(
-                                r"(duplicate column|duplicate column name|already exists)",
-                                msg,
-                            )
-                        ):
-                            logger.warning(
-                                "Migration %03d ADD COLUMN failed (idempotent, "
-                                "column already exists): %s",
-                                num,
-                                e,
-                            )
+                        # NOTE: the "no such column" guard below is
+                        # UNREACHABLE in practice — SQLite's
+                        # "duplicate column" and "no such column"
+                        # errors are mutually exclusive for the same
+                        # statement. The first branch (line ~498)
+                        # already catches "duplicate column" via the
+                        # "duplicate column name" substring match.
+                        # Kept as no-op to document original intent.
+                        elif False:  # pragma: no cover
+                            pass
                         else:
                             logger.error(
                                 "Migration %03d statement failed (non-idempotent): %s",

@@ -86,11 +86,19 @@ def _sp_lazy(name: str, default: object = None) -> object:
 
 
 def _get_rerank_half_life_days() -> float:
-    """Resolve rerank_half_life_days from config; falls back to 180.0."""
+    """Resolve rerank_half_life_days from config; falls back to 180.0.
+
+    Tries the legacy flat name first (backwards-compat shim on MemoryConfig),
+    then falls back to the nested ``cfg.rerank.half_life_days`` path.
+    """
     try:
         from infra._lazy_imports import get_config
 
-        return float(get_config().rerank_half_life_days)
+        cfg = get_config()
+        try:
+            return float(cfg.rerank_half_life_days)
+        except AttributeError:
+            return float(cfg.rerank.half_life_days)
     except Exception as e:
         logger.warning("Unhandled exception in _get_rerank_half_life_days: %s", e)
         return 180.0

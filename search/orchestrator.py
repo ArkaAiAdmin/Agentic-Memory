@@ -1,5 +1,30 @@
 from __future__ import annotations
 
+"""12-phase hybrid search orchestrator for agentic-memory.
+
+Pipeline phases (executed in order):
+  Phase 0  — Input normalization & query type detection
+  Phase 1  — FTS5 BM25 retrieval
+  Phase 2  — Vector (usearch) retrieval
+  Phase 3  — ColBERT late-interaction retrieval
+  Phase 4  — Reciprocal Rank Fusion (RRF) merge
+  Phase 5  — Cross-encoder reranking (optional)
+  Phase 6  — Temporal decay application
+  Phase 7  — Neural forget curve adjustment
+  Phase 8  — KG concept/centrality boost
+  Phase 9  — Final score computation & ranking
+  Phase 10 — Result envelope construction
+  Phase 11 — Error counter & latency logging
+
+Error handling: each phase is individually isolated. On failure, the
+phase increments its error counter (via ``infra.error_counter``) and
+the pipeline falls through to the next phase with degraded results.
+No single phase failure kills the search.
+
+Thread safety: uses module-level ``_db_columns_cache`` (RLock) and
+``_phase_latencies`` (RLock) for cross-call shared state.
+"""
+
 import json
 import logging
 import math
@@ -60,6 +85,139 @@ from search.synthesis import (
     _bb1_synthesize,
 )
 
+# Docstrings for imported search functions (defined in search.query_parser /
+# search.scoring but exposed here as part of the orchestrator's public surface).
+_parse_search_query.__doc__ = (
+    """Normalize and tokenize a raw search query.
+
+    Args:
+        query: Raw natural-language query string from the caller.
+        db_path: Path to the SQLite DB (used for synonym expansion).
+
+    Returns:
+        A 4-tuple ``(normalized_query, fts_query, bare_text,
+        graph_rag_terms)`` where ``normalized_query`` is the
+        Unicode-normalized lowercase form, ``fts_query`` is
+        FTS5-safe escaped query, ``bare_text`` is the raw extracted
+        text, and ``graph_rag_terms`` are tokens for KG expansion.
+    """
+)
+_reciprocal_rank_fusion.__doc__ = (
+    """Fuse multiple ranked result lists via Reciprocal Rank Fusion (RRF).
+
+    Args:
+        ranked_lists: Iterable of lists, each a ranked sequence of
+            doc_ids (or (doc_id, score) tuples) ordered by
+            descending relevance.
+        k: RRF dampening constant (default 60).
+        weights: Optional per-list weight multipliers.  Must be the
+            same length as ``ranked_lists``.  ``None`` gives equal
+            weight to all lists.
+
+    Returns:
+        A ``dict`` mapping ``doc_id`` → float RRF score.  Documents
+        appearing in multiple lists receive summed weighted scores.
+    """
+)
+_apply_temporal_decay.__doc__ = (
+    """Apply exponential temporal decay to scored search results.
+
+    Multiplies each result's ``final_score`` by a decay factor based
+    on the note's age, boosting recent notes and gently penalising
+    old ones without overriding relevance-based ranking.
+
+    Args:
+        scored_results: List of result tuples with ``final_score`` at
+            index 6 and ``created`` at index 4.
+        decay_weight: Blend weight for the decay term (default 0.15).
+        as_of: Optional epoch time anchor for time-travel queries.
+
+    Returns:
+        A new list of result tuples with updated ``final_score``.
+        Returns ``scored_results`` unchanged when temporal decay is
+        disabled or ``decay_weight <= 0``.
+    """
+)
+_apply_neural_forget_curve.__doc__ = (
+    """Apply surprise-based neural-forget re-ranking to scored results.
+
+    Penalises notes whose last-access query has low Jaccard overlap
+    with the current query, reflecting the intuition that notes last
+    reviewed for dissimilar queries decay faster (Ebbinghaus
+    surprise term).
+
+    Args:
+        scored_results: List of result tuples with ``final_score`` at
+            index 6.
+        query: Current natural-language search query string.
+
+    Returns:
+        A new list of result tuples with adjusted ``final_score``.
+        Returns ``scored_results`` unchanged on any failure
+        (best-effort, never propagates exceptions).
+    """
+)
+_apply_concept_boost.__doc__ = (
+    """Boost results whose entities overlap with concept-note entities.
+
+    Reads ``category='concepts'`` memories to compile entity sets, then
+    multiplies ``final_score`` by up to 1.5× for matching results.
+    Results that ARE concept notes receive a stronger boost.
+
+    Args:
+        scored_results: List of result tuples with ``final_score`` at
+            index 6.
+        query: Current natural-language search query string.
+        db_path: Path to the SQLite DB (used for concept lookup).
+
+    Returns:
+        A new list of result tuples with updated ``final_score``.
+        Best-effort: returns ``scored_results`` unchanged on failure.
+    """
+)
+_apply_centrality_boost.__doc__ = (
+    """Boost results whose linked entities have high graph centrality.
+
+    Reads ``kg_entities.centrality`` scores and multiplies
+    ``final_score`` by up to 1.25× proportional to average entity
+    centrality for each result's linked entities.
+
+    Args:
+        scored_results: List of result tuples with ``final_score`` at
+            index 6.
+        db_path: Path to the SQLite DB (used for centrality lookup).
+
+    Returns:
+        A new list of result tuples with updated ``final_score``.
+        Returns ``scored_results`` unchanged when
+        ``MEMORY_GRAPH_CENTRALITY_BOOST`` is disabled.
+        Best-effort: never propagates exceptions.
+    """
+)
+_compute_final_score.__doc__ = (
+    """Compute the weighted final score for a single search result.
+
+    Combines five retrieval channels into a single float:
+        bm25 (0.45), fitness (0.25), importance (0.15),
+        pinned (0.10), tag_match (0.05).
+
+    Weights are loaded from config ``rerank_weights`` JSON if set,
+    otherwise the defaults are used.  Temporal decay / forgetting
+    curve is applied by callers AFTER this step.
+
+    Args:
+        ctx: A ``ScoreContext`` named-tuple carrying the per-result
+            attributes (``rank``, ``fitness``, ``importance``,
+            ``pinned``, ``created``, ``tags_json``, ``query``,
+            ``boost_pinned``, ``recency_weight``, ``weights``,
+            ``now_ts``).
+
+    Returns:
+        A float in [0, ~1.5] representing the combined relevance
+        score for this result.
+    """
+)
+
 logger = logging.getLogger(__name__)
 
 _db_columns_cache: dict = {}
@@ -71,7 +229,21 @@ _phase_latencies_lock = threading.Lock()
 
 
 def _get_memories_columns(db: AnyConnection) -> set[str]:
-    """Cache memories table columns by DB path to save PRAGMA queries."""
+    """Cache memories table columns by DB path to save repeated PRAGMA queries.
+
+    Thread-safe: protected by ``_db_columns_cache_lock``.  Returns a
+    ``set`` of column name strings for the ``memories`` table,
+    populating the module-level cache on first call per DB path.
+
+    Args:
+        db: Active ``sqlite3.Connection`` (or AnyConnection wrapper)
+            used to execute ``PRAGMA database_list`` and
+            ``PRAGMA table_info(memories)``.
+
+    Returns:
+        A ``set[str]`` of column names in the ``memories`` table.
+        Returns an empty ``set`` on any ``sqlite3.Error``.
+    """
     try:
         db_path_row = db.execute("PRAGMA database_list").fetchone()
         db_path = db_path_row[2] if db_path_row is not None and len(db_path_row) > 2 else ""
@@ -339,13 +511,11 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: 
             logger.warning("_skill_first_lookup: hit_count update failed: %s", e)
 
         # Format results
-
-        # Format results
         results = []
         for row in rows:
             results.append(
                 {
-                    "id": row[1],
+                    "id": row[0],
                     "name": row[1],
                     "source_memory_id": row[2],
                     "topic": row[3],
@@ -1709,6 +1879,21 @@ def _build_search_result_envelope(
 
     The synthesis step is best-effort: a failure to synthesize must
     never block the user from getting the underlying results.
+
+    Args:
+        result_items: List of public-API result dicts (one per row).
+        output: List of human-readable output lines (one per result).
+        results_to_display: Raw DB row tuples for result formatting.
+        synthesize: If True, call ``_bb1_synthesize`` and attach the
+            ``synthesis`` key to the envelope.
+        query: The original search query string (used for synthesis).
+        max_synthesis_sentences: Maximum sentences in synthesis output.
+        related_facts: Optional list of KG fact dicts to attach.
+
+    Returns:
+        A public-API result dict with ``results``, ``count``,
+        ``output``, ``raw_results``, ``query_id``, ``agent_scope``,
+        and optionally ``synthesis`` and ``related_facts``.
     """
     # T10: build the related-facts section BEFORE joining so the
     # regeneration passes can't strip it.
@@ -1874,7 +2059,6 @@ def _record_search_telemetry(
     except Exception as e:
         _phase_inc("search.record_search_telemetry", e)
         logger.warning("record_search_telemetry failed: %s", e)
-        pass
     try:
         from adaptive_retention import record_access
 
@@ -2033,6 +2217,56 @@ def search_memories(
     tags: list[str] | None = None,
     shared_with_me: bool = False,
 ) -> dict:
+    """Main entry point: 12-phase hybrid search returning ranked memories.
+
+    Orchestrates the full retrieval pipeline: query parsing, FTS5 BM25,
+    vector search, ColBERT late-interaction, RRF fusion, cross-encoder
+    reranking, temporal decay, neural forget curve, KG concept/centrality
+    boost, quality gates, user profiling, and envelope construction.
+    Each phase is individually isolated — on failure it increments its
+    error counter and the pipeline falls through with degraded results.
+
+    Args:
+        db_path: Path to the SQLite memory database.
+        query: Natural-language search query.
+        limit: Maximum number of results to return.
+        include_global: Include memories from all namespaces (not just
+            the calling agent's).
+        rerank: Enable cross-encoder and late-interaction reranking.
+        boost_pinned: Scale pinned notes higher in final ranking.
+        recency_weight: Weight for the recency temporal factor.
+        include_invalid: Include superseded/invalidated memories.
+        hybrid: Enable semantic vector fusion with FTS5.
+        synthesize: Generate a synthesis summary alongside results.
+        max_synthesis_sentences: Max sentences in synthesis summary.
+        use_history: Include session-history context.
+        safety_wiring: Run injection-detection safety demoting pass.
+        deep_rerank: Use deeper (slower) cross-encoder model.
+        skill_first: Return skill matches before memory results.
+        include_facts: Include KG facts in the result envelope.
+        fact_limit: Max KG facts to return.
+        tenant_id: Tenant namespace for multi-tenant isolation.
+        light: Skip expensive rerank/personalization passes.
+        as_of: Time-travel anchor (epoch seconds) for temporal queries.
+        belief_status: Filter KG facts by belief status.
+        epistemic_source: Filter KG facts by epistemic source.
+        fact_type: Filter KG facts by type.
+        memory_source: Filter by memory origin (agent/auto_save/import).
+        category: Filter by category slug.
+        tags: Filter by tag list (JSON exact-match via LIKE).
+        shared_with_me: Append memories shared with the current agent.
+
+    Returns:
+        A public-API result dict with keys:
+          - results: list of result-item dicts
+          - count: int (number of results)
+          - output: human-readable result string
+          - query_id: UUID for CTR feedback correlation
+          - agent_scope: current agent namespace
+          - related_facts: (optional) KG facts matching the query
+          - phase_errors: (optional) per-phase error counters
+          - phase_latencies: (optional) per-phase latency in ms
+    """
     if not db_path.exists():
         return {
             "results": [],

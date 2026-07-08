@@ -79,16 +79,77 @@ JOURNAL_MAX_RETRIES = int(os.environ.get("MEMORY_JOURNAL_MAX_RETRIES", "3"))
 _local = threading.local()
 
 
+# Maximum time we wait for SUCCESSIVE busy_timeout errors before dropping
+# a thread-local connection. The bug we hit before this fix: when an
+# exception left a thread-local connection's transaction open (e.g. the
+# reconciler thread's ``UPDATE`` threw and never committed), every
+# subsequent ``BEGIN IMMEDIATE`` on the same conn failed with
+# "cannot start a transaction within a transaction". All ``save_memory_journal``
+# calls on OTHER threads then blocked on the held RESERVED lock for 30 s
+# before failing with SQLITE_BUSY. ``_get_journal_conn`` now detects and
+# recovers stale transactions before returning the cached connection.
+_STALE_CONN_MAX_FAILURES = 3
+
+
+def _is_stale_transaction(conn: sqlite3.Connection) -> bool:
+    """True if the connection has an active transaction that needs clearing.
+
+    Uses sqlite3.Connection.in_transaction (the documented public API) —
+    more reliable than probing via ``BEGIN IMMEDIATE`` which either
+    raises "cannot start a transaction within a transaction" (silent)
+    or commits unwanted state.
+    """
+    try:
+        return bool(getattr(conn, "in_transaction", False))
+    except Exception:
+        return False
+
+
+def _clear_stale_transaction(conn: sqlite3.Connection) -> None:
+    """Rollback any half-open transaction on ``conn`` so it can be reused.
+
+    Best-effort: any exception is swallowed because the purpose of this
+    helper is to DISARM a broken state, not to assert correctness.
+    """
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+
+
 def _get_journal_conn(journal_path: Path, timeout: float = 10.0) -> sqlite3.Connection:
-    """Get or create a thread-local connection to the journal DB."""
+    """Get or create a thread-local connection to the journal DB.
+
+    Connection reuse guard (2026-07-08): if a previously-cached
+    connection has a half-open transaction (e.g. from a prior
+    exception between ``BEGIN IMMEDIATE`` and ``conn.commit()``),
+    we rollback before returning — otherwise subsequent calls on
+    the same thread see "cannot start a transaction within a
+    transaction" and the held RESERVED lock blocks every other
+    thread's writes for ``busy_timeout`` seconds.
+    """
     key = str(journal_path)
     if not hasattr(_local, "conns"):
         _local.conns = {}
     conn: sqlite3.Connection | None = _local.conns.get(key)
-    if conn is None:
+    if conn is not None and _is_stale_transaction(conn):
+        # 2026-07-08: stale transaction detected. Roll back before returning
+        # so subsequent BEGIN IMMEDIATE on the same cached conn doesn't
+        # raise "transaction within a transaction" and silently leave a
+        # RESERVED lock held for busy_timeout seconds.
+        _clear_stale_transaction(conn)
+    if conn is None or _is_stale_transaction(conn):
+        # Either no cached conn, or still in transaction after rollback
+        # (rollback itself failed) → rebuild the conn entirely.
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            _local.conns.pop(key, None)
         new_conn: sqlite3.Connection = sqlite3.connect(str(journal_path), timeout=timeout)
         new_conn.execute("PRAGMA journal_mode=WAL")
-        new_conn.execute("PRAGMA busy_timeout=5000")
+        new_conn.execute("PRAGMA busy_timeout=30000")
         new_conn.execute("PRAGMA synchronous=NORMAL")
         new_conn.row_factory = sqlite3.Row
         _local.conns[key] = new_conn
@@ -585,20 +646,34 @@ def reset_stuck_processing(
     if max_age_seconds is None:
         max_age_seconds = STUCK_PROCESSING_MAX_AGE_SECONDS
     conn = _get_journal_conn(journal_path)
-    reset = conn.execute(
-        "UPDATE write_journal SET status='pending', error=NULL, started_at=NULL "
-        "WHERE status='processing' "
-        "AND (started_at IS NULL "
-        "OR datetime(started_at, ?) <= datetime('now'))",
-        (f"+{max_age_seconds} seconds",),
-    ).rowcount
-    if reset:
-        conn.commit()
-        logger.info(
-            "write_journal: reset %d stuck processing entries (age>=%ds)",
-            reset,
-            max_age_seconds,
-        )
+    try:
+        reset = conn.execute(
+            "UPDATE write_journal SET status='pending', error=NULL, started_at=NULL "
+            "WHERE status='processing' "
+            "AND (started_at IS NULL "
+            "OR datetime(started_at, ?) <= datetime('now'))",
+            (f"+{max_age_seconds} seconds",),
+        ).rowcount
+        if reset:
+            logger.info(
+                "write_journal: reset %d stuck processing entries (age>=%ds)",
+                reset,
+                max_age_seconds,
+            )
+    finally:
+        # 2026-07-08: unconditionally close any open transaction on this
+        # thread-local connection. Without this, a previous failure could
+        # leave BEGIN IMMEDIATE active and block every other thread's
+        # save_memory_journal call for busy_timeout seconds.
+        # Always COMMIT if we have a transaction (durable; safer than
+        # rolling back UPDATE work that's already visible to readers).
+        try:
+            if _is_stale_transaction(conn):
+                conn.commit()
+            else:
+                conn.rollback()
+        except Exception:
+            logger.warning("write_journal: commit/rollback in reset_stuck_processing failed")
     return reset
 
 
@@ -608,15 +683,24 @@ def purge_applied(journal_path: Path, max_age_days: int = 7) -> int:
     Prevents unbounded journal growth.  Run via cron.
     """
     conn = _get_journal_conn(journal_path)
-    purged = conn.execute(
-        "DELETE FROM write_journal WHERE status='applied' "
-        "AND processed_at IS NOT NULL "
-        "AND datetime(processed_at, ?) <= datetime('now')",
-        (f"+{max_age_days} days",),
-    ).rowcount
-    if purged:
-        conn.commit()
-        logger.info("write_journal: purged %d applied entries older than %d days", purged, max_age_days)
+    try:
+        purged = conn.execute(
+            "DELETE FROM write_journal WHERE status='applied' "
+            "AND processed_at IS NOT NULL "
+            "AND datetime(processed_at, ?) <= datetime('now')",
+            (f"+{max_age_days} days",),
+        ).rowcount
+        if purged:
+            logger.info("write_journal: purged %d applied entries older than %d days", purged, max_age_days)
+    finally:
+        # 2026-07-08: same defensive cleanup as reset_stuck_processing.
+        try:
+            if _is_stale_transaction(conn):
+                conn.commit()
+            else:
+                conn.rollback()
+        except Exception:
+            logger.warning("write_journal: commit/rollback in purge_applied failed")
     return purged
 
 

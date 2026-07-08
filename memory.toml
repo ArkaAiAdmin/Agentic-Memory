@@ -76,8 +76,8 @@ ner_spacy_enabled = false             # MEMORY_NER_SPACY — optional spaCy NER 
 [cache]
 fts5_cache = true                     # MEMORY_FTS5_CACHE — LRU result cache for search
 fts5_cache_ttl = 30                   # MEMORY_FTS5_CACHE_TTL — seconds
-vec_cache_max = 20                    # MEMORY_VEC_CACHE_MAX — LRU size for vector search cache
-vec_cache_ttl_s = 30.0                # MEMORY_VEC_CACHE_TTL_S — vector search cache TTL (seconds)
+vec_cache_max = 500                    # MEMORY_VEC_CACHE_MAX — LRU size for vector search cache
+vec_cache_ttl_s = 300.0                # MEMORY_VEC_CACHE_TTL_S — vector search cache TTL (seconds)
 
 [quality_gates]
 min_content_length = 20               # MEMORY_QUALITY_MIN_CONTENT_LENGTH — min content chars for a note to pass gates
@@ -143,7 +143,7 @@ rank_proxy_scale = 30.0              # MEMORY_HYBRID_RANK_PROXY_SCALE
 # open the circuit for `circuit_breaker_seconds` (skips saves).
 max_retries = 3                      # MEMORY_AUTO_SAVE_MAX_RETRIES
 backoff_base_seconds = 1.0           # MEMORY_AUTO_SAVE_BACKOFF_BASE_SECONDS
-backoff_cap_seconds = 30.0           # MEMORY_AUTO_SAVE_BACKOFF_CAP_SECONDS
+backoff_cap_seconds = 300.0           # MEMORY_AUTO_SAVE_BACKOFF_CAP_SECONDS
 circuit_breaker_seconds = 300.0      # MEMORY_AUTO_SAVE_CIRCUIT_BREAKER_SECONDS
 failure_window_seconds = 60.0        # MEMORY_AUTO_SAVE_FAILURE_WINDOW_SECONDS
 
@@ -155,11 +155,11 @@ allowlist = "memory_save,memory_supersede,memory_delete,todowrite,task,question,
 denylist = "filesystem_list_allowed_directories,filesystem_list_directory,filesystem_directory_tree,filesystem_read_multiple_files,filesystem_search_files,filesystem_get_file_info,filesystem_list_directory_with_sizes,memory_session_start,memory_user_profile,memory_recall_context,memory_profile_access,memory_record_ctr_feedback,memory_check_concept_drift,todo,process,read_terminal"
 
 # Async/batch auto-save daemon settings
-batch_interval_seconds = 0.5         # AUTO_SAVE_BATCH_INTERVAL
+batch_interval_seconds = 5.0           # AUTO_SAVE_BATCH_INTERVAL
 batch_size = 50                       # AUTO_SAVE_BATCH_SIZE
-daemon_idle_seconds = 3600           # AUTO_SAVE_DAEMON_IDLE_S
+daemon_idle_seconds = 300             # AUTO_SAVE_DAEMON_IDLE_S
 async_enabled = true                 # MEMORY_ASYNC_AUTOSAVE (1=enabled, 0=disabled)
-inbox_max_bytes = 104857600          # AUTO_SAVE_INBOX_MAX_BYTES (100 MB)
+inbox_max_bytes = 500000              # AUTO_SAVE_INBOX_MAX_BYTES (500 KB)
 keyword_routing = true               # MEMORY_AUTO_SAVE_KEYWORD_ROUTING — enable keyword heuristic to route high-signal tool invocations to category=lessons (with auto-capture+draft tags). Set to false to disable routing; all saves go to sessions/.
 always_sessions = false              # MEMORY_AUTO_SAVE_ALWAYS_SESSIONS — override keyword heuristic: force every auto-save into category=sessions. Set to true to bypass routing regardless of keyword_routing.
 

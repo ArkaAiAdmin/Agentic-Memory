@@ -8,6 +8,8 @@ lock contention and database locks in concurrent multithreaded workflows.
 from __future__ import annotations
 
 import logging
+import os
+import time
 
 import concurrent.futures
 import queue
@@ -129,6 +131,15 @@ class ProxyConnection:
         self._resp_queue = resp_queue
         self.row_factory: Optional[Any] = None
         self._closed = False
+        # 2026-07-08: bounded response wait. If the write-queue session is
+        # force-closed (idle/max-session timeout) or the worker thread is
+        # stuck, a caller must not block forever waiting for a response
+        # that will never arrive. A timeout surfaces a clean error so the
+        # caller's finally-block close() can run and the next save can
+        # proceed.
+        self._resp_timeout = float(
+            os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "60.0")
+        )
 
     def cursor(self) -> ProxyCursorObject:
         return ProxyCursorObject(self)
@@ -137,6 +148,20 @@ class ProxyConnection:
     def in_transaction(self) -> bool:
         return True
 
+    def _wait_response(self):
+        """Wait for a response from the write-queue session, bounded.
+
+        Raises ``sqlite3.OperationalError`` on timeout so the caller's
+        finally-block ``close()`` runs instead of hanging indefinitely.
+        """
+        try:
+            return self._resp_queue.get(timeout=self._resp_timeout)
+        except queue.Empty:
+            raise sqlite3.OperationalError(
+                f"write queue session response timeout after "
+                f"{self._resp_timeout:.0f}s (session likely force-closed)"
+            )
+
     def execute(self, sql: str, params: Any = ()) -> ProxyCursor:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
@@ -144,7 +169,7 @@ class ProxyConnection:
             # The write queue session is already in a transaction (started with BEGIN IMMEDIATE)
             return ProxyCursor(None, [], None, None)
         self._cmd_queue.put(("execute", (sql, params)))
-        status, res = self._resp_queue.get()
+        status, res = self._wait_response()
         if status == "error":
             raise res
         lastrowid, rowcount, fetchall_data, description = res
@@ -164,7 +189,7 @@ class ProxyConnection:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
         self._cmd_queue.put(("executemany", (sql, list(params_seq))))
-        status, res = self._resp_queue.get()
+        status, res = self._wait_response()
         if status == "error":
             raise res
         lastrowid, rowcount, _, description = res
@@ -174,7 +199,7 @@ class ProxyConnection:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
         self._cmd_queue.put(("executescript", sql_script))
-        status, res = self._resp_queue.get()
+        status, res = self._wait_response()
         if status == "error":
             raise res
         return self
@@ -183,7 +208,7 @@ class ProxyConnection:
         if self._closed:
             return
         self._cmd_queue.put(("commit", None))
-        status, res = self._resp_queue.get()
+        status, res = self._wait_response()
         if status == "error":
             raise res
 
@@ -191,7 +216,7 @@ class ProxyConnection:
         if self._closed:
             return
         self._cmd_queue.put(("rollback", None))
-        status, res = self._resp_queue.get()
+        status, res = self._wait_response()
         if status == "error":
             raise res
 
@@ -330,16 +355,40 @@ class SQLiteWriteQueue:
                         elif task_type == "session":
                             cmd_queue, resp_queue = payload
                             conn.execute("BEGIN IMMEDIATE")
+                            # 2026-07-08: bound the session lifetime so a
+                            # caller that forgets to send ``close`` (or dies
+                            # mid-session) cannot hold the RESERVED write
+                            # lock on memory.db for the previous 3600s idle
+                            # window. On idle/max-session timeout we rollback
+                            # (releasing the lock) and break the loop.
+                            _idle_s = float(os.environ.get("MEMORY_WRITE_QUEUE_IDLE_S", "30.0"))
+                            _max_s = float(os.environ.get("MEMORY_WRITE_QUEUE_MAX_S", "300.0"))
+                            _session_start = time.monotonic()
                             try:
                                 future.set_result(True)
                                 while True:
-                                    try:
-                                        cmd = cmd_queue.get(timeout=3600.0)
-                                    except queue.Empty:
+                                    _elapsed = time.monotonic() - _session_start
+                                    if _elapsed > _max_s:
+                                        logger.warning(
+                                            "_run_loop: session exceeded max duration %.0fs; force-rolling-back",
+                                            _max_s,
+                                        )
                                         try:
                                             conn.rollback()
-                                        except Exception as e:
-                                            logger.warning("_run_loop failed: %s", e)
+                                        except Exception as _rb_e:
+                                            logger.warning("_run_loop rollback failed: %s", _rb_e)
+                                        break
+                                    try:
+                                        cmd = cmd_queue.get(timeout=_idle_s)
+                                    except queue.Empty:
+                                        logger.warning(
+                                            "_run_loop: session idle >%.0fs; force-rolling-back to release lock",
+                                            _idle_s,
+                                        )
+                                        try:
+                                            conn.rollback()
+                                        except Exception as _rb_e:
+                                            logger.warning("_run_loop rollback failed: %s", _rb_e)
                                         break
                                     if cmd is None:
                                         conn.commit()

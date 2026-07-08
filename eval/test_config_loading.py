@@ -49,129 +49,108 @@ def _write_toml(tmp_path: Path, content: str) -> Path:
 
 
 class TestMemoryConfigDefaults:
-    """Verify MemoryConfig has all 22 fields with correct defaults."""
+    """Verify MemoryConfig has all 21 nested config fields with correct defaults."""
 
     def test_field_count(self):
-        """MemoryConfig should have the expected number of fields."""
+        """MemoryConfig should have the expected number of top-level fields."""
         import dataclasses
 
         fields = dataclasses.fields(MemoryConfig)
-        # Updated 2026-06-19: P3-32 added 10 fields, then 2026-06-19
-        # backoff/circuit-breaker fix added 5 more (auto_save_*), then
-        # 2026-06-19 deep-rerank hang fix added 1 (deep_rerank_timeout).
-        # Was 39 (pre-P3-32) → 58 (post-P3-32) → 63 (post-backoff) → 64 (post-deep-rerank-timeout).
-        # 2026-06-19 P3.1+P3.3 added 3 (llm_extraction_max_tokens,
-        # llm_extraction_hybrid_threshold, llm_extraction_force) → 67.
-        # 2026-06-19 concept_drift_threshold added → 68.
-        # 2026-06-23 feature_temporal_kg added → 69.
-        # 2026-06-23 auto-save settings and other optimizations added → 78.
-        # 2026-06-23 auto_save_allowlist and auto_save_denylist added to memory.toml → 80.
-        # 2026-06-25 further field additions brought total to 103.
-        # 2026-06-25 idle_unload_seconds added to MemoryConfig → 104.
-        # 2026-07-01 legacy_note_crdt + vec_rebuild_adaptive → 107.
-        # 2026-07-01 config merge: exploration_mode, neural_forget_mode/weights,
-        # temporal_ssm_enabled/weights, session_decision_llm, rate_limits → 114.
-        # 2026-07-02 Sprint 3: feature_temporal_kg_llm + temporal_kg_llm_tier → 116.
-        # 2026-07-03 sync server fields (6: sync_enable_server/host/port/peers/interval_minutes,
-        # auto_save_health_check_minutes) → 122.
-        # 2026-07-05 P2: db_pool_size, search_parallel_enabled, ner_spacy_enabled → 125.
-        # 2026-07-05 Packaging API: api_enable_server, api_listen_host, api_listen_port, api_token → 129.
-        # 2026-07-05 Recall remediation: auto_save_keyword_routing, auto_save_always_sessions,
-        # recall_max_tokens, recall_tier1_hot_days, recall_tier_fallback_threshold → 134.
-        # 2026-07 Security health-check fixes: llm_allow_remote_code, api_insecure_loopback,
-        # dashboard_address → 138.
-        # 2026-07-07 kg-reasoning + namespace-isolation adds fields → 141.
-        assert len(fields) == 141, (
-            f"Expected 141 fields, got {len(fields)}: {[f.name for f in fields]}"
+        # Post-refactor: 21 nested config dataclass fields (general, search,
+        # kg, graph_cache, write, embedding, auto_save, sync, api,
+        # quality_gates, sharing, cache, llm, hybrid, rerank, features,
+        # user_profile, recall, semantic_kg, rate_limits, health_check).
+        assert len(fields) == 21, (
+            f"Expected 21 nested config fields, got {len(fields)}: {[f.name for f in fields]}"
         )
 
     def test_default_db_path(self):
         cfg = MemoryConfig()
-        assert cfg.db_path == "memory/memory.db"
+        assert cfg.general.db_path == "memory/memory.db"
 
     def test_default_wal_checkpoint(self):
         cfg = MemoryConfig()
-        assert cfg.wal_checkpoint_startup is True
+        assert cfg.general.wal_checkpoint_startup is True
 
     def test_default_unindexed_safety_net(self):
         cfg = MemoryConfig()
-        assert cfg.unindexed_safety_net_limit == 1000
+        assert cfg.general.unindexed_safety_net_limit == 1000
 
     def test_default_temporal_half_life(self):
         cfg = MemoryConfig()
-        assert cfg.temporal_half_life == 180.0
+        assert cfg.search.temporal_half_life == 180.0
 
     def test_default_temporal_decay_mode(self):
         cfg = MemoryConfig()
-        assert cfg.temporal_decay_mode == "exponential"
+        assert cfg.search.temporal_decay_mode == "exponential"
 
     def test_default_late_interaction(self):
         cfg = MemoryConfig()
-        assert cfg.late_interaction is True
+        assert cfg.search.late_interaction is True
 
     def test_default_knowledge_graph(self):
         cfg = MemoryConfig()
-        assert cfg.knowledge_graph is True
+        assert cfg.search.knowledge_graph is True
 
     def test_default_graph_rag_hops(self):
         cfg = MemoryConfig()
-        assert cfg.graph_rag_hops == 3
+        assert cfg.search.graph_rag_hops == 3
 
     def test_default_graph_rag_expansions(self):
         cfg = MemoryConfig()
-        assert cfg.graph_rag_expansions == 5
+        assert cfg.search.graph_rag_expansions == 5
 
     def test_default_query_cache(self):
         cfg = MemoryConfig()
-        assert cfg.query_cache is True
+        assert cfg.search.query_cache is True
 
     def test_default_reranker_disabled(self):
         cfg = MemoryConfig()
-        assert cfg.reranker_disabled is False
+        assert cfg.search.reranker_disabled is False
 
     def test_default_contextual_retrieval(self):
         cfg = MemoryConfig()
-        assert cfg.contextual_retrieval is True
+        assert cfg.search.contextual_retrieval is True
 
     def test_default_multi_agent(self):
         cfg = MemoryConfig()
-        assert cfg.multi_agent is True
+        assert cfg.features.multi_agent is True
 
     def test_default_summarization(self):
         cfg = MemoryConfig()
-        assert cfg.summarization is True
+        assert cfg.features.summarization is True
 
     def test_default_user_profile(self):
         cfg = MemoryConfig()
-        assert cfg.user_profile is True
+        assert cfg.features.user_profile is True
 
     def test_default_self_directed(self):
         cfg = MemoryConfig()
-        assert cfg.self_directed is True
+        assert cfg.features.self_directed is True
 
     def test_default_adaptive_retention(self):
         cfg = MemoryConfig()
-        assert cfg.adaptive_retention is True
+        assert cfg.features.adaptive_retention is True
 
     def test_default_consolidation(self):
         cfg = MemoryConfig()
-        assert cfg.consolidation is True
+        assert cfg.features.consolidation is True
 
     def test_default_quality_gates(self):
         cfg = MemoryConfig()
-        assert cfg.quality_gates is True
+        assert cfg.features.quality_gates is True
 
     def test_default_fts5_cache(self):
         cfg = MemoryConfig()
-        assert cfg.fts5_cache is True
+        assert cfg.cache.fts5_cache is True
 
     def test_default_fts5_cache_ttl(self):
         cfg = MemoryConfig()
-        assert cfg.fts5_cache_ttl == 30
+        assert cfg.cache.fts5_cache_ttl == 30
 
     def test_default_shared_pool_ttl_days(self):
         cfg = MemoryConfig()
-        assert cfg.shared_pool_ttl_days == 30
+        assert cfg.sharing.shared_pool_ttl_days == 30
 
 
 class TestReadToml:
@@ -557,7 +536,7 @@ class TestTomlIntegration:
             # Force config reload
             cfg = _config_mod.get_config()
             assert cfg.late_interaction is True
-            assert cfg.quality_gates is True
+            assert cfg.features.quality_gates is True
 
             # Now import and verify dynamic properties
             import search_pipeline
@@ -641,6 +620,118 @@ class TestTomlIntegration:
             setattr(_config_mod, "_TOML_PATH", original_toml)
             setattr(_config_mod, "_instance", None)
             os.environ.update(saved_env)
+
+
+class TestNestedConfigBackwardsCompat:
+    """Legacy flat-field access via __getattr__ still works."""
+
+    def test_flat_access_equals_nested(self):
+        """cfg.temporal_half_life must equal cfg.search.temporal_half_life."""
+        cfg = MemoryConfig()
+        assert cfg.temporal_half_life == cfg.search.temporal_half_life
+        assert cfg.temporal_half_life == 180.0
+
+    def test_backwards_compat_all_common_fields(self):
+        """Spot-check: common legacy field names resolve via __getattr__."""
+        cfg = MemoryConfig()
+        assert cfg.db_path == cfg.general.db_path
+        assert cfg.knowledge_graph == cfg.search.knowledge_graph
+        assert cfg.write_journal == cfg.write.write_journal
+        assert cfg.multi_agent == cfg.features.multi_agent
+        assert cfg.fts5_cache == cfg.cache.fts5_cache
+
+    def test_missing_attr_raises(self):
+        cfg = MemoryConfig()
+        with pytest.raises(AttributeError):
+            _ = cfg.nonexistent_field_xyz
+
+
+class TestNestedConfigDirectAccess:
+    """Verify direct nested config attribute access."""
+
+    def test_search_nested_values(self):
+        cfg = MemoryConfig()
+        assert cfg.search.temporal_half_life == 180.0
+        assert cfg.search.forgetting_curve_half_life == 30.0
+        assert cfg.search.deep_rerank_timeout == 30.0
+
+    def test_feature_flags_nested(self):
+        cfg = MemoryConfig()
+        assert cfg.features.quality_gates is True
+        assert cfg.features.feature_temporal_kg is True
+        assert cfg.features.saga_enabled is True
+
+    def test_health_check_nested(self):
+        cfg = MemoryConfig()
+        assert cfg.health_check.vec_index_drift_threshold == 50
+        assert cfg.health_check.disk_pct_used_threshold == 95
+
+    def test_llm_config_nested(self):
+        cfg = MemoryConfig()
+        assert cfg.llm.provider == "none"
+        assert cfg.llm.extraction_model_id == "Qwen/Qwen2.5-3B-Instruct"
+
+    def test_auto_save_nested(self):
+        cfg = MemoryConfig()
+        assert cfg.auto_save.max_retries == 3
+        assert cfg.auto_save.circuit_breaker_seconds == 300.0
+
+    def test_write_config_nested(self):
+        cfg = MemoryConfig()
+        assert cfg.write.write_journal is False
+        assert cfg.write.defer_expensive is True
+
+
+class TestHealthCheckConfigDefaults:
+    """Verify default health-check thresholds."""
+
+    def test_drift_default(self):
+        cfg = MemoryConfig()
+        assert cfg.health_check.vec_index_drift_threshold == 50
+
+    def test_disk_default(self):
+        cfg = MemoryConfig()
+        assert cfg.health_check.disk_pct_used_threshold == 95
+
+
+class TestHealthCheckDynamicThresholds:
+    """Verify health-check thresholds can be overridden via env/TOML."""
+
+    def test_drift_threshold_override(self, tmp_path):
+        reset_config()
+        original_toml = getattr(_config_mod, "_TOML_PATH")
+        toml_path = _write_toml(
+            tmp_path,
+            """
+            [health_check]
+            vec_index_drift_threshold = 100
+            disk_pct_used_threshold = 98
+            """,
+        )
+        saved_env = {}
+        for key in list(os.environ):
+            if key.startswith("MEMORY_"):
+                saved_env[key] = os.environ.pop(key)
+        setattr(_config_mod, "_TOML_PATH", toml_path)
+        setattr(_config_mod, "_instance", None)
+        try:
+            cfg = _config_mod.get_config()
+            assert cfg.health_check.vec_index_drift_threshold == 100
+            assert cfg.health_check.disk_pct_used_threshold == 98
+        finally:
+            setattr(_config_mod, "_TOML_PATH", original_toml)
+            setattr(_config_mod, "_instance", None)
+            os.environ.update(saved_env)
+
+    def test_drift_threshold_via_env(self):
+        os.environ["MEMORY_VEC_INDEX_DRIFT_THRESHOLD"] = "200"
+        try:
+            setattr(_config_mod, "_instance", None)
+            cfg = _config_mod.get_config()
+            assert cfg.health_check.vec_index_drift_threshold == 200
+        finally:
+            os.environ.pop("MEMORY_VEC_INDEX_DRIFT_THRESHOLD", None)
+            setattr(_config_mod, "_instance", None)
 
 
 if __name__ == "__main__":

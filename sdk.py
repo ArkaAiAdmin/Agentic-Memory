@@ -22,9 +22,18 @@ Also provides:
     - Memory.delete(note_id)
     - Memory.list(limit=50)
     - Memory.clear() — clears all memory for the current user/agent
+
+Changelog:
+  1.0.0 (2026-07-08) — Stable API. Nested config refactor complete.
+                        AgentMemory.search gains include_global parameter.
+  0.9.0 (2026-06-15) — Bump potion-8M embedding, add AgentMemory class.
+  0.8.0 (2026-05-20) — Initial public SDK.
 """
 
 from __future__ import annotations
+
+__version__ = "1.0.0"
+__all__ = ["Memory", "AgentMemory"]
 
 import json
 import logging
@@ -276,11 +285,11 @@ class AgentMemory:
             is_global=is_global,
         ))
 
-    def search(self, query: str, limit: int = 10) -> list[dict]:
+    def search(self, query: str, limit: int = 10, include_global: bool = False) -> list[dict]:
         """Search only this agent's memories."""
         from agent_context import agent_search
 
-        result = agent_search(query=query, limit=limit)
+        result = agent_search(query=query, limit=limit, include_global=include_global)
         return [
             {
                 "id": r.get("id", ""),

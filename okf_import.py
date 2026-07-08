@@ -14,9 +14,8 @@ Usage:
 
 from __future__ import annotations
 
-import logging
-
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -150,8 +149,7 @@ def okf_import(
                     "error": f"Target database not accessible: {target_db}",
                 }
         except Exception as e:
-            logger.warning("okf_import failed: %s", e)
-            pass  # Let save_memory handle it
+            logger.warning("okf_import pre-check failed: %s", e)
 
     for file_path in md_files:
         rel = file_path.relative_to(source_dir)

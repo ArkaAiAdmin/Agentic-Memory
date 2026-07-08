@@ -41,7 +41,8 @@ def run(db_path: Path, dry_run: bool = False) -> dict:
     import sqlite3
     from reasoning.compile import revalidate_entailment_chains
 
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout = 30000;")
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         result = revalidate_entailment_chains(conn, db_path, dry_run=dry_run)

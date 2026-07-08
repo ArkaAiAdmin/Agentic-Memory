@@ -131,7 +131,8 @@ def _should_skip_similar(content: str, ttl_hours: int = 24) -> bool:
         )
         normalized = _normalize_for_dedup(content)
         sample = normalized[:200]
-        conn = sqlite3.connect(str(db_path), timeout=5)
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        conn.execute("PRAGMA busy_timeout = 30000;")
         try:
             row = conn.execute(
                 "SELECT id FROM memories "

@@ -470,12 +470,34 @@ _singleton_lock = threading.Lock()
 
 
 def _resolve_provider_name() -> str:
-    """Read MEMORY_LLM_PROVIDER from env (default: huggingface)."""
-    name = os.environ.get("MEMORY_LLM_PROVIDER", "huggingface").strip().lower()
-    if name not in ("ollama", "llama_cpp", "huggingface"):
-        logger.warning("Unknown LLM provider %r, falling back to huggingface", name)
-        return "huggingface"
-    return name
+    """Resolve the LLM provider name from env var or MemoryConfig.
+
+    Priority:
+      1. ``MEMORY_LLM_PROVIDER`` env var (highest — allows per-run override)
+      2. ``MemoryConfig.llm.provider`` (TOML config; ``"none"`` means unset)
+      3. ``"huggingface"`` (hard fallback)
+    """
+    env_name = os.environ.get("MEMORY_LLM_PROVIDER")
+    if env_name:
+        name = env_name.strip().lower()
+        if name not in ("ollama", "llama_cpp", "huggingface"):
+            logger.warning("Unknown LLM provider %r, falling back to huggingface", name)
+            return "huggingface"
+        return name
+
+    try:
+        from infra.config import get_config  # lazy — avoids circular imports
+        cfg = get_config()
+        config_name = getattr(cfg, "provider", "none")
+        if config_name and config_name != "none":
+            name = config_name.strip().lower()
+            if name in ("ollama", "llama_cpp", "huggingface"):
+                return name
+            logger.warning("Unknown LLM provider %r from config, falling back to huggingface", name)
+    except Exception:
+        pass
+
+    return "huggingface"
 
 
 def _make_provider(name: str) -> BaseLLMProvider:

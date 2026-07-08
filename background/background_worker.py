@@ -134,16 +134,18 @@ def handle_fact_consolidation(
         # transformers) still happen at import time and can load a 3B LLM
         # consuming 6-8GB. Check + short-circuit here to skip the expensive
         # import entirely when the guard would immediately return.
+        row = conn.execute("SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL").fetchone()
+        n = int(row[0]) if row else 0
+        if n > 2000:
+            raise RuntimeError(
+                f"corpus {n} notes exceeds consolidation guard (2000) "
+                f"— run compaction manually or increase guard"
+            )
         try:
-            row = conn.execute("SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL").fetchone()
-            n = int(row[0]) if row else 0
-            if n > 2000:
-                return f"fact consolidation skipped: corpus {n} notes exceeds guard (2000)"
+            consolidate_memory_facts(db_path=_P(db_path))
         except Exception as _wp_exc:
             logger.warning("handle_fact_consolidation: broad except swallowed: %s", _wp_exc)
             pass
-
-        consolidate_memory_facts(db_path=_P(db_path))
         return "fact consolidation completed"
     except Exception as e:
         raise RuntimeError(f"fact_consolidation failed: {e}") from e
@@ -631,7 +633,8 @@ def _get_vec_rebuild_threshold() -> int:
         db_path = mem_dir / "memory.db"
         if not db_path.exists():
             return base
-        conn = sqlite3.connect(str(db_path), timeout=5.0)
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        conn.execute("PRAGMA busy_timeout = 30000;")
         conn.row_factory = sqlite3.Row
         window_seconds = 600  # 10-minute window for rate estimation
         recent_writes = conn.execute(
@@ -759,10 +762,22 @@ def _reconciliation_loop(journal_path: Path, target_base: Path) -> None:
                 reset_stuck_processing,
             )
 
-            # Reset stuck entries first (handles daemon crash mid-batch)
-            reset_stuck_processing(journal_path)
+            # Reset stuck entries first (handles daemon crash mid-batch).
+            # 2026-07-08: reset_stuck_processing now unconditionally closes
+            # the thread-local journal transaction (see write_journal.py),
+            # so we don't need extra cleanup here — but we still wrap in
+            # try/finally for resilience against future code paths.
+            try:
+                reset_stuck_processing(journal_path)
+            except Exception as _rs_err:
+                logger.warning("reconciliation: reset_stuck_processing failed: %s", _rs_err)
 
-            entries = dequeue_pending(journal_path, batch_size=10)
+            try:
+                entries = dequeue_pending(journal_path, batch_size=10)
+            except Exception as _dq_err:
+                logger.warning("reconciliation: dequeue_pending failed: %s", _dq_err)
+                _RECONCILER_SHUTDOWN.wait(0.1)
+                continue
             if not entries:
                 # No work → sleep 100ms before next poll
                 _RECONCILER_SHUTDOWN.wait(0.1)

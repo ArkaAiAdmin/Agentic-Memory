@@ -634,11 +634,16 @@ def _op_memory_stats() -> str:
             logger.warning("Unhandled exception in _op_memory_stats: %s", e)
         cb_open = False
         try:
-            from circuit_breaker import get_circuit_breaker_state
+            from background.circuit_breaker import get_circuit_breaker_state
 
             cb_open = get_circuit_breaker_state().get("open", False)
-        except Exception as e:
-            logger.warning("Unhandled exception in _op_memory_stats: %s", e)
+        except ImportError:
+            try:
+                from circuit_breaker import get_circuit_breaker_state
+
+                cb_open = get_circuit_breaker_state().get("open", False)
+            except ImportError:
+                cb_open = False
         flags = {}
         try:
             flags = get_feature_flags()

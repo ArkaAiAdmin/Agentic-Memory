@@ -179,7 +179,8 @@ def memory_health_check(conn) -> str:
             j_path = Path(mem_dir) / "journal.db"
             if j_path.exists():
                 import sqlite3 as _sqlite3
-                _jc = _sqlite3.connect(str(j_path))
+                _jc = _sqlite3.connect(str(j_path), timeout=30.0)
+                _jc.execute("PRAGMA busy_timeout = 30000;")
                 _pending = _jc.execute(
                     "SELECT COUNT(*) FROM write_journal WHERE status='pending'"
                 ).fetchone()[0]
@@ -208,10 +209,15 @@ def memory_health_check(conn) -> str:
         logger.warning("Unhandled exception in memory_health_check: %s", exc)
         status["journal"]["error"] = str(exc)[:200]
 
+    from infra.config import get_config as _get_hc_cfg
+
+    _hc_cfg = _get_hc_cfg()
+    _degraded_drift = getattr(_hc_cfg, "vec_index_drift_threshold", 50)
+    _degraded_disk = getattr(_hc_cfg, "disk_pct_used_threshold", 95)
     degraded = bool(
         status["db"].get("accessible") is False
-        or int(status["vec_index"].get("drift", 0)) > 50
-        or int(status.get("disk", {}).get("pct_used", 0)) > 95
+        or int(status["vec_index"].get("drift", 0)) > _degraded_drift
+        or int(status.get("disk", {}).get("pct_used", 0)) > _degraded_disk
     )
     status["overall"] = "degraded" if degraded else "healthy"
     return json.dumps(status)

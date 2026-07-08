@@ -145,7 +145,8 @@ def main() -> int:
         return 0
 
     import sqlite3
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout = 30000;")
     examples = _load_examples(conn)
     if len(examples) < _MIN_EXAMPLES:
         logger.info("cron_train_forget_model: only %d examples (need >=%d), skipping",

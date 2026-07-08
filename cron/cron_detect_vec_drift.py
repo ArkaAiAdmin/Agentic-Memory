@@ -63,7 +63,8 @@ def main(argv: list[str] | None = None) -> int:
     acquire_lock_or_exit('cron_detect_vec_drift')
 
     try:
-        conn = sqlite3.connect(args.db_path)
+        conn = sqlite3.connect(args.db_path, timeout=30.0)
+        conn.execute("PRAGMA busy_timeout = 30000;")
         conn.execute("PRAGMA foreign_keys=ON")
         cursor = conn.cursor()
 

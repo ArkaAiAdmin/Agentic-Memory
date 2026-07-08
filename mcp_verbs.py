@@ -160,7 +160,8 @@ def _supplement_with_pending(db_path: Path, query: str, limit: int) -> list[dict
         return []
     try:
         import sqlite3 as _sqlite3
-        _conn = _sqlite3.connect(str(journal_path))
+        _conn = _sqlite3.connect(str(journal_path), timeout=30.0)
+        _conn.execute("PRAGMA busy_timeout = 30000;")
         _conn.row_factory = _sqlite3.Row
         _rows = _conn.execute(
             "SELECT note_id, content, category, title_slug, tags, importance, created_at "

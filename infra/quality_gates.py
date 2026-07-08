@@ -432,7 +432,7 @@ if TYPE_CHECKING:
 # memory_sharing.py, and 11 other modules in this codebase.
 __getattr__ = make_lazy_getattr(
     {
-        "QUALITY_GATES_ENABLED": "quality_gates",
+        "QUALITY_GATES_ENABLED": ("features", lambda f: getattr(f, "quality_gates")),
         "_MIN_CONTENT_LENGTH": "quality_min_content_length",
         "_MAX_DUPLICATE_SIMILARITY": "quality_max_duplicate_similarity",
         "_MIN_RELEVANCE_SCORE": "quality_min_relevance_score",

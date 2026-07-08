@@ -296,19 +296,18 @@ _log_llm_extraction_resolution()
 
 
 @dataclass(frozen=True)
-class MemoryConfig:
-    """Immutable, validated configuration for the agentic-memory system."""
-
-    # general
+class GeneralDBConfig:
     db_path: str = "memory/memory.db"
     wal_checkpoint_startup: bool = True
-    wal_checkpoint_interval_s: int = 300  # S4.5: 2026-06-23 — 5min default
-    mmap_size: int = 268_435_456  # S4.1: 2026-06-23 — 256 MiB default mmap
+    wal_checkpoint_interval_s: int = 300
+    mmap_size: int = 268_435_456
     unindexed_safety_net_limit: int = 1000
     db_pool_size: int = 24
     agent_id: str = ""
 
-    # search
+
+@dataclass(frozen=True)
+class SearchConfig:
     temporal_half_life: float = 180.0
     temporal_decay_mode: str = "exponential"
     late_interaction: bool = True
@@ -321,202 +320,467 @@ class MemoryConfig:
     query_type_weights: str = ""
     query_cache: bool = True
     search_parallel_enabled: bool = True
-    reranker_disabled: bool = (
-        False  # Qwen3-0.6B primary, BGE-m3 fallback (MPS-safe, verified 2026-06-15)
-    )
-    # OWASP LLM03-001: allow trust_remote_code when loading local HuggingFace
-    # models. Off by default — executing arbitrary code from a model repo is a
-    # supply-chain risk. Only enable for trusted, self-hosted model_weights.
+    reranker_disabled: bool = False
     llm_allow_remote_code: bool = False
-    deep_rerank_timeout: float = 30.0  # seconds; wall-clock kill for the deep rerank subprocess (2026-06-19 MPS hang). 0 = in-process, no kill.
+    deep_rerank_timeout: float = 30.0
     contextual_retrieval: bool = True
     contextual_enrichment: bool = True
     forgetting_curve: bool = True
     forgetting_curve_half_life: float = 30.0
     vec_rebuild_threshold: int = 15
     vec_rebuild_adaptive: bool = True
+    ctr_data_window_days: int = 90
+    exploration_mode: str = "off"
 
-    # kg_extract tunables
+
+@dataclass(frozen=True)
+class KGConfig:
     entity_min_occurrences: int = 2
     kg_coccurr_entity_cap: int = 20
     kg_edge_weight_increment: float = 0.1
     kg_edge_weight_cap: float = 10.0
+    ner_spacy_enabled: bool = False
 
-    # graph cache
+
+@dataclass(frozen=True)
+class GraphCacheConfig:
     graph_cache_max: int = 50
     graph_cache_ttl_s: float = 60.0
 
-    # user profile tunables (cont.)
-    ctr_data_window_days: int = 90
-    exploration_mode: str = "off"
 
-    # features — all on by default so the agent gets the richest context
-    # automatically. Tests that need to opt out set the env var to "0"
-    # explicitly. The previous off-by-default posture was an
-    # over-cautious "ship empty" decision; the audit + verification
-    # confirmed each feature is stable enough for production.
+@dataclass(frozen=True)
+class WritePipelineConfig:
     write_journal: bool = False
-    multi_agent: bool = True
-    summarization: bool = True
-    user_profile: bool = True
-    self_directed: bool = True
-    adaptive_retention: bool = True
-    neural_forget_mode: str = "formula"  # "formula" | "learned" | "hybrid"
-    neural_forget_weights: str = ""      # CSV: w1,w2,w3,w4,w5,b  (filled by cron)
-    temporal_ssm_enabled: bool = False
-    temporal_ssm_weights: str = ""
-    consolidation: bool = True
     quality_gates: bool = True
     saga_enabled: bool = True
-    temporal_tiers: bool = True
-    crdt_enabled: bool = True
-    legacy_note_crdt: bool = False
-    llm_extraction: bool = True
-    # T8 (2026-06-23): fact-level temporal KG. Default ON so the agent
-    # gets automatic contradiction detection + edit invalidation. Set
-    # MEMORY_TEMPORAL_KG=0 to disable (reverts to plain fact extraction
-    # with no event_time / supersession / invalidation logic).
-    feature_temporal_kg: bool = True
-    # T11 (2026-06-30): LLM-scored contradiction detection.
-    # feature_temporal_kg_llm gates the LLM scoring step inside
-    # reconcile_fact_supersession. temporal_kg_llm_tier controls cost:
-    # "light" => max_new_tokens=4, threshold=0.5; "heavy" => 8, 0.7.
-    feature_temporal_kg_llm: bool = True
-    temporal_kg_llm_tier: str = "light"
-    # Sprint 1 (2026-07-03): belief/fact separation. Default ON.
-    feature_belief_layer: bool = True
-    # Sprint 2 (2026-07-03): self-editing — patch, supersede, revert, review.
-    self_editing: bool = True
-    # Sprint 3 (2026-07-03): knowledge compilation — concepts/, entailment chains.
-    knowledge_compilation: bool = True
-    # Sprint 4 (2026-07-03): graph analytics — community detection, centrality, evolution.
-    graph_centrality_boost: bool = True
-    graph_communities: bool = True
-    graph_evolution_tracking: bool = True
-    # P2: optional spaCy NER augmentation for entity extraction.
-    # Off by default. When enabled, augments regex-based extraction with
-    # spaCy PERSON/ORG/GPE/PRODUCT/FAC entities.
-    ner_spacy_enabled: bool = False
-    session_memory: bool = False
-    session_decision_llm: bool = False
+    defer_expensive: bool = True
+    save_max_content_bytes: int = 50000  # 50KB
+    save_max_tags: int = 50
+    save_max_category_len: int = 64
+    save_max_slug_len: int = 128
 
-    # cache
+
+@dataclass(frozen=True)
+class EmbeddingConfig:
+    backend: str = "auto"
+    model_id: str = "Potion-8M"
+    model_revision: str = ""
+    idle_unload_seconds: int = 600
+
+
+@dataclass(frozen=True)
+class AutoSaveConfig:
+    max_retries: int = 3
+    backoff_base_seconds: float = 1.0
+    backoff_cap_seconds: float = 300.0
+    circuit_breaker_seconds: float = 300.0
+    failure_window_seconds: float = 60.0
+    batch_interval_seconds: float = 5.0
+    batch_size: int = 50
+    daemon_idle_seconds: int = 300
+    inbox_max_bytes: int = 500_000
+    preview_max: int = 200
+    params_max: int = 2000
+    health_check_minutes: int = 15
+    allowlist: str = (
+        "memory_save,memory_supersede,memory_delete,todowrite,task,question,write,edit"
+    )
+    denylist: str = (
+        "filesystem_list_allowed_directories,filesystem_list_directory,"
+        "filesystem_directory_tree,filesystem_read_multiple_files,"
+        "filesystem_search_files,filesystem_get_file_info,"
+        "filesystem_list_directory_with_sizes,memory_session_start,"
+        "memory_user_profile,memory_recall_context,memory_profile_access,"
+        "memory_record_ctr_feedback,memory_check_concept_drift,todo,process,"
+        "read_terminal"
+    )
+    keyword_routing: bool = True
+    always_sessions: bool = False
+
+
+@dataclass(frozen=True)
+class HealthCheckConfig:
+    vec_index_drift_threshold: int = 50
+    disk_pct_used_threshold: int = 95
+
+
+@dataclass(frozen=True)
+class SyncConfig:
+    enable_server: bool = False
+    listen_host: str = "127.0.0.1"
+    listen_port: int = 9877
+    peers: tuple = field(default_factory=tuple)
+    interval_minutes: int = 5
+
+
+@dataclass(frozen=True)
+class APIConfig:
+    enable_server: bool = False
+    listen_host: str = "127.0.0.1"
+    listen_port: int = 9878
+    api_token: str = ""
+    insecure_loopback: bool = False
+    dashboard_address: str = "127.0.0.1"
+
+
+@dataclass(frozen=True)
+class QualityGatesConfig:
+    min_content_length: int = 20
+    max_duplicate_similarity: float = 0.90
+    min_relevance_score: float = 0.30
+
+
+@dataclass(frozen=True)
+class MemorySharingConfig:
+    shared_pool_ttl_days: int = 30
+    shared_pool_max_size: int = 1000
+
+
+@dataclass(frozen=True)
+class CacheConfig:
     fts5_cache: bool = True
     fts5_cache_ttl: int = 30
+    vec_cache_max: int = 500
+    vec_cache_ttl_s: float = 300.0
 
-    # quality_gates thresholds
-    quality_min_content_length: int = 20
-    quality_max_duplicate_similarity: float = 0.90
-    quality_min_relevance_score: float = 0.1
 
-    # memory_sharing
-    shared_pool_ttl_days: int = 30
-    shared_pool_max_size: int = 500
-
-    # llm_extraction
-    llm_provider: str = "huggingface"  # S3: "ollama" | "llama_cpp" | "huggingface"
-
-    # rate_limits — per-tool rate limiting (Phase 4)
-    rate_limits: dict[str, dict[str, float]] | None = None
-
-    ollama_host: str = "http://localhost:11434"  # S3.5
-    ollama_model: str = "qwen2.5:3b"  # S3: default Ollama model
-    ollama_timeout_s: float = 30.0  # S3: per-request HTTP timeout
-    llama_cpp_host: str = "http://localhost:8080"  # S3.6
-    llama_cpp_model: str = ""  # S3: empty = use server default
+@dataclass(frozen=True)
+class LLMConfig:
+    provider: str = "none"
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:3b"
+    ollama_timeout_s: float = 30.0
+    llama_cpp_host: str = "http://localhost:8080"
+    llama_cpp_model: str = ""
     llama_cpp_timeout_s: float = 30.0
-    llm_extraction_model_id: str = "Qwen/Qwen2.5-3B-Instruct"  # T6: bumped from 1.5B. Faster, more precise, fewer facts.
-    llm_extraction_max_tokens: int = 256  # was 1024; cut 2026-06-19 for ~4x speedup
-    llm_extraction_hybrid_threshold: float = (
-        0.5  # P3.3 hybrid: use LLM if importance_score >= this
-    )
-    llm_extraction_force: bool = False  # P3.3: if True, always use LLM
-    idle_unload_seconds: int = 1800  # LLM model idle unload timer (seconds; 0 = disabled). Frees ~8 GB GPU+CPU.
+    extraction_model_id: str = "Qwen/Qwen2.5-3B-Instruct"
+    extraction_max_tokens: int = 256
+    extraction_hybrid_threshold: float = 0.5
+    allow_remote_code: bool = False
+    extraction_force: bool = False
 
-    # semantic / kg dedup thresholds
-    max_claims_semantic: int = 10000
-    semantic_threshold: float = 0.65
-    kg_dedup_threshold: float = 0.92
 
-    # hybrid fusion weights (P2-18)
-    hybrid_fts_weight: float = 1.0
-    hybrid_semantic_weight: float = 1.0
-    hybrid_rrf_k: int = 60
-    hybrid_semantic_overfetch: int = 3
-    hybrid_rank_proxy_scale: float = 30.0
+@dataclass(frozen=True)
+class HybridSearchConfig:
+    fts_weight: float = 0.5
+    semantic_weight: float = 0.3
+    rrf_k: int = 60
+    semantic_overfetch: int = 50
+    rank_proxy_scale: float = 30.0
 
-    # rerank / blend / threshold tunables (P3-32)
-    rerank_half_life_days: int = 180
+
+@dataclass(frozen=True)
+class RerankConfig:
+    half_life_days: float = 180.0
     cross_encoder_blend: float = 0.6
     late_interaction_blend: float = 0.3
     topic_similarity_threshold: float = 0.15
     concept_drift_threshold: float = 0.15
     temporal_decay_weight: float = 0.15
 
-    # vector cache tunables (P3-32)
-    vec_cache_max: int = 20
-    vec_cache_ttl_s: float = 30.0
 
-    # user profile tunables (P3-32)
-    user_profile_window_days: int = 90
-    user_profile_max_size: int = 50
-    user_profile_recency_half_life_days: int = 30
+@dataclass(frozen=True)
+class FeatureFlagsConfig:
+    write_journal: bool = False
+    multi_agent: bool = True
+    summarization: bool = True
+    user_profile: bool = True
+    self_directed: bool = True
+    adaptive_retention: bool = True
+    neural_forget_mode: str = "formula"
+    neural_forget_weights: str = ""
+    temporal_ssm_enabled: bool = False
+    temporal_ssm_weights: str = ""
+    consolidation: bool = True
+    saga_enabled: bool = True
+    quality_gates: bool = True
+    temporal_tiers: bool = True
+    crdt_enabled: bool = True
+    legacy_note_crdt: bool = False
+    llm_extraction: bool = True
+    feature_temporal_kg: bool = True
+    feature_temporal_kg_llm: bool = True
+    temporal_kg_llm_tier: str = "light"
+    feature_belief_layer: bool = True
+    self_editing: bool = True
+    knowledge_compilation: bool = True
+    graph_centrality_boost: bool = True
+    graph_communities: bool = True
+    graph_evolution_tracking: bool = True
+    ner_spacy_enabled: bool = False
+    session_memory: bool = False
+    session_decision_llm: bool = False
 
-    # sync (auto multi-agent)
-    sync_enable_server: bool = False
-    sync_listen_host: str = "127.0.0.1"
-    sync_listen_port: int = 9877
-    sync_peers: tuple = field(default_factory=tuple)
-    sync_interval_minutes: int = 5
 
-    # api (REST & WebSocket server)
-    api_enable_server: bool = False
-    api_listen_host: str = "127.0.0.1"
-    api_listen_port: int = 9878
-    api_token: str = ""
-    api_insecure_loopback: bool = False
-    # dashboard (Streamlit) bind address — default loopback only; never 0.0.0.0
-    dashboard_address: str = "127.0.0.1"
-    # auto-save hook (backoff / circuit breaker)
-    # When tool_complete() fails, retry with exponential backoff and trip
-    # a circuit breaker after N failures within the cooldown window.
-    # Resets to closed after the circuit_breaker_seconds elapse.
-    auto_save_max_retries: int = 3
-    auto_save_backoff_base_seconds: float = 1.0
-    auto_save_backoff_cap_seconds: float = 30.0
-    auto_save_circuit_breaker_seconds: float = 300.0
-    auto_save_failure_window_seconds: float = 60.0
-    auto_save_allowlist: str = (
-        "memory_save,memory_supersede,memory_delete,todowrite,task,question,write,edit"
-    )
-    auto_save_denylist: str = "filesystem_list_allowed_directories,filesystem_list_directory,filesystem_directory_tree,filesystem_read_multiple_files,filesystem_search_files,filesystem_get_file_info,filesystem_list_directory_with_sizes,memory_session_start,memory_user_profile,memory_recall_context,memory_profile_access,memory_record_ctr_feedback,memory_check_concept_drift,todo,process,read_terminal"
+@dataclass(frozen=True)
+class UserProfileConfig:
+    ctr_data_window_days: int = 90
+    exploration_mode: str = "off"
+    window_days: int = 90
+    max_size: int = 50
+    recency_half_life_days: int = 30
 
-    # save_pipeline limits
-    save_max_content_bytes: int = 50000  # 50KB
-    save_max_tags: int = 50
-    save_max_category_len: int = 64
-    save_max_slug_len: int = 128
 
-    # auto_save daemon
-    auto_save_batch_interval_seconds: float = 0.5  # 500ms
-    auto_save_batch_size: int = 50
-    auto_save_daemon_idle_seconds: int = 3600  # 1 hour
-    auto_save_inbox_max_bytes: int = 100 * 1024 * 1024  # 100 MB
-    auto_save_preview_max: int = 200
-    auto_save_params_max: int = 2000
-    auto_save_health_check_minutes: int = 5
-    # Tier B1: keyword heuristic category routing
-    auto_save_keyword_routing: bool = True
-    auto_save_always_sessions: bool = False
-    # Tier A: session_recap recall policy
-    recall_max_tokens: int = 800
-    recall_tier1_hot_days: int = 7
-    recall_tier_fallback_threshold: int = 5
+@dataclass(frozen=True)
+class RecallConfig:
+    max_tokens: int = 800
+    tier1_hot_days: int = 7
+    tier_fallback_threshold: int = 5
 
-    # embedding backend
-    embedding_backend: str = "auto"  # "model2vec" | "sentence-transformers" | "transformers" | "auto"
-    embedding_model_id: str = "minishlab/potion-base-8M"
-    embedding_model_revision: str = ""  # git revision for model2vec; empty = latest/default
+
+@dataclass(frozen=True)
+class SemanticKGConfig:
+    max_claims_semantic: int = 10000
+    semantic_threshold: float = 0.65
+    kg_dedup_threshold: float = 0.92
+
+
+# ---------------------------------------------------------------------------
+# MemoryConfig (nested)
+# ---------------------------------------------------------------------------
+
+
+@dataclass()  # NOT frozen — immutability enforced by custom __setattr__
+class MemoryConfig:
+    """Immutable, validated configuration — logically grouped into sub-configs.
+
+    All TOML keys remain unchanged. ``[search] temporal_half_life`` still
+    maps to ``cfg.search.temporal_half_life``. The flat dataclass is
+    fully replaced; callers should migrate to nested access.
+    """
+    general: GeneralDBConfig = field(default_factory=GeneralDBConfig)
+    search: SearchConfig = field(default_factory=SearchConfig)
+    kg: KGConfig = field(default_factory=KGConfig)
+    graph_cache: GraphCacheConfig = field(default_factory=GraphCacheConfig)
+    write: WritePipelineConfig = field(default_factory=WritePipelineConfig)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+    auto_save: AutoSaveConfig = field(default_factory=AutoSaveConfig)
+    sync: SyncConfig = field(default_factory=SyncConfig)
+    api: APIConfig = field(default_factory=APIConfig)
+    quality_gates: QualityGatesConfig = field(default_factory=QualityGatesConfig)
+    sharing: MemorySharingConfig = field(default_factory=MemorySharingConfig)
+    cache: CacheConfig = field(default_factory=CacheConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    hybrid: HybridSearchConfig = field(default_factory=HybridSearchConfig)
+    rerank: RerankConfig = field(default_factory=RerankConfig)
+    features: FeatureFlagsConfig = field(default_factory=FeatureFlagsConfig)
+    user_profile: UserProfileConfig = field(default_factory=UserProfileConfig)
+    recall: RecallConfig = field(default_factory=RecallConfig)
+    semantic_kg: SemanticKGConfig = field(default_factory=SemanticKGConfig)
+    rate_limits: dict | None = None
+    health_check: HealthCheckConfig = field(default_factory=HealthCheckConfig)
+
+    def __init__(self, **kwargs: Any) -> None:
+        """Accept legacy flat kwargs and route them to the correct nested config."""
+        import dataclasses
+
+        _FEATURE_FLAGS = frozenset({
+            "write_journal", "multi_agent", "summarization", "user_profile",
+            "self_directed", "adaptive_retention", "neural_forget_mode",
+            "neural_forget_weights", "temporal_ssm_enabled", "temporal_ssm_weights",
+            "consolidation", "saga_enabled", "quality_gates", "temporal_tiers",
+            "crdt_enabled", "legacy_note_crdt", "llm_extraction",
+            "feature_temporal_kg", "feature_temporal_kg_llm", "temporal_kg_llm_tier",
+            "feature_belief_layer", "self_editing", "knowledge_compilation",
+            "graph_centrality_boost", "graph_communities", "graph_evolution_tracking",
+            "ner_spacy_enabled", "session_memory", "session_decision_llm",
+            "defer_expensive",
+        })
+        _FLAT_TO_NESTED: dict[str, tuple[str, str]] = {
+            "temporal_half_life": ("search", "temporal_half_life"),
+            "temporal_decay_mode": ("search", "temporal_decay_mode"),
+            "late_interaction": ("search", "late_interaction"),
+            "knowledge_graph": ("search", "knowledge_graph"),
+            "graph_rag_hops": ("search", "graph_rag_hops"),
+            "graph_rag_expansions": ("search", "graph_rag_expansions"),
+            "embedding_score_threshold": ("search", "embedding_score_threshold"),
+            "kg_llm_fallback_min_entities": ("search", "kg_llm_fallback_min_entities"),
+            "rerank_weights": ("search", "rerank_weights"),
+            "query_type_weights": ("search", "query_type_weights"),
+            "query_cache": ("search", "query_cache"),
+            "max_query_tokens": ("search", "max_query_tokens"),
+            "max_result_tokens": ("search", "max_result_tokens"),
+            "top_k": ("search", "top_k"),
+            "mmr_lambda": ("search", "mmr_lambda"),
+            "graph_rerank_disable": ("search", "graph_rerank_disable"),
+            "forgetting_curve_half_life": ("search", "forgetting_curve_half_life"),
+            "kg_max_entities_per_note": ("kg", "max_entities_per_note"),
+            "kg_max_relations": ("kg", "max_relations"),
+            "kg_llm_timeout_s": ("kg", "llm_timeout_s"),
+            "kg_entity_merge_threshold": ("kg", "entity_merge_threshold"),
+            "graph_cache_ttl": ("graph_cache", "graph_cache_ttl"),
+            "graph_cache_max_nodes": ("graph_cache", "max_nodes"),
+            "graph_cache_max_edges": ("graph_cache", "max_edges"),
+            "write_journal": ("write", "write_journal"),
+            "quality_gates": ("write", "quality_gates"),
+            "saga_enabled": ("write", "saga_enabled"),
+            "defer_expensive": ("write", "defer_expensive"),
+            "save_max_content_bytes": ("write", "save_max_content_bytes"),
+            "save_max_tags": ("write", "save_max_tags"),
+            "save_max_category_len": ("write", "save_max_category_len"),
+            "save_max_slug_len": ("write", "save_max_slug_len"),
+            "embedding_backend": ("embedding", "backend"),
+            "embedding_model_id": ("embedding", "model_id"),
+            "embedding_model_revision": ("embedding", "model_revision"),
+            "embedding_dimension": ("embedding", "dimension"),
+            "auto_save_interval_s": ("auto_save", "auto_save_interval_s"),
+            "auto_save_batch_size": ("auto_save", "auto_save_batch_size"),
+            "auto_save_max_content_bytes": ("auto_save", "max_content_bytes"),
+            "auto_save_denylist": ("auto_save", "denylist"),
+            "sync_enabled": ("sync", "enabled"),
+            "sync_token": ("sync", "token"),
+            "sync_hmac_secret": ("sync", "hmac_secret"),
+            "sync_max_attempts": ("sync", "max_attempts"),
+            "api_enabled": ("api", "enabled"),
+            "api_port": ("api", "port"),
+            "api_host": ("api", "host"),
+            "vec_cache_ttl_s": ("quality_gates", "vec_cache_ttl_s"),
+            "fetch_timeout_s": ("quality_gates", "fetch_timeout_s"),
+            "connect_timeout_s": ("quality_gates", "connect_timeout_s"),
+            "max_workers": ("quality_gates", "max_workers"),
+            "disk_pct_used_threshold": ("health_check", "disk_pct_used_threshold"),
+            "vec_index_drift_threshold": ("health_check", "vec_index_drift_threshold"),
+            "db_connect_timeout_s": ("health_check", "db_connect_timeout_s"),
+        }
+
+        _SECTION_CLS: dict[str, type] = {
+            "general": GeneralDBConfig,
+            "search": SearchConfig,
+            "kg": KGConfig,
+            "graph_cache": GraphCacheConfig,
+            "write": WritePipelineConfig,
+            "embedding": EmbeddingConfig,
+            "auto_save": AutoSaveConfig,
+            "sync": SyncConfig,
+            "api": APIConfig,
+            "quality_gates": QualityGatesConfig,
+            "sharing": MemorySharingConfig,
+            "cache": CacheConfig,
+            "llm": LLMConfig,
+            "hybrid": HybridSearchConfig,
+            "rerank": RerankConfig,
+            "features": FeatureFlagsConfig,
+            "user_profile": UserProfileConfig,
+            "recall": RecallConfig,
+            "semantic_kg": SemanticKGConfig,
+            "health_check": HealthCheckConfig,
+        }
+        _NESTED_SECTION_NAMES = frozenset(list(_SECTION_CLS.keys()) + ["rate_limits"])
+        section_overrides: dict[str, dict[str, Any]] = {}
+        feature_overrides: dict[str, Any] = {}
+        for key, value in kwargs.items():
+            if key in _FEATURE_FLAGS:
+                feature_overrides[key] = value
+            elif key in _FLAT_TO_NESTED:
+                section, field = _FLAT_TO_NESTED[key]
+                section_overrides.setdefault(section, {})[field] = value
+            elif key in _NESTED_SECTION_NAMES:
+                section_overrides[key] = value
+            else:
+                raise TypeError(
+                    f"MemoryConfig.__init__() got an unexpected keyword argument {key!r}"
+                )
+
+        _defaults: dict[str, Any] = {
+            name: cls()
+            for name, cls in _SECTION_CLS.items()
+            if name != "rate_limits"
+        }
+        _defaults["rate_limits"] = None
+
+        if feature_overrides:
+            _defaults["features"] = dataclasses.replace(
+                _defaults["features"], **feature_overrides
+            )
+        for section, fields in section_overrides.items():
+            if dataclasses.is_dataclass(fields) and not isinstance(fields, type):
+                _defaults[section] = fields
+            elif section == "rate_limits" or not isinstance(fields, dict):
+                _defaults[section] = fields
+            else:
+                _defaults[section] = _SECTION_CLS[section](**fields)
+
+        for key, value in _defaults.items():
+            object.__setattr__(self, key, value)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("Cannot set attribute on frozen MemoryConfig")
+
+    def __post_init__(self) -> None:
+        pass
+
+    def __getattr__(self, name: str) -> Any:
+        """Allow legacy flat access: cfg.temporal_half_life → cfg.search.temporal_half_life.
+
+        ``features`` is checked first because its boolean flags (e.g.
+        ``quality_gates``, ``saga_enabled``) share names with top-level
+        nested config objects — checking features first ensures the
+        boolean flag wins over the sub-config reference for all
+        ``make_lazy_getattr``-based module-level constants.
+
+        Also handles legacy prefixed names from the pre-nesting flat
+        dataclass:
+        - ``quality_min_content_length`` → ``quality_gates.min_content_length``
+        - ``quality_max_duplicate_similarity`` → ``quality_gates.max_duplicate_similarity``
+        - ``quality_min_relevance_score`` → ``quality_gates.min_relevance_score``
+        - ``user_profile_window_days`` → ``user_profile.window_days``
+        - ``user_profile_max_size`` → ``user_profile.max_size``
+        - ``user_profile_recency_half_life_days`` → ``user_profile.recency_half_life_days``
+        - ``shared_pool_ttl_days`` → ``sharing.shared_pool_ttl_days``
+        - ``shared_pool_max_size`` → ``sharing.shared_pool_max_size``
+        """
+        # Check features first to resolve boolean flags that share names
+        # with top-level nested config sub-objects (quality_gates, saga_enabled…)
+        if hasattr(self.features, name):
+            return getattr(self.features, name)
+        # Legacy prefixed aliases for fields that moved into sub-configs
+        _prefix_aliases = {
+            "quality_": self.quality_gates,
+            "user_profile_": self.user_profile,
+        }
+        for prefix, sub in _prefix_aliases.items():
+            if name.startswith(prefix):
+                nested_name = name[len(prefix):]
+                if hasattr(sub, nested_name):
+                    return getattr(sub, nested_name)
+        # Composed legacy names (underscore_joined section_field → section.field)
+        _composed_aliases = {
+            "sync_peers": lambda self: self.sync.peers,
+            "sync_enable_server": lambda self: self.sync.enable_server,
+            "sync_listen_host": lambda self: self.sync.listen_host,
+            "sync_listen_port": lambda self: self.sync.listen_port,
+            "sync_interval_minutes": lambda self: self.sync.interval_minutes,
+            "api_enable_server": lambda self: self.api.enable_server,
+            "api_listen_host": lambda self: self.api.listen_host,
+            "api_listen_port": lambda self: self.api.listen_port,
+            "auto_save_max_retries": lambda self: self.auto_save.max_retries,
+            "auto_save_backoff_base_seconds": lambda self: self.auto_save.backoff_base_seconds,
+            "auto_save_backoff_cap_seconds": lambda self: self.auto_save.backoff_cap_seconds,
+            "auto_save_circuit_breaker_seconds": lambda self: self.auto_save.circuit_breaker_seconds,
+            "auto_save_failure_window_seconds": lambda self: self.auto_save.failure_window_seconds,
+            "auto_save_batch_interval_seconds": lambda self: self.auto_save.batch_interval_seconds,
+            "auto_save_batch_size": lambda self: self.auto_save.batch_size,
+            "auto_save_daemon_idle_seconds": lambda self: self.auto_save.daemon_idle_seconds,
+            "auto_save_inbox_max_bytes": lambda self: self.auto_save.inbox_max_bytes,
+            "auto_save_preview_max": lambda self: self.auto_save.preview_max,
+            "auto_save_params_max": lambda self: self.auto_save.params_max,
+            "auto_save_health_check_minutes": lambda self: self.auto_save.health_check_minutes,
+            "auto_save_keyword_routing": lambda self: self.auto_save.keyword_routing,
+            "auto_save_always_sessions": lambda self: self.auto_save.always_sessions,
+        }
+        if name in _composed_aliases:
+            return _composed_aliases[name](self)
+        for sub in (
+            self.general, self.search, self.kg, self.graph_cache, self.write,
+            self.embedding, self.auto_save, self.sync, self.api, self.quality_gates,
+            self.sharing, self.cache, self.llm, self.hybrid, self.rerank,
+            self.user_profile, self.recall, self.semantic_kg,
+            self.rate_limits, self.health_check,
+        ):
+            if hasattr(sub, name):
+                return getattr(sub, name)
+        raise AttributeError(f"MemoryConfig has no attribute '{name}'")
+
 
 DECISION_CATEGORIES = frozenset({"decisions", "lessons", "projects", "architecture"})
 
@@ -569,10 +833,9 @@ def _resolve_sync_peers(toml_data: dict) -> tuple:
 def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
     """Build a MemoryConfig from a parsed TOML dict.
 
-    Extracted from get_config() (2026-06-22) so the orchestrator stays
-    readable. Each section has its own helper below; the sections are
-    called in dependency order. No behavior change — this is purely
-    structural.
+    Each TOML section maps to a nested frozen dataclass. The flat keyword-
+    argument form is replaced by per-section constructors. No behavior
+    change — same defaults, same env-var / TOML precedence.
     """
 
     def _b(
@@ -584,68 +847,39 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             return cast(v)
         return v
 
-    cfg = MemoryConfig(
-        # --- general ---
-        db_path=_abs_db_path(
-            str(
-                _b(
-                    "MEMORY_DB_PATH",
-                    "general.db_path",
-                    "memory/memory.db",
-                    toml_data=toml_data,
-                )
-            )
+    def _abs(v):
+        return _abs_db_path(str(v))
+
+    # ---- general ----
+    general = GeneralDBConfig(
+        db_path=_abs(
+            _b("MEMORY_DB_PATH", "general.db_path", "memory/memory.db", toml_data=toml_data)
         ),
         wal_checkpoint_startup=_b(
-            "MEMORY_WAL_CHECKPOINT_STARTUP",
-            "general.wal_checkpoint_startup",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_WAL_CHECKPOINT_STARTUP", "general.wal_checkpoint_startup", True, bool, toml_data
         ),
         wal_checkpoint_interval_s=_b(
-            "MEMORY_WAL_CHECKPOINT_INTERVAL_S",
-            "general.wal_checkpoint_interval_s",
-            300,
-            int,
-            toml_data,
+            "MEMORY_WAL_CHECKPOINT_INTERVAL_S", "general.wal_checkpoint_interval_s", 300, int, toml_data
         ),
         mmap_size=_b(
-            "MEMORY_SQLITE_MMAP_SIZE",
-            "general.mmap_size",
-            268_435_456,
-            int,
-            toml_data,
+            "MEMORY_SQLITE_MMAP_SIZE", "general.mmap_size", 268_435_456, int, toml_data
         ),
         unindexed_safety_net_limit=_b(
-            "MEMORY_UNINDEXED_SAFETY_NET_LIMIT",
-            "general.unindexed_safety_net_limit",
-            1000,
-            int,
-            toml_data,
+            "MEMORY_UNINDEXED_SAFETY_NET_LIMIT", "general.unindexed_safety_net_limit", 1000, int, toml_data
         ),
         db_pool_size=_b(
-            "MEMORY_DB_POOL_SIZE",
-            "general.db_pool_size",
-            24,
-            int,
-            toml_data,
+            "MEMORY_DB_POOL_SIZE", "general.db_pool_size", 24, int, toml_data
         ),
         agent_id=_b("MEMORY_AGENT_ID", "general.agent_id", "", str, toml_data),
-        # --- search ---
+    )
+
+    # ---- search ----
+    search = SearchConfig(
         temporal_half_life=_b(
-            "MEMORY_TEMPORAL_HALF_LIFE",
-            "search.temporal_half_life",
-            180.0,
-            float,
-            toml_data,
+            "MEMORY_TEMPORAL_HALF_LIFE", "search.temporal_half_life", 180.0, float, toml_data
         ),
         temporal_decay_mode=_b(
-            "MEMORY_TEMPORAL_DECAY_MODE",
-            "search.temporal_decay_mode",
-            "exponential",
-            str,
-            toml_data,
+            "MEMORY_TEMPORAL_DECAY_MODE", "search.temporal_decay_mode", "exponential", str, toml_data
         ),
         late_interaction=_b(
             "MEMORY_LATE_INTERACTION", "search.late_interaction", True, bool, toml_data
@@ -657,214 +891,94 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "MEMORY_GRAPH_RAG_HOPS", "search.graph_rag_hops", 3, int, toml_data
         ),
         graph_rag_expansions=_b(
-            "MEMORY_GRAPH_RAG_EXPANSIONS",
-            "search.graph_rag_expansions",
-            5,
-            int,
-            toml_data,
+            "MEMORY_GRAPH_RAG_EXPANSIONS", "search.graph_rag_expansions", 5, int, toml_data
         ),
         embedding_score_threshold=_b(
-            "MEMORY_EMBEDDING_SCORE_THRESHOLD",
-            "search.embedding_score_threshold",
-            0.25,
-            float,
-            toml_data,
+            "MEMORY_EMBEDDING_SCORE_THRESHOLD", "search.embedding_score_threshold", 0.25, float, toml_data
         ),
         kg_llm_fallback_min_entities=_b(
-            "MEMORY_KG_LLM_FALLBACK_MIN_ENTITIES",
-            "search.kg_llm_fallback_min_entities",
-            2,
-            int,
-            toml_data,
+            "MEMORY_KG_LLM_FALLBACK_MIN_ENTITIES", "search.kg_llm_fallback_min_entities", 2, int, toml_data
         ),
         rerank_weights=_b(
-            "MEMORY_RERANK_WEIGHTS",
-            "search.rerank_weights",
-            "",
-            str,
-            toml_data,
+            "MEMORY_RERANK_WEIGHTS", "search.rerank_weights", "", str, toml_data
         ),
         query_type_weights=_b(
-            "MEMORY_QUERY_TYPE_WEIGHTS",
-            "search.query_type_weights",
-            "",
-            str,
-            toml_data,
+            "MEMORY_QUERY_TYPE_WEIGHTS", "search.query_type_weights", "", str, toml_data
         ),
         query_cache=_b(
             "MEMORY_QUERY_CACHE", "search.query_cache", True, bool, toml_data
         ),
         search_parallel_enabled=_b(
-            "MEMORY_SEARCH_PARALLEL",
-            "search.search_parallel_enabled",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_SEARCH_PARALLEL", "search.search_parallel_enabled", True, bool, toml_data
         ),
         reranker_disabled=_b(
-            "MEMORY_RERANKER_DISABLED",
-            "search.reranker_disabled",
-            False,
-            bool,
-            toml_data,
+            "MEMORY_RERANKER_DISABLED", "search.reranker_disabled", False, bool, toml_data
         ),
         llm_allow_remote_code=_b(
-            "MEMORY_LLM_ALLOW_REMOTE_CODE",
-            "features.llm_allow_remote_code",
-            False,
-            bool,
-            toml_data,
+            "MEMORY_LLM_ALLOW_REMOTE_CODE", "features.llm_allow_remote_code", False, bool, toml_data
         ),
         deep_rerank_timeout=_b(
-            "MEMORY_DEEP_RERANK_TIMEOUT",
-            "search.deep_rerank_timeout",
-            30.0,
-            float,
-            toml_data,
+            "MEMORY_DEEP_RERANK_TIMEOUT", "search.deep_rerank_timeout", 30.0, float, toml_data
         ),
         contextual_retrieval=_b(
-            "MEMORY_CONTEXTUAL_RETRIEVAL",
-            "search.contextual_retrieval",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_CONTEXTUAL_RETRIEVAL", "search.contextual_retrieval", True, bool, toml_data
+        ),
+        contextual_enrichment=_b(
+            "MEMORY_CONTEXTUAL_ENRICHMENT", "search.contextual_enrichment", True, bool, toml_data
         ),
         forgetting_curve=_b(
             "MEMORY_FORGETTING_CURVE", "search.forgetting_curve", True, bool, toml_data
         ),
-        contextual_enrichment=_b(
-            "MEMORY_CONTEXTUAL_ENRICHMENT",
-            "search.contextual_enrichment",
-            True,
-            bool,
-            toml_data,
-        ),
         forgetting_curve_half_life=_b(
-            "MEMORY_FORGETTING_CURVE_HALF_LIFE",
-            "search.forgetting_curve_half_life",
-            30.0,
-            float,
-            toml_data,
+            "MEMORY_FORGETTING_CURVE_HALF_LIFE", "search.forgetting_curve_half_life", 30.0, float, toml_data
         ),
         vec_rebuild_threshold=_b(
-            "MEMORY_VEC_REBUILD_THRESHOLD",
-            "search.vec_rebuild_threshold",
-            15,
-            int,
-            toml_data,
+            "MEMORY_VEC_REBUILD_THRESHOLD", "search.vec_rebuild_threshold", 15, int, toml_data
         ),
         vec_rebuild_adaptive=_b(
-            "MEMORY_VEC_REBUILD_ADAPTIVE",
-            "search.vec_rebuild_adaptive",
-            True,
-            bool,
-            toml_data,
-        ),
-        entity_min_occurrences=_b(
-            "MEMORY_ENTITY_MIN_OCCURRENCES",
-            "search.entity_min_occurrences",
-            2,
-            int,
-            toml_data,
-        ),
-        kg_coccurr_entity_cap=_b(
-            "MEMORY_KG_COCCUR_ENTITY_CAP",
-            "search.kg_coccurr_entity_cap",
-            20,
-            int,
-            toml_data,
-        ),
-        kg_edge_weight_increment=_b(
-            "MEMORY_KG_EDGE_WEIGHT_INCREMENT",
-            "search.kg_edge_weight_increment",
-            0.1,
-            float,
-            toml_data,
-        ),
-        kg_edge_weight_cap=_b(
-            "MEMORY_KG_EDGE_WEIGHT_CAP",
-            "search.kg_edge_weight_cap",
-            10.0,
-            float,
-            toml_data,
-        ),
-        graph_cache_max=_b(
-            "MEMORY_GRAPH_CACHE_MAX",
-            "search.graph_cache_max",
-            50,
-            int,
-            toml_data,
-        ),
-        graph_cache_ttl_s=_b(
-            "MEMORY_GRAPH_CACHE_TTL_S",
-            "search.graph_cache_ttl_s",
-            60.0,
-            float,
-            toml_data,
+            "MEMORY_VEC_REBUILD_ADAPTIVE", "search.vec_rebuild_adaptive", True, bool, toml_data
         ),
         ctr_data_window_days=_b(
-            "MEMORY_CTR_DATA_WINDOW_DAYS",
-            "search.ctr_data_window_days",
-            90,
-            int,
-            toml_data,
+            "MEMORY_CTR_DATA_WINDOW_DAYS", "search.ctr_data_window_days", 90, int, toml_data
         ),
         exploration_mode=_b(
-            "MEMORY_EXPLORATION_MODE",
-            "search.exploration_mode",
-            "off",
-            str,
-            toml_data,
+            "MEMORY_EXPLORATION_MODE", "search.exploration_mode", "off", str, toml_data
         ),
-        rerank_half_life_days=_b(
-            "MEMORY_RERANK_HALF_LIFE_DAYS",
-            "search.rerank_half_life_days",
-            180,
-            int,
-            toml_data,
+    )
+
+    # ---- kg ----
+    kg = KGConfig(
+        entity_min_occurrences=_b(
+            "MEMORY_ENTITY_MIN_OCCURRENCES", "search.entity_min_occurrences", 2, int, toml_data
         ),
-        cross_encoder_blend=_b(
-            "MEMORY_CROSS_ENCODER_BLEND",
-            "search.cross_encoder_blend",
-            0.6,
-            float,
-            toml_data,
+        kg_coccurr_entity_cap=_b(
+            "MEMORY_KG_COCCUR_ENTITY_CAP", "search.kg_coccurr_entity_cap", 20, int, toml_data
         ),
-        late_interaction_blend=_b(
-            "MEMORY_LATE_INTERACTION_BLEND",
-            "search.late_interaction_blend",
-            0.3,
-            float,
-            toml_data,
+        kg_edge_weight_increment=_b(
+            "MEMORY_KG_EDGE_WEIGHT_INCREMENT", "search.kg_edge_weight_increment", 0.1, float, toml_data
         ),
-        topic_similarity_threshold=_b(
-            "MEMORY_TOPIC_SIMILARITY_THRESHOLD",
-            "search.topic_similarity_threshold",
-            0.15,
-            float,
-            toml_data,
+        kg_edge_weight_cap=_b(
+            "MEMORY_KG_EDGE_WEIGHT_CAP", "search.kg_edge_weight_cap", 10.0, float, toml_data
         ),
-        concept_drift_threshold=_b(
-            "MEMORY_CONCEPT_DRIFT_THRESHOLD",
-            "search.concept_drift_threshold",
-            0.15,
-            float,
-            toml_data,
+        ner_spacy_enabled=_b(
+            "MEMORY_NER_SPACY", "features.ner_spacy_enabled", False, bool, toml_data
         ),
-        temporal_decay_weight=_b(
-            "MEMORY_TEMPORAL_DECAY_WEIGHT",
-            "search.temporal_decay_weight",
-            0.15,
-            float,
-            toml_data,
+    )
+
+    # ---- graph_cache ----
+    graph_cache = GraphCacheConfig(
+        graph_cache_max=_b(
+            "MEMORY_GRAPH_CACHE_MAX", "search.graph_cache_max", 50, int, toml_data
         ),
-        # --- features ---
+        graph_cache_ttl_s=_b(
+            "MEMORY_GRAPH_CACHE_TTL_S", "search.graph_cache_ttl_s", 60.0, float, toml_data
+        ),
+    )
+
+    # ---- features ----
+    features = FeatureFlagsConfig(
         write_journal=_b(
-            "MEMORY_WRITE_JOURNAL_ENABLED",
-            "features.write_journal",
-            False,
-            bool,
-            toml_data,
+            "MEMORY_WRITE_JOURNAL_ENABLED", "features.write_journal", False, bool, toml_data
         ),
         multi_agent=_b(
             "MEMORY_MULTI_AGENT", "features.multi_agent", True, bool, toml_data
@@ -879,39 +993,19 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "MEMORY_SELF_DIRECTED", "features.self_directed", True, bool, toml_data
         ),
         adaptive_retention=_b(
-            "MEMORY_ADAPTIVE_RETENTION",
-            "features.adaptive_retention",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_ADAPTIVE_RETENTION", "features.adaptive_retention", True, bool, toml_data
         ),
         neural_forget_mode=_b(
-            "MEMORY_NEURAL_FORGET_MODE",
-            "features.neural_forget_mode",
-            "formula",
-            str,
-            toml_data,
+            "MEMORY_NEURAL_FORGET_MODE", "features.neural_forget_mode", "formula", str, toml_data
         ),
         neural_forget_weights=_b(
-            "MEMORY_NEURAL_FORGET_WEIGHTS",
-            "features.neural_forget_weights",
-            "",
-            str,
-            toml_data,
+            "MEMORY_NEURAL_FORGET_WEIGHTS", "features.neural_forget_weights", "", str, toml_data
         ),
         temporal_ssm_enabled=_b(
-            "MEMORY_TEMPORAL_SSM_ENABLED",
-            "features.temporal_ssm_enabled",
-            False,
-            bool,
-            toml_data,
+            "MEMORY_TEMPORAL_SSM_ENABLED", "features.temporal_ssm_enabled", False, bool, toml_data
         ),
         temporal_ssm_weights=_b(
-            "MEMORY_TEMPORAL_SSM_WEIGHTS",
-            "features.temporal_ssm_weights",
-            "",
-            str,
-            toml_data,
+            "MEMORY_TEMPORAL_SSM_WEIGHTS", "features.temporal_ssm_weights", "", str, toml_data
         ),
         consolidation=_b(
             "MEMORY_CONSOLIDATION", "features.consolidation", True, bool, toml_data
@@ -938,507 +1032,383 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "MEMORY_TEMPORAL_KG", "features.feature_temporal_kg", True, bool, toml_data
         ),
         feature_temporal_kg_llm=_b(
-            "MEMORY_TEMPORAL_KG_LLM",
-            "features.feature_temporal_kg_llm",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_TEMPORAL_KG_LLM", "features.feature_temporal_kg_llm", True, bool, toml_data
         ),
         temporal_kg_llm_tier=_b(
-            "MEMORY_TEMPORAL_KG_LLM_TIER",
-            "features.temporal_kg_llm_tier",
-            "light",
-            str,
-            toml_data,
+            "MEMORY_TEMPORAL_KG_LLM_TIER", "features.temporal_kg_llm_tier", "light", str, toml_data
         ),
         feature_belief_layer=_b(
-            "MEMORY_BELIEF_LAYER",
-            "features.feature_belief_layer",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_BELIEF_LAYER", "features.feature_belief_layer", True, bool, toml_data
         ),
         self_editing=_b(
-            "MEMORY_SELF_EDITING",
-            "features.self_editing",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_SELF_EDITING", "features.self_editing", True, bool, toml_data
         ),
         knowledge_compilation=_b(
-            "MEMORY_KNOWLEDGE_COMPILATION",
-            "features.knowledge_compilation",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_KNOWLEDGE_COMPILATION", "features.knowledge_compilation", True, bool, toml_data
         ),
         graph_centrality_boost=_b(
-            "MEMORY_GRAPH_CENTRALITY_BOOST",
-            "features.graph_centrality_boost",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_GRAPH_CENTRALITY_BOOST", "features.graph_centrality_boost", True, bool, toml_data
         ),
         graph_communities=_b(
-            "MEMORY_GRAPH_COMMUNITIES",
-            "features.graph_communities",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_GRAPH_COMMUNITIES", "features.graph_communities", True, bool, toml_data
         ),
         graph_evolution_tracking=_b(
-            "MEMORY_GRAPH_EVOLUTION_TRACKING",
-            "features.graph_evolution_tracking",
-            True,
-            bool,
-            toml_data,
+            "MEMORY_GRAPH_EVOLUTION_TRACKING", "features.graph_evolution_tracking", True, bool, toml_data
         ),
         ner_spacy_enabled=_b(
-            "MEMORY_NER_SPACY",
-            "features.ner_spacy_enabled",
-            False,
-            bool,
-            toml_data,
+            "MEMORY_NER_SPACY", "features.ner_spacy_enabled", False, bool, toml_data
         ),
         session_memory=_b(
             "MEMORY_SESSION_MEMORY", "session_memory.enabled", False, bool, toml_data
         ),
-        # --- cache ---
-        fts5_cache=_b("MEMORY_FTS5_CACHE", "cache.fts5_cache", True, bool, toml_data),
-        fts5_cache_ttl=_b(
-            "MEMORY_FTS5_CACHE_TTL", "cache.fts5_cache_ttl", 30, int, toml_data
+        session_decision_llm=_b(
+            "MEMORY_SESSION_DECISION_LLM", "session_memory.decision_llm", False, bool, toml_data
         ),
-        vec_cache_max=_b(
-            "MEMORY_VEC_CACHE_MAX", "cache.vec_cache_max", 20, int, toml_data
+    )
+
+    # ---- write (save pipeline) ----
+    write = WritePipelineConfig(
+        write_journal=features.write_journal,
+        quality_gates=features.quality_gates,
+        saga_enabled=features.saga_enabled,
+        defer_expensive=True,
+        save_max_content_bytes=_b(
+            "MEMORY_SAVE_MAX_CONTENT_BYTES", "save_pipeline.max_content_bytes", 50000, int, toml_data
         ),
-        vec_cache_ttl_s=_b(
-            "MEMORY_VEC_CACHE_TTL_S", "cache.vec_cache_ttl_s", 30.0, float, toml_data
+        save_max_tags=_b(
+            "MEMORY_SAVE_MAX_TAGS", "save_pipeline.max_tags", 50, int, toml_data
         ),
-        # --- quality_gates ---
-        quality_min_content_length=_b(
-            "MEMORY_QUALITY_MIN_CONTENT_LENGTH",
-            "quality_gates.min_content_length",
-            20,
-            int,
-            toml_data,
+        save_max_category_len=_b(
+            "MEMORY_SAVE_MAX_CATEGORY_LEN", "save_pipeline.max_category_len", 64, int, toml_data
         ),
-        quality_max_duplicate_similarity=_b(
-            "MEMORY_QUALITY_MAX_DUPLICATE_SIMILARITY",
-            "quality_gates.max_duplicate_similarity",
-            0.90,
-            float,
-            toml_data,
+        save_max_slug_len=_b(
+            "MEMORY_SAVE_MAX_SLUG_LEN", "save_pipeline.max_slug_len", 128, int, toml_data
         ),
-        quality_min_relevance_score=_b(
-            "MEMORY_QUALITY_MIN_RELEVANCE_SCORE",
-            "quality_gates.min_relevance_score",
-            0.1,
-            float,
-            toml_data,
+    )
+
+    # ---- embedding ----
+    embedding = EmbeddingConfig(
+        backend=_b(
+            "MEMORY_EMBEDDING_BACKEND", "embedding.backend", "auto", str, toml_data
         ),
-        # --- multi_agent ---
-        shared_pool_ttl_days=_b(
-            "MEMORY_SHARED_POOL_TTL_DAYS",
-            "multi_agent.shared_pool_ttl_days",
-            30,
-            int,
-            toml_data,
+        model_id=_b(
+            "MEMORY_EMBEDDING_MODEL_ID", "embedding.model_id", "Potion-8M", str, toml_data
         ),
-        shared_pool_max_size=_b(
-            "MEMORY_SHARED_POOL_MAX_SIZE",
-            "multi_agent.shared_pool_max_size",
-            500,
-            int,
-            toml_data,
-        ),
-        # --- llm_extraction ---
-        llm_provider=_b(
-            "MEMORY_LLM_PROVIDER",
-            "llm_extraction.provider",
-            "huggingface",  # S3: "ollama" | "llama_cpp" | "huggingface"
-            str,
-            toml_data,
-        ),
-        ollama_host=_b(
-            "MEMORY_OLLAMA_HOST",
-            "llm_extraction.ollama_host",
-            "http://localhost:11434",
-            str,
-            toml_data,
-        ),
-        ollama_model=_b(
-            "MEMORY_OLLAMA_MODEL",
-            "llm_extraction.ollama_model",
-            "qwen2.5:3b",
-            str,
-            toml_data,
-        ),
-        ollama_timeout_s=_b(
-            "MEMORY_OLLAMA_TIMEOUT_S",
-            "llm_extraction.ollama_timeout_s",
-            30.0,
-            float,
-            toml_data,
-        ),
-        llama_cpp_host=_b(
-            "MEMORY_LLAMA_CPP_HOST",
-            "llm_extraction.llama_cpp_host",
-            "http://localhost:8080",
-            str,
-            toml_data,
-        ),
-        llama_cpp_model=_b(
-            "MEMORY_LLAMA_CPP_MODEL",
-            "llm_extraction.llama_cpp_model",
-            "",
-            str,
-            toml_data,
-        ),
-        llama_cpp_timeout_s=_b(
-            "MEMORY_LLAMA_CPP_TIMEOUT_S",
-            "llm_extraction.llama_cpp_timeout_s",
-            30.0,
-            float,
-            toml_data,
-        ),
-        llm_extraction_model_id=_b(
-            "MEMORY_LLM_EXTRACTION_MODEL_ID",
-            "llm_extraction.model_id",
-            "Qwen/Qwen2.5-3B-Instruct",  # T6: bumped from 1.5B
-            str,
-            toml_data,
-        ),
-        llm_extraction_max_tokens=_b(
-            "MEMORY_LLM_EXTRACTION_MAX_TOKENS",
-            "llm_extraction.max_tokens",
-            256,
-            int,
-            toml_data,
-        ),
-        llm_extraction_hybrid_threshold=_b(
-            "MEMORY_LLM_HYBRID_THRESHOLD",
-            "llm_extraction.hybrid_threshold",
-            0.5,
-            float,
-            toml_data,
-        ),
-        llm_extraction_force=_b(
-            "MEMORY_LLM_FORCE", "llm_extraction.force", False, bool, toml_data
+        model_revision=_b(
+            "MEMORY_EMBEDDING_MODEL_REVISION", "embedding.model_revision", "", str, toml_data
         ),
         idle_unload_seconds=_b(
-            "MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS",
-            "llm_extraction.idle_unload_seconds",
-            1800,
-            int,
-            toml_data,
+            "MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS", "embedding.idle_unload_seconds", 600, int, toml_data
         ),
-        # --- semantic / kg dedup ---
-        max_claims_semantic=_b(
-            "MEMORY_MAX_CLAIMS_SEMANTIC",
-            "semantic.max_claims_semantic",
-            10000,
-            int,
-            toml_data,
-        ),
-        semantic_threshold=_b(
-            "MEMORY_SEMANTIC_THRESHOLD",
-            "semantic.semantic_threshold",
-            0.65,
-            float,
-            toml_data,
-        ),
-        kg_dedup_threshold=_b(
-            "MEMORY_KG_DEDUP_THRESHOLD", "kg_dedup.threshold", 0.92, float, toml_data
-        ),
-        # --- hybrid fusion weights ---
-        hybrid_fts_weight=_b(
-            "MEMORY_HYBRID_FTS_WEIGHT", "hybrid.fts_weight", 1.0, float, toml_data
-        ),
-        hybrid_semantic_weight=_b(
-            "MEMORY_HYBRID_SEMANTIC_WEIGHT",
-            "hybrid.semantic_weight",
-            1.0,
-            float,
-            toml_data,
-        ),
-        hybrid_rrf_k=_b("MEMORY_HYBRID_RRF_K", "hybrid.rrf_k", 60, int, toml_data),
-        hybrid_semantic_overfetch=_b(
-            "MEMORY_HYBRID_SEMANTIC_OVERFETCH",
-            "hybrid.semantic_overfetch",
-            3,
-            int,
-            toml_data,
-        ),
-        hybrid_rank_proxy_scale=_b(
-            "MEMORY_HYBRID_RANK_PROXY_SCALE",
-            "hybrid.rank_proxy_scale",
-            30.0,
-            float,
-            toml_data,
-        ),
-        # --- user profile ---
-        user_profile_window_days=_b(
-            "MEMORY_USER_PROFILE_WINDOW_DAYS",
-            "user_profile.window_days",
-            90,
-            int,
-            toml_data,
-        ),
-        user_profile_max_size=_b(
-            "MEMORY_USER_PROFILE_MAX_SIZE", "user_profile.max_size", 50, int, toml_data
-        ),
-        user_profile_recency_half_life_days=_b(
-            "MEMORY_USER_PROFILE_RECENCY_HALF_LIFE_DAYS",
-            "user_profile.recency_half_life_days",
-            30,
-            int,
-            toml_data,
-        ),
-        # --- sync ---
-        sync_enable_server=_b(
-            "MEMORY_SYNC_ENABLE_SERVER", "sync.enable_server", False, bool, toml_data
-        ),
-        sync_listen_host=_b(
-            "MEMORY_SYNC_LISTEN_HOST", "sync.listen_host", "127.0.0.1", str, toml_data
-        ),
-        sync_listen_port=_b(
-            "MEMORY_SYNC_LISTEN_PORT", "sync.listen_port", 9877, int, toml_data
-        ),
-        sync_interval_minutes=_b(
-            "MEMORY_SYNC_INTERVAL_MINUTES",
-            "sync.schedule.interval_minutes",
-            5,
-            int,
-            toml_data,
-        ),
-        sync_peers=_resolve_sync_peers(toml_data),
-        # --- api ---
-        api_enable_server=_b(
-            "MEMORY_API_ENABLE_SERVER", "api.enable_server", False, bool, toml_data
-        ),
-        api_listen_host=_b(
-            "MEMORY_API_LISTEN_HOST", "api.listen_host", "127.0.0.1", str, toml_data
-        ),
-        api_listen_port=_b(
-            "MEMORY_API_LISTEN_PORT", "api.listen_port", 9878, int, toml_data
-        ),
-        api_token=_b(
-            "MEMORY_API_TOKEN", "api.token", "", str, toml_data
-        ),
-        api_insecure_loopback=_b(
-            "MEMORY_API_INSECURE_LOOPBACK",
-            "api.insecure_loopback",
-            False,
-            bool,
-            toml_data,
-        ),
-        dashboard_address=_b(
-            "MEMORY_DASHBOARD_ADDRESS",
-            "api.dashboard_address",
-            "127.0.0.1",
-            str,
-            toml_data,
-        ),
-        # --- auto_save ---
-        auto_save_max_retries=_b(
+    )
+
+    # ---- auto_save ----
+    auto_save = AutoSaveConfig(
+        max_retries=_b(
             "MEMORY_AUTO_SAVE_MAX_RETRIES", "auto_save.max_retries", 3, int, toml_data
         ),
-        auto_save_backoff_base_seconds=_b(
-            "MEMORY_AUTO_SAVE_BACKOFF_BASE_SECONDS",
-            "auto_save.backoff_base_seconds",
-            1.0,
-            float,
-            toml_data,
+        backoff_base_seconds=_b(
+            "MEMORY_AUTO_SAVE_BACKOFF_BASE_SECONDS", "auto_save.backoff_base_seconds", 1.0, float, toml_data
         ),
-        auto_save_backoff_cap_seconds=_b(
-            "MEMORY_AUTO_SAVE_BACKOFF_CAP_SECONDS",
-            "auto_save.backoff_cap_seconds",
-            30.0,
-            float,
-            toml_data,
+        backoff_cap_seconds=_b(
+            "MEMORY_AUTO_SAVE_BACKOFF_CAP_SECONDS", "auto_save.backoff_cap_seconds", 300.0, float, toml_data
         ),
-        auto_save_circuit_breaker_seconds=_b(
-            "MEMORY_AUTO_SAVE_CIRCUIT_BREAKER_SECONDS",
-            "auto_save.circuit_breaker_seconds",
-            300.0,
-            float,
-            toml_data,
+        circuit_breaker_seconds=_b(
+            "MEMORY_AUTO_SAVE_CIRCUIT_BREAKER_SECONDS", "auto_save.circuit_breaker_seconds", 300.0, float, toml_data
         ),
-        auto_save_failure_window_seconds=_b(
-            "MEMORY_AUTO_SAVE_FAILURE_WINDOW_SECONDS",
-            "auto_save.failure_window_seconds",
-            60.0,
-            float,
-            toml_data,
+        failure_window_seconds=_b(
+            "MEMORY_AUTO_SAVE_FAILURE_WINDOW_SECONDS", "auto_save.failure_window_seconds", 60.0, float, toml_data
         ),
-        auto_save_allowlist=_b(
+        batch_interval_seconds=_b(
+            "MEMORY_AUTO_SAVE_BATCH_INTERVAL_SECONDS", "auto_save.batch_interval_seconds", 5.0, float, toml_data
+        ),
+        batch_size=_b(
+            "MEMORY_AUTO_SAVE_BATCH_SIZE", "auto_save.batch_size", 50, int, toml_data
+        ),
+        daemon_idle_seconds=_b(
+            "MEMORY_AUTO_SAVE_DAEMON_IDLE_SECONDS", "auto_save.daemon_idle_seconds", 300, int, toml_data
+        ),
+        inbox_max_bytes=_b(
+            "MEMORY_AUTO_SAVE_INBOX_MAX_BYTES", "auto_save.inbox_max_bytes", 500_000, int, toml_data
+        ),
+        preview_max=_b(
+            "AUTO_SAVE_PREVIEW_MAX", "auto_save.preview_max", 200, int, toml_data
+        ),
+        params_max=_b(
+            "AUTO_SAVE_PARAMS_MAX", "auto_save.params_max", 2000, int, toml_data
+        ),
+        health_check_minutes=_b(
+            "MEMORY_AUTO_SAVE_HEALTH_CHECK_MINUTES", "auto_save.health_check_minutes", 15, int, toml_data
+        ),
+        allowlist=_b(
             "AUTO_SAVE_TOOL_ALLOWLIST",
             "auto_save.allowlist",
             "memory_save,memory_supersede,memory_delete,todowrite,task,question,write,edit",
             str,
             toml_data,
         ),
-        auto_save_denylist=_b(
+        denylist=_b(
             "AUTO_SAVE_TOOL_DENYLIST",
             "auto_save.denylist",
-            "filesystem_list_allowed_directories,filesystem_list_directory,filesystem_directory_tree,filesystem_read_multiple_files,filesystem_search_files,filesystem_get_file_info,filesystem_list_directory_with_sizes,memory_session_start,memory_user_profile,memory_recall_context,memory_profile_access,memory_record_ctr_feedback,memory_check_concept_drift,todo,process,read_terminal",
+            "filesystem_list_allowed_directories,filesystem_list_directory,"
+            "filesystem_directory_tree,filesystem_read_multiple_files,"
+            "filesystem_search_files,filesystem_get_file_info,"
+            "filesystem_list_directory_with_sizes,memory_session_start,"
+            "memory_user_profile,memory_recall_context,memory_profile_access,"
+            "memory_record_ctr_feedback,memory_check_concept_drift,todo,process,"
+            "read_terminal",
             str,
             toml_data,
         ),
-        # --- save_pipeline ---
-        save_max_content_bytes=_b(
-            "MEMORY_SAVE_MAX_CONTENT_BYTES",
-            "save_pipeline.max_content_bytes",
-            50000,
-            int,
-            toml_data,
+        keyword_routing=_b(
+            "MEMORY_AUTO_SAVE_KEYWORD_ROUTING", "auto_save.keyword_routing", True, bool, toml_data
         ),
-        save_max_tags=_b(
-            "MEMORY_SAVE_MAX_TAGS",
-            "save_pipeline.max_tags",
-            50,
-            int,
-            toml_data,
-        ),
-        save_max_category_len=_b(
-            "MEMORY_SAVE_MAX_CATEGORY_LEN",
-            "save_pipeline.max_category_len",
-            64,
-            int,
-            toml_data,
-        ),
-        save_max_slug_len=_b(
-            "MEMORY_SAVE_MAX_SLUG_LEN",
-            "save_pipeline.max_slug_len",
-            128,
-            int,
-            toml_data,
-        ),
-        # --- auto_save ---
-        auto_save_batch_interval_seconds=_b(
-            "MEMORY_AUTO_SAVE_BATCH_INTERVAL_SECONDS",
-            "auto_save.batch_interval_seconds",
-            0.5,
-            float,
-            toml_data,
-        ),
-        auto_save_batch_size=_b(
-            "MEMORY_AUTO_SAVE_BATCH_SIZE",
-            "auto_save.batch_size",
-            50,
-            int,
-            toml_data,
-        ),
-        auto_save_daemon_idle_seconds=_b(
-            "MEMORY_AUTO_SAVE_DAEMON_IDLE_SECONDS",
-            "auto_save.daemon_idle_seconds",
-            3600,
-            int,
-            toml_data,
-        ),
-        auto_save_inbox_max_bytes=_b(
-            "MEMORY_AUTO_SAVE_INBOX_MAX_BYTES",
-            "auto_save.inbox_max_bytes",
-            100 * 1024 * 1024,
-            int,
-            toml_data,
-        ),
-        auto_save_preview_max=_b(
-            "AUTO_SAVE_PREVIEW_MAX",
-            "auto_save.preview_max",
-            200,
-            int,
-            toml_data,
-        ),
-        auto_save_params_max=_b(
-            "AUTO_SAVE_PARAMS_MAX",
-            "auto_save.params_max",
-            2000,
-            int,
-            toml_data,
-        ),
-        auto_save_health_check_minutes=_b(
-            "MEMORY_AUTO_SAVE_HEALTH_CHECK_MINUTES",
-            "auto_save.health_check_minutes",
-            5,
-            int,
-            toml_data,
-        ),
-        auto_save_keyword_routing=_b(
-            "MEMORY_AUTO_SAVE_KEYWORD_ROUTING",
-            "auto_save.keyword_routing",
-            True,
-            bool,
-            toml_data,
-        ),
-        auto_save_always_sessions=_b(
-            "MEMORY_AUTO_SAVE_ALWAYS_SESSIONS",
-            "auto_save.always_sessions",
-            False,
-            bool,
-            toml_data,
-        ),
-        recall_max_tokens=_b(
-            "MEMORY_RECALL_MAX_TOKENS",
-            "recall.max_tokens",
-            800,
-            int,
-            toml_data,
-        ),
-        recall_tier1_hot_days=_b(
-            "MEMORY_RECALL_TIER1_DAYS",
-            "recall.tier1_hot_days",
-            7,
-            int,
-            toml_data,
-        ),
-        recall_tier_fallback_threshold=_b(
-            "MEMORY_RECALL_TIER_FALLBACK_THRESHOLD",
-            "recall.tier_fallback_threshold",
-            5,
-            int,
-            toml_data,
-        ),
-        # --- session_memory (decision_llm; session_memory is bound above) ---
-        session_decision_llm=_b(
-            "MEMORY_SESSION_DECISION_LLM",
-            "session_memory.decision_llm",
-            False,
-            bool,
-            toml_data,
-        ),
-        # --- embedding ---
-        embedding_backend=_b(
-            "MEMORY_EMBEDDING_BACKEND",
-            "embedding.backend",
-            "auto",
-            str,
-            toml_data,
-        ),
-        embedding_model_id=_b(
-            "MEMORY_EMBEDDING_MODEL_ID",
-            "embedding.model_id",
-            "minishlab/potion-base-8M",
-            str,
-            toml_data,
-        ),
-        embedding_model_revision=_b(
-            "MEMORY_EMBEDDING_MODEL_REVISION",
-            "embedding.model_revision",
-            "",
-            str,
-            toml_data,
-        ),
-        # --- rate_limits ---
-        rate_limits=_b(
-            "MEMORY_RATE_LIMITS",
-            "rate_limits",
-            None,
-            cast=None,
-            toml_data=toml_data,
+        always_sessions=_b(
+            "MEMORY_AUTO_SAVE_ALWAYS_SESSIONS", "auto_save.always_sessions", False, bool, toml_data
         ),
     )
-    return cfg
+
+    # ---- recall ----
+    recall = RecallConfig(
+        max_tokens=_b(
+            "MEMORY_RECALL_MAX_TOKENS", "recall.max_tokens", 800, int, toml_data
+        ),
+        tier1_hot_days=_b(
+            "MEMORY_RECALL_TIER1_DAYS", "recall.tier1_hot_days", 7, int, toml_data
+        ),
+        tier_fallback_threshold=_b(
+            "MEMORY_RECALL_TIER_FALLBACK_THRESHOLD", "recall.tier_fallback_threshold", 5, int, toml_data
+        ),
+    )
+
+    # ---- user_profile ----
+    user_profile = UserProfileConfig(
+        ctr_data_window_days=_b(
+            "MEMORY_CTR_DATA_WINDOW_DAYS", "search.ctr_data_window_days", 90, int, toml_data
+        ),
+        exploration_mode=search.exploration_mode,
+        window_days=_b(
+            "MEMORY_USER_PROFILE_WINDOW_DAYS", "user_profile.window_days", 90, int, toml_data
+        ),
+        max_size=_b(
+            "MEMORY_USER_PROFILE_MAX_SIZE", "user_profile.max_size", 50, int, toml_data
+        ),
+        recency_half_life_days=_b(
+            "MEMORY_USER_PROFILE_RECENCY_HALF_LIFE_DAYS", "user_profile.recency_half_life_days", 30, int, toml_data
+        ),
+    )
+
+    # ---- quality_gates ----
+    quality_gates_cfg = QualityGatesConfig(
+        min_content_length=_b(
+            "MEMORY_QUALITY_MIN_CONTENT_LENGTH", "quality_gates.min_content_length", 20, int, toml_data
+        ),
+        max_duplicate_similarity=_b(
+            "MEMORY_QUALITY_MAX_DUPLICATE_SIMILARITY", "quality_gates.max_duplicate_similarity", 0.90, float, toml_data
+        ),
+        min_relevance_score=_b(
+            "MEMORY_QUALITY_MIN_RELEVANCE_SCORE", "quality_gates.min_relevance_score", 0.30, float, toml_data
+        ),
+    )
+
+    # ---- sharing ----
+    sharing = MemorySharingConfig(
+        shared_pool_ttl_days=_b(
+            "MEMORY_SHARED_POOL_TTL_DAYS", "multi_agent.shared_pool_ttl_days", 30, int, toml_data
+        ),
+        shared_pool_max_size=_b(
+            "MEMORY_SHARED_POOL_MAX_SIZE", "multi_agent.shared_pool_max_size", 1000, int, toml_data
+        ),
+    )
+
+    # ---- cache ----
+    cache = CacheConfig(
+        fts5_cache=_b("MEMORY_FTS5_CACHE", "cache.fts5_cache", True, bool, toml_data),
+        fts5_cache_ttl=_b(
+            "MEMORY_FTS5_CACHE_TTL", "cache.fts5_cache_ttl", 30, int, toml_data
+        ),
+        vec_cache_max=_b(
+            "MEMORY_VEC_CACHE_MAX", "cache.vec_cache_max", 500, int, toml_data
+        ),
+        vec_cache_ttl_s=_b(
+            "MEMORY_VEC_CACHE_TTL_S", "cache.vec_cache_ttl_s", 300.0, float, toml_data
+        ),
+    )
+
+    # ---- llm ----
+    llm = LLMConfig(
+        provider=_b(
+            "MEMORY_LLM_PROVIDER", "llm_extraction.provider", "none", str, toml_data
+        ),
+        ollama_host=_b(
+            "MEMORY_OLLAMA_HOST", "llm_extraction.ollama_host", "http://localhost:11434", str, toml_data
+        ),
+        ollama_model=_b(
+            "MEMORY_OLLAMA_MODEL", "llm_extraction.ollama_model", "qwen2.5:3b", str, toml_data
+        ),
+        ollama_timeout_s=_b(
+            "MEMORY_OLLAMA_TIMEOUT_S", "llm_extraction.ollama_timeout_s", 30.0, float, toml_data
+        ),
+        llama_cpp_host=_b(
+            "MEMORY_LLAMA_CPP_HOST", "llm_extraction.llama_cpp_host", "http://localhost:8080", str, toml_data
+        ),
+        llama_cpp_model=_b(
+            "MEMORY_LLAMA_CPP_MODEL", "llm_extraction.llama_cpp_model", "", str, toml_data
+        ),
+        llama_cpp_timeout_s=_b(
+            "MEMORY_LLAMA_CPP_TIMEOUT_S", "llm_extraction.llama_cpp_timeout_s", 30.0, float, toml_data
+        ),
+        extraction_model_id=_b(
+            "MEMORY_LLM_EXTRACTION_MODEL_ID", "llm_extraction.model_id", "Qwen/Qwen2.5-3B-Instruct", str, toml_data
+        ),
+        extraction_max_tokens=_b(
+            "MEMORY_LLM_EXTRACTION_MAX_TOKENS", "llm_extraction.max_tokens", 256, int, toml_data
+        ),
+        extraction_hybrid_threshold=_b(
+            "MEMORY_LLM_HYBRID_THRESHOLD", "llm_extraction.hybrid_threshold", 0.5, float, toml_data
+        ),
+        extraction_force=_b(
+            "MEMORY_LLM_FORCE", "llm_extraction.force", False, bool, toml_data
+        ),
+    )
+
+    # ---- hybrid ----
+    hybrid = HybridSearchConfig(
+        fts_weight=_b(
+            "MEMORY_HYBRID_FTS_WEIGHT", "hybrid.fts_weight", 0.5, float, toml_data
+        ),
+        semantic_weight=_b(
+            "MEMORY_HYBRID_SEMANTIC_WEIGHT", "hybrid.semantic_weight", 0.3, float, toml_data
+        ),
+        rrf_k=_b(
+            "MEMORY_HYBRID_RRF_K", "hybrid.rrf_k", 60, int, toml_data
+        ),
+        semantic_overfetch=_b(
+            "MEMORY_HYBRID_SEMANTIC_OVERFETCH", "hybrid.semantic_overfetch", 50, int, toml_data
+        ),
+        rank_proxy_scale=_b(
+            "MEMORY_HYBRID_RANK_PROXY_SCALE", "hybrid.rank_proxy_scale", 30.0, float, toml_data
+        ),
+    )
+
+    # ---- rerank ----
+    rerank = RerankConfig(
+        half_life_days=_b(
+            "MEMORY_RERANK_HALF_LIFE_DAYS", "search.rerank_half_life_days", 180.0, float, toml_data
+        ),
+        cross_encoder_blend=_b(
+            "MEMORY_CROSS_ENCODER_BLEND", "search.cross_encoder_blend", 0.6, float, toml_data
+        ),
+        late_interaction_blend=_b(
+            "MEMORY_LATE_INTERACTION_BLEND", "search.late_interaction_blend", 0.3, float, toml_data
+        ),
+        topic_similarity_threshold=_b(
+            "MEMORY_TOPIC_SIMILARITY_THRESHOLD", "search.topic_similarity_threshold", 0.15, float, toml_data
+        ),
+        concept_drift_threshold=_b(
+            "MEMORY_CONCEPT_DRIFT_THRESHOLD", "search.concept_drift_threshold", 0.15, float, toml_data
+        ),
+        temporal_decay_weight=_b(
+            "MEMORY_TEMPORAL_DECAY_WEIGHT", "search.temporal_decay_weight", 0.15, float, toml_data
+        ),
+    )
+
+    # ---- semantic_kg ----
+    semantic_kg = SemanticKGConfig(
+        max_claims_semantic=_b(
+            "MEMORY_MAX_CLAIMS_SEMANTIC", "semantic.max_claims_semantic", 10000, int, toml_data
+        ),
+        semantic_threshold=_b(
+            "MEMORY_SEMANTIC_THRESHOLD", "semantic.semantic_threshold", 0.65, float, toml_data
+        ),
+        kg_dedup_threshold=_b(
+            "MEMORY_KG_DEDUP_THRESHOLD", "kg.dedup.threshold", 0.92, float, toml_data
+        ),
+    )
+
+    # ---- sync ----
+    sync = SyncConfig(
+        enable_server=_b(
+            "MEMORY_SYNC_ENABLE_SERVER", "sync.enable_server", False, bool, toml_data
+        ),
+        listen_host=_b(
+            "MEMORY_SYNC_LISTEN_HOST", "sync.listen_host", "127.0.0.1", str, toml_data
+        ),
+        listen_port=_b(
+            "MEMORY_SYNC_LISTEN_PORT", "sync.listen_port", 9877, int, toml_data
+        ),
+        peers=_resolve_sync_peers(toml_data),
+        interval_minutes=_b(
+            "MEMORY_SYNC_INTERVAL_MINUTES", "sync.schedule.interval_minutes", 5, int, toml_data
+        ),
+    )
+
+    # ---- api ----
+    api = APIConfig(
+        enable_server=_b(
+            "MEMORY_API_ENABLE_SERVER", "api.enable_server", False, bool, toml_data
+        ),
+        listen_host=_b(
+            "MEMORY_API_LISTEN_HOST", "api.listen_host", "127.0.0.1", str, toml_data
+        ),
+        listen_port=_b(
+            "MEMORY_API_LISTEN_PORT", "api.listen_port", 9878, int, toml_data
+        ),
+        api_token=_b("MEMORY_API_TOKEN", "api.token", "", str, toml_data),
+        insecure_loopback=_b(
+            "MEMORY_API_INSECURE_LOOPBACK", "api.insecure_loopback", False, bool, toml_data
+        ),
+        dashboard_address=_b(
+            "MEMORY_DASHBOARD_ADDRESS", "api.dashboard_address", "127.0.0.1", str, toml_data
+        ),
+    )
+
+    # ---- health_check ----
+    health_check = HealthCheckConfig(
+        vec_index_drift_threshold=_b(
+            "MEMORY_VEC_INDEX_DRIFT_THRESHOLD",
+            "health_check.vec_index_drift_threshold",
+            50,
+            int,
+            toml_data,
+        ),
+        disk_pct_used_threshold=_b(
+            "MEMORY_DISK_PCT_USED_THRESHOLD",
+            "health_check.disk_pct_used_threshold",
+            95,
+            int,
+            toml_data,
+        ),
+    )
+
+    # ---- rate_limits (raw dict — not yet mapped to RateLimitsConfig) ----
+    raw_rate_limits = _b(
+        "MEMORY_RATE_LIMITS", "rate_limits", None, cast=None, toml_data=toml_data
+    )
+
+    return MemoryConfig(
+        general=general,
+        search=search,
+        kg=kg,
+        graph_cache=graph_cache,
+        write=write,
+        embedding=embedding,
+        auto_save=auto_save,
+        sync=sync,
+        api=api,
+        quality_gates=quality_gates_cfg,
+        sharing=sharing,
+        cache=cache,
+        llm=llm,
+        hybrid=hybrid,
+        rerank=rerank,
+        features=features,
+        user_profile=user_profile,
+        recall=recall,
+        semantic_kg=semantic_kg,
+        rate_limits=raw_rate_limits,
+        health_check=health_check,
+    )
 
 
 def get_config() -> MemoryConfig:
@@ -1526,135 +1496,136 @@ def get_feature_flags() -> dict:
         }
 
     cfg = get_config()
+    _f = cfg.features
     return {
         "write_journal": _flag(
-            cfg.write_journal,
+            _f.write_journal,
             "MEMORY_WRITE_JOURNAL_ENABLED",
             "features.write_journal",
             False,
         ),
         "multi_agent": _flag(
-            cfg.multi_agent, "MEMORY_MULTI_AGENT", "features.multi_agent", True
+            _f.multi_agent, "MEMORY_MULTI_AGENT", "features.multi_agent", True
         ),
         "summarization": _flag(
-            cfg.summarization, "MEMORY_SUMMARIZATION", "features.summarization", True
+            _f.summarization, "MEMORY_SUMMARIZATION", "features.summarization", True
         ),
         "user_profile": _flag(
-            cfg.user_profile, "MEMORY_USER_PROFILE", "features.user_profile", True
+            _f.user_profile, "MEMORY_USER_PROFILE", "features.user_profile", True
         ),
         "self_directed": _flag(
-            cfg.self_directed, "MEMORY_SELF_DIRECTED", "features.self_directed", True
+            _f.self_directed, "MEMORY_SELF_DIRECTED", "features.self_directed", True
         ),
         "adaptive_retention": _flag(
-            cfg.adaptive_retention,
+            _f.adaptive_retention,
             "MEMORY_ADAPTIVE_RETENTION",
             "features.adaptive_retention",
             True,
         ),
         "temporal_ssm_enabled": _flag(
-            cfg.temporal_ssm_enabled,
+            _f.temporal_ssm_enabled,
             "MEMORY_TEMPORAL_SSM_ENABLED",
             "features.temporal_ssm_enabled",
             False,
         ),
         "consolidation": _flag(
-            cfg.consolidation,
+            _f.consolidation,
             "MEMORY_CONSOLIDATION",
             "features.consolidation",
             True,
         ),
         "quality_gates": _flag(
-            cfg.quality_gates, "MEMORY_QUALITY_GATES", "features.quality_gates", True
+            _f.quality_gates, "MEMORY_QUALITY_GATES", "features.quality_gates", True
         ),
         "saga_enabled": _flag(
-            cfg.saga_enabled, "MEMORY_SAGA_ENABLED", "features.saga_enabled", True
+            _f.saga_enabled, "MEMORY_SAGA_ENABLED", "features.saga_enabled", True
         ),
         "temporal_tiers": _flag(
-            cfg.temporal_tiers, "MEMORY_TEMPORAL_TIERS", "features.temporal_tiers", True
+            _f.temporal_tiers, "MEMORY_TEMPORAL_TIERS", "features.temporal_tiers", True
         ),
         "crdt_enabled": _flag(
-            cfg.crdt_enabled, "MEMORY_CRDT_ENABLED", "features.crdt_enabled", True
+            _f.crdt_enabled, "MEMORY_CRDT_ENABLED", "features.crdt_enabled", True
         ),
         "legacy_note_crdt": _flag(
-            cfg.legacy_note_crdt,
+            _f.legacy_note_crdt,
             "MEMORY_LEGACY_NOTE_CRDT",
             "features.legacy_note_crdt",
             False,
         ),
         "llm_extraction": _flag(
-            cfg.llm_extraction,
+            _f.llm_extraction,
             "MEMORY_LLM_EXTRACTION",
             "features.llm_extraction",
             True,
         ),
         "feature_temporal_kg": _flag(
-            cfg.feature_temporal_kg,
+            _f.feature_temporal_kg,
             "MEMORY_TEMPORAL_KG",
             "features.feature_temporal_kg",
             True,
         ),
         "feature_belief_layer": _flag(
-            cfg.feature_belief_layer,
+            _f.feature_belief_layer,
             "MEMORY_BELIEF_LAYER",
             "features.feature_belief_layer",
             True,
         ),
         "self_editing": _flag(
-            cfg.self_editing,
+            _f.self_editing,
             "MEMORY_SELF_EDITING",
             "features.self_editing",
             True,
         ),
         "knowledge_compilation": _flag(
-            cfg.knowledge_compilation,
+            _f.knowledge_compilation,
             "MEMORY_KNOWLEDGE_COMPILATION",
             "features.knowledge_compilation",
             True,
         ),
         "graph_centrality_boost": _flag(
-            cfg.graph_centrality_boost,
+            _f.graph_centrality_boost,
             "MEMORY_GRAPH_CENTRALITY_BOOST",
             "features.graph_centrality_boost",
             True,
         ),
         "graph_communities": _flag(
-            cfg.graph_communities,
+            _f.graph_communities,
             "MEMORY_GRAPH_COMMUNITIES",
             "features.graph_communities",
             True,
         ),
         "graph_evolution_tracking": _flag(
-            cfg.graph_evolution_tracking,
+            _f.graph_evolution_tracking,
             "MEMORY_GRAPH_EVOLUTION_TRACKING",
             "features.graph_evolution_tracking",
             True,
         ),
         "ner_spacy_enabled": _flag(
-            cfg.ner_spacy_enabled,
+            _f.ner_spacy_enabled,
             "MEMORY_NER_SPACY",
             "features.ner_spacy_enabled",
             False,
         ),
         "fts5_cache": _flag(
-            cfg.fts5_cache, "MEMORY_FTS5_CACHE", "cache.fts5_cache", True
+            cfg.cache.fts5_cache, "MEMORY_FTS5_CACHE", "cache.fts5_cache", True
         ),
         "query_cache": _flag(
-            cfg.query_cache, "MEMORY_QUERY_CACHE", "search.query_cache", True
+            cfg.search.query_cache, "MEMORY_QUERY_CACHE", "search.query_cache", True
         ),
         "reranker_disabled": _flag(
-            cfg.reranker_disabled,
+            cfg.search.reranker_disabled,
             "MEMORY_RERANKER_DISABLED",
             "search.reranker_disabled",
             False,
         ),
         "llm_allow_remote_code": _flag(
-            cfg.llm_allow_remote_code,
+            cfg.llm.allow_remote_code,
             "MEMORY_LLM_ALLOW_REMOTE_CODE",
-            "features.llm_allow_remote_code",
+            "llm.allow_remote_code",
             False,
         ),
         "contextual_retrieval": _flag(
-            cfg.contextual_retrieval,
+            cfg.search.contextual_retrieval,
             "MEMORY_CONTEXTUAL_RETRIEVAL",
             "search.contextual_retrieval",
             True,

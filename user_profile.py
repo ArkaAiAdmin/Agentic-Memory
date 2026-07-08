@@ -339,4 +339,4 @@ def profile_stats(db_path: str | None = None) -> dict:
 
 from infra.memory_common import make_lazy_getattr
 
-__getattr__ = make_lazy_getattr({"PROFILE_ENABLED": "user_profile"})
+__getattr__ = make_lazy_getattr({"PROFILE_ENABLED": ("features", lambda f: f.user_profile)})

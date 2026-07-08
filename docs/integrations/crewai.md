@@ -7,7 +7,7 @@ pip install agentic-memory[crewai]
 ```
 
 Requires Python 3.11–3.13 (Python 3.14 is blocked by `tiktoken` wheel
-availability). Requires `crewai>=0.80,<1.0`.
+availability). Requires `crewai>=1.0`.
 
 > ⚠️  If you see `ProcessLookupError` or a `tiktoken` build error, you
 > are on Python 3.14. Use Python 3.11–3.13, or skip the CrewAI extra
@@ -35,11 +35,15 @@ crew = Crew(
 crew.kickoff()
 ```
 
+`AgenticMemoryMemory` implements both the CrewAI v0.x `save`/`search` memory
+protocol and the CrewAI v1.x unified-memory `remember`/`recall` protocol.
+A single class works across both versions.
+
 After the run, all task contexts are queryable:
 
 ```python
-results = memory.search("user preferences on dark mode")
-# [{"content": "...", "score": 0.85, "tags": ["crew", "researcher", "task-1"]}, ...]
+results = memory.recall("user preferences on dark mode")
+# [{"record": {...}, "score": 0.85}, ...]
 ```
 
 ## AgenticMemorySearchTool and AgenticMemorySaveTool
@@ -91,9 +95,14 @@ Returns: `"Saved as <note_id>"`
 
 ## Version compatibility
 
-CrewAI 0.x has the `Memory` protocol with `save(context, agent, task)` and
-`search(query) -> list[dict]`. CrewAI 1.x replaced this with
-`LongTermMemory` / `ShortTermMemory`.
+`AgenticMemoryMemory` supports both CrewAI 0.x and 1.x:
 
-`AgenticMemoryMemory.__init__` runs a version check and raises a clear
-`ImportError` on CrewAI 1.x with instructions to pin `crewai<1.0`.
+| CrewAI version | Protocol | Methods |
+|---|---|---|
+| 0.x (>=0.80) | `Memory` save/search | ``save(context, agent, task)``, ``search(query)`` |
+| 1.x (>=1.0) | Unified `Memory` | ``remember(content, categories=...)``, ``recall(query, categories=..., limit=...)`` |
+
+`AgenticMemoryMemory.__init__` accepts either version; no explicit version
+check is needed because both method sets are implemented on the same class.
+CrewAI v1's ``Field(discriminator="memory_kind")`` recognises the adapter
+via the ``memory_kind: Literal["memory"]`` field.

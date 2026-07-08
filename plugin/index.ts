@@ -1,63 +1,68 @@
 /**
  * agentic-memory OpenCode plugin — thin adapter
  *
- * This is the ONLY file that imports from @opencode-ai/plugin.
- * It translates OpenCode's event names and input/output types into
- * plain function calls on the hook implementation.
- *
- * The actual logic lives in ./agentic-memory-hooks.ts which knows
- * nothing about OpenCode's plugin system.
+ * The ONLY file that imports from @opencode-ai/plugin.
+ * All hook logic lives in ./agentic-memory-hooks.ts and is agnostic
+ * to any harness.
  */
 
 import type { PluginInput } from "@opencode-ai/plugin"
-import {
-  startSession,
-  onToolAfter,
-  beforeTool,
-  onIdle,
-  endSession,
-  injectSystemPrompt,
-  onCompacting,
-} from "./agentic-memory-hooks.js"
+import type { HarnessAdapter, HookContext } from "./types.js"
+import { state } from "./agentic-memory-hooks.js"
+import * as hooks from "./agentic-memory-hooks.js"
+
+const HANDLER_MAP: Record<string, keyof typeof hooks> = {
+  "tool.execute.after": "onToolAfter",
+  "tool.execute.before": "beforeTool",
+  "session.created": "startSession",
+  "session.idle": "onIdle",
+  "session.deleted": "endSession",
+  "experimental.chat.system.transform": "injectSystemPrompt",
+  "experimental.session.compacting": "onCompacting",
+}
+
+function buildAdapter(input: PluginInput): HarnessAdapter {
+  const log = (msg: string) =>
+    input.client.app.log({ body: { service: "agentic-memory", level: "debug" as const, message: msg } }).catch(() => {})
+
+  return {
+    log,
+    eventName: (_event: string) => "opencode",
+    injectIntoSystemPrompt: (_lines: string[]) => { void _lines },
+    getState: () => state,
+    spawn: async (args, label) => {
+      const { spawn } = await import("node:child_process")
+      return await new Promise<string>((resolve) => {
+        const child = spawn(input.venvPython ?? process.execPath, args, { stdio: ["pipe", "pipe", "pipe"] })
+        let out = ""
+        child.stdout?.on("data", (d: Buffer) => { out += d })
+        child.on("close", (code) => resolve(code === 0 ? out : ""))
+        child.on("error", () => resolve(""))
+      })
+    },
+    fireAndForget: async (args, label) => {
+      const { spawn } = await import("node:child_process")
+      const child = spawn(input.venvPython ?? process.execPath, args, { stdio: ["ignore", "ignore", "pipe"], detached: true })
+      child.on("error", (err) => log(`[agentic-memory] [opencode] ${label} error: ${err}`))
+      child.on("close", (code) => {
+        if (code !== 0) log(`[agentic-memory] [opencode] ${label} exited ${code}`)
+      })
+      child.unref()
+    },
+  }
+}
 
 export default async function AgenticMemoryPlugin(
   _input: PluginInput
 ): Promise<Record<string, unknown>> {
-  const log = (msg: string) => _input.client.app.log({ body: { service: "agentic-memory", level: "debug" as const, message: msg } }).catch(() => {})
+  const adapter = buildAdapter(_input)
+  const result: Record<string, unknown> = {}
 
-  return {
-    "tool.execute.after": async (input: { tool: string; args?: Record<string, unknown> }, output: unknown) => {
-      await onToolAfter(input.tool, input.args, output, log)
-    },
-
-    "tool.execute.before": async (input: { tool: string; args?: Record<string, unknown> }) => {
-      await beforeTool(input.tool, input.args, log)
-    },
-
-    "session.created": async () => {
-      await startSession(log)
-    },
-
-    "session.idle": async () => {
-      onIdle(log)
-    },
-
-    "session.deleted": async (input: { sessionID?: string }) => {
-      await endSession(input.sessionID || "unknown", log)
-    },
-
-    "experimental.chat.system.transform": async (
-      _input: { sessionID?: string; model: { providerID: string; modelID: string } },
-      output: { system: string[] }
-    ) => {
-      injectSystemPrompt(output.system)
-    },
-
-    "experimental.session.compacting": async (
-      input: { sessionID: string },
-      output: { context: string[]; prompt?: string }
-    ) => {
-      await onCompacting(input.sessionID || "unknown", output, log)
-    },
+  for (const [event, fnName] of Object.entries(HANDLER_MAP)) {
+    result[event] = async (raw: Record<string, unknown>) => {
+      const ctx: HookContext = { adapter, ...raw }
+      return (hooks[fnName] as (ctx: HookContext) => void | Promise<void>)(ctx)
+    }
   }
+  return result
 }

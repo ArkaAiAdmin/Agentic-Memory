@@ -2,18 +2,6 @@ from __future__ import annotations
 
 import logging
 logger = logging.getLogger(__name__)
-"""
-MCP tool: memory_sdk_demo.
-
-Demonstrates how to use the agentic_memory SDK (`Memory`,
-`AgentMemory`) end-to-end. Wraps the same `main()` function that
-backs the `agentic-memory` CLI and the `python -m agentic_memory`
-entry point.
-
-This tool is the canonical "show me how to use the SDK" entry
-point. It saves a few sample memories, runs a search, and prints
-DB stats so the caller can verify the wiring works.
-"""
 from mcp_common import _bootstrap_path  # noqa: E402,F401
 from typing import Any
 

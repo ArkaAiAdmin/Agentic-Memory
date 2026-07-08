@@ -203,11 +203,18 @@ def agent_save(content: str, category: str, title_slug: str, **kwargs):
         return str(e)
 
 
-def agent_search(query: str, limit: int = 5, rerank: bool = True) -> dict:
+def agent_search(query: str, limit: int = 5, rerank: bool = True, include_global: bool = True) -> dict:
     """Search memories scoped to the current agent.
 
     Wraps ``search_pipeline.search_memories`` with automatic agent
     namespace filtering. Returns the same dict shape as search_memories.
+
+    Args:
+        query: Search query string.
+        limit: Max results to return.
+        rerank: Whether to apply cross-encoder reranking.
+        include_global: If True, include global (cross-agent) memories in
+            results alongside agent-scoped ones. Defaults to True.
     """
     from infra._lazy_imports import search_memories, get_config
     from pathlib import Path
@@ -217,7 +224,7 @@ def agent_search(query: str, limit: int = 5, rerank: bool = True) -> dict:
         db_path=db_path,
         query=query,
         limit=limit,
-        include_global=True,
+        include_global=include_global,
         rerank=rerank,
     )
     # Post-filter by agent namespace if not in default

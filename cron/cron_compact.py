@@ -58,7 +58,8 @@ def run(script, args=None, timeout=120):
 def check_integrity(db_path):
     """Run PRAGMA integrity_check and foreign_key_check after rebuild."""
     print("\n=== integrity_check ===")
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout = 30000;")
     conn.execute("PRAGMA foreign_keys=ON")
     try:
         result = conn.execute("PRAGMA integrity_check").fetchone()

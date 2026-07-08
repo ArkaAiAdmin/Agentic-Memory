@@ -2,21 +2,24 @@
  * agentic-memory OpenCode plugin — pure implementation
  *
  * This module contains the actual hook logic — what happens when
- * OpenCode fires a tool call, session start, compaction, etc.
+ * a harness fires a tool call, session start, compaction, etc.
  *
- * It knows NOTHING about OpenCode's plugin system. It exports plain
- * functions with plain arguments. The OpenCode-facing adapter lives
- * in index.ts and is the ONLY file that imports from @opencode-ai/plugin.
+ * It knows NOTHING about any specific harness. It exports plain
+ * functions that accept a HookContext, which wraps a HarnessAdapter
+ * providing logging, spawning, and state access. The harness-facing
+ * adapter lives in index.ts and is the ONLY file that imports from
+ * a harness SDK.
  *
  * This separation means:
- * - OpenCode API changes only require rewriting index.ts
+ * - Harness API changes only require rewriting index.ts
  * - Hook behavior is versioned, tested, and reviewed independently
- * - This file can be reused by other harnesses (Claude Code, etc.)
+ * - This file can be reused by any harness (OpenCode, Claude Code, etc.)
  */
 
 import * as fs from "fs"
 import * as path from "path"
 import { spawn } from "child_process"
+import type { HookContext, HarnessAdapter } from "./types.js"
 
 // ── Path resolution ──────────────────────────────────────────────────────────
 
@@ -70,31 +73,65 @@ function recordSuccess(label: string): void {
   }
 }
 
-function isAutoSaveCircuitOpen(log: (msg: string) => void): boolean {
-  if (!fs.existsSync(CIRCUIT_SENTINEL)) return false
-  if (isCircuitOpen("auto-save")) {
-    log(`[agentic-memory] Circuit OPEN for auto-save (TS + sentinel) — skipping`)
+function isAutoSaveCircuitOpen(adapter: HarnessAdapter): boolean {
+  const jsCircuitOpen = isCircuitOpen("auto-save")
+
+  if (jsCircuitOpen) {
+    adapter.log("[agentic-memory] Circuit OPEN for auto-save (TS circuit breaker) — skipping")
     return true
   }
-  log(`[agentic-memory] Circuit OPEN for auto-save (Python CB via sentinel) — skipping`)
-  return true
+
+  // 2026-07-08: read sentinel JSON — it now carries pid + ts so we can
+  // distinguish a stale sentinel (crashed daemon) from an active circuit.
+  let sentinelPid: number | undefined
+  try {
+    const raw = fs.readFileSync(CIRCUIT_SENTINEL, "utf-8")
+    const data = JSON.parse(raw)
+    if (data.status === "open") {
+      sentinelPid = data.pid
+    }
+  } catch {
+    // No sentinel, corrupt, or legacy format (bare "open") — fall through
+    // to the bare-exists check below for backward compat.
+  }
+
+  if (sentinelPid !== undefined) {
+    // New-style sentinel: check if the owning process is still alive.
+    try {
+      process.kill(sentinelPid, 0)
+    } catch {
+      adapter.log(`[agentic-memory] Stale sentinel (pid=${sentinelPid} dead) — clearing, treating circuit as CLOSED`)
+      try { fs.unlinkSync(CIRCUIT_SENTINEL) } catch {}
+      return false
+    }
+    adapter.log(`[agentic-memory] Circuit OPEN for auto-save (Python CB via sentinel pid=${sentinelPid}) — skipping`)
+    return true
+  }
+
+  // Fallback: bare file exists (legacy sentinel without PID).
+  if (fs.existsSync(CIRCUIT_SENTINEL)) {
+    adapter.log("[agentic-memory] Circuit OPEN for auto-save (Python CB via sentinel) — skipping")
+    return true
+  }
+
+  return false
 }
 
-function recordFailure(log: (msg: string) => void, label: string, err: unknown, extra?: Record<string, unknown>): void {
+function recordFailure(adapter: HarnessAdapter, label: string, err: unknown, extra?: Record<string, unknown>): void {
   const count = (failureCounts.get(label) || 0) + 1
   failureCounts.set(label, count)
   if (count === CIRCUIT_THRESHOLD) {
     circuitOpenTimes.set(label, Date.now())
-    log(`[agentic-memory] Circuit breaker OPENED for ${label} after ${count} consecutive failures`)
+    adapter.log(`[agentic-memory] Circuit breaker OPENED for ${label} after ${count} consecutive failures`)
   } else if (count > CIRCUIT_THRESHOLD) {
-    log(`[agentic-memory] ${label} failed (${count}/${CIRCUIT_THRESHOLD}): ${err instanceof Error ? err.message : String(err)}`)
+    adapter.log(`[agentic-memory] ${label} failed (${count}/${CIRCUIT_THRESHOLD}): ${err instanceof Error ? err.message : String(err)}`)
   }
   try {
     fs.appendFileSync(ERROR_LOG, JSON.stringify({ ts: Date.now(), label, error: err instanceof Error ? err.message : String(err), failureCount: count, ...extra }) + "\n")
   } catch { /* ignore */ }
 }
 
-function surfaceRecentHookErrors(log: (msg: string) => void, maxAgeMs: number = 5 * 60 * 1000): void {
+function surfaceRecentHookErrors(adapter: HarnessAdapter, maxAgeMs: number = 5 * 60 * 1000): void {
   if (!fs.existsSync(ERROR_LOG)) return
   const cutoff = Date.now() - maxAgeMs
   try {
@@ -108,12 +145,12 @@ function surfaceRecentHookErrors(log: (msg: string) => void, maxAgeMs: number = 
       }
     })
     if (recent.length > 0) {
-      log(`[agentic-memory] ${recent.length} recent hook error(s) — check hook-errors.jsonl for details`)
+      adapter.log(`[agentic-memory] ${recent.length} recent hook error(s) — check hook-errors.jsonl for details`)
     }
   } catch { /* ignore */ }
 }
 
-function surfaceRecentAutoSaveResults(log: (msg: string) => void, maxAgeMs: number = 5 * 60 * 1000): void {
+function surfaceRecentAutoSaveResults(adapter: HarnessAdapter, maxAgeMs: number = 5 * 60 * 1000): void {
   if (!fs.existsSync(AUTO_SAVE_RESULTS)) return
   const cutoff = Date.now() - maxAgeMs
   try {
@@ -129,11 +166,11 @@ function surfaceRecentAutoSaveResults(log: (msg: string) => void, maxAgeMs: numb
     const failed = recent.filter(e => e.status === "failed")
     const saved = recent.filter(e => e.status === "saved")
     if (failed.length > 0) {
-      const previews = failed.slice(0, 3).map((e: any) => e.error || e.tool).join(", ")
-      log(`[agentic-memory] ${failed.length} auto-save failure(s) recently: ${previews}`)
+      const previews = failed.slice(0, 3).map((e: Record<string, unknown>) => (e.error || e.tool) as string).join(", ")
+      adapter.log(`[agentic-memory] ${failed.length} auto-save failure(s) recently: ${previews}`)
     }
     if (saved.length > 0) {
-      log(`[agentic-memory] ${saved.length} auto-save note(s) confirmed`)
+      adapter.log(`[agentic-memory] ${saved.length} auto-save note(s) confirmed`)
     }
     // Trim old entries to bound file size.
     try {
@@ -171,7 +208,7 @@ function getAutoSaveResult(entryId: string): any | null {
 async function waitForAutoSave(
   entryId: string,
   timeoutMs: number,
-  log: (msg: string) => void
+  adapter: HarnessAdapter
 ): Promise<any | null> {
   const deadline = Date.now() + timeoutMs
   let last: any = null
@@ -181,7 +218,7 @@ async function waitForAutoSave(
     await new Promise(r => setTimeout(r, 50))
   }
   if (last === null) {
-    log(`[agentic-memory] auto-save wait timed out after ${timeoutMs}ms for ${entryId}`)
+    adapter.log(`[agentic-memory] auto-save wait timed out after ${timeoutMs}ms for ${entryId}`)
   }
   return last
 }
@@ -192,10 +229,10 @@ async function captureOutput(
   args: string[],
   stdinData?: string,
   label = "unknown",
-  log: (msg: string) => void
+  adapter: HarnessAdapter
 ): Promise<string> {
   if (isCircuitOpen(label)) {
-    log(`[agentic-memory] Circuit OPEN for ${label} — skipping`)
+    adapter.log(`[agentic-memory] Circuit OPEN for ${label} — skipping`)
     return ""
   }
   return await new Promise<string>((resolve) => {
@@ -208,27 +245,27 @@ async function captureOutput(
     }
     child.on("close", (code) => {
       if (code === 0) { recordSuccess(label); resolve(stdout) }
-      else { recordFailure(log, label, `Exit code ${code}`, { code }); resolve("") }
+      else { recordFailure(adapter, label, `Exit code ${code}`, { code }); resolve("") }
     })
-    child.on("error", (err) => { recordFailure(log, label, err); resolve("") })
+    child.on("error", (err) => { recordFailure(adapter, label, err); resolve("") })
   })
 }
 
-function fireAndForget(args: string[], label = "unknown", log: (msg: string) => void): void {
+function fireAndForget(args: string[], label = "unknown", adapter: HarnessAdapter): void {
   if (isCircuitOpen(label)) {
-    log(`[agentic-memory] Circuit OPEN for ${label} — skipping`)
+    adapter.log(`[agentic-memory] Circuit OPEN for ${label} — skipping`)
     return
   }
   try {
     const child = spawn(VENV, args, { stdio: ["ignore", "ignore", "pipe"], detached: true })
-    child.on("error", (err) => recordFailure(log, label, err))
+    child.on("error", (err) => recordFailure(adapter, label, err))
     child.on("close", (code) => {
       if (code === 0) recordSuccess(label)
-      else recordFailure(log, label, `Exit code ${code}`, { code })
+      else recordFailure(adapter, label, `Exit code ${code}`, { code })
     })
     child.unref()
   } catch (err) {
-    recordFailure(log, label, err)
+    recordFailure(adapter, label, err)
   }
 }
 
@@ -270,7 +307,8 @@ function isAutoSaveAllowed(tool: string): boolean {
 
 // ── Shared mutable state ─────────────────────────────────────────────────────
 // Written by startSession(), read + cleared by injectSystemPrompt() on the
-// first LLM call after session start.
+// first LLM call after session start. Managed via the adapter's getState()
+// so hook functions are agnostic to the harness.
 
 export const state = {
   sessionContext: "",
@@ -292,10 +330,11 @@ function loadAgentContract(): string {
 }
 
 // ── Hook implementations ─────────────────────────────────────────────────────
-// Each function is a self-contained unit: plain args, plain return value,
-// no framework dependencies. Callable from any harness.
+// Each function receives a HookContext with a HarnessAdapter. Plain args,
+// plain return value, no harness-specific dependencies. Callable from any
+// harness that provides a HarnessAdapter implementation.
 
-export async function startSession(log: (msg: string) => void): Promise<void> {
+export async function startSession(ctx: HookContext): Promise<void> {
   // ── Phase 3: Auto-bootstrap on first run ────────────────────────────────
   // If the memory DB hasn't been created yet, run init silently so the
   // agent can start using memory without manual setup. Idempotent: the
@@ -304,30 +343,31 @@ export async function startSession(log: (msg: string) => void): Promise<void> {
     const memDir = path.join(AGENTIC_MEMORY_DIR, "memory")
     const dbPath = path.join(memDir, "memory.db")
     if (!fs.existsSync(dbPath)) {
-      log("[agentic-memory] First run detected — auto-initializing memory directory...")
+      ctx.adapter.log("[agentic-memory] First run detected — auto-initializing memory directory...")
       const initScript = path.join(AGENTIC_MEMORY_DIR, "cli.py")
       const result = await captureOutput(
         [VENV, initScript, "init", "--no-install"],
         undefined,
         "auto-init",
-        log
+        ctx.adapter
       )
       const firstLine = result.trim().split("\n")[0]
       if (firstLine) {
-        log(`[agentic-memory] Init: ${firstLine}`)
+        ctx.adapter.log(`[agentic-memory] Init: ${firstLine}`)
       } else {
-        log("[agentic-memory] Init complete")
+        ctx.adapter.log("[agentic-memory] Init complete")
       }
     }
   } catch (e) {
-    log(`[agentic-memory] Auto-init skipped: ${e instanceof Error ? e.message : String(e)}`)
+    ctx.adapter.log(`[agentic-memory] Auto-init skipped: ${e instanceof Error ? e.message : String(e)}`)
   }
   // ── End auto-bootstrap ───────────────────────────────────────────────────
 
-  return runSessionStart(log)
+  return runSessionStart(ctx)
 }
 
-async function runSessionStart(log: (msg: string) => void): Promise<void> {
+async function runSessionStart(ctx: HookContext): Promise<void> {
+  const s = ctx.adapter.getState()
   // Session context is a one-time bootstrap: recall + pinned/high-
   // importance notes. It's injected once at session creation and then
   // cleared. Proactive context (per-tool) is a separate mechanism
@@ -337,33 +377,37 @@ async function runSessionStart(log: (msg: string) => void): Promise<void> {
   const contexts: Promise<string>[] = []
 
   if (hookEnabled("session:start:memory-recall", ["minimal"])) {
-    contexts.push(captureOutput([MEMORY_RECALL], undefined, "recall", log))
+    contexts.push(captureOutput([MEMORY_RECALL], undefined, "recall", ctx.adapter))
   }
   if (hookEnabled("session:start:memory-bootstrap", ["minimal"])) {
-    contexts.push(captureOutput([MEMORY_SESSION_START], undefined, "memory-session-start", log))
+    contexts.push(captureOutput([MEMORY_SESSION_START], undefined, "memory-session-start", ctx.adapter))
   }
 
   if (contexts.length > 0) {
-    state.sessionContext = (await Promise.all(contexts)).filter(Boolean).join("\n\n")
+    s.sessionContext = (await Promise.all(contexts)).filter(Boolean).join("\n\n")
   }
 }
 
-export async function onToolAfter(tool: string, args: Record<string, unknown> | undefined, output: unknown, log: (msg: string) => void): Promise<void> {
+export async function onToolAfter(ctx: HookContext): Promise<void> {
+  const tool = ctx.toolName ?? ""
+  const args = ctx.toolArgs
+  const output = ctx.output
+
   if (!hookEnabled("post:memory:auto-save", ["minimal"])) return
   if (!isAutoSaveAllowed(tool)) return
 
-  surfaceRecentHookErrors(log)
-  surfaceRecentAutoSaveResults(log)
+  surfaceRecentHookErrors(ctx.adapter)
+  surfaceRecentAutoSaveResults(ctx.adapter)
 
   const paramsJson = JSON.stringify(args ?? {}).slice(0, 2000)
   const preview = typeof output === "string" ? output.slice(0, 200) : ""
 
-  fireAndForget([CONTEXT_MONITOR, "track", "--tool", tool, "--params", paramsJson, "--result-preview", preview], "track", log)
-  if (!isAutoSaveCircuitOpen(log)) {
+  await ctx.adapter.fireAndForget([CONTEXT_MONITOR, "track", "--tool", tool, "--params", paramsJson, "--result-preview", preview], "track")
+  if (!isAutoSaveCircuitOpen(ctx.adapter)) {
     const now = Date.now()
     const last = _lastAutoSaveTime.get(tool) || 0
     if (now - last < AUTO_SAVE_THROTTLE_MS) {
-      log(`[agentic-memory] auto-save throttled for ${tool} (${now - last}ms since last)`)
+      ctx.adapter.log(`[agentic-memory] auto-save throttled for ${tool} (${now - last}ms since last)`)
       return
     }
     _lastAutoSaveTime.set(tool, now)
@@ -378,49 +422,53 @@ export async function onToolAfter(tool: string, args: Record<string, unknown> | 
           [AUTO_SAVE, "tool-complete", "--tool", tool, "--params", paramsJson, "--result-preview", preview, "--entry-id", entryId, "--wait-timeout", String(waitTimeoutMs / 1000)],
           undefined,
           "auto-save-wait",
-          log
+          ctx.adapter
         )
         const parsed = result ? JSON.parse(result) : {}
         if (parsed.status === "saved" || parsed.saved === true) {
-          log(`[agentic-memory] auto-save confirmed for ${entryId}`)
+          ctx.adapter.log(`[agentic-memory] auto-save confirmed for ${entryId}`)
         } else if (parsed.status === "timeout") {
-          log(`[agentic-memory] auto-save wait timed out for ${entryId}`)
+          ctx.adapter.log(`[agentic-memory] auto-save wait timed out for ${entryId}`)
         }
       } catch (e) {
-        log(`[agentic-memory] auto-save blocking call failed: ${e instanceof Error ? e.message : String(e)}`)
+        ctx.adapter.log(`[agentic-memory] auto-save blocking call failed: ${e instanceof Error ? e.message : String(e)}`)
       }
     } else {
-      fireAndForget([AUTO_SAVE, "tool-complete", "--tool", tool, "--params", paramsJson, "--result-preview", preview, "--entry-id", entryId], "auto-save", log)
+      await ctx.adapter.fireAndForget([AUTO_SAVE, "tool-complete", "--tool", tool, "--params", paramsJson, "--result-preview", preview, "--entry-id", entryId], "auto-save")
     }
   }
 }
 
-export function beforeTool(tool: string, args: Record<string, unknown> | undefined, log: (msg: string) => void): Promise<void> {
+export function beforeTool(ctx: HookContext): Promise<void> {
   // Proactive context is captured here and injected into the system
   // prompt on the NEXT LLM call (via injectSystemPrompt). If no LLM
   // call occurs before the next tool, the context is overwritten by
   // the next beforeTool call. The agent always sees the latest
   // proactive context in this hook's stdout stream regardless.
-  return captureOutput([PROACTIVE_CONTEXT], JSON.stringify({ tool_name: tool, tool_input: args ?? {} }), "memory-proactive-context", log).then((out) => {
-    if (out.trim()) state.proactiveContext = out.trim()
+  const tool = ctx.toolName ?? ""
+  const args = ctx.toolArgs
+  return captureOutput([PROACTIVE_CONTEXT], JSON.stringify({ tool_name: tool, tool_input: args ?? {} }), "memory-proactive-context", ctx.adapter).then((out) => {
+    if (out.trim()) ctx.adapter.getState().proactiveContext = out.trim()
   })
 }
 
-export function onIdle(log: (msg: string) => void): void {
+export async function onIdle(ctx: HookContext): Promise<void> {
   if (!hookEnabled("session:idle:memory-checkpoint", ["minimal"])) return
-  try { fireAndForget([CONTEXT_MONITOR, "idle"], "idle", log) } catch { /* ignore */ }
+  try { await ctx.adapter.fireAndForget([CONTEXT_MONITOR, "idle"], "idle") } catch { /* ignore */ }
 }
 
-export function endSession(sessionId: string, log: (msg: string) => void): Promise<void> {
+export function endSession(ctx: HookContext): Promise<void> {
+  const sessionId = ctx.sessionId ?? "unknown"
+
   if (!hookEnabled("session:end:memory-summary", ["minimal"])) return Promise.resolve()
 
-  log("[agentic-memory] Flushing final session summary (blocking)...")
+  ctx.adapter.log("[agentic-memory] Flushing final session summary (blocking)...")
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(VENV, [CONTEXT_MONITOR, "end", "--session-id", sessionId || "unknown"], { stdio: ["ignore", "pipe", "ignore"] })
+    const child = spawn(VENV, [CONTEXT_MONITOR, "end", "--session-id", sessionId], { stdio: ["ignore", "pipe", "ignore"] })
     let stdout = ""
     child.stdout?.on("data", (d: Buffer) => { stdout += d })
     child.on("close", (code) => {
-      if (code === 0) { log(`[agentic-memory] Session end summary saved: ${stdout.trim()}`); resolve() }
+      if (code === 0) { ctx.adapter.log(`[agentic-memory] Session end summary saved: ${stdout.trim()}`); resolve() }
       else reject(new Error(`Exit code ${code}: ${stdout}`))
     })
     child.on("error", reject)
@@ -435,7 +483,7 @@ export function endSession(sessionId: string, log: (msg: string) => void): Promi
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...process.env, MEMORY_HOOK_EVENT: "stop" },
       })
-      sessionChild.stdin?.write(JSON.stringify({ session_id: sessionId || "unknown" }))
+      sessionChild.stdin?.write(JSON.stringify({ session_id: sessionId }))
       sessionChild.stdin?.end()
 
       let stdout = ""
@@ -450,7 +498,7 @@ export function endSession(sessionId: string, log: (msg: string) => void): Promi
       sessionChild.on("close", (code) => {
         clearTimeout(timeout)
         if (code === 0) {
-          log(`[agentic-memory] Session memory saved: ${stdout.trim()}`)
+          ctx.adapter.log(`[agentic-memory] Session memory saved: ${stdout.trim()}`)
           resolve()
         } else {
           reject(new Error(`Session-end save failed (exit ${code}): ${stderr.trim()}`))
@@ -461,42 +509,47 @@ export function endSession(sessionId: string, log: (msg: string) => void): Promi
         reject(err)
       })
     })
-  }).catch((e) => log(`[agentic-memory] Session end save failed: ${e}`))
+  }).catch((e) => ctx.adapter.log(`[agentic-memory] Session end save failed: ${e}`))
 }
 
-export function injectSystemPrompt(system: string[]): void {
-  // NOTE: OpenCode fires `experimental.chat.system.transform` before
+export function injectSystemPrompt(ctx: HookContext): void {
+  // NOTE: A harness fires `experimental.chat.system.transform` before
   // each LLM call (not just once at session start). Each call pushes
   // whatever is currently in state.sessionContext / state.proactiveContext
   // and then clears it so we don't inject stale context on the next turn.
-  // If OpenCode ever changes this to fire only once, proactive context
+  // If a harness ever changes this to fire only once, proactive context
   // would only be delivered on the very first LLM call.
 
   // Agent contract: injected on every LLM call as a persistent reminder.
   const contract = loadAgentContract()
   if (contract) {
-    system.push(contract)
+    ctx.adapter.injectIntoSystemPrompt([contract])
   }
 
-  if (state.sessionContext) {
-    system.push(state.sessionContext)
-    state.sessionContext = ""
+  const s = ctx.adapter.getState()
+  if (s.sessionContext) {
+    ctx.adapter.injectIntoSystemPrompt([s.sessionContext])
+    s.sessionContext = ""
   }
-  if (state.proactiveContext) {
-    system.push(state.proactiveContext)
-    state.proactiveContext = ""
+  if (s.proactiveContext) {
+    ctx.adapter.injectIntoSystemPrompt([s.proactiveContext])
+    s.proactiveContext = ""
   }
 }
 
-export async function onCompacting(sessionId: string, output: { context: string[]; prompt?: string }, log: (msg: string) => void): Promise<void> {
+export async function onCompacting(ctx: HookContext): Promise<void> {
+  const sessionId = ctx.sessionId ?? "unknown"
+  const output = ctx.output as { context: string[]; prompt?: string } | undefined
+
   if (!hookEnabled("session:compacting:memory-save", ["minimal"])) return
+  if (!output) return
 
   let lastCompactionTime = 0
   try {
     if (fs.existsSync(STATE_FILE)) {
       const stateContent = fs.readFileSync(STATE_FILE, "utf8")
-      const state = JSON.parse(stateContent)
-      lastCompactionTime = state.last_compaction_time || 0
+      const parsed = JSON.parse(stateContent)
+      lastCompactionTime = parsed.last_compaction_time || 0
     }
   } catch { /* state file may not exist yet */ }
 
@@ -504,17 +557,17 @@ export async function onCompacting(sessionId: string, output: { context: string[
   const isThrottled = now - lastCompactionTime < 45
 
   if (isThrottled) {
-    log("[agentic-memory] Skipping pre-compaction context save (throttled)")
+    ctx.adapter.log("[agentic-memory] Skipping pre-compaction context save (throttled)")
     output.context.push("\n\n⚠️ COMPACTION SURVIVAL: A pre-compaction context note was saved. After compaction, search for 'pre-compaction context save' to recover what was happening before this compaction event.")
   } else {
-    log("[agentic-memory] Context compaction detected — saving pre-compaction context")
+    ctx.adapter.log("[agentic-memory] Context compaction detected — saving pre-compaction context")
 
     let messageCount = "0"
     try {
       if (fs.existsSync(STATE_FILE)) {
         const stateContent = fs.readFileSync(STATE_FILE, "utf8")
-        const state = JSON.parse(stateContent)
-        messageCount = String(state.total_tool_calls || state.tool_call_count || 0)
+        const parsed = JSON.parse(stateContent)
+        messageCount = String(parsed.total_tool_calls || parsed.tool_call_count || 0)
       }
     } catch { /* state file may not exist yet */ }
 
@@ -525,19 +578,24 @@ export async function onCompacting(sessionId: string, output: { context: string[
     // sees after compaction completes.
     let snapshotOk = true
     try {
-      const snapshotRaw = await captureOutput([MEMORY_PRECOMPACT_SNAPSHOT, JSON.stringify({ session_id: sessionId || "unknown" })], "precompact-snapshot", log)
+      const snapshotRaw = await captureOutput(
+        [MEMORY_PRECOMPACT_SNAPSHOT, JSON.stringify({ session_id: sessionId })],
+        undefined,
+        "precompact-snapshot",
+        ctx.adapter
+      )
       const snapshotParsed = JSON.parse(snapshotRaw.trim() || "{}")
       if (!snapshotParsed.ok) {
         snapshotOk = false
-        log(`[agentic-memory] Pre-compaction snapshot failed: ${snapshotParsed.error || "unknown error"}`)
+        ctx.adapter.log(`[agentic-memory] Pre-compaction snapshot failed: ${snapshotParsed.error || "unknown error"}`)
       }
     } catch (e) {
       snapshotOk = false
-      log(`[agentic-memory] Pre-compaction snapshot error: ${e}`)
+      ctx.adapter.log(`[agentic-memory] Pre-compaction snapshot error: ${e}`)
     }
 
-    const result = await captureOutput([CONTEXT_MONITOR, "compact", "--session-id", sessionId || "unknown", "--message-count", messageCount], undefined, "compact", log)
-    log(`[agentic-memory] Pre-compaction context saved: ${result.trim()}`)
+    const result = await captureOutput([CONTEXT_MONITOR, "compact", "--session-id", sessionId, "--message-count", messageCount], undefined, "compact", ctx.adapter)
+    ctx.adapter.log(`[agentic-memory] Pre-compaction context saved: ${result.trim()}`)
 
     const snapshotWarning = snapshotOk ? "" : " (snapshot failed — data may be incomplete)"
     output.context.push(`\n\n⚠️ COMPACTION SURVIVAL: A pre-compaction context note was saved.${snapshotWarning} After compaction, search for 'pre-compaction context save' to recover what was happening before this compaction event.`)

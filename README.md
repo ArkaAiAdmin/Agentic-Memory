@@ -41,6 +41,32 @@ Built for **Claude Code**, **OpenCode**, and any MCP-compatible agent harness.
 
 ---
 
+## Quick start — bare Python
+
+No MCP, no OpenCode, no TS plugin required. The Python layer is a standalone library.
+
+```python
+from agentic_memory import Memory
+
+m = Memory(db_path="memory.db")  # defaults to memory/memory.db
+
+# Save
+note_id = m.add("User prefers dark mode", tags=["preferences"])
+print(note_id)  # → preferences/user-prefers-dark-mode
+
+# Search
+results = m.search("user preferences")
+for r in results:
+    print(f"{r['note_id']}: {r['content'][:80]}")
+
+# Agent-scoped
+from agentic_memory import AgentMemory
+am = AgentMemory(agent_id="coder-1")
+am.save("Frontend uses React 18", tags=["frontend", "react"])
+```
+
+---
+
 ## 5-Minute Tutorial
 
 ### Step 1 — Install (30 seconds)

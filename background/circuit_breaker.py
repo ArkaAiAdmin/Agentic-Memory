@@ -21,10 +21,11 @@ from __future__ import annotations
 import logging
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Optional, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +55,18 @@ def _get_sentinel_path() -> Path:
 
 
 def _write_circuit_sentinel() -> None:
-    """Write the sentinel file to signal that the Python CB is open."""
+    """Write the sentinel file to signal that the Python CB is open.
+
+    Format: ``{"status":"open","pid":<int>,"ts":<unix_epoch>}``
+    The PID lets us detect stale sentinels left by crashed processes.
+    """
     try:
-        _get_sentinel_path().write_text("open")
+        _get_sentinel_path().write_text(
+            json.dumps(
+                {"status": "open", "pid": os.getpid(), "ts": time.time()},
+                separators=(",", ":"),
+            )
+        )
     except Exception as e:
         logger.warning("_write_circuit_sentinel failed: %s", e)
 
@@ -67,6 +77,44 @@ def _remove_circuit_sentinel() -> None:
         _get_sentinel_path().unlink(missing_ok=True)
     except Exception as e:
         logger.warning("_remove_circuit_sentinel failed: %s", e)
+
+
+def _read_sentinel() -> Optional[dict]:
+    """Read and parse the sentinel file. Returns None if absent or corrupt."""
+    try:
+        raw = _get_sentinel_path().read_text()
+        result = json.loads(raw)
+        if isinstance(result, dict):
+            return result
+        return None
+    except Exception:
+        return None
+
+
+def _is_stale_sentinel(cb_seconds: float) -> bool:
+    """Return True if the on-disk sentinel is from a dead process or expired.
+
+    A sentinel is stale when:
+    - The owning PID no longer exists (crashed daemon), OR
+    - ``ts`` is older than ``circuit_open_until`` (the timeout expired and
+      nobody cleaned up), OR
+    - The file is corrupt / unreadable (treat as stale to clear it).
+    """
+    data = _read_sentinel()
+    if data is None:
+        return True
+    pid = data.get("pid")
+    ts = data.get("ts", 0)
+    if pid is not None:
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return True
+        except Exception:
+            return True
+    if time.time() - ts > cb_seconds:
+        return True
+    return False
 
 # Module-level keep-alive for the daemon's flock FD.
 _DAEMON_LOCKS: dict[str, Any] = {}
@@ -313,7 +361,54 @@ def _auto_save_reset_state() -> None:
 
 
 def _load_circuit_state_from_audit() -> None:
-    """Load circuit breaker state from memory_audit_log on startup."""
+    """Load circuit breaker state from memory_audit_log on startup.
+
+    Stale-sentinel guard (2026-07-08): if a sentinel file exists but its
+    owning PID is dead (crashed daemon) or its timestamp is older than
+    the open-until window, the sentinel is stale. We remove it and skip
+    loading from the audit log — otherwise a daemon crash would keep the
+    circuit permanently open.
+    """
+    try:
+        sentinel = _read_sentinel()
+        if sentinel and sentinel.get("status") == "open":
+            # Try to recover the cb_seconds from the latest open event;
+            # if we can't, use a sane default (300s).
+            cb_seconds = 300.0
+            try:
+                from infra.db import connection_pool
+
+                db_path = _get_db_path()
+                conn = connection_pool.get(str(db_path), timeout=5.0)
+                try:
+                    row = conn.execute(
+                        "SELECT args FROM memory_audit_log "
+                        "WHERE tool='auto_save_circuit_open' "
+                        "ORDER BY ts DESC LIMIT 1"
+                    ).fetchone()
+                    if row and row[0]:
+                        args = json.loads(row[0])
+                        cb_seconds = float(args.get("cb_seconds", 300.0))
+                finally:
+                    try:
+                        from infra.memory_common import safe_close_db
+
+                        safe_close_db(conn, should_commit=False)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            if _is_stale_sentinel(cb_seconds):
+                logger.info(
+                    "circuit breaker: stale sentinel detected (pid=%s, ts=%s) — clearing",
+                    sentinel.get("pid"),
+                    sentinel.get("ts"),
+                )
+                _remove_circuit_sentinel()
+                return
+    except Exception as e:
+        logger.warning("_load_circuit_state_from_audit: sentinel pre-check failed: %s", e)
+
     try:
         from infra.db import connection_pool
 
