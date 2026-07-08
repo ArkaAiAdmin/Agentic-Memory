@@ -910,9 +910,9 @@ class EmbeddingSearch:
                 fresh = None
                 logger.warning("batch re-encode failed: %s", e)
             if fresh is not None:
-                for k, idx_in_items in enumerate(text_to_indices):
-                    mid, row, _old_vec, chash = items[idx_in_items]
-                    items[idx_in_items] = (mid, row, fresh[k], chash)
+                for k, index_in_items in enumerate(text_to_indices):
+                    mid, row, _old_vec, chash = items[index_in_items]
+                    items[index_in_items] = (mid, row, fresh[k], chash)
                     to_save.append((mid, chash, fresh[k], dim))
 
         # Single matrix multiply for all candidates.
@@ -1439,8 +1439,8 @@ class EmbeddingSearch:
             if entry is None:
                 continue
             parent_id = entry["parent_id"]
-            idx_in_matches = candidate_keys.index(k)
-            score = float(matches.distances[idx_in_matches])
+            index_in_matches = candidate_keys.index(k)
+            score = float(matches.distances[index_in_matches])
             if parent_id not in mid_scores or score > mid_scores[parent_id]["score"]:
                 mid_scores[parent_id] = {"parent_id": parent_id, "score": score, "chunk_id": entry["chunk_id"]}
         ranked = sorted(mid_scores.values(), key=lambda x: x["score"], reverse=True)[:limit]

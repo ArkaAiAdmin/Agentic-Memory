@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "LLMExtractor",
-    "_get_extractor",
     "is_llm_extraction_available",
     "extract_facts_via_llm",
     "extract_entities_via_llm",

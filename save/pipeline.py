@@ -13,19 +13,9 @@ __all__ = [
     "upsert_row",
     "memory_supersede_db",
     "reinforce_memories_db",
-    "_update_memory_index_incremental",
-    "_recalculate_fitness_scores",
-    "_auto_backlink_multi_part",
     "clear_pragma_cache",
     "patch_memory",
     "revert_supersede",
-    "_record_revision_log",
-    # Re-exports from the save/ subpackage (preserved for callers that
-    # import these from save_pipeline directly).
-    "_crdt_agent_id",
-    "_is_crdt_enabled",
-    "_is_legacy_note_crdt_enabled",
-    "_crdt_bump_version",
 ]
 from dataclasses import dataclass
 import json

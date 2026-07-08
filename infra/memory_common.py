@@ -32,7 +32,7 @@ from infra.frontmatter import _coerce  # noqa: F401
 # Re-exports from the 6 new modules (one canonical home, multiple import paths)
 import logging
 
-from infra.db import (
+from infra.db import (  # noqa: F401
     _ConnectionPool,
     connection_pool,
     safe_close_db,
@@ -41,18 +41,18 @@ from infra.db import (
     count_rows,
 )
 import infra.db as _db_module
-from infra.fts import (
+from infra.fts import (  # noqa: F401
     cleanup_fts5_orphans,
     _migrate_fts5_porter_tokenizer,
     _migrate_ensure_fts_triggers,
 )
 from infra.frontmatter import parse_frontmatter
-from infra.file_lock import (
+from infra.file_lock import (  # noqa: F401
     _try_flock,
     acquire_flock_with_retry,
     release_flock,
 )
-from infra.memory_config import (
+from infra.memory_config import (  # noqa: F401
     GLOBAL_MEM_DIR,
     get_memory_paths,
     find_project_root,
@@ -66,7 +66,7 @@ from infra.safe_call import safe_call
 
 # Migration helpers — canonical home is db_migrations.py, re-exported here
 # so ``from memory_common import _migrate_*`` continues to work.
-from infra.db_migrations import (
+from infra.db_migrations import (  # noqa: F401
     SCHEMA_VERSION,
     run_db_migrations,
     _migrate_schema_version,
@@ -127,22 +127,16 @@ def _maybe_checkpoint_on_startup(path):
 
 __all__ = [
     # db.py
-    "_ConnectionPool",
     "connection_pool",
     "safe_close_db",
     "open_db",
     "wal_checkpoint_idle",
     "count_rows",
-    "_maybe_checkpoint_on_startup",
     # fts.py
     "cleanup_fts5_orphans",
-    "_migrate_fts5_porter_tokenizer",
-    "_migrate_ensure_fts_triggers",
     # frontmatter.py
     "parse_frontmatter",
-    "_coerce",
     # file_lock.py
-    "_try_flock",
     "acquire_flock_with_retry",
     "release_flock",
     # memory_config.py
@@ -153,25 +147,12 @@ __all__ = [
     "log_backup",
     "validate_config",
     "PROJECT_ROOT_MARKERS",
-    "_VALID_LOG_LEVELS",
     # safe_call.py
     "safe_call",
     # db_migrations.py (re-exported for backward compat)
     "atomic_write",
     "run_db_migrations",
     "SCHEMA_VERSION",
-    "_migrate_schema_version",
-    "_migrate_memory_embeddings",
-    "_migrate_memory_audit_log",
-    "_migrate_memory_vec_idx",
-    "_migrate_ensure_columns",
-    "_migrate_ensure_backlinks_table",
-    "_migrate_ensure_indexes",
-    "_migrate_memory_ctr_feedback",
-    "_migrate_concept_drift",
-    "_migrate_ensure_chunks_table",
-    "_migrate_kg_tables",
-    "_migrate_kg_extraction_stats",
     # RateLimiter
     "RateLimiter",
     "get_default_limiter",

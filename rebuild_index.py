@@ -14,7 +14,7 @@ import math
 import time
 from typing import Optional
 
-__all__ = ["rebuild_index", "_rebuild_index_body"]
+__all__ = ["rebuild_index"]
 import unicodedata
 from infra.memory_common import safe_close_db
 

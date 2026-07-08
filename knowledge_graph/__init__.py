@@ -8,7 +8,7 @@ Re-exports all public symbols from the submodules so both
 import logging
 logger = logging.getLogger(__name__)
 
-from knowledge_graph.kg_db import (
+from knowledge_graph.kg_db import (  # noqa: F401
     _upsert_edge,
     _upsert_entity,
     get_active_edges_for_entity,
@@ -21,7 +21,7 @@ from knowledge_graph.kg_extract import (
     extract_relations,
 )
 from knowledge_graph.kg_schema import ensure_kg_schema
-from knowledge_graph.kg_search import (
+from knowledge_graph.kg_search import (  # noqa: F401
     _row_to_edge_dict,
     _row_to_entity_dict,
     _temporal_edge_clause,
@@ -48,12 +48,6 @@ __all__ = [
     "clear_graph_cache",
     "invalidate_edge",
     "get_active_edges_for_entity",
-    # backward-compat internals
-    "_upsert_entity",
-    "_upsert_edge",
-    "_row_to_edge_dict",
-    "_row_to_entity_dict",
-    "_temporal_edge_clause",
 ]
 
 _KG_ENABLED_CACHE: bool | None = None

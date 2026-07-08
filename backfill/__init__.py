@@ -35,22 +35,6 @@ from backfill.orchestrator import (  # noqa: F401
 )
 
 __all__ = [
-    # index_backfills
-    "_backfill_memories_from_markdown",
-    "_backfill_fts",
-    "_backfill_embeddings",
-    "_backfill_chunks",
-    "_backfill_chunks_fts",
-    "_backfill_backlinks",
-    "_backfill_vec_index_raw",
-    "_backfill_crdt_vectors",
-    "_backfill_tiers",
-    # kg_backfills
-    "_is_stopword",
-    "_is_valid_entity",
-    "_backfill_kg_facts",
-    "_backfill_kg_graph",
-    "_ENTITY_STOPWORDS",
     # orchestrator
     "health_check",
     "backfill_incremental",

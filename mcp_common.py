@@ -53,9 +53,6 @@ __all__ = [
     "GLOBAL_MEM_DIR",
     "get_memory_paths",
     "AGENTS_SKILLS_DIR",
-    "_bootstrap_path",
-    "_resolve_memory_dir",
-    "_run_subprocess_output",
     "recompile_skills_catalog",
 ]
 

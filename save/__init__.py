@@ -50,27 +50,6 @@ from save.cleanup import (  # noqa: F401
 )
 
 __all__ = [
-    # crdt_helpers
-    "_crdt_agent_id",
-    "_is_crdt_enabled",
-    "_is_legacy_note_crdt_enabled",
-    "_crdt_bump_version",
-    # indexers
-    "_index_backlinks",
-    "_index_chunks",
-    "_index_embedding",
-    "_index_kg",
-    "_index_facts",
-    "_index_adaptive_retention",
-    # backlinks
-    "_auto_fts_backlinks",
-    "_auto_semantic_backlinks",
-    "_auto_backlink_multi_part",
-    # post_save_hooks
-    "_enrich_context",
-    "_recalculate_fitness_scores",
-    "_run_post_save_hooks",
-    "_enqueue_background_tasks",
     # cleanup (B-3 fix 2026-06-22 follow-up)
     "cleanup_memory_relations",
     "remove_kg_relations_for_note",
