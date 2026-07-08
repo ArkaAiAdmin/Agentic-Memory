@@ -1903,8 +1903,15 @@ def _save_memory_core(
             category, title_slug, is_global, db_path
         )
         original_category = category
-        if effective_category != category:
-            category = effective_category
+        # NOTE: We intentionally keep `category` as the caller-supplied value
+        # (typically "lessons") even when effective_category is redirected to
+        # "audits".  The file path was already resolved correctly by
+        # _resolve_save_paths (which returns file_path based on
+        # effective_category), but the DB row note_id and all backlinks / KG
+        # edges must use the original category so the row id matches the
+        # note_id returned to the caller.  Previously this reassignment
+        # caused the DB row to be stored as "audits/..." while the caller
+        # received "lessons/...", breaking all subsequent lookups by note_id.
         _markdown, _fm_meta, now_iso, metadata_json = _build_memory_file(
             content,
             category,

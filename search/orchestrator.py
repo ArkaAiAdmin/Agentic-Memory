@@ -1952,7 +1952,7 @@ def _apply_quality_gates(
     query: str,
     rerank: bool,
     backlinks_map: dict,
-) -> tuple[list, list[str]]:
+) -> tuple[list, list[str], list]:
     """Phase 11b: drop low-quality results via the quality_gates filter.
 
     Only acts when ``quality_gates.QUALITY_GATES_ENABLED`` is true
@@ -1968,12 +1968,12 @@ def _apply_quality_gates(
         if getattr(qg, "QUALITY_GATES_ENABLED", False) and result_items:
             result_items, qg_stats = qg.filter_results(result_items)
             if qg_stats.get("filtered", 0) > 0:
+                kept_ids = {ri["id"] for ri in result_items}
+                results_to_display[:] = [
+                    r for r in results_to_display if r[0] in kept_ids
+                ]
                 output = _format_search_results(
-                    [
-                        r
-                        for r in results_to_display
-                        if r[0] in {ri["id"] for ri in result_items}
-                    ],
+                    results_to_display,
                     query,
                     rerank,
                     result_items,
@@ -1982,7 +1982,7 @@ def _apply_quality_gates(
     except Exception as e:
         _phase_inc("search.quality_gates", e)
         logger.warning("quality_gates failed: %s", e)
-    return result_items, output
+    return result_items, output, results_to_display
 
 
 def _apply_user_profiling(
@@ -1994,7 +1994,7 @@ def _apply_user_profiling(
     rerank: bool,
     backlinks_map: dict,
     db_path: Path,
-) -> tuple[list, list[str]]:
+) -> tuple[list, list[str], list]:
     """Phase 11c: rerank result list per the user's stored profile.
 
     Only acts when ``user_profile.PROFILE_ENABLED`` is true and the
@@ -2010,12 +2010,12 @@ def _apply_user_profiling(
         if getattr(up, "PROFILE_ENABLED", False) and result_items:
             profile = up.get_user_profile(db_path=str(db_path))
             result_items = up.personalize_results(result_items, profile=profile)
+            kept_ids = {ri["id"] for ri in result_items}
+            results_to_display[:] = [
+                r for r in results_to_display if r[0] in kept_ids
+            ]
             output = _format_search_results(
-                [
-                    r
-                    for r in results_to_display
-                    if r[0] in {ri["id"] for ri in result_items}
-                ],
+                results_to_display,
                 query,
                 rerank,
                 result_items,
@@ -2024,7 +2024,7 @@ def _apply_user_profiling(
     except Exception as e:
         _phase_inc("search.user_profiling", e)
         logger.warning("user_profiling failed: %s", e)
-    return result_items, output
+    return result_items, output, results_to_display
 
 
 def _record_search_telemetry(
@@ -2100,10 +2100,11 @@ def _apply_save_hint_floater(
     db_path: Path,
     result_items: list,
     output: list[str],
+    results_to_display: list,
     query: str,
     rerank: bool,
     backlinks_map: dict,
-) -> tuple[list, list[str]]:
+) -> tuple[list, list[str], list]:
     """Defense-in-depth: surface a very-recent save even if FTS hasn't seen it.
 
     Reads the ``recent_save_hint`` table (set by the post-save hook
@@ -2121,9 +2122,9 @@ def _apply_save_hint_floater(
 
         hint = recent_save_for(str(db_path))
     except (ImportError, AttributeError):
-        return result_items, output
+        return result_items, output, results_to_display
     if hint is None:
-        return result_items, output
+        return result_items, output, results_to_display
     hint_id, _hint_ts = hint
     try:
         hint_in_fts = (
@@ -2136,11 +2137,11 @@ def _apply_save_hint_floater(
             is not None
         )
     except sqlite3.Error:
-        return result_items, output
+        return result_items, output, results_to_display
     if not (hint_in_fts and result_items):
-        return result_items, output
+        return result_items, output, results_to_display
     if any(ri.get("id") == hint_id for ri in result_items):
-        return result_items, output
+        return result_items, output, results_to_display
     try:
         floater_row = db.execute(
             "SELECT id, content, source_file, tags, created_at, "
@@ -2150,9 +2151,9 @@ def _apply_save_hint_floater(
             (hint_id,),
         ).fetchone()
     except sqlite3.Error:
-        return result_items, output
+        return result_items, output, results_to_display
     if floater_row is None:
-        return result_items, output
+        return result_items, output, results_to_display
     floater_item = {
         "id": floater_row[0],
         "source_file": floater_row[2],
@@ -2167,17 +2168,35 @@ def _apply_save_hint_floater(
         "summary": None,
     }
     result_items.insert(0, floater_item)
+    # Build floater tuple in the canonical results_to_display column
+    # order: (id, content, source_file, tags, created, rank,
+    #  final_score, fitness, importance, pinned, last_accessed,
+    #  metadata, access_count, avg_dist)
+    floater_tuple = (
+        floater_row[0],
+        floater_row[1],
+        floater_row[2],
+        floater_row[3],
+        floater_row[4],
+        0.0,
+        1.0,
+        floater_row[5],
+        floater_row[6],
+        floater_row[7],
+        floater_row[8],
+        floater_row[9],
+        1,
+        None,
+    )
+    results_to_display.insert(0, floater_tuple)
     try:
         output = _format_search_results(
-            [floater_row + (0, 1.0)],
-            query,
-            rerank,
-            result_items,
-            backlinks_map,
+            results_to_display,
+            query, rerank, result_items, backlinks_map,
         )
     except Exception as _oe:
         logger.warning("_format_search_results (fallback) failed: %s", _oe)
-    return result_items, output
+    return result_items, output, results_to_display
 
 
 def _get_agent_scope() -> str:
@@ -2277,6 +2296,10 @@ def search_memories(
             ),
             "agent_scope": _get_agent_scope(),
         }
+
+    # Reset per-call phase latency accumulator so results are not
+    # polluted by stale entries from prior invocations.
+    _phase_latencies.clear()
 
     # Phase 1: Parse query
     _t0 = time.time()
@@ -2620,7 +2643,7 @@ def search_memories(
 
         # Phase 11b: Quality gates
         if not light:
-            result_items, output = _apply_quality_gates(
+            result_items, output, results_to_display = _apply_quality_gates(
                 result_items=result_items,
                 output=output,
                 results_to_display=results_to_display,
@@ -2631,7 +2654,7 @@ def search_memories(
 
         # Phase 11c: User profiling
         if not light:
-            result_items, output = _apply_user_profiling(
+            result_items, output, results_to_display = _apply_user_profiling(
                 result_items=result_items,
                 output=output,
                 results_to_display=results_to_display,
@@ -2654,11 +2677,12 @@ def search_memories(
 
         # Save-then-search atomicity hint
         if not light:
-            result_items, output = _apply_save_hint_floater(
+            result_items, output, results_to_display = _apply_save_hint_floater(
                 db=db,
                 db_path=db_path,
                 result_items=result_items,
                 output=output,
+                results_to_display=results_to_display,
                 query=query,
                 rerank=rerank,
                 backlinks_map=backlinks_map,

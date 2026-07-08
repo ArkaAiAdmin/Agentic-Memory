@@ -136,7 +136,6 @@ def _auto_semantic_backlinks(
         ).fetchone()
         if not rel_row:
             return
-        rel_row[0]
         # Get or create entity for this memory
         db.execute(
             "INSERT OR IGNORE INTO kg_entities (name, entity_type) VALUES (?, 'memory')",
