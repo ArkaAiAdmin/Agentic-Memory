@@ -74,14 +74,14 @@ def _get_memories_columns(db: AnyConnection) -> set[str]:
     """Cache memories table columns by DB path to save PRAGMA queries."""
     try:
         db_path_row = db.execute("PRAGMA database_list").fetchone()
-        db_path = db_path_row[2] if db_path_row is not None else ""
+        db_path = db_path_row[2] if db_path_row is not None and len(db_path_row) > 2 else ""
     except sqlite3.Error:
         db_path = ""
 
     if not db_path:
         try:
             return {
-                row[1] for row in db.execute("PRAGMA table_info(memories)").fetchall()
+                row[1] for row in db.execute("PRAGMA table_info(memories)").fetchall() if len(row) > 1
             }
         except sqlite3.Error:
             return set()
@@ -92,7 +92,7 @@ def _get_memories_columns(db: AnyConnection) -> set[str]:
     if cols is None:
         try:
             cols = {
-                row[1] for row in db.execute("PRAGMA table_info(memories)").fetchall()
+                row[1] for row in db.execute("PRAGMA table_info(memories)").fetchall() if len(row) > 1
             }
             with _db_columns_cache_lock:
                 _db_columns_cache[db_path] = cols

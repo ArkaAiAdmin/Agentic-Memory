@@ -201,7 +201,7 @@ class ProxyConnection:
         self._closed = True
         self._cmd_queue.put(("close", None))
         try:
-            self._resp_queue.get()
+            self._resp_queue.get(timeout=30.0)
         except Exception as e:
             logger.warning("close failed: %s", e)
 

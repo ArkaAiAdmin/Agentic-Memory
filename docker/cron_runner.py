@@ -26,7 +26,7 @@ import sys
 import time
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("agentic_memory.cron_runner")
 DEFAULT_SCHEDULE = Path("/app/cron/schedule.json")
 
 

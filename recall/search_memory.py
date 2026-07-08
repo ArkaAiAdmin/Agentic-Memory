@@ -77,9 +77,8 @@ def search_memories(
 
     if not db_file.exists():
         if not silent:
-            logger.error(
-                "Memory database %s does not exist. Run rebuild_index.py first.",
-                db_file,
+            print(
+                "Memory database %s does not exist. Run rebuild_index.py first." % db_file
             )
         return []
 
@@ -119,13 +118,11 @@ def search_memories(
 
     # Pretty print in the legacy format so existing CLI output is preserved.
     source_str = " + ".join(sources_searched) if sources_searched else "none"
-    logger.info(
-        "Search results for: '%s' (Top %d from %s)",
-        query,
-        len(all_items),
-        source_str,
+    print(
+        "Search results for: '%s' (Top %d from %s)"
+        % (query, len(all_items), source_str)
     )
-    logger.info("=" * 80)
+    print("=" * 80)
     seen_ids = set()
     for i, item in enumerate(all_items, 1):
         if item["id"] in seen_ids:
@@ -135,13 +132,13 @@ def search_memories(
         tags_str = ", ".join(tags) if tags else "none"
         source_label = f"[{item.get('source_db', '')}]" if item.get("source_db") else ""
         score = item.get("final_score", 0.0)
-        logger.info("[%d] %s (Score: %.2f) %s", i, item["id"], score, source_label)
-        logger.info("    Source: memory/%s", item["source_file"])
-        logger.info("    Tags: %s", tags_str)
-        logger.info("    Created: %s", item.get("created", ""))
-        logger.info("    Content:\n    %s", item.get("content", "").strip())
-        logger.info("")
-    logger.info("=" * 80)
+        print("[%d] %s (Score: %.2f) %s" % (i, item["id"], score, source_label))
+        print("    Source: memory/%s" % item["source_file"])
+        print("    Tags: %s" % tags_str)
+        print("    Created: %s" % item.get("created", ""))
+        print("    Content:\n    %s" % item.get("content", "").strip())
+        print("")
+    print("=" * 80)
 
     # Increment access_count for every displayed result (legacy side effect).
     note_ids = [item["id"] for item in all_items if item.get("id")]

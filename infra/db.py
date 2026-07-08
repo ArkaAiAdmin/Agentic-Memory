@@ -874,6 +874,10 @@ def open_db(
                 conn.rollback()
             except Exception as rb_exc:
                 logger.warning("db: rollback failed in open_db write session: %s", rb_exc)
+            try:
+                conn.close()
+            except Exception as close_exc:
+                logger.warning("db: connection close_failed in open_db write session after rollback: %s", close_exc)
             raise
         else:
             try:

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -210,23 +211,21 @@ def _resolve(
             # integrity-critical flag silently weakens crash-consistency /
             # data-integrity guarantees. Surface it loudly.
             if env_key in _INTEGRITY_CRITICAL_FLAGS and resolved is False:
-                logger.warning(
-                    "SECURITY: integrity-critical flag %s overridden via env to "
+                sys.stderr.write(
+                    "warning: SECURITY: integrity-critical flag %s overridden via env to "
                     "disabled — crash-consistency / integrity guarantees are being "
                     "downgraded. This bypasses the saga write path, CRDT merge "
-                    "safety, the CQRS write journal, and/or quality gates.",
-                    env_key,
+                    "safety, the CQRS write journal, and/or quality gates.\n"
+                    % (env_key,)
                 )
             return resolved
         except (ValueError, TypeError) as e:
-            # 2026-06-22 (C7 fix): warn instead of silently swallowing
-            # so the operator can see the typo.
-            logger.warning(
-                "warning: %s=%r could not be parsed as %s; falling back to default. Error: %s",
-                env_key,
-                env_val,
-                type(default).__name__,
-                e,
+            # 2026-06-22 (C7 fix): warn directly to stderr so the message
+            # is always visible even when no logging handler is configured
+            # (e.g. in a bare subprocess or freshly-imported module).
+            sys.stderr.write(
+                "warning: %s=%r could not be parsed as %s; falling back to default. Error: %s\n"
+                % (env_key, env_val, type(default).__name__, e)
             )
             return default
     toml_val = _deep_get(toml_data or {}, dotted_path)
@@ -246,13 +245,10 @@ def _resolve(
             elif default is None and isinstance(toml_val, dict):
                 pass
             else:
-                logger.warning(
+                sys.stderr.write(
                     "warning: %s=%r has type %s but the dataclass field expects %s; "
-                    "falling back to the TOML value as-is.",
-                    dotted_path,
-                    toml_val,
-                    type(toml_val).__name__,
-                    type(default).__name__,
+                    "falling back to the TOML value as-is.\n"
+                    % (dotted_path, toml_val, type(toml_val).__name__, type(default).__name__)
                 )
         return toml_val
 
@@ -284,12 +280,10 @@ def _log_llm_extraction_resolution() -> None:
         toml_data,
         parser=_parse_bool,
     )
-    logger.info(
+    sys.stderr.write(
         "IMPORT config.py: MEMORY_LLM_EXTRACTION env=%r "
-        "toml[features.llm_extraction]=%r effective=%r",
-        raw_env,
-        toml_val,
-        effective,
+        "toml[features.llm_extraction]=%r effective=%r\n"
+        % (raw_env, toml_val, effective)
     )
 
 

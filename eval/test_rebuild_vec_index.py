@@ -196,10 +196,10 @@ class TestMd5ToUint64:
         assert isinstance(result, int)
 
     def test_positive(self):
-        """Key is always positive (fits in unsigned int64)."""
+        """Key is always positive and fits in signed SQLite INTEGER."""
         for i in range(100):
             result = md5_to_uint64(f"note-{i}")
-            assert 0 <= result < (1 << 64)
+            assert 0 <= result <= 0x7FFFFFFFFFFFFFFF
 
     def test_deterministic(self):
         """Same input always produces same output."""

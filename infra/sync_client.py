@@ -59,14 +59,16 @@ def _log_sync_result(
     duration_ms: int = 0,
 ) -> None:
     """Insert a row into ``sync_log`` after a sync cycle."""
-    from infra.db import open_db
+    import sqlite3
 
     db_path = Path(db_path)
     if not db_path.exists():
         logger.warning("sync_log: DB not found at %s", db_path)
         return
     try:
-        with open_db(db_path, timeout=10.0) as conn:
+        conn = sqlite3.connect(str(db_path), timeout=10)
+        conn.execute("PRAGMA foreign_keys=ON")
+        try:
             conn.execute(
                 """INSERT INTO sync_log
                    (peer_name, peer_url, peer_agent_id, direction,
@@ -89,6 +91,9 @@ def _log_sync_result(
                     duration_ms,
                 ),
             )
+            conn.commit()
+        finally:
+            conn.close()
     except Exception as e:
         logger.warning("sync_log: write failed: %s", e)
 
@@ -615,7 +620,7 @@ def sync_skills_with_peer(
         peer_name,
         peer_url,
         peer_agent_id,
-        "skill_sync",
+        "sync",
         True,
         changes_pulled=applied,
         changes_pushed=push_applied,
