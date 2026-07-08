@@ -59,8 +59,9 @@ automatically.
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import os
 import threading
 import time
@@ -106,7 +107,8 @@ def _allow_remote_code() -> bool:
                 from config import get_config
 
                 return bool(get_config().llm_allow_remote_code)
-            except Exception:
+            except Exception as e:
+                logger.warning("_allow_remote_code failed: %s", e)
                 return False
         return False
     return False
@@ -199,7 +201,8 @@ class OllamaProvider(BaseLLMProvider):
             req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=2.0) as resp:
                 cached = resp.status == 200
-        except Exception:
+        except Exception as e:
+            logger.warning("is_available failed: %s", e)
             cached = False
         with self._lock:
             self._available_cache = cached
@@ -290,7 +293,8 @@ class LlamaCppProvider(BaseLLMProvider):
             req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=2.0) as resp:
                 cached = resp.status == 200
-        except Exception:
+        except Exception as e:
+            logger.warning("is_available failed: %s", e)
             cached = False
         with self._lock:
             self._available_cache = cached
@@ -406,6 +410,7 @@ class HuggingFaceProvider(BaseLLMProvider):
                 self._resolved_device = self.device
                 return True
             except Exception as e:
+                logger.warning("_ensure_loaded failed: %s", e)
                 self._load_error = str(e)[:200]
                 self._model = None
                 self._tokenizer = None

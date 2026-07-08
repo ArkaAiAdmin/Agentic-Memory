@@ -108,8 +108,8 @@ class _ConnectionPool:
                 try:
                     conn.close()
                     logger.info("db pool: evicted connection for %s in background due to inode drift", key[0])
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("db: connection close_failed during background inode-drift eviction: %s", e)
 
     @staticmethod
     def _inode_of(path: str) -> int:
@@ -373,8 +373,8 @@ class _ConnectionPool:
                         )
                         try:
                             conn.close()
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning("db: connection close_failed during inode-mismatch eviction: %s", e)
                         self._pooled_ids.discard(conn_id)
                         self._migrated.discard((key[0], conn_id))
                         self._pool.pop(key, None)
@@ -388,8 +388,8 @@ class _ConnectionPool:
                                 "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                                 "SELECT * FROM memories WHERE tenant_id = tenant_id()"
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning("db: failed to create tenant view in pool get: %s", e)
                         return conn
             # C4: Close at most ONE idle same-path orphan (the evicted key)
             # rather than scanning every other thread's connections while
@@ -459,8 +459,8 @@ class _ConnectionPool:
                 "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                 "SELECT * FROM memories WHERE tenant_id = tenant_id()"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("db: failed to create tenant view in pool put: %s", e)
 
         return conn
 
@@ -689,6 +689,7 @@ def wal_checkpoint_idle(db_path: Path, wal_size_threshold_mb: float = 10.0) -> d
             "threshold_mb": wal_size_threshold_mb,
         }
     except Exception as e:
+        logger.warning("wal_checkpoint_idle failed: %s", e)
         return {
             "status": "error",
             "ok": False,
@@ -864,26 +865,26 @@ def open_db(
                     "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                     "SELECT * FROM memories WHERE tenant_id = tenant_id()"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("db: failed to create tenant view in write session: %s", e)
             yield conn
         except BaseException as exc:
             exc_info = exc
             try:
                 conn.rollback()
-            except Exception:
-                pass
+            except Exception as rb_exc:
+                logger.warning("db: rollback failed in open_db write session: %s", rb_exc)
             raise
         else:
             try:
                 conn.commit()
-            except Exception:
-                pass
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("db: commit failed in open_db write session: %s", e)
+            finally:
+                try:
+                    conn.close()
+                except Exception as e:
+                    logger.warning("db: connection close_failed in open_db write session finally: %s", e)
         return
 
     lock_ctx = db_path_flock(path) if write else nullcontext()
@@ -932,8 +933,8 @@ def open_db(
                     "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                     "SELECT * FROM memories WHERE tenant_id = tenant_id()"
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("db: failed to create tenant view in non-pooled open_db: %s", e)
             yield conn
         except BaseException as exc:
             exc_info = exc

@@ -263,7 +263,8 @@ def memory_graph_insights(
                 try:
                     from kg.graph_analytics import compute_betweenness
                     betweenness = compute_betweenness(conn)
-                except Exception:
+                except Exception as e:
+                    logger.warning("Unhandled exception in memory_graph_insights: %s", e)
                     betweenness = {}
             top_betweenness = sorted(betweenness.items(), key=lambda x: x[1], reverse=True)[:sample_size]
 
@@ -280,9 +281,10 @@ def memory_graph_insights(
                             )
                             if dist is not None:
                                 sampled_paths.append(dist)
-                        except Exception:
-                            pass
-            except Exception:
+                        except Exception as e:
+                            logger.warning("Unhandled exception in memory_graph_insights: %s", e)
+            except Exception as e:
+                logger.warning("Unhandled exception in memory_graph_insights: %s", e)
                 sampled_paths = []
 
             avg_path = sum(len(p) for p in sampled_paths) / len(sampled_paths) if sampled_paths else None
@@ -376,8 +378,8 @@ def memory_graph_evolution(since: str = "24h", limit: int = 5) -> str:
                 top = _json.loads(current[6]) if current[6] else []
                 if top:
                     out.append(f"  Top entities: {', '.join(e['name'] for e in top[:5])}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Unhandled exception in memory_graph_evolution: %s", e)
 
             if len(rows) >= 2:
                 previous = rows[-1]
@@ -399,8 +401,8 @@ def memory_graph_evolution(since: str = "24h", limit: int = 5) -> str:
                         out.append(f"  New entities (this window): {', '.join(curr_new[:5])}")
                     if prev_new:
                         out.append(f"  New entities (previous window): {', '.join(prev_new[:5])}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Unhandled exception in memory_graph_evolution: %s", e)
             else:
                 out.append("\nNo previous snapshot to diff against.")
 

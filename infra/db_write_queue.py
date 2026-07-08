@@ -7,8 +7,9 @@ lock contention and database locks in concurrent multithreaded workflows.
 
 from __future__ import annotations
 
-import concurrent.futures
 import logging
+
+import concurrent.futures
 import queue
 import sqlite3
 import threading
@@ -201,8 +202,8 @@ class ProxyConnection:
         self._cmd_queue.put(("close", None))
         try:
             self._resp_queue.get()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("close failed: %s", e)
 
     def __enter__(self) -> ProxyConnection:
         return self
@@ -216,8 +217,8 @@ class ProxyConnection:
     def __del__(self) -> None:
         try:
             self.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("__del__ failed: %s", e)
 
 
 class SQLiteWriteQueue:
@@ -319,10 +320,11 @@ class SQLiteWriteQueue:
                                 conn.commit()
                                 future.set_result(result)
                             except Exception as cb_exc:
+                                logger.warning("_run_loop failed: %s", cb_exc)
                                 try:
                                     conn.rollback()
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.warning("_run_loop failed: %s", e)
                                 raise cb_exc
 
                         elif task_type == "session":
@@ -336,8 +338,8 @@ class SQLiteWriteQueue:
                                     except queue.Empty:
                                         try:
                                             conn.rollback()
-                                        except Exception:
-                                            pass
+                                        except Exception as e:
+                                            logger.warning("_run_loop failed: %s", e)
                                         break
                                     if cmd is None:
                                         conn.commit()
@@ -392,12 +394,14 @@ class SQLiteWriteQueue:
                                             resp_queue.put(("success", None))
                                             break
                                     except Exception as q_exc:
+                                        logger.warning("_run_loop failed: %s", q_exc)
                                         resp_queue.put(("error", q_exc))
                             except Exception as sess_exc:
+                                logger.warning("_run_loop failed: %s", sess_exc)
                                 try:
                                     conn.rollback()
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.warning("_run_loop failed: %s", e)
                                 if not future.done():
                                     future.set_exception(sess_exc)
 
@@ -409,8 +413,8 @@ class SQLiteWriteQueue:
                         if conn:
                             try:
                                 conn.close()
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.warning("_run_loop failed: %s", e)
 
             except Exception as e:
                 logger.error("Fatal error in SQLiteWriteQueue run loop: %s", e)
@@ -438,8 +442,8 @@ class SQLiteWriteQueue:
                 break
         try:
             self._queue.put(None)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("stop failed: %s", e)
         self._thread.join(timeout=timeout)
 
 

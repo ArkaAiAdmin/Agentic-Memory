@@ -28,22 +28,23 @@ __all__ = [
     "_crdt_bump_version",
 ]
 from dataclasses import dataclass
-import hashlib
 import json
 import logging
 import os
 import re
+import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, cast
 from infra.memory_common import (
     acquire_flock_with_retry,
     atomic_write,
     get_memory_paths,
     parse_frontmatter,
 )
+from infra.hash_utils import md5_to_uint64
 from infra.infrastructure import (
     _err,
     ErrorCode,
@@ -95,28 +96,12 @@ class SaveRequest:
     fact_type: str = "observation"
 
 
-def _md5_to_uint64(memory_id: str) -> int:
-    """Derive a stable uint64 key from a memory id.
-
-    md5 first 8 bytes -> unsigned int, masked to signed int64 range
-    (0..2^63-1) so the value fits in SQLite's INTEGER column. usearch
-    accepts uint64 keys, but Python's sqlite3 module refuses values
-    that exceed signed int64 — masking the high bit is the simplest
-    way to make the key round-trip through both.
-
-    Collision probability for 1M items: ~2.7e-7.
-    """
-    digest = hashlib.md5(memory_id.encode("utf-8")).digest()
-    raw = int.from_bytes(digest[:8], "big", signed=False)
-    return raw & ((1 << 63) - 1)
-
-
-def _write_vec_key(db, note_id: str) -> int:
+def _write_vec_key(db: AnyConnection, note_id: str) -> int:
     """Write the memory_vec_keys mapping for a note.
 
     Returns the generated key for saga rollback tracking.
     """
-    key = _md5_to_uint64(note_id)
+    key = md5_to_uint64(note_id)
     db.execute(
         "INSERT OR REPLACE INTO memory_vec_keys (key, memory_id) VALUES (?, ?)",
         (key, note_id),
@@ -219,7 +204,7 @@ _LEGACY_COLS = frozenset(
 )
 
 
-def _detect_schema_features(db_path, conn=None) -> dict:
+def _detect_schema_features(db_path: Path, conn: Optional[AnyConnection] = None) -> dict:
     """Return a dict of schema features for the memories table.
 
     Centralizes the ``PRAGMA table_info(memories)`` walk that used to be
@@ -392,7 +377,7 @@ def _acquire_lock(db_path: Path):
                 try:
                     lock_file.close()
                 except Exception as close_exc:
-                    logger.debug("lock_file.close() failed for stale lock %s: %s", lock_path, close_exc)
+                    logger.warning("lock_file.close() failed for stale lock %s: %s", lock_path, close_exc)
                 try:
                     lock_path.unlink()
                 except Exception as unlink_exc:
@@ -417,7 +402,7 @@ def _acquire_lock(db_path: Path):
         try:
             lock_file.close()
         except Exception as close_exc:
-            logger.debug("lock_file.close() failed during flock error: %s", close_exc)
+            logger.warning("lock_file.close() failed during flock error: %s", close_exc)
         logger.warning(
             "Could not acquire flock for lock file %s: %s", lock_path, e
         )
@@ -425,7 +410,7 @@ def _acquire_lock(db_path: Path):
 
 
 def _upsert_memory_row(
-    db,
+    db: AnyConnection,
     note_id: str,
     source_file: str,
     content: str,
@@ -459,7 +444,7 @@ def _upsert_memory_row(
                 row[1]
                 for row in db.execute("PRAGMA table_info(memories)").fetchall()
             }
-        except Exception as _pragma_exc:
+        except sqlite3.Error as _pragma_exc:
             logger.debug("PRAGMA table_info(memories) failed: %s", _pragma_exc)
             cols = set()
     has_tenant = "tenant_id" in cols
@@ -557,21 +542,21 @@ def _upsert_memory_row(
                 f"INSERT INTO file_mtimes ({fm_path_col}, mtime, content_hash) VALUES (?, strftime('%s', 'now'), '') ON CONFLICT({fm_path_col}) DO UPDATE SET mtime = excluded.mtime",
                 (source_file,),
             )
-    except Exception as e:
+    except sqlite3.Error as e:
         logger.debug("file_mtimes update skipped for %s: %s", source_file, e)
 
 
 def upsert_row(
-    conn,
+    conn: AnyConnection,
     note_id: str,
     content: str,
     source_file: str,
-    tags,
+    tags: Optional[list[str] | str],
     category: str,
     pinned: bool = False,
     tier: str = "warm",
-    metadata=None,
-    db_path=None,
+    metadata: Optional[dict[str, Any] | str] = None,
+    db_path: Optional[Path] = None,
     is_global: bool = False,
     importance: int = 3,
     tenant_id: str = "default",
@@ -879,8 +864,8 @@ def _update_memory_index_incremental(
             raise
         try:
             conn.rollback()
-        except Exception:
-            pass
+        except Exception as _rb_exc:
+            logger.warning("rollback failed in incremental update: %s", _rb_exc)
         logger.error("Error in incremental update: %s", e)
     else:
         if not external_db:
@@ -894,7 +879,7 @@ def _update_memory_index_incremental(
             try:
                 local_db.close()
             except Exception as _close_exc:
-                logger.debug("local_db.close() failed in _update_memory_index_incremental: %s", _close_exc)
+                logger.warning("local_db.close() failed in _update_memory_index_incremental: %s", _close_exc)
 
 
 def _defer_indexing_background_tasks(
@@ -960,10 +945,15 @@ def _defer_indexing_background_tasks(
             try:
                 bq_conn.close()
             except Exception as _bq_close_exc:
-                logger.debug("bq_conn.close() failed in _defer_indexing_background_tasks: %s", _bq_close_exc)
+                logger.warning("bq_conn.close() failed in _defer_indexing_background_tasks: %s", _bq_close_exc)
 
 
-def _validate_save_params(content, category, title_slug, tags):
+def _validate_save_params(
+    content: str,
+    category: str,
+    title_slug: str,
+    tags: Optional[list[str] | str],
+) -> tuple[list[str], str]:
     if not isinstance(content, str):
         raise SaveValidationError(ErrorCode.INVALID_PARAMS, "content must be a string.")
     from infra._lazy_imports import get_config
@@ -1074,7 +1064,12 @@ def _scan_for_injection_or_skip(
         raise
 
 
-def _acquire_db_connection(db_path_obj, category, title_slug, start_time):
+def _acquire_db_connection(
+    db_path_obj: Path | str,
+    category: str,
+    title_slug: str,
+    start_time: float,
+) -> AnyConnection:
     """Acquire a write-serialized SQLite connection via the write queue.
     Returns the connection on success, or a string error message if
     acquisition failed (the message is already audit-logged).
@@ -1108,7 +1103,12 @@ def _acquire_db_connection(db_path_obj, category, title_slug, start_time):
         raise SaveValidationError(ErrorCode.DB_ERROR, f"saving memory: {e}")
 
 
-def _resolve_save_paths(category, title_slug, is_global, db_path):
+def _resolve_save_paths(
+    category: str,
+    title_slug: str,
+    is_global: bool,
+    db_path: Optional[str],
+) -> tuple[Path, Path, Path, Path, str]:
     if db_path is not None:
         mem_dir = Path(db_path).parent
         project_root = mem_dir.parent
@@ -1207,8 +1207,14 @@ def _resolve_save_paths(category, title_slug, is_global, db_path):
 
 
 def _build_memory_file(
-    content, category, title_slug, tags_list, pinned, now_iso=None, note_id=None
-):
+    content: str,
+    category: str,
+    title_slug: str,
+    tags_list: list[str],
+    pinned: bool,
+    now_iso: Optional[str] = None,
+    note_id: Optional[str] = None,
+) -> tuple[str, dict[str, Any], str, str]:
     import datetime
 
     if now_iso is None:
@@ -1285,7 +1291,8 @@ def _is_saga_enabled() -> bool:
         return True
     try:
         return bool(_get_config().saga_enabled)
-    except Exception:
+    except Exception as _cfg_exc:
+        logger.warning("config check for saga_enabled failed, defaulting to enabled: %s", _cfg_exc)
         return True
 
 
@@ -1386,8 +1393,8 @@ def _audit_save_failure(
             elapsed,
             db_path_obj,
         )
-    except Exception:  # noqa: BLE001 — intentional blanket catch
-        pass
+    except Exception as _audit_exc:  # noqa: BLE001 — must never raise (audit guard)
+        logger.warning("audit_save_failure failed (non-fatal): %s", _audit_exc)
 
 
 def _persist_via_saga(
@@ -1497,7 +1504,7 @@ def save_memory(
                 tenant_id = _ctx.agent_id
             else:
                 tenant_id = "default"
-        except (ImportError, Exception):
+        except (ImportError, AttributeError):
             tenant_id = "default"
     req = SaveRequest(
         content=content,
@@ -1584,7 +1591,7 @@ def save_memory_journal(
                     tenant_id = _ctx.agent_id
                 else:
                     tenant_id = "default"
-            except (ImportError, Exception):
+            except (ImportError, AttributeError):
                 tenant_id = "default"
         req = SaveRequest(
             content=content,
@@ -1646,7 +1653,7 @@ def save_memory_journal(
 # ── config-aware routing ──────────────────────────────────────────────
 
 
-def save_memory_auto(*args, **kwargs):
+def save_memory_auto(*args: Any, **kwargs: Any) -> str:
     """Route to save_memory_journal or save_memory based on cfg.write_journal.
 
     Same signature as save_memory / save_memory_journal (both calling
@@ -1663,7 +1670,7 @@ def save_memory_auto(*args, **kwargs):
         kwargs.pop("_now_iso", None)
         kwargs.pop("_conn", None)
         return save_memory_journal(*args, **kwargs)
-    return save_memory(*args, **kwargs)
+    return cast(str, save_memory(*args, **kwargs))
 
 
 def materialize_journal_entry(
@@ -1829,14 +1836,14 @@ def _materialize_journal_once(
                 if _save_errored:
                     try:
                         conn.rollback()
-                    except Exception:
-                        pass
+                    except Exception as _rb_exc:
+                        logger.warning("rollback failed in journal materialization: %s", _rb_exc)
                 conn.close()
-            except Exception:
-                pass
+            except Exception as _close_exc:
+                logger.warning("conn.close() failed in journal materialization: %s", _close_exc)
 
 
-def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn=None) -> None:
+def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn: Optional[AnyConnection] = None) -> None:
     """Best-effort: project the committed SQL row into memory_field_crdt."""
     try:
         from crdt.crdt_field import project_sql_to_crdt as _proj
@@ -1848,14 +1855,14 @@ def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn=None) -> None:
             with open_db(db_path_obj, timeout=5.0) as c:
                 _proj(c, note_id, _crdt_agent_id())
     except Exception as _e:
-        logger.debug("save_memory: CRDT SQL projection skipped: %s", _e)
+        logger.warning("save_memory: CRDT SQL projection skipped: %s", _e)
 
 
 def _save_memory_core(
         req: SaveRequest,
-        _now_iso: str | None = None,
-        _conn=None,
-    ):
+        _now_iso: Optional[str] = None,
+        _conn: Optional[AnyConnection] = None,
+    ) -> str:
     """Internal implementation of save_memory."""
     content = req.content
     category = req.category
@@ -1876,7 +1883,7 @@ def _save_memory_core(
             _ctx = get_agent()
             if _ctx.agent_id and _ctx.agent_id != "default":
                 tenant_id = _ctx.agent_id
-        except (ImportError, Exception):
+        except (ImportError, AttributeError):
             pass
     epistemic_source = req.epistemic_source
     belief_status = req.belief_status
@@ -2013,7 +2020,7 @@ def _save_memory_core(
                 category,
                 title_slug,
                 content,
-                tags,
+                tags_list,
                 pinned,
                 is_global,
                 (safety_wiring and not defer_expensive),
@@ -2044,7 +2051,7 @@ def _save_memory_core(
                         try:
                             conn.rollback()
                         except Exception as _rb_err:
-                            logger.debug("save_memory: rollback failed: %s", _rb_err)
+                            logger.warning("save_memory: rollback failed: %s", _rb_err)
                     conn.close()
                     if not _save_errored and deferred_writes:
                         from infra.memory_common import safe_atomic_write
@@ -2054,7 +2061,7 @@ def _save_memory_core(
                             except Exception as _we:
                                 logger.warning("Failed to run deferred file write for %s: %s", filepath, _we)
                 except Exception as _close_err:
-                    logger.debug(
+                    logger.warning(
                         "save_memory: safe_close_db in finally failed: %s", _close_err
                     )
             elif not _save_errored and deferred_writes:
@@ -2169,7 +2176,7 @@ def memory_supersede_db(
                         (json.dumps(meta), old_id),
                     )
                 except Exception as _supersede_meta_exc:
-                    logger.debug("supersession metadata update failed for %s: %s", old_id, _supersede_meta_exc)
+                    logger.warning("supersession metadata update failed for %s: %s", old_id, _supersede_meta_exc)
             return (True, None)
         else:
             with open_db(db_path, timeout=30.0) as db:
@@ -2216,7 +2223,7 @@ def memory_supersede_db(
                             (json.dumps(meta), old_id),
                         )
                     except Exception as _supersede_meta_exc:
-                        logger.debug("supersession metadata update failed for %s: %s", old_id, _supersede_meta_exc)
+                        logger.warning("supersession metadata update failed for %s: %s", old_id, _supersede_meta_exc)
                 return (True, None)
     except Exception as e:
         return (False, str(e))

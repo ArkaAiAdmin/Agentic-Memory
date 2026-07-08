@@ -5,10 +5,12 @@ Extracted from auto_save.py in Phase 3.
 """
 from __future__ import annotations
 
+import logging
+
 import hashlib
 import json
-import logging
 import os
+import traceback
 import re
 import time
 from pathlib import Path
@@ -100,7 +102,8 @@ def _get_auto_save_cfg() -> dict[str, bool]:
             "keyword_routing": bool(getattr(cfg, "auto_save_keyword_routing", True)),
             "always_sessions": bool(getattr(cfg, "auto_save_always_sessions", False)),
         }
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_auto_save_cfg failed: %s", e)
         return {"keyword_routing": True, "always_sessions": False}
 
 
@@ -139,7 +142,8 @@ def _should_skip_similar(content: str, ttl_hours: int = 24) -> bool:
         finally:
             conn.close()
         return row is not None
-    except Exception:
+    except Exception as e:
+        logger.warning("_should_skip_similar failed: %s", e)
         return False
 
 
@@ -189,6 +193,7 @@ def _async_enqueue_or_fallback(
     try:
         return _tool_complete_inner(tool, params, result_preview, ts)
     except Exception as e:
+        logger.warning("_async_enqueue_or_fallback failed: %s", e)
         return {
             "saved": False,
             "error": f"save failed: {e}",
@@ -671,7 +676,10 @@ def tool_complete(
         )
     except Exception as e:
         cb = _auto_save_record_failure_and_maybe_trip()
-        tb = logging.getLogger(__name__).getEffectiveLevel() <= logging.DEBUG and __import__("traceback").format_exc() or str(e)
+        if logging.getLogger(__name__).getEffectiveLevel() <= logging.DEBUG:
+            tb = traceback.format_exc()
+        else:
+            tb = str(e)
         logger.warning(
             "auto-save %s failed: %s (failure %d/%d within window, backoff=%.1fs)",
             tool,
@@ -691,14 +699,14 @@ def tool_complete(
                 "ts": int(_dt.datetime.now().timestamp() * 1000),
                 "label": "auto-save",
                 "error": str(e),
-                "traceback": tb if "traceback" in dir() else "",
+                "traceback": tb,
                 "failureCount": cb["n_failures"],
                 "code": 1,
             }
             with open(_err_path, "a") as _ef:
                 _ef.write(_json.dumps(_entry) + "\n")
-        except Exception:
-            pass
+        except Exception as write_err:
+            logger.warning("tool_complete failed to write error log: %s", write_err)
         return {
             "saved": False,
             "error": f"save failed: {e}",
@@ -714,8 +722,6 @@ def tool_complete(
 def _fast_path_enqueue(
     tool: str, params: str, result_preview: str, ts: Optional[str], entry_id: str = ""
 ) -> Optional[dict]:
-
-    from background.auto_save import _resolve_allowlist, _tool_name_matches, _resolve_denylist, _scan_content_for_injection, _async_enqueue_or_fallback  # noqa: E402
     """Apply the gates (allowlist/denylist/injection) and enqueue if they pass.
 
     Returns the "queued" envelope on success, or ``None`` if any
@@ -723,6 +729,7 @@ def _fast_path_enqueue(
     checks are intentionally duplicated here so the daemon can be
     a pure writer — it never has to re-validate.
     """
+    from background.auto_save import _resolve_allowlist, _tool_name_matches, _resolve_denylist, _scan_content_for_injection, _async_enqueue_or_fallback  # noqa: E402
     try:
         if not tool:
             return None

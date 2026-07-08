@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
+logger = logging.getLogger(__name__)
 """Agentic Memory Dashboard — state-of-the-art local observability.
 
 Run:
@@ -340,7 +343,8 @@ def _blob_weight(v):
     if isinstance(v, bytes) and len(v) == 4:
         try:
             return struct.unpack("<f", v)[0]
-        except Exception:
+        except Exception as e:
+            logger.warning("_blob_weight failed: %s", e)
             return 1.0
     try:
         return float(v)
@@ -359,7 +363,8 @@ def get_conn():
 def query(sql: str, params=()) -> pd.DataFrame | None:
     try:
         return pd.read_sql_query(sql, get_conn(), params=params)
-    except Exception:
+    except Exception as e:
+        logger.warning("query failed: %s", e)
         return None
 
 
@@ -373,7 +378,8 @@ def table(name: str) -> bool:
             .fetchone()
         )
         return r is not None
-    except Exception:
+    except Exception as e:
+        logger.warning("table failed: %s", e)
         return False
 
 
@@ -384,7 +390,8 @@ def try_count(table_name: str, where: str | None = None) -> int:
             sql += f" WHERE {where}"
         r = get_conn().execute(sql).fetchone()
         return r[0] if r else 0
-    except Exception:
+    except Exception as e:
+        logger.warning("try_count failed: %s", e)
         return 0
 
 
@@ -395,18 +402,20 @@ def _live_health():
         r = conn.execute("SELECT COUNT(*) FROM memories").fetchone()
         checks.append(("memories", "ok" if r and r[0] > 0 else "error", f"{r[0]} notes"))
     except Exception as e:
+        logger.warning("_live_health failed: %s", e)
         checks.append(("memories", "error", str(e)))
     for tbl in ("kg_entities", "kg_edges", "kg_facts", "memory_chunks", "memory_embeddings", "memory_audit_log", "backlinks"):
         try:
             r = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()
             checks.append((tbl, "ok" if r and r[0] > 0 else "warning", f"{r[0]} rows"))
         except Exception as e:
+            logger.warning("_live_health failed: %s", e)
             checks.append((tbl, "error", str(e)))
     try:
         r = conn.execute("SELECT COUNT(*) FROM memories WHERE pinned=1").fetchone()
         checks.append(("pinned", "ok", f"{r[0]} notes"))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_live_health failed: %s", e)
     return {"ts": datetime.now(timezone.utc).isoformat(), "checks": checks}
 
 
@@ -576,8 +585,8 @@ with overview_tab:
             "SELECT AVG(latency_ms) FROM memory_audit_log WHERE DATE(ts,'unixepoch') = DATE('now')"
         ).fetchone()
         avg_lat = round(r[0], 1) if r and r[0] else None
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("operation failed: %s", e)
     db_size_mb = DB.stat().st_size / 1024 / 1024
 
     cols = st.columns(7)
@@ -691,8 +700,8 @@ with overview_tab:
             for row in df["tags"]:
                 try:
                     c.update(json.loads(row))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("operation failed: %s", e)
             if c:
                 td = pd.DataFrame(c.most_common(20), columns=["tag", "count"])
                 fig = px.bar(
@@ -1072,8 +1081,8 @@ with embed_tab:
                         tiers.append(r.get("tier", "") or "")
                         fits.append(float(r["fitness_score"]) if pd.notna(r.get("fitness_score")) else 0.0)
                         previews.append((r.get("preview") or "")[:100])
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("operation failed: %s", e)
 
             if len(vecs) >= 3:
                 with st.spinner("Computing PCA ..."):
@@ -1580,7 +1589,8 @@ with ctr_tab:
                                 st.plotly_chart(fig_w, width="stretch")
                             else:
                                 st.json(rp)
-                        except Exception:
+                        except Exception as e:
+                            logger.warning("operation failed: %s", e)
                             st.code(r["ranking_params"])
             else:
                 st.info("No events match the filters")
@@ -1675,7 +1685,8 @@ with benchmarks_tab:
         for fp in perf_paths:
             try:
                 data = json.loads(fp.read_text())
-            except Exception:
+            except Exception as e:
+                logger.warning("operation failed: %s", e)
                 continue
             for corp in data.get("corpora", []):
                 sz = corp.get("corpus_size", 0)
@@ -1702,7 +1713,8 @@ with benchmarks_tab:
         for fp in bench_paths:
             try:
                 data = json.loads(fp.read_text())
-            except Exception:
+            except Exception as e:
+                logger.warning("operation failed: %s", e)
                 continue
             results_block = data.get("results", {})
             for size_str, modes in results_block.items():
@@ -1862,7 +1874,8 @@ with benchmarks_tab:
                 with rtab:
                     try:
                         rdata = json.loads(rfp.read_text())
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("operation failed: %s", e)
                         st.error(f"Failed to parse {rfp.name}")
                         continue
                     c1, c2, c3, c4 = st.columns(4)

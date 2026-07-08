@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import logging
 """Sync invariant checker — detects drift across memory subsystems.
 
 Compares row counts between the memories table and its satellite tables
@@ -12,7 +14,6 @@ Usage:
     # result = {"overall": "healthy"|"drift"|"empty", "subsystems": {...}, "ghosts": {...}}
 """
 
-import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -27,7 +28,8 @@ def _count(conn: AnyConnection, sql: str) -> int:
     try:
         row = conn.execute(sql).fetchone()
         return int(row[0]) if row is not None else 0
-    except Exception:
+    except Exception as e:
+        logger.warning("_count failed: %s", e)
         return 0
 
 
@@ -85,7 +87,8 @@ def _detect_reverse_ghosts(conn: AnyConnection) -> dict:
             "SELECT COUNT(*) FROM memories_fts "
             "WHERE id IN (SELECT id FROM memories WHERE deleted_at IS NOT NULL)",
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("_detect_reverse_ghosts failed: %s", e)
         ghosts["fts"] = 0
 
     # Embedding ghosts: embeddings for soft-deleted memories
@@ -95,7 +98,8 @@ def _detect_reverse_ghosts(conn: AnyConnection) -> dict:
             "SELECT COUNT(*) FROM memory_embeddings "
             "WHERE memory_id IN (SELECT id FROM memories WHERE deleted_at IS NOT NULL)",
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("_detect_reverse_ghosts failed: %s", e)
         ghosts["embeddings"] = 0
 
     # KG fact ghosts: facts extracted from soft-deleted memories
@@ -105,7 +109,8 @@ def _detect_reverse_ghosts(conn: AnyConnection) -> dict:
             "SELECT COUNT(*) FROM kg_facts "
             "WHERE source_memory IN (SELECT id FROM memories WHERE deleted_at IS NOT NULL)",
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("_detect_reverse_ghosts failed: %s", e)
         ghosts["kg_facts"] = 0
 
     # Chunk ghosts: chunks for soft-deleted memories
@@ -115,7 +120,8 @@ def _detect_reverse_ghosts(conn: AnyConnection) -> dict:
             "SELECT COUNT(*) FROM memory_chunks "
             "WHERE parent_id IN (SELECT id FROM memories WHERE deleted_at IS NOT NULL)",
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("_detect_reverse_ghosts failed: %s", e)
         ghosts["chunks"] = 0
 
     ghosts["total"] = sum(ghosts.values())

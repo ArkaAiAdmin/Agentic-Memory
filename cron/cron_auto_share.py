@@ -89,7 +89,8 @@ def main() -> int:
         from save.crdt_helpers import _crdt_agent_id
 
         agent_id = _crdt_agent_id()
-    except Exception:
+    except Exception as e:
+        logger.warning("main failed: %s", e)
         agent_id = "auto-share"
 
     print(

@@ -35,11 +35,11 @@ from adaptive_retention import ensure_adaptive_schema
 # Import rebuild_vec_index functions
 sys.path.insert(0, _project_root)
 from rebuild_vec_index import (
-    _md5_to_uint64,
     _load_cached_embeddings,
     rebuild_vec_index,
     VEC_INDEX_METRIC,
 )
+from infra.hash_utils import md5_to_uint64
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -192,24 +192,24 @@ class TestMd5ToUint64:
 
     def test_returns_int(self):
         """Output is an integer."""
-        result = _md5_to_uint64("test-note-id")
+        result = md5_to_uint64("test-note-id")
         assert isinstance(result, int)
 
     def test_positive(self):
-        """Key is always positive (fits in signed int64)."""
+        """Key is always positive (fits in unsigned int64)."""
         for i in range(100):
-            result = _md5_to_uint64(f"note-{i}")
-            assert 0 <= result < (1 << 63)
+            result = md5_to_uint64(f"note-{i}")
+            assert 0 <= result < (1 << 64)
 
     def test_deterministic(self):
         """Same input always produces same output."""
-        a = _md5_to_uint64("stable-id")
-        b = _md5_to_uint64("stable-id")
+        a = md5_to_uint64("stable-id")
+        b = md5_to_uint64("stable-id")
         assert a == b
 
     def test_different_inputs_different_outputs(self):
         """Different IDs produce different keys (high probability)."""
-        keys = {_md5_to_uint64(f"unique-{i}") for i in range(50)}
+        keys = {md5_to_uint64(f"unique-{i}") for i in range(50)}
         assert len(keys) == 50
 
 

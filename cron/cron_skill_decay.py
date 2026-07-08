@@ -191,7 +191,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
         finally:
             conn.close()
-    except Exception:
+    except Exception as e:
+        logger.warning("main failed: %s", e)
         import traceback
 
         traceback.print_exc()

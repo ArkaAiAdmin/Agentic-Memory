@@ -12,6 +12,9 @@ Features:
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import json
 import math
 import sqlite3
@@ -86,7 +89,8 @@ def compute_importance(conn: AnyConnection, memory_id: str) -> float:
             row[1] for row in conn.execute("PRAGMA table_info(memories)").fetchall()
         }
         has_metadata = "metadata" in cols
-    except Exception:
+    except Exception as e:
+        logger.warning("compute_importance failed: %s", e)
         has_metadata = False
 
     if has_metadata:
@@ -195,6 +199,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
             conn.commit()
             stats["fixed"]["fts"] = total
         except Exception as e:
+            logger.warning("_backfill_drifted_subsystems failed: %s", e)
             stats["fixed"]["fts"] = f"error: {e}"
 
     # Backfill embeddings
@@ -213,6 +218,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
                     count += 1
             stats["fixed"]["embeddings"] = count
         except Exception as e:
+            logger.warning("_backfill_drifted_subsystems failed: %s", e)
             stats["fixed"]["embeddings"] = f"error: {e}"
 
     # Backfill KG entities + edges
@@ -234,6 +240,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
                 stats["fixed"]["kg_entities"] = count
                 stats["fixed"]["kg_edges"] = count
         except Exception as e:
+            logger.warning("_backfill_drifted_subsystems failed: %s", e)
             stats["fixed"]["kg_entities"] = f"error: {e}"
 
     # Backfill KG facts (index_facts_for_memory_bulk, NOT
@@ -260,6 +267,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
                     count += result.get("facts", 0)
             stats["fixed"]["kg_facts"] = count
         except Exception as e:
+            logger.warning("_backfill_drifted_subsystems failed: %s", e)
             stats["fixed"]["kg_facts"] = f"error: {e}"
 
     # Backfill chunks
@@ -274,6 +282,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
                     count += 1
             stats["fixed"]["chunks"] = count
         except Exception as e:
+            logger.warning("_backfill_drifted_subsystems failed: %s", e)
             stats["fixed"]["chunks"] = f"error: {e}"
 
     # Backfill tiers
@@ -289,6 +298,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
             conn.commit()
             stats["fixed"]["tiers"] = count
         except Exception as e:
+            logger.warning("_backfill_drifted_subsystems failed: %s", e)
             stats["fixed"]["tiers"] = f"error: {e}"
 
     # Backfill metadata
@@ -305,6 +315,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
             conn.commit()
             stats["fixed"]["metadata"] = count
         except Exception as e:
+            logger.warning("_backfill_drifted_subsystems failed: %s", e)
             stats["fixed"]["metadata"] = f"error: {e}"
 
     # Rebuild vector index if drifted
@@ -324,6 +335,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
             )
             stats["fixed"]["vector_index"] = "rebuilt"
         except Exception as e:
+            logger.warning("_backfill_drifted_subsystems failed: %s", e)
             stats["fixed"]["vector_index"] = f"error: {e}"
 
     # Backfill adaptive retention
@@ -334,6 +346,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
             result = batch_update_retention()
             stats["fixed"]["adaptive_retention"] = result.get("updated", 0)
         except Exception as e:
+            logger.warning("_backfill_drifted_subsystems failed: %s", e)
             stats["fixed"]["adaptive_retention"] = f"error: {e}"
 
     # Backfill backlinks
@@ -349,6 +362,7 @@ def _backfill_drifted_subsystems(conn: AnyConnection, drifted: list[str]) -> dic
             conn.commit()
             stats["fixed"]["backlinks"] = count
         except Exception as e:
+            logger.warning("_backfill_drifted_subsystems failed: %s", e)
             stats["fixed"]["backlinks"] = f"error: {e}"
 
     stats["elapsed"] = round(_time.time() - start, 2)
@@ -512,15 +526,15 @@ def run_heartbeat(
         drifted = get_drifted_subsystems(drift_result)
         if drifted:
             sync_backfill = _backfill_drifted_subsystems(conn, drifted)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("run_heartbeat failed: %s", e)
 
     # Step 0.5: clean orphaned subsystem data (entries referencing deleted notes)
     orphan_cleanup = None
     try:
         orphan_cleanup = _cleanup_orphaned_subsystem_data(conn, dry_run=dry_run)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("run_heartbeat failed: %s", e)
 
     # Step 1: batch-compute adaptive half-lives if enabled
     adaptive_stats = None

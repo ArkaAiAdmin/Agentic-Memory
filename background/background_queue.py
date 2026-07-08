@@ -17,8 +17,9 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -150,8 +151,8 @@ def enqueue_task(
                 try:
                     from infra.rate_limiter import get_retry_after
                     retry_after = get_retry_after(task_type)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("enqueue_task failed: %s", e)
                 return {
                     "queued": False,
                     "reason": "queue_full",
@@ -218,7 +219,8 @@ def enqueue_task(
             conn.execute("RELEASE SAVEPOINT enqueue_sp")
         else:
             conn.commit()
-    except Exception:
+    except Exception as e:
+        logger.warning("enqueue_task failed: %s", e)
         if sp_open:
             conn.execute("ROLLBACK TO SAVEPOINT enqueue_sp")
         else:
@@ -292,13 +294,14 @@ def dequeue_task(conn: AnyConnection,
             conn.execute("RELEASE SAVEPOINT dequeue_sp")
         else:
             conn.commit()
-    except Exception:
+    except Exception as e:
+        logger.warning("dequeue_task failed: %s", e)
         if sp_open:
             try:
                 conn.execute("ROLLBACK TO SAVEPOINT dequeue_sp")
                 conn.execute("RELEASE SAVEPOINT dequeue_sp")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("dequeue_task failed: %s", e)
         else:
             conn.rollback()
         raise

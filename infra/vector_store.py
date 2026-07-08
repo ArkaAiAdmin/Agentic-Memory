@@ -26,13 +26,13 @@ Interface (the minimum a VectorStore must support):
 
 from __future__ import annotations
 
-import io
 import logging
+logger = logging.getLogger(__name__)
+
+import io
 import math
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
-
-LOG = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -188,8 +188,9 @@ class USearchVectorStore:
             return
         try:
             self._idx.remove(key)  # type: ignore[union-attr]
-        except Exception as e:  # usearch raises KeyError on missing
-            LOG.debug("usearch remove key=%s: %s", key, e)
+        except Exception as e:
+            logger.warning("remove failed: %s", e)
+            logger.debug("usearch remove key=%s: %s", key, e)
 
     def search(self, query_vector, k: int) -> list[SearchHit]:
         if self._idx is None:
@@ -199,9 +200,9 @@ class USearchVectorStore:
             )
         if k <= 0 or len(self) == 0:
             return []
-        matches = self._idx.search(  # type: ignore[union-attr,arg-type]
+        matches = self._idx.search(  # pyright: ignore[reportArgumentType]
             _to_list(query_vector, self.ndim), k
-        )
+        )  # type: ignore[union-attr,arg-type]
         keys = [int(k) for k in matches.keys.tolist()]
         dists = [float(d) for d in matches.distances.tolist()]
         return [
@@ -236,7 +237,7 @@ def _build_usearch_index(ndim: int, metric: str):
     try:
         from usearch.index import Index
     except ImportError:
-        LOG.warning(
+        logger.warning(
             "usearch not installed; USearchVectorStore will be a no-op. "
             "Install with `pip install usearch` for production use."
         )
@@ -311,7 +312,6 @@ def _to_list(vector, ndim: int) -> list[float]:
 
 
 def _cosine_distance(a: list[float], b: list[float]) -> float:
-    """1 - cosine_similarity. Range [0, 2] for unit vectors, [0, 1] typical."""
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(x * x for x in b))
@@ -324,7 +324,6 @@ def _cosine_distance(a: list[float], b: list[float]) -> float:
 
 
 def _l2sq_distance(a: list[float], b: list[float]) -> float:
-    """Squared L2 distance. Smaller = closer."""
     return sum((x - y) ** 2 for x, y in zip(a, b))
 
 

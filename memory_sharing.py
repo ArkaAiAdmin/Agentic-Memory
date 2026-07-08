@@ -20,8 +20,9 @@ Opt-in via ``MEMORY_MULTI_AGENT=1``.
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -95,8 +96,8 @@ def _ensure_shared_table(conn: AnyConnection) -> None:
             conn.execute(f"ALTER TABLE {_SHARED_TABLE} ADD COLUMN target_agent_id TEXT DEFAULT NULL")
         if "shared_with" not in cols:
             conn.execute(f"ALTER TABLE {_SHARED_TABLE} ADD COLUMN shared_with TEXT DEFAULT NULL")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_ensure_shared_table failed: %s", e)
     conn.execute(
         f"CREATE INDEX IF NOT EXISTS idx_shared_agent ON {_SHARED_TABLE}(agent_id)"
     )
@@ -211,13 +212,15 @@ def share_memory(
                     ),
                 )
                 conn.commit()
-            except Exception:
+            except Exception as e:
+                logger.warning("share_memory failed: %s", e)
                 conn.rollback()
                 raise
             return {"enabled": True, "shared_id": shared_id, "agent_id": agent_id}
         finally:
             conn.close()
     except Exception as e:
+        logger.warning("share_memory failed: %s", e)
         return {"enabled": True, "error": str(e)}
 
 
@@ -251,8 +254,8 @@ def list_shared_memories(
         try:
             from agent_context import get_agent as _gwa
             current_agent = _gwa().agent_id
-        except (ImportError, Exception):
-            pass
+        except (ImportError, Exception) as e:
+            logger.warning("list_shared_memories failed: %s", e)
 
     if db_path is not None:
         db = db_path
@@ -608,15 +611,17 @@ def import_shared_memory(
                 "new_note_id": new_id,
                 "source_agent": source_agent,
             }
-        except Exception:
+        except Exception as e:
+            logger.warning("import_shared_memory failed: %s", e)
             try:
                 conn.rollback()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("import_shared_memory failed: %s", e)
             raise
         finally:
             conn.close()
     except Exception as e:
+        logger.warning("import_shared_memory failed: %s", e)
         return {"enabled": True, "error": str(e)}
 
 
@@ -795,7 +800,8 @@ def auto_share_high_value(
             from save.crdt_helpers import _crdt_agent_id
 
             agent_id = _crdt_agent_id()
-        except Exception:
+        except Exception as e:
+            logger.warning("auto_share_high_value failed: %s", e)
             agent_id = "auto-share"
 
     candidates = list_share_candidates(

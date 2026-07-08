@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import logging
+logger = logging.getLogger(__name__)
 """
 CTR feedback and concept drift MCP tools — memory_record_ctr_feedback,
 memory_check_concept_drift, memory_list_drift_alarms.
@@ -82,6 +85,7 @@ def memory_record_ctr_feedback(
         )
         return json.dumps({"status": "ok", "action": action, "id": id})
     except Exception as e:
+        logger.warning("memory_record_ctr_feedback failed: %s", e)
         return _err(ErrorCode.CTR_FEEDBACK_ERROR, str(e))
 
 
@@ -105,6 +109,7 @@ def memory_check_concept_drift(threshold: float = 0.15) -> str:
         result = check_concept_drift_db(db_path, threshold=threshold)
         return json.dumps(result)
     except Exception as e:
+        logger.warning("memory_check_concept_drift failed: %s", e)
         return _err(ErrorCode.CONCEPT_DRIFT_ERROR, str(e))
 
 
@@ -233,4 +238,5 @@ def memory_list_drift_alarms(
             )
         return _err(ErrorCode.DB_ERROR, str(e))
     except Exception as e:
+        logger.warning("memory_list_drift_alarms failed: %s", e)
         return _err(ErrorCode.DB_ERROR, str(e))

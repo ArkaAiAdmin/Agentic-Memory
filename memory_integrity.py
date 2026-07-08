@@ -18,6 +18,8 @@ re-creates .md files for memories whose file is missing on disk
 
 from __future__ import annotations
 
+import logging
+
 __all__ = [
     "check_index_integrity",
     "main",
@@ -29,7 +31,6 @@ __all__ = [
 ]
 
 import argparse
-import logging
 import sqlite3
 import sys
 import time
@@ -676,6 +677,7 @@ def check_index_integrity(db_path: str | Path, deep: bool = False) -> dict[str, 
             }
         )
     except Exception as e:
+        logger.warning("check_index_integrity failed: %s", e)
         findings.append(
             {
                 "id": "integrity-unexpected-error",

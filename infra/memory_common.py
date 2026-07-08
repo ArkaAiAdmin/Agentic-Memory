@@ -419,14 +419,19 @@ def get_default_limiter() -> RateLimiter:
                         limits = _resolve_tool_limits(tool, toml_limits)
                         per_tool[tool] = (limits["burst"], 60.0)
                     _resolve_tool_limits("_default", toml_limits)
-                except Exception:
+                except Exception as e:
+                    logger.warning(
+                        "get_default_limiter: failed to resolve per-tool limits: %s", e
+                    )
                     for tool, entry in toml_limits.items():
                         if isinstance(entry, dict):
                             rpm = float(entry.get("rate", 60.0 / 60.0)) * 60.0
                             burst = int(entry.get("burst", max(1, int(rpm))))
                             per_tool[tool] = (burst, 60.0)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "get_default_limiter: falling back to default limiter: %s", e
+                )
             _default_limiter = RateLimiter(max_calls=60, window_seconds=60.0, per_tool_limits=per_tool)
         return _default_limiter
 
@@ -682,7 +687,8 @@ def get_sessions_dir() -> Path:
     try:
         _, local_mem, _ = get_memory_paths()
         return local_mem / "sessions"
-    except Exception:
+    except Exception as e:
+        logger.warning("get_sessions_dir: falling back to default: %s", e)
         return Path.home() / ".config" / "agentic-memory" / "memory" / "sessions"
 
 
@@ -694,7 +700,8 @@ def read_current_session() -> dict:
         return {}
     try:
         return cast(dict, json.loads(_CURRENT_SESSION_FILE.read_text()))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("read_current_session: failed to parse session file: %s", e)
         return {}
 
 
@@ -707,7 +714,8 @@ def is_session_active(max_age_seconds: float = 3600.0) -> bool:
     try:
         elapsed = time.time() - float(started_at)
         return elapsed < max_age_seconds
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as e:
+        logger.warning("is_session_active: invalid started_at value: %s", e)
         return False
 
 

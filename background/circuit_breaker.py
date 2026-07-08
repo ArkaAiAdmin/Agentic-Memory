@@ -18,8 +18,9 @@ Imported by: auto_save.py (backward-compat shim), background daemon, CLI hooks.
 """
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import threading
 import time
 from pathlib import Path
@@ -56,16 +57,16 @@ def _write_circuit_sentinel() -> None:
     """Write the sentinel file to signal that the Python CB is open."""
     try:
         _get_sentinel_path().write_text("open")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_write_circuit_sentinel failed: %s", e)
 
 
 def _remove_circuit_sentinel() -> None:
     """Remove the sentinel file to signal that the Python CB is closed."""
     try:
         _get_sentinel_path().unlink(missing_ok=True)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_remove_circuit_sentinel failed: %s", e)
 
 # Module-level keep-alive for the daemon's flock FD.
 _DAEMON_LOCKS: dict[str, Any] = {}
@@ -123,8 +124,8 @@ def _auto_save_circuit_open() -> bool:
                         return bool(result)
                 finally:
                     state.detach()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_auto_save_circuit_open failed: %s", e)
 
     with _AUTO_SAVE_STATE_LOCK:
         return _t.time() < _AUTO_SAVE_STATE["circuit_open_until"]
@@ -169,7 +170,8 @@ def _auto_save_record_failure_and_maybe_trip() -> dict:
         cap = float(getattr(cfg, "auto_save_backoff_cap_seconds", 30.0))
         cb_seconds = float(getattr(cfg, "auto_save_circuit_breaker_seconds", 300.0))
         window = float(getattr(cfg, "auto_save_failure_window_seconds", 60.0))
-    except Exception:
+    except Exception as e:
+        logger.warning("_auto_save_record_failure_and_maybe_trip failed: %s", e)
         max_retries, base, cap, cb_seconds, window = 3, 1.0, 30.0, 300.0, 60.0
 
     now = _t.time()
@@ -261,8 +263,8 @@ def _record_circuit_skip(entry: dict) -> None:
                     0.0,
                 ),
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_record_circuit_skip failed: %s", e)
 
 
 def _persist_circuit_state(event: str, *, details: dict) -> None:
@@ -368,8 +370,8 @@ def _load_circuit_state_from_audit() -> None:
                 safe_close_db(conn, should_commit=False)
             except Exception as e:
                 logger.debug("Failed to close db connection in load circuit: %s", e)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_load_circuit_state_from_audit failed: %s", e)
 
 
 # ---------------------------------------------------------------------------

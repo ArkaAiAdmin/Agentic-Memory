@@ -11,8 +11,9 @@ there so ``from memory_common import _migrate_*`` still works for the
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import sqlite3
 
 logger = logging.getLogger(__name__)
@@ -881,8 +882,8 @@ def run_schema_setup(conn: AnyConnection) -> None:
         _stable_snapshot = _mr.SCHEMA_STABLE
         if _stable_snapshot:
             _mr.SCHEMA_STABLE = False
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("run_schema_setup failed: %s", e)
 
     try:
         _run_sql_migrations(conn)
@@ -892,8 +893,8 @@ def run_schema_setup(conn: AnyConnection) -> None:
                 import infra.migration_runner as _mr2
 
                 _mr2.SCHEMA_STABLE = _stable_snapshot
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("run_schema_setup failed: %s", e)
 
     # Ensure the core memories table exists.
     conn.execute(
@@ -1038,8 +1039,8 @@ def run_schema_setup(conn: AnyConnection) -> None:
     # canonical fast-path. See the gate at the top of this function.
     try:
         conn.execute("PRAGMA foreign_keys = ON")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("run_schema_setup failed: %s", e)
 
 
 def run_db_migrations(conn) -> None:

@@ -971,5 +971,6 @@ __getattr__ = make_lazy_getattr({"SAGA_ENABLED": "saga_enabled"})
 # with the documented "read once at import time" semantics.
 try:
     SAGA_ENABLED = bool(sys.modules[__name__].SAGA_ENABLED)
-except Exception:
+except Exception as _wp_exc:
+    logger.warning("<module>: broad except swallowed: %s", _wp_exc)
     SAGA_ENABLED = True

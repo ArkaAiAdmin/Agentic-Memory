@@ -5,6 +5,9 @@ Re-exports all public symbols from the submodules so both
 ``from knowledge_graph import graph_search`` keep working.
 """
 
+import logging
+logger = logging.getLogger(__name__)
+
 from knowledge_graph.kg_db import (
     _upsert_edge,
     _upsert_entity,
@@ -65,7 +68,8 @@ def __getattr__(name: str):
             from config import get_config
 
             _KG_ENABLED_CACHE = bool(getattr(get_config(), "knowledge_graph", True))
-        except Exception:
+        except Exception as e:
+            logger.warning("__getattr__ failed: %s", e)
             _KG_ENABLED_CACHE = True
         return _KG_ENABLED_CACHE
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

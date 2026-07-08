@@ -26,7 +26,7 @@ import sys
 import time
 from pathlib import Path
 
-LOG = logging.getLogger("agentic_memory.cron_runner")
+logger = logging.getLogger(__name__)
 DEFAULT_SCHEDULE = Path("/app/cron/schedule.json")
 
 
@@ -45,12 +45,12 @@ def run_once(entry: dict, scripts_dir: Path) -> None:
     started = time.time()
     script_path = scripts_dir / name
     if not script_path.exists():
-        LOG.error("script not found: %s", script_path)
+        logger.error("script not found: %s", script_path)
         return
     cmd = [sys.executable, str(script_path), *args]
     run_env = os.environ.copy()
     run_env.update({k: str(v) for k, v in extra_env.items()})
-    LOG.info("running %s (args=%s)", name, args)
+    logger.info("running %s (args=%s)", name, args)
     try:
         result = subprocess.run(
             cmd,
@@ -61,9 +61,9 @@ def run_once(entry: dict, scripts_dir: Path) -> None:
         )
         elapsed = time.time() - started
         if result.returncode == 0:
-            LOG.info("ok %s in %.1fs", name, elapsed)
+            logger.info("ok %s in %.1fs", name, elapsed)
         else:
-            LOG.error(
+            logger.error(
                 "fail %s rc=%d in %.1fs — stderr=%s",
                 name,
                 result.returncode,
@@ -71,7 +71,7 @@ def run_once(entry: dict, scripts_dir: Path) -> None:
                 result.stderr[:500],
             )
     except subprocess.TimeoutExpired:
-        LOG.error("timeout %s after %ds", name, entry.get("timeout_seconds", 300))
+        logger.error("timeout %s after %ds", name, entry.get("timeout_seconds", 300))
 
 
 def next_due(entry: dict, now_ts: float, last_run: float) -> float:
@@ -114,7 +114,7 @@ def main() -> int:
 
     schedule = load_schedule(args.schedule)
     enabled = [e for e in schedule if e.get("enabled", True)]
-    LOG.info(
+    logger.info(
         "loaded %d schedule entries (%d enabled)",
         len(schedule),
         len(enabled),
@@ -126,7 +126,7 @@ def main() -> int:
         return 0
 
     last_runs: dict[str, float] = {}
-    LOG.info("entering cron loop — pid=%d", os.getpid())
+    logger.info("entering cron loop — pid=%d", os.getpid())
     while True:
         now_ts = time.time()
         for entry in enabled:

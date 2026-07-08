@@ -8,6 +8,8 @@ Provides:
 from __future__ import annotations
 
 import logging
+logger = logging.getLogger(__name__)
+
 from typing import Any, Callable
 
 __all__ = ['safe_call']
@@ -51,10 +53,10 @@ def safe_call(
     Returns:
         The result of ``func(*args, **kwargs)``, or ``fallback`` on exception.
     """
-    logger = logging.getLogger(__name__)
     try:
         return func(*args, **kwargs)
     except Exception as e:
+        logger.warning("safe_call failed: %s", e)
         if raise_on and isinstance(e, raise_on):
             raise
         logger.log(log_level, 'safe_call[%s] failed: %s', err_label, e)

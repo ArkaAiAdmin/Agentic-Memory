@@ -101,7 +101,8 @@ def _open_server_db(db_path: str) -> _AnyConnection:
     try:
         run_schema_setup(conn)
         conn.execute("PRAGMA busy_timeout = 30000;")
-    except Exception:
+    except Exception as _wp_exc:
+        logger.warning("_open_server_db: broad except swallowed: %s", _wp_exc)
         conn.close()
         fallback = sqlite3.connect(str(db_path), timeout=30.0)
         fallback.execute("PRAGMA foreign_keys = ON")
@@ -338,6 +339,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
             added = peer_directory.merge_peers(peers, source="gossip")
             self._json_response({"status": "ok", "added": added})
         except Exception as e:
+            logger.warning("_handle_gossip_peers: broad except swallowed: %s", e)
             self._error(f"Gossip processing failed: {e}", 400)
 
     # ------------------------------------------------------------------
@@ -619,7 +621,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
             finally:
                 try:
                     conn.close()
-                except Exception:
+                except Exception as _wp_exc:
+                    logger.warning("_handle_kg_changes: broad except swallowed: %s", _wp_exc)
                     pass
         except Exception as e:
             logger.error("sync_server: kg changes failed: %s", e)
@@ -714,7 +717,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
             finally:
                 try:
                     conn.close()
-                except Exception:
+                except Exception as _wp_exc:
+                    logger.warning("_handle_kg_push: broad except swallowed: %s", _wp_exc)
                     pass
         except Exception as e:
             logger.error("sync_server: kg push failed: %s", e)
@@ -816,7 +820,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
             finally:
                 try:
                     conn.close()
-                except Exception:
+                except Exception as _wp_exc:
+                    logger.warning("_handle_skill_changes: broad except swallowed: %s", _wp_exc)
                     pass
         except Exception as e:
             logger.error("sync_server: skill changes failed: %s", e)
@@ -871,7 +876,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
             finally:
                 try:
                     conn.close()
-                except Exception:
+                except Exception as _wp_exc:
+                    logger.warning("_handle_skill_push: broad except swallowed: %s", _wp_exc)
                     pass
         except Exception as e:
             logger.error("sync_server: skill push failed: %s", e)
@@ -1079,7 +1085,8 @@ class SyncServer:
             logger.error("sync_server: TLS configuration error: %s", e)
             try:
                 self._server.server_close()
-            except Exception:
+            except Exception as _wp_exc:
+                logger.warning("start: broad except swallowed: %s", _wp_exc)
                 pass
             self._server = None
             return False

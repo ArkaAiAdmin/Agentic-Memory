@@ -11,6 +11,9 @@ Usage:
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 from _flock import acquire_lock_or_exit
 import argparse
 import json
@@ -79,6 +82,7 @@ def main() -> int:
             else:
                 failed += 1
         except Exception as e:
+            logger.warning("main failed: %s", e)
             failed += 1
             results.append({"source": src, "target": tgt, "action": "error", "error": str(e)})
 

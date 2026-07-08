@@ -14,6 +14,7 @@ callers can still import them via ``from memory_common import _migrate_fts5_...`
 from __future__ import annotations
 
 import logging
+
 import sqlite3
 import time
 from typing import TYPE_CHECKING
@@ -127,12 +128,14 @@ def _migrate_fts5_porter_tokenizer(conn: AnyConnection) -> None:
                 conn.execute("DROP TABLE IF EXISTS memories_fts")
                 _create_fts5_table(conn)
                 conn.execute("RELEASE SAVEPOINT fts5_porter_sp")
-            except Exception:
+            except Exception as e:
+                logger.warning("_migrate_fts5_porter_tokenizer failed: %s", e)
                 conn.execute("ROLLBACK TO SAVEPOINT fts5_porter_sp")
                 conn.execute("RELEASE SAVEPOINT fts5_porter_sp")
                 raise
             break
-        except Exception:
+        except Exception as e:
+            logger.warning("_migrate_fts5_porter_tokenizer failed: %s", e)
             if attempt == 2:
                 return
             time.sleep(0.05 * (attempt + 1))

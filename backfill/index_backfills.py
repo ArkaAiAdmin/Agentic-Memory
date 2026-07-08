@@ -20,8 +20,9 @@ backfill_all for backward compat.
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import os
 import re
 from pathlib import Path
@@ -140,7 +141,8 @@ def _backfill_chunks_fts(conn):
     """Populate memory_chunks_fts from memory_chunks."""
     try:
         existing = conn.execute("SELECT COUNT(*) FROM memory_chunks_fts").fetchone()[0]
-    except Exception:
+    except Exception as e:
+        logger.warning("_backfill_chunks_fts failed: %s", e)
         return
     if existing > 0:
         return
@@ -153,8 +155,8 @@ def _backfill_chunks_fts(conn):
                     "INSERT INTO memory_chunks_fts(rowid, content) VALUES (?, ?)",
                     (cid, content),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("_backfill_chunks_fts failed: %s", e)
     logger.info("Chunks FTS backfilled: %d rows", len(rows))
 
 
@@ -162,7 +164,8 @@ def _backfill_backlinks(conn):
     """Rebuild backlinks from [[wiki-links]] in memory content."""
     try:
         existing = conn.execute("SELECT COUNT(*) FROM backlinks").fetchone()[0]
-    except Exception:
+    except Exception as e:
+        logger.warning("_backfill_backlinks failed: %s", e)
         return
     if existing > 0:
         return
@@ -187,8 +190,8 @@ def _backfill_backlinks(conn):
                         (mid, target),
                     )
                     count += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("_backfill_backlinks failed: %s", e)
     logger.info("Backlinks backfilled: %d links", count)
 
 
@@ -271,8 +274,8 @@ def _backfill_tiers(conn: AnyConnection) -> dict:
                 warms += 1
             else:
                 colds += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_backfill_tiers failed: %s", e)
 
     logger.info(
         "Tiers backfilled: %d/%d (hot=%d warm=%d cold=%d)",

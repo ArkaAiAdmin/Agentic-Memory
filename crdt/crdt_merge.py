@@ -34,8 +34,9 @@ writing to this note, typically 1-3).
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 from typing import Optional
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -119,7 +120,8 @@ def _capture_pre_state_main(conn: AnyConnection, note_id: str) -> Optional[dict]
                FROM memories WHERE id=?""",
             (note_id,),
         ).fetchone()
-    except Exception:
+    except Exception as e:
+        logger.warning("_capture_pre_state_main failed: %s", e)
         return None
     if row is None:
         return None
@@ -187,7 +189,8 @@ def _write_merged_markdown(
         # the frontmatter format consistent with save_memory.
         try:
             from save_pipeline import _build_memory_file
-        except Exception:
+        except Exception as e:
+            logger.warning("_write_merged_markdown failed: %s", e)
             _build_memory_file = None  # type: ignore[assignment]
         if _build_memory_file is not None:
             try:
@@ -373,7 +376,8 @@ def crdt_save(
                 ).fetchone()
                 is not None
             )
-    except Exception:
+    except Exception as e:
+        logger.warning("crdt_save failed: %s", e)
         _has_table = False
 
     if _has_table:

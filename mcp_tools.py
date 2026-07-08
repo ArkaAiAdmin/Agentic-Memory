@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import logging
+logger = logging.getLogger(__name__)
 """
 MCP tool registry — auto-discovery + dynamic re-export.
 
@@ -42,7 +45,8 @@ def __getattr__(name: str):
         if _mod is None:
             try:
                 _mod = importlib.import_module(_mod_name)
-            except Exception:
+            except Exception as e:
+                logger.warning("__getattr__ failed: %s", e)
                 continue
         if hasattr(_mod, name):
             _val = getattr(_mod, name)

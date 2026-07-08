@@ -24,10 +24,11 @@ Design notes:
 
 from __future__ import annotations
 
+import logging
+
 import atexit
 import json
 import re
-import logging
 import queue
 import threading
 import time
@@ -398,6 +399,7 @@ def audit(
     except BaseException as e:
         # Use repr to keep one-line, never lossy. Truncate very long
         # error strings so the row doesn't blow up the DB.
+        logger.warning("audit failed: %s", e)
         error = repr(e)
         if len(error) > 2000:
             error = error[:2000] + "...<truncated>"

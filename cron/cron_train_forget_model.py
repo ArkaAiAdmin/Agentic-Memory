@@ -68,7 +68,8 @@ def _load_examples(conn):
                """,
             (cutoff,),
         ).fetchall()
-    except Exception:
+    except Exception as e:
+        logger.warning("_load_examples failed: %s", e)
         return []
     examples = []
     for row in rows:

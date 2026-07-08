@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
 """Sprint 4 / 8.2: rebuild the usearch HNSW vector index in-place.
 
 Mirrors ``rebuild_index.py`` (the FTS5 + MEMORY.md regen script), but for
@@ -22,7 +24,6 @@ Usage:
 """
 
 import hashlib
-import logging
 import os
 import sqlite3
 import sys
@@ -72,8 +73,8 @@ def _resolve_rebuild_model_id() -> str:
         cfg_id = getattr(get_config(), "embedding_model_id", None)
         if cfg_id:
             return str(cfg_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_resolve_rebuild_model_id failed: %s", e)
     return MODEL_ID
 
 
@@ -282,8 +283,8 @@ def rebuild_vec_index(db_path, *, force: bool = False) -> dict:
                         vec_array[i] = vec
                         n_cache_hits += 1
                         continue
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("rebuild_vec_index failed: %s", e)
             to_encode_texts.append(text)
             to_encode_indices.append(i)
             n_cache_misses += 1
@@ -477,8 +478,8 @@ def rebuild_chunk_vec_index(db_path, *, force: bool = False) -> dict:
                         vec_array[i] = vec
                         n_cache_hits += 1
                         continue
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("rebuild_chunk_vec_index failed: %s", e)
             to_encode_texts.append(text)
             to_encode_indices.append(i)
             n_cache_misses += 1

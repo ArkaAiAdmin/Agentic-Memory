@@ -18,6 +18,9 @@ Usage:
         log_error(e, context="memory-proactive-context.main()")
 """
 
+import logging
+logger = logging.getLogger(__name__)
+
 import os
 import traceback
 from datetime import datetime, timezone
@@ -47,6 +50,6 @@ def log_error(exc: BaseException, context: str = "") -> None:
             if tb:
                 last = tb[-1]
                 f.write(f"  at {last.filename}:{last.lineno} in {last.name}\n")
-    except Exception:
+    except Exception as e:
         # We are the last line of defense — do not raise
-        pass
+        logger.warning("log_error failed: %s", e)

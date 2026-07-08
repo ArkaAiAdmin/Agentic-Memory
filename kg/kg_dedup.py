@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
+logger = logging.getLogger(__name__)
 """Cron wrapper: kg_dedup — auto-merge duplicate KG entities.
 
 Merges entities with the same normalized name and type, plus fuzzy
@@ -32,8 +35,8 @@ get_config: Callable[[], Any] | None = None
 try:
     from config import get_config as _gc
     get_config = _gc
-except Exception:
-    pass
+except Exception as e:
+    logger.warning("operation failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +231,7 @@ def compute_semantic_merge_candidates(
         if np is None:
             return []
     except Exception as e:
+        logger.warning("compute_semantic_merge_candidates failed: %s", e)
         import logging
 
         logging.getLogger(__name__).debug(

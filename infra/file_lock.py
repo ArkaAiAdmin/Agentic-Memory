@@ -11,6 +11,8 @@ Provides:
 from __future__ import annotations
 
 import logging
+logger = logging.getLogger(__name__)
+
 import subprocess
 import time
 
@@ -68,7 +70,8 @@ def _is_stale_lock(lock_path) -> bool:
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 continue
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning("_is_stale_lock failed: %s", e)
         return False
 
 
@@ -114,7 +117,6 @@ def acquire_flock_with_retry(
         FileLockError: when ``strict=True`` and all attempts fail
             (or fcntl is unavailable on the platform).
     """
-    logger = logging.getLogger(__name__)
     backoff = initial_backoff
     for attempt in range(1, max_attempts + 1):
         if _try_flock(lock_file, nonblocking=nonblocking):
@@ -157,10 +159,10 @@ def release_flock(lock_file) -> bool:
         return False
     try:
         _fcntl.flock(lock_file.fileno(), _fcntl.LOCK_UN)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("release_flock failed: %s", e)
     try:
         lock_file.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("release_flock failed: %s", e)
     return True

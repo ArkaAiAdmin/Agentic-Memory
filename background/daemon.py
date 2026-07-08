@@ -6,6 +6,7 @@ Extracted from auto_save.py in Phase 3.
 from __future__ import annotations
 
 import logging
+
 import os
 import threading
 import time
@@ -29,7 +30,7 @@ from background.inbox import (
     _write_pid_file,
 )
 
-logger = logging.getLogger("auto_save.daemon")
+logger = logging.getLogger(__name__)
 
 _DEFAULT_BATCH_INTERVAL_S = 0.5
 _DEFAULT_BATCH_SIZE = 50
@@ -245,8 +246,8 @@ def run_daemon(stop_event: Optional["threading.Event"] = None) -> None:  # noqa:
     if not acquire_flock_with_retry(lock_fd, max_attempts=1, nonblocking=True):
         try:
             lock_fd.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("run_daemon failed: %s", e)
         logger.info("auto-save daemon: another instance holds the lock; exiting")
         return
     # Pin the FD in a module-level dict so it survives the daemon's

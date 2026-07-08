@@ -33,8 +33,9 @@ CLI usage:
 
 from __future__ import annotations
 
-import datetime
 import logging
+
+import datetime
 import os
 import sys
 from contextlib import contextmanager
@@ -117,7 +118,8 @@ class ARCCache:
         try:
             yield cur
             self.db.commit()
-        except Exception:
+        except Exception as e:
+            logger.warning("transaction failed: %s", e)
             self.db.rollback()
             raise
         finally:

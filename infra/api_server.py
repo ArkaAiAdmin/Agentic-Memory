@@ -228,7 +228,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         try:
             client = MemoryClient(db_path=self.server.db_path)
             note_count = client.stats().memories
-        except Exception:
+        except Exception as _wp_exc:
+            logger.warning("_handle_health: broad except swallowed: %s", _wp_exc)
             pass
         self._write_json({
             "status": "healthy",
@@ -258,6 +259,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             ]
             self._write_json({"memories": memories_list})
         except Exception as e:
+            logger.warning("_handle_list_memories: broad except swallowed: %s", e)
             self._error(f"Failed to list memories: {e}", 500)
 
     def _handle_search_memories(self, query_params: dict) -> None:
@@ -287,6 +289,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             ]
             self._write_json({"results": results_list})
         except Exception as e:
+            logger.warning("_handle_search_memories: broad except swallowed: %s", e)
             self._error(f"Search failed: {e}", 500)
 
     def _handle_search_memories_post(self) -> None:
@@ -320,6 +323,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             ]
             self._write_json({"results": results_list})
         except Exception as e:
+            logger.warning("_handle_search_memories_post: broad except swallowed: %s", e)
             self._error(f"Search failed: {e}", 500)
 
     def _handle_stats(self) -> None:
@@ -335,6 +339,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 "relations": stats.relations,
             })
         except Exception as e:
+            logger.warning("_handle_stats: broad except swallowed: %s", e)
             self._error(f"Failed to retrieve stats: {e}", 500)
 
     def _handle_get_memory(self, note_id: str) -> None:
@@ -369,6 +374,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             finally:
                 safe_close_db(conn)
         except Exception as e:
+            logger.warning("_handle_get_memory: broad except swallowed: %s", e)
             self._error(f"Failed to retrieve memory: {e}", 500)
 
     def _read_json_body(self) -> Any:
@@ -407,6 +413,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             )
             self._write_json({"id": note_id, "status": "success"}, 201)
         except Exception as e:
+            logger.warning("_handle_add_memory: broad except swallowed: %s", e)
             self._error(f"Failed to add memory: {e}", 500)
 
     def _handle_delete_memory(self, note_id: str) -> None:
@@ -418,6 +425,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             else:
                 self._error(f"Memory not found or delete failed: {note_id}", 404)
         except Exception as e:
+            logger.warning("_handle_delete_memory: broad except swallowed: %s", e)
             self._error(f"Failed to delete memory: {e}", 500)
 
     def _handle_clear_memories(self) -> None:
@@ -426,6 +434,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             cleared_count = client.clear()
             self._write_json({"cleared": cleared_count})
         except Exception as e:
+            logger.warning("_handle_clear_memories: broad except swallowed: %s", e)
             self._error(f"Failed to clear memories: {e}", 500)
 
     def _handle_rebuild(self) -> None:
@@ -434,6 +443,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             client.rebuild(scope="active")
             self._write_json({"success": True})
         except Exception as e:
+            logger.warning("_handle_rebuild: broad except swallowed: %s", e)
             self._error(f"Rebuild index failed: {e}", 500)
 
     def _handle_compact(self) -> None:
@@ -443,6 +453,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             result = maint.compact()
             self._write_json({"success": True, "result": str(result)})
         except Exception as e:
+            logger.warning("_handle_compact: broad except swallowed: %s", e)
             self._error(f"Compaction failed: {e}", 500)
 
     def _handle_integrity(self) -> None:
@@ -454,6 +465,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 "errors": report.errors,
             })
         except Exception as e:
+            logger.warning("_handle_integrity: broad except swallowed: %s", e)
             self._error(f"Integrity check failed: {e}", 500)
 
     def _handle_kg_nodes(self, query_params: dict) -> None:
@@ -479,6 +491,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             finally:
                 safe_close_db(conn)
         except Exception as e:
+            logger.warning("_handle_kg_nodes: broad except swallowed: %s", e)
             self._error(f"Failed to list KG nodes: {e}", 500)
 
     def _handle_kg_edges(self, query_params: dict) -> None:
@@ -505,6 +518,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             finally:
                 safe_close_db(conn)
         except Exception as e:
+            logger.warning("_handle_kg_edges: broad except swallowed: %s", e)
             self._error(f"Failed to list KG edges: {e}", 500)
 
     def _handle_ws_handshake(self) -> None:
@@ -685,7 +699,8 @@ class APIServer(ThreadingHTTPServer):
             with self._ws_send_lock:
                 sock.sendall(bytes(header) + payload)
             return True
-        except Exception:
+        except Exception as _wp_exc:
+            logger.warning("send_ws_message: broad except swallowed: %s", _wp_exc)
             return False
 
     def broadcast(self, message: str) -> None:
@@ -722,7 +737,8 @@ class APIServer(ThreadingHTTPServer):
             for sock in self._ws_clients.values():
                 try:
                     sock.close()
-                except Exception:
+                except Exception as _wp_exc:
+                    logger.warning("stop: broad except swallowed: %s", _wp_exc)
                     pass
             self._ws_clients.clear()
 
@@ -770,7 +786,8 @@ class APIServer(ThreadingHTTPServer):
 
                         try:
                             payload = json.loads(payload_str)
-                        except Exception:
+                        except Exception as _wp_exc:
+                            logger.warning("_outbox_loop: broad except swallowed: %s", _wp_exc)
                             payload = payload_str
 
                         msg = json.dumps({

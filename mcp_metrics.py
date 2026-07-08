@@ -3,6 +3,9 @@
 Allows starting, stopping, and checking the status of the
 standalone metrics HTTP server (metrics_server.py).
 """
+
+import logging
+logger = logging.getLogger(__name__)
 from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
@@ -63,6 +66,7 @@ def memory_metrics_server(action: str = "status", port: int = 9464) -> str:
                 }
             )
         except Exception as e:
+            logger.warning("memory_metrics_server failed: %s", e)
             return _err(ErrorCode.DB_ERROR, f"metrics server start failed: {e}")
 
     elif action == "stop":
@@ -81,6 +85,7 @@ def memory_metrics_server(action: str = "status", port: int = 9464) -> str:
             _METRICS_PROCESS = None
             return json.dumps({"ok": True, "status": "killed"})
         except Exception as e:
+            logger.warning("memory_metrics_server failed: %s", e)
             return _err(ErrorCode.DB_ERROR, f"metrics server stop failed: {e}")
 
     else:

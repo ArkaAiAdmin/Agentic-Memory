@@ -20,6 +20,9 @@ itself a thin alias of the canonical, so the import chain now reads
 intermediate re-implementations.
 """
 
+import logging
+logger = logging.getLogger(__name__)
+
 import os  # noqa: F401 — kept for test mocking (test_search_memory_cli patches search_memory.os)
 import sys
 from pathlib import Path
@@ -74,9 +77,9 @@ def search_memories(
 
     if not db_file.exists():
         if not silent:
-            print(
-                f"Error: Memory database {db_file} does not exist. "
-                "Run rebuild_index.py first."
+            logger.error(
+                "Memory database %s does not exist. Run rebuild_index.py first.",
+                db_file,
             )
         return []
 
@@ -116,8 +119,13 @@ def search_memories(
 
     # Pretty print in the legacy format so existing CLI output is preserved.
     source_str = " + ".join(sources_searched) if sources_searched else "none"
-    print(f"\nSearch results for: '{query}' (Top {len(all_items)} from {source_str})")
-    print("=" * 80)
+    logger.info(
+        "Search results for: '%s' (Top %d from %s)",
+        query,
+        len(all_items),
+        source_str,
+    )
+    logger.info("=" * 80)
     seen_ids = set()
     for i, item in enumerate(all_items, 1):
         if item["id"] in seen_ids:
@@ -127,13 +135,13 @@ def search_memories(
         tags_str = ", ".join(tags) if tags else "none"
         source_label = f"[{item.get('source_db', '')}]" if item.get("source_db") else ""
         score = item.get("final_score", 0.0)
-        print(f"[{i}] {item['id']} (Score: {score:.2f}) {source_label}")
-        print(f"    Source: memory/{item['source_file']}")
-        print(f"    Tags: {tags_str}")
-        print(f"    Created: {item.get('created', '')}")
-        print(f"    Content:\n    {item.get('content', '').strip()}")
-        print()
-    print("=" * 80)
+        logger.info("[%d] %s (Score: %.2f) %s", i, item["id"], score, source_label)
+        logger.info("    Source: memory/%s", item["source_file"])
+        logger.info("    Tags: %s", tags_str)
+        logger.info("    Created: %s", item.get("created", ""))
+        logger.info("    Content:\n    %s", item.get("content", "").strip())
+        logger.info("")
+    logger.info("=" * 80)
 
     # Increment access_count for every displayed result (legacy side effect).
     note_ids = [item["id"] for item in all_items if item.get("id")]
@@ -154,8 +162,8 @@ def search_memories(
                     note_ids,
                 )
                 conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("search_memories failed: %s", e)
 
     return all_items
 

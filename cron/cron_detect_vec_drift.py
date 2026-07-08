@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
+logger = logging.getLogger(__name__)
 """Detect drift between vec_keys and embeddings in a memory DB."""
 
 from _flock import acquire_lock_or_exit
@@ -32,7 +35,8 @@ def _get_rebuild_threshold() -> int:
         from infra._lazy_imports import get_config
         val = get_config().vec_rebuild_threshold
         return int(val) if val is not None else 5
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_rebuild_threshold failed: %s", e)
         return int(os.environ.get("MEMORY_VEC_REBUILD_THRESHOLD", "5"))
 
 

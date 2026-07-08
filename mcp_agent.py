@@ -3,6 +3,9 @@
 Provides ADMIN tools for initializing, clearing, and listing agent contexts.
 Agent scoping enables namespace isolation for multi-agent CRDT systems.
 """
+
+import logging
+logger = logging.getLogger(__name__)
 from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
@@ -49,6 +52,7 @@ def memory_agent_init(
             }
         )
     except Exception as e:
+        logger.warning("memory_agent_init failed: %s", e)
         return _err(ErrorCode.PROFILE_ERROR, str(e))
 
 
@@ -66,6 +70,7 @@ def memory_agent_clear() -> str:
         clear_agent()
         return json.dumps({"ok": True, "message": "Agent context cleared"})
     except Exception as e:
+        logger.warning("memory_agent_clear failed: %s", e)
         return _err(ErrorCode.PROFILE_ERROR, str(e))
 
 
@@ -83,4 +88,5 @@ def memory_agent_list() -> str:
         agents = list_agents()
         return json.dumps({"ok": True, "agents": agents})
     except Exception as e:
+        logger.warning("memory_agent_list failed: %s", e)
         return _err(ErrorCode.PROFILE_ERROR, str(e))

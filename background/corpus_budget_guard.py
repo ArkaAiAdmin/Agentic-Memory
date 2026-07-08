@@ -8,8 +8,9 @@ if the corpus has grown too large.
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import os
 import time
 from pathlib import Path
@@ -38,7 +39,8 @@ def _corpus_budget_multiple() -> int:
         from infra._lazy_imports import get_config
         cfg = get_config()
         return max(1, int(getattr(cfg, "corpus_budget_multiple", _DEFAULT_CORPUS_BUDGET_MULTIPLE)))
-    except Exception:
+    except Exception as e:
+        logger.warning("_corpus_budget_multiple failed: %s", e)
         return _DEFAULT_CORPUS_BUDGET_MULTIPLE
 
 
@@ -68,7 +70,8 @@ def _read_health_status(memory_dir: Path) -> dict:
         return {}
     try:
         return cast(dict, json.loads(health_path.read_text()))
-    except Exception:
+    except Exception as e:
+        logger.warning("_read_health_status failed: %s", e)
         return {}
 
 

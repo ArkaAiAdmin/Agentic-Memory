@@ -89,9 +89,11 @@ def get_auto_save_result(entry_id: str) -> dict | None:
                 entry: dict[str, Any] = json.loads(line)
                 if entry.get("entry_id") == entry_id:
                     return entry
-            except Exception:
+            except Exception as _wp_exc:
+                logger.warning("get_auto_save_result: broad except swallowed: %s", _wp_exc)
                 continue
-    except Exception:
+    except Exception as _wp_exc:
+        logger.warning("get_auto_save_result: broad except swallowed: %s", _wp_exc)
         pass
     return None
 
@@ -192,7 +194,8 @@ def _inbox_max_bytes() -> int:
 
         cfg = get_config()
         return int(getattr(cfg, "auto_save_inbox_max_bytes", _DEFAULT_INBOX_MAX_BYTES))
-    except Exception:
+    except Exception as _wp_exc:
+        logger.warning("_inbox_max_bytes: broad except swallowed: %s", _wp_exc)
         return _DEFAULT_INBOX_MAX_BYTES
 
 def _is_daemon_running() -> bool:
@@ -241,7 +244,8 @@ def _remove_pid_file() -> None:
     """Best-effort PID file removal.  Idempotent — missing is fine."""
     try:
         get_auto_save_pid_path().unlink(missing_ok=True)
-    except Exception:
+    except Exception as _wp_exc:
+        logger.warning("_remove_pid_file: broad except swallowed: %s", _wp_exc)
         pass
 
 def _enqueue_to_inbox(entry: dict) -> bool:
@@ -351,7 +355,8 @@ def _drain_inbox() -> list[dict]:
         logger.warning("auto-save daemon: failed to read inbox: %s", e)
         try:
             pending.unlink(missing_ok=True)
-        except Exception:
+        except Exception as _wp_exc:
+            logger.warning("_drain_inbox: broad except swallowed: %s", _wp_exc)
             pass
         return []
     for ln, line in enumerate(raw.splitlines(), 1):
@@ -400,7 +405,8 @@ def _reprocess_orphaned_pending_files(max_age_s: float = 30.0) -> int:
                     continue
                 try:
                     entries.append(json.loads(line))
-                except Exception:
+                except Exception as _wp_exc:
+                    logger.warning("_reprocess_orphaned_pending_files: broad except swallowed: %s", _wp_exc)
                     pass
             if not entries:
                 pf.unlink(missing_ok=True)
@@ -449,12 +455,14 @@ def _is_daemon_lock_held() -> bool:
             release_flock(lock_fd)
             return False
         return True
-    except Exception:
+    except Exception as _wp_exc:
+        logger.warning("_is_daemon_lock_held: broad except swallowed: %s", _wp_exc)
         return True  # safe side: assume running
     finally:
         try:
             lock_fd.close()
-        except Exception:
+        except Exception as _wp_exc:
+            logger.warning("_is_daemon_lock_held: broad except swallowed: %s", _wp_exc)
             pass
 
 def _cleanup_stale_daemon_lock() -> bool:
@@ -497,7 +505,8 @@ def _cleanup_stale_daemon_lock() -> bool:
             # Stale lock cleaned — also remove the stale PID file.
             pid_path.unlink(missing_ok=True)
             return True
-    except Exception:
+    except Exception as _wp_exc:
+        logger.warning("_cleanup_stale_daemon_lock: broad except swallowed: %s", _wp_exc)
         pass
     finally:
         if lock_fd is not None:
@@ -643,7 +652,8 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
                 if conn is not None:
                     try:
                         conn.rollback()
-                    except Exception:
+                    except Exception as _wp_exc:
+                        logger.warning("_process_inbox_batch: broad except swallowed: %s", _wp_exc)
                         pass
                 continue
             if result.get("saved"):
@@ -663,6 +673,7 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
         if conn is not None:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _wp_exc:
+                logger.warning("_process_inbox_batch: broad except swallowed: %s", _wp_exc)
                 pass
     return summary

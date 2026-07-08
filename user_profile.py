@@ -8,6 +8,9 @@ Opt-in via MEMORY_USER_PROFILE=1.
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import json
 import time
 from collections import Counter
@@ -38,8 +41,8 @@ try:
     _RECENCY_HALF_LIFE_DAYS = int(
         getattr(_get_up_cfg(), "user_profile_recency_half_life_days", 30)
     )
-except Exception:
-    pass
+except Exception as e:
+    logger.warning("operation failed: %s", e)
 
 
 def _decay_weight(days_since_access: float) -> float:
@@ -106,6 +109,7 @@ def record_access(
         finally:
             conn.close()
     except Exception as _e:
+        logger.warning("record_access failed: %s", _e)
         import logging
 
         logging.getLogger(__name__).debug("user_profile.record_access: error: %s", _e)
@@ -208,6 +212,7 @@ def get_user_profile(
             "active_days": len(active_days),
         }
     except Exception as e:
+        logger.warning("get_user_profile failed: %s", e)
         return {"enabled": True, "error": str(e)}
 
 
@@ -325,6 +330,7 @@ def profile_stats(db_path: str | None = None) -> dict:
         finally:
             conn.close()
     except Exception as _e:
+        logger.warning("profile_stats failed: %s", _e)
         import logging
 
         logging.getLogger(__name__).debug("user_profile.profile_stats: error: %s", _e)

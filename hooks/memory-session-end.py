@@ -25,9 +25,10 @@ If the Stop event fires and saved_at is missing or older than the
 session start, the hook auto-saves a session memory via the MCP tool.
 """
 
+import logging
+
 import fcntl
 import json
-import logging
 import os
 import sys
 import time
@@ -107,6 +108,7 @@ def _end_session_via_manager(session_id: str, marker: dict) -> dict:
             else None,
         }
     except Exception as e:
+        logger.warning("_end_session_via_manager failed: %s", e)
         log_error(e, context="memory-session-end.end_session")
         return {"ended": False, "error": str(e)}
 
@@ -197,8 +199,8 @@ def _try_promote_session_drafts() -> None:
                 conn.commit()
         finally:
             conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_try_promote_session_drafts failed: %s", e)
 
 
 def _maybe_auto_save() -> dict:
@@ -251,6 +253,7 @@ def _maybe_auto_save() -> dict:
         _save_marker(marker)
         return {"saved": True, "reason": "auto_saved", "result": str(result)}
     except Exception as e:
+        logger.warning("_maybe_auto_save failed: %s", e)
         log_error(e, context="memory-session-end.auto_save")
         return {"saved": False, "reason": f"auto_save_failed: {e}"}
 
@@ -281,7 +284,8 @@ def _collect_session_memory_ids(marker: dict) -> list[str]:
             return [r[0] for r in rows]
         finally:
             conn.close()
-    except Exception:
+    except Exception as e:
+        logger.warning("_collect_session_memory_ids failed: %s", e)
         return []
 
 
@@ -311,6 +315,7 @@ def _auto_reinforce(marker: dict) -> dict:
         updated = reinforce_memories_db(db_path, memory_ids, delta=0.5)
         return {"reinforced": True, "updated_count": updated, "session_ids": len(memory_ids)}
     except Exception as e:
+        logger.warning("_auto_reinforce failed: %s", e)
         log_error(e, context="memory-session-end._auto_reinforce")
         return {"reinforced": False, "reason": f"error: {e}"}
 
@@ -332,6 +337,7 @@ def _compliance_gate() -> dict:
             return {"score": result.get("score"), "issues": result.get("issues", [])}
         return {}
     except Exception as _e:
+        logger.warning("_compliance_gate failed: %s", _e)
         return {"error": str(_e)}
 
 
@@ -398,6 +404,7 @@ def main():
                 print(json.dumps({"tool_count": marker.get("tool_count", 0)}))
 
     except Exception as e:
+        logger.warning("main failed: %s", e)
         log_error(e, context="memory-session-end.main()")
 
 

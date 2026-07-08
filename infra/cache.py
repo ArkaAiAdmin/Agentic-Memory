@@ -12,6 +12,9 @@ Exports (via __all__):
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import hashlib
 import sys
 import threading
@@ -117,7 +120,8 @@ def _flag_enabled(name: str) -> bool:
         from infra._lazy_imports import get_config
 
         return bool(getattr(get_config(), name, False))
-    except Exception:
+    except Exception as e:
+        logger.warning("_flag_enabled failed: %s", e)
         return False
 
 

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import json
 import os
 import sqlite3
@@ -111,6 +114,7 @@ class Maintenance:
                 message="Rebuild timed out after 120s",
             )
         except Exception as e:
+            logger.warning("rebuild failed: %s", e)
             return MaintenanceResult(
                 operation="rebuild",
                 success=False,
@@ -215,6 +219,7 @@ class Maintenance:
                     if ckpt.get("status") != "skipped":
                         parts.append(f"WAL Checkpoint:\n{json.dumps(ckpt, indent=2)}")
                 except Exception as e:
+                    logger.warning("compact failed: %s", e)
                     parts.append(f"WAL Checkpoint (error, non-fatal): {e}")
 
             return MaintenanceResult(
@@ -223,6 +228,7 @@ class Maintenance:
                 message="\n\n".join(parts),
             )
         except Exception as e:
+            logger.warning("compact failed: %s", e)
             return MaintenanceResult(
                 operation="compact",
                 success=False,
@@ -260,6 +266,7 @@ class Maintenance:
                 stats=dict(report),
             )
         except Exception as e:
+            logger.warning("check_integrity failed: %s", e)
             return IntegrityReport(
                 passed=False,
                 errors=[f"Integrity check raised: {e}"],
@@ -498,6 +505,7 @@ class Maintenance:
                 message="Timed out after 120s",
             )
         except Exception as e:
+            logger.warning("consolidate failed: %s", e)
             return MaintenanceResult(
                 operation="consolidate", success=False, message=str(e)
             )
@@ -544,6 +552,7 @@ class Maintenance:
                 message="Timed out after 60s",
             )
         except Exception as e:
+            logger.warning("rewrite_links failed: %s", e)
             return MaintenanceResult(
                 operation="rewrite_links", success=False, message=str(e)
             )

@@ -15,6 +15,7 @@ backfill_all for backward compat.
 from __future__ import annotations
 
 import logging
+
 import os
 import time
 
@@ -609,7 +610,8 @@ def _backfill_kg_graph(conn):
     """Derive kg_entities + kg_edges from kg_facts."""
     try:
         has_facts = conn.execute("SELECT COUNT(*) FROM kg_facts").fetchone()[0]
-    except Exception:
+    except Exception as e:
+        logger.warning("_backfill_kg_graph failed: %s", e)
         return
     if has_facts == 0:
         return
@@ -706,8 +708,8 @@ def _backfill_kg_graph(conn):
                 (name, "concept", count),
             )
             kept_count += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_backfill_kg_graph failed: %s", e)
 
     logger.info(
         "KG entity filter: %d kept, %d dropped (too_short=%d, stopword=%d, "
@@ -749,8 +751,8 @@ def _backfill_kg_graph(conn):
                         "VALUES (?, ?, ?, ?, datetime('now'))",
                         (src, tgt, pred, conf),
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("_backfill_kg_graph failed: %s", e)
 
     logger.info(
         "KG graph backfilled: %d entities, %d edges", kept_count, len(seen_edges)

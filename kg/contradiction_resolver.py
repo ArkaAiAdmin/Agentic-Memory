@@ -11,6 +11,8 @@ Otherwise the newer note wins deterministically.
 """
 
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
 
 import json
 import os
@@ -58,6 +60,7 @@ def auto_resolve_contradiction_pair(
                     if row:
                         rows[nid] = row
     except Exception as e:
+        logger.warning("Unhandled exception in auto_resolve_contradiction_pair: %s", e)
         return {"action": "error", "error": str(e), "source": note_a, "target": note_b}
 
     if note_a not in rows or note_b not in rows:
@@ -68,7 +71,6 @@ def auto_resolve_contradiction_pair(
 
 
 def _pick_strategy(row_a: tuple, row_b: tuple) -> str:
-    """Choose a resolution strategy based on LLM or deterministic rule."""
     if os.environ.get("MEMORY_CONTRADICTION_AUTO_RESOLVE_LLM") != "1":
         ts_a = row_a[3] or row_a[4] or ""
         ts_b = row_b[3] or row_b[4] or ""
@@ -94,8 +96,8 @@ def _pick_strategy(row_a: tuple, row_b: tuple) -> str:
         action: str = parsed.get("action", "")
         if action in ("supersede_b_with_a", "supersede_a_with_b", "merge", "keep_both"):
             return action
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Unhandled exception in _pick_strategy: %s", e)
     ts_a = row_a[3] or row_a[4] or ""
     ts_b = row_b[3] or row_b[4] or ""
     return "supersede_b_with_a" if ts_a >= ts_b else "supersede_a_with_b"
@@ -163,6 +165,7 @@ def _apply_resolution(
             if isinstance(actual_merged_id, str) and (actual_merged_id.startswith("{") or "error" in actual_merged_id.lower()):
                 return {"action": "error", "error": f"save merged note failed: {actual_merged_id}", "source": note_a, "target": note_b}
         except Exception as e:
+            logger.warning("Unhandled exception in _apply_resolution: %s", e)
             return {"action": "error", "error": f"save merged note failed: {e}", "source": note_a, "target": note_b}
 
         memory_supersede_db(db_path, note_a, merged_id, valid_to=now_iso, rationale="merged", conn=conn)
@@ -188,7 +191,6 @@ _LLM_PROMPT = (
 
 
 def _get_provider() -> Any | None:
-    """Return the configured LLM provider or None."""
     try:
         from fact.llm_providers import get_provider
         return get_provider()

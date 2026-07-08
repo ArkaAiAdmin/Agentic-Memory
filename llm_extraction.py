@@ -9,8 +9,9 @@ Opt-in via MEMORY_LLM_EXTRACTION=1.
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import os
 import re
 import threading
@@ -214,7 +215,8 @@ def _get_max_tokens() -> int:
         from infra._lazy_imports import get_config
 
         return int(get_config().llm_extraction_max_tokens)
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_max_tokens failed: %s", e)
         v = os.environ.get("MEMORY_LLM_EXTRACTION_MAX_TOKENS")
         if v:
             try:
@@ -323,7 +325,8 @@ class LLMExtractor:
             from infra._lazy_imports import get_config
 
             self._idle_unload_s = int(get_config().idle_unload_seconds)
-        except Exception:
+        except Exception as e:
+            logger.warning("__init__ failed: %s", e)
             self._idle_unload_s = int(
                 os.environ.get("MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS", "1800")
             )
@@ -343,8 +346,8 @@ class LLMExtractor:
 
             if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
                 return "mps"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_resolve_device failed: %s", e)
         return "cpu"
 
     def load(self) -> bool:
@@ -623,7 +626,8 @@ def _start_idle_unload_monitor_if_needed() -> None:
             from infra._lazy_imports import get_config
 
             check_interval = int(get_config().idle_unload_seconds)
-        except Exception:
+        except Exception as e:
+            logger.warning("_start_idle_unload_monitor_if_needed failed: %s", e)
             check_interval = int(
                 os.environ.get("MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS", "1800")
             )
@@ -698,7 +702,8 @@ def _get_extractor(model_id: str = "") -> LLMExtractor:
                 from infra._lazy_imports import get_config
 
                 model_id = get_config().llm_extraction_model_id
-            except Exception:
+            except Exception as e:
+                logger.warning("_get_extractor failed: %s", e)
                 model_id = os.environ.get(
                     "MEMORY_LLM_EXTRACTION_MODEL_ID",
                     "Qwen/Qwen2.5-1.5B-Instruct",
@@ -722,7 +727,8 @@ def is_llm_extraction_available() -> bool:
 
         if not get_config().llm_extraction:
             return False
-    except Exception:
+    except Exception as e:
+        logger.warning("is_llm_extraction_available failed: %s", e)
         if os.environ.get("MEMORY_LLM_EXTRACTION") != "1":
             return False
 
@@ -816,8 +822,8 @@ def _parse_provider_output(raw: str) -> dict[str, Any]:
         val = json.loads(text)
         if isinstance(val, dict):
             return val
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_parse_provider_output failed: %s", e)
     # Try to find a JSON object in the text.
     start = text.find("{")
     end = text.rfind("}")
@@ -826,8 +832,8 @@ def _parse_provider_output(raw: str) -> dict[str, Any]:
             val = json.loads(text[start : end + 1])
             if isinstance(val, dict):
                 return val
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_parse_provider_output failed: %s", e)
     return {}
 
 
@@ -874,14 +880,16 @@ def is_llm_extraction_available_via_provider() -> bool:
 
         if not get_config().llm_extraction:
             return False
-    except Exception:
+    except Exception as e:
+        logger.warning("is_llm_extraction_available_via_provider failed: %s", e)
         if os.environ.get("MEMORY_LLM_EXTRACTION") != "1":
             return False
     try:
         from fact.llm_providers import get_provider
 
         return get_provider() is not None
-    except Exception:
+    except Exception as e:
+        logger.warning("is_llm_extraction_available_via_provider failed: %s", e)
         return False
 
 
@@ -969,7 +977,8 @@ def score_fact_contradiction_via_llm_v2(
         from fact.llm_providers import get_provider
 
         provider = get_provider()
-    except Exception:
+    except Exception as e:
+        logger.warning("score_fact_contradiction_via_llm_v2 failed: %s", e)
         return None
     if provider is None:
         return None
@@ -979,6 +988,7 @@ def score_fact_contradiction_via_llm_v2(
     max_new = 4 if tier == "light" else 8
     try:
         raw = provider.generate(prompt, max_tokens=max_new, temperature=0.0)
-    except Exception:
+    except Exception as e:
+        logger.warning("score_fact_contradiction_via_llm_v2 failed: %s", e)
         return None
     return _parse_contradiction_score(raw)

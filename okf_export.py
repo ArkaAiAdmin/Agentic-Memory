@@ -20,7 +20,7 @@ from typing import Any
 
 from okf_conformance import OKF_VERSION, validate_bundle
 
-logger = logging.getLogger("okf_export")
+logger = logging.getLogger(__name__)
 
 FRONTMATTER_KEYS = [
     "type",

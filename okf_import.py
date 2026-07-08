@@ -14,15 +14,16 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import os
 from pathlib import Path
 
 from infra.frontmatter import parse_frontmatter
 from save_pipeline import save_memory_auto
 
-logger = logging.getLogger("okf_import")
+logger = logging.getLogger(__name__)
 
 # OKF standard frontmatter keys that the spec mentions or that save_memory
 # also writes into its own generated frontmatter block.
@@ -148,7 +149,8 @@ def okf_import(
                     "dry_run": dry_run,
                     "error": f"Target database not accessible: {target_db}",
                 }
-        except Exception:
+        except Exception as e:
+            logger.warning("okf_import failed: %s", e)
             pass  # Let save_memory handle it
 
     for file_path in md_files:

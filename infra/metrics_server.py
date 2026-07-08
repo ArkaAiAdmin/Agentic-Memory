@@ -17,6 +17,9 @@ Usage:
     memory_audit_operations_total
 """
 
+import logging
+logger = logging.getLogger(__name__)
+
 import argparse
 import json
 import sys
@@ -109,6 +112,7 @@ def collect_gauges(db_path: Path) -> str:
                 lines.append(f'memory_tier_count{{tier="{safe}"}} {c}')
 
     except Exception as exc:
+        logger.warning("collect_gauges failed: %s", exc)
         up = 0
         lines.append(f"# error: {exc}")
 
@@ -156,7 +160,8 @@ def db_up() -> bool:
             conn.execute("PRAGMA foreign_keys=ON")
             conn.execute("SELECT 1").fetchone()
             return True
-    except Exception:
+    except Exception as e:
+        logger.warning("db_up failed: %s", e)
         return False
 
 

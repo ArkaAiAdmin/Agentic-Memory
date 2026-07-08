@@ -1,4 +1,9 @@
 from __future__ import annotations
+
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
 """Agentic Memory — Local-first persistent memory for AI agents.
 
 This package is the canonical, pip-installable surface of the agentic-memory
@@ -520,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
         m = Maintenance()
         try:
             if args.maint_cmd == "rebuild":
-                result = m.rebuild(scope=args.scope)
+                result: Any = m.rebuild(scope=args.scope)
                 print(_json(result if hasattr(result, "_asdict") else result))
             elif args.maint_cmd == "compact":
                 result = m.compact(dry_run=args.dry_run)
@@ -673,17 +678,20 @@ def _run_demo(query: str) -> int:
             note_id = mc.save(text, tags=tags)
             saved.append({"text": text, "note_id": note_id})
         except Exception as exc:
+            logger.warning("_run_demo failed: %s", exc)
             saved.append({"text": text, "error": str(exc)})
 
     try:
-        results = mc.search(query, limit=5)
+        results: Any = mc.search(query, limit=5)
     except Exception as exc:
+        logger.warning("_run_demo failed: %s", exc)
         results = {"error": str(exc)}
 
     try:
         s = mc.stats()
-        stats = s if hasattr(s, "_asdict") else str(s)
+        stats: Any = s if hasattr(s, "_asdict") else str(s)
     except Exception as exc:
+        logger.warning("_run_demo failed: %s", exc)
         stats = {"error": str(exc)}
 
     out = {

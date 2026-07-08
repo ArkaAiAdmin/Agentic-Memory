@@ -37,7 +37,8 @@ def _search_row_to_item(r) -> dict:
     tags_json = r[3]
     try:
         tags = _json.loads(tags_json) if tags_json else []
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _search_row_to_item: %s", e)
         tags = []
     metadata_json = r[11] if len(r) > 11 else None
     auto_summary = None
@@ -50,8 +51,8 @@ def _search_row_to_item(r) -> dict:
             )
             if meta and meta.get("auto_summary"):
                 auto_summary = meta["auto_summary"]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in _search_row_to_item: %s", e)
     return {
         "id": r[0],
         "content": r[1],
@@ -97,7 +98,8 @@ def _format_merged_results(merged_rtd, query: str, rerank: bool) -> tuple[str, l
         ) = r[:10]
         try:
             tags = _json.loads(tags_json) if tags_json else []
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in _format_merged_results: %s", e)
             tags = []
         tags_str = ", ".join(tags) if tags else "none"
         score_info = (
@@ -193,7 +195,8 @@ def _rebuild_output_for_ids(
         return None
     try:
         return _format_merged_results(merged_rtd, query, rerank)
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _rebuild_output_for_ids: %s", e)
         return None
 
 
@@ -607,8 +610,8 @@ def memory_session_start(query: str = "") -> str:
                     "\n**⚠️  Embedding model loading…** "
                     "Semantic search not yet available; using FTS5."
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in memory_session_start: %s", e)
         recall = recall_context(
             db_path=str(db_path),
             query=query,
@@ -634,7 +637,8 @@ def memory_session_start(query: str = "") -> str:
                 )
                 for tier, info in stats.get("tiers", {}).items():
                     stats_section += f"  {tier}: {info['count']} (avg importance={info['avg_importance']:.2f})\n"
-            except Exception:
+            except Exception as e:
+                logger.warning("Unhandled exception in memory_session_start: %s", e)
                 stats_section = ""
         else:
             total = recall.get("total_memories", 0)
@@ -649,8 +653,8 @@ def memory_session_start(query: str = "") -> str:
                 )
                 if out and not out.startswith("[stderr]"):
                     review_section = f"\n**Review Schedule**:\n{out}\n"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in memory_session_start: %s", e)
 
         return f"{briefing}{embedding_status}\n{stats_section}{review_section}"
     except Exception:

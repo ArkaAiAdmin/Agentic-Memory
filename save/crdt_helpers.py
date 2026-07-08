@@ -17,8 +17,9 @@ LWW path and for tests.
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import os
 import socket
 from typing import Any
@@ -56,7 +57,8 @@ def _crdt_agent_id() -> str:
             pass
     try:
         return socket.gethostname()
-    except Exception:  # FLAVOR_A: hostname fallback for containerized envs
+    except Exception as e:
+        logger.warning("_crdt_agent_id failed: %s", e)
         return "local"
 
 

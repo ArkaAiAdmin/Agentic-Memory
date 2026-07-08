@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+
 import re
 import sqlite3
 import sys
@@ -28,7 +29,8 @@ def _get_edge_weight_params() -> tuple[float, float]:
 
         c = get_config()
         return (c.kg_edge_weight_increment, c.kg_edge_weight_cap)
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_edge_weight_params failed: %s", e)
         return (0.1, 10.0)
 
 
@@ -109,8 +111,8 @@ def _upsert_entity(
                     "INSERT OR IGNORE INTO kg_entity_aliases (entity_id, alias) VALUES (?, ?)",
                     (best_match_id, normalized)
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("_upsert_entity failed: %s", e)
             row = (best_match_id,)
 
     if row:
@@ -293,7 +295,8 @@ def index_kg_for_memory(conn: AnyConnection, memory_id: str, content: str) -> di
             from infra._lazy_imports import get_config
 
             _min_occ = int(get_config().entity_min_occurrences)
-        except Exception:
+        except Exception as e:
+            logger.warning("index_kg_for_memory failed: %s", e)
             _min_occ = 2
         regex_entities = extract_entities(content, min_occurrences=_min_occ)
         stats["regex_count"] = len(regex_entities)
@@ -304,7 +307,8 @@ def index_kg_for_memory(conn: AnyConnection, memory_id: str, content: str) -> di
             from infra._lazy_imports import get_config
 
             _fallback_threshold = int(get_config().kg_llm_fallback_min_entities)
-        except Exception:
+        except Exception as e:
+            logger.warning("index_kg_for_memory failed: %s", e)
             _fallback_threshold = 2
         if len(entities) < _fallback_threshold:
             try:

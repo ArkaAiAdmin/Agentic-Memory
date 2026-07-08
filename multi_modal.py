@@ -19,8 +19,9 @@ without them (returns a note explaining that a format isn't supported).
 
 from __future__ import annotations
 
-import ipaddress
 import logging
+
+import ipaddress
 import os
 import socket
 import urllib.request
@@ -321,9 +322,11 @@ def ingest_url(
             text = extractor.result()
             content += text[:5000]
         except Exception as e:
+            logger.warning("ingest_url failed: %s", e)
             return {"note_id": "", "error": f"URL fetch failed: {e}"}
 
     except Exception as e:
+        logger.warning("ingest_url failed: %s", e)
         return {"note_id": "", "error": f"URL processing failed: {e}"}
 
     return _save_content(content, category, tags or ["web", "url"], _slugify(title))

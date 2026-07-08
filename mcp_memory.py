@@ -218,7 +218,8 @@ def memory_supersede(old_id: str, new_id: str, valid_to: Optional[str] = None) -
             invalidate_cache_for_note(old_id)
             if new_id:
                 invalidate_cache_for_note(new_id)
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in memory_supersede: %s", e)
             _search_cache.clear()
         return (
             f"Superseded: {old_id} is now valid_to={valid_to}, superseded_by={new_id}."
@@ -262,7 +263,8 @@ def memory_auto_save_hook(
                     from infra.cache import invalidate_cache_for_note
 
                     invalidate_cache_for_note(data["note_id"])
-                except Exception:
+                except Exception as e:
+                    logger.warning("Unhandled exception in memory_auto_save_hook: %s", e)
                     _search_cache.clear()
                 return f"Auto-saved: {data['note_id']}"
             return _err(ErrorCode.DB_ERROR, f"Auto-save failed: {data.get('error', out[:200])}")
@@ -329,6 +331,7 @@ def memory_auto_save_daemon_metrics() -> str:
             _AUTO_SAVE_STATE_LOCK,
         )
     except Exception as e:
+        logger.warning("Unhandled exception in memory_auto_save_daemon_metrics: %s", e)
         return _err(ErrorCode.DB_ERROR, f"Failed to import auto_save: {e}")
 
     # Get daemon state
@@ -338,8 +341,8 @@ def memory_auto_save_daemon_metrics() -> str:
         from background.auto_save import get_auto_save_inbox_path
 
         inbox_path = get_auto_save_inbox_path()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Unhandled exception in memory_auto_save_daemon_metrics: %s", e)
 
     with _AUTO_SAVE_STATE_LOCK:
         state = {
@@ -416,7 +419,8 @@ def memory_reinforce(memory_ids: list, success: bool) -> str:
             all_ids = [mid for ids in by_db.values() for mid in ids]
             for nid in all_ids:
                 invalidate_cache_for_note(nid)
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in memory_reinforce: %s", e)
             _search_cache.clear()
         scope_note = []
         for db_path_key, hits in hits_per_db.items():
@@ -453,7 +457,8 @@ def memory_delete(note_id: str, hard: bool = False) -> str:
 
         try:
             active_dir = _resolve_memory_dir()
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in memory_delete: %s", e)
             active_dir = None
         if active_dir is None:
             return _err(ErrorCode.DB_ERROR, "No active memory directory found.")
@@ -505,7 +510,8 @@ def memory_restore(note_id: str) -> str:
 
         try:
             active_dir = _resolve_memory_dir()
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in memory_restore: %s", e)
             active_dir = None
         if active_dir is None:
             return _err(ErrorCode.DB_ERROR, "No active memory directory found.")
@@ -539,7 +545,8 @@ def memory_trash(include_expired: bool = False) -> str:
 
         try:
             active_dir = _resolve_memory_dir()
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in memory_trash: %s", e)
             active_dir = None
         if active_dir is None:
             return _err(ErrorCode.DB_ERROR, "No active memory directory found.")
@@ -571,7 +578,8 @@ def memory_purge_expired(dry_run: bool = False) -> str:
 
         try:
             active_dir = _resolve_memory_dir()
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in memory_purge_expired: %s", e)
             active_dir = None
         if active_dir is None:
             return _err(ErrorCode.DB_ERROR, "No active memory directory found.")

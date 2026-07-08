@@ -178,6 +178,7 @@ def memory_compact(dry_run: bool = False) -> str:
             if ckpt.get("status") != "skipped":
                 results.append(f"WAL Checkpoint:\n{json.dumps(ckpt, indent=2)}")
     except Exception as e:
+        logger.warning("memory_compact failed: %s", e)
         results.append(f"WAL Checkpoint (error, non-fatal): {e}")
 
     return "\n\n".join(results)
@@ -230,4 +231,5 @@ def memory_backfill_all(mode: str = "health", source: str = "") -> str:
             )
         return json.dumps(result, indent=2)
     except Exception as e:
+        logger.warning("memory_backfill_all failed: %s", e)
         return _err(ErrorCode.DB_ERROR, str(e))

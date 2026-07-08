@@ -97,6 +97,7 @@ def validate_backup(backup_path: Path, dry_run: bool = False) -> dict:
             _ = fh.read(4)
         checks.append({"check": "gzip_decompress", "pass": True, "detail": "decompressed OK"})
     except Exception as exc:
+        logger.warning("validate_backup failed: %s", exc)
         checks.append({"check": "gzip_decompress", "pass": False, "detail": str(exc)})
         return {**result, "error": f"gzip decompress failed: {exc}"}
 
@@ -225,6 +226,7 @@ def install_cron() -> dict:
             return {"installed": True, "cron_line": cron_line}
         return {"installed": False, "error": f"crontab - failed: {proc.stderr}"}
     except Exception as exc:
+        logger.warning("install_cron failed: %s", exc)
         return {"installed": False, "error": str(exc)}
 
 
@@ -242,6 +244,7 @@ def uninstall_cron() -> dict:
         proc = subprocess.run(["crontab", "-"], input="\n".join(lines) + "\n", text=True, timeout=5)
         return {"removed": proc.returncode == 0}
     except Exception as exc:
+        logger.warning("uninstall_cron failed: %s", exc)
         return {"removed": False, "error": str(exc)}
 
 

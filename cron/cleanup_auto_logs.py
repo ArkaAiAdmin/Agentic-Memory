@@ -10,6 +10,9 @@ Respects flock: two instances never run concurrently.
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import json
 import os
 import sys
@@ -77,7 +80,8 @@ def _parse_auto_ts(path: Path, default_tz: datetime.timezone | None = None) -> f
         else:
             dt = dt.replace(tzinfo=datetime.timezone.utc)
         return dt.timestamp()
-    except Exception:
+    except Exception as e:
+        logger.warning("_parse_auto_ts failed: %s", e)
         return None
 
 
@@ -130,9 +134,11 @@ def cleanup_auto_logs(
                 path.rename(dest)
                 moved += 1
             except Exception as exc:
+                logger.warning("cleanup_auto_logs failed: %s", exc)
                 errors.append(f"{path.name}: {exc}")
         db.commit()
-    except Exception:
+    except Exception as e:
+        logger.warning("cleanup_auto_logs failed: %s", e)
         db.rollback()
         raise
     finally:
@@ -190,7 +196,8 @@ def main() -> int:
         print(json.dumps(result, indent=2))
         if "error" in result:
             sys.exit(1)
-    except Exception:
+    except Exception as e:
+        logger.warning("main failed: %s", e)
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
     return 0

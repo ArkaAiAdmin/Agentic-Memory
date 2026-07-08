@@ -14,8 +14,9 @@ task_queue round-trip when the call site is internal.
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import re
 import time
 from pathlib import Path
@@ -147,7 +148,6 @@ def infer_entailment_chains(
             f2_id = r2[0]
             _f2_subject = r2[1]
             f2_predicate = r2[2]
-            f2_object = r2[3]
             f2_conf = r2[4] or 1.0
 
             raw_conf = _CONFIDENCE_TRANSITIVE * min(conf, f2_conf)
@@ -454,8 +454,8 @@ def revalidate_entailment_chains(
                     ).fetchone()
                     if row:
                         valid_derived_ids.append(fid)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("revalidate_entailment_chains failed: %s", e)
             if valid_derived_ids:
                 try:
                     conn.executemany(

@@ -32,6 +32,9 @@ Usage:
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import atexit
 import sys
 from pathlib import Path
@@ -125,8 +128,8 @@ def acquire_lock_or_exit(name: str, max_attempts: int = 5) -> None:
     ):
         try:
             lock_fd.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("acquire_lock_or_exit failed: %s", e)
         # Another instance is running; skip this tick.
         print(f"[{name}] skipped: another instance holds {lock_path}")
         sys.exit(0)
@@ -142,19 +145,20 @@ def acquire_lock_or_exit(name: str, max_attempts: int = 5) -> None:
             if fd is not None:
                 try:
                     release_flock(fd)
-                except Exception:
+                except Exception as e:
+                    logger.warning("_atexit_cleanup failed: %s", e)
                     try:
                         fd.close()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("_atexit_cleanup failed: %s", e)
             lock_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_atexit_cleanup failed: %s", e)
 
     try:
         atexit.register(_atexit_cleanup)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("acquire_lock_or_exit failed: %s", e)
 
 
 __all__ = [

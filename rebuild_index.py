@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
 import os
 import sys
 import re
 import sqlite3
-import logging
 from pathlib import Path
 import json
 import datetime
@@ -156,12 +157,12 @@ def rebuild_index(source_dir, db_path):
         if lock_file and fcntl:
             try:
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("rebuild_index failed: %s", e)
             try:
                 lock_file.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("rebuild_index failed: %s", e)
 
 
 def _rebuild_index_body(source_dir, db_path, source, lock_file):
@@ -931,8 +932,8 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
             p = str(db_path) + suffix
             if os.path.exists(p):
                 os.unlink(p)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_rebuild_index_body failed: %s", e)
     try:
         # Sprint 2 Task 2: this site intentionally uses os.replace,
         # not atomic_write. atomic_write writes `content` to a temp
@@ -950,8 +951,8 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
             from infra._lazy_imports import connection_pool
 
             connection_pool.close(str(db_path))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_rebuild_index_body failed: %s", e)
         try:
             target_db = sqlite3.connect(str(db_path), timeout=5.0)
             target_db.execute("PRAGMA foreign_keys=ON")
@@ -981,8 +982,8 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
                     compaction_candidates.append(
                         f"memory/{note['rel_path']} [SESSION OLDER THAN 30 DAYS: move to sessions/archive/]"
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("_rebuild_index_body failed: %s", e)
 
     try:
         _regenerate_memory_md(source, db_path)

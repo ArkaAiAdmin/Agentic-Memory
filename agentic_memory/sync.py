@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 from pathlib import Path
 from typing import Any
 
@@ -150,6 +151,7 @@ class SyncManager:
                 finally:
                     conn.close()
             except Exception as exc:
+                logger.warning("status failed: %s", exc)
                 entry["error"] = str(exc)[:200]
 
             status_list.append(entry)

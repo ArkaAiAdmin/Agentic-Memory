@@ -27,9 +27,10 @@ an MPS kernel that segfaults on unified-memory pointer math.
 
 from __future__ import annotations
 
+import logging
+
 __all__ = ["get_reranker", "reset_reranker_for_tests", "normalize_rerank_score"]
 
-import logging
 import multiprocessing as mp
 import threading
 import time
@@ -437,6 +438,7 @@ def _score_worker_main(
         else:
             q.put(("ok", scores))
     except Exception as e:
+        logger.warning("_score_worker_main failed: %s", e)
         q.put(("error", f"{type(e).__name__}: {e}"))
 
 

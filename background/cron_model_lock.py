@@ -20,9 +20,10 @@ Usage::
 
 from __future__ import annotations
 
+import logging
+
 import contextlib
 import fcntl
-import logging
 import os
 import time
 from pathlib import Path
@@ -51,7 +52,8 @@ def _get_lock_dir() -> Path:
         cfg = get_config()
         db_path = Path(cfg.db_path)
         lock_dir = db_path.parent / _DEFAULT_LOCK_DIR_NAME
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_lock_dir failed: %s", e)
         lock_dir = Path(".cron_model_lock")
     lock_dir.mkdir(parents=True, exist_ok=True)
     return lock_dir

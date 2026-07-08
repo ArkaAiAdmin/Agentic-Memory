@@ -444,7 +444,6 @@ def classify_operation(
 
 
 def _find_sentence_containing(text: str, phrase: str) -> str | None:
-    """Find the sentence in text that contains the given phrase."""
     sentences = split_sentences(text)
     for sent in sentences:
         if phrase in sent.lower():
@@ -763,7 +762,6 @@ TECHNICAL_ANTONYMS: dict[str, set[str]] = {
 
 
 def _get_antonym(word: str) -> set[str] | None:
-    """Look up the set of antonyms for a word. Returns None if not found."""
     return TECHNICAL_ANTONYMS.get(word.lower())
 
 
@@ -889,7 +887,6 @@ AFFIRMATION_CUES = frozenset(
 
 
 def _extract_claims(text, min_words=5, max_words=50):
-    """Split a note's content into atomic claims."""
     if not text:
         return []
     # Strip frontmatter
@@ -972,7 +969,6 @@ def _claim_polarity(claim: str) -> tuple[int, int]:
 
 
 def _cosine_sim(a, b) -> float:
-    """Cosine similarity between two 1-D numpy arrays."""
     import numpy as np
 
     na = np.linalg.norm(a)

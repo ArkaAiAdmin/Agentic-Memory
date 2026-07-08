@@ -12,6 +12,7 @@ Owns:
 from __future__ import annotations
 
 import logging
+
 import os
 
 logger = logging.getLogger(__name__)
@@ -121,8 +122,8 @@ def _resolve_denylist() -> frozenset:
             toml_denylist = getattr(cfg, "auto_save_denylist", "")
             if toml_denylist:
                 return frozenset(t.strip() for t in toml_denylist.split(",") if t.strip())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_resolve_denylist failed: %s", e)
         return DEFAULT_TOOL_DENYLIST
     if override.lower() in {"0", "false", "off", "disable", "disabled"}:
         return frozenset()
@@ -145,8 +146,8 @@ def _resolve_allowlist() -> frozenset | None:
         toml_allowlist = getattr(cfg, "auto_save_allowlist", "")
         if toml_allowlist:
             return frozenset(t.strip() for t in toml_allowlist.split(",") if t.strip())
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_resolve_allowlist failed: %s", e)
     return DEFAULT_TOOL_ALLOWLIST
 
 

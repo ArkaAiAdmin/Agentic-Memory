@@ -8,6 +8,9 @@ so that the 4-tier recall policy can do contextual retrieval instead of
 returning raw session transcript noise.
 """
 
+import logging
+logger = logging.getLogger(__name__)
+
 import json
 import sys
 from pathlib import Path
@@ -82,7 +85,8 @@ def _fetch_recent_contradictions(since_ts: float | None) -> str:
             return "\n".join(lines)
         finally:
             conn.close()
-    except Exception:
+    except Exception as e:
+        logger.warning("_fetch_recent_contradictions failed: %s", e)
         return ""
 
 

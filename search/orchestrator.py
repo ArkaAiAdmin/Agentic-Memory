@@ -75,7 +75,7 @@ def _get_memories_columns(db: AnyConnection) -> set[str]:
     try:
         db_path_row = db.execute("PRAGMA database_list").fetchone()
         db_path = db_path_row[2] if db_path_row is not None else ""
-    except Exception:
+    except sqlite3.Error:
         db_path = ""
 
     if not db_path:
@@ -83,7 +83,7 @@ def _get_memories_columns(db: AnyConnection) -> set[str]:
             return {
                 row[1] for row in db.execute("PRAGMA table_info(memories)").fetchall()
             }
-        except Exception:
+        except sqlite3.Error:
             return set()
 
     with _db_columns_cache_lock:
@@ -96,7 +96,7 @@ def _get_memories_columns(db: AnyConnection) -> set[str]:
             }
             with _db_columns_cache_lock:
                 _db_columns_cache[db_path] = cols
-        except Exception:
+        except sqlite3.Error:
             cols = set()
 
     return cols
@@ -152,7 +152,7 @@ def _fetch_rows_by_ids(
         try:
             rows = db.execute(query, [*chunk, *extra_params]).fetchall()
             result.update({row[0]: row for row in rows})
-        except Exception:
+        except sqlite3.Error:
             logger.warning("_fetch_rows_by_ids: chunk of %d ids failed", len(chunk))
             continue
     return result
@@ -210,7 +210,7 @@ def _search_chunks_enhanced(db: AnyConnection, fts_query: str, limit: int) -> li
             "SELECT mc.parent_id, mc.chunk_idx, mc.content,\n                      mc.start_offset, mc.end_offset, fts.rank\n               FROM memory_chunks_fts fts\n               JOIN memory_chunks mc ON mc.id = fts.rowid\n               WHERE memory_chunks_fts MATCH ?\n               ORDER BY fts.rank\n               LIMIT ?",
             (fts_query, limit),
         ).fetchall()
-    except Exception:
+    except sqlite3.Error:
         return []
     return rows
 
@@ -254,7 +254,7 @@ def _resolve_late_interaction_enabled() -> bool:
         from infra._lazy_imports import get_config
 
         return bool(getattr(get_config(), "late_interaction", True))
-    except Exception:
+    except (ImportError, AttributeError):
         return True
 
 
@@ -263,7 +263,7 @@ def _get_embedding_score_threshold() -> float:
         from infra._lazy_imports import get_config
 
         return float(get_config().embedding_score_threshold)
-    except Exception:
+    except (ImportError, AttributeError):
         return 0.25
 
 
@@ -287,7 +287,7 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: 
         from infra._lazy_imports import connection_pool, safe_close_db
 
         db = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
-    except Exception as exc:
+    except sqlite3.Error as exc:
         logger.warning("_skill_first_lookup: connection_pool.get failed: %s", exc)
         return None
     try:
@@ -296,7 +296,7 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: 
             table_check = db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='memory_skills'"
             ).fetchone()
-        except Exception:
+        except sqlite3.Error:
             return None
         if not table_check:
             return None
@@ -319,7 +319,7 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: 
                 f"ORDER BY hit_count DESC LIMIT ?",
                 params + [limit],
             ).fetchall()
-        except Exception:
+        except sqlite3.Error:
             return None
 
         if not rows:
@@ -335,8 +335,10 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: 
                 [now_ts] + skill_ids,
             )
             db.commit()
-        except Exception:
-            pass
+        except sqlite3.Error as e:
+            logger.warning("_skill_first_lookup: hit_count update failed: %s", e)
+
+        # Format results
 
         # Format results
         results = []
@@ -372,8 +374,8 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: 
     finally:
         try:
             safe_close_db(db)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_skill_first_lookup: safe_close_db failed: %s", e)
 
 
 def record_ctr_feedback_db(
@@ -534,7 +536,7 @@ def _record_drift_event(
                 continue
             try:
                 vec = _np.frombuffer(blob, dtype=_np.float32).copy()
-            except Exception:
+            except (ValueError, BufferError):
                 continue
             contrib = float(
                 sum(abs(float(vec[i])) * abs(float(diff[i])) for i in top_idxs)
@@ -561,7 +563,7 @@ def _record_drift_event(
                     ),
                 )
                 n_alarms_written += 1
-            except Exception:
+            except sqlite3.IntegrityError:
                 # FK violation (memory hard-deleted between read and
                 # write) is non-fatal; skip.
                 continue
@@ -614,7 +616,7 @@ def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15, tenant_
         if prev and prev[0]:
             try:
                 prev_centroid = _np.array(json.loads(prev[0]))
-            except Exception as _de:
+            except json.JSONDecodeError as _de:
                 logger.warning("concept_drift: failed to parse drifted_dimensions: %s", _de)
         if prev_centroid is not None and len(prev_centroid) == len(centroid):
             cos_sim = float(
@@ -765,7 +767,7 @@ def _search_kg_facts(
             "LIMIT ?",
             (fts_query, *belief_params, limit),
         ).fetchall()
-    except Exception:
+    except sqlite3.Error:
         logger.warning("KG fact search failed; returning empty list", exc_info=True)
         return []
 
@@ -873,10 +875,10 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5) -> list[str]:
         finally:
             try:
                 connection_pool.put(conn)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("reasoning_expand: connection_pool.put failed: %s", e)
     except Exception as exc:
-        logger.debug("reasoning_expand failed: %s", exc)
+        logger.warning("reasoning_expand failed: %s", exc)
         return []
 
 
@@ -991,7 +993,8 @@ def _fallback_embedding_search(
                 )
             )
         return fb_rows
-    except Exception:
+    except Exception as e:
+        logger.warning("_fallback_embedding_search failed: %s", e)
         return []
 
 
@@ -1165,7 +1168,7 @@ def _enhance_with_chunks(
             seen_ids.add(parent_id)
     except Exception as _chunk_exc:
         _phase_inc("search.chunk_enhancement", _chunk_exc)
-        logger.debug("chunk_enhancement failed: %s", _chunk_exc)
+        logger.warning("chunk_enhancement failed: %s", _chunk_exc)
     return results
 
 
@@ -1275,17 +1278,17 @@ def _apply_safety_demoting(
 
 def _rerank_results(
     *,
-    results,
-    query,
-    db_path,
-    has_fitness,
-    rerank,
-    boost_pinned,
-    recency_weight,
-    limit,
-    deep_rerank,
+    results: list,
+    query: str,
+    db_path: Path,
+    has_fitness: bool,
+    rerank: bool,
+    boost_pinned: bool,
+    recency_weight: float,
+    limit: int,
+    deep_rerank: bool,
     as_of: float | None = None,
-):
+) -> tuple[list, Optional[dict]]:
     """Phase 9 of search_memories: compute final scores and rerank.
 
     Returns ``(results_to_display, ctr_weights)``:
@@ -1406,7 +1409,9 @@ def _rerank_results(
     return out[:limit], _qweights
 
 
-def _build_result_items(*, db, results_to_display, query, rerank):
+def _build_result_items(
+    *, db: AnyConnection, results_to_display: list, query: str, rerank: bool
+) -> tuple[list, list[str], dict]:
     """Phase 10 of search_memories: build the public result list and output.
 
     Two responsibilities:
@@ -1503,8 +1508,14 @@ def _build_result_items(*, db, results_to_display, query, rerank):
 
 
 def _apply_strong_match_boost(
-    *, result_items, output, results_to_display, query, rerank, backlinks_map
-):
+    *,
+    result_items: list,
+    output: list[str],
+    results_to_display: list,
+    query: str,
+    rerank: bool,
+    backlinks_map: dict,
+) -> tuple[list, list[str], list]:
     """QB6 final pass: hoist a high-confidence match to position 0.
 
     If any row's FTS5 rank converts (via the standard ``1/(1+exp(r))``
@@ -1558,7 +1569,8 @@ def _apply_strong_match_boost(
         except Exception as _oe:
             logger.warning("_format_search_results failed: %s", _oe)
         return result_items, output, results_to_display
-    except Exception:
+    except Exception as e:
+        logger.warning("_apply_strong_match_boost failed: %s", e)
         return result_items, output, results_to_display
 
 
@@ -1585,8 +1597,8 @@ def _cache_store_result(cache_key: str, result: dict) -> None:
             from infra.cache import register_cache_note_ids
 
             register_cache_note_ids(cache_key, note_ids)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("register_cache_note_ids failed: %s", e)
 
 
 def _build_empty_result_with_hint(
@@ -1620,7 +1632,7 @@ def _build_empty_result_with_hint(
 
                 try:
                     et_str = f" [event_time={_dt.fromtimestamp(et, tz=_tz.utc).strftime('%Y-%m-%d')}]"
-                except Exception:
+                except (ValueError, OSError):
                     pass
             conf = fact.get("confidence", 0.0) or 0.0
             facts_section.append(
@@ -1642,7 +1654,7 @@ def _build_empty_result_with_hint(
     return result
 
 
-def _record_last_accessed(db, result_items) -> None:
+def _record_last_accessed(db: AnyConnection, result_items: list) -> None:
     """Phase 12 of search_memories: stamp last_accessed on every result row.
 
     Bumps ``last_accessed`` to the current ISO timestamp in a single
@@ -1673,13 +1685,13 @@ def _record_last_accessed(db, result_items) -> None:
 
 def _build_search_result_envelope(
     *,
-    result_items,
-    output,
-    results_to_display,
-    synthesize,
-    query,
-    max_synthesis_sentences,
-    related_facts=None,
+    result_items: list,
+    output: list[str],
+    results_to_display: list,
+    synthesize: bool,
+    query: str,
+    max_synthesis_sentences: int,
+    related_facts: Optional[list[dict]] = None,
 ) -> dict:
     """Build the final public-API result dict for a search call.
 
@@ -1712,7 +1724,7 @@ def _build_search_result_envelope(
 
                 try:
                     et_str = f" [event_time={_dt.fromtimestamp(et, tz=_tz.utc).strftime('%Y-%m-%d')}]"
-                except Exception:
+                except (ValueError, OSError):
                     pass
             conf = fact.get("confidence", 0.0) or 0.0
             facts_section.append(
@@ -1737,19 +1749,25 @@ def _build_search_result_envelope(
                 query, results_to_display, max_sentences=max_synthesis_sentences
             )
             result["synthesis"] = synth
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("synthesis failed: %s", e)
     try:
         from agent_context import get_agent
         result["agent_scope"] = get_agent().namespace
-    except (ImportError, Exception):
+    except (ImportError, AttributeError):
         result["agent_scope"] = "default"
     return result
 
 
 def _apply_quality_gates(
-    *, result_items, output, results_to_display, query, rerank, backlinks_map
-):
+    *,
+    result_items: list,
+    output: list[str],
+    results_to_display: list,
+    query: str,
+    rerank: bool,
+    backlinks_map: dict,
+) -> tuple[list, list[str]]:
     """Phase 11b: drop low-quality results via the quality_gates filter.
 
     Only acts when ``quality_gates.QUALITY_GATES_ENABLED`` is true
@@ -1784,14 +1802,14 @@ def _apply_quality_gates(
 
 def _apply_user_profiling(
     *,
-    result_items,
-    output,
-    results_to_display,
-    query,
-    rerank,
-    backlinks_map,
-    db_path,
-):
+    result_items: list,
+    output: list[str],
+    results_to_display: list,
+    query: str,
+    rerank: bool,
+    backlinks_map: dict,
+    db_path: Path,
+) -> tuple[list, list[str]]:
     """Phase 11c: rerank result list per the user's stored profile.
 
     Only acts when ``user_profile.PROFILE_ENABLED`` is true and the
@@ -1824,7 +1842,9 @@ def _apply_user_profiling(
     return result_items, output
 
 
-def _record_search_telemetry(*, db, query_id, result_items, ctr_weights) -> None:
+def _record_search_telemetry(
+    *, db: AnyConnection, query_id: str, result_items: list, ctr_weights: Optional[dict]
+) -> None:
     """Record CTR feedback and adaptive-retention access events for the result set.
 
     Two side-effects, both best-effort:
@@ -1891,8 +1911,15 @@ def _record_search_phase_latencies(*, db, query_id: str, phase_latencies: dict[s
 
 
 def _apply_save_hint_floater(
-    *, db, db_path, result_items, output, query, rerank, backlinks_map
-):
+    *,
+    db: AnyConnection,
+    db_path: Path,
+    result_items: list,
+    output: list[str],
+    query: str,
+    rerank: bool,
+    backlinks_map: dict,
+) -> tuple[list, list[str]]:
     """Defense-in-depth: surface a very-recent save even if FTS hasn't seen it.
 
     Reads the ``recent_save_hint`` table (set by the post-save hook
@@ -1909,7 +1936,7 @@ def _apply_save_hint_floater(
         from recent_save_hint import recent_save_for
 
         hint = recent_save_for(str(db_path))
-    except Exception:
+    except (ImportError, AttributeError):
         return result_items, output
     if hint is None:
         return result_items, output
@@ -1924,7 +1951,7 @@ def _apply_save_hint_floater(
             ).fetchone()
             is not None
         )
-    except Exception:
+    except sqlite3.Error:
         return result_items, output
     if not (hint_in_fts and result_items):
         return result_items, output
@@ -1938,7 +1965,7 @@ def _apply_save_hint_floater(
             "FROM tenant_memories WHERE id = ? AND deleted_at IS NULL",
             (hint_id,),
         ).fetchone()
-    except Exception:
+    except sqlite3.Error:
         return result_items, output
     if floater_row is None:
         return result_items, output
@@ -1973,7 +2000,7 @@ def _get_agent_scope() -> str:
     try:
         from agent_context import get_agent
         return get_agent().namespace or "default"
-    except (ImportError, Exception):
+    except (ImportError, AttributeError):
         return "default"
 
 
@@ -2096,7 +2123,7 @@ def search_memories(
                     repo_filter = f" AND (m.source_file LIKE 'agents/{ctx.namespace}/%' OR m.source_file NOT LIKE 'agents/%')"
                 else:
                     repo_filter = f" AND m.source_file LIKE 'agents/{ctx.namespace}/%'"
-        except (ImportError, Exception):
+        except (ImportError, AttributeError):
             pass
         # Sprint 2: memory_source filter (agent / auto_save / import)
         if memory_source is not None:
@@ -2149,7 +2176,7 @@ def search_memories(
         try:
             from infra._lazy_imports import get_config
             _search_parallel = bool(getattr(get_config(), "search_parallel_enabled", True))
-        except Exception:
+        except (ImportError, AttributeError):
             _search_parallel = True
 
         if _search_parallel and include_facts:
@@ -2166,7 +2193,7 @@ def search_memories(
                     )
                 except Exception as _fts_exc:
                     _phase_inc("search.fts", _fts_exc)
-                    logger.debug("fts_worker failed: %s", _fts_exc)
+                    logger.warning("fts_worker failed: %s", _fts_exc)
                     return []
                 finally:
                     connection_pool.put(conn)
@@ -2183,7 +2210,7 @@ def search_memories(
                     )
                 except Exception as _kg_exc:
                     _phase_inc("search.kg_facts", _kg_exc)
-                    logger.debug("kg_worker failed: %s", _kg_exc)
+                    logger.warning("kg_worker failed: %s", _kg_exc)
                     return []
                 finally:
                     connection_pool.put(conn)
@@ -2229,7 +2256,7 @@ def search_memories(
             if not results:
                 try:
                     total = db.execute("SELECT COUNT(*) FROM tenant_memories").fetchone()[0]
-                except Exception:
+                except sqlite3.Error:
                     total = 0
                 if total == 0:
                     hint = "The database is empty."
@@ -2414,7 +2441,7 @@ def search_memories(
             try:
                 from infra._lazy_imports import get_agent as _swm_get_agent
                 _swm_agent_id = _swm_get_agent().agent_id
-            except (ImportError, Exception):
+            except (ImportError, AttributeError):
                 _swm_agent_id = None
             if _swm_agent_id:
                 _seen_ids = {r[0] for r in results_to_display}
@@ -2438,7 +2465,7 @@ def search_memories(
                             results_to_display = list(results_to_display) + list(_swm_extra)
                 except Exception as _swm_exc:
                     _phase_inc("search.shared_with_me", _swm_exc)
-                    logger.debug("shared_with_me filter failed: %s", _swm_exc)
+                    logger.warning("shared_with_me filter failed: %s", _swm_exc)
             _record_phase_latency("shared_with_me", _swm_t0)
 
         # B3.2: Cross-namespace audit logging — fires after search completes
@@ -2463,9 +2490,9 @@ def search_memories(
                             results_count=len(result_items),
                             latency_ms=(time.time() - _ns_audit_t0) * 1000.0,
                         )
-                    except Exception:
-                        pass
-            except (ImportError, Exception):
+                    except Exception as _ns_audit_exc:
+                        logger.warning("namespace audit enqueue failed: %s", _ns_audit_exc)
+            except (ImportError, AttributeError):
                 pass
         _record_phase_latency("namespace_audit", _ns_audit_t0)
 
@@ -2498,6 +2525,7 @@ def search_memories(
         return result
     except Exception as e:
         _phase_inc("search.orchestrator", e)
+        logger.warning("search_memories failed: %s", e)
         return {
             "results": [],
             "count": 0,
@@ -2507,8 +2535,8 @@ def search_memories(
         if db is not None:
             try:
                 safe_close_db(db)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("safe_close_db failed: %s", e)
 
 
 # Backward-compatible phase latency helper for test_observability.py.

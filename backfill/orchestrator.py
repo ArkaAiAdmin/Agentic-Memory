@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+
 import os
 import sqlite3
 import sys
@@ -218,6 +219,7 @@ def health_check(db_path: str | Path | None = None) -> dict:
                     result["stale_count"] += 1
                 result["tables"][table] = {"count": count, "ok": ok, "reason": reason}
             except Exception as e:
+                logger.warning("health_check failed: %s", e)
                 result["tables"][table] = {
                     "count": 0,
                     "ok": False,

@@ -57,8 +57,8 @@ def _get_rerank_weights() -> dict:
             parsed = json.loads(raw)
             if isinstance(parsed, dict):
                 return parsed
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Unhandled exception in _get_rerank_weights: %s", e)
     return _RERANK_WEIGHTS
 
 
@@ -91,7 +91,8 @@ def _get_rerank_half_life_days() -> float:
         from infra._lazy_imports import get_config
 
         return float(get_config().rerank_half_life_days)
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _get_rerank_half_life_days: %s", e)
         return 180.0
 
 
@@ -169,7 +170,7 @@ def _temporal_decay_factor(
                 return max(
                     0.0, 1.0 - float(age_days) / (3.0 * float(cast(float, half_life)))
                 )
-            return 0.5 ** (float(age_days) / float(cast(float, half_life)))  # type: ignore[no-any-return]
+            return float(0.5 ** (float(age_days) / float(cast(float, half_life))))
 
     # Standard decay based on created timestamp
     if not created:
@@ -186,9 +187,9 @@ def _temporal_decay_factor(
             - float(age_days)
             / (3.0 * float(cast(float, _sp_lazy("_TEMPORAL_DECAY_HALF_LIFE", 180)))),
         )
-    return 0.5 ** (  # type: ignore[no-any-return]
+    return float(0.5 ** (
         float(age_days) / float(cast(float, _sp_lazy("_TEMPORAL_DECAY_HALF_LIFE", 180)))
-    )
+    ))
 
 
 def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
@@ -306,8 +307,8 @@ def _apply_temporal_decay(
             from infra._lazy_imports import get_config
 
             decay_weight = float(get_config().temporal_decay_weight)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in _apply_temporal_decay: %s", e)
     if _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential") == "off" or decay_weight <= 0:
         return scored_results
     now_ts = time.time() if as_of is None else as_of
@@ -424,7 +425,8 @@ def _apply_exploration(cached_stats) -> Optional[dict]:
     try:
         cfg = get_config()
         mode = os.environ.get("MEMORY_EXPLORATION_MODE", getattr(cfg, "exploration_mode", "off")).lower()
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _apply_exploration: %s", e)
         mode = os.environ.get("MEMORY_EXPLORATION_MODE", "off").lower()
 
     if mode == "thompson":
@@ -470,20 +472,22 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
         from infra._lazy_imports import connection_pool
 
         db = connection_pool.get(str(db_path), timeout=5.0)
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
         return scored_results
 
     try:
         concept_rows = db.execute(
             "SELECT note_id, metadata FROM memories WHERE category = 'concepts' AND deleted_at IS NULL"
         ).fetchall()
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
         return scored_results
     finally:
         try:
             connection_pool.put(db)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
 
     if not concept_rows:
         return scored_results
@@ -500,7 +504,8 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
             meta = json.loads(meta_json) if isinstance(meta_json, str) else meta_json
             ents = meta.get("entities", [])
             concept_entities[note_id] = {int(e) for e in ents if e is not None}
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
             continue
 
     if not concept_entities:
@@ -530,7 +535,8 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
         try:
             meta = json.loads(metadata_json) if isinstance(metadata_json, str) else (metadata_json or {})
             result_entities = {int(e) for e in (meta.get("entities") or []) if e is not None}
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
             result_entities = set()
 
         for cid, centities in concept_entities.items():
@@ -576,27 +582,30 @@ def _apply_centrality_boost(scored_results: list, db_path: Path) -> list:
         from infra._lazy_imports import get_config
         if str(get_config().graph_centrality_boost).lower() not in ("1", "true", "yes"):
             return scored_results
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _apply_centrality_boost: %s", e)
         return scored_results
 
     try:
         from infra._lazy_imports import connection_pool
 
         db = connection_pool.get(str(db_path), timeout=5.0)
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _apply_centrality_boost: %s", e)
         return scored_results
 
     try:
         centrality_rows = db.execute(
             "SELECT id, centrality FROM kg_entities WHERE centrality IS NOT NULL"
         ).fetchall()
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _apply_centrality_boost: %s", e)
         return scored_results
     finally:
         try:
             connection_pool.put(db)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in _apply_centrality_boost: %s", e)
 
     if not centrality_rows:
         return scored_results
@@ -632,8 +641,8 @@ def _apply_centrality_boost(scored_results: list, db_path: Path) -> list:
             for eid in result_entities:
                 if eid in centrality_map:
                     entity_centralities.append(centrality_map[eid])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in _apply_centrality_boost: %s", e)
 
         if entity_centralities:
             avg_centrality = sum(entity_centralities) / len(entity_centralities)

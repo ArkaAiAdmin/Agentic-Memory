@@ -25,10 +25,11 @@ Usage:
 
 from __future__ import annotations
 
+import logging
+
 import argparse
 import hashlib
 import json
-import logging
 import re
 import sqlite3
 import sys
@@ -432,8 +433,8 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
         from infra.db_migrations import _migrate_kg_tables
 
         _migrate_kg_tables(conn)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("run_migrations failed: %s", e)
 
     # Step 3: Read applied migrations
     applied = _get_applied_migrations(conn)
@@ -461,15 +462,14 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
         )
 
     if dry_run:
-        print(f"[DRY RUN] Would apply {len(pending)} migration(s):\n")
+        logger.info("[DRY RUN] Would apply %d migration(s):", len(pending))
         for num, path in pending:
             stmts = _parse_sql_file(path)
-            print(f"  {num:03d}: {path.name} ({len(stmts)} statement(s))")
+            logger.info("  %03d: %s (%d statement(s))", num, path.name, len(stmts))
             for stmt in stmts:
                 for line in stmt.split("\n"):
-                    print(f"    {line}")
-            print()
-        print(f"  schema_version would advance to {SCHEMA_VERSION}")
+                    logger.info("    %s", line)
+        logger.info("  schema_version would advance to %d", SCHEMA_VERSION)
         return
 
     # Step 6: Apply pending migrations in a single transaction
@@ -592,8 +592,8 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
     finally:
         try:
             conn.execute("PRAGMA foreign_keys = ON")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("run_migrations failed: %s", e)
 
 
 def migrate_down(conn: AnyConnection, target_version: int, dry_run: bool = False) -> None:
@@ -631,15 +631,15 @@ def migrate_down(conn: AnyConnection, target_version: int, dry_run: bool = False
         return
 
     if dry_run:
-        print(f"[DRY RUN] Would roll back {len(to_rollback)} migration(s):")
+        logger.info("[DRY RUN] Would roll back %d migration(s):", len(to_rollback))
         for num in to_rollback:
             path = down_map[num]
             stmts = _parse_sql_file(path)
-            print(f"\n  {num:03d}: {path.name} ({len(stmts)} statement(s))")
+            logger.info("  %03d: %s (%d statement(s))", num, path.name, len(stmts))
             for stmt in stmts:
                 for line in stmt.split("\n"):
-                    print(f"    {line}")
-        print(f"\n  schema_version would regress to {target_version}")
+                    logger.info("    %s", line)
+        logger.info("  schema_version would regress to %d", target_version)
         return
 
     try:
@@ -674,8 +674,8 @@ def migrate_down(conn: AnyConnection, target_version: int, dry_run: bool = False
     finally:
         try:
             conn.execute("PRAGMA foreign_keys = ON")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("migrate_down failed: %s", e)
 
 
 if __name__ == "__main__":

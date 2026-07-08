@@ -107,6 +107,7 @@ def memory_health_check(conn) -> str:
         }
         conn.rollback()
     except Exception as exc:
+        logger.warning("Unhandled exception in memory_health_check: %s", exc)
         status["db"] = {"accessible": False, "error": str(exc)[:200]}
 
     try:
@@ -121,6 +122,7 @@ def memory_health_check(conn) -> str:
             "drift": max(drift, 0),
         }
     except Exception as exc:
+        logger.warning("Unhandled exception in memory_health_check: %s", exc)
         status["vec_index"] = {"error": str(exc)[:200]}
 
     try:
@@ -129,6 +131,7 @@ def memory_health_check(conn) -> str:
         ).fetchone()[0]
         status["fts"] = {"row_count": fts_count or 0}
     except Exception as exc:
+        logger.warning("Unhandled exception in memory_health_check: %s", exc)
         status["fts"] = {"error": str(exc)[:200]}
 
     try:
@@ -139,6 +142,7 @@ def memory_health_check(conn) -> str:
             if k in pool_state
         }
     except Exception as exc:
+        logger.warning("Unhandled exception in memory_health_check: %s", exc)
         status["pool"] = {"error": str(exc)[:200]}
 
     try:
@@ -149,6 +153,7 @@ def memory_health_check(conn) -> str:
         )
         status["worker"] = {"alive": worker_alive}
     except Exception as exc:
+        logger.warning("Unhandled exception in memory_health_check: %s", exc)
         status["worker"] = {"error": str(exc)[:200]}
 
     try:
@@ -160,6 +165,7 @@ def memory_health_check(conn) -> str:
             "pct_used": round(usage.used / usage.total * 100, 1) if usage.total else 0,
         }
     except Exception as exc:
+        logger.warning("Unhandled exception in memory_health_check: %s", exc)
         status["disk"] = {"error": str(exc)[:200]}
 
     # CQRS write-journal health (Phase 3, 2026-07-08)
@@ -199,6 +205,7 @@ def memory_health_check(conn) -> str:
                 _threads[0].is_alive() if _threads else False
             )
     except Exception as exc:
+        logger.warning("Unhandled exception in memory_health_check: %s", exc)
         status["journal"]["error"] = str(exc)[:200]
 
     degraded = bool(
@@ -473,6 +480,7 @@ def memory_arc_stats(conn) -> str:
             finally:
                 cache.close()
         except Exception as e:
+            logger.warning("Unhandled exception in memory_arc_stats: %s", e)
             return _err(ErrorCode.DB_ERROR, f"ARCCache read failed: {e}")
         # Backwards-compat: also surface `arc_cache.py` CLI output so
         # anything that depended on the old text format still works.
@@ -1098,6 +1106,7 @@ def memory_llm_unload() -> str:
             }
         )
     except Exception as e:
+        logger.warning("Unhandled exception in memory_llm_unload: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -1124,6 +1133,7 @@ def memory_list_federated_skills(
             (limit,),
         ).fetchall()
     except Exception as e:
+        logger.warning("Unhandled exception in memory_list_federated_skills: %s", e)
         return _err(ErrorCode.DB_ERROR, f"Failed to query skills: {e}")
     results = []
     for row in rows:
@@ -1199,6 +1209,7 @@ def memory_resolve_contradiction(
             (target_note_id,),
         ).fetchone()
     except Exception as e:
+        logger.warning("Unhandled exception in memory_resolve_contradiction: %s", e)
         return _err(ErrorCode.DB_ERROR, f"Failed to load notes: {e}")
     if not src or not tgt:
         return _err(

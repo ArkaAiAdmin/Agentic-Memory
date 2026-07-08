@@ -42,9 +42,10 @@ SQLite WAL mode handles concurrent INSERTs with minimal serialisation.
 
 from __future__ import annotations
 
+import logging
+
 import hashlib
 import json
-import logging
 import os
 import sqlite3
 import threading
@@ -101,8 +102,8 @@ def _clear_local_conns() -> None:
         for conn in _local.conns.values():
             try:
                 conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("_clear_local_conns failed: %s", e)
         _local.conns = {}
 
 

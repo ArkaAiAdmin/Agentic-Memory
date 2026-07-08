@@ -23,8 +23,9 @@ and DB connections. Safe to call from any thread.
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import os
 import sys
 import time
@@ -114,7 +115,8 @@ def _get_last_push_timestamp(db_path: str | Path, peer_name: str) -> float:
             return float(row[0]) if row and row[0] else 0.0
         finally:
             conn.close()
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_last_push_timestamp failed: %s", e)
         return 0.0
 
 
@@ -140,7 +142,8 @@ def _get_last_pull_timestamp(db_path: str | Path, peer_name: str) -> float:
             return float(row[0]) if row and row[0] else 0.0
         finally:
             conn.close()
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_last_pull_timestamp failed: %s", e)
         return 0.0
 
 
@@ -401,6 +404,7 @@ def push_to_peer(
         finally:
             conn.close()
     except Exception as e:
+        logger.warning("push_to_peer failed: %s", e)
         return {"error": f"Local query failed: {e}"}
 
     if not rows:
@@ -504,6 +508,7 @@ def sync_with_peer(
             limit=max(limit, 500),
         )
     except Exception as e:
+        logger.warning("sync_with_peer failed: %s", e)
         skill_sync_result = {"error": str(e), "success": False}
 
     duration = int((time.time() - start) * 1000)
@@ -572,7 +577,8 @@ def sync_skills_with_peer(
         try:
             merge_and_save_skill(_open_conn(db_path), skill_dict)
             applied += 1
-        except Exception:
+        except Exception as e:
+            logger.warning("sync_skills_with_peer failed: %s", e)
             skipped += 1
 
     local_rows = _query_skills_since(db_path, since_push, limit)
@@ -704,7 +710,8 @@ def sync_once(
 
                 cfg = get_config()
                 db_path = cfg.db_path
-            except Exception:
+            except Exception as e:
+                logger.warning("sync_once failed: %s", e)
                 db_path = "memory/memory.db"
     db_path = str(db_path)
 
@@ -716,7 +723,8 @@ def sync_once(
         try:
             u = urlparse(peer_url)
             peer_name = (u.hostname or "peer") + (f":{u.port}" if u.port else "")
-        except Exception:
+        except Exception as e:
+            logger.warning("sync_once failed: %s", e)
             peer_name = "peer"
     if not peer_agent_id:
         peer_agent_id = (
@@ -727,7 +735,8 @@ def sync_once(
             from save.crdt_helpers import _crdt_agent_id
 
             local_agent_id = _crdt_agent_id()
-        except Exception:
+        except Exception as e:
+            logger.warning("sync_once failed: %s", e)
             local_agent_id = "local"
 
     if not Path(db_path).exists():

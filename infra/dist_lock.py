@@ -42,7 +42,7 @@ import uuid
 from pathlib import Path
 from typing import Iterator, Protocol, runtime_checkable
 
-LOG = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ class FileLock:
             try:
                 fcntl.flock(self._fd, fcntl.LOCK_UN)
             except OSError as e:
-                LOG.warning("FileLock release on %s: %s", self.path, e)
+                logger.warning("FileLock release on %s: %s", self.path, e)
             finally:
                 os.close(self._fd)
                 self._fd = None

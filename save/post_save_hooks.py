@@ -257,7 +257,8 @@ def _hook_invalidate_search_cache(note_id):
         from infra.cache import invalidate_cache_for_note
 
         invalidate_cache_for_note(note_id)
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _hook_invalidate_search_cache: %s", e)
         _search_cache.clear()
 
 
@@ -392,7 +393,8 @@ def _hook_track_decisions(db_path_obj, note_id, content, category):
                 from infra.db import safe_close_db
 
                 safe_close_db(conn)
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in _hook_track_decisions: %s", e)
             row = None
 
         if not row:
@@ -413,7 +415,8 @@ def _hook_track_decisions(db_path_obj, note_id, content, category):
                 from infra.db import safe_close_db
 
                 safe_close_db(conn)
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in _hook_track_decisions: %s", e)
             existing = []
 
         open_threads: dict[str, tuple[str, str]] = {}

@@ -27,12 +27,14 @@ def memory_adaptive_retention(dry_run: bool = False) -> str:
             try:
                 results["adaptive_retention"] = ar.batch_update_retention(dry_run=True)
             except Exception as e:
+                logger.warning("memory_adaptive_retention failed: %s", e)
                 results["adaptive_retention"] = {"error": str(e)}
         return json.dumps(results, indent=2)
 
     try:
         results = run_retention_pipeline(db_path)
     except Exception as e:
+        logger.warning("memory_adaptive_retention failed: %s", e)
         results = {"error": str(e)}
 
     return json.dumps(

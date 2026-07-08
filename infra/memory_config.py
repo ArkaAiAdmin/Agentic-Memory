@@ -23,6 +23,8 @@ import shutil
 from pathlib import Path
 from typing import Tuple
 
+logger = logging.getLogger(__name__)
+
 PROJECT_ROOT_MARKERS = (
     "memory",
     ".git",
@@ -199,7 +201,6 @@ def log_backup(db_path: Path, keep: int = 3) -> None:
     """
     import datetime
 
-    logger = logging.getLogger(__name__)
     db_path = Path(db_path)
     if not db_path.exists():
         return

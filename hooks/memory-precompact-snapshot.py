@@ -13,6 +13,9 @@ Reliability rules:
   - Idempotent output dir naming (-1, -2, ... suffix)
 """
 
+import logging
+logger = logging.getLogger(__name__)
+
 import json
 import shutil
 import sys
@@ -188,6 +191,7 @@ def main():
                 )
                 conn.commit()
     except Exception as e:
+        logger.warning("main failed: %s", e)
         log_error(e, context="memory-precompact-snapshot.db_insert")
 
     print(json.dumps({"ok": True, "out_dir": str(out_dir)}))
@@ -201,7 +205,7 @@ if __name__ == "__main__":
     except BaseException as _hook_e:
         try:
             log_error(_hook_e, context="memory-precompact-snapshot.top_level")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("operation failed: %s", e)
         print(json.dumps({"ok": False, "error": str(_hook_e)}))
         sys.exit(0)

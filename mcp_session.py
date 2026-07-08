@@ -5,10 +5,11 @@ These are explicit retrieval tools — they do not modify search_memories behavi
 """
 from __future__ import annotations
 
+import logging
+
 from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
-import logging
 import os
 from pathlib import Path
 
@@ -51,8 +52,8 @@ def memory_thread_context(
                 if state_file.exists():
                     cs = json.loads(state_file.read_text())
                     session_id = cs.get("session_id", "")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("memory_thread_context failed: %s", e)
         if not session_id:
             return _err(ErrorCode.INVALID_PARAMS, "session_id is required")
 
@@ -115,8 +116,8 @@ def memory_list_threads(
                 if state_file.exists():
                     cs = json.loads(state_file.read_text())
                     session_id = cs.get("session_id", "")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("memory_list_threads failed: %s", e)
         if not session_id:
             return _err(ErrorCode.INVALID_PARAMS, "session_id is required")
 

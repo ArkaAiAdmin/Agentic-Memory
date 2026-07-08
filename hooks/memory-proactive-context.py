@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
+logger = logging.getLogger(__name__)
 """Proactive context hook — searches memory before tool execution.
 
 Usage: Called as PreToolUse hook. Extracts query from tool input,
@@ -42,6 +45,7 @@ try:
     from search.orchestrator import search_memories  # noqa: E402
     from infra.memory_common import get_memory_paths  # noqa: E402
 except Exception as import_err:
+    logger.warning("operation failed: %s", import_err)
     log_error(import_err, context="memory-proactive-context.imports")
 
     # Define stubs so python can still compile and run main() without crashing
@@ -174,8 +178,8 @@ def _temporal_kg_alert() -> None:
                 " invalidation. Consider setting MEMORY_TEMPORAL_KG=0."
             )
             print("=== END TEMPORAL-KG WARNING ===")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_temporal_kg_alert failed: %s", e)
 
 
 def _health_alerts() -> None:
@@ -207,9 +211,9 @@ def _health_alerts() -> None:
         if len(alerts) > 5:
             print(f"  ... and {len(alerts) - 5} more (see .health_status.json)")
         print("=== END HEALTH ALERTS ===")
-    except Exception:
+    except Exception as e:
         # Never block the hook — health alerts are best-effort
-        pass
+        logger.warning("_health_alerts failed: %s", e)
 
     # Phase 4 temporal-KG heuristic (outside the health-file try block
     # so one failure doesn't suppress the other).
@@ -365,6 +369,7 @@ def main(db_path: Path | None = None):
     except Exception as e:
         # Never block tool execution, but record the failure so ops
         # can see it (see lessons/hook-silent-failures-design-debt-2026-06-16)
+        logger.warning("main failed: %s", e)
         log_error(e, context="memory-proactive-context.main()")
 
 

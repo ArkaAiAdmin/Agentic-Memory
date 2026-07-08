@@ -133,7 +133,8 @@ def memory_search(
         if getattr(get_config(), "write_journal", False):
             try:
                 pending = _supplement_with_pending(db_path, query, limit)
-            except Exception:
+            except Exception as e:
+                logger.warning("Unhandled exception in memory_search: %s", e)
                 pending = []
             if pending:
                 rows = "\n".join(
@@ -181,7 +182,8 @@ def _supplement_with_pending(db_path: Path, query: str, limit: int) -> list[dict
             }
             for r in _rows
         ]
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _supplement_with_pending: %s", e)
         return []
 
 
@@ -376,8 +378,8 @@ def memory_curate_autosave(
                     try:
                         from infra.memory_common import safe_atomic_write
                         safe_atomic_write(target_path, content, encoding="utf-8")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Unhandled exception in memory_curate_autosave: %s", e)
                     promoted += 1
                 return f"Promoted {promoted} auto-saved note(s) to '{category}'."
 
@@ -520,8 +522,8 @@ def memory_note(
 
                     with open_db(_resolve_db_path(), timeout=10.0) as db:
                         _record_revision_log(db, note_id, "delete", rationale=rationale)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Unhandled exception in memory_note: %s", e)
             return str(result)
         elif action == "restore":
             from mcp_memory import memory_restore

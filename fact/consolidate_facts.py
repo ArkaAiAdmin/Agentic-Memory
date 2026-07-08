@@ -75,10 +75,10 @@ def consolidate_memory_facts(db_path: Path | str | None = None):
         db_path = Path(db_path)
         local_mem = resolve_db_path(db_path).parent
 
-    print(f"=== Running System 2 Memory Consolidation: {local_mem.parent} ===")
+    logger.info("=== Running System 2 Memory Consolidation: %s ===", local_mem.parent)
 
     if not db_path.exists():
-        print(f"Error: Database {db_path} does not exist. Run rebuild_index.py first.")
+        logger.error("Database %s does not exist. Run rebuild_index.py first.", db_path)
         sys.exit(1)
 
     # Process lock using flock
@@ -89,7 +89,7 @@ def consolidate_memory_facts(db_path: Path | str | None = None):
             lock_file = open(lock_path, "w")
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            print(
+            logger.warning(
                 "Another consolidation is already running. Waiting for it to finish..."
             )
             if lock_file is not None:
@@ -123,10 +123,11 @@ def consolidate_memory_facts(db_path: Path | str | None = None):
         # Guard: O(n²) contradiction detection becomes slow above ~2000 notes.
         # Use cron_consolidate.py (lightweight SHA256 + Jaccard) for large corpora.
         if len(memories) > 2000:
-            print(
-                f"⚠ Corpus has {len(memories)} notes (>2000). "
-                "consolidate_facts.py uses O(n²) contradiction detection and may be slow. "
-                "Use cron_consolidate.py for large corpora."
+            logger.warning(
+                "Corpus has %d notes (>2000). consolidate_facts.py uses O(n^2) "
+                "contradiction detection and may be slow. Use cron_consolidate.py "
+                "for large corpora.",
+                len(memories),
             )
             safe_close_db(db)
             return
@@ -213,7 +214,7 @@ def consolidate_memory_facts(db_path: Path | str | None = None):
         # 4. Contradiction detection using contradiction_detector.py.
         # H2 fix: prefer detect_contradictions_all (phrase + semantic) when
         # available, falling back to phrase-only detect_contradictions.
-        print("  Scanning for contradictions...")
+        logger.info("  Scanning for contradictions...")
         local_mem = resolve_db_path(str(db_path)).parent
         if _HAS_SEMANTIC and _detect_all is not None:
             try:
@@ -351,11 +352,11 @@ This report identifies potential memory consolidation opportunities.
 *Review these suggestions and apply changes manually or via memory_compact tool.*
 """
             atomic_write(report_path, report_content, encoding="utf-8")
-            print(f"Compaction proposal written to: {report_path}")
+            logger.info("Compaction proposal written to: %s", report_path)
         except Exception as e:
             logger.error("Error writing compaction report: %s", e)
     else:
-        print(
+        logger.info(
             "No memory compaction actions required. Database is clean and consolidated."
         )
 

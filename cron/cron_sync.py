@@ -43,7 +43,8 @@ def _resolve_peer_url_from_config() -> str:
         from infra._lazy_imports import get_config
 
         cfg = get_config()
-    except Exception:
+    except Exception as e:
+        logger.warning("_resolve_peer_url_from_config failed: %s", e)
         return ""
     peers = getattr(cfg, "sync_peers", None) or []
     for peer in peers:

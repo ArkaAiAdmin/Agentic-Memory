@@ -68,12 +68,14 @@ def _get_threshold() -> float:
 
         cfg = get_config()
         return float(cfg.concept_drift_threshold)
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_threshold failed: %s", e)
         try:
             return float(
                 os.environ.get("MEMORY_CONCEPT_DRIFT_THRESHOLD", str(DEFAULT_THRESHOLD))
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("_get_threshold failed: %s", e)
             return DEFAULT_THRESHOLD
 
 
@@ -95,7 +97,8 @@ def _compute_centroid(conn: AnyConnection) -> Optional[npt.NDArray[np.float32]]:
             continue
         try:
             vec = np.frombuffer(blob, dtype=np.float32)
-        except Exception:
+        except Exception as e:
+            logger.warning("_compute_centroid failed: %s", e)
             continue
         count += 1
         if mean is None:

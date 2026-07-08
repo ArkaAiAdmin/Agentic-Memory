@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import hashlib
 import logging
+
+import hashlib
 import re
 import threading
 from collections import deque
@@ -776,8 +777,8 @@ def extract_entities(text: str, min_occurrences: int = 2) -> list[tuple[str, str
         if get_config().ner_spacy_enabled:
             from knowledge_graph.ner_spacy import augment_entities
             unique = augment_entities(cleaned, unique)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("extract_entities failed: %s", e)
 
     return unique
 

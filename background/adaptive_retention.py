@@ -8,6 +8,9 @@ Opt-in via MEMORY_ADAPTIVE_RETENTION=1.
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import json
 import sqlite3
 from typing import TYPE_CHECKING
@@ -219,7 +222,8 @@ def compute_adaptive_halflife(
         )
         adapted = base_halflife * multiplier
         return max(_MIN_HALF_LIFE_DAYS, min(_MAX_HALF_LIFE_DAYS, adapted))
-    except Exception:
+    except Exception as e:
+        logger.warning("compute_adaptive_halflife failed: %s", e)
         return base_halflife
 
 
@@ -327,8 +331,8 @@ def batch_update_retention(
             if should_close and conn_to_use:
                 try:
                     conn_to_use.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("batch_update_retention failed: %s", e)
         return {
             "enabled": True,
             "total_notes": len(rows),
@@ -337,6 +341,7 @@ def batch_update_retention(
             "dry_run": dry_run,
         }
     except Exception as e:
+        logger.warning("batch_update_retention failed: %s", e)
         return {"enabled": True, "error": str(e)}
 
 
@@ -392,7 +397,8 @@ def retention_stats(db_path: str | None = None) -> dict:
             "min_halflife_days": round(min(halflives), 1),
             "max_halflife_days": round(max(halflives), 1),
         }
-    except Exception:
+    except Exception as e:
+        logger.warning("retention_stats failed: %s", e)
         return {"enabled": True, "error": "stats unavailable"}
 
 
@@ -464,7 +470,8 @@ def get_last_access_queries_batch(
 
     try:
         conn = connection_pool.get(actual_db)
-    except Exception:
+    except Exception as e:
+        logger.warning("get_last_access_queries_batch failed: %s", e)
         return result
 
     try:
@@ -504,8 +511,8 @@ def get_last_access_queries_batch(
         except sqlite3.OperationalError:
             # Table doesn't exist yet — leave all results as None
             pass
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("get_last_access_queries_batch failed: %s", e)
     finally:
         safe_close_db(conn)
 

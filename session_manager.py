@@ -12,8 +12,9 @@ need saga participation.
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import re
 import sqlite3
 import threading
@@ -42,7 +43,8 @@ def _is_enabled() -> bool:
         from config import get_config
 
         return bool(get_config().session_memory)
-    except Exception:
+    except Exception as e:
+        logger.warning("_is_enabled failed: %s", e)
         return False
 
 
@@ -218,12 +220,13 @@ def _mark_audit_pending(
             (row_id,),
         )
         conn.commit()
-    except Exception:
+    except Exception as e:
+        logger.warning("_mark_audit_pending failed: %s", e)
         if conn:
             try:
                 conn.rollback()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("_mark_audit_pending failed: %s", e)
     finally:
         if conn:
             from infra.db import safe_close_db
@@ -258,6 +261,7 @@ def reconcile_audit(db_path: Optional[Path] = None) -> str:
             {"ok": True, "pending": pending, "total": sum(len(v) for v in pending.values())}
         )
     except Exception as exc:
+        logger.warning("reconcile_audit failed: %s", exc)
         return json.dumps({"ok": False, "error": str(exc)})
     finally:
         if conn:
@@ -303,7 +307,8 @@ def _save_system_record(
     try:
         from config import get_config
         _cfg = get_config()
-    except Exception:
+    except Exception as e:
+        logger.warning("_save_system_record failed: %s", e)
         _cfg = None
     _row_for_v22 = {**row, "id": row_id}
     if getattr(_cfg, "write_journal", False) and "summary_note_id" in _row_for_v22:
@@ -324,8 +329,8 @@ def _save_system_record(
         if conn:
             try:
                 conn.rollback()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("_save_system_record failed: %s", e)
     finally:
         if conn:
             from infra.db import safe_close_db

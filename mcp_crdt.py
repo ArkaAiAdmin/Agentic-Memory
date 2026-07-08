@@ -168,6 +168,7 @@ def memory_crdt_status() -> str:
             finally:
                 conn.close()
         except Exception as e:
+            logger.warning("memory_crdt_status failed: %s", e)
             entry["error"] = str(e)[:200]
 
         status_list.append(entry)

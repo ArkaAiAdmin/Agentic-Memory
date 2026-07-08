@@ -21,6 +21,7 @@ search_pipeline for backward compat.
 from __future__ import annotations
 
 import logging
+
 import re
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,8 @@ def _get_topic_similarity_threshold() -> float:
         from infra._lazy_imports import get_config
 
         return float(get_config().topic_similarity_threshold)
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_topic_similarity_threshold failed: %s", e)
         return _QW5_TOPIC_SIMILARITY_THRESHOLD
 
 

@@ -78,7 +78,8 @@ def _get_effective_batch_size() -> int:
         from infra._lazy_imports import get_config
         pool_size: int = int(get_config().db_pool_size)
         return int(min(_DEFAULT_BATCH_SIZE, max(1, pool_size - 4)))
-    except Exception:
+    except Exception as _wp_exc:
+        logger.warning("_get_effective_batch_size: broad except swallowed: %s", _wp_exc)
         return _DEFAULT_BATCH_SIZE
 
 # Module-level keep-alive for the inline flock fd (H-fix 2026-06-22).
@@ -138,7 +139,8 @@ def handle_fact_consolidation(
             n = int(row[0]) if row else 0
             if n > 2000:
                 return f"fact consolidation skipped: corpus {n} notes exceeds guard (2000)"
-        except Exception:
+        except Exception as _wp_exc:
+            logger.warning("handle_fact_consolidation: broad except swallowed: %s", _wp_exc)
             pass
 
         consolidate_memory_facts(db_path=_P(db_path))
@@ -497,7 +499,8 @@ def _lazy_graph_snapshots(payload: dict, conn: AnyConnection, db_path: Path) -> 
         try:
             new_entities = _json.loads(last_snapshot[0]) if last_snapshot[0] else []
             removed_entities = _json.loads(last_snapshot[1]) if last_snapshot[1] else []
-        except Exception:
+        except Exception as _wp_exc:
+            logger.warning("_lazy_graph_snapshots: broad except swallowed: %s", _wp_exc)
             pass
 
     conn.execute(
@@ -612,7 +615,8 @@ def _get_vec_rebuild_threshold() -> int:
         cfg = get_config()
         base = int(getattr(cfg, "vec_rebuild_threshold", 15) or 15)
         adaptive = bool(getattr(cfg, "vec_rebuild_adaptive", False))
-    except Exception:
+    except Exception as _wp_exc:
+        logger.warning("_get_vec_rebuild_threshold: broad except swallowed: %s", _wp_exc)
         base = int(os.environ.get("MEMORY_VEC_REBUILD_THRESHOLD", "15"))
         adaptive = False
 
@@ -645,7 +649,8 @@ def _get_vec_rebuild_threshold() -> int:
         ratio = drift_per_minute / writes_per_minute
         multiplier = max(0.5, min(3.0, ratio))
         return max(1, int(base * multiplier))
-    except Exception:
+    except Exception as _wp_exc:
+        logger.warning("_get_vec_rebuild_threshold: broad except swallowed: %s", _wp_exc)
         return base
 
 
@@ -1044,7 +1049,8 @@ class WorkerPool:
         finally:
             try:
                 conn.close()
-            except Exception:
+            except Exception as _wp_exc:
+                logger.warning("_worker_loop: broad except swallowed: %s", _wp_exc)
                 pass
             logger.info(
                 "worker pool: worker %d stopped (processed %d tasks)",
@@ -1056,7 +1062,8 @@ def _check_high_priority_pending(conn: AnyConnection) -> bool:
     try:
         row = conn.execute("SELECT id FROM task_queue WHERE status = 'pending' LIMIT 1").fetchone()
         return row is not None
-    except Exception:
+    except Exception as _wp_exc:
+        logger.warning("_check_high_priority_pending: broad except swallowed: %s", _wp_exc)
         return False
 
 
@@ -1256,11 +1263,13 @@ def run_worker(
             reconciler_thread.join(timeout=5)
         except NameError:
             pass
-        except Exception:
+        except Exception as _wp_exc:
+            logger.warning("run_worker: broad except swallowed: %s", _wp_exc)
             pass
         try:
             conn.close()
-        except Exception:
+        except Exception as _wp_exc:
+            logger.warning("run_worker: broad except swallowed: %s", _wp_exc)
             pass
         logger.info("worker: stopped")
 

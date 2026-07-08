@@ -1,5 +1,6 @@
-import json
+
 import logging
+import json
 import os
 import sqlite3
 import subprocess
@@ -125,6 +126,7 @@ def memory_dashboard(action: str = "status", port: int = 8501) -> str:
                 }
             )
         except Exception as e:
+            logger.warning("memory_dashboard failed: %s", e)
             return _err(ErrorCode.DB_ERROR, f"dashboard start failed: {e}")
 
     elif action == "stop":
@@ -143,6 +145,7 @@ def memory_dashboard(action: str = "status", port: int = 8501) -> str:
             _DASHBOARD_PROCESS = None
             return json.dumps({"ok": True, "status": "killed", "stats": stats})
         except Exception as e:
+            logger.warning("memory_dashboard failed: %s", e)
             return _err(ErrorCode.DB_ERROR, f"dashboard stop failed: {e}")
 
     else:

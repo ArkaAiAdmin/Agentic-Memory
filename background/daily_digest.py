@@ -6,6 +6,7 @@ Extracted from auto_save.py in Phase 3.
 from __future__ import annotations
 
 import logging
+
 import re
 import shutil
 from datetime import datetime, timedelta
@@ -106,7 +107,8 @@ def _get_tool_counts_from_db(date_str: str) -> dict[str, int]:
             from infra.memory_common import safe_close_db
 
             safe_close_db(conn, should_commit=False)
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_tool_counts_from_db failed: %s", e)
         return {}
 
 def _archive_one_autosave(
@@ -149,8 +151,8 @@ def _archive_one_autosave(
         finally:
             try:
                 conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("_archive_one_autosave failed: %s", e)
     except Exception as e:
         logger.warning("could not delete archived DB row for %s: %s", path.name, e)
     # Now move the file (idempotent: if missing, skip silently).
@@ -190,8 +192,8 @@ def _sweep_orphan_rows() -> None:
                             f"DELETE FROM {table} WHERE {col} NOT IN "
                             f"(SELECT id FROM memories)"
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("_sweep_orphan_rows failed: %s", e)
                 conn.commit()
             finally:
                 # P0-2 fix (2026-06-24): wrap the restore in try/except so a
@@ -204,8 +206,8 @@ def _sweep_orphan_rows() -> None:
         finally:
             try:
                 conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("_sweep_orphan_rows failed: %s", e)
     except Exception as e:
         logger.debug("daily-digest orphan cleanup skipped: %s", e)
 

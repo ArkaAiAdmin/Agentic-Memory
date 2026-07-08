@@ -12,6 +12,9 @@ speak the same invariants.
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import re
 from pathlib import Path
 from typing import Any
@@ -66,6 +69,7 @@ def validate_bundle(bundle_dir: str | Path) -> list[str]:
         try:
             fm, _ = _parse_frontmatter(text)
         except Exception as exc:
+            logger.warning("validate_bundle failed: %s", exc)
             if name not in RESERVED_NAMES:
                 errors.append(f"{rel_str}: unparseable frontmatter: {exc}")
             continue

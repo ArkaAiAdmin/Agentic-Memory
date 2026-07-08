@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING
 
@@ -95,13 +96,13 @@ def ensure_kg_schema(conn: AnyConnection) -> None:
         if "community_id" not in cols_entities:
             try:
                 conn.execute("ALTER TABLE kg_entities ADD COLUMN community_id INTEGER DEFAULT 0")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("ensure_kg_schema failed: %s", e)
         if "betweenness" not in cols_entities:
             try:
                 conn.execute("ALTER TABLE kg_entities ADD COLUMN betweenness REAL DEFAULT 0.0")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("ensure_kg_schema failed: %s", e)
     except Exception as exc:
         logger.debug("KG schema migration (ALTER TABLE) skipped: %s", exc)
 

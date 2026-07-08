@@ -1075,7 +1075,8 @@ def _compaction_note_age_days(note_id: str) -> float | None:
         ts = time.strptime(date_time, "%Y-%m-%d_%H-%M-%S")
         epoch = time.mktime(ts)
         return (time.time() - epoch) / 86400
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in _compaction_note_age_days: %s", e)
         return None
 
 
@@ -1144,8 +1145,8 @@ def _enforce_compaction_pin_limit():
                 try:
                     md.unlink()
                     orphan_count += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Unhandled exception in _enforce_compaction_pin_limit: %s", e)
         if orphan_count:
             logger.info(
                 "compaction retention: removed %d orphaned .md files", orphan_count
@@ -1350,8 +1351,8 @@ post-compaction continuity — the agent *already decided* what mattered.
         if cs_path.exists():
             try:
                 cs = json.loads(cs_path.read_text())
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Unhandled exception in pre_compaction: %s", e)
         entity_session_id = cs.get("session_id", "")
         if entity_session_id:
             summary_note_id = result.get("note_id", "")
@@ -1363,8 +1364,8 @@ post-compaction continuity — the agent *already decided* what mattered.
                     m = re.search(r"note_id[:\s]+([\w-]+)", ac)
                     if m:
                         recovered_ids.append(m.group(1))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Unhandled exception in pre_compaction: %s", e)
             mgr.compact_session(
                 session_id=entity_session_id,
                 tokens_before=tokens_before,

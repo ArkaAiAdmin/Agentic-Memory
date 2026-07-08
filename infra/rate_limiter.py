@@ -17,6 +17,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+
 import os
 import threading
 import time
@@ -141,7 +142,8 @@ def configure_rate_limits(toml_limits: dict[str, Any] | None = None) -> None:
         cfg = get_config()
         # cfg.rate_limits is a dict[str, dict] if set, or empty dict
         toml_limits = cfg.rate_limits or toml_limits or {}
-    except Exception:
+    except Exception as e:
+        logger.warning("configure_rate_limits failed: %s", e)
         toml_limits = toml_limits or {}
 
     known_tools = set(_default_limits()) - {"_default"}

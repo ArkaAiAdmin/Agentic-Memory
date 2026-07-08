@@ -94,7 +94,6 @@ __all__ = [
 
 
 def make_vv() -> dict[str, int]:
-    """Create a fresh (empty) version vector."""
     return {}
 
 

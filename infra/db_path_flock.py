@@ -82,6 +82,8 @@ Opt-out (rare)::
 
 from __future__ import annotations
 
+import logging
+
 __all__ = [
     "acquire_db_path_flock",
     "release_db_path_flock",
@@ -91,7 +93,6 @@ __all__ = [
 ]
 
 import contextlib
-import logging
 import os
 import threading
 from pathlib import Path
@@ -161,13 +162,14 @@ class PathLockFd:
                         initial_backoff=0.05,
                         strict=True,
                     )
-                except Exception:
+                except Exception as e:
                     # On failure, close the fd so a subsequent
                     # attempt can re-open it.
+                    logger.warning("acquire failed: %s", e)
                     try:
                         self._fd.close()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("acquire failed: %s", e)
                     self._fd = None
                     raise
             self._ref_count += 1
@@ -185,8 +187,8 @@ class PathLockFd:
                     try:
                         import fcntl as _fcntl
                         _fcntl.flock(self._fd.fileno(), _fcntl.LOCK_UN)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("release failed: %s", e)
 
 
 def is_db_path_flock_enabled() -> bool:

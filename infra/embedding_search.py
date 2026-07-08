@@ -45,11 +45,11 @@ try:
 except Exception:
     logger.warning("Failed to read vec cache config")
     pass
-_vec_cache: _OrderedDict = _OrderedDict()
+_vec_cache: _OrderedDict[tuple, tuple[float, list[dict]]] = _OrderedDict()
 _vec_cache_lock = _threading.Lock()
 
 
-def _vec_cache_get(key: tuple) -> Any | None:
+def _vec_cache_get(key: tuple) -> list[dict] | None:
     now = _time.monotonic()
     with _vec_cache_lock:
         entry = _vec_cache.get(key)
@@ -303,7 +303,7 @@ class EmbeddingSearch:
         # happened) or when the persisted dim no longer matches the
         # current model. Test isolation: tests that need a clean cache
         # can call self.clear_vec_index_cache().
-        self._vec_index_cache: dict = {}
+        self._vec_index_cache: dict[str, tuple[Any, dict]] = {}
         # Query embedding cache (LRU 128) — opt-in via MEMORY_QUERY_CACHE=1
         # Maps query_text -> embedding_vector (numpy array).
         self._query_cache: OrderedDict = OrderedDict()
@@ -353,7 +353,8 @@ class EmbeddingSearch:
                 try:
                     from infra._lazy_imports import get_config
                     cfg = get_config()
-                except Exception:
+                except Exception as _wp_exc:
+                    logger.warning("_load_model: broad except swallowed: %s", _wp_exc)
                     cfg = None
 
             backend = "auto"
@@ -700,7 +701,7 @@ class EmbeddingSearch:
             and cached[1]["blob_len"] == blob_len
             and cached[1].get("model_id") == stored_model_id
         ):
-            return cached  # type: ignore[no-any-return]
+            return cached
 
         # Model_id drift: embeddings were built with a different model.
         # Invalidate the index so the caller falls back to full scan /
@@ -1025,7 +1026,8 @@ class EmbeddingSearch:
                 now = time.time()
                 try:
                     db.execute("PRAGMA busy_timeout = 50;")
-                except Exception:
+                except Exception as _wp_exc:
+                    logger.warning("_search_full_scan: broad except swallowed: %s", _wp_exc)
                     pass
                 try:
                     with db:
@@ -1041,7 +1043,8 @@ class EmbeddingSearch:
                 finally:
                     try:
                         db.execute("PRAGMA busy_timeout = 30000;")
-                    except Exception:
+                    except Exception as _wp_exc:
+                        logger.warning("_search_full_scan: broad except swallowed: %s", _wp_exc)
                         pass
             except Exception as e:
                 logger.warning("failed to write embeddings back: %s", e)
@@ -1240,7 +1243,7 @@ class EmbeddingSearch:
         cache_key = (str(db_path), query, limit, _cache_extras)
         cached = _vec_cache_get(cache_key)
         if cached is not None:
-            return cached  # type: ignore[no-any-return]
+            return cached
 
         db = connection_pool.get(str(db_path), timeout=30.0)
         db.execute("PRAGMA busy_timeout = 30000;")
@@ -1313,7 +1316,8 @@ class EmbeddingSearch:
                     # evicted. Idempotent: a no-op when not a ghost.
                     try:
                         cache.record_hit(mid)
-                    except Exception:
+                    except Exception as _wp_exc:
+                        logger.warning("_arc_track_hits: broad except swallowed: %s", _wp_exc)
                         pass
             finally:
                 cache.close()
@@ -1467,7 +1471,8 @@ class EmbeddingSearch:
                 score = float(self.np.dot(vec, query_vec))
                 if parent_id not in mid_scores or score > mid_scores[parent_id]["score"]:
                     mid_scores[parent_id] = {"parent_id": parent_id, "score": score, "chunk_id": chunk_id}
-            except Exception:
+            except Exception as _wp_exc:
+                logger.warning("_search_chunks_full_scan: broad except swallowed: %s", _wp_exc)
                 continue
         ranked = sorted(mid_scores.values(), key=lambda x: x["score"], reverse=True)[:limit]
         return ranked
@@ -1480,7 +1485,8 @@ class EmbeddingSearch:
                 from infra.memory_config import get_memory_paths
                 _, local_mem, _ = get_memory_paths()
                 _path = local_mem / "memory.db"
-            except Exception:
+            except Exception as _wp_exc:
+                logger.warning("search_chunks: broad except swallowed: %s", _wp_exc)
                 _path = Path("memory/memory.db")
         _db = db
         own_db = False

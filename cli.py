@@ -393,6 +393,7 @@ def doctor_main() -> None:
                         f"DB at v{db_version}, code expects v{SCHEMA_VERSION} — run migrations",
                     )
         except Exception as exc:
+            logger.warning("Unhandled exception in doctor_main: %s", exc)
             add_check("schema_version", "failure", str(exc))
 
         # ── Check 3: Integrity (via existing module) ───────────────────────
@@ -418,6 +419,7 @@ def doctor_main() -> None:
             else:
                 add_check("db_integrity", "ok", "No issues found")
         except Exception as exc:
+            logger.warning("Unhandled exception in doctor_main: %s", exc)
             add_check("db_integrity", "failure", str(exc))
 
         # ── Check 4: FTS5 drift ────────────────────────────────────────────
@@ -440,6 +442,7 @@ def doctor_main() -> None:
             else:
                 add_check("fts5_drift", "ok", "FTS5 in sync")
         except Exception as exc:
+            logger.warning("Unhandled exception in doctor_main: %s", exc)
             add_check("fts5_drift", "warning", str(exc))
 
         # ── Check 5: KG orphans ────────────────────────────────────────────
@@ -462,6 +465,7 @@ def doctor_main() -> None:
                 else:
                     add_check("kg_orphans", "ok", "No KG orphans")
         except Exception as exc:
+            logger.warning("Unhandled exception in doctor_main: %s", exc)
             add_check("kg_orphans", "warning", str(exc))
 
     # ── Check 6: Hook errors / circuit breaker ─────────────────────────────
@@ -493,6 +497,7 @@ def doctor_main() -> None:
                     f"OK ({len(lines)} total entries, no open circuits)",
                 )
         except Exception as exc:
+            logger.warning("Unhandled exception in doctor_main: %s", exc)
             add_check("hook_errors", "warning", str(exc))
 
     # ── Check 7: Context monitor state ────────────────────────────────────
@@ -512,6 +517,7 @@ def doctor_main() -> None:
                 f"tool_calls={tool_count}, last_compaction={datetime.fromtimestamp(last_compact).isoformat() if last_compact else 'never'}",
             )
         except Exception as exc:
+            logger.warning("Unhandled exception in doctor_main: %s", exc)
             add_check("context_monitor", "warning", str(exc))
 
     # ── Check 8: Allowlist config ─────────────────────────────────────────
@@ -524,6 +530,7 @@ def doctor_main() -> None:
         else:
             add_check("allowlist", "ok", f"{len(al)} tools in allowlist")
     except Exception as exc:
+        logger.warning("Unhandled exception in doctor_main: %s", exc)
         add_check("allowlist", "warning", str(exc))
 
     # ── Check 9: Memory dir writable ──────────────────────────────────────
@@ -533,6 +540,7 @@ def doctor_main() -> None:
         test_file.unlink()
         add_check("dir_writable", "ok", f"{mem_dir} is writable")
     except Exception as exc:
+        logger.warning("Unhandled exception in doctor_main: %s", exc)
         add_check("dir_writable", "failure", str(exc))
 
     # ── Check 10: Plugin wiring ───────────────────────────────────────────
@@ -560,6 +568,7 @@ def doctor_main() -> None:
                 "opencode.jsonc not found (not using OpenCode?)",
             )
     except Exception as exc:
+        logger.warning("Unhandled exception in doctor_main: %s", exc)
         add_check("plugin_wiring", "warning", str(exc))
 
     # ── Output ────────────────────────────────────────────────────────────
@@ -574,8 +583,8 @@ def doctor_main() -> None:
     try:
         report_path.write_text(json.dumps(report, indent=2))
         report["report_path"] = str(report_path)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Unhandled exception in doctor_main: %s", e)
 
     if parsed.json:
         print(json.dumps(report, indent=2))
@@ -621,6 +630,7 @@ def doctor_main() -> None:
                 else:
                     print("skipped (no handler)")
             except Exception as exc:
+                logger.warning("Unhandled exception in doctor_main: %s", exc)
                 print(f"FAILED: {exc}")
 
         if fix_applied:
@@ -698,6 +708,7 @@ def status_main() -> None:
                 else:
                     parts.append(_c(f"schema=v{db_ver}", ok_color))
         except Exception as exc:
+            logger.warning("Unhandled exception in status_main: %s", exc)
             parts.append(_c(f"db_err={exc}", fail_color))
     else:
         parts.append(_c("db=missing", fail_color))
@@ -721,7 +732,8 @@ def status_main() -> None:
                 )
             else:
                 parts.append(_c("circuits=ok", ok_color))
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in status_main: %s", e)
             parts.append(_c("circuits=?", warn_color))
     else:
         parts.append(_c("circuits=ok", ok_color))
@@ -733,8 +745,8 @@ def status_main() -> None:
             state = json.loads(state_file.read_text())
             tc = state.get("tool_calls", state.get("total_tool_calls", 0))
             parts.append(f"tool_calls={tc}")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in status_main: %s", e)
 
     # Allowlist
     try:
@@ -742,7 +754,8 @@ def status_main() -> None:
 
         al = _resolve_allowlist()
         parts.append(f"allowlist={'*' if al is None else len(al)}")
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in status_main: %s", e)
         parts.append("allowlist=?")
 
     print(" | ".join(parts))
@@ -754,7 +767,8 @@ def version_main() -> None:
         from importlib.metadata import version as _pkg_version
 
         installed = _pkg_version("agentic-memory")
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in version_main: %s", e)
         installed = "dev (unknown)"
 
     try:
@@ -778,9 +792,11 @@ def version_main() -> None:
                     )
                 else:
                     print(f"agentic-memory {installed} (newer than PyPI {latest})")
-            except Exception:
+            except Exception as e:
+                logger.warning("Unhandled exception in version_main: %s", e)
                 print(f"agentic-memory {installed} (PyPI: {latest})")
-    except Exception:
+    except Exception as e:
+        logger.warning("Unhandled exception in version_main: %s", e)
         print(f"agentic-memory {installed}")
 
 
@@ -840,6 +856,7 @@ def install_mcp_main() -> None:
             if _update(oc_mcp):
                 updated.append(str(oc_mcp))
         except Exception as exc:
+            logger.warning("Unhandled exception in install_mcp_main: %s", exc)
             print(f"warning: {oc_mcp}: {exc}", file=sys.stderr)
 
     # Claude Desktop
@@ -855,6 +872,7 @@ def install_mcp_main() -> None:
             if _update(cd_cfg):
                 updated.append(str(cd_cfg))
         except Exception as exc:
+            logger.warning("Unhandled exception in install_mcp_main: %s", exc)
             print(f"warning: {cd_cfg}: {exc}", file=sys.stderr)
 
     # Claude Code
@@ -864,6 +882,7 @@ def install_mcp_main() -> None:
                 if _update(cc_cfg):
                     updated.append(str(cc_cfg))
             except Exception as exc:
+                logger.warning("Unhandled exception in install_mcp_main: %s", exc)
                 print(f"warning: {cc_cfg}: {exc}", file=sys.stderr)
 
     if updated:
@@ -942,7 +961,8 @@ def dashboard_main() -> None:
             from config import get_config
 
             bind_address = get_config().dashboard_address or "127.0.0.1"
-        except Exception:
+        except Exception as e:
+            logger.warning("Unhandled exception in dashboard_main: %s", e)
             bind_address = "127.0.0.1"
     if bind_address in (None, "", "0.0.0.0"):
         bind_address = "127.0.0.1"

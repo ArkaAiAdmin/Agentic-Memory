@@ -30,14 +30,14 @@ that returns a question + scoring template.
 
 from __future__ import annotations
 
-import json
 import logging
+logger = logging.getLogger(__name__)
+
+import json
 import os
 import subprocess
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
-
-LOG = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ def get_default_judge() -> Judge:
             command = json.loads(cmd)
             return SubprocessJudge(command=command)
         except json.JSONDecodeError:
-            LOG.warning("AGENTIC_MEMORY_JUDGE_COMMAND is not valid JSON; using stub")
+            logger.warning("AGENTIC_MEMORY_JUDGE_COMMAND is not valid JSON; using stub")
     return StubJudge()
 
 
@@ -353,6 +353,7 @@ class JudgeRunner:
         try:
             raw = self.judge.grade(user, system=system)
         except Exception as e:
+            logger.warning("grade failed: %s", e)
             return JudgeScore(
                 score=0.0,
                 reasoning=f"judge error: {e}",

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
+logger = logging.getLogger(__name__)
 """Metrics collection and Prometheus export for Agentic Memory.
 
 Tracks: save/search/delete latency, error rates, throughput.
@@ -145,7 +148,8 @@ def get_stats(db_path: Path | None = None) -> dict:
                 count_row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
                 count = int(count_row[0]) if count_row is not None else 0
                 db_stats[table] = count
-            except Exception:
+            except Exception as e:
+                logger.warning("get_stats failed: %s", e)
                 db_stats[table] = -1
         stats["_db"] = db_stats
 

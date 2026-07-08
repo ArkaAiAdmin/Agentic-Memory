@@ -8,8 +8,6 @@ from typing import Any
 
 @dataclass
 class MemoryResult:
-    """A single memory search result."""
-
     id: str
     content: str
     score: float = 0.0
@@ -23,8 +21,6 @@ class MemoryResult:
 
 @dataclass
 class SearchResults:
-    """Container for search results with optional synthesis."""
-
     results: list[MemoryResult] = field(default_factory=list)
     total: int = 0
     synthesis: str = ""
@@ -39,8 +35,6 @@ class SearchResults:
 
 @dataclass
 class Entity:
-    """A knowledge graph entity."""
-
     id: str
     name: str
     entity_type: str
@@ -50,8 +44,6 @@ class Entity:
 
 @dataclass
 class Relation:
-    """A knowledge graph relation (subject → predicate → object)."""
-
     id: str
     source: str
     target: str
@@ -62,8 +54,6 @@ class Relation:
 
 @dataclass
 class Fact:
-    """An extracted SPO fact with temporal metadata."""
-
     id: str
     subject: str
     predicate: str
@@ -83,8 +73,6 @@ class Fact:
 
 @dataclass
 class Stats:
-    """System statistics."""
-
     memories: int = 0
     vector_keys: int = 0
     chunks: int = 0
@@ -95,8 +83,6 @@ class Stats:
 
 @dataclass
 class AgentInfo:
-    """Agent context information."""
-
     agent_id: str
     display_name: str = ""
     parent_agent: str = ""
@@ -105,8 +91,6 @@ class AgentInfo:
 
 @dataclass
 class IntegrityReport:
-    """Database integrity check report."""
-
     passed: bool = True
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -115,8 +99,6 @@ class IntegrityReport:
 
 @dataclass
 class MaintenanceResult:
-    """Result of a maintenance operation."""
-
     operation: str
     success: bool = True
     message: str = ""

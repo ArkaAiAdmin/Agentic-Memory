@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
 """Cron wrapper: cross_session_learn — extract reusable patterns from sessions.
 
 Scans recent session notes, identifies patterns worth saving as
@@ -12,7 +14,6 @@ Usage:
 
 import os
 import sys
-import logging
 
 logger = logging.getLogger(__name__)
 from pathlib import Path
@@ -51,7 +52,8 @@ def extract_session_text(session_path: Path) -> str:
     """Read a session note and return its text content."""
     try:
         return session_path.read_text(encoding="utf-8")
-    except Exception:
+    except Exception as e:
+        logger.warning("extract_session_text failed: %s", e)
         return ""
 
 
@@ -132,7 +134,8 @@ def scan_sessions_and_learn(
             mtime = session_file.stat().st_mtime
             if mtime < cutoff_ts:
                 continue
-        except Exception:
+        except Exception as e:
+            logger.warning("scan_sessions_and_learn failed: %s", e)
             continue
 
         text = extract_session_text(session_file)

@@ -131,7 +131,6 @@ def get_counter() -> ErrorCounter:
 
 
 def increment(phase: str, error: Optional[BaseException] = None) -> None:
-    """Convenience function to increment the global counter."""
     get_counter().increment(phase, error)
 
 
@@ -140,17 +139,14 @@ def get_counts(
     until_ts: Optional[float] = None,
     limit: int = 50,
 ) -> dict:
-    """Convenience function to get counts from the global counter."""
     return get_counter().get_counts(since_ts, until_ts, limit)
 
 
 def get_all() -> dict[str, int]:
-    """Convenience function to get all counts from the global counter."""
     return get_counter().get_all()
 
 
 def reset() -> None:
-    """Convenience function to reset the global counter."""
     get_counter().reset()
 
 

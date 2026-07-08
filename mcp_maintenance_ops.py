@@ -13,6 +13,8 @@ to ``_get_local_tools()`` / ``_get_domain_tools()`` which run on first
 dispatch (not at module load). The ``MaintenanceOp`` enum is also
 resolved lazily.
 """
+import logging
+logger = logging.getLogger(__name__)
 from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
@@ -617,8 +619,8 @@ def _op_memory_stats() -> str:
                     ).fetchone()[0]
                 finally:
                     safe_close_db(conn)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Unhandled exception in _op_memory_stats: %s", e)
         queue_depth = 0
         try:
             from background.background_queue import init_task_queue, pending_count
@@ -628,20 +630,20 @@ def _op_memory_stats() -> str:
                 with open_db(Path(db_path)) as qconn:
                     init_task_queue(qconn)
                     queue_depth = pending_count(qconn)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in _op_memory_stats: %s", e)
         cb_open = False
         try:
             from circuit_breaker import get_circuit_breaker_state
 
             cb_open = get_circuit_breaker_state().get("open", False)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in _op_memory_stats: %s", e)
         flags = {}
         try:
             flags = get_feature_flags()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Unhandled exception in _op_memory_stats: %s", e)
         return _json.dumps(
             {
                 "db_path": db_path,
@@ -653,6 +655,7 @@ def _op_memory_stats() -> str:
             }
         )
     except Exception as e:
+        logger.warning("Unhandled exception in _op_memory_stats: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -700,6 +703,7 @@ def _op_list_active_threads(
         finally:
             safe_close_db(conn)
     except Exception as e:
+        logger.warning("Unhandled exception in _op_list_active_threads: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -718,6 +722,7 @@ def _op_extract_skills(memory_id: str = "", dry_run: bool = False) -> str:
             from mcp_maintenance import memory_extract_skills
             return cast(str, memory_extract_skills(conn, memory_id=memory_id, dry_run=dry_run))
     except Exception as e:
+        logger.warning("Unhandled exception in _op_extract_skills: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -736,6 +741,7 @@ def _op_list_skills(limit: int = 50) -> str:
             from mcp_maintenance import memory_list_skills
             return cast(str, memory_list_skills(conn, limit=limit))
     except Exception as e:
+        logger.warning("Unhandled exception in _op_list_skills: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -776,6 +782,7 @@ def _op_recover_session(session_id: str) -> str:
             current = row[1] or ""
         return _json.dumps({"chain": chain})
     except Exception as e:
+        logger.warning("Unhandled exception in _op_recover_session: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -786,6 +793,7 @@ def _op_flags_status() -> str:
 
         return json.dumps(get_feature_flags(), indent=2)
     except Exception as e:
+        logger.warning("Unhandled exception in _op_flags_status: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -798,6 +806,7 @@ def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = Non
             get_counts(since_ts=since_ts, until_ts=until_ts, limit=limit), indent=2
         )
     except Exception as e:
+        logger.warning("Unhandled exception in _op_phase_errors: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -865,6 +874,7 @@ def _op_search_phase_stats(
         finally:
             conn.close()
     except Exception as e:
+        logger.warning("Unhandled exception in _op_search_phase_stats: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -918,6 +928,7 @@ def _op_recall_trace(
             indent=2,
         )
     except Exception as e:
+        logger.warning("Unhandled exception in _op_recall_trace: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -977,6 +988,7 @@ def _op_recall_status() -> str:
             indent=2,
         )
     except Exception as e:
+        logger.warning("Unhandled exception in _op_recall_status: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -1031,6 +1043,7 @@ def _op_session_admin_stats(type: str = "all") -> str:
         finally:
             safe_close_db(conn)
     except Exception as e:
+        logger.warning("Unhandled exception in _op_session_admin_stats: %s", e)
         return _err(classify_exception(e), str(e))
 
 
@@ -1067,7 +1080,8 @@ def _op_background_task_status(memory_id: str) -> str:
                 status, started, completed, err, attempts, task_type, payload_str = row
                 try:
                     payload = json.loads(payload_str)
-                except Exception:
+                except Exception as e:
+                    logger.warning("Unhandled exception in _op_background_task_status: %s", e)
                     payload = {}
                 if payload.get("memory_id") != memory_id:
                     continue
@@ -1100,6 +1114,7 @@ def _op_background_task_status(memory_id: str) -> str:
                 res["error"] = "; ".join(errors)
             return json.dumps(res)
     except Exception as e:
+        logger.warning("Unhandled exception in _op_background_task_status: %s", e)
         return _err(classify_exception(e), str(e))
 
 

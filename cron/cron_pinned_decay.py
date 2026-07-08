@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """Cron wrapper: check pinned notes for drift, auto-unpin stale ones."""
 
-from _flock import acquire_lock_or_exit
 import os
 import sys
 import traceback
 
 os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
-import os
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
+from cron._flock import acquire_lock_or_exit
 from pinned_decay import main as pinned_main
 
 

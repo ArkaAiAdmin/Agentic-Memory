@@ -8,6 +8,9 @@ api_base), triggers a full vec index rebuild.
 Usage:
     venv/bin/python embedding_recompute.py [--force] [--dry-run]
 """
+
+import logging
+logger = logging.getLogger(__name__)
 import os
 import sys
 import json
@@ -45,7 +48,8 @@ def get_current_model_config() -> dict:
                 "dimensions": getattr(es.model, "dim", 256),
             }
         return {"model": "minishlab/potion-base-8M", "api_base": "local", "dimensions": 256}
-    except Exception:
+    except Exception as e:
+        logger.warning("get_current_model_config failed: %s", e)
         return {"model": "", "api_base": "", "dimensions": 0}
 
 
@@ -58,7 +62,8 @@ def get_stored_model_config() -> dict:
         if isinstance(config, dict):
             return config
         return {}
-    except Exception:
+    except Exception as e:
+        logger.warning("get_stored_model_config failed: %s", e)
         return {}
 
 

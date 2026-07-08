@@ -23,6 +23,7 @@ search_pipeline for backward compat.
 from __future__ import annotations
 
 import logging
+
 import re
 from typing import cast
 
@@ -112,7 +113,8 @@ def _get_cross_encoder_blend() -> float:
 
         v = get_config().cross_encoder_blend
         return float(v)
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_cross_encoder_blend failed: %s", e)
         return _CROSS_ENCODER_BLEND
 
 
@@ -121,7 +123,8 @@ def _get_late_interaction_blend() -> float:
         from infra._lazy_imports import get_config
 
         return cast(float, get_config().late_interaction_blend)
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_late_interaction_blend failed: %s", e)
         return _LATE_INTERACTION_BLEND
 
 
@@ -207,8 +210,8 @@ def _apply_cross_encoder_rerank(
         from infra._lazy_imports import get_config
         if get_config().reranker_disabled:
             return list(scored_results)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_apply_cross_encoder_rerank failed: %s", e)
     head = scored_results[:top_k]
     tail = scored_results[top_k:]
     blend = _get_cross_encoder_blend()

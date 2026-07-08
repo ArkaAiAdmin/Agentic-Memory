@@ -9,6 +9,7 @@ Opt-in via MEMORY_SUMMARIZATION=1.
 from __future__ import annotations
 
 import logging
+
 import math
 import os
 import re
@@ -30,14 +31,15 @@ def is_llm_summarization_available() -> bool:
         # Enable if llm_summarization is True or either env var is set to 1
         if getattr(cfg, "llm_summarization", False):
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("is_llm_summarization_available failed: %s", e)
 
     if os.environ.get("MEMORY_LLM_SUMMARIZATION") == "1" or os.environ.get("MEMORY_LLM_EXTRACTION") == "1":
         try:
             from fact.llm_providers import get_provider
             return get_provider() is not None
-        except Exception:
+        except Exception as e:
+            logger.warning("is_llm_summarization_available failed: %s", e)
             return False
     return False
 
@@ -309,7 +311,8 @@ def summarize_note(
             return summary
         finally:
             conn.close()
-    except Exception:
+    except Exception as e:
+        logger.warning("summarize_note failed: %s", e)
         return ""
 
 
@@ -399,6 +402,7 @@ def auto_summarize_long(
         finally:
             conn.close()
     except Exception as e:
+        logger.warning("auto_summarize_long failed: %s", e)
         return {"enabled": True, "error": str(e)}
 
 
@@ -454,7 +458,8 @@ def summarization_stats(db_path: str | None = None) -> dict:
                 "already_summarized": summarized,
                 "min_content_length": _MIN_CONTENT_LENGTH,
             }
-    except Exception:
+    except Exception as e:
+        logger.warning("summarization_stats failed: %s", e)
         return {"enabled": True, "error": "stats unavailable"}
 
 

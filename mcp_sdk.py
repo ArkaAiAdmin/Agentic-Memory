@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import logging
+logger = logging.getLogger(__name__)
 """
 MCP tool: memory_sdk_demo.
 
@@ -66,6 +69,7 @@ def memory_sdk_demo(query: str = "preferences", samples: int = 3) -> str:
                 note_id = m.add(text, tags=tags)
                 saved.append({"text": text, "note_id": note_id})
             except Exception as exc:
+                logger.warning("memory_sdk_demo failed: %s", exc)
                 saved.append({"text": text, "error": str(exc)})
 
         results: list = []
@@ -73,11 +77,13 @@ def memory_sdk_demo(query: str = "preferences", samples: int = 3) -> str:
             try:
                 results = m.search(query, limit=5)
             except Exception as exc:
+                logger.warning("memory_sdk_demo failed: %s", exc)
                 results = [{"error": str(exc)}]
 
         try:
             stats: dict[str, Any] = m.stats()
         except Exception as exc:
+            logger.warning("memory_sdk_demo failed: %s", exc)
             stats = {"error": str(exc)}
 
         envelope = {
@@ -94,4 +100,5 @@ def memory_sdk_demo(query: str = "preferences", samples: int = 3) -> str:
         }
         return json.dumps(envelope, indent=2, default=str)
     except Exception as exc:
+        logger.warning("memory_sdk_demo failed: %s", exc)
         return _err(ErrorCode.QUALITY_ERROR, f"memory_sdk_demo failed: {exc}")

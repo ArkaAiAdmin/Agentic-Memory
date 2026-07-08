@@ -104,8 +104,8 @@ def do_backup(backup_dir: Path | None = None) -> dict:
                 if conn is not None:
                     try:
                         conn.close()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("do_backup failed: %s", e)
             src_conn = None
             dst_conn = None
             # Retry with exponential backoff: 0s, 5s, 15s. The middle
@@ -135,7 +135,8 @@ def do_backup(backup_dir: Path | None = None) -> dict:
 
         subprocess.run(["gzip", "-f", str(backup_path)], check=True, timeout=120)
         backup_size = gz_path.stat().st_size
-    except Exception:
+    except Exception as e:
+        logger.warning("do_backup failed: %s", e)
         gz_path = backup_path  # fall back to uncompressed
 
     # Rotate: remove backups older than MAX_BACKUPS days

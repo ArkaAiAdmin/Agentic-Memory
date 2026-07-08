@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
+logger = logging.getLogger(__name__)
 """
 SessionStart hook: auto-load memory context at session start.
 
@@ -137,7 +140,8 @@ def _get_sessions_dir() -> Path:
 
         _, local_mem, _ = get_memory_paths()
         return local_mem / "sessions"
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_sessions_dir failed: %s", e)
         return Path(__file__).resolve().parent.parent / "memory" / "sessions"
 
 
@@ -269,6 +273,7 @@ def proactive_search(query: str, db_path: Path | None = None) -> str:
             lines.append(f"    {content}...")
         return "\n".join(lines)
     except Exception as e:
+        logger.warning("proactive_search failed: %s", e)
         log_error(e, context="memory-session-start.proactive_search()")
         return ""
 
@@ -353,6 +358,7 @@ def main():
                         f" (status: {ctx.session.status})"
                     )
         except Exception as _e:
+            logger.warning("main failed: %s", _e)
             log_error(_e, context="memory-session-start.session_init")
 
         # Phase 1: Bootstrap (pinned, high-importance, recent)
@@ -363,6 +369,7 @@ def main():
             os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
             bootstrap_output = get_bootstrap_summary()
         except Exception as e:
+            logger.warning("main failed: %s", e)
             log_error(e, context="memory-session-start.bootstrap_inprocess")
 
         # Phase 2: Proactive push (search based on session context)
@@ -396,6 +403,7 @@ def main():
             print("\n\n".join(parts))
 
     except Exception as e:
+        logger.warning("main failed: %s", e)
         log_error(e, context="memory-session-start.main()")
 
 

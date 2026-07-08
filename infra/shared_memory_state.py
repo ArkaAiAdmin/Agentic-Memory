@@ -50,6 +50,7 @@ on all supported platforms.
 from __future__ import annotations
 
 import logging
+
 import multiprocessing.shared_memory  # noqa: F401  (used in type hints)
 import os
 import struct
@@ -172,8 +173,8 @@ class SharedMemoryState:
                     stale.unlink()
                 except FileNotFoundError:
                     pass
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as e:
+                    logger.warning("create failed: %s", e)
                 # Small delay before retry to reduce contention.
                 time.sleep(0.01)
         raise RuntimeError(
@@ -230,8 +231,8 @@ class SharedMemoryState:
             SharedMemory(name=self.name).unlink()
         except FileNotFoundError:
             pass
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:
+            logger.warning("unlink failed: %s", e)
         self.detach()
 
     def __enter__(self) -> "SharedMemoryState":
@@ -407,7 +408,8 @@ class SharedMemoryState:
             _version, _ts, circuit_open_until = struct.unpack("<Idd", raw[4:])
         except struct.error:  # noqa: BLE001
             return None
-        except Exception:  # noqa: BLE001
+        except Exception as e:
+            logger.warning("is_circuit_open failed: %s", e)
             return None
         return bool(time.time() < float(circuit_open_until))
 
@@ -422,7 +424,8 @@ class SharedMemoryState:
             return None
         try:
             raw = bytes(self._buf[32:36])
-        except Exception:  # noqa: BLE001
+        except Exception as e:
+            logger.warning("read_daemon_pid failed: %s", e)
             return None
         try:
             (pid,) = struct.unpack("<i", raw)

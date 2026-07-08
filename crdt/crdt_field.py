@@ -65,8 +65,9 @@ The module exposes:
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -835,7 +836,8 @@ def crdt_field_save(
             if result["applied"]:
                 _finalize_crdt_save(db_path_obj, note_id, content, conn)
             return result
-        except Exception:
+        except Exception as e:
+            logger.warning("crdt_field_save failed: %s", e)
             if _write_conn is not None and _pre_state is not None:
                 _restore_crdt_pre_state(_write_conn, note_id, _pre_state, db_path_obj)
             raise
@@ -889,8 +891,8 @@ def _capture_crdt_pre_state(
             "WHERE memory_id=?",
             (note_id,),
         ).fetchall()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_capture_crdt_pre_state failed: %s", e)
     md_content: str | None = None
     md_path: Path | None = None
     if db_path_obj is not None:
@@ -906,8 +908,8 @@ def _capture_crdt_pre_state(
                 if resolved_path.exists():
                     md_content = resolved_path.read_text(encoding="utf-8")
                     md_path = resolved_path
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_capture_crdt_pre_state failed: %s", e)
     return _CrdtPreState(
         memories_row=memories_row,
         field_rows=field_rows,

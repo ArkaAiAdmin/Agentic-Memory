@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-"""File-system lifecycle management for agentic-memory."""
+
 import logging
+"""File-system lifecycle management for agentic-memory."""
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,8 @@ def consolidate_consolidated_sessions(memory_dir: Path, dry_run: bool = False):
     for session_file in sessions_dir.glob("*.md"):
         try:
             content = session_file.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
+        except Exception as e:
+            logger.warning("consolidate_consolidated_sessions failed: %s", e)
             continue
 
         metadata, body = parse_frontmatter(content)
@@ -161,7 +163,8 @@ def archive_cold_files(memory_dir: Path, dry_run: bool = False):
                 from infra.arc_cache import ARCCache
 
                 arc_cache = ARCCache(db_path)
-        except Exception:
+        except Exception as e:
+            logger.warning("archive_cold_files failed: %s", e)
             arc_cache = None
     try:
         for md_file in memory_dir.rglob("*.md"):
@@ -247,10 +250,10 @@ def archive_cold_files(memory_dir: Path, dry_run: bool = False):
                     # show which categories are getting archived.
                     arc_cache.record_eviction(memory_id, bundle_key)
                     stats["arc_evictions_recorded"] += 1
-                except Exception:
+                except Exception as e:
                     # ARC recording is best-effort; never break the
                     # eviction run on a telemetry error.
-                    pass
+                    logger.warning("archive_cold_files failed: %s", e)
             stats["archived"] += 1
         # Write gzip bundles
         if not dry_run:
@@ -265,14 +268,14 @@ def archive_cold_files(memory_dir: Path, dry_run: bool = False):
         if arc_cache is not None and stats["arc_evictions_recorded"] > 0:
             try:
                 arc_cache.compute_eviction_pressure()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("archive_cold_files failed: %s", e)
     finally:
         if arc_cache is not None:
             try:
                 arc_cache.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("archive_cold_files failed: %s", e)
     return stats
 
 

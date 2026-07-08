@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import os
 import datetime
 from pathlib import Path
@@ -9,7 +11,7 @@ from pathlib import Path
 
 
 class SpacedRepetition:
-    def __init__(self, db_path):
+    def __init__(self, db_path: str | Path):
         # P1-14 fix: route through the connection pool instead of
         # opening a raw sqlite3.connect(). The previous bare
         # ``sqlite3.connect(str(db_path))`` + bare ``conn.close()`` did
@@ -24,7 +26,7 @@ class SpacedRepetition:
         self.db.execute("PRAGMA busy_timeout = 30000;")
         self._ensure_table()
 
-    def _ensure_table(self):
+    def _ensure_table(self) -> None:
         self.db.execute("""
             CREATE TABLE IF NOT EXISTS review_schedule (
                 memory_id TEXT PRIMARY KEY,
@@ -37,7 +39,7 @@ class SpacedRepetition:
         """)
         self.db.commit()
 
-    def record_success(self, memory_id):
+    def record_success(self, memory_id: str) -> None:
         """Record successful retrieval. Increase interval exponentially."""
         row = self.db.execute(
             "SELECT retrieval_count, interval_days, ease_factor FROM review_schedule WHERE memory_id = ?",
@@ -75,7 +77,7 @@ class SpacedRepetition:
         )
         self.db.commit()
 
-    def record_failure(self, memory_id):
+    def record_failure(self, memory_id: str) -> None:
         """Record failed retrieval. Reset interval, decrease ease factor."""
         # Read current EF to apply SM-2 decrease
         row = self.db.execute(
@@ -99,7 +101,7 @@ class SpacedRepetition:
         )
         self.db.commit()
 
-    def get_due_reviews(self, limit=10):
+    def get_due_reviews(self, limit: int = 10) -> list[tuple[str, str, float, float]]:
         """Get memories that are due for review."""
         today = datetime.date.today().isoformat()
         return self.db.execute(
@@ -113,23 +115,28 @@ class SpacedRepetition:
             (today, limit),
         ).fetchall()
 
-    def get_stats(self):
+    def get_stats(self) -> dict[str, float | int]:
         """Get review statistics."""
-        total = self.db.execute("SELECT COUNT(*) FROM review_schedule").fetchone()[0]
-        due = self.db.execute(
+        total_row = self.db.execute(
+            "SELECT COUNT(*) FROM review_schedule"
+        ).fetchone()
+        due_row = self.db.execute(
             "SELECT COUNT(*) FROM review_schedule WHERE next_review <= ?",
             (datetime.date.today().isoformat(),),
-        ).fetchone()[0]
-        avg_ef = self.db.execute(
+        ).fetchone()
+        avg_row = self.db.execute(
             "SELECT AVG(ease_factor) FROM review_schedule"
-        ).fetchone()[0]
+        ).fetchone()
+        total = total_row[0] if total_row else 0
+        due = due_row[0] if due_row else 0
+        avg_ef = avg_row[0] if avg_row else None
         return {
             "total_scheduled": total,
             "due_for_review": due,
             "avg_ease_factor": round(avg_ef, 2) if avg_ef else 2.5,
         }
 
-    def close(self):
+    def close(self) -> None:
         self.db.close()
 
 

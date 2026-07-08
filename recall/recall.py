@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import logging
 """Memory recall mechanism for agent cold-start and session continuity.
 
 Assembles a structured briefing from multiple memory sources so that
@@ -21,7 +23,6 @@ Design principles (from research, 2026-06-10):
 __all__ = ["recall_context", "format_briefing", "session_recap"]
 
 import json
-import logging
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -110,6 +111,7 @@ def recall_context(
         conn = connection_pool.get(str(db_path_resolved), timeout=10.0)
         conn.execute("PRAGMA busy_timeout = 10000;")
     except Exception as e:
+        logger.warning("recall_context failed: %s", e)
         return _empty_result(query, f"Connection failed: {e}")
 
     sections: dict = {}
@@ -165,8 +167,8 @@ def recall_context(
         if conn is not None:
             try:
                 safe_close_db(conn, should_commit=False)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("recall_context failed: %s", e)
 
 
 def format_briefing(data: dict) -> str:
@@ -263,7 +265,8 @@ def _get_recall_cfg() -> dict[str, int | bool]:
             "tier1_hot_days": int(getattr(cfg, "recall_tier1_hot_days", _RECALL_DEFAULTS["tier1_hot_days"])),
             "tier_fallback_threshold": int(getattr(cfg, "recall_tier_fallback_threshold", _RECALL_DEFAULTS["tier_fallback_threshold"])),
         }
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_recall_cfg failed: %s", e)
         return dict(_RECALL_DEFAULTS)
 
 
@@ -306,8 +309,8 @@ def _trace_event(
             fh.write(line + "\n")
             fh.flush()
         _maybe_prune_trace(trace_path, max_lines=50_000)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_trace_event failed: %s", e)
 
 
 def _maybe_prune_trace(trace_path: Path, max_lines: int = 50_000) -> None:
@@ -329,8 +332,8 @@ def _maybe_prune_trace(trace_path: Path, max_lines: int = 50_000) -> None:
         with open(tmp, "wb") as fh:
             fh.writelines(lines)
         tmp.replace(trace_path)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_maybe_prune_trace failed: %s", e)
 
 
 
@@ -386,7 +389,8 @@ def session_recap(
         conn = sqlite3.connect(str(db_path_resolved), timeout=10)
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout = 10000;")
-    except Exception:
+    except Exception as e:
+        logger.warning("session_recap failed: %s", e)
         return "Database connection failed."
 
     try:
@@ -823,8 +827,8 @@ def _fetch_relevant(
                             sr.record_success(str(nid))
             finally:
                 sr.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_fetch_relevant failed: %s", e)
         return items
     except Exception as e:
         logger.debug("search_memories failed for recall: %s", e)
@@ -846,7 +850,8 @@ def _fetch_user_profile(db_path: str | None = None) -> Optional[dict]:
         if profile and profile.get("enabled", False):
             return profile
         return None
-    except Exception:
+    except Exception as e:
+        logger.warning("_fetch_user_profile failed: %s", e)
         return None
 
 

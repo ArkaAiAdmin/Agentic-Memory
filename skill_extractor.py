@@ -28,6 +28,9 @@ Zero dependencies on other memory modules. Pure Python.
 
 from __future__ import annotations
 
+import logging
+logger = logging.getLogger(__name__)
+
 import json
 import re
 import time
@@ -460,7 +463,8 @@ def record_skill_hit(conn: AnyConnection, skill_id: int) -> None:
     """Record a skill hit using G-Counter on hit_vector and LWW on last_used_vector."""
     try:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(memory_skills)").fetchall()}
-    except Exception:
+    except Exception as e:
+        logger.warning("record_skill_hit failed: %s", e)
         cols = set()
     if "hit_vector" not in cols or "last_used_vector" not in cols or "logical_clock" not in cols:
         conn.execute(
@@ -516,7 +520,8 @@ def _resolve_skill_agent_id() -> str:
         try:
             import socket
             agent_id = socket.gethostname()
-        except Exception:
+        except Exception as e:
+            logger.warning("_resolve_skill_agent_id failed: %s", e)
             agent_id = "local"
     return agent_id or "local"
 
@@ -707,5 +712,6 @@ def extract_skill_for_memory(
         save_skill(conn, skill)
         conn.commit()
         return skill
-    except Exception:
+    except Exception as e:
+        logger.warning("extract_skill_for_memory failed: %s", e)
         return None

@@ -6,6 +6,9 @@ chunk-based search, temporal decay, conversation history resolution,
 Graph-RAG expansion, and the main search_memories orchestrator.
 """
 
+import logging
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Backward-compat module attribute proxying
 #
@@ -49,7 +52,8 @@ def _install_proxies() -> None:
         return
     try:
         from search import scoring as _scoring
-    except Exception:
+    except Exception as e:
+        logger.warning("_install_proxies failed: %s", e)
         return
     _proxy_targets = {
         "_CTR_WEIGHTS_CACHE": _scoring,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+
 import sqlite3
 import threading
 import time as _time
@@ -29,7 +30,8 @@ def _get_graph_cache_max() -> int:
         from infra._lazy_imports import get_config
 
         return int(get_config().graph_cache_max)
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_graph_cache_max failed: %s", e)
         return 50
 
 
@@ -38,7 +40,8 @@ def _get_graph_cache_ttl_s() -> float:
         from infra._lazy_imports import get_config
 
         return float(get_config().graph_cache_ttl_s)
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_graph_cache_ttl_s failed: %s", e)
         return 60.0
 
 

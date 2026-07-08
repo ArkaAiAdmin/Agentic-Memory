@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
+logger = logging.getLogger(__name__)
 """
 Memory Bootstrap — run at session start to provide context.
 
@@ -49,8 +52,8 @@ def _get_recent_compaction() -> str | None:
                 path = sessions_dir / f"compaction-save-{ts}.md"
                 if path.exists():
                     return path.read_text()[:3000]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_get_recent_compaction failed: %s", e)
 
     # Fallback: scan for the most recently-modified compaction-save-*.md
     try:
@@ -61,8 +64,8 @@ def _get_recent_compaction() -> str | None:
         )
         if candidates:
             return candidates[0].read_text()[:3000]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("_get_recent_compaction failed: %s", e)
 
     return None
 
@@ -90,7 +93,8 @@ def _get_recent_sessions(conn, project_root: str = "", limit: int = 3) -> list[d
             }
             for r in rows
         ]
-    except Exception:
+    except Exception as e:
+        logger.warning("_get_recent_sessions failed: %s", e)
         return []
 
 
@@ -385,8 +389,8 @@ def get_bootstrap_summary(db_path: str | None = None) -> str:
         project_root = None
         try:
             project_root = Path.cwd()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("get_bootstrap_summary failed: %s", e)
         pinned = get_pinned_notes(conn)
         high_importance = get_high_importance(conn)
         recent = get_recent_notes(conn)
@@ -412,8 +416,8 @@ def get_bootstrap_summary(db_path: str | None = None) -> str:
                     "ORDER BY created_at DESC LIMIT 5"
                 ).fetchall()
             ]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("get_bootstrap_summary failed: %s", e)
         summary: str = format_summary(
             pinned,
             high_importance,

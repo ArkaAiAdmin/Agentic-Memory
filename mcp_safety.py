@@ -100,7 +100,8 @@ def memory_check_contradictions(
 
         try:
             active_dir = _resolve_memory_dir()
-        except Exception:
+        except Exception as e:
+            logger.warning("memory_check_contradictions failed: %s", e)
             active_dir = None
         if active_dir is None:
             return _err(ErrorCode.DB_ERROR, "No active memory directory found.")

@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,7 +30,7 @@ from typing import Any, Dict, Optional
 # so an operator knows the integrity guarantee is being downgraded. The
 # warning is emitted only when the env override actively DISABLES the flag
 # (resolved value is explicitly False), which is the dangerous case.
-logger = logging.getLogger("agentic_memory.config")
+logger = logging.getLogger(__name__)
 
 _INTEGRITY_CRITICAL_FLAGS: frozenset[str] = frozenset(
     {
@@ -222,11 +221,12 @@ def _resolve(
         except (ValueError, TypeError) as e:
             # 2026-06-22 (C7 fix): warn instead of silently swallowing
             # so the operator can see the typo.
-            print(
-                f"warning: {env_key}={env_val!r} could not be parsed as "
-                f"{type(default).__name__}; falling back to default. "
-                f"Error: {e}",
-                file=sys.stderr,
+            logger.warning(
+                "warning: %s=%r could not be parsed as %s; falling back to default. Error: %s",
+                env_key,
+                env_val,
+                type(default).__name__,
+                e,
             )
             return default
     toml_val = _deep_get(toml_data or {}, dotted_path)
@@ -246,12 +246,13 @@ def _resolve(
             elif default is None and isinstance(toml_val, dict):
                 pass
             else:
-                print(
-                    f"warning: {dotted_path}={toml_val!r} has type "
-                    f"{type(toml_val).__name__} but the dataclass field "
-                    f"expects {type(default).__name__}; falling back to "
-                    f"the TOML value as-is.",
-                    file=sys.stderr,
+                logger.warning(
+                    "warning: %s=%r has type %s but the dataclass field expects %s; "
+                    "falling back to the TOML value as-is.",
+                    dotted_path,
+                    toml_val,
+                    type(toml_val).__name__,
+                    type(default).__name__,
                 )
         return toml_val
 
@@ -283,10 +284,12 @@ def _log_llm_extraction_resolution() -> None:
         toml_data,
         parser=_parse_bool,
     )
-    print(
-        f"IMPORT config.py: MEMORY_LLM_EXTRACTION env={raw_env!r} "
-        f"toml[features.llm_extraction]={toml_val!r} effective={effective}",
-        file=sys.stderr,
+    logger.info(
+        "IMPORT config.py: MEMORY_LLM_EXTRACTION env=%r "
+        "toml[features.llm_extraction]=%r effective=%r",
+        raw_env,
+        toml_val,
+        effective,
     )
 
 
@@ -1673,7 +1676,6 @@ def log_feature_flags_at_startup() -> None:
     flags were on/off for the lifetime of the session.
     """
     flags = get_feature_flags()
-    logger = logging.getLogger(__name__)
     logger.info("feature_flags_snapshot=%s", json.dumps(flags))
 
 

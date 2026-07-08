@@ -60,6 +60,7 @@ def _check_circuit_breaker() -> dict:
         except (json.JSONDecodeError, AttributeError):
             return {"status": "ok", "raw": str(result)[:500]}
     except Exception as e:
+        logger.warning("_check_circuit_breaker failed: %s", e)
         return {"status": "error", "message": str(e)}
 
 
@@ -71,6 +72,7 @@ def _check_auto_save_health() -> dict:
 
         return health_check(minutes=30)
     except Exception as e:
+        logger.warning("_check_auto_save_health failed: %s", e)
         return {"status": "error", "message": str(e)}
 
 
@@ -95,6 +97,7 @@ def _check_semantic_search() -> dict:
             "results_count": len(result.get("results", [])),
         }
     except Exception as e:
+        logger.warning("_check_semantic_search failed: %s", e)
         return {"status": "error", "message": str(e)}
 
 
@@ -154,6 +157,7 @@ def main() -> int:
                     f"[WARNING index] {w.get('check', w.get('code', '?'))}: {w['message']}"
                 )
     except Exception as e:
+        logger.warning("main failed: %s", e)
         report["checks"]["index_integrity"] = {"status": "error", "message": str(e)}
         report["alerts"].append(f"[ERROR index_integrity] {e}")
         report["overall_healthy"] = False
@@ -179,6 +183,7 @@ def main() -> int:
                 f"backlinks={orphan_counts.get('backlinks', 0)})"
             )
     except Exception as e:
+        logger.warning("main failed: %s", e)
         report["checks"]["kg_orphans"] = {"status": "error", "message": str(e)}
         report["alerts"].append(f"[ERROR kg_orphans] {e}")
 
@@ -217,6 +222,7 @@ def main() -> int:
             "stuck_reset": _stuck,
         }
     except Exception as _tq_err:
+        logger.warning("main failed: %s", _tq_err)
         report["checks"]["task_queue"] = {"status": "error", "message": str(_tq_err)}
         report["alerts"].append(f"[ERROR task_queue] {_tq_err}")
 

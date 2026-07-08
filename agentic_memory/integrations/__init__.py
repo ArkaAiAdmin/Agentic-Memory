@@ -18,7 +18,7 @@ from __future__ import annotations
 # ── LangChain ────────────────────────────────────────────────────────────────
 
 
-def __get_langchain_retriever():  # type: ignore[return]
+def __get_langchain_retriever() -> type | None:
     try:
         from agentic_memory.integrations.langchain.retriever import (
             AgenticMemoryRetriever,
@@ -29,7 +29,7 @@ def __get_langchain_retriever():  # type: ignore[return]
         return None
 
 
-def __get_langchain_history():  # type: ignore[return]
+def __get_langchain_history() -> type | None:
     try:
         from agentic_memory.integrations.langchain.history import (
             AgenticMemoryChatHistory,
@@ -40,7 +40,7 @@ def __get_langchain_history():  # type: ignore[return]
         return None
 
 
-def __get_langchain_tools():
+def __get_langchain_tools() -> tuple[type | None, type | None]:
     try:
         from agentic_memory.integrations.langchain.tool import (
             search_tool,
@@ -52,7 +52,7 @@ def __get_langchain_tools():
         return None, None
 
 
-def __get_langchain_callback():  # type: ignore[return]
+def __get_langchain_callback() -> type | None:
     try:
         from agentic_memory.integrations.langchain.callback import (
             AgenticMemoryCallbackHandler,
@@ -66,7 +66,7 @@ def __get_langchain_callback():  # type: ignore[return]
 # ── CrewAI ───────────────────────────────────────────────────────────────────
 
 
-def __get_crewai_search_tool():  # type: ignore[return]
+def __get_crewai_search_tool() -> type | None:
     try:
         from agentic_memory.integrations.crewai.tool import (
             AgenticMemorySearchTool,
@@ -77,7 +77,7 @@ def __get_crewai_search_tool():  # type: ignore[return]
         return None
 
 
-def __get_crewai_save_tool():  # type: ignore[return]
+def __get_crewai_save_tool() -> type | None:
     try:
         from agentic_memory.integrations.crewai.tool import (
             AgenticMemorySaveTool,
@@ -88,7 +88,7 @@ def __get_crewai_save_tool():  # type: ignore[return]
         return None
 
 
-def __get_crewai_memory():  # type: ignore[return]
+def __get_crewai_memory() -> type | None:
     try:
         from agentic_memory.integrations.crewai.memory import (
             AgenticMemoryMemory,

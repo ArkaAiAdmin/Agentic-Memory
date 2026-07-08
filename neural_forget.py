@@ -26,8 +26,9 @@ Wired into ``search_pipeline._apply_neural_forget_curve()`` and replaces
 
 from __future__ import annotations
 
-import json
 import logging
+
+import json
 import math
 import sqlite3
 import time
@@ -119,7 +120,8 @@ class NeuralForgetModel:
         try:
             from infra._lazy_imports import get_config
             raw = get_config().neural_forget_weights
-        except Exception:
+        except Exception as e:
+            logger.warning("from_config failed: %s", e)
             raw = ""
         if not raw:
             return cls(weights=None)
@@ -132,8 +134,8 @@ class NeuralForgetModel:
             else:
                 if len(parts) == 6:
                     return cls(parts)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("from_config failed: %s", e)
         return cls(weights=None)
 
     def to_config_str(self) -> str:
@@ -213,7 +215,8 @@ def compute_retention_rate(
         from infra._lazy_imports import get_config
 
         mode = getattr(get_config(), "neural_forget_mode", "formula")
-    except Exception:
+    except Exception as e:
+        logger.warning("compute_retention_rate failed: %s", e)
         mode = "formula"
 
     if mode == "learned":
@@ -320,8 +323,8 @@ def compute_forgetting_rate(
         if should_close:
             try:
                 conn.__exit__(None, None, None)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("compute_forgetting_rate failed: %s", e)
 
     body: str = row_data["body"]
     fitness = row_data["fitness"]
@@ -335,8 +338,8 @@ def compute_forgetting_rate(
         meta = json.loads(meta_json)
         if isinstance(meta, dict) and "adaptive_halflife_days" in meta:
             half_life_days = float(meta["adaptive_halflife_days"])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("compute_forgetting_rate failed: %s", e)
 
     recency_days = 0.0
     if last_accessed:
@@ -407,7 +410,8 @@ def batch_update_retention(db_path: str | Path, limit: int = 500) -> dict:
                     (round(rate, 4), note_id),
                 )
                 updated += 1
-            except Exception:
+            except Exception as e:
+                logger.warning("batch_update_retention failed: %s", e)
                 failed += 1
 
         conn.commit()

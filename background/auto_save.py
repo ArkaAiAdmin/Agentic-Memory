@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+import logging
 """Auto-save hook + daily digest for Agentic Memory.
 
 Two CLI subcommands:
@@ -53,7 +55,6 @@ import re
 import sys
 import time
 import datetime
-import logging
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -283,6 +284,7 @@ def _async_autosave_enabled() -> bool:
         cfg = get_config()
         return getattr(cfg, "auto_save_async_enabled", _DEFAULT_ASYNC_AUTOSAVE)
     except Exception as _exc:
+        logger.warning("_async_autosave_enabled failed: %s", _exc)
         _log_config_fallback("auto_save_async_enabled", _exc)
         return _DEFAULT_ASYNC_AUTOSAVE
 
@@ -300,6 +302,7 @@ def _batch_interval_s() -> float:
             getattr(cfg, "auto_save_batch_interval_seconds", _DEFAULT_BATCH_INTERVAL_S)
         )
     except Exception as _exc:
+        logger.warning("_batch_interval_s failed: %s", _exc)
         _log_config_fallback("auto_save_batch_interval_seconds", _exc)
         return _DEFAULT_BATCH_INTERVAL_S
 
@@ -315,6 +318,7 @@ def _batch_size() -> int:
         cfg = get_config()
         return int(getattr(cfg, "auto_save_batch_size", _DEFAULT_BATCH_SIZE))
     except Exception as _exc:
+        logger.warning("_batch_size failed: %s", _exc)
         _log_config_fallback("auto_save_batch_size", _exc)
         return _DEFAULT_BATCH_SIZE
 
@@ -332,6 +336,7 @@ def _daemon_idle_s() -> float:
             getattr(cfg, "auto_save_daemon_idle_seconds", _DEFAULT_DAEMON_IDLE_S)
         )
     except Exception as _exc:
+        logger.warning("_daemon_idle_s failed: %s", _exc)
         _log_config_fallback("auto_save_daemon_idle_seconds", _exc)
         return _DEFAULT_DAEMON_IDLE_S
 
@@ -466,6 +471,7 @@ def health_check(minutes: int = _DEFAULT_HEALTH_CHECK_MINUTES) -> dict:
 
             safe_close_db(conn, should_commit=False)
     except Exception as e:
+        logger.warning("health_check failed: %s", e)
         db_error = str(e)
 
     # Check state file
