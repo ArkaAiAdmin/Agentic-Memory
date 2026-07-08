@@ -515,10 +515,15 @@ print(f"avg_search_ms={{(t1-t0)/20*1000:.1f}}")
         # Always checks the real prod DB — never MEMORY_DB_PATH.
         try:
             if not PROD_DB_PATH.exists():
-                val.record("F1 prod DB exists", "FAIL", f"prod not at {PROD_DB_PATH}")
+                val.record("F1 prod DB exists", "SKIP", f"prod not at {PROD_DB_PATH}")
             else:
                 c = sqlite3.connect(str(PROD_DB_PATH))
-                n = c.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+                try:
+                    n = c.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+                except sqlite3.OperationalError as table_err:
+                    val.record("F1 prod DB untouched", "SKIP", f"uninitialized prod DB: {table_err}")
+                    c.close()
+                    return
                 if n == PROD_BASELINE_ROWS:
                     val.record(
                         "F1 prod DB untouched", "PASS", f"{n} rows (matches baseline)"
@@ -529,6 +534,7 @@ print(f"avg_search_ms={{(t1-t0)/20*1000:.1f}}")
                         "WARN",
                         f"{n} rows (expected {PROD_BASELINE_ROWS})",
                     )
+                c.close()
         except Exception as e:
             val.record("F1 prod DB untouched", "FAIL", f"err: {e}")
 

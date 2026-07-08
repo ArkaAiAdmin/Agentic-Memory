@@ -154,6 +154,12 @@ def _get_journal_conn(journal_path: Path, timeout: float = 10.0) -> sqlite3.Conn
         new_conn.row_factory = sqlite3.Row
         _local.conns[key] = new_conn
         conn = new_conn
+    # idempotent schema bootstrap — safe on every return path so that
+    # threads/processes reusing a pooled conn always see the schema.
+    try:
+        init_journal_db(journal_path)
+    except Exception:
+        pass
     return conn
 
 
@@ -430,19 +436,24 @@ def enqueue_write(
     return note_id
 
 
-def dequeue_pending(
+def dequeue_pending_for_worker(
     journal_path: Path,
     batch_size: int = 10,
+    *,
+    worker_id: int = 0,
+    n_workers: int = 1,
 ) -> list[dict[str, Any]]:
-    """Read and claim the next batch of pending entries (atomic UPDATE).
+    """Claim a sharded slice of pending entries for a specific worker.
 
-    Uses ``BEGIN IMMEDIATE`` to claim entries so two concurrent
-    daemon processes don't race on the same batch.
+    Uses ``(id % n_workers) = worker_id`` to partition the journal so
+    N concurrent workers claim disjoint sets of rows without collisions.
 
     Returns:
         A list of row dicts with status='processing'.  Empty list
-        if nothing is pending.
+        if nothing is pending for this shard.
     """
+    if not (0 <= worker_id < n_workers):
+        raise ValueError(f"worker_id {worker_id} out of range [0, {n_workers})")
     conn = _get_journal_conn(journal_path)
     conn.execute("BEGIN IMMEDIATE")
     rows = conn.execute(
@@ -450,8 +461,10 @@ def dequeue_pending(
         "tags, pinned, is_global, importance, tenant_id, "
         "epistemic_source, belief_status, asserting_agent_id, fact_type, "
         "defer_expensive, context, status, created_at "
-        "FROM write_journal WHERE status='pending' ORDER BY id LIMIT ?",
-        (batch_size,),
+        "FROM write_journal WHERE status='pending' "
+        "AND (id % ?) = ? "
+        "ORDER BY id LIMIT ?",
+        (n_workers, worker_id, batch_size),
     ).fetchall()
     if rows:
         ids = [r["id"] for r in rows]
@@ -463,11 +476,28 @@ def dequeue_pending(
         )
     conn.commit()
     entries = [dict(r) for r in rows]
-    # Reflect the status update in the returned dicts (the SELECT
-    # ran before the UPDATE, so rows still have 'pending').
     for e in entries:
         e["status"] = "processing"
+        e["worker_id"] = worker_id
     return entries
+
+
+def dequeue_pending(
+    journal_path: Path,
+    batch_size: int = 10,
+) -> list[dict[str, Any]]:
+    """Read and claim the next batch of pending entries (atomic UPDATE).
+
+    Uses ``BEGIN IMMEDIATE`` to claim entries so two concurrent
+    daemon processes don't race on the same batch.  New callers
+    should prefer ``dequeue_pending_for_worker`` for sharded
+    multi-worker deployments.
+
+    Returns:
+        A list of row dicts with status='processing'.  Empty list
+        if nothing is pending.
+    """
+    return dequeue_pending_for_worker(journal_path, batch_size, worker_id=0, n_workers=1)
 
 
 def mark_applied(journal_path: Path, entry_id: int) -> None:

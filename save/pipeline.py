@@ -1666,6 +1666,7 @@ def save_memory_auto(*args: Any, **kwargs: Any) -> str:
 def materialize_journal_entry(
     entry: dict,
     target_base: Path,
+    journal_path: Path | None = None,
 ) -> str:
     """Apply a single journal entry through the saga write path.
 
@@ -1679,13 +1680,15 @@ def materialize_journal_entry(
     """
     from infra.write_journal import (
         JOURNAL_MAX_RETRIES,
+        mark_applied,
         mark_dead_letter,
         mark_retry,
         verify_content_hash,
     )
 
     note_id = entry.get("note_id", "")
-    journal_path = target_base / "journal.db"
+    if journal_path is None:
+        journal_path = target_base / "journal.db"
 
     # W6: row-level integrity check before we touch memory.db.
     if not verify_content_hash(entry.get("content", ""), entry.get("content_hash")):
@@ -1699,9 +1702,14 @@ def materialize_journal_entry(
     # current scanner.  Permanent failures (SaveValidationError) and
     # exhausted retries are dead-lettered; everything else is transient.
     last_err: BaseException | None = None
+    returned = False
     for _attempt in range(max(1, JOURNAL_MAX_RETRIES)):
         try:
-            return _materialize_journal_once(entry, target_base, note_id, journal_path)
+            _materialize_journal_once(entry, target_base, note_id, journal_path)
+            returned = True
+            mark_applied(journal_path, entry["id"])
+            logger.info("materialize_journal_entry: applied %s (attempt %d)", note_id, _attempt + 1)
+            return str(note_id)
         except SaveValidationError as e:
             # Permanent: injection / validation rejection.  Do not retry.
             logger.error(
@@ -1726,16 +1734,43 @@ def materialize_journal_entry(
                 break
             # Exponential backoff before the next in-loop retry.
             time.sleep(min(0.1 * (2 ** retry_count), 2.0))
+    if returned:
+        return str(note_id)
     msg = f"materialization failed after {JOURNAL_MAX_RETRIES} retries: {last_err}"
     logger.error("ALERT write_journal: %s — dead-lettering entry %s", msg, note_id)
     mark_dead_letter(journal_path, entry["id"], msg)
     raise RuntimeError(msg)
 
 
+def _check_already_materialized(db_path: Path, note_id: str) -> bool:
+    """Return True if ``note_id`` already has a row in memories.
+
+    Used as an idempotent guard so two concurrent reconcilers
+    materializing the same journal entry do not double-write.
+    """
+    from infra.db import open_db
+
+    try:
+        with open_db(db_path, timeout=5.0) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM memories WHERE id=? LIMIT 1", (note_id,)
+            ).fetchone()
+            return row is not None
+    except Exception as exc:
+        logger.debug("_check_already_materialized: %s", exc)
+        return False
+
+
 def _materialize_journal_once(
     entry: dict, target_base: Path, note_id: str, journal_path: Path
 ) -> str:
-    """Single materialization attempt for one journal entry (no retry)."""
+    """Single materialization attempt for one journal entry (no retry).
+
+    This no longer holds the per-DB-path flock across the entire saga.
+    Cross-process safety is provided by SQLite's ``BEGIN IMMEDIATE``
+    inside ``_save_memory_core``.  A brief pre-existence SELECT lets
+    a second reconciler skip materialization when a peer already won.
+    """
     from infra.write_journal import mark_applied, materialize_security_scan
 
     # Re-run the prompt-injection scan at materialization time. The enqueue
@@ -1779,19 +1814,32 @@ def _materialize_journal_once(
         req.content, req.category, req.title_slug, tags_list, req.pinned, note_id=note_id,
     )
 
-    from infra.db_path_flock import (
-        acquire_db_path_flock,
-        release_db_path_flock,
+    from infra.memory_common import _resolve_tags
+    tags_list = _resolve_tags(req.category, req.tags or [], context=req.context)
+    _markdown, _fm_meta, now_iso, metadata_json = _build_memory_file(
+        req.content, req.category, req.title_slug, tags_list, req.pinned, note_id=note_id,
     )
+
+    _db_path_parsed = Path(db_path_obj)
+
+    # Idempotent guard: if a peer reconciler already materialized this
+    # note_id, skip the full saga and just mark the journal entry applied.
+    # Cross-process serialization is provided by SQLite's BEGIN IMMEDIATE
+    # inside _save_memory_core; this pre-check just avoids the expensive
+    # duplicate work.
+    if _check_already_materialized(_db_path_parsed, note_id):
+        mark_applied(journal_path, entry["id"])
+        logger.info("materialize_journal_entry: %s already materialized, skipping", note_id)
+        return note_id
+
+    conn = None
+    _save_errored = False
     try:
         conn = _acquire_db_connection(
             db_path_obj, req.category, req.title_slug, time.time()
         )
     except Exception:
         raise
-    _db_path_parsed = Path(db_path_obj)
-    acquire_db_path_flock(_db_path_parsed)
-    _save_errored = False
     try:
         note_id_out, conn = _persist_via_saga(
             conn=conn, db_path_obj=_db_path_parsed,
@@ -1813,14 +1861,12 @@ def _materialize_journal_once(
         _enqueue_background_tasks(_db_path_parsed, note_id_out, conn=conn)
         if _is_crdt_enabled():
             _project_sql_to_crdt(_db_path_parsed, note_id, conn=conn)
-        mark_applied(journal_path, entry["id"])
-        logger.info("materialize_journal_entry: applied %s", note_id_out)
+        logger.info("materialize_journal_entry: materialized %s", note_id_out)
         return str(note_id_out)
     except Exception:
         _save_errored = True
         raise
     finally:
-        release_db_path_flock(_db_path_parsed)
         if conn is not None:
             try:
                 if _save_errored:

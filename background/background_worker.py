@@ -787,7 +787,7 @@ def _reconciliation_loop(journal_path: Path, target_base: Path) -> None:
                 if _RECONCILER_SHUTDOWN.is_set():
                     break
                 try:
-                    materialize_journal_entry(entry, target_base)
+                    materialize_journal_entry(entry, target_base, journal_path)
                 except Exception as exc:
                     logger.exception(
                         "reconciliation: entry %d (%s) failed: %s",
@@ -817,6 +817,249 @@ def _start_reconciler(journal_path: Path, target_base: Path) -> threading.Thread
     thread.start()
     logger.info("reconciliation loop: started (journal=%s, target=%s)", journal_path, target_base)
     return thread
+
+
+# ---------------------------------------------------------------------------
+# Multi-worker reconciler fleet (opt-in via MEMORY_RECONCILER_N_WORKERS > 1)
+# ---------------------------------------------------------------------------
+
+
+def _journal_is_globally_drained(journal_path: Path) -> bool:
+    """Return True if the journal has no pending or processing entries."""
+    try:
+        conn = sqlite3.connect(str(journal_path), timeout=2)
+        conn.execute("PRAGMA journal_mode=WAL")
+        row = conn.execute(
+            "SELECT "
+            "  SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS p, "
+            "  SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS pr "
+            "FROM write_journal"
+        ).fetchone()
+        conn.close()
+        if row is None:
+            return True
+        pending = int(row[0])
+        processing = int(row[1])
+        return pending == 0 and processing == 0
+    except Exception as _jd_err:
+        logger.debug("global drained check failed: %s", _jd_err)
+        return False
+
+
+def _reconciliation_loop_sharded(
+    journal_path: Path,
+    target_base: Path,
+    worker_id: int,
+    n_workers: int,
+) -> None:
+    """Per-worker reconciler loop with id-sharded journal claim.
+
+    Each worker claims rows whose ``id % n_workers == worker_id`` so
+    N workers operate on disjoint journal slices.  Shutdown is handled
+    via the module-level ``_RECONCILER_SHUTDOWN`` event (set by the
+    parent process supervisor before terminating children).
+    """
+    from save.pipeline import materialize_journal_entry
+    from infra.write_journal import (
+        dequeue_pending_for_worker,
+        reset_stuck_processing,
+    )
+
+    _shutdown_local = threading.Event()
+
+    def _on_term(signum, frame):
+        _shutdown_local.set()
+
+    try:
+        signal.signal(signal.SIGTERM, _on_term)
+        signal.signal(signal.SIGINT, _on_term)
+    except (ValueError, OSError):
+        pass
+
+    _IDLE_EXIT_EMPTIES = 5  # 5 consecutive empty dequeues (~0.5s)
+    _empty_dequeues = 0
+
+    while not _shutdown_local.is_set() and not _RECONCILER_SHUTDOWN.is_set():
+        try:
+            try:
+                reset_stuck_processing(journal_path)
+            except Exception as _rs_err:
+                logger.warning("reconciler-%d: reset_stuck_processing failed: %s", worker_id, _rs_err)
+
+            try:
+                entries = dequeue_pending_for_worker(
+                    journal_path, batch_size=10,
+                    worker_id=worker_id, n_workers=n_workers,
+                )
+            except Exception as _dq_err:
+                logger.warning("reconciler-%d: dequeue failed: %s", worker_id, _dq_err)
+                _shutdown_local.wait(0.1)
+                continue
+
+            if not entries:
+                _empty_dequeues += 1
+                _shutdown_local.wait(0.1)
+                if _empty_dequeues >= _IDLE_EXIT_EMPTIES and _journal_is_globally_drained(
+                    journal_path
+                ):
+                    logger.info(
+                        "reconciler-%d: journal drained after %d idle checks, exiting",
+                        worker_id, _empty_dequeues,
+                    )
+                    break
+                continue
+
+            _empty_dequeues = 0
+
+            for entry in entries:
+                if _shutdown_local.is_set() or _RECONCILER_SHUTDOWN.is_set():
+                    break
+                try:
+                    materialize_journal_entry(entry, target_base, journal_path)
+                except Exception as exc:
+                    logger.exception(
+                        "reconciler-%d: entry %d (%s) failed: %s",
+                        worker_id,
+                        entry.get("id"),
+                        entry.get("note_id", "?"),
+                        exc,
+                    )
+                _shutdown_local.wait(0.001)
+        except Exception as loop_exc:
+            logger.error("reconciler-%d loop error: %s", worker_id, loop_exc)
+            _shutdown_local.wait(1.0)
+
+    logger.info("reconciler-%d: loop stopped", worker_id)
+
+
+def multiwriter_reconciliation_pool(
+    journal_path: Path,
+    target_base: Path,
+    n_workers: int = 4,
+    idle_quit_after_secs: float = 5.0,
+) -> None:
+    """Supervise N reconciler worker processes with id-sharded claim.
+
+    Each child runs as an independent subprocess via ``background.fleet_worker``.
+    The parent polls the journal to detect when it is quiet and terminates
+    workers gracefully.  Used only when ``MEMORY_RECONCILER_N_WORKERS > 1``.
+
+    This avoids the macOS fork-safety issue where daemon threads (connection
+    pool revalidator, write queue) are copied into child processes in an
+    undefined locked state, causing deadlock.
+    """
+    if not (n_workers >= 1):
+        raise ValueError(f"n_workers must be >= 1, got {n_workers}")
+
+    logger.info(
+        "multiwriter pool: spawning n=%d workers (journal=%s)",
+        n_workers, journal_path,
+    )
+
+    # Build command-line args for each worker
+    _worker_cmd_base = [
+        sys.executable, "-m", "background.fleet_worker",
+        str(journal_path), str(target_base),
+    ]
+
+    procs: list[subprocess.Popen] = []
+    for k in range(n_workers):
+        popen = subprocess.Popen(
+            _worker_cmd_base + [str(k), str(n_workers)],
+        )
+        procs.append(popen)
+
+    idle_start: float | None = None
+    _IDLE_SECS = idle_quit_after_secs
+    _POLL_INTERVAL = 1.0
+
+    def _journal_is_quiet() -> bool:
+        try:
+            conn = sqlite3.connect(str(journal_path), timeout=2)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.row_factory = sqlite3.Row
+            pending = int(conn.execute(
+                "SELECT COUNT(*) AS c FROM write_journal WHERE status='pending'"
+            ).fetchone()["c"])
+            processing = int(conn.execute(
+                "SELECT COUNT(*) AS c FROM write_journal WHERE status='processing'"
+            ).fetchone()["c"])
+            conn.close()
+            return pending == 0 and processing == 0
+        except Exception as _jq_exc:
+            logger.debug("_journal_is_quiet: %s", _jq_exc)
+            return False
+
+    def _terminate_all(timeout: float = 10.0) -> None:
+        for p in procs:
+            if p.poll() is None:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+        deadline = time.time() + timeout
+        for p in procs:
+            if p.poll() is None and time.time() < deadline:
+                try:
+                    p.wait(timeout=max(0, deadline - time.time()))
+                except Exception:
+                    pass
+            if p.poll() is None:
+                try:
+                    p.kill()
+                    p.wait(timeout=2)
+                except Exception:
+                    pass
+
+    try:
+        while True:
+            all_done = True
+            for p in procs:
+                if p.poll() is None:
+                    all_done = False
+                    try:
+                        p.wait(timeout=_POLL_INTERVAL)
+                    except Exception:
+                        pass
+            if all_done:
+                break
+            quiet = _journal_is_quiet()
+            if quiet:
+                if idle_start is None:
+                    idle_start = time.time()
+                    logger.info("multiwriter pool: journal drained, idle timer started")
+                elif time.time() - idle_start >= _IDLE_SECS:
+                    logger.info(
+                        "multiwriter pool: idle for %.1fs, exiting",
+                        time.time() - idle_start,
+                    )
+                    break
+            else:
+                if idle_start is not None:
+                    logger.debug("multiwriter pool: work detected, resetting idle")
+                idle_start = None
+    except KeyboardInterrupt:
+        logger.warning("multiwriter pool: SIGINT, terminating children")
+    except Exception as exc:
+        logger.error("multiwriter pool: supervisor error: %s", exc)
+    finally:
+        _RECONCILER_SHUTDOWN.set()
+        _terminate_all(timeout=5)
+        for p in procs:
+            if p.returncode not in (0, None):
+                logger.warning(
+                    "multiwriter pool: reconciler-%d exited with code %d",
+                    procs.index(p), p.returncode,
+                )
+    logger.info("multiwriter pool: all workers exited")
+
+
+def _get_reconciler_worker_count() -> int:
+    """Return the configured reconciler worker count (default 1)."""
+    try:
+        return int(os.environ.get("MEMORY_RECONCILER_N_WORKERS", "1"))
+    except (ValueError, TypeError):
+        return 1
 
 
 # ---------------------------------------------------------------------------
@@ -1163,10 +1406,31 @@ def run_worker(
 
         _maybe_run_wal_checkpoint(init_conn, db_path)
 
-    # Start the CQRS write-journal reconciliation daemon (daemon thread).
-    # This runs alongside the task-processing loop — it polls the journal
-    # every 100ms and applies pending writes to the main DB.
+    # Start the CQRS write-journal reconciliation daemon.
+    # TWO modes, selected by ``MEMORY_RECONCILER_N_WORKERS`` env var
+    # (default 1 = existing single-thread loop; >1 = multi-process
+    # fleet with id-sharded claim for higher throughput):
+    #
+    #   MEMORY_RECONCILER_N_WORKERS=1  →  _start_reconciler (daemon thread)
+    #   MEMORY_RECONCILER_N_WORKERS=4  →  multiwriter_reconciliation_pool (4 OS processes)
+    #
+    # The task worker pool (``n_workers`` arg) is orthogonal: it controls
+    # concurrency of task-queue workers, not journal reconcilers.
     journal_path = db_path.parent / "journal.db"
+    reconciler_n_workers = _get_reconciler_worker_count()
+
+    if reconciler_n_workers > 1:
+        logger.info(
+            "run_worker: multi-process reconciler fleet (n=%d)", reconciler_n_workers
+        )
+        _RECONCILER_SHUTDOWN.clear()
+        multiwriter_reconciliation_pool(
+            journal_path, db_path.parent, n_workers=reconciler_n_workers
+        )
+        # Pool exits cleanly when journal drains or on signal — return.
+        return
+
+    # Default: single-reconciler thread (behaviour bitidentical to before).
     reconciler_thread = _start_reconciler(journal_path, db_path.parent)
 
     # Delegate to WorkerPool when n_workers > 1
