@@ -1,8 +1,8 @@
 """Tool registry: defines tool visibility tiers for the MCP server.
 
-Phase A (2026-07-01): 14 verbs + 1 escape hatch (memory_advanced).
+Phase A (2026-07-01): 16 CORE tools + escape hatch (memory_advanced).
 
-CORE_TOOLS:    15 tools total — all visible directly on the MCP surface.
+CORE_TOOLS:    16 tools total — all visible directly on the MCP surface.
                 Everything else is accessible via memory_maintenance(operation="...")
                 or memory_advanced(operation="...").
 ADMIN_TOOLS:    Legacy tools callable via memory_maintenance / memory_advanced.

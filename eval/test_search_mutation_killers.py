@@ -53,9 +53,13 @@ from search_pipeline import (
     _QUERY_TYPE_WEIGHTS,
 )
 
-from infra.infrastructure import GLOBAL_MEM_DIR
-
-PROD_DB = Path(os.environ.get("MEMORY_DB_PATH", str(GLOBAL_MEM_DIR / "memory.db")))
+_prod_db_str = os.environ.get("MEMORY_DB_PATH")
+if not _prod_db_str:
+    raise RuntimeError(
+        "MEMORY_DB_PATH must be set to a temp DB to run these tests. "
+        "Use the temp_db_path fixture or set MEMORY_DB_PATH explicitly."
+    )
+PROD_DB = Path(_prod_db_str)
 
 
 def now_iso():

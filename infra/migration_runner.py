@@ -16,7 +16,7 @@ Design:
     the next run. DBs that were upgraded before checksums were added
     get backfilled on first post-upgrade access.
 
-Current schema version: 33.
+Current schema version: 36.
 
 Usage:
     from infra.migration_runner import run_migrations
@@ -384,12 +384,12 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
     For reverse / rollback migrations, use migrate_down().
 
     Steps:
-      1. Ensure schema_version table exists
-      2. Ensure base schema (memories table) exists
-      3. Read applied migrations
-      4. Discover available .sql files
-      5. Apply pending ones in order
-      6. Update schema_version to current SCHEMA_VERSION
+       1. Ensure schema_version table exists
+       2. Ensure base schema (memories table + KG tables) via migration 000
+       3. Read applied migrations
+       4. Discover available .sql files
+       5. Apply pending ones in order
+       6. Update schema_version to current SCHEMA_VERSION
     """
     # Step 1: Ensure schema_version table exists
     conn.execute(
@@ -398,48 +398,16 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
         "  version INTEGER NOT NULL"
         "  )"
     )
+    # Step 2 is now handled by migrations/000_base_schema.sql (base tables
+    # and KG tables). The numbered migrations below it assume those tables
+    # are already present.
     _ensure_checksums_column(conn)
     _backfill_empty_checksums(conn)
 
-    # Step 2: Ensure base schema (memories table) and KG tables exist.
-    # The numbered SQL migrations assume these tables are present.
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS memories (
-            id            TEXT PRIMARY KEY,
-            content       TEXT NOT NULL,
-            source_file   TEXT NOT NULL,
-            tags          TEXT DEFAULT '[]',
-            created_at    TEXT NOT NULL,
-            updated_at    TEXT NOT NULL,
-            observed_at   TEXT NOT NULL,
-            pinned        INTEGER DEFAULT 0,
-            importance    INTEGER DEFAULT 3,
-            decay         TEXT DEFAULT 'none',
-            score         REAL DEFAULT 1.0,
-            supersedes    TEXT,
-            repo_id       TEXT,
-            access_count  INTEGER DEFAULT 1,
-            success_score REAL DEFAULT 0.0,
-            fitness_score REAL DEFAULT 1.0,
-            conflict_policy TEXT DEFAULT 'supersede',
-            version_vector TEXT DEFAULT '{}',
-            logical_clock INTEGER DEFAULT 0,
-            consolidation_state TEXT DEFAULT 'working'
-        )
-        """
-    )
-    try:
-        from infra.db_migrations import _migrate_kg_tables
-
-        _migrate_kg_tables(conn)
-    except Exception as e:
-        logger.warning("run_migrations failed: %s", e)
-
-    # Step 3: Read applied migrations
+    # Step 2: Read applied migrations
     applied = _get_applied_migrations(conn)
 
-    # Step 3.5: Integrity gate — refuse to apply further migrations if any
+    # Step 3: Integrity gate — refuse to apply further migrations if any
     # already-applied migration file's SHA256 no longer matches the stored
     # checksum (OWASP A08-002).
     _enforce_checksum_integrity(conn)

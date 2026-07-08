@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 """Cron wrapper: backup validation — test-restore + integrity check.
 
 Verifies that the most recent (or a specified) .db.gz backup is
@@ -29,6 +28,7 @@ What it checks:
     4. schema_version matches current expected version
     5. Row count sanity: memories > 0, schema_version has entries
 """
+from __future__ import annotations
 
 import gzip
 import os
@@ -48,11 +48,11 @@ if os.path.basename(_parent) == "cron":
 sys.path.insert(0, _parent)
 from infra.memory_common import GLOBAL_MEM_DIR, safe_close_db
 from infra.log import setup_logging
+from infra.migration_runner import SCHEMA_VERSION as CURRENT_SCHEMA_VERSION
 
 logger = setup_logging(__name__)
 
 BACKUP_DIR_NAME = "backups"
-CURRENT_SCHEMA_VERSION = 23
 CRON_MARKER = "# agentic-memory-backup-validate"
 CRON_SCHEDULE = "0 3 * * *"
 
@@ -64,12 +64,42 @@ EXPECTED_TABLES = frozenset([
     "memories_fts_data",
     "memories_fts_docsize",
     "memories_fts_idx",
+    "memory_embeddings",
+    "memory_audit_log",
+    "memory_vec_idx",
+    "memory_vec_keys",
+    "memory_chunks",
+    "memory_chunk_embeddings",
+    "memory_chunk_vec_idx",
+    "memory_chunk_vec_keys",
     "kg_entities",
     "kg_edges",
     "kg_facts",
+    "kg_facts_fts",
     "shared_memories",
     "backlinks",
-    "memory_chunks",
+    "memory_skills",
+    "sync_log",
+    "kg_extraction_stats",
+    "concept_drift",
+    "drift_alarms",
+    "arc_ghosts",
+    "arc_stats",
+    "memory_field_crdt",
+    "kg_entity_crdt",
+    "kg_edge_crdt",
+    "sessions",
+    "decision_threads",
+    "thread_events",
+    "session_compaction_log",
+    "belief_assertions",
+    "memory_revision_log",
+    "entailment_chains",
+    "graph_snapshots",
+    "memory_events",
+    "memory_ctr_feedback",
+    "user_profile_access_log",
+    "search_phase_stats",
 ])
 
 
@@ -250,7 +280,7 @@ def uninstall_cron() -> dict:
 
 def main() -> int:
     if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
-        print(__doc__.strip(), file=sys.stderr)
+        print((__doc__ or "").strip(), file=sys.stderr)
         return 0
 
     setup_logging(__name__, level="INFO", fmt="%(message)s")

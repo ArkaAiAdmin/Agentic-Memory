@@ -36,11 +36,12 @@ from infra.memory_config import install_root
 REPO = install_root()
 LOG_FILE = REPO / "memory" / "kg-backfill-cron.log"
 
-# Cron schedule: Sunday 03:30 (server local time)
-CRON_WEEKDAY = 6  # Monday=0, Sunday=6 in Python
-CRON_HOUR = 3
-CRON_MINUTE = 30
-TOLERANCE_MINUTES = 30  # ±30 min for "expected" window
+# Cron schedule: daily 04:00 UTC (any day of week).
+# Matches install_crontab.sh: 0 4 * * * cron_kg_backfill_monitor
+CRON_WEEKDAY = -1  # -1 = any day
+CRON_HOUR = 4
+CRON_MINUTE = 0
+TOLERANCE_MINUTES = 30
 
 # Threshold for "large drop" warning (fraction of pre count)
 LARGE_DROP_THRESHOLD = 0.10
@@ -68,7 +69,7 @@ def _load_entries(days: int) -> list[dict]:
 
 def _is_in_expected_window(ts: datetime) -> bool:
     """True iff ts is within ±TOLERANCE_MINUTES of the expected cron slot."""
-    if ts.weekday() != CRON_WEEKDAY:
+    if CRON_WEEKDAY >= 0 and ts.weekday() != CRON_WEEKDAY:
         return False
     expected_minute = CRON_HOUR * 60 + CRON_MINUTE
     actual_minute = ts.hour * 60 + ts.minute
@@ -140,7 +141,7 @@ def check(entries: list[dict], verbose: bool = False) -> tuple[int, list[str]]:
         elif age_minutes > 60 * 24 * 2:  # > 2 days old
             alerts.append(
                 f"WARN: latest entry is {age_minutes / 60 / 24:.1f} days old — "
-                f"expected within 7 days (weekly Sunday 03:30)"
+                f"expected within 7 days (daily 04:00 UTC)"
             )
             exit_code = max(exit_code, 1)
 

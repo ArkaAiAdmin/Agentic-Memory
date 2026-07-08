@@ -25,7 +25,6 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 from infra.memory_common import open_db
-from infra.infrastructure import GLOBAL_MEM_DIR
 from save_pipeline import save_memory
 from _fixtures import bootstrap_temp_db_clean
 from search_pipeline import (
@@ -41,7 +40,13 @@ from search_pipeline import (
 )
 from search.orchestrator import _rerank_results
 
-PROD_DB = Path(os.environ.get("MEMORY_DB_PATH", str(GLOBAL_MEM_DIR / "memory.db")))
+_prod_db_str = os.environ.get("MEMORY_DB_PATH")
+if not _prod_db_str:
+    raise RuntimeError(
+        "MEMORY_DB_PATH must be set to a temp DB to run these tests. "
+        "Use the temp_db_path fixture or set MEMORY_DB_PATH explicitly."
+    )
+PROD_DB = Path(_prod_db_str)
 
 
 def now_iso():
@@ -119,8 +124,13 @@ class TestZeroResultSuggestions(unittest.TestCase):
 
     def test_suggestions_have_expected_keys(self):
         suggestions = _build_zero_result_suggestions(PROD_DB, "test")
-        # Should have some suggestion keys
-        self.assertTrue(len(suggestions) >= 0)
+        self.assertIsInstance(suggestions, dict)
+        self.assertGreaterEqual(
+            len(suggestions), 1,
+            "Should return at least one suggestion key",
+        )
+        for key in suggestions:
+            self.assertIsInstance(key, str)
 
 
 class TestIncludeGlobalFilter(unittest.TestCase):

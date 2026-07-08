@@ -917,6 +917,10 @@ class MaintenanceOp(str, Enum):
     LIST_FEDERATED_SKILLS = "list_federated_skills"  # next-frontier: cross-agent skill corpus view
     RECALL_STATS = "recall_stats"
     BACKGROUND_TASK_STATUS = "background_task_status"
+    RESTORE = "restore"
+    SUPERSEDE = "supersede"
+    SDK_DEMO = "sdk_demo"
+    STRIP_PROVENANCE = "strip_provenance"
 
     @classmethod
     def all_values(cls) -> list[str]:

@@ -16,6 +16,7 @@ from rewrite_links import rewrite_wikilinks
 
 
 def main() -> int:
+    acquire_lock_or_exit('cron_rewrite_links')
     # argparse handles --help and exits cleanly. The pipeline itself
     # takes no flags.
     if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
@@ -30,7 +31,6 @@ def main() -> int:
         print(f"cron_rewrite_links FAILED: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
-    acquire_lock_or_exit('cron_rewrite_links')
     return 0
 
 

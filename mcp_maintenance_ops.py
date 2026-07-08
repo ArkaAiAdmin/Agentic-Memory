@@ -147,6 +147,8 @@ def _get_domain_tools() -> dict:
             memory_auto_save_daemon_metrics,
             memory_daily_digest,
             memory_purge_auto_saves,
+            memory_restore,
+            memory_supersede,
         )
         from mcp_summarization import (
             memory_summarize,
@@ -182,7 +184,7 @@ def _get_domain_tools() -> dict:
         from mcp_metrics import memory_metrics_server
         from mcp_search import memory_semantic_search, memory_recall_stats
         from mcp_session import memory_thread_context, memory_list_threads, memory_resolve_thread
-        from mcp_safety import memory_check_contradictions, memory_scan_injection
+        from mcp_safety import memory_check_contradictions, memory_scan_injection, memory_strip_provenance
 
         _domain_tools = {
             "memory_agent_init": memory_agent_init,
@@ -208,6 +210,8 @@ def _get_domain_tools() -> dict:
             "memory_auto_save_daemon_metrics": memory_auto_save_daemon_metrics,
             "memory_purge_auto_saves": memory_purge_auto_saves,
             "memory_daily_digest": memory_daily_digest,
+            "memory_restore": memory_restore,
+            "memory_supersede": memory_supersede,
             "memory_summarize": memory_summarize,
             "memory_auto_summarize": memory_auto_summarize,
             "memory_summarization_stats": memory_summarization_stats,
@@ -235,6 +239,7 @@ def _get_domain_tools() -> dict:
             "memory_user_profile": memory_user_profile,
             "memory_check_contradictions": memory_check_contradictions,
             "memory_scan_injection": memory_scan_injection,
+            "memory_strip_provenance": memory_strip_provenance,
             "memory_profile_access": memory_profile_access,
         }
     return _domain_tools
@@ -558,6 +563,25 @@ def _get_handlers() -> dict:
             MaintenanceOp.LIST_FEDERATED_SKILLS: lambda *, limit=50, agent_filter="", **_: t[
                 "memory_list_federated_skills"
             ](limit=limit, agent_filter=agent_filter),
+            MaintenanceOp.RESTORE: lambda *, note_id, **_: t[
+                "memory_restore"
+            ](note_id=note_id),
+            MaintenanceOp.SUPERSEDE: lambda *, old_id, new_id, valid_to=None, **_: (
+                t["memory_supersede"](
+                    old_id=old_id,
+                    new_id=new_id,
+                    valid_to=valid_to,
+                )
+            ),
+            MaintenanceOp.SDK_DEMO: lambda *, query="preferences", samples=3, **_: (
+                t["memory_sdk_demo"](
+                    query=query,
+                    samples=samples,
+                )
+            ),
+            MaintenanceOp.STRIP_PROVENANCE: lambda *, content, **_: t[
+                "memory_strip_provenance"
+            ](content=content),
         }
     return _MAINTENANCE_HANDLERS
 
@@ -633,17 +657,14 @@ def _op_memory_stats() -> str:
         except Exception as e:
             logger.warning("Unhandled exception in _op_memory_stats: %s", e)
         cb_open = False
-        try:
-            from background.circuit_breaker import get_circuit_breaker_state
-
-            cb_open = get_circuit_breaker_state().get("open", False)
-        except ImportError:
+        for _mod in ("background.circuit_breaker", "circuit_breaker"):
             try:
-                from circuit_breaker import get_circuit_breaker_state
-
-                cb_open = get_circuit_breaker_state().get("open", False)
-            except ImportError:
-                cb_open = False
+                _mod_state = __import__(_mod, fromlist=["_auto_save_get_state"])
+                _get_state_fn = _mod_state._auto_save_get_state
+                cb_open = _get_state_fn().get("circuit_open", False)
+                break
+            except (ImportError, AttributeError):
+                pass
         flags = {}
         try:
             flags = get_feature_flags()

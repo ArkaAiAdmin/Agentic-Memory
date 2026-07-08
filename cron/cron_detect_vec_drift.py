@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+"""Detect drift between vec_keys and embeddings in a memory DB."""
 from __future__ import annotations
 
 import logging
 logger = logging.getLogger(__name__)
-"""Detect drift between vec_keys and embeddings in a memory DB."""
 
 from _flock import acquire_lock_or_exit
 import argparse

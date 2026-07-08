@@ -38,7 +38,6 @@ def main() -> int:
     # Show minimal diff context
     gen_lines = generated.splitlines()
     chk_lines = checked_in.splitlines()
-    max_lines = max(len(gen_lines), len(chk_lines))
     diffs = 0
     for i, (g, c) in enumerate(zip(gen_lines, chk_lines), 1):
         if g != c:
@@ -58,3 +57,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_doc_drift_matches_codebase():
+    """Run doc drift check as a pytest test."""
+    raise SystemExit(main())

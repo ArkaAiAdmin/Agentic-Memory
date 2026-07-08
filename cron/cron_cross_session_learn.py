@@ -47,6 +47,7 @@ def main() -> int:
         sys.exit(0)
 
     days = _os.environ.get("MEMORY_CROSS_SESSION_DAYS", "3")
+    acquire_lock_or_exit('cron_cross_session_learn')
     cmd = [PYTHON, str(_INSTALL_ROOT / "cross_session_learn.py"), f"--days={days}"]
     print(f"[cross_session_learn] running: {' '.join(cmd)}")
     t0 = time.time()
@@ -68,7 +69,6 @@ def main() -> int:
     except Exception as e:
         print(f"[cross_session_learn] ERROR: {e}", file=_sys.stderr)
         return 1
-    acquire_lock_or_exit('cron_cross_session_learn')
 
 
 if __name__ == "__main__":

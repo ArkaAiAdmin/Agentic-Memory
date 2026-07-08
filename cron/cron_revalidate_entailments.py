@@ -65,12 +65,7 @@ def main() -> int:
         mem_dir = resolve_active_memory_dir()
         db_path = mem_dir / "memory.db"
 
-    if not acquire_lock_or_exit(str(db_path) + ".revalidate.lock", max_attempts=0):
-        print(
-            "revalidate_entailments: another instance running, exiting",
-            file=sys.stderr,
-        )
-        return 0
+    acquire_lock_or_exit(str(db_path) + ".revalidate.lock")
 
     try:
         t0 = time.time()

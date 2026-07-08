@@ -27,17 +27,17 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from infra.infrastructure import GLOBAL_MEM_DIR  # noqa: E402
 from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 from retrieval_benchmark import RetrievalBenchmark  # noqa: E402
 from search.orchestrator import search_memories  # noqa: E402
 
-_PROD_DB = Path(
-    os.environ.get(
-        "MEMORY_DB_PATH",
-        str(GLOBAL_MEM_DIR / "memory.db"),
+_PROD_DB_STR = os.environ.get("MEMORY_DB_PATH")
+if not _PROD_DB_STR:
+    raise RuntimeError(
+        "MEMORY_DB_PATH must be set to a temp DB to run these tests. "
+        "Use the temp_db_path fixture or set MEMORY_DB_PATH explicitly."
     )
-)
+_PROD_DB = Path(_PROD_DB_STR)
 
 
 # ---------------------------------------------------------------------------

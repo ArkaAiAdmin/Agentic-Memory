@@ -1,12 +1,12 @@
-"""15-verb agent surface for agentic memory.
+"""16-tool agent surface for agentic memory.
 
-Each verb is a thin @mcp.tool() wrapper around existing functionality
+Each tool is a thin @mcp.tool() wrapper around existing functionality
 with sensible defaults so the agent can call it with 1-2 params.
 
 The underlying ADMIN tools are still accessible via
 memory_advanced(operation="...") for power users.
 
-Verbs (15 + 1 escape hatch):
+Tools (16 + 1 escape hatch (memory_advanced)):
   memory_search, memory_save, memory_delete, memory_recall, memory_note,
   memory_learn, memory_audit, memory_organize, memory_share,
   memory_graph, memory_profile, memory_session_start, memory_review_beliefs,
@@ -326,21 +326,23 @@ def memory_curate_autosave(
         category: Target category for promotion (default "lessons").
     """
     try:
-        from infra.db import open_db
         from pathlib import Path
+        from infra.db import open_db
 
         db_path = _resolve_db_path()
-        with open_db(db_path, timeout=30.0) as db:
-            clauses = ["m.source_file LIKE 'auto_saves/%' AND m.deleted_at IS NULL"]
-            params: list = []
-            if start_date:
-                clauses.append("m.created_at >= ?")
-                params.append(start_date)
-            if end_date:
-                clauses.append("m.created_at <= ?")
-                params.append(end_date + "T23:59:59")
 
-            if action == "list":
+        if action == "list":
+
+            with open_db(db_path, timeout=30.0) as db:
+                clauses = ["m.source_file LIKE 'auto_saves/%' AND m.deleted_at IS NULL"]
+                params: list = []
+                if start_date:
+                    clauses.append("m.created_at >= ?")
+                    params.append(start_date)
+                if end_date:
+                    clauses.append("m.created_at <= ?")
+                    params.append(end_date + "T23:59:59")
+
                 rows = db.execute(
                     "SELECT m.id, m.content, m.created_at, m.tags "
                     f"FROM memories m WHERE {' AND '.join(clauses)} "
@@ -355,48 +357,84 @@ def memory_curate_autosave(
                     lines.append(f"  [{r[0]}] {preview}...")
                 return "\n".join(lines)
 
-            elif action == "promote":
-                if not note_ids:
-                    return _err(ErrorCode.INVALID_PARAMS, "note_ids required for promote")
-                import datetime
-                promoted = 0
+        if action == "promote":
+            if not note_ids:
+                return _err(ErrorCode.INVALID_PARAMS, "note_ids required for promote")
+
+            # Read existing notes from DB before mutating, so the
+            # data is available after the connection block closes.
+            with open_db(db_path, timeout=30.0) as db:
+                to_promote: list[tuple[str, tuple]] = []
                 for nid in note_ids:
                     row = db.execute(
-                        "SELECT content, tags, source_file FROM memories WHERE id = ? AND deleted_at IS NULL",
+                        "SELECT content, tags, source_file, title_slug "
+                        "FROM memories WHERE id = ? AND deleted_at IS NULL",
                         (nid,),
                     ).fetchone()
-                    if row is None:
-                        continue
-                    content, tags_json, source_file = row
-                    new_source = f"{category}/{Path(source_file).name}"
-                    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                    db.execute(
-                        "UPDATE memories SET source_file = ?, category = ?, updated_at = ? WHERE id = ?",
-                        (new_source, category, now_iso, nid),
-                    )
-                    target_path = db_path.parent / new_source
-                    target_path.parent.mkdir(parents=True, exist_ok=True)
-                    try:
-                        from infra.memory_common import safe_atomic_write
-                        safe_atomic_write(target_path, content, encoding="utf-8")
-                    except Exception as e:
-                        logger.warning("Unhandled exception in memory_curate_autosave: %s", e)
-                    promoted += 1
-                return f"Promoted {promoted} auto-saved note(s) to '{category}'."
+                    if row:
+                        to_promote.append((nid, row))
 
-            elif action == "discard":
-                if not note_ids:
-                    return _err(ErrorCode.INVALID_PARAMS, "note_ids required for discard")
-                import datetime
-                now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                placeholders = ",".join("?" for _ in note_ids)
-                db.execute(
-                    f"UPDATE memories SET deleted_at = ?, updated_at = ? WHERE id IN ({placeholders}) AND deleted_at IS NULL",
-                    (now_iso, now_iso, *note_ids),
+            if not to_promote:
+                return "No valid notes to promote."
+
+            from config import get_config
+            from infra._lazy_imports import save_memory_journal, save_memory
+            from save_pipeline import SaveValidationError
+            from mcp_memory import memory_delete
+
+            cfg = get_config()
+            _save_fn = save_memory_journal if cfg.write_journal else save_memory
+
+            promoted = 0
+            for nid, (content, tags_json, source_file, title_slug) in to_promote:
+                slug = title_slug or (
+                    Path(source_file).stem if source_file else nid.split("/")[-1]
                 )
-                return f"Discarded {len(note_ids)} auto-saved note(s)."
-            else:
-                return _err(ErrorCode.INVALID_PARAMS, "action must be 'list', 'promote', or 'discard'")
+                tags = json.loads(tags_json) if tags_json else []
+                try:
+                    # Soft-delete the old auto-save note so the
+                    # original record does not co-exist with the
+                    # new promoted one (prevents DB/filesystem
+                    # divergence and KG orphan rows).
+                    memory_delete(note_id=nid, hard=False)
+                    # Re-save via write pipeline so .md file write,
+                    # FTS5 update, KG extraction, and lock ordering
+                    # all happen inside the saga transaction.
+                    _save_fn(
+                        content=content,
+                        category=category,
+                        title_slug=slug,
+                        tags=tags,
+                        pinned=False,
+                        importance=3,
+                        is_global=False,
+                        defer_expensive=True,
+                    )
+                    promoted += 1
+                except SaveValidationError as e:
+                    logger.warning("promote validation error for %s: %s", nid, e)
+                except Exception as e:
+                    logger.warning("Unhandled exception promoting %s: %s", nid, e)
+            return f"Promoted {promoted} auto-saved note(s) to '{category}'."
+
+        if action == "discard":
+            if not note_ids:
+                return _err(ErrorCode.INVALID_PARAMS, "note_ids required for discard")
+            from mcp_memory import memory_delete
+
+            discarded = 0
+            for nid in note_ids:
+                try:
+                    memory_delete(note_id=nid, hard=False)
+                    discarded += 1
+                except Exception as e:
+                    logger.warning("discard error for %s: %s", nid, e)
+            return f"Discarded {discarded} auto-saved note(s)."
+        else:
+            return _err(
+                ErrorCode.INVALID_PARAMS,
+                "action must be 'list', 'promote', or 'discard'",
+            )
     except Exception as e:
         logger.exception("in memory_curate_autosave")
         return _wrap_db_error("memory_curate_autosave", e)
