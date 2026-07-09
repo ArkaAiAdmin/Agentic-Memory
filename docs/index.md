@@ -1,69 +1,67 @@
-# Documentation
+# Agentic Memory Documentation
 
-Welcome to the Agentic Memory documentation.
+Local-first persistent memory for AI agents. Zero cloud dependency, MCP-native, privacy-first.
 
-## Get Started
+## Quick Links
 
-| Page | Description |
-|------|-------------|
-| [Quick Start](quick-start.md) | Get running in 5 minutes (includes all install methods: PyPI, source, Docker) |
+- [Quick Start](guides/quick-start.md) — Get running in 5 minutes
+- [Python SDK](api/python-sdk.md) — Full API reference
+- [TypeScript SDK](api/typescript-sdk.md) — Full API reference
+- [REST API](api/rest-api.md) — HTTP endpoints
+- [Architecture](architecture/overview.md) — System design
 
-## Concepts
+## Guides
 
-Understand how Agentic Memory works and why it's designed this way.
+| Guide | Description |
+|-------|-------------|
+| [Quick Start](guides/quick-start.md) | Get running in 5 minutes |
+| [LangChain](guides/langchain.md) | LangChain integration |
+| [CrewAI](guides/crewai.md) | CrewAI integration |
 
-| Page | Description |
-|------|-------------|
-| [Why Markdown](concepts/why-markdown.md) | Why markdown files are the source of truth |
-| [Search Pipeline](concepts/search-pipeline.md) | How hybrid BM25 + semantic + KG search works |
-| [Knowledge Graph](concepts/knowledge-graph.md) | Entity extraction, relationships, and deduplication |
-| [Temporal Knowledge Graph](concepts/temporal-kg.md) | Bi-temporal facts: event_time, contradiction detection, edit invalidation, time-aware queries |
-| [Tier System](concepts/tier-system.md) | Hot/warm/cold memory lifecycle |
-| [Background Tasks](concepts/background-tasks.md) | Async processing queue and workers |
-| [Security Model](concepts/security-model.md) | Injection detection, data isolation, no-telemetry |
+## API Reference
 
-## How-To Guides
+| API | Description |
+|-----|-------------|
+| [Python SDK](api/python-sdk.md) | `MemoryClient`, `AgentMemory`, models, exceptions |
+| [TypeScript SDK](api/typescript-sdk.md) | `MemoryClient`, types, WebSocket |
+| [REST API](api/rest-api.md) | HTTP endpoints, WebSocket events |
 
-Real-world workflows and recipes.
+## Architecture
 
-| Page | Description |
-|------|-------------|
-| [Integrate with Claude Code](how-to/integrate-claude-code.md) | Set up MCP server for Claude Code |
-| [Multi-Project Sharing](how-to/multi-project.md) | Share memories across projects |
-| [Extend Entity Types](how-to/custom-entity-types.md) | Add domain-specific NER patterns |
-| [Debug Search](how-to/debug-search.md) | Troubleshoot search quality issues |
-| [Set Up Cron Jobs](how-to/cron-setup.md) | Background processing schedule |
-| [Add an MCP Tool](how-to/add-an-mcp-tool.md) | Maintainer: add a new tool to the MCP server |
-| [Add a Cron Job](how-to/add-a-cron-job.md) | Maintainer: add a new background job |
-| [Add a Claude Code Hook](how-to/add-a-claude-code-hook.md) | Maintainer: add a new lifecycle hook |
-| [Run a Schema Migration](how-to/run-a-migration.md) | Maintainer: schema change procedure |
+| Document | Description |
+|----------|-------------|
+| [Overview](architecture/overview.md) | High-level system design |
+| [Subsystems](architecture/subsystems.md) | Deep dive into each component |
 
-## Reference
+## Features
 
-Complete API and configuration documentation.
+### Search Pipeline
 
-| Page | Description |
-|------|-------------|
-| [API Reference](api-reference.md) | All public functions and classes |
-| [MCP Tools](reference/mcp-tools.md) | 102 tools (15 CORE + 87 ADMIN + 3 DEPRECATED; 16 visible) for agent integration |
-| [Configuration](reference/configuration.md) | Environment variables and `memory.toml` |
-| [Database Schema](reference/schema.md) | Tables, indexes, and migration history (current: v21) |
+12-phase hybrid search: FTS5 BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost. Each phase independently isolated.
 
-## For Maintainers
+### Knowledge Graph
 
-If you're working *on* the agentic-memory system itself (not just *using* it), see:
+Entity extraction with Jaccard fuzzy matching, temporal edges with valid_at/invalid_at, contradiction detection, supersession chains.
 
-- [`AGENTS.md`](../AGENTS.md) — the maintainer contract: rules, hard constraints, session protocol
-- [`memory_workflow.md`](../memory_workflow.md) — system reference: pipelines, hooks, config, troubleshooting
-- [`CONTRIBUTING.md`](../CONTRIBUTING.md) — coding conventions, test patterns, PR rules
-- [`skills/`](../skills/) — maintainer-specific skills (memory-architecture, add-an-mcp-tool, add-a-cron-job, add-a-claude-code-hook)
+### Multi-Agent Sync
 
-## Explanation
+CRDT field-level LWWES for conflict-free replication. CQRS write journal for lock-free writes. Saga transactions for crash consistency.
 
-Deeper context and rationale.
+### Neural Forget
 
-| Page | Description |
-|------|-------------|
-| [Design Decisions](explanation/design-decisions.md) | Why we chose SQLite, markdown, BM25, etc. |
-| [Boot Sequence](explanation/boot-sequence.md) | What happens when you open a terminal, run opencode, and create a new session — traced from `hooks.json` |
-| [Comparison](explanation/comparison.md) | How Agentic Memory compares to alternatives |
+Surprise-based retention formula considering query relevance, access patterns, recency, and importance.
+
+### Integrations
+
+Native support for LangChain, CrewAI, OKF (Open Knowledge Format), MCP, REST API, WebSocket.
+
+## System Requirements
+
+- Python 3.11+
+- SQLite with FTS5
+- ~100MB disk space for DB + indexes
+- No cloud connection required
+
+## License
+
+Apache 2.0
