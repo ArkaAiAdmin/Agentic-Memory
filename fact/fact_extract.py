@@ -896,7 +896,7 @@ def _should_use_llm_for_memory(conn: AnyConnection, memory_id: str) -> bool:
     try:
         from config import get_config
 
-        threshold = float(get_config().llm_extraction_hybrid_threshold)
+        threshold = float(get_config().llm.extraction_hybrid_threshold)
     except Exception:
         logger.warning("Failed to read LLM extraction hybrid threshold from config")
         pass
@@ -912,7 +912,7 @@ def _should_use_llm_for_memory(conn: AnyConnection, memory_id: str) -> bool:
     try:
         from config import get_config
 
-        force = bool(get_config().llm_extraction_force)
+        force = bool(get_config().llm.extraction_force)
     except Exception:
         logger.warning("Failed to read LLM extraction force flag from config")
         pass

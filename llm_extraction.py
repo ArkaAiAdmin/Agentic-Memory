@@ -213,7 +213,7 @@ def _get_max_tokens() -> int:
     try:
         from infra._lazy_imports import get_config
 
-        return int(get_config().llm_extraction_max_tokens)
+        return int(get_config().llm.extraction_max_tokens)
     except Exception as e:
         logger.warning("_get_max_tokens failed: %s", e)
         v = os.environ.get("MEMORY_LLM_EXTRACTION_MAX_TOKENS")
@@ -700,7 +700,7 @@ def _get_extractor(model_id: str = "") -> LLMExtractor:
             try:
                 from infra._lazy_imports import get_config
 
-                model_id = get_config().llm_extraction_model_id
+                model_id = get_config().llm.extraction_model_id
             except Exception as e:
                 logger.warning("_get_extractor failed: %s", e)
                 model_id = os.environ.get(
