@@ -122,7 +122,7 @@ agentic-memory/                    # Repo root
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
 ├── migration_runner.py             # Schema migrations (current v36)
-└── ... (121 modules total)
+└── ... (122 modules total)
 ```
 
 | Module | Layer | Purpose |
@@ -143,7 +143,7 @@ agentic-memory/                    # Repo root
 
 ## Surface: MCP tools, cron jobs, hooks
 
-- **102 MCP tools** (16 CORE + 86 ADMIN).
+- **103 MCP tools** (16 CORE + 87 ADMIN).
   Single source of truth: `tool_registry.py`.
 - **37 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.

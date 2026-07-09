@@ -88,6 +88,7 @@ ADMIN_TOOLS = [
     "memory_ingest",
     "memory_dashboard",
     "memory_metrics_server",
+    "memory_admin_policy_hash",
     "memory_agent_init",
     "memory_agent_clear",
     "memory_agent_list",

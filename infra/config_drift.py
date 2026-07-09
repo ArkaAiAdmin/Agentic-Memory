@@ -70,6 +70,12 @@ _FLAG_TIERS: dict[str, DriftSeverity] = {
     "MEMORY_DB_CONNECT_TIMEOUT_S":    DriftSeverity.OPERATIONAL,
 }
 
+# Snapshot of the ORIGINAL built-in tier table, captured at import time
+# BEFORE any [drift_tiers] TOML override is applied. Used by
+# config_drift_tier_patch to restore hardcoded defaults on override removal.
+# Values are immutable DriftSeverity enums, so a shallow copy is sufficient.
+_HARDCODE_DEFAULTS: dict[str, DriftSeverity] = dict(_FLAG_TIERS)
+
 
 def set_flag_tier(env_key: str, severity: DriftSeverity) -> None:
     """Extend the tier table at runtime. Used by deployment-specific code."""

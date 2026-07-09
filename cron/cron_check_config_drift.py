@@ -43,7 +43,24 @@ def main() -> int:
     parser.add_argument("--enforce-scope", action="store_true",
                         help="Fail-fast on drift before computing report. "
                              "Exits 78 if drift detected at enforcement level.")
+    parser.add_argument("--reload-policy", action="store_true",
+                        help="Reload policy cache and reapply tier overrides "
+                             "from memory.toml before building drift report.")
+    parser.add_argument("--apply-tier-patches", action="store_true",
+                        help="Reload policy cache and reapply tier overrides "
+                             "from memory.toml before building drift report.")
     args = parser.parse_args()
+
+    if args.reload_policy or args.apply_tier_patches:
+        try:
+            from infra.config_drift_policy import reset_policy_cache
+            from infra.config_drift_tier_patch import apply_tier_overrides_from_toml
+            from infra.config import _read_toml, _TOML_PATH
+            reset_policy_cache()
+            if _TOML_PATH.exists():
+                apply_tier_overrides_from_toml(_read_toml(_TOML_PATH))
+        except Exception as e:
+            logger.warning("cron: tier/policy reload failed: %s", e)
 
     if args.enforce_scope:
         from infra.config_drift import build_drift_report

@@ -13,9 +13,9 @@ You are an agent working on the **agentic-memory** codebase at the repo root.
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
 <!--AUTO-GEN:START key="what_this_system_is"-->
-- **Surface**: 16 CORE verbs + `memory_maintenance` router (86 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 41+ cron jobs
+- **Surface**: 16 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 8 lifecycle hooks + 41+ cron jobs
 - **Schema**: v36, ~48 tables
-- **Code**: ~99k LOC production, ~85k+ test LOC; see `docs/architecture.md`
+- **Code**: ~101k LOC production, ~86k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 
@@ -49,8 +49,8 @@ Minimum: do #1, #7, and #13. Run #8 opportunistically. Use `agentic-memory_memor
 agentic-memory/
 ├── save/ (save/pipeline.py)          ← write path (saga, FTS5, chunks, embeddings, KG, facts, audit, CRDT)
 ├── search/ (search/orchestrator.py)  ← read path (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve)
-├── infra/ (tool_registry.py)         ← 16 CORE + 86 ADMIN + 3 DEPRECATED (single source of truth; tool_registry.py + memory_mcp.py + mcp_maintenance.py)
-├── hooks/                            ← 6 lifecycle hook implementations + 1 log helper
+├── infra/ (tool_registry.py)         ← 16 CORE + 87 ADMIN + 3 DEPRECATED (single source of truth; tool_registry.py + memory_mcp.py + mcp_maintenance.py)
+├── hooks/                            ← 8 lifecycle hook implementations + 1 log helper
 ├── background/
 │   ├── auto_save.py                  ← async inbox+daemon entry point
 │   ├── inbox.py                      ← inbox management + daemon lifecycle
@@ -59,10 +59,10 @@ agentic-memory/
 │   ├── tool_complete.py              ← hook → save_memory pipeline
 │   └── circuit_breaker.py            ← auto-save failure gating
 ├── cron/                             ← 41+ scheduled jobs + install_crontab.sh
-├── mcp_*.py (28 modules)             ← domain-split MCP tools
+├── mcp_*.py (29 modules)             ← domain-split MCP tools
 ├── memory/                           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md               ← MCP tool reference for agents
-└── eval/                             ← 261 test files, 4266+ test functions
+└── eval/                             ← 267 test files, 4323+ test functions
 <!--AUTO-GEN:END key="critical_path"-->
 
 **Message contract:** All CORE tool responses are user-facing JSON. Admin tools (87 ADMIN + 3 DEPRECATED) are routed exclusively through `memory_maintenance(operation="...")` — never call an ADMIN tool name directly. All writes go through `save_memory` (direct) or `save_memory_journal` (CQRS journal, gated by `MEMORY_WRITE_JOURNAL_ENABLED`); the saga ensures crash-consistent rollback with dependent-row cleanup. `defer_expensive=True` by default — returns <200ms.
@@ -79,7 +79,7 @@ agentic-memory/
 <!--AUTO-GEN:END key="hard_rule_4"-->**. Never edit live DB schema by hand.
 5. **Default search is `include_global=True`** with blended RRF. Don't override "for safety."
 6. <!--AUTO-GEN:START key="hard_rule_6"-->
-**16 CORE tools are user-facing**; 86 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
+**16 CORE tools are user-facing**; 87 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
 <!--AUTO-GEN:END key="hard_rule_6"-->
 7. **Use `venv/bin/python backfill_all.py` (incremental default) or `venv/bin/python backfill_all.py --full` (full rebuild).** Bare args create 22 MB garbage DBs at repo root.
 8. **Tests hitting prod DB must use `_ProdDBGuarded` mixin.** See `eval/test_safety_wiring.py:60-109`.
@@ -194,13 +194,13 @@ Binds to `127.0.0.1:9877`. Key env vars: `MEMORY_SYNC_TOKEN` (required), `MEMORY
 
 <!--AUTO-GEN:START key="mcp_surface_contract"-->
 **Source of truth for the MCP tool surface: `docs/MCP_SURFACE.md` + `tool_registry.py`**. The MCP
-server exposes **16 CORE tools** directly plus **1 `memory_maintenance` router**; 86 ADMIN + 3 DEPRECATED are hidden behind it
+server exposes **16 CORE tools** directly plus **1 `memory_maintenance` router**; 87 ADMIN + 3 DEPRECATED are hidden behind it
 `memory_maintenance(operation="...")`.
 
 | Tier | Count | Access |
 |------|-------|--------|
 | CORE verbs | 16 | Direct MCP tool call |
-| ADMIN (legacy) | 86 | `memory_maintenance(operation="...")` or `memory_advanced(operation="...")` |
+| ADMIN (legacy) | 87 | `memory_maintenance(operation="...")` or `memory_advanced(operation="...")` |
 | DEPRECATED | 3 | Same as ADMIN (also listed in ADMIN_TOOLS; tracked for audit) |
 <!--AUTO-GEN:END key="mcp_surface_contract"-->
 
@@ -282,12 +282,12 @@ See `memory.toml` for all 17 feature flags.
 
 <!--AUTO-GEN:START key="current_state"-->
 - **Schema v36**: 37 migrations (100% down-migration coverage), ~48 tables.
-- **MCP surface**: 16 CORE verbs + 1 `memory_maintenance` router (86 ADMIN + 3 DEPRECATED). Agents see 17 tools. See `docs/MCP_SURFACE.md` for verb reference.
+- **MCP surface**: 16 CORE verbs + 1 `memory_maintenance` router (87 ADMIN + 3 DEPRECATED). Agents see 17 tools. See `docs/MCP_SURFACE.md` for verb reference.
 - **Write path**: Saga transaction (DB + vec_key + .md file) with flock-based cross-process locking, crash-consistent rollback, and dependent-row cleanup. `defer_expensive=True` by default — returns <200ms.
 - **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + cross-encoder + temporal decay + neural forget curve + concept/centrality boost). Phase-level error counters.
 - **KG/Temporal**: Entity extraction with Jaccard fuzzy match, temporal KG with contradiction detection and fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save with circuit breaker, TS plugin coordination, cron-driven maintenance.
-- **Testing**: 261 test files, 4266+ test functions, ~85k+ test LOC. Subprocess-per-file runner for torch-safe parallelism.
+- **Testing**: 267 test files, 4323+ test functions, ~86k+ test LOC. Subprocess-per-file runner for torch-safe parallelism.
 - **Canonical references**: `docs/architecture.md` (architecture), `docs/MCP_SURFACE.md` (MCP workflow), `docs/reference/mcp-tools.md` (tool catalog), `skills/memory-architecture/SKILL.md` (agent walkthrough).
 
 > Note: For authoritative counts, query `tool_registry.py` and `infra/migration_runner.py` directly.

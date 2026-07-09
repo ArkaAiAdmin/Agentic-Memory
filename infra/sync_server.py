@@ -259,6 +259,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
             self._handle_skill_changes(parse_qs(parsed.query))
         elif path == "/sync/peers":
             self._handle_get_peers()
+        elif path == "/crdt/policy_hash":
+            self._handle_policy_hash(parse_qs(parsed.query))
         else:
             self._error("Not found", 404)
 
@@ -341,6 +343,33 @@ class _SyncHandler(BaseHTTPRequestHandler):
         except Exception as e:
             logger.warning("_handle_gossip_peers: broad except swallowed: %s", e)
             self._error(f"Gossip processing failed: {e}", 400)
+
+    # ------------------------------------------------------------------
+    # GET /crdt/policy_hash[?include_full=1]
+    #     Peer-facing fleet drift endpoint: returns the local process's
+    #     drift-policy hash (and optionally the full policy) so other nodes
+    #     can diff their posture. Mirrors memory_admin_policy_hash.
+    # ------------------------------------------------------------------
+
+    def _handle_policy_hash(self, query: dict) -> None:
+        if not self._require_auth():
+            return
+        include_full = query.get("include_full", ["0"])[0] in ("1", "true", "yes")
+        try:
+            from infra.config_drift_policy import resolve_policy
+
+            p = resolve_policy()
+            body = {
+                "policy_hash": p.policy_hash(),
+                "scope": p.scope,
+                "schema_version": 1,
+            }
+            if include_full:
+                body["full_policy"] = p.to_dict()
+            self._json_response(body)
+        except Exception as e:
+            logger.warning("_handle_policy_hash failed: %s", e)
+            self._error(f"policy_hash failed: {e}", 500)
 
     # ------------------------------------------------------------------
     # GET /crdt/changes?since=...&agent=...&limit=...

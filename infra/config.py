@@ -1463,6 +1463,8 @@ def reset_config() -> None:
     global _instance
     with _instance_lock:
         _instance = None
+    from infra.config_drift_policy import reset_policy_cache
+    reset_policy_cache()
 
 
 def get_feature_flags() -> dict:

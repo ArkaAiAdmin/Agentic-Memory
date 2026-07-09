@@ -953,6 +953,7 @@ class MaintenanceOp(str, Enum):
     SUPERSEDE = "supersede"
     SDK_DEMO = "sdk_demo"
     STRIP_PROVENANCE = "strip_provenance"
+    POLICY_HASH_STATUS = "policy_hash_status"
 
     @classmethod
     def all_values(cls) -> list[str]:
@@ -1313,3 +1314,11 @@ def memory_background_task_status(memory_id: str) -> str:
     """
     from mcp_maintenance_ops import MAINTENANCE_HANDLERS
     return MAINTENANCE_HANDLERS[MaintenanceOp.BACKGROUND_TASK_STATUS](memory_id=memory_id)
+
+
+@mcp.tool()
+@with_audit("memory_admin_policy_hash")
+def memory_admin_policy_hash(*, include_full: bool = False) -> str:
+    """Return the local process's drift-policy hash. Used by fleet drift diff."""
+    from mcp_maintenance_policy_hash import memory_admin_policy_hash as _impl
+    return _impl(include_full=include_full)

@@ -391,9 +391,18 @@ All legacy/diagnostic tools are accessible via `memory_maintenance(operation="..
 | `session_admin_stats` | Database stats for sessions/threads/compactions | type |
 | `recall_stats` | Retrieve recall context, trace, or status | action, query, limit |
 | `background_task_status` | Status of deferred background tasks | memory_id |
+| `policy_hash_status` | Fleet posture diff — local policy hash vs peers | peer_timeout_s, max_concurrent, cache_ttl_s, force_refresh, include_full_policy, since_ts |
 
 **Full list with all parameters:** Call `memory_maintenance(operation="help")` to get a
 parameter reference for any admin operation.
+
+> **Fleet policy-hash diffusion:** `policy_hash_status` returns a fleet posture
+> diff (local `policy_hash` + per-peer status, latency, and delta keys). Peer
+> nodes expose their own hash over the sync-server REST route
+> `GET /crdt/policy_hash` (optional `?include_full=1`), which mirrors the
+> hidden `memory_admin_policy_hash` admin tool. `memory_admin_policy_hash` is
+> intentionally removed from the direct MCP surface and is reachable only via
+> the sync-server HTTP route or the `policy_hash_status` maintenance op.
 
 ---
 

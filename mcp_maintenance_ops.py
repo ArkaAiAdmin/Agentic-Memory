@@ -556,6 +556,18 @@ def _get_handlers() -> dict:
                 _op_config_drift(persist=persist, severity_floor=severity_floor,
                                   compare_to_last=compare_to_last, format=format)
             ),
+            MaintenanceOp.POLICY_HASH_STATUS: lambda *, peer_timeout_s=5.0, max_concurrent=4,
+                                              cache_ttl_s=60.0, force_refresh=False,
+                                              include_full_policy=False, since_ts=None, **_: (
+                _op_policy_hash_status(
+                    peer_timeout_s=peer_timeout_s,
+                    max_concurrent=max_concurrent,
+                    cache_ttl_s=cache_ttl_s,
+                    force_refresh=force_refresh,
+                    include_full_policy=include_full_policy,
+                    since_ts=since_ts,
+                )
+            ),
             MaintenanceOp.PHASE_ERRORS: lambda *, since_ts=None, until_ts=None, limit=50, **_: _op_phase_errors(
                 since_ts=since_ts, until_ts=until_ts, limit=limit
             ),
@@ -909,11 +921,148 @@ def _op_config_drift(
 def _json_default(o):
     import dataclasses as _dc
     from enum import Enum
-    if _dc.is_dataclass(o):
+    if _dc.is_dataclass(o) and not isinstance(o, type):
         return _dc.asdict(o)
     if isinstance(o, Enum):
         return o.value
     return str(o)
+
+
+def _op_policy_hash_status(
+    *,
+    peer_timeout_s: float = 5.0,
+    max_concurrent: int = 4,
+    cache_ttl_s: float = 60.0,
+    force_refresh: bool = False,
+    include_full_policy: bool = False,
+    since_ts: float | None = None,
+) -> str:
+    try:
+        import os
+        import time
+        import socket
+        from infra.config_drift_policy import resolve_policy
+        from infra.policy_hash_fetcher import fetch_all_peer_hashes
+        from infra.policy_hash_cache import (
+            load_peer_cache, persist_peer_cache, filter_stale_entries,
+        )
+        from infra.policy_hash_diff import dict_diff
+
+        local_policy = resolve_policy()
+        local_hash = local_policy.policy_hash()
+
+        try:
+            from sync import SyncManager
+            sync_status = SyncManager().status()
+            peers = sync_status.get("peers", [])
+        except Exception:
+            peers = []
+
+        now = time.time()
+        cache = ({} if force_refresh else load_peer_cache())
+
+        if force_refresh:
+            peers_to_query = peers
+            cached_for_peers = {}
+        else:
+            fresh, stale = filter_stale_entries(cache, cache_ttl_s)
+            peers_to_query = [
+                p for p in peers
+                if p.get("name") in stale or p.get("agent_id") in stale
+            ]
+            cached_for_peers = fresh
+
+        sync_token = os.environ.get("MEMORY_SYNC_TOKEN", "")
+        fresh_results = (
+            fetch_all_peer_hashes(
+                peers_to_query,
+                timeout_s=peer_timeout_s,
+                max_concurrent=max_concurrent,
+                sync_token=sync_token,
+            )
+            if peers_to_query
+            else {}
+        )
+
+        merged = {}
+        for p in peers:
+            name = p.get("name", p.get("agent_id", "?"))
+            if name in fresh_results:
+                status, latency, body = fresh_results[name]
+                entry = {
+                    "status": status,
+                    "fetched_at": now,
+                    "fetched_via": "live",
+                    "latency_s": round(latency, 4),
+                    "peer_url": p.get("url", ""),
+                    "agent_id": p.get("agent_id", ""),
+                    **(
+                        {k: v for k, v in body.items() if k != "full_policy"}
+                        if not include_full_policy
+                        else body
+                    ),
+                }
+            elif name in cached_for_peers:
+                entry = dict(cached_for_peers[name], fetched_via="cache")
+            else:
+                entry = {
+                    "status": "pending",
+                    "peer_url": p.get("url", ""),
+                    "agent_id": p.get("agent_id", ""),
+                }
+            merged[name] = entry
+
+        persist_peer_cache(merged)
+
+        aligned, divergent, unreachable, pending = [], [], [], []
+        for name, entry in merged.items():
+            peer_hash = entry.get("policy_hash", "")
+            if entry.get("status") == "unreachable":
+                unreachable.append(name)
+            elif entry.get("status") == "pending":
+                pending.append(name)
+            elif peer_hash and peer_hash == local_hash:
+                aligned.append(name)
+            elif peer_hash:
+                local_dict = local_policy.to_dict()
+                peer_dict = {
+                    k: entry.get(k)
+                    for k in entry
+                    if k not in ("fetched_at", "fetched_via", "latency_s", "status")
+                }
+                delta_keys = dict_diff(local_dict, peer_dict) if peer_dict else ["policy_hash"]
+                divergent.append({
+                    "name": name,
+                    "peer_policy_hash": peer_hash,
+                    "local_policy_hash": local_hash,
+                    "delta_keys": delta_keys[:20],
+                })
+
+        out = {
+            "schema_version": 1,
+            "generated_at": now,
+            "local": {
+                "host": socket.gethostname(),
+                "agent_id": getattr(local_policy, "agent_id", "") or "",
+                "policy_hash": local_hash,
+                "scope": local_policy.scope,
+            },
+            "peers": list(merged.values()),
+            "summary": {
+                "total_peers": len(merged),
+                "aligned": len(aligned),
+                "divergent": len(divergent),
+                "unreachable": len(unreachable),
+                "pending": len(pending),
+            },
+            "divergent_peers": divergent,
+            "cache_ttl_s": cache_ttl_s,
+        }
+        return json.dumps(out, indent=2, default=str)
+    except Exception as e:
+        logger.warning("Unhandled exception in _op_policy_hash_status: %s", e)
+        from mcp_common import _err, classify_exception
+        return _err(classify_exception(e), str(e))
 
 
 def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = None, limit: int = 50) -> str:

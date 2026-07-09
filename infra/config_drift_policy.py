@@ -166,11 +166,79 @@ def _resolve_policy_default(scope: str) -> DriftPolicy:
 
 
 _active_policy: Optional[DriftPolicy] = None
+_TOML_HOT_RELOAD_SUBSCRIBED: bool = False
+_last_resolved_toml_mtime: float = 0.0
+
+
+def _record_toml_reload_event(mtime: float) -> None:
+    from infra.config_drift_audit import AuditEvent, append_audit_event
+    policy = resolve_policy()
+    try:
+        append_audit_event(AuditEvent(
+            timestamp=time.time(),
+            scope=policy.scope,
+            decision="toml_hot_reload",
+            tier="",
+            flag="policy_global",
+            mode="",
+            policy_hash=policy.policy_hash(),
+            extra={"toml_mtime": mtime},
+        ), audit_path=policy.audit_path)
+    except Exception as e:
+        logger.warning("policy: failed to audit hot-reload: %s", e)
+
+
+def _on_toml_change(new_mtime: float) -> None:
+    global _active_policy, _active_has_inited, _last_resolved_toml_mtime
+    logger.info("policy: TOML change detected (mtime=%.0f), reloading", new_mtime)
+    try:
+        from infra.config import _read_toml
+        from infra.toml_watch import get_toml_path
+        toml_data = _read_toml(get_toml_path())
+        from infra.config_drift_tier_patch import apply_tier_overrides_from_toml
+        # Prefer the policy's own audit_path so everything lands in one file
+        _audit_path = None
+        if _active_policy is not None:
+            _audit_path = _active_policy.audit_path
+        apply_tier_overrides_from_toml(toml_data, audit_enabled=True, audit_path=_audit_path)
+    except Exception as e:
+        logger.warning("policy: failed to reload tiers from TOML: %s", e)
+    _active_policy = None
+    _active_has_inited = False
+    _last_resolved_toml_mtime = 0.0
+    _record_toml_reload_event(new_mtime)
 
 
 def resolve_policy(scope: str | None = None) -> DriftPolicy:
     """Compute the active policy for the current process. Idempotent cache."""
-    global _active_policy
+    global _active_policy, _last_resolved_toml_mtime, _TOML_HOT_RELOAD_SUBSCRIBED
+
+    if not _TOML_HOT_RELOAD_SUBSCRIBED:
+        env_val = os.environ.get("MEMORY_TOML_HOT_RELOAD", "")
+        if env_val in ("1", "true", "yes"):
+            try:
+                from infra.toml_watch import subscribe, start_watcher
+                subscribe(_on_toml_change)
+                start_watcher()
+                _TOML_HOT_RELOAD_SUBSCRIBED = True
+                logger.info(
+                    "policy: hot-reload subscribed, MEMORY_TOML_HOT_RELOAD=%r", env_val,
+                )
+            except Exception as e:
+                logger.warning("policy: hot-reload subscription failed: %s", e)
+        else:
+            _TOML_HOT_RELOAD_SUBSCRIBED = True  # mark as checked
+
+    env_val = os.environ.get("MEMORY_TOML_HOT_RELOAD", "")
+    if env_val in ("1", "true", "yes"):
+        try:
+            from infra.toml_watch import current_mtime
+            mtime_now = current_mtime()
+            if _last_resolved_toml_mtime != 0.0 and _last_resolved_toml_mtime != mtime_now:
+                _active_policy = None
+        except Exception:
+            pass
+
     if _active_policy is not None:
         return _active_policy
 
@@ -219,6 +287,11 @@ def resolve_policy(scope: str | None = None) -> DriftPolicy:
         legacy_merged["integrity"] = DriftEnforceMode.WARN
         policy = DriftPolicy(**{**asdict(policy), "tier_modes": legacy_merged})
 
+    try:
+        from infra.toml_watch import current_mtime
+        _last_resolved_toml_mtime = current_mtime()
+    except Exception:
+        pass
     _active_policy = policy
     return policy
 
