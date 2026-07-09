@@ -1441,10 +1441,21 @@ def get_config() -> MemoryConfig:
 
         toml_data = _read_toml(_TOML_PATH)
         cfg = _build_config_from_toml(toml_data)
+        _instance = cfg if not is_testing else None
 
-        if not is_testing:
-            _instance = cfg
-        return cfg
+    # Config-drift startup enforcement (scope-aware, hatch-able).
+    # Run OUTSIDE the lock to prevent re-entrant deadlock when
+    # run_startup_enforcement -> build_drift_report -> get_feature_flags
+    # -> get_config() re-enters the same lock on the same thread.
+    try:
+        from infra.config_drift_policy import run_startup_enforcement
+        run_startup_enforcement()
+    except SystemExit:
+        raise  # propagate EX_CONFIG
+    except Exception:
+        logger.debug("startup enforcement skipped: non-critical error")
+
+    return cfg
 
 
 def reset_config() -> None:

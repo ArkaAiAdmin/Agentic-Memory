@@ -2318,6 +2318,16 @@ def search_memories(
     if expansion_terms:
         fts_query = f"{fts_query} OR {' OR '.join(expansion_terms[:5])}"
     _record_phase_latency("reasoning_expand", _reasoning_t0)
+    # Drift enforcement for search operations
+    try:
+        from infra.config_drift import build_drift_report
+        from infra.config_drift_policy import enforce, DriftEnforcementError
+        _drift_report = build_drift_report()
+        enforce(_drift_report, verb="search")
+    except DriftEnforcementError:
+        raise
+    except Exception:
+        logger.debug("drift enforcement skipped in search_memories: non-critical error")
     terms = re.findall("[\\w@\\#\\.\\+\\-]+", fts_query, flags=re.UNICODE)
     if not terms:
         return {

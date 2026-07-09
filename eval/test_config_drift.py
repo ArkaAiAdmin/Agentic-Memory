@@ -15,7 +15,7 @@ if not VENV_PYTHON.exists():
 
 
 def _run(code: str, extra_env: dict | None = None) -> subprocess.CompletedProcess:
-    env = os.environ.copy()
+    env = {k: v for k, v in os.environ.items() if not k.startswith("MEMORY_")}
     env["PYTHONPATH"] = str(WORKTREE)
     env["MEMORY_INSTALL_ROOT"] = str(WORKTREE)
     if extra_env:
@@ -23,6 +23,7 @@ def _run(code: str, extra_env: dict | None = None) -> subprocess.CompletedProces
     return subprocess.run(
         [str(VENV_PYTHON), "-c", code],
         capture_output=True, text=True, timeout=30, env=env,
+        cwd=str(WORKTREE),
     )
 
 

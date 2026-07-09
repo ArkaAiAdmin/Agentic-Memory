@@ -13,6 +13,10 @@ import os
 import sys
 
 os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
+# This cron is a drift *surveillance* tool: it detects and reports drift
+# rather than failing at import time. Explicit fail-fast is available via
+# the --enforce-scope flag, which calls enforce() directly.
+os.environ.setdefault("MEMORY_CONFIG_DRIFT_SKIP_ENFORCEMENT", "1")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -36,7 +40,19 @@ def main() -> int:
                         help="Compute report but don't persist or alert.")
     parser.add_argument("--alert-stdout", action="store_true",
                         help="Print alert to stdout (for cron log capture).")
+    parser.add_argument("--enforce-scope", action="store_true",
+                        help="Fail-fast on drift before computing report. "
+                             "Exits 78 if drift detected at enforcement level.")
     args = parser.parse_args()
+
+    if args.enforce_scope:
+        from infra.config_drift import build_drift_report
+        from infra.config_drift_policy import enforce, DriftEnforcementError
+        try:
+            enforce(build_drift_report(), verb="admin")
+        except DriftEnforcementError as e:
+            print(json.dumps(e.to_dict(), indent=2))
+            sys.exit(78)
 
     acquire_lock_or_exit("cron_check_config_drift")
 

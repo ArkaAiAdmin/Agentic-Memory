@@ -211,18 +211,30 @@ def memory_health_check(conn) -> str:
 
     try:
         from infra.config_drift import build_drift_report
+        from infra.config_drift_policy import resolve_policy, enforce, DriftEnforcementError
+        policy = resolve_policy()
         drift_report = build_drift_report()
+        try:
+            enforce(drift_report, policy=policy, verb="admin")
+            drift_enforced = False
+        except DriftEnforcementError as e:
+            drift_enforced = True
+            drift_block_reason = e.to_dict()
+            status["config_drift_last_enforcement"] = drift_block_reason
         crit = drift_report.critical_drift()
         status["config_drift"] = {
             "total_flags": drift_report.total_flags,
             "drift_count_by_severity": drift_report.drift_count_by_severity,
             "integrity_compromised": len(crit) > 0,
+            "policy_hash": policy.policy_hash(),
+            "scope": policy.scope,
+            "enforcement_active": drift_enforced,
             "sample_drift_flags": [
                 {"flag": e.flag, "verdicts": e.drift_verdicts[:3]}
                 for e in drift_report.entries if e.has_drift()
             ][:10],
         }
-        if crit:
+        if crit or drift_enforced:
             status["overall"] = "degraded_drift"
     except Exception as exc:
         logger.warning("Unhandled exception in config_drift health check: %s", exc)

@@ -1814,12 +1814,6 @@ def _materialize_journal_once(
         req.content, req.category, req.title_slug, tags_list, req.pinned, note_id=note_id,
     )
 
-    from infra.memory_common import _resolve_tags
-    tags_list = _resolve_tags(req.category, req.tags or [], context=req.context)
-    _markdown, _fm_meta, now_iso, metadata_json = _build_memory_file(
-        req.content, req.category, req.title_slug, tags_list, req.pinned, note_id=note_id,
-    )
-
     _db_path_parsed = Path(db_path_obj)
 
     # Idempotent guard: if a peer reconciler already materialized this
@@ -1933,6 +1927,16 @@ def _save_memory_core(
     try:
         _start_time = time.time()
         tags_list, _tags_str = _validate_save_params(content, category, title_slug, tags)
+        # Drift enforcement — fail-fast on config drift for save operations
+        try:
+            from infra.config_drift import build_drift_report
+            from infra.config_drift_policy import enforce, DriftEnforcementError
+            _drift_report = build_drift_report()
+            enforce(_drift_report, verb="save")
+        except DriftEnforcementError:
+            raise  # propagate — caller handles SaveValidationError wrapping
+        except Exception:
+            logger.debug("drift enforcement skipped in _save_memory_core: non-critical error")
         if note_id and "/" in note_id:
             _derived_cat, _derived_slug = note_id.split("/", 1)
             if not category:

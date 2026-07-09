@@ -458,3 +458,42 @@ def diff_reports(prev: Optional[DriftReport], current: DriftReport) -> list[str]
             elif prev_entry.has_drift():
                 diffs.append(f"[{e.severity}] {e.flag}: drift cleared")
     return diffs
+
+
+# ---------------------------------------------------------------------------
+# TOML tier override loading
+# ---------------------------------------------------------------------------
+
+def _apply_tier_overrides_from_toml() -> None:
+    """Read [drift_tiers] from memory.toml and override _FLAG_TIERS.
+
+    Unknown / malformed entries are logged and ignored — never raise,
+    so a typo in someone's TOML doesn't break drift detection entirely.
+    """
+    try:
+        if not _TOML_PATH.exists():
+            return
+        toml_data = _read_toml(_TOML_PATH)
+        overrides = (toml_data.get("drift_tiers") or {})
+        for key, value in overrides.items():
+            env_key = key.upper() if key.islower() else key
+            value_lower = str(value).strip().lower()
+            tier = None
+            for s in DriftSeverity:
+                if s.value == value_lower:
+                    tier = s
+                    break
+            if tier is None:
+                logger.warning(
+                    "drift: unknown tier %r for %s in memory.toml [drift_tiers]; ignoring",
+                    value, env_key,
+                )
+                continue
+            set_flag_tier(env_key, tier)
+            logger.info("drift: tier override %s = %s (from memory.toml)", env_key, tier.value)
+    except Exception as e:
+        logger.warning("drift: failed to apply tier overrides: %s", e)
+
+
+# Apply at import time — runs once when the module is first loaded.
+_apply_tier_overrides_from_toml()

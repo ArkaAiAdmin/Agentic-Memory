@@ -19,7 +19,7 @@ CRON_SCRIPT = str(WORKTREE / "cron" / "cron_check_config_drift.py")
 def _run_cron(extra_env: dict | None = None, *args: str) -> subprocess.CompletedProcess:
     import tempfile
     tmp_root = tempfile.mkdtemp()
-    env = os.environ.copy()
+    env = {k: v for k, v in os.environ.items() if not k.startswith("MEMORY_")}
     env["PYTHONPATH"] = str(WORKTREE)
     env["MEMORY_INSTALL_ROOT"] = tmp_root
     env["MEMORY_KNOWLEDGE_GRAPH"] = "1"
@@ -28,6 +28,7 @@ def _run_cron(extra_env: dict | None = None, *args: str) -> subprocess.Completed
     cmd = [str(VENV_PYTHON), CRON_SCRIPT] + list(args)
     return subprocess.run(
         cmd, capture_output=True, text=True, timeout=30, env=env,
+        cwd=str(WORKTREE),
     )
 
 

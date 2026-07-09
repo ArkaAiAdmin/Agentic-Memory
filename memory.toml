@@ -215,3 +215,54 @@ backend = "sentence-transformers"        # MEMORY_EMBEDDING_BACKEND (overridden 
 model_id = "intfloat/e5-small-v2"       # MEMORY_EMBEDDING_MODEL_ID (overridden by fixture when MEMORY_TEST_EMBEDDING=1)
 model_revision = ""                      # MEMORY_EMBEDDING_MODEL_REVISION (overridden by fixture when MEMORY_TEST_EMBEDDING=1)
 
+# ---------------------------------------------------------------------------
+# Config-drift enforcement policy (2026-07-09)
+# ---------------------------------------------------------------------------
+# Controls whether drift between env vars and TOML values triggers warnings
+# or enforcement actions. See infra/config_drift_policy.py.
+#
+# Process scope — one of: production | staging | development | test
+# Default: auto-detected (heuristic). Set explicitly for CI/production.
+[scope]
+name = "development"
+
+[drift]
+# Whether a drift report is computed at process startup. Default: true.
+detect_on_startup = true
+
+# Default enforcement mode applied on top of per-tier overrides below.
+# One of: warn | soft_block | hard_fail
+# Default: warn (preserves today's behavior — log only).
+default_mode = "warn"
+
+# Per-tier overrides for enforcement mode. Any tier not listed falls
+# back to default_mode above.
+tier_modes = {integrity = "hard_fail", stability = "soft_block", compliance = "warn", operational = "warn", neutral = "warn"}
+
+# When a tier is in SOFT_BLOCK mode, which operations are blocked?
+# Subset of: "save", "search", "read", "admin", "auto_save"
+soft_block_operations = ["save"]
+
+# Whether drift enforcement is recorded to the audit JSONL file.
+audit_enabled = true
+audit_path = "memory/config_drift_audit.jsonl"
+audit_max_bytes = 50102400  # 50 MB rotation threshold
+
+# Progressive escalation: escalate warn → soft_block → hard_fail on
+# repeated drift detection within the window.
+progressive_enforcement = true
+progression_window_secs = 300    # 5-minute rolling window
+progression_max_hits = 3          # 3 hits → promote to next mode
+
+# Escape hatch settings: time-bounded override via MEMORY_ESCAPE_HATCH.
+escape_hatch_enabled = true
+escape_hatch_max_secs = 14400      # 4 hours, max single override
+escape_hatch_audit_every_secs = 60 # re-affirm every minute
+
+# Per-flag tier overrides — deployment-specific tier classification.
+# Use this when a flag is differently critical in your deployment than
+# the upstream default (e.g., MEMORY_RERANKER_DISABLED becomes COMPLIANCE
+# in a search-quality-validated deployment).
+# [drift_tiers]
+# MEMORY_RERANKER_DISABLED = "compliance"
+
