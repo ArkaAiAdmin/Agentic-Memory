@@ -13,9 +13,9 @@ You are an agent working on the **agentic-memory** codebase at the repo root.
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
 <!--AUTO-GEN:START key="what_this_system_is"-->
-- **Surface**: 16 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 8 lifecycle hooks + 42+ cron jobs
+- **Surface**: 16 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 8 lifecycle hooks + 43+ cron jobs
 - **Schema**: v36, ~48 tables
-- **Code**: ~101k LOC production, ~87k+ test LOC; see `docs/architecture.md`
+- **Code**: ~102k LOC production, ~87k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 
@@ -58,7 +58,7 @@ agentic-memory/
 │   ├── background_worker.py           ← CQRS write-journal reconciler daemon
 │   ├── tool_complete.py              ← hook → save_memory pipeline
 │   └── circuit_breaker.py            ← auto-save failure gating
-├── cron/                             ← 42+ scheduled jobs + install_crontab.sh
+├── cron/                             ← 43+ scheduled jobs + install_crontab.sh
 ├── mcp_*.py (29 modules)             ← domain-split MCP tools
 ├── memory/                           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md               ← MCP tool reference for agents
@@ -204,11 +204,89 @@ server exposes **16 CORE tools** directly plus **1 `memory_maintenance` router**
 | DEPRECATED | 3 | Same as ADMIN (also listed in ADMIN_TOOLS; tracked for audit) |
 <!--AUTO-GEN:END key="mcp_surface_contract"-->
 
-**When to use which:**
-- Use a **CORE verb** if one covers the task (see `docs/MCP_SURFACE.md` for the full verb reference).
-- Use `memory_maintenance(operation="...")` for admin/diagnostic ops.
-- Never call an ADMIN tool name directly — it will return `ToolError("Unknown tool")` because it is removed
-  from the FastMCP surface at startup.
+**When to use which (decision tree):**
+
+## 1. Session Start (Hard Rule #1 — always first)
+
+| Trigger | Tool | Key Params | Defaults |
+|---------|------|-----------|----------|
+| Every new session or task switch | memory_session_start | query: subsystem/task name | empty = general briefing |
+
+## 2. Save
+
+| Trigger | Tool | Key Params | Defaults |
+|---------|------|-----------|----------|
+| Lesson learned, bug fixed, insight | memory_learn | content, category, tags, importance | category="lessons", importance=3, pinned=False |
+| Explicit memory (event, decision, preference, session) | memory_save | content, category, tags, importance, pinned | category="lessons", importance=3, pinned=False |
+| Edit existing note | memory_note | note_id, action, content, rationale | action="update" for full replace |
+| Insert/delete fragments in a note | memory_note | note_id, action="patch", additions=[], deletions=[], rationale | additions and deletions are lists of strings |
+| Retire a note and create a replacement | memory_note | note_id, action="supersede", title_slug, rationale | rationale required |
+| Undo a supersession | memory_note | note_id, action="revert_supersede", rationale | rationale required |
+| Review auto-saved drafts | memory_curate_autosave | action, note_ids | action="list" (no note_ids) |
+| Promote a draft to intentional memory | memory_curate_autosave | action="promote", note_ids=[...] | — |
+| Discard an unwanted draft | memory_curate_autosave | action="discard", note_ids=[...] | — |
+
+## 3. Search / Find
+
+| Trigger | Tool | Key Params | Defaults / Notes |
+|---------|------|-----------|-----------------|
+| Default lookup (all modes) | memory_search | query, mode, limit | mode="hybrid", limit=10, include_global=True |
+| Semantic/vector search only | memory_search | query, mode="semantic" | use when full-text noise is high |
+| Full-text search only | memory_search | query, mode="fts" | fast, no embedding required |
+| KG facts only | memory_search | query, mode="facts" | combine with belief_status, epistemic_source, fact_type |
+| Knowledge graph traversal | memory_search | query, mode="graph" | — |
+| Filter facts by belief | memory_search | mode="facts", belief_status | active \| retracted \| deprecated \| unconfirmed |
+| Filter facts by source | memory_search | mode="facts", epistemic_source | agent \| auto_save \| hook \| import \| cron |
+| Filter facts by type | memory_search | mode="facts", fact_type | observation \| agent_inference \| external_stated \| hypothesis \| derived |
+| Filter by how memory was created | memory_search | memory_source | agent \| auto_save \| import |
+| Bounded recall (recent context + recall log) | memory_recall | query, session_id | empty query = recent activity |
+| Explore knowledge graph | memory_graph | query, action | action="explore" \| "traverse" \| "shortest_path" \| "stats" |
+| Walk from a specific entity | memory_graph | action="traverse", start=entity_id, max_depth | max_depth=2 |
+| Find path between two entities | memory_graph | action="shortest_path", start, end | — |
+| Graph statistics | memory_graph | action="stats" | — |
+
+## 4. Review / Curate / Clean Up
+
+| Trigger | Tool | Key Params | Defaults |
+|---------|------|-----------|----------|
+| Review low-confidence or stale beliefs | memory_review_beliefs | min_confidence, older_than_days, limit | min_confidence=0.5, older_than_days=30, limit=20 |
+| Safe maintenance batch | memory_organize | target, dry_run | target="safe_default", dry_run=False |
+| Full maintenance batch | memory_organize | target="full", dry_run=False | full = safe_default + backfill + dedup + purge_expired |
+| Compact FTS5 index | memory_organize | target="compact", dry_run | — |
+| Deduplicate KG entities | memory_organize | target="dedup", dry_run | — |
+| Delete a note | memory_delete | note_id, hard | hard=False (soft-delete, 30-day recovery) |
+| Check system health | memory_health_check | — | — |
+
+## 5. Share (multi-agent)
+
+| Trigger | Tool | Key Params | Defaults |
+|---------|------|-----------|----------|
+| Share a note with another agent | memory_share | note_id, share_with | — |
+| View notes shared with current agent | memory_share | note_id="", action="list" | — |
+
+## 6. Admin / Diagnostic (behind memory_maintenance router)
+
+| Trigger | Tool | Key Params | Notes |
+|---------|------|-----------|-------|
+| Any admin/diagnostic op | memory_maintenance(operation="<name>", **kwargs) | operation, kwargs | 87 ops — never call ADMIN tools by name [Hard Rule #6] |
+| Examples | memory_maintenance | operation="tier_stats" | |
+| Examples | memory_maintenance | operation="check_integrity", deep=True | |
+| Examples | memory_maintenance | operation="audit", hours=24 | |
+| Review recent activity / errors | memory_audit | hours, limit, include_errors | hours=24, limit=20, include_errors=True |
+| View user/agent/skills profile or ARC stats | memory_profile | action="stats\|user\|agents\|skills\|arc" | action="stats" for overview |
+| Power user escape hatch | memory_advanced(operation="<any admin op>") | operation, kwargs | Identical to memory_maintenance |
+
+---
+
+**Pre-flight (every session):**
+1. `memory_session_start(query="<current subsystem>")` — loads context from previous sessions [Hard Rule #1]
+2. Search before acting: `memory_search(query="<topic>")` before any task [Hard Rule #2]
+3. Never call ADMIN tools by name — go through `memory_maintenance` [Hard Rule #6]
+
+**After significant work:**
+- Save decisions/lessons with `memory_save(category="decisions"/"lessons")` [Hard Rules 3, 13]
+- Save session summary before ending [Hard Rule 7]
+- Do NOT call `memory_organize` or `memory_maintenance` as a routine post-task ritual — cron handles this [Hard Rule 19]
 
 **Tool registry:** `tool_registry.ADMIN_TOOLS` is the `for`-loop target in `memory_mcp.py` (line 231).
 Any name in that list should be reachable only via `memory_maintenance`. If you add a new

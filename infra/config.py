@@ -394,7 +394,7 @@ class AutoSaveConfig:
         "filesystem_directory_tree,filesystem_read_multiple_files,"
         "filesystem_search_files,filesystem_get_file_info,"
         "filesystem_list_directory_with_sizes,memory_session_start,"
-        "memory_user_profile,memory_recall_context,memory_profile_access,"
+        "memory_user_profile,memory_recall,memory_profile_access,"
         "memory_record_ctr_feedback,memory_check_concept_drift,todo,process,"
         "read_terminal"
     )
@@ -1131,7 +1131,7 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "filesystem_directory_tree,filesystem_read_multiple_files,"
             "filesystem_search_files,filesystem_get_file_info,"
             "filesystem_list_directory_with_sizes,memory_session_start,"
-            "memory_user_profile,memory_recall_context,memory_profile_access,"
+            "memory_user_profile,memory_recall,memory_profile_access,"
             "memory_record_ctr_feedback,memory_check_concept_drift,todo,process,"
             "read_terminal",
             str,

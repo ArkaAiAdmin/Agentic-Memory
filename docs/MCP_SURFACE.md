@@ -81,9 +81,9 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 - `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.
 - `memory_advanced(operation="...", **kwargs)`: alias for `memory_maintenance`; interchangeable.
 
-> **Important:** 80+ legacy ADMIN tools were pruned from the direct surface in Phase A
-> (2026-07-01). They are **not gone** — they are accessible via the router. Calling
-> `memory_maintenance` with an operation name is the supported path.
+> **Important:** 87 ADMIN + 3 DEPRECATED tools are not removed — they are accessible via the `memory_maintenance`
+> router. Calling `memory_maintenance` with an operation name is the supported path. The 3 DEPRECATED tools
+> are routed via their replacement verbs and also tracked for audit.
 
 > **There is exactly one `memory_save` MCP tool.** It is registered as a CORE verb in
 > `mcp_verbs.py` and exported through `memory_mcp.py`. Do not call `save_pipeline.save_memory`

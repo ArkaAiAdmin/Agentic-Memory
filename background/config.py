@@ -80,7 +80,7 @@ DEFAULT_TOOL_DENYLIST: frozenset = frozenset(
         "filesystem_list_directory_with_sizes",
         "memory_session_start",
         "memory_user_profile",
-        "memory_recall_context",
+        "memory_recall",
         "memory_profile_access",
         "memory_record_ctr_feedback",
         "memory_check_concept_drift",
