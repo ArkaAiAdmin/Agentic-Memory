@@ -890,7 +890,8 @@ class TestTemporalFactClause:
 
     def test_as_of_none_returns_current_only(self):
         clause, params = ft._temporal_fact_clause(None)
-        assert clause == " AND f.invalid_at IS NULL"
+        assert "f.invalid_at IS NULL" in clause
+        assert "f.superseded_by IS NULL" in clause
         assert params == []
 
     def test_as_of_epoch(self):

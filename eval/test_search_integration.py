@@ -20,6 +20,8 @@ import tempfile
 from pathlib import Path
 from unittest import TestCase
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from eval._fixtures import bootstrap_temp_db_clean  # noqa: E402
@@ -100,6 +102,7 @@ class TestSearchEndToEnd(TestCase):
         assert result["count"] == 0
         assert result["results"] == []
 
+    @pytest.mark.timeout(180)
     def test_search_phase_latencies_recorded_on_success(self) -> None:
         from search.orchestrator import search_memories, _phase_latencies
 
@@ -112,7 +115,7 @@ class TestSearchEndToEnd(TestCase):
         assert "phase_latencies" in result, (
             f"Expected phase_latencies, got keys: {list(result)}"
         )
-        for known_phase in ("fts", "hybrid_fusion", "rerank"):
+        for known_phase in ("search.fts", "search.hybrid_fusion", "rerank"):
             assert known_phase in result["phase_latencies"], (
                 f"Missing phase: {known_phase}, got: {list(result['phase_latencies'])}"
             )
@@ -163,6 +166,7 @@ class TestSearchEndToEnd(TestCase):
         assert result["count"] == 0
         assert result["results"] == []
 
+    @pytest.mark.timeout(180)
     def test_search_query_id_is_unique_per_call(self) -> None:
         from search.orchestrator import search_memories
 

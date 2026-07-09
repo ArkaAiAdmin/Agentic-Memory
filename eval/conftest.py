@@ -192,6 +192,10 @@ _TEST_ENV_VARS = {
     # directly read memory.db after writes and expect synchronous behavior.
     # Dedicated write-journal integration tests opt in via their own config.
     "MEMORY_WRITE_JOURNAL_ENABLED": "0",
+    # Downgrade config drift enforcement from hard_fail to warn so that
+    # env-var overrides (like MEMORY_WRITE_JOURNAL_ENABLED=0 above) don't
+    # block startup. Tests intentionally override TOML flags.
+    "MEMORY_FAIL_ON_INTEGRITY_DRIFT": "0",
 }
 
 @pytest.fixture(scope="session", autouse=False)

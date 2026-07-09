@@ -35,14 +35,17 @@ class TestCrdtDominance(unittest.TestCase):
     def test_dominates_basic(self):
         self.assertTrue(dominates({"a": 2, "b": 3}, {"a": 1, "b": 2}))
         self.assertFalse(dominates({"a": 1, "b": 2}, {"a": 2, "b": 1}))
-        self.assertTrue(dominates({"a": 1}, {"a": 1}))
+        # Equal vectors: strict dominance requires at least one strictly
+        # greater counter, so equal does NOT dominate (CRDT semantics).
+        self.assertFalse(dominates({"a": 1}, {"a": 1}))
         self.assertFalse(dominates({}, {}))
 
     def test_concurrent(self):
         self.assertTrue(concurrent({"a": 2, "b": 1}, {"a": 1, "b": 2}))
         self.assertFalse(concurrent({"a": 2}, {"a": 1}))
-        self.assertFalse(concurrent({"a": 1, "b": 1}, {"a": 1, "b": 1}))
-        self.assertTrue(concurrent({}, {}))
+        # Equal vectors are concurrent — neither dominates.
+        self.assertTrue(concurrent({"a": 1, "b": 1}, {"a": 1, "b": 1}))
+        self.assertFalse(concurrent({}, {}))
 
 
 class TestCrdtSaveNewNote(unittest.TestCase):

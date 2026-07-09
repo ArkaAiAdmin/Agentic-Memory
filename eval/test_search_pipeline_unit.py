@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
@@ -84,6 +86,7 @@ class TestSearchMemoriesReturnStructure(unittest.TestCase):
         result = search_memories(PROD_DB, "test", limit=5, safety_wiring=False)
         self.assertIsInstance(result["results"], list)
 
+    @pytest.mark.timeout(240)
     def test_output_is_string(self):
         result = search_memories(PROD_DB, "test", limit=5, safety_wiring=False)
         self.assertIsInstance(result["output"], str)

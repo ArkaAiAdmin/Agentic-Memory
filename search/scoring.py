@@ -486,7 +486,7 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
 
     try:
         concept_rows = db.execute(
-            "SELECT note_id, metadata FROM memories WHERE category = 'concepts' AND deleted_at IS NULL"
+            "SELECT id, metadata FROM memories WHERE category = 'concepts' AND deleted_at IS NULL"
         ).fetchall()
     except Exception as e:
         logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
@@ -603,7 +603,7 @@ def _apply_centrality_boost(scored_results: list, db_path: Path) -> list:
 
     try:
         centrality_rows = db.execute(
-            "SELECT id, centrality FROM kg_entities WHERE centrality IS NOT NULL"
+            "SELECT id, betweenness FROM kg_entities WHERE betweenness IS NOT NULL"
         ).fetchall()
     except Exception as e:
         logger.warning("Unhandled exception in _apply_centrality_boost: %s", e)

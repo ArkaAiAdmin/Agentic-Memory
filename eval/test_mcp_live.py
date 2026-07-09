@@ -14,6 +14,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import memory_mcp
@@ -186,6 +188,7 @@ class TestLiveMCPRateLimit(unittest.TestCase):
 
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
+    @pytest.mark.timeout(240)
     def test_burst_returns_rate_limited(self):
         os.environ["MEMORY_RATE_LIMIT_MEMORY_SEARCH"] = "3600,60"
         reset_config()

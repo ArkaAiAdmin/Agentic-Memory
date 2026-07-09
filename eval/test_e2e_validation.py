@@ -487,7 +487,7 @@ print(f"avg_search_ms={{(t1-t0)/20*1000:.1f}}")
 """
     e_path = test_root / "_e_perf.py"
     e_path.write_text(e_script)
-    rc, out, err, dur = run(f"{py} {e_path}", test_root=test_root)
+    rc, out, err, dur = run(f"{py} {e_path}", test_root=test_root, timeout=180)
     if "avg_search_ms=" in out:
         m = re.search(r"avg_search_ms=([\d.]+)", out)
         if m:

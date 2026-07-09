@@ -109,13 +109,18 @@ class TestParseVersionVector(unittest.TestCase):
 
 
 class TestDominates(unittest.TestCase):
-    """dominates: v1 >= v2 componentwise (non-strict)."""
+    """dominates: v1 strictly dominates v2 (v1 causally after v2).
 
-    def test_equal_dominates(self):
-        """v1 == v2: IS a domination (non-strict). The function
-        checks component-wise >=, not strict >."""
+    v1 dominates v2 iff for every agent x, v1[x] >= v2[x], and there
+    exists at least one agent where v1[x] > v2[x].  Equal vectors are
+    concurrent — neither dominates.
+    """
+
+    def test_equal_does_not_dominate(self):
+        """v1 == v2: does NOT dominate (strict). Equal vectors are
+        concurrent in CRDT semantics."""
         v = {"a": 1, "b": 1}
-        self.assertTrue(dominates(v, v))
+        self.assertFalse(dominates(v, v))
 
     def test_strictly_greater_dominates(self):
         v1 = {"a": 2, "b": 1}
@@ -157,9 +162,10 @@ class TestDominates(unittest.TestCase):
 class TestConcurrent(unittest.TestCase):
     """concurrent: neither dominates."""
 
-    def test_equal_is_not_concurrent(self):
+    def test_equal_is_concurrent(self):
+        """Equal vectors are concurrent — neither dominates."""
         v = {"a": 1, "b": 1}
-        self.assertFalse(concurrent(v, v))
+        self.assertTrue(concurrent(v, v))
 
     def test_strictly_greater_is_not_concurrent(self):
         v1 = {"a": 2, "b": 1}

@@ -41,7 +41,8 @@ class TestFeatureFlags:
         required = {"value", "env_var", "toml_path", "default", "warnings"}
         for name, meta in flags.items():
             assert required.issubset(set(meta.keys())), f"{name} missing keys: {required - set(meta.keys())}"
-            assert isinstance(meta["value"], bool)
+            # Most flags are bool, but some (e.g. neural_forget_mode) are str.
+            assert isinstance(meta["value"], (bool, str, int, float))
             assert isinstance(meta["warnings"], list)
 
     def test_disabled_temporal_kg_has_warning(self, monkeypatch):

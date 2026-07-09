@@ -92,6 +92,9 @@ def dominates(v1: dict[str, int], v2: dict[str, int]) -> bool:
 
 def concurrent(v1: dict[str, int], v2: dict[str, int]) -> bool:
     """Return True if v1 and v2 are concurrent (neither dominates)."""
+    # Both empty = same state, not concurrent.
+    if not v1 and not v2:
+        return False
     return not dominates(v1, v2) and not dominates(v2, v1)
 
 

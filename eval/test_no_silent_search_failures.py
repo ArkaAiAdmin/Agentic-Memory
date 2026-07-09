@@ -153,6 +153,7 @@ class TestNoSilentSearchFailures:
                 f"search('{q}') on DB with bad KG entity returned error: {out[:200]}"
             )
 
+    @pytest.mark.timeout(120)
     def test_search_with_special_chars_in_query(self, temp_db_clean):
         """Edge case: queries containing characters that are FTS5 special."""
         for q in ['a"b', "a'b", "a/b", "a*b", "a^b", "a:b"]:

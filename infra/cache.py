@@ -49,7 +49,7 @@ safety_wiring: bool = True
 # The actual LRU cache instance.  Importable and directly mutated by
 # search/save/clear paths in search_pipeline, save_pipeline, etc.
 _search_cache: OrderedDict = OrderedDict()
-_search_cache_lock = threading.Lock()
+_search_cache_lock = threading.RLock()
 _fts5_cache_cleared: bool = False
 
 # Reverse index: maps note_id → set of cache_keys whose result includes
@@ -175,19 +175,29 @@ def invalidate_cache_for_note(note_id: str) -> int:
     Returns the number of entries evicted.  Falls back to a full clear
     if the note is not tracked (e.g. cache was populated before this
     function was wired up).
+
+    Uses try_lock to avoid blocking searcher threads — if the lock is
+    already held, the invalidation is skipped (the cache may be stale
+    but the system won't deadlock).
     """
     with _cache_note_index_lock:
         keys = _cache_note_index.pop(note_id, None)
     if keys is None:
-        with _search_cache_lock:
-            _search_cache.clear()
+        if _search_cache_lock.acquire(blocking=False):
+            try:
+                _search_cache.clear()
+            finally:
+                _search_cache_lock.release()
         return 0
     evicted = 0
-    with _search_cache_lock:
-        for k in keys:
-            if k in _search_cache:
-                _search_cache.pop(k, None)
-                evicted += 1
+    if _search_cache_lock.acquire(blocking=False):
+        try:
+            for k in keys:
+                if k in _search_cache:
+                    _search_cache.pop(k, None)
+                    evicted += 1
+        finally:
+            _search_cache_lock.release()
     return evicted
 
 
