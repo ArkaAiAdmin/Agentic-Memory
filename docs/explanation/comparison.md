@@ -7,13 +7,13 @@ How Agentic Memory compares to other memory systems.
 | Feature | Agentic Memory | Mem0 | Zep | MemGPT/Letta |
 |---------|---------------|------|-----|--------------|
 | **Storage** | Markdown + SQLite | PostgreSQL | PostgreSQL | PostgreSQL |
-| **Search** | BM25 + vector + KG | Vector + graph | Vector + graph | Vector + LLM |
+| **Search** | 12-phase hybrid (BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost) | Vector + graph | Vector + graph | Vector + LLM |
 | **Source of truth** | Markdown files | Database | Database | Database |
 | **Self-hosted** | Yes (default) | Yes | Yes | Yes |
 | **Cloud option** | Planned | Yes | Yes | Yes |
 | **LLM required** | No (optional) | Yes | Yes | Yes |
 | **Privacy** | Local-first | Configurable | Configurable | Configurable |
-| **MCP support** | Yes (102 tools: 15 CORE + 87 ADMIN + 3 DEPRECATED) | Yes | Yes | No |
+| **MCP support** | Yes (17 CORE tools) | Yes | Yes | No |
 | **Open source** | Apache 2.0 | Apache 2.0 | MIT | Apache 2.0 |
 
 ## Detailed Comparison

@@ -1,6 +1,6 @@
 # How to Add a Cron Job
 
-Add a new background job to the agentic-memory system. There are 26 cron scripts today (`cron/cron_*.py`); this is how to add a 27th. All cron scripts live in the `cron/` subdirectory (moved from the repo root on 2026-06-22).
+Add a new background job to the agentic-memory system. There are 39 cron scripts today (`cron/cron_*.py`); this is how to add a 40th. All cron scripts live in the `cron/` subdirectory. The consolidated scheduler (`cron/scheduler.py`) runs every 5 minutes and executes due jobs by frequency tier.
 
 This is the **maintainer** version. For the high-level skill, see `skills/add-a-cron-job/SKILL.md`.
 

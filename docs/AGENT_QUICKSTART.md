@@ -15,7 +15,7 @@ Every agent interacting with this system is bound by the **Memory Contract**:
 
 ## 2. Core Verbs & Escape Hatch Reference
 
-The agent-facing surface is composed of **15 core verbs** and **1 escape hatch**:
+The agent-facing surface is composed of **17 core verbs** and **1 escape hatch**:
 
 ### Core Verbs (Thin wrappers with sensible defaults)
 * `memory_search(query, limit=15, mode="hybrid")`: Unified keyword FTS5 + semantic vector search.
@@ -33,6 +33,7 @@ The agent-facing surface is composed of **15 core verbs** and **1 escape hatch**
 * `memory_review_beliefs(action="due")`: View beliefs scheduled for reinforcement/decay review.
 * `memory_curate_autosave(action="list")`: List, apply, or purge deferred/inbox auto-saves.
 * `memory_health_check()`: Diagnostic summary of DB, index, background worker, and schema.
+* `memory_system_health()`: Comprehensive green/yellow/red health check with actionable next steps.
 
 ### Escape Hatch
 * `memory_advanced(operation, kwargs)`: Pass-through router to run any administrative/maintenance operation directly.

@@ -1,6 +1,6 @@
 # Database Schema
 
-Agentic Memory uses SQLite with FTS5 for full-text search. Schema version **36** (defined in `migration_runner.py`; 37 migrations, ~48 user-visible tables; ~62 total including FTS5 virtual tables).
+Agentic Memory uses SQLite with FTS5 for full-text search. Schema version **37** (defined in `migration_runner.py`; 38 migrations, ~49 user-visible tables; ~62 total including FTS5 virtual tables).
 
 Migration history (most recent first):
 - v21: `kg_entity_crdt` + `kg_edge_crdt` tables for CRDT multi-agent merge support. Enables conflict-free entity/edge sync across peers.

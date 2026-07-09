@@ -42,7 +42,7 @@ services:
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - Git
 
 ### Installation
@@ -99,18 +99,14 @@ sudo systemctl start agentic-memory
 
 ## Cron Jobs
 
-For background task processing, add to crontab:
+Agentic Memory uses a consolidated scheduler that runs every 5 minutes:
 
 ```bash
-# Process background tasks every 15 minutes
-*/15 * * * * agentic-memory-worker
-
-# Compact and dedup monthly on the 1st at 02:30
-30 2 1 * * agentic-memory-compact
-
-# Backup database daily at 3 AM
-0 3 * * * cd /opt/agentic-memory && venv/bin/python cron/cron_backup.py
+# Install the scheduler (replaces 39 individual cron entries)
+bash cron/install_crontab.sh
 ```
+
+The scheduler checks which jobs are due by frequency tier and runs them sequentially. Configure in `cron/jobs.py`.
 
 ## Reverse Proxy (Nginx)
 

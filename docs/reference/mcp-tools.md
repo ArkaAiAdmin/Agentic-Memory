@@ -1,10 +1,10 @@
 # MCP Tools Reference
 
-Agentic Memory exposes **16 CORE + 87 ADMIN + 3 DEPRECATED = 106 total registered names** (103 `@mcp.tool()` registrations, with DEPRECATED tools excluded from the direct surface). The single source of truth for the tool surface is `tool_registry.py` (`CORE_TOOLS`, `ADMIN_TOOLS`, and `DEPRECATED` lists).
+Agentic Memory exposes **17 CORE + 87 ADMIN + 3 DEPRECATED = 107 total registered names** (104 `@mcp.tool()` registrations, with DEPRECATED tools excluded from the direct surface). The single source of truth for the tool surface is `tool_registry.py` (`CORE_TOOLS`, `ADMIN_TOOLS`, and `DEPRECATED` lists).
 
-## Core Tools (16)
+## Core Tools (17)
 
-The 16 tools most agents use day-to-day. Each is a first-class MCP
+The 17 tools most agents use day-to-day. Each is a first-class MCP
 function; no grouping required.
 
 ### `memory_save`

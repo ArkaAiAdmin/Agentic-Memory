@@ -5,6 +5,22 @@ own your data — this guide shows you how to make other tools aware of it.
 
 ## Step 1: Export via OKF
 
+### Via MCP Tool (Recommended)
+
+```python
+from agentic_memory import MemoryClient
+mc = MemoryClient()
+mc.okf_export("~/ObsidianVault/agent-memory")
+```
+
+Or via MCP:
+
+```
+memory_okf_export(output_dir="~/ObsidianVault/agent-memory")
+```
+
+### Via CLI
+
 ```bash
 cd ~/.config/agentic-memory
 venv/bin/python okf_export.py \

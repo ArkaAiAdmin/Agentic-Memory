@@ -9,24 +9,21 @@ Get Agentic Memory running in 5 minutes.
 
 ## Installation
 
-### macOS
-
-**Homebrew (recommended):**
-
-```bash
-brew tap ArkaAiAdmin/agentic-memory https://github.com/ArkaAiAdmin/Agentic-Memory.git
-brew install agentic-memory
-```
-
-**pip:**
+### pip (Recommended)
 
 ```bash
 pip install agentic-memory
 ```
 
-### Windows
+### From Source
 
-**pip:**
+```bash
+git clone https://github.com/ArkaAiAdmin/agentic-memory-local.git
+cd agentic-memory-local
+pip install -e ".[all]"
+```
+
+### Windows
 
 ```powershell
 pip install agentic-memory

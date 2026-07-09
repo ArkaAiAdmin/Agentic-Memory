@@ -1,26 +1,28 @@
 # Integration Roadmap
 
-## Shipped (v2.0.0)
+## Shipped
 
 | Adapter | Status |
 |---|---|
-| LangChain `BaseRetriever` | ✅ |
-| LangChain `BaseChatMessageHistory` | ✅ |
 | LangChain `StructuredTool` (search + save) | ✅ |
+| LangChain `Retriever` (retrieval) | ✅ |
 | LangChain `CallbackHandler` (auto-save turns) | ✅ |
+| LangChain `ChatMessageHistory` (persistent history) | ✅ |
 | CrewAI `BaseTool` (search + save) | ✅ |
-| CrewAI `Memory` slot adapter | ✅ (CrewAI 0.x only) |
-| Tests (all 6 suites) | ✅ |
-| Docs (overview + langchain + crewai) | ✅ |
+| OKF Export/Import (Obsidian, Logseq) | ✅ |
+| MCP Server (17 CORE tools) | ✅ |
+| REST API + WebSocket | ✅ |
+| Python SDK | ✅ |
+| TypeScript SDK | ✅ |
 
 ## Planned
 
-| Adapter | Target | Priority |
-|---|---|---|
-| LlamaIndex `BaseMemory` | v2.1.0 | Medium |
-| Haystack document store | v2.1.0 | Medium |
-| Semantic Kernel memory plugin | v2.2.0 | Low |
-| AutoGen `Memory` adapter | v2.2.0 | Low |
+| Adapter | Priority |
+|---|---|
+| LlamaIndex `BaseMemory` | Medium |
+| Haystack document store | Medium |
+| Semantic Kernel memory plugin | Low |
+| AutoGen `Memory` adapter | Low |
 
 ## What would help us prioritise
 

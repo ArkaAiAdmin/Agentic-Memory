@@ -1,25 +1,51 @@
 # Search Pipeline
 
-Agentic Memory uses a **hybrid search pipeline** that combines three retrieval methods, then ranks results with a learned ranker.
+Agentic Memory uses a **12-phase hybrid search pipeline** that combines multiple retrieval methods, reranking, temporal decay, and knowledge graph boosting.
 
 ## Overview
 
 ```
-Query
-  │
-  ├──▶ FTS5 BM25 (keyword match)
-  ├──▶ Vector search (semantic match)
-  ├──▶ Knowledge graph (entity lookup)
-  │
-  ▼
-┌──────────────┐
-│   Ranker     │
-│ (score merge)│
-└──────┬───────┘
-       │
-       ▼
-  Results (top-k)
+Query → Phase 0 (Normalize) → Phase 1 (FTS5 BM25)
+                                    ↓
+                              Phase 2 (Vector Search)
+                                    ↓
+                              Phase 3 (ColBERT Late-Interaction)
+                                    ↓
+                              Phase 4 (RRF Merge)
+                                    ↓
+                              Phase 5 (Cross-Encoder Rerank)
+                                    ↓
+                              Phase 6 (Temporal Decay)
+                                    ↓
+                              Phase 7 (Neural Forget Curve)
+                                    ↓
+                              Phase 8 (KG Concept Boost)
+                                    ↓
+                              Phase 9 (Final Scoring)
+                                    ↓
+                              Phase 10 (Result Envelope)
+                                    ↓
+                              Phase 11 (Error Counter + Latency)
 ```
+
+Each phase is independently isolated — no single failure kills the search.
+
+## Phase Details
+
+| Phase | Technique | Purpose |
+|-------|-----------|---------|
+| 0 | Unicode normalization, query classification | Input normalization |
+| 1 | SQLite FTS5 BM25 | Keyword-based retrieval |
+| 2 | usearch ANN + model2vec embeddings | Semantic vector search |
+| 3 | Character n-gram late-interaction | Token-level matching |
+| 4 | Reciprocal Rank Fusion | Merge FTS5 + vector + ColBERT |
+| 5 | IDF+bigram weak CE or Qwen3-Reranker deep CE | Neural reranking |
+| 6 | Time-weighted scoring | Recency bias |
+| 7 | Surprise-based retention formula | Forget curve |
+| 8 | KG entity centrality boost | Knowledge graph boost |
+| 9 | Weighted combination | Final scoring |
+| 10 | JSON envelope | Output formatting |
+| 11 | Per-phase error tracking | Observability |
 
 ## Stage 1: FTS5 BM25
 
@@ -28,166 +54,103 @@ SQLite's FTS5 extension provides **keyword-based full-text search** with BM25 ra
 ```python
 # How FTS5 works internally
 SELECT *, bm25(chunks) AS rank
-FROM chunks
-WHERE chunks MATCH 'sqlite concurrency'
+FROM memories_fts
+WHERE memories_fts MATCH ?
 ORDER BY rank
-LIMIT 20;
 ```
 
-**Strengths:**
-- Fast (microseconds for small-to-medium corpora)
-- Handles exact matches well
-- No model loading required
-- Works offline with zero dependencies
+**Strengths:** Fast, deterministic, no model required.
+**Weakness:** No semantic understanding — "happy" won't match "joyful".
 
-**Weaknesses:**
-- No semantic understanding ("car" ≠ "automobile")
-- No contextual ranking
-- Sensitive to exact word forms
+## Stage 2: Vector Search
 
-## Stage 2: Vector Search (Optional)
-
-When enabled (`MEMORY_EMBEDDINGS=1`), the system uses `model2vec` embeddings for **semantic similarity**.
+model2vec embeddings stored in a usearch ANN index for approximate nearest-neighbor search.
 
 ```python
-# How vector search works
-query_embedding = model.encode("sqlite concurrency patterns")
-# L2-normalized: cosine similarity = dot product
-similarities = np.dot(query_embedding, stored_embeddings.T)
-top_indices = np.argsort(similarities)[-k:]
+# Embedding + search
+embedding = model2vec.encode(query)
+results = vec_index.search(embedding, k=limit)
 ```
 
-**Strengths:**
-- Understands meaning ("car" ≈ "automobile")
-- Captures conceptual similarity
-- Works across languages
+**Strengths:** Semantic understanding — "happy" matches "joyful".
+**Weakness:** Slower than FTS5, requires embedding model.
 
-**Weaknesses:**
-- Requires model loading (~50MB)
-- Slower than FTS5 (milliseconds vs microseconds)
-- Less precise for exact keyword matches
+## Stage 3: ColBERT Late-Interaction
 
-## Stage 3: Knowledge Graph (Optional)
+Character n-gram proxy for late-interaction reranking. Pre-computed query ngrams for efficiency.
 
-When enabled (`MEMORY_KNOWLEDGE_GRAPH=1`), the system searches the **entity-relation graph**.
+**Strengths:** Token-level matching without full cross-encoder cost.
+**Weakness:** Approximation of true late-interaction.
 
-```python
-# How KG search works
-entities = search_graph("SQLite", max_hops=2)
-# Returns: entity → relations → related entities → memories
-```
+## Stage 4: Reciprocal Rank Fusion (RRF)
 
-**Strengths:**
-- Captures relationships between concepts
-- Enables "hop" queries (find related entities)
-- Provides structured context
-
-**Weaknesses:**
-- Depends on NER quality (regex-based)
-- Sparse for small memory stores
-- No semantic ranking
-
-## Stage 4: Ranker
-
-The ranker merges results from all three stages into a **single ranked list**.
-
-### Scoring
-
-Each result gets a score from 0.0 to 1.0:
+Merges results from FTS5, vector, and ColBERT using RRF:
 
 ```
-final_score = (bm25_score × bm25_weight) +
-              (vector_score × vector_weight) +
-              (kg_score × kg_weight) +
-              (recency_bonus × recency_weight)
+RRF_score(d) = Σ 1 / (k + rank_i(d))
 ```
 
-Default weights (configurable):
+Where `k=60` (standard constant) and `rank_i(d)` is the rank of document `d` in retrieval method `i`.
 
-| Source | Weight | Rationale |
-|--------|--------|-----------|
-| FTS5 BM25 | 0.4 | Keyword relevance is primary |
-| Vector | 0.3 | Semantic match is secondary |
-| KG | 0.2 | Relationship context is tertiary |
-| Recency | 0.1 | Recent memories get a small boost |
+## Stage 5: Cross-Encoder Reranking
 
-### Reranking (Optional)
+Two options:
+- **Weak CE:** IDF-weighted token coverage + bigram phrase bonus (sub-millisecond)
+- **Deep CE:** Qwen3-Reranker-0.6B or BAAI/bge-reranker-v2-m3 (neural, higher quality)
 
-When the cross-encoder reranker is available, results are reranked for higher precision:
+## Stage 6: Temporal Decay
 
-```python
-# Cross-encoder reranking
-reranked = cross_encoder.rank(
-    query=query,
-    passages=[r["content"] for r in results],
-    top_k=10
+Time-weighted scoring based on memory age:
+
+```
+decay_score = score × (1 / (1 + α × days_old))
+```
+
+Where `α` is the decay rate (configurable).
+
+## Stage 7: Neural Forget Curve
+
+Surprise-based retention formula:
+
+```
+retention = sigmoid(
+    w_acc × access_signal +
+    w_surp × surprise +
+    w_imp × importance_norm +
+    w_fit × fitness -
+    w_rec × recency_penalty -
+    bias
 )
 ```
 
-The cross-encoder evaluates each (query, passage) pair directly, producing more accurate relevance scores than the separate-encode-then-compare approach.
+**Signals:**
+- `access_signal` — How often the memory has been accessed
+- `surprise` — How unexpected the content is (Jaccard distance)
+- `importance_norm` — Memory's importance rating (1-5)
+- `fitness` — Memory's quality score
+- `recency_penalty` — Days since last access
 
-## Pipeline Modes
+## Stage 8: KG Concept Boost
 
-### Quick Search (Default)
+Boosts results linked to high-centrality entities in the knowledge graph.
 
-```
-FTS5 → top-20 → Ranker → top-10
-```
+## Stage 9: Final Scoring
 
-No vector search, no reranking. Fastest option.
-
-### Semantic Search
-
-```
-FTS5 → top-20 ─┐
-                ├──→ Ranker → top-10
-Vector → top-20 ┘
-```
-
-Adds semantic similarity. Requires `model2vec` installed.
-
-### Full Search
+Weighted combination of all signals:
 
 ```
-FTS5 → top-20 ─┐
-                ├──→ Ranker → top-20 → Reranker → top-10
-Vector → top-20 ┘
-KG → top-10 ─────┘
+final_score = α × fts_score + β × vector_score + γ × rerank_score + δ × temporal_score + ε × forget_score + ζ × kg_boost
 ```
 
-All three sources + reranking. Slowest but most accurate.
+Weights are configurable via `memory.toml`.
 
 ## Configuration
 
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `MEMORY_EMBEDDINGS` | `0` | Enable vector search |
-| `MEMORY_KNOWLEDGE_GRAPH` | `0` | Enable KG search |
-| `rerank=true` | `false` | Enable cross-encoder reranking |
-| `deep_rerank=true` | `false` | Use jina-reranker-v3 (slower, better) |
-
-## Tuning Search Quality
-
-### If results are too noisy
-
-- Increase `min_score` threshold
-- Use more specific queries
-- Enable reranking for precision
-
-### If relevant results are missing
-
-- Try broader queries
-- Enable vector search for semantic matching
-- Enable KG for relationship-based retrieval
-
-### If search is too slow
-
-- Disable vector search (use FTS5 only)
-- Reduce `limit` parameter
-- Rebuild the FTS5 index: `python rebuild_index.py`
-
-## Further Reading
-
-- [Why Markdown](why-markdown.md) — Why the index is derived
-- [Knowledge Graph](knowledge-graph.md) — Entity extraction details
-- [Debug Search](../how-to/debug-search.md) — Troubleshooting guide
+```toml
+[search]
+recency_weight = 0.1
+rerank_enabled = true
+late_interaction = true
+concept_boost_enabled = true
+centrality_boost_enabled = true
+```

@@ -1,6 +1,6 @@
 # How to Add an MCP Tool
 
-Add a new tool to the agentic-memory MCP server. There are 56 tools today; this walks you through adding a 57th.
+Add a new tool to the agentic-memory MCP server. There are 57 tools today (17 CORE + 87 ADMIN + 3 DEPRECATED); this walks you through adding a 58th.
 
 This is the **maintainer** version. For the high-level skill, see `skills/add-an-mcp-tool/SKILL.md`.
 
