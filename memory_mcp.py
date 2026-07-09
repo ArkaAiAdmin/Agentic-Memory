@@ -230,8 +230,24 @@ import mcp_verbs  # noqa: E402, F401
 # Import additional MCP modules so their tools are registered before the
 # removal loop below — this prevents orphans appearing/disappearing
 # depending on the entry point.
+import mcp_agent  # noqa: E402,F401
+import mcp_async  # noqa: E402,F401
+import mcp_crdt  # noqa: E402,F401
+import mcp_ctr_drift  # noqa: E402,F401
+import mcp_dashboard  # noqa: E402,F401
 import mcp_kg  # noqa: E402, F401 — graph_insights/evolution (ADMIN_TOOLS)
+import mcp_kg_traversal  # noqa: E402,F401
 import mcp_maintenance  # noqa: E402, F401 — memory_maintenance + admin tools
+import mcp_maintenance_ops  # noqa: E402, F401
+import mcp_metrics  # noqa: E402,F401
+import mcp_multi_modal  # noqa: E402,F401
+import mcp_okf  # noqa: E402,F401
+import mcp_profile  # noqa: E402,F401
+import mcp_quality  # noqa: E402,F401
+import mcp_safety  # noqa: E402,F401
+import mcp_sdk  # noqa: E402,F401
+import mcp_session  # noqa: E402,F401
+import mcp_sharing  # noqa: E402,F401
 
 # Keep memory_maintenance (the router) visible; hide individual admin tools.
 for _admin_name in tool_registry.ADMIN_TOOLS:
