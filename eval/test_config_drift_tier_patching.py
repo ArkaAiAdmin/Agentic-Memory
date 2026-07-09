@@ -3,14 +3,11 @@
 Per Hard Rule 20 each test is a separate Python process so the global
 ``_FLAG_TIERS`` dict starts fresh for every assertion.
 """
-import json
 import os
 import subprocess
 import sys
 import textwrap
-import time
 import unittest
-from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -33,6 +30,26 @@ def _run_subprocess(code: str, env: dict) -> subprocess.CompletedProcess:
 # ---------------------------------------------------------------------------
 
 class TestConfigDriftTierPatching(unittest.TestCase):
+
+    def setUp(self) -> None:
+        # Each test executes in a child process (see ``_run_subprocess``), so
+        # the parent process's ``_FLAG_TIERS`` is normally untouched. We still
+        # snapshot + restore it directly here as defence-in-depth: if any test
+        # is ever changed to mutate the module-level dict in-process, this
+        # guarantees isolation regardless of test ordering. Self-contained by
+        # design — does not depend on any helper such as ``reset_flag_tiers``.
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
+        from infra.config_drift import _FLAG_TIERS
+
+        self._flag_tiers_snapshot: dict = dict(_FLAG_TIERS)
+
+    def tearDown(self) -> None:
+        from infra.config_drift import _FLAG_TIERS
+
+        _FLAG_TIERS.clear()
+        _FLAG_TIERS.update(self._flag_tiers_snapshot)
 
     def test_empty_string_removes_override(self):
         code = textwrap.dedent(f"""

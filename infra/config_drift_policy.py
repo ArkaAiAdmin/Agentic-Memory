@@ -21,6 +21,7 @@ from typing import Any, Optional, cast
 from infra.config_drift import (
     DriftEntry,
     build_drift_report,
+    _FLAG_TIERS,
 )
 from infra.config_drift_runtime import (
     record_drift,
@@ -81,6 +82,12 @@ class DriftPolicy:
             **asdict(self),
             "default_mode": self.default_mode.value,
             "tier_modes": {k: v.value for k, v in self.tier_modes.items()},
+            # The flag->tier assignment table is part of the policy posture:
+            # two deployments that only differ in which flag sits in which
+            # tier must NOT share a policy_hash, or fleet drift diffs of the
+            # tier table become meaningless. Serialized deterministically
+            # (sorted flag keys, enum .value) so the hash stays stable.
+            "flag_tiers": {k: v.value for k, v in sorted(_FLAG_TIERS.items())},
         }
 
     def policy_hash(self) -> str:

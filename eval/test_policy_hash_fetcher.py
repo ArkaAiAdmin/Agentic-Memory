@@ -5,7 +5,6 @@ import threading
 import time
 import unittest
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from pathlib import Path
 import sys
 import os
 import urllib.error
@@ -102,7 +101,6 @@ class TestPolicyHashFetcher(unittest.TestCase):
         import urllib.request as _urllib_request
         from unittest.mock import patch, MagicMock
         captured: dict = {}
-        original_urlopen = _urllib_request.urlopen
 
         def _fake_urlopen(req, timeout=None):
             captured["auth_header"] = req.get_header("Authorization")
@@ -118,7 +116,6 @@ class TestPolicyHashFetcher(unittest.TestCase):
 
     def test_fetch_bad_response_non_200(self):
         from unittest.mock import patch
-        import urllib.error
         import email.message
         hdrs = email.message.Message()
         with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(

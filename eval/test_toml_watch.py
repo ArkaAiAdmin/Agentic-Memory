@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from infra.toml_watch import (
     current_mtime, refresh_mtime, toml_changed_since,
     subscribe, start_watcher, stop_watcher, get_toml_path,
-    _DEBOUNCE, _poller_thread, _poller_stop, _subscribers,
 )
 
 
@@ -58,7 +57,8 @@ class TestTomlWatch(unittest.TestCase):
         )
 
     def test_subscribe_and_unsubscribe(self):
-        cb = lambda mtime: None
+        def cb(mtime):
+            return None
         unsub = subscribe(cb)
         import infra.toml_watch as tw
         self.assertIn(cb, tw._subscribers)

@@ -1,6 +1,51 @@
 .PHONY: test test-quick test-file test-clean test-results update-agents-md help
+.PHONY: lint typecheck
 
 PYTHON := ./venv/bin/python
+
+# Config-drift surface: the production files that implement hot-reload / fleet
+# policy_hash / tier-patch PLUS their dedicated test files. Scoped so the gate
+# is GREEN while repo-wide `ruff check .` still carries ~81 pre-existing errors
+# (broadening to the rest of the repo is a separate future PR).
+CONFIG_DRIFT_SURFACE := \
+	infra/config_drift.py \
+	infra/config_drift_policy.py \
+	infra/config_drift_tier_patch.py \
+	infra/toml_watch.py \
+	infra/policy_hash_cache.py \
+	infra/policy_hash_fetcher.py \
+	infra/policy_hash_diff.py \
+	mcp_maintenance_policy_hash.py \
+	hooks/memory_toml_reload.py \
+	hooks/memory_tier_patch.py \
+	eval/test_config_drift_tier_patching.py \
+	eval/test_config_drift_tier_reset.py \
+	eval/test_policy_hash_cache.py \
+	eval/test_policy_hash_fetcher.py \
+	eval/test_policy_hash_status.py \
+	eval/test_toml_watch.py \
+	eval/test_toml_hot_reload.py \
+	eval/test_policy_eligibility.py
+
+# infra/toml_watch.py is excluded from typecheck: it is owned by another
+# sub-agent and carries 2 pre-existing mypy no-any-return errors that must be
+# fixed by that owner, not here.
+CONFIG_DRIFT_TYPECHECK_SURFACE := \
+	infra/config_drift.py \
+	infra/config_drift_policy.py \
+	infra/config_drift_tier_patch.py \
+	infra/policy_hash_cache.py \
+	infra/policy_hash_fetcher.py \
+	infra/policy_hash_diff.py \
+	mcp_maintenance_policy_hash.py \
+	hooks/memory_toml_reload.py \
+	hooks/memory_tier_patch.py
+
+lint: ## Ruff over the config-drift surface (scoped, not repo-wide)
+	$(PYTHON) -m ruff check $(CONFIG_DRIFT_SURFACE)
+
+typecheck: ## Mypy over the config-drift surface (scoped, not repo-wide)
+	$(PYTHON) -m mypy --follow-imports=silent $(CONFIG_DRIFT_TYPECHECK_SURFACE)
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, "$$2"}'

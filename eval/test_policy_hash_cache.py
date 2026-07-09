@@ -8,7 +8,6 @@ import os
 import subprocess
 import sys
 import textwrap
-import time
 import unittest
 from pathlib import Path
 

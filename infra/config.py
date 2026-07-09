@@ -1465,6 +1465,8 @@ def reset_config() -> None:
         _instance = None
     from infra.config_drift_policy import reset_policy_cache
     reset_policy_cache()
+    from infra.config_drift import reset_flag_tiers
+    reset_flag_tiers()
 
 
 def get_feature_flags() -> dict:

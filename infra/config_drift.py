@@ -68,6 +68,15 @@ _FLAG_TIERS: dict[str, DriftSeverity] = {
     "MEMORY_RERANKER_DISABLED":       DriftSeverity.OPERATIONAL,
     "MEMORY_RECONCILER_N_WORKERS":    DriftSeverity.OPERATIONAL,
     "MEMORY_DB_CONNECT_TIMEOUT_S":    DriftSeverity.OPERATIONAL,
+    # NEUTRAL: search weights / decay curves — cosmetic, no enforcement posture.
+    # Explicitly enumerated (not just the implicit default) so the NEUTRAL
+    # tier is never empty; an empty tier would be a dead, meaningless
+    # enforcement band in the drift framework.
+    "MEMORY_RERANK_WEIGHTS":          DriftSeverity.NEUTRAL,
+    "MEMORY_QUERY_TYPE_WEIGHTS":      DriftSeverity.NEUTRAL,
+    "MEMORY_FORGETTING_CURVE_HALF_LIFE": DriftSeverity.NEUTRAL,
+    "MEMORY_TEMPORAL_HALF_LIFE":      DriftSeverity.NEUTRAL,
+    "MEMORY_TEMPORAL_DECAY_MODE":     DriftSeverity.NEUTRAL,
 }
 
 # Snapshot of the ORIGINAL built-in tier table, captured at import time
@@ -80,6 +89,12 @@ _HARDCODE_DEFAULTS: dict[str, DriftSeverity] = dict(_FLAG_TIERS)
 def set_flag_tier(env_key: str, severity: DriftSeverity) -> None:
     """Extend the tier table at runtime. Used by deployment-specific code."""
     _FLAG_TIERS[env_key] = severity
+
+
+def reset_flag_tiers() -> None:
+    """Restore _FLAG_TIERS to the canonical hardcoded defaults (drops TOML/runtime overrides)."""
+    _FLAG_TIERS.clear()
+    _FLAG_TIERS.update(_HARDCODE_DEFAULTS)
 
 
 def _tier_for(env_key: str) -> DriftSeverity:

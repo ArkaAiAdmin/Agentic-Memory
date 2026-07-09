@@ -9,6 +9,7 @@ import json
 import logging
 import time
 from pathlib import Path
+from typing import cast
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ def load_peer_cache() -> dict[str, dict]:
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text())
+        return cast("dict[str, dict]", json.loads(p.read_text()))
     except Exception as e:
         logger.debug("policy_hash_cache: load failed: %s", e)
         return {}
@@ -38,7 +39,7 @@ def persist_peer_cache(cache: dict[str, dict]) -> None:
 
 
 def is_cache_fresh(cache_entry: dict, cache_ttl_s: float) -> bool:
-    fetched_at = cache_entry.get("fetched_at", 0.0)
+    fetched_at = cast(float, cache_entry.get("fetched_at", 0.0))
     if fetched_at <= 0:
         return False
     return (time.time() - fetched_at) < cache_ttl_s

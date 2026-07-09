@@ -1,6 +1,50 @@
 repos:
   - repo: local
     hooks:
+      # Scoped ruff + mypy gates for the config-drift surface. Scoping is
+      # intentional: repo-wide `ruff check .` still carries 84 pre-existing
+      # errors (broadening is a separate future PR), so an unscoped hook would
+      # be permanently red. Test files in this surface are owned/fixed by other
+      # sub-agents and are intentionally excluded; infra/toml_watch.py is
+      # excluded from the mypy hook (owned by another sub-agent, 2 pre-existing
+      # no-any-return errors).
+      - id: ruff
+        name: ruff (config-drift surface)
+        description: Lint the config-drift surface (scoped; repo-wide ruff has 84 pre-existing errors)
+        entry: venv/bin/python -m ruff check --no-fix
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+        args:
+          - infra/config_drift.py
+          - infra/config_drift_policy.py
+          - infra/config_drift_tier_patch.py
+          - infra/toml_watch.py
+          - infra/policy_hash_cache.py
+          - infra/policy_hash_fetcher.py
+          - infra/policy_hash_diff.py
+          - mcp_maintenance_policy_hash.py
+          - hooks/memory_toml_reload.py
+          - hooks/memory_tier_patch.py
+      - id: mypy
+        name: mypy (config-drift surface)
+        description: Typecheck the config-drift surface (toml_watch.py owned by another sub-agent)
+        entry: venv/bin/python -m mypy --follow-imports=silent
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+        args:
+          - infra/config_drift.py
+          - infra/config_drift_policy.py
+          - infra/config_drift_tier_patch.py
+          - infra/policy_hash_cache.py
+          - infra/policy_hash_fetcher.py
+          - infra/policy_hash_diff.py
+          - mcp_maintenance_policy_hash.py
+          - hooks/memory_toml_reload.py
+          - hooks/memory_tier_patch.py
       - id: no-direct-pytest-eval
         name: no-direct-pytest-eval
         description: Reject `pytest eval/` unless run via eval/run_full_suite.py (MPS safety)
