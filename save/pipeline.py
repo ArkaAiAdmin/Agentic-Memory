@@ -1743,10 +1743,15 @@ def materialize_journal_entry(
 
 
 def _check_already_materialized(db_path: Path, note_id: str) -> bool:
-    """Return True if ``note_id`` already has a row in memories.
+    """Return True if ``note_id`` already has a row in memories AND hooks were completed.
 
     Used as an idempotent guard so two concurrent reconcilers
     materializing the same journal entry do not double-write.
+
+    W7 (hooks_completed): returns False when the row exists but hooks
+    were not yet run (daemon crashed between saga success and
+    mark_applied), so the reconciler re-runs the full path including
+    hooks.
     """
     from infra.db import open_db
 
@@ -1755,7 +1760,24 @@ def _check_already_materialized(db_path: Path, note_id: str) -> bool:
             row = conn.execute(
                 "SELECT 1 FROM memories WHERE id=? LIMIT 1", (note_id,)
             ).fetchone()
-            return row is not None
+            if row is None:
+                return False
+            try:
+                cols = {
+                    r[1]
+                    for r in conn.execute("PRAGMA table_info(write_journal)").fetchall()
+                }
+                if "hooks_completed" in cols:
+                    jrow = conn.execute(
+                        "SELECT hooks_completed FROM write_journal WHERE note_id=? "
+                        "ORDER BY id DESC LIMIT 1",
+                        (note_id,),
+                    ).fetchone()
+                    if jrow is not None and not jrow[0]:
+                        return False
+            except Exception as _hc_exc:
+                logger.debug("_check_already_materialized hooks_completed check failed: %s", _hc_exc)
+            return True
     except Exception as exc:
         logger.debug("_check_already_materialized: %s", exc)
         return False
@@ -1856,6 +1878,19 @@ def _materialize_journal_once(
         if _is_crdt_enabled():
             _project_sql_to_crdt(_db_path_parsed, note_id, conn=conn)
         logger.info("materialize_journal_entry: materialized %s", note_id_out)
+        try:
+            from infra.write_journal import mark_applied as _mark_applied
+            _mark_applied(journal_path, entry["id"])
+            logger.info("materialize_journal_entry: mark_applied %s (id=%d)", note_id_out, entry["id"])
+            try:
+                conn.execute(
+                    "UPDATE write_journal SET hooks_completed=1 WHERE id=?",
+                    (entry["id"],),
+                )
+            except Exception as _hc_exc:
+                logger.debug("materialize_journal_entry: hooks_completed update failed: %s", _hc_exc)
+        except Exception as _ma_exc:
+            logger.warning("materialize_journal_entry: mark_applied failed for %s: %s", note_id_out, _ma_exc)
         return str(note_id_out)
     except Exception:
         _save_errored = True

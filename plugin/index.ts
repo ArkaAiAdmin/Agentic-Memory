@@ -8,7 +8,7 @@
 
 import type { PluginInput } from "@opencode-ai/plugin"
 import type { HarnessAdapter, HookContext } from "./types.js"
-import { state } from "./agentic-memory-hooks.js"
+import { state, resolveVenvPython } from "./agentic-memory-hooks.js"
 import * as hooks from "./agentic-memory-hooks.js"
 
 const HANDLER_MAP: Record<string, keyof typeof hooks> = {
@@ -32,8 +32,12 @@ function buildAdapter(input: PluginInput): HarnessAdapter {
     getState: () => state,
     spawn: async (args, label) => {
       const { spawn } = await import("node:child_process")
+      const interpreter = input.venvPython ?? resolveVenvPython()
+      if (!interpreter.endsWith("python") && !interpreter.endsWith("python3")) {
+        log(`[agentic-memory] BAD INTERPRETER: ${interpreter} is not a Python binary`)
+      }
       return await new Promise<string>((resolve) => {
-        const child = spawn(input.venvPython ?? process.execPath, args, { stdio: ["pipe", "pipe", "pipe"] })
+        const child = spawn(interpreter, args, { stdio: ["pipe", "pipe", "pipe"] })
         let out = ""
         child.stdout?.on("data", (d: Buffer) => { out += d })
         child.on("close", (code) => resolve(code === 0 ? out : ""))
@@ -42,7 +46,11 @@ function buildAdapter(input: PluginInput): HarnessAdapter {
     },
     fireAndForget: async (args, label) => {
       const { spawn } = await import("node:child_process")
-      const child = spawn(input.venvPython ?? process.execPath, args, { stdio: ["ignore", "ignore", "pipe"], detached: true })
+      const interpreter = input.venvPython ?? resolveVenvPython()
+      if (!interpreter.endsWith("python") && !interpreter.endsWith("python3")) {
+        log(`[agentic-memory] BAD INTERPRETER: ${interpreter} is not a Python binary`)
+      }
+      const child = spawn(interpreter, args, { stdio: ["ignore", "ignore", "pipe"], detached: true })
       child.on("error", (err) => log(`[agentic-memory] [opencode] ${label} error: ${err}`))
       child.on("close", (code) => {
         if (code !== 0) log(`[agentic-memory] [opencode] ${label} exited ${code}`)

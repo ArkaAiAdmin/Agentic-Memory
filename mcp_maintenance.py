@@ -43,8 +43,9 @@ from mcp_instance import mcp
 
 # Sub-module imports — register @mcp.tool() functions at import time.
 import mcp_rebuild  # noqa: E402, F401
-import mcp_audit  # noqa: E402, F401
-import mcp_crdt  # noqa: E402, F401
+import mcp_audit    # noqa: E402, F401
+import mcp_crdt     # noqa: E402, F401
+import mcp_maintenance_policy_hash  # noqa: E402, F401 — admin_policy_hash (CORE tool)
 
 
 @mcp.tool()
@@ -98,10 +99,9 @@ def memory_health_check(conn) -> str:
     status["schema_version"] = SCHEMA_VERSION
 
     try:
-        db_path = conn.execute("PRAGMA database_list").fetchone()[2]
         row_count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         status["db"] = {
-            "path": str(db_path),
+            "path": "<active memory dir>",
             "accessible": True,
             "row_count": row_count,
         }
@@ -1026,70 +1026,68 @@ def memory_maintenance(
 
     **List of supported operations:**
 
+    Ops are case-insensitive. Unknown ops return an error listing ``MaintenanceOp.all_values()``.
+
     **Common operations (no extra params):**
       ``tier_stats``, ``audit``, ``consolidate``, ``rewrite_links``,
       ``arc_stats``, ``arc_reset``, ``review_schedule``, ``quality_stats``, ``facts_stats``,
-      ``graph_stats``, ``profile_stats``, ``retention_stats``,
-      ``summarization_stats``, ``auto_save_status``, ``shared_stats``,
-      ``flags_status``, ``phase_errors``, ``memory_stats``
+      ``graph_stats``, ``graph_insights``, ``graph_evolution``,
+      ``profile_stats``, ``retention_stats``, ``summarization_stats``,
+      ``auto_save_status``, ``auto_save_daemon_metrics``, ``shared_stats``,
+      ``flags_status``, ``phase_errors``, ``pinned_decay``, ``facts_stats``,
+      ``memory_stats``, ``session_admin_stats``, ``crdt_status``, ``dashboard``,
+      ``llm_unload``, ``circuit_breaker_status``, ``policy_hash_status``
 
     **Operations with params:**
-      ``heartbeat``         dry_run
-      ``duplicates``        threshold
-      ``merge_suggestions`` threshold
-      ``rebuild``           scope
-      ``compact``           dry_run
-      ``check_integrity``   deep
-      ``pinned_decay``      dry_run
-      ``backfill_all``      backfill_mode, source
-      ``detect_contradictions``  min_confidence, contradiction_mode, semantic_threshold
-      ``audit_query``       tool_name, since_ts, until_ts, only_errors, limit, offset
-      ``compile_skill``     lesson_slug, skill_name, primary_triggers, secondary_triggers
-      ``crdt_sync``         agent_id, remote_notes_json
-      ``crdt_status``       (no extra params)
-      ``reinforce``         memory_ids, success
-      ``adaptive_retention`` dry_run
-      ``auto_summarize``    min_length, dry_run
-      ``daily_digest``      date
-      ``trash``             include_expired
-      ``purge_expired``     (none)
-      ``share``             share_note_id, share_agent_id
-      ``shared_list``       share_agent_id (reused), shared_category, shared_limit
-      ``shared_import``     shared_id, target_agent_id
-      ``quality_filter``    query, quality_limit
-      ``summarize``         note_id
-      ``facts_list``        facts_limit, facts_min_confidence
-       ``record_ctr_feedback`` ctr_id, query_id, ctr_action, ctr_source
-       ``check_concept_drift`` threshold
-        ``list_drift_alarms`` acknowledged, alarm_level, limit, acknowledge_ids, acknowledged_by, notes
-        ``auto_save_hook``    auto_save_tool, auto_save_params_json, auto_save_result_preview
-        ``okf_export``        output_dir, include_deleted, overwrite
-        ``okf_import``        input_dir, is_global, dry_run, overwrite
-        ``ingest_file``       file_path, category, tags
-        ``ingest_url``        url, category, tags
-        ``dashboard``         (no extra params)
-        ``metrics_server``    action, port
-        ``tier_migration``    dry_run
-        ``embedding_model_check``  force, dry_run
-        ``incremental_update`` memory_id, new_content, old_state
-        ``llm_unload``         (no extra params)
-        ``circuit_breaker_status``  limit, since_ts
-        ``temporal_contradictions``  since_ts, until_ts, reason, limit, offset
-        ``temporal_query``     as_of, fact_id, since_ts, query, limit
-        ``compliance_check``   session_id
-        ``session_stats``      (no extra params)
-        ``thread_stats``       (no extra params)
-        ``compaction_stats``   (no extra params)
-        ``list_active_threads``  project_root, status, limit
-        ``recover_session``    session_id
-        ``agent_init``         agent_id, display_name, parent_agent, namespace
-        ``agent_clear``        (no extra params)
-        ``agent_list``         (no extra params)
-        ``extract_skills``     memory_id, dry_run
-        ``list_skills``        limit
-        ``auto_share``         agent_id, min_importance, min_fitness, limit, dry_run
-        ``graph_shortest_path``  source, target, max_depth
-        ``graph_traverse``     start, edge_patterns
+      ``heartbeat``                      dry_run
+      ``duplicates``                     threshold
+      ``merge_suggestions``              threshold
+      ``rebuild``                        scope
+      ``compact``                        dry_run
+      ``check_integrity``                deep
+      ``backfill_all``                   backfill_mode, source
+      ``detect_contradictions``          min_confidence, contradiction_mode, semantic_threshold
+      ``audit_query``                    tool_name, since_ts, until_ts, only_errors, limit, offset
+      ``compile_skill``                  lesson_slug, skill_name, primary_triggers, secondary_triggers
+      ``crdt_sync``                      agent_id, remote_notes_json
+      ``reinforce``                      memory_ids, success
+      ``adaptive_retention``             dry_run
+      ``auto_summarize``                 min_length, dry_run
+      ``daily_digest``                   date
+      ``trash``                          include_expired
+      ``purge_expired``                  (none)
+      ``share``                          share_note_id, share_agent_id
+      ``shared_list``                    share_agent_id, shared_category, shared_limit
+      ``shared_import``                  shared_id, target_agent_id
+      ``quality_filter``                 query, quality_limit
+      ``summarize``                      note_id
+      ``facts_list``                     facts_limit, facts_min_confidence
+      ``record_ctr_feedback``            ctr_id, query_id, ctr_action, ctr_source
+      ``check_concept_drift``            threshold
+      ``list_drift_alarms``              acknowledged, alarm_level, limit, acknowledge_ids, acknowledged_by, notes
+      ``auto_save_hook``                 auto_save_tool, auto_save_params_json, auto_save_result_preview
+      ``okf_export``                     output_dir, include_deleted, overwrite
+      ``okf_import``                     input_dir, is_global, dry_run, overwrite
+      ``ingest``                         file_path (or) url, category, tags
+      ``metrics_server``                 action, port
+      ``run_tier_migration``             dry_run
+      ``check_embedding_model``          force, dry_run
+      ``incremental_update``             memory_id, new_content, old_state
+      ``list_active_threads``            project_root, status, limit
+      ``recover_session``                session_id
+      ``agent_init``                     agent_id, display_name, parent_agent, namespace
+      ``agent_clear``                    (none)
+      ``agent_list``                     (none)
+      ``extract_skills``                 memory_id, dry_run
+      ``list_skills``                    limit
+      ``auto_share``                     agent_id, min_importance, min_fitness, limit, dry_run
+      ``graph_shortest_path``            source, target, max_depth
+      ``graph_traverse``                 start, edge_patterns
+      ``policy_hash_status``             include_full, force_refresh
+      ``compliance_check``               session_id
+      ``temporal_contradictions``        since_ts, until_ts, reason, limit, offset
+      ``temporal_query``                 as_of, fact_id, since_ts, query, limit
+      ``background_task_status``         memory_id
 
     Per-operation validation is delegated to the handler — each
     operation extracts only the kwargs it needs. Unknown kwargs are
@@ -1314,11 +1312,3 @@ def memory_background_task_status(memory_id: str) -> str:
     """
     from mcp_maintenance_ops import MAINTENANCE_HANDLERS
     return MAINTENANCE_HANDLERS[MaintenanceOp.BACKGROUND_TASK_STATUS](memory_id=memory_id)
-
-
-@mcp.tool()
-@with_audit("memory_admin_policy_hash")
-def memory_admin_policy_hash(*, include_full: bool = False) -> str:
-    """Return the local process's drift-policy hash. Used by fleet drift diff."""
-    from mcp_maintenance_policy_hash import memory_admin_policy_hash as _impl
-    return _impl(include_full=include_full)

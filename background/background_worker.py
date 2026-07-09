@@ -1184,10 +1184,8 @@ def process_one_task(
     # non-main threads without crashing; in that case we skip the
     # signal-based timeout (the run is bounded by the outer cron
     # timeout anyway).
-    _use_signal_timeout = (
-        _sig.getsignal(_sig.SIGALRM) is not _sig.SIG_DFL
-        or threading.current_thread() is threading.main_thread()
-    )
+    old_handler = None
+    _use_signal_timeout = threading.current_thread() is threading.main_thread()
 
     if _use_signal_timeout:
         old_handler = _sig.signal(_sig.SIGALRM, _timeout_handler)
@@ -1227,7 +1225,7 @@ def process_one_task(
     finally:
         if _use_signal_timeout:
             _sig.alarm(0)
-        _sig.signal(_sig.SIGALRM, old_handler)
+            _sig.signal(_sig.SIGALRM, old_handler)
 
     return True
 

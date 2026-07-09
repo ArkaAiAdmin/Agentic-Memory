@@ -1,7 +1,7 @@
 # Agentic Memory — MCP Surface Reference
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
-> Last updated: 2026-07-05. Schema v32.
+> Last updated: 2026-07-05. Schema v36.
 
 ---
 

@@ -257,9 +257,9 @@ def supersede_fact(
         return False
     # Sprint 2: set valid_at on the winner when resolving a contradiction,
     # so subsequent supersessions have a stable "took effect" anchor.
-    if winner_valid_at is not None and new[2] is None:
+    if new[2] is None:
         conn.execute(
-            "UPDATE kg_facts SET valid_at = ? WHERE id = ?",
+            "UPDATE kg_facts SET valid_at = COALESCE(?, transaction_time) WHERE id = ?",
             (winner_valid_at, new_id),
         )
     # invalid_at = the new fact's event_time if known, else now
@@ -269,6 +269,15 @@ def supersede_fact(
         "invalidation_reason = ?, contradiction_score = ? WHERE id = ?",
         (invalid_at, new_id, reason, score, old_id),
     )
+    try:
+        _ = conn.execute("SELECT 1 FROM belief_assertions LIMIT 1")
+        conn.execute(
+            "UPDATE belief_assertions SET belief_status = 'deprecated' "
+            "WHERE fact_id = ? AND belief_status = 'active'",
+            (old_id,),
+        )
+    except Exception:
+        pass
     conn.execute(
         "UPDATE kg_facts SET supersedes = ? WHERE id = ?",
         (old_id, new_id),
@@ -330,12 +339,19 @@ def _mark_fact_superseded(
         "invalidation_reason = ?, contradiction_score = ? WHERE id = ?",
         (invalid_at, winner_id, reason, score, fact_id),
     )
-    # Set valid_at on winner if not already set
-    if winner[1] is not None:
+    conn.execute(
+        "UPDATE kg_facts SET valid_at = COALESCE(valid_at, ?, transaction_time) WHERE id = ?",
+        (winner[1] or time.time(), winner_id),
+    )
+    try:
+        _ = conn.execute("SELECT 1 FROM belief_assertions LIMIT 1")
         conn.execute(
-            "UPDATE kg_facts SET valid_at = COALESCE(valid_at, ?) WHERE id = ?",
-            (winner[1], winner_id),
+            "UPDATE belief_assertions SET belief_status = 'deprecated' "
+            "WHERE fact_id = ? AND belief_status = 'active'",
+            (fact_id,),
         )
+    except Exception:
+        pass
     _propagate_entailment_invalidation(conn, fact_id)
     return True
 
@@ -882,7 +898,7 @@ def _temporal_fact_clause(as_of: "float | None") -> "tuple[str, list]":
     if as_of is not None:
         return (
             " AND (f.valid_at IS NULL OR f.valid_at <= ?) "
-            "AND (f.invalid_at IS NULL OR f.invalid_at >= ?)",
+            "AND (f.invalid_at IS NULL OR f.invalid_at = '' OR f.invalid_at >= ?)",
             [as_of, as_of],
         )
     return " AND f.invalid_at IS NULL", []

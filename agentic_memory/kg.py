@@ -91,13 +91,14 @@ class KnowledgeGraph:
 
     # ── Fact search ─────────────────────────────────────────────────
 
-    def search_facts(self, query: str, limit: int = 10) -> list[Fact]:
+    def search_facts(self, query: str, limit: int = 10, include_invalid: bool = False) -> list[Fact]:
         """Search extracted facts (SPO triples) matching *query*.
 
         Args:
             query: Free-text search against subject, predicate, and
                 object fields.
             limit: Maximum number of facts to return.
+            include_invalid: If True, include invalidated and superseded facts.
 
         Returns:
             Matching facts with confidence scores and temporal metadata.
@@ -106,6 +107,23 @@ class KnowledgeGraph:
 
         raw = facts_search_db(self._db_path, query, limit=limit)
         items = _as_list(raw)
+        if not include_invalid and items:
+            conn2 = get_db_connection(self._db_path)
+            try:
+                ids = [f.get("id") for f in items if f.get("id")]
+                if ids:
+                    placeholders = ",".join("?" for _ in ids)
+                    rows = conn2.execute(
+                        f"SELECT id, invalid_at, superseded_by FROM kg_facts WHERE id IN ({placeholders})",
+                        ids,
+                    ).fetchall()
+                    excluded = {
+                        str(r[0]) for r in rows
+                        if r[1] is not None or r[2] is not None
+                    }
+                    items = [f for f in items if str(f.get("id", "")) not in excluded]
+            finally:
+                safe_close_db(conn2)
         return [
             Fact(
                 id=str(f.get("id", "")),
@@ -225,24 +243,27 @@ class KnowledgeGraph:
 
     # ── Direct DB helpers ───────────────────────────────────────────
 
-    def list_facts(self, limit: int = 50, offset: int = 0) -> list[Fact]:
+    def list_facts(self, limit: int = 50, offset: int = 0, include_invalid: bool = False) -> list[Fact]:
         """List all facts with pagination (newest first).
 
         Args:
             limit: Maximum number of facts to return.
             offset: Number of facts to skip for pagination.
+            include_invalid: If True, include invalidated and superseded facts.
 
         Returns:
             Facts ordered by descending ID.
         """
         conn = get_db_connection(self._db_path)
         try:
+            where = "" if include_invalid else "WHERE invalid_at IS NULL AND superseded_by IS NULL "
             rows = conn.execute(
                 "SELECT id, subject, predicate, object, confidence, category, "
                 "       source_note_id, event_time, event_time_granularity, "
                 "       valid_at, invalid_at, superseded_by, supersedes, "
                 "       contradiction_score, locked "
-                "FROM kg_facts ORDER BY id DESC LIMIT ? OFFSET ?",
+                f"FROM kg_facts {where}"
+                "ORDER BY id DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
             return [

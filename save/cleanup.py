@@ -149,6 +149,14 @@ def remove_kg_relations_for_note(
         counts["kg_edges"] = int(cur.rowcount or 0)
     except sqlite3.OperationalError as exc:
         logger.warning("remove_kg_relations_for_note(%s) kg_edges: %r", note_id, exc)
+    try:
+        cur = conn.execute(
+            "DELETE FROM kg_entities WHERE name = ? AND entity_type = 'memory'",
+            (note_id,),
+        )
+        counts["kg_entities"] = int(cur.rowcount or 0)
+    except sqlite3.OperationalError as exc:
+        logger.warning("remove_kg_relations_for_note(%s) kg_entities: %r", note_id, exc)
     return counts
 
 

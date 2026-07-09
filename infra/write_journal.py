@@ -242,6 +242,12 @@ def _ensure_journal_columns(conn: sqlite3.Connection) -> None:
         # of stuck entries is gated on this timestamp so a genuinely slow
         # (but live) materialization is not reset mid-flight.
         conn.execute("ALTER TABLE write_journal ADD COLUMN started_at TEXT")
+    if "hooks_completed" not in cols:
+        # W7: tracks whether post-save hooks ran for this entry.  When
+        # a daemon crash occurs between saga success and hook completion,
+        # the entry is re-dispatched on restart and _check_already_materialized
+        # can decide whether to re-run hooks or skip them.
+        conn.execute("ALTER TABLE write_journal ADD COLUMN hooks_completed INTEGER DEFAULT 0")
     conn.execute(
         """CREATE TABLE IF NOT EXISTS journal_failed (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,

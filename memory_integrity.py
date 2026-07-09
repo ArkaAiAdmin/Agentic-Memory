@@ -1199,6 +1199,7 @@ def find_kg_orphans(db: AnyConnection) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = {
         "kg_edges": [],
         "kg_entities": [],
+        "kg_facts_null_source": [],
         "backlinks": [],
     }
 
@@ -1267,6 +1268,17 @@ def find_kg_orphans(db: AnyConnection) -> dict[str, list[dict[str, Any]]]:
         out["kg_entities"] = [
             {"id": r[0], "name": r[1], "entity_type": r[2]} for r in rows
         ]
+
+    if "kg_facts" in tables:
+        try:
+            rows = db.execute(
+                "SELECT id, subject, predicate, object FROM kg_facts WHERE source_memory IS NULL"
+            ).fetchall()
+            out["kg_facts_null_source"] = [
+                {"id": r[0], "subject": r[1], "predicate": r[2], "object": r[3]} for r in rows
+            ]
+        except sqlite3.DatabaseError as exc:
+            logger.warning("find_kg_orphans: kg_facts null source SELECT failed: %s", exc)
 
     if "backlinks" in tables and "memories" in tables:
         try:

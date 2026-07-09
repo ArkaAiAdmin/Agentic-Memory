@@ -1467,6 +1467,9 @@ def reset_config() -> None:
     reset_policy_cache()
     from infra.config_drift import reset_flag_tiers
     reset_flag_tiers()
+    import infra.config_drift_policy as _cdp
+    _cdp._active_has_inited = False
+    _cdp._last_resolved_toml_mtime = 0.0
 
 
 def get_feature_flags() -> dict:

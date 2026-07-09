@@ -15,6 +15,7 @@ from infra.config_drift import (
     DriftSeverity,
     _FLAG_TIERS,
     _HARDCODE_DEFAULTS,
+    reset_flag_tiers,
     set_flag_tier,
 )
 from infra.config_drift_audit import append_audit_event, AuditEvent
@@ -45,6 +46,7 @@ def apply_tier_overrides_from_toml(
     strict: bool = False,
 ) -> TierPatchResult:
     overrides = toml_data.get("drift_tiers") or {}
+    reset_flag_tiers()
     patched: list[TierPatch] = []
     rejected: list[tuple[str, str, str]] = []
 

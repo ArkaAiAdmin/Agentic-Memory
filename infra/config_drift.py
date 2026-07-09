@@ -319,7 +319,11 @@ def _verdicts(spec: FlagSpec, src: FlagSource) -> list[str]:
         )
 
     if src.env_raw is not None and src.effective == spec.default:
-        if src.env_raw.lower() != str(spec.default).lower():
+        try:
+            env_normalized = _coerce_typed(src.env_raw, spec.py_type, spec.default)
+        except Exception:
+            env_normalized = src.env_raw
+        if env_normalized != spec.default:
             verdicts.append(
                 f"explicit_default_via_env_mismatch: env={src.env_raw!r} but effective={src.effective!r}"
             )

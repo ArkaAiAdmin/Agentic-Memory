@@ -539,7 +539,7 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
         metadata_json = r[11] if len(r) > 11 else None
         _ = r[12] if len(r) > 12 else 1
         boosted = float(final_score or 0.0)
-        _concept_match = False
+        concept_boost = 1.0
         try:
             meta = json.loads(metadata_json) if isinstance(metadata_json, str) else (metadata_json or {})
             result_entities = {int(e) for e in (meta.get("entities") or []) if e is not None}
@@ -547,15 +547,14 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
             logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
             result_entities = set()
 
-        for cid, centities in concept_entities.items():
+        for cid in sorted(concept_entities):
+            centities = concept_entities[cid]
             if note_id == cid or cid in (source_file or ""):
-                boosted *= _CONCEPT_BOOST
-                _concept_match = True
-                break
-            if result_entities and centities and (result_entities & centities):
-                boosted *= _CONCEPT_MEMBERSHIP_BOOST
-                _concept_match = True
-                break
+                concept_boost = max(concept_boost, _CONCEPT_BOOST)
+            elif result_entities and centities and (result_entities & centities):
+                concept_boost = max(concept_boost, _CONCEPT_MEMBERSHIP_BOOST)
+
+        boosted *= concept_boost
 
         if q_tokens:
             cname_tokens = set()

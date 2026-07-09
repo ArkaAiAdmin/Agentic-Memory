@@ -34,8 +34,14 @@ function resolveVenvPython(): string {
     const candidate = path.join(AGENTIC_MEMORY_DIR, sub, "bin", "python")
     if (fs.existsSync(candidate)) return candidate
   }
-  return process.execPath
+  throw new Error(
+    `No Python venv found at ${path.join(AGENTIC_MEMORY_DIR, "venv/bin/python")} ` +
+    `or ${path.join(AGENTIC_MEMORY_DIR, ".venv/bin/python")}. ` +
+    `Run: cd ${AGENTIC_MEMORY_DIR} && python -m venv venv && venv/bin/pip install -e .`
+  )
 }
+
+export { resolveVenvPython }
 
 const VENV = resolveVenvPython()
 const CONTEXT_MONITOR = path.join(AGENTIC_MEMORY_DIR, "context_monitor.py")
@@ -463,22 +469,26 @@ export function endSession(ctx: HookContext): Promise<void> {
   if (!hookEnabled("session:end:memory-summary", ["minimal"])) return Promise.resolve()
 
   ctx.adapter.log("[agentic-memory] Flushing final session summary (blocking)...")
+  let contextEndOk = false
+  let sessionEndOk = false
   return new Promise<void>((resolve, reject) => {
     const child = spawn(VENV, [CONTEXT_MONITOR, "end", "--session-id", sessionId], { stdio: ["ignore", "pipe", "ignore"] })
     let stdout = ""
     child.stdout?.on("data", (d: Buffer) => { stdout += d })
     child.on("close", (code) => {
-      if (code === 0) { ctx.adapter.log(`[agentic-memory] Session end summary saved: ${stdout.trim()}`); resolve() }
-      else reject(new Error(`Exit code ${code}: ${stdout}`))
+      if (code === 0) {
+        ctx.adapter.log(`[agentic-memory] Session end summary saved: ${stdout.trim()}`)
+        contextEndOk = true
+        resolve()
+      } else {
+        reject(new Error(`Exit code ${code}: ${stdout}`))
+      }
     })
     child.on("error", reject)
-  }).then(() => {
-    // Blocking: save session memory note (Rule #7 compliance).
-    // Previously fire-and-forget, which meant the agent got no
-    // confirmation whether the session save succeeded. Now we wait
-    // up to 10s for the script to write the session summary to the
-    // memory DB so silent data loss is impossible.
-    return new Promise<void>((resolve, reject) => {
+  }).catch((e) => {
+    ctx.adapter.log(`[agentic-memory] context_monitor end failed: ${e}`)
+  }).finally(() =>
+    new Promise<void>((resolve, reject) => {
       const sessionChild = spawn(VENV, [MEMORY_SESSION_END], {
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...process.env, MEMORY_HOOK_EVENT: "stop" },
@@ -499,6 +509,7 @@ export function endSession(ctx: HookContext): Promise<void> {
         clearTimeout(timeout)
         if (code === 0) {
           ctx.adapter.log(`[agentic-memory] Session memory saved: ${stdout.trim()}`)
+          sessionEndOk = true
           resolve()
         } else {
           reject(new Error(`Session-end save failed (exit ${code}): ${stderr.trim()}`))
@@ -508,8 +519,8 @@ export function endSession(ctx: HookContext): Promise<void> {
         clearTimeout(timeout)
         reject(err)
       })
-    })
-  }).catch((e) => ctx.adapter.log(`[agentic-memory] Session end save failed: ${e}`))
+    }).catch((e2) => ctx.adapter.log(`[agentic-memory] Session end save failed: ${e2}`))
+  )
 }
 
 export function injectSystemPrompt(ctx: HookContext): void {

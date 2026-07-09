@@ -1740,6 +1740,7 @@ def _apply_strong_match_boost(
             logger.warning("_format_search_results failed: %s", _oe)
         return result_items, output, results_to_display
     except Exception as e:
+        _phase_inc("search.strong_match_boost", e)
         logger.warning("_apply_strong_match_boost failed: %s", e)
         return result_items, output, results_to_display
 
@@ -1753,19 +1754,16 @@ def _cache_store_result(cache_key: str, result: dict) -> None:
     — if SEARCH_CACHE_MAX is ever changed (e.g. per-deployment tuning)
     this is the only spot to touch.
     """
+    from infra.cache import cache_put, register_cache_note_ids
+
     note_ids = [
         item.get("id", "")
         for item in (result.get("results") or result.get("result_items") or [])
         if item.get("id")
     ]
-    _search_cache[cache_key] = (time.time(), result)
-    _search_cache.move_to_end(cache_key)
-    if len(_search_cache) > SEARCH_CACHE_MAX:
-        _search_cache.popitem(last=False)
+    cache_put(cache_key, result, max_size=SEARCH_CACHE_MAX)
     if note_ids:
         try:
-            from infra.cache import register_cache_note_ids
-
             register_cache_note_ids(cache_key, note_ids)
         except Exception as e:
             logger.warning("register_cache_note_ids failed: %s", e)
@@ -2061,8 +2059,8 @@ def _record_search_telemetry(
         )
         db.commit()
     except Exception as e:
-        _phase_inc("search.record_search_telemetry", e)
-        logger.warning("record_search_telemetry failed: %s", e)
+        _phase_inc("search.telemetry.ctr_feedback", e)
+        logger.warning("record_search_telemetry CTR failed: %s", e)
     try:
         from adaptive_retention import record_access
 
@@ -2070,8 +2068,8 @@ def _record_search_telemetry(
             record_access(db, r.get("id", ""), source="search")
         db.commit()
     except Exception as e:
-        _phase_inc("search.record_search_telemetry", e)
-        logger.warning("record_search_telemetry failed: %s", e)
+        _phase_inc("search.telemetry.adaptive_retention", e)
+        logger.warning("record_search_telemetry adaptive_retention failed: %s", e)
 
 
 def _record_search_phase_latencies(*, db, query_id: str, phase_latencies: dict[str, float]) -> None:
@@ -2125,7 +2123,8 @@ def _apply_save_hint_floater(
         from recent_save_hint import recent_save_for
 
         hint = recent_save_for(str(db_path))
-    except (ImportError, AttributeError):
+    except (ImportError, AttributeError) as _e:
+        _phase_inc("search.save_hint_floater", _e)
         return result_items, output, results_to_display
     if hint is None:
         return result_items, output, results_to_display
@@ -2140,7 +2139,8 @@ def _apply_save_hint_floater(
             ).fetchone()
             is not None
         )
-    except sqlite3.Error:
+    except sqlite3.Error as _fts_e:
+        _phase_inc("search.save_hint_floater", _fts_e)
         return result_items, output, results_to_display
     if not (hint_in_fts and result_items):
         return result_items, output, results_to_display
@@ -2154,7 +2154,8 @@ def _apply_save_hint_floater(
             "FROM tenant_memories WHERE id = ? AND deleted_at IS NULL",
             (hint_id,),
         ).fetchone()
-    except sqlite3.Error:
+    except sqlite3.Error as _fl_e:
+        _phase_inc("search.save_hint_floater", _fl_e)
         return result_items, output, results_to_display
     if floater_row is None:
         return result_items, output, results_to_display
@@ -2363,11 +2364,13 @@ def search_memories(
         + (f":tags={','.join(sorted(tags))}" if tags else "")
         + f":swm={int(shared_with_me)}"
     )
+    from infra.cache import cache_touch
+
     now = time.time()
     if cache_key in _search_cache:
         ts, cached_result = _search_cache[cache_key]
         if not SEARCH_CACHE_TTL_ENABLED or now - ts <= SEARCH_CACHE_TTL:
-            _search_cache.move_to_end(cache_key)
+            cache_touch(cache_key)
             cached_result = dict(cached_result)
             cached_result["query_id"] = uuid.uuid4().hex
             return cached_result
@@ -2625,14 +2628,14 @@ def search_memories(
             )
             _search_ctr_weights = None
             if has_fitness and _effective_rerank:
-                last_accessed_col = results[0][9] if results and len(results[0]) > 9 else None
-                metadata_col = results[0][10] if results and len(results[0]) > 10 else None
-                access_count = results[0][11] if results and len(results[0]) > 11 else 1
                 results_to_display = [
                     (
                         r[0], r[1], r[2], r[3], r[4], r[5],
                         -r[5], None, None, None,
-                        last_accessed_col, metadata_col, access_count, None,
+                        r[9] if len(r) > 9 else None,
+                        r[10] if len(r) > 10 else None,
+                        r[11] if len(r) > 11 else 1,
+                        None,
                     )
                     for r in results
                 ]

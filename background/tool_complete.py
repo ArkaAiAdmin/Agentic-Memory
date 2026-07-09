@@ -211,8 +211,6 @@ def _upsert_memory(
     importance: int = 1,
     conn=None,
 ) -> bool:
-
-    from background.auto_save import get_db_path  # noqa: E402
     """Insert or update a memory note in the active DB via save_pipeline.save_memory.
 
     Delegates to the canonical save path so the hook path benefits from:
@@ -221,6 +219,7 @@ def _upsert_memory(
     - Write lock (flock)
     - Post-save hooks (contradiction check, audit, skill extraction, cache invalidation)
     """
+    from background.auto_save import get_db_path  # noqa: E402
     db = get_db_path()
     if not db.exists():
         return False

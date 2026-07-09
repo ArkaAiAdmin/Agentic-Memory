@@ -559,7 +559,8 @@ def _get_handlers() -> dict:
             MaintenanceOp.POLICY_HASH_STATUS: lambda *, peer_timeout_s=5.0, max_concurrent=4,
                                               cache_ttl_s=60.0, force_refresh=False,
                                               include_full_policy=False, since_ts=None, **_: (
-                _op_policy_hash_status(
+                __import__("mcp_maintenance_policy_hash", fromlist=["policy_hash_status"])
+                .policy_hash_status(
                     peer_timeout_s=peer_timeout_s,
                     max_concurrent=max_concurrent,
                     cache_ttl_s=cache_ttl_s,
@@ -689,7 +690,7 @@ def _op_memory_stats() -> str:
             logger.warning("Unhandled exception in _op_memory_stats: %s", e)
         return _json.dumps(
             {
-                "db_path": db_path,
+                "db_path": "<configured>",
                 "db_size_bytes": db_size,
                 "note_count": note_count,
                 "background_queue_depth": queue_depth,

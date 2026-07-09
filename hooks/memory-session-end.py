@@ -222,10 +222,10 @@ def _maybe_auto_save() -> dict:
     if tool_count < _TOOL_THRESHOLD:
         return {"saved": False, "reason": f"insufficient_activity_{tool_count}_tools"}
 
-    # Try to auto-save via the MCP tool
+    # Try to auto-save via the canonical save pipeline
     try:
         # We import here to avoid startup cost if not needed
-        from mcp_memory import memory_save
+        from background.auto_save import _upsert_memory
 
         # Phase 3: lightweight promotion scan for auto-capture drafts
         # from the current session. Runs best-effort; never blocks the
@@ -241,13 +241,18 @@ def _maybe_auto_save() -> dict:
             f"Auto-saved by memory-session-end hook (Rule #7 enforcement).\n"
         )
 
-        result = memory_save(
+        now_iso_val = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+        note_id = f"sessions/auto-session-end-{session_id[:8] if session_id else 'unknown'}"
+        saved = _upsert_memory(
+            note_id=note_id,
+            source_file="",
             content=content,
-            category="sessions",
-            title_slug=f"auto-session-end-{session_id[:8] if session_id else 'unknown'}",
-            tags=["auto-session-end", "rule-7"],
+            tags_json=["auto-session-end", "rule-7"],
+            now_iso=now_iso_val,
+            pinned=0,
             importance=2,
         )
+        result = {"saved": bool(saved)}
         # Mark as saved
         marker["saved_at"] = now
         _save_marker(marker)

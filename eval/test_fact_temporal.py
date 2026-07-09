@@ -896,7 +896,7 @@ class TestTemporalFactClause:
     def test_as_of_epoch(self):
         clause, params = ft._temporal_fact_clause(1700000000.0)
         assert "f.valid_at <= ?" in clause
-        assert "f.invalid_at IS NULL OR f.invalid_at >= ?" in clause
+        assert "f.invalid_at IS NULL OR f.invalid_at = '' OR f.invalid_at >= ?" in clause
         assert params == [1700000000.0, 1700000000.0]
 
 

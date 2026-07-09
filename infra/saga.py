@@ -49,6 +49,7 @@ Example::
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import sys
 import threading
@@ -798,30 +799,63 @@ def _build_save_memory_steps(
             _remove_vec_key(params.conn, params.note_id)
 
     def _do_file() -> Path:
-        # Scenario 4 fix: detect concurrent edits by comparing the
-        # current on-disk content with the pre-saga snapshot.  If
-        # they differ, the on-disk version is preserved as a
-        # conflict file before the new content is written.  This
-        # closes the LWW gap where a second opencode session could
-        # silently overwrite the first.
-        from infra.memory_common import safe_atomic_write
-
+        # Scenario 4 fix (2026-06-22): concurrent-edit detection.
+        #
+        # For existing files we must detect a concurrent modification
+        # between saga-start (params.initial_file_content snapshotted
+        # at _build_save_memory_steps time) and our write.  The correct
+        # order is:
+        #   1. Read the current on-disk content BEFORE any write.
+        #   2. If current != initial_file_content, a concurrent edit
+        #      is in flight — preserve the "losing" on-disk version as
+        #      a conflict file before we overwrite it.
+        #   3. Call do_write_file() (which is already atomic via
+        #      atomic_write) to persist the new markdown.
+        #
+        # Prior BUG (2026-07): two separate bugs compounded:
+        #   (a) _read_new_content_for_file() was called before
+        #       do_write_file() ran, so the OLD content was fetched
+        #       and written back by safe_atomic_write — new markdown
+        #       was silently dropped for every edit of an existing file.
+        #   (b) In the safe_atomic_write except-fallback, do_write_file()
+        #       silently overwrote any concurrent edit without saving a
+        #       conflict file.
         if params.initial_file_content is not None:
             try:
-                safe_atomic_write(
-                    file_path,
-                    _read_new_content_for_file(),
-                    encoding="utf-8",
-                    expected_existing=params.initial_file_content,
+                current_on_disk = file_path.read_text(encoding="utf-8")
+            except Exception:
+                current_on_disk = None
+            if current_on_disk is not None and current_on_disk != params.initial_file_content:
+                import time as _time
+
+                ts = int(_time.time())
+                conflict_path = file_path.with_suffix(
+                    f"{file_path.suffix}.conflict-{os.getpid()}-{ts}"
                 )
-            except Exception as _atomic_exc:
-                logger.warning(
-                    "safe_atomic_write failed in saga _do_file, falling back to regular write: %s",
-                    _atomic_exc,
-                )
+                try:
+                    conflict_path.write_text(current_on_disk, encoding="utf-8")
+                    logger.warning(
+                        "saga _do_file: concurrent edit on %s detected; "
+                        "conflict content saved to %s",
+                        file_path,
+                        conflict_path,
+                    )
+                except Exception as _conflict_exc:
+                    logger.warning(
+                        "saga _do_file: failed to save conflict file %s: %s",
+                        conflict_path,
+                        _conflict_exc,
+                    )
+            try:
                 do_write_file()
+            except Exception as _write_exc:
+                logger.warning(
+                    "do_write_file failed in saga _do_file for %s: %s",
+                    file_path,
+                    _write_exc,
+                )
+                raise
         else:
-            # No pre-existing file → no conflict possible.
             do_write_file()
         params.wrote_file = True
         return file_path

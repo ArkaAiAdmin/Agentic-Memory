@@ -568,8 +568,6 @@ def _start_daemon_if_needed() -> bool:
         return False
 
 def _process_inbox_batch(entries: list[dict]) -> dict:
-    from background.tool_complete import _tool_complete_inner  # noqa: E402
-    from background.auto_save import get_db_path  # noqa: E402
     """Process a batch of inbox entries synchronously.
 
     Used both by the daemon's main loop and by the inline fallback
@@ -583,6 +581,8 @@ def _process_inbox_batch(entries: list[dict]) -> dict:
 
     Returns a summary dict: ``{"saved": N, "skipped": M, "failed": K}``.
     """
+    from background.tool_complete import _tool_complete_inner  # noqa: E402
+    from background.auto_save import get_db_path  # noqa: E402
     summary = {"saved": 0, "skipped": 0, "failed": 0}
     if not entries:
         return summary

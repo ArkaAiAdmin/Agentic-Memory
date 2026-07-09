@@ -50,6 +50,7 @@ safety_wiring: bool = True
 # search/save/clear paths in search_pipeline, save_pipeline, etc.
 _search_cache: OrderedDict = OrderedDict()
 _search_cache_lock = threading.Lock()
+_fts5_cache_cleared: bool = False
 
 # Reverse index: maps note_id → set of cache_keys whose result includes
 # that note.  Used for selective invalidation on single-note writes so
@@ -151,7 +152,7 @@ def cache_stats() -> dict:
             "active": fts5_active,
             "expired": fts5_expired,
         },
-        "fts5_cache_cleared_on_write": False,
+        "fts5_cache_cleared_on_write": getattr(this_mod, "_fts5_cache_cleared", False),
     }
 
 
@@ -197,14 +198,32 @@ def clear_all_caches() -> None:
     delete, backfill, rebuild).  Uses a lazy import to break the
     circular dependency between ``cache.py`` and ``embedding_search.py``.
     """
+    global _fts5_cache_cleared
     with _search_cache_lock:
         _search_cache.clear()
+        _fts5_cache_cleared = True
     try:
         from infra.embedding_search import clear_vec_cache
 
         clear_vec_cache()
     except ImportError:
         pass
+
+
+def cache_put(key, value, max_size: int = SEARCH_CACHE_MAX) -> None:
+    """Thread-safe cache insertion with LRU eviction."""
+    with _search_cache_lock:
+        _search_cache[key] = (time.time(), value)
+        _search_cache.move_to_end(key)
+        while len(_search_cache) > max_size:
+            _search_cache.popitem(last=False)
+
+
+def cache_touch(key) -> None:
+    """Thread-safe LRU touch: mark key as most-recently-used."""
+    with _search_cache_lock:
+        if key in _search_cache:
+            _search_cache.move_to_end(key)
 
 
 from infra.memory_common import make_lazy_getattr

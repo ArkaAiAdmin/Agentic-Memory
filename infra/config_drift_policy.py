@@ -304,8 +304,10 @@ def resolve_policy(scope: str | None = None) -> DriftPolicy:
 
 
 def reset_policy_cache() -> None:
-    global _active_policy
+    global _active_policy, _active_has_inited, _last_resolved_toml_mtime
     _active_policy = None
+    _active_has_inited = False
+    _last_resolved_toml_mtime = 0.0
 
 
 _active_has_inited: bool = False
