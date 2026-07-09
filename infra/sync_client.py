@@ -34,6 +34,8 @@ import urllib.error
 from pathlib import Path
 from typing import Any, Optional, cast
 
+from infra.sync_server import SYNC_AUTH_TOKEN
+
 logger = logging.getLogger(__name__)
 
 # Default timeout for HTTP requests (seconds).
@@ -197,9 +199,9 @@ def _json_get(url: str, timeout: int = _HTTP_TIMEOUT) -> Optional[dict]:
     """HTTP GET, return parsed JSON dict or None on failure."""
     try:
         req = urllib.request.Request(url, method="GET")
-        # sync_server._check_replay requires X-Sync-Timestamp when
-        # SYNC_MAX_REQUEST_AGE > 0. Send it on every request.
         req.add_header("X-Sync-Timestamp", str(int(time.time())))
+        if SYNC_AUTH_TOKEN:
+            req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8")
             return cast(Optional[dict], json.loads(body))
@@ -226,7 +228,9 @@ def _json_post(url: str, data: dict, timeout: int = _HTTP_TIMEOUT) -> Optional[d
                 "Content-Type": "application/json",
                 "X-Sync-Timestamp": str(int(time.time())),
             },
-        )
+            )
+        if SYNC_AUTH_TOKEN:
+            req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             resp_body = resp.read().decode("utf-8")
             return cast(Optional[dict], json.loads(resp_body))

@@ -1,6 +1,6 @@
 # Database Schema
 
-Agentic Memory uses SQLite with FTS5 for full-text search. Schema version **21** (defined in `migration_runner.py`; 21 migrations, 49 tables total).
+Agentic Memory uses SQLite with FTS5 for full-text search. Schema version **36** (defined in `migration_runner.py`; 37 migrations, ~48 user-visible tables; ~62 total including FTS5 virtual tables).
 
 Migration history (most recent first):
 - v21: `kg_entity_crdt` + `kg_edge_crdt` tables for CRDT multi-agent merge support. Enables conflict-free entity/edge sync across peers.
@@ -534,3 +534,18 @@ CREATE TABLE schema_version (
 | 19 | `019_kg_facts_entity_fk.sql` | kg_facts.subject/object_entity_id FKs get ON DELETE SET NULL. Pre-existing bug fix for entity dedup. |
 | 20 | `020_kg_facts_fts.sql` | kg_facts FTS5 virtual table + 3 sync triggers (ai, ad, au). Brings kg_facts in line with the other 3 text-searchable tables. |
 | 21 | `021_kg_crdt.sql` | kg_entity_crdt + kg_edge_crdt tables for CRDT multi-agent merge support. Enables conflict-free entity/edge sync across peers. |
+| 22 | `022_session_memory.sql` | sessions, decision_threads, thread_events, session_compaction_log tables for the session memory system. |
+| 23 | `023_add_audit_status.sql` | memory_audit_log.status column + status-based indexes for audit-phase triage. |
+| 24 | `024_chunk_embeddings.sql` | memory_chunk_embeddings, memory_chunk_vec_idx, memory_chunk_vec_keys for chunk-level multi-vector search. |
+| 25 | `025_belief_plumbing.sql` | belief_assertions table + kg_facts.fact_type column (Sprint 1 fact/belief separation). |
+| 26 | `026_belief_assertions.sql` | belief_assertions tables: agent assertions, assertion history, support relations for evidential reasoning. |
+| 27 | `027_revision_log.sql` | memory_revision_log table for note revision tracking + diff storage (Sprint 3). |
+| 28 | `028_entailment_chains.sql` | entailment_chains table for logical inference linking between facts (Sprint 3). |
+| 29 | `029_graph_snapshots.sql` | graph_snapshots table for point-in-time KG serialization (Sprint 4 graph analytics). |
+| 30 | `030_community_id_and_betweenness.sql` | kg_entities.community_id + betweenness columns for graph community detection (Sprint 4). |
+| 31 | `031_outbox_events.sql` | memory_events outbox table for REST/WS API event sourcing. |
+| 32 | `032_outbox_events_scoped.sql` | Scoped outbox update trigger (semantic columns only) for memory_events. |
+| 33 | `033_shared_skills.sql` | memory_skills.hit_vector, last_used_vector, logical_clock columns for CRDT-aware skill hit counting. |
+| 34 | `034_entailment_validation.sql` | Entailment validation tables and triggers. |
+| 35 | `035_shared_memories_target_agent_id.sql` | shared_memories.target_agent_id + shared_with columns for directed sharing and the shared_with_me filter. |
+| 36 | `036_embedding_model_tracking.sql` | embedding model tracking in memory_vec_idx for model-version-aware vector index management. |

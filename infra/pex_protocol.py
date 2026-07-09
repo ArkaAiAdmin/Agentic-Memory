@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+from infra.sync_server import SYNC_AUTH_TOKEN
+
 
 class PeerDirectory:
     """Thread-safe directory of discovered and gossiped peers."""
@@ -95,6 +97,8 @@ def send_gossip(target_url: str, local_agent_id: str, peers: List[Dict[str, Any]
             method="POST",
             headers={"Content-Type": "application/json"},
         )
+        if SYNC_AUTH_TOKEN:
+            req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
         with urllib.request.urlopen(req, timeout=5) as resp:
             body = resp.read().decode("utf-8")
             return dict(json.loads(body))

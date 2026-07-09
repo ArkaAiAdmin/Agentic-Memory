@@ -583,7 +583,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
         try:
             from kg.kg_crdt import ensure_kg_crdt_schema
 
-            db_path = self.server.db_path  # type: ignore[attr-defined]
+            db_path = self.db_path
             conn = _open_server_db(db_path)
             try:
                 ensure_kg_crdt_schema(conn)
@@ -688,7 +688,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
         try:
             from kg.kg_crdt import ensure_kg_crdt_schema
 
-            db_path = self.server.db_path  # type: ignore[attr-defined]
+            db_path = self.db_path
             conn = _open_server_db(db_path)
             try:
                 ensure_kg_crdt_schema(conn)
@@ -884,10 +884,10 @@ class _SyncHandler(BaseHTTPRequestHandler):
 
         try:
             from skill_extractor import ensure_skill_schema, merge_and_save_skill
-            ensure_skill_schema(_open_server_db(self.db_path))
             db_path = self.db_path
             conn = _open_server_db(db_path)
             try:
+                ensure_skill_schema(conn)
                 applied = 0
                 skipped = 0
                 for skill in data.get("skills", []):

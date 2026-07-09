@@ -128,7 +128,7 @@ class FlagSource:
 class DriftEntry:
     """Computed verdict for one flag."""
     flag: str
-    toml_path: str
+    toml_path: str | None
     severity: str
     sources: FlagSource
     drift_verdicts: list[str] = field(default_factory=list)
@@ -192,7 +192,7 @@ def _entry_to_dict(e: DriftEntry) -> dict:
 class FlagSpec:
     """Operator-facing metadata for one flag."""
     env_var: str
-    toml_path: str
+    toml_path: str | None
     default: Any
     py_type: type = field(default_factory=lambda: type(None))
 
@@ -211,17 +211,18 @@ def _all_flag_specs() -> list[FlagSpec]:
             env_var=meta["env_var"],
             toml_path=meta["toml_path"],
             default=meta["default"],
+            py_type=bool,
         ))
     operational = [
         ("MEMORY_DB_PATH",                  "general.db_path",              "memory/memory.db", str),
         ("MEMORY_DB_POOL_SIZE",             "general.db_pool_size",         24, int),
-        ("MEMORY_DB_FLOCK",                 "general.db_flock",             True, bool),
+        ("MEMORY_DB_FLOCK",                 None,                           True, bool),
         ("MEMORY_WAL_CHECKPOINT_STARTUP",   "general.wal_checkpoint_startup", True, bool),
         ("MEMORY_WAL_CHECKPOINT_INTERVAL_S","general.wal_checkpoint_interval_s", 300, int),
         ("MEMORY_DB_CONNECT_TIMEOUT_S",     "general.db_connect_timeout_s", 30, int),
         ("MEMORY_RERANKER_DISABLED",        "search.reranker_disabled",     False, bool),
-        ("MEMORY_RECONCILER_N_WORKERS",     "infra.reconciler_n_workers",   1, int),
-        ("MEMORY_JOURNAL_MAX_RETRIES",      "infra.journal_max_retries",    3, int),
+        ("MEMORY_RECONCILER_N_WORKERS",     None,                           1, int),
+        ("MEMORY_JOURNAL_MAX_RETRIES",      None,                           3, int),
     ]
     for env_var, toml_path, default, py_t in operational:
         specs.append(FlagSpec(
@@ -239,11 +240,12 @@ def _decompose(spec: FlagSpec) -> FlagSource:
     """Pull all four sources for one flag from the live process state."""
     toml_data = _read_toml(_TOML_PATH) if _TOML_PATH.exists() else {}
     env_raw = os.environ.get(spec.env_var)
-    toml_value = _deep_get(toml_data or {}, spec.toml_path)
+    toml_path = spec.toml_path or ""
+    toml_value = _deep_get(toml_data or {}, toml_path) if toml_path else None
 
     parse_failed = False
     try:
-        effective = _resolve(spec.env_var, spec.toml_path, spec.default, toml_data)
+        effective = _resolve(spec.env_var, toml_path, spec.default, toml_data) if toml_path else spec.default
     except Exception as exc:
         logger.warning("drift: resolve failed for %s: %s", spec.env_var, exc)
         effective = spec.default
@@ -521,4 +523,7 @@ def _apply_tier_overrides_from_toml() -> None:
 
 
 # Apply at import time — runs once when the module is first loaded.
-_apply_tier_overrides_from_toml()
+# Can be suppressed by setting MEMORY_SKIP_IMPORT_TIER_OVERRIDE=1 (useful in tests
+# to avoid side-effects from a corrupted or absent memory.toml at import time).
+if os.environ.get("MEMORY_SKIP_IMPORT_TIER_OVERRIDE") is None:
+    _apply_tier_overrides_from_toml()

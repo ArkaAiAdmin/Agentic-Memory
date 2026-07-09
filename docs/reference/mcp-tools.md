@@ -1,13 +1,10 @@
 # MCP Tools Reference
 
-Agentic Memory exposes **15 CORE MCP tools + 87 ADMIN tools**
-(routed through `memory_maintenance`) for agent integration. The
-single source of truth for the tool surface is `tool_registry.py`
-(`CORE_TOOLS` and `ADMIN_TOOLS` lists).
+Agentic Memory exposes **16 CORE + 87 ADMIN + 3 DEPRECATED = 106 total registered names** (103 `@mcp.tool()` registrations, with DEPRECATED tools excluded from the direct surface). The single source of truth for the tool surface is `tool_registry.py` (`CORE_TOOLS`, `ADMIN_TOOLS`, and `DEPRECATED` lists).
 
-## Core Tools (15)
+## Core Tools (16)
 
-The 15 tools most agents use day-to-day. Each is a first-class MCP
+The 16 tools most agents use day-to-day. Each is a first-class MCP
 function; no grouping required.
 
 ### `memory_save`
@@ -95,18 +92,6 @@ neighbors up to N hops.
 
 ```python
 memory_graph_search(start="agentic-memory", max_hops=2, limit=20)
-```
-
----
-
-### `memory_recall_context`
-
-Return the most-relevant memories for a session-start or pre-tool
-context probe. Heavier than `memory_search` (always runs the full
-hybrid stack); use `memory_search` for ad-hoc queries.
-
-```python
-memory_recall_context(query="...", limit=5)
 ```
 
 ---
@@ -217,7 +202,7 @@ memory_profile_access(note_id="lessons/sqlite-wal-mode", source="search")
 
 ---
 
-## Admin Tools (70)
+## Admin Tools (87)
 
 All admin operations go through the `memory_maintenance` grouped
 tool, dispatched by `operation=`. The full list (single source of

@@ -137,10 +137,10 @@ $BLOCK_BEGIN
 # Phase B: enqueue via worker task queue
 0  1  *   *   0    MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_integrity_check >> $LOG_DIR/integrity.log 2>&1
 
-# Log retention — rotate/archive old cron logs (daily 01:00, same slot as
-# integrity on Sundays; per-cron flocks serialize against each other)
+# Log retention — rotate/archive old cron logs (Saturday 01:00, avoids
+# Sunday collision with cron_integrity_check at 01:00).
 # Phase B: enqueue via worker task queue
-0  1  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_log_retention >> $LOG_DIR/log-retention.log 2>&1
+0  1  *   *   6    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_log_retention >> $LOG_DIR/log-retention.log 2>&1
 
 # Incremental backfill — rebuild stale indexes daily (daily 01:30)
 # Phase B: enqueue via worker task queue

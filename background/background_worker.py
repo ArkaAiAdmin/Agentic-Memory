@@ -568,7 +568,10 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_crdt_sync": "cron/cron_crdt_sync.py",
     "cron_monitor_task_queue": "cron/monitor_task_queue.py",
     # Pre-Phase B — already mapped
-    "cron_cleanup_auto_logs": "cron/cleanup_auto_logs.py",
+    # Z-7 fix: rename cron/cleanup_auto_logs.py → cron/cron_cleanup_auto_logs.py
+    # to match the cron_*.py naming convention. Old path kept as fallback
+    # for any lingering direct invocations that bypass the task queue.
+    "cron_cleanup_auto_logs": "cron/cron_cleanup_auto_logs.py",
     "cron_kg_backfill_monitor": "cron/cron_kg_backfill_monitor.py",
     "cron_embedding_recompute": "cron/cron_embedding_recompute.py",
     "cron_detect_vec_drift": "cron/cron_detect_vec_drift.py",
@@ -1346,8 +1349,12 @@ def run_worker(
         n_workers: Number of concurrent worker threads (default 1).
             Pass >1 to enable the threaded WorkerPool.
     """
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
+    # ADD-A-2: signal.signal only works in the main thread.  Guard
+    # both handlers so run_worker is safe when called from a test
+    # harness or other non-main thread.
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, _handle_signal)
+        signal.signal(signal.SIGINT, _handle_signal)
 
     logger.info(
         "worker: starting (db=%s, interval=%ds, once=%s, drain=%s, "
@@ -1459,7 +1466,9 @@ def run_worker(
             )
             os._exit(1)
 
-        _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
+        _use_proc_signal = threading.current_thread() is threading.main_thread()
+        if _use_proc_signal:
+            _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
         _proc_sig.alarm(_PROCESS_TIMEOUT_S)
 
         if drain:
@@ -1534,7 +1543,8 @@ def run_worker(
                             break
                         time.sleep(1)
     finally:
-        _proc_sig.alarm(0)
+        if _use_proc_signal:
+            _proc_sig.alarm(0)
         _RECONCILER_SHUTDOWN.set()
         try:
             reconciler_thread.join(timeout=5)

@@ -1788,10 +1788,12 @@ def _materialize_journal_once(
 ) -> str:
     """Single materialization attempt for one journal entry (no retry).
 
-    This no longer holds the per-DB-path flock across the entire saga.
-    Cross-process safety is provided by SQLite's ``BEGIN IMMEDIATE``
-    inside ``_save_memory_core``.  A brief pre-existence SELECT lets
-    a second reconciler skip materialization when a peer already won.
+    Acquires the per-DB-path flock (same lock used by _save_memory_core)
+    before entering the materialization critical section.  The flock is
+    held across _check_already_materialized, _persist_via_saga, and all
+    post-save hooks so two concurrent reconcilers cannot both run the
+    full saga for the same note_id.  It is released in the function's
+    outer finally block regardless of success or failure.
     """
     from infra.write_journal import mark_applied, materialize_security_scan
 
@@ -1833,79 +1835,95 @@ def _materialize_journal_once(
     from infra.memory_common import _resolve_tags
     tags_list = _resolve_tags(req.category, req.tags or [], context=req.context)
     _markdown, _fm_meta, now_iso, metadata_json = _build_memory_file(
-        req.content, req.category, req.title_slug, tags_list, req.pinned, note_id=note_id,
+        req.content, req.category, req.title_slug, tags_list, req.pinned,
+        now_iso=entry.get("created_at"), note_id=note_id,
     )
 
     _db_path_parsed = Path(db_path_obj)
 
-    # Idempotent guard: if a peer reconciler already materialized this
-    # note_id, skip the full saga and just mark the journal entry applied.
-    # Cross-process serialization is provided by SQLite's BEGIN IMMEDIATE
-    # inside _save_memory_core; this pre-check just avoids the expensive
-    # duplicate work.
-    if _check_already_materialized(_db_path_parsed, note_id):
-        mark_applied(journal_path, entry["id"])
-        logger.info("materialize_journal_entry: %s already materialized, skipping", note_id)
-        return note_id
+    # W-1: acquire the per-DB-path flock before the materialization
+    # critical section (same lock used by _save_memory_core's direct
+    # path).  Cross-process serialization prevents two reconciler threads
+    # racing through _check_already_materialized + _persist_via_saga
+    # simultaneously.  Re-entrant per-process, so _save_memory_core's
+    # outer acquire is safe when the reconciler runs inside the sagaxed
+    # write path.  Released in the finally block at the end of this
+    # function.
+    from infra.db_path_flock import (
+        acquire_db_path_flock,
+        release_db_path_flock,
+    )
+    acquire_db_path_flock(_db_path_parsed)
+    try:
+        # Idempotent guard: if a peer reconciler already materialized this
+        # note_id, skip the full saga and just mark the journal entry applied.
+        # Cross-process serialization is provided by the db_path_flock acquired
+        # above; this pre-check just avoids the expensive duplicate work.
+        if _check_already_materialized(_db_path_parsed, note_id):
+            mark_applied(journal_path, entry["id"])
+            logger.info("materialize_journal_entry: %s already materialized, skipping", note_id)
+            return note_id
 
-    conn = None
-    _save_errored = False
-    try:
-        conn = _acquire_db_connection(
-            db_path_obj, req.category, req.title_slug, time.time()
-        )
-    except Exception:
-        raise
-    try:
-        note_id_out, conn = _persist_via_saga(
-            conn=conn, db_path_obj=_db_path_parsed,
-            category=req.category, title_slug=req.title_slug,
-            content=req.content, tags_list=tags_list, pinned=req.pinned,
-            now_iso=now_iso, is_global=req.is_global, metadata_json=metadata_json,
-            file_path=file_path, markdown_content=_markdown, importance=req.importance,
-            defer_expensive=req.defer_expensive, tenant_id=req.tenant_id,
-            epistemic_source=req.epistemic_source, belief_status=req.belief_status,
-            asserting_agent_id=req.asserting_agent_id, fact_type=req.fact_type,
-        )
-        _run_post_save_hooks(
-            target_mem, _db_path_parsed, note_id_out,
-            req.category, req.title_slug, req.content, req.tags or [],
-            req.pinned, req.is_global,
-            (req.safety_wiring and not req.defer_expensive),
-            time.time(), conn=conn,
-        )
-        _enqueue_background_tasks(_db_path_parsed, note_id_out, conn=conn)
-        if _is_crdt_enabled():
-            _project_sql_to_crdt(_db_path_parsed, note_id, conn=conn)
-        logger.info("materialize_journal_entry: materialized %s", note_id_out)
+        conn = None
+        _save_errored = False
         try:
-            from infra.write_journal import mark_applied as _mark_applied
-            _mark_applied(journal_path, entry["id"])
-            logger.info("materialize_journal_entry: mark_applied %s (id=%d)", note_id_out, entry["id"])
+            conn = _acquire_db_connection(
+                db_path_obj, req.category, req.title_slug, time.time()
+            )
+        except Exception:
+            raise
+        try:
+            note_id_out, conn = _persist_via_saga(
+                conn=conn, db_path_obj=_db_path_parsed,
+                category=req.category, title_slug=req.title_slug,
+                content=req.content, tags_list=tags_list, pinned=req.pinned,
+                now_iso=now_iso, is_global=req.is_global, metadata_json=metadata_json,
+                file_path=file_path, markdown_content=_markdown, importance=req.importance,
+                defer_expensive=req.defer_expensive, tenant_id=req.tenant_id,
+                epistemic_source=req.epistemic_source, belief_status=req.belief_status,
+                asserting_agent_id=req.asserting_agent_id, fact_type=req.fact_type,
+            )
+            _run_post_save_hooks(
+                target_mem, _db_path_parsed, note_id_out,
+                req.category, req.title_slug, req.content, req.tags or [],
+                req.pinned, req.is_global,
+                (req.safety_wiring and not req.defer_expensive),
+                time.time(), conn=conn,
+            )
+            _enqueue_background_tasks(_db_path_parsed, note_id_out, conn=conn)
+            if _is_crdt_enabled():
+                _project_sql_to_crdt(_db_path_parsed, note_id, conn=conn)
+            logger.info("materialize_journal_entry: materialized %s", note_id_out)
             try:
-                conn.execute(
-                    "UPDATE write_journal SET hooks_completed=1 WHERE id=?",
-                    (entry["id"],),
-                )
-            except Exception as _hc_exc:
-                logger.debug("materialize_journal_entry: hooks_completed update failed: %s", _hc_exc)
-        except Exception as _ma_exc:
-            logger.warning("materialize_journal_entry: mark_applied failed for %s: %s", note_id_out, _ma_exc)
-        return str(note_id_out)
-    except Exception:
-        _save_errored = True
-        raise
+                from infra.write_journal import mark_applied as _mark_applied
+                _mark_applied(journal_path, entry["id"])
+                logger.info("materialize_journal_entry: mark_applied %s (id=%d)", note_id_out, entry["id"])
+                try:
+                    conn.execute(
+                        "UPDATE write_journal SET hooks_completed=1 WHERE id=?",
+                        (entry["id"],),
+                    )
+                except Exception as _hc_exc:
+                    logger.debug("materialize_journal_entry: hooks_completed update failed: %s", _hc_exc)
+            except Exception as _ma_exc:
+                logger.warning("materialize_journal_entry: mark_applied failed for %s: %s", note_id_out, _ma_exc)
+            return str(note_id_out)
+        except Exception:
+            _save_errored = True
+            raise
+        finally:
+            if conn is not None:
+                try:
+                    if _save_errored:
+                        try:
+                            conn.rollback()
+                        except Exception as _rb_exc:
+                            logger.warning("rollback failed in journal materialization: %s", _rb_exc)
+                    conn.close()
+                except Exception as _close_exc:
+                    logger.warning("conn.close() failed in journal materialization: %s", _close_exc)
     finally:
-        if conn is not None:
-            try:
-                if _save_errored:
-                    try:
-                        conn.rollback()
-                    except Exception as _rb_exc:
-                        logger.warning("rollback failed in journal materialization: %s", _rb_exc)
-                conn.close()
-            except Exception as _close_exc:
-                logger.warning("conn.close() failed in journal materialization: %s", _close_exc)
+        release_db_path_flock(_db_path_parsed)
 
 
 def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn: Optional[AnyConnection] = None) -> None:

@@ -40,6 +40,7 @@ from typing import Any, NamedTuple, Optional
 
 from infra.cache import (
     _search_cache,
+    _search_cache_lock,
     SEARCH_CACHE_MAX,
     SEARCH_CACHE_TTL,
     SEARCH_CACHE_TTL_ENABLED,
@@ -53,7 +54,7 @@ from infra.infrastructure import (
     _err,
     ErrorCode,
 )
-from infra.error_counter import increment as _phase_inc, get_counts as _phase_counts
+from infra.error_counter import increment as _phase_inc, get_counts as _phase_counts, reset as _phase_reset
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -2305,6 +2306,7 @@ def search_memories(
     # Reset per-call phase latency accumulator so results are not
     # polluted by stale entries from prior invocations.
     _phase_latencies.clear()
+    _phase_reset()
 
     # Phase 1: Parse query
     _t0 = time.time()
@@ -2367,14 +2369,15 @@ def search_memories(
     from infra.cache import cache_touch
 
     now = time.time()
-    if cache_key in _search_cache:
-        ts, cached_result = _search_cache[cache_key]
-        if not SEARCH_CACHE_TTL_ENABLED or now - ts <= SEARCH_CACHE_TTL:
-            cache_touch(cache_key)
-            cached_result = dict(cached_result)
-            cached_result["query_id"] = uuid.uuid4().hex
-            return cached_result
-        _search_cache.pop(cache_key)
+    with _search_cache_lock:
+        if cache_key in _search_cache:
+            ts, cached_result = _search_cache[cache_key]
+            if not SEARCH_CACHE_TTL_ENABLED or now - ts <= SEARCH_CACHE_TTL:
+                cache_touch(cache_key)
+                cached_result = dict(cached_result)
+                cached_result["query_id"] = uuid.uuid4().hex
+                return cached_result
+            _search_cache.pop(cache_key)
 
     db = None
     try:
@@ -2493,9 +2496,9 @@ def search_memories(
                 fts_future = executor.submit(_fts_worker)
                 kg_future = executor.submit(_kg_worker)
                 results = fts_future.result()
-                _record_phase_latency("fts", _t0)
+                _record_phase_latency("search.fts", _t0)
                 related_facts = kg_future.result()
-                _record_phase_latency("kg_facts", _t0)
+                _record_phase_latency("search.kg_facts", _t0)
         else:
             results = _fts_search(
                 db, fts_query, limit * 3 if _effective_rerank else limit, has_fitness,
@@ -2504,7 +2507,7 @@ def search_memories(
                 tag_filter_params=tuple(_tag_filter_params),
                 category=category or None,
             )
-            _record_phase_latency("fts", _t0)
+            _record_phase_latency("search.fts", _t0)
             if include_facts:
                 _t0_kg = time.time()
                 related_facts = _search_kg_facts(
@@ -2514,7 +2517,7 @@ def search_memories(
                     epistemic_source=epistemic_source,
                     fact_type=fact_type,
                 )
-                _record_phase_latency("kg_facts", _t0_kg)
+                _record_phase_latency("search.kg_facts", _t0_kg)
 
         # Phase 5: Fallback to embeddings
         if not results:
@@ -2526,7 +2529,7 @@ def search_memories(
                     db, normalized_query, db_path, limit, repo_filter, category,
                     tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
                 )
-                _record_phase_latency("embedding_fallback", _t0)
+                _record_phase_latency("search.embedding_fallback", _t0)
             if not results:
                 try:
                     total = db.execute("SELECT COUNT(*) FROM tenant_memories").fetchone()[0]
@@ -2556,7 +2559,7 @@ def search_memories(
             results = _hybrid_fusion(
                 db, results, normalized_query, db_path, limit, repo_filter, category=category or None,
             )
-            _record_phase_latency("hybrid_fusion", _t0)
+            _record_phase_latency("search.hybrid_fusion", _t0)
 
         # Phase 7: Temporal filtering
         if not include_invalid or as_of is not None:

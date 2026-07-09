@@ -281,7 +281,7 @@ def _enqueue_to_inbox(entry: dict) -> bool:
             except OSError as exc:
                 logger.debug("auto-save daemon: cannot stat inbox %s: %s", inbox, exc)
                 current_size = 0
-        if current_size + len(line.encode("utf-8")) > max_bytes:
+        if current_size + len(line.encode("utf-8")) >= max_bytes:
             logger.warning(
                 "auto-save: inbox at %d bytes, refusing enqueue of %d bytes "
                 "(cap is %d). Caller will fall back to sync path.",

@@ -602,19 +602,7 @@ class MemoryConfig:
             "rerank_weights": ("search", "rerank_weights"),
             "query_type_weights": ("search", "query_type_weights"),
             "query_cache": ("search", "query_cache"),
-            "max_query_tokens": ("search", "max_query_tokens"),
-            "max_result_tokens": ("search", "max_result_tokens"),
-            "top_k": ("search", "top_k"),
-            "mmr_lambda": ("search", "mmr_lambda"),
-            "graph_rerank_disable": ("search", "graph_rerank_disable"),
             "forgetting_curve_half_life": ("search", "forgetting_curve_half_life"),
-            "kg_max_entities_per_note": ("kg", "max_entities_per_note"),
-            "kg_max_relations": ("kg", "max_relations"),
-            "kg_llm_timeout_s": ("kg", "llm_timeout_s"),
-            "kg_entity_merge_threshold": ("kg", "entity_merge_threshold"),
-            "graph_cache_ttl": ("graph_cache", "graph_cache_ttl"),
-            "graph_cache_max_nodes": ("graph_cache", "max_nodes"),
-            "graph_cache_max_edges": ("graph_cache", "max_edges"),
             "write_journal": ("write", "write_journal"),
             "quality_gates": ("write", "quality_gates"),
             "saga_enabled": ("write", "saga_enabled"),
@@ -626,25 +614,10 @@ class MemoryConfig:
             "embedding_backend": ("embedding", "backend"),
             "embedding_model_id": ("embedding", "model_id"),
             "embedding_model_revision": ("embedding", "model_revision"),
-            "embedding_dimension": ("embedding", "dimension"),
-            "auto_save_interval_s": ("auto_save", "auto_save_interval_s"),
-            "auto_save_batch_size": ("auto_save", "auto_save_batch_size"),
-            "auto_save_max_content_bytes": ("auto_save", "max_content_bytes"),
-            "auto_save_denylist": ("auto_save", "denylist"),
-            "sync_enabled": ("sync", "enabled"),
+            "sync_enabled": ("sync", "enable_server"),
             "sync_token": ("sync", "token"),
             "sync_hmac_secret": ("sync", "hmac_secret"),
             "sync_max_attempts": ("sync", "max_attempts"),
-            "api_enabled": ("api", "enabled"),
-            "api_port": ("api", "port"),
-            "api_host": ("api", "host"),
-            "vec_cache_ttl_s": ("quality_gates", "vec_cache_ttl_s"),
-            "fetch_timeout_s": ("quality_gates", "fetch_timeout_s"),
-            "connect_timeout_s": ("quality_gates", "connect_timeout_s"),
-            "max_workers": ("quality_gates", "max_workers"),
-            "disk_pct_used_threshold": ("health_check", "disk_pct_used_threshold"),
-            "vec_index_drift_threshold": ("health_check", "vec_index_drift_threshold"),
-            "db_connect_timeout_s": ("health_check", "db_connect_timeout_s"),
         }
 
         _SECTION_CLS: dict[str, type] = {
@@ -1470,6 +1443,7 @@ def reset_config() -> None:
     import infra.config_drift_policy as _cdp
     _cdp._active_has_inited = False
     _cdp._last_resolved_toml_mtime = 0.0
+    _cdp._TOML_HOT_RELOAD_SUBSCRIBED = False
 
 
 def get_feature_flags() -> dict:
@@ -1550,6 +1524,24 @@ def get_feature_flags() -> dict:
             "features.temporal_ssm_enabled",
             False,
         ),
+        "neural_forget_mode": _flag(
+            _f.neural_forget_mode,
+            "MEMORY_NEURAL_FORGET_MODE",
+            "features.neural_forget_mode",
+            "formula",
+        ),
+        "neural_forget_weights": _flag(
+            _f.neural_forget_weights,
+            "MEMORY_NEURAL_FORGET_WEIGHTS",
+            "features.neural_forget_weights",
+            "",
+        ),
+        "temporal_ssm_weights": _flag(
+            _f.temporal_ssm_weights,
+            "MEMORY_TEMPORAL_SSM_WEIGHTS",
+            "features.temporal_ssm_weights",
+            "",
+        ),
         "consolidation": _flag(
             _f.consolidation,
             "MEMORY_CONSOLIDATION",
@@ -1585,6 +1577,18 @@ def get_feature_flags() -> dict:
             "MEMORY_TEMPORAL_KG",
             "features.feature_temporal_kg",
             True,
+        ),
+        "feature_temporal_kg_llm": _flag(
+            _f.feature_temporal_kg_llm,
+            "MEMORY_TEMPORAL_KG_LLM",
+            "features.feature_temporal_kg_llm",
+            True,
+        ),
+        "temporal_kg_llm_tier": _flag(
+            _f.temporal_kg_llm_tier,
+            "MEMORY_TEMPORAL_KG_TIER",
+            "features.temporal_kg_llm_tier",
+            "light",
         ),
         "feature_belief_layer": _flag(
             _f.feature_belief_layer,
@@ -1628,6 +1632,18 @@ def get_feature_flags() -> dict:
             "features.ner_spacy_enabled",
             False,
         ),
+        "session_memory": _flag(
+            _f.session_memory,
+            "MEMORY_SESSION_MEMORY",
+            "features.session_memory",
+            False,
+        ),
+        "session_decision_llm": _flag(
+            _f.session_decision_llm,
+            "MEMORY_SESSION_DECISION_LLM",
+            "features.session_decision_llm",
+            False,
+        ),
         "fts5_cache": _flag(
             cfg.cache.fts5_cache, "MEMORY_FTS5_CACHE", "cache.fts5_cache", True
         ),
@@ -1650,6 +1666,12 @@ def get_feature_flags() -> dict:
             cfg.search.contextual_retrieval,
             "MEMORY_CONTEXTUAL_RETRIEVAL",
             "search.contextual_retrieval",
+            True,
+        ),
+        "defer_expensive": _flag(
+            cfg.write.defer_expensive,
+            "MEMORY_DEFER_EXPENSIVE",
+            "write.defer_expensive",
             True,
         ),
     }

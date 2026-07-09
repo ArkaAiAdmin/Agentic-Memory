@@ -38,23 +38,22 @@ User/Agent
 ## Search Pipeline
 
 The search orchestrator (`search_memories` in `search/orchestrator.py`)
-runs the following **13 phases** in order:
+runs the following **12 phases** in order:
 
-> **Pipeline flow:** Parse query → Skill-first lookup (if requested) → Cache check → DB setup → Fallback to embeddings → Hybrid fusion → Temporal filtering → Chunk enhancement → Reranking → Build output → Safety demoting → Quality gates → Record access
+> **Pipeline flow:** Skill-first lookup (if requested) → Cache check → DB setup → Fallback to embeddings → Hybrid fusion → Temporal filtering → Chunk enhancement → Reranking → Build output → Safety demoting → Quality gates → Record access
 
-1. Parse query
-2. Skill-first lookup (if requested)
-3. Cache check
-4. DB setup
-5. Fallback to embeddings
-6. Hybrid fusion
-7. Temporal filtering
-8. Chunk enhancement
-9. Reranking
-10. Build output
-11. Safety demoting
-12. Quality gates
-13. Record access
+1. Skill-first lookup (if requested)
+2. Cache check
+3. DB setup
+4. Fallback to embeddings
+5. Hybrid fusion
+6. Temporal filtering
+7. Chunk enhancement
+8. Reranking
+9. Build output
+10. Safety demoting
+11. Quality gates
+12. Record access
 
 ## Save Pipeline
 
@@ -102,7 +101,7 @@ agentic-memory/                    # Repo root
 │   ├── synthesis.py                # BB1/BB2 synthesis
 │   ├── chunk_index.py              # Chunk search, Graph-RAG expansion
 │   ├── instrumentation.py          # Timing/log/observability
-│   └── orchestrator.py             # search_memories + 13-phase search
+│   └── orchestrator.py             # search_memories + 12-phase search
 ├── backfill_all.py                 # Audit pipeline shim → backfill/
 ├── backfill/                       # Audit pipeline subpackage
 │   ├── __init__.py                 # Public API
@@ -139,19 +138,17 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v36, 36 migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v36, 37 migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
-- **103 MCP tools** (16 CORE + 87 ADMIN).
-  Single source of truth: `tool_registry.py`.
-- **38 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
+- **106 registered tool names** (16 CORE + 87 ADMIN + 3 DEPRECATED; 103 `@mcp.tool()` registrations on the active surface).
+  Single source of truth: `tool_registry.py` (`CORE_TOOLS`, `ADMIN_TOOLS`, `DEPRECATED` lists).
+- **42 .py files** in `cron/` (37 scheduled `cron_*.py` scripts + 5 utility files such as `_flock.py`, `enqueue_task.py`, `monitor_task_queue.py`) — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.
-- **6 lifecycle hooks** in `hooks/` — session start/end,
-  precompact snapshot, proactive context, recall,
-  search-on-demand. See `~/.claude/settings.json` and `opencode.jsonc` for wiring.
-  `_log_error.py` is a log helper, not a lifecycle hook.
+- **6 lifecycle hook scripts** (7 event→handler→script mappings in AGENTS.md wiring table) in `hooks/` — session start/end, precompact snapshot, proactive context, recall, search-on-demand, toml reload/tier patch. See `opencode.jsonc` for wiring.
+  `_log_error.py` is a log helper, not a lifecycle hook. `__init__.py` is a package marker.
 
 ## Concurrency Model
 

@@ -40,7 +40,7 @@ def count_hooks() -> int:
 def count_cron_scripts() -> int:
     """Count cron scripts in cron/ directory."""
     cron_files = list(Path("cron").glob("cron_*.py")) + list(
-        Path("cron").glob("cleanup_auto_logs.py")
+        Path("cron").glob("cron_cleanup_auto_logs.py")
     ) + list(Path("cron").glob("enqueue_task.py")) + list(
         Path("cron").glob("monitor_task_queue.py")
     )
@@ -177,6 +177,7 @@ def main() -> int:
     print(f"  MCP tools: {actual_tools}")
     print(f"  Hooks: {actual_hooks}")
     print(f"  Cron scripts: {actual_cron}")
+    print(f"  Cron jobs: {actual_cron_jobs}")
     print(f"  Migrations: {actual_migrations}")
     print()
 

@@ -254,7 +254,14 @@ def facts_stats(conn: AnyConnection) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def facts_search_db(db_path: str | Path, query: str, limit: int = 10) -> list[dict]:
+def facts_search_db(
+    db_path: str | Path,
+    query: str,
+    limit: int = 10,
+    belief_status: str | None = None,
+    epistemic_source: str | None = None,
+    fact_type: str | None = None,
+) -> list[dict]:
     """facts_search with connection lifecycle managed."""
     from infra.memory_common import connection_pool, safe_close_db
 
@@ -262,7 +269,12 @@ def facts_search_db(db_path: str | Path, query: str, limit: int = 10) -> list[di
     conn.execute("PRAGMA busy_timeout = 30000;")
     ensure_facts_schema(conn)
     try:
-        return facts_search(conn, query, limit=limit)
+        return facts_search(
+            conn, query, limit=limit,
+            belief_status=belief_status,
+            epistemic_source=epistemic_source,
+            fact_type=fact_type,
+        )
     finally:
         safe_close_db(conn)
 

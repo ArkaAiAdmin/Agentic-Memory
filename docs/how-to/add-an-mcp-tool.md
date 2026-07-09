@@ -17,8 +17,8 @@ This is the **maintainer** version. For the high-level skill, see `skills/add-an
 
 ## Decide: CORE or ADMIN?
 
-**CORE** = user-facing verb the agent invokes in normal conversation. There are 18 today:
-`memory_search`, `memory_recall_context`, `memory_session_start`, `memory_save`, `memory_delete`, `memory_restore`, `memory_supersede`, `memory_reinforce`, `memory_facts_search`, `memory_graph_search`, `memory_check_contradictions`, `memory_scan_injection`, `memory_rebuild`, `memory_audit`, `memory_compile_skill`, `memory_facts_stats`, `memory_graph_stats`, `memory_quality_filter`.
+**CORE** = user-facing verb the agent invokes in normal conversation. There are 16 today (authoritative: `tool_registry.py` `CORE_TOOLS`):
+`memory_search`, `memory_save`, `memory_delete`, `memory_recall`, `memory_note`, `memory_learn`, `memory_audit`, `memory_organize`, `memory_share`, `memory_graph`, `memory_profile`, `memory_session_start`, `memory_advanced`, `memory_review_beliefs`, `memory_curate_autosave`, `memory_health_check`.
 
 **ADMIN** = grouped under `memory_maintenance(operation="...")`. There are 37+ today: heartbeat, compact, consolidate, backfill_all, check_integrity, duplicates, merge_suggestions, rewrite_links, tier_stats, review_schedule, pinned_decay_check, retention_stats, profile_stats, profile_access, auto_summarize, summarize, daily_digest, share, shared_list, shared_stats, etc.
 

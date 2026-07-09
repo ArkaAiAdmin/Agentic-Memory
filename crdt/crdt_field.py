@@ -365,7 +365,20 @@ def apply_field_updates_to_db(
             if _vv_dominates(upd.version_vector, existing_vv):
                 pass
             else:
-                continue
+                # LWW tiebreak: if incoming update is newer than the
+                # tombstone, allow the merge to proceed (un-tombstone).
+                # This prevents permanent tombstoning when a newer live
+                # write arrives concurrently with a stale tombstone.
+                if (
+                    upd.logical_clock > existing_clock
+                    or (
+                        upd.logical_clock == existing_clock
+                        and upd.last_writer_agent > existing_agent
+                    )
+                ):
+                    pass
+                else:
+                    continue
 
         existing = FieldUpdate(
             memory_id=upd.memory_id,

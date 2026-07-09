@@ -151,8 +151,6 @@ def _should_skip_similar(content: str, ttl_hours: int = 24) -> bool:
 def _async_enqueue_or_fallback(
     tool: str, params: str, result_preview: str, ts: Optional[str], entry_id: str = ""
 ) -> dict:
-
-    from background.auto_save import _now_iso, _slugify, _is_daemon_running, _start_daemon_if_needed, _enqueue_to_inbox, _get_sessions_dir, _tool_complete_inner, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale, _get_dedup_lock_dir  # noqa: E402,F401
     """Async path: enqueue to the inbox and start the daemon if needed.
 
     Returns a "queued" envelope on success, or invokes the inline
@@ -162,6 +160,7 @@ def _async_enqueue_or_fallback(
     The note_id is computed up-front so the caller can log/audit
     it before the actual save happens in the daemon.
     """
+    from background.auto_save import _now_iso, _slugify, _is_daemon_running, _start_daemon_if_needed, _enqueue_to_inbox, _get_sessions_dir, _tool_complete_inner, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale, _get_dedup_lock_dir  # noqa: E402,F401
     ts = ts or _now_iso()
     ts_compact = ts.replace(":", "-").replace("T", "_").split(".")[0]
     tool_slug = _slugify(tool, max_len=40)
@@ -357,7 +356,16 @@ def _tool_complete_inner(
     extra_tags: Optional[list[str]] = None,
     conn=None,
 ) -> dict:
+    """Save a tool invocation as a memory note in a caller-chosen category.
 
+    ``category`` defaults to ``sessions`` (preserving Phase 0/1c behaviour).
+    Pass ``category="lessons"``, ``importance=1`` and
+    ``extra_tags=["auto-capture","draft"]`` to write a draft note that
+    the Phase 3 promotion engine can later promote to a curated tier.
+
+    Returns the save result dict, or raises on hard failure (handled by
+    the retry wrapper in ``tool_complete``).
+    """
     from background.auto_save import (
         _resolve_allowlist,
         _resolve_denylist,
@@ -381,16 +389,6 @@ def _tool_complete_inner(
         _get_memory_dir,
     )  # noqa: E402
     from background.config import _params_max, _preview_max  # noqa: E402
-    """Save a tool invocation as a memory note in a caller-chosen category.
-
-    ``category`` defaults to ``sessions`` (preserving Phase 0/1c behaviour).
-    Pass ``category="lessons"``, ``importance=1`` and
-    ``extra_tags=["auto-capture","draft"]`` to write a draft note that
-    the Phase 3 promotion engine can later promote to a curated tier.
-
-    Returns the save result dict, or raises on hard failure (handled by
-    the retry wrapper in ``tool_complete``).
-    """
     if not tool:
         raise ValueError("empty tool name")
     allowlist = _resolve_allowlist()

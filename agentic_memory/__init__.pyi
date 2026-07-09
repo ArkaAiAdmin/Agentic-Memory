@@ -301,8 +301,7 @@ class Fact:
     predicate: str
     obj: str
     confidence: float
-    category: str
-    source_note_id: str
+    source_memory: str
     event_time: str
     event_time_granularity: str
     valid_at: str
@@ -319,8 +318,7 @@ class Fact:
         predicate: str = "",
         obj: str = "",
         confidence: float = 1.0,
-        category: str = "",
-        source_note_id: str = "",
+        source_memory: str = "",
         event_time: str = "",
         event_time_granularity: str = "",
         valid_at: str = "",

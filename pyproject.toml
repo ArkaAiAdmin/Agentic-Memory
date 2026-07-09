@@ -186,7 +186,7 @@ files = [
     "context_monitor.py",
     "contradiction_detector.py",
     "cron/_flock.py",
-    "cron/cleanup_auto_logs.py",
+    "cron/cron_cleanup_auto_logs.py",
     "cron/cron_auto_share.py",
     "cron/cron_auto_summarize.py",
     "cron/cron_backup.py",

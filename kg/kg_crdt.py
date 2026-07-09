@@ -212,21 +212,29 @@ def merge_entity_ops(ops: Iterable[EntityOp]) -> dict[int, dict[str, Any]]:
             continue
 
         # LWW per metadata field: pick the op with the highest
-        # version_vector. Ties broken by timestamp then agent_id.
+        # version_vector according to causal partial order.
+        # Ties broken by (timestamp desc, agent_id asc) — a proper
+        # total order, not sum() which is not a partial order.
         def _winner(field_name: str) -> str:
             field_ops = [o for o in adds if getattr(o, field_name, "")]
             if not field_ops:
                 return ""
-            return str(
-                max(
-                    field_ops,
-                    key=lambda o: (
-                        sum(o.version_vector.values()),
-                        o.timestamp,
-                        o.agent_id,
-                    ),
-                ).__dict__[field_name]
-            )
+            if len(field_ops) == 1:
+                return str(field_ops[0].__dict__[field_name])
+            winner_op = field_ops[0]
+            for candidate in field_ops[1:]:
+                if vv_dominates(candidate.version_vector, winner_op.version_vector):
+                    winner_op = candidate
+                elif not vv_dominates(winner_op.version_vector, candidate.version_vector):
+                    if (
+                        candidate.timestamp > winner_op.timestamp
+                        or (
+                            candidate.timestamp == winner_op.timestamp
+                            and candidate.agent_id < winner_op.agent_id
+                        )
+                    ):
+                        winner_op = candidate
+            return str(winner_op.__dict__[field_name])
 
         result[entity_id] = {
             "tombstone": False,

@@ -70,17 +70,24 @@ def parse_version_vector(raw: Optional[str]) -> dict[str, int]:
 
 
 def dominates(v1: dict[str, int], v2: dict[str, int]) -> bool:
-    """Return True if v1 dominates v2 (all v1 counters ≥ all v2 counters).
+    """Return True if v1 strictly dominates v2 (v1 causally after v2).
 
-    Two empty version vectors are never concurrent — neither dominates.
+    v1 dominates v2 iff for every agent x, v1[x] >= v2[x], and there
+    exists at least one agent where v1[x] > v2[x].  Equal vectors are
+    concurrent — neither dominates.
     """
     all_keys = set(v1) | set(v2)
     if not all_keys:
         return False
+    at_least_one_greater = False
     for k in all_keys:
-        if v1.get(k, 0) < v2.get(k, 0):
+        v1_val = v1.get(k, 0)
+        v2_val = v2.get(k, 0)
+        if v1_val < v2_val:
             return False
-    return True
+        if v1_val > v2_val:
+            at_least_one_greater = True
+    return at_least_one_greater
 
 
 def concurrent(v1: dict[str, int], v2: dict[str, int]) -> bool:

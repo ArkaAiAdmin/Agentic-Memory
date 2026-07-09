@@ -580,4 +580,4 @@ memory_maintenance(operation="duplicates", threshold=0.85)
 
 ## Schema Version
 
-Current: **v32** (32 migrations, 100% down-migration coverage)
+Current: **v36** (37 migrations, 100% down-migration coverage)

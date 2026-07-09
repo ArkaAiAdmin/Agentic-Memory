@@ -372,14 +372,14 @@
     │           │           │
     ▼           ▼           ▼
 ┌────────┐ ┌────────┐ ┌──────────────┐
-│ Hook 1 │ │ Hook 2 │ │ memory_recall│
-│Session │ │Proactive│ │_context()   │
-│Start   │ │Context  │ │(MCP tool)   │
+│ Hook 1 │ │ Hook 2    │ │memory_search│
+│Session │ │Proactive │ │(CORE verb) │
+│Start   │ │Context   │ │(use search)│
 └───┬────┘ └───┬────┘ └──────┬───────┘
     │          │              │
     ▼          ▼              ▼
 ┌──────────────────────────────────────────────────────┐
-│              memory_recall_context()                  │
+│              memory_search()                        │
 │                                                       │
 │  ┌─────────────────────────────────────────────────┐ │
 │  │ 1. PINNED NOTES          │ pinned=true           │ │

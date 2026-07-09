@@ -7,7 +7,7 @@ classes: `Memory` and `AgentMemory`. Individual functions like
 `save_memory()`, `search_memories()`, `get_memory()`, etc. are not
 part of the public API — they live in internal modules and should
 be called via the `Memory` / `AgentMemory` classes below, or via
-the MCP server (`memory_save`, `memory_search`, `memory_recall_context`,
+the MCP server (`memory_save`, `memory_search`, `memory_learn`, `memory_recall`,
 etc. — see [MCP Tools](reference/mcp-tools.md)).
 
 ### `Memory` class

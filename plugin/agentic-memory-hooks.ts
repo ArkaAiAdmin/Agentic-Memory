@@ -59,7 +59,13 @@ const CIRCUIT_SENTINEL = path.join(AGENTIC_MEMORY_DIR, "memory", ".auto_save_cir
 
 // ── Circuit breaker ──────────────────────────────────────────────────────────
 
-const CIRCUIT_THRESHOLD = 10
+// Z-6 fix: lowered from 10 to match Python's default max_retries=3 in
+// background/circuit_breaker.py._auto_save_record_failure_and_maybe_trip,
+// which trips at 4 failures (n_failures > max_retries).  Both sides must
+// use the same threshold: the TS counter is independent of the Python
+// sentinel, so if TS allows 10 spawns while Python circuit is already
+// open, 6 unnecessary subprocesses will be launched before TS trips.
+const CIRCUIT_THRESHOLD = 4
 const COOL_DOWN_MS = 5 * 60 * 1000
 const failureCounts = new Map<string, number>()
 const circuitOpenTimes = new Map<string, number>()

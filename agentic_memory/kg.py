@@ -133,8 +133,7 @@ class KnowledgeGraph:
                 confidence=float(
                     f.get("confidence", f.get("effective_confidence", 1.0))
                 ),
-                category=f.get("category", ""),
-                source_note_id=f.get("source_note_id", ""),
+                source_memory=f.get("source_memory", ""),
                 event_time=f.get("event_time", ""),
                 event_time_granularity=f.get("event_time_granularity", ""),
                 valid_at=f.get("valid_at", ""),
@@ -258,8 +257,8 @@ class KnowledgeGraph:
         try:
             where = "" if include_invalid else "WHERE invalid_at IS NULL AND superseded_by IS NULL "
             rows = conn.execute(
-                "SELECT id, subject, predicate, object, confidence, category, "
-                "       source_note_id, event_time, event_time_granularity, "
+                "SELECT id, subject, predicate, object, confidence, source_memory, "
+                "       event_time, event_time_granularity, "
                 "       valid_at, invalid_at, superseded_by, supersedes, "
                 "       contradiction_score, locked "
                 f"FROM kg_facts {where}"
@@ -273,16 +272,15 @@ class KnowledgeGraph:
                     predicate=r[2],
                     obj=r[3],
                     confidence=float(r[4] or 1.0),
-                    category=r[5] or "",
-                    source_note_id=r[6] or "",
-                    event_time=r[7] or "",
-                    event_time_granularity=r[8] or "",
-                    valid_at=r[9] or "",
-                    invalid_at=r[10] or "",
-                    superseded_by=r[11] or "",
-                    supersedes=r[12] or "",
-                    contradiction_score=float(r[13] or 0.0),
-                    locked=bool(r[14]),
+                    source_memory=r[5] or "",
+                    event_time=r[6] or "",
+                    event_time_granularity=r[7] or "",
+                    valid_at=r[8] or "",
+                    invalid_at=r[9] or "",
+                    superseded_by=r[10] or "",
+                    supersedes=r[11] or "",
+                    contradiction_score=float(r[12] or 0.0),
+                    locked=bool(r[13]),
                 )
                 for r in rows
             ]
