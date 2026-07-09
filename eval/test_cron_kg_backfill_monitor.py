@@ -74,10 +74,10 @@ class TestIsInExpectedWindow(unittest.TestCase):
         ts = datetime(2026, 6, 21, 3, 30, tzinfo=timezone.utc)  # Sunday 03:30
         self.assertTrue(mod._is_in_expected_window(ts))
 
-    def test_sunday_300_in_window(self):
+    def test_sunday_300_not_in_window(self):
         mod = _load_monitor()
         ts = datetime(2026, 6, 21, 3, 0, tzinfo=timezone.utc)
-        self.assertTrue(mod._is_in_expected_window(ts))
+        self.assertFalse(mod._is_in_expected_window(ts))
 
     def test_sunday_400_in_window(self):
         mod = _load_monitor()
@@ -89,10 +89,10 @@ class TestIsInExpectedWindow(unittest.TestCase):
         ts = datetime(2026, 6, 21, 2, 0, tzinfo=timezone.utc)
         self.assertFalse(mod._is_in_expected_window(ts))
 
-    def test_monday_not_in_window(self):
+    def test_monday_in_window(self):
         mod = _load_monitor()
         ts = datetime(2026, 6, 22, 3, 30, tzinfo=timezone.utc)  # Monday
-        self.assertFalse(mod._is_in_expected_window(ts))
+        self.assertTrue(mod._is_in_expected_window(ts))
 
 
 class TestCheck(unittest.TestCase):

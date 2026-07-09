@@ -21,6 +21,7 @@ import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Dict, Optional
 
 # ---------------------------------------------------------------------------
@@ -46,14 +47,16 @@ _INTEGRITY_CRITICAL_FLAGS: frozenset[str] = frozenset(
 # TOML parsing — tomllib (3.11+) with tomli fallback
 # ---------------------------------------------------------------------------
 
+tomllib: ModuleType | None
 try:
-    import tomllib
+    import tomllib as _tomllib_stdlib
+    tomllib = _tomllib_stdlib
 except ModuleNotFoundError:
     try:
         import tomli as _tomllib_fallback
+        tomllib = _tomllib_fallback
     except ModuleNotFoundError:
-        _tomllib_fallback = None
-    tomllib = _tomllib_fallback
+        tomllib = None
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -133,7 +136,8 @@ def _read_toml(path: Path) -> Dict[str, Any]:
     if not path.exists() or tomllib is None:
         return {}
     with open(path, "rb") as fh:
-        return tomllib.load(fh)
+        data = tomllib.load(fh)
+        return data if isinstance(data, dict) else {}
 
 
 def _deep_get(d: Dict[str, Any], dotted: str) -> Any:

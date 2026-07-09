@@ -38,26 +38,23 @@ User/Agent
 ## Search Pipeline
 
 The search orchestrator (`search_memories` in `search/orchestrator.py`)
-runs the following **18 phases** in order:
+runs the following **13 phases** in order:
+
+> **Pipeline flow:** Parse query → Skill-first lookup (if requested) → Cache check → DB setup → Fallback to embeddings → Hybrid fusion → Temporal filtering → Chunk enhancement → Reranking → Build output → Safety demoting → Quality gates → Record access
 
 1. Parse query
 2. Skill-first lookup (if requested)
 3. Cache check
 4. DB setup
-5. Namespace / repo filtering
-6. FTS search
-7. T10 — KG fact search (independent of memory results)
-8. Fallback to embeddings
-9. Hybrid fusion
-10. Temporal filtering
-11. Chunk enhancement
-12. Reranking
-13. Build output
-14. Safety demoting
-15. Quality gates
-16. Record access
-17. Cache update
-18. Audit logging
+5. Fallback to embeddings
+6. Hybrid fusion
+7. Temporal filtering
+8. Chunk enhancement
+9. Reranking
+10. Build output
+11. Safety demoting
+12. Quality gates
+13. Record access
 
 ## Save Pipeline
 
@@ -87,7 +84,7 @@ agentic-memory/                    # Repo root
 ├── agentic_memory/                # Python package (pip installable; 2 files)
 │   ├── __init__.py                 # Re-exports Memory, AgentMemory, main
 │   └── __main__.py                 # python -m agentic_memory
-├── cli.py                          # ~18 CLI entry points
+├── cli.py                          # 11 CLI entry points
 ├── memory_mcp.py                   # MCP server (thin orchestrator)
 ├── save_pipeline.py                # Write path shim → save/
 ├── save/                           # Write path subpackage
@@ -105,7 +102,7 @@ agentic-memory/                    # Repo root
 │   ├── synthesis.py                # BB1/BB2 synthesis
 │   ├── chunk_index.py              # Chunk search, Graph-RAG expansion
 │   ├── instrumentation.py          # Timing/log/observability
-│   └── orchestrator.py             # search_memories + 15-phase search
+│   └── orchestrator.py             # search_memories + 13-phase search
 ├── backfill_all.py                 # Audit pipeline shim → backfill/
 ├── backfill/                       # Audit pipeline subpackage
 │   ├── __init__.py                 # Public API
@@ -124,8 +121,8 @@ agentic-memory/                    # Repo root
 ├── embedding_search.py             # Semantic search via model2vec
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
-├── migration_runner.py             # Schema migrations (current v33, locked)
-└── ... (118 modules total)
+├── migration_runner.py             # Schema migrations (current v36)
+└── ... (121 modules total)
 ```
 
 | Module | Layer | Purpose |
@@ -142,21 +139,16 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v33, 33 migrations, locked) |
+| `migration_runner.py` | Infra | Schema migrations (v36, 36 migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
-- **16 MCP tools** (15 CORE + 1 maintenance router)
-- **37 cron scripts** in `cron/`
-- **6 lifecycle hooks** in `hooks/`
-- Single source of truth: `tool_registry.py`
-
-- **102 registered tools** (15 CORE + 87 ADMIN + 3 DEPRECATED).
-  Single source of truth: `tool_registry.py`. The maintenance router exposes 87 ADMIN + 3 DEPRECATED operations.
+- **102 MCP tools** (16 CORE + 86 ADMIN).
+  Single source of truth: `tool_registry.py`.
 - **37 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.
-- **7 lifecycle hooks** in `hooks/` — session start/end,
+- **6 lifecycle hooks** in `hooks/` — session start/end,
   precompact snapshot, proactive context, recall,
   search-on-demand. See `~/.claude/settings.json` and `opencode.jsonc` for wiring.
   `_log_error.py` is a log helper, not a lifecycle hook.
@@ -203,22 +195,6 @@ See `memory.toml [features]` for all flags. Key defaults:
   after a merge is silent drift.
 - **Connection pool**: per-DB-path pool with re-entrancy guard;
   per-thread keys; `PoolExhaustedError` on full depth.
-
-## Schema Stability (v33 Locked)
-
-The database schema is **locked at v33**. `infra/migration_runner.py` sets
-`SCHEMA_STABLE = True`, which prevents any migration > 33 from running. To add
-a new migration:
-
-1. Create `migrations/034_<name>.sql` + `migrations/034_<name>.down.sql`
-2. Set `SCHEMA_STABLE = False` and bump `SCHEMA_VERSION = 34`
-3. Commit both changes
-4. Set `SCHEMA_STABLE = True` in a follow-up commit after the migration is
-   deployed to all instances
-
-This two-phase process ensures no migration can be accidentally applied before
-its rollback script exists, and that the lock is re-engaged promptly after the
-new migration lands.
 
 ---
 *This file is generated by `scripts/generate_architecture_md.py`.

@@ -61,4 +61,5 @@ if __name__ == "__main__":
 
 def test_doc_drift_matches_codebase():
     """Run doc drift check as a pytest test."""
-    raise SystemExit(main())
+    rc = main()
+    assert rc == 0, "docs/architecture.md has drifted from live code"

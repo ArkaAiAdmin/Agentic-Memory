@@ -1824,7 +1824,7 @@ def _build_empty_result_with_hint(
     return result
 
 
-def _record_last_accessed(db: AnyConnection, result_items: list) -> None:
+def _record_last_accessed(db: AnyConnection | None, result_items: list) -> None:
     """Phase 12 of search_memories: stamp last_accessed on every result row.
 
     Bumps ``last_accessed`` to the current ISO timestamp in a single
@@ -1833,6 +1833,8 @@ def _record_last_accessed(db: AnyConnection, result_items: list) -> None:
     on this column but a failure to record is non-fatal.
     """
     if not result_items:
+        return
+    if db is None:
         return
     try:
         import datetime as _dt
@@ -2028,7 +2030,7 @@ def _apply_user_profiling(
 
 
 def _record_search_telemetry(
-    *, db: AnyConnection, query_id: str, result_items: list, ctr_weights: Optional[dict]
+    *, db: AnyConnection | None, query_id: str, result_items: list, ctr_weights: Optional[dict]
 ) -> None:
     """Record CTR feedback and adaptive-retention access events for the result set.
 
@@ -2042,6 +2044,8 @@ def _record_search_telemetry(
     All exceptions are swallowed — telemetry is informational, not a
     precondition for the user seeing results.
     """
+    if db is None:
+        return
     try:
         db.execute(
             "INSERT OR REPLACE INTO memory_ctr_feedback "

@@ -77,10 +77,10 @@ class TestFactExtractionHelpers(unittest.TestCase):
     def test_dedup_facts_keeps_highest_confidence(self):
         from fact import _dedup_facts
 
-        facts = [
-            ("Score", "has_value", "5", 0.5),
-            ("Score", "has_value", "5", 0.9),  # higher confidence, same key
-            ("Different", "has_value", "1", 0.7),
+        facts: list[tuple[str, str, str, float, str | None, str]] = [
+            ("Score", "has_value", "5", 0.5, None, "observation"),
+            ("Score", "has_value", "5", 0.9, None, "observation"),  # higher confidence, same key
+            ("Different", "has_value", "1", 0.7, None, "observation"),
         ]
         deduped = _dedup_facts(facts)
         self.assertEqual(len(deduped), 2)
@@ -230,6 +230,7 @@ class TestAutoSaveInjectionScan(unittest.TestCase):
             "",
         )
         self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["reason"], "high_risk_prompt_injection")
         self.assertGreaterEqual(result["risk_score"], 0.5)
 
@@ -757,7 +758,7 @@ class TestSearchOrchestratorHelpers(unittest.TestCase):
                 None,
             )
         ]
-        ri_out, out_out = _apply_quality_gates(
+        ri_out, out_out, rtd_out = _apply_quality_gates(
             result_items=ri_in,
             output=out_in,
             results_to_display=rtd_in,
@@ -765,12 +766,13 @@ class TestSearchOrchestratorHelpers(unittest.TestCase):
             rerank=True,
             backlinks_map={},
         )
-        # Helper returns a (result_items, output) tuple. The output
+        # Helper returns a (result_items, output, results_to_display) tuple. The output
         # may have been re-formatted by quality gates (the production
         # default is QUALITY_GATES_ENABLED=True), so we just verify
         # the type contracts.
         self.assertIsInstance(ri_out, list)
         self.assertIsInstance(out_out, list)
+        self.assertIsInstance(rtd_out, list)
 
 
 class TestAutoSaveAsyncBatch(unittest.TestCase):

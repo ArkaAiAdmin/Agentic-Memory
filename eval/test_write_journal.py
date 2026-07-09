@@ -136,6 +136,7 @@ class TestJournalLifecycle:
         entries = dequeue_pending(jp)
         mark_applied(jp, entries[0]["id"])
         entry = get_entry_by_note_id(jp, nid)
+        assert entry is not None
         assert entry["status"] == "applied"
         assert entry["processed_at"] is not None
 
@@ -145,6 +146,7 @@ class TestJournalLifecycle:
         entries = dequeue_pending(jp)
         mark_failed(jp, entries[0]["id"], "boom")
         entry = get_entry_by_note_id(jp, nid)
+        assert entry is not None
         assert entry["status"] == "failed"
         assert entry["error"] == "boom"
 
@@ -187,7 +189,7 @@ class TestQueries:
 
     def test_get_pending_by_agent_excludes_applied(self, tmp_path: Path):
         jp = _make_journal(tmp_path)
-        nid = enqueue_write(jp, _make_req(), "agent-A")
+        enqueue_write(jp, _make_req(), "agent-A")
         entries = dequeue_pending(jp)
         mark_applied(jp, entries[0]["id"])
         pending_a = get_pending_by_agent(jp, "agent-A")
@@ -230,11 +232,13 @@ class TestConcurrentEnqueues:
     def test_n_threads_n_unique_note_ids(self, tmp_path: Path):
         jp = _make_journal(tmp_path)
         n_threads = 10
-        results = []
-        errors = []
+        results: list[str] = []
+        errors: list[Exception] = []
+        barrier = threading.Barrier(n_threads)
 
         def _enqueue(i: int):
             try:
+                barrier.wait()
                 nid = enqueue_write(jp, _make_req(title_slug=f"t{i}"), f"agent-{i}")
                 results.append(nid)
             except Exception as e:
@@ -244,8 +248,10 @@ class TestConcurrentEnqueues:
         for th in threads:
             th.start()
         for th in threads:
-            th.join(timeout=5)
+            th.join()
 
+        alive = [th for th in threads if th.is_alive()]
+        assert not alive, f"{len(alive)} thread(s) did not finish"
         assert not errors, f"Errors during concurrent enqueue: {errors}"
         assert len(results) == n_threads
         assert len(set(results)) == n_threads, "All note_ids must be unique"
@@ -321,6 +327,7 @@ class TestSaveMemoryJournal:
         journal_path = tmp_path / "journal.db"
         init_journal_db(journal_path)
         entry = get_entry_by_note_id(journal_path, nid)
+        assert entry is not None
         assert entry["importance"] == 5
         assert entry["pinned"] == 1
         assert json.loads(entry["tags"]) == ["a", "b"]
@@ -348,8 +355,6 @@ class TestMaterializeJournalEntry:
                                           title_slug="asm", tags=["a", "b"], importance=5), "a1")
         entries = dequeue_pending(jp)
         entry = entries[0]
-
-        from save.pipeline import materialize_journal_entry
 
         # Verify the entry has all fields we need for reconstruction
         assert entry["note_id"] == nid
