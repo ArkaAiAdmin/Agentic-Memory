@@ -9,7 +9,7 @@ from infra.memory_common import configure_logging  # noqa: F401
 from infra.infrastructure import (  # noqa: F401
     resolve_active_memory_dir,
 )
-from mcp_common import with_audit, logger
+from mcp_common import with_audit
 
 
 @mcp.tool()
