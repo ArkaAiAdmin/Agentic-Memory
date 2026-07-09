@@ -551,6 +551,11 @@ def _get_handlers() -> dict:
             MaintenanceOp.SCAN_INJECTION: lambda *, content, **_: t["memory_scan_injection"](content=content),
             MaintenanceOp.PROFILE_ACCESS: lambda *, note_id, **_: t["memory_profile_access"](note_id=note_id),
             MaintenanceOp.FLAGS_STATUS: lambda **_: _op_flags_status(),
+            MaintenanceOp.CONFIG_DRIFT: lambda *, persist=True, severity_floor="neutral",
+                                           compare_to_last=True, format="json", **_: (
+                _op_config_drift(persist=persist, severity_floor=severity_floor,
+                                  compare_to_last=compare_to_last, format=format)
+            ),
             MaintenanceOp.PHASE_ERRORS: lambda *, since_ts=None, until_ts=None, limit=50, **_: _op_phase_errors(
                 since_ts=since_ts, until_ts=until_ts, limit=limit
             ),
@@ -821,6 +826,94 @@ def _op_flags_status() -> str:
     except Exception as e:
         logger.warning("Unhandled exception in _op_flags_status: %s", e)
         return _err(classify_exception(e), str(e))
+
+
+def _op_config_drift(
+    persist: bool = True,
+    severity_floor: str = "neutral",
+    compare_to_last: bool = True,
+    format: str = "json",
+) -> str:
+    """Compute the drift report for the running process.
+
+    Args:
+        persist:            Write to memory/last_drift_snapshot.json. Default True.
+        severity_floor:     Only return entries at or above this severity. Default "neutral".
+        compare_to_last:    Include delta against the previous snapshot. Default True.
+        format:             "json" only.
+
+    Returns a JSON string with ``report`` and optionally ``delta``.
+    """
+    try:
+        from infra.config_drift import (
+            build_drift_report,
+            persist_drift_report,
+            load_last_drift_snapshot,
+            diff_reports,
+            DriftReport,
+            DriftSeverity,
+        )
+
+        import json
+        import logging
+        logger = logging.getLogger(__name__)
+
+        report = build_drift_report()
+        if persist:
+            persist_drift_report(report)
+        prev = load_last_drift_snapshot() if compare_to_last else None
+        delta_text = diff_reports(prev, report) if prev else []
+
+        floor_order = {
+            "neutral": 0, "operational": 1, "compliance": 2,
+            "stability": 3, "integrity": 4,
+        }
+        floor_idx = floor_order.get(severity_floor, 0)
+        severity_values = {
+            "neutral": DriftSeverity.NEUTRAL,
+            "operational": DriftSeverity.OPERATIONAL,
+            "compliance": DriftSeverity.COMPLIANCE,
+            "stability": DriftSeverity.STABILITY,
+            "integrity": DriftSeverity.INTEGRITY,
+        }
+        filtered = [
+            e for e in report.entries
+            if floor_order.get(e.severity, 0) >= floor_idx
+        ]
+
+        # Build filtered drift_count_by_severity
+        filtered_drift_count: dict[str, int] = {}
+        for sev in severity_values.values():
+            filtered_drift_count[sev.value] = sum(
+                1 for e in filtered if e.severity == sev.value and e.has_drift()
+            )
+
+        filtered_report = DriftReport(
+            schema_version=report.schema_version,
+            generated_at=report.generated_at,
+            host=report.host,
+            agent_id=report.agent_id,
+            entries=filtered,
+            total_flags=report.total_flags,
+            drift_count_by_severity=filtered_drift_count,
+        )
+
+        out = {"report": filtered_report.to_dict(), "delta": delta_text}
+        return json.dumps(out, indent=2, default=_json_default)
+    except Exception as e:
+        logger.warning("Unhandled exception in _op_config_drift: %s", e)
+        from mcp_common import _err, classify_exception
+        return _err(classify_exception(e), str(e))
+
+
+def _json_default(o):
+    import dataclasses as _dc
+    from enum import Enum
+    if _dc.is_dataclass(o):
+        return _dc.asdict(o)
+    if isinstance(o, Enum):
+        return o.value
+    return str(o)
 
 
 def _op_phase_errors(since_ts: float | None = None, until_ts: float | None = None, limit: int = 50) -> str:

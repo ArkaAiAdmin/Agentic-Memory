@@ -379,6 +379,7 @@ All legacy/diagnostic tools are accessible via `memory_maintenance(operation="..
 | `ingest` | Ingest a file or web page URL | file_path, url, category, tags |
 | `check_concept_drift` | Detect embedding drift | threshold |
 | `flags_status` | Feature flags status | — |
+| `config_drift` | Config drift across all flags | severity_floor, persist, compare_to_last |
 | `phase_errors` | Search phase errors | — |
 | `circuit_breaker_status` | Circuit breaker health | limit, since_ts |
 | `compliance_check` | Compliance audit | session_id |

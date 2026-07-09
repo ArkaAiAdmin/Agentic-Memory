@@ -270,6 +270,9 @@ $BLOCK_BEGIN
 # Staggered at :10 and :40 to avoid all other operational crons.
 # Phase B: enqueue via worker task queue
 10,40 *  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/enqueue_task.py --task-type cron_monitor_task_queue >> $LOG_DIR/task-queue-monitor.log 2>&1
+
+# Config-drift surveillance — compare running config to vendor intent (daily 04:30)
+30 4  *   *   *    $VENV_PY $ROOT/cron/cron_check_config_drift.py --severity-floor stability --alert-stdout >> $LOG_DIR/config-drift.log 2>&1
 $BLOCK_END
 EOF
 }

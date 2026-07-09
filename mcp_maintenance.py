@@ -209,6 +209,25 @@ def memory_health_check(conn) -> str:
         logger.warning("Unhandled exception in memory_health_check: %s", exc)
         status["journal"]["error"] = str(exc)[:200]
 
+    try:
+        from infra.config_drift import build_drift_report
+        drift_report = build_drift_report()
+        crit = drift_report.critical_drift()
+        status["config_drift"] = {
+            "total_flags": drift_report.total_flags,
+            "drift_count_by_severity": drift_report.drift_count_by_severity,
+            "integrity_compromised": len(crit) > 0,
+            "sample_drift_flags": [
+                {"flag": e.flag, "verdicts": e.drift_verdicts[:3]}
+                for e in drift_report.entries if e.has_drift()
+            ][:10],
+        }
+        if crit:
+            status["overall"] = "degraded_drift"
+    except Exception as exc:
+        logger.warning("Unhandled exception in config_drift health check: %s", exc)
+        status["config_drift"] = {"error": str(exc)[:200]}
+
     from infra.config import get_config as _get_hc_cfg
 
     _hc_cfg = _get_hc_cfg()
@@ -911,6 +930,7 @@ class MaintenanceOp(str, Enum):
     SCAN_INJECTION = "scan_injection"
     PROFILE_ACCESS = "profile_access"
     FLAGS_STATUS = "flags_status"
+    CONFIG_DRIFT = "config_drift"  # 2026-07-09: drift across all known flags
     PHASE_ERRORS = "phase_errors"
     SEARCH_PHASE_STATS = "search_phase_stats"  # P6: per-phase latency aggregation
     RESOLVE_CONTRADICTION = "resolve_contradiction"  # next-frontier: LLM-assisted contradiction resolution
