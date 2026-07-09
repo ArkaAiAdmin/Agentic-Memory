@@ -2,14 +2,14 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-%20passed-brightgreen)](#testing)
-[![SQLite FTS5](https://img.shields.io/badge/sqlite-FTS5-orange.svg)](https://www.sqlite.org/fts5.html)
-[![MCP Tools](https://img.shields.io/badge/MCP-16%20tools_(15%20CORE%20%2B%201%20maintenance%20router)-purple.svg)](docs/reference/mcp-tools.md)
+[![Tests](https://img.shields.io/badge/tests-4%2C334%2B-brightgreen)](#testing)
+[![Schema](https://img.shields.io/badge/schema-v37-orange.svg)](docs/reference/schema.md)
+[![MCP Tools](https://img.shields.io/badge/MCP-17%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
 [![Temporal KG](https://img.shields.io/badge/Temporal-KG-brightgreen)](docs/concepts/temporal-kg.md)
 [![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
 
-[Quick Start](#quick-start) · [5-Min Tutorial](#5-minute-tutorial) · [Features](#features) · [Architecture](#architecture) · [MCP Server](#mcp-server) · [Comparison](#comparison) · [Docs](docs/index.md) · [Contributing](CONTRIBUTING.md)
+[Quick Start](#quick-start) · [Features](#features) · [Architecture](#architecture) · [MCP Server](#mcp-server) · [SDKs](#sdks) · [Comparison](#comparison) · [Docs](docs/index.md) · [Contributing](CONTRIBUTING.md)
 
 ---
 
@@ -17,370 +17,337 @@
 
 Agentic Memory gives AI agents **persistent, cross-session, local-first memory** — no cloud, no vendor lock-in, no API keys required. Memories are stored as human-readable Markdown files. A derived SQLite index enables fast full-text, semantic, and knowledge-graph search.
 
-Built for **Claude Code**, **OpenCode**, and any MCP-compatible agent harness.
+Built for **Claude Code**, **OpenCode**, **MiMoCode**, and any MCP-compatible agent harness.
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                        Agentic Memory                         │
-├──────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌──────────────┐    ┌──────────────┐    ┌───────────────┐  │
-│  │  Markdown    │───▶│  SQLite FTS5 │───▶│  BM25 Search  │  │
-│  │  (source)    │    │  (derived)   │    │  + Vector     │  │
-│  └──────────────┘    └──────────────┘    └───────────────┘  │
-│         │                   │                    │           │
-│         ▼                   ▼                    ▼           │
-│  ┌──────────────┐    ┌──────────────┐    ┌───────────────┐  │
-│  │  .md files   │    │  Knowledge   │    │  RRF Fusion   │  │
-│  │  (Git-ready) │    │  Graph (KG)  │    │  Reranker     │  │
-│  └──────────────┘    └──────────────┘    └───────────────┘  │
-│                                                               │
-│  37 cron jobs │ 6 hooks │ 16 MCP tools │ CRDT sync │ Arc cache │
-└──────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Quick start — bare Python
-
-No MCP, no OpenCode, no TS plugin required. The Python layer is a standalone library.
-
-```python
-from agentic_memory import Memory
-
-m = Memory(db_path="memory.db")  # defaults to memory/memory.db
-
-# Save
-note_id = m.add("User prefers dark mode", tags=["preferences"])
-print(note_id)  # → preferences/user-prefers-dark-mode
-
-# Search
-results = m.search("user preferences")
-for r in results:
-    print(f"{r['note_id']}: {r['content'][:80]}")
-
-# Agent-scoped
-from agentic_memory import AgentMemory
-am = AgentMemory(agent_id="coder-1")
-am.save("Frontend uses React 18", tags=["frontend", "react"])
+┌─────────────────────────────────────────────────────────────────┐
+│                       Agentic Memory                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
+│  │  Markdown    │───▶│  SQLite FTS5 │───▶│  12-Phase Search  │  │
+│  │  (source)    │    │  (derived)   │    │  Pipeline         │  │
+│  └──────────────┘    └──────────────┘    └──────────────────┘  │
+│         │                   │                    │              │
+│         ▼                   ▼                    ▼              │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
+│  │  .md files   │    │  Temporal    │    │  CQRS + CRDT     │  │
+│  │  (Git-ready) │    │  Knowledge   │    │  Multi-Agent     │  │
+│  │              │    │  Graph       │    │  Sync            │  │
+│  └──────────────┘    └──────────────┘    └──────────────────┘  │
+│                                                                  │
+│  17 MCP tools │ 39 cron scripts → 1 scheduler │ 8 hooks        │
+│  Python SDK │ TypeScript SDK │ REST API + WebSocket              │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 5-Minute Tutorial
+## Quick Start
 
-### Step 1 — Install (30 seconds)
-
-```bash
-pip install agentic-memory[all]
-```
-
-Or from source:
-
-```bash
-git clone https://github.com/ArkaAiAdmin/Agentic-Memory.git
-cd Agentic-Memory
-pip install -e ".[all]"
-```
-
-### Step 2 — Bootstrap your project (15 seconds)
-
-```bash
-agentic-memory init
-```
-
-This creates a `memory/` directory next to your project with categories: `lessons/`, `decisions/`, `projects/`, `preferences/`, `sessions/`.
-
-### Step 3 — Save a memory (30 seconds)
-
-```bash
-agentic-memory search "how to handle auth errors"
-# → "no results yet — your memory is empty"
-```
-
-Now save something:
-
-```bash
-agentic-memory search "save a memory about OAuth2 token refresh"
-# Uses the MCP memory_save tool under the hood
-```
-
-Or via Python SDK:
+### Python SDK (Recommended)
 
 ```python
 from agentic_memory import MemoryClient
 
-client = MemoryClient()
-client.save(
-    content="OAuth2 access tokens expire after 1 hour. Always implement refresh_token grant. "
-            "Store refresh tokens encrypted, never in plaintext logs.",
-    category="lessons",
-    tags=["auth", "oauth2", "security"],
-    importance=4,
-)
-results = client.search("oauth refresh token")
-print(results[0].content)
-# → "OAuth2 access tokens expire after 1 hour..."
+mc = MemoryClient()
+mc.save("User prefers dark mode", category="preferences")
+results = mc.search("dark mode")
+for r in results:
+    print(f"[{r.score:.2f}] {r.content}")
 ```
 
-### Step 4 — Wire it to your agent (2 minutes)
+### Agent Scoping
 
-Add to your MCP config (`~/.opencode/mcp-servers.json` or Claude Code `settings.json`):
+```python
+from agentic_memory import AgentMemory
 
-```json
+coder = AgentMemory(agent_id="coder")
+coder.save("Frontend uses React with TypeScript")
+
+designer = AgentMemory(agent_id="designer")
+designer.save("Brand colors are #FF5733 and #33FF57")
+```
+
+### MCP Server
+
+```bash
+# Add to your MCP config
 {
   "agentic-memory": {
-    "command": "agentic-memory-server",
-    "args": [],
-    "env": {}
+    "command": "agentic-memory-server"
   }
 }
 ```
 
-That's it — your agent now has 15 CORE MCP tools: `memory_search`, `memory_save`, `memory_delete`, `memory_recall`, `memory_note`, `memory_learn`, `memory_audit`, `memory_organize`, `memory_share`, `memory_graph`, `memory_profile`, `memory_session_start`, `memory_advanced`, `memory_review_beliefs`, `memory_curate_autosave`. Plus `memory_maintenance` for 87 ADMIN + 3 DEPRECATED operations.
-
-### Step 5 — Use it (ongoing)
+### REST API
 
 ```bash
-agentic-memory search "database migration patterns"    # hybrid search
-agentic-memory rebuild                                   # rebuild FTS5 index
-agentic-memory consolidate                               # deduplicate
-agentic-memory integrity                                 # health check
-agentic-memory dashboard                                 # web UI
+agentic-memory api --port 9878
+curl http://localhost:9878/api/v1/search?q=dark+mode
 ```
 
 ---
 
 ## Features
 
-### Search — Best-in-Class Hybrid Retrieval
+### Search — 12-Phase Hybrid Pipeline
 
-| Layer | Technology | Details |
+| Phase | Technique | Purpose |
 |-------|-----------|---------|
-| **FTS5 BM25** | SQLite FTS5 | 4 virtual tables, Porter stemmer |
-| **Semantic vector** | model2vec + usearch HNSW | Optional `[embeddings]` extra |
-| **Cross-encoder** | Qwen3-Reranker-0.6B | Opt-in via `deep_rerank=True` |
-| **Knowledge graph** | SPO triples + entity graph | 3-hop Graph-RAG expansion |
-| **RRF fusion** | Reciprocal Rank Fusion | Configurable k, multi-channel |
-| **Temporal decay** | Ebbinghaus half-life | Default 180-day forget curve |
-| **CTR feedback** | Click-through ranking | Channel weights learn from usage |
-| **User profile** | Access-pattern adaptive | 90-day window, exponential decay |
-| **Injection safety** | Prompt demotion | Suspicious content deprioritized |
+| 0 | Unicode normalization | Input normalization |
+| 1 | FTS5 BM25 | Keyword retrieval |
+| 2 | usearch ANN + model2vec | Semantic vector search |
+| 3 | ColBERT late-interaction | Token-level matching |
+| 4 | Reciprocal Rank Fusion | Merge all retrievers |
+| 5 | Cross-encoder rerank | Neural reranking (weak or deep CE) |
+| 6 | Temporal decay | Recency bias |
+| 7 | Neural forget curve | Surprise-based retention |
+| 8 | KG concept boost | Knowledge graph boost |
+| 9 | Final scoring | Weighted combination |
+| 10 | Result envelope | Output formatting |
+| 11 | Error counter | Per-phase observability |
+
+Each phase is independently isolated — no single failure kills the search.
 
 ### Write — Crash-Safe, Conflict-Preserving
 
-- **`fcntl.flock` single-writer** — no two processes write simultaneously
-- **Saga rollback** — 13-step indexed upsert; all steps roll back on failure
-- **CRDT field-level LWWES** — concurrent edits to different fields both win
-- **Conflict preservation** — `.conflict-<pid>-<ts>` files on collision, never silent overwrite
-- **Safe atomic write** — POSIX rename, crash-safe `.md` persistence
+- **Saga transactions** — Crash-consistent writes with undo/redo
+- **CQRS write journal** — Lock-free multi-agent writes via journal.db
+- **CRDT field-level LWWES** — Concurrent edits to different fields both win
+- **Safe atomic write** — POSIX rename, conflict file preservation
 
 ### Knowledge Graph — Temporal + Contradiction-Aware
 
-- Bi-temporal validity: `valid_from`, `valid_to`, `superseded_by`, `invalid_at`, `event_time`
-- SPO triple extraction with confidence scores
-- Entity dedup (exact + semantic)
-- Contradiction detection (phrase + semantic)
-- Graph CRDTs (v21): peer-to-peer entity/edge merge
+- Entity extraction with Jaccard fuzzy matching
+- Temporal edges with `valid_at` / `invalid_at`
+- Contradiction detection and supersession chains
+- Graph analytics (centrality, community detection)
 
-### Automation — 36 Cron Jobs + 6 Hooks
+### Neural Forget Curve
 
-- **Background worker** — SQLite-backed async task queue (flock-protected)
-- **Cron jobs** — FTS rebuild, embedding recompute, KG backfill, quality filter, concept drift, integrity, tier migration, pinned decay, skill extraction, cross-session learning, and more
-- **Lifecycle hooks** — PreToolUse, SessionStart, Stop/PostToolUse wired to Claude Code / OpenCode
-- **Auto-save daemon** — inbox+daemon architecture, 2-5ms enqueue, 95% latency reduction
+Surprise-based retention formula considering access patterns, query relevance, recency, and importance:
 
-### Storage — Markdown Canonical, Git-Versionable
-
-- `.md` files are the source of truth (not the DB)
-- SQLite is derived and rebuildable
-- No cloud dependency — all data stays local
-- `safe_atomic_write` with conflict file preservation
-- ~62 tables at schema v32, 32 versioned migrations
-
-### MCP Surface — 16 Tools (15 CORE + 1 maintenance router)
-
-Agents see **16 MCP tools** total:
-
-```text
-CORE (15 tools, always visible):
-  memory_search, memory_save, memory_delete, memory_recall,
-  memory_note, memory_learn, memory_audit, memory_organize,
-  memory_share, memory_graph, memory_profile, memory_session_start,
-  memory_advanced, memory_review_beliefs, memory_curate_autosave
-
-MAINTENANCE (1 tool, router):
-  memory_maintenance — exposes 87 ADMIN + 3 DEPRECATED operations
 ```
+retention = sigmoid(w_acc × access + w_surp × surprise + w_imp × importance + w_fit × fitness - w_rec × recency - bias)
+```
+
+### Cron Consolidation
+
+39 crontab entries replaced with **1 consolidated scheduler** that runs every 5 minutes, checks which jobs are due by frequency tier, and runs them sequentially.
+
+### System Health Dashboard
+
+`memory_system_health` MCP tool returns green/yellow/red across 6 dimensions with actionable next steps: database, search, worker, crons, auto-save, disk.
 
 ---
 
 ## Architecture
 
 ```
-agentic-memory/                          # Repo root
-├── agentic_memory/                      # Python package (pip installable)
-│   ├── client.py                         # MemoryClient (save/search/CRUD)
-│   ├── kg.py                             # KnowledgeGraph
-│   ├── temporal.py                       # TemporalKG
-│   ├── maintenance.py                    # Maintenance ops
-│   ├── agent.py                          # AgentMemory (namespace-isolated)
-│   ├── sync.py                           # SyncManager (CRDT sync)
-│   ├── admin.py                          # Admin / circuit breaker
-│   ├── models.py                         # 8 typed dataclasses
-│   ├── exceptions.py                     # 9-class exception hierarchy
-│   └── integrations/                     # LangChain + CrewAI adapters
-├── save/                                # Write path subpackage
-│   ├── indexers.py                       # FTS / embedding / chunk writes
-│   ├── backlinks.py                      # Wiki-style backlink index
-│   ├── crdt_helpers.py                   # CRDT snapshot extraction
-│   └── post_save_hooks.py                # Fitness recalc, tier, audit
-├── search/                              # Read path subpackage
-│   ├── orchestrator.py                   # 11-phase search (1,811 LOC → 28 helpers)
-│   ├── scoring.py                        # RRF, temporal decay, CTR
-│   ├── rerankers.py                      # Cross-encoder, late interaction
-│   └── chunk_index.py                    # Chunk search, Graph-RAG
-├── backfill/                            # Index rebuild subpackage
-├── cron/                                # 27 background job scripts
-├── hooks/                               # 4 Claude Code lifecycle hooks
-├── mcp_*.py (28 modules)                # Domain-split MCP tools
-├── auto_save.py                         # Tool-call auto-save + daemon
-├── background_worker.py                 # Async task processor
-├── migration_runner.py                  # Schema v32, 32 migrations
-└── db.py                                # Connection pool + WAL
+agentic-memory/
+├── agentic_memory/              # Python SDK (pip installable)
+│   ├── client.py                # MemoryClient (save/search/CRUD)
+│   ├── temporal.py              # TemporalKG
+│   ├── kg.py                    # KnowledgeGraph
+│   ├── integrations/            # LangChain + CrewAI adapters
+│   └── models.py                # 8 typed dataclasses
+├── search/                      # 12-phase search pipeline
+│   ├── orchestrator.py          # Main pipeline (2,825 LOC)
+│   ├── scoring.py               # RRF, temporal decay, KG boost
+│   ├── rerankers.py             # Cross-encoder, ColBERT
+│   ├── chunk_index.py           # Semantic chunking
+│   └── synthesis.py             # Answer synthesis
+├── save/                        # Write path
+│   ├── pipeline.py              # Saga-wrapped save
+│   ├── backlinks.py             # Wiki-style backlinks
+│   └── post_save_hooks.py       # Post-save operations
+├── infra/                       # Infrastructure
+│   ├── db.py                    # Connection pool + WAL
+│   ├── write_journal.py         # CQRS write journal
+│   ├── embedding_search.py      # Semantic embeddings
+│   ├── reranker.py              # Neural reranker
+│   ├── vector_store.py          # ANN index abstraction
+│   ├── api_server.py            # REST + WebSocket
+│   └── cache.py                 # Multi-level caching
+├── knowledge_graph/             # KG extraction + search
+├── kg/                          # Temporal KG + analytics
+├── crdt/                        # Field-level CRDT merge
+├── fact/                        # Fact extraction + temporal
+├── background/                  # Daemon + worker + circuit breaker
+├── cron/                        # 39 scripts + consolidated scheduler
+├── hooks/                       # 8 lifecycle hooks
+├── migrations/                  # 38 reversible migrations
+├── eval/                        # 4,334+ tests
+├── ts-sdk/                      # TypeScript SDK
+├── mcp_*.py                     # 30 MCP modules
+├── mcp_health.py                # System health MCP tool
+└── dashboard.py                 # Streamlit observability
 ```
 
-**Production stats (2026-07-06):** ~90k LOC production, 236 test files, ~4,031 test functions, ~62-table SQLite schema at v32, 102 MCP tools, 37 cron jobs, 6 lifecycle hooks.
-
-See [docs/architecture.md](docs/architecture.md) for full detail.
+**Production stats:** ~193K LOC, 270 test files, 4,334+ test functions, schema v37, 38 reversible migrations, 17 CORE MCP tools, 1 consolidated scheduler, 8 lifecycle hooks.
 
 ---
 
-## Comparison
+## SDKs
 
-| Feature | Agentic Memory | Mem0 | Graphiti | Letta | EverOS |
-|---------|---------------|------|----------|-------|--------|
-| **Local-first** | ✅ (default) | ⚠️ partial | ⚠️ partial | ❌ | ✅ |
-| **Markdown canonical** | ✅ | ❌ | ❌ | ❌ | ✅ |
-| **Temporal KG** | ✅ bi-temporal | ✅ | ✅ | partial | ❌ |
-| **Contradiction detection** | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **CRDT sync** | ✅ field-level | ❌ | ❌ | ❌ | ❌ |
-| **FTS5 / BM25** | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **102 MCP tools** | ✅ | SDK only | MCP server | API | ❌ |
-| **6 lifecycle hooks** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **37 cron jobs** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Circuit breakers** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Field-level CRDT** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Schema migrations** | ✅ (v32) | ❌ | ❌ | ❌ | ❌ |
-| **Test suite** | 4,031 tests | moderate | moderate | moderate | minimal |
-| **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
+### Python
 
-See [docs/explanation/comparison.md](docs/explanation/comparison.md) for detailed breakdowns.
+```bash
+pip install agentic-memory
+```
+
+```python
+from agentic_memory import MemoryClient, AgentMemory, TemporalKG
+
+mc = MemoryClient()
+mc.save("Important context", category="lessons")
+results = mc.search("context")
+stats = mc.stats()
+```
+
+### TypeScript
+
+```bash
+npm install @agentic-memory/sdk
+```
+
+```typescript
+import { MemoryClient } from '@agentic-memory/sdk';
+const client = new MemoryClient();
+await client.add('Important context');
+const results = await client.search('context');
+```
+
+### REST API
+
+```bash
+agentic-memory api --port 9878
+```
+
+```bash
+curl -X POST http://localhost:9878/api/v1/memories \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Important context"}'
+```
 
 ---
 
 ## MCP Server
 
-15 core tools are always visible to your agent; 84 admin + 3 deprecated tools are grouped under `memory_maintenance(operation="...")`:
+17 CORE tools always visible to your agent. 87 ADMIN + 3 DEPRECATED behind `memory_maintenance(operation="...")`.
+
+### CORE Tools
+
+```
+memory_search         memory_save           memory_delete
+memory_recall         memory_note           memory_learn
+memory_audit          memory_organize       memory_share
+memory_graph          memory_profile        memory_session_start
+memory_advanced       memory_review_beliefs memory_curate_autosave
+memory_health_check   memory_system_health
+```
+
+### Setup
 
 ```json
 {
   "agentic-memory": {
     "command": "agentic-memory-server",
-    "args": [],
     "env": {
       "MEMORY_KNOWLEDGE_GRAPH": "1",
-      "MEMORY_EMBEDDINGS": "0",
       "MEMORY_DB_PATH": "./memory.db"
     }
   }
 }
 ```
 
-Full tool reference: [docs/reference/mcp-tools.md](docs/reference/mcp-tools.md)
+---
+
+## Integrations
+
+### LangChain
+
+```python
+from agentic_memory.integrations.langchain.tool import search_tool, save_tool
+agent = create_react_agent(llm, tools=[search_tool, save_tool])
+```
+
+### CrewAI
+
+```python
+from agentic_memory.integrations.crewai.tool import AgenticMemorySearchTool
+agent = Agent(..., tools=[AgenticMemorySearchTool()])
+```
+
+### OKF (Open Knowledge Format)
+
+```python
+mc.okf_export("~/ObsidianVault/agent-memory")
+```
 
 ---
 
 ## Configuration
 
-### Install extras
+### Install Extras
 
 ```bash
-pip install agentic-memory              # Core (MCP + SDK)
+pip install agentic-memory              # Core
 pip install agentic-memory[embeddings]  # + semantic search
-pip install agentic-memory[reranker]    # + cross-encoder reranker
-pip install agentic-memory[langchain]   # + LangChain adapters
-pip install agentic-memory[crewai]      # + CrewAI adapters
-pip install agentic-memory[dev]         # + pytest, ruff, mypy
+pip install agentic-memory[reranker]    # + cross-encoder
+pip install agentic-memory[langchain]   # + LangChain
+pip install agentic-memory[crewai]      # + CrewAI
 pip install agentic-memory[all]         # Everything
 ```
 
-### Key environment variables
+### Key Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MEMORY_DB_PATH` | `./memory.db` | Database path |
-| `MEMORY_LOCAL_DIR` | `./memory` | Markdown memory directory |
-| `MEMORY_KNOWLEDGE_GRAPH` | `0` | Enable KG extraction (1=on) |
-| `MEMORY_EMBEDDINGS` | `0` | Enable semantic search (1=on) |
-| `MEMORY_SYNC_TOKEN` | — | Required for sync server |
-| `MEMORY_ASYNC_AUTOSAVE` | `1` | Inbox+daemon auto-save (0=sync) |
-
-Full list: [docs/reference/configuration.md](docs/reference/configuration.md)
+| `MEMORY_LOCAL_DIR` | `./memory` | Markdown directory |
+| `MEMORY_KNOWLEDGE_GRAPH` | `0` | Enable KG extraction |
+| `MEMORY_EMBEDDINGS` | `0` | Enable semantic search |
+| `MEMORY_LLM_EXTRACTION` | `0` | Enable LLM fact extraction |
 
 ---
 
-## Self-Hosting
+## Comparison
 
-### Docker Compose (recommended)
-
-```bash
-docker compose up -d
-```
-
-3 services: MCP server (stdio), sync server (TLS/mTLS, port 9877), cron scheduler. Named volume for data persistence. See [docker-compose.yml](docker-compose.yml).
-
-### From source
-
-```bash
-git clone https://github.com/ArkaAiAdmin/Agentic-Memory.git
-cd Agentic-Memory
-python -m venv venv && source venv/bin/activate
-pip install -e ".[all]"
-agentic-memory-server  # starts MCP server
-agentic-memory-dashboard  # web UI (Streamlit)
-```
-
-Detailed instructions: [docs/self-hosting.md](docs/self-hosting.md)
-
----
-
-## CLI Reference
-
-```bash
-agentic-memory server         # Start MCP server
-agentic-memory search "query" # Search memories (hybrid)
-agentic-memory rebuild        # Rebuild FTS5 index
-agentic-memory backfill       # Full index rebuild (--incremental or --full)
-agentic-memory consolidate    # Deduplicate and merge
-agentic-memory integrity      # Database health check
-agentic-memory doctor         # Full health report
-agentic-memory init           # (Re)bootstrap a project
-agentic-memory dashboard      # Launch web dashboard (Streamlit)
-agentic-memory status         # One-line health snapshot
-agentic-memory-worker         # Process background tasks
-```
+| Feature | Agentic Memory | Mem0 | Letta | Zep |
+|---------|---------------|------|-------|-----|
+| **Local-first** | Yes | No | No | No |
+| **MCP-native** | 17 CORE tools | No | No | 1 tool |
+| **12-phase search** | Yes | No | No | No |
+| **Temporal KG** | Yes | Partial | No | Yes |
+| **CRDT sync** | Field-level | No | No | No |
+| **CQRS journal** | Yes | No | No | No |
+| **Neural forget** | Yes | No | No | No |
+| **Python SDK** | Yes | Yes | Yes | Yes |
+| **TypeScript SDK** | Yes | Yes | Yes | Yes |
+| **LangChain** | Yes | Yes | Yes | Yes |
+| **CrewAI** | Yes | Yes | Yes | No |
+| **OKF support** | Yes | No | No | No |
+| **Test coverage** | 4,334+ tests | ~500 | ~2,000 | ~300 |
+| **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 
 ---
 
 ## Documentation
 
-| Section | What You'll Find |
-|---------|-----------------|
-| [Concepts](docs/concepts/why-markdown.md) | Why markdown, search pipeline, KG, tier system, background tasks, security model |
-| [How-To Guides](docs/how-to/integrate-claude-code.md) | Claude Code / OpenCode integration, multi-project sharing, custom entities, debugging search, cron setup |
-| [Reference](docs/reference/mcp-tools.md) | 102 registered MCP tools, configuration, database schema |
-| [Explanation](docs/explanation/design-decisions.md) | Design rationale, comparison with alternatives, boot sequence |
+| Section | Description |
+|---------|-------------|
+| [Quick Start](docs/guides/quick-start.md) | Get running in 5 minutes |
+| [Python SDK](docs/api/python-sdk.md) | Full API reference |
+| [TypeScript SDK](docs/api/typescript-sdk.md) | Full API reference |
+| [REST API](docs/api/rest-api.md) | HTTP endpoints |
+| [Architecture](docs/architecture/overview.md) | System design |
+| [LangChain Guide](docs/guides/langchain.md) | Integration guide |
+| [CrewAI Guide](docs/guides/crewai.md) | Integration guide |
+| [Concepts](docs/concepts/) | Search pipeline, KG, CRDT, tiers |
+| [How-To Guides](docs/how-to/) | Integration, debugging, cron setup |
+| [Reference](docs/reference/) | MCP tools, configuration, schema |
 
 ---
 
