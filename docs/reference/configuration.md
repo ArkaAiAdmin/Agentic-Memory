@@ -33,6 +33,7 @@ Agentic Memory is configured via environment variables or `memory.toml`.
 | `MEMORY_SAGA_ENABLED` | `true` | Transactional save (DB + vec + file) |
 | `MEMORY_TEMPORAL_TIERS` | `true` | Hot/warm/cold tier system |
 | `MEMORY_CONTEXTUAL_RETRIEVAL` | `true` | Prepend context to embeddings |
+| `MEMORY_TOML_HOT_RELOAD` | `0` (off) | Opt-in live-reload of the drift policy + `[drift_tiers]` when `memory.toml` changes (no restart). OFF by default — auto-reloading enforcement policy in production is surprising. See [TOML Hot-Reload](#toml-hot-reload). |
 
 ### Search
 
@@ -73,6 +74,40 @@ Agentic Memory is configured via environment variables or `memory.toml`.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MEMORY_UNINDEXED_SAFETY_NET_LIMIT` | `1000` | Max unindexed results before fallback |
+
+### TOML Hot-Reload
+
+`MEMORY_TOML_HOT_RELOAD` live-reloads the config-drift policy and any
+`[drift_tiers]` overrides when `memory.toml` changes — **no restart
+required**. It is **opt-in and OFF by default** (auto-reloading an
+enforcement policy in production is surprising and could change behavior
+under you), so operators must explicitly enable it in the server process
+environment:
+
+```bash
+export MEMORY_TOML_HOT_RELOAD=1   # before starting the MCP server
+```
+
+When enabled:
+
+- A **background poller daemon thread** (`toml-watcher`) watches `memory.toml`
+  for mtime advances and re-applies the policy + tier overrides.
+- Every reload is **audited** to `memory/config_drift_audit.jsonl` — grep
+  `decision=toml_hot_reload` to inspect what changed and when.
+- If the file bytes are unchanged since the last reload, the reload is a
+  no-op (no duplicate audit event).
+
+If you prefer not to enable the poller, two **manual operator CLIs** force a
+reload (or tier patch) on demand, also without a restart:
+
+```bash
+python hooks/memory_toml_reload.py   # force a one-shot drift-policy reload
+python hooks/memory_tier_patch.py    # live-patch a [drift_tiers] override
+```
+
+> **Tradeoff:** leaving it OFF means a `memory.toml` edit only takes effect
+> on the next process restart. That is the safe default for production; turn
+> it on only when you want edits to propagate live.
 
 > **Note:** The repo contains 4 env vars in its source that are
 > NOT documented here because they are not actually checked anywhere:

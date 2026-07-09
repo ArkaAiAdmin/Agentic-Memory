@@ -221,6 +221,18 @@ model_revision = ""                      # MEMORY_EMBEDDING_MODEL_REVISION (over
 # Controls whether drift between env vars and TOML values triggers warnings
 # or enforcement actions. See infra/config_drift_policy.py.
 #
+# MEMORY_TOML_HOT_RELOAD=1  # opt-in; live-reload drift policy + [drift_tiers]
+#                           # from memory.toml on file change, no restart.
+#                           # OFF by default. Set in the server process env
+#                           # (e.g. `export MEMORY_TOML_HOT_RELOAD=1` before
+#                           # launching) to enable. When enabled it starts a
+#                           # background poller daemon; every reload is audited
+#                           # to memory/config_drift_audit.jsonl
+#                           # (grep `decision=toml_hot_reload`).
+#                           # Manual operator CLIs (no restart needed either way):
+#                           #   hooks/memory_toml_reload.py   (force a reload)
+#                           #   hooks/memory_tier_patch.py    (patch a tier)
+#
 # Process scope — one of: production | staging | development | test
 # Default: auto-detected (heuristic). Set explicitly for CI/production.
 [scope]

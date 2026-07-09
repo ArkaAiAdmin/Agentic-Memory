@@ -13,9 +13,9 @@ You are an agent working on the **agentic-memory** codebase at the repo root.
 Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.config/agentic-memory/memory/`.
 
 <!--AUTO-GEN:START key="what_this_system_is"-->
-- **Surface**: 16 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 8 lifecycle hooks + 41+ cron jobs
+- **Surface**: 16 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 8 lifecycle hooks + 42+ cron jobs
 - **Schema**: v36, ~48 tables
-- **Code**: ~101k LOC production, ~86k+ test LOC; see `docs/architecture.md`
+- **Code**: ~101k LOC production, ~87k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 
@@ -58,11 +58,11 @@ agentic-memory/
 │   ├── background_worker.py           ← CQRS write-journal reconciler daemon
 │   ├── tool_complete.py              ← hook → save_memory pipeline
 │   └── circuit_breaker.py            ← auto-save failure gating
-├── cron/                             ← 41+ scheduled jobs + install_crontab.sh
+├── cron/                             ← 42+ scheduled jobs + install_crontab.sh
 ├── mcp_*.py (29 modules)             ← domain-split MCP tools
 ├── memory/                           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md               ← MCP tool reference for agents
-└── eval/                             ← 267 test files, 4323+ test functions
+└── eval/                             ← 268 test files, 4328+ test functions
 <!--AUTO-GEN:END key="critical_path"-->
 
 **Message contract:** All CORE tool responses are user-facing JSON. Admin tools (87 ADMIN + 3 DEPRECATED) are routed exclusively through `memory_maintenance(operation="...")` — never call an ADMIN tool name directly. All writes go through `save_memory` (direct) or `save_memory_journal` (CQRS journal, gated by `MEMORY_WRITE_JOURNAL_ENABLED`); the saga ensures crash-consistent rollback with dependent-row cleanup. `defer_expensive=True` by default — returns <200ms.
@@ -252,6 +252,7 @@ See `opencode.jsonc` for plugin registration. The TS plugin is the single wiring
 |---|---|
 | `MEMORY_WRITE_JOURNAL_ENABLED` | OFF | CQRS write journal (lock-free multi-writer). Requires background_worker daemon. When enabled, `save_memory_journal` is used instead of `save_memory`; writes are enqueued to journal and materialized asynchronously. |
 | `MEMORY_TEMPORAL_KG` | ON | Event-time extraction, contradiction detection, supersession. Set `0` to disable if false contradictions or edit invalidation are too aggressive. `kg_facts.locked = 1` prevents per-fact supersession. |
+| `MEMORY_TOML_HOT_RELOAD` | OFF | Live-reload of the drift policy + `[drift_tiers]` when `memory.toml` changes, no restart. Opt-in and OFF by default (auto-reloading enforcement policy in prod is surprising). Starts a background poller daemon; every reload is audited to `memory/config_drift_audit.jsonl` (`decision=toml_hot_reload`). Manual operator CLIs: `hooks/memory_toml_reload.py`, `hooks/memory_tier_patch.py`. |
 
 See `memory.toml` for all 17 feature flags.
 
@@ -287,7 +288,7 @@ See `memory.toml` for all 17 feature flags.
 - **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + cross-encoder + temporal decay + neural forget curve + concept/centrality boost). Phase-level error counters.
 - **KG/Temporal**: Entity extraction with Jaccard fuzzy match, temporal KG with contradiction detection and fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save with circuit breaker, TS plugin coordination, cron-driven maintenance.
-- **Testing**: 267 test files, 4323+ test functions, ~86k+ test LOC. Subprocess-per-file runner for torch-safe parallelism.
+- **Testing**: 268 test files, 4328+ test functions, ~87k+ test LOC. Subprocess-per-file runner for torch-safe parallelism.
 - **Canonical references**: `docs/architecture.md` (architecture), `docs/MCP_SURFACE.md` (MCP workflow), `docs/reference/mcp-tools.md` (tool catalog), `skills/memory-architecture/SKILL.md` (agent walkthrough).
 
 > Note: For authoritative counts, query `tool_registry.py` and `infra/migration_runner.py` directly.

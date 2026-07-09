@@ -53,11 +53,22 @@ def main() -> int:
 
     if args.reload_policy or args.apply_tier_patches:
         try:
+            from infra.config_drift import _FLAG_TIERS, _HARDCODE_DEFAULTS
             from infra.config_drift_policy import reset_policy_cache
             from infra.config_drift_tier_patch import apply_tier_overrides_from_toml
             from infra.config import _read_toml, _TOML_PATH
             reset_policy_cache()
             if _TOML_PATH.exists():
+                # ``infra.config_drift`` auto-applies ``[drift_tiers]`` from
+                # memory.toml at *import* time, so by the time we get here the
+                # toml tiers are already reflected in ``_FLAG_TIERS``. Without a
+                # reset, ``apply_tier_overrides_from_toml`` sees prev==tier for
+                # every flag and becomes a silent no-op (the ``--apply-tier-
+                # patches`` path was effectively dead). Reset to the hardcoded
+                # defaults first so this re-apply is a genuine, observable
+                # re-derivation from memory.toml on every scheduled run.
+                _FLAG_TIERS.clear()
+                _FLAG_TIERS.update(_HARDCODE_DEFAULTS)
                 apply_tier_overrides_from_toml(_read_toml(_TOML_PATH))
         except Exception as e:
             logger.warning("cron: tier/policy reload failed: %s", e)

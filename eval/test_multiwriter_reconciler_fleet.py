@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -110,8 +111,47 @@ def _launch_fleet(
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        # Put the supervisor in its own process group so the test can tear
+        # down the *entire* fleet (supervisor + its fleet_worker children) with
+        # one killpg.  Without this, popen.kill() only SIGKILLs the supervisor
+        # and the worker subprocesses become orphaned (see _kill_fleet_tree).
+        start_new_session=True,
     )
     return popen
+
+
+def _kill_fleet_tree(popen: subprocess.Popen, timeout_s: float = 10.0) -> None:
+    """Terminate the fleet supervisor AND all of its worker subprocesses.
+
+    ``popen.kill()`` only signals the immediate child (the ``fleet_entry``
+    supervisor).  The supervisor spawns N ``fleet_worker`` children via
+    ``subprocess.Popen``; a SIGKILL on the parent does not propagate to
+    them, so they are reparented to init and keep materializing the
+    journal — and re-dispatching "stuck" entries via
+    ``reset_stuck_processing`` — for the rest of the test.  Under
+    suite-level concurrency those orphans compete with the restarted
+    fleet for CPU and the journal lock, which can starve the restart
+    past its 90s budget (the observed flake).
+
+    Launching the supervisor with ``start_new_session=True`` makes it a
+    process-group leader, so a single ``killpg`` takes down the whole
+    tree.  The killed workers hold no external resources the test needs.
+    """
+    if popen.poll() is not None:
+        return
+    try:
+        pgid = os.getpgid(popen.pid)
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        # Supervisor already gone — best-effort direct kill.
+        try:
+            popen.kill()
+        except Exception:
+            pass
+    try:
+        popen.wait(timeout=timeout_s)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +161,19 @@ def _launch_fleet(
 
 class TestMultiwriterFleet:
     """Uses a real in-process fleet run via subprocess."""
+
+    def setup_method(self, method) -> None:
+        # Track live fleet subprocesses so teardown can reap the whole tree
+        # even if a test aborts before its own kill step.
+        self._fleet_popens: list[subprocess.Popen] = []
+
+    def teardown_method(self, method) -> None:
+        for p in getattr(self, "_fleet_popens", []):
+            try:
+                _kill_fleet_tree(p, timeout_s=5)
+            except Exception:
+                pass
+        self._fleet_popens = []
 
     def test_fleet_drains_all_entries(self, tmp_path: Path) -> None:
         n_entries = 500
@@ -133,11 +186,20 @@ class TestMultiwriterFleet:
         _prepopulate_journal(journal_path, n=n_entries)
 
         popen = _launch_fleet(journal_path, target_base, n_workers, timeout_s=90)
+        self._fleet_popens.append(popen)
         try:
             stdout, stderr = popen.communicate(timeout=90)
         except subprocess.TimeoutExpired:
-            popen.kill()
-            pytest.fail(f"Fleet did not finish within 90s. stderr:\n{stderr.read()}")
+            _kill_fleet_tree(popen)
+            _stderr_tail = b""
+            try:
+                if popen.stderr is not None:
+                    _stderr_tail = popen.stderr.read()
+            except Exception:
+                pass
+            pytest.fail(
+                f"Fleet did not finish within 90s. stderr:\n{_stderr_tail.decode(errors='replace')}"
+            )
         print(f"Fleet stdout:\n{stdout.decode()}\nstderr:\n{stderr.decode()}")
         assert popen.returncode == 0, f"Fleet exited with code {popen.returncode}"
 
@@ -171,12 +233,31 @@ class TestMultiwriterFleet:
         _prepopulate_journal(journal_path, n=n_entries)
 
         popen = _launch_fleet(journal_path, target_base, n_workers, timeout_s=20)
+        self._fleet_popens.append(popen)
         try:
             popen.communicate(timeout=5)
         except subprocess.TimeoutExpired:
             pass
-        popen.kill()
-        popen.wait(timeout=5)
+        # Make sure the first fleet actually claimed at least one entry
+        # before we kill it.  Otherwise there is nothing "stuck" to reclaim
+        # on restart, so the test would not be exercising its contract.  The
+        # workers can take longer to spin up under heavy machine load, so poll
+        # briefly instead of assuming the 5s above was enough.
+        if popen.poll() is None:
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline and popen.poll() is None:
+                try:
+                    if _count_journal_status(journal_path).get("processing", 0) > 0:
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.25)
+        # Kill the *entire* fleet process tree (supervisor + fleet_worker
+        # children).  popen.kill() only SIGKILLs the supervisor and leaves the
+        # worker subprocesses orphaned; they keep materializing the journal and
+        # re-dispatching stuck entries, which starves the restarted fleet under
+        # suite-level concurrency (the observed flake).
+        _kill_fleet_tree(popen)
 
         time.sleep(STUCK + 2)
 
@@ -184,10 +265,11 @@ class TestMultiwriterFleet:
         reset_stuck_processing(journal_path)
 
         popen2 = _launch_fleet(journal_path, target_base, n_workers, timeout_s=90)
+        self._fleet_popens.append(popen2)
         try:
             stdout, stderr = popen2.communicate(timeout=90)
         except subprocess.TimeoutExpired:
-            popen2.kill()
+            _kill_fleet_tree(popen2)
             pytest.fail("Restarted fleet did not finish within 90s")
         assert popen2.returncode == 0, f"Fleet restart failed: {stderr.decode()}"
 
@@ -205,6 +287,5 @@ if __name__ == "__main__" or __name__ == "eval.test_multiwriter_reconciler_fleet
     import sys as _sys
 
     if len(_sys.argv) >= 2 and _sys.argv[1] == "run_fleet" and len(_sys.argv) >= 3:
-        import json as _json
         from pathlib import Path as _Path
         _run_fleet_from_config(_Path(_sys.argv[2]))

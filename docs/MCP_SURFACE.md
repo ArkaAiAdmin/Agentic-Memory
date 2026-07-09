@@ -396,13 +396,32 @@ All legacy/diagnostic tools are accessible via `memory_maintenance(operation="..
 **Full list with all parameters:** Call `memory_maintenance(operation="help")` to get a
 parameter reference for any admin operation.
 
-> **Fleet policy-hash diffusion:** `policy_hash_status` returns a fleet posture
-> diff (local `policy_hash` + per-peer status, latency, and delta keys). Peer
-> nodes expose their own hash over the sync-server REST route
-> `GET /crdt/policy_hash` (optional `?include_full=1`), which mirrors the
-> hidden `memory_admin_policy_hash` admin tool. `memory_admin_policy_hash` is
-> intentionally removed from the direct MCP surface and is reachable only via
-> the sync-server HTTP route or the `policy_hash_status` maintenance op.
+> **Fleet policy-hash diffusion:** `policy_hash_status` (Plan 1) returns a
+> unified fleet posture diff so an operator can confirm every node runs the
+> same drift policy. It computes the local policy hash and then classifies
+> each peer as **aligned** (same hash), **divergent** (different hash — with
+> `delta_keys`), **unreachable** (HTTP/timeout error), or **pending** (no hash
+> yet).
+>
+> - **Parameters:** `peer_timeout_s=5` (per-peer fetch timeout), `max_concurrent=4`
+>   (parallel fetch fan-out), `cache_ttl_s=60` (peer-hash cache TTL),
+>   `force_refresh=False` (bypass cache), `include_full_policy=False` (include
+>   each peer's full policy dict in the diff), `since_ts=None` (audit filter).
+> - **Peers:** read from `SyncManager().status()["peers"]`.
+> - **Peer fetch:** the hash for each peer is fetched over HTTP from that
+>   peer's sync-server route `GET /crdt/policy_hash` (served by
+>   `infra/sync_server.py`; requires sync auth). Optional `?include_full=1`
+>   returns the full policy, mirroring the peer-facing admin tool
+>   `memory_admin_policy_hash`.
+> - **`memory_admin_policy_hash`:** the hidden admin tool (reachable only via
+>   the sync-server HTTP route or this `policy_hash_status` op — it is NOT on
+>   the direct MCP surface). Returns `{"policy_hash", "scope",
+>   "schema_version", ("full_policy")}`.
+>
+> This is the operator-facing counterpart to the `MEMORY_TOML_HOT_RELOAD`
+> opt-in (documented in `docs/reference/configuration.md`): if hot-reload is
+> OFF somewhere, that node can silently diverge from the fleet until restart —
+> `policy_hash_status` is how you detect it.
 
 ---
 

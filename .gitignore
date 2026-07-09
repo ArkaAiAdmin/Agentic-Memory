@@ -44,3 +44,4 @@ cron/MagicMock/
 "<MagicMock*"
 scratch/
 ts-sdk/node_modules/
+cron/.drift_cron_*.json
