@@ -13,6 +13,7 @@ Covers:
 
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 import time
@@ -42,13 +43,30 @@ from search_pipeline import (
 )
 from search.orchestrator import _rerank_results
 
+# Use MEMORY_DB_PATH if set (run_full_suite.py), otherwise create a temp DB.
 _prod_db_str = os.environ.get("MEMORY_DB_PATH")
-if not _prod_db_str:
-    raise RuntimeError(
-        "MEMORY_DB_PATH must be set to a temp DB to run these tests. "
-        "Use the temp_db_path fixture or set MEMORY_DB_PATH explicitly."
-    )
-PROD_DB = Path(_prod_db_str)
+if _prod_db_str:
+    PROD_DB = Path(_prod_db_str)
+else:
+    _tmp_db = Path(tempfile.mkdtemp(prefix="search_pipeline_unit_")) / "memory.db"
+    bootstrap_temp_db_clean(_tmp_db)
+    # Seed a few notes so search has something to work with
+    _conn = sqlite3.connect(str(_tmp_db))
+    _conn.execute("PRAGMA journal_mode=WAL")
+    _now = datetime.now(timezone.utc).isoformat()
+    for nid, content in [
+        ("test/python-basics", "Python is a popular programming language"),
+        ("test/machine-learning", "Machine learning uses statistical methods"),
+        ("test/sqlite", "SQLite is an embedded database engine"),
+    ]:
+        _conn.execute(
+            "INSERT INTO memories (id,content,source_file,tags,created_at,updated_at,observed_at,category) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (nid, content, f"memory/lessons/{nid}.md", "[]", _now, _now, _now, "lessons"),
+        )
+    _conn.commit()
+    _conn.close()
+    PROD_DB = _tmp_db
 
 
 def now_iso():

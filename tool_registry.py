@@ -27,6 +27,7 @@ CORE_TOOLS = [
     "memory_review_beliefs",
     "memory_curate_autosave",
     "memory_health_check",
+    "memory_system_health",
 ]
 
 ADMIN_TOOLS = [
