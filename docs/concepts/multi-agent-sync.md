@@ -21,17 +21,15 @@ When two agents write to the same note, their version vectors are compared:
 
 ### Architecture
 
-```
-┌─────────────────┐          ┌─────────────────┐
-│   Agent A       │          │   Agent B       │
-│  memory.db      │          │  memory.db      │
-│  sync_server.py │◄────────►│  sync_server.py │
-│  sync_client.py │  HTTP    │  sync_client.py │
-└─────────────────┘          └─────────────────┘
-         │                           │
-          │   cron/cron_crdt_sync.py  │
-          │   (every 15 min)          │
-         └───────────────────────────┘
+```mermaid
+graph LR
+    A[Agent A - memory.db] -->|HTTP| B[Agent B - memory.db]
+    A --> C[sync_server.py]
+    A --> D[sync_client.py]
+    B --> C
+    B --> D
+    E[cron/cron_crdt_sync.py - every 15 min] --> A
+    E --> B
 ```
 
 Each agent runs both a **sync server** (threaded HTTP daemon) and a **sync client** (scheduled via `cron/cron_crdt_sync.py` or `cron/cron_sync.py`). The cron job orchestrates the cycle:

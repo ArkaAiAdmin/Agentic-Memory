@@ -13,15 +13,10 @@ All data stays on your machine:
 - **No API keys required** — Core system uses only local computation
 - **No network by default** — MCP server binds to localhost only
 
-```
-Your Machine                    The Internet
-┌─────────────────┐            ┌─────────────┐
-│  Agentic Memory │            │             │
-│  ┌───────────┐  │            │  (nothing)  │
-│  │ memory.db │  │◄── NO ──▶│             │
-│  │ *.md      │  │  NETWORK  │             │
-│  └───────────┘  │            └─────────────┘
-└─────────────────┘
+```mermaid
+graph LR
+    A[Your Machine] --> B[Agentic Memory - memory.db + *.md]
+    B -->|NO NETWORK| C[The Internet - nothing]
 ```
 
 ### 2. No LLM in the Write Path

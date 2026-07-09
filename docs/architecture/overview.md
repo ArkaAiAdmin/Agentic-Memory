@@ -12,55 +12,46 @@ Agentic-memory is a local-first, MCP-native memory system for AI agents. It comb
 
 ## High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      MCP Server (17 tools)                   │
-├─────────────────────────────────────────────────────────────┤
-│  Python SDK  │  TypeScript SDK  │  REST API  │  WebSocket   │
-├─────────────────────────────────────────────────────────────┤
-│                    Integration Layer                          │
-│  LangChain  │  CrewAI  │  OKF Export/Import  │  Hooks      │
-├─────────────────────────────────────────────────────────────┤
-│                    Core Engine                                │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │  Search   │  │   Save   │  │    KG    │  │  CRDT    │   │
-│  │ Pipeline  │  │ Pipeline │  │  Engine  │  │  Merge   │   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                    Infrastructure                             │
-│  DB Pool  │  Cache  │  Vector Store  │  CQRS Journal  │ Saga│
-├─────────────────────────────────────────────────────────────┤
-│                    Storage                                    │
-│  SQLite (FTS5 + WAL)  │  usearch (ANN)  │  Markdown files  │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    A[MCP Server - 17 tools] --> B[Python SDK]
+    A --> C[TypeScript SDK]
+    A --> D[REST API + WebSocket]
+    B --> E[Integration Layer]
+    C --> E
+    D --> E
+    E --> F[LangChain + CrewAI + OKF + Hooks]
+    F --> G[Core Engine]
+    G --> H[Search Pipeline]
+    G --> I[Save Pipeline]
+    G --> J[KG Engine]
+    G --> K[CRDT Merge]
+    H --> L[Infrastructure]
+    I --> L
+    J --> L
+    K --> L
+    L --> M[DB Pool + Cache + Vector Store + CQRS + Saga]
+    M --> N[SQLite FTS5 + usearch ANN + Markdown files]
 ```
 
 ## 12-Phase Search Pipeline
 
 The search pipeline is the most sophisticated subsystem. Each phase is independently isolated — no single failure kills the search.
 
-```
-Query → Phase 0 (Normalize) → Phase 1 (FTS5 BM25)
-                                    ↓
-                              Phase 2 (Vector Search)
-                                    ↓
-                              Phase 3 (ColBERT Late-Interaction)
-                                    ↓
-                              Phase 4 (RRF Merge)
-                                    ↓
-                              Phase 5 (Cross-Encoder Rerank)
-                                    ↓
-                              Phase 6 (Temporal Decay)
-                                    ↓
-                              Phase 7 (Neural Forget Curve)
-                                    ↓
-                              Phase 8 (KG Concept Boost)
-                                    ↓
-                              Phase 9 (Final Scoring)
-                                    ↓
-                              Phase 10 (Result Envelope)
-                                    ↓
-                              Phase 11 (Error Counter + Latency)
+```mermaid
+graph TD
+    Q[Query] --> P0[Phase 0: Normalize]
+    P0 --> P1[Phase 1: FTS5 BM25]
+    P1 --> P2[Phase 2: Vector Search]
+    P2 --> P3[Phase 3: ColBERT]
+    P3 --> P4[Phase 4: RRF Merge]
+    P4 --> P5[Phase 5: Cross-Encoder Rerank]
+    P5 --> P6[Phase 6: Temporal Decay]
+    P6 --> P7[Phase 7: Neural Forget]
+    P7 --> P8[Phase 8: KG Boost]
+    P8 --> P9[Phase 9: Final Scoring]
+    P9 --> P10[Phase 10: Result Envelope]
+    P10 --> P11[Phase 11: Error Counter]
 ```
 
 ### Phase Details
@@ -82,23 +73,12 @@ Query → Phase 0 (Normalize) → Phase 1 (FTS5 BM25)
 
 ## CQRS Write Path
 
-```
-Agent Save Request
-        ↓
-┌───────────────────┐
-│   Save Pipeline   │
-│   (Saga-wrapped)  │
-└─────────┬─────────┘
-          ↓
-┌───────────────────┐     ┌───────────────────┐
-│    Journal.db     │────▶│  Background Worker │
-│  (Lock-free WAL)  │     │  (Reconciliation)  │
-└───────────────────┘     └─────────┬─────────┘
-                                    ↓
-                          ┌───────────────────┐
-                          │    Main DB        │
-                          │  (Memory.db)      │
-                          └───────────────────┘
+```mermaid
+graph LR
+    A[Agent Save Request] --> B[Save Pipeline - Saga-wrapped]
+    B --> C[journal.db - Lock-free WAL]
+    C --> D[Background Worker - Reconciliation]
+    D --> E[Main DB - Memory.db]
 ```
 
 **Flow:**
@@ -110,24 +90,14 @@ Agent Save Request
 
 ## CRDT Sync Flow
 
-```
-Agent A                    Agent B
-   │                          │
-   │  ┌─────────────────┐     │
-   ├──│  Version Vector  │─────┤
-   │  │  (LWW-Element)  │     │
-   │  └─────────────────┘     │
-   │                          │
-   │  Remote dominates?       │
-   │  ┌─────┐                 │
-   ├──│ YES │── Accept write  │
-   │  └─────┘                 │
-   │  ┌─────┐                 │
-   ├──│ NO  │── Reject (stale)│
-   │  └─────┘                 │
-   │  ┌─────────┐             │
-   ├──│ CONFLICT│── LWW merge │
-   │  └─────────┘             │
+```mermaid
+graph TD
+    A[Agent A] --> B[Version Vector LWW-Element]
+    C[Agent B] --> B
+    B --> D{Remote dominates?}
+    D -->|YES| E[Accept write]
+    D -->|NO| F[Reject stale]
+    D -->|CONCURRENT| G[LWW merge]
 ```
 
 **Conflict Resolution:**
@@ -137,10 +107,10 @@ Agent A                    Agent B
 
 ## Temporal Knowledge Graph
 
-```
-Entity A ──[relation, weight, valid_at, invalid_at]──▶ Entity B
-     │                                                      │
-     └──────────[contradicts]───────────────────────────────┘
+```mermaid
+graph LR
+    A[Entity A] -->|relation, weight, valid_at, invalid_at| B[Entity B]
+    A -->|contradicts| B
 ```
 
 **Edge Properties:**

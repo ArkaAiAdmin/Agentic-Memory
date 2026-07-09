@@ -4,12 +4,11 @@ Agentic Memory automatically manages memory lifecycle through **hot, warm, and c
 
 ## Tier Overview
 
-```
-┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐
-│  Hot    │────▶│  Warm   │────▶│  Cold   │────▶│ Archive │
-│ (frequent)│   │ (recent)│   │ (rare)  │   │ (old)   │
-└─────────┘     └─────────┘     └─────────┘     └─────────┘
-  Fast search    Normal search   Slow search     Deleted
+```mermaid
+graph LR
+    A[Hot - frequent] -->|Fast search| B[Warm - recent]
+    B -->|Normal search| C[Cold - rare]
+    C -->|Slow search| D[Archive - old]
 ```
 
 | Tier | Description | Search Impact |

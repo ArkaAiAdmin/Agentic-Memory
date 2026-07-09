@@ -139,184 +139,20 @@ The agentic-memory cron jobs (`background_worker.py` runs every 15 min) continue
 
 ## The data flow chart
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 0: TERMINAL OPEN                                                        │
-│                                                                              │
-│   $ opencode                                                                  │
-│       │                                                                      │
-│       │ ~200ms                                                               │
-│       ▼                                                                      │
-│   shell exec opencode binary                                                 │
-└──────────────────────────────┬───────────────────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 1: OPENCODE BOOTS                                                       │
-│                                                                              │
-│   Node.js process spawns                                                     │
-│       │                                                                      │
-│       ├──▶ read opencode.json (user + project level)                         │
-│       ├──▶ load plugins: ecc-universal@1.10.0                                │
-│       ├──▶ load hooks: 36 commands across 7 events from hooks.json           │
-│       ├──▶ load MCP servers: agentic-memory + others                         │
-│       │       │                                                              │
-│       │       └──▶ spawn memory_mcp.py (FastMCP, 56 tools)                   │
-│       │                                                                      │
-│       ├──▶ auto-discover skills: 87 from ~/.opencode/skills/                 │
-│       ├──▶ read INSTRUCTIONS.md (379 lines → system prompt context)          │
-│       └──▶ open SQLite session store at ~/.opencode/                          │
-│                                                                              │
-│   Time: ~2-3s                                                                │
-└──────────────────────────────┬───────────────────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 2: NEW SESSION (you press 'n' or Cmd+N)                                 │
-│                                                                              │
-│   opencode fires SessionStart event                                          │
-│       │                                                                      │
-│       ├── HOOK 1: session:start (ECC bootstrap)                               │
-│       │     node scripts/hooks/session-start-bootstrap.js                     │
-│       │     → detect package manager                                         │
-│       │     → pre-session cleanup                                            │
-│       │     ~1s                                                              │
-│       │                                                                      │
-│       └── HOOK 2: session:memorybootstrap (agentic-memory)                   │
-│             MEMORY_KNOWLEDGE_GRAPH=1 MEMORY_SELF_DIRECTED=1                  │
-│             ~/.config/agentic-memory/venv/bin/python                │
-│             ~/.config/agentic-memory/hooks/memory-session-start.py  │
-│             │                                                                │
-│             ├──▶ recall.session_recap()                                       │
-│             │     │                                                          │
-│             │     ├──▶ SELECT pinned notes from memories WHERE pinned=1       │
-│             │     ├──▶ SELECT recent digests (last 7d) from sessions          │
-│             │     ├──▶ SELECT high-importance memories                       │
-│             │     ├──▶ SELECT review-schedule items due for review           │
-│             │     └──▶ LOAD user profile from user_access_log                │
-│             │                                                                │
-│             ├──▶ format_briefing() → 3-4 KB of text                          │
-│             └──▶ print to STDOUT  ◀── INJECTED AS SYSTEM CONTEXT            │
-│                                                                              │
-│   Time: ~2-5s   (15s timeout)                                                │
-│   Output: pinned + recent + high-importance + review queue + user profile     │
-└──────────────────────────────┬───────────────────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 3: FIRST USER PROMPT                                                     │
-│                                                                              │
-│   You: "show me the recent changes to the FTS5 cache"                        │
-│       │                                                                      │
-│       │                                                                      │
-│       ▼                                                                      │
-│   opencode sends: system_prompt + INSTRUCTIONS.md + memorybootstrap         │
-│                    + your prompt → LLM                                       │
-│                                                                              │
-│   Time: ~1-3s (LLM inference)                                                │
-└──────────────────────────────┬───────────────────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 4: LLM CALLS A TOOL → PreToolUse EVENT                                  │
-│                                                                              │
-│   LLM emits: tool_use(Bash, command="git diff memory/cache.py")              │
-│       │                                                                      │
-│       opencode fires PreToolUse (12 hooks, parallel where possible)           │
-│       │                                                                      │
-│       ├── pre:config-protection     (~5s timeout)                             │
-│       ├── pre:mcp-health-check      (no timeout)                              │
-│       ├── pre:edit-write:gateguard-fact-force (Edit/Write only, 5s)          │
-│       ├── pre:bash:gateguard-fact-force (Bash only, 5s)                       │
-│       │                                                                      │
-│       └── pre:memory-proactive-context (agentic-memory)                       │
-│             MEMORY_KNOWLEDGE_GRAPH=1                                          │
-│             ~/.config/agentic-memory/venv/bin/python                │
-│             ~/.config/agentic-memory/hooks/                         │
-│             memory-proactive-context.py                                        │
-│             │                                                                │
-│             ├──▶ read JSON from stdin (tool_name, tool_input)                │
-│             ├──▶ extract_query_from_tool_input()                              │
-│             │     → tool_input.command = "git diff memory/cache.py"           │
-│             │     → query = "git diff memory/cache.py" (or refined)          │
-│             ├──▶ memory_mcp.search_memories(query, limit=3)                  │
-│             │     → 3-channel parallel: FTS5 + usearch + KG                  │
-│             │     → Qwen3-0.6B rerank                                        │
-│             │     → top 3 results                                            │
-│             ├──▶ format_results() → ~500 bytes of context                    │
-│             └──▶ print to STDOUT  ◀── INJECTED BEFORE TOOL RUNS              │
-│                                                                              │
-│   Time: ~500ms   (3s timeout)                                                │
-│   Output: top-3 memories related to the tool's intent, injected as context   │
-└──────────────────────────────┬───────────────────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 5: TOOL EXECUTES → PostToolUse EVENT                                     │
-│                                                                              │
-│   tool runs: git diff memory/cache.py → returns diff text                     │
-│       │                                                                      │
-│       opencode fires PostToolUse (12 hooks, many async)                       │
-│       │                                                                      │
-│       ├── post:bash:command-log-audit    (audit bash)                        │
-│       ├── post:bash:command-log-cost     (cost tracking)                     │
-│       ├── post:bash:pr-created           (PR detection)                       │
-│       ├── post:bash:build-complete       (build analysis, async)              │
-│       ├── post:quality-gate             (file edit quality, async)            │
-│       ├── post:edit:design-quality-check (UX drift check)                    │
-│       ├── post:edit:accumulate          (batch edits for Stop-time)          │
-│       ├── post:edit:console-warn        (warn on console.log)                │
-│       ├── post:governance-capture       (governance events)                  │
-│       ├── post:session-activity-tracker  (metrics)                            │
-│       ├── post:observe:continuous-learning (learn from patterns)             │
-│       │                                                                      │
-│       └── post:memory-auto-save (agentic-memory, ASYNC)                       │
-│             node scripts/hooks/memory-auto-save.cjs                          │
-│             │                                                                │
-│             ├──▶ read JSON from stdin (tool_name, tool_input, tool_output)    │
-│             ├──▶ extract preview: "git diff memory/cache.py"                 │
-│             ├──▶ write to context_monitor_state (per-session)                │
-│             ├──▶ every 10 calls: flush to memory/sessions/auto-*.md          │
-│             └──▶ upsert to DB (memory.memories table)                         │
-│                                                                              │
-│   Time: ~100ms (async, doesn't block)                                        │
-│   Side effect: every tool call is captured to memory                          │
-└──────────────────────────────┬───────────────────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 6-8: CYCLE CONTINUES                                                    │
-│                                                                              │
-│   For every subsequent tool call:                                            │
-│     Phase 4 (PreToolUse, ~500ms) → Phase 5 (PostToolUse, ~100ms async)         │
-│                                                                              │
-│   For every agent response:                                                   │
-│     Stop event fires (6 hooks, mostly async, 5-30s total)                     │
-│       ├── stop:format-typecheck (sync, 300s)                                 │
-│       ├── stop:check-console-log (sync)                                       │
-│       ├── stop:session-end (async)                                           │
-│       ├── stop:evaluate-session (async)                                      │
-│       ├── stop:cost-tracker (async)                                          │
-│       └── stop:desktop-notify (async)                                        │
-│                                                                              │
-│   Cron background_worker.py runs every 15 min in background:               │
-│     → process the auto-save queue                                            │
-│     → run consolidation, contradiction detection                             │
-│     → write session-end notes                                                │
-└──────────────────────────────┬───────────────────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 9: SESSION ENDS (you close opencode)                                    │
-│                                                                              │
-│   opencode fires SessionEnd event                                            │
-│       │                                                                      │
-│       └── session:end:marker (async, 10s)                                    │
-│             → write final session marker to ~/.opencode/                       │
-│                                                                              │
-│   Time: <1s                                                                  │
-│   Cron continues to run in background, processing accumulated auto-saves      │
-└──────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    P0[Phase 0: Terminal Open] --> P1[Phase 1: OpenCode Boots]
+    P1 --> P2[Phase 2: MCP Server Starts]
+    P2 --> P3[Phase 3: Session Created]
+    P3 --> P4[Phase 4: First Prompt]
+    
+    P1 --> A1[Read opencode.json]
+    P1 --> A2[Load plugins]
+    P1 --> A3[Load hooks]
+    P1 --> A4[Load MCP servers]
+    A4 --> A5[Spawn memory_mcp.py]
+    P1 --> A6[Auto-discover skills]
+    P1 --> A7[Read INSTRUCTIONS.md]
 ```
 
 ---

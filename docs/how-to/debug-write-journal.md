@@ -10,17 +10,11 @@ into `memory.db` via the standard saga (DB upsert + vec key + .md file).
 
 ## Architecture
 
-```
-Agent process          Background thread
-┌─────────────┐        ┌──────────────────┐
-│ save_memory │        │ reconciliation   │
-│ _journal()  │        │ loop (100ms poll)│
-│  └─INSERT   │        │  ┌──────────────┐│
-│    journal  │        │  │ dequeue →    ││
-│    .db      │───────>│  │ materialize  ││
-└─────────────┘        │  │ → saga       ││
-                       │  └──────────────┘│
-                       └──────────────────┘
+```mermaid
+graph LR
+    A[Agent process - save_memory _journal] -->|INSERT| B[journal.db]
+    B --> C[Background thread - reconciliation loop - 100ms poll]
+    C --> D[dequeue -> materialize -> saga]
 ```
 
 - **Multi-agent safe**: any number of agent processes can `INSERT` into

@@ -64,13 +64,12 @@ This file is:
 
 SQLite exists for **performance**, not as the source of truth:
 
-```
-Markdown files (truth)
-    │
-    ├──▶ FTS5 index (fast search)
-    ├──▶ Knowledge graph (entity lookup)
-    ├──▶ Vector embeddings (semantic search)
-    └──▶ Task queue (async processing)
+```mermaid
+graph TD
+    A[Markdown files - truth] --> B[FTS5 index - fast search]
+    A --> C[Knowledge graph - entity lookup]
+    A --> D[Vector embeddings - semantic search]
+    A --> E[Task queue - async processing]
 ```
 
 Every derived artifact can be rebuilt:

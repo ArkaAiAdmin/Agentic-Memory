@@ -15,29 +15,15 @@ Running these in the foreground would add 100-500ms to every save operation. The
 
 ## Architecture
 
-```
-Save Pipeline
-    │
-    ├──▶ Write markdown (synchronous)
-    ├──▶ Update FTS5 index (synchronous)
-    ├──▶ Update knowledge graph (synchronous)
-    │
-    └──▶ Enqueue background tasks (async)
-              │
-              ▼
-        ┌─────────────┐
-        │  Task Queue  │  (SQLite table)
-        │  (pending)   │
-        └──────┬──────┘
-               │
-        ┌──────▼──────┐
-        │   Worker     │  (background_worker.py)
-        │  (process)   │
-        └──────┬──────┘
-               │
-        ┌──────▼──────┐
-        │  Completed   │
-        └─────────────┘
+```mermaid
+graph TD
+    A[Save Pipeline] --> B[Write markdown - synchronous]
+    A --> C[Update FTS5 index - synchronous]
+    A --> D[Update knowledge graph - synchronous]
+    A --> E[Enqueue background tasks - async]
+    E --> F[Task Queue - SQLite table - pending]
+    F --> G[Worker - background_worker.py - process]
+    G --> H[Completed]
 ```
 
 ## Task Queue Schema
@@ -273,17 +259,12 @@ tool_complete hook
     ├──▶ append 1 JSONL line to <memory>/.auto_save_inbox.jsonl (~2-5ms)
     │
     ▼
-┌──────────────┐
-│  Inbox       │  (append-only JSONL, POSIX atomic appends)
-│  (queue)     │
-└──────┬───────┘
-       │ every 500ms or every 50 entries
-┌──────▼───────┐
-│  Daemon      │  (auto_save.py daemon, long-running)
-│  (batcher)   │
-└──────┬───────┘
-       │
-       ▼
+[Inbox - append-only JSONL, POSIX atomic appends]
+    │ every 500ms or every 50 entries
+    ▼
+[Daemon - auto_save.py daemon, long-running - batcher]
+    │
+    ▼
   Single SQLite transaction per batch
 ```
 

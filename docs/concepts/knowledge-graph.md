@@ -22,11 +22,11 @@ ENTITY_PATTERNS = {
 
 Each extracted entity becomes a node in the graph:
 
-```
-(memory) "lessons/sqlite-wal-mode"
-    ├── mentions → (entity) "SQLite"
-    ├── mentions → (entity) "WAL mode"
-    └── mentions → (entity) "PRAGMA journal_mode"
+```mermaid
+graph TD
+    A["lessons/sqlite-wal-mode"] -->|mentions| B["SQLite"]
+    A -->|mentions| C["WAL mode"]
+    A -->|mentions| D["PRAGMA journal_mode"]
 ```
 
 ### 2. Relationship Extraction
