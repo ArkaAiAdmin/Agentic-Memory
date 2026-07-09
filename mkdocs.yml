@@ -9,24 +9,15 @@
 #     mkdocs gh-deploy     # GitHub Pages
 #     mkdocs build && rsync -av site/ user@host:/var/www/agentic-memory/
 #     Docker: docker run --rm -v $PWD:/docs squidfunk/mkdocs-material build
-#
-# The nav mirrors the Diataxis structure already in docs/index.md:
-#   - Concepts (understand the why)
-#   - How-To (real-world workflows)
-#   - Reference (api/configuration/schema)
-#   - Explanation (deeper rationale)
-# Plus Docker (Phase 4.1) at the top level.
 
 site_name: Agentic Memory
-site_description: Local-first persistent memory for AI agents — Mem0-compatible SDK, MCP server, 79 MCP tools
+site_description: Local-first persistent memory for AI agents — 17 CORE MCP tools, Python/TypeScript SDK, REST API
 site_author: Arka Ai
 
-repo_url: https://github.com/ArkaAiAdmin/Agentic-Memory
-repo_name: ArkaAiAdmin/Agentic-Memory
+repo_url: https://github.com/ArkaAiAdmin/agentic-memory-local
+repo_name: ArkaAiAdmin/agentic-memory-local
 edit_uri: edit/main/docs/
 
-# Use the modern Material theme — palette toggle for light/dark,
-# instant nav (no full page reloads), and built-in search.
 theme:
   name: material
   palette:
@@ -45,12 +36,12 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
-    - navigation.instant        # SPA-style navigation
-    - navigation.tracking       # Update URL on scroll to anchors
-    - navigation.tabs           # Top-level nav tabs
-    - navigation.sections       # Sidebar sections
-    - navigation.indexes        # Section landing pages
-    - navigation.top            # Back-to-top button
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
     - search.suggest
     - search.highlight
     - search.share
@@ -61,7 +52,6 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
-# Required for instant nav + search to work correctly.
 markdown_extensions:
   - admonition
   - attr_list
@@ -89,31 +79,26 @@ markdown_extensions:
   - pymdownx.magiclink:
       repo_url_shorthand: true
       user: ArkaAiAdmin
-      repo: Agentic-Memory
+      repo: agentic-memory-local
 
 plugins:
   - search
 
-# Build strict — fail on broken internal links. New contributors
-# often add a doc without updating the nav; this catches that.
-# strict: false — docs link to maintainer files (AGENTS.md,
-# memory_workflow.md, lessons/*.md) which are outside the public
-# site. We'd rather emit a warning than fail the build.
 strict: false
-
-# Don't include the audit/ARKIT files in the public site (they
-# were internal-only and have been removed from docs/ in 2026-06-23).
-exclude_docs: |
-  audit-2026-06-20.md
-  ARKIT-2026.md
 
 nav:
   - Home: index.md
-  - Quick Start: quick-start.md
-  - Architecture: architecture.md
-  - Self-Hosting: self-hosting.md
-  - Docker:
-      - docker_README.md
+  - Quick Start:
+      - guides/quick-start.md
+      - guides/langchain.md
+      - guides/crewai.md
+  - Architecture:
+      - architecture/overview.md
+      - architecture/subsystems.md
+  - API Reference:
+      - api/python-sdk.md
+      - api/typescript-sdk.md
+      - api/rest-api.md
   - Concepts:
       - concepts/why-markdown.md
       - concepts/search-pipeline.md
@@ -130,30 +115,28 @@ nav:
       - how-to/debug-search.md
       - how-to/cron-setup.md
       - how-to/walkthrough.md
-      - how-to/build-docs-site.md
       - Maintainer:
           - how-to/add-an-mcp-tool.md
           - how-to/add-a-cron-job.md
           - how-to/add-a-claude-code-hook.md
           - how-to/run-a-migration.md
   - Reference:
-      - api-reference.md
       - reference/mcp-tools.md
       - reference/configuration.md
       - reference/schema.md
+      - durability.md
+      - OPERATOR_RELOAD_COMMANDS.md
+      - kg_dashboard.md
   - Explanation:
       - explanation/design-decisions.md
       - explanation/boot-sequence.md
       - explanation/comparison.md
+  - Self-Hosting: self-hosting.md
+  - LLM Providers: llm-providers.md
+  - OKF Migration: okf-obsidian-migration.md
 
-# Extra — useful for the docs site but not for the printed output.
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/ArkaAiAdmin/Agentic-Memory
-  generator: false  # hide "Made with Material for MkDocs"
-
-# Build hooks — copy docker/README.md into docs/ so the link in
-# nav resolves. Run `mkdocs build` and the build hook does the copy.
-hooks:
-  - docs/_hooks/copy_docker_readme.py
+      link: https://github.com/ArkaAiAdmin/agentic-memory-local
+  generator: false
