@@ -171,4 +171,4 @@ The trade-off is no automatic sync, but that's a feature — you choose what to 
 ## Further Reading
 
 - [Comparison](comparison.md) — How we compare to alternatives
-- [Architecture](../architecture.md) — Full system design
+- [Architecture](../architecture/overview.md) — Full system design

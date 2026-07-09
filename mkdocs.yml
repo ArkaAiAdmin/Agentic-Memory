@@ -113,17 +113,27 @@ nav:
       - how-to/multi-project.md
       - how-to/custom-entity-types.md
       - how-to/debug-search.md
+      - how-to/debug-write-journal.md
       - how-to/cron-setup.md
       - how-to/walkthrough.md
+      - how-to/build-docs-site.md
+      - how-to/performance-benchmarks.md
       - Maintainer:
           - how-to/add-an-mcp-tool.md
           - how-to/add-a-cron-job.md
           - how-to/add-a-claude-code-hook.md
           - how-to/run-a-migration.md
+  - Integrations:
+      - integrations/overview.md
+      - integrations/langchain.md
+      - integrations/crewai.md
+      - integrations/roadmap.md
   - Reference:
       - reference/mcp-tools.md
       - reference/configuration.md
       - reference/schema.md
+      - MCP_SURFACE.md
+      - AGENT_QUICKSTART.md
       - durability.md
       - OPERATOR_RELOAD_COMMANDS.md
       - kg_dashboard.md

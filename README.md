@@ -19,26 +19,18 @@ Agentic Memory gives AI agents **persistent, cross-session, local-first memory**
 
 Built for **Claude Code**, **OpenCode**, **MiMoCode**, and any MCP-compatible agent harness.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                       Agentic Memory                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
-│  │  Markdown    │───▶│  SQLite FTS5 │───▶│  12-Phase Search  │  │
-│  │  (source)    │    │  (derived)   │    │  Pipeline         │  │
-│  └──────────────┘    └──────────────┘    └──────────────────┘  │
-│         │                   │                    │              │
-│         ▼                   ▼                    ▼              │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
-│  │  .md files   │    │  Temporal    │    │  CQRS + CRDT     │  │
-│  │  (Git-ready) │    │  Knowledge   │    │  Multi-Agent     │  │
-│  │              │    │  Graph       │    │  Sync            │  │
-│  └──────────────┘    └──────────────┘    └──────────────────┘  │
-│                                                                  │
-│  17 MCP tools │ 39 cron scripts → 1 scheduler │ 8 hooks        │
-│  Python SDK │ TypeScript SDK │ REST API + WebSocket              │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    A[Agentic Memory] --> B[Markdown - source]
+    A --> C[SQLite FTS5 - derived]
+    A --> D[12-Phase Search Pipeline]
+    B --> E[.md files - Git-ready]
+    C --> F[Temporal Knowledge Graph]
+    D --> G[CQRS + CRDT Multi-Agent Sync]
+    A --> H[17 MCP tools]
+    A --> I[39 cron scripts -> 1 scheduler]
+    A --> J[8 hooks]
+    A --> K[Python SDK + TypeScript SDK + REST API]
 ```
 
 ---

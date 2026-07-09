@@ -108,5 +108,5 @@ Agents benefit from markdown-first in practical ways:
 
 ## Further Reading
 
-- [Architecture](../architecture.md) — Full data flow diagram
+- [Architecture](../architecture/overview.md) — Full data flow diagram
 - [Design Decisions](../explanation/design-decisions.md) — Why we chose this approach

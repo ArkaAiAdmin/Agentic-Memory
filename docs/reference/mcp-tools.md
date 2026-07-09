@@ -339,6 +339,6 @@ python -c "from agentic_memory import memory_mcp; print('OK')"
 
 ## Further Reading
 
-- [Python API](python-api.md) — Direct Python function calls
-- [CLI Commands](cli.md) — Command-line interface
+- [Python SDK](../api/python-sdk.md) — Direct Python function calls
+- [REST API](../api/rest-api.md) — HTTP endpoints
 - [Search Pipeline](../concepts/search-pipeline.md) — How search works

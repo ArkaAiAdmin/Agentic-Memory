@@ -307,10 +307,8 @@ These are tracked as future work; the MVP focuses on the simple
 ## See Also
 
 - [Knowledge Graph](knowledge-graph.md) — base fact graph (pre-temporal)
-- [Architecture](../architecture.md) — where the temporal KG fits in
+- [Architecture](../architecture/overview.md) — where the temporal KG fits in
   the system
-- [AGENTS.md](../../AGENTS.md) — operator-facing doc with the
-  feature-flag table
 - `fact_temporal.py` — implementation (4 core functions + 3 query
   functions)
 - `mcp_audit.py` — `memory_temporal_query` and `memory_temporal_contradictions`

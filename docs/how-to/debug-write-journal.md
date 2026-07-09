@@ -118,4 +118,4 @@ pending journal entries. No separate tool needed.
 - `background/background_worker.py` — `_reconciliation_loop`, `_start_reconciler`
 - `infra/write_journal.py` — `enqueue_write`, `mark_dead_letter`, `reset_stuck_processing`
 - `mcp_maintenance.py` — `memory_health_check` (journal section)
-- `docs/architecture.md` — system architecture
+- `docs/architecture/overview.md` — system architecture

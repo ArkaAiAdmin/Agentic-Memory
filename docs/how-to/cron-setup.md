@@ -159,5 +159,3 @@ Ensure only one worker runs at a time:
 
 - [Background Tasks](../concepts/background-tasks.md) — How the task queue works
 - [Self-Hosting](../self-hosting.md) — Production deployment guide
-- [KG Backfill: Data-Loss Recovery](../../lessons/2026-06-19-kg-backfill-data-loss-recovery.md) — Why the cron uses --incremental
-- [KG LLM Extraction Speed](../../lessons/2026-06-19-kg-llm-extraction-speed.md) — Why the cron defaults to regex-only

@@ -131,4 +131,4 @@ How Agentic Memory compares to other memory systems.
 ## Further Reading
 
 - [Design Decisions](design-decisions.md) — Why we made these choices
-- [Architecture](../architecture.md) — Full system design
+- [Architecture](../architecture/overview.md) — Full system design
