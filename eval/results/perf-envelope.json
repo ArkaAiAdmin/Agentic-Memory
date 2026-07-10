@@ -1,22 +1,20 @@
 {
-  "timestamp": "2026-06-30T09:18:50.745408+00:00",
+  "timestamp": "2026-07-10T09:34:02.324477+00:00",
   "host": "macOS",
   "venv_python": "/Users/arka/.config/agentic-memory/venv/bin/python",
   "perf_root": "/tmp/perf_envelope_test",
   "sizes": [
-    1000,
-    10000,
-    100000
+    1000
   ],
   "warmup_iters": 2,
   "measure_iters": 5,
-  "total_s": 285.2,
+  "total_s": 18.99,
   "corpora": [
     {
       "corpus_size": 1000,
-      "generation_s": 0.09,
-      "initial_build_s": 0.86,
-      "total_s": 11.68,
+      "generation_s": 0.08,
+      "initial_build_s": 0.98,
+      "total_s": 18.99,
       "db_rows": 1000,
       "measurements": [
         {
@@ -24,16 +22,16 @@
           "corpus_size": 1000,
           "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0005,
-          "p95_s": 0.0006,
-          "max_s": 0.0006,
-          "mean_s": 0.0005,
+          "p50_s": 0.0007,
+          "p95_s": 0.0008,
+          "max_s": 0.0008,
+          "mean_s": 0.0007,
           "elapsed_s": [
+            0.0008,
+            0.0008,
+            0.0007,
             0.0006,
-            0.0005,
-            0.0005,
-            0.0005,
-            0.0005
+            0.0006
           ],
           "notes": "20 random terms; LIMIT 20; sqlite3 direct"
         },
@@ -60,16 +58,16 @@
           "corpus_size": 1000,
           "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0007,
-          "p95_s": 0.0007,
-          "max_s": 0.0007,
-          "mean_s": 0.0007,
+          "p50_s": 0.0041,
+          "p95_s": 0.0043,
+          "max_s": 0.0043,
+          "mean_s": 0.0036,
           "elapsed_s": [
-            0.0007,
-            0.0007,
-            0.0007,
-            0.0007,
-            0.0007
+            0.0043,
+            0.0031,
+            0.0021,
+            0.0043,
+            0.0041
           ],
           "notes": "direct SQLite INSERT; no frontmatter parse"
         },
@@ -78,16 +76,16 @@
           "corpus_size": 1000,
           "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.7397,
-          "p95_s": 0.7422,
-          "max_s": 0.7422,
-          "mean_s": 0.7395,
+          "p50_s": 1.4361,
+          "p95_s": 1.7717,
+          "max_s": 1.7717,
+          "mean_s": 1.4325,
           "elapsed_s": [
-            0.7397,
-            0.7368,
-            0.7422,
-            0.7414,
-            0.7377
+            1.036,
+            1.255,
+            1.7717,
+            1.6634,
+            1.4361
           ],
           "notes": "rebuild_index.py on full corpus; reads from disk"
         },
@@ -96,16 +94,16 @@
           "corpus_size": 1000,
           "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0005,
-          "p95_s": 0.0006,
-          "max_s": 0.0006,
-          "mean_s": 0.0005,
+          "p50_s": 0.0007,
+          "p95_s": 0.0016,
+          "max_s": 0.0016,
+          "mean_s": 0.0009,
           "elapsed_s": [
-            0.0005,
-            0.0005,
-            0.0005,
-            0.0006,
-            0.0006
+            0.0007,
+            0.0007,
+            0.0007,
+            0.0008,
+            0.0016
           ],
           "notes": "library call: SELECT pinned notes + per-note psi check"
         },
@@ -114,16 +112,16 @@
           "corpus_size": 1000,
           "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.0511,
-          "p95_s": 0.0518,
-          "max_s": 0.0518,
-          "mean_s": 0.0509,
+          "p50_s": 0.1004,
+          "p95_s": 0.2835,
+          "max_s": 0.2835,
+          "mean_s": 0.1352,
           "elapsed_s": [
-            0.0518,
-            0.0495,
-            0.0508,
-            0.0511,
-            0.0511
+            0.1009,
+            0.0993,
+            0.0918,
+            0.1004,
+            0.2835
           ],
           "notes": "contradiction_detector.py --mode=phrase on 200-note subsample (detector is O(n^2); full corpus would be ~25x longer)"
         },
@@ -132,264 +130,18 @@
           "corpus_size": 1000,
           "iterations": 5,
           "unit": "seconds",
-          "p50_s": 0.5062,
-          "p95_s": 0.5251,
-          "max_s": 0.5251,
-          "mean_s": 0.5113,
+          "p50_s": 0.7688,
+          "p95_s": 0.8938,
+          "max_s": 0.8938,
+          "mean_s": 0.784,
           "elapsed_s": [
-            0.5062,
-            0.5057,
-            0.5052,
-            0.5141,
-            0.5251
+            0.7688,
+            0.6954,
+            0.7408,
+            0.8212,
+            0.8938
           ],
           "notes": "contradiction_detector.py --mode=semantic on 200-note subsample (detector is O(n^2); full corpus would be ~25x longer)"
-        }
-      ]
-    },
-    {
-      "corpus_size": 10000,
-      "generation_s": 0.78,
-      "initial_build_s": 2.55,
-      "total_s": 22.9,
-      "db_rows": 10000,
-      "measurements": [
-        {
-          "name": "fts5_search",
-          "corpus_size": 10000,
-          "iterations": 5,
-          "unit": "seconds",
-          "p50_s": 0.0005,
-          "p95_s": 0.0005,
-          "max_s": 0.0005,
-          "mean_s": 0.0005,
-          "elapsed_s": [
-            0.0005,
-            0.0005,
-            0.0005,
-            0.0005,
-            0.0005
-          ],
-          "notes": "20 random terms; LIMIT 20; sqlite3 direct"
-        },
-        {
-          "name": "semantic_search",
-          "corpus_size": 10000,
-          "iterations": 5,
-          "unit": "seconds",
-          "p50_s": 0.0,
-          "p95_s": 0.0,
-          "max_s": 0.0,
-          "mean_s": 0.0,
-          "elapsed_s": [
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0
-          ],
-          "notes": "1 query x limit=5 per iteration; potion-base-8M; encodes all rows in DB"
-        },
-        {
-          "name": "save",
-          "corpus_size": 10000,
-          "iterations": 5,
-          "unit": "seconds",
-          "p50_s": 0.0006,
-          "p95_s": 0.0008,
-          "max_s": 0.0008,
-          "mean_s": 0.0007,
-          "elapsed_s": [
-            0.0007,
-            0.0008,
-            0.0006,
-            0.0006,
-            0.0006
-          ],
-          "notes": "direct SQLite INSERT; no frontmatter parse"
-        },
-        {
-          "name": "rebuild",
-          "corpus_size": 10000,
-          "iterations": 5,
-          "unit": "seconds",
-          "p50_s": 2.5941,
-          "p95_s": 2.6136,
-          "max_s": 2.6136,
-          "mean_s": 2.5959,
-          "elapsed_s": [
-            2.5809,
-            2.5824,
-            2.5941,
-            2.6084,
-            2.6136
-          ],
-          "notes": "rebuild_index.py on full corpus; reads from disk"
-        },
-        {
-          "name": "pinned_decay_dry_run",
-          "corpus_size": 10000,
-          "iterations": 5,
-          "unit": "seconds",
-          "p50_s": 0.0005,
-          "p95_s": 0.0005,
-          "max_s": 0.0005,
-          "mean_s": 0.0005,
-          "elapsed_s": [
-            0.0005,
-            0.0005,
-            0.0005,
-            0.0004,
-            0.0004
-          ],
-          "notes": "library call: SELECT pinned notes + per-note psi check"
-        },
-        {
-          "name": "contradiction_phrase",
-          "corpus_size": 10000,
-          "iterations": 0,
-          "unit": "seconds",
-          "p50_s": 0.0,
-          "p95_s": 0.0,
-          "max_s": 0.0,
-          "mean_s": 0.0,
-          "elapsed_s": [],
-          "notes": "skipped (O(n^2); corpus too large)"
-        },
-        {
-          "name": "contradiction_semantic",
-          "corpus_size": 10000,
-          "iterations": 0,
-          "unit": "seconds",
-          "p50_s": 0.0,
-          "p95_s": 0.0,
-          "max_s": 0.0,
-          "mean_s": 0.0,
-          "elapsed_s": [],
-          "notes": "skipped (O(n^2) + embedding cost; corpus too large)"
-        }
-      ]
-    },
-    {
-      "corpus_size": 100000,
-      "generation_s": 8.41,
-      "initial_build_s": 22.09,
-      "total_s": 250.61,
-      "db_rows": 100000,
-      "measurements": [
-        {
-          "name": "fts5_search",
-          "corpus_size": 100000,
-          "iterations": 5,
-          "unit": "seconds",
-          "p50_s": 0.0006,
-          "p95_s": 0.0007,
-          "max_s": 0.0007,
-          "mean_s": 0.0006,
-          "elapsed_s": [
-            0.0006,
-            0.0006,
-            0.0006,
-            0.0005,
-            0.0007
-          ],
-          "notes": "20 random terms; LIMIT 20; sqlite3 direct"
-        },
-        {
-          "name": "semantic_search",
-          "corpus_size": 100000,
-          "iterations": 5,
-          "unit": "seconds",
-          "p50_s": 0.0,
-          "p95_s": 0.0,
-          "max_s": 0.0,
-          "mean_s": 0.0,
-          "elapsed_s": [
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0
-          ],
-          "notes": "1 query x limit=5 per iteration; potion-base-8M; encodes all rows in DB"
-        },
-        {
-          "name": "save",
-          "corpus_size": 100000,
-          "iterations": 5,
-          "unit": "seconds",
-          "p50_s": 0.0007,
-          "p95_s": 0.0008,
-          "max_s": 0.0008,
-          "mean_s": 0.0007,
-          "elapsed_s": [
-            0.0007,
-            0.0006,
-            0.0006,
-            0.0008,
-            0.0008
-          ],
-          "notes": "direct SQLite INSERT; no frontmatter parse"
-        },
-        {
-          "name": "rebuild",
-          "corpus_size": 100000,
-          "iterations": 5,
-          "unit": "seconds",
-          "p50_s": 32.0676,
-          "p95_s": 36.9698,
-          "max_s": 36.9698,
-          "mean_s": 32.1243,
-          "elapsed_s": [
-            30.3793,
-            32.3375,
-            36.9698,
-            32.0676,
-            28.8673
-          ],
-          "notes": "rebuild_index.py on full corpus; reads from disk"
-        },
-        {
-          "name": "pinned_decay_dry_run",
-          "corpus_size": 100000,
-          "iterations": 5,
-          "unit": "seconds",
-          "p50_s": 0.0006,
-          "p95_s": 0.0007,
-          "max_s": 0.0007,
-          "mean_s": 0.0006,
-          "elapsed_s": [
-            0.0006,
-            0.0006,
-            0.0006,
-            0.0006,
-            0.0007
-          ],
-          "notes": "library call: SELECT pinned notes + per-note psi check"
-        },
-        {
-          "name": "contradiction_phrase",
-          "corpus_size": 100000,
-          "iterations": 0,
-          "unit": "seconds",
-          "p50_s": 0.0,
-          "p95_s": 0.0,
-          "max_s": 0.0,
-          "mean_s": 0.0,
-          "elapsed_s": [],
-          "notes": "skipped (O(n^2); corpus too large)"
-        },
-        {
-          "name": "contradiction_semantic",
-          "corpus_size": 100000,
-          "iterations": 0,
-          "unit": "seconds",
-          "p50_s": 0.0,
-          "p95_s": 0.0,
-          "max_s": 0.0,
-          "mean_s": 0.0,
-          "elapsed_s": [],
-          "notes": "skipped (O(n^2) + embedding cost; corpus too large)"
         }
       ]
     }
