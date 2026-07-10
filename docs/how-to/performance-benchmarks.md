@@ -21,6 +21,8 @@ Understand the expected performance characteristics of the agentic-memory system
 
 > **Important:** the scripts measure the live `save_memory` / `search_memories` code paths end to end (saga transaction, FTS5 incremental index, atomic file write, drift check). They are the source of truth for these numbers; do not hand-edit the tables.
 
+> **⚠️ Measurement caveat — re-run pending.** These numbers were captured on **2026-07-10 while ~20 GB of RAM was held by Adobe Lightroom Classic running actively in the background**. Under that load the benchmark process was very likely pushed into swap/SSD thrash, so the absolute latencies below are **pessimistic floor estimates, not representative of the machine's idle capability**. The *relative* comparisons (e.g. hybrid search vs FTS5-only, core path vs LLM-extraction-on) remain valid. A clean re-run on an idle machine is scheduled — see `docs/how-to/performance-benchmarks.md` follow-up task. Do not treat the absolute ms values as SLA-grade numbers until then.
+
 ## Write path (`save_memory`)
 
 Latency per note written, at three corpus sizes. Lower is better.
