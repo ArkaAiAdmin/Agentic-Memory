@@ -1,4 +1,4 @@
-"""16-tool agent surface for agentic memory.
+"""17-tool agent surface for agentic memory.
 
 Each tool is a thin @mcp.tool() wrapper around existing functionality
 with sensible defaults so the agent can call it with 1-2 params.
@@ -6,13 +6,14 @@ with sensible defaults so the agent can call it with 1-2 params.
 The underlying ADMIN tools are still accessible via
 memory_advanced(operation="...") for power users.
 
-Tools (16 + 1 escape hatch (memory_advanced)):
+Tools (17 + 1 escape hatch (memory_advanced)):
   memory_search, memory_save, memory_delete, memory_recall, memory_note,
   memory_learn, memory_audit, memory_organize, memory_share,
   memory_graph, memory_profile, memory_session_start, memory_review_beliefs,
-  memory_curate_autosave, memory_health_check, memory_advanced
+  memory_curate_autosave, memory_health_check, memory_system_health,
+  memory_advanced
 
-Phase A (2026-07-01): These 16 tools are the entire agent-facing MCP
+Phase A (2026-07-01): These 17 tools are the entire agent-facing MCP
 surface. The 80+ legacy tools are callable through memory_advanced.
 """
 from __future__ import annotations
@@ -746,6 +747,7 @@ def memory_audit(
 def memory_organize(
     target: str = "safe_default",
     dry_run: bool = False,
+    confirm: bool = False,
 ) -> str:
     """Run safe memory maintenance batch.
 
@@ -758,6 +760,7 @@ def memory_organize(
     Args:
         target: Which batch to run (default: safe_default).
         dry_run: Preview without changes (default False).
+        confirm: Required when target='full' and dry_run=False (purge is destructive).
     """
     try:
         from mcp_rebuild import memory_compact, memory_backfill_all
@@ -775,11 +778,17 @@ def memory_organize(
                 ("rewrite_links", memory_rewrite_links()),
             ]
         elif target == "full":
+            if not dry_run and not confirm:
+                return _err(
+                    ErrorCode.INVALID_PARAMS,
+                    "target='full' with dry_run=False triggers purge_expired "
+                    "(destructive). Pass confirm=True to proceed.",
+                )
             results = [
                 ("compact", memory_compact(dry_run=dry_run)),
                 ("consolidate", memory_consolidate()),
                 ("rewrite_links", memory_rewrite_links()),
-                ("backfill", memory_backfill_all(backfill_mode="health")),
+                ("backfill", memory_backfill_all(mode="health")),
                 ("purge_expired", memory_purge_expired(dry_run=dry_run)),
                 ("dedup", memory_dedup(action="duplicates", threshold=0.85)),
             ]

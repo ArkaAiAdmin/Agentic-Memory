@@ -75,7 +75,7 @@ Only call it when:
 Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 `~/.config/agentic-memory/memory/` (SQLite + markdown files + vector index).
 
-**Surface: 16 CORE verbs + `memory_maintenance` router (escape hatch)**
+**Surface: 17 CORE verbs + `memory_maintenance` router (escape hatch)**
 
 - CORE tools: visible directly — call them by name.
 - `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.
