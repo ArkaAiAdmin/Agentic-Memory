@@ -258,18 +258,12 @@ def gen_hard_rule_6(data: dict[str, Any]) -> str:
 @_register("mcp_surface_contract")
 def gen_mcp_surface_contract(data: dict[str, Any]) -> str:
     tc = data["tool_counts"]
-    return "\n".join([
-        "**Source of truth for the MCP tool surface: `docs/MCP_SURFACE.md` + `tool_registry.py`**. The MCP",
-        f"server exposes **{tc['core']} CORE tools** directly plus **1 `memory_maintenance` router**; "
-        f"{tc['admin']} ADMIN + {tc['deprecated']} DEPRECATED are hidden behind it",
-        "`memory_maintenance(operation=\"...\")`.",
-        "",
-        "| Tier | Count | Access |",
-        "|------|-------|--------|",
-        f"| CORE verbs | {tc['core']} | Direct MCP tool call |",
-        f"| ADMIN (legacy) | {tc['admin']} | `memory_maintenance(operation=\"...\")` or `memory_advanced(operation=\"...\")` |",
-        f"| DEPRECATED | {tc['deprecated']} | Same as ADMIN (also listed in ADMIN_TOOLS; tracked for audit) |",
-    ])
+    return (
+        f"**Source of truth:** `docs/MCP_SURFACE.md` + `tool_registry.py`. "
+        f"The MCP server exposes **{tc['core']} CORE tools** directly plus **1 `memory_maintenance` router**; "
+        f"{tc['admin']} ADMIN + {tc['deprecated']} DEPRECATED are hidden behind it "
+        f"`memory_maintenance(operation=\"...\")`."
+    )
 
 
 @_register("critical_path")
@@ -278,22 +272,18 @@ def gen_critical_path(data: dict[str, Any]) -> str:
     admin_label = f"{tc['admin']} ADMIN + {tc['deprecated']} DEPRECATED"
     return "\n".join([
         "agentic-memory/",
-        "├── save/ (save/pipeline.py)          ← write path (saga, FTS5, chunks, embeddings, KG, facts, audit, CRDT)",
-        "├── search/ (search/orchestrator.py)  ← read path (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve)",
-        f"├── infra/ (tool_registry.py)         ← {tc['core']} CORE + {admin_label} (single source of truth; tool_registry.py + memory_mcp.py + mcp_maintenance.py)",
-        f"├── hooks/                            ← {data['hook_count']} lifecycle hook implementations + 1 log helper",
+        "├── save/ (save/pipeline.py)               ← write path",
+        "├── search/ (search/orchestrator.py)       ← read path",
+        f"├── infra/ (tool_registry.py)              ← {tc['core']} CORE + {admin_label} (tool registry, migrations, config)",
+        f"├── hooks/                                  ← {data['hook_count']} lifecycle hooks",
         "├── background/",
-        "│   ├── auto_save.py                  ← async inbox+daemon entry point",
-        "│   ├── inbox.py                      ← inbox management + daemon lifecycle",
-        "│   ├── daemon.py                     ← long-lived inbox drainer",
-        "│   ├── background_worker.py           ← CQRS write-journal reconciler daemon",
-        "│   ├── tool_complete.py              ← hook → save_memory pipeline",
-        "│   └── circuit_breaker.py            ← auto-save failure gating",
-        f"├── cron/                             ← {data['cron_job_count']}+ scheduled jobs + install_crontab.sh",
-        f"├── mcp_*.py ({data['mcp_module_count']} modules)             ← domain-split MCP tools",
-        "├── memory/                           ← live store (gitignored)",
-        "├── docs/MCP_SURFACE.md               ← MCP tool reference for agents",
-        f"└── eval/                             ← {data['test_file_count']} test files, {data['test_function_count']}+ test functions",
+        "│   ├── auto_save.py   ← async inbox+daemon",
+        "│   └── background_worker.py ← CQRS write-journal daemon",
+        f"├── cron/             ← {data['cron_job_count']}+ scheduled jobs",
+        f"├── mcp_*.py ({data['mcp_module_count']} modules) ← MCP tool surface",
+        "├── memory/           ← live store (gitignored)",
+        "├── docs/MCP_SURFACE.md",
+        f"└── eval/             ← {data['test_file_count']} test files, {data['test_function_count']}+ test functions",
     ])
 
 
@@ -302,18 +292,14 @@ def gen_current_state(data: dict[str, Any]) -> str:
     tc = data["tool_counts"]
     admin_label = f"{tc['admin']} ADMIN + {tc['deprecated']} DEPRECATED"
     return "\n".join([
-        f"- **Schema v{data['schema_version']}**: {data['migration_count']} migrations (100% down-migration coverage), ~{data['table_count']} tables.",
-        f"- **MCP surface**: {tc['core']} CORE verbs + 1 `memory_maintenance` router ({admin_label}). Agents see {tc['core_visible']} tools. See `docs/MCP_SURFACE.md` for verb reference.",
-        "- **Write path**: Saga transaction (DB + vec_key + .md file) with flock-based cross-process locking, crash-consistent rollback, and dependent-row cleanup. `defer_expensive=True` by default — returns <200ms.",
-        "- **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + cross-encoder + temporal decay + neural forget curve + concept/centrality boost). Phase-level error counters.",
-        "- **KG/Temporal**: Entity extraction with Jaccard fuzzy match, temporal KG with contradiction detection and fact supersession, bi-temporal validity.",
-        "- **Background**: Async inbox+daemon auto-save with circuit breaker, TS plugin coordination, cron-driven maintenance.",
-        f"- **Testing**: {data['test_file_count']} test files, {data['test_function_count']}+ test functions, ~{data['test_loc'] // 1000}k+ test LOC. Subprocess-per-file runner for torch-safe parallelism.",
-        "- **Canonical references**: `docs/architecture.md` (architecture), `docs/MCP_SURFACE.md` (MCP workflow), `docs/reference/mcp-tools.md` (tool catalog), `skills/memory-architecture/SKILL.md` (agent walkthrough).",
-        "",
-        "> Note: For authoritative counts, query `tool_registry.py` and `infra/migration_runner.py` directly.",
-        "",
-        "> Note: Current Status is a point-in-time snapshot. It will drift. For authoritative counts, query the codebase directly.",
+        f"- **Schema v{data['schema_version']}**: {data['migration_count']} migrations (100% down-coverage), ~{data['table_count']} tables.",
+        f"- **MCP surface**: {tc['core']} CORE + 1 router ({admin_label}). See `docs/MCP_SURFACE.md`.",
+        "- **Write path**: Saga transaction (DB + vec_key + .md) with flock locking, crash-consistent rollback. `defer_expensive=True` → <200ms.",
+        "- **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).",
+        "- **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.",
+        "- **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.",
+        f"- **Testing**: {data['test_file_count']} test files, {data['test_function_count']}+ test functions, ~{data['test_loc'] // 1000}k+ test LOC. Subprocess-per-file runner.",
+        "- **Canonical refs**: `docs/architecture.md` · `docs/MCP_SURFACE.md` · `skills/memory-architecture/SKILL.md`.",
     ])
 
 
