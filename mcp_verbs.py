@@ -264,20 +264,43 @@ def memory_review_beliefs(
 
         db_path = _resolve_db_path()
         with open_db(db_path, timeout=10.0) as db:
-            cutoff = time.time() - (older_than_days * 86400)
-            beliefs = get_active_beliefs(
-                db,
-                min_confidence=0,
-                belief_status=belief_status,
-                limit=limit * 2,
-            )
-            # Filter: return beliefs BELOW min_confidence (needs agent attention)
-            # AND older_than_days: last_reviewed_at < cutoff OR never reviewed
-            candidates = [
-                b for b in beliefs
-                if b.get("confidence", 1.0) < min_confidence
-                and (b.get("last_reviewed_at") is None or b["last_reviewed_at"] < cutoff)
-            ]
+            # Try reading from the review queue first; fall back to filtering
+            try:
+                rows = db.execute(
+                    "SELECT q.belief_id, q.fact_id, ba.confidence, ba.epistemic_source, "
+                    "kf.subject, kf.predicate, kf.object "
+                    "FROM belief_review_queue q "
+                    "JOIN belief_assertions ba ON ba.id = q.belief_id "
+                    "LEFT JOIN kg_facts kf ON kf.id = ba.fact_id "
+                    "WHERE q.status = 'pending' LIMIT ?", (limit,)
+                ).fetchall()
+            except Exception:
+                rows = []
+            candidates = []
+            for r in rows:
+                candidates.append({
+                    "id": r[0],
+                    "fact_id": r[1],
+                    "confidence": r[2],
+                    "epistemic_source": r[3],
+                    "subject": r[4],
+                    "predicate": r[5],
+                    "object": r[6],
+                })
+            if not candidates:
+                # Fallback: filter active beliefs directly
+                cutoff = time.time() - (older_than_days * 86400)
+                beliefs = get_active_beliefs(
+                    db,
+                    min_confidence=0,
+                    belief_status=belief_status,
+                    limit=limit * 2,
+                )
+                candidates = [
+                    b for b in beliefs
+                    if b.get("confidence", 1.0) < min_confidence
+                    and (b.get("last_reviewed_at") is None or b["last_reviewed_at"] < cutoff)
+                ]
             if not candidates:
                 return "No beliefs need review at this time."
             lines = [f"Found {len(candidates)} beliefs for review:"]

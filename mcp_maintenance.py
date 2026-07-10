@@ -1288,14 +1288,13 @@ def memory_resolve_contradiction(
     if strategy == "keep_both":
         return json.dumps({"action": "kept_both", "source": source_note_id, "target": target_note_id})
     if strategy == "merge":
-        llm_summary = "(LLM merge not available — set MEMORY_CONTRADICTION_AUTO_RESOLVE_LLM=1 to enable merging)"
-        return json.dumps({
-            "action": "merge_skipped",
-            "reason": "LLM merge not enabled",
-            "source": source_note_id,
-            "target": target_note_id,
-            "llm_summary": llm_summary,
-        })
+        from kg.contradiction_resolver import auto_resolve_contradiction_pair
+        result = auto_resolve_contradiction_pair(
+            _resolve_memory_dir() / "memory.db",
+            source_note_id, target_note_id,
+            conn=conn, force_strategy="merge",
+        )
+        return json.dumps(result)
     return _err(
         ErrorCode.INVALID_PARAMS,
         f"Unknown strategy {strategy!r}. Use auto|merge|supersede_source|supersede_target|keep_both.",

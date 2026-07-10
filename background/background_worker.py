@@ -580,6 +580,12 @@ def _lazy_resolve_contradictions(payload: dict, conn: AnyConnection, db_path: Pa
     return "resolve_contradictions: completed"
 
 
+def _lazy_review_beliefs(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from cron.cron_review_beliefs import main
+    main()
+    return "review_beliefs: completed"
+
+
 HANDLERS.update(
     {
         "entailment_chains": _lazy_entailment_chains,
@@ -589,6 +595,7 @@ HANDLERS.update(
         "graph_snapshots": _lazy_graph_snapshots,
         "revalidate_entailments": _lazy_revalidate_entailments,
         "cron_resolve_contradictions": _lazy_resolve_contradictions,
+        "cron_review_beliefs": _lazy_review_beliefs,
     }
 )
 
@@ -634,6 +641,7 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_promote_drafts": "cron/cron_promote_drafts.py",
     "cron_semantic_clusters": "cron/cron_semantic_clusters.py",
     "cron_skill_decay": "cron/cron_skill_decay.py",
+    "cron_review_beliefs": "cron/cron_review_beliefs.py",
 }
 
 

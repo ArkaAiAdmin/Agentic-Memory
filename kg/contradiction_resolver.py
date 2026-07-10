@@ -28,6 +28,7 @@ def auto_resolve_contradiction_pair(
     note_a: str,
     note_b: str,
     conn: Optional[AnyConnection] = None,
+    force_strategy: str | None = None,
 ) -> dict[str, Any]:
     """Resolve a single contradiction pair and apply the chosen action.
 
@@ -66,7 +67,7 @@ def auto_resolve_contradiction_pair(
     if note_a not in rows or note_b not in rows:
         return {"action": "error", "error": "note(s) not found", "source": note_a, "target": note_b}
 
-    strategy = _pick_strategy(rows[note_a], rows[note_b])
+    strategy = force_strategy if force_strategy else _pick_strategy(rows[note_a], rows[note_b])
     return _apply_resolution(db_path_obj, note_a, note_b, strategy, now_iso, conn=conn)
 
 

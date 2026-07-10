@@ -1,0 +1,1 @@
+DELETE FROM belief_assertions WHERE rationale = 'backfilled_v039';

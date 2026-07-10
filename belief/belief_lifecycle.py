@@ -311,3 +311,45 @@ def handle_evidence_chain_staleness(
         "checked": checked_count,
         "deprecated": deprecation_count,
     }
+
+
+def get_beliefs_due_for_review(
+    conn: AnyConnection, staleness_days: float = 30.0,
+    min_confidence: float = 1.0, limit: int = 50,
+) -> list[dict]:
+    """Return active beliefs that are stale or low-confidence.
+
+    Args:
+        staleness_days: Beliefs not reviewed within this many days are stale.
+        min_confidence: Beliefs with confidence below this threshold need review.
+            Default 1.0 means all confidence levels pass (only staleness filters).
+    """
+    import time as _time
+    cutoff = _time.time() - (staleness_days * 86400)
+    rows = conn.execute(
+        "SELECT ba.id, ba.fact_id, ba.memory_id, ba.belief_status, ba.confidence, "
+        "ba.epistemic_source, ba.certainty_tier, ba.last_reviewed_at, ba.review_count, "
+        "kf.subject, kf.predicate, kf.object "
+        "FROM belief_assertions ba LEFT JOIN kg_facts kf ON kf.id = ba.fact_id "
+        "WHERE ba.belief_status = 'active' AND ba.confidence < ? "
+        "AND (ba.last_reviewed_at IS NULL OR ba.last_reviewed_at < ?) "
+        "ORDER BY ba.confidence ASC, ba.last_reviewed_at ASC LIMIT ?",
+        (min_confidence, cutoff, limit),
+    ).fetchall()
+    return [
+        {
+            "id": r[0],
+            "fact_id": r[1],
+            "memory_id": r[2],
+            "belief_status": r[3],
+            "confidence": r[4],
+            "epistemic_source": r[5],
+            "certainty_tier": r[6],
+            "last_reviewed_at": r[7],
+            "review_count": r[8],
+            "subject": r[9],
+            "predicate": r[10],
+            "object": r[11],
+        }
+        for r in rows
+    ]

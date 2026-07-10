@@ -104,7 +104,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-08: bumped to 36 for embedding model tracking in memory_vec_idx (C4.3).
 # 2026-07-10: bumped to 37 for cron_runs execution tracking table.
 # 2026-07-11: bumped to 38 for inception-fingerprint identity on kg_entities.
-SCHEMA_VERSION = 38
+SCHEMA_VERSION = 40
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the
