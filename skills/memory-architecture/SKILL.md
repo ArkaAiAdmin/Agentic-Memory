@@ -16,15 +16,15 @@ A one-page mental model of the agentic-memory system, sized for someone about to
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │ LAYER 3 — SURFACE                                                     │
-│   102 registered tools (15 CORE + 87 ADMIN + 3 DEPRECATED; 16 visible via memory_maintenance)         │
+│   107 registered tools (17 CORE + 87 ADMIN + 3 DEPRECATED; 18 visible — 17 CORE + 1 memory_maintenance router)  │
 │   4 user-facing hooks in hooks/ + 1 log helper module (_log_error.py) │
-│   25 cron scripts / 26 scheduled jobs (all in `cron/` subdirectory)    │
+│   39 cron scripts (all in `cron/` subdirectory)                        │
 │   ~18 CLI commands                                                      │
 └──────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│ LAYER 2 — PIPELINE (Python, ~71k LOC production, ~75k LOC test)        │
+│ LAYER 2 — PIPELINE (Python, ~104k LOC production, ~98k LOC test)        │
 │                                                                      │
 │   WRITE PATH:                                                        │
 │     save_pipeline.save_memory() (1,623 lines, saga → save/)         │
@@ -46,7 +46,7 @@ A one-page mental model of the agentic-memory system, sized for someone about to
                                    │
                                    ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│ LAYER 1 — STORAGE (SQLite at memory/memory.db, Schema v32)           │
+│ LAYER 1 — STORAGE (SQLite at memory/memory.db, Schema v37)           │
 │                                                                      │
 │   memories / memories_fts / memory_chunks / memory_chunks_fts       │
 │   memory_embeddings (BLOB, dim=256, f16, ssm_state)                  │
@@ -59,7 +59,7 @@ A one-page mental model of the agentic-memory system, sized for someone about to
 │   shared_memories (CRDT cross-agent pool)                            │
 │   sync_log / task_queue / review_schedule / concept_drift            │
 │   drift_alarms (v15) / file_mtimes / schema_version                  │
-│   ~51 tables total (~31 user-visible, 28 domain + 3 FTS virtual)     │
+│   ~49 user-visible tables (including FTS virtual and operational)     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -81,18 +81,18 @@ A one-page mental model of the agentic-memory system, sized for someone about to
 | `sync_client.py` | 656 | HTTP sync client (urllib push/pull) | Cross-machine sync |
 | `memory_sharing.py` | 800 | In-DB shared memory pool | Cross-agent in-DB sharing |
 | `mcp_maintenance_ops.py` | 490 | Per-operation dispatch table (~50 entries) | Adding a new admin op |
-| `db_migrations.py` | 837 | Schema migrations, current v21 | Adding a new migration |
+| `db_migrations.py` | 837 | Schema migrations, current v37 | Adding a new migration |
 | `skill_extractor.py` | 520 | Cached skill extraction (607 rows live) | Skill cache bugs |
 | `adaptive_retention.py` | 496 | Psi-formula half-life + audit_hits cache | Per-note retention scoring |
 | `memory_injection.py` | 353 | 4-category prompt-injection scan | New injection patterns |
 | `quality_gates.py` | 435 | O(N log N) sliding-window near-dup dedup | Quality thresholds |
 | `tier_migration.py` | 471 | Hot/warm/cold tier assignment | Tier-lifecycle bugs |
-| `mcp_tools.py` | 243 | Canonical tool inventory (102 registered tools) | Adding/removing a tool |
+| `mcp_tools.py` | 243 | Canonical tool inventory (107 registered tools) | Adding/removing a tool |
 | `memory_mcp.py` | 268 | FastMCP server, tool registration | Server lifecycle, tool filtering |
 | `embedding_incremental.py` | 268 | Streaming / partial-embedding state (v15) | Embedding recompute bugs |
 | `arc_cache.py` | 339 | Adaptive Replacement Cache w/ ghost lists (v14) | Eviction / ghost list bugs |
 | `reranker.py` | 561 | Qwen3-0.6B primary, BGE-m3 fallback | Reranker scoring issues |
-| `cron/cron_*.py` | varies | 25 jobs (incl. _flock.py support module) | Adding a new cron |
+| `cron/cron_*.py` | varies | 39 jobs (incl. _flock.py support module) | Adding a new cron |
 | `cron/install_crontab.sh` | ~160 | Idempotent block installer for crontab | Crontab wiring changes |
 | `memory_workflow.md` | 256 | System reference | Updating config / troubleshooting |
 | `AGENTS.md` | 129 | Maintainer contract | Adding hard rules |
@@ -103,7 +103,7 @@ A one-page mental model of the agentic-memory system, sized for someone about to
 
 2. **The 6-factor hybrid fusion weights are in `search_pipeline._RERANK_WEIGHTS`.** bm25=0.4, fitness=0.2, importance=0.15, pinned=0.1, recency=0.1, tag_match=0.05. Tunable by CTR feedback if `MEMORY_CTR_TUNING=1`. **Don't tune these without a benchmark.**
 
-3. **Schema changes go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **v21** (v13 `memory_field_crdt`, v14 `arc_ghosts`/`arc_stats`, v15 `drift_alarms` + `memory_embeddings.ssm_state`, v16 `concept_drift`, v17 `kg_cascade`, v18 `fact_temporal`, v19 kg_facts entity FKs, v20 kg_facts FTS5, v21 `kg_crdt`). **Never edit the live DB schema by hand.**
+3. **Schema changes go in `migrations/NNN_name.sql` + `NNN_name.down.sql`.** Bump `SCHEMA_VERSION` in `migration_runner.py`. Current: **v37** (v13 `memory_field_crdt`, v14 `arc_ghosts`/`arc_stats`, v15 `drift_alarms` + `memory_embeddings.ssm_state`, v16 `concept_drift`, v17 `kg_cascade`, v18 `fact_temporal`, v19 kg_facts entity FKs, v20 kg_facts FTS5, v21 `kg_crdt`, v22 session memory, v23 audit_status, v24 chunk embeddings, v25 belief_plumbing, v26 belief_assertions, v27 revision_log, v28 entailment_chains, v29 graph_snapshots, v30 community_id/betweenness, v31 outbox_events, v32 scoped_outbox, v33 shared_skills, v34 entailment_validation, v35 shared_memories_target_agent_id, v36 embedding_model_tracking, v37 `cron_runs`). **Never edit the live DB schema by hand.**
 
 4. **All writes go through `save_pipeline.save_memory(note_id=..., context=..., ...)`.** `save_memory` is the single normalization site: it derives `category`/`title_slug` from `note_id`, strips frontmatter, resolves tags via `_resolve_tags(context, ...)`, and validates content length. Callers pass raw inputs; `save_memory` does the rest. Don't re-implement any of these steps in a caller — the H1 divergence bug (2026-06-26) showed what happens when two callers each maintain their own copy.
 
@@ -132,23 +132,23 @@ For deeper exploration, the `explore` subagent is best.
 - `valid_to IS NULL` means "current." The temporal filter in `search_pipeline` relies on it.
 - `kg_facts.subject/predicate/object` form the KG. Changing column shape breaks every KG query.
 - `memory_vec_keys.memory_id` must be a 1:1 mapping to `memories.id` for the rebuild to work.
-- The 15 CORE tool names are user-facing. Renaming breaks user expectations.
+- The 17 CORE tool names are user-facing. Renaming breaks user expectations.
 
-## State of the system (2026-06-25 snapshot)
+## State of the system (2026-07-10 snapshot)
 
 Re-run before relying on these:
-- 3,870 active memories in 27 user-visible tables
-- 3,498 tests collected (183 test files); 2,711 pass, 0 fail, 10 skip at last run
-- All 17 features ON by default (`memory.toml`)
-- 25 cron scripts / 26 scheduled jobs (all in `cron/` subdirectory, incl. `_flock.py` support module)
+- 3,870+ active memories in 49 user-visible tables
+- 4,431 tests collected (271 test files) at last run; 0 failures
+- All features ON by default (`memory.toml`)
+- 39 cron scripts (all in `cron/` subdirectory, incl. `_flock.py` support module)
 - 4 user-facing hooks in hooks/ + 1 log helper module (`_log_error.py`)
-- 102 registered tools: 15 CORE + 87 ADMIN + 3 DEPRECATED (routed through `memory_maintenance`)
-- 26 `mcp_*.py` modules + 2 sync modules (`sync_server.py`, `sync_client.py`)
-- 71,357 LOC production (all subdirs), 75,299 LOC in tests
-- Schema v32, 32 migrations, ~62 tables
-- `memory_skills` 607 rows, `drift_alarms` 10 rows, `concept_drift` 1 row
-- `task_queue` drained 12,026 → ~297 pending
+- 107 registered tools: 17 CORE + 87 ADMIN + 3 DEPRECATED (routed through `memory_maintenance`)
+- 30 `mcp_*.py` modules + 2 sync modules (`sync_server.py`, `sync_client.py`)
+- 103,811 LOC production (all subdirs), 98,414 LOC in tests
+- Schema v37, 38 migrations, ~49 tables
+- `memory_skills` 607+ rows, `drift_alarms` 10+ rows, `concept_drift` 1+ row
+- `task_queue` drained 12,000+ → ~300 pending
 - Rule reliability: `memory-session-end.py` (Rule #7), `cron_health_check.py` (Rules #5, #9-11), `memory_compliance_check` MCP tool
 
 If you change something substantial, update this skill and `memory_workflow.md` in the same commit.
-— last reviewed 2026-06-25
+— last reviewed 2026-07-10

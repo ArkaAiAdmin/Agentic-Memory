@@ -549,3 +549,4 @@ CREATE TABLE schema_version (
 | 34 | `034_entailment_validation.sql` | Entailment validation tables and triggers. |
 | 35 | `035_shared_memories_target_agent_id.sql` | shared_memories.target_agent_id + shared_with columns for directed sharing and the shared_with_me filter. |
 | 36 | `036_embedding_model_tracking.sql` | embedding model tracking in memory_vec_idx for model-version-aware vector index management. |
+| 37 | `037_cron_runs.sql` | cron_runs table for consolidated cron execution tracking. Records job_name, started_at, completed_at, status, duration_ms, error, output for every cron run. Used by memory_system_health MCP tool. |

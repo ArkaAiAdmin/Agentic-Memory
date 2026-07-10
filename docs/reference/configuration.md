@@ -34,6 +34,14 @@ Agentic Memory is configured via environment variables or `memory.toml`.
 | `MEMORY_TEMPORAL_TIERS` | `true` | Hot/warm/cold tier system |
 | `MEMORY_CONTEXTUAL_RETRIEVAL` | `true` | Prepend context to embeddings |
 | `MEMORY_TOML_HOT_RELOAD` | `0` (off) | Opt-in live-reload of the drift policy + `[drift_tiers]` when `memory.toml` changes (no restart). OFF by default — auto-reloading enforcement policy in production is surprising. See [TOML Hot-Reload](#toml-hot-reload). |
+| `MEMORY_WRITE_JOURNAL_ENABLED` | `false` | CQRS write journal (lock-free multi-writer) for async background worker reconciliation |
+| `MEMORY_TEMPORAL_KG` | `true` | Fact-level temporal KG: event_time extraction, contradiction detection, supersession, edit invalidation |
+| `MEMORY_BELIEF_LAYER` | `true` | Fact/belief separation: creates belief_assertions for every kg_facts row |
+| `MEMORY_SELF_EDITING` | `true` | Self-editing tool surface: patch, supersede, revert_supersede actions |
+| `MEMORY_KNOWLEDGE_COMPILATION` | `true` | Background compilation tasks: concepts corpus, entailment chains, skill enrichment |
+| `MEMORY_GRAPH_CENTRALITY_BOOST` | `true` | Centrality-boosted search scoring |
+| `MEMORY_GRAPH_COMMUNITIES` | `true` | Community detection (connected components + Louvain) |
+| `MEMORY_GRAPH_EVOLUTION_TRACKING` | `true` | Graph snapshot and evolution diff tracking |
 
 ### Search
 
@@ -49,7 +57,7 @@ Agentic Memory is configured via environment variables or `memory.toml`.
 | `MEMORY_RERANKER_DISABLED` | `false` | Disable reranker (Qwen3-0.6B) |
 | `MEMORY_FORGETTING_CURVE` | `true` | Enable Ebbinghaus decay |
 | `MEMORY_FORGETTING_CURVE_HALF_LIFE` | `30.0` | Forgetting curve half-life in days |
-| `MEMORY_VEC_REBUILD_THRESHOLD` | `5` | Max vec/emb drift before auto-rebuild |
+| `MEMORY_VEC_REBUILD_THRESHOLD` | `15` | Max vec/emb drift before auto-rebuild |
 
 ### Cache
 
@@ -67,7 +75,7 @@ Agentic Memory is configured via environment variables or `memory.toml`.
 | `MEMORY_SYNC_LISTEN_PORT` | `9877` | Sync server port |
 | `MEMORY_SYNC_INTERVAL_MINUTES` | `5` | Sync cycle interval |
 | `MEMORY_SHARED_POOL_TTL_DAYS` | `30` | Shared memory pool TTL |
-| `MEMORY_LLM_EXTRACTION_MODEL_ID` | `Qwen/Qwen2.5-1.5B-Instruct` | Model for LLM extraction |
+| `MEMORY_LLM_EXTRACTION_MODEL_ID` | `Qwen/Qwen2.5-3B-Instruct` | Model for LLM extraction |
 
 ### Safety
 
@@ -125,7 +133,10 @@ Located at `~/.config/agentic-memory/memory.toml`:
 [general]
 db_path = "memory/memory.db"          # MEMORY_DB_PATH
 wal_checkpoint_startup = true          # MEMORY_WAL_CHECKPOINT_STARTUP
+wal_checkpoint_interval_s = 300        # MEMORY_WAL_CHECKPOINT_INTERVAL_S
+mmap_size = 268435456                  # MEMORY_SQLITE_MMAP_SIZE
 unindexed_safety_net_limit = 1000     # MEMORY_UNINDEXED_SAFETY_NET_LIMIT
+db_pool_size = 24                      # MEMORY_DB_POOL_SIZE
 agent_id = ""                          # MEMORY_AGENT_ID
 
 [search]
@@ -141,7 +152,7 @@ contextual_retrieval = true
 contextual_enrichment = true
 forgetting_curve = true
 forgetting_curve_half_life = 30
-vec_rebuild_threshold = 5
+vec_rebuild_threshold = 15
 
 [features]
 multi_agent = true
@@ -155,16 +166,32 @@ saga_enabled = true
 temporal_tiers = true
 crdt_enabled = true
 llm_extraction = true
+write_journal = true
+feature_temporal_kg = true
+feature_belief_layer = true
+self_editing = true
+knowledge_compilation = true
+graph_centrality_boost = true
+graph_communities = true
+graph_evolution_tracking = true
 
 [cache]
 fts5_cache = true
 fts5_cache_ttl = 30
 
+[quality_gates]
+min_content_length = 20
+
 [multi_agent]
 shared_pool_ttl_days = 30
 
+[user_profile]
+window_days = 90
+max_size = 50
+
 [llm_extraction]
-model_id = "Qwen/Qwen2.5-1.5B-Instruct"
+model_id = "Qwen/Qwen2.5-3B-Instruct"
+max_tokens = 256
 
 [sync]
 enable_server = false
