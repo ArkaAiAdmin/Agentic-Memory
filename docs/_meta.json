@@ -1,0 +1,18 @@
+{
+  "schema_version": 37,
+  "num_migrations": 38,
+  "num_core_tools": 17,
+  "num_admin_tools": 87,
+  "num_deprecated_tools": 3,
+  "num_total_tools": 107,
+  "num_tests": 4431,
+  "num_test_files": 271,
+  "loc_production": 103658,
+  "loc_test": 98414,
+  "loc_total": 202072,
+  "num_cron_scripts": 39,
+  "num_tables_visible": 49,
+  "num_hooks": 8,
+  "num_agents_ported": 6,
+  "last_verified": "2026-07-10"
+}
