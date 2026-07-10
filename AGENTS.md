@@ -157,6 +157,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 - **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.
 - **Testing**: 271 test files, 4346+ test functions, ~87k+ test LOC. Subprocess-per-file runner.
+- **Paper**: *Conflict-Free Knowledge Graph Projection* — preprint under review (arXiv pending; Zenodo DOI: pending — add after arXiv ID is confirmed).
 - **Canonical refs**: `docs/architecture.md` · `docs/MCP_SURFACE.md` · `skills/memory-architecture/SKILL.md`.
 <!--AUTO-GEN:END key="current_state"-->
 

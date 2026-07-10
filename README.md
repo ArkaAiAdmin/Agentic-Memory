@@ -8,6 +8,7 @@
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
 [![Temporal KG](https://img.shields.io/badge/Temporal-KG-brightgreen)](docs/concepts/temporal-kg.md)
 [![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
+[![Paper](https://img.shields.io/badge/paper-KG_Projection-blue)](paper_pipeline/)
 
 [Quick Start](#quick-start) · [Features](#features) · [Architecture](#architecture) · [MCP Server](#mcp-server) · [SDKs](#sdks) · [Comparison](#comparison) · [Docs](docs/index.md) · [Contributing](CONTRIBUTING.md)
 
