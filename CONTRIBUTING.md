@@ -69,3 +69,14 @@ When filing an issue, please include:
 
 By contributing you agree your contributions will be licensed under the
 project's Apache 2.0 license.
+
+## Documentation checklist (every PR)
+
+When your PR changes any of the following, you MUST update docs:
+
+- [ ] Schema version changed → update `docs/_meta.json`, run `venv/bin/python scripts/verify_doc_meta.py`
+- [ ] Tool count (CORE/ADMIN) changed → update `docs/_meta.json`, run the verify script
+- [ ] New config key → reflected in `docs/reference/configuration.md` (run `scripts/gen_config_doc.py`)
+- [ ] New feature → add a how-to guide and/or concept doc
+- [ ] Changed behavior → update existing docs that reference it
+- [ ] Run `pre-commit run --all-files` (includes doc-freshness hooks)

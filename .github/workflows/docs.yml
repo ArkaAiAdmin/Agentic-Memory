@@ -1,0 +1,38 @@
+name: Docs Freshness
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  docs-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          ./venv/bin/python -m pip install --upgrade pip
+          ./venv/bin/python -m pip install -r requirements.txt
+          ./venv/bin/python -m pip install mkdocs mkdocs-material
+
+      - name: Verify docs/_meta.json against live code
+        run: ./venv/bin/python scripts/verify_doc_meta.py
+
+      - name: Verify generated reference docs are current
+        run: |
+          ./venv/bin/python scripts/gen_mcp_tools_doc.py --check
+          ./venv/bin/python scripts/gen_schema_doc.py --check
+          ./venv/bin/python scripts/gen_config_doc.py --check
+
+      - name: Build docs (strict — fails on broken internal links)
+        run: ./venv/bin/python -m mkdocs build --strict

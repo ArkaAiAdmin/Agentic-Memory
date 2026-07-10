@@ -68,3 +68,18 @@ repos:
         types: [python, sql]
         pass_filenames: false
         always_run: true
+      - id: doc-meta-fresh
+        name: doc-meta-fresh
+        description: Verify docs/_meta.json matches live code (schema version, tool/migration/cron/test counts, LOC)
+        entry: python scripts/verify_doc_meta.py
+        language: system
+        files: ^docs/.*\.md$
+        pass_filenames: false
+        always_run: true
+      - id: doc-refs-current
+        name: doc-refs-current
+        description: Verify generated reference docs (mcp-tools, schema, configuration) match live code
+        entry: python scripts/gen_mcp_tools_doc.py --check && python scripts/gen_schema_doc.py --check && python scripts/gen_config_doc.py --check
+        language: system
+        pass_filenames: false
+        always_run: true

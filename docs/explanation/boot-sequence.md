@@ -307,7 +307,7 @@ For **developers**: adding a new lifecycle hook means editing both the TypeScrip
 
 ## Related
 
-- [Hook Wiring](../AGENTS.md#hook-wiring) — How OpenCode lifecycle events connect to Python scripts
+- [Hook Wiring](https://github.com/ArkaAiAdmin/agentic-memory-local/blob/main/AGENTS.md#hook-wiring) — How OpenCode lifecycle events connect to Python scripts
 - [Design Decisions](design-decisions.md) — Why the system is built this way
 - [MCP Tools Reference](../reference/mcp-tools.md) — All available MCP tools
 - [Architecture](../architecture/overview.md) — Full system design

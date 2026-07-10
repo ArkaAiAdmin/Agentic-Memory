@@ -66,7 +66,8 @@ test-file: ## Run a single test file: make test-file FILE=eval/test_foo.py
 test-results: ## Show last full-suite results
 	@cat eval/results/full_suite_results.txt 2>/dev/null || echo "No results yet — run 'make test'"
 
-update-agents-md: ## Regenerate AUTO-GEN sections in AGENTS.md from live codebase
+update-agents-md: ## Regenerate AUTO-GEN sections in AGENTS.md + docs/_meta.json from live codebase
+	$(PYTHON) scripts/gen_doc_meta.py
 	$(PYTHON) infra/agents_md_generator.py
 
 test-clean: ## Clear pytest cache + temp junit XML
