@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import statistics
 import sys
 import time
@@ -61,14 +60,19 @@ def _populate_db(db_path: str, corpus: list[dict]):
 
 
 def _measure_search(db_path: str, query: str, mode: str) -> float:
+    from pathlib import Path as _Path
+
     from search.orchestrator import search_memories
+    # `mode` is "fts" (BM25-only) or "hybrid" (BM25 + vector fusion).
+    # search_memories exposes this via the `hybrid` boolean flag.
     t0 = time.time()
     search_memories(
-        db_path=db_path,
+        db_path=_Path(db_path),
         query=query,
         limit=10,
         include_global=False,
-        search_mode=mode,
+        safety_wiring=False,
+        hybrid=(mode == "hybrid"),
     )
     return (time.time() - t0) * 1000.0
 
