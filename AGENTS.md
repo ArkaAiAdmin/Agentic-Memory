@@ -93,6 +93,28 @@ agentic-memory/
 
 ---
 
+## Sub-Agents
+
+Six specialized sub-agents are wired in `.opencode/agents/`. Dispatch via the `Task` tool. The orchestrator should delegate whenever the task is scoped to a single domain and reading all the files inline would exceed ~10 file contexts.
+
+| Agent | Trigger | Dispatch |
+|---|---|---|
+| `drift-investigator` | Config/vec/doc/KG drift, integrity failures, escape-hatch triage | `task(subagent_type="drift-investigator", description="Drift diagnosis", prompt=...)` |
+| `kg-engineer` | KG entity/fact extraction, contradiction, temporal KG, graph analytics, dedup | `task(subagent_type="kg-engineer", ...)` |
+| `migration-builder` | New migrations, schema checksum repair, migration test gaps | `task(subagent_type="migration-builder", ...)` |
+| `search-optimizer` | Hybrid search tuning, reranker config, quality stats, phase errors, FTS5 issues | `task(subagent_type="search-optimizer", ...)` |
+| `security-auditor` | OWASP audit, injection scan, permission review, drift enforcement, config integrity | `task(subagent_type="security-auditor", ...)` |
+| `test-writer` | New tests for eval/, test pattern gaps, flaky test triage, safety wiring | `task(subagent_type="test-writer", ...)` |
+
+Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not call their Python hooks directly unless debugging.
+
+**Sub-agent rules:**
+- Fix pre-existing bugs encountered during their work (one-liners inline, >10 lines / 2 files → escalate in return report)
+- Return a structured report: what changed, what was tested, what the next step is
+- Orchestrator integrates reports — it does not hold all file contexts
+
+---
+
 ### Pointers
 
 <!--AUTO-GEN:START key="mcp_surface_contract"-->
