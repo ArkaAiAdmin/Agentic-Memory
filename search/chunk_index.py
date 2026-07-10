@@ -305,9 +305,8 @@ def _qw5_ensure_schema(db) -> None:
         if not exists:
             db.executescript(_QW5_CHUNKS_SCHEMA_SQL)
             db.executescript(_QW5_CHUNKS_TRIGGERS_SQL)
-    except Exception:
-        logger.warning("Failed to create memory_chunks schema")
-        pass
+    except Exception as e:
+        logger.warning("Failed to create memory_chunks schema: %s", e)
 
 
 def _qw5_index_chunks_for(db, parent_id: str, content: str) -> int:

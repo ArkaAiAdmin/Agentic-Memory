@@ -1426,7 +1426,7 @@ def get_config() -> MemoryConfig:
     except SystemExit:
         raise  # propagate EX_CONFIG
     except Exception:
-        logger.debug("startup enforcement skipped: non-critical error")
+        logger.warning("startup enforcement skipped: non-critical error")
 
     return cfg
 

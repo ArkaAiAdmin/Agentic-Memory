@@ -244,7 +244,6 @@ def _recalculate_fitness_scores(
                 db.close()
             except Exception:
                 logger.warning("Failed to safely close DB after fitness recalculation")
-                pass
 
 
 def _hook_invalidate_search_cache(note_id):

@@ -149,8 +149,12 @@ class TestPatchFile(TestCase):
         merged without running the patcher, this test catches it.
         """
         cron_dir = REPO / "cron"
+        # Utility modules called by the scheduler — not standalone cron scripts
+        EXCLUDED = {"cron_runs.py", "enqueue_task.py", "monitor_task_queue.py", "scheduler.py", "jobs.py", "_flock.py"}
         missing = []
         for cron_file in sorted(cron_dir.glob("cron_*.py")):
+            if cron_file.name in EXCLUDED:
+                continue
             text = cron_file.read_text(encoding="utf-8")
             if "acquire_lock_or_exit" not in text:
                 missing.append(str(cron_file.relative_to(REPO)))

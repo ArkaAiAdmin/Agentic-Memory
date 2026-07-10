@@ -437,21 +437,41 @@ HANDLERS = {
 
 
 def _lazy_entailment_chains(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from config import get_config
+
+    _cfg = get_config()
+    if not getattr(_cfg, 'knowledge_compilation', True):
+        return "entailment_chains: disabled (MEMORY_KNOWLEDGE_COMPILATION=0)"
     from reasoning.compile import handle_entailment_chains
     return handle_entailment_chains(payload, conn, db_path)
 
 
 def _lazy_concept_compilation(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from config import get_config
+
+    _cfg = get_config()
+    if not getattr(_cfg, 'knowledge_compilation', True):
+        return "concept_compilation: disabled (MEMORY_KNOWLEDGE_COMPILATION=0)"
     from reasoning.compile import handle_concept_compilation
     return handle_concept_compilation(payload, conn, db_path)
 
 
 def _lazy_skill_enrichment(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from config import get_config
+
+    _cfg = get_config()
+    if not getattr(_cfg, 'knowledge_compilation', True):
+        return "skill_enrichment: disabled (MEMORY_KNOWLEDGE_COMPILATION=0)"
     from reasoning.compile import handle_skill_enrichment
     return handle_skill_enrichment(payload, conn, db_path)
 
 
 def _lazy_graph_communities(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from config import get_config
+
+    _cfg = get_config()
+    if not getattr(_cfg, 'graph_communities', True):
+        return "graph_communities: disabled (MEMORY_GRAPH_COMMUNITIES=0)"
     from kg.graph_communities import compute_communities, write_community_ids
 
     algorithm = payload.get("algorithm", "louvain")
@@ -541,6 +561,12 @@ def _lazy_revalidate_entailments(
     )
 
 
+def _lazy_resolve_contradictions(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from cron.cron_resolve_contradictions import main
+    main()
+    return "resolve_contradictions: completed"
+
+
 HANDLERS.update(
     {
         "entailment_chains": _lazy_entailment_chains,
@@ -549,6 +575,7 @@ HANDLERS.update(
         "graph_communities": _lazy_graph_communities,
         "graph_snapshots": _lazy_graph_snapshots,
         "revalidate_entailments": _lazy_revalidate_entailments,
+        "cron_resolve_contradictions": _lazy_resolve_contradictions,
     }
 )
 

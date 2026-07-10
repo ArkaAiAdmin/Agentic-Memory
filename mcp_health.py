@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import shutil
 import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from infra.infrastructure import with_audit
+from mcp_instance import mcp
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +264,8 @@ def _check_disk() -> dict[str, Any]:
         return {"status": "yellow", "details": f"disk check failed: {e}", "action": None}
 
 
+@with_audit("memory_system_health")
+@mcp.tool()
 def memory_system_health(conn=None) -> str:  # noqa: ARG001
     """Comprehensive system health: green/yellow/red with actionable next steps.
 

@@ -262,8 +262,8 @@ def _enrich_candidates_with_llm(
                             confidence=max(0.0, min(1.0, conf)),
                             thread_slug=slug,
                             alternatives=alts,
+                        )
                     )
-                )
     except Exception as exc:
         logger.warning("decision_extraction: failed to persist candidate: %s", exc)
 

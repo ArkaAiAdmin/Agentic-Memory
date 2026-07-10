@@ -543,6 +543,15 @@ def memory_note(
         deletions: Text segments to remove by content match (for patch action).
     """
     try:
+        if action in ("patch", "supersede", "revert_supersede"):
+            from config import get_config
+
+            if not getattr(get_config(), 'self_editing', True):
+                return _err(
+                    ErrorCode.INVALID_PARAMS,
+                    f"Self-editing disabled (MEMORY_SELF_EDITING=0). "
+                    f"Action '{action}' requires self_editing=True.",
+                )
         if action == "read":
             from search.orchestrator import search_memories
 

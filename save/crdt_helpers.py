@@ -54,7 +54,6 @@ def _crdt_agent_id() -> str:
                 return str(cfg.agent_id)
         except Exception:
             logger.warning("Failed to fetch agent_id from config")
-            pass
     try:
         return socket.gethostname()
     except Exception as e:
@@ -76,7 +75,6 @@ def _is_crdt_enabled() -> bool:
             return bool(cfg.crdt_enabled)
         except Exception:
             logger.warning("Failed to fetch crdt_enabled from config")
-            pass
     return True
 
 
@@ -92,7 +90,6 @@ def _is_legacy_note_crdt_enabled() -> bool:
             return bool(cfg.legacy_note_crdt)
         except Exception:
             logger.warning("Failed to fetch legacy_note_crdt from config")
-            pass
     return False
 
 

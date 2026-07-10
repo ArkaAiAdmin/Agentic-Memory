@@ -34,7 +34,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, cast
 
-import numpy as np
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    np = None  # type: ignore[assignment]
+    HAS_NUMPY = False
 
 logger = logging.getLogger(__name__)
 
@@ -426,6 +431,8 @@ def _compute_final_score(ctx) -> float:
 
 
 def _apply_exploration(cached_stats) -> Optional[dict]:
+    if not HAS_NUMPY:
+        return cast(dict, cached_stats[2]) if cached_stats else None
     if cached_stats is None:
         return None
     alphas, betas, expected = cached_stats
@@ -798,7 +805,15 @@ class TemporalAttentionModel:
     """
 
     def __init__(self, weights=None):
+        from config import get_config
+
+        if not getattr(get_config(), 'temporal_ssm_enabled', False):
+            raise RuntimeError(
+                "TemporalAttentionModel disabled (MEMORY_TEMPORAL_SSM_ENABLED=0)"
+            )
         self.has_learned_weights = False
+        if not HAS_NUMPY:
+            return
         self.W_readout = np.zeros(_W_HIDDEN, dtype=np.float64)
         self.W_input = np.zeros((_W_HIDDEN, _W_INPUT_DIM), dtype=np.float64)
         self.b_readout = 0.0
@@ -826,6 +841,8 @@ class TemporalAttentionModel:
         dismissed: bool = False,
         hours_since_access: float = 0.0,
     ) -> None:
+        if not HAS_NUMPY:
+            return
         h = np.zeros(_W_HIDDEN, dtype=np.float64)
         if self.has_learned_weights:
             q = np.asarray(query_emb, dtype=np.float64).flatten()
@@ -841,7 +858,7 @@ class TemporalAttentionModel:
         self._last_access_ts[note_id] = time.time()
 
     def score(self, note_id: str) -> float:
-        if not self.has_learned_weights or note_id not in self._hidden:
+        if not HAS_NUMPY or not self.has_learned_weights or note_id not in self._hidden:
             return 0.5
         h = self._hidden[note_id]
         raw = float(np.dot(self.W_readout, h)) + self.b_readout

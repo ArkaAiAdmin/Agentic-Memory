@@ -165,6 +165,14 @@ JOBS: dict[str, dict] = {
         "args": ["--severity-floor", "stability", "--reload-policy", "--apply-tier-patches", "--alert-stdout"],
         "timeout": 120,
     },
+    "resolve_contradictions": {
+        "freq": "1d",
+        "offset_min": 300,
+        "script": "cron/enqueue_task.py",
+        "args": ["--task-type", "cron_resolve_contradictions"],
+        "env": {"MEMORY_TEMPORAL_KG": "1"},
+        "timeout": 300,
+    },
     "auto_share": {
         "freq": "1d",
         "offset_min": 540,
@@ -242,6 +250,13 @@ JOBS: dict[str, dict] = {
         "offset_min": 360,
         "script": "cron/enqueue_task.py",
         "args": ["--task-type", "cron_concept_drift"],
+        "timeout": 300,
+    },
+    "train_forget_model": {
+        "freq": "1w",
+        "dow": 0,
+        "offset_min": 330,
+        "script": "cron/cron_train_forget_model.py",
         "timeout": 300,
     },
     "semantic_clusters": {
@@ -327,6 +342,13 @@ JOBS: dict[str, dict] = {
         "offset_min": 153,
         "script": "cron/enqueue_task.py",
         "args": ["--task-type", "cron_rebuild_fts"],
+        "timeout": 300,
+    },
+    "revalidate_entailments": {
+        "freq": "1d",
+        "offset_min": 360,
+        "script": "cron/enqueue_task.py",
+        "args": ["--task-type", "cron_revalidate_entailments"],
         "timeout": 300,
     },
 }

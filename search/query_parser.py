@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sqlite3
 from pathlib import Path
 
 from infra.infrastructure import _normalize_unicode
@@ -305,7 +306,7 @@ def _top_recent_tags(db_path, limit: int = 5, tenant_id: str = "default") -> lis
             return [{"tag": r[0], "latest_observed_at": r[1]} for r in rows]
         finally:
             safe_close_db(conn)
-    except Exception:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
         logger.warning("Failed to query recent tags for suggestions")
         return []
 
@@ -324,7 +325,7 @@ def _top_recent_notes(db_path, limit: int = 5, tenant_id: str = "default") -> li
             return [{"id": r[0], "preview": r[1], "observed_at": r[2]} for r in rows]
         finally:
             safe_close_db(conn)
-    except Exception:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
         logger.warning("Failed to query recent notes for suggestions")
         return []
 
@@ -346,7 +347,7 @@ def _top_recent_source_files(db_path, limit: int = 5, tenant_id: str = "default"
             ]
         finally:
             safe_close_db(conn)
-    except Exception:
+    except (sqlite3.OperationalError, sqlite3.DatabaseError):
         logger.warning("Failed to query recent source files for suggestions")
         return []
 

@@ -41,26 +41,16 @@ def _run_subprocess(code: str, env: dict) -> subprocess.CompletedProcess:
 class TestCrontabWiresTierPatching(unittest.TestCase):
     def test_crontab_contains_tier_patch_flags(self):
         code = textwrap.dedent(f"""
-            from pathlib import Path
-            p = Path({repr(os.path.join(REPO_ROOT, "cron", "install_crontab.sh"))})
-            text = p.read_text()
-            assert "--apply-tier-patches" in text, (
-                "crontab is missing --apply-tier-patches on the "
-                "cron_check_config_drift.py line"
+            import sys
+            sys.path.insert(0, {repr(os.path.join(REPO_ROOT))})
+            from cron.jobs import JOBS
+            drift_job = JOBS.get("config_drift", {{}})
+            args = drift_job.get("args", [])
+            assert "--apply-tier-patches" in args, (
+                f"config_drift job missing --apply-tier-patches: {{args}}"
             )
-            assert "--reload-policy" in text, (
-                "crontab is missing --reload-policy on the "
-                "cron_check_config_drift.py line"
-            )
-            # Both flags must be on the SAME line that invokes the drift cron.
-            drift_lines = [
-                ln for ln in text.splitlines()
-                if "cron_check_config_drift.py" in ln
-            ]
-            assert drift_lines, "no cron_check_config_drift.py line found"
-            line = drift_lines[0]
-            assert "--apply-tier-patches" in line and "--reload-policy" in line, (
-                f"tier-patch flags not on the drift-cron line: {{line!r}}"
+            assert "--reload-policy" in args, (
+                f"config_drift job missing --reload-policy: {{args}}"
             )
             print("PASS")
         """)
@@ -76,21 +66,15 @@ class TestCrontabWiresTierPatching(unittest.TestCase):
 class TestCrontabWiresFleetJob(unittest.TestCase):
     def test_crontab_invokes_fleet_policy_hash_status(self):
         code = textwrap.dedent(f"""
-            from pathlib import Path
-            p = Path({repr(os.path.join(REPO_ROOT, "cron", "install_crontab.sh"))})
-            text = p.read_text()
-            assert "cron_policy_hash_status.py" in text, (
-                "crontab does not invoke cron_policy_hash_status.py"
+            import sys
+            sys.path.insert(0, {repr(os.path.join(REPO_ROOT))})
+            from cron.jobs import JOBS
+            assert "policy_hash_status" in JOBS, (
+                f"policy_hash_status not in JOBS: {{list(JOBS.keys())}}"
             )
-            # Must be a real cron schedule line, not just a comment.
-            sched_lines = [
-                ln.strip() for ln in text.splitlines()
-                if "cron_policy_hash_status.py" in ln and not ln.strip().startswith("#")
-            ]
-            assert sched_lines, "no scheduled line for cron_policy_hash_status.py"
-            # Hourly boundary (the 2nd field is '*'): 0  *  *  *  *
-            assert sched_lines[0].split()[1] == "*", (
-                f"fleet job should be hourly, got: {{sched_lines[0]!r}}"
+            job = JOBS["policy_hash_status"]
+            assert job.get("freq") == "1h", (
+                f"policy_hash_status should be hourly, got: {{job.get('freq')}}"
             )
             print("PASS")
         """)

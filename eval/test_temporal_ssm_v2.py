@@ -1,6 +1,8 @@
 import time
 import unittest
 import numpy as np
+import os
+os.environ["MEMORY_TEMPORAL_SSM_ENABLED"] = "1"
 from search.scoring import TemporalAttentionModel
 
 class TestTemporalAttentionModel(unittest.TestCase):

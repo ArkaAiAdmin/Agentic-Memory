@@ -340,6 +340,10 @@ def memory_graph_evolution(since: str = "24h", limit: int = 5) -> str:
             "7d"). Falls back to comparing the two most recent snapshots.
         limit: Maximum number of diffs / top items to show.
     """
+    from config import get_config
+
+    if not getattr(get_config(), 'graph_evolution_tracking', True):
+        return "Graph evolution tracking disabled. Set MEMORY_GRAPH_EVOLUTION_TRACKING=1 to enable."
     from knowledge_graph import KG_ENABLED
 
     if not KG_ENABLED:

@@ -467,26 +467,6 @@ class SharedMemoryState:
             # this as alive.
             return True
         return True
-        if not state["is_daemon_alive"]:
-            return False
-        pid_val = state["daemon_pid"]
-        if not isinstance(pid_val, (int, float)):
-            return False
-        pid = int(pid_val)
-        if pid <= 0:
-            return False
-        # Check if the PID is running. We don't import psutil — just
-        # use os.kill(pid, 0) which sends signal 0 (a no-op that
-        # errors with ESRCH if the process doesn't exist).
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            # Process exists but is owned by another user — count
-            # this as alive.
-            return True
-        return True
 
 
 # ---------------------------------------------------------------------------

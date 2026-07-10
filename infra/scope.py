@@ -58,9 +58,6 @@ def resolve_scope() -> Scope:
     except Exception as e:
         logger.debug("scope: failed to read TOML scope: %s", e)
 
-    # Heuristic: in-process test harness
-    if "pytest" in sys.modules:
-        return Scope.TEST
     # Heuristic: a configured DB path inside INSTALL_ROOT → production-ish
     try:
         from infra.config import resolve_db_path

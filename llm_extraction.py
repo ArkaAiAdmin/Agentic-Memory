@@ -664,17 +664,16 @@ _extractor: Optional[LLMExtractor] = None
 _extractor_lock = threading.Lock()
 
 # Hook subprocess names that must never load the LLM
-_HOOK_SCRIPTS = frozenset(
-    {
-        "auto_save.py",
-        "memory-proactive-context.py",
-        "memory-search-on-demand.py",
-        "memory-session-start.py",
-        "memory-session-end.py",
-        "memory-idle-checkpoint.py",
-        "memory-pre-compaction.py",
-    }
-)
+_HOOK_SCRIPTS = frozenset({
+    "auto_save.py",
+    "memory-proactive-context.py",
+    "memory-search-on-demand.py",
+    "memory-session-start.py",
+    "memory-session-end.py",
+    "memory-precompact-snapshot.py",
+    "memory-recall-session.py",
+    "context_monitor.py",
+})
 
 
 def _is_hook_process() -> bool:

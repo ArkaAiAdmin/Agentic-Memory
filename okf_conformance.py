@@ -166,6 +166,9 @@ def _warn_broken_links(
             if target not in known and target not in seen_targets:
                 seen_targets[target] = str(p.relative_to(bundle_dir)).replace("\\", "/")
 
+    for target, source in seen_targets.items():
+        errors.append(f"broken link: {source} -> {target}")
+
 
 def is_concept_path(rel_path: str | Path, bundle_root: Path) -> bool:
     """True if *rel_path* is a concept document, not a reserved file."""
