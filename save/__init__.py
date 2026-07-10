@@ -24,24 +24,10 @@ from save.crdt_helpers import (  # noqa: F401
     _is_legacy_note_crdt_enabled,
     _crdt_bump_version,
 )
-from save.indexers import (  # noqa: F401
-    _index_backlinks,
-    _index_chunks,
-    _index_embedding,
-    _index_kg,
-    _index_facts,
-    _index_adaptive_retention,
-)
 from save.backlinks import (  # noqa: F401
     _auto_fts_backlinks,
     _auto_semantic_backlinks,
     _auto_backlink_multi_part,
-)
-from save.post_save_hooks import (  # noqa: F401
-    _enrich_context,
-    _recalculate_fitness_scores,
-    _run_post_save_hooks,
-    _enqueue_background_tasks,
 )
 from save.cleanup import (  # noqa: F401
     cleanup_memory_relations,
@@ -50,20 +36,47 @@ from save.cleanup import (  # noqa: F401
 )
 
 __all__ = [
-    # cleanup (B-3 fix 2026-06-22 follow-up)
     "cleanup_memory_relations",
     "remove_kg_relations_for_note",
     "remove_backlinks_for_note",
-    # Orchestrator — defined in save_pipeline shim, proxied here
-    # via __getattr__ so that ``from save import save_memory`` works.
     "save_memory",
     "save_memory_journal",
     "memory_supersede_db",
     "reinforce_memories_db",
+    "_index_backlinks",
+    "_index_chunks",
+    "_index_embedding",
+    "_index_kg",
+    "_index_facts",
+    "_index_adaptive_retention",
+    "_enrich_context",
+    "_recalculate_fitness_scores",
+    "_run_post_save_hooks",
+    "_enqueue_background_tasks",
 ]
 
 
+_LAZY_SAVE_NAMES: dict[str, tuple[str, str]] = {
+    "_index_backlinks": ("save.indexers", "_index_backlinks"),
+    "_index_chunks": ("save.indexers", "_index_chunks"),
+    "_index_embedding": ("save.indexers", "_index_embedding"),
+    "_index_kg": ("save.indexers", "_index_kg"),
+    "_index_facts": ("save.indexers", "_index_facts"),
+    "_index_adaptive_retention": ("save.indexers", "_index_adaptive_retention"),
+    "_enrich_context": ("save.post_save_hooks", "_enrich_context"),
+    "_recalculate_fitness_scores": ("save.post_save_hooks", "_recalculate_fitness_scores"),
+    "_run_post_save_hooks": ("save.post_save_hooks", "_run_post_save_hooks"),
+    "_enqueue_background_tasks": ("save.post_save_hooks", "_enqueue_background_tasks"),
+}
+
+
 def __getattr__(name: str):
+    if name in _LAZY_SAVE_NAMES:
+        import importlib
+
+        mod_name, attr_name = _LAZY_SAVE_NAMES[name]
+        mod = importlib.import_module(mod_name)
+        return getattr(mod, attr_name)
     if name == "save_memory":
         from infra._lazy_imports import save_memory
 
