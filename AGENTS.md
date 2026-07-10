@@ -80,12 +80,25 @@ agentic-memory/
 
 ## Workflow
 
+**Branch-first rule (non-negotiable).** Significant work starts with
+`git checkout -b feat/<name>` off a clean `main`. The branch must exist
+before any file is read as part of change planning, and must exist before
+any sub-agent is dispatched. Sub-agents inherits the working tree state
+at dispatch time — if you haven't branched yet, they edit on `main`.
+
 **Significant change** (schema, migration, write-path, search pipeline, 3+ source files):
-1. `git checkout -b feat/<name>` off `main`
-2. Dispatch 2+ independent streams to sub-agents (don't hold >10 file contexts inline). Sub-agents fix bugs they find; escalate >10 lines / 2 files beyond scope in return report.
-3. Implement + validate affected tests during development
-4. `make test` (4200+ tests) — backgrounded, polled every 30s, confirm `0 failures` before merging
-5. `git checkout main && git merge feat/<name> && git push origin main`
+1. Confirm clean working tree on `main`: `git status --short`. Pull latest.
+2. `git checkout -b feat/<name>` off `main` **before reading or modifying any files**.
+3. Dispatch 2+ independent streams to sub-agents (don't hold >10 file contexts inline). Sub-agents fix bugs they find; escalate >10 lines / 2 files beyond scope in return report.
+4. Implement + validate affected tests during development
+5. `make test` (4200+ tests) — backgrounded, polled every 30s, confirm `0 failures` before merging
+6. `git checkout main && git merge feat/<name> && git push origin main`
+7. `git branch -d feat/<name>`
+
+**Read-only exempton.** File reads for pure analysis (no write intent)
+may happen on `main` before branching. The moment a modification is
+intended, the branch must exist — including before dispatching a
+sub-agent that will make edits.
 
 **Ask vs Act:**
 - **Act without asking:** unambiguous bug fixes, docs matching existing behavior, behavior-preserving refactors, running existing commands in this file, reverting your own breaking change
