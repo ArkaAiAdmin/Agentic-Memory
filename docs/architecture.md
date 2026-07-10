@@ -38,23 +38,22 @@ User/Agent
 ## Search Pipeline
 
 The search orchestrator (`search_memories` in `search/orchestrator.py`)
-runs the following **13 phases** in order:
+runs the following **12 phases** in order:
 
-> **Pipeline flow:** Parse query → Skill-first lookup (if requested) → Cache check → DB setup → Fallback to embeddings → Hybrid fusion → Temporal filtering → Chunk enhancement → Reranking → Build output → Safety demoting → Quality gates → Record access
+> **Pipeline flow:** Input normalization & query type detection → FTS5 BM25 retrieval → Vector (usearch) retrieval → ColBERT late-interaction retrieval → Reciprocal Rank Fusion (RRF) merge → Cross-encoder reranking (optional) → Temporal decay application → Neural forget curve adjustment → KG concept/centrality boost → Final score computation & ranking → Result envelope construction → Error counter & latency logging
 
-1. Parse query
-2. Skill-first lookup (if requested)
-3. Cache check
-4. DB setup
-5. Fallback to embeddings
-6. Hybrid fusion
-7. Temporal filtering
-8. Chunk enhancement
-9. Reranking
-10. Build output
-11. Safety demoting
-12. Quality gates
-13. Record access
+1. Input normalization & query type detection
+2. FTS5 BM25 retrieval
+3. Vector (usearch) retrieval
+4. ColBERT late-interaction retrieval
+5. Reciprocal Rank Fusion (RRF) merge
+6. Cross-encoder reranking (optional)
+7. Temporal decay application
+8. Neural forget curve adjustment
+9. KG concept/centrality boost
+10. Final score computation & ranking
+11. Result envelope construction
+12. Error counter & latency logging
 
 ## Save Pipeline
 
@@ -102,7 +101,7 @@ agentic-memory/                    # Repo root
 │   ├── synthesis.py                # BB1/BB2 synthesis
 │   ├── chunk_index.py              # Chunk search, Graph-RAG expansion
 │   ├── instrumentation.py          # Timing/log/observability
-│   └── orchestrator.py             # search_memories + 13-phase search
+│   └── orchestrator.py             # search_memories + 12-phase search
 ├── backfill_all.py                 # Audit pipeline shim → backfill/
 ├── backfill/                       # Audit pipeline subpackage
 │   ├── __init__.py                 # Public API
@@ -139,13 +138,13 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v37, 37 migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v37, 38 migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
 - **104 MCP tools** (17 CORE + 87 ADMIN).
   Single source of truth: `tool_registry.py`.
-- **40 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
+- **39 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.
 - **6 lifecycle hooks** in `hooks/` — session start/end,

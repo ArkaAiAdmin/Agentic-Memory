@@ -26,23 +26,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # ---------------------------------------------------------------------------
 
 def count_search_phases() -> tuple[int, list[str], list[str]]:
-    """Return (unique_phase_count, phase_numbers_in_order, phase_names_in_order)."""
+    """Return (unique_phase_count, phase_numbers, phase_names).
+
+    Source: orchestrator.py docstring (the canonical 12-phase pipeline).
+    """
     path = Path("search/orchestrator.py")
-    seen: dict[str, tuple[str, int]] = {}
-    for lineno, line in enumerate(path.read_text().splitlines()):
-        m = re.search(
-            r"#\s*Phase\s+(\d+[b]?)\s*:\s*(.+)", line, re.IGNORECASE
-        )
+    content = path.read_text()
+
+    # Parse docstring header: """N-phase hybrid search orchestrator...
+    header = re.search(r'"""(\d+)-phase\s', content)
+    if not header:
+        return 12, [], []
+
+    expected_count = int(header.group(1))
+
+    # Parse docstring phase entries: "Phase N — description"
+    phases: list[tuple[str, str]] = []
+    for line in content.splitlines()[:40]:
+        m = re.match(r"\s*Phase\s+(\d+)\s*[—–-]\s+(.+)", line)
         if m:
-            num = m.group(1).strip()
+            num = m.group(1)
             name = m.group(2).strip().rstrip(".")
-            seen.setdefault(name, (num, lineno))
-    entries: list[tuple[str, str]] = [
-        (num, name) for name, (num, _ln) in sorted(seen.items(), key=lambda kv: kv[1][1])
-    ]
-    phase_nums = [num for num, _name in entries]
-    phase_names = [name for _num, name in entries]
-    return len(entries), phase_nums, phase_names
+            phases.append((num, name))
+
+    if phases:
+        phase_nums = [n for n, _ in phases]
+        phase_names = [name for _, name in phases]
+        return len(phases), phase_nums, phase_names
+
+    return expected_count, [], []
 
 
 def count_tools() -> dict[str, int]:
@@ -59,11 +71,13 @@ def count_schema_version() -> int:
     return SCHEMA_VERSION
 
 
+def count_migrations() -> int:
+    """Count numbered migration pairs (each must have a .down.sql)."""
+    return len(list(Path("migrations").glob("*.down.sql")))
+
+
 def count_cron_scripts() -> int:
-    return len(
-        list(Path("cron").glob("cron_*.py"))
-        + list(Path("cron").glob("cron_cleanup_auto_logs.py"))
-    )
+    return len(list(Path("cron").glob("cron_*.py")))
 
 
 def count_hooks() -> int:
@@ -109,6 +123,7 @@ PHASE_TRANSITIONS: list[tuple[str, str]] = [
 def generate_doc() -> str:
     tools = count_tools()
     version = count_schema_version()
+    n_migrations = count_migrations()
     n_cron = count_cron_scripts()
     n_hooks = count_hooks()
     n_phases, phase_nums, phase_names = count_search_phases()
@@ -252,7 +267,7 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v{version}, {version} migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v{version}, {n_migrations} migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
