@@ -32,7 +32,7 @@ opencode:
 2. Loads `package.json` plugins → loads `ecc-universal@1.10.0` (the ECC plugin)
 3. ECC plugin loads its own 36 hook commands from `hooks/hooks.json`
 4. Loads MCP servers from `~/.opencode/mcp-configs/mcp-servers.json`:
-   - `agentic-memory` → `python3 ~/.config/agentic-memory/memory_mcp.py` (FastMCP, 56 tools)
+   - `agentic-memory` → `python3 ~/.config/agentic-memory/memory_mcp.py` (FastMCP, 107 tools)
    - others
 5. Auto-discovers skills from `~/.opencode/skills/` (87 skills) and any project `./skills/`
 6. Reads `~/.opencode/instructions/INSTRUCTIONS.md` (379 lines) — loaded as system prompt context
@@ -173,7 +173,7 @@ sequenceDiagram
     T->>OC: exec
     OC->>ECP: load plugin (ecc-universal@1.10.0)
     ECP->>OC: register 36 hook commands
-    OC->>AM: spawn memory_mcp.py (FastMCP, 56 tools)
+    OC->>AM: spawn memory_mcp.py (FastMCP, 107 tools)
     AM->>DB: connect
     OC-->>U: opencode ready (2-3s)
 

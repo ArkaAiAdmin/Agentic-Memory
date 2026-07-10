@@ -64,34 +64,99 @@ memory_search(
 
 ---
 
-### `memory_semantic_search`
+### `memory_recall`
 
-Semantic-only search using vector embeddings. Useful when keyword
-search returns nothing and you know the concept but not the words.
+Fast query-based context matching. Returns recent memories and
+context relevant to the query.
 
 ```python
-memory_semantic_search(query="how to handle race conditions", limit=5)
+memory_recall(query="SQLite concurrency", limit=5)
 ```
 
 ---
 
-### `memory_facts_search`
+### `memory_delete`
 
-Search the knowledge-graph facts table (subject-predicate-object triples).
+Soft-delete a memory. Can be restored within 30 days.
 
 ```python
-memory_facts_search(subject="SQLite", predicate="uses", limit=10)
+memory_delete(note_id="lessons/sqlite-wal-mode", hard=False)
+```
+
+**Parameters:**
+- `note_id` (str, required) — Memory ID
+- `hard` (bool, optional) — Immediately purge (default: false, soft-delete)
+
+---
+
+### `memory_note`
+
+Read, update, patch, supersede, or restore a specific note by ID.
+
+```python
+memory_note(note_id="lessons/sqlite-wal-mode", action="read")
 ```
 
 ---
 
-### `memory_graph_search`
+### `memory_learn`
 
-Walk the knowledge graph from a starting entity, returning
-neighbors up to N hops.
+Fast-path memory save with automated slug generation and
+auto-categorization. Ideal for lessons and insights.
 
 ```python
-memory_graph_search(start="agentic-memory", max_hops=2, limit=20)
+memory_learn(content="Always use WAL mode for SQLite", category="lessons")
+```
+
+---
+
+### `memory_audit`
+
+View recent memory activity, errors, and system health.
+
+```python
+memory_audit(hours=24, limit=20)
+```
+
+---
+
+### `memory_organize`
+
+Run safe maintenance batch (compact, consolidate, link rewrite).
+
+```python
+memory_organize(target="safe_default", dry_run=False)
+```
+
+---
+
+### `memory_share`
+
+Share memories with other agents or view the shared pool.
+
+```python
+memory_share(note_id="lessons/sqlite-wal-mode", share_with="agent-b")
+```
+
+---
+
+### `memory_graph`
+
+Explore the knowledge graph: traverse entities, find paths, or
+return graph statistics.
+
+```python
+memory_graph(query="SQLite", action="explore")
+```
+
+---
+
+### `memory_profile`
+
+View user/agent profile, ARC stats, and cached skills.
+
+```python
+memory_profile(action="stats")
 ```
 
 ---
@@ -102,102 +167,62 @@ Boot a session: returns recent memories, profile state, and any
 active context. Designed to be called by hooks on session start.
 
 ```python
-memory_session_start(project_id="my-app")
+memory_session_start(query="my-app")
 ```
 
 ---
 
-### `memory_user_profile`
+### `memory_advanced`
 
-Read or update the per-user preference profile.
+Power user escape hatch — pass through to any memory_maintenance
+operation. Use when no CORE verb covers your use case.
 
 ```python
-memory_user_profile(operation="get")
-memory_user_profile(operation="set", profile={...})
+memory_advanced(operation="tier_stats", kwargs="{}")
 ```
 
 ---
 
-### `memory_delete`
+### `memory_review_beliefs`
 
-Soft-delete a memory. Can be restored within 30 days.
-
-```python
-memory_delete(id="lessons/sqlite-wal-mode", hard=False)
-```
-
-**Parameters:**
-- `id` (str, required) — Memory ID
-- `hard` (bool, optional) — Immediately purge (default: false, soft-delete)
-
----
-
-### `memory_restore`
-
-Restore a soft-deleted memory.
+Review low-confidence, old, or stale belief assertions that may
+need agent attention.
 
 ```python
-memory_restore(id="lessons/sqlite-wal-mode")
+memory_review_beliefs(min_confidence=0.5, older_than_days=30, limit=20)
 ```
 
 ---
 
-### `memory_check_contradictions`
+### `memory_curate_autosave`
 
-Scan the most-recent memories for facts that conflict with existing
-ones. Surfaces a structured warning and writes a
-`memory_save_contradiction_check` audit row.
+Review auto-saved tool invocations and promote or discard them.
 
 ```python
-memory_check_contradictions(top_n=20, min_confidence="low")
+memory_curate_autosave(action="list")
 ```
 
 ---
 
-### `memory_scan_injection`
+### `memory_health_check`
 
-Run the prompt-injection detector on arbitrary content. Returns a
-risk score and a list of matched patterns.
+Unified health-check returning DB, index, worker, and schema
+status across all subsystems.
 
 ```python
-memory_scan_injection(content="...")
+memory_health_check()
 ```
 
 ---
 
-### `memory_rebuild`
+### `memory_system_health`
 
-Rebuild the search index from markdown files. Use after a schema
-migration or to repair index drift.
-
-```python
-memory_rebuild(scope="active")
-```
-
-**Parameters:**
-- `scope` (str, optional) — One of: active (default), local, global
-
----
-
-### `memory_supersede`
-
-Mark a memory as superseded by another. Sets `valid_to` on the
-old note and `superseded_by` on the new one for temporal
-filtering.
+Comprehensive green/yellow/red health check with actionable next
+steps across 6 dimensions (DB, search, worker, crons, auto-save,
+disk).
 
 ```python
-memory_supersede(old_id="lessons/v1", new_id="lessons/v2")
-```
-
----
-
-### `memory_profile_access`
-
-Record a profile-relevant access event. Used by the auto-profiling
-loop; rarely called directly by agents.
-
-```python
-memory_profile_access(note_id="lessons/sqlite-wal-mode", source="search")
+memory_system_health()
 ```
 
 ---
@@ -208,96 +233,95 @@ All admin operations go through the `memory_maintenance` grouped
 tool, dispatched by `operation=`. The full list (single source of
 truth: `tool_registry.ADMIN_TOOLS`):
 
-| Operation | Purpose |
-|-----------|---------|
+| Tool | Purpose |
+|------|---------|
 | `memory_maintenance` | The dispatcher itself — pass `operation=...` to call any admin op |
 | `memory_adaptive_retention` | Compute the psi-formula half-life for a memory |
-| `memory_arc_stats` | Read ARC eviction-cache stats without recomputing |
+| `memory_admin_policy_hash` | Get or refresh the drift-policy hash |
+| `memory_agent_clear` | Clear the local CRDT agent identity |
+| `memory_agent_init` | Initialize a CRDT agent identity for the local host |
+| `memory_agent_list` | List known CRDT agent identities |
 | `memory_arc_reset` | Reset ARC ghost lists and stats (operator escape hatch) |
-| `memory_audit` | Health check on the memory database |
+| `memory_arc_stats` | Read ARC eviction-cache stats without recomputing |
 | `memory_audit_query` | Query the per-call audit log with filters |
+| `memory_auto_save_daemon_metrics` | Show auto-save daemon performance metrics |
 | `memory_auto_save_hook` | Programmatic equivalent of the opencode tool-complete hook |
 | `memory_auto_save_status` | Show auto-save health, last batch, daemon PID |
-| `memory_auto_summarize` | Trigger TF-IDF summarization on a note |
 | `memory_auto_share` | Auto-publish opt-in memories to the shared pool |
+| `memory_auto_summarize` | Trigger TF-IDF summarization on a note |
 | `memory_backfill_all` | Run the audit pipeline (FTS, vec, KG, etc.) |
+| `memory_background_task_status` | Check status of a background task |
 | `memory_check_concept_drift` | Compute centroid-vs-centroid drift for an embedding |
-| `memory_check_integrity` | Full DB integrity check |
+| `memory_check_contradictions` | Scan memories for conflicting facts |
 | `memory_check_embedding_model` | Verify active embedding model revision |
+| `memory_check_integrity` | Full DB integrity check |
+| `memory_circuit_breaker_status` | Show circuit breaker open/closed state |
 | `memory_compact` | Run deduplication and consolidation |
-| `memory_consolidate` | Run fact consolidation + contradiction detection |
 | `memory_compile_skill` | Compile a lesson into an executable agent skill |
+| `memory_compliance_check` | Audit session compliance with reliability rules |
+| `memory_consolidate` | Run fact consolidation + contradiction detection |
 | `memory_crdt_status` | Show CRDT version-vector state for the local agent |
 | `memory_crdt_sync` | Push/pull CRDT state with a peer |
 | `memory_daily_digest` | Roll auto-saves into a daily summary note |
 | `memory_dashboard` | Return a high-level summary (counts, health) |
+| `memory_dedup` | Find and merge near-duplicate memories |
 | `memory_detect_contradictions` | Force a contradiction scan over a category |
-| `memory_duplicates` | Find near-duplicate memories in the corpus |
 | `memory_extract_skills` | Refresh the skills cache from existing lessons |
 | `memory_facts_list` | List extracted SPO triples with filters |
+| `memory_facts_search` | Search the knowledge-graph facts table |
 | `memory_facts_stats` | Statistics on the facts table |
+| `memory_graph_evolution` | Show how the KG has changed over time |
+| `memory_graph_insights` | Discover patterns and anomalies in the KG |
+| `memory_graph_search` | Walk the KG from a starting entity |
+| `memory_graph_shortest_path` | Find the shortest path between two entities |
 | `memory_graph_stats` | Statistics on the KG (entities, edges, density) |
+| `memory_graph_traverse` | Walk the KG from a starting entity by edge type |
 | `memory_heartbeat` | Run the periodic self-healing + tier sweep |
 | `memory_incremental_update` | Re-index a single memory (FTS, vec, chunk, KG) |
-| `memory_ingest_file` | Read a file and save its contents as a memory |
-| `memory_ingest_url` | Fetch a URL and save its content as a memory |
-| `memory_list_drift_alarms` | List per-memory concept-drift alarms (v15) |
+| `memory_ingest` | Read a file or fetch a URL and save as memory |
+| `memory_list_drift_alarms` | List per-memory concept-drift alarms |
+| `memory_list_federated_skills` | List skills from federated sources |
 | `memory_list_skills` | List cached skills ordered by hit count |
+| `memory_list_threads` | List active session threads |
 | `memory_llm_unload` | Force-unload the LLM from memory to release GPU |
-| `memory_merge_embeddings` | Merge duplicate embedding rows after consolidation |
-| `memory_merge_suggestions` | List candidate memory merges from the dedup pipeline |
 | `memory_metrics_server` | Start the Prometheus-format metrics endpoint |
 | `memory_okf_export` | Export memories to OKF (one .md per memory) |
 | `memory_okf_import` | Import memories from an OKF directory |
 | `memory_pinned_decay_check` | Find pinned notes that haven't been accessed in N days |
+| `memory_profile_access` | Record a profile-relevant access event |
 | `memory_profile_stats` | Read user-profile hit counts and top categories |
 | `memory_purge_auto_saves` | Hard-delete auto-saves older than N days |
 | `memory_purge_expired` | Hard-delete tombstoned notes older than 30 days |
 | `memory_quality_filter` | Apply the quality_gates filter to a result set |
 | `memory_quality_stats` | Show quality-gate pass/fail rates |
+| `memory_rebuild` | Rebuild the search index from markdown files |
+| `memory_recall_stats` | Stats on recall query performance |
 | `memory_record_ctr_feedback` | Record a click-through event for a search result |
 | `memory_reinforce` | Provide positive/negative feedback on memories |
+| `memory_resolve_contradiction` | Resolve a specific contradiction between facts |
+| `memory_resolve_thread` | Resolve or close a session thread |
+| `memory_restore` | Restore a soft-deleted memory |
 | `memory_retention_stats` | Stats on the adaptive-retention system |
 | `memory_review_schedule` | Get SM-2 spaced-repetition review queue |
 | `memory_rewrite_links` | Fix broken wiki-links after a category move |
 | `memory_run_tier_migration` | Run the hot/warm/cold tier migration pass |
-| `memory_share` | Publish a memory to the shared pool |
+| `memory_scan_injection` | Run the prompt-injection detector on arbitrary content |
+| `memory_sdk_demo` | Run a self-test of the Python SDK surface |
+| `memory_semantic_search` | Semantic-only search using vector embeddings |
+| `memory_session_admin_stats` | Administrative stats on sessions |
 | `memory_shared_import` | Import a memory from the shared pool |
 | `memory_shared_list` | List memories in the shared pool |
 | `memory_shared_stats` | Stats on the shared pool |
 | `memory_strip_provenance` | Remove agent_id/peer metadata from a memory |
 | `memory_summarize` | Manually trigger summarization on a note |
 | `memory_summarization_stats` | Stats on the summarization system |
+| `memory_supersede` | Mark a memory as superseded by another |
+| `memory_temporal_contradictions` | Query temporal contradiction log |
+| `memory_temporal_query` | Query facts as of a historical point in time |
+| `memory_thread_context` | Get context for a specific session thread |
 | `memory_tier_stats` | Tier distribution and importance statistics |
 | `memory_trash` | List soft-deleted memories pending restore/purge |
-| `memory_agent_init` | Initialize a CRDT agent identity for the local host |
-| `memory_agent_clear` | Clear the local CRDT agent identity |
-| `memory_agent_list` | List known CRDT agent identities |
-| `memory_sdk_demo` | Run a self-test of the Python SDK surface |
-
-The 9 admin tools added on 2026-06-22:
-- `memory_list_drift_alarms` (drift alarms UI, v15)
-- `memory_arc_reset` (operator escape hatch for ARC state)
-- `memory_extract_skills` (refresh `memory_skills` cache)
-- `memory_list_skills` (list cached skills)
-- `memory_auto_share` (auto-publish to shared pool)
-- `memory_agent_init` / `memory_agent_clear` / `memory_agent_list` (CRDT agent identity)
-- `memory_sdk_demo` (Python SDK quickstart)
-
-For historical reference, the full tool-addition timeline (per
-`tool_registry.py`):
-
-- **2026-06-15** (1 tool): `memory_record_ctr_feedback`
-- **2026-06-17** (4 tools): `memory_crdt_sync`, `memory_crdt_status`,
-  `memory_okf_export`, `memory_okf_import`
-- **2026-06-18** (13 tools, H4 fix): `memory_heartbeat`,
-  `memory_tier_stats`, `memory_run_tier_migration`,
-  `memory_check_embedding_model`, `memory_incremental_update`,
-  `memory_merge_embeddings`, `memory_duplicates`,
-  `memory_merge_suggestions`, `memory_llm_unload`,
-  `memory_ingest_file`, `memory_ingest_url`, `memory_dashboard`,
-  `memory_metrics_server`
-- **2026-06-22** (9 tools): see list above
+| `memory_user_profile` | Read or update the per-user preference profile |
 
 ---
 
