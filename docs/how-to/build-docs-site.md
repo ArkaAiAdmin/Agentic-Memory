@@ -1,10 +1,22 @@
 # Build the Documentation Site
 
+## Goal
+
+Build and deploy the public documentation site using Material for MkDocs from the `docs/` tree.
+
+## Prerequisites
+
+- [ ] Agentic Memory installed with docs extras (`pip install -e ".[docs]"`)
+- [ ] Python 3.10+
+- [ ] Write access to the repository (for deployment)
+
 The public docs at [agentic-memory.ar...(TBD)](https://...)
 are built with [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/)
 from the `docs/` tree + `mkdocs.yml` at the repo root.
 
-## Install
+## Steps
+
+### 1. Install
 
 ```sh
 pip install -e ".[docs]"
@@ -13,7 +25,7 @@ pip install -e ".[docs]"
 This pulls in `mkdocs` and `mkdocs-material`. Other plugins we
 use (`pymdownx.*`) ship with Material.
 
-## Local preview
+### 2. Local preview
 
 ```sh
 mkdocs serve
@@ -22,7 +34,7 @@ mkdocs serve
 Opens `http://127.0.0.1:8000` with live reload — edit a `.md`
 file and the browser updates instantly.
 
-## Build static site
+### 3. Build static site
 
 ```sh
 mkdocs build --clean
@@ -31,7 +43,7 @@ mkdocs build --clean
 Output goes to `site/`. This is the directory you serve from
 GitHub Pages, Netlify, S3, etc.
 
-## Deploy to GitHub Pages
+### 4. Deploy to GitHub Pages
 
 ```sh
 mkdocs gh-deploy
@@ -39,6 +51,21 @@ mkdocs gh-deploy
 
 Pushes `site/` to the `gh-pages` branch. The site goes live at
 `https://<user>.github.io/Agentic-Memory/`.
+
+## Verification
+
+```sh
+# Check the built site
+mkdocs build --clean
+echo "Site built to site/ with $(ls site/ | wc -l) top-level entries"
+
+# Or for live preview
+mkdocs serve &
+sleep 2
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000
+```
+
+Expected output: `mkdocs build --clean` exits with exit code 0 and no errors. The live preview returns HTTP 200.
 
 ## Authoring conventions
 
@@ -60,6 +87,12 @@ When you add a new page, also add it to the `nav:` block in
 into `docs/docker_README.md` so the nav can reference it. The
 hook runs on `pre_build` and unlinks on `post_build`, so the
 working tree stays clean unless a build is in progress.
+
+## Related
+
+- [Add an MCP Tool](add-an-mcp-tool.md) — How to add new tool docs
+- [Architecture](../architecture.md) — System architecture overview
+- [MCP Tools Reference](../reference/mcp-tools.md) — Full tool documentation
 
 ## Troubleshooting
 

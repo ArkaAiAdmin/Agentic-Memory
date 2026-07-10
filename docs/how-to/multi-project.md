@@ -1,6 +1,14 @@
 # How to Share Memories Across Projects
 
-Agentic Memory supports **global memories** that are shared across all projects, and **local memories** that are project-specific.
+## Goal
+
+Save and search memories across multiple projects — keep universal lessons in a global store and project-specific patterns in local stores.
+
+## Prerequisites
+
+- [ ] Agentic Memory installed (follow the [integrate-claude-code](integrate-claude-code.md) guide)
+- [ ] At least one project bootstrapped with `setup_memory.sh`
+- [ ] A second project directory you want to share memories with
 
 ## Architecture
 
@@ -115,6 +123,35 @@ ln -s ~/.config/agentic-memory/memory ~/Assets/ProjectA/shared-memory
 
 The `MEMORY.md` file in each project's memory directory is a derived index that includes both local and global memories. It's automatically updated when you save memories.
 
+## Verification
+
+```bash
+# Save a global memory
+python search_memory.py save \
+  --content "Global test memory" \
+  --category lessons \
+  --title-slug global-test \
+  --global
+
+# Search from a different project — the global memory should appear
+cd ~/Assets/ProjectB
+python search_memory.py "global test" --global
+```
+
+Expected output: The search result includes the global test memory regardless of which project directory you query from.
+
+## Troubleshooting
+
+### Global memory not appearing in other projects
+
+**Cause**: The `include_global` flag was not set during search.
+**Fix**: Pass `include_global=True` or `--global` to include global results.
+
+### Memory saved as local by mistake
+
+**Cause**: Default `is_global=False` saved the memory to the local project store.
+**Fix**: Re-save with `is_global=True` or delete the local copy and re-save globally.
+
 ## Configuration
 
 | Variable | Default | Effect |
@@ -129,7 +166,9 @@ The `MEMORY.md` file in each project's memory directory is a derived index that 
 3. **Don't overuse global** — Too many global memories dilute local relevance
 4. **Review global periodically** — Archive outdated global memories
 
-## Further Reading
+## Related
 
+- [Integrate with Claude Code](integrate-claude-code.md) — Initial setup
 - [Why Markdown](../concepts/why-markdown.md) — Why markdown is the source of truth
 - [Tier System](../concepts/tier-system.md) — How memories age across projects
+- [Multi-Agent Sync](../concepts/multi-agent-sync.md) — Sync memories across agents

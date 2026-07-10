@@ -1,6 +1,15 @@
 # How to Run a Schema Migration
 
-Add or apply a schema change to the agentic-memory SQLite database.
+## Goal
+
+Add or apply a schema change to the agentic-memory SQLite database — adding tables, columns, indexes, or constraints through the numbered migration system.
+
+## Prerequisites
+
+- [ ] Python 3.10+
+- [ ] Access to the `migrations/` directory and `migration_runner.py`
+- [ ] A backup of the current database: `venv/bin/python cron/cron_backup.py`
+- [ ] Understanding of SQLite schema limitations (e.g., `ALTER TABLE` support)
 
 ## When to use this
 
@@ -62,12 +71,14 @@ print('SCHEMA_VERSION:', migration_runner.SCHEMA_VERSION)
    #     run_migrations(conn)
    ```
 
-4. **Verify** the change:
+## Verification
 
-   ```bash
-   venv/bin/python memory_integrity.py memory/memory.db
-   venv/bin/python -m pytest eval/ -q
-   ```
+```bash
+venv/bin/python memory_integrity.py memory/memory.db
+venv/bin/python -m pytest eval/ -q
+```
+
+Expected output: `memory_integrity` exits with exit code 0; pytest reports no failures.
 
 5. **Update `memory_workflow.md`** (Database Tables section) to document the new column or table.
 
@@ -121,7 +132,24 @@ BEGIN
 END;
 ```
 
-## Common pitfalls
+## Troubleshooting
+
+### Migration not applied
+
+**Cause**: The migration number is higher than `SCHEMA_VERSION` or lower than the current applied version.
+**Fix**: Check `SCHEMA_VERSION` in `migration_runner.py` — it must match the highest migration number on disk. Run `venv/bin/python migration_runner.py --db memory/memory.db --dry-run` to preview.
+
+### Rollback fails
+
+**Cause**: The down migration references a table or column that doesn't exist.
+**Fix**: Write down migrations idempotently using `IF EXISTS`. Test by running apply → rollback → re-apply in a test database.
+
+### Migration causes data loss
+
+**Cause**: A `DROP COLUMN` or `DROP TABLE` was run without verifying the data is safe to lose.
+**Fix**: Never drop columns or tables with live data. Use soft-delete via `valid_to = datetime.now()` instead.
+
+### Additional pitfalls
 
 - **Don't edit the live DB schema by hand.** Always go through a migration.
 - **Don't use `ALTER TABLE ... RENAME` without a down migration.** Rollback must work.
@@ -149,10 +177,12 @@ def test_migration_017():
     apply_migration(17)
 ```
 
-## Reference
+## Related
 
 - All migrations: `migrations/NNN_*.sql` (auto-discovered by numeric prefix)
 - Migration runner: `migration_runner.py` (`SCHEMA_VERSION` is the only knob to bump)
 - Auto-discovery helper: `_get_available_migrations()` (sorted by `int(stem.split('_')[0])`)
 - Down-migration helper: `_get_down_migrations()` (matches `*.down.sql`)
 - Schema documentation: `memory_workflow.md` (Database Tables section)
+- [Self-Hosting](../self-hosting.md) — Production deployment
+- [Add a Cron Job](add-a-cron-job.md) — For recurring maintenance

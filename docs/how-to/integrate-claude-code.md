@@ -1,14 +1,18 @@
 # How to Integrate with Claude Code
 
-Set up Agentic Memory as an MCP server for Claude Code.
+## Goal
+
+Set up Agentic Memory as an MCP server for Claude Code so the agent can save and search memories during your session.
 
 ## Prerequisites
 
-- Python 3.10+
-- Agentic Memory installed (`pip install agentic-memory` or from source)
-- Claude Code installed
+- [ ] Python 3.10+
+- [ ] Agentic Memory installed (`pip install agentic-memory` or from source)
+- [ ] Claude Code installed
 
-## Step 1: Install Agentic Memory
+## Steps
+
+### 1. Install Agentic Memory
 
 ```bash
 # From PyPI
@@ -20,7 +24,7 @@ cd Agentic-Memory
 pip install -e ".[all]"
 ```
 
-## Step 2: Configure MCP Server
+### 2. Configure MCP Server
 
 Add the server to your Claude Code MCP config. The config file is at:
 - **macOS**: `~/.opencode/mcp-servers.json`
@@ -36,7 +40,7 @@ Add the server to your Claude Code MCP config. The config file is at:
 }
 ```
 
-## Step 3: Enable Features
+### 3. Enable Features
 
 Set environment variables or edit `memory.toml`:
 
@@ -60,7 +64,7 @@ knowledge_graph = true
 consolidation = true
 ```
 
-## Step 4: Bootstrap a Project
+### 4. Bootstrap a Project
 
 ```bash
 cd ~/Assets/MyProject
@@ -71,7 +75,7 @@ This creates:
 - `~/Assets/MyProject/memory/` directory structure
 - Appends memory instructions to `AGENTS.md`
 
-## Step 5: Verify
+## Verification
 
 Start Claude Code and test:
 
@@ -86,6 +90,8 @@ Or via MCP tools directly:
 memory_save(content="Always use WAL mode for SQLite", category="lessons")
 memory_search(query="SQLite WAL")
 ```
+
+Expected output: The search returns the saved memory with a relevance score.
 
 ## Available Tools
 
@@ -128,7 +134,7 @@ python -c "from agentic_memory import memory_mcp; print('OK')"
 - Reduce search limit: `memory_search(query="...", limit=5)`
 - Rebuild the index periodically
 
-## Further Reading
+## Related
 
 - [MCP Tools Reference](../reference/mcp-tools.md) — Full tool documentation
 - [Configuration](../reference/configuration.md) — All environment variables

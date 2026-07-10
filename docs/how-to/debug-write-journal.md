@@ -1,4 +1,14 @@
-# CQRS Write Journal Runbook
+# How to Debug the CQRS Write Journal
+
+## Goal
+
+Diagnose and resolve issues with the write journal — stuck entries, dead letters, reconciler failures, or read-your-writes problems.
+
+## Prerequisites
+
+- [ ] Write journal enabled (`MEMORY_WRITE_JOURNAL_ENABLED=true` or `write_journal = true` in `memory.toml`)
+- [ ] Access to `memory/journal.db`
+- [ ] Python 3.10+ with `sqlite3` module
 
 ## Overview
 
@@ -7,6 +17,24 @@ When `MEMORY_WRITE_JOURNAL_ENABLED=true` (or `write_journal = true` in
 `journal.db` instead of direct `save_memory`. A background reconciler
 thread (`journal-reconciler`) drains the journal and materializes entries
 into `memory.db` via the standard saga (DB upsert + vec key + .md file).
+
+## Steps
+
+### 1. Check Journal Health
+
+Use the health check to verify the journal is operating correctly before proceeding deeper.
+
+### 2. Inspect Dead Letters
+
+If the health check shows `failed > 0`, examine the dead-letter queue.
+
+### 3. Recover Stuck Reconciliation
+
+If `pending > 0` or `reconciler_alive: false`, follow the recovery procedure.
+
+### 4. Verify Read-Your-Writes
+
+After recovery, confirm pending entries are visible in search results.
 
 ## Architecture
 
@@ -107,10 +135,37 @@ If you see duplicate results (once from supplement, once after
 materialization), the supplement entry has `"_pending": true`. The
 duplicate disappears after the next poll cycle (≤100ms).
 
+## Troubleshooting
+
+### Journal file not found
+
+**Cause**: The write journal was never initialized because `MEMORY_WRITE_JOURNAL_ENABLED` was false at first launch.
+**Fix**: Set `MEMORY_WRITE_JOURNAL_ENABLED=true` and restart the MCP server. The journal.db file is created on first write.
+
+### Entries stuck in "processing" state
+
+**Cause**: The reconciler daemon crashed mid-batch.
+**Fix**: Run `reset_stuck_processing()` manually: `venv/bin/python -c "from infra.write_journal import reset_stuck_processing; reset_stuck_processing(Path('memory/journal.db'))"`
+
+### Duplicate results in search
+
+**Cause**: An entry appears both as a pending supplement and a materialized row.
+**Fix**: The duplicate disappears after the next poll cycle (≤100ms). If persistent, check that the reconciler is marking processed entries correctly.
+
 ## New Tool: memory_read_your_writes
 
 The `memory_search` tool already does read-your-writes by supplementing
 pending journal entries. No separate tool needed.
+
+## Verification
+
+```python
+from agentic_memory import memory_health_check
+status = memory_health_check(conn="default")
+print(status["journal"])
+```
+
+Expected output: A journal section with `enabled: true`, `reconciler_alive: true`, and `pending: 0` under normal operation.
 
 ## Related
 

@@ -1,6 +1,18 @@
 # How to Extend Entity Types
 
-Agentic Memory uses regex-based NER to extract entities. You can add **custom entity types** for your domain.
+## Goal
+
+Add custom entity types to the knowledge graph's regex-based NER extraction so the system can recognize domain-specific concepts.
+
+## Prerequisites
+
+- [ ] Knowledge graph enabled (`MEMORY_KNOWLEDGE_GRAPH=1`)
+- [ ] Access to the `knowledge_graph.py` source file
+- [ ] Familiarity with Python regex syntax
+
+## Steps
+
+### 1. Understand the Default Entity Types
 
 ## Default Entity Types
 
@@ -13,9 +25,9 @@ Agentic Memory uses regex-based NER to extract entities. You can add **custom en
 | `url` | `https?://[^\s]+` | https://example.com |
 | `email` | `[a-zA-Z0-9._%+-]+@...` | user@example.com |
 
-## Adding Custom Entity Types
+### 2. Add Custom Entity Patterns
 
-### Step 1: Edit `knowledge_graph.py`
+Edit `knowledge_graph.py`:
 
 Find the `ENTITY_PATTERNS` dictionary and add your custom type:
 
@@ -32,7 +44,7 @@ ENTITY_PATTERNS = {
 }
 ```
 
-### Step 2: Rebuild the Knowledge Graph
+### 3. Rebuild the Knowledge Graph
 
 After adding patterns, rebuild the KG to extract new entities:
 
@@ -40,7 +52,7 @@ After adding patterns, rebuild the KG to extract new entities:
 python backfill_all.py --mode full
 ```
 
-### Step 3: Verify
+## Verification
 
 ```bash
 # Check extracted entities
@@ -53,6 +65,8 @@ for row in conn.execute(
     print(f'{row[0]}: {row[1]} entities')
 "
 ```
+
+Expected output: Your new entity type appears in the list with at least 1 entity.
 
 ## Example: AWS Entity Types
 
@@ -99,6 +113,18 @@ aws_entities = search_graph("*", entity_type="aws_service", limit=50)
 lambda_memories = search_graph("Lambda", max_hops=1)
 ```
 
+## Troubleshooting
+
+### Custom entity not being extracted
+
+**Cause**: The regex pattern doesn't match the text in the memory content.
+**Fix**: Test your regex against the actual content using `python -c "import re; print(re.findall(r'your_pattern', 'your text'))"`. Ensure word boundaries (`\b`) are correct.
+
+### Rebuild didn't pick up new entities
+
+**Cause**: The KG backfill runs in incremental mode by default and may skip already-processed memories.
+**Fix**: Re-run with full mode: `python backfill_all.py --mode full`.
+
 ## Limitations
 
 - **Regex-based** — Can't handle complex entity structures
@@ -106,7 +132,10 @@ lambda_memories = search_graph("Lambda", max_hops=1)
 - **No context understanding** — "Python" the language vs "python" the command
 - **Performance** — More patterns = slower extraction
 
-## Further Reading
+## Related
+
+- [Knowledge Graph](../concepts/knowledge-graph.md) — How NER works
+- [Search Pipeline](../concepts/search-pipeline.md) — How entities are used in search
 
 - [Knowledge Graph](../concepts/knowledge-graph.md) — How NER works
 - [Search Pipeline](../concepts/search-pipeline.md) — How entities are used in search

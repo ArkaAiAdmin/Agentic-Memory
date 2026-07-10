@@ -1,6 +1,17 @@
 # How to Add a Cron Job
 
-Add a new background job to the agentic-memory system. There are 39 cron scripts today (`cron/cron_*.py`); this is how to add a 40th. All cron scripts live in the `cron/` subdirectory. The consolidated scheduler (`cron/scheduler.py`) runs every 5 minutes and executes due jobs by frequency tier.
+## Goal
+
+Add a new background job to the agentic-memory system's cron schedule.
+
+## Prerequisites
+
+- [ ] Access to the `cron/` directory
+- [ ] Python 3.10+
+- [ ] Familiarity with crontab syntax
+- [ ] Read the user-facing [cron setup guide](cron-setup.md) first
+
+There are 39 cron scripts today (`cron/cron_*.py`); this is how to add a 40th. All cron scripts live in the `cron/` subdirectory. The consolidated scheduler (`cron/scheduler.py`) runs every 5 minutes and executes due jobs by frequency tier.
 
 This is the **maintainer** version. For the high-level skill, see `skills/add-a-cron-job/SKILL.md`.
 
@@ -106,7 +117,7 @@ All scripts live under `cron/`.
 | `cron/cron_auto_share.py` | (manual) | Auto-publish opt-in to shared pool (2026-06-22) |
 | `cron/cron_sync.py` | (manual) | Multi-agent sync orchestration (2026-06-22) |
 
-## Common pitfalls
+## Troubleshooting
 
 - **Don't hardcode venv paths.** Use `sys.executable` or `MEMORY_PYTHON` env.
 - **Don't bypass feature flags.** Set the env var at the top of the script.
@@ -114,10 +125,29 @@ All scripts live under `cron/`.
 - **Don't race on `memory/.rebuild.lock`.** Only one rebuild-flavored cron at a time.
 - **Don't place new cron scripts at the repo root.** They live in `cron/` since 2026-06-22.
 
-## Reference
+## Verification
 
-- All 23 existing crons: `cron/cron_*.py` in the `cron/` subdirectory
+```bash
+# Install the crontab
+bash cron/install_crontab.sh
+
+# Verify it appears
+crontab -l | grep your_op
+
+# Run manually
+venv/bin/python cron/cron_your_op.py
+
+# Check output
+tail memory/your_op.log
+```
+
+Expected output: The crontab line is installed, the script runs without errors, and the log file contains the expected output.
+
+## Related
+
+- All 39 cron scripts: `cron/cron_*.py` in the `cron/` subdirectory
 - Crontab installer: `cron/install_crontab.sh` (idempotent block installer)
-- Cron setup how-to: `docs/how-to/cron-setup.md` (user-facing reference)
+- [Cron Setup](cron-setup.md) — User-facing cron reference
 - Drift check: `~/.opencode/scripts/cron_wirings_check.py`
 - Skill (deeper version): `skills/add-a-cron-job/SKILL.md`
+- [Add a Claude Code Hook](add-a-claude-code-hook.md) — For event-driven actions

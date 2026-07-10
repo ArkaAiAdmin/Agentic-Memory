@@ -1,10 +1,22 @@
 # How to Set Up Cron Jobs
 
-Agentic Memory uses cron jobs for background processing. Here's how to set them up.
+## Goal
 
-## Required Jobs
+Install and manage scheduled background jobs for the agentic-memory system — indexing, compaction, backup, and health checks.
 
-### 1. Background Task Worker (Every 5 minutes)
+## Prerequisites
+
+- [ ] Access to the machine's crontab (`crontab -e`)
+- [ ] Agentic Memory installed and configured
+- [ ] Python 3.10+ in the project's virtual environment
+
+## Steps
+
+### 1. Add the Required Jobs
+
+The following cron jobs are essential for the system to function properly.
+
+#### Background Task Worker (Every 5 minutes)
 
 Processes pending background tasks (entity resolution, fact consolidation, etc.).
 
@@ -16,7 +28,7 @@ crontab -e
 */5 * * * * agentic-memory-worker
 ```
 
-### 2. Compact and Dedup (Daily at 2 AM)
+#### Compact and Dedup (Daily at 2 AM)
 
 Runs entity deduplication and fact consolidation.
 
@@ -24,7 +36,7 @@ Runs entity deduplication and fact consolidation.
 0 2 * * * agentic-memory-compact
 ```
 
-### 3. Backup Database (Daily at 3 AM)
+#### Backup Database (Daily at 3 AM)
 
 Creates a timestamped backup of the database.
 
@@ -32,9 +44,9 @@ Creates a timestamped backup of the database.
 0 3 * * * cd /path/to/agentic-memory && venv/bin/python cron/cron_backup.py
 ```
 
-## Optional Jobs
+### 2. Add Optional Jobs (as needed)
 
-### Health Check (Daily at 4 AM)
+#### Health Check (Daily at 4 AM)
 
 Runs integrity checks and repairs.
 
@@ -42,7 +54,7 @@ Runs integrity checks and repairs.
 0 4 * * * agentic-memory-integrity
 ```
 
-### Tier Migration (Weekly on Sunday at 5 AM)
+#### Tier Migration (Weekly on Sunday at 5 AM)
 
 Moves memories between hot/warm/cold tiers.
 
@@ -50,7 +62,7 @@ Moves memories between hot/warm/cold tiers.
 0 5 * * 0 agentic-memory-tier
 ```
 
-### Quality Filter (Weekly on Sunday at 6 AM)
+#### Quality Filter (Weekly on Sunday at 6 AM)
 
 Runs quality gates on memories.
 
@@ -58,7 +70,7 @@ Runs quality gates on memories.
 0 6 * * 0 cd /path/to/agentic-memory && venv/bin/python cron/cron_quality_filter.py
 ```
 
-### KG Backfill (Weekly on Sunday at 3:30 AM)
+#### KG Backfill (Weekly on Sunday at 3:30 AM)
 
 Refreshes kg_facts, kg_entities, and kg_edges from the current memory
 corpus using the entity quality filters (P3.2, 2026-06-19). Runs after
@@ -71,6 +83,26 @@ is safe and partial progress persists.
 ```
 
 Log output: `memory/kg-backfill-cron.log` (one JSON line per run).
+
+## Verification
+
+After installing cron jobs, verify they're running:
+
+```bash
+# Check cron service
+sudo service cron status
+
+# List installed crontab
+crontab -l | grep agentic-memory
+
+# Check for recent run in logs (Linux)
+grep -i "agentic-memory" /var/log/syslog | tail -5
+
+# Check for recent run in logs (macOS)
+grep "agentic-memory" /var/log/system.log | tail -5
+```
+
+Expected output: Your crontab lines appear in `crontab -l` output and recent log entries show the jobs ran.
 
 ## Full Crontab Example
 
@@ -155,7 +187,8 @@ Ensure only one worker runs at a time:
 */5 * * * * flock -n /tmp/agentic-memory-worker.lock agentic-memory-worker
 ```
 
-## Further Reading
+## Related
 
 - [Background Tasks](../concepts/background-tasks.md) — How the task queue works
+- [Add a Cron Job](add-a-cron-job.md) — How to create a new cron script
 - [Self-Hosting](../self-hosting.md) — Production deployment guide

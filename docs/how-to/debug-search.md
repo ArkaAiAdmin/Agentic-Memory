@@ -1,8 +1,18 @@
 # How to Debug Search Issues
 
-When search results don't match expectations, use this systematic approach.
+## Goal
 
-## Step 1: Check Index Health
+Diagnose and fix search quality issues — missing results, low relevance, or stale indexes in the memory system.
+
+## Prerequisites
+
+- [ ] Access to the memory database (`memory.db`)
+- [ ] Python 3.10+ with `sqlite3` module
+- [ ] Familiarity with FTS5 and basic SQL
+
+## Steps
+
+### 1. Check Index Health
 
 ```bash
 # Run integrity check
@@ -19,7 +29,7 @@ if count == 0:
 "
 ```
 
-## Step 2: Rebuild the Index
+### 2. Rebuild the Index
 
 If the index is stale or corrupted:
 
@@ -31,7 +41,7 @@ agentic-memory-rebuild
 agentic-memory-backfill
 ```
 
-## Step 3: Check Search Pipeline
+### 3. Check Search Pipeline
 
 ### Test FTS5 directly
 
@@ -73,7 +83,7 @@ print(f'Entities: {entities}, Facts: {facts}')
 "
 ```
 
-## Step 4: Compare Search Modes
+### 4. Compare Search Modes
 
 ### Quick search (FTS5 only)
 
@@ -99,7 +109,7 @@ from agentic_memory import search_graph
 entities = search_graph("your query", limit=10)
 ```
 
-## Step 5: Check Query Quality
+### 5. Check Query Quality
 
 ### Too specific
 
@@ -130,7 +140,7 @@ FTS5 doesn't understand synonyms. Use semantic search:
 # Semantic search will
 ```
 
-## Step 6: Check for Common Issues
+### 6. Check for Common Issues
 
 ### Stale index
 
@@ -169,7 +179,40 @@ print(f'Active dir: {resolve_active_memory_dir()}')
 "
 ```
 
-## Step 7: Advanced Debugging
+## Troubleshooting
+
+### Search still broken after rebuild
+
+**Cause**: The FTS5 index is corrupted or the embeddings are out of sync.
+**Fix**: Run `agentic-memory-backfill` instead of `agentic-memory-rebuild` to rebuild from scratch.
+
+### FTS5 not available
+
+**Cause**: The Python `sqlite3` module was compiled without FTS5 support.
+**Fix**: Install a Python build with FTS5: `pip install pysqlite3-binary` or use the system Python on macOS (which ships FTS5).
+
+### semantic search returns empty results
+
+**Cause**: No embeddings exist in `memory_embeddings` table.
+**Fix**: Enable `MEMORY_EMBEDDINGS=1` and rebuild the index.
+
+## Verification
+
+After applying any fix, confirm the search produces expected results:
+
+```bash
+python -c "
+from agentic_memory import search_memories
+results = search_memories('your query', limit=5)
+print(f'Found {len(results)} results')
+for r in results:
+    print(f'  [{r[\"score\"]:.2f}] {r[\"content\"][:80]}')
+"
+```
+
+Expected output: Relevant results with scores above 0.5 (BM25) or above 0.7 (semantic).
+
+### 7. Advanced Debugging
 
 ### Enable verbose logging
 
@@ -196,7 +239,9 @@ print(f'Average: {sum(scores)/len(scores):.2f}')
 "
 ```
 
-## Further Reading
+## Related
 
 - [Search Pipeline](../concepts/search-pipeline.md) — How search works
 - [Configuration](../reference/configuration.md) — All search-related settings
+- [Knowledge Graph](../concepts/knowledge-graph.md) — How entities are used in search
+- [Performance Benchmarks](performance-benchmarks.md) — Expected latency and throughput

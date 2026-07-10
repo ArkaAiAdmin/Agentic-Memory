@@ -1,8 +1,18 @@
 # Walkthrough: Using Agentic Memory
 
-This guide walks through the core workflow of the memory system — from first save to cross-session recall.
+## Goal
 
-## Step 1: Save Your First Memory
+Learn the core workflow of the memory system — from your first save to cross-session recall — to understand how the agent persists and retrieves knowledge.
+
+## Prerequisites
+
+- [ ] Agentic Memory installed and configured (see [integrate-claude-code](integrate-claude-code.md))
+- [ ] An active session with access to MCP tools (`memory_save`, `memory_search`, etc.)
+- [ ] Basic familiarity with the MCP tool interface
+
+## Steps
+
+### 1. Save Your First Memory
 
 Use the `memory_save` tool (or CLI `memory_save.py`) to persist a note:
 
@@ -22,7 +32,7 @@ memory_save(
 - Auto-backlinks are created to related notes
 - A background task is queued for entity resolution and fact consolidation
 
-## Step 2: Search for It
+### 2. Search for It
 
 ```
 memory_search(query: "what tech stack for my web app")
@@ -37,7 +47,7 @@ memory_search(query: "what tech stack for my web app")
 6. User profiling personalizes ranking
 7. Auto-summary is included in results if available
 
-## Step 3: Build Context Over Time
+### 3. Build Context Over Time
 
 Save more notes about your project:
 
@@ -48,7 +58,7 @@ memory_save(content: "# Bug: Auth timeout\n\nJWT token expires after 24h but ref
 
 The auto-backlinker will discover relationships between these notes. The knowledge graph builds connections automatically.
 
-## Step 4: Recall Across Sessions
+### 4. Recall Across Sessions
 
 At the start of a new session, the agent calls:
 
@@ -63,7 +73,7 @@ This returns:
 - **Contextual search results**: Relevant to the current query
 - **User profile**: Your preferences and access patterns
 
-## Step 5: Use Tags for Control
+### 5. Use Tags for Control
 
 Tags control behavior:
 
@@ -76,7 +86,7 @@ Tags control behavior:
 | `superseded` | Note is hidden from search results |
 | `valid_to` | Note expires after the specified date |
 
-## Step 6: Let the System Learn
+### 6. Let the System Learn
 
 The system continuously improves:
 
@@ -131,3 +141,39 @@ Or via environment variables:
 export MEMORY_TEMPORAL_TIERS=1
 export MEMORY_CONTEXTUAL_ENRICHMENT=1
 ```
+
+## Verification
+
+After completing the walkthrough, confirm the system is working:
+
+```bash
+# Save a test memory
+memory_save(content: "Walkthrough test complete", category: "lessons", title_slug: "walkthrough-test")
+
+# Search for it
+memory_search(query: "walkthrough test")
+
+# Start a new session context
+memory_session_start()
+```
+
+Expected output: The saved memory appears in search results, and `memory_session_start()` returns recent context including your walkthrough activity.
+
+## Troubleshooting
+
+### memory_save returns an error
+
+**Cause**: MCP server not running or database path incorrect.
+**Fix**: Check `memory_health_check` and verify `memory.db` exists at the expected path.
+
+### Search returns no results
+
+**Cause**: The index hasn't been built yet or is stale.
+**Fix**: Run `agentic-memory-rebuild` to rebuild the FTS5 index.
+
+## Related
+
+- [Integrate with Claude Code](integrate-claude-code.md) — Initial setup
+- [Search Pipeline](../concepts/search-pipeline.md) — How search works
+- [Knowledge Graph](../concepts/knowledge-graph.md) — How entities are extracted
+- [MCP Tools Reference](../reference/mcp-tools.md) — Full tool documentation

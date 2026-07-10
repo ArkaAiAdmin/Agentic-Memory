@@ -1,5 +1,15 @@
 # Performance Benchmarks
 
+## Goal
+
+Understand the expected performance characteristics of the agentic-memory system — search latency, write throughput, index rebuild times, and memory footprint — to plan capacity and diagnose slowdowns.
+
+## Prerequisites
+
+- [ ] Agentic Memory installed with all extras
+- [ ] Python 3.12 in a virtual environment
+- [ ] A populated database (8,000+ memories for representative benchmarks)
+
 Agentic Memory is designed for local-first, sub-100ms search latency on
 a typical laptop (Apple Silicon M-series or Intel i7, 16 GB RAM, SQLite
 DB under 100 MB). Numbers below are representative measurements on
@@ -89,3 +99,36 @@ python scripts/bench_all.py
 These scripts are not yet included in the repo; create them by
 wrapping `time.perf_counter()` around the corresponding hot-path
 entry points and reporting percentile stats (see `numpy.percentile`).
+
+## Verification
+
+Run the benchmark scripts to confirm the system performs within expected ranges:
+
+```bash
+python scripts/bench_search.py --queries 100 --runs 3
+```
+
+Expected output: p50 search latency should be under 10ms for BM25 and under 20ms for hybrid search on the reference hardware.
+
+## Troubleshooting
+
+### Search latency is much higher than benchmarks
+
+**Cause**: The database has grown beyond the benchmarked 8,000 memories, or the reranker is enabled (adds 30-250ms).
+**Fix**: Disable the deep reranker (`MEMORY_RERANKER_DISABLED=1`) and rebuild the FTS5 index. Check vector index drift with `agentic-memory-integrity`.
+
+### Write latency spikes
+
+**Cause**: A background task (K G extraction, embedding) is blocking the write path.
+**Fix**: Ensure `defer_expensive=True` (default) so embedding and KG extraction run asynchronously.
+
+### MPS kernel hangs on Apple Silicon
+
+**Cause**: PyTorch MPS backend incompatibility with the cross-encoder model.
+**Fix**: Set `reranker_disabled = true` in `memory.toml` or `MEMORY_RERANKER_DISABLED=1`.
+
+## Related
+
+- [Search Pipeline](../concepts/search-pipeline.md) — How the search pipeline is structured
+- [Add a Cron Job](add-a-cron-job.md) — Recurring maintenance tasks
+- [Configuration](../reference/configuration.md) — Search and reranker settings

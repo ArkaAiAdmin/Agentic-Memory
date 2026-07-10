@@ -1,6 +1,17 @@
 # How to Add a Claude Code Hook
 
-Add a new lifecycle hook to the agentic-memory system. There are 4 lifecycle hooks today (`memory-proactive-context`, `memory-session-start`, `memory-session-end`, plus the log helper `_log_error.py` is not a lifecycle hook); this is how to add a 5th.
+## Goal
+
+Add a new lifecycle hook to the agentic-memory system so events (session start, tool calls, session end) trigger automatic memory operations without agent intervention.
+
+## Prerequisites
+
+- [ ] Python 3.10+
+- [ ] Access to the `hooks/` directory
+- [ ] Familiarity with the hook lifecycle events (PreToolUse, PostToolUse, SessionStart, Stop, UserPromptSubmit, SessionEnd, compacting)
+- [ ] Read the user-facing [cron setup guide](cron-setup.md) to understand what crons handle vs hooks
+
+There are 6 lifecycle hooks today (`memory-proactive-context`, `memory-session-start`, `memory-session-end`, `memory-recall-session`, `memory-search-on-demand`, `memory-precompact-snapshot`, plus the log helper `_log_error.py` is not a lifecycle hook); this is how to add a 7th.
 
 This is the **maintainer** version. For the high-level skill, see `skills/add-a-claude-code-hook/SKILL.md`.
 
@@ -25,14 +36,15 @@ This is the **maintainer** version. For the high-level skill, see `skills/add-a-
 | `Stop` | Agent stops responding | Save snapshot, ping user |
 | `SessionEnd` | Session deleted | Final save, cleanup |
 
-The current 5 hooks cover:
+The current 6 lifecycle hooks cover:
 - `PreToolUse` — `memory-proactive-context` (proactive context injection)
 - `PostToolUse` — `memory-search-on-demand` (auto-save on tool complete)
 - `SessionStart` — `memory-session-start` (load context for a fresh session)
 - `Stop` — `memory-session-end` (auto-save session memory, enforces Rule #7)
 - `UserPromptSubmit` — `memory-recall-session` (recall on user prompt)
+- `experimental.session.compacting` — `memory-precompact-snapshot` (snapshot before context compaction)
 
-Plus a 6th file (`_log_error.py`) that is a shared error logger, not a lifecycle hook.
+Plus `_log_error.py` which is a shared error logger, not a lifecycle hook.
 
 ## Steps
 
@@ -111,7 +123,7 @@ Plus a 6th file (`_log_error.py`) that is a shared error logger, not a lifecycle
 
 6. **Update `memory_workflow.md`** (Hook System section) with a row for your hook.
 
-## Common pitfalls
+## Troubleshooting
 
 - **Print to STDOUT, not stderr.** Most common bug.
 - **Don't fire-and-forget for PreToolUse.** Output is lost.
@@ -119,10 +131,23 @@ Plus a 6th file (`_log_error.py`) that is a shared error logger, not a lifecycle
 - **Don't write to memory.db directly.** Use MCP tools or `save_pipeline.save_memory`.
 - **Use `matcher` to limit which tools trigger your hook.** `"matcher": "Edit|Write"` is much cheaper than `"matcher": ".*"`.
 
-## Reference
+## Verification
 
-- All 3 existing hooks: `hooks/memory-*.py`
+```bash
+# Test the hook with mock input
+echo '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"},"session_id":"test"}' | python3 hooks/memory_your_event.py
+
+# Check the hook log
+tail memory/hooks.log
+```
+
+Expected output: The hook prints valid JSON (its output) to stdout. No error messages appear on stderr.
+
+## Related
+
+- All 6 existing hooks: `hooks/memory-*.py`
 - Auto-save hook: `auto_save.py:285` (`tool_complete` function)
 - Claude Code config: `~/.claude/settings.json`
 - OpenCode config: `~/.opencode/ecc-hooks.ts`
 - Skill (deeper version): `skills/add-a-claude-code-hook/SKILL.md`
+- [Add a Cron Job](add-a-cron-job.md) — For recurring tasks
