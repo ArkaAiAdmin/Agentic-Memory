@@ -5,6 +5,14 @@ Agentic Memory supports **multi-agent memory sharing** via two complementary mec
 1. **CRDT-based peer sync** — direct HTTP sync between independent agent workspaces, using conflict-free replicated data types (CRDTs) built on version vectors.
 2. **Shared memory pool** — a lightweight `shared_memories` table where agents can explicitly publish and import notes.
 
+## What is Multi-Agent Sync?
+
+The multi-agent sync system allows **two or more independent agent workspaces** to share memories. It provides two complementary mechanisms: CRDT-based peer sync (full workspace replication with conflict resolution) and a shared memory pool (lightweight opt-in sharing).
+
+## Why it matters
+
+Without shared memory, each agent workspace is an island — lessons learned by one agent are invisible to others. Multi-agent sync enables teams of agents to build a **shared knowledge base** where insights propagate across sessions, machines, or agent identities. The CRDT layer ensures that concurrent edits from different agents merge without data loss, even when the agents are offline from each other.
+
 ## CRDT Peer Sync
 
 ### How it works
@@ -129,12 +137,24 @@ Enable with `MEMORY_MULTI_AGENT=1` (or `features.multi_agent = true` in `memory.
 | Isolation | Full workspace copy | Single shared table |
 | Use case | Multi-agent teams | Cross-session hints |
 
-## Further Reading
+## Key behaviors
+
+- **Version-vector conflict resolution**: Concurrent edits are resolved by comparing version vectors. If one dominates (all counters >=), it wins deterministically. If neither dominates, last-writer-wins with agent_id as tiebreaker.
+- **Three merge strategies**: Per-note `conflict_policy` supports `supersede` (default, dominant version wins), `replace` (always accept incoming), and `coexist` (keep both as separate timeline entries).
+- **Shared pool is opt-in**: Agents explicitly publish notes via `memory_share`. No automatic replication. Simpler than CRDT sync but requires manual action.
+- **Sync server security**: Binds to `127.0.0.1` by default. Remote access requires TLS, HMAC signing, or a reverse proxy with authentication.
+- **Cron-driven pull/push cycle**: The sync cron job orchestrates the cycle on a configurable interval (default 5 minutes).
+- **Per-peer sync log**: The `sync_log` table tracks every push/pull cycle with change counts, duration, and error details for observability.
+
+## Related
 
 - `crdt_merge.py` — Core CRDT merge engine
 - `sync_server.py` — HTTP sync server
 - `sync_client.py` — HTTP sync client
 - `cron/cron_crdt_sync.py` — Scheduled sync orchestration (in the `cron/` subdirectory since 2026-06-22)
 - `cron/cron_sync.py` — Alternative sync entry point (added 2026-06-22)
-- [Configuration Reference](../reference/configuration.md) — All env vars
-- [Schema Reference](../reference/schema.md) — Full table definitions
+- [Configuration Reference](../reference/configuration.md) — All env vars including `MEMORY_SYNC_*`
+- [Schema Reference](../reference/schema.md) — Full table definitions including `shared_memories`, `sync_log`
+- [Knowledge Graph](knowledge-graph.md) — CRDT tables for KG (`kg_entity_crdt`, `kg_edge_crdt`)
+- [Security Model](security-model.md) — Sync server security and TLS configuration
+- [Self-Hosting](../self-hosting.md) — Production deployment with remote sync

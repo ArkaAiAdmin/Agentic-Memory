@@ -2,7 +2,15 @@
 
 Agentic Memory uses a **12-phase hybrid search pipeline** that combines multiple retrieval methods, reranking, temporal decay, and knowledge graph boosting.
 
-## Overview
+## What is the Search Pipeline?
+
+The search pipeline is the **read path** of Agentic Memory — it transforms a natural-language query into a ranked list of relevant memories. It combines keyword matching (FTS5 BM25), semantic understanding (vector embeddings), token-level matching (ColBERT), deep neural reranking, temporal recency, a neural forget curve, and knowledge-graph centrality boosting into a single hybrid scoring function.
+
+## Why it matters
+
+Without the search pipeline, agents would rely on exact-match queries that miss semantic relationships, ignore recency, and fail on large memory stores. The hybrid pipeline ensures that the most relevant memory surfaces regardless of phrasing, age, or graph connectivity — making retrieval robust across a wide range of query types and corpus sizes.
+
+## How it works
 
 ```
 Query → Phase 0 (Normalize) → Phase 1 (FTS5 BM25)
@@ -154,3 +162,19 @@ late_interaction = true
 concept_boost_enabled = true
 centrality_boost_enabled = true
 ```
+
+## Key behaviors
+
+- **Phase isolation**: Each of the 12 phases is independently isolated — no single failure kills the search. Phase 11 tracks per-phase errors for observability.
+- **Graceful degradation**: If the vector index is missing or stale, search falls back to FTS5-only results. If the reranker fails, search returns RRF-merged results without reranking.
+- **Deterministic FTS5**: BM25 ranking is deterministic and repeatable — no model dependency for keyword queries.
+- **Defer-expensive mode**: By default, semantic search and deep reranking are deferred (returns <200ms). Results are cached for fast re-query.
+- **Configurable weights**: Each scoring component (FTS5, vector, rerank, temporal, forget, KG) has a configurable weight in `memory.toml`.
+
+## Related
+
+- [How to Debug Search](../how-to/debug-search.md) — Step-by-step troubleshooting guide
+- [Configuration Reference](../reference/configuration.md) — All search-related env vars and TOML keys
+- [Knowledge Graph](knowledge-graph.md) — How entities boost search results
+- [Temporal KG](temporal-kg.md) — Time-aware decay and fact supersession
+- [Architecture Overview](../architecture/overview.md) — Where the search pipeline fits in the system

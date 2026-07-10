@@ -1,5 +1,24 @@
 # Python SDK API Reference
 
+## Overview
+
+The Python SDK (`agentic-memory` package) provides a programmatic interface to all memory operations without going through MCP. Use it for scripting, batch operations, custom integrations, and any scenario where you want to call memory functions directly from Python code. The SDK wraps the same internal pipeline as the MCP tools.
+
+## Quick Reference
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `MemoryClient(db_path, user_id)` | Create a new client | Client instance |
+| `.save(content, category, ...)` | Save a memory | Note ID (str) |
+| `.search(query, limit, ...)` | Search memories | `SearchResults` |
+| `.get(note_id)` | Get a single memory | `MemoryResult` or None |
+| `.delete(note_id, hard)` | Soft/hard delete | bool |
+| `.restore(note_id)` | Restore from soft-delete | bool |
+| `.list(limit, offset, category)` | List recent memories | list of `MemoryResult` |
+| `.stats()` | System statistics | `Stats` |
+| `.clear()` | Clear SDK-created memories | int |
+| `AgentMemory(agent_id, db_path)` | Agent-scoped client | Client instance |
+
 ## Installation
 
 ```bash
@@ -294,6 +313,44 @@ class Fact:
 ```
 
 ---
+
+## Configuration
+
+The Python SDK reads the same configuration as the MCP server — environment variables and `memory.toml`. Key settings:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEMORY_DB_PATH` | `./memory.db` | Database location |
+| `MEMORY_MULTI_AGENT` | `true` | Enable cross-agent sharing |
+| `MEMORY_KNOWLEDGE_GRAPH` | `true` | Enable KG in search results |
+
+When creating a `MemoryClient(db_path="/custom/path.db")`, the explicit path overrides all config.
+
+## Troubleshooting
+
+### Symptom: `ConnectionError` on client creation
+
+**Cause**: The database path doesn't exist or is locked by another process.
+
+**Fix**: Verify the DB path exists and no other process holds a write lock. Check `MEMORY_DB_PATH` is set correctly.
+
+### Symptom: `NotFoundError` when calling `.get()` or `.delete()`
+
+**Cause**: The note ID doesn't exist or has been hard-deleted.
+
+**Fix**: Use `.search()` to find the correct ID, or `.list()` to browse available memories.
+
+### Symptom: `CircuitBreakerOpen` on save
+
+**Cause**: The auto-save circuit breaker is open after too many failures.
+
+**Fix**: Check `memory_maintenance(operation="circuit_breaker_status")` for details. The breaker auto-resets after 5 minutes.
+
+## Related
+
+- [TypeScript SDK](typescript-sdk.md) — TypeScript equivalent
+- [REST API](rest-api.md) — HTTP interface
+- [MCP Tools Reference](../reference/mcp-tools.md) — MCP tool equivalents
 
 ## Exceptions
 

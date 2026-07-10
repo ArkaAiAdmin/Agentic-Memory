@@ -2,6 +2,10 @@
 
 Why Agentic Memory is built the way it is.
 
+## Context
+
+Every architecture decision in Agentic Memory was made with a specific tradeoff in mind: keep the system local-first, deterministic, and zero-dependency. This document records the key decisions, the alternatives that were considered, and the rationale behind each choice. Understanding these decisions helps you extend the system without contradicting its design principles.
+
 ## Why Markdown as Source of Truth?
 
 ### The Problem with Database-Only
@@ -168,7 +172,27 @@ Save (fast) → Enqueue (fast) → Process (async)
 
 The trade-off is no automatic sync, but that's a feature — you choose what to share.
 
-## Further Reading
+## Tradeoffs
+
+Every decision in this system involves a tradeoff between simplicity and capability. The common thread: Agentic Memory consistently chooses **zero-dependency, deterministic, local-first** over **more features, more accuracy, or cloud convenience**. This means:
+
+- **You don't need to run any server or LLM** — but you won't get LLM-powered extraction quality.
+- **Markdown is your source of truth** — but index rebuilds are occasionally needed.
+- **SQLite keeps it simple** — but you can't do distributed reads at scale.
+- **BM25 is fast and predictable** — but you may want vector search for fuzzy semantics.
+- **Background tasks via cron are reliable** — but you don't get real-time processing.
+
+## Implications
+
+For **users**: the system works out of the box with zero infrastructure. Memory files are plain markdown you can read, edit, version-control, and back up with standard tools.
+
+For **operators**: maintenance is minimal — a cron job and an occasional index rebuild. No servers to monitor, no databases to tune, no containers to orchestrate.
+
+For **developers**: the codebase is dependency-light (stdlib Python + SQLite). Customizing entity extraction, search ranking, or storage layout means editing Python, not wrangling Docker.
+
+## Related
 
 - [Comparison](comparison.md) — How we compare to alternatives
 - [Architecture](../architecture/overview.md) — Full system design
+- [Boot Sequence](boot-sequence.md) — How the system initializes
+- [Reference: Configuration](../reference/configuration.md) — All config options

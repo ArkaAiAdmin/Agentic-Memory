@@ -280,6 +280,16 @@ The temporal KG is fast enough to be on the save hot path. No
 measurable regression observed in the focused regression suite
 (243/243 tests passing after T1-T8).
 
+## Key behaviors
+
+- **Bi-temporal query model**: Two independent time axes (event time + transaction time) answer different questions — "what was true then?" vs. "what did we know then?"
+- **Event-time extraction**: The system auto-detects dates, months, quarters, and years from memory text using 12 regex patterns. Bare "YYYY" without a preposition is rejected (too noisy).
+- **Memory-level time**: All facts extracted from a single memory share the same `event_time`. Per-fact LLM time is captured in the prompt but not yet wired through.
+- **Supersession preserves history**: Contradicted facts are marked `invalid_at` and linked via `superseded_by`/`supersedes` — they remain queryable in historical queries but filtered out of current-state queries.
+- **Edit invalidation**: When a memory is edited, the system diffs old vs. new facts and invalidates removed ones (sets `invalidation_reason = 'manual'`).
+- **Order-of-insertion matters**: If the newer-in-time memory is inserted first, a later older-in-time memory is NOT detected as a contradiction (different event times). The user must manually supersede.
+- **Global feature flag**: The entire temporal subsystem can be disabled via `MEMORY_TEMPORAL_KG=0`, restoring basic (non-temporal) fact extraction.
+
 ## Limitations
 
 1. **Memory-level time, not per-fact**: All facts from a memory share
@@ -304,13 +314,33 @@ measurable regression observed in the focused regression suite
 These are tracked as future work; the MVP focuses on the simple
 "same S+P, different O, same time = contradiction" rule.
 
-## See Also
+## Troubleshooting
 
-- [Knowledge Graph](knowledge-graph.md) — base fact graph (pre-temporal)
-- [Architecture](../architecture/overview.md) — where the temporal KG fits in
-  the system
-- `fact_temporal.py` — implementation (4 core functions + 3 query
-  functions)
+### Temporal KG disabled but I see temporal columns
+
+The columns always exist (added by migration 018). When `MEMORY_TEMPORAL_KG=0`, no event_time is stored, no contradiction detection runs, and no edit invalidation runs. The columns remain NULL and unused.
+
+### Contradiction not detected when expected
+
+Check the granularity: a day-precision fact ("2026-03-15") and a year-precision fact ("2024") only overlap if the year matches. If both facts have different subjects or predicates, they won't be compared at all — the rule requires same S+P, different O, overlapping time.
+
+### Edit invalidation removed too many facts
+
+Edit invalidation diffs old facts against new extraction. If you significantly rewrote a memory, previously extracted facts that no longer appear in the new text are invalidated. To preserve a fact, keep its wording in the updated memory.
+
+### Order-of-insertion surprises
+
+If you insert Memory B (event_time=2024) before Memory A (event_time=2020) with the same S+P but different O, no contradiction is flagged. The expected fix is to save a new memory that explicitly supersedes the earlier fact, or use `memory_maintenance(operation="detect_contradictions")` to force a full scan.
+
+## Related
+
+- [Knowledge Graph](knowledge-graph.md) — Base fact graph (pre-temporal) and entity extraction
+- [Search Pipeline](search-pipeline.md) — How temporal decay feeds into hybrid search scoring
+- [How to Run a Migration](../how-to/run-a-migration.md) — Adding new temporal migrations
+- [Schema Reference](../reference/schema.md) — Full `kg_facts` table definition with temporal columns
+- [Configuration Reference](../reference/configuration.md) — `MEMORY_TEMPORAL_KG` and related env vars
+- [Architecture Overview](../architecture/overview.md) — Where the temporal KG fits in the system
+- `fact_temporal.py` — Implementation (4 core functions + 3 query functions)
 - `mcp_audit.py` — `memory_temporal_query` and `memory_temporal_contradictions`
 - `memory_integrity.py` — `--temporal-summary` and `--temporal-query` CLI
-- Migration `018_fact_temporal.sql` — schema upgrade
+- Migration `018_fact_temporal.sql` — Schema upgrade

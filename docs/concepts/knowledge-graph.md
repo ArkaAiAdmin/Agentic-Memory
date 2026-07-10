@@ -2,7 +2,15 @@
 
 The knowledge graph captures **entities and relationships** extracted from memories, enabling structured queries like "show me all memories related to PostgreSQL" or "what decisions involved the auth system?"
 
-## How It Works
+## What is the Knowledge Graph?
+
+The knowledge graph is a **structured entity-relationship layer** built on top of the memory store. Every time a memory is saved, the system extracts entities (technologies, concepts, files, commands) and the relationships between them, creating a graph that can be queried by entity, traversed by relationship, or used to boost search results.
+
+## Why it matters
+
+Unstructured text search alone cannot answer questions like "what's connected to Docker?" or "how many times has PostgreSQL been mentioned?" The knowledge graph surfaces **cross-memory relationships** that keyword search would miss, enables **entity-based discovery** (find everything related to a technology), and feeds **centrality boosting** into the search pipeline so well-connected entities rank higher.
+
+## How it works
 
 ### 1. Entity Extraction (NER)
 
@@ -205,12 +213,24 @@ The knowledge graph has limitations:
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `MEMORY_KNOWLEDGE_GRAPH` | `0` | Enable KG extraction |
+| `MEMORY_KNOWLEDGE_GRAPH` | `true` | Enable KG extraction |
 | `--semantic` flag | off | Enable semantic dedup |
 | `--threshold` | `0.92` | Similarity threshold for semantic dedup |
 
-## Further Reading
+## Key behaviors
 
-- [Search Pipeline](search-pipeline.md) — How KG integrates with search
-- [Design Decisions](../explanation/design-decisions.md) — Why regex-based NER
-- [Extend Entity Types](../how-to/custom-entity-types.md) — Add custom patterns
+- **Regex-based NER**: Entity extraction is deterministic and requires no LLM API calls. Trade-off: domain-specific entities need explicit pattern additions.
+- **Exact + semantic dedup**: Two-tier deduplication prevents entity bloat. Exact merges (same name+type) run first, then fuzzy merges (cosine similarity > 0.92) catch near-duplicates.
+- **Contradiction detection**: The temporal KG layer (see [Temporal KG](temporal-kg.md)) detects when new facts conflict with existing ones and marks the superseded fact as invalid.
+- **CRDT conflict-free merge**: When multiple agent workspaces sync, the `kg_entity_crdt` and `kg_edge_crdt` tables (v21) use 2P-Set and LWW semantics to merge without data loss.
+- **No deep semantics**: The regex extractor cannot infer "the database" = "SQLite" without an explicit mention. Semantic understanding requires the search pipeline's vector embeddings.
+- **Sparse graph**: Small memory stores may have few connections. The KG becomes more valuable as the corpus grows.
+
+## Related
+
+- [Search Pipeline](search-pipeline.md) — How KG integrates with search (centrality boost, graph RAG)
+- [Temporal KG](temporal-kg.md) — Bi-temporal fact tracking and contradiction detection
+- [Design Decisions](../explanation/design-decisions.md) — Why regex-based NER was chosen
+- [Extend Entity Types](../how-to/custom-entity-types.md) — Add custom NER patterns
+- [Schema Reference](../reference/schema.md) — Full table definitions for `kg_entities`, `kg_edges`, `kg_facts`
+- [Architecture Overview](../architecture/overview.md) — Where the KG fits in the system

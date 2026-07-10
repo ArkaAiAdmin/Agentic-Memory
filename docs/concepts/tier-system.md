@@ -1,6 +1,14 @@
 # Tier System
 
-Agentic Memory automatically manages memory lifecycle through **hot, warm, and cold tiers**. Memories move between tiers based on access patterns, importance, and age.
+Agentic Memory automatically manages memory lifecycle through **hot, warm, cold, and archive tiers**. Memories move between tiers based on access patterns, importance, and age.
+
+## What is the Tier System?
+
+The tier system is a **memory lifecycle manager** that automatically classifies each memory into one of four tiers based on its access frequency, recency, importance, and success score. Tiers control which memories are included in searches, how much compute is spent on background processing, and when a memory should be archived.
+
+## Why it matters
+
+Without tier management, every memory consumes equal resources regardless of relevance. An ancient, never-used lesson dilutes search results and wastes background-task cycles. The tier system ensures that **frequently-used and important memories are surfaced quickly**, while stale memories are gracefully retired — keeping the system fast and focused as the corpus grows.
 
 ## Tier Overview
 
@@ -135,11 +143,20 @@ Pinned memories:
 - Never move to cold/archive tiers
 - Show a pin indicator in the UI
 
+## Key behaviors
+
+- **Pinning prevents migration**: Pinned memories (`pinned=True`) never leave the hot tier and always appear in search results. The daily pin-decay check can auto-unpin memories that have gone unaccessed.
+- **Spaced-repetition integration**: The tier system integrates with SM-2 scheduling — memories that are successfully reviewed stay hot longer; poorly-reviewed memories decay faster.
+- **No data loss on archive**: Archive-tier memories are excluded from all searches but the markdown file is preserved. The memory can be restored by saving it again or re-indexing.
+- **Cron-driven migration**: Tier migration runs via cron (`agentic-memory-tier`, typically weekly). Between runs, all tiers are visible in search unless explicitly filtered.
+- **Background task gating**: Cold and archive memories stop receiving background processing (entity resolution, fact consolidation) to save compute.
+- **Reinforcement loop**: Success feedback from the agent (via `memory_reinforce`) feeds into the success score, which directly influences tier assignment.
+
 ## Configuration
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `MEMORY_SELF_DIRECTED` | `0` | Enable tier migration |
+| `MEMORY_SELF_DIRECTED` | `true` | Enable tier migration |
 | Pin decay check | Daily | Auto-unpin stale pinned memories |
 | Archive threshold | 180 days | Move to archive after this period |
 
@@ -163,7 +180,10 @@ memory_run_tier_migration(dry_run=True)   # Preview a migration pass
 memory_run_tier_migration(dry_run=False)  # Commit a migration pass on demand
 ```
 
-## Further Reading
+## Related
 
-- [Background Tasks](background-tasks.md) — How async processing works
+- [Background Tasks](background-tasks.md) — How tier gating affects background task processing
 - [Why Markdown](why-markdown.md) — Why tiers affect the index, not the files
+- [How to Set Up Cron Jobs](../how-to/cron-setup.md) — Configuring tier migration schedule
+- [Configuration Reference](../reference/configuration.md) — `MEMORY_SELF_DIRECTED`, `MEMORY_TEMPORAL_TIERS`, and related env vars
+- [Schema Reference](../reference/schema.md) — `review_schedule` and `memories.tier` column definitions

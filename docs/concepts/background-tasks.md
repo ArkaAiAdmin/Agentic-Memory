@@ -1,6 +1,10 @@
 # Background Tasks
 
-Agentic Memory uses a **SQLite-backed task queue** for expensive operations that shouldn't block the save path.
+Agentic Memory uses a **SQLite-backed task queue** for expensive operations that shouldn't block the save path, plus an **inbox + daemon** pattern for latency-sensitive auto-save operations.
+
+## What are Background Tasks?
+
+Background tasks are deferred operations that are enqueued during the save path and processed asynchronously by a worker. They fall into two categories: the SQLite `task_queue` for batch processing (entity resolution, fact consolidation, contradiction detection, cross-session learning) and the inbox/daemon pattern for latency-critical auto-save hooks.
 
 ## Why Background Tasks?
 
@@ -229,19 +233,30 @@ for row in conn.execute(
 "
 ```
 
+## Key behaviors (Task Queue)
+
+- **Best-effort enqueue**: If enqueueing fails, the save still succeeds. Background tasks are never a write-path failure point.
+- **Priority-ordered processing**: Tasks with higher `priority` values are processed first. `contradiction_check` (priority 2) runs before `entity_resolution` (priority 1).
+- **Automatic retry with backoff**: Failed tasks retry up to `max_attempts` (default 3). Each attempt increments `attempts` and stores the error message.
+- **`BEGIN IMMEDIATE` concurrency**: Prevents two workers from dequeuing the same task. Only one worker should run at a time (use `flock` for cross-process safety).
+- **Tier-aware task gating**: Cold and archive memories skip entity resolution and fact consolidation. Only hot and warm memories receive background processing.
+- **Graceful shutdown**: SIGTERM/SIGINT complete the current task before exiting.
+
 ## Configuration
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| Cron interval | `*/5 * * * *` | How often worker runs |
+| Cron interval | `*/15 * * * *` | How often worker runs (reduced from `*/5` on 2026-06-22) |
 | Max attempts | `3` | Retries before marking as failed |
 | Batch size | `10` | Max tasks per worker invocation |
 
-## Further Reading
+## Related
 
 - [Tier System](tier-system.md) — How tiers affect task processing
 - [Knowledge Graph](knowledge-graph.md) — Entity resolution details
 - [Set Up Cron Jobs](../how-to/cron-setup.md) — Configure the worker schedule
+- [Configuration Reference](../reference/configuration.md) — All env vars
+- [Schema Reference](../reference/schema.md) — `task_queue` table definition
 
 ---
 
@@ -284,6 +299,14 @@ tool_complete hook
   daemon doesn't re-validate
 - A failure to enqueue falls back to the inline sync path so no save is lost
 - The daemon does a final flush on SIGTERM/SIGINT/idle timeout
+
+### Key behaviors (Async Auto-Save)
+
+- **Sub-millisecond enqueue**: Appending a JSONL line to the inbox takes ~2-5ms — two orders of magnitude faster than a Python subprocess.
+- **Crash-safe inbox**: The JSONL inbox is append-only. A daemon crash never loses data; the next daemon picks up where the previous one left off.
+- **flock-protected daemon**: The daemon holds a flock on the inbox directory. A second daemon for the same memory dir is prevented from starting.
+- **Inline fallback**: If enqueueing to the inbox fails (e.g., disk full), the hook falls back to the synchronous inline save path — no save is ever lost.
+- **Final flush on shutdown**: The daemon flushes all pending entries on SIGTERM, SIGINT, or idle timeout (default 1 hour of silence).
 
 **Tunables:**
 

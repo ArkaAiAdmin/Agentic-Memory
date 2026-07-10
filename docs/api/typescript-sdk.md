@@ -1,5 +1,22 @@
 # TypeScript SDK API Reference
 
+## Overview
+
+The TypeScript SDK (`@agentic-memory/sdk`) provides a native TypeScript interface to Agentic Memory over HTTP. Use it in Node.js applications, web frontends, and any TypeScript project that needs to persist and search memories. The SDK communicates with the memory server via REST + WebSocket.
+
+## Quick Reference
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `new MemoryClient(options)` | Create a new client | Client instance |
+| `.add(content, options)` | Save a memory | Promise\<string\> |
+| `.search(query, options)` | Search memories | Promise\<SearchResult[]\> |
+| `.get(id)` | Get a single memory | Promise\<MemoryResult \| null\> |
+| `.list(options)` | List recent memories | Promise\<MemoryResult[]\> |
+| `.delete(id, hard)` | Soft/hard delete | Promise\<boolean\> |
+| `.restore(id)` | Restore from soft-delete | Promise\<boolean\> |
+| `.stats()` | System statistics | Promise\<Stats\> |
+
 ## Installation
 
 ```bash
@@ -203,6 +220,45 @@ interface KGRelation {
 ```
 
 ---
+
+## Configuration
+
+The TypeScript SDK connects to a running memory server. Configuration is passed to the constructor:
+
+```typescript
+const client = new MemoryClient({
+  baseUrl: 'http://127.0.0.1:9878',  // Default
+  token: 'your-api-token',            // Optional auth
+});
+```
+
+Environment variables on the server side control the server's behavior (see [Configuration Reference](../reference/configuration.md) for the full list).
+
+## Troubleshooting
+
+### Symptom: `ECONNREFUSED` on client creation
+
+**Cause**: The memory server is not running.
+
+**Fix**: Start the server: `agentic-memory-server` or `python memory_mcp.py`.
+
+### Symptom: `401 Unauthorized` on API calls
+
+**Cause**: The API token doesn't match the server's `MEMORY_API_TOKEN`.
+
+**Fix**: Verify the token in your client constructor matches the server's env var.
+
+### Symptom: WebSocket connection drops after a few seconds
+
+**Cause**: The server may be behind a proxy that doesn't support WebSocket upgrades, or the server's CORS config blocks the client origin.
+
+**Fix**: Check `MEMORY_API_CORS_ORIGINS` and ensure `ws://` protocol is allowed through the proxy.
+
+## Related
+
+- [Python SDK](python-sdk.md) — Python equivalent
+- [REST API](rest-api.md) — Raw HTTP interface
+- [MCP Tools Reference](../reference/mcp-tools.md) — MCP tool equivalents
 
 ## WebSocket
 

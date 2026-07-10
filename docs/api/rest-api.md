@@ -1,5 +1,29 @@
 # REST API Reference
 
+## Overview
+
+The REST API lets any HTTP client — `curl`, Postman, browser JS, scripts — interact with Agentic Memory without installing any SDK. The server runs as a standalone process and exposes endpoints for CRUD operations, search, knowledge graph traversal, system health, and maintenance. All responses are JSON.
+
+## Quick Reference
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/memories` | Create a new memory |
+| GET | `/api/v1/search?q=...` | Search memories |
+| GET | `/api/v1/memories/{id}` | Get a single memory |
+| GET | `/api/v1/memories` | List memories |
+| DELETE | `/api/v1/memories/{id}` | Delete a memory |
+| POST | `/api/v1/memories/{id}/restore` | Restore soft-deleted |
+| GET | `/api/v1/stats` | System statistics |
+| GET | `/api/v1/health` | Health check |
+| GET | `/api/v1/kg/entities` | List KG entities |
+| GET | `/api/v1/kg/relations` | List KG relations |
+| GET | `/api/v1/temporal/facts?q=...` | Search temporal facts |
+| GET | `/api/v1/temporal/contradictions` | List contradictions |
+| POST | `/api/v1/maintenance/check` | Run integrity check |
+| GET | `/api/v1/system/health` | Deep system health |
+| WS | `ws://localhost:9878/ws` | Real-time events |
+
 ## Base URL
 
 ```
@@ -224,6 +248,17 @@ Connect to `ws://localhost:9878/ws` for real-time events:
 
 ---
 
+## Configuration
+
+The API server reads these environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEMORY_API_TOKEN` | (none) | Bearer token for auth |
+| `MEMORY_API_CORS_ORIGINS` | (none) | Allowed CORS origins (comma-separated) |
+| `MEMORY_API_RATE_LIMIT` | `60` | Requests per minute per IP |
+| `MEMORY_DB_PATH` | `./memory.db` | Database path |
+
 ## CORS
 
 Configure allowed origins:
@@ -242,3 +277,30 @@ The API server includes built-in rate limiting:
 # Default: 60 requests per minute per IP
 export MEMORY_API_RATE_LIMIT=60
 ```
+
+## Troubleshooting
+
+### Symptom: `401 Unauthorized` on every request
+
+**Cause**: The server requires a token (`MEMORY_API_TOKEN` is set) but the client isn't sending it.
+
+**Fix**: Include the token header: `curl -H "Authorization: Bearer $TOKEN" http://localhost:9878/api/v1/memories`.
+
+### Symptom: `CORS` errors from browser JavaScript
+
+**Cause**: `MEMORY_API_CORS_ORIGINS` is empty or doesn't include the browser's origin.
+
+**Fix**: Set `export MEMORY_API_CORS_ORIGINS="http://localhost:3000"` (or your frontend's URL) and restart the server.
+
+### Symptom: Empty search results when data exists
+
+**Cause**: The REST API uses the same search pipeline as MCP. If FTS5 or the vector index is out of sync, results may be empty.
+
+**Fix**: Run `POST /api/v1/maintenance/check` or rebuild the index via MCP: `memory_maintenance(operation="rebuild")`.
+
+## Related
+
+- [Python SDK](python-sdk.md) — Programmatic Python access
+- [TypeScript SDK](typescript-sdk.md) — TypeScript/Node.js client
+- [MCP Tools Reference](../reference/mcp-tools.md) — MCP tool equivalents
+- [Configuration Reference](../reference/configuration.md) — All server config options

@@ -1,5 +1,9 @@
 # Boot Sequence: From Terminal to First Prompt
 
+## Context
+
+Every time you start a session with Agentic Memory, a chain of events fires before your first prompt reaches the LLM. Understanding this boot sequence helps operators debug hook failures, developers optimize the startup path, and users understand why memory context is available from the very first turn. This document traces the real sequence from `~/.opencode/hooks/hooks.json`.
+
 What actually happens when you open a new terminal, type `opencode`, and create a new session — traced from the real `~/.opencode/hooks/hooks.json` config, not from imagination.
 
 ## The 60-second version
@@ -283,3 +287,27 @@ The 5s is hidden inside the tool execution wall time (LLM round-trip is usually 
 ## Provenance
 
 Built 2026-06-15 by reading the actual `~/.opencode/hooks/hooks.json` and tracing each hook command to its purpose. Verified via the opencode plugin entry at `dist/plugins/ecc-hooks.js`. The 3 agentic-memory hooks are the only Python hooks in the entire opencode config — every other hook is Node.js or shell.
+
+## Tradeoffs
+
+The hook-based boot sequence trades **simplicity** for **invisibility**. The startup path involves 30+ hook commands across multiple lifecycle events — this is complex machinery that can fail silently. But when it works, the agent gets session context, proactive memory lookup, and auto-save with zero user-facing latency. The key tradeoffs:
+
+- **Sync hooks (PreToolUse) block the agent** — if the proactive context hook takes >3s, it times out and the agent loses memory context for that tool call.
+- **Async hooks (PostToolUse) are fire-and-forget** — if auto-save fails, the agent doesn't know. Failures end up in `hook-errors.jsonl`.
+- **Python hooks are the only non-Node.js hooks** — the agentic-memory hooks are Python subprocesses spawned by Node.js. This adds ~200ms of Python startup overhead per hook call.
+- **Caching is minimal** — every PreToolUse hook runs a live DB query. A warm cache would be faster but adds complexity.
+
+## Implications
+
+For **users**: the boot sequence is invisible. Memory context is injected automatically before every tool call. You never think about it — but your agent's responses are qualitatively better because of it.
+
+For **operators**: the complexity is in the hook wiring. Failures are silent by design (the hooks never crash the agent). Debugging requires checking `hook-errors.jsonl`, `hooks.log`, and the circuit breaker status.
+
+For **developers**: adding a new lifecycle hook means editing both the TypeScript plugin (`hooks.json`) and the Python handler script. The Python side must handle all exceptions internally (`except BaseException → log_error() → sys.exit(0)`) to avoid crashing the agent.
+
+## Related
+
+- [Hook Wiring](../AGENTS.md#hook-wiring) — How OpenCode lifecycle events connect to Python scripts
+- [Design Decisions](design-decisions.md) — Why the system is built this way
+- [MCP Tools Reference](../reference/mcp-tools.md) — All available MCP tools
+- [Architecture](../architecture/overview.md) — Full system design

@@ -2,6 +2,14 @@
 
 Agentic Memory stores memories as **markdown files** — not just in a database. This is a deliberate architectural choice with significant implications.
 
+## What is Markdown-First Storage?
+
+Markdown-first storage means the **primary record of every memory is a `.md` file on disk**, not a row in a database. The SQLite database is a derived artifact — built from the markdown files for performance, but never the authoritative copy. This inverts the usual architecture where the database is the source of truth and files are exports.
+
+## Why it matters
+
+A database-first system creates vendor lock-in, opaque binary backups, and poor version control. Markdown-first means memories are **readable in any editor, diffable with git, portable across tools, and recoverable from a directory copy**. If the database corrupts, you delete it and rebuild — nothing is lost. This makes the system dramatically more resilient and future-proof than a database-only approach.
+
 ## The Core Principle
 
 > **Markdown files are the source of truth. SQLite is derived and rebuildable.**
@@ -106,7 +114,12 @@ Agents benefit from markdown-first in practical ways:
 4. **Merge-friendly** — Git handles conflicts naturally
 5. **Portable across tools** — Works with Claude Code, OpenCode, or any text editor
 
-## Further Reading
+## Related
 
-- [Architecture](../architecture/overview.md) — Full data flow diagram
-- [Design Decisions](../explanation/design-decisions.md) — Why we chose this approach
+- [Architecture Overview](../architecture/overview.md) — Full data flow: markdown → derived layers
+- [Design Decisions](../explanation/design-decisions.md) — Why we chose markdown-first over database-only
+- [Tier System](tier-system.md) — How tiers affect the index, not the files
+- [Background Tasks](background-tasks.md) — Async processing that rebuilds derived artifacts
+- [Boot Sequence](../explanation/boot-sequence.md) — How rebuild_index.py recovers from a clean state
+- [Durability](../durability.md) — Crash safety and recovery guarantees
+- [How to Debug Write Journal](../how-to/debug-write-journal.md) — CQRS write journal and markdown consistency

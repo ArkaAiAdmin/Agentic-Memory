@@ -2,6 +2,14 @@
 
 Agentic Memory is designed with **privacy-first principles**. No data leaves your machine unless you explicitly choose to share it.
 
+## What is the Security Model?
+
+The security model defines the **privacy guarantees, threat mitigations, and operational boundaries** of Agentic Memory. It covers data isolation (local-first architecture, per-project databases), injection detection (demoting suspicious content in search), access control (localhost-only MCP server, file permissions), and resilience (markdown as source of truth, rebuildable indices).
+
+## Why it matters
+
+Agentic Memory stores **private human memories** — lessons, decisions, preferences, and project context. A security lapse could expose this data to unauthorized agents, exfiltrate it over the network, or let malicious content poison the agent's behavior. The security model provides clear boundaries: what the system protects, what it does not, and how operators can harden their deployment.
+
 ## Core Security Properties
 
 ### 1. Local-First
@@ -136,6 +144,30 @@ volumes:
     - agentic-data:/data
 ```
 
+## Key behaviors
+
+- **No LLM in the write path**: Entity extraction, fact extraction, and search ranking use deterministic regex and BM25 — no API calls. The only LLM-dependent feature is semantic embeddings, which run locally via `model2vec`.
+- **Injection detection demotes, does not delete**: Suspicious content is flagged and demoted in search results but preserved in the database. An operator can review and approve it via `memory_scan_injection`.
+- **Per-project isolation**: Each project has its own `memory.db`. Global memory (`is_global=True`) is opt-in. Cross-project access requires explicit configuration.
+- **AO** (Accountable Operations): The `memory_audit_log` table records every MCP tool invocation with timestamp, arguments, error state, and latency. Audit logs are append-only.
+- **Sync server security**: The MCP sync server binds to `127.0.0.1` by default. Remote access requires TLS, optional mTLS, HMAC signing token, and CORS configuration.
+- **Markdown rebuild guarantees**: If the database is compromised, the markdown files remain as the trusted source of truth. Run `rebuild_index.py` to recover.
+
+## Configuration
+
+The security model is configuration-free in its default state (no env vars to set for local-first operation). For remote access, configure the sync server:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEMORY_SYNC_TOKEN` | — | Required auth token for sync server |
+| `MEMORY_SYNC_HMAC_SECRET` | — | Optional HMAC signing secret |
+| `MEMORY_SYNC_TLS_CERT` | — | TLS certificate path |
+| `MEMORY_SYNC_TLS_KEY` | — | TLS key path |
+| `MEMORY_SYNC_TLS_CLIENT_CA` | — | mTLS client CA path |
+| `MEMORY_SYNC_CORS_ORIGINS` | — | CORS allowed origins (empty = no CORS) |
+
+See [Configuration Reference](../reference/configuration.md) and [Self-Hosting](../self-hosting.md) for full details.
+
 ## Best Practices
 
 1. **Use file permissions** — `chmod 600 memory.db` restricts access
@@ -145,7 +177,11 @@ volumes:
 5. **Use `.gitignore`** — Never commit `memory.db` or `*.db` files
 6. **Audit logs** — `memory_audit_log` tracks all operations
 
-## Further Reading
+## Related
 
-- [Why Markdown](why-markdown.md) — Why markdown is the source of truth
+- [Why Markdown](why-markdown.md) — Why markdown is the source of truth (data corruption resistance)
+- [Multi-Agent Sync](multi-agent-sync.md) — Sync server security and TLS configuration
+- [How to Set Up Cron Jobs](../how-to/cron-setup.md) — Backup and integrity-check cron jobs
+- [Configuration Reference](../reference/configuration.md) — All env vars including sync security
 - [Self-Hosting](../self-hosting.md) — Deploy securely on your infrastructure
+- [MCP Tools Reference](../reference/mcp-tools.md) — Audit tool surface and error handling

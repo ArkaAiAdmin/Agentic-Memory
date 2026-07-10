@@ -1,6 +1,8 @@
 # Comparison
 
-How Agentic Memory compares to other memory systems.
+## Context
+
+When choosing a memory system for your agent, you have several options — each with different tradeoffs around privacy, infrastructure, LLM dependency, and search quality. This document compares Agentic Memory to the most popular alternatives so you can make an informed choice based on your specific requirements.
 
 ## Overview
 
@@ -128,7 +130,26 @@ How Agentic Memory compares to other memory systems.
 - You want LLM-managed memory
 - Cost is not a concern
 
-## Further Reading
+## Tradeoffs
+
+Choosing Agentic Memory means accepting certain constraints:
+
+- **No LLM-powered extraction** — entity extraction uses regex + Jaccard matching, which is less accurate than LLM-based approaches (Mem0, Zep) but is deterministic and requires zero API costs.
+- **BM25-first search** — keyword precision is excellent, but semantic matching requires the optional vector search pipeline. Other systems default to semantic search.
+- **SQLite concurrency** — single-writer means one process writes at a time. PostgreSQL-based systems (Mem0, Zep) handle higher write concurrency natively.
+- **No cloud sync (default)** — sync is opt-in via the multi-agent CRDT layer. Mem0 and Zep offer managed cloud sync out of the box.
+- **Manual infrastructure decisions** — tier migration, index rebuilding, and compaction are handled by cron jobs. Other systems manage this automatically.
+
+## Implications
+
+For **evaluators**: use the "When to choose" guides under each comparison to map your requirements to the right system. If you need zero infrastructure and local-first privacy, start with Agentic Memory. If you need managed cloud sync, look at Mem0.
+
+For **operators**: Agentic Memory's simplicity (SQLite, no server process) means less operational overhead than alternatives that require PostgreSQL, Neo4j, or Docker Compose. The tradeoff is that advanced features (knowledge graph, entity resolution) are less sophisticated.
+
+For **migrators**: Agentic Memory's markdown-first design means you can bulk-import from any system that can export to markdown. The reverse path (migrating away) is equally straightforward — your memories are plain text files.
+
+## Related
 
 - [Design Decisions](design-decisions.md) — Why we made these choices
 - [Architecture](../architecture/overview.md) — Full system design
+- [MCP Tools Reference](../reference/mcp-tools.md) — All available MCP tools

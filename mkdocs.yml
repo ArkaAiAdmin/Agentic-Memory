@@ -93,12 +93,9 @@ nav:
       - guides/langchain.md
       - guides/crewai.md
   - Architecture:
+      - architecture.md
       - architecture/overview.md
       - architecture/subsystems.md
-  - API Reference:
-      - api/python-sdk.md
-      - api/typescript-sdk.md
-      - api/rest-api.md
   - Concepts:
       - concepts/why-markdown.md
       - concepts/search-pipeline.md
@@ -108,7 +105,7 @@ nav:
       - concepts/background-tasks.md
       - concepts/multi-agent-sync.md
       - concepts/security-model.md
-  - How-To Guides:
+  - How-to Guides:
       - how-to/integrate-claude-code.md
       - how-to/multi-project.md
       - how-to/custom-entity-types.md
@@ -129,6 +126,9 @@ nav:
       - integrations/crewai.md
       - integrations/roadmap.md
   - Reference:
+      - api/python-sdk.md
+      - api/typescript-sdk.md
+      - api/rest-api.md
       - reference/mcp-tools.md
       - reference/configuration.md
       - reference/schema.md
@@ -141,9 +141,10 @@ nav:
       - explanation/design-decisions.md
       - explanation/boot-sequence.md
       - explanation/comparison.md
-  - Self-Hosting: self-hosting.md
-  - LLM Providers: llm-providers.md
-  - OKF Migration: okf-obsidian-migration.md
+  - Operations:
+      - self-hosting.md
+      - llm-providers.md
+      - okf-obsidian-migration.md
 
 extra:
   social:
