@@ -15,11 +15,11 @@ Local-first semantic memory for AI agents. All data at `~/.config/agentic-memory
 | SQLite DB | `memory/memory.db` |
 | Memory notes | `memory/<category>/<slug>.md` |
 | Config (TOML) | `memory.toml` (env var overridable via `config.py`) |
-| Tool registry | `tool_registry.py` — 15 CORE + 87 ADMIN + 3 DEPRECATED (single source of truth) |
+| Tool registry | `tool_registry.py` — 17 CORE + 87 ADMIN + 3 DEPRECATED (single source of truth) |
 | Python env | `venv/` |
-| MCP entry | `memory_mcp.py` — delegates to 26 mcp_*.py modules (85 total tools) |
+| MCP entry | `memory_mcp.py` — delegates to 30 mcp_*.py modules (107 total tools) |
 
-### Database Tables (~51 tables total, ~31 user-visible: 28 domain + 3 FTS virtual; ~20 FTS internals)
+### Database Tables (~62 tables total, ~49 user-visible: 46 domain + 3 FTS virtual; ~13 FTS internals)
 
 | Table | Purpose |
 |-------|---------|
@@ -44,7 +44,7 @@ Local-first semantic memory for AI agents. All data at `~/.config/agentic-memory
 | `task_queue` | Async task queue |
 | `arc_ghosts` / `arc_stats` | ARC eviction cache (v14) |
 | `file_mtimes` | Incremental index tracking |
-| `schema_version` | Schema migrations (current: 21) |
+| `schema_version` | Schema migrations (current: 37) |
 | `memory_field_crdt` | Per-field CRDT state (v13) |
 
 ---
@@ -70,7 +70,7 @@ Save steps run in order within a single transaction:
 
 ### Search Pipeline (read path)
 
-search_memories() has 16 Phase comments in search/orchestrator.py:
+search_memories() implements 12-phases with sub-numbered variants in search/orchestrator.py:
 0. Cache check
 1. Query parse (type detection)
 1b. Skill-first lookup
@@ -210,7 +210,7 @@ File: `memory.toml`. All features **on by default**. Set any flag to `false` to 
 
 ## Automated Maintenance
 
-~27 cron schedule entries (25 cron_*.py scripts + background_worker.py + auto_save.py daily-digest + backfill_all.py --incremental). Install: `bash cron/install_crontab.sh` (idempotent, marker-delimited).
+39 cron scripts managed by 1 consolidated scheduler (`cron/scheduler.py`, runs every 5 min). Install: `bash cron/install_crontab.sh` (idempotent, marker-delimited).
 
 | Component | Schedule | What it does |
 |-----------|----------|--------------|

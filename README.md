@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-4%2C334%2B-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/tests-4%2C431%2B-brightgreen)](#testing)
 [![Schema](https://img.shields.io/badge/schema-v37-orange.svg)](docs/reference/schema.md)
 [![MCP Tools](https://img.shields.io/badge/MCP-17%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
@@ -170,14 +170,14 @@ agentic-memory/
 ├── cron/                        # 39 scripts + consolidated scheduler
 ├── hooks/                       # 8 lifecycle hooks
 ├── migrations/                  # 38 reversible migrations
-├── eval/                        # 4,334+ tests
+├── eval/                        # 4,431+ tests
 ├── ts-sdk/                      # TypeScript SDK
 ├── mcp_*.py                     # 30 MCP modules
 ├── mcp_health.py                # System health MCP tool
 └── dashboard.py                 # Streamlit observability
 ```
 
-**Production stats:** ~193K LOC, 270 test files, 4,334+ test functions, schema v37, 38 reversible migrations, 17 CORE MCP tools, 1 consolidated scheduler, 8 lifecycle hooks.
+**Production stats:** ~202K LOC, 271 test files, 4,431+ test functions, schema v37, 38 reversible migrations, 17 CORE MCP tools, 1 consolidated scheduler, 8 lifecycle hooks.
 
 ---
 
@@ -321,7 +321,7 @@ pip install agentic-memory[all]         # Everything
 | **LangChain** | Yes | Yes | Yes | Yes |
 | **CrewAI** | Yes | Yes | Yes | No |
 | **OKF support** | Yes | No | No | No |
-| **Test coverage** | 4,334+ tests | ~500 | ~2,000 | ~300 |
+| **Test coverage** | 4,431+ tests | ~500 | ~2,000 | ~300 |
 | **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 
 ---

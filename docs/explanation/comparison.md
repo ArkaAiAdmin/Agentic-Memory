@@ -26,7 +26,7 @@ How Agentic Memory compares to other memory systems.
 |--------|---------------|------|
 | **Architecture** | Markdown-first, SQLite index | Database-first |
 | **Search** | BM25 (fast, deterministic) | Vector (semantic) |
-| **Knowledge graph** | Regex-based NER | LLM-based extraction |
+| **Knowledge graph** | Jaccard + regex NER | LLM-based extraction |
 | **LLM dependency** | None (optional embeddings) | Required for extraction |
 | **Pricing** | Free (self-hosted) | Free tier + paid plans |
 | **Setup** | Single file, no server | Docker or cloud |
@@ -49,7 +49,7 @@ How Agentic Memory compares to other memory systems.
 
 | Aspect | Agentic Memory | Zep |
 |--------|---------------|-----|
-| **Knowledge graph** | Regex-based | LLM-based (more accurate) |
+| **Knowledge graph** | Jaccard + regex | LLM-based (more accurate) |
 | **Search** | BM25 + vector | Vector + graph traversal |
 | **Temporal awareness** | Tier system (hot/warm/cold) | Built-in time-aware search |
 | **Setup** | Simple (SQLite) | Complex (PostgreSQL + Neo4j) |
