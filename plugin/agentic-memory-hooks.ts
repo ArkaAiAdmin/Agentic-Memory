@@ -406,6 +406,7 @@ export async function onToolAfter(ctx: HookContext): Promise<void> {
   const output = ctx.output
 
   if (!hookEnabled("post:memory:auto-save", ["minimal"])) return
+  if (!tool) return
   if (!isAutoSaveAllowed(tool)) return
 
   surfaceRecentHookErrors(ctx.adapter)
@@ -458,6 +459,7 @@ export function beforeTool(ctx: HookContext): Promise<void> {
   // the next beforeTool call. The agent always sees the latest
   // proactive context in this hook's stdout stream regardless.
   const tool = ctx.toolName ?? ""
+  if (!tool) return Promise.resolve()
   const args = ctx.toolArgs
   return captureOutput([PROACTIVE_CONTEXT], JSON.stringify({ tool_name: tool, tool_input: args ?? {} }), "memory-proactive-context", ctx.adapter).then((out) => {
     if (out.trim()) ctx.adapter.getState().proactiveContext = out.trim()
