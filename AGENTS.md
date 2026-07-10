@@ -15,7 +15,7 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data at `~/.confi
 <!--AUTO-GEN:START key="what_this_system_is"-->
 - **Surface**: 17 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 8 lifecycle hooks + 46+ cron jobs
 - **Schema**: v37, ~49 tables
-- **Code**: ~103k LOC production, ~87k+ test LOC; see `docs/architecture.md`
+- **Code**: ~104k LOC production, ~87k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 
