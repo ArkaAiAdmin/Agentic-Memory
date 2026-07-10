@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -1080,6 +1081,24 @@ def _compaction_note_age_days(note_id: str) -> float | None:
         return None
 
 
+def _compaction_dir_age_days(dir_name: str) -> float | None:
+    """Extract timestamp from a compaction directory name like
+    'compaction-save-20260704T193402' or 'compaction-save-20260704T193402-1'.
+    Returns age in days, or None if parse fails.
+    """
+    try:
+        slug = dir_name.replace("compaction-save-", "")  # 20260704T193402[-1]
+        # Strip optional collision suffix (-1, -2, etc.)
+        if "-" in slug:
+            slug = slug.rsplit("-", 1)[0]
+        ts = time.strptime(slug, "%Y%m%dT%H%M%S")
+        epoch = time.mktime(ts)
+        return (time.time() - epoch) / 86400
+    except Exception as e:
+        logger.debug("_compaction_dir_age_days: cannot parse %r: %s", dir_name, e)
+        return None
+
+
 def _enforce_compaction_pin_limit():
     """Cap pinned compaction notes at COMPACTION_PIN_LIMIT and delete
     compaction notes older than COMPACTION_RETENTION_DAYS from both
@@ -1150,6 +1169,36 @@ def _enforce_compaction_pin_limit():
         if orphan_count:
             logger.info(
                 "compaction retention: removed %d orphaned .md files", orphan_count
+            )
+
+        # Clean up compaction-save-* directories older than retention period.
+        # These contain events.jsonl snapshots and accumulate without cleanup.
+        dir_deleted = 0
+        dir_bytes_freed = 0
+        for comp_dir in sessions_dir.glob("compaction-save-*"):
+            if not comp_dir.is_dir():
+                continue
+            age = _compaction_dir_age_days(comp_dir.name)
+            if age is None:
+                continue
+            # Hard cutoff: 7 days for unsurfaced, 3 days for surfaced
+            surfaced = (comp_dir / ".surfaced").exists()
+            cutoff = COMPACTION_RETENTION_DAYS if surfaced else 7
+            if age > cutoff:
+                try:
+                    dir_size = sum(
+                        f.stat().st_size for f in comp_dir.rglob("*") if f.is_file()
+                    )
+                    shutil.rmtree(comp_dir)
+                    dir_deleted += 1
+                    dir_bytes_freed += dir_size
+                except Exception as e:
+                    logger.warning("compaction retention: failed to remove %s: %s", comp_dir.name, e)
+        if dir_deleted:
+            logger.info(
+                "compaction retention: removed %d directories (%.1f MB freed)",
+                dir_deleted,
+                dir_bytes_freed / (1024 * 1024),
             )
 
     except Exception as e:

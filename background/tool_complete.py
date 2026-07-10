@@ -673,7 +673,7 @@ def tool_complete(
             category=category, importance=importance, extra_tags=extra_tags,
         )
     except Exception as e:
-        cb = _auto_save_record_failure_and_maybe_trip()
+        cb = _auto_save_record_failure_and_maybe_trip(error=e)
         if logging.getLogger(__name__).getEffectiveLevel() <= logging.DEBUG:
             tb = traceback.format_exc()
         else:

@@ -205,9 +205,51 @@ def _check_circuit_timeout_expiry() -> None:
         _update_shared_memory_state()
 
 
-def _auto_save_record_failure_and_maybe_trip() -> dict:
-    """Record a save failure. Returns the resolved backoff config."""
+def _is_flock_contention(error: Exception) -> bool:
+    """Return True if the error is a flock/lock contention issue.
+
+    Flock contention is expected during high concurrency (multiple MCP
+    servers, cron jobs overlapping). These should not count toward the
+    circuit breaker threshold because they're transient and self-resolving.
+    """
+    # FileLockError from infra.file_lock
+    type_name = type(error).__name__
+    if type_name == "FileLockError":
+        return True
+    # Check error message for flock-related patterns
+    msg = str(error).lower()
+    return any(
+        pattern in msg
+        for pattern in (
+            "could not acquire flock",
+            "flock",
+            "filelock",
+            "database is locked",
+            "busy",
+        )
+    )
+
+
+def _auto_save_record_failure_and_maybe_trip(error: Exception | None = None) -> dict:
+    """Record a save failure. Returns the resolved backoff config.
+
+    If *error* is a flock/lock contention error, it is logged at debug
+    level and does NOT count toward the circuit breaker threshold.
+    """
     import time as _t
+
+    # Flock contention is expected and transient — don't trip the breaker.
+    if error is not None and _is_flock_contention(error):
+        logger.debug(
+            "auto-save: flock contention (non-fatal): %s", error
+        )
+        return {
+            "max_retries": 3,
+            "next_backoff": 0.0,
+            "n_failures": 0,
+            "circuit_breaker_seconds": 300.0,
+            "flock_contention": True,
+        }
 
     try:
         from infra._lazy_imports import get_config

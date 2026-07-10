@@ -42,7 +42,7 @@ def _stat_mtime(path: Path) -> float:
 
 def current_mtime() -> float:
     with _watcher_lock:
-        return _watcher_state.get(str(get_toml_path()), 0.0)
+        return float(_watcher_state.get(str(get_toml_path()), 0.0))
 
 
 def refresh_mtime() -> float:
@@ -69,7 +69,7 @@ def refresh_mtime() -> float:
             _watcher_seen.add(key)
             return 0.0
         pending = _watcher_state.pop(key + "__pending", None)
-        prev = _watcher_state.get(key, 0.0)
+        prev = float(_watcher_state.get(key, 0.0))
         if pending is not None and pending == observed:
             # Second consecutive identical observation: confirm seed.
             _watcher_state[key] = observed

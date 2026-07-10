@@ -163,16 +163,55 @@ class PathLockFd:
                         strict=True,
                     )
                 except Exception as e:
-                    # On failure, close the fd so a subsequent
-                    # attempt can re-open it.
-                    logger.warning("acquire failed: %s", e)
-                    try:
-                        self._fd.close()
-                    except Exception as e:
+                    # Check if the lock is stale (held by a dead process).
+                    lock_path = self.path.parent / f"{self.path.name}.flock"
+                    if self._is_stale(lock_path):
+                        logger.info(
+                            "db_path_flock: stale lock detected on %s — recovering",
+                            lock_path,
+                        )
+                        # Close the old fd and reopen to steal the stale lock.
+                        try:
+                            self._fd.close()
+                        except Exception:
+                            pass
+                        self._fd = self._ensure_fd()
+                        try:
+                            acquire_flock_with_retry(
+                                self._fd,
+                                max_attempts=3,
+                                initial_backoff=0.05,
+                                strict=True,
+                            )
+                            # Successfully recovered — fall through to ref_count++
+                        except Exception as e2:
+                            logger.warning("acquire failed after stale recovery: %s", e2)
+                            try:
+                                self._fd.close()
+                            except Exception:
+                                pass
+                            self._fd = None
+                            raise
+                    else:
+                        # On failure, close the fd so a subsequent
+                        # attempt can re-open it.
                         logger.warning("acquire failed: %s", e)
-                    self._fd = None
-                    raise
+                        try:
+                            self._fd.close()
+                        except Exception as e:
+                            logger.warning("acquire failed: %s", e)
+                        self._fd = None
+                        raise
             self._ref_count += 1
+
+    @staticmethod
+    def _is_stale(lock_path: Path) -> bool:
+        """Check if a lock file is held by a dead process."""
+        try:
+            from infra.file_lock import _is_stale_lock
+            return _is_stale_lock(lock_path)
+        except Exception:
+            return False
 
     def release(self) -> None:
         """Release the flock.  Per-call — called once per

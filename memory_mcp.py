@@ -261,6 +261,20 @@ for _admin_name in tool_registry.ADMIN_TOOLS:
 
 
 if __name__ == "__main__":
+    # Singleton guard: prevent duplicate MCP server instances on the same DB.
+    try:
+        from infra.mcp_singleton import acquire_mcp_singleton
+
+        if not acquire_mcp_singleton():
+            logger.error(
+                "Another memory_mcp process is already running. "
+                "Exiting to prevent flock contention. "
+                "Kill the existing process or check for stale lock files in memory/"
+            )
+            sys.exit(1)
+    except ImportError:
+        logger.debug("mcp_singleton module not available, skipping singleton guard")
+
     # Start the optional CRDT sync server as a daemon thread.
     try:
         from infra.sync_server import start_server_from_config
