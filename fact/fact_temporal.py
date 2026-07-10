@@ -911,6 +911,7 @@ def query_facts_at_time(
     *,
     query: "str | None" = None,
     limit: int = 100,
+    time_axis: str = "valid",
 ) -> list[dict]:
     """T4.2: return facts valid at the given epoch.
 
@@ -924,12 +925,19 @@ def query_facts_at_time(
       query: optional case-insensitive substring filter against
         subject / predicate / object.  Default: no filter.
       limit: max rows to return.  Default: 100.
+      time_axis: ``"valid"`` (default) filters on valid_at/invalid_at
+        (when the fact was true in the world).  ``"transaction"``
+        filters on transaction_time (when we learned the fact).
 
     Returns:
       list of dicts with the full fact row (id, S/P/O, event_time,
       valid_at, invalid_at, superseded_by, etc.).
     """
-    clause, params = _temporal_fact_clause(as_of)
+    if time_axis == "transaction":
+        clause = " AND f.transaction_time <= ? AND f.superseded_by IS NULL"
+        params = [as_of]
+    else:
+        clause, params = _temporal_fact_clause(as_of)
     where = f"WHERE 1=1{clause}"
     if query:
         where += " AND (f.subject LIKE ? OR f.predicate LIKE ? OR f.object LIKE ?)"

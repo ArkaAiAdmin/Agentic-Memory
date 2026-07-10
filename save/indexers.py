@@ -140,27 +140,11 @@ def _index_facts(db, note_id: str, content: str, belief_status: str = "active",
 
             ensure_facts_schema(db)
             ensure_beliefs_schema(db)
-            facts = index_facts_for_memory(db, note_id, content,
-                                           belief_status=belief_status,
-                                           epistemic_source=epistemic_source,
-                                           fact_type=fact_type)
-            # Create belief_assertions for each extracted fact (Sprint 1)
-            from infra._lazy_imports import get_config
-
-            if get_config().feature_belief_layer and isinstance(facts, list):
-                for fact in facts:
-                    fid = fact.get("id") if isinstance(fact, dict) else None
-                    if fid is not None:
-                        ensure_belief_assertion(
-                            db, fid, memory_id=note_id,
-                            belief_status=belief_status,
-                            epistemic_source=epistemic_source,
-                            asserting_agent_id=asserting_agent_id or None,
-                            evidence_chain=evidence_chain,
-                        )
-            elif isinstance(facts, dict):
-                # index_facts_for_memory returns a dict, not a list
-                pass
+            # belief_assertions now created inside index_facts_for_memory (G1)
+            index_facts_for_memory(db, note_id, content,
+                                   belief_status=belief_status,
+                                   epistemic_source=epistemic_source,
+                                   fact_type=fact_type)
     except Exception as fe:
         logger.warning("Fact indexing skipped for %s: %s", note_id, fe)
 

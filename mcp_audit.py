@@ -570,6 +570,7 @@ def memory_temporal_query(
     since_ts: Optional[float] = None,
     query: Optional[str] = None,
     limit: int = 100,
+    time_axis: str = "valid",
 ) -> str:
     """T4.5: time-aware queries on the fact-level knowledge graph.
 
@@ -591,6 +592,9 @@ def memory_temporal_query(
       since_ts: epoch seconds (for changed_since).
       query: optional case-insensitive substring filter (at_time only).
       limit: max rows (at_time and changed_since; default 100).
+      time_axis: ``"valid"`` (default) filters on valid_at/invalid_at
+        (when the fact was true in the world).  ``"transaction"``
+        filters on transaction_time (when we learned the fact).
 
     Returns:
       JSON with ok, operation, and the rows.
@@ -621,6 +625,11 @@ def memory_temporal_query(
             ErrorCode.INVALID_PARAMS,
             "since_ts (epoch seconds) is required for operation='changed_since'",
         )
+    if time_axis not in ("valid", "transaction"):
+        return _err(
+            ErrorCode.INVALID_PARAMS,
+            f"time_axis must be 'valid' or 'transaction' (got {time_axis!r})",
+        )
     try:
         from fact.fact_temporal import (
             query_facts_at_time,
@@ -635,7 +644,7 @@ def memory_temporal_query(
             db.row_factory = sqlite3.Row
             if operation == "at_time":
                 assert as_of is not None  # validated above
-                rows = query_facts_at_time(db, as_of, query=query, limit=limit)
+                rows = query_facts_at_time(db, as_of, query=query, limit=limit, time_axis=time_axis)
             elif operation == "chain":
                 assert fact_id is not None  # validated above
                 rows = query_fact_supersession_chain(db, fact_id)
