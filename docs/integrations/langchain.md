@@ -132,3 +132,54 @@ chain.invoke({"input": "Remember: user likes dark mode"})
 | `save_prompts` | `bool` | `False` | Persist raw LLM input |
 | `save_responses` | `bool` | `True` | Persist LLM output text |
 | `auto_tags` | `list[str]` | `["auto-saved"]` | Tags appended to every entry |
+
+## Troubleshooting
+
+### `ModuleNotFoundError: No module named 'langchain_core'` (or `langchain`)
+**Symptom:** Importing `agentic_memory.integrations.langchain.*` fails even though
+`agentic_memory` imports fine.
+**Cause:** The `[langchain]` extra is not installed. The module imports
+`langchain_core` lazily at call time, but `StructuredTool` is bound at import
+time (see `tool.py:84`), so `search_tool`/`save_tool` are `None` when the
+extra is missing.
+**Fix:** Install the extra:
+```bash
+pip install "agentic-memory[langchain]"
+```
+
+### `MemoryClient` raises `FileNotFoundError` / searches return nothing
+**Symptom:** The retriever, history, or tools run without error but find no
+memories, or `MemoryClient` raises when no DB exists at the resolved path.
+**Cause:** No `db_path` was passed and `AGENTIC_MEMORY_DB_PATH` is unset, so
+`MemoryClient()` falls back to the default path
+(`~/.config/agentic-memory/memory/memory.db`), which may not exist yet or may
+not be the DB you intend to read.
+**Fix:** Pass `db_path` explicitly, or export the env var:
+```python
+retriever = AgenticMemoryRetriever(db_path="~/.config/agentic-memory/memory/memory.db")
+```
+```bash
+export AGENTIC_MEMORY_DB_PATH="$HOME/.config/agentic-memory/memory/memory.db"
+```
+
+### `TypeError: search() got an unexpected keyword argument '...'`
+**Symptom:** Instantiating `AgenticMemoryRetriever` works, but invocation fails
+with a keyword-argument error from the underlying `MemoryClient.search()`.
+**Cause:** `search_kwargs` (default `{"limit": 5, "rerank": True}`) is
+forwarded verbatim to `MemoryClient.search()` (`retriever.py:57`). Any key you
+add that `search()` does not accept triggers this.
+**Fix:** Validate keys against `MemoryClient.search()`'s signature, e.g.:
+```python
+retriever = AgenticMemoryRetriever(
+    db_path="~/.config/agentic-memory/memory/memory.db",
+    search_kwargs={"limit": 5},  # only pass args search() accepts
+)
+```
+
+### `AgenticMemoryChatHistory.clear()` does not delete stored messages
+**Symptom:** After `history.clear()`, the previously saved messages are still
+returned by searches.
+**Cause:** `clear()` is intentionally a no-op (`history.py:84`). Session-scoped
+deletion is not yet implemented in the underlying pipeline.
+**Fix:** Delete the session's memories directly via `MemoryClient.delete(note_id)`
+or soft-delete by the session tag, instead of relying on `clear()`.

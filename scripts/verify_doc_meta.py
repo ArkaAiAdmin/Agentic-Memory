@@ -6,12 +6,13 @@ Run from repo root: venv/bin/python scripts/verify_doc_meta.py
 
 from __future__ import annotations
 
+import argparse
 import json
-import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 META_PATH = REPO_ROOT / "docs" / "_meta.json"
@@ -62,9 +63,9 @@ def _count_files(glob_pattern: str) -> int:
     return len(list(REPO_ROOT.glob(glob_pattern)))
 
 
-def _get_live_values() -> dict:
+def _get_live_values() -> dict[str, Any]:
     """Extract live values from code."""
-    live = {}
+    live: dict[str, Any] = {}
 
     # Schema version
     sys.path.insert(0, str(REPO_ROOT))
@@ -108,7 +109,61 @@ def _get_live_values() -> dict:
     return live
 
 
+# Order + labels for the human-readable report and the markdown table.
+ALL_FIELDS = [
+    "schema_version",
+    "num_migrations",
+    "num_core_tools",
+    "num_admin_tools",
+    "num_cron_scripts",
+    "num_tests",
+    "loc_production",
+    "loc_test",
+    "loc_total",
+]
+
+# Subset + display labels used by the ``--markdown`` dashboard.
+MARKDOWN_ROWS = [
+    ("schema_version", "Schema version"),
+    ("num_migrations", "Migrations"),
+    ("num_core_tools", "CORE tools"),
+    ("num_admin_tools", "ADMIN tools"),
+    ("num_cron_scripts", "Cron scripts"),
+    ("num_tests", "Tests"),
+    ("loc_production", "Production LOC"),
+    ("loc_test", "Test LOC"),
+    ("loc_total", "Total LOC"),
+]
+
+
+def _print_markdown(meta: dict, live: dict) -> None:
+    """Print a markdown dashboard of doc-health metrics."""
+    print("## Documentation Health\n")
+    print("| Check | Value | Status |")
+    print("|-------|-------|--------|")
+    for field, label in MARKDOWN_ROWS:
+        expected = meta.get(field)
+        actual = live.get(field)
+        if expected is not None and actual is not None and expected == actual:
+            print(f"| {label} | {expected} | ✅ current |")
+        elif expected is not None and actual is not None:
+            print(f"| {label} | {actual} | ❌ drift (expected {expected}) |")
+        else:
+            print(f"| {label} | {actual if actual is not None else 'n/a'} | ❌ unavailable |")
+    print(f"\nLast verified: {meta.get('last_verified', 'unknown')}")
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Verify docs/_meta.json matches live code."
+    )
+    parser.add_argument(
+        "--markdown",
+        action="store_true",
+        help="Print a markdown dashboard instead of the human-readable report.",
+    )
+    args = parser.parse_args()
+
     if not META_PATH.exists():
         print(f"ERROR: {META_PATH} not found", file=sys.stderr)
         return 1
@@ -116,20 +171,8 @@ def main() -> int:
     meta = json.loads(META_PATH.read_text())
     live = _get_live_values()
 
-    all_fields = [
-        "schema_version",
-        "num_migrations",
-        "num_core_tools",
-        "num_admin_tools",
-        "num_cron_scripts",
-        "num_tests",
-        "loc_production",
-        "loc_test",
-        "loc_total",
-    ]
-
     failures = []
-    for field in all_fields:
+    for field in ALL_FIELDS:
         expected = meta.get(field)
         actual = live.get(field)
         if expected is None or actual is None:
@@ -141,11 +184,15 @@ def main() -> int:
         else:
             print(f"  PASS  {field}: {expected}")
 
+    if args.markdown:
+        _print_markdown(meta, live)
+
     if failures:
         print(f"\n{len(failures)} field(s) drifted. Update docs/_meta.json or fix the code.")
         return 1
 
-    print(f"\nAll {len(all_fields)} fields match live code. Meta is fresh.")
+    if not args.markdown:
+        print(f"\nAll {len(ALL_FIELDS)} fields match live code. Meta is fresh.")
     return 0
 
 
