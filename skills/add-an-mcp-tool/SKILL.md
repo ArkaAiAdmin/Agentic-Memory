@@ -161,7 +161,7 @@ Reference the audit item if it addresses one: `[mcp-tool] add memory_your_op for
 ## Common pitfalls
 
 - **Don't bypass the saga.** If you write to `memories`, wrap in `with conn:` + `safe_close_db(conn)`. The C1 fix is fragile.
-- **Don't add to CORE_TOOLS without checking the tool list.** It's curated. The 15 CORE tools are the day-to-day user verbs.
+- **Don't add to CORE_TOOLS without checking the tool list.** It's curated. The 17 CORE tools are the day-to-day user verbs.
 - **Don't return non-string.** MCP tools are string-returning. JSON-encode if needed (`json.dumps(result)`).
 - **Don't write to STDERR from a hook.** The proactive-context hook was a 2-day bug because of this. STDOUT is the channel.
 - **Don't forget the tool_registry drift check.** It's a CI step that catches registration drift.
