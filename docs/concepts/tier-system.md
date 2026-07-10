@@ -180,6 +180,20 @@ memory_run_tier_migration(dry_run=True)   # Preview a migration pass
 memory_run_tier_migration(dry_run=False)  # Commit a migration pass on demand
 ```
 
+## Troubleshooting
+
+### A memory vanished from search
+
+Cold/archive tiers are excluded from searches, but the markdown file is preserved. Re-index or re-save the memory to restore it to a searchable tier. See [Why Markdown](why-markdown.md).
+
+### Pinned memory still migrated
+
+Pinning (`pinned=True`) prevents auto-archive, but the daily pin-decay check can auto-unpin memories that have gone unaccessed. Re-pin if needed. See [Configuration Reference](../reference/configuration.md).
+
+### Tiers not updating
+
+Tier migration runs via cron (`agentic-memory-tier`, typically weekly). Run `memory_run_tier_migration(dry_run=True)` to preview a pass, or check the schedule in [Set Up Cron Jobs](../how-to/cron-setup.md).
+
 ## Related
 
 - [Background Tasks](background-tasks.md) — How tier gating affects background task processing

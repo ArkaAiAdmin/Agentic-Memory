@@ -98,7 +98,7 @@ CREATE TABLE kg_facts (
     created_at TEXT
 );
 
-### 3a. CRDT Tables (v21)
+### 3a. CRDT Tables (migration 021)
 
 Migration 021 (`migrations/021_kg_crdt.sql`) added two tables that enable conflict-free merges when multiple agents write to the same knowledge graph concurrently (e.g., laptop + desktop in a multi-peer sync setup):
 
@@ -222,9 +222,23 @@ The knowledge graph has limitations:
 - **Regex-based NER**: Entity extraction is deterministic and requires no LLM API calls. Trade-off: domain-specific entities need explicit pattern additions.
 - **Exact + semantic dedup**: Two-tier deduplication prevents entity bloat. Exact merges (same name+type) run first, then fuzzy merges (cosine similarity > 0.92) catch near-duplicates.
 - **Contradiction detection**: The temporal KG layer (see [Temporal KG](temporal-kg.md)) detects when new facts conflict with existing ones and marks the superseded fact as invalid.
-- **CRDT conflict-free merge**: When multiple agent workspaces sync, the `kg_entity_crdt` and `kg_edge_crdt` tables (v21) use 2P-Set and LWW semantics to merge without data loss.
+- **CRDT conflict-free merge**: When multiple agent workspaces sync, the `kg_entity_crdt` and `kg_edge_crdt` tables (migration 021) use 2P-Set and LWW semantics to merge without data loss.
 - **No deep semantics**: The regex extractor cannot infer "the database" = "SQLite" without an explicit mention. Semantic understanding requires the search pipeline's vector embeddings.
 - **Sparse graph**: Small memory stores may have few connections. The KG becomes more valuable as the corpus grows.
+
+## Troubleshooting
+
+### Entity not extracted
+
+Extraction is regex-based (see "Entity Extraction" above). Domain-specific entities need explicit patterns in `ENTITY_PATTERNS`. Add patterns via [Extend Entity Types](../how-to/custom-entity-types.md) or include the term explicitly in the memory text.
+
+### Duplicate entities appearing
+
+Two-tier dedup runs exact merge first (same `name` + `entity_type`), then semantic merge (cosine similarity > 0.92). If duplicates persist, the embedding model may score them below threshold — lower `--threshold` or run `memory_organize(target="dedup")`. See [Schema Reference](../reference/schema.md).
+
+### KG sync conflicts across agents
+
+When multiple workspaces sync, `kg_entity_crdt`/`kg_edge_crdt` (migration 021) merge via 2P-Set/LWW so entities are never silently lost. If an entity looks missing, verify `feature_crdt=true` in `memory.toml`. See [Multi-Agent Sync](multi-agent-sync.md).
 
 ## Related
 

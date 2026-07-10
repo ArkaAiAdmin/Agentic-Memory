@@ -149,7 +149,7 @@ volumes:
 - **No LLM in the write path**: Entity extraction, fact extraction, and search ranking use deterministic regex and BM25 — no API calls. The only LLM-dependent feature is semantic embeddings, which run locally via `model2vec`.
 - **Injection detection demotes, does not delete**: Suspicious content is flagged and demoted in search results but preserved in the database. An operator can review and approve it via `memory_scan_injection`.
 - **Per-project isolation**: Each project has its own `memory.db`. Global memory (`is_global=True`) is opt-in. Cross-project access requires explicit configuration.
-- **AO** (Accountable Operations): The `memory_audit_log` table records every MCP tool invocation with timestamp, arguments, error state, and latency. Audit logs are append-only.
+- **Audit logging** (Accountable Operations): The `memory_audit_log` table records every MCP tool invocation with timestamp, arguments, error state, and latency. Audit logs are append-only.
 - **Sync server security**: The MCP sync server binds to `127.0.0.1` by default. Remote access requires TLS, optional mTLS, HMAC signing token, and CORS configuration.
 - **Markdown rebuild guarantees**: If the database is compromised, the markdown files remain as the trusted source of truth. Run `rebuild_index.py` to recover.
 
@@ -176,6 +176,20 @@ See [Configuration Reference](../reference/configuration.md) and [Self-Hosting](
 4. **Review injected content** — Check `memory_injection.py` flags periodically
 5. **Use `.gitignore`** — Never commit `memory.db` or `*.db` files
 6. **Audit logs** — `memory_audit_log` tracks all operations
+
+## Troubleshooting
+
+### Suspicious content is being demoted
+
+`memory_injection.py` scans for imperative, system-prompt, tool-invocation, and roleplay patterns. A legitimate memory that triggers these patterns is demoted (not deleted). Review and approve it via `memory_scan_injection`, or refine the patterns. See [Reference: MCP Tools](../reference/mcp-tools.md).
+
+### Need to expose the server remotely
+
+The MCP/sync server is localhost-only by default. For remote access, use a reverse proxy with authentication and TLS, or configure the sync server's `MEMORY_SYNC_*` TLS/HMAC settings. See [Self-Hosting](../self-hosting.md).
+
+### Database corrupted
+
+Markdown files are the source of truth. Delete `memory.db` and run `rebuild_index.py` to recover from the `.md` files. Nothing is lost. See [Why Markdown](why-markdown.md) and [Durability](../durability.md).
 
 ## Related
 

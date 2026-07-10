@@ -114,6 +114,16 @@ Agents benefit from markdown-first in practical ways:
 4. **Merge-friendly** — Git handles conflicts naturally
 5. **Portable across tools** — Works with Claude Code, OpenCode, or any text editor
 
+## Troubleshooting
+
+### Database corrupted or out of sync
+
+Delete `memory.db` and run `python rebuild_index.py --memory-dir /path/to/memory`. Because markdown is the source of truth, nothing is lost — the derived index (FTS5, KG, vectors) is rebuilt from the `.md` files. See [Durability](../durability.md) and [Boot Sequence](../explanation/boot-sequence.md).
+
+### A markdown file is corrupted
+
+The markdown file *is* the source of truth. If a `.md` file is corrupted, that one memory is lost (the DB can be rebuilt, but not that content). Keep files under version control and back them up. See [Durability](../durability.md).
+
 ## Related
 
 - [Architecture Overview](../architecture/overview.md) — Full data flow: markdown → derived layers

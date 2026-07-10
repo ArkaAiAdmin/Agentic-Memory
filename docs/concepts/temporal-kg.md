@@ -9,6 +9,10 @@ It answers questions like:
 - "Show me all the contradictions in our fact store this week."
 - "What was true in 2023 but isn't true anymore?"
 
+## What is Temporal KG?
+
+The temporal knowledge graph is a **bi-temporal fact store** layered on top of the base [Knowledge Graph](knowledge-graph.md). Where the base KG records *what* facts exist, the temporal KG records **when** each fact was true in the world (event time) and **when** the system learned it (transaction time). This lets the system answer both "what is true now?" and "what was true on 2024-03-15?", preserving history while keeping current state queryable — without a separate archive.
+
 ## Why Temporal Facts?
 
 Plain facts are statements like `Python is_a language`. But facts have a
@@ -45,7 +49,7 @@ The schema uses **two time axes** (same approach as Graphiti/Zep):
 The MVP defaults event_time = transaction_time for simplicity. Future
 work may separate them more clearly.
 
-## Schema (v21, cumulative)
+## Schema (migrations 018–021, cumulative)
 
 The temporal KG spans four incremental migrations (018–021), each
 adding columns or tables to `kg_facts`:
@@ -268,7 +272,7 @@ memory_audit_query(tool_name="kg_fact_temporal", since_ts=..., limit=...)
 
 ## Performance
 
-On the live prod DB (v21):
+On the live prod DB (schema v37):
 - `index_facts_for_memory` adds ~10ms per fact (event_time extraction +
   reconciliation)
 - `invalidate_stale_facts` is O(old_facts) — one query, one row check per old fact

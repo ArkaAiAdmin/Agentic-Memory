@@ -137,6 +137,36 @@ Enable with `MEMORY_MULTI_AGENT=1` (or `features.multi_agent = true` in `memory.
 | Isolation | Full workspace copy | Single shared table |
 | Use case | Multi-agent teams | Cross-session hints |
 
+## Configuration
+
+The CRDT peer-sync fields are configured under `[sync]` in `memory.toml` (see "CRDT Peer Sync → Configuration" above). All fields are overridable via `MEMORY_SYNC_*` environment variables except `[[sync.peers]]`, which is TOML-only.
+
+The shared memory pool is enabled with `MEMORY_MULTI_AGENT=1` (or `features.multi_agent = true` in `memory.toml`).
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `MEMORY_SYNC_ENABLE_SERVER` | `false` | Start the HTTP sync server |
+| `MEMORY_SYNC_LISTEN_HOST` | `127.0.0.1` | Bind host for the sync server |
+| `MEMORY_SYNC_LISTEN_PORT` | `9877` | Bind port for the sync server |
+| `MEMORY_SYNC_INTERVAL_MINUTES` | `5` | Cron pull/push cycle interval |
+| `MEMORY_MULTI_AGENT` | `0` | Enable the shared memory pool |
+
+See [Configuration Reference](../reference/configuration.md) for the full list of `MEMORY_SYNC_*` env vars.
+
+## Troubleshooting
+
+### Sync server won't bind to a remote host
+
+The server binds to `127.0.0.1` by default. For non-loopback binding you must enable TLS (`MEMORY_SYNC_TLS_CERT`/`MEMORY_SYNC_TLS_KEY`) or front it with an authenticated reverse proxy. A non-loopback bind without TLS only logs a warning. See [Security Model](security-model.md) and [Self-Hosting](../self-hosting.md).
+
+### Conflicts not resolving as expected
+
+Concurrent edits are resolved by version-vector comparison; if neither dominates, last-writer-wins with `agent_id` as tiebreaker. To force a specific outcome, set the per-note `conflict_policy` to `replace` or `coexist`. See the Conflict Resolution section above.
+
+### Shared note not visible to another agent
+
+The shared pool is opt-in — notes only appear after an explicit `memory_share`. Confirm `MEMORY_MULTI_AGENT=1` is set for both agents and that the note was published (not just saved locally).
+
 ## Key behaviors
 
 - **Version-vector conflict resolution**: Concurrent edits are resolved by comparing version vectors. If one dominates (all counters >=), it wins deterministically. If neither dominates, last-writer-wins with agent_id as tiebreaker.

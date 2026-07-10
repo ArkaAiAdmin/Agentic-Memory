@@ -171,6 +171,24 @@ centrality_boost_enabled = true
 - **Defer-expensive mode**: By default, semantic search and deep reranking are deferred (returns <200ms). Results are cached for fast re-query.
 - **Configurable weights**: Each scoring component (FTS5, vector, rerank, temporal, forget, KG) has a configurable weight in `memory.toml`.
 
+## Troubleshooting
+
+### No vector/semantic results returned
+
+Check the vec-index health via `agentic-memory_memory_health_check(conn=...)`. If the usearch index is missing or stale, search falls back to FTS5-only (graceful degradation). Rebuild it with `python rebuild_vec_index.py` after a warm-up chain.
+
+### Latency higher than expected
+
+Semantic search and deep reranking are deferred by default (`defer_expensive=True`, returns <200ms). If latency is high, confirm `rerank_enabled` and `late_interaction` aren't forcing a synchronous deep cross-encoder. See [Configuration Reference](../reference/configuration.md).
+
+### Recency-biased or stale results
+
+Temporal decay (`recency_weight`) down-weights older memories. Adjust the scoring weights in `memory.toml` under `[search]`. See [Configuration Reference](../reference/configuration.md).
+
+### A phase is failing
+
+Phase 11 tracks per-phase error counts. Inspect `memory_maintenance(operation="phase_errors")` to see which phase errored; the remaining phases still return results.
+
 ## Related
 
 - [How to Debug Search](../how-to/debug-search.md) — Step-by-step troubleshooting guide

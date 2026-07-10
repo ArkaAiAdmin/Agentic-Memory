@@ -317,3 +317,17 @@ tool_complete hook
 
 See `AGENTS.md` "Async Auto-Save" section for the full architecture
 and the daemon lifecycle.
+
+## Troubleshooting
+
+### Tasks stuck in `pending`
+
+Only one worker should run at a time (flock-protected). Check for a second worker process, or a crashed worker that left `status='processing'` (a crashed worker is recovered on the next run). Inspect with the monitoring queries above.
+
+### Queue backlog growing
+
+The worker runs on cron (`*/15`). A large backlog (e.g., after a long downtime) drains automatically; you can force a drain with `agentic-memory-worker`. Cold/archive memories are skipped for entity/fact tasks — see [Tier System](tier-system.md).
+
+### Auto-save not appearing in search
+
+The async auto-save inbox flushes every `AUTO_SAVE_BATCH_INTERVAL` (default 0.5s) or every `AUTO_SAVE_BATCH_SIZE` (50) entries. If a save isn't visible quickly, check the daemon is alive (PID file + flock) and that `MEMORY_ASYNC_AUTOSAVE` isn't disabled. On enqueue failure it falls back to the inline path, so no save is lost.
