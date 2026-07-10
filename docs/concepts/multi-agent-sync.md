@@ -48,6 +48,22 @@ Each agent runs both a **sync server** (threaded HTTP daemon) and a **sync clien
 4. `POST /crdt/push` — send local changes to the peer.
 5. Record the result in `sync_log`.
 
+### CRDT Sync Cycle
+
+```mermaid
+flowchart TD
+    A["Agent A"] -->|"1 · GET /crdt/changes?since=&agent="| B["Sync Server (Agent B)"]
+    B -->|"returns peer changes"| A
+    A -->|"2 · crdt_save() merge locally"| LA[("A · memory.db")]
+    A -->|"3 · POST /crdt/push (JSON + HMAC sig + replay ts)"| B
+    B -->|"4 · crdt_sync_all() merge"| LB[("B · memory.db")]
+    B -->|"result: applied / conflict / rejected"| A
+    A -->|"5 · record cycle"| S["sync_log"]
+    B -->|"update last-sync"| SB["sync_log"]
+```
+
+*Pull-then-push cycle between two agents. Auth: `MEMORY_SYNC_TOKEN` bearer (required) plus optional HMAC signature (`verify_hmac`) and a replay-guarded `since` timestamp.*
+
 ### Sync Server Endpoints
 
 | Endpoint | Method | Description |

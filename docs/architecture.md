@@ -32,8 +32,30 @@ User/Agent
        ├──▶ SQLite FTS5 index (full-text search)
        ├──▶ Knowledge graph (entities + relations)
        ├──▶ Vector embeddings (optional)
-       └──▶ Background tasks (async processing)
+        └──▶ Background tasks (async processing)
 ```
+
+```mermaid
+flowchart TD
+    U["User / Agent"] --> M["MCP Layer (17 CORE + memory_maintenance router)"]
+    M --> S["Save Pipeline<br/>save_memory (saga, 13 steps)"]
+    S --> MD[(".md note files (source of truth)")]
+    S --> FTS[("FTS5 index")]
+    S --> KG[("Knowledge graph<br/>kg_entities / kg_facts")]
+    S --> VEC[("Vector embeddings (usearch)")]
+    S --> Q[("Task queue (background_queue.db)")]
+    U --> SE["Search Pipeline<br/>search/orchestrator.py (12 phases)"]
+    FTS --> SE
+    VEC --> SE
+    KG --> SE
+    SE --> R["Ranked results → User / Agent"]
+    Q --> BW["Background Worker<br/>background_worker.py (flock-guarded)"]
+    BW -->|kg + fact index| KG
+    BW -->|embeddings| VEC
+    BW --> FTS
+```
+
+*High-level data flow: every write fans out to the markdown source of truth plus the derivable indexes; the background worker keeps the KG, vectors, and FTS in sync with enqueued tasks.*
 
 ## Search Pipeline
 

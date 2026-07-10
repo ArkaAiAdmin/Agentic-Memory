@@ -37,6 +37,27 @@ graph TD
     A -->|mentions| D["PRAGMA journal_mode"]
 ```
 
+### Pipeline Overview
+
+```mermaid
+flowchart TD
+    N["Memory note (.md)"] --> E["extract_entities()<br/>kg_extract.py"]
+    N --> F["extract_facts()<br/>fact_extract.py"]
+    E --> KE[("kg_entities")]
+    F --> KF[("kg_facts (SPO triples)")]
+    KF --> D1["dedup_entities()<br/>exact name+type"]
+    KF --> D2["dedup_entities_semantic()<br/>embedding Jaccard"]
+    D1 --> MERGE["merge_entities()"]
+    D2 --> MERGE
+    MERGE --> KE
+    KF --> CD["contradiction_detector<br/>kg/contradiction_detector.py"]
+    CD -->|contradiction| SUP["supersede / retract"]
+    KE --> Q["Graph queries + centrality boost"]
+    KF --> Q
+```
+
+*End-to-end KG pipeline: extraction → SPO storage → entity dedup → contradiction detection → queryable graph.*
+
 ### 2. Relationship Extraction
 
 The system also extracts **Subject-Predicate-Object (SPO) triples** from memory content:

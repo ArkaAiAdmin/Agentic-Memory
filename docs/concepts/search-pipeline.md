@@ -33,7 +33,26 @@ Query → Phase 0 (Normalize) → Phase 1 (FTS5 BM25)
                                     ↓
                               Phase 10 (Result Envelope)
                                     ↓
-                              Phase 11 (Error Counter + Latency)
+                               Phase 11 (Error Counter + Latency)
+```
+
+```mermaid
+flowchart TD
+    Q["Query input"] --> P0["0 · Normalize & query-type detection"]
+    P0 --> P1["1 · FTS5 BM25 retrieval"]
+    P0 --> P2["2 · Vector retrieval (usearch)"]
+    P0 --> P3["3 · ColBERT late-interaction"]
+    P1 --> P4["4 · RRF merge"]
+    P2 --> P4
+    P3 --> P4
+    P4 --> P5["5 · Cross-encoder rerank (optional)"]
+    P5 --> P6["6 · Temporal decay"]
+    P6 --> P7["7 · Neural forget curve"]
+    P7 --> P8["8 · KG concept / centrality boost"]
+    P8 --> P9["9 · Final score & ranking"]
+    P9 --> P10["10 · Result envelope"]
+    P10 --> P11["11 · Error counter & latency log"]
+    P11 --> R["Ranked results"]
 ```
 
 Each phase is independently isolated — no single failure kills the search.

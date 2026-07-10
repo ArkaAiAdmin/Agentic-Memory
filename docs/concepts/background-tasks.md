@@ -30,6 +30,23 @@ graph TD
     G --> H[Completed]
 ```
 
+```mermaid
+flowchart TD
+    ENQ["save_pipeline / tool handler<br/>enqueue_task()"] --> Q[("task_queue")]
+    CRON["cron → background_worker<br/>--drain / --interval"] --> LOCK["acquire_flock_with_retry"]
+    LOCK --> POLL["poll task_queue<br/>dequeue_task()"]
+    Q --> POLL
+    POLL --> H["dispatch by task_type<br/>(entity_resolution / fact_consolidation / contradiction / custom)"]
+    H --> EXEC["handler executes<br/>(watchdog timeout)"]
+    EXEC -->|success| DONE["complete_task() → completed_tasks"]
+    EXEC -->|failure| FAIL["fail_task()"]
+    FAIL -->|retries left| Q
+    FAIL -->|exhausted| DEAD["dead_letters / alert"]
+    Q -->|full: RejectPolicy| REJ["reject / drop_oldest / drop_newest"]
+```
+
+*Task lifecycle: enqueue → flock-guarded worker dispatch → handler → complete or fail/retry.*
+
 ## Task Queue Schema
 
 ```sql

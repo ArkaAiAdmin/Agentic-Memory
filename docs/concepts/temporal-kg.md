@@ -148,6 +148,27 @@ The OLD fact is **preserved for history** (still in the DB, still
 queryable via `query_fact_supersession_chain`) but excluded from
 "current state" queries (which filter on `invalid_at IS NULL`).
 
+## Fact Lifecycle
+
+```mermaid
+flowchart TD
+    SAVE["Memory saved / edited"] --> ET["extract_event_time(content)"]
+    ET --> INS["INSERT into kg_facts<br/>(event_time, valid_at, transaction_time)"]
+    INS --> REC["reconcile_fact_supersession(new_fact_id)"]
+    REC -->|same S+P, diff O, overlapping time| C["Contradiction detected"]
+    C --> SUP["OLD fact: invalid_at = new.event_time,<br/>superseded_by = new.id,<br/>invalidation_reason = 'contradicted'"]
+    C --> NEW["NEW fact: supersedes = old.id"]
+    REC -->|no overlap| ACT["Both facts stay active"]
+    SAVE -->|edit diff (OLD minus NEW)| INV["invalidate_stale_facts(memory_id)"]
+    INV --> MAN["OLD facts: invalid_at set,<br/>invalidation_reason = 'manual'<br/>(no superseded_by)"]
+    SUP --> HIST["History preserved; current-state<br/>queries filter invalid_at IS NULL"]
+    NEW --> HIST
+    MAN --> HIST
+    HIST --> Q["query_facts_at_time / chain / changed_since"]
+```
+
+*Lifecycle of a fact from extraction through contradiction supersession or edit invalidation, ending in a queryable history.*
+
 ## Edit Invalidation
 
 When a memory is **edited**, `invalidate_stale_facts(conn, memory_id,
@@ -332,9 +353,15 @@ Check the granularity: a day-precision fact ("2026-03-15") and a year-precision 
 
 Edit invalidation diffs old facts against new extraction. If you significantly rewrote a memory, previously extracted facts that no longer appear in the new text are invalidated. To preserve a fact, keep its wording in the updated memory.
 
-### Order-of-insertion surprises
+### Order-independence
 
-If you insert Memory B (event_time=2024) before Memory A (event_time=2020) with the same S+P but different O, no contradiction is flagged. The expected fix is to save a new memory that explicitly supersedes the earlier fact, or use `memory_maintenance(operation="detect_contradictions")` to force a full scan.
+Contradiction detection is **order-independent**: the winner is chosen by
+`event_time`, not insertion order. Whether you save Memory B (event_time=2024)
+before or after Memory A (event_time=2020) with the same S+P but different O,
+the chronologically-later fact (B) wins and the earlier fact (A) is marked
+`superseded` (reason `contradicted`) by `reconcile_fact_supersession`. To force
+a full rescan of existing facts, use
+`memory_maintenance(operation="detect_contradictions")`.
 
 ## Related
 
@@ -344,7 +371,7 @@ If you insert Memory B (event_time=2024) before Memory A (event_time=2020) with 
 - [Schema Reference](../reference/schema.md) — Full `kg_facts` table definition with temporal columns
 - [Configuration Reference](../reference/configuration.md) — `MEMORY_TEMPORAL_KG` and related env vars
 - [Architecture Overview](../architecture/overview.md) — Where the temporal KG fits in the system
-- `fact_temporal.py` — Implementation (4 core functions + 3 query functions)
+- `fact/fact_temporal.py` — Implementation (4 core functions + 3 query functions)
 - `mcp_audit.py` — `memory_temporal_query` and `memory_temporal_contradictions`
 - `memory_integrity.py` — `--temporal-summary` and `--temporal-query` CLI
 - Migration `018_fact_temporal.sql` — Schema upgrade
