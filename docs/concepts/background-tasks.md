@@ -335,6 +335,108 @@ tool_complete hook
 See `AGENTS.md` "Async Auto-Save" section for the full architecture
 and the daemon lifecycle.
 
+## Worker Memory Model
+
+Each background component has a very different memory profile. Understanding
+what each one does—and what it loads into memory—is essential for diagnosing
+RSS spikes on memory-constrained hosts.
+
+### Component overview
+
+| Component | Lifetime | Trigger | Primary job |
+|-----------|----------|---------|-------------|
+| **auto-save daemon** | Long-running (hours) | Hook fires on every tool call | Batch JSONL inbox → SQLite |
+| **background_worker --drain** | Short-lived (seconds to minutes) | Cron tick | Flush write journal, run single task batch |
+| **background_worker --interval** | Long-running loop | Cron tick | Continuously drain task_queue |
+| **Reconciliation loop** | In-process thread | Background thread inside `--drain`/`--interval` | Reconcile deferred writes against DB |
+
+### Normal memory footprint
+
+| Process | RSS without LLM extractor | RSS with LLM extractor loaded |
+|---------|---------------------------|-------------------------------|
+| auto-save daemon | < 50 MB | N/A (daemon never loads torch) |
+| background_worker (drain) | < 100 MB | ~ 2 GB (Qwen2.5-3B mmap + torch + tokenizers + numpy.linalg) |
+| background_worker (interval) | < 100 MB at idle | ~ 2 GB if fact_consolidation runs |
+| Reconciliation loop | ~ 10 MB | Same + extractor if triggered by same process |
+
+> **Iron rule**: The `--drain` worker only needs to flush the write journal and
+> finish the current task batch. It has no dependency on the LLM extractor.
+> Loading Qwen2.5-3B-Instruct for a drain worker is always a bug.
+
+### What triggers the LLM extractor
+
+The extractor (`Qwen/Qwen2.5-3B-Instruct` via `transformers`) is imported lazily
+inside a small set of handler functions:
+
+- `handle_fact_consolidation` — imports `fact.consolidate_facts`, which at module
+  scope imports `llm_extraction` and `sentence_transformers`
+- `handle_contradiction_check` — same dependency chain
+- Cross-session learning handlers
+
+The module-level `import` defers only until the handler function body runs.
+Once any of these functions is called, the torch/tokenizers/huggingface plumbing
+allocates ~2 GB of resident memory via mmap + heap allocations.
+
+Drain workers that only process `entity_resolution` or `cross_session_learn`
+tasks never touch these handlers—**unless the job dispatcher falls through to a
+handler it does not need**.
+
+### Disabling the extractor
+
+Two equivalent ways to prevent extractor loading:
+
+```bash
+# 1. Environment variable (recommended for cron)
+MEMORY_LLM_EXTRACTION=0 venv/bin/python background_worker.py --drain
+
+# 2. CLI flag (useful for manual runs)
+venv/bin/python background_worker.py --drain --no-extractor
+```
+
+When either mechanism is active, the module-level `_EXTRACTOR_DISABLED` flag is
+set before any handler runs. Each handler that needs the extractor checks this
+flag first and returns `"skipped: extractor disabled"` immediately, bypassing
+the expensive `import` entirely.
+
+The scheduler (`cron/scheduler.py`) runs the drain worker as a subprocess and
+passes its own environment through. Setting `MEMORY_LLM_EXTRACTION=0` in the
+crontab entry (or in the job's `env` dict in `cron/jobs.py`) is sufficient to
+protect every future cron tick.
+
+### 2026-07-10 incident: swap cascade
+
+**What happened.** On 2026-07-10 the cron-fired drain worker imported
+`fact.consolidate_facts` during a `contradiction_check` run. The Qwen2.5-3B
+model's mmap region (~2 GB) was added to the worker's heap allocations,
+pushing RSS above 3 GB. On a 24 GB M5 Pro where Adobe Lightroom was already
+holding ~20 GB of image buffers, the combined footprint exceeded physical RAM
+and forced macOS to swap.
+
+**Why swap was catastrophic.** Swap on macOS is backed by the SSD and is
+orders of magnitude slower than RAM. Once the system entered swap, every
+running process (Lightroom included) experienced severe I/O stalls. The
+worker's watchdog (default 120 s per task) timed out, the operator saw the
+system freeze, and the incident was escalated as a potential OOM crash.
+
+**Why it triggered on drain.** The `--drain` mode processes tasks in priority
+order. `contradiction_check` (priority 2) ran before `entity_resolution`
+(priority 1) during that cycle, so the first handler to execute was one that
+loads the extractor. Drain workers do not need entity-level contradiction
+analysis—their job is to flush the queue.
+
+**How the guard prevents recurrence.**
+
+1. `MEMORY_LLM_EXTRACTION=0` is set in the crontab line before every cron
+   invocation, so even a code regression in `background_worker.py` cannot
+   load the extractor again.
+2. Agent A added a module-level `_EXTRACTOR_DISABLED` flag with early-return
+   guards in every extractor-dependent handler.
+3. Agent B added a pre-drain guard in the reconciliation loop that skips
+   `fact_consolidation` and `contradiction_check` when the corpus exceeds
+   2,000 notes, preventing the module-level import from even being reached.
+4. `scripts/worker_memory_guard.py` (new) can be called before or after
+   launch to assert RSS stays under a configurable threshold.
+
 ## Troubleshooting
 
 ### Tasks stuck in `pending`

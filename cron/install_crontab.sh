@@ -102,7 +102,7 @@ $BLOCK_BEGIN
 # The scheduler checks which jobs are due and runs them sequentially.
 # Job registry: cron/jobs.py | Scheduler: cron/scheduler.py
 # Execution tracking: cron_runs table | Health: memory_system_health MCP tool
-*/5 *  *   *   *    MEMORY_DB_PATH=$DB_PATH $VENV_PY $ROOT/cron/scheduler.py >> $LOG_DIR/scheduler.log 2>&1
+*/5 *  *   *   *    MEMORY_DB_PATH=$DB_PATH MEMORY_LLM_EXTRACTION=0 $VENV_PY $ROOT/cron/scheduler.py >> $LOG_DIR/scheduler.log 2>&1
 $BLOCK_END
 EOF
 }
