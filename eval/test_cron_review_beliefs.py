@@ -60,20 +60,29 @@ def _setup_clean_db() -> tuple[sqlite3.Connection, str]:
     return conn, db_path
 
 
+_belief_seq = 0
+
+
 def _seed_belief(
     conn: sqlite3.Connection,
     confidence: float = 0.5,
     belief_status: str = "active",
     last_reviewed_at: float | None = None,
-    mem_id: str = "test/mem-1",
-    subject: str = "alice",
-    obj: str = "lawyer",
+    mem_id: str | None = None,
+    subject: str | None = None,
+    obj: str | None = None,
 ) -> tuple[int, int]:
     """Insert a memory + kg_fact + belief_assertion, return (belief_id, fact_id).
 
     The memories row is inserted first because kg_facts has a FK to memories(id)
-    via source_memory.
+    via source_memory.  SPO auto-increments to avoid UNIQUE collisions.
     """
+    global _belief_seq
+    _belief_seq += 1
+    n = _belief_seq
+    subject = subject or f"entity_{n}"
+    obj = obj or f"role_{n}"
+    mem_id = mem_id or f"test/mem-{n}"
     now = time.time()
     ts = str(now)
     conn.execute(
@@ -218,14 +227,9 @@ class TestCronReviewBeliefs:
         conn, db_path = _setup_clean_db()
         try:
             stale_ts = time.time() - (60 * 86400)
-            # Seed 5 distinct stale beliefs (unique subject/object to avoid UNIQUE constraint)
+            # Seed 5 distinct stale beliefs (auto-incrementing SPO)
             for i in range(5):
-                _seed_belief(
-                    conn, confidence=0.3, last_reviewed_at=stale_ts,
-                    mem_id=f"test/mem-limit-{i}",
-                    subject=f"entity_{i}",
-                    obj=f"role_{i}",
-                )
+                _seed_belief(conn, confidence=0.3, last_reviewed_at=stale_ts)
 
             mod = _load_cron_review_beliefs()
             with patch.object(mod, "acquire_lock_or_exit", lambda *_a, **_kw: None):
