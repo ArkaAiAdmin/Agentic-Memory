@@ -136,7 +136,7 @@ def _index_facts(db, note_id: str, content: str, belief_status: str = "active",
 
         if KG_ENABLED:
             from fact import ensure_facts_schema, index_facts_for_memory
-            from belief import ensure_belief_assertion, ensure_beliefs_schema
+            from belief import ensure_beliefs_schema
 
             ensure_facts_schema(db)
             ensure_beliefs_schema(db)

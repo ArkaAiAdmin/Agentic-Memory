@@ -78,6 +78,12 @@ Only call it when:
 Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 `~/.config/agentic-memory/memory/` (SQLite + markdown files + vector index).
 
+**Subsystem status (2026-07-11):**
+- **Belief layer:** LIVE — `belief_assertions` populated on every save (G1, flag-gated via `feature_belief_layer`).
+- **Temporal queries:** LIVE — `query_facts_at_time` supports `time_axis="valid"|"transaction"` (G2).
+- **Contradiction merge:** LIVE — `memory_resolve_contradiction(strategy="merge")` delegates to resolver (G3).
+- **Belief review:** LIVE — `cron_review_beliefs` queues stale beliefs; `memory_review_beliefs` reads queue (G4).
+
 **Surface: 17 CORE verbs + `memory_maintenance` router (escape hatch)**
 
 - CORE tools: visible directly — call them by name.
@@ -205,6 +211,8 @@ CRUD operations on a specific memory note.
 
 ### memory_review_beliefs
 Review beliefs that may need agent attention — low confidence, old, or stale.
+Reads from `belief_review_queue` (populated by cron_review_beliefs).
+Falls back to direct `belief_assertions` query when queue is empty.
 
 **Args:**
 | Param | Type | Required | Default |
