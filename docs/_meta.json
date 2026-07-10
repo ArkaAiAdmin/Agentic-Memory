@@ -1,20 +1,20 @@
 {
   "schema_version": 37,
-  "num_migrations": 38,
+  "num_migrations": 39,
   "num_core_tools": 17,
   "num_admin_tools": 87,
   "num_deprecated_tools": 3,
   "num_total_tools": 107,
   "num_tests": 4431,
   "num_test_files": 271,
-  "loc_production": 105331,
+  "loc_production": 105689,
   "loc_test": 87812,
-  "loc_total": 193143,
+  "loc_total": 193501,
   "num_cron_scripts": 46,
-  "num_tables_visible": 49,
+  "num_tables_visible": 51,
   "num_hooks": 8,
   "num_agents_ported": 6,
-  "last_verified": "2026-07-10",
+  "last_verified": "2026-07-11",
   "num_mcp_modules": 30,
   "num_test_functions": 4346,
   "provenance": {
@@ -29,6 +29,6 @@
     "truth_rank_1": "_meta.json (machine-enforced)",
     "truth_rank_2": "AGENTS.md AUTO-GEN sections (via agents_md_generator.py -> gen_doc_meta.py)",
     "truth_rank_3": "docs/MCP_SURFACE.md + docs/architecture.md (manual, cross-check via gen_schema_doc.py)",
-    "last_meta_regenerated": "2026-07-10"
+    "last_meta_regenerated": "2026-07-11"
   }
 }

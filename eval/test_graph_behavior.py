@@ -395,7 +395,7 @@ class TestGraphInsightsAndCentrality(unittest.TestCase):
             add_edge(conn, c, a)
 
             from mcp_kg import memory_graph_insights
-            output = memory_graph_insights(sample_size=5, include_bridge=False)
+            output = memory_graph_insights(sample_size=5, include_bridge=False, conn=conn)
             assert "Graph Analytics Insights" in output, f"Missing title in output"
             assert "Density" in output, f"Missing Density in output"
             assert "PageRank" in output, f"Missing PageRank in output"

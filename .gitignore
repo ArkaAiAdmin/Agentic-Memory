@@ -35,7 +35,7 @@ docs/docker_README.md
 
 # Coverage data (contains absolute source paths)
 .coverage
-paper_pipeline/
+#paper_pipeline/
 
 # Runtime artifacts (daemon PID, test debris)
 .auto_save_daemon_manifest.json
@@ -45,3 +45,4 @@ cron/MagicMock/
 scratch/
 ts-sdk/node_modules/
 cron/.drift_cron_*.json
+paper_pipeline/

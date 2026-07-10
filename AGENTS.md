@@ -7,7 +7,7 @@ If you are an agent **using** the system (not maintaining it): read `AGENT_CONTR
 ---
 <!--AUTO-GEN:START key="what_this_system_is"-->
 - **Surface**: 17 CORE verbs + `memory_maintenance` router (87 ADMIN + 3 DEPRECATED behind router) + 8 lifecycle hooks + 46+ cron jobs
-- **Schema**: v37, ~49 tables
+- **Schema**: v37, ~51 tables
 - **Code**: ~105k LOC production, ~87k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
@@ -150,14 +150,13 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 
 ---
 <!--AUTO-GEN:START key="current_state"-->
-- **Schema v37**: 38 migrations (100% down-coverage), ~49 tables.
+- **Schema v37**: 39 migrations (100% down-coverage), ~51 tables.
 - **MCP surface**: 17 CORE + 1 router (87 ADMIN + 3 DEPRECATED). See `docs/MCP_SURFACE.md`.
 - **Write path**: Saga transaction (DB + vec_key + .md) with flock locking, crash-consistent rollback. `defer_expensive=True` → <200ms.
 - **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).
 - **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.
 - **Testing**: 271 test files, 4346+ test functions, ~87k+ test LOC. Subprocess-per-file runner.
-- **Paper**: *Conflict-Free Knowledge Graph Projection* — preprint under review (arXiv pending; Zenodo DOI: pending — add after arXiv ID is confirmed).
 - **Canonical refs**: `docs/architecture.md` · `docs/MCP_SURFACE.md` · `skills/memory-architecture/SKILL.md`.
 <!--AUTO-GEN:END key="current_state"-->
 

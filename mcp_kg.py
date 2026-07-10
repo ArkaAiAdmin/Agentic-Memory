@@ -216,6 +216,7 @@ def memory_facts_stats() -> str:
 def memory_graph_insights(
     sample_size: int = 20,
     include_bridge: bool = True,
+    conn=None,
 ) -> str:
     """Return graph analytics insights: density, modularity, avg path length, bridge nodes.
 
@@ -226,17 +227,22 @@ def memory_graph_insights(
 
     if not KG_ENABLED:
         return "Knowledge graph disabled. Set MEMORY_KNOWLEDGE_GRAPH=1 to enable."
-    target_base = _resolve_memory_dir()
-    db_path = target_base / "memory.db"
-    if not db_path.exists():
-        return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
     try:
-        from infra.db import open_db
+        from contextlib import nullcontext
         from kg.graph_analytics import compute_pagerank
         from kg.graph_communities import connected_components
 
         out = ["**Graph Analytics Insights**"]
-        with open_db(db_path, row_factory=None) as conn:
+        if conn is not None:
+            _conn_ctx = nullcontext(conn)
+        else:
+            from infra.db import open_db
+            target_base = _resolve_memory_dir()
+            db_path = target_base / "memory.db"
+            if not db_path.exists():
+                return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
+            _conn_ctx = open_db(db_path, row_factory=None)
+        with _conn_ctx as conn:
             entity_row = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()
             entity_count = int(entity_row[0]) if entity_row and entity_row[0] is not None else 0
             edge_row = conn.execute(
