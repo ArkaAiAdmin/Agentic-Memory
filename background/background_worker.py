@@ -61,6 +61,13 @@ logger = logging.getLogger(__name__)
 # Graceful shutdown flag
 _shutdown = False
 
+# LLM fact-extractor guard.  When True, the worker skips any task that
+# requires the LLM extractor (Qwen/Qwen2.5-3B-Instruct, ~2 GB mmap +
+# torch/tokenizers/rayon).  Set automatically for drain/once/short-lived
+# modes (the worker only needs to flush the write journal in those modes),
+# or explicitly via --no-extractor or MEMORY_LLM_EXTRACTION=0.
+_EXTRACTOR_DISABLED = False
+
 # Default batch size for the non-drain worker loop.  Each cron tick
 # processes up to this many tasks before sleeping for ``interval``
 # seconds again.  The previous behaviour was exactly 1 task per tick,
@@ -124,6 +131,8 @@ def handle_fact_consolidation(
     payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Run fact consolidation (merge similar SPO triples)."""
+    if _EXTRACTOR_DISABLED:
+        return "skipped: extractor disabled"
     try:
         from pathlib import Path as _P
         from fact.consolidate_facts import consolidate_memory_facts
@@ -155,6 +164,8 @@ def handle_semantic_backlinks(
     payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Create semantic KG edges between the saved memory and its nearest neighbors."""
+    if _EXTRACTOR_DISABLED:
+        return "skipped: extractor disabled"
     try:
         from save.backlinks import _auto_semantic_backlinks
 
@@ -237,6 +248,8 @@ def handle_kg_and_fact_index(
     payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Extract KG entities, facts, and enrich context for a memory (deferred)."""
+    if _EXTRACTOR_DISABLED:
+        return "skipped: extractor disabled"
     try:
         from save.indexers import _index_kg, _index_facts
         from save.post_save_hooks import _enrich_context
@@ -1383,6 +1396,18 @@ def run_worker(
         signal.signal(signal.SIGTERM, _handle_signal)
         signal.signal(signal.SIGINT, _handle_signal)
 
+    # Short-lived / drain callers don't need LLM extraction.
+    # Enforce the extractor-gate here too so tests and other programmatic
+    # callers get the same memory savings as the CLI path.
+    global _EXTRACTOR_DISABLED
+    if drain or once:
+        _EXTRACTOR_DISABLED = True
+    if _EXTRACTOR_DISABLED:
+        logger.info(
+            "worker: LLM extractor disabled (drain=%s, once=%s)",
+            drain, once,
+        )
+
     logger.info(
         "worker: starting (db=%s, interval=%ds, once=%s, drain=%s, "
         "max_tasks=%d, n_workers=%d)",
@@ -1407,34 +1432,39 @@ def run_worker(
         # the file write leaves a backward orphan (DB row, missing .md).
         # Reconciling both directions means no partial memory survives a
         # restart of the daemon (the single writer to memory.db).
-        try:
-            from memory_integrity import reconcile_orphan_files
+        # Skipped in drain/once modes: those are short-lived cron tasks
+        # that only flush the write journal; orphan reconciliation is
+        # a daemon-startup-only concern.
+        if not _EXTRACTOR_DISABLED:
+            try:
+                from memory_integrity import reconcile_orphan_files
 
-            reconcile = reconcile_orphan_files(db_path, db_path.parent)
-            n_back = len(reconcile.get("backward_recovered", []))
-            n_fwd = len(reconcile.get("forward_reaped", []))
-            if n_back or n_fwd:
-                logger.info(
-                    "worker: orphan reconciliation healed %d backward / reaped %d forward",
-                    n_back,
-                    n_fwd,
-                )
-        except Exception as _orph_exc:
-            logger.debug("worker: orphan reconciliation failed: %s", _orph_exc)
+                reconcile = reconcile_orphan_files(db_path, db_path.parent)
+                n_back = len(reconcile.get("backward_recovered", []))
+                n_fwd = len(reconcile.get("forward_reaped", []))
+                if n_back or n_fwd:
+                    logger.info(
+                        "worker: orphan reconciliation healed %d backward / reaped %d forward",
+                        n_back,
+                        n_fwd,
+                    )
+            except Exception as _orph_exc:
+                logger.debug("worker: orphan reconciliation failed: %s", _orph_exc)
 
-        try:
-            from background.corpus_budget_guard import run_corpus_budget_guard
+        if not _EXTRACTOR_DISABLED:
+            try:
+                from background.corpus_budget_guard import run_corpus_budget_guard
 
-            guard_status = run_corpus_budget_guard(db_path, conn=init_conn)
-            if guard_status.get("compaction_enqueued"):
-                logger.info(
-                    "worker: corpus budget exceeded (~%d tokens, budget %d) — "
-                    "compaction enqueued",
-                    guard_status.get("tokens", 0),
-                    guard_status.get("budget", 0),
-                )
-        except Exception as _guard_exc:
-            logger.debug("worker: corpus budget guard failed: %s", _guard_exc)
+                guard_status = run_corpus_budget_guard(db_path, conn=init_conn)
+                if guard_status.get("compaction_enqueued"):
+                    logger.info(
+                        "worker: corpus budget exceeded (~%d tokens, budget %d) — "
+                        "compaction enqueued",
+                        guard_status.get("tokens", 0),
+                        guard_status.get("budget", 0),
+                    )
+            except Exception as _guard_exc:
+                logger.debug("worker: corpus budget guard failed: %s", _guard_exc)
 
         _maybe_run_wal_checkpoint(init_conn, db_path)
 
@@ -1660,11 +1690,38 @@ def main():
     parser.add_argument(
         "--workers", type=int, default=None, help="Number of worker threads (default 1)"
     )
+    parser.add_argument(
+        "--no-extractor",
+        action="store_true",
+        help="Disable LLM fact extractor (saves ~2 GB RAM on startup). "
+        "Automatically implied for --drain, --once, and --max-tasks modes. "
+        "Also set via MEMORY_LLM_EXTRACTION=0 env var.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
     )
+
+    # ------------------------------------------------------------------ #
+    # LLM extractor gate                                                    #
+    # Drain/once/short-lived workers only flush the write journal and do   #
+    # not need LLM fact extraction (saves ~2 GB mmap + torch/tokenizers).  #
+    # Also honour the explicit --no-extractor flag and the                  #
+    # MEMORY_LLM_EXTRACTION=0 env var (same flag used by the save path).   #
+    # ------------------------------------------------------------------ #
+    global _EXTRACTOR_DISABLED
+    if args.no_extractor:
+        _EXTRACTOR_DISABLED = True
+    elif args.drain or args.once or args.max_tasks is not None:
+        _EXTRACTOR_DISABLED = True
+    elif os.environ.get("MEMORY_LLM_EXTRACTION", "").strip().lower() in ("0", "false", "no", "off"):
+        _EXTRACTOR_DISABLED = True
+    if _EXTRACTOR_DISABLED:
+        logger.info(
+            "worker: LLM extractor disabled (drain=%s, once=%s, max_tasks=%s, no_extractor=%s)",
+            args.drain, args.once, args.max_tasks is not None, args.no_extractor,
+        )
 
     if args.db:
         db_path = Path(args.db)

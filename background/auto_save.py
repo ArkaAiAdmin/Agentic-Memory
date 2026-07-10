@@ -130,6 +130,19 @@ try:
 except ImportError:  # cache module is optional in some test contexts
     _search_cache = None
 
+# ---------------------------------------------------------------------------
+# NOTE (2026-07 memory-leak fix): auto_save.py is usually launched as a
+# subprocess (TS plugin: one shot per tool call) or via
+# `python auto_save.py tool-complete ...`.  It does NOT pull in the LLM
+# extractor at module import time — background.tool_complete uses
+# function-level lazy imports from infra._lazy_imports.  If future work
+# moves any save-pipeline symbols to module-level in this file, be aware
+# that `from save import X` at the top level transitively loads
+# save.indexers -> fact.fact_extract -> fact.llm_extraction ->
+# llm_extraction (Qwen2.5-3B, ~2 GB mmap + torch/tokenizers/rayon).
+# Keep all save imports inside function bodies.
+# ---------------------------------------------------------------------------
+
 configure_logging()
 logger = logging.getLogger(__name__)
 
