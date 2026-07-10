@@ -64,7 +64,17 @@ def _count_files(glob_pattern: str) -> int:
 
 
 def _get_live_values() -> dict[str, Any]:
-    """Extract live values from code."""
+    """Extract live values from the single canonical gatherer (agents_md_generator)."""
+    sys.path.insert(0, str(REPO_ROOT / "infra"))
+    try:
+        from agents_md_generator import get_meta_for_json  # type: ignore[import-untyped]
+        return get_meta_for_json()
+    except ImportError:
+        return _get_live_values_fallback()
+
+
+def _get_live_values_fallback() -> dict[str, Any]:
+    """Legacy collector — safety net only, should not be reached in normal operation."""
     live: dict[str, Any] = {}
 
     # Schema version
@@ -109,14 +119,19 @@ def _get_live_values() -> dict[str, Any]:
     return live
 
 
-# Order + labels for the human-readable report and the markdown table.
+# Order + labels for the human-readable report.
 ALL_FIELDS = [
     "schema_version",
     "num_migrations",
+    "num_mcp_modules",
     "num_core_tools",
     "num_admin_tools",
+    "num_deprecated_tools",
+    "num_total_tools",
     "num_cron_scripts",
-    "num_tests",
+    "num_hooks",
+    "num_test_files",
+    "num_tables_visible",
     "loc_production",
     "loc_test",
     "loc_total",
@@ -126,11 +141,16 @@ ALL_FIELDS = [
 MARKDOWN_ROWS = [
     ("schema_version", "Schema version"),
     ("num_migrations", "Migrations"),
+    ("num_mcp_modules", "MCP modules"),
     ("num_core_tools", "CORE tools"),
     ("num_admin_tools", "ADMIN tools"),
+    ("num_deprecated_tools", "Deprecated tools"),
+    ("num_total_tools", "Total tools"),
     ("num_cron_scripts", "Cron scripts"),
-    ("num_tests", "Tests"),
-    ("loc_production", "Production LOC"),
+    ("num_hooks", "Hooks"),
+    ("num_test_files", "Test files"),
+    ("num_tables_visible", "Tables"),
+    ("loc_production", "Prod LOC"),
     ("loc_test", "Test LOC"),
     ("loc_total", "Total LOC"),
 ]
@@ -190,6 +210,18 @@ def main() -> int:
     if failures:
         print(f"\n{len(failures)} field(s) drifted. Update docs/_meta.json or fix the code.")
         return 1
+
+    # Staleness gate
+    from datetime import date as _date
+    provenance = meta.get("provenance", {})
+    last_regen = provenance.get("last_meta_regenerated")
+    if last_regen and not args.markdown:
+        try:
+            days_old = (_date.today() - _date.fromisoformat(last_regen)).days
+            if days_old > 7:
+                print(f"  WARN  _meta.json provenance is {days_old} days stale (threshold: 7 days). Run 'make update-agents-md'.")
+        except (ValueError, TypeError):
+            pass
 
     if not args.markdown:
         print(f"\nAll {len(ALL_FIELDS)} fields match live code. Meta is fresh.")

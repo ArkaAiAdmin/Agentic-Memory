@@ -4,6 +4,21 @@ You are an agent using the agentic-memory system. Follow these 5 rules. Addition
 
 ---
 
+## Rule 0: Truth-Source Ranking (MANDATORY)
+
+Before reading AGENTS.md, docs/MCP_SURFACE.md, or docs/architecture.md
+for ANY count (tool names, schema version, cron count, test count, LOC):
+
+1. Read docs/_meta.json FIRST.
+2. Check _meta.json["provenance"]["truth_rank_1"] — that is the canonical
+   machine-enforced source for all counts.
+3. Check _meta.json["provenance"]["last_meta_regenerated"] — if > 7 days
+   old, run `make update-agents-md` before trusting any counts.
+4. Only then fall back to AGENTS.md AUTO-GEN sections or MCP_SURFACE.md
+   for behavioral/narrative context (not counts).
+
+---
+
 ## 1. Start Every Session
 
 ```

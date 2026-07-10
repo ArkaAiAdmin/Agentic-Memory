@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Regenerate the computed fields of docs/_meta.json from live code.
+"""Regenerate docs/_meta.json from the single canonical live-code gatherer.
 
-Reads the existing docs/_meta.json, recomputes the fields that
-``verify_doc_meta.py`` checks against live code, writes them back in
-place, sets ``last_verified`` to today's date, and preserves any other
-fields (e.g. ``num_agents_ported``) that are not derived from code.
+Reads all live meta from agents_md_generator.get_meta_for_json() (which
+itself calls gather()), overlays onto existing _meta.json preserving
+non-computed fields (provenance block, timestamps), and writes back.
 
 Usage:
     python scripts/gen_doc_meta.py
@@ -18,52 +17,65 @@ from datetime import date
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS_DIR = REPO_ROOT / "scripts"
+sys.path.insert(0, str(REPO_ROOT / "infra"))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from agents_md_generator import get_meta_for_json  # sole source of truth
+
 META_PATH = REPO_ROOT / "docs" / "_meta.json"
 
-# Fields recomputed from live code (mirrors verify_doc_meta._get_live_values).
-COMPUTED_FIELDS = [
+# Canonical live fields — must match keys returned by get_meta_for_json().
+# Adding a new field to gather() requires adding it here too.
+KNOWN_META_FIELDS = [
     "schema_version",
     "num_migrations",
+    "num_mcp_modules",
     "num_core_tools",
     "num_admin_tools",
+    "num_deprecated_tools",
+    "num_total_tools",
     "num_cron_scripts",
-    "num_tests",
+    "num_hooks",
+    "num_test_files",
+    "num_test_functions",
+    "num_tables_visible",
     "loc_production",
     "loc_test",
     "loc_total",
 ]
 
+PROVENANCE_BLOCK = {
+    "what_this_system_is_auto_gen_key": "what_this_system_is",
+    "tool_surface_auto_gen_key": "mcp_surface_contract",
+    "hard_rule_4_auto_gen_key": "hard_rule_4",
+    "hard_rule_6_auto_gen_key": "hard_rule_6",
+    "critical_path_auto_gen_key": "critical_path",
+    "current_state_auto_gen_key": "current_state",
+    "schema_doc": "docs/architecture.md",
+    "mcp_doc": "docs/MCP_SURFACE.md",
+    "truth_rank_1": "_meta.json (machine-enforced)",
+    "truth_rank_2": "AGENTS.md AUTO-GEN sections (via agents_md_generator.py -> gen_doc_meta.py)",
+    "truth_rank_3": "docs/MCP_SURFACE.md + docs/architecture.md (manual, cross-check via gen_schema_doc.py)",
+    "last_meta_regenerated": date.today().isoformat(),
+}
+
 
 def main() -> int:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-    sys.path.insert(0, str(REPO_ROOT))
-    from verify_doc_meta import _get_live_values  # type: ignore[import-untyped]
-
-    live = _get_live_values()
+    live = get_meta_for_json()
 
     meta: dict = {}
     if META_PATH.exists():
         meta = json.loads(META_PATH.read_text())
 
-    for field in COMPUTED_FIELDS:
+    for field in KNOWN_META_FIELDS:
         if live.get(field) is not None:
             meta[field] = live[field]
 
-    # Keep derived tool totals consistent with the updated counts.
-    core = meta.get("num_core_tools")
-    admin = meta.get("num_admin_tools")
-    if core is not None and admin is not None:
-        try:
-            from tool_registry import DEPRECATED  # type: ignore[import-untyped]
-
-            meta["num_deprecated_tools"] = len(DEPRECATED)
-        except ImportError:
-            pass
-        dep = meta.get("num_deprecated_tools", 0)
-        meta["num_total_tools"] = core + admin + (dep or 0)
-
-    # Mark freshness without clobbering any non-computed fields.
+    if "provenance" not in meta:
+        meta["provenance"] = {}
+    for k, v in PROVENANCE_BLOCK.items():
+        meta["provenance"].setdefault(k, v)
+    meta["provenance"]["last_meta_regenerated"] = date.today().isoformat()
     meta["last_verified"] = date.today().isoformat()
 
     META_PATH.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")

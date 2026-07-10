@@ -1,3 +1,6 @@
+<!-- MCP_TRUTH_SOURCE: docs/_meta.json -->
+<!-- Last verified by gen_doc_meta.py — check provenance.last_meta_regenerated for freshness -->
+<!-- Truth ranking: _meta.json > AGENTS.md AUTO-GEN > this file. See _meta.json["provenance"]. -->
 # Agentic Memory — MCP Surface Reference
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**

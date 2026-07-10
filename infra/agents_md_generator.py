@@ -65,6 +65,34 @@ def _count_hooks() -> int:
     return len([f for f in hooks_dir.glob("*.py") if not f.stem.startswith("_")])
 
 
+def get_meta_for_json() -> dict[str, Any]:
+    """Return a flat, _meta.json-compatible dict from the single canonical live-code gatherer.
+
+    This is the ONLY entry point for live meta collection. Other scripts
+    (gen_doc_meta.py, verify_doc_meta.py) must import this — never
+    re-implement their own collection logic.
+    """
+    data = gather()
+    tc = data["tool_counts"]
+    return {
+        "schema_version": data["schema_version"],
+        "num_migrations": data["migration_count"],
+        "num_mcp_modules": data["mcp_module_count"],
+        "num_core_tools": tc["core"],
+        "num_admin_tools": tc["admin"],
+        "num_deprecated_tools": tc["deprecated"],
+        "num_total_tools": tc["core"] + tc["admin"] + tc["deprecated"],
+        "num_cron_scripts": data["cron_job_count"],
+        "num_hooks": data["hook_count"],
+        "num_test_files": data["test_file_count"],
+        "num_test_functions": data["test_function_count"],
+        "num_tables_visible": data["table_count"],
+        "loc_production": data["production_loc"],
+        "loc_test": data["test_loc"],
+        "loc_total": data["production_loc"] + data["test_loc"],
+    }
+
+
 def _count_mcp_modules() -> int:
     """Return the number of mcp_*.py modules at repo root."""
     return len(list(REPO.glob("mcp_*.py")))
@@ -201,6 +229,11 @@ def gather() -> dict[str, Any]:
     hook_count = _count_hooks()
     mcp_modules = _count_mcp_modules()
 
+    from datetime import date
+    section_ts: dict[str, str] = {}
+    for key in SECTION_FNS:
+        section_ts[f"_section_timestamp_{key}"] = date.today().isoformat()
+
     return {
         "schema_version": migrations["schema_version"],
         "migration_count": migrations["migration_pair_count"],
@@ -219,6 +252,7 @@ def gather() -> dict[str, Any]:
         "cron_job_count": cron_count,
         "hook_count": hook_count,
         "mcp_module_count": mcp_modules,
+        "auto_gen_section_timestamps": section_ts,
     }
 
 
@@ -364,6 +398,11 @@ def main() -> None:
         print(f"Updated {AGENTS_MD}")
     else:
         print("No changes needed")
+
+    # Expose per-section timestamps for gen_doc_meta / verify_doc_meta
+    ts_path = REPO / "docs" / "_auto_gen_timestamps.json"
+    ts = {k: v for k, v in data.items() if k.startswith("_section_timestamp_")}
+    ts_path.write_text(json.dumps(ts, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
