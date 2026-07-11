@@ -19,6 +19,7 @@ from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -185,6 +186,15 @@ def _get_domain_tools() -> dict:
         from mcp_search import memory_semantic_search, memory_recall_stats
         from mcp_session import memory_thread_context, memory_list_threads, memory_resolve_thread
         from mcp_safety import memory_check_contradictions, memory_scan_injection, memory_strip_provenance
+        from mcp_auth import (
+            memory_login_url,
+            memory_callback,
+            memory_whoami,
+            memory_rotate_key,
+            memory_sso_sync_metadata,
+            memory_sso_idp_list,
+            memory_sso_idp_add,
+        )
 
         _domain_tools = {
             "memory_agent_init": memory_agent_init,
@@ -1464,7 +1474,7 @@ def _op_gdpr_erase(
         with open_db(db_path) as conn:
             from infra.gdpr import gdpr_erase
             result = gdpr_erase(
-                conn=conn,
+                conn=cast(sqlite3.Connection, conn),
                 principal_id=resolved_principal or "anonymous",
                 data_subject_sub=data_subject_sub,
                 tenant_id=tenant_id,

@@ -25,9 +25,46 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import toml
-
 from mcp_instance import mcp
+
+
+def _toml_load(fh) -> Dict[str, Any]:
+    """Load TOML from a binary file handle using stdlib tomllib/tomli."""
+    try:
+        import tomllib as _toml
+    except ModuleNotFoundError:
+        import tomli as _toml  # type: ignore[no-redef]
+    return _toml.load(fh)
+
+
+def _toml_dump(data: Dict[str, Any], fh) -> None:
+    """Minimal TOML serializer for nested dicts of scalars.
+
+    Handles the nested-dict-of-scalars structure written by the SSO IdP
+    registration path (``memory.auth.sso.idps``). Avoids the third-party
+    ``toml`` dependency so the package runs on stdlib alone.
+    """
+
+    def _scalar(v: Any) -> str:
+        if v is None:
+            return '""'
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, (int, float)):
+            return repr(v)
+        return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    def _emit(d: Dict[str, Any], indent: str) -> None:
+        for key, value in d.items():
+            if isinstance(value, dict) and value:
+                fh.write(f"{indent}[{key}]\n")
+                _emit(value, indent)
+            elif isinstance(value, dict):
+                fh.write(f"{indent}{key} = {{}}\n")
+            else:
+                fh.write(f"{indent}{key} = {_scalar(value)}\n")
+
+    _emit(data, "")
 from infra.authlib_sso import (
     IdPMetadataCache,
     KeyManager,
@@ -74,7 +111,7 @@ def _load_sso_config() -> Dict[str, Any]:
         return {}
     try:
         with open(path, "rb") as fh:
-            data = toml.load(fh)
+            data = _toml_load(fh)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to parse memory.toml: %s", exc)
         return {}
@@ -308,7 +345,7 @@ def _add_idp_to_toml(name: str, kind: str, **fields: Any) -> None:
     data: Dict[str, Any] = {}
     if path.exists():
         with open(path, "rb") as fh:
-            data = toml.load(fh)
+            data = _toml_load(fh)
     memory = data.setdefault("memory", {})
     auth = memory.setdefault("auth", {})
     sso = auth.setdefault("sso", {})
@@ -320,7 +357,7 @@ def _add_idp_to_toml(name: str, kind: str, **fields: Any) -> None:
             entry[k] = v
     idps[name] = entry
     with open(path, "w", encoding="utf-8") as fh:
-        toml.dump(data, fh)
+        _toml_dump(data, fh)
 
 
 def _now_iso() -> str:

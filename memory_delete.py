@@ -319,7 +319,7 @@ def soft_delete_note(
         try:
             from agent_context import get_agent
             _rbac_ctx = get_agent()
-            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
+            principal_id = getattr(_rbac_ctx, "principal_id", None)
             if not principal_id:
                 from agent_context import _AGENT_CONTEXT
                 principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
@@ -399,7 +399,7 @@ def restore_note(db_path, note_id: str, *, tenant_id: str | None = None) -> bool
         try:
             from agent_context import get_agent
             _rbac_ctx = get_agent()
-            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
+            principal_id = getattr(_rbac_ctx, "principal_id", None)
             if not principal_id:
                 from agent_context import _AGENT_CONTEXT
                 principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
@@ -663,7 +663,7 @@ def hard_delete_note(db_path, note_id: str, *, tenant_id: str | None = None) -> 
         try:
             from agent_context import get_agent
             _rbac_ctx = get_agent()
-            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
+            principal_id = getattr(_rbac_ctx, "principal_id", None)
             if not principal_id:
                 from agent_context import _AGENT_CONTEXT
                 principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
@@ -823,7 +823,7 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
         try:
             from agent_context import get_agent
             _rbac_ctx = get_agent()
-            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
+            principal_id = getattr(_rbac_ctx, "principal_id", None)
             if not principal_id:
                 from agent_context import _AGENT_CONTEXT
                 principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
