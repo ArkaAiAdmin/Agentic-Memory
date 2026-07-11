@@ -387,14 +387,20 @@ def _safe_parse(xml_bytes: bytes) -> ET.Element:
     """Parse XML with entity expansion disabled (XXE-safe)."""
     try:
         from defusedxml.ElementTree import fromstring as _fromstring  # type: ignore
-
-        return _fromstring(xml_bytes)
+        from defusedxml.common import DefusedXmlException  # type: ignore
     except ImportError:
         text = xml_bytes.decode("utf-8", "replace")
         # Strip DOCTYPE / entity declarations — the main XXE attack surface.
         if "<!DOCTYPE" in text or "<!ENTITY" in text:
             raise SsoAuthError("Refusing to parse XML with DOCTYPE/ENTITY declarations")
         return ET.fromstring(xml_bytes)
+    try:
+        return _fromstring(xml_bytes)
+    except DefusedXmlException as exc:
+        # defusedxml raises DefusedXmlException (e.g. EntitiesForbidden) on
+        # XXE attempts. Normalize to SsoAuthError so callers see a uniform
+        # failure surface regardless of whether defusedxml is installed.
+        raise SsoAuthError(f"Refusing to parse unsafe XML: {exc}") from exc
 
 
 def parse_saml_response(saml_response_b64: str) -> SsoIdentity:
