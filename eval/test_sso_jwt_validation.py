@@ -290,7 +290,7 @@ class TestVerifyOidcIdToken(unittest.TestCase):
 
     def _generate_idp_jwks(self):
         """Create a synthetic RSA key pair and return (jwks, private_key, kid)."""
-        from authlib.jose import JsonWebKey
+        from joserfc.jwk import import_key
         from cryptography.hazmat.primitives.asymmetric import rsa
         from cryptography.hazmat.primitives import serialization
 
@@ -300,9 +300,9 @@ class TestVerifyOidcIdToken(unittest.TestCase):
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption(),
         )
-        jwk = JsonWebKey.import_key(priv_pem)
-        priv_dict = jwk.as_dict(is_private=True)
-        pub_dict = jwk.as_dict(is_private=False)
+        jwk = import_key(priv_pem)
+        priv_dict = jwk.as_dict(private=True)
+        pub_dict = jwk.as_dict(private=False)
         kid = priv_dict.get("kid", "test-kid-1")
         pub_dict["kid"] = kid
         priv_dict["kid"] = kid
@@ -310,15 +310,16 @@ class TestVerifyOidcIdToken(unittest.TestCase):
         return jwks, priv_dict, kid
 
     def _sign_id_token(self, claims: dict, private_key: dict) -> str:
-        from authlib.jose import JsonWebKey, JsonWebToken
+        from joserfc.jwk import import_key
+        from joserfc import jwt as jose_jwt
 
-        jwt = JsonWebToken(["RS256"])
-        token = jwt.encode(
+        token = jose_jwt.encode(
             {"alg": "RS256", "kid": private_key["kid"], "typ": "JWT"},
             claims,
-            JsonWebKey.import_key(private_key),
+            import_key(private_key),
+            algorithms=["RS256"],
         )
-        return token.decode("utf-8") if isinstance(token, bytes) else token
+        return token
 
     def test_verify_valid_id_token(self):
         jwks, priv_key, kid = self._generate_idp_jwks()
@@ -438,7 +439,7 @@ class TestVerifyOidcIdToken(unittest.TestCase):
     def test_select_jwk_without_keys_dict(self):
         """_select_jwk handles a single key dict (not a JWKS wrapper)."""
         from infra.authlib_sso import _select_jwk
-        from authlib.jose import JsonWebKey
+        from joserfc.jwk import import_key
         from cryptography.hazmat.primitives.asymmetric import rsa
         from cryptography.hazmat.primitives import serialization
 
@@ -448,8 +449,8 @@ class TestVerifyOidcIdToken(unittest.TestCase):
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption(),
         )
-        jwk = JsonWebKey.import_key(priv_pem)
-        pub_dict = jwk.as_dict(is_private=False)
+        jwk = import_key(priv_pem)
+        pub_dict = jwk.as_dict(private=False)
         result = _select_jwk(pub_dict, None)
         self.assertIn("kty", result)
 
