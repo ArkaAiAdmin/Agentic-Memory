@@ -1059,9 +1059,11 @@ class SyncServer:
         host: str = "127.0.0.1",
         port: int = 9877,
         discover: bool = False,
+        tenant_id: str = "default",
     ):
         self.db_path = str(db_path)
         self.agent_id = agent_id
+        self.tenant_id = tenant_id
         self.host = host
         self.port = port
         self.discover = discover

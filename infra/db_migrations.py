@@ -227,6 +227,38 @@ def _migrate_ensure_indexes(conn) -> None:
             pass
 
 
+def _migrate_audit_tenant_index(conn) -> None:
+    """Create the tenant_id index on memory_audit_log (audit tenant isolation)."""
+    try:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_audit_log_tenant_id "
+            "ON memory_audit_log(tenant_id)"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
+def _migrate_kg_edges_tenant_id(conn) -> None:
+    """Add tenant_id column to kg_edges if absent (kg tenant isolation)."""
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_edges)").fetchall()}
+    except sqlite3.OperationalError:
+        return
+    if "tenant_id" not in cols:
+        try:
+            conn.execute("ALTER TABLE kg_edges ADD COLUMN tenant_id TEXT DEFAULT 'default'")
+        except sqlite3.OperationalError:
+            pass
+    # Index for tenant isolation queries on kg_edges.
+    try:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_kg_edges_tenant_id "
+            "ON kg_edges(tenant_id)"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
 def _migrate_memory_ctr_feedback(conn) -> None:
     """Create CTR feedback table if absent (P2a)."""
     try:
@@ -524,49 +556,53 @@ def _migrate_fix_kg_edges_fk(conn) -> None:
     """Fix kg_edges FK ON DELETE from NO ACTION to CASCADE."""
     fks = conn.execute("PRAGMA foreign_key_list(kg_edges)").fetchall()
     needs_fix = any(fk[6] == "NO ACTION" for fk in fks)
-    if needs_fix:
-        # Get existing data
-        rows = conn.execute("SELECT * FROM kg_edges").fetchall()
-        conn.execute("DROP TABLE kg_edges")
-        conn.execute("""
-            CREATE TABLE kg_edges (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_id INTEGER NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
-                target_id INTEGER NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
-                relation TEXT NOT NULL DEFAULT 'related_to',
-                weight REAL DEFAULT 1.0,
-                created_at TEXT,
-                valid_at TEXT,
-                invalid_at TEXT,
-                UNIQUE(source_id, target_id, relation)
-            )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_kg_edges_source ON kg_edges(source_id)"
+    if not needs_fix:
+        return
+    # Get existing data using the current schema's column list so we only
+    # migrate columns that actually exist (avoids mismatch after an
+    # ALTER TABLE ADD COLUMN like _migrate_kg_edges_tenant_id runs first).
+    old_cols = [d[0] for d in conn.execute("PRAGMA table_info(kg_edges)").fetchall()]
+    rows = conn.execute(
+        f"SELECT {','.join(old_cols)} FROM kg_edges"
+    ).fetchall()
+    conn.execute("DROP TABLE kg_edges")
+    conn.execute("""
+        CREATE TABLE kg_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id INTEGER NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
+            target_id INTEGER NOT NULL REFERENCES kg_entities(id) ON DELETE CASCADE,
+            relation TEXT NOT NULL DEFAULT 'related_to',
+            weight REAL DEFAULT 1.0,
+            created_at TEXT,
+            valid_at TEXT,
+            invalid_at TEXT,
+            tenant_id TEXT DEFAULT 'default',
+            UNIQUE(source_id, target_id, relation)
         )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_kg_edges_target ON kg_edges(target_id)"
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kg_edges_source ON kg_edges(source_id)",
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kg_edges_target ON kg_edges(target_id)",
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kg_edges_relation ON kg_edges(relation)",
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kg_edges_valid_at ON kg_edges(valid_at)",
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kg_edges_invalid_at ON kg_edges(invalid_at)",
+    )
+    # Re-insert using old column list; tenant_id falls back to DEFAULT.
+    if rows:
+        placeholders = ",".join("?" * len(old_cols))
+        col_list = ",".join(old_cols)
+        conn.executemany(
+            f"INSERT INTO kg_edges ({col_list}) VALUES ({placeholders})",
+            rows,
         )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_kg_edges_relation ON kg_edges(relation)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_kg_edges_valid_at ON kg_edges(valid_at)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_kg_edges_invalid_at ON kg_edges(invalid_at)"
-        )
-        # Copy data back. M30 fix: use named columns so this stays
-        # correct if kg_edges ever gets a new column added in a future
-        # migration. The column order is whatever the SELECT above
-        # returned, so the parameterised INSERT is bound by name.
-        cols = [d[0] for d in conn.execute("PRAGMA table_info(kg_edges)").fetchall()]
-        placeholders = ",".join("?" * len(cols))
-        col_list = ",".join(cols)
-        for row in rows:
-            conn.execute(
-                f"INSERT INTO kg_edges ({col_list}) VALUES ({placeholders})", row
-            )
     # B4 fix: removed inner conn.commit() for atomicity.
 
 
@@ -1033,7 +1069,9 @@ def run_schema_setup(conn: AnyConnection) -> None:
         _migrate_memory_ctr_feedback(conn)
         _migrate_concept_drift(conn)
         _migrate_add_fk_constraints(conn)
+        _migrate_audit_tenant_index(conn)
         _migrate_fix_kg_edges_fk(conn)
+        _migrate_kg_edges_tenant_id(conn)
         _migrate_schema_version(conn)
 
     # No need to mark the conn — the schema_version table is the

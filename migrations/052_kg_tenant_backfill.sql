@@ -7,18 +7,20 @@
 -- (e.g. freshly written post-050) are left untouched.
 
 UPDATE kg_facts
-SET tenant_id = (
+SET tenant_id = COALESCE((
     SELECT m.tenant_id FROM memories m WHERE m.id = kg_facts.source_memory
-)
-WHERE source_memory IS NOT NULL
-  AND COALESCE(tenant_id, 'default') = 'default';
+), 'default')
+WHERE COALESCE(tenant_id, 'default') = 'default';
 
+-- For kg_entities: derive tenant_id from the nearest linked memory via
+-- kg_facts. COALESCE to 'default' so rows with no reachable memory
+-- (ungrounded entities) do not violate NOT NULL.
 UPDATE kg_entities
-SET tenant_id = (
+SET tenant_id = COALESCE((
     SELECT m.tenant_id FROM memories m
     JOIN kg_facts kf ON kf.source_memory = m.id
     WHERE kf.subject_entity_id = kg_entities.id
        OR kf.object_entity_id = kg_entities.id
     LIMIT 1
-)
+), 'default')
 WHERE COALESCE(tenant_id, 'default') = 'default';

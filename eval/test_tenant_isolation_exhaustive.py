@@ -785,8 +785,10 @@ class TestKGIsolation:
         if "kg_edges" not in tables:
             pytest.skip("no kg_edges table")
         cols = _col_set(db_path, "kg_edges")
-        if "tenant_id" not in cols:
-            pytest.xfail("SECURITY GAP: kg_edges lacks tenant_id")
+        assert "tenant_id" in cols, "kg_edges table is missing tenant_id column"
+        assert "idx_kg_edges_tenant_id" in _index_names(db_path), (
+            "kg_edges tenant_id index missing"
+        )
 
     def test_kg_facts_have_source_memory(self, db_path: Path):
         cols = _col_set(db_path, "kg_facts")
@@ -987,10 +989,7 @@ class TestAuditLogTenant:
     def test_has_tenant_index(self, db_path: Path):
         idxs = _index_names(db_path)
         has = any("tenant" in i.lower() for i in idxs)
-        if not has:
-            pytest.xfail("AUDIT GAP: no tenant_id index on memory_audit_log.tenant_id — "
-                         "requires a SQL migration (extra index); cannot live in "
-                         "_migrate_ensure_indexes because it breaks down-up round-trips.")
+        assert has, "memory_audit_log is missing a tenant_id index"
 
     def test_audit_populates_tenant(self, db_path: Path):
         from infra.audit import enqueue_audit, flush_audit

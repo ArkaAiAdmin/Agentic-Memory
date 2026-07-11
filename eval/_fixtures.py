@@ -15,11 +15,14 @@ from infra.memory_common import get_memory_paths
 
 
 def bootstrap_temp_db(db_path: Path) -> None:
-    """Copy the live prod schema (and data) into *db_path*.
+    """Copy the live prod schema (and data) into *db_path*, then bring it
+    up to the current schema version via ``run_schema_setup``.
 
     This is the H21-recommended bootstrap: a fully-bootstrapped temp DB
-    with all 6 migrations applied (incl. 005 which adds deleted_at +
-    deleted_by). Tests using this don't need the blanket xfail.
+    with all numbered migrations applied (currently 52).  The extra
+    ``run_schema_setup`` call ensures post-052 corrective helpers
+    (e.g. kg_edges tenant_id, audit tenant_id index) are applied even
+    when the prod snapshot was taken before those helpers were added.
 
     Use as a function (e.g. in setUp()) or via the temp_db_path pytest
     fixture in conftest.py.
@@ -32,6 +35,15 @@ def bootstrap_temp_db(db_path: Path) -> None:
     prod_db = global_mem / "memory.db"
     if prod_db.exists():
         shutil.copy2(prod_db, db_path)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA foreign_keys = ON")
+        from infra.db_migrations import run_schema_setup
+
+        run_schema_setup(conn)
+    finally:
+        conn.close()
 
 
 def bootstrap_temp_db_clean(db_path: Path) -> None:
