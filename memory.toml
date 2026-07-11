@@ -279,6 +279,68 @@ escape_hatch_audit_every_secs = 60 # re-affirm every minute
 # MEMORY_RERANKER_DISABLED = "compliance"
 
 # ---------------------------------------------------------------------------
+# SSO / OIDC / SAML identity provider configuration (Phase 2)
+# ---------------------------------------------------------------------------
+# Each entry under [memory.auth.sso.idps] defines an identity provider.
+# Providers of kind "oidc" require: client_id, client_secret, authorize_url,
+# token_url, jwks_url, issuer. Providers of kind "saml" require:
+# metadata_url (or sso_url), entity_id.
+#
+# The signing key for locally-minted JWTs is auto-generated (migration 047),
+# stored in idem_token_key, and rotated via memory_rotate_key.
+#
+# Example:
+# [memory.auth.sso]
+#   default_tenant = "default"
+#   idps = { okta = { kind = "oidc", client_id = "...", ... } }
+[memory.auth.sso]
+default_tenant = "default"
+
+# Example IdP entries (uncomment + fill to enable):
+# [memory.auth.sso.idps.google]
+# kind = "oidc"
+# client_id = "your-client-id"
+# client_secret = "your-client-secret"
+# authorize_url = "https://accounts.google.com/o/oauth2/v2/auth"
+# token_url = "https://oauth2.googleapis.com/token"
+# jwks_url = "https://www.googleapis.com/oauth2/v3/certs"
+# issuer = "https://accounts.google.com"
+# scopes = "openid email profile"
+# tenant_id = "default"
+
+# [memory.auth.sso.idps.okta]
+# kind = "oidc"
+# client_id = "0oa..."
+# client_secret = "..."
+# authorize_url = "https://dev-XXXXXX.okta.com/oauth2/default/v1/authorize"
+# token_url = "https://dev-XXXXXX.okta.com/oauth2/default/v1/token"
+# jwks_url = "https://dev-XXXXXX.okta.com/oauth2/default/v1/keys"
+# issuer = "https://dev-XXXXXX.okta.com/oauth2/default"
+# scopes = "openid email profile"
+# tenant_id = "default"
+
+# [memory.auth.sso.idps.azure]
+# kind = "oidc"
+# client_id = "..."  # Application (client) ID
+# client_secret = "..."  # Client secret
+# authorize_url = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize"
+# token_url = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+# jwks_url = "https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys"
+# issuer = "https://login.microsoftonline.com/{tenant}/v2.0"
+# scopes = "openid email profile"
+# tenant_id = "default"
+
+# [memory.auth.sso.idps.saml-idp]
+# kind = "saml"
+# entity_id = "https://memory.example.com/saml/metadata"
+# metadata_url = "https://idp.example.com/metadata.xml"
+# sso_url = "https://idp.example.com/sso"  # overrides metadata
+# signing_cert_pem = """-----BEGIN CERTIFICATE-----
+# ...
+# -----END CERTIFICATE-----"""
+# tenant_id = "default"
+
+# ---------------------------------------------------------------------------
 # Static principal mapping (Phase 1 RBAC — no SSO)
 # ---------------------------------------------------------------------------
 # Maps bearer tokens to principals for authorization. Tokens listed here

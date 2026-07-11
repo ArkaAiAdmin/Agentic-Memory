@@ -78,37 +78,77 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _require_auth(self) -> bool:
         """Enforce authentication.
 
-        The loopback auth bypass is gated behind ``insecure_loopback``. When
-        it is True (dev-only escape hatch), loopback clients skip token
-        checks. When False (the secure default), ALL clients — including
-        loopback — must present a valid bearer token.
+        Phase 2 (SSO/OIDC/SAML): first tries JWT validation via Authlib
+        (SSO-issued tokens signed by ``idem_token_key``). On success the
+        principal is resolved from the JWT claims and stored on ``self``
+        for downstream handlers.
+
+        Fallback: static bearer token comparison (``MEMORY_API_TOKEN`` or
+        ``server.token``), which also attempts principal resolution via
+        ``infra.authorizer.resolve_principal`` for backward compatibility.
+
+        The loopback auth bypass is gated behind ``insecure_loopback``.
         """
         self._principal = None
         self._principal_id = None
         peer = self.client_address[0]
         if getattr(self.server, "insecure_loopback", False) and _is_loopback(peer):
             return True
-        token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
-        if not token:
-            self._error("Auth required: set MEMORY_API_TOKEN or request locally", 401)
-            return False
         auth = self.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             self._error("Authorization required: Bearer <token>", 401)
             return False
-        if auth[7:] != token:
+        bearer = auth[7:]
+
+        # Phase 2: try JWT validation first (SSO-issued tokens via Authlib).
+        try:
+            import sqlite3 as _sqlite3
+            from infra.authlib_sso import (
+                resolve_principal_by_external_sub,
+                verify_token,
+            )
+
+            _conn = _sqlite3.connect(str(self.server.db_path))
+            try:
+                claims = verify_token(_conn, bearer)
+                sub = claims.get("sub", "")
+                provider = claims.get("provider", "")
+                if sub and provider:
+                    pid = resolve_principal_by_external_sub(
+                        _conn, provider, sub,
+                    )
+                    if pid:
+                        self._principal_id = pid
+                        self._principal = type("_Principal", (), {"id": pid})()
+                return True
+            except Exception:
+                pass
+            finally:
+                try:
+                    _conn.close()
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
+        # Fallback: static bearer token comparison.
+        token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
+        if not token:
+            self._error("Auth required: set MEMORY_API_TOKEN or request locally", 401)
+            return False
+        if bearer != token:
             self._error("Invalid token", 403)
             return False
         # Resolve principal for downstream handlers (config-first, DB fallback)
         try:
             from infra.authorizer import resolve_principal
             principal = resolve_principal(
-                db_path=str(self.server.db_path), token=auth[7:],
+                db_path=str(self.server.db_path), token=bearer,
             )
             if principal:
                 self._principal_id = principal.id
                 self._principal = principal
-            # else: legacy token or unknown token — allow through (backward compat)
         except Exception:
             pass
         return True
@@ -116,19 +156,53 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _require_auth_ws(self) -> bool:
         """Auth check for WebSocket upgrades.
 
-        S8 — empty-token access is NOT allowed by default. The token may be
+        Phase 2: tries JWT validation first (SSO-issued tokens), then
+        falls back to static bearer token comparison.
+
+        Empty-token access is NOT allowed by default. The token may be
         unset only in a deliberate dev opt-in: when the server was started
-        with ``insecure_loopback`` (the same flag that relaxes REST auth for
-        loopback clients). Otherwise a valid bearer token (header or
-        ``?token=`` query) is required, matching ``_require_auth``.
+        with ``insecure_loopback``.
         """
         self._principal = None
         self._principal_id = None
+
+        # Phase 2: try JWT first.
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            bearer = auth[7:]
+            try:
+                import sqlite3 as _sqlite3
+                from infra.authlib_sso import (
+                    resolve_principal_by_external_sub,
+                    verify_token,
+                )
+
+                _conn = _sqlite3.connect(str(self.server.db_path))
+                try:
+                    claims = verify_token(_conn, bearer)
+                    sub = claims.get("sub", "")
+                    provider = claims.get("provider", "")
+                    if sub and provider:
+                        pid = resolve_principal_by_external_sub(
+                            _conn, provider, sub,
+                        )
+                        if pid:
+                            self._principal_id = pid
+                            self._principal = type("_Principal", (), {"id": pid})()
+                    return True
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        _conn.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # Fallback: static token comparison.
         token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
         if not token:
-            # Dev opt-in only: the REST layer already gates the loopback
-            # bypass behind insecure_loopback; reuse it for WS so empty-token
-            # access is never the default.
             if getattr(self.server, "insecure_loopback", False):
                 return True
             self._error(
@@ -137,7 +211,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 401,
             )
             return False
-        auth = self.headers.get("Authorization", "")
+
         if auth.startswith("Bearer ") and auth[7:] == token:
             self._resolve_ws_principal(auth[7:])
             return True
