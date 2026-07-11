@@ -101,59 +101,92 @@ def gdpr_erase(
 
     try:
         # Step 3: cascading delete — dependency-safe order
+        #
+        # NOTE: kg_facts, kg_entities, kg_edges, and backlinks do NOT
+        # have a tenant_id column. We resolve the tenant's memory IDs
+        # first, then walk the KG graph to find the affected rows.
 
-        # kg_edges referencing tenant entities
-        cur = conn.execute(
-            "DELETE FROM kg_edges WHERE source_id IN "
-            "(SELECT id FROM kg_entities WHERE tenant_id = ?) "
-            "OR target_id IN (SELECT id FROM kg_entities WHERE tenant_id = ?)",
-            (tenant_id, tenant_id),
-        )
-        rows_deleted["kg_edges"] = cur.rowcount
+        # Collect memory IDs for the target tenant (used by KG backlinks)
+        memory_ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT id FROM memories WHERE tenant_id = ?", (tenant_id,)
+            ).fetchall()
+        ]
 
-        # backlinks (note: the table may use tenant_isolation or not; safe to attempt)
-        try:
-            cur = conn.execute(
-                "DELETE FROM backlinks WHERE source_id IN "
-                "(SELECT id FROM memories WHERE tenant_id = ?) "
-                "OR target_id IN (SELECT id FROM memories WHERE tenant_id = ?)",
-                (tenant_id, tenant_id),
-            )
-            rows_deleted["backlinks"] = cur.rowcount
-        except sqlite3.OperationalError:
+        # backlinks reference memory IDs; no tenant_id column on the table
+        if memory_ids:
+            placeholders = ",".join("?" * len(memory_ids))
+            try:
+                cur = conn.execute(
+                    f"DELETE FROM backlinks WHERE source_id IN ({placeholders}) "
+                    f"OR target_id IN ({placeholders})",
+                    memory_ids + memory_ids,
+                )
+                rows_deleted["backlinks"] = cur.rowcount
+            except sqlite3.OperationalError:
+                rows_deleted["backlinks"] = 0
+        else:
             rows_deleted["backlinks"] = 0
 
-        # kg_facts for tenant entities
-        cur = conn.execute(
-            "DELETE FROM kg_facts WHERE tenant_id = ?",
-            (tenant_id,),
-        )
-        rows_deleted["kg_facts"] = cur.rowcount
-
-        # kg_entities
-        cur = conn.execute(
-            "DELETE FROM kg_entities WHERE tenant_id = ?",
-            (tenant_id,),
-        )
-        rows_deleted["kg_entities"] = cur.rowcount
-
-        # memory_chunks → memory_embeddings → memory_vec_keys
-        # (chunks reference memories; embeddings reference chunks/vec_keys)
-        try:
+        # kg_facts reference tenant memories via source_memory
+        if memory_ids:
+            placeholders = ",".join("?" * len(memory_ids))
             cur = conn.execute(
-                "DELETE FROM memory_chunk_embeddings WHERE chunk_id IN "
-                "(SELECT id FROM memory_chunks WHERE memory_id IN "
-                "(SELECT id FROM memories WHERE tenant_id = ?))",
-                (tenant_id,),
+                f"DELETE FROM kg_facts WHERE source_memory IN ({placeholders})",
+                memory_ids,
             )
-            rows_deleted["memory_chunk_embeddings"] = cur.rowcount
-        except sqlite3.OperationalError:
-            rows_deleted["memory_chunk_embeddings"] = 0
+            rows_deleted["kg_facts"] = cur.rowcount
 
+            # Collect orphan KG entity IDs for cleanup.  We re-query for
+            # any remaining kg_facts referencing these entities (facts
+            # from other tenants might still reference them) and only
+            # delete entities that are now fully orphaned.
+            entity_ids = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT DISTINCT e.id FROM kg_entities e "
+                    "WHERE e.id IN ("
+                    "  SELECT subject_entity_id FROM kg_facts WHERE source_memory IN ({0})"
+                    "  UNION "
+                    "  SELECT object_entity_id FROM kg_facts WHERE source_memory IN ({0})"
+                    ")".format(placeholders),
+                    memory_ids + memory_ids,
+                ).fetchall()
+            ]
+            if entity_ids:
+                e_placeholders = ",".join("?" * len(entity_ids))
+                # kg_edges referencing these entities
+                cur = conn.execute(
+                    f"DELETE FROM kg_edges WHERE source_id IN ({e_placeholders}) "
+                    f"OR target_id IN ({e_placeholders})",
+                    entity_ids + entity_ids,
+                )
+                rows_deleted["kg_edges"] = cur.rowcount
+                # Only delete entities that no longer have any facts
+                cur = conn.execute(
+                    f"DELETE FROM kg_entities WHERE id IN ({e_placeholders}) "
+                    f"AND id NOT IN (SELECT subject_entity_id FROM kg_facts) "
+                    f"AND id NOT IN (SELECT object_entity_id FROM kg_facts)",
+                    entity_ids,
+                )
+                rows_deleted["kg_entities"] = cur.rowcount
+            else:
+                rows_deleted["kg_edges"] = 0
+                rows_deleted["kg_entities"] = 0
+        else:
+            rows_deleted["kg_facts"] = 0
+            rows_deleted["kg_edges"] = 0
+            rows_deleted["kg_entities"] = 0
+
+        # memory_chunks (parent_id = memories.id), chunk_vec_keys,
+        # chunk_embeddings, then top-level memory_embeddings and
+        # memory_vec_keys.
+        # memory_chunk_vec_keys — FK to memory_chunk_embeddings
         try:
             cur = conn.execute(
                 "DELETE FROM memory_chunk_vec_keys WHERE chunk_id IN "
-                "(SELECT id FROM memory_chunks WHERE memory_id IN "
+                "(SELECT id FROM memory_chunks WHERE parent_id IN "
                 "(SELECT id FROM memories WHERE tenant_id = ?))",
                 (tenant_id,),
             )
@@ -161,14 +194,27 @@ def gdpr_erase(
         except sqlite3.OperationalError:
             rows_deleted["memory_chunk_vec_keys"] = 0
 
+        # memory_chunk_embeddings — FK to memories via parent_id
+        try:
+            cur = conn.execute(
+                "DELETE FROM memory_chunk_embeddings WHERE chunk_id IN "
+                "(SELECT id FROM memory_chunks WHERE parent_id IN "
+                "(SELECT id FROM memories WHERE tenant_id = ?))",
+                (tenant_id,),
+            )
+            rows_deleted["memory_chunk_embeddings"] = cur.rowcount
+        except sqlite3.OperationalError:
+            rows_deleted["memory_chunk_embeddings"] = 0
+
+        # memory_chunks — parent_id = memories.id
         cur = conn.execute(
-            "DELETE FROM memory_chunks WHERE memory_id IN "
+            "DELETE FROM memory_chunks WHERE parent_id IN "
             "(SELECT id FROM memories WHERE tenant_id = ?)",
             (tenant_id,),
         )
         rows_deleted["memory_chunks"] = cur.rowcount
 
-        # memory_embeddings
+        # memory_embeddings — memory_id = memories.id
         try:
             cur = conn.execute(
                 "DELETE FROM memory_embeddings WHERE memory_id IN "
@@ -179,7 +225,7 @@ def gdpr_erase(
         except sqlite3.OperationalError:
             rows_deleted["memory_embeddings"] = 0
 
-        # memory_vec_keys
+        # memory_vec_keys — memory_id = memories.id
         try:
             cur = conn.execute(
                 "DELETE FROM memory_vec_keys WHERE memory_id IN "

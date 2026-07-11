@@ -949,6 +949,7 @@ class MaintenanceOp(str, Enum):
     LIST_FEDERATED_SKILLS = "list_federated_skills"  # next-frontier: cross-agent skill corpus view
     RECALL_STATS = "recall_stats"
     BACKGROUND_TASK_STATUS = "background_task_status"
+    GDPR_ERASE = "gdpr_erase"
     RESTORE = "restore"
     SUPERSEDE = "supersede"
     SDK_DEMO = "sdk_demo"
@@ -987,6 +988,7 @@ class MaintenanceOp(str, Enum):
 #                     merge/delete paths are covered by gating the op.
 DESTRUCTIVE_MAINTENANCE_OPS: frozenset["MaintenanceOp"] = frozenset(
     {
+        MaintenanceOp.GDPR_ERASE,
         MaintenanceOp.PURGE_EXPIRED,
         MaintenanceOp.TRASH,
         MaintenanceOp.AGENT_CLEAR,
@@ -1085,6 +1087,7 @@ def memory_maintenance(
       ``graph_traverse``                 start, edge_patterns
       ``policy_hash_status``             include_full, force_refresh
       ``compliance_check``               session_id
+      ``gdpr_erase``                     principal_id, data_subject_sub, tenant_id, confirm
       ``temporal_contradictions``        since_ts, until_ts, reason, limit, offset
       ``temporal_query``                 as_of, fact_id, since_ts, query, limit
       ``background_task_status``         memory_id

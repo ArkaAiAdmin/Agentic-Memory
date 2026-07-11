@@ -237,6 +237,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._handle_compact()
         elif path == "/api/v1/maintenance/integrity":
             self._handle_integrity()
+        elif path == "/api/v1/compliance/gdpr/erase":
+            self._handle_gdpr_erase()
         else:
             self._error("Not found", 404)
 
@@ -499,6 +501,47 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         except Exception as e:
             logger.warning("_handle_integrity: broad except swallowed: %s", e)
             self._error(f"Integrity check failed: {e}", 500)
+
+    def _handle_gdpr_erase(self) -> None:
+        """POST /api/v1/compliance/gdpr/erase — GDPR Right-to-Be-Forgotten."""
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        data_subject_sub = req.get("data_subject_sub", "")
+        tenant_id = req.get("tenant_id", "default")
+        if not data_subject_sub:
+            self._error("data_subject_sub is required", 400)
+            return
+        try:
+            from infra.gdpr import gdpr_erase
+            from infra.authorizer import mcp_authorize
+            from infra.db import open_db
+            from pathlib import Path
+
+            # RBAC gate: compliance:gdpr-erase
+            allowed = mcp_authorize(
+                principal_id=getattr(self, "_principal_id", None),
+                action="compliance",
+                resource="gdpr-erase",
+                db_path=str(self.server.db_path) if hasattr(self.server, "db_path") else None,
+            )
+            if not allowed:
+                self._error("Forbidden: requires compliance:gdpr-erase role", 403)
+                return
+
+            with open_db(Path(str(self.server.db_path))) as conn:
+                result = gdpr_erase(
+                    conn=conn,
+                    principal_id=getattr(self, "_principal_id", "api"),
+                    data_subject_sub=data_subject_sub,
+                    tenant_id=tenant_id,
+                )
+            self._write_json(result)
+        except Exception as e:
+            logger.warning("_handle_gdpr_erase: %s", e)
+            self._error(f"GDPR erase failed: {e}", 500)
 
     def _handle_kg_nodes(self, query_params: dict) -> None:
         try:
