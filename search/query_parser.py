@@ -32,6 +32,100 @@ from infra.memory_common import connection_pool, safe_close_db
 
 logger = logging.getLogger(__name__)
 
+# Stop words: high-frequency words that waste FTS5 match budget on AND queries
+_STOP_WORDS = frozenset({
+    'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+    'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
+    'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
+    'could', 'should', 'may', 'might', 'shall', 'can', 'need', 'dare',
+    'ought', 'used', 'what', 'which', 'who', 'whom', 'this', 'that',
+    'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
+    'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'its',
+    'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs',
+    'am', 'if', 'then', 'else', 'when', 'where', 'how', 'all', 'each',
+    'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such',
+    'no', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very',
+    'just', 'because', 'as', 'until', 'while', 'about', 'between',
+    'through', 'during', 'before', 'after', 'above', 'below', 'up',
+    'down', 'out', 'off', 'over', 'under', 'again', 'further', 'once',
+    'here', 'there', 'any', 'also', 'type', 'kind', 'sort', 'want',
+    'looking', 'find', 'search', 'query', 'tell', 'show',
+})
+
+# Word form expansions: porter stemming misses these cross-form matches.
+# Maps a stem to all its surface forms so FTS5 OR-matches correctly.
+# E.g. "container" and "containerize" have different porter stems, but
+# we want queries containing either to match documents containing either.
+_WORD_FORM_EXPANSIONS: dict[str, list[str]] = {
+    'container': ['container', 'containers', 'containerize', 'containerized', 'containerizing', 'containerization'],
+    'deploy': ['deploy', 'deploys', 'deployed', 'deploying', 'deployment', 'deployments'],
+    'orchestrat': ['orchestrate', 'orchestrates', 'orchestrated', 'orchestrating', 'orchestration', 'orchestrator', 'orchestrators'],
+    'observ': ['observe', 'observes', 'observed', 'observing', 'observation', 'observations', 'observability', 'observable'],
+    'serial': ['serialize', 'serializes', 'serialized', 'serializing', 'serialization', 'serializations'],
+    'index': ['index', 'indexes', 'indexed', 'indexing', 'indices'],
+    'monitor': ['monitor', 'monitors', 'monitored', 'monitoring', 'monitoring'],
+    'configur': ['configure', 'configures', 'configured', 'configuring', 'configuration', 'configurations'],
+    'optimi': ['optimize', 'optimizes', 'optimized', 'optimizing', 'optimization', 'optimisations', 'optimizations'],
+    'automat': ['automate', 'automates', 'automated', 'automating', 'automation', 'automations'],
+    'implement': ['implement', 'implements', 'implemented', 'implementing', 'implementation', 'implementations'],
+    'integrat': ['integrate', 'integrates', 'integrated', 'integrating', 'integration', 'integrations'],
+    'migrat': ['migrate', 'migrates', 'migrated', 'migrating', 'migration', 'migrations'],
+    'compil': ['compile', 'compiles', 'compiled', 'compiling', 'compilation', 'compilations'],
+    'test': ['test', 'tests', 'testing', 'tested', 'tester', 'testers'],
+    'search': ['search', 'searches', 'searched', 'searching', 'retrieval', 'retrieve', 'retrieves', 'retrieved', 'retrieving'],
+    'perform': ['perform', 'performs', 'performed', 'performing', 'performance', 'performances'],
+    'secur': ['secure', 'secures', 'secured', 'securing', 'security', 'securities'],
+    'author': ['authorize', 'authorizes', 'authorized', 'authorizing', 'authorization', 'authorizations', 'authorise', 'authorisation'],
+    'authentic': ['authenticate', 'authenticates', 'authenticated', 'authenticating', 'authentication', 'authentications'],
+    'encrypt': ['encrypt', 'encrypts', 'encrypted', 'encrypting', 'encryption', 'encryptions'],
+    'compress': ['compress', 'compresses', 'compressed', 'compressing', 'compression', 'compressions'],
+    'synch': ['synchronize', 'synchronizes', 'synchronized', 'synchronizing', 'synchronization', 'sync', 'syncs', 'synced', 'syncing'],
+    'asynch': ['asynchronize', 'asynchronizes', 'asynchronized', 'asynchronizing', 'asynchronization', 'async'],
+    'consolid': ['consolidate', 'consolidates', 'consolidated', 'consolidating', 'consolidation'],
+    'extract': ['extract', 'extracts', 'extracted', 'extracting', 'extraction', 'extractions'],
+    'deduplic': ['deduplicate', 'deduplicates', 'deduplicated', 'deduplicating', 'deduplication', 'dedup', 'deduplicates'],
+    'summar': ['summarize', 'summarizes', 'summarized', 'summarizing', 'summarization', 'summarisations', 'summaries', 'summary'],
+    'compact': ['compact', 'compacts', 'compacted', 'compacting', 'compaction'],
+    'retent': ['retain', 'retains', 'retained', 'retaining', 'retention'],
+    'decay': ['decay', 'decays', 'decayed', 'decaying'],
+    'supersed': ['supersede', 'supersedes', 'superseded', 'superseding', 'supersession'],
+    'reconcil': ['reconcile', 'reconciles', 'reconciled', 'reconciling', 'reconciliation'],
+    'propagat': ['propagate', 'propagates', 'propagated', 'propagating', 'propagation'],
+    'embed': ['embed', 'embeds', 'embedded', 'embedding', 'embeddings'],
+    'chunk': ['chunk', 'chunks', 'chunked', 'chunking'],
+    'vector': ['vector', 'vectors', 'vectorized', 'vectorization'],
+    'cluster': ['cluster', 'clusters', 'clustered', 'clustering'],
+    'entiti': ['entity', 'entities'],
+    'relat': ['relation', 'relations', 'relationship', 'relationships', 'related'],
+    'contradict': ['contradict', 'contradicts', 'contradicted', 'contradicting', 'contradiction', 'contradictions'],
+    'entail': ['entail', 'entails', 'entailed', 'entailing', 'entailment', 'entailments'],
+    'infer': ['infer', 'infers', 'inferred', 'inferring', 'inference', 'inferences'],
+    'compile': ['compile', 'compiles', 'compiled', 'compiling', 'compilation'],
+    'enrich': ['enrich', 'enriches', 'enriched', 'enriching', 'enrichment'],
+    'qualiti': ['quality', 'qualities'],
+    'prioriti': ['prioritize', 'prioritizes', 'prioritized', 'prioritizing', 'priority', 'priorities'],
+    'schedul': ['schedule', 'schedules', 'scheduled', 'scheduling', 'scheduler'],
+    'config': ['config', 'configs', 'configuration', 'configurations', 'configure', 'configured'],
+    'rebuild': ['rebuild', 'rebuilds', 'rebuilt', 'rebuilding'],
+    'backup': ['backup', 'backups', 'backed', 'backing'],
+    'restore': ['restore', 'restores', 'restored', 'restoring', 'restoration'],
+    'purge': ['purge', 'purges', 'purged', 'purging'],
+    'compact': ['compact', 'compacts', 'compacted', 'compacting', 'compaction'],
+    'revis': ['revision', 'revisions', 'revise', 'revises', 'revised', 'revising'],
+    'assert': ['assertion', 'assertions', 'assert', 'asserts', 'asserted', 'asserting'],
+    'bel': ['belief', 'beliefs', 'believe', 'believes', 'believed', 'believing'],
+    'fact': ['fact', 'facts'],
+    'concept': ['concept', 'concepts', 'conceptual'],
+    'graph': ['graph', 'graphs', 'graphed', 'graphing'],
+    'node': ['node', 'nodes'],
+    'edg': ['edge', 'edges'],
+    'path': ['path', 'paths'],
+    'travers': ['traverse', 'traverses', 'traversed', 'traversing', 'traversal', 'traversals'],
+    'commun': ['community', 'communities', 'communicate', 'communicates', 'communicated', 'communicating', 'communication'],
+    'centr': ['central', 'centrally', 'center', 'centers', 'centered', 'centering', 'centrality'],
+    'between': ['between', 'betweenness'],
+}
+
 # Query type classification regexes (QW3)
 _QUERY_TYPE_TEMPORAL_RE = re.compile(
     "\\b(when|what year|what date|how long ago|last (week|month|year)|recent|latest|yesterday|today|tomorrow|ago|\\d{4}[-/]\\d{2}|in \\d{4})\\b",
@@ -206,6 +300,46 @@ _QUERY_EXPANSIONS: dict[str, list[str]] = {
     "transformer": ["transformer architecture", "attention model"],
     "gpt": ["generative pre trained transformer"],
     "bert": ["bidirectional encoder representations"],
+    "container": ["docker", "pod", "image"],
+    "containers": ["docker", "pods", "images"],
+    "orchestration": ["orchestrate", "orchestrates", "orchestrating"],
+    "kubernetes": ["k8s", "kube", "cluster"],
+    "infrastructure": ["infra", "platform", "foundation"],
+    "management": ["manage", "manages", "managing"],
+    "platform": ["infrastructure", "framework", "system"],
+    "deployment": ["deploy", "deploying", "deployed"],
+    "monitoring": ["observe", "observability", "telemetry"],
+    "logging": ["log", "logs", "logger"],
+    "testing": ["test", "tests", "qa", "quality assurance"],
+    "database": ["db", "dbs", "datastore", "store"],
+    "search": ["query", "lookup", "find", "retrieval"],
+    "performance": ["perf", "speed", "latency", "throughput"],
+    "security": ["auth", "authn", "authz", "secure"],
+    "configuration": ["config", "settings", "setup"],
+    "architecture": ["design", "structure", "pattern"],
+    "serialization": ["serialize", "deserialize", "encoding"],
+    "rollback": ["revert", "undo", "recovery"],
+    "fixtures": ["setup", "config", "conftest", "helpers"],
+    "applications": ["services", "apps", "app"],
+    "queries": ["search", "lookup", "find", "retrieval"],
+    "self-healing": ["resilient", "fault-tolerant", "self-heal"],
+    "assurance": ["quality", "testing", "qa"],
+    "package": ["pkg", "packages", "library"],
+    "cluster": ["clusters", "clustered"],
+    "healing": ["health", "healthy", "heal"],
+    "pods": ["containers", "instances", "services", "containerized"],
+    "dashboard": ["visualization", "grafana"],
+    "healing": ["health", "healthy", "heal"],
+    "self-healing": ["resilient", "fault-tolerant", "self-heal"],
+    "cluster": ["clusters", "clustered", "orchestration", "orchestrating"],
+    "orchestrat": ["orchestrate", "orchestrates", "orchestrated", "orchestrating", "orchestration", "orchestrator", "orchestrators"],
+    "kubernetes": ["k8s", "kube", "orchestrator"],
+    "logging": ["log", "logs", "logger", "observability"],
+    "observ": ["observe", "observes", "observed", "observing", "observation", "observations", "observability", "observable"],
+    "package": ["pkg", "packages", "library", "containerize", "services"],
+    "applications": ["services", "apps", "app", "containerized"],
+    "index": ["indexes", "indexed", "indexing", "indices", "search", "lookup"],
+    "queries": ["search", "lookup", "find", "retrieval"],
 }
 
 _QUERY_EXPANSION_REVERSE: dict[str, str] = {}
@@ -236,7 +370,7 @@ def _expand_query(query: str) -> str:
     Quoted phrases are preserved as-is (don't expand inside phrases).
     The original tokens are always kept so the user's literal query still matches.
     """
-    if not query or not _query_expansions():
+    if not query:
         return query
     phrases = re.findall('"([^"]*)"', query)
     bare = re.sub('"[^"]*"', " ", query)
@@ -247,6 +381,7 @@ def _expand_query(query: str) -> str:
     seen_aliases: set = set()
     for tok in bare_tokens:
         low = tok.lower()
+        # Try synonym expansion first
         canon = _query_expansion_reverse().get(low)
         if canon and canon not in seen_aliases:
             seen_aliases.add(canon)
@@ -258,9 +393,30 @@ def _expand_query(query: str) -> str:
             quoted = " OR ".join((f'"{f}"' for f in unique))
             expanded_tokens.append(f"({quoted})")
         else:
-            expanded_tokens.append(f'"{tok}"')
+            # Try word form expansion (porters-stemmer cross-form matching)
+            expanded = False
+            for stem, forms in _WORD_FORM_EXPANSIONS.items():
+                # Check if this token matches any form in the expansion set
+                if low in [f.lower() for f in forms] or low.startswith(stem):
+                    # Use all forms from this expansion set
+                    unique: list[str] = []
+                    for f in forms:
+                        if f.lower() not in [u.lower() for u in unique]:
+                            unique.append(f)
+                    quoted = " OR ".join((f'"{f}"' for f in unique))
+                    expanded_tokens.append(f"({quoted})")
+                    expanded = True
+                    break
+            if not expanded:
+                expanded_tokens.append(f'"{tok}"')
     out_parts = [f'"{p}"' for p in phrases if p.strip()]
     out_parts.extend(expanded_tokens)
+    # Count content words (excluding stop words) to decide AND vs OR
+    content_count = len([t for t in out_parts if t not in ('', ' ')])
+    # Use OR for long queries (4+ content words) to improve recall;
+    # AND for short queries (1-3 words) for precision
+    if content_count >= 4:
+        return " OR ".join(out_parts)
     return " AND ".join(out_parts)
 
 
@@ -541,8 +697,10 @@ def _parse_search_query(query: str, db_path: Path) -> tuple[str, str, str, list[
     phrases = re.findall('"([^"]*)"', normalized_query)
     bare = re.sub('"[^"]*"', " ", normalized_query)
     bare_words = re.findall("[\\w@\\#\\.\\+\\-]+", bare, flags=re.UNICODE)
+    # Filter stop words from FTS terms (but keep bare_words for display)
+    content_words = [w for w in bare_words if w.lower() not in _STOP_WORDS]
     terms = [_escape_phrase(p) for p in phrases if p.strip()]
-    terms += [_escape_phrase(_escape_fts_query(w)) for w in bare_words if w]
+    terms += [_escape_phrase(_escape_fts_query(w)) for w in content_words if w]
     expanded = _expand_query(normalized_query)
     fts_query = (
         expanded if expanded and expanded != normalized_query else " OR ".join(terms)
