@@ -193,6 +193,27 @@ See `memory.toml [features]` for all flags. Key defaults:
   content to the `.md` file. Markdown is source of truth; stale `.md`
   after a merge is silent drift.
 - **Connection pool**: per-DB-path pool with re-entrancy guard;
+
+## Tenant Isolation & RBAC
+
+### Tenant isolation (Phase 0)
+Every memory row carries `tenant_id TEXT NOT NULL DEFAULT 'default'`. Each
+pooled/open connection exposes a `tenant_memories` TEMP VIEW scoped to the
+active agent's tenant via the `tenant_id()` SQLite function. Direct reads and
+writes that bypass the view are being migrated to the view or the
+`tenant_filtered_query` helper. The audit log carries `tenant_id` +
+`principal_id`. Delete paths (`soft_delete_note`, `hard_delete_note`,
+`restore_note`, `purge_expired`) take an explicit `tenant_id` and refuse
+cross-tenant operations.
+
+### RBAC (Phase 1)
+`infra/rbac.py` provides `check_permission(principal, resource, action)` over
+`roles` / `role_bindings` / `policies` / `acl_overrides` tables (migrations
+045/046). `infra/authorizer.py`'s `mcp_authorize` is the single gate called
+from `save_memory`, the delete paths, and the mutating MCP verbs; it fails
+open on error and defaults to deny when a principal is resolved but holds no
+matching role. Principals are resolved from a bearer token via the static
+`[api.principals]` mapping in `memory.toml` (SSO arrives in Phase 2).
   per-thread keys; `PoolExhaustedError` on full depth.
 
 ---

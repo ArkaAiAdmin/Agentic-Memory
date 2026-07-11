@@ -604,3 +604,12 @@ Current: **v44** (45 migrations, 100% down-migration coverage)
 - Delete operations (`soft_delete_note`, `hard_delete_note`, `restore_note`, `purge_expired`) accept `tenant_id` parameter for explicit tenant checks
 - FTS search joins via `tenant_memories` view for tenant isolation
 - `MemoryClient.list()` queries `tenant_memories` view
+
+### RBAC Authorization (Phase 1)
+
+- `infra/rbac.py` — engine: `Principal`, `Role`, `check_permission(principal, resource, action)`. Evaluation order: ACL overrides → role-binding policies → default **deny**.
+- `infra/authorizer.py` — `mcp_authorize(principal_id, action, resource, db_path)`. Returns `True` when no principal is resolved (unauthenticated/backward-compat mode) or RBAC grants access; fails **open** on exception.
+- Schema (migrations 045/046): `roles`, `role_bindings`, `policies` (resource/action matrix), `acl_overrides` (explicit grant/deny), `principal_roles_audit`. Default roles seeded: `memory:read` / `memory:write` / `memory:delete` / `memory:admin`, `ops:read` / `ops:admin`.
+- Enforcement points (defense-in-depth): `save_memory` (`_save_memory_core`), `memory_delete` (`soft_delete_note`/`restore_note`/`hard_delete_note`/`purge_expired`), and the mutating MCP verbs (`mcp_memory`, `mcp_verbs`, `mcp_kg`, `mcp_dashboard`). `api_server` REST path enforces via middleware; `sdk` passes principal context.
+- Principal resolution (Phase 1, token-based): `resolve_principal` maps a bearer token to a `Principal` via the static `[api.principals]` table in `memory.toml` (`{token} = "kind:id"`), then falls back to the `principal_identities` table. The legacy `MEMORY_API_TOKEN` returns no principal (RBAC not enforced).
+- Denied calls return `ErrorCode.AUTHORIZATION_DENIED`.
