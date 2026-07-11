@@ -45,7 +45,8 @@ class TestRedactAuditValue:
     def test_redacts_openai_style_token_in_value(self):
         d = {"token": "sk-proj-A" * 10}
         result = redact_audit_value(d)
-        assert result["token"] == "sk-proj-A" * 10  # key match takes priority
+        # Key "token" matches _SECRET_KEY_RE, so it gets redacted regardless of value
+        assert result["token"] == REDACTED_MASK
         # But if key is innocuous, value pattern should trigger:
         d2 = {"input": "sk-" + "A" * 30}
         result2 = redact_audit_value(d2)
