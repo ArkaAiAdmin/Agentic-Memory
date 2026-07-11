@@ -988,7 +988,9 @@ class TestAuditLogTenant:
         idxs = _index_names(db_path)
         has = any("tenant" in i.lower() for i in idxs)
         if not has:
-            pytest.xfail("AUDIT GAP: no tenant_id index")
+            pytest.xfail("AUDIT GAP: no tenant_id index on memory_audit_log.tenant_id — "
+                         "requires a SQL migration (extra index); cannot live in "
+                         "_migrate_ensure_indexes because it breaks down-up round-trips.")
 
     def test_audit_populates_tenant(self, db_path: Path):
         from infra.audit import enqueue_audit, flush_audit
