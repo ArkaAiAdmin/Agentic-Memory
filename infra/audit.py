@@ -384,7 +384,7 @@ def audit(
     finally:
         latency_ms = (time.time() - start) * 1000.0
         # Pull any caller-set fields off ctx; fall back to None.
-            enqueue_audit(
+        enqueue_audit(
             db_path=db_path,
             tool=tool,
             args=args,
