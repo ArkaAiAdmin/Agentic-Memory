@@ -140,7 +140,8 @@ class KeyManager:
         pub_dict = key.as_dict(private=False)
         # Use the JWK's own thumbprint kid (Authlib sets it in the JWT
         # header automatically) so verification lookups line up.
-        kid = priv_dict.get("kid") or f"kid-{int(time.time())}-{uuid.uuid4().hex[:8]}"
+        raw_kid = priv_dict.get("kid")
+        kid = raw_kid if isinstance(raw_kid, str) else f"kid-{int(time.time())}-{uuid.uuid4().hex[:8]}"
         priv_dict["kid"] = kid
         pub_dict["kid"] = kid
         private_jwk = json.dumps(priv_dict)
@@ -296,7 +297,8 @@ def _jwt_unverified_header(token: str) -> Dict[str, Any]:
     try:
         header_b64 = token.split(".")[0]
         pad = "=" * (-len(header_b64) % 4)
-        return json.loads(base64.urlsafe_b64decode(header_b64 + pad))
+        header: Dict[str, Any] = json.loads(base64.urlsafe_b64decode(header_b64 + pad))
+        return header
     except Exception as exc:  # noqa: BLE001
         raise SsoAuthError(f"Malformed JWT header: {exc}") from exc
 
@@ -333,7 +335,7 @@ def verify_oidc_id_token(
 
 def _select_jwk(jwks: Dict[str, Any], kid: Optional[str]) -> Dict[str, Any]:
     """Pick a public JWK from a JWKS document by kid (or the only key)."""
-    keys = jwks.get("keys") if isinstance(jwks, dict) else None
+    keys: List[Dict[str, Any]] = (jwks.get("keys") if isinstance(jwks, dict) else None) or []
     if not keys:
         # Allow being passed a single key dict directly.
         if isinstance(jwks, dict) and ("kty" in jwks or "n" in jwks):
@@ -350,7 +352,8 @@ def _select_jwk(jwks: Dict[str, Any], kid: Optional[str]) -> Dict[str, Any]:
 def fetch_jwks(jwks_url: str, timeout: float = 10.0) -> Dict[str, Any]:
     resp = requests.get(jwks_url, timeout=timeout)
     resp.raise_for_status()
-    return resp.json()
+    jwks: Dict[str, Any] = resp.json()
+    return jwks
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +386,8 @@ def _safe_parse(xml_bytes: bytes) -> ET.Element:
             raise SsoAuthError("Refusing to parse XML with DOCTYPE/ENTITY declarations")
         return ET.fromstring(xml_bytes)
     try:
-        return _fromstring(xml_bytes)
+        element: ET.Element = _fromstring(xml_bytes)
+        return element
     except DefusedXmlException as exc:
         # defusedxml raises DefusedXmlException (e.g. EntitiesForbidden) on
         # XXE attempts. Normalize to SsoAuthError so callers see a uniform
@@ -709,7 +713,7 @@ class SsoSession:
         id_token = data.get("id_token")
         if not id_token:
             raise SsoAuthError("OIDC token endpoint did not return id_token")
-        return id_token
+        return str(id_token)
 
 
 # ---------------------------------------------------------------------------

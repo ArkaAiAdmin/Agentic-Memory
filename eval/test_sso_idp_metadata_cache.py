@@ -258,7 +258,8 @@ class TestSsoSessionOIDC(unittest.TestCase):
         from infra.authlib_sso import SsoSession, SsoAuthError
 
         # Generate a valid id_token signed by a synthetic IdP key
-        from authlib.jose import JsonWebKey, JsonWebToken
+        from joserfc.jwk import import_key
+        from joserfc import jwt as jose_jwt
         from cryptography.hazmat.primitives.asymmetric import rsa
         from cryptography.hazmat.primitives import serialization
 
@@ -268,14 +269,13 @@ class TestSsoSessionOIDC(unittest.TestCase):
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption(),
         )
-        idp_key = JsonWebKey.import_key(priv_pem)
-        priv_dict = idp_key.as_dict(is_private=True)
-        pub_dict = idp_key.as_dict(is_private=False)
+        idp_key = import_key(priv_pem)
+        priv_dict = idp_key.as_dict(private=True)
+        pub_dict = idp_key.as_dict(private=False)
         kid = priv_dict.get("kid", "idp-key-1")
         pub_dict["kid"] = kid
 
-        jwt_signer = JsonWebToken(["RS256"])
-        id_token_val = jwt_signer.encode(
+        id_token_val = jose_jwt.encode(
             {"alg": "RS256", "kid": kid, "typ": "JWT"},
             {
                 "sub": "ext-user-1",
@@ -286,7 +286,8 @@ class TestSsoSessionOIDC(unittest.TestCase):
                 "exp": int(time.time()) + 3600,
                 "iat": int(time.time()),
             },
-            JsonWebKey.import_key(priv_dict),
+            import_key(priv_dict),
+            algorithms=["RS256"],
         )
         id_token_str = (
             id_token_val.decode("utf-8")
@@ -326,7 +327,8 @@ class TestSsoSessionOIDC(unittest.TestCase):
     def test_parse_callback_with_direct_id_token(self):
         """OIDC callback with direct id_token (no code exchange)."""
         from infra.authlib_sso import SsoSession, SsoAuthError
-        from authlib.jose import JsonWebKey, JsonWebToken
+        from joserfc.jwk import import_key
+        from joserfc import jwt as jose_jwt
         from cryptography.hazmat.primitives.asymmetric import rsa
         from cryptography.hazmat.primitives import serialization
 
@@ -336,14 +338,13 @@ class TestSsoSessionOIDC(unittest.TestCase):
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption(),
         )
-        idp_key = JsonWebKey.import_key(priv_pem)
-        priv_dict = idp_key.as_dict(is_private=True)
-        pub_dict = idp_key.as_dict(is_private=False)
+        idp_key = import_key(priv_pem)
+        priv_dict = idp_key.as_dict(private=True)
+        pub_dict = idp_key.as_dict(private=False)
         kid = priv_dict.get("kid", "idp-key-1")
         pub_dict["kid"] = kid
 
-        jwt_signer = JsonWebToken(["RS256"])
-        id_token_val = jwt_signer.encode(
+        id_token_val = jose_jwt.encode(
             {"alg": "RS256", "kid": kid, "typ": "JWT"},
             {
                 "sub": "ext-user-2",
@@ -353,7 +354,8 @@ class TestSsoSessionOIDC(unittest.TestCase):
                 "exp": int(time.time()) + 3600,
                 "iat": int(time.time()),
             },
-            JsonWebKey.import_key(priv_dict),
+            import_key(priv_dict),
+            algorithms=["RS256"],
         )
         id_token_str = (
             id_token_val.decode("utf-8")
