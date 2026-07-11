@@ -369,7 +369,7 @@ def memory_curate_autosave(
 
                 rows = db.execute(
                     "SELECT m.id, m.content, m.created_at, m.tags "
-                    f"FROM memories m WHERE {' AND '.join(clauses)} "
+                    f"FROM tenant_memories m WHERE {' AND '.join(clauses)} "
                     "ORDER BY m.created_at DESC LIMIT 50",
                     params,
                 ).fetchall()
@@ -392,7 +392,7 @@ def memory_curate_autosave(
                 for nid in note_ids:
                     row = db.execute(
                         "SELECT content, tags, source_file, title_slug "
-                        "FROM memories WHERE id = ? AND deleted_at IS NULL",
+                        "FROM tenant_memories WHERE id = ? AND deleted_at IS NULL",
                         (nid,),
                     ).fetchone()
                     if row:

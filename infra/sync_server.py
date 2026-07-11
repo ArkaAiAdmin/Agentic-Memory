@@ -306,7 +306,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 conn.execute("PRAGMA foreign_keys=ON")
                 try:
                     row = conn.execute(
-                        "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
+                        "SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL"
                     ).fetchone()
                     if row:
                         note_count = row[0]
@@ -414,7 +414,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 rows = conn.execute(
                     """SELECT id, content, source_file, logical_clock,
                               version_vector, updated_at
-                       FROM memories
+                       FROM tenant_memories
                        WHERE deleted_at IS NULL
                          AND CAST(strftime('%s', updated_at) AS INTEGER) > ?
                        ORDER BY updated_at ASC

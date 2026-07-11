@@ -666,7 +666,7 @@ class TestDownUpRoundTripSchema(unittest.TestCase):
         conn = _new_db()
         try:
             _create_base_schema(conn)
-            migration_runner.run_migrations(conn)
+            db_migrations.run_schema_setup(conn)
             self._verify_round_trip(
                 conn, migration_runner.SCHEMA_VERSION - 1, self
             )
@@ -679,7 +679,7 @@ class TestDownUpRoundTripSchema(unittest.TestCase):
         conn = _new_db()
         try:
             _create_base_schema(conn)
-            migration_runner.run_migrations(conn)
+            db_migrations.run_schema_setup(conn)
             self._verify_round_trip(conn, 15, self)
         finally:
             conn.close()
@@ -690,7 +690,7 @@ class TestDownUpRoundTripSchema(unittest.TestCase):
         conn = _new_db()
         try:
             _create_base_schema(conn)
-            migration_runner.run_migrations(conn)
+            db_migrations.run_schema_setup(conn)
             self._verify_round_trip(conn, 0, self)
         finally:
             conn.close()

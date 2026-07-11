@@ -876,26 +876,6 @@ def run_schema_setup(conn: AnyConnection) -> None:
     # only for the fresh-DB setup path; do NOT propagate to normal
     # production paths.
     _stable_snapshot = None
-    try:
-        import infra.migration_runner as _mr
-
-        _stable_snapshot = _mr.SCHEMA_STABLE
-        if _stable_snapshot:
-            _mr.SCHEMA_STABLE = False
-    except Exception as e:
-        logger.warning("run_schema_setup failed: %s", e)
-
-    try:
-        _run_sql_migrations(conn)
-    finally:
-        if _stable_snapshot is not None:
-            try:
-                import infra.migration_runner as _mr2
-
-                _mr2.SCHEMA_STABLE = _stable_snapshot
-            except Exception as e:
-                logger.warning("run_schema_setup failed: %s", e)
-
     # Ensure the core memories table exists.
     conn.execute(
         """
@@ -952,7 +932,6 @@ def run_schema_setup(conn: AnyConnection) -> None:
         _migrate_memory_vec_idx(conn)
         _migrate_kg_tables(conn)
         _migrate_kg_extraction_stats(conn)
-        _migrate_ensure_chunks_table(conn)
         _migrate_ensure_skill_columns(conn)
 
         try:
@@ -1019,7 +998,29 @@ def run_schema_setup(conn: AnyConnection) -> None:
         #    already in place from step 1, so CREATE INDEX / ALTER TABLE
         #    etc. succeed rather than being silently skipped.
         # ------------------------------------------------------------------
-        _run_sql_migrations(conn)  # type: ignore[arg-type]
+        try:
+            import infra.migration_runner as _mr
+
+            _stable_snapshot = _mr.SCHEMA_STABLE
+            if _stable_snapshot:
+                _mr.SCHEMA_STABLE = False
+        except Exception as e:
+            logger.warning("run_schema_setup stable-snapshot failed: %s", e)
+            _stable_snapshot = None
+
+        try:
+            _run_sql_migrations(conn)  # type: ignore[arg-type]
+        finally:
+            if _stable_snapshot is not None:
+                try:
+                    import infra.migration_runner as _mr2
+
+                    _mr2.SCHEMA_STABLE = _stable_snapshot
+                except Exception as e:
+                    logger.warning("run_schema_setup stable-restore failed: %s", e)
+
+        # Ensure memory_chunks FTS triggers AFTER migrations create the table.
+        _migrate_ensure_chunks_table(conn)
 
         # ------------------------------------------------------------------
         # 3. Post-migration setup: FTS5, FK constraints, etc.

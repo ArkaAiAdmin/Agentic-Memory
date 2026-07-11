@@ -231,14 +231,17 @@ class MemoryClient:
         offset: int = 0,
         category: str = "",
     ) -> list[MemoryResult]:
-        """List recent memories (newest first), optionally filtered by category."""
+        """List recent memories (newest first), optionally filtered by category.
+
+        Uses the tenant_memories TEMP VIEW to respect tenant isolation.
+        """
         conn = get_db_connection(self._db_path)
         try:
             if category:
                 rows = conn.execute(
                     "SELECT id, content, tags, category, created_at, "
                     "       pinned, importance "
-                    "FROM memories WHERE deleted_at IS NULL AND category = ? "
+                    "FROM tenant_memories WHERE deleted_at IS NULL AND category = ? "
                     "ORDER BY created_at DESC LIMIT ? OFFSET ?",
                     (category, limit, offset),
                 ).fetchall()
@@ -246,7 +249,7 @@ class MemoryClient:
                 rows = conn.execute(
                     "SELECT id, content, tags, category, created_at, "
                     "       pinned, importance "
-                    "FROM memories WHERE deleted_at IS NULL "
+                    "FROM tenant_memories WHERE deleted_at IS NULL "
                     "ORDER BY created_at DESC LIMIT ? OFFSET ?",
                     (limit, offset),
                 ).fetchall()

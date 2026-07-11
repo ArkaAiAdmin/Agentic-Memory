@@ -328,6 +328,30 @@ class SQLiteWriteQueue:
                         conn.execute("PRAGMA busy_timeout=30000")
                         conn.execute("PRAGMA foreign_keys=ON")
 
+                        # Ensure schema (FTS, triggers, etc.) is up to date
+                        # on this raw connection — same as open_db / pool.get.
+                        try:
+                            from infra.db_migrations import run_schema_setup
+                            run_schema_setup(conn)
+                        except Exception as schema_exc:
+                            logger.warning(
+                                "db_write_queue schema setup failed: %s",
+                                schema_exc,
+                            )
+                        # Create tenant isolation primitives (function + view)
+                        # matching what connection_pool.get() does.
+                        try:
+                            conn.create_function("tenant_id", 0, lambda: "default")
+                            conn.execute(
+                                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+                            )
+                        except Exception as tenant_exc:
+                            logger.warning(
+                                "db_write_queue tenant view failed: %s",
+                                tenant_exc,
+                            )
+
                         if task_type == "statement":
                             query, params = payload
                             conn.execute("BEGIN IMMEDIATE")

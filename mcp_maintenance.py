@@ -99,7 +99,7 @@ def memory_health_check(conn) -> str:
     status["schema_version"] = SCHEMA_VERSION
 
     try:
-        row_count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        row_count = conn.execute("SELECT COUNT(*) FROM tenant_memories").fetchone()[0]
         status["db"] = {
             "path": "<active memory dir>",
             "accessible": True,
@@ -112,7 +112,7 @@ def memory_health_check(conn) -> str:
 
     try:
         n_memories = conn.execute(
-            "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
+            "SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL"
         ).fetchone()[0]
         n_vec = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()[0]
         drift = n_memories - n_vec
@@ -622,7 +622,7 @@ def memory_extract_skills(
     try:
         if memory_id:
             row = conn.execute(
-                "SELECT id, content, category FROM memories "
+                "SELECT id, content, category FROM tenant_memories "
                 "WHERE id = ? AND deleted_at IS NULL",
                 (memory_id,),
             ).fetchone()
@@ -1242,11 +1242,11 @@ def memory_resolve_contradiction(
 
     try:
         src = conn.execute(
-            "SELECT id, content, created_at, updated_at FROM memories WHERE id = ?",
+            "SELECT id, content, created_at, updated_at FROM tenant_memories WHERE id = ?",
             (source_note_id,),
         ).fetchone()
         tgt = conn.execute(
-            "SELECT id, content, created_at, updated_at FROM memories WHERE id = ?",
+            "SELECT id, content, created_at, updated_at FROM tenant_memories WHERE id = ?",
             (target_note_id,),
         ).fetchone()
     except Exception as e:

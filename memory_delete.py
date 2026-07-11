@@ -281,6 +281,8 @@ def soft_delete_note(
     db_path,
     note_id: str,
     deleted_by: str = "user",
+    *,
+    tenant_id: str | None = None,
 ) -> bool:
     """Mark ``note_id`` as soft-deleted.
 
@@ -299,6 +301,8 @@ def soft_delete_note(
         note_id: Canonical memory id (validated, see design notes).
         deleted_by: Free-text label of who/what deleted it. Defaults
             to ``"user"``; cleanup scripts may pass e.g. ``"purge"``.
+        tenant_id: If provided, the note must belong to this tenant.
+            Refuses to delete notes from other tenants.
 
     Returns:
         True on a successful state change (note went from active to
@@ -311,19 +315,33 @@ def soft_delete_note(
     try:
         with open_db(db_path) as conn:
             # Check existence + current state in one round trip.
-            row = conn.execute(
-                "SELECT deleted_at FROM memories WHERE id = ?", (note_id,)
-            ).fetchone()
+            # Tenant isolation: also check tenant_id matches.
+            if tenant_id is not None:
+                row = conn.execute(
+                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = ?",
+                    (note_id, tenant_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = tenant_id()",
+                    (note_id,),
+                ).fetchone()
             if row is None:
                 return False
             if row[0] is not None:
                 # Already soft-deleted — idempotent no-op.
                 return False
             now = _now_iso()
-            conn.execute(
-                "UPDATE memories SET deleted_at = ?, deleted_by = ? WHERE id = ?",
-                (now, deleted_by, note_id),
-            )
+            if tenant_id is not None:
+                conn.execute(
+                    "UPDATE memories SET deleted_at = ?, deleted_by = ? WHERE id = ? AND tenant_id = ?",
+                    (now, deleted_by, note_id, tenant_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE memories SET deleted_at = ?, deleted_by = ? WHERE id = ? AND tenant_id = tenant_id()",
+                    (now, deleted_by, note_id),
+                )
             # ── Invalidate edges for entities tied to this note ──
             _invalidate_edges_for_note(conn, note_id)
             conn.commit()
@@ -333,7 +351,7 @@ def soft_delete_note(
         return False
 
 
-def restore_note(db_path, note_id: str) -> bool:
+def restore_note(db_path, note_id: str, *, tenant_id: str | None = None) -> bool:
     """Clear ``deleted_at`` and ``deleted_by`` on a soft-deleted note.
 
     Idempotent in the sense that restoring an already-active note is a
@@ -348,6 +366,8 @@ def restore_note(db_path, note_id: str) -> bool:
     Args:
         db_path: Path to the memory DB.
         note_id: Canonical memory id.
+        tenant_id: If provided, the note must belong to this tenant.
+            Refuses to restore notes from other tenants.
 
     Returns:
         True on a successful state change (note went from
@@ -356,17 +376,30 @@ def restore_note(db_path, note_id: str) -> bool:
     note_id = _validate_note_id(note_id)
     try:
         with open_db(db_path) as conn:
-            row = conn.execute(
-                "SELECT deleted_at FROM memories WHERE id = ?", (note_id,)
-            ).fetchone()
+            if tenant_id is not None:
+                row = conn.execute(
+                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = ?",
+                    (note_id, tenant_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = tenant_id()",
+                    (note_id,),
+                ).fetchone()
             if row is None:
                 return False
             if row[0] is None:
                 return False
-            conn.execute(
-                "UPDATE memories SET deleted_at = NULL, deleted_by = NULL WHERE id = ?",
-                (note_id,),
-            )
+            if tenant_id is not None:
+                conn.execute(
+                    "UPDATE memories SET deleted_at = NULL, deleted_by = NULL WHERE id = ? AND tenant_id = ?",
+                    (note_id, tenant_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE memories SET deleted_at = NULL, deleted_by = NULL WHERE id = ? AND tenant_id = tenant_id()",
+                    (note_id,),
+                )
             # ── Re-validate edges for entities tied to this note ──
             _restore_edges_for_note(conn, note_id)
             conn.commit()
@@ -542,7 +575,7 @@ class _SkipDelete(Exception):
     pass
 
 
-def hard_delete_note(db_path, note_id: str) -> bool:
+def hard_delete_note(db_path, note_id: str, *, tenant_id: str | None = None) -> bool:
     """Permanently remove a note and ALL associated data from the DB.
 
     Cascading removals:
@@ -563,6 +596,8 @@ def hard_delete_note(db_path, note_id: str) -> bool:
           past 30 days can be removed (e.g. for GDPR-style cleanup).
         * Already-soft-deleted notes are always hard-deletable,
           regardless of age.
+        * Tenant isolation: refuses to hard-delete a note that does
+          not belong to the caller's tenant.
 
     Raises:
         ValueError: if the note exists, is active, and is younger
@@ -573,6 +608,8 @@ def hard_delete_note(db_path, note_id: str) -> bool:
     Args:
         db_path: Path to the memory DB.
         note_id: Canonical memory id.
+        tenant_id: If provided, the note must belong to this tenant.
+            Refuses to delete notes from other tenants.
 
     Returns:
         True on successful delete. False if the note does not exist
@@ -585,10 +622,16 @@ def hard_delete_note(db_path, note_id: str) -> bool:
     note_id = _validate_note_id(note_id)
     try:
         with open_db(db_path) as conn:
-            row = conn.execute(
-                "SELECT created_at, deleted_at FROM memories WHERE id = ?",
-                (note_id,),
-            ).fetchone()
+            if tenant_id is not None:
+                row = conn.execute(
+                    "SELECT created_at, deleted_at FROM memories WHERE id = ? AND tenant_id = ?",
+                    (note_id, tenant_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT created_at, deleted_at FROM memories WHERE id = ? AND tenant_id = tenant_id()",
+                    (note_id,),
+                ).fetchone()
             if row is None:
                 return False
             try:
@@ -608,7 +651,10 @@ def hard_delete_note(db_path, note_id: str) -> bool:
 
             cleanup_memory_relations(cast(sqlite3.Connection, conn), note_id)
             _purge_fts5_if_no_trigger(conn, note_id)
-            conn.execute("DELETE FROM memories WHERE id = ?", (note_id,))
+            if tenant_id is not None:
+                conn.execute("DELETE FROM memories WHERE id = ? AND tenant_id = ?", (note_id, tenant_id))
+            else:
+                conn.execute("DELETE FROM memories WHERE id = ? AND tenant_id = tenant_id()", (note_id,))
             conn.commit()
             _purge_markdown_file(note_id)
             return True
@@ -619,7 +665,7 @@ def hard_delete_note(db_path, note_id: str) -> bool:
         return False
 
 
-def list_trash(db_path, include_expired: bool = False) -> List[dict]:
+def list_trash(db_path, include_expired: bool = False, *, tenant_id: str | None = None) -> List[dict]:
     """List all soft-deleted notes, oldest first.
 
     Each entry is a dict with:
@@ -635,20 +681,32 @@ def list_trash(db_path, include_expired: bool = False) -> List[dict]:
             ``deleted_at`` is older than 30 days — those are
             ``purge_expired``'s problem, not yours. If True, return
             the full trash including the expired tail.
+        tenant_id: If provided, only list notes belonging to this tenant.
 
     Returns:
         A list of dicts, oldest first. Empty list on any DB error.
     """
     try:
         with open_db(db_path, row_factory=sqlite3.Row) as conn:
-            cur = conn.execute(
-                """
-                SELECT id, source_file, deleted_at, deleted_by
-                  FROM memories
-                 WHERE deleted_at IS NOT NULL
-                 ORDER BY deleted_at ASC
-                """
-            )
+            if tenant_id is not None:
+                cur = conn.execute(
+                    """
+                    SELECT id, source_file, deleted_at, deleted_by
+                      FROM memories
+                     WHERE deleted_at IS NOT NULL AND tenant_id = ?
+                     ORDER BY deleted_at ASC
+                    """,
+                    (tenant_id,),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    SELECT id, source_file, deleted_at, deleted_by
+                      FROM memories
+                     WHERE deleted_at IS NOT NULL AND tenant_id = tenant_id()
+                     ORDER BY deleted_at ASC
+                    """
+                )
             now = _now_dt()
             results: List[dict] = []
             for row in cur.fetchall():
@@ -682,7 +740,7 @@ def list_trash(db_path, include_expired: bool = False) -> List[dict]:
         return []
 
 
-def purge_expired(db_path, dry_run: bool = False) -> int:
+def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = None) -> int:
     """Hard-delete all soft-deleted notes whose 30-day window has elapsed.
 
     Full cascade removal per note:
@@ -697,6 +755,8 @@ def purge_expired(db_path, dry_run: bool = False) -> int:
 
     Args:
         db_path: Path to the memory DB.
+        dry_run: If True, count but don't delete.
+        tenant_id: If provided, only purge notes belonging to this tenant.
 
     Returns:
         Count of notes purged. 0 if none are expired or on any DB
@@ -706,10 +766,16 @@ def purge_expired(db_path, dry_run: bool = False) -> int:
         with open_db(db_path) as conn:
             cutoff = _now_dt() - _dt.timedelta(seconds=RESTORE_WINDOW_SECONDS)
             cutoff_iso = cutoff.isoformat()
-            cur = conn.execute(
-                "SELECT id FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < ?",
-                (cutoff_iso,),
-            )
+            if tenant_id is not None:
+                cur = conn.execute(
+                    "SELECT id FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < ? AND tenant_id = ?",
+                    (cutoff_iso, tenant_id),
+                )
+            else:
+                cur = conn.execute(
+                    "SELECT id FROM memories WHERE deleted_at IS NOT NULL AND deleted_at < ? AND tenant_id = tenant_id()",
+                    (cutoff_iso,),
+                )
             expired_ids = [r[0] for r in cur.fetchall()]
             if not expired_ids:
                 return 0
@@ -863,7 +929,7 @@ def purge_expired(db_path, dry_run: bool = False) -> int:
         return 0
 
 
-def is_soft_deleted(db_path, note_id: str) -> bool:
+def is_soft_deleted(db_path, note_id: str, *, tenant_id: str | None = None) -> bool:
     """Return True if ``note_id`` exists and ``deleted_at IS NOT NULL``.
 
     Returns False for unknown ids. Returns False (not raise) on DB
@@ -872,13 +938,21 @@ def is_soft_deleted(db_path, note_id: str) -> bool:
     Args:
         db_path: Path to the memory DB.
         note_id: Canonical memory id.
+        tenant_id: If provided, only check notes belonging to this tenant.
     """
     note_id = _validate_note_id(note_id)
     try:
         with open_db(db_path) as conn:
-            row = conn.execute(
-                "SELECT deleted_at FROM memories WHERE id = ?", (note_id,)
-            ).fetchone()
+            if tenant_id is not None:
+                row = conn.execute(
+                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = ?",
+                    (note_id, tenant_id),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = tenant_id()",
+                    (note_id,),
+                ).fetchone()
             if row is None:
                 return False
             return row[0] is not None
@@ -891,6 +965,8 @@ def delete_active_where(
     db_path,
     where_clause: str,
     params: Tuple[Any, ...] = (),
+    *,
+    tenant_id: str | None = None,
 ) -> int:
     """Bulk soft-delete active notes matching ``where_clause``.
 
@@ -915,6 +991,7 @@ def delete_active_where(
             or ``--``.
         params: Tuple of parameter values, bound via SQLite's
             parameter substitution.
+        tenant_id: If provided, only delete notes belonging to this tenant.
 
     Returns:
         Count of notes soft-deleted. 0 on no match or DB error.
@@ -944,15 +1021,22 @@ def delete_active_where(
     try:
         with open_db(db_path) as conn:
             now = _now_iso()
+            # Tenant isolation: add tenant_id filter if provided.
+            if tenant_id is not None:
+                tenant_filter = " AND tenant_id = ?"
+                tenant_params = (tenant_id,)
+            else:
+                tenant_filter = " AND tenant_id = tenant_id()"
+                tenant_params = ()
             # Only touch active rows. RETURNING is SQLite 3.35+ but
             # we use a separate count to stay compatible.
             cur = conn.execute(
                 f"""
                 UPDATE memories
                    SET deleted_at = ?, deleted_by = 'bulk'
-                 WHERE deleted_at IS NULL AND ({clause})
+                 WHERE deleted_at IS NULL AND ({clause}){tenant_filter}
                 """,
-                (now,) + tuple(params),
+                (now,) + tuple(params) + tenant_params,
             )
             changed = cur.rowcount if cur.rowcount is not None else 0
             # rowcount can be -1 if the driver doesn't track it; fall
@@ -961,9 +1045,9 @@ def delete_active_where(
                 row = conn.execute(
                     f"""
                     SELECT COUNT(*) FROM memories
-                     WHERE deleted_at = ? AND ({clause})
+                     WHERE deleted_at = ? AND ({clause}){tenant_filter}
                     """,
-                    (now,) + tuple(params),
+                    (now,) + tuple(params) + tenant_params,
                 ).fetchone()
                 if row is not None:
                     changed = row[0]
@@ -975,9 +1059,9 @@ def delete_active_where(
                         f"""
                         SELECT id FROM memories
                          WHERE deleted_at = ? AND deleted_by = 'bulk'
-                           AND ({clause})
+                           AND ({clause}){tenant_filter}
                         """,
-                        (now,) + tuple(params),
+                        (now,) + tuple(params) + tenant_params,
                     ).fetchall()
                 ]
                 for nid in deleted_ids:

@@ -1758,7 +1758,7 @@ def _check_already_materialized(db_path: Path, note_id: str) -> bool:
     try:
         with open_db(db_path, timeout=5.0) as conn:
             row = conn.execute(
-                "SELECT 1 FROM memories WHERE id=? LIMIT 1", (note_id,)
+                "SELECT 1 FROM tenant_memories WHERE id=? LIMIT 1", (note_id,)
             ).fetchone()
             if row is None:
                 return False
@@ -2237,17 +2237,17 @@ def memory_supersede_db(
             if not features["has_temporal"]:
                 return (False, "memory schema does not have temporal columns")
             old_row = db.execute(
-                "SELECT id FROM memories WHERE id = ?", (old_id,)
+                "SELECT id FROM tenant_memories WHERE id = ?", (old_id,)
             ).fetchone()
             if not old_row:
                 return (False, f"old_id '{old_id}' not found")
             new_row = db.execute(
-                "SELECT id FROM memories WHERE id = ?", (new_id,)
+                "SELECT id FROM tenant_memories WHERE id = ?", (new_id,)
             ).fetchone()
             if not new_row:
                 return (False, f"new_id '{new_id}' not found")
             old_content = db.execute(
-                "SELECT content FROM memories WHERE id = ?", (old_id,)
+                "SELECT content FROM tenant_memories WHERE id = ?", (old_id,)
             ).fetchone()
             db.execute(
                 """UPDATE memories
@@ -2264,7 +2264,7 @@ def memory_supersede_db(
             if rationale:
                 try:
                     meta_row = db.execute(
-                        "SELECT metadata FROM memories WHERE id = ?", (old_id,)
+                        "SELECT metadata FROM tenant_memories WHERE id = ?", (old_id,)
                     ).fetchone()
                     if meta_row and meta_row[0]:
                         meta = json.loads(meta_row[0])
@@ -2284,17 +2284,17 @@ def memory_supersede_db(
                 if not features["has_temporal"]:
                     return (False, "memory schema does not have temporal columns")
                 old_row = db.execute(
-                    "SELECT id FROM memories WHERE id = ?", (old_id,)
+                    "SELECT id FROM tenant_memories WHERE id = ?", (old_id,)
                 ).fetchone()
                 if not old_row:
                     return (False, f"old_id '{old_id}' not found")
                 new_row = db.execute(
-                    "SELECT id FROM memories WHERE id = ?", (new_id,)
+                    "SELECT id FROM tenant_memories WHERE id = ?", (new_id,)
                 ).fetchone()
                 if not new_row:
                     return (False, f"new_id '{new_id}' not found")
                 old_content = db.execute(
-                    "SELECT content FROM memories WHERE id = ?", (old_id,)
+                    "SELECT content FROM tenant_memories WHERE id = ?", (old_id,)
                 ).fetchone()
                 db.execute(
                     """UPDATE memories
@@ -2311,7 +2311,7 @@ def memory_supersede_db(
                 if rationale:
                     try:
                         meta_row = db.execute(
-                            "SELECT metadata FROM memories WHERE id = ?", (old_id,)
+                            "SELECT metadata FROM tenant_memories WHERE id = ?", (old_id,)
                         ).fetchone()
                         if meta_row and meta_row[0]:
                             meta = json.loads(meta_row[0])
@@ -2350,7 +2350,7 @@ def reinforce_memories_db(db_path: Path, ids: list[str], delta: float) -> int:
         with open_db(db_path, timeout=30.0) as db:
             for mid in ids:
                 row = db.execute(
-                    "SELECT success_score FROM memories WHERE id=?", (mid,)
+                    "SELECT success_score FROM tenant_memories WHERE id=?", (mid,)
                 ).fetchone()
                 if row:
                     old_score = row[0] or 0.0
@@ -2395,7 +2395,7 @@ def patch_memory(
 
         with open_db(db_path, timeout=30.0) as db:
             row = db.execute(
-                "SELECT content, metadata, source_file FROM memories WHERE id = ? AND deleted_at IS NULL",
+                "SELECT content, metadata, source_file FROM tenant_memories WHERE id = ? AND deleted_at IS NULL",
                 (note_id,),
             ).fetchone()
             if row is None:
@@ -2498,7 +2498,7 @@ def revert_supersede(
 
         with open_db(db_path, timeout=30.0) as db:
             row = db.execute(
-                "SELECT valid_to, superseded_by FROM memories WHERE id = ? AND deleted_at IS NULL",
+                "SELECT valid_to, superseded_by FROM tenant_memories WHERE id = ? AND deleted_at IS NULL",
                 (note_id,),
             ).fetchone()
             if row is None:

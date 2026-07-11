@@ -1073,7 +1073,7 @@ def _fts_search(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count\n"
             "          FROM memories_fts fts\n"
-            "          JOIN memories m ON m.rowid = fts.rowid\n"
+            "          JOIN tenant_memories m ON m.rowid = fts.rowid\n"
             f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
             "          ORDER BY fts.rank\n"
             "          LIMIT ?",
@@ -1087,7 +1087,7 @@ def _fts_search(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count\n"
         "      FROM memories_fts fts\n"
-        "      JOIN memories m ON m.rowid = fts.rowid\n"
+        "      JOIN tenant_memories m ON m.rowid = fts.rowid\n"
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
         "      ORDER BY fts.rank\n"
         "      LIMIT ?",
@@ -1816,6 +1816,7 @@ def _build_empty_result_with_hint(
         "output": output,
         "suggestions": _build_zero_result_suggestions(db_path, query),
         "agent_scope": _get_agent_scope(),
+        "query_id": uuid.uuid4().hex,
     }
     if related_facts:
         result["related_facts"] = related_facts
@@ -2301,6 +2302,7 @@ def search_memories(
                 f"Memory database not found in current directory ({db_path}). Run memory_rebuild tool first.",
             ),
             "agent_scope": _get_agent_scope(),
+            "query_id": uuid.uuid4().hex,
         }
 
     # Reset per-call phase latency accumulator so results are not
@@ -2339,6 +2341,7 @@ def search_memories(
             "output": f"No memories matched the query: '{query}'",
             "suggestions": _build_zero_result_suggestions(db_path, query),
             "agent_scope": _get_agent_scope(),
+            "query_id": uuid.uuid4().hex,
         }
 
     # Phase 1b: Skill-first lookup (if requested)

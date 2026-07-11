@@ -403,7 +403,7 @@ def push_to_peer(
             rows = conn.execute(
                 """SELECT id, content, source_file, logical_clock,
                           version_vector
-                   FROM memories
+                   FROM tenant_memories
                    WHERE deleted_at IS NULL
                      AND CAST(strftime('%s', updated_at) AS INTEGER) > ?
                    ORDER BY updated_at ASC

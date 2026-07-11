@@ -349,7 +349,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             try:
                 row = conn.execute(
                     "SELECT id, content, tags, category, created_at, updated_at, deleted_at "
-                    "FROM memories WHERE id = ?",
+                    "FROM tenant_memories WHERE id = ?",
                     (note_id,),
                 ).fetchone()
                 if not row:
@@ -400,7 +400,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 return
             tags = req.get("tags", [])
             category = req.get("category", "sdk")
-            is_global = req.get("is_global", True)
+            # TODO: Replace with principal extraction hook for multi-tenant auth.
+            is_global = req.get("is_global", False)
             pinned = req.get("pinned", False)
 
             client = MemoryClient(db_path=self.server.db_path)

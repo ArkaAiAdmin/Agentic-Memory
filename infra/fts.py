@@ -119,7 +119,12 @@ def _migrate_fts5_porter_tokenizer(conn: AnyConnection) -> None:
         _create_fts5_table(conn)
         return
     create_sql = row[0] or ""
-    if "porter" in create_sql.lower():
+    # Rebuild if missing porter tokenizer OR missing the id column.
+    # Old FTS tables created before the id column was added have porter
+    # but lack id, causing "no column named id" on INSERT.
+    has_porter = "porter" in create_sql.lower()
+    has_id = '"id"' in create_sql or "'id'" in create_sql or ", id," in create_sql or "(id," in create_sql
+    if has_porter and has_id:
         return
     for attempt in range(3):
         try:
@@ -185,3 +190,30 @@ def _migrate_ensure_fts_triggers(conn: AnyConnection) -> None:
             "            END\n"
             "            "
         )
+    # Recreate kg_entities_fts triggers if the kg_entities table was
+    # dropped and recreated by a later migration (e.g. 041) which
+    # destroys triggers created by migration 000.
+    kg_fts_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='kg_entities_fts'"
+    ).fetchone()
+    if kg_fts_exists:
+        if "kg_entities_fts_ai" not in existing:
+            conn.execute(
+                "CREATE TRIGGER kg_entities_fts_ai AFTER INSERT ON kg_entities BEGIN"
+                " INSERT INTO kg_entities_fts(rowid, name, entity_type)"
+                " VALUES (new.id, new.name, new.entity_type); END"
+            )
+        if "kg_entities_fts_ad" not in existing:
+            conn.execute(
+                "CREATE TRIGGER kg_entities_fts_ad AFTER DELETE ON kg_entities BEGIN"
+                " INSERT INTO kg_entities_fts(kg_entities_fts, rowid, name, entity_type)"
+                " VALUES ('delete', old.id, old.name, old.entity_type); END"
+            )
+        if "kg_entities_fts_au" not in existing:
+            conn.execute(
+                "CREATE TRIGGER kg_entities_fts_au AFTER UPDATE ON kg_entities BEGIN"
+                " INSERT INTO kg_entities_fts(kg_entities_fts, rowid, name, entity_type)"
+                " VALUES ('delete', old.id, old.name, old.entity_type);"
+                " INSERT INTO kg_entities_fts(rowid, name, entity_type)"
+                " VALUES (new.id, new.name, new.entity_type); END"
+            )

@@ -4,7 +4,7 @@
 # Agentic Memory — MCP Surface Reference
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
-> Last updated: 2026-07-10. Schema v37.
+> Last updated: 2026-07-11. Schema v44. Multi-tenant isolation enforced.
 
 ---
 
@@ -591,4 +591,16 @@ memory_maintenance(operation="duplicates", threshold=0.85)
 
 ## Schema Version
 
-Current: **v37** (38 migrations, 100% down-migration coverage)
+Current: **v44** (45 migrations, 100% down-migration coverage)
+
+### Multi-Tenant Isolation (Phase 0)
+
+- `tenant_id TEXT NOT NULL DEFAULT 'default'` on `memories` table (migration 042)
+- `tenant_memories` TEMP VIEW filters by `tenant_id()` per connection
+- `tenant_id()` SQLite function returns agent context's tenant_id
+- `principal_identities` table for SSO round-tripping (migration 043)
+- `tenant_id` + `principal_id` on `memory_audit_log` (migration 044)
+- REST API `is_global` default changed from `True` to `False`
+- Delete operations (`soft_delete_note`, `hard_delete_note`, `restore_note`, `purge_expired`) accept `tenant_id` parameter for explicit tenant checks
+- FTS search joins via `tenant_memories` view for tenant isolation
+- `MemoryClient.list()` queries `tenant_memories` view

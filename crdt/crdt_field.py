@@ -444,7 +444,7 @@ def project_sql_to_crdt(
     """
     row = conn.execute(
         "SELECT content, tags, category, version_vector, logical_clock "
-        "FROM memories WHERE id=?",
+        "FROM tenant_memories WHERE id=?",
         (memory_id,),
     ).fetchone()
     if not row:
@@ -493,7 +493,7 @@ def project_crdt_to_sql(
         if val is None:
             continue
         cur = conn.execute(
-            f"SELECT {field_name} FROM memories WHERE id=?", (memory_id,)
+            f"SELECT {field_name} FROM tenant_memories WHERE id=?", (memory_id,)
         )
         row = cur.fetchone()
         if row is None:
@@ -519,10 +519,17 @@ def backfill_from_memories(conn: AnyConnection) -> int:
     a partial backfill can be resumed).
     """
     ensure_field_crdt_schema(conn)
+    # Fall back to memories table if tenant_memories TEMP VIEW doesn't
+    # exist yet (e.g. during run_schema_setup before open_db creates it).
+    table = "tenant_memories"
+    try:
+        conn.execute("SELECT 1 FROM tenant_memories LIMIT 0")
+    except sqlite3.OperationalError:
+        table = "memories"
     rows = conn.execute(
         "SELECT id, content, tags, category, version_vector, logical_clock, "
         "        COALESCE(repo_id, '') "
-        "FROM memories WHERE deleted_at IS NULL"
+        f"FROM {table} WHERE deleted_at IS NULL"
     ).fetchall()
     count = 0
     for (
@@ -755,7 +762,7 @@ def crdt_field_save(
                 # the note-level row.
                 row = conn.execute(
                 "SELECT version_vector, logical_clock, conflict_policy "
-                "FROM memories WHERE id=?",
+                "FROM tenant_memories WHERE id=?",
                 (note_id,),
             ).fetchone()
 
@@ -893,7 +900,7 @@ def _capture_crdt_pre_state(
 ) -> _CrdtPreState:
     memories_row = conn.execute(
         "SELECT content, tags, category, version_vector, logical_clock, "
-        "source_file FROM memories WHERE id=?",
+        "source_file FROM tenant_memories WHERE id=?",
         (note_id,),
     ).fetchone()
     field_rows: list[tuple] = []
@@ -911,7 +918,7 @@ def _capture_crdt_pre_state(
     if db_path_obj is not None:
         try:
             row = conn.execute(
-                "SELECT source_file FROM memories WHERE id=?", (note_id,)
+                "SELECT source_file FROM tenant_memories WHERE id=?", (note_id,)
             ).fetchone()
             if row and row[0]:
                 src = row[0]
@@ -951,7 +958,7 @@ def _restore_crdt_pre_state(
             )
     else:
         try:
-            conn.execute("DELETE FROM memories WHERE id=?", (note_id,))
+            conn.execute("DELETE FROM memories WHERE id=? AND tenant_id=tenant_id()", (note_id,))
         except Exception as exc:
             logger.warning("crdt undo: delete memories for %s failed: %r", note_id, exc)
     try:
@@ -1019,7 +1026,7 @@ def _finalize_crdt_save(
         return
     try:
         row = conn.execute(
-            "SELECT source_file FROM memories WHERE id=?",
+            "SELECT source_file FROM tenant_memories WHERE id=?",
             (note_id,),
         ).fetchone()
         if not row or not row[0]:
@@ -1117,7 +1124,7 @@ def _seed_note_into_field_crdt_if_needed(
 
     row = conn.execute(
         "SELECT content, tags, category, version_vector, logical_clock "
-        "FROM memories WHERE id = ?",
+        "FROM tenant_memories WHERE id = ?",
         (note_id,),
     ).fetchone()
     if row is None:
@@ -1142,7 +1149,7 @@ def _seed_note_into_field_crdt_if_needed(
 def parse_existing_vv(conn: AnyConnection, note_id: str) -> dict[str, int]:
     """Read the note's existing version vector."""
     row = conn.execute(
-        "SELECT version_vector FROM memories WHERE id=?",
+        "SELECT version_vector FROM tenant_memories WHERE id=?",
         (note_id,),
     ).fetchone()
     if row is None or not row[0]:
@@ -1157,7 +1164,7 @@ def parse_existing_vv(conn: AnyConnection, note_id: str) -> dict[str, int]:
 def parse_existing_clock(conn: AnyConnection, note_id: str) -> int:
     """Read the note's existing logical clock."""
     row = conn.execute(
-        "SELECT logical_clock FROM memories WHERE id=?",
+        "SELECT logical_clock FROM tenant_memories WHERE id=?",
         (note_id,),
     ).fetchone()
     return int(row[0]) if row and row[0] else 0
@@ -1205,7 +1212,7 @@ def _fallback_to_note_level(
 
     if conflict_policy is None:
         row = conn.execute(
-            "SELECT conflict_policy FROM memories WHERE id=?",
+            "SELECT conflict_policy FROM tenant_memories WHERE id=?",
             (note_id,),
         ).fetchone()
         policy_used = row[0] if row else "supersede"

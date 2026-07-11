@@ -127,7 +127,7 @@ def _capture_pre_state_main(conn: AnyConnection, note_id: str) -> Optional[dict]
     try:
         row = conn.execute(
             """SELECT content, source_file, version_vector, logical_clock
-               FROM memories WHERE id=?""",
+               FROM tenant_memories WHERE id=?""",
             (note_id,),
         ).fetchone()
     except Exception as e:
@@ -173,7 +173,7 @@ def _write_merged_markdown(
         # Look up the source_file path (set by save_memory and
         # stored relative to memory_root).
         row = conn.execute(
-            "SELECT source_file FROM memories WHERE id=?",
+            "SELECT source_file FROM tenant_memories WHERE id=?",
             (note_id,),
         ).fetchone()
         if not row or not row[0]:
@@ -479,7 +479,7 @@ def crdt_save(
 
             # Read existing version vector
             row = conn.execute(
-                "SELECT version_vector, logical_clock FROM memories WHERE id=?",
+                "SELECT version_vector, logical_clock FROM tenant_memories WHERE id=?",
                 (note_id,),
             ).fetchone()
 
@@ -577,7 +577,7 @@ def crdt_save(
                     conflict = True
                     if conflict_policy is None:
                         _cp_row = conn.execute(
-                            "SELECT conflict_policy FROM memories WHERE id=?",
+                            "SELECT conflict_policy FROM tenant_memories WHERE id=?",
                             (note_id,),
                         ).fetchone()
                         policy_used = _cp_row[0] if _cp_row else "supersede"
@@ -594,7 +594,7 @@ def crdt_save(
                     if policy_used == "coexist":
                         conflict_id = f"{note_id}__conflict_{remote_agent_id}"
                         _existing = conn.execute(
-                            "SELECT id FROM memories WHERE id=?", (conflict_id,)
+                            "SELECT id FROM tenant_memories WHERE id=?", (conflict_id,)
                         ).fetchone()
                         if _existing is None:
                             _rv = json.dumps(incoming_vv)
@@ -624,11 +624,11 @@ def crdt_save(
                     elif policy_used == "replace" and remote_wins:
                         archived_id = f"{note_id}__v_{existing_clock}"
                         _existing_archived = conn.execute(
-                            "SELECT id FROM memories WHERE id=?", (archived_id,)
+                            "SELECT id FROM tenant_memories WHERE id=?", (archived_id,)
                         ).fetchone()
                         if _existing_archived is None:
                             _old_content = conn.execute(
-                                "SELECT content, source_file FROM memories WHERE id=?",
+                                "SELECT content, source_file FROM tenant_memories WHERE id=?",
                                 (note_id,),
                             ).fetchone()
                             if _old_content:
@@ -715,7 +715,7 @@ def crdt_save(
                 if conflict_id:
                     # Coexist branch: also write the conflict .md.
                     _row = conn.execute(
-                        "SELECT content FROM memories WHERE id=?",
+                        "SELECT content FROM tenant_memories WHERE id=?",
                         (conflict_id,),
                     ).fetchone()
                     if _row:
@@ -741,7 +741,7 @@ def crdt_save(
             # logical_clock).
             if pre_existing_main is None:
                 try:
-                    conn.execute("DELETE FROM memories WHERE id=?", (note_id,))
+                    conn.execute("DELETE FROM memories WHERE id=? AND tenant_id=tenant_id()", (note_id,))
                     conn.commit()
                 except Exception as undo_exc:
                     logger.error("crdt saga undo: delete main row failed: %r", undo_exc)
@@ -769,7 +769,7 @@ def crdt_save(
             if pre_existing_conflict is None:
                 try:
                     conn.execute(
-                        "DELETE FROM memories WHERE id=?",
+                        "DELETE FROM memories WHERE id=? AND tenant_id=tenant_id()",
                         (f"{note_id}__conflict_{remote_agent_id}",),
                     )
                     conn.commit()
@@ -801,7 +801,7 @@ def crdt_save(
             # so we always delete on undo, never restore.
             try:
                 conn.execute(
-                    "DELETE FROM memories WHERE id LIKE ? AND id != ?",
+                    "DELETE FROM memories WHERE id LIKE ? AND id != ? AND tenant_id=tenant_id()",
                     (f"{note_id}__v_%", note_id),
                 )
                 conn.commit()

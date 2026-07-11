@@ -38,7 +38,7 @@ def memory_audit() -> str:
         with open_db(db_path, timeout=30.0, pooled=True, row_factory=sqlite3.Row, write=True) as db:
             run_db_migrations(db)
             rows = db.execute(
-                "SELECT id, content, created_at, updated_at, access_count, pinned FROM memories"
+                "SELECT id, content, created_at, updated_at, access_count, pinned FROM tenant_memories"
             ).fetchall()
         if not rows:
             return "No memories found to audit."

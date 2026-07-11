@@ -156,7 +156,7 @@ class Memory:
         conn = connection_pool.get(str(self._db_path), timeout=10.0)
         try:
             rows = conn.execute(
-                "SELECT id, content, tags, created_at FROM memories "
+                "SELECT id, content, tags, created_at FROM tenant_memories "
                 "WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             ).fetchall()
@@ -191,7 +191,7 @@ class Memory:
         try:
             conn.execute("PRAGMA foreign_keys=ON")
             pending_row = conn.execute(
-                "SELECT COUNT(*) FROM memories WHERE source_file LIKE 'sdk-%'"
+                "SELECT COUNT(*) FROM memories WHERE source_file LIKE 'sdk-%' AND tenant_id = tenant_id()"
             ).fetchone()
             pending = pending_row[0] if pending_row is not None else 0
             if not confirm:
@@ -202,7 +202,7 @@ class Memory:
                 )
                 return int(pending) if dry_run else 0
             n = conn.execute(
-                "DELETE FROM memories WHERE source_file LIKE 'sdk-%'"
+                "DELETE FROM memories WHERE source_file LIKE 'sdk-%' AND tenant_id = tenant_id()"
             ).rowcount
             conn.commit()
             cleared = int(n) if n is not None else 0
@@ -219,7 +219,7 @@ class Memory:
         try:
             return {
                 "memories": conn.execute(
-                    "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
+                    "SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL"
                 ).fetchone()[0],
                 "vector_keys": conn.execute(
                     "SELECT COUNT(*) FROM memory_vec_keys"

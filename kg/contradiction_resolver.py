@@ -46,7 +46,7 @@ def auto_resolve_contradiction_pair(
             db = conn
             for nid in (note_a, note_b):
                 row = db.execute(
-                    "SELECT id, content, source_file, created_at, updated_at, metadata FROM memories WHERE id = ?",
+                    "SELECT id, content, source_file, created_at, updated_at, metadata FROM tenant_memories WHERE id = ?",
                     (nid,),
                 ).fetchone()
                 if row:
@@ -55,7 +55,7 @@ def auto_resolve_contradiction_pair(
             with open_db(db_path_obj, timeout=30.0) as db:
                 for nid in (note_a, note_b):
                     row = db.execute(
-                        "SELECT id, content, source_file, created_at, updated_at, metadata FROM memories WHERE id = ?",
+                        "SELECT id, content, source_file, created_at, updated_at, metadata FROM tenant_memories WHERE id = ?",
                         (nid,),
                     ).fetchone()
                     if row:
@@ -138,12 +138,12 @@ def _apply_resolution(
         row_a, row_b = None, None
         if conn is not None:
             db = conn
-            row_a = db.execute("SELECT * FROM memories WHERE id=?", (note_a,)).fetchone()
-            row_b = db.execute("SELECT * FROM memories WHERE id=?", (note_b,)).fetchone()
+            row_a = db.execute("SELECT * FROM tenant_memories WHERE id=?", (note_a,)).fetchone()
+            row_b = db.execute("SELECT * FROM tenant_memories WHERE id=?", (note_b,)).fetchone()
         else:
             with open_db(db_path, timeout=30.0) as db:
-                row_a = db.execute("SELECT * FROM memories WHERE id=?", (note_a,)).fetchone()
-                row_b = db.execute("SELECT * FROM memories WHERE id=?", (note_b,)).fetchone()
+                row_a = db.execute("SELECT * FROM tenant_memories WHERE id=?", (note_a,)).fetchone()
+                row_b = db.execute("SELECT * FROM tenant_memories WHERE id=?", (note_b,)).fetchone()
         if not row_a or not row_b:
             return {"action": "error", "error": "notes not found for merge", "source": note_a, "target": note_b}
         merged_content = (

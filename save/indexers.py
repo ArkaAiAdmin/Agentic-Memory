@@ -50,7 +50,7 @@ def _index_backlinks(db, note_id: str, content: str):
         # Try to resolve the full note_id for the target
         try:
             row = db.execute(
-                "SELECT id FROM memories WHERE id = ? OR id LIKE ?",
+                "SELECT id FROM tenant_memories WHERE id = ? OR id LIKE ?",
                 (target_slug, f"%/{target_slug}"),
             ).fetchone()
             target_id = row[0] if row else target_slug

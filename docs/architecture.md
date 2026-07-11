@@ -120,7 +120,7 @@ agentic-memory/                    # Repo root
 ├── embedding_search.py             # Semantic search via model2vec
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
-├── migration_runner.py             # Schema migrations (current v37)
+├── migration_runner.py             # Schema migrations (current v44)
 └── ... (123 modules total)
 ```
 
@@ -138,13 +138,13 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v37, 39 migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v44, 45 migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
 - **104 MCP tools** (17 CORE + 87 ADMIN).
   Single source of truth: `tool_registry.py`.
-- **39 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
+- **40 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.
 - **6 lifecycle hooks** in `hooks/` — session start/end,
@@ -177,6 +177,23 @@ See `memory.toml [features]` for all flags. Key defaults:
 | `user_profile` | `true` | Personalize recall ranking from access history |
 | `consolidation` | `true` | SHA-256 + n-gram Jaccard dedup |
 | `quality_gates` | `true` | Filter results below relevance threshold |
+
+## Multi-Tenant Isolation (Phase 0)
+
+The `memories` table has `tenant_id TEXT NOT NULL DEFAULT 'default'`.
+Every connection gets a `tenant_memories` TEMP VIEW that filters by
+`tenant_id()` — a per-connection SQLite function returning the agent
+context's tenant ID. This enforces isolation at the DB layer without
+requiring RBAC.
+
+Key enforcement points:
+- Search: FTS JOIN via `tenant_memories`
+- Save: `tenant_id` column on insert
+- Delete: explicit `tenant_id` parameter on all delete operations
+- REST API: `is_global` defaults to `False`
+- Client: `get_db_connection` detects agent context
+
+See `docs/security/tenant_isolation.md` for full details.
 
 ## Safety & Integrity
 

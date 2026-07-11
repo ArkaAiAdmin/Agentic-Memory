@@ -966,7 +966,7 @@ def count_rows(db_dir: Path) -> int:
         return -1
     try:
         with open_db(db, timeout=5.0) as conn:
-            row = conn.execute("SELECT COUNT(*) FROM memories").fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM tenant_memories").fetchone()
             n = row[0] if row is not None else 0
             return n
     except Exception:

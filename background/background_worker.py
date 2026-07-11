@@ -143,7 +143,7 @@ def handle_fact_consolidation(
         # transformers) still happen at import time and can load a 3B LLM
         # consuming 6-8GB. Check + short-circuit here to skip the expensive
         # import entirely when the guard would immediately return.
-        row = conn.execute("SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL").fetchone()
+        row = conn.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
         n = int(row[0]) if row else 0
         if n > 2000:
             raise RuntimeError(
@@ -689,13 +689,13 @@ def _get_vec_rebuild_threshold() -> int:
         conn.row_factory = sqlite3.Row
         window_seconds = 600  # 10-minute window for rate estimation
         recent_writes = conn.execute(
-            "SELECT COUNT(*) AS n FROM memories "
+            "SELECT COUNT(*) AS n FROM tenant_memories "
             "WHERE updated_at >= datetime('now', ?)",
             (f"-{window_seconds} seconds",),
         ).fetchone()["n"]
         recent_drift_rows = conn.execute(
             "SELECT COUNT(*) AS n FROM memory_vec_keys "
-            "WHERE memory_id NOT IN (SELECT id FROM memories)"
+            "WHERE memory_id NOT IN (SELECT id FROM tenant_memories)"
         ).fetchone()["n"]
         conn.close()
         writes_per_minute = max(recent_writes / (window_seconds / 60.0), 0.01)
@@ -723,7 +723,7 @@ def _check_and_reconcile_vec_drift(conn: AnyConnection, db_path: Path) -> None:
     """
     try:
         row_m = conn.execute(
-            "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
+            "SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL"
         ).fetchone()
         n_memories = row_m[0] if row_m is not None else 0
         row_vec = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()
@@ -741,11 +741,11 @@ def _check_and_reconcile_vec_drift(conn: AnyConnection, db_path: Path) -> None:
         # un-delete later is cheap.
         n_orphan_vec = conn.execute(
             "DELETE FROM memory_vec_keys WHERE memory_id NOT IN "
-            "(SELECT id FROM memories)"
+            "(SELECT id FROM tenant_memories)"
         ).rowcount
         n_orphan_emb = conn.execute(
             "DELETE FROM memory_embeddings WHERE memory_id NOT IN "
-            "(SELECT id FROM memories)"
+            "(SELECT id FROM tenant_memories)"
         ).rowcount
         if n_orphan_vec or n_orphan_emb:
             conn.commit()

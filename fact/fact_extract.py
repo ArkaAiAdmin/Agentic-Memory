@@ -941,7 +941,7 @@ def _should_use_llm_for_memory(conn: AnyConnection, memory_id: str) -> bool:
     # Look up the memory's pinned status + importance_score
     try:
         row = conn.execute(
-            "SELECT pinned, importance_score FROM memories WHERE id = ?",
+            "SELECT pinned, importance_score FROM tenant_memories WHERE id = ?",
             (memory_id,),
         ).fetchone()
     except Exception:

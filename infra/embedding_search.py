@@ -569,7 +569,7 @@ class EmbeddingSearch:
                     mid = "unknown"
                     for mid, content, tags, source_file in db.execute(
                         "SELECT m.id, m.content, m.tags, m.source_file "
-                        "FROM memories m LEFT JOIN memory_embeddings e "
+                        "FROM tenant_memories m LEFT JOIN memory_embeddings e "
                         "  ON e.memory_id = m.id "
                         "WHERE m.deleted_at IS NULL "
                         "  AND (e.memory_id IS NULL OR e.updated_at < ?)",
@@ -811,7 +811,7 @@ class EmbeddingSearch:
         # the right answer (1.9s on 10K, 13s on 100K).
         try:
             unindexed = db.execute(
-                "SELECT m.id FROM memories m "
+                "SELECT m.id FROM tenant_memories m "
                 "WHERE m.deleted_at IS NULL "
                 "AND NOT EXISTS "
                 "  (SELECT 1 FROM memory_vec_keys k WHERE k.memory_id = m.id) "
@@ -844,7 +844,7 @@ class EmbeddingSearch:
         placeholders = ",".join("?" for _ in candidate_mids)
         try:
             mem_rows = db.execute(
-                f"SELECT id, content, source_file, tags FROM memories "
+                f"SELECT id, content, source_file, tags FROM tenant_memories "
                 f"WHERE id IN ({placeholders}) AND deleted_at IS NULL",
                 candidate_mids,
             ).fetchall()
@@ -967,7 +967,7 @@ class EmbeddingSearch:
             return "Embedding model not loaded."
         # Get all memories (the candidate set).
         rows = db.execute(
-            "SELECT id, content, source_file, tags FROM memories WHERE deleted_at IS NULL"
+            "SELECT id, content, source_file, tags FROM tenant_memories WHERE deleted_at IS NULL"
         ).fetchall()
         if not rows:
             return "No memories found."
@@ -1139,7 +1139,7 @@ class EmbeddingSearch:
                 if candidate_mids:
                     placeholders = ",".join("?" for _ in candidate_mids)
                     mem_rows = db.execute(
-                        f"SELECT id, content, source_file, tags FROM memories "
+                        f"SELECT id, content, source_file, tags FROM tenant_memories "
                         f"WHERE id IN ({placeholders}) AND deleted_at IS NULL",
                         candidate_mids,
                     ).fetchall()
