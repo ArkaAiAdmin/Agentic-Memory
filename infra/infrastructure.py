@@ -189,6 +189,26 @@ def _try_extract_result_meta(result: str, ctx: dict) -> None:
         ctx["results_count"] = r["count"]
 
 
+def _resolve_principal_for_audit() -> str | None:
+    """Resolve the current principal for audit logging.
+
+    Checks the agent context (MCP request context) for a ``principal_id``
+    attribute.  Falls back to ``None`` (no principal asserted) when not
+    running under an authenticated MCP request — expected for
+    unauthenticated deployments and direct Python callers.
+    """
+    try:
+        from agent_context import get_agent
+
+        ctx = get_agent()
+        principal_id = getattr(ctx, "principal_id", None)
+        if principal_id:
+            return principal_id
+    except (ImportError, Exception):
+        pass
+    return None
+
+
 def with_audit(tool_name: str):
     """Decorator: wrap an MCP tool with audit logging + rate limiting.
 
@@ -210,10 +230,12 @@ def with_audit(tool_name: str):
             db_path = _resolve_active_db_path()
             audit_args = dict(kwargs) if kwargs else {}
             audit_args.setdefault("tenant_id", "default")
+            principal_id = _resolve_principal_for_audit()
             with audit.audit(
                 tool_name,
                 args=audit_args,
                 db_path=db_path,
+                principal_id=principal_id,
             ) as ctx:
                 result = func(*args, **kwargs)
                 _try_extract_result_meta(result, ctx)

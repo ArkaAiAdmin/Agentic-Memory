@@ -49,22 +49,26 @@ def _resolve_auth_db_path() -> str | None:
 
 
 def _get_principal_from_context() -> str | None:
-    """Resolve the current principal from MCP request context.
+    """Resolve the current principal for RBAC + audit logging.
 
-    Phase 1: checks MEMORY_SYNC_TOKEN or agent context.
-    Phase 2: will use JWT claims from the MCP transport layer.
+    The :class:`~agent_context.AgentContext` dataclass carries the
+    per-thread agent identity (``agent_id``, ``display_name``, etc.).
+    ``principal_id`` is not a native field on that dataclass; the agent
+    identity and the principal are one and the same in the current
+    implementation, so ``agent_id`` is returned as the principal id.
+
+    Returns ``None`` when no agent context has been activated (e.g.
+    unauthenticated mode).
     """
-    # Check agent context for principal
     try:
         from agent_context import get_agent
+
         ctx = get_agent()
-        # Agent context may carry a principal_id from the MCP layer
-        principal_id = getattr(ctx, "principal_id", None)
-        if principal_id:
-            return principal_id
+        agent_id = getattr(ctx, "agent_id", None)
+        if agent_id:
+            return agent_id
     except (ImportError, Exception):
         pass
-    # No principal resolved = unauthenticated mode
     return None
 
 

@@ -73,6 +73,34 @@ from infra.audit_sink import redact_audit_value, REDACTED_MASK
 # Backwards-compatible alias (kept so any in-repo caller still works).
 _redact_args = redact_audit_value
 
+# ---------------------------------------------------------------------------
+# Identity resolution for audit rows
+# ---------------------------------------------------------------------------
+# The AgentContext dataclass (agent_context.py) stores the per-thread agent
+# identity but does not carry a ``principal_id`` attribute directly — the
+# canonical identity field is ``agent_id``.  Both are equivalent in the
+# current codebase (RBAC uses agent_id as the principal id), so we resolve
+# whichever is available and use it for both ``principal_id`` and
+# ``tenant_id`` when the caller does not supply them explicitly.
+
+
+def _resolve_audit_principal_and_tenant() -> tuple[str | None, str | None]:
+    """Return ``(principal_id, tenant_id)`` from the current agent context.
+
+    Falls back to ``(None, None)`` when no agent context is active (e.g.
+    unauthenticated or direct-Python callers).
+    """
+    principal_id: str | None = None
+    try:
+        from agent_context import get_agent
+
+        ctx = get_agent()
+        principal_id = getattr(ctx, "principal_id", None) or getattr(ctx, "agent_id", None)
+    except (ImportError, Exception):
+        pass
+    return principal_id, principal_id  # In this codebase, agent_id IS the tenant id.
+
+
 # Pending counter — incremented on enqueue, decremented after the
 # writer thread has finished processing (INSERT or drop). Lets
 # ``flush_audit`` block until the writer is genuinely idle, not just
@@ -180,8 +208,8 @@ def _flush_audit_rows(rows: list) -> None:
                     conn.executemany(
                         "INSERT INTO memory_audit_log "
                         "(ts, tool, args, results_count, top1_id, "
-                        "latency_ms, error, request_id, principal_id) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "latency_ms, error, request_id, principal_id, tenant_id) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         [
                             (
                                 r["ts"],
@@ -193,6 +221,7 @@ def _flush_audit_rows(rows: list) -> None:
                                 r["error"],
                                 r["request_id"],
                                 r["principal_id"],
+                                r.get("tenant_id"),
                             )
                             for r in batch
                         ],
@@ -246,6 +275,10 @@ def enqueue_audit(
         error: Error message string if the call failed. None on
             success.
         request_id: Optional correlation id for distributed tracing.
+        principal_id: Identity of the caller.  When ``None``, the
+            current agent context is consulted automatically, so
+            callers that drive tools via the agent loop do not
+            need to pass this explicitly.
 
     Note:
         Safe to call from any thread. If the queue is full the row is
@@ -260,6 +293,13 @@ def enqueue_audit(
         args_json = json.dumps(redacted_args, default=str) if redacted_args is not None else None
     except (TypeError, ValueError):
         args_json = repr(redacted_args)
+    # Resolve caller identity: explicit kwarg wins, otherwise fall back to
+    # the current agent context (same logic as _resolve_principal_for_audit
+    # in infra.infrastructure so the with_audit decorator and direct calls
+    # stay consistent).
+    tenant_id = None
+    if principal_id is None:
+        principal_id, tenant_id = _resolve_audit_principal_and_tenant()
     row = {
         "ts": time.time(),
         "tool": tool,
@@ -270,6 +310,7 @@ def enqueue_audit(
         "error": error,
         "request_id": request_id,
         "principal_id": principal_id,
+        "tenant_id": tenant_id,
         "db_path": db_path,
     }
     global _PENDING

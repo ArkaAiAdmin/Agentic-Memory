@@ -1005,8 +1005,6 @@ class TestAuditLogTenant:
             if row is None:
                 pytest.skip("no audit row")
             assert row is not None
-            if row[0] == "default":
-                pytest.xfail("AUDIT GAP: tenant_id not populated")
             assert row[0] == "agent-a"
             assert row[1] == "memory_search"
             assert row[2] > 0
@@ -1027,8 +1025,10 @@ class TestAuditLogTenant:
         if not rows:
             pytest.skip("no audit rows")
         tids = {r[0] for r in rows}
-        if tids == {"default"}:
-            pytest.xfail("AUDIT GAP: all tenant_ids are 'default'")
+        assert "default" not in tids or len(tids) > 1, (
+            "All audit rows show tenant_id='default'; principal context was not propagated"
+        )
+        assert tids == {"agent-a", "agent-b"}, f"Expected distinct tenant_ids, got: {tids}"
 
     def test_required_columns(self, db_path: Path):
         cols = _col_set(db_path, "memory_audit_log")
