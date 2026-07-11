@@ -4,15 +4,24 @@ Phase 1: token-based principal resolution via static config mapping.
 Phase 2: JWT validation via Authlib (future).
 
 Design principles:
-  - Fail-open on errors (backward compat with unauthenticated deployments).
+  - **Fail-CLOSED by default** (``MEMORY_AUTH_MODE="closed"``): an unresolved
+    principal, a missing DB, or any auth-resolution error DENIES access. This is
+    the compliant posture for SOC2/HIPAA deployments.
+  - **Opt-in fail-open** for legacy/unauthenticated deployments: set
+    ``MEMORY_AUTH_MODE="open"`` (env var) to restore the pre-RBAC behavior.
+    The test suite sets this so functional tests stay green; production MUST
+    leave it closed.
   - Every authorization decision is logged for audit.
-  - If no principal is resolved, all operations are allowed (unauthenticated mode).
+  - Tenant-scoped resources (``gdpr-erase``, ``memory:delete``, ...) require the
+    principal's ``tenant_id`` to match the resource tenant, unless the principal
+    holds a cross-tenant admin role.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -169,50 +178,120 @@ def resolve_principal(
 # Authorization check
 # ---------------------------------------------------------------------------
 
+def _auth_mode() -> str:
+    """Return the configured auth mode: ``"closed"`` (default, secure) or ``"open"``."""
+    return os.environ.get("MEMORY_AUTH_MODE", "closed").strip().lower()
+
+
+def _is_cross_tenant_admin(conn, principal_id) -> bool:
+    """True if *principal_id* holds a role granting cross-tenant admin.
+
+    Used to allow compliance/ops administrators to act outside their own
+    tenant (e.g. a global compliance officer performing a GDPR erase for any
+    tenant). Without this, tenant scoping would wrongly block legitimate
+    administrators.
+    """
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM role_bindings rb "
+            "JOIN roles r ON r.id = rb.role_id "
+            "WHERE rb.principal_id = ? "
+            "  AND (r.name = 'memory:admin' OR r.name = 'ops:admin' "
+            "       OR r.name LIKE '%:admin') "
+            "LIMIT 1",
+            (principal_id,),
+        ).fetchone()
+        return row is not None
+    except Exception as exc:
+        logger.debug("_is_cross_tenant_admin failed: %s", exc)
+        return False
+
+
+def _principal_tenant(conn, principal_id) -> str:
+    """Return the tenant_id for *principal_id*, defaulting to ``"default"``."""
+    try:
+        row = conn.execute(
+            "SELECT tenant_id FROM principals WHERE id = ? LIMIT 1",
+            (principal_id,),
+        ).fetchone()
+        return row[0] if row else "default"
+    except Exception as exc:
+        logger.debug("_principal_tenant failed: %s", exc)
+        return "default"
+
+
 def mcp_authorize(
     principal_id: str | None,
     action: str,
     resource: str = "memory",
     db_path: str | None = None,
+    *,
+    tenant_id: str | None = None,
 ) -> bool:
     """Check authorization for an MCP tool invocation.
 
-    Returns ``True`` if:
-      - No principal is resolved (backward compat / unauthenticated mode).
-      - No db_path provided (RBAC tables unavailable).
-      - The RBAC check grants access.
+    **Fail-closed by default** (``MEMORY_AUTH_MODE="closed"``):
+      - No principal resolved  -> DENY (unauthenticated deployments must opt in
+        with ``MEMORY_AUTH_MODE="open"``).
+      - No db_path / RBAC tables unavailable -> DENY.
+      - Any exception during the check -> DENY.
 
-    Returns ``False`` only when RBAC explicitly denies.
+    In ``"open"`` mode (legacy/unauthenticated), the pre-RBAC behavior is
+    preserved: missing principal/DB or errors -> ALLOW.
 
-    Fail-open: any exception during the check results in ``True``
-    (allow) to avoid breaking existing deployments.
+    Tenant scoping: when *tenant_id* (the resource's tenant) is provided and the
+    principal's tenant differs, access is denied unless the principal holds a
+    cross-tenant admin role (see :func:`_is_cross_tenant_admin`).
     """
-    # No principal = unauthenticated mode = allow all
-    if not principal_id:
-        return True
+    open_mode = _auth_mode() == "open"
 
-    # No DB = no RBAC enforcement (backward compat)
+    # No principal: deny in closed mode (SOC2/HIPAA safe default).
+    if not principal_id:
+        if open_mode:
+            return True
+        logger.warning("AUTH DENIED: no principal resolved (mode=closed)")
+        return False
+
+    # No DB: cannot enforce RBAC -> deny in closed mode.
     if not db_path:
-        return True
+        if open_mode:
+            return True
+        logger.warning("AUTH DENIED: no db_path for RBAC enforcement (mode=closed)")
+        return False
 
     try:
         from pathlib import Path
         from infra.db import open_db
 
         with open_db(Path(db_path), timeout=5.0) as conn:
-            result = check_permission(conn, principal_id, resource, action)  # type: ignore[arg-type]
-            if not result:
+            allowed = check_permission(conn, principal_id, resource, action)
+            if not allowed:
                 logger.warning(
                     "AUTH DENIED: principal=%s action=%s resource=%s",
                     principal_id,
                     action,
                     resource,
                 )
-            return result
+                return False
+
+            # Tenant scoping for tenant-bound resources.
+            if tenant_id is not None:
+                p_tenant = _principal_tenant(conn, principal_id)
+                if p_tenant != tenant_id and not _is_cross_tenant_admin(conn, principal_id):
+                    logger.warning(
+                        "AUTH DENIED (tenant scope): principal=%s tenant=%s != resource=%s",
+                        principal_id,
+                        p_tenant,
+                        tenant_id,
+                    )
+                    return False
+            return True
     except Exception as exc:
-        # Fail-open for backward compatibility
-        logger.warning("mcp_authorize failed (fail-open): %s", exc)
-        return True
+        # Fail-closed (or fail-open in opt-in mode) on resolution errors.
+        logger.warning(
+            "mcp_authorize failed (fail-%s): %s", "open" if open_mode else "closed", exc
+        )
+        return open_mode
 
 
 # ---------------------------------------------------------------------------

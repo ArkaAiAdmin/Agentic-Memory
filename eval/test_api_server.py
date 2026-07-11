@@ -143,6 +143,32 @@ class TestAPIServer(unittest.TestCase):
         self.assertIn("formatting", get_data["tags"])
         self.assertEqual(get_data["category"], "sdk")
 
+    def test_is_global_defaults_to_false(self):
+        # G6: omitting is_global from the request body must default to False.
+        # The REST server must NOT share writes into the global pool by
+        # default (the pre-hardening default was True, a cross-tenant hole).
+        # We capture the kwarg passed to MemoryClient.save rather than
+        # asserting on a DB column, because is_global is not stored as a
+        # standalone column on the memories table.
+        captured = {}
+        original_save = MemoryClient.save
+
+        def fake_save(self, **kwargs):
+            captured["is_global"] = kwargs.get("is_global")
+            return "fake-note-id-" + str(kwargs.get("category", "x"))
+
+        MemoryClient.save = fake_save
+        try:
+            status, data = self._http_request("/api/v1/memories", "POST", {
+                "content": "default is_global regression check",
+                "category": "sdk",
+            })
+        finally:
+            MemoryClient.save = original_save
+        self.assertEqual(status, 201)
+        self.assertEqual(captured.get("is_global"), False,
+                         "is_global must default to False when omitted from the body")
+
     def test_search_memories(self):
         # Add a record
         status, data = self._http_request("/api/v1/memories", "POST", {

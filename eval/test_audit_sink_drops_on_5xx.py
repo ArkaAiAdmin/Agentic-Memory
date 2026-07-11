@@ -73,3 +73,19 @@ class TestDropOn5xx:
                 sink.emit(EVENT)
         mock_warn.assert_called_once()
         assert "dropped event" in mock_warn.call_args[0][0]
+
+    def test_sustained_5xx_never_blocks_caller(self):
+        """A burst of sustained 5xx responses drops every event without ever
+        blocking the caller (GAP 7).
+
+        NOTE: a dropped audit event is only logged, not re-emitted to a
+        separate meta-audit channel. That meta-audit channel is a known
+        follow-up item and is intentionally out of scope here.
+        """
+        sink = _sink(max_retries=1, backoff_base_s=0.001, backoff_cap_s=0.002)
+        mock_resp = MagicMock(status_code=500)
+        with patch.object(sink._session, "post", return_value=mock_resp) as mp:
+            for _ in range(20):
+                sink.emit(EVENT)
+        # 20 events * (1 initial + 1 retry) == 40 posts, none raised.
+        assert mp.call_count == 40

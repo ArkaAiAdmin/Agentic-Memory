@@ -577,14 +577,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._error(f"Integrity check failed: {e}", 500)
 
     def _handle_gdpr_erase(self) -> None:
-        """POST /api/v1/compliance/gdpr/erase — GDPR Right-to-Be-Forgotten."""
+        """POST /api/v1/compliance/gdpr/erase — GDPR Right-to-Be-Forgotten.
+
+        The target tenant is resolved from the authenticated principal, never
+        from the request body (GAP 1 / GAP 5). A caller cannot erase a tenant
+        other than their own unless they hold a cross-tenant admin role.
+        """
         try:
             req = self._read_json_body()
         except ValueError as e:
             self._error(str(e), 400)
             return
         data_subject_sub = req.get("data_subject_sub", "")
-        tenant_id = req.get("tenant_id", "default")
         if not data_subject_sub:
             self._error("data_subject_sub is required", 400)
             return
@@ -594,15 +598,23 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             from infra.db import open_db
             from pathlib import Path
 
-            # RBAC gate: compliance:gdpr-erase
+            principal = getattr(self, "_principal", None)
+            # Resolve tenant from the authenticated principal, NOT the body.
+            tenant_id = principal.tenant_id if principal else "default"
+
+            # RBAC gate: compliance:gdpr-erase (tenant-scoped).
             allowed = mcp_authorize(
                 principal_id=getattr(self, "_principal_id", None),
                 action="compliance",
                 resource="gdpr-erase",
                 db_path=str(self.server.db_path) if hasattr(self.server, "db_path") else None,
+                tenant_id=tenant_id,
             )
             if not allowed:
-                self._error("Forbidden: requires compliance:gdpr-erase role", 403)
+                self._error(
+                    "Forbidden: requires compliance:gdpr-erase role for this tenant",
+                    403,
+                )
                 return
 
             with open_db(Path(str(self.server.db_path))) as conn:

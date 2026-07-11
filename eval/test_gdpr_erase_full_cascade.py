@@ -153,7 +153,7 @@ class TestGDPREraseFullCascade:
         assert result["status"] == "completed"
         assert remaining == 0
 
-    def test_deletes_memory_audit_log(self, db_path: Path):
+    def test_anonymizes_memory_audit_log(self, db_path: Path):
         from infra.gdpr import gdpr_erase
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys=ON")
@@ -162,15 +162,21 @@ class TestGDPREraseFullCascade:
             ("audit-mem", "test", "tenant-a"),
         )
         conn.execute(
-            "INSERT INTO memory_audit_log (ts, tool, args, latency_ms, tenant_id) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (1712345678.0, "gdpr_test", "{}", 0.0, "tenant-a"),
+            "INSERT INTO memory_audit_log (ts, tool, args, latency_ms, tenant_id, principal_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (1712345678.0, "gdpr_test", "{}", 0.0, "tenant-a", "orig-principal"),
         )
         conn.commit()
         result = gdpr_erase(conn, principal_id="p1", data_subject_sub="user@a.com", tenant_id="tenant-a")
-        remaining = conn.execute(
-            "SELECT COUNT(*) FROM memory_audit_log WHERE tenant_id='tenant-a'"
-        ).fetchone()[0]
+        rows = conn.execute(
+            "SELECT principal_id, args FROM memory_audit_log WHERE tenant_id='tenant-a'"
+        ).fetchall()
         conn.close()
         assert result["status"] == "completed"
-        assert remaining == 0
+        assert len(rows) == 1, "audit row must be preserved (anonymized, not deleted)"
+        assert rows[0][0].startswith("erased-subject-"), (
+            f"principal_id must be tombstone: {rows[0][0]}"
+        )
+        assert rows[0][1] == '{"redacted": true}', (
+            f"args must be redacted: {rows[0][1]}"
+        )

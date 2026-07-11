@@ -243,17 +243,30 @@ def gdpr_erase(
         )
         rows_deleted["memories"] = cur.rowcount
 
-        # memory_audit_log
+        # memory_audit_log — ANONYMIZE, never bulk-delete (GAP 3).
+        # Audit evidence must be retained for SOC2 (>=1yr) / HIPAA (>=6yr).
+        # We tombstone the principal and redact the args payload, preserving
+        # the structural row so the audit trail survives a data-subject erase.
+        tombstone = f"erased-subject-{data_subject_hash}"
         try:
             cur = conn.execute(
-                "DELETE FROM memory_audit_log WHERE tenant_id = ?",
-                (tenant_id,),
+                "UPDATE memory_audit_log "
+                "SET principal_id = ?, args = ? "
+                "WHERE tenant_id = ?",
+                (tombstone, '{"redacted": true}', tenant_id),
             )
-            rows_deleted["memory_audit_log"] = cur.rowcount
+            rows_deleted["memory_audit_log_anonymized"] = cur.rowcount
         except sqlite3.OperationalError:
-            # tenant_id column may not exist on older schemas
-            cur = conn.execute("DELETE FROM memory_audit_log")
-            rows_deleted["memory_audit_log"] = cur.rowcount
+            # Pre-V44 schema (no tenant_id column): never bulk-delete audit
+            # evidence. Anonymize all rows instead of erasing them.
+            try:
+                cur = conn.execute(
+                    "UPDATE memory_audit_log SET principal_id = ?, args = ?",
+                    (tombstone, '{"redacted": true}'),
+                )
+                rows_deleted["memory_audit_log_anonymized"] = cur.rowcount
+            except sqlite3.OperationalError:
+                rows_deleted["memory_audit_log_anonymized"] = 0
 
         # Step 4: delete .md files
         for p in md_paths:

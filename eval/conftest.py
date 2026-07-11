@@ -18,6 +18,13 @@ from pathlib import Path
 
 WORKTREE_ROOT = str(Path(__file__).resolve().parent.parent)
 
+# Auth mode: tests exercise functionality, not auth enforcement. The secure
+# default for deployments is "closed" (fail-closed authorizer); the test
+# suite opts into the legacy "open" behavior so the existing functional
+# tests stay green. New adversarial auth tests set MEMORY_AUTH_MODE="closed"
+# explicitly within the test.
+os.environ.setdefault("MEMORY_AUTH_MODE", "open")
+
 # ---------------------------------------------------------------------------
 # Test embedding config — activates when MEMORY_TEST_EMBEDDING=1
 # ---------------------------------------------------------------------------

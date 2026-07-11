@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 import argparse
 import json
+import os
 import sys
 import sqlite3
 from contextlib import closing
@@ -65,22 +66,28 @@ def collect_gauges(db_path: Path) -> str:
     try:
         with closing(sqlite3.connect(str(db_path), timeout=5)) as conn:
             conn.execute("PRAGMA foreign_keys=ON")
+            # Tenant scoping (GAP 10): when MEMORY_METRICS_TENANT is set,
+            # metrics report only that tenant instead of a cross-tenant
+            # aggregate. The value is operator-configured (env), not
+            # request-supplied, so interpolation here is safe.
+            tenant = os.environ.get("MEMORY_METRICS_TENANT", "").strip()
+            tclause = f" WHERE tenant_id = '{tenant}'" if tenant else ""
             # Single query with scalar subqueries replaces 11+ round-trips
-            row = conn.execute("""
+            row = conn.execute(f"""
                 SELECT
-                  (SELECT COUNT(*) FROM memories),
-                  (SELECT COUNT(*) FROM memories WHERE pinned=1),
+                  (SELECT COUNT(*) FROM memories{tclause}),
+                  (SELECT COUNT(*) FROM memories WHERE pinned=1{tclause}),
                   (SELECT COUNT(*) FROM memory_embeddings),
                   (SELECT COUNT(*) FROM kg_entities),
                   (SELECT COUNT(*) FROM kg_edges),
                   (SELECT COUNT(*) FROM memory_chunks),
                   (SELECT COUNT(*) FROM memory_ctr_feedback),
                   (SELECT COUNT(*) FROM concept_drift),
-                  (SELECT COUNT(*) FROM memory_audit_log),
-                  (SELECT COUNT(*) FROM memory_audit_log WHERE error IS NOT NULL),
-                  (SELECT AVG(latency_ms) FROM memory_audit_log),
-                  (SELECT MIN(latency_ms) FROM memory_audit_log),
-                  (SELECT MAX(latency_ms) FROM memory_audit_log)
+                  (SELECT COUNT(*) FROM memory_audit_log{tclause}),
+                  (SELECT COUNT(*) FROM memory_audit_log WHERE error IS NOT NULL{tclause}),
+                  (SELECT AVG(latency_ms) FROM memory_audit_log{tclause}),
+                  (SELECT MIN(latency_ms) FROM memory_audit_log{tclause}),
+                  (SELECT MAX(latency_ms) FROM memory_audit_log{tclause})
             """).fetchone()
             if row:
                 cols = [

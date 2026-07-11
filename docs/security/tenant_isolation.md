@@ -25,19 +25,20 @@ The `tenant_id()` SQLite function is registered per-connection via `connection_p
 | Background worker | `tenant_memories` view | `background/background_worker.py` |
 | Sync server/client | `tenant_memories` view | `infra/sync_server.py`, `infra/sync_client.py` |
 
-## Schema (Migrations 042-044)
+## Schema (Migrations 042-052)
 
 - **042**: `memories.tenant_id TEXT NOT NULL DEFAULT 'default' CHECK(tenant_id != '')`
 - **043**: `principals` + `principal_identities` tables (SSO round-tripping)
 - **044**: `memory_audit_log` gets `tenant_id` + `principal_id` columns
+- **050**: `kg_facts`, `kg_entities` get `tenant_id` column
+- **052**: backfills `kg_facts`/`kg_entities` `tenant_id` from parent memory
 
-## Known Gaps (Phase 1/3)
+## Known Gaps (remaining)
 
-- `kg_facts`, `kg_edges` lack `tenant_id` column
 - `memory_field_crdt` lacks agent/tenant columns
-- Audit log doesn't populate `tenant_id` on writes
-- SyncServer lacks `tenant_id` filtering
-- RBAC layer not yet implemented
+- SyncServer lacks `tenant_id` filtering on reads
+- Audit log `tenant_id`/`principal_id` population on writes is best-effort
+- GDPR erase resolves tenant from the principal, not the request body (fixed in Phase hardening)
 
 ## Test Coverage
 
