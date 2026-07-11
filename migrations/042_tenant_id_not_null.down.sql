@@ -6,12 +6,12 @@
 -- Step 1: Create old-style table with nullable tenant_id
 CREATE TABLE memories_old (
     id                TEXT PRIMARY KEY,
-    content           TEXT    NOT NULL,
-    source_file       TEXT    NOT NULL,
+    content           TEXT    NOT NULL DEFAULT '',
+    source_file       TEXT    NOT NULL DEFAULT '',
     tags              TEXT    DEFAULT '[]',
-    created_at        TEXT    NOT NULL,
-    updated_at        TEXT    NOT NULL,
-    observed_at       TEXT    NOT NULL,
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    observed_at       TEXT    NOT NULL DEFAULT (datetime('now')),
     pinned            INTEGER DEFAULT 0,
     importance        INTEGER DEFAULT 3,
     decay             TEXT    DEFAULT 'none',
@@ -49,7 +49,13 @@ INSERT INTO memories_old (
     category, tier, importance_score, metadata
 )
 SELECT
-    id, content, source_file, tags, created_at, updated_at, observed_at,
+    id,
+    COALESCE(content, ''),
+    COALESCE(source_file, ''),
+    tags,
+    COALESCE(created_at, ''),
+    COALESCE(updated_at, ''),
+    COALESCE(observed_at, ''),
     pinned, importance, decay, score, supersedes, repo_id, access_count,
     success_score, fitness_score, conflict_policy, version_vector,
     logical_clock, consolidation_state, tenant_id, valid_from, valid_to,
@@ -57,7 +63,10 @@ SELECT
     category, tier, importance_score, metadata
 FROM memories;
 
--- Step 3: Drop current table and rename old
+-- Step 3: Drop current table and rename old.
+-- Drop the tenant_memories TEMP VIEW first (same reason as the up-migration):
+-- a view depending on `memories` breaks ALTER ... RENAME TO memories.
+DROP VIEW IF EXISTS tenant_memories;
 DROP TABLE memories;
 ALTER TABLE memories_old RENAME TO memories;
 

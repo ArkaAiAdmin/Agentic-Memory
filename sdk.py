@@ -62,6 +62,7 @@ class Memory:
         db_path: Optional[str | Path] = None,
         user_id: str = "default",
         config: Optional[dict] = None,
+        principal_id: str | None = None,
     ):
         if db_path:
             self._db_path = Path(db_path)
@@ -71,6 +72,7 @@ class Memory:
             self._db_path = Path(get_config().db_path)
         self._user_id = user_id
         self._config = config or {}
+        self._principal_id = principal_id
 
     def add(
         self,
@@ -91,6 +93,9 @@ class Memory:
                 opted in.
         """
         from infra._lazy_imports import save_memory_auto
+        if self._principal_id:
+            from agent_context import _AGENT_CONTEXT
+            _AGENT_CONTEXT.principal_id = self._principal_id
 
         ts = time.strftime("%Y%m%d_%H%M%S")
         title_slug = f"sdk-auto-{ts}-{hash(content) & 0xFFFF:04x}"
@@ -146,6 +151,9 @@ class Memory:
         Returns True if the note was found and deleted.
         """
         from memory_delete import soft_delete_note
+        if self._principal_id:
+            from agent_context import _AGENT_CONTEXT
+            _AGENT_CONTEXT.principal_id = self._principal_id
 
         return soft_delete_note(str(self._db_path), note_id)
 
@@ -251,6 +259,7 @@ class AgentMemory:
         display_name: str = "",
         parent_agent: Optional[str] = None,
         db_path: Optional[str | Path] = None,
+        principal_id: str | None = None,
     ):
         from agent_context import init_agent
 
@@ -259,7 +268,8 @@ class AgentMemory:
             display_name=display_name or agent_id,
             parent_agent=parent_agent,
         )
-        self._mem = Memory(db_path=db_path)
+        self._mem = Memory(db_path=db_path, principal_id=principal_id)
+        self._principal_id = principal_id
 
     def save(
         self,
@@ -276,6 +286,9 @@ class AgentMemory:
                 scope. Defaults to False to keep agent memories scoped.
         """
         from agent_context import agent_save
+        if self._principal_id:
+            from agent_context import _AGENT_CONTEXT
+            _AGENT_CONTEXT.principal_id = self._principal_id
 
         return str(agent_save(
             content=content,

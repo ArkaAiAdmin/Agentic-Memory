@@ -118,6 +118,27 @@ def _bootstrap_db(p: Path) -> None:
         except Exception:
             pass
         conn.commit()
+        # Seed RBAC so agent contexts are authorized for read/write/delete.
+        try:
+            from infra.rbac import seed_default_roles, grant_role
+
+            seed_default_roles(conn, tenant_id="default")
+            for agent_id in ("agent-a", "agent-b", "agent-c", "default"):
+                conn.execute(
+                    "INSERT OR IGNORE INTO principals (id, kind, tenant_id, display_name) "
+                    "VALUES (?, 'agent', ?, ?)",
+                    (agent_id, agent_id, agent_id),
+                )
+                for role_name in ("memory:read", "memory:write", "memory:delete"):
+                    row = conn.execute(
+                        "SELECT id FROM roles WHERE name=? AND tenant_id='default'",
+                        (role_name,),
+                    ).fetchone()
+                    if row is not None:
+                        grant_role(conn, agent_id, row[0])
+            conn.commit()
+        except Exception:
+            pass
     finally:
         conn.close()
 
@@ -848,6 +869,8 @@ class TestVectorIsolation:
         _insert(db_path, "lessons/vxb", "VXB", tenant_id="agent-b")
         ra = _row(db_path, "lessons/vxa")
         rb = _row(db_path, "lessons/vxb")
+        assert ra is not None
+        assert rb is not None
         assert ra["tenant_id"] == "agent-a"
         assert rb["tenant_id"] == "agent-b"
 
@@ -981,6 +1004,7 @@ class TestAuditLogTenant:
                 ).fetchone()
             if row is None:
                 pytest.skip("no audit row")
+            assert row is not None
             if row[0] == "default":
                 pytest.xfail("AUDIT GAP: tenant_id not populated")
             assert row[0] == "agent-a"
@@ -1038,6 +1062,7 @@ class TestAuditLogTenant:
                 ).fetchone()
             if row is None:
                 pytest.skip("no audit row")
+            assert row is not None
             # tenant_id should not be None (could be 'default' if not populated)
             assert row[0] is not None
         finally:
@@ -1074,10 +1099,12 @@ class TestCRDTIsolation:
     def test_tenant_preserved(self, db_path: Path):
         _insert(db_path, "lessons/cr1", "From A", tenant_id="agent-a")
         r1 = _row(db_path, "lessons/cr1")
+        assert r1 is not None
         assert r1["tenant_id"] == "agent-a"
         assert r1["source_file"] == "agents/agent-a/lessons/cr1"
         _insert(db_path, "lessons/cr1", "From B", tenant_id="agent-b")
         r2 = _row(db_path, "lessons/cr1")
+        assert r2 is not None
         assert r2["tenant_id"] in ("agent-a", "agent-b")
         # Content should be overwritten
         assert r2["content"] in ("From A", "From B")
@@ -1135,7 +1162,7 @@ class TestSyncIsolation:
 
     def test_sync_client_tenant(self, db_path: Path):
         try:
-            from infra.sync_client import SyncClient
+            from infra.sync_client import SyncClient  # type: ignore[attr-defined]
             import inspect
             has = "tenant_id" in inspect.getsource(SyncClient)
         except (ImportError, Exception):

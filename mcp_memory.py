@@ -28,6 +28,19 @@ from mcp_common import (
     resolve_db_for_memory_id,
 )
 from mcp_instance import mcp
+
+
+def _resolve_principal_for_rbac() -> str | None:
+    """Resolve principal ID from agent context for RBAC checks."""
+    try:
+        from agent_context import get_agent
+        ctx = get_agent()
+        principal_id = getattr(ctx, "principal_id", None)
+        if principal_id:
+            return principal_id
+    except (ImportError, Exception):
+        pass
+    return None
 from save_pipeline import save_memory, SaveValidationError
 
 
@@ -455,6 +468,33 @@ def memory_delete(note_id: str, hard: bool = False) -> str:
     try:
         from memory_delete import soft_delete_note, hard_delete_note
 
+        # RBAC: check delete authorization before proceeding
+        try:
+            from infra.authorizer import mcp_authorize, log_authorization_decision
+            from infra.memory_common import get_memory_paths
+            from pathlib import Path
+
+            # Resolve DB path for RBAC check
+            _, local_mem, _ = get_memory_paths()
+            auth_db = str(local_mem / "memory.db") if (local_mem / "memory.db").exists() else None
+            principal_id = _resolve_principal_for_rbac()
+            if not mcp_authorize(principal_id, "delete", "memory", auth_db):
+                log_authorization_decision(
+                    principal_id=principal_id,
+                    action="delete",
+                    resource="memory",
+                    allowed=False,
+                    db_path=auth_db,
+                )
+                return _err(
+                    ErrorCode.AUTHORIZATION_DENIED,
+                    f"Not authorized to delete note '{note_id}'. "
+                    f"Principal '{principal_id or 'anonymous'}' lacks the required role.",
+                )
+        except Exception:
+            # Fail-open: if RBAC subsystem is unavailable, allow the operation
+            pass
+
         try:
             active_dir = _resolve_memory_dir()
         except Exception as e:
@@ -507,6 +547,30 @@ def memory_restore(note_id: str) -> str:
     """
     try:
         from memory_delete import restore_note
+
+        # RBAC: check write authorization before proceeding
+        try:
+            from infra.authorizer import mcp_authorize, log_authorization_decision
+            from infra.memory_common import get_memory_paths
+            from pathlib import Path
+
+            _, local_mem, _ = get_memory_paths()
+            auth_db = str(local_mem / "memory.db") if (local_mem / "memory.db").exists() else None
+            principal_id = _resolve_principal_for_rbac()
+            if not mcp_authorize(principal_id, "write", "memory", auth_db):
+                log_authorization_decision(
+                    principal_id=principal_id,
+                    action="write",
+                    resource="memory",
+                    allowed=False,
+                    db_path=auth_db,
+                )
+                return _err(
+                    ErrorCode.AUTHORIZATION_DENIED,
+                    f"Not authorized to restore note '{note_id}'.",
+                )
+        except Exception:
+            pass
 
         try:
             active_dir = _resolve_memory_dir()

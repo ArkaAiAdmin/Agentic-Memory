@@ -294,12 +294,16 @@ def _validate_sql_columns(columns: str) -> bool:
 def _fetch_rows_by_ids(
     db: AnyConnection,
     ids: list,
-    table: str = "memories",
+    table: str = "tenant_memories",
     columns: str = "id, content, source_file, tags, created_at, fitness_score, importance, pinned, last_accessed, metadata, access_count",
     extra_filter: str = "",
     extra_params: tuple = (),
 ) -> dict:
     """Batch-fetch rows by IDs to avoid N+1 queries. Returns {id: row_tuple}.
+
+    Defaults to the ``tenant_memories`` TEMP VIEW so results are scoped to the
+    current tenant (the connection's ``tenant_id()`` function). Pass
+    ``table="memories"`` explicitly for administrative cross-tenant reads.
 
     Chunks at 500 IDs per query to stay under SQLite's ~999 variable limit.
     """
@@ -1073,7 +1077,7 @@ def _fts_search(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count\n"
             "          FROM memories_fts fts\n"
-            "          JOIN tenant_memories m ON m.rowid = fts.rowid\n"
+            "          JOIN tenant_memories m ON m.id = (SELECT id FROM memories WHERE rowid = fts.rowid)\n"
             f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
             "          ORDER BY fts.rank\n"
             "          LIMIT ?",
@@ -1087,7 +1091,7 @@ def _fts_search(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count\n"
         "      FROM memories_fts fts\n"
-        "      JOIN tenant_memories m ON m.rowid = fts.rowid\n"
+        "      JOIN tenant_memories m ON m.id = (SELECT id FROM memories WHERE rowid = fts.rowid)\n"
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
         "      ORDER BY fts.rank\n"
         "      LIMIT ?",
@@ -2368,6 +2372,7 @@ def search_memories(
         + f":bs={belief_status or ''}:es={epistemic_source or ''}:ft={fact_type or ''}:ms={memory_source or ''}"
         + (f":tags={','.join(sorted(tags))}" if tags else "")
         + f":swm={int(shared_with_me)}"
+        + f":tid={tenant_id}"
     )
     from infra.cache import cache_touch
 

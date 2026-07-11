@@ -142,24 +142,22 @@ def _insert_memory(conn, **kwargs):
         "tags": "",
         "created_at": "2026-06-10T10:00:00Z",
         "updated_at": "2026-06-10T10:00:00Z",
+        "observed_at": "2026-06-10T10:00:00Z",
         "category": "lessons",
-        "title_slug": "test",
         "importance": 0,
         "pinned": 0,
         "fitness_score": 0.0,
         "deleted_at": None,
         "valid_to": None,
         "superseded_by": None,
-        "hash": "",
-        "embedding_available": 0,
     }
     defaults.update(kwargs)
     conn.execute(
         """INSERT INTO memories
            (id, content, source_file, tags, created_at, updated_at,
-            category, title_slug, importance, pinned, fitness_score,
-            deleted_at, valid_to, superseded_by, hash, embedding_available)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            observed_at, category, importance, pinned, fitness_score,
+            deleted_at, valid_to, superseded_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             defaults["id"],
             defaults["content"],
@@ -167,16 +165,14 @@ def _insert_memory(conn, **kwargs):
             defaults["tags"],
             defaults["created_at"],
             defaults["updated_at"],
+            defaults["observed_at"],
             defaults["category"],
-            defaults["title_slug"],
             defaults["importance"],
             defaults["pinned"],
             defaults["fitness_score"],
             defaults["deleted_at"],
             defaults["valid_to"],
             defaults["superseded_by"],
-            defaults["hash"],
-            defaults["embedding_available"],
         ),
     )
     return defaults["id"]

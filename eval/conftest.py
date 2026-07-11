@@ -78,6 +78,59 @@ faulthandler.dump_traceback_later(15, repeat=True)
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
+# ---------------------------------------------------------------------------
+# Tenant-isolation bootstrap for test connections.
+#
+# The tenant-isolation hardening routes memory reads through the
+# `tenant_memories` TEMP VIEW (and the `tenant_id()` SQLite function), which
+# is created on every connection handed out by infra/db.py's connection
+# pool. Many tests, however, open raw `sqlite3.connect(...)` connections to
+# their bootstrapped temp DBs and never go through the pool — so the view
+# (and the function) are absent, and any query against `tenant_memories`
+# raises "no such table: tenant_memories" / "no such function: tenant_id".
+#
+# Rather than seeding the view in ~20 individual test files, we seed it on
+# every sqlite connection opened during the test session *once the `memories`
+# table already exists*. The seeding is idempotent and best-effort: it is a
+# no-op for the bootstrap/migration connection (which opens against an empty
+# file and builds the schema afterwards, so seeding there would break
+# migration 042's RENAME), for connections that already have the view (e.g.
+# those created by the pool), and for any connection where `memories` is not
+# yet present. This mirrors the production connection-setup contract for the
+# test environment.
+# ---------------------------------------------------------------------------
+import sqlite3 as _sqlite3
+
+_ami_original_connect = _sqlite3.connect
+
+
+def _ami_patched_connect(*args, **kwargs):
+    conn = _ami_original_connect(*args, **kwargs)
+    try:
+        conn.create_function("tenant_id", 0, lambda: "default")
+        # Only seed the view once `memories` already exists in this database.
+        # The bootstrap/migration connection opens against an empty file and
+        # builds the schema afterwards; seeding the view there would create a
+        # dependency that breaks migration 042's `ALTER ... RENAME TO memories`
+        # (a view referencing `memories` forces "no such table: main.memories"
+        # at RENAME time). The test's later connection opens against the
+        # already-built file and gets the view here.
+        _has = conn.execute(
+            "SELECT 1 FROM sqlite_master "
+            "WHERE type IN ('table','view') AND name='memories'"
+        ).fetchone()
+        if _has:
+            conn.execute(
+                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+            )
+    except Exception:
+        pass
+    return conn
+
+
+_sqlite3.connect = _ami_patched_connect
+
 
 def embedding_available() -> bool:
     """Check if the embedding model (model2vec) is loaded and usable."""

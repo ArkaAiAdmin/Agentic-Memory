@@ -36,6 +36,82 @@ from mcp_common import (
 from mcp_instance import mcp
 
 # ---------------------------------------------------------------------------
+# RBAC authorization helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_auth_db_path() -> str | None:
+    """Resolve the DB path for RBAC authorization checks."""
+    try:
+        db_path = _resolve_db_path()
+        return str(db_path) if db_path and db_path.exists() else None
+    except Exception:
+        return None
+
+
+def _get_principal_from_context() -> str | None:
+    """Resolve the current principal from MCP request context.
+
+    Phase 1: checks MEMORY_SYNC_TOKEN or agent context.
+    Phase 2: will use JWT claims from the MCP transport layer.
+    """
+    # Check agent context for principal
+    try:
+        from agent_context import get_agent
+        ctx = get_agent()
+        # Agent context may carry a principal_id from the MCP layer
+        principal_id = getattr(ctx, "principal_id", None)
+        if principal_id:
+            return principal_id
+    except (ImportError, Exception):
+        pass
+    # No principal resolved = unauthenticated mode
+    return None
+
+
+def _check_authorization(action: str, resource: str = "memory") -> str | None:
+    """Check RBAC authorization. Returns error string if denied, None if allowed.
+
+    Fail-open: returns None (allow) on any error or when no RBAC is configured.
+    """
+    try:
+        from infra.authorizer import mcp_authorize, log_authorization_decision
+
+        principal_id = _get_principal_from_context()
+        db_path = _resolve_auth_db_path()
+
+        allowed = mcp_authorize(
+            principal_id=principal_id,
+            action=action,
+            resource=resource,
+            db_path=db_path,
+        )
+        if not allowed:
+            log_authorization_decision(
+                principal_id=principal_id,
+                action=action,
+                resource=resource,
+                allowed=False,
+                db_path=db_path,
+            )
+            return _err(
+                ErrorCode.AUTHORIZATION_DENIED,
+                f"Not authorized for '{action}' on '{resource}'. "
+                f"Principal '{principal_id or 'anonymous'}' lacks the required role.",
+            )
+        # Log successful authorization too
+        log_authorization_decision(
+            principal_id=principal_id,
+            action=action,
+            resource=resource,
+            allowed=True,
+            db_path=db_path,
+        )
+        return None
+    except Exception:
+        # Fail-open on any error
+        return None
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -105,6 +181,9 @@ def memory_search(
         shared_with_me: If True, also include memories explicitly shared with
             the current agent (via the shared pool's target_agent_id).
     """
+    auth_err = _check_authorization("search", "memory")
+    if auth_err:
+        return auth_err
     if include_global is None:
         try:
             from agent_context import get_agent
@@ -211,6 +290,9 @@ def memory_save(
         importance: 1-5 (default 3).
         is_global: Save to global memory (default False).
     """
+    auth_err = _check_authorization("write", "memory")
+    if auth_err:
+        return auth_err
     try:
         from config import get_config
         from infra._lazy_imports import save_memory_journal, save_memory
@@ -258,6 +340,9 @@ def memory_review_beliefs(
         older_than_days: Only return beliefs last reviewed more than this many days ago.
         limit: Max results (default 20).
     """
+    auth_err = _check_authorization("search", "memory")
+    if auth_err:
+        return auth_err
     try:
         from infra.db import open_db
         from belief.belief_lifecycle import get_active_beliefs
@@ -349,6 +434,9 @@ def memory_curate_autosave(
         note_ids: List of note IDs to promote/discard (required for promote/discard).
         category: Target category for promotion (default "lessons").
     """
+    auth_err = _check_authorization("write", "memory")
+    if auth_err:
+        return auth_err
     try:
         from pathlib import Path
         from infra.db import open_db
@@ -480,6 +568,9 @@ def memory_delete(
             safety gate: hard deletes cannot be recovered, so they must be explicitly
             confirmed. Soft-deletes (hard=False, the default) are unaffected.
     """
+    auth_err = _check_authorization("delete", "memory")
+    if auth_err:
+        return auth_err
     try:
         from mcp_memory import memory_delete as _delete
 
@@ -514,6 +605,9 @@ def memory_recall(query: str = "", session_id: str = "", tenant_id: str = "defau
         query: What to recall (default: recent activity).
         session_id: Specific session/thread to recall.
     """
+    auth_err = _check_authorization("search", "memory")
+    if auth_err:
+        return auth_err
     try:
         from search.orchestrator import search_memories
 
@@ -566,6 +660,20 @@ def memory_note(
         additions: Text segments to insert (for patch action).
         deletions: Text segments to remove by content match (for patch action).
     """
+    # Map note actions to RBAC actions
+    _note_action_map = {
+        "read": "search",
+        "update": "write",
+        "delete": "delete",
+        "restore": "write",
+        "supersede": "write",
+        "patch": "write",
+        "revert_supersede": "write",
+    }
+    rbac_action = _note_action_map.get(action, "write")
+    auth_err = _check_authorization(rbac_action, "memory")
+    if auth_err:
+        return auth_err
     try:
         if action in ("patch", "supersede", "revert_supersede"):
             from config import get_config
@@ -695,6 +803,9 @@ def memory_learn(
         category: Target category (default: lessons).
         tags: Additional tags.
     """
+    auth_err = _check_authorization("write", "memory")
+    if auth_err:
+        return auth_err
     try:
         from config import get_config
         from infra._lazy_imports import save_memory_journal, save_memory
@@ -744,6 +855,9 @@ def memory_audit(
         limit: Max results (default 20).
         include_errors: Include error entries (default True).
     """
+    auth_err = _check_authorization("search", "memory")
+    if auth_err:
+        return auth_err
     try:
         from mcp_audit import memory_audit_query, memory_circuit_breaker_status
 
@@ -785,6 +899,9 @@ def memory_organize(
         dry_run: Preview without changes (default False).
         confirm: Required when target='full' and dry_run=False (purge is destructive).
     """
+    auth_err = _check_authorization("admin", "maintenance")
+    if auth_err:
+        return auth_err
     try:
         from mcp_rebuild import memory_compact, memory_backfill_all
         from mcp_memory import memory_purge_expired
@@ -850,6 +967,9 @@ def memory_share(
         share_with: Target agent ID (for action=share).
         action: "list" | "share" | "import" | "stats".
     """
+    auth_err = _check_authorization("share", "memory")
+    if auth_err:
+        return auth_err
     try:
         from mcp_sharing import (
             memory_shared_list,
@@ -908,6 +1028,9 @@ def memory_graph(
         max_depth: Max traversal depth (default 2).
         action: "explore" | "traverse" | "shortest_path" | "stats".
     """
+    auth_err = _check_authorization("search", "memory")
+    if auth_err:
+        return auth_err
     try:
         from mcp_kg import memory_facts_list, memory_graph_stats
         from mcp_kg_traversal import memory_graph_shortest_path, memory_graph_traverse
@@ -941,6 +1064,9 @@ def memory_profile(
         action: "stats" | "user" | "agents" | "skills" | "arc".
         agent_id: Agent ID (for action=agents).
     """
+    auth_err = _check_authorization("search", "memory")
+    if auth_err:
+        return auth_err
     try:
         from mcp_profile import memory_profile_stats, memory_user_profile
         from mcp_agent import memory_agent_list, memory_agent_init
@@ -976,6 +1102,9 @@ def memory_session_start(query: str = "") -> str:
     Args:
         query: Optional topic to scope the briefing to.
     """
+    auth_err = _check_authorization("search", "memory")
+    if auth_err:
+        return auth_err
     try:
         from mcp_search import memory_session_start as _session_start
 
@@ -1001,6 +1130,9 @@ def memory_advanced(operation: str, **kwargs: str) -> str:
     (e.g. ``purge_expired``, ``okf_export``, ``crdt_sync``) called without
     ``confirm=True`` is refused; pass ``confirm=True`` to proceed.
     """
+    auth_err = _check_authorization("admin", "maintenance")
+    if auth_err:
+        return auth_err
     try:
         from mcp_maintenance import memory_maintenance
 

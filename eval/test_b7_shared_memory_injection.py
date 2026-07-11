@@ -62,8 +62,19 @@ def _seed_shared(db: Path, content: str, source_agent: str = "untrusted_peer") -
         # The migration on first connection cleans up orphaned FK rows,
         # so we need a real target.
         conn.execute(
-            "INSERT INTO memories (id, content, category) VALUES (?, ?, ?)",
-            ("src_1", "original content", "lessons"),
+            "INSERT INTO memories "
+            "(id, content, category, source_file, created_at, updated_at, "
+            " observed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "src_1",
+                "original content",
+                "lessons",
+                "lessons/src_1.md",
+                "2026-06-10T10:00:00Z",
+                "2026-06-10T10:00:00Z",
+                "2026-06-10T10:00:00Z",
+            ),
         )
         conn.execute(
             "INSERT INTO shared_memories (id, agent_id, content, category, tags, shared_at, source_note_id, metadata) "

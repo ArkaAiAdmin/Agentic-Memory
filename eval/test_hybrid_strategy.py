@@ -95,6 +95,10 @@ class TestShouldUseLlmForMemory(unittest.TestCase):
             ("no_score", "no score content", 0, None),
         )
         self.conn.commit()
+        # Tenant-isolation hardening queries the tenant_memories TEMP VIEW.
+        self.conn.execute(
+            "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS SELECT * FROM memories"
+        )
 
         self._saved_env = {}
         for k in (
@@ -239,6 +243,10 @@ class TestIndexFactsForMemoryUsesRegexByDefault(unittest.TestCase):
             ("high_value", "Some content for high value test", 1, 0.1),
         )
         self.conn.commit()
+        # Tenant-isolation hardening queries the tenant_memories TEMP VIEW.
+        self.conn.execute(
+            "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS SELECT * FROM memories"
+        )
 
         self._saved_env = {}
         for k in ("MEMORY_LLM_FORCE", "MEMORY_LLM_HYBRID"):
@@ -455,6 +463,10 @@ class TestBulkFunctionLLMSafe(unittest.TestCase):
             ("pinned_note", "**Topic:** some content with entities", 1, 0.95),
         )
         self.conn.commit()
+        # Tenant-isolation hardening queries the tenant_memories TEMP VIEW.
+        self.conn.execute(
+            "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS SELECT * FROM memories"
+        )
 
         self._saved_env = {}
         for k in ("MEMORY_LLM_FORCE", "MEMORY_LLM_HYBRID"):

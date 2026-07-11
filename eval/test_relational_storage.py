@@ -148,12 +148,14 @@ class TestKGFacts(unittest.TestCase):
     def test_kg_entity_insert_and_dedup(self):
         conn = sqlite3.connect(str(self.db_path))
         conn.execute(
-            "INSERT OR IGNORE INTO kg_entities (name, entity_type) VALUES (?, ?)",
-            ("Redis", "technology"),
+            "INSERT OR IGNORE INTO kg_entities (name, entity_type, fingerprint) "
+            "VALUES (?, ?, ?)",
+            ("Redis", "technology", "fp-redis"),
         )
         conn.execute(
-            "INSERT OR IGNORE INTO kg_entities (name, entity_type) VALUES (?, ?)",
-            ("Redis", "technology"),
+            "INSERT OR IGNORE INTO kg_entities (name, entity_type, fingerprint) "
+            "VALUES (?, ?, ?)",
+            ("Redis", "technology", "fp-redis"),
         )
         conn.commit()
         count = conn.execute(

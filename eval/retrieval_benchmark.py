@@ -336,6 +336,7 @@ class RetrievalBenchmark:
             light=True,
             include_facts=False,
             safety_wiring=False,
+            tenant_id="bench",
         )
 
     def _run_hybrid(
@@ -359,6 +360,7 @@ class RetrievalBenchmark:
             rerank=False,
             include_facts=False,
             safety_wiring=False,
+            tenant_id="bench",
         )
 
     # ------------------------------------------------------------------

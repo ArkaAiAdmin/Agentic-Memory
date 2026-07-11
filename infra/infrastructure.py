@@ -278,6 +278,7 @@ class ErrorCode(Enum):
     EXPORT_ERROR = "EXPORT_ERROR"
     IMPORT_ERROR = "IMPORT_ERROR"
     INJECTION_DETECTED = "INJECTION_DETECTED"
+    AUTHORIZATION_DENIED = "AUTHORIZATION_DENIED"
 
 
 _HINT_BY_CODE: dict[ErrorCode, tuple[str, str]] = {
@@ -311,6 +312,10 @@ _HINT_BY_CODE: dict[ErrorCode, tuple[str, str]] = {
     ),
     ErrorCode.INJECTION_DETECTED: (
         "Potential injection detected in input. Review the content.",
+        "abort",
+    ),
+    ErrorCode.AUTHORIZATION_DENIED: (
+        "You do not have permission for this operation. Check your role bindings.",
         "abort",
     ),
 }

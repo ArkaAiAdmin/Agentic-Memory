@@ -18,6 +18,75 @@ from mcp_common import (
 from mcp_instance import mcp
 
 
+# ---------------------------------------------------------------------------
+# RBAC authorization helpers (mirror mcp_verbs.py — fail-open by design)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_auth_db_path() -> str | None:
+    """Resolve the DB path for RBAC authorization checks."""
+    try:
+        db_path = _resolve_memory_dir() / "memory.db"
+        return str(db_path) if db_path and db_path.exists() else None
+    except Exception:
+        return None
+
+
+def _get_principal_from_context() -> str | None:
+    """Resolve the current principal from MCP request context (Phase 1)."""
+    try:
+        from agent_context import get_agent
+        ctx = get_agent()
+        principal_id = getattr(ctx, "principal_id", None)
+        if principal_id:
+            return principal_id
+    except (ImportError, Exception):
+        pass
+    return None
+
+
+def _check_authorization(action: str, resource: str = "memory") -> str | None:
+    """Check RBAC authorization. Returns error string if denied, None if allowed.
+
+    Fail-open: returns None (allow) on any error or when no RBAC is configured.
+    """
+    try:
+        from infra.authorizer import mcp_authorize, log_authorization_decision
+
+        principal_id = _get_principal_from_context()
+        db_path = _resolve_auth_db_path()
+
+        allowed = mcp_authorize(
+            principal_id=principal_id,
+            action=action,
+            resource=resource,
+            db_path=db_path,
+        )
+        if not allowed:
+            log_authorization_decision(
+                principal_id=principal_id,
+                action=action,
+                resource=resource,
+                allowed=False,
+                db_path=db_path,
+            )
+            return _err(
+                ErrorCode.AUTHORIZATION_DENIED,
+                f"Not authorized for '{action}' on '{resource}'. "
+                f"Principal '{principal_id or 'anonymous'}' lacks the required role.",
+            )
+        log_authorization_decision(
+            principal_id=principal_id,
+            action=action,
+            resource=resource,
+            allowed=True,
+            db_path=db_path,
+        )
+        return None
+    except Exception:
+        return None
+
+
 @mcp.tool()
 @with_audit("memory_graph_search")
 def memory_graph_search(query: str, limit: int = 10, max_hops: int = 2) -> str:
@@ -26,6 +95,9 @@ def memory_graph_search(query: str, limit: int = 10, max_hops: int = 2) -> str:
     Returns entities with their relations, ranked by mention count.
     Requires MEMORY_KNOWLEDGE_GRAPH=1 to be enabled.
     """
+    auth_err = _check_authorization("read", "memory")
+    if auth_err:
+        return auth_err
     from knowledge_graph import KG_ENABLED
 
     if not KG_ENABLED:
@@ -72,6 +144,9 @@ def memory_graph_stats() -> str:
     db_path = target_base / "memory.db"
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
+    auth_err = _check_authorization("read", "memory")
+    if auth_err:
+        return auth_err
     try:
         from knowledge_graph import graph_stats_db
 
@@ -123,6 +198,9 @@ def memory_facts_search(query: str, limit: int = 10) -> str:
     db_path = target_base / "memory.db"
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
+    auth_err = _check_authorization("read", "memory")
+    if auth_err:
+        return auth_err
     try:
         from fact import facts_search_db
 
@@ -157,6 +235,9 @@ def memory_facts_list(limit: int = 20, min_confidence: float = 0.0) -> str:
     db_path = target_base / "memory.db"
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
+    auth_err = _check_authorization("read", "memory")
+    if auth_err:
+        return auth_err
     try:
         from fact import facts_list_db
 
@@ -188,6 +269,9 @@ def memory_facts_stats() -> str:
     db_path = target_base / "memory.db"
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
+    auth_err = _check_authorization("read", "memory")
+    if auth_err:
+        return auth_err
     try:
         from fact import facts_stats_db
 
@@ -220,9 +304,12 @@ def memory_graph_insights(
 ) -> str:
     """Return graph analytics insights: density, modularity, avg path length, bridge nodes.
 
-    Uses PageRank for importance ranking, betweenness for bridge nodes, and
+    Uses PageRank for importance ranking,     betweenness for bridge nodes, and
     connected components for community detection.
     """
+    auth_err = _check_authorization("read", "memory")
+    if auth_err:
+        return auth_err
     from knowledge_graph import KG_ENABLED
 
     if not KG_ENABLED:
@@ -358,6 +445,9 @@ def memory_graph_evolution(since: str = "24h", limit: int = 5) -> str:
     db_path = target_base / "memory.db"
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"no memory.db at {db_path}")
+    auth_err = _check_authorization("read", "memory")
+    if auth_err:
+        return auth_err
     try:
         from infra.db import open_db
         import json as _json

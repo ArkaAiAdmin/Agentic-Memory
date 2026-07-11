@@ -120,7 +120,7 @@ agentic-memory/                    # Repo root
 ├── embedding_search.py             # Semantic search via model2vec
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
-├── migration_runner.py             # Schema migrations (current v44)
+├── migration_runner.py             # Schema migrations (current v46)
 └── ... (123 modules total)
 ```
 
@@ -138,7 +138,7 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v44, 45 migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v46, 47 migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
@@ -177,23 +177,6 @@ See `memory.toml [features]` for all flags. Key defaults:
 | `user_profile` | `true` | Personalize recall ranking from access history |
 | `consolidation` | `true` | SHA-256 + n-gram Jaccard dedup |
 | `quality_gates` | `true` | Filter results below relevance threshold |
-
-## Multi-Tenant Isolation (Phase 0)
-
-The `memories` table has `tenant_id TEXT NOT NULL DEFAULT 'default'`.
-Every connection gets a `tenant_memories` TEMP VIEW that filters by
-`tenant_id()` — a per-connection SQLite function returning the agent
-context's tenant ID. This enforces isolation at the DB layer without
-requiring RBAC.
-
-Key enforcement points:
-- Search: FTS JOIN via `tenant_memories`
-- Save: `tenant_id` column on insert
-- Delete: explicit `tenant_id` parameter on all delete operations
-- REST API: `is_global` defaults to `False`
-- Client: `get_db_connection` detects agent context
-
-See `docs/security/tenant_isolation.md` for full details.
 
 ## Safety & Integrity
 

@@ -585,6 +585,19 @@ def import_shared_memory(
                 metadata=meta,
             )
 
+            # Run indexers before the CRDT write. crdt_field_save commits
+            # the session connection internally (project_crdt_to_sql),
+            # so writing CRDT first would prematurely commit the uncommitted
+            # memories row and break rollback on indexer failure.
+            _run_import_indexers(
+                conn,
+                new_id,
+                content,
+                category,
+                tags_list,
+                source_file,
+                is_suspicious,
+            )
             _write_imported_note_crdt(
                 conn,
                 new_id,
@@ -594,15 +607,6 @@ def import_shared_memory(
                 source_file,
                 category,
                 tags_list,
-            )
-            _run_import_indexers(
-                conn,
-                new_id,
-                content,
-                category,
-                tags_list,
-                source_file,
-                is_suspicious,
             )
 
             conn.commit()

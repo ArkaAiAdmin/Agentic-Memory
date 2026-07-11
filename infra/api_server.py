@@ -83,6 +83,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         checks. When False (the secure default), ALL clients — including
         loopback — must present a valid bearer token.
         """
+        self._principal = None
+        self._principal_id = None
         peer = self.client_address[0]
         if getattr(self.server, "insecure_loopback", False) and _is_loopback(peer):
             return True
@@ -97,6 +99,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         if auth[7:] != token:
             self._error("Invalid token", 403)
             return False
+        # Resolve principal for downstream handlers (config-first, DB fallback)
+        try:
+            from infra.authorizer import resolve_principal
+            principal = resolve_principal(
+                db_path=str(self.server.db_path), token=auth[7:],
+            )
+            if principal:
+                self._principal_id = principal.id
+                self._principal = principal
+            # else: legacy token or unknown token — allow through (backward compat)
+        except Exception:
+            pass
         return True
 
     def _require_auth_ws(self) -> bool:
@@ -108,6 +122,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         loopback clients). Otherwise a valid bearer token (header or
         ``?token=`` query) is required, matching ``_require_auth``.
         """
+        self._principal = None
+        self._principal_id = None
         token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
         if not token:
             # Dev opt-in only: the REST layer already gates the loopback
@@ -123,14 +139,29 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             return False
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and auth[7:] == token:
+            self._resolve_ws_principal(auth[7:])
             return True
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
         ws_token = qs.get("token", [""])[0]
         if ws_token and ws_token == token:
+            self._resolve_ws_principal(ws_token)
             return True
         self._error("Unauthorized: provide token in Authorization header or ?token= query", 401)
         return False
+
+    def _resolve_ws_principal(self, raw_token: str) -> None:
+        """Resolve principal from a WS bearer token and store on self."""
+        try:
+            from infra.authorizer import resolve_principal
+            principal = resolve_principal(
+                db_path=str(self.server.db_path), token=raw_token,
+            )
+            if principal:
+                self._principal_id = principal.id
+                self._principal = principal
+        except Exception:
+            pass
 
     def do_OPTIONS(self) -> None:
         """CORS preflight handling."""

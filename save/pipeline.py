@@ -1974,6 +1974,25 @@ def _save_memory_core(
     evidence_chain = req.evidence_chain
     fact_type = req.fact_type
 
+    # Defense-in-depth RBAC check
+    try:
+        from infra.authorizer import mcp_authorize
+        principal_id = None
+        try:
+            from agent_context import get_agent
+            _rbac_ctx = get_agent()
+            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
+            if not principal_id:
+                from agent_context import _AGENT_CONTEXT
+                principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
+        except (ImportError, AttributeError):
+            pass
+        if not mcp_authorize(principal_id, "write", "memory", db_path):
+            from infra.infrastructure import _err, ErrorCode
+            return _err(ErrorCode.AUTHORIZATION_DENIED, f"Not authorized for 'write' on 'memory'. Principal '{principal_id or 'anonymous'}' lacks the required role.")
+    except Exception:
+        pass  # fail-open for backward compat
+
     from infra.db import _local_state
 
     _local_state.in_save_pipeline = True

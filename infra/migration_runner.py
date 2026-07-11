@@ -106,7 +106,8 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-11: bumped to 38 for inception-fingerprint identity on kg_entities.
 # 2026-07-11: bumped to 41 — UNIQUE(fingerprint) replaces UNIQUE(name, entity_type).
 # 2026-07-11: bumped to 44 — tenant_id NOT NULL + principals + audit tenant_id.
-SCHEMA_VERSION = 44
+# 2026-07-11: bumped to 46 — RBAC schema (roles, bindings, policies, acl, audit) + seed.
+SCHEMA_VERSION = 46
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the

@@ -312,6 +312,24 @@ def soft_delete_note(
     note_id = _validate_note_id(note_id)
     if not isinstance(deleted_by, str) or not deleted_by:
         raise ValueError("deleted_by must be a non-empty string")
+    # Defense-in-depth RBAC check
+    try:
+        from infra.authorizer import mcp_authorize
+        principal_id = None
+        try:
+            from agent_context import get_agent
+            _rbac_ctx = get_agent()
+            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
+            if not principal_id:
+                from agent_context import _AGENT_CONTEXT
+                principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
+        except (ImportError, AttributeError):
+            pass
+        if not mcp_authorize(principal_id, "delete", "memory", str(db_path) if db_path else None):
+            logger.warning("RBAC denied: principal=%s action=delete resource=memory", principal_id or "anonymous")
+            return False
+    except Exception as _rbac_exc:
+        logger.warning("RBAC check failed (fail-open) in soft_delete_note: %s", _rbac_exc)
     try:
         with open_db(db_path) as conn:
             # Check existence + current state in one round trip.
@@ -374,6 +392,24 @@ def restore_note(db_path, note_id: str, *, tenant_id: str | None = None) -> bool
         soft-deleted to active). False otherwise.
     """
     note_id = _validate_note_id(note_id)
+    # Defense-in-depth RBAC check
+    try:
+        from infra.authorizer import mcp_authorize
+        principal_id = None
+        try:
+            from agent_context import get_agent
+            _rbac_ctx = get_agent()
+            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
+            if not principal_id:
+                from agent_context import _AGENT_CONTEXT
+                principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
+        except (ImportError, AttributeError):
+            pass
+        if not mcp_authorize(principal_id, "write", "memory", str(db_path) if db_path else None):
+            logger.warning("RBAC denied: principal=%s action=write resource=memory", principal_id or "anonymous")
+            return False
+    except Exception as _rbac_exc:
+        logger.warning("RBAC check failed (fail-open) in restore_note: %s", _rbac_exc)
     try:
         with open_db(db_path) as conn:
             if tenant_id is not None:
@@ -620,6 +656,24 @@ def hard_delete_note(db_path, note_id: str, *, tenant_id: str | None = None) -> 
     list of the cascade.
     """
     note_id = _validate_note_id(note_id)
+    # Defense-in-depth RBAC check
+    try:
+        from infra.authorizer import mcp_authorize
+        principal_id = None
+        try:
+            from agent_context import get_agent
+            _rbac_ctx = get_agent()
+            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
+            if not principal_id:
+                from agent_context import _AGENT_CONTEXT
+                principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
+        except (ImportError, AttributeError):
+            pass
+        if not mcp_authorize(principal_id, "delete", "memory", str(db_path) if db_path else None):
+            logger.warning("RBAC denied: principal=%s action=delete resource=memory", principal_id or "anonymous")
+            return False
+    except Exception as _rbac_exc:
+        logger.warning("RBAC check failed (fail-open) in hard_delete_note: %s", _rbac_exc)
     try:
         with open_db(db_path) as conn:
             if tenant_id is not None:
@@ -762,6 +816,24 @@ def purge_expired(db_path, dry_run: bool = False, *, tenant_id: str | None = Non
         Count of notes purged. 0 if none are expired or on any DB
         error.
     """
+    # Defense-in-depth RBAC check
+    try:
+        from infra.authorizer import mcp_authorize
+        principal_id = None
+        try:
+            from agent_context import get_agent
+            _rbac_ctx = get_agent()
+            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
+            if not principal_id:
+                from agent_context import _AGENT_CONTEXT
+                principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
+        except (ImportError, AttributeError):
+            pass
+        if not mcp_authorize(principal_id, "admin", "memory", str(db_path) if db_path else None):
+            logger.warning("RBAC denied: principal=%s action=admin resource=memory", principal_id or "anonymous")
+            return 0
+    except Exception as _rbac_exc:
+        logger.warning("RBAC check failed (fail-open) in purge_expired: %s", _rbac_exc)
     try:
         with open_db(db_path) as conn:
             cutoff = _now_dt() - _dt.timedelta(seconds=RESTORE_WINDOW_SECONDS)
@@ -1022,6 +1094,7 @@ def delete_active_where(
         with open_db(db_path) as conn:
             now = _now_iso()
             # Tenant isolation: add tenant_id filter if provided.
+            tenant_params: tuple[str, ...]
             if tenant_id is not None:
                 tenant_filter = " AND tenant_id = ?"
                 tenant_params = (tenant_id,)

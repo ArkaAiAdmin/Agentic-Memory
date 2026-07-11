@@ -278,3 +278,12 @@ escape_hatch_audit_every_secs = 60 # re-affirm every minute
 # [drift_tiers]
 # MEMORY_RERANKER_DISABLED = "compliance"
 
+# ---------------------------------------------------------------------------
+# Static principal mapping (Phase 1 RBAC — no SSO)
+# ---------------------------------------------------------------------------
+# Maps bearer tokens to principals for authorization. Tokens listed here
+# bypass DB-based principal lookup. Format: token = "{kind}:{principal_id}"
+# Valid kinds: user, service, agent
+# [api.principals]
+# "tkn_example" = "user:admin-1"
+

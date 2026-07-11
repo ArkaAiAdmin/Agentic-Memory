@@ -6,18 +6,24 @@
 -- SQLite doesn't support ALTER COLUMN, so we recreate the table.
 -- FTS triggers are recreated by infra/fts.py at schema setup time.
 
+-- Step 0: Ensure the tenant_id column exists. On a fresh DB the column
+-- is introduced here; on an already-migrated DB this is a no-op (the
+-- runner ignores the "duplicate column" error). SQLite only permits
+-- adding columns with a constant DEFAULT, which backfills existing rows.
+ALTER TABLE memories ADD COLUMN tenant_id TEXT DEFAULT 'default';
+
 -- Step 1: Backfill NULL tenant_id
 UPDATE memories SET tenant_id = 'default' WHERE tenant_id IS NULL;
 
 -- Step 2: Create new table with NOT NULL + CHECK constraint
 CREATE TABLE memories_new (
     id                TEXT PRIMARY KEY,
-    content           TEXT    NOT NULL,
-    source_file       TEXT    NOT NULL,
+    content           TEXT    NOT NULL DEFAULT '',
+    source_file       TEXT    NOT NULL DEFAULT '',
     tags              TEXT    DEFAULT '[]',
-    created_at        TEXT    NOT NULL,
-    updated_at        TEXT    NOT NULL,
-    observed_at       TEXT    NOT NULL,
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    observed_at       TEXT    NOT NULL DEFAULT (datetime('now')),
     pinned            INTEGER DEFAULT 0,
     importance        INTEGER DEFAULT 3,
     decay             TEXT    DEFAULT 'none',
@@ -55,7 +61,13 @@ INSERT INTO memories_new (
     category, tier, importance_score, metadata
 )
 SELECT
-    id, content, source_file, tags, created_at, updated_at, observed_at,
+    id,
+    COALESCE(content, ''),
+    COALESCE(source_file, ''),
+    tags,
+    COALESCE(created_at, ''),
+    COALESCE(updated_at, ''),
+    COALESCE(observed_at, ''),
     pinned, importance, decay, score, supersedes, repo_id, access_count,
     success_score, fitness_score, conflict_policy, version_vector,
     logical_clock, consolidation_state,
@@ -64,9 +76,16 @@ SELECT
     deleted_by, context_prefix, category, tier, importance_score, metadata
 FROM memories;
 
--- Step 4: Drop old table and rename new
+-- Step 4: Drop old table and rename new.
+-- Drop the tenant_memories TEMP VIEW first if present: it references
+-- `memories`, and SQLite rejects ALTER ... RENAME TO memories while a view
+-- depends on the (about-to-be-dropped) table ("no such table: main.memories").
+-- The view is recreated below and by the connection pool on next use.
+DROP VIEW IF EXISTS tenant_memories;
 DROP TABLE memories;
 ALTER TABLE memories_new RENAME TO memories;
+CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS
+    SELECT * FROM memories WHERE tenant_id = tenant_id();
 
 -- Step 5: Recreate all indexes
 CREATE INDEX idx_memories_repo_id ON memories(repo_id);
