@@ -40,6 +40,11 @@ def _get_principal_from_context() -> str | None:
         principal_id = getattr(ctx, "principal_id", None)
         if principal_id:
             return principal_id
+        # AgentContext stores identifier as agent_id; fall back when
+        # principal_id is not separately set (typical for local single-user mode).
+        agent_id = getattr(ctx, "agent_id", None)
+        if agent_id:
+            return agent_id
     except (ImportError, Exception):
         pass
     return None
@@ -319,7 +324,7 @@ def memory_graph_insights(
         from kg.graph_analytics import compute_pagerank
         from kg.graph_communities import connected_components
 
-        out = ["**Graph Analytics Insights**"]
+        out = ["Graph Analytics Insights"]
         if conn is not None:
             _conn_ctx = nullcontext(conn)
         else:

@@ -329,7 +329,10 @@ def soft_delete_note(
             logger.warning("RBAC denied: principal=%s action=delete resource=memory", principal_id or "anonymous")
             return False
     except Exception as _rbac_exc:
-        logger.warning("RBAC check failed (fail-open) in soft_delete_note: %s", _rbac_exc)
+        # Fail-closed (mirrors infra.authorizer.mcp_authorize). A RBAC
+        # resolution error must never grant a delete — deny and return.
+        logger.warning("RBAC check failed (fail-closed) in soft_delete_note: %s", _rbac_exc)
+        return False
     try:
         with open_db(db_path) as conn:
             # Check existence + current state in one round trip.
@@ -409,7 +412,9 @@ def restore_note(db_path, note_id: str, *, tenant_id: str | None = None) -> bool
             logger.warning("RBAC denied: principal=%s action=write resource=memory", principal_id or "anonymous")
             return False
     except Exception as _rbac_exc:
-        logger.warning("RBAC check failed (fail-open) in restore_note: %s", _rbac_exc)
+        # Fail-closed: a RBAC resolution error must never grant a restore.
+        logger.warning("RBAC check failed (fail-closed) in restore_note: %s", _rbac_exc)
+        return False
     try:
         with open_db(db_path) as conn:
             if tenant_id is not None:
@@ -678,7 +683,9 @@ def hard_delete_note(db_path, note_id: str, *, tenant_id: str | None = None) -> 
             logger.warning("RBAC denied: principal=%s action=delete resource=memory", principal_id or "anonymous")
             return False
     except Exception as _rbac_exc:
-        logger.warning("RBAC check failed (fail-open) in hard_delete_note: %s", _rbac_exc)
+        # Fail-closed: a RBAC resolution error must never grant a delete.
+        logger.warning("RBAC check failed (fail-closed) in hard_delete_note: %s", _rbac_exc)
+        return False
     try:
         with open_db(db_path) as conn:
             if tenant_id is not None:

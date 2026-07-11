@@ -1120,7 +1120,7 @@ def memory_session_start(query: str = "") -> str:
 
 @mcp.tool()
 @with_audit("memory_advanced")
-def memory_advanced(operation: str, tenant_id: str = "default", **kwargs: str) -> str:
+def memory_advanced(operation: str, tenant_id: str | None = None, **kwargs: str) -> str:
     """Power user escape hatch — pass through to any memory_maintenance operation.
 
     Use this when a verb doesn't cover your use case.
@@ -1141,7 +1141,9 @@ def memory_advanced(operation: str, tenant_id: str = "default", **kwargs: str) -
     try:
         from mcp_maintenance import memory_maintenance
 
-        return str(memory_maintenance(operation=operation, tenant_id=tenant_id, **kwargs))
+        if tenant_id is not None:
+            kwargs["tenant_id"] = tenant_id
+        return str(memory_maintenance(operation=operation, **kwargs))
     except Exception as e:
         logger.exception("in memory_advanced verb")
         return _wrap_db_error("memory_advanced", e)

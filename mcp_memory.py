@@ -38,6 +38,9 @@ def _resolve_principal_for_rbac() -> str | None:
         principal_id = getattr(ctx, "principal_id", None)
         if principal_id:
             return principal_id
+        agent_id = getattr(ctx, "agent_id", None)
+        if agent_id:
+            return agent_id
     except (ImportError, Exception):
         pass
     return None

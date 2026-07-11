@@ -31,7 +31,10 @@ def _dashboard_check_authorization(action: str) -> str | None:
         principal_id = None
         try:
             from agent_context import get_agent
-            principal_id = getattr(get_agent(), "principal_id", None)
+            ctx = get_agent()
+            principal_id = getattr(ctx, "principal_id", None)
+            if not principal_id:
+                principal_id = getattr(ctx, "agent_id", None)
         except (ImportError, Exception):
             pass
 

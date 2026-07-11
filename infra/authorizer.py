@@ -183,6 +183,53 @@ def _auth_mode() -> str:
     return os.environ.get("MEMORY_AUTH_MODE", "closed").strip().lower()
 
 
+# ---------------------------------------------------------------------------
+# Action / resource normalization
+# ---------------------------------------------------------------------------
+# The MCP verb layer speaks a richer vocabulary (search, share, save, ...) than
+# the RBAC policy schema, whose ``policies.action`` column is constrained to
+# ``CHECK(action IN ('read','write','delete','admin','export'))``. Verb actions
+# such as ``search`` or ``share`` can therefore never be stored as a policy and
+# would be denied for every principal. Normalizing verb actions/resources to the
+# canonical RBAC vocabulary here (the single enforcement choke point) lets the
+# verb layer authorize correctly without weakening RBAC: canonical inputs pass
+# through unchanged, so direct callers (adversarial tests) are unaffected.
+
+_CANONICAL_ACTIONS = frozenset({"read", "write", "delete", "admin", "export"})
+
+_ACTION_ALIASES = {
+    "search": "read",
+    "recall": "read",
+    "list": "read",
+    "get": "read",
+    "save": "write",
+    "update": "write",
+    "patch": "write",
+    "supersede": "write",
+    "revert_supersede": "write",
+    "share": "write",
+    "purge": "delete",
+}
+
+_RESOURCE_ALIASES = {
+    "maintenance": "ops",
+}
+
+
+def _normalize_action(action: str) -> str:
+    """Map a verb-layer action to the canonical RBAC action vocabulary."""
+    a = (action or "").strip().lower()
+    if a in _CANONICAL_ACTIONS:
+        return a
+    return _ACTION_ALIASES.get(a, a)
+
+
+def _normalize_resource(resource: str) -> str:
+    """Map a verb-layer resource to the canonical RBAC resource vocabulary."""
+    r = (resource or "").strip().lower()
+    return _RESOURCE_ALIASES.get(r, r)
+
+
 def _is_cross_tenant_admin(conn, principal_id) -> bool:
     """True if *principal_id* holds a role granting cross-tenant admin.
 
@@ -244,6 +291,8 @@ def mcp_authorize(
     cross-tenant admin role (see :func:`_is_cross_tenant_admin`).
     """
     open_mode = _auth_mode() == "open"
+    action = _normalize_action(action)
+    resource = _normalize_resource(resource)
 
     # No principal (None): deny in closed mode, allow in open mode for
     # backward compat with legacy single-token deployments.

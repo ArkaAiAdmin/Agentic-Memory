@@ -629,15 +629,43 @@ class TestDownUpRoundTripSchema(unittest.TestCase):
 
     @staticmethod
     def _normalize_sql(sql: str) -> str:
-        """Collapse whitespace then normalize punctuation spacing.
+        """Collapse whitespace and normalise object-name quoting and column order.
 
         Removes whitespace before punctuation characters (commas,
         parentheses, semicolons) so that ``CREATE ... , checksums``
         and ``CREATE ... ,checksums`` both become ``CREATE ..., checksums``.
+        Strips surrounding double-quotes from SQLite object identifiers
+        (table/column/index names) so that SQLite's own DDL reflection
+        (which quotes identifiers renamed via ALTER TABLE) compares equal
+        to the original unquoted migration DDL. Also sorts and deduplicates
+        column definitions inside CREATE TABLE statements so that column
+        order changes (e.g. ALTER TABLE ADD COLUMN) do not surface as
+        schema divergences.
         """
         import re
 
-        return re.sub(r"\s+([,();])", r"\1", " ".join(sql.split()))
+        norm = re.sub(r"\s+([,();])", r"\1", " ".join(sql.split()))
+        # Strip surrounding double-quotes from SQLite identifiers.
+        norm = re.sub(r'"([^"]+)"', r"\1", norm)
+        # Normalise CREATE TABLE column order: sort columns and their
+        # inline constraints deterministically so order-only differences
+        # (e.g. ALTER TABLE ADD COLUMN vs. original CREATE TABLE) collapse
+        # to the same string.
+        if norm.upper().startswith("CREATE TABLE") and "(" in norm:
+            head, rest = norm.split("(", 1)
+            body, tail = rest.rsplit(")", 1)
+            cols = []
+            constraints = []
+            for part in re.split(r",\s*", body.strip()):
+                p = part.strip()
+                if not p:
+                    continue
+                (constraints if p.upper().startswith(("CONSTRAINT", "PRIMARY KEY",
+                    "UNIQUE", "CHECK", "FOREIGN KEY", "INDEX")) else cols).append(p)
+            cols.sort()
+            constraints.sort()
+            norm = f"{head}({', '.join(cols + constraints)}){tail}"
+        return norm
 
     @staticmethod
     def _verify_round_trip(

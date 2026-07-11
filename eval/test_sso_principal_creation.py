@@ -171,12 +171,21 @@ class TestResolveOrCreatePrincipal(unittest.TestCase):
             pid1 = resolve_or_create_principal(conn, identity)
             pid2 = resolve_or_create_principal(conn, identity)
             self.assertEqual(pid1, pid2, "same identity should return same principal_id")
+            # Count only SSO-created principals (ID prefix 'principal-');
+            # migration-seeded defaults have plain string IDs like 'default'.
+            sso_count = conn.execute(
+                "SELECT COUNT(*) FROM principals WHERE id LIKE 'principal-%'"
+            ).fetchone()[0]
             self.assertEqual(
-                _count_rows(self.db_path, "principals"), 1,
-                "should have exactly one principal row",
+                sso_count, 1,
+                "should have exactly one SSO-created principal row",
             )
+            identity_count = conn.execute(
+                "SELECT COUNT(*) FROM principal_identities "
+                "WHERE principal_id LIKE 'principal-%'"
+            ).fetchone()[0]
             self.assertEqual(
-                _count_rows(self.db_path, "principal_identities"), 1,
+                identity_count, 1,
                 "should have exactly one identity row",
             )
         finally:
@@ -196,8 +205,12 @@ class TestResolveOrCreatePrincipal(unittest.TestCase):
                 pid1, pid2,
                 "different provider but same sub should get different pids",
             )
+            sso_count = conn.execute(
+                "SELECT COUNT(*) FROM principals WHERE id LIKE 'principal-%'"
+            ).fetchone()[0]
             self.assertEqual(
-                _count_rows(self.db_path, "principals"), 2,
+                sso_count, 2,
+                "should have exactly two SSO-created principal rows",
             )
         finally:
             conn.close()

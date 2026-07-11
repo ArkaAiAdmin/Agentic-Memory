@@ -546,29 +546,39 @@ class TestDeleteIsolation:
     def test_soft_delete_cross_tenant(self, db_path: Path):
         from memory_delete import soft_delete_note
         _insert(db_path, "lessons/boss-mem", "B memo", tenant_id="agent-b")
-        result = soft_delete_note(str(db_path), "lessons/boss-mem", deleted_by="agent-a")
-        if result:
-            r = _row(db_path, "lessons/boss-mem")
-            if r and r.get("deleted_at") is not None:
-                pytest.xfail("SECURITY GAP: cross-tenant soft delete succeeded")
-        assert result is False or result is True  # document behavior
+        # Caller passes its OWN tenant (agent-a); the victim note is
+        # agent-b. The tenant-scoped WHERE must block this. If the
+        # protection regresses (e.g. the tenant clause is dropped),
+        # the delete would succeed and this assertion fails.
+        result = soft_delete_note(
+            str(db_path), "lessons/boss-mem", deleted_by="agent-a", tenant_id="agent-a"
+        )
+        assert result is False, "cross-tenant soft delete must be blocked"
+        r = _row(db_path, "lessons/boss-mem")
+        assert r is not None, "victim note must survive cross-tenant delete"
+        assert r["deleted_at"] is None
+        assert r["tenant_id"] == "agent-b"
 
     def test_hard_delete_cross_tenant(self, db_path: Path):
         from memory_delete import hard_delete_note
         _insert(db_path, "lessons/boss-rpt", "B report", tenant_id="agent-b")
-        result = hard_delete_note(str(db_path), "lessons/boss-rpt")
-        if result:
-            r = _row(db_path, "lessons/boss-rpt")
-            if r is None:
-                pytest.xfail("SECURITY GAP: cross-tenant hard delete succeeded")
+        result = hard_delete_note(str(db_path), "lessons/boss-rpt", tenant_id="agent-a")
+        assert result is False, "cross-tenant hard delete must be blocked"
+        r = _row(db_path, "lessons/boss-rpt")
+        assert r is not None, "victim note must survive cross-tenant delete"
+        assert r["tenant_id"] == "agent-b"
 
     def test_restore_cross_tenant(self, db_path: Path):
         from memory_delete import restore_note, soft_delete_note
         _insert(db_path, "lessons/boss-n", "B note", tenant_id="agent-b")
-        soft_delete_note(str(db_path), "lessons/boss-n", deleted_by="agent-b")
-        result = restore_note(str(db_path), "lessons/boss-n")
-        if result:
-            pytest.xfail("SECURITY GAP: cross-tenant restore succeeded")
+        # Own soft-delete (same tenant) succeeds first.
+        assert soft_delete_note(str(db_path), "lessons/boss-n", deleted_by="agent-b", tenant_id="agent-b") is True
+        # Restore as a DIFFERENT tenant must be blocked.
+        result = restore_note(str(db_path), "lessons/boss-n", tenant_id="agent-a")
+        assert result is False, "cross-tenant restore must be blocked"
+        r = _row(db_path, "lessons/boss-n")
+        assert r is not None
+        assert r["deleted_at"] is not None, "note must remain soft-deleted"
 
     def test_delete_own_succeeds(self, db_path: Path):
         from memory_delete import soft_delete_note
@@ -664,11 +674,14 @@ class TestRESTApiIsolation:
         _set_agent("agent-a")
         try:
             c = MemoryClient(db_path=str(db_path))
+            # agent-a's connection tenant (via tenant_id()) must not
+            # permit deleting agent-b's note. Regressing the tenant
+            # scoping would let this succeed.
             result = c.delete("lessons/del-b")
-            if result:
-                r = _row(db_path, "lessons/del-b")
-                if r is None:
-                    pytest.xfail("SECURITY GAP: cross-tenant API delete")
+            assert result is False, "cross-tenant API delete must be blocked"
+            r = _row(db_path, "lessons/del-b")
+            assert r is not None, "victim note must survive cross-tenant delete"
+            assert r["tenant_id"] == "agent-b"
         finally:
             clear_agent()
 
