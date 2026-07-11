@@ -103,6 +103,8 @@ class HttpAuditSink:
             self.url,
             last_exc,
         )
+        from infra.audit_sink import record_dead_letter
+        record_dead_letter(event, str(last_exc), "HttpAuditSink")
 
     def flush(self) -> None:
         try:

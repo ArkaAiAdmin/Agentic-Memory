@@ -23,10 +23,13 @@ never leave the process even on the way to an external SIEM.
 
 from __future__ import annotations
 
+import json
 import logging
 import queue
 import re
 import threading
+import time as _time
+from pathlib import Path
 from typing import Any, Optional, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
@@ -111,6 +114,35 @@ _SINK_SHUTDOWN = threading.Event()
 _SINK_THREAD: Optional[threading.Thread] = None
 _SINK_LOCK = threading.Lock()
 
+# --- SOC2 CC7.2 dead-letter log --------------------------------------------
+# Persistent JSONL for audit events that could not be forwarded to any
+# sink. Written directly to disk (not through dispatch_to_sinks) so the
+# record survives queue-full drops and sink failures alike.
+_DEAD_LETTER_PATH = Path(__file__).resolve().parent.parent / "memory" / "audit_sink_dead_letter.jsonl"
+_DEAD_LETTER_LOCK = threading.Lock()
+
+
+def record_dead_letter(event: dict, error: str, sink_name: str) -> None:
+    """Append one failed dispatch entry to the dead-letter JSONL.
+
+    Each line is a self-contained JSON object with ts/sink/error/event.
+    Failures to write the dead-letter itself are logged but never raised
+    (a dead-letter write failure must not crash the dispatch thread).
+    """
+    entry = {
+        "ts": _time.time(),
+        "sink": sink_name,
+        "error": error,
+        "event": event,
+    }
+    try:
+        _DEAD_LETTER_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _DEAD_LETTER_LOCK:
+            with open(_DEAD_LETTER_PATH, "a") as fh:
+                fh.write(json.dumps(entry, default=str) + "\n")
+    except Exception as exc:
+        logger.warning("dead-letter write failed: %s", exc)
+
 
 def _load_http_sink_config() -> Optional[dict]:
     """Read ``[audit.sinks.http]`` from memory.toml. Returns None if unset."""
@@ -186,13 +218,19 @@ def _dispatch_loop() -> None:
                     type(sink).__name__,
                     exc,
                 )
+                record_dead_letter(
+                    redacted,
+                    str(exc),
+                    type(sink).__name__,
+                )
 
 
 def dispatch_to_sinks(event: dict) -> None:
     """Fire-and-forget fan-out to all configured sinks.
 
     Never blocks and never raises: if the bounded queue is full the event is
-    dropped (DEBUG log). The actual emit happens on a background thread.
+    dropped (DEBUG log) and a dead-letter record is written so SOC2 CC7.2
+    evidence is not silently lost.
     """
     _ensure_dispatch_thread()
     try:
@@ -203,6 +241,7 @@ def dispatch_to_sinks(event: dict) -> None:
             _SINK_QUEUE.qsize(),
             event.get("tool"),
         )
+        record_dead_letter(event, "dispatch queue full", "dispatch-queue")
 
 
 def flush_sinks(timeout: float = 5.0) -> None:
