@@ -56,6 +56,7 @@ Minimum every session: #1 + #5. Save a **context-rich** `projects` note (importa
 20. **Full-suite runs: backgrounded and polled.** `nohup` + tail the log every **30 seconds** until `0 failures` — polling less often misses failures and exceeds shell timeout. Set `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES` on macOS; or use `.venv/bin/python eval/run_full_suite.py`.
 21. **Don't run maintenance as a post-task ritual.** Cron and the background worker handle indexing, compaction, dedup, contradiction detection. Call `memory_maintenance` / `memory_organize` only when cron is down or immediate results are required.
 22. **Ask with named options, not open questions.** Never ask "what should I do?" — give 2–4 concrete alternatives with tradeoffs. If the answer is already in an existing decision or doc, act.
+23. **Do not overanalyze — act.** When the task is clear, execute it directly and verify normally (run the checks you normally would), but do not overthink: do not enumerate every possible failure mode, re-derive state that git already reports, or run redundant confirmation passes after the user has said the work is verified. A stash/branch/working-tree question is answered by one `git` command, not a 10-minute investigation. If the user says "you are overthinking," stop immediately and just perform the requested action.
 
 ---
 <!--AUTO-GEN:START key="critical_path"-->
