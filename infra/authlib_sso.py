@@ -282,6 +282,16 @@ def verify_token(
             "aud": {"essential": True, "value": audience},
         },
     )
+    try:
+        claims.validate(leeway=0)
+    except Exception as exc:  # noqa: BLE001
+        raise SsoAuthError(f"Token validation failed: {exc}") from exc
+    # Explicit exp check: Authlib may truncate to integer seconds and
+    # accept a token whose exp equals the current wall-clock second.
+    # This ensures sub-second-granularity rejection on the exp boundary.
+    exp_ts = claims.get("exp", 0)
+    if exp_ts and exp_ts < time.time():
+        raise SsoAuthError("Token is expired (strict check)")
     return dict(claims)
 
 
@@ -325,7 +335,12 @@ def verify_oidc_id_token(
         )
     except Exception as exc:  # noqa: BLE001
         raise SsoAuthError(f"id_token verification failed: {exc}") from exc
-    return dict(claims)
+    try:
+        claims.validate(leeway=0)
+    except Exception as exc:  # noqa: BLE001
+        raise SsoAuthError(f"id_token validation failed: {exc}") from exc
+    result = dict(claims)
+    return result
 
 
 def _select_jwk(jwks: Dict[str, Any], kid: Optional[str]) -> Dict[str, Any]:
@@ -397,7 +412,10 @@ def parse_saml_response(saml_response_b64: str) -> SsoIdentity:
 
 
 def _parse_saml_assertion(raw: bytes) -> SsoIdentity:
-    root = _safe_parse(raw)
+    try:
+        root = _safe_parse(raw)
+    except ET.ParseError as exc:
+        raise SsoAuthError(f"Malformed SAML XML: {exc}") from exc
     # Find the Assertion element anywhere in the tree.
     assertion = _find_first(root, "Assertion")
     if assertion is None:
@@ -511,20 +529,22 @@ def _iter_local(element: ET.Element, local: str):
 
 
 def _parse_saml_time(value: str) -> float:
-    # SAML uses ISO8601 with 'Z' UTC marker; normalize for fromisoformat.
     v = value.strip().replace("Z", "+00:00")
-    try:
-        return time.mktime(time.strptime(v, "%Y-%m-%dT%H:%M:%S%z")) if "%z" in v else 0
-    except Exception:  # noqa: BLE001
+    has_tz = "+" in v[10:] or "-" in v[10:]  # check offset after date portion
+    if has_tz:
         try:
-            from datetime import datetime, timezone
-
-            dt = datetime.fromisoformat(v)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.timestamp()
+            return time.mktime(time.strptime(v, "%Y-%m-%dT%H:%M:%S%z"))
         except Exception:  # noqa: BLE001
-            return 0.0
+            pass
+    try:
+        from datetime import datetime, timezone
+
+        dt = datetime.fromisoformat(v)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:  # noqa: BLE001
+        return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -703,15 +723,24 @@ class SsoSession:
 # ---------------------------------------------------------------------------
 
 def resolve_principal_by_external_sub(
-    conn: sqlite3.Connection, provider: str, external_sub: str
+    conn: sqlite3.Connection, provider: str, external_sub: str,
+    tenant_id: str = "",
 ) -> Optional[str]:
     """Return the principal_id for a (provider, external_sub) if known."""
-    row = conn.execute(
-        "SELECT p.id FROM principals p"
-        " JOIN principal_identities pi ON pi.principal_id = p.id"
-        " WHERE pi.provider = ? AND pi.external_sub = ? LIMIT 1",
-        (provider, external_sub),
-    ).fetchone()
+    if tenant_id:
+        row = conn.execute(
+            "SELECT p.id FROM principals p"
+            " JOIN principal_identities pi ON pi.principal_id = p.id"
+            " WHERE pi.provider = ? AND pi.external_sub = ? AND p.tenant_id = ? LIMIT 1",
+            (provider, external_sub, tenant_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT p.id FROM principals p"
+            " JOIN principal_identities pi ON pi.principal_id = p.id"
+            " WHERE pi.provider = ? AND pi.external_sub = ? LIMIT 1",
+            (provider, external_sub),
+        ).fetchone()
     return row[0] if row else None
 
 
@@ -723,7 +752,7 @@ def resolve_or_create_principal(
 ) -> str:
     """Return the principal_id for *identity*, creating it on first login."""
     existing = resolve_principal_by_external_sub(
-        conn, identity.provider, identity.external_sub
+        conn, identity.provider, identity.external_sub, tenant_id=tenant_id,
     )
     if existing:
         return existing
@@ -735,9 +764,9 @@ def resolve_or_create_principal(
          tenant_id, _now()),
     )
     conn.execute(
-        "INSERT INTO principal_identities (principal_id, provider, external_sub, created_at)"
-        " VALUES (?, ?, ?, ?)",
-        (principal_id, identity.provider, identity.external_sub, _now()),
+        "INSERT INTO principal_identities (principal_id, provider, external_sub, tenant_id, created_at)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (principal_id, identity.provider, identity.external_sub, tenant_id, _now()),
     )
     conn.commit()
     return principal_id
