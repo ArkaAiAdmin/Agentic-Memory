@@ -83,17 +83,34 @@ def check_permission(
         # acl_overrides table may not exist yet — treat as no override.
         logger.debug("acl_overrides query failed (table may not exist): %s", exc)
 
-    # 2. Policies via role bindings
+    # 2. Policies via role bindings (deny policies are excluded)
     try:
-        row = conn.execute(
-            "SELECT 1 FROM role_bindings rb "
-            "JOIN policies p ON p.role_id = rb.role_id "
-            "WHERE rb.principal_id = ? "
-            "  AND (p.resource = ? OR p.resource = '*' OR ? LIKE p.resource || '/%') "
-            "  AND (p.action = ? OR p.action = '*') "
-            "LIMIT 1",
-            (principal_id, resource, resource, action),
-        ).fetchone()
+        # Check if policies table has an 'effect' column
+        has_effect = any(
+            col[1] == "effect"
+            for col in conn.execute("PRAGMA table_info(policies)").fetchall()
+        )
+        if has_effect:
+            row = conn.execute(
+                "SELECT 1 FROM role_bindings rb "
+                "JOIN policies p ON p.role_id = rb.role_id "
+                "WHERE rb.principal_id = ? "
+                "  AND (p.resource = ? OR p.resource = '*' OR ? LIKE p.resource || '/%') "
+                "  AND (p.action = ? OR p.action = '*') "
+                "  AND (p.effect IS NULL OR p.effect != 'deny') "
+                "LIMIT 1",
+                (principal_id, resource, resource, action),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT 1 FROM role_bindings rb "
+                "JOIN policies p ON p.role_id = rb.role_id "
+                "WHERE rb.principal_id = ? "
+                "  AND (p.resource = ? OR p.resource = '*' OR ? LIKE p.resource || '/%') "
+                "  AND (p.action = ? OR p.action = '*') "
+                "LIMIT 1",
+                (principal_id, resource, resource, action),
+            ).fetchone()
         if row is not None:
             return True
     except Exception as exc:

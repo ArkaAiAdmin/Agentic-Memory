@@ -398,7 +398,7 @@ def apply_field_updates_to_db(
                     upd.logical_clock > existing_clock
                     or (
                         upd.logical_clock == existing_clock
-                        and upd.last_writer_agent > existing_agent
+                        and upd.last_writer_agent <= existing_agent
                     )
                 ):
                     pass
@@ -804,10 +804,10 @@ def crdt_field_save(
                     )
                 )
 
-                # Check if the note-level row exists. If not, this is a new
-                # note — accept all field updates unconditionally and write
-                # the note-level row.
-                row = conn.execute(
+            # Check if the note-level row exists. If not, this is a new
+            # note — accept all field updates unconditionally and write
+            # the note-level row.
+            row = conn.execute(
                 "SELECT version_vector, logical_clock, conflict_policy "
                 "FROM tenant_memories WHERE id=?",
                 (note_id,),

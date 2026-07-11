@@ -4,6 +4,18 @@
 
 When choosing a memory system for your agent, you have several options — each with different tradeoffs around privacy, infrastructure, LLM dependency, and search quality. This document compares Agentic Memory to the most popular alternatives so you can make an informed choice based on your specific requirements.
 
+## Competitor Landscape (July 2026)
+
+| System | Funding | LOC (approx) | License | Status |
+|--------|---------|---------------|---------|--------|
+| **Agentic Memory** | — | ~110K | Apache 2.0 | Active development |
+| **Mem0** | $8M raised | ~30K | Apache 2.0 | Active |
+| **Letta** (fka MemGPT) | $28M raised | ~50K | Apache 2.0 | Active |
+| **Zep** | $5.5M raised | ~40K | Apache 2.0 | Active |
+| **Pinecone** | $138M raised | N/A (proprietary) | Proprietary | Managed service |
+| **Weaviate** | $67.7M raised | ~200K | BSD-3 | Active |
+| **Qdrant** | $47.5M raised | ~150K | Apache 2.0 | Active |
+
 ## Overview
 
 | Feature | Agentic Memory | Mem0 | Zep | MemGPT/Letta |
@@ -104,6 +116,9 @@ When choosing a memory system for your agent, you have several options — each 
 5. **Background task queue** — SQLite-backed, no external queue
 6. **Tier system** — Automatic memory lifecycle management
 7. **Injection detection** — Built-in safety without external tools
+8. **12-phase hybrid search** — BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost
+9. **Field-level CRDT** — Concurrent edits to different fields both win
+10. **Temporal knowledge graph** — Bi-temporal validity with contradiction detection
 
 ## When to Use What
 
@@ -129,6 +144,81 @@ When choosing a memory system for your agent, you have several options — each 
 - You're doing research
 - You want LLM-managed memory
 - Cost is not a concern
+
+### Agentic Memory vs Pinecone
+
+**Pinecone** is a managed vector database service ($138M raised, proprietary).
+
+| Aspect | Agentic Memory | Pinecone |
+|--------|---------------|----------|
+| **Architecture** | Markdown + SQLite | Managed vector DB |
+| **Search** | 12-phase hybrid | Vector similarity only |
+| **Self-hosted** | Yes (default) | No (managed only) |
+| **LLM required** | No | No |
+| **Pricing** | Free (self-hosted) | Pay-per-query |
+| **Privacy** | Local-first | Cloud-only |
+
+**When to choose Agentic Memory:**
+- You want local-first privacy
+- You need hybrid search (BM25 + vector + KG)
+- You want zero infrastructure costs
+- You need knowledge graph capabilities
+
+**When to choose Pinecone:**
+- You need managed infrastructure
+- You want vector-only similarity search
+- You have high-throughput requirements
+- You prefer SaaS over self-hosted
+
+### Agentic Memory vs Weaviate
+
+**Weaviate** is an open-source vector database ($67.7M raised, BSD-3, ~200K LOC).
+
+| Aspect | Agentic Memory | Weaviate |
+|--------|---------------|----------|
+| **Architecture** | Markdown + SQLite | Vector DB + modules |
+| **Search** | 12-phase hybrid | Vector + BM25 + hybrid |
+| **Self-hosted** | Yes (trivial) | Yes (Docker) |
+| **LLM required** | No | Optional (generative modules) |
+| **Setup** | Single file | Docker Compose |
+| **Scale** | Single-node | Distributed |
+
+**When to choose Agentic Memory:**
+- You want simple deployment (no Docker)
+- You need Markdown as source of truth
+- You want local-first privacy
+- You need knowledge graph capabilities
+
+**When to choose Weaviate:**
+- You need distributed vector search
+- You want built-in ML modules
+- You need high-throughput production deployment
+- You prefer a established vector DB ecosystem
+
+### Agentic Memory vs Qdrant
+
+**Qdrant** is an open-source vector database ($47.5M raised, Apache 2.0, ~150K LOC).
+
+| Aspect | Agentic Memory | Qdrant |
+|--------|---------------|--------|
+| **Architecture** | Markdown + SQLite | Vector DB |
+| **Search** | 12-phase hybrid | Vector + payload filtering |
+| **Self-hosted** | Yes (trivial) | Yes (Docker) |
+| **LLM required** | No | No |
+| **Setup** | Single file | Docker |
+| **Performance** | Good for small-medium | Optimized for large scale |
+
+**When to choose Agentic Memory:**
+- You want zero infrastructure
+- You need hybrid search (BM25 + vector + KG)
+- You want Markdown as source of truth
+- You need knowledge graph capabilities
+
+**When to choose Qdrant:**
+- You need high-performance vector search
+- You want payload-based filtering
+- You need distributed deployment
+- You prefer a mature vector DB
 
 ## Tradeoffs
 

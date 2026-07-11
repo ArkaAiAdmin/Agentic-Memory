@@ -321,6 +321,7 @@ def pull_from_peer(
                 source_file=note.get("source_file", ""),
                 remote_vv_str=note.get("version_vector", "{}"),
                 remote_logical_clock=int(note.get("logical_clock", 0)),
+                tags=note.get("tags", "[]"),
             )
         else:
             r = crdt_save(
@@ -436,6 +437,7 @@ def push_to_peer(
         return {"applied": 0, "conflict": 0, "rejected": 0, "total": 0}
 
     notes = {}
+    note_ids = [row[0] for row in rows]
     for row in rows:
         notes[row[0]] = {
             "content": row[1] or "",
@@ -443,6 +445,35 @@ def push_to_peer(
             "logical_clock": row[3] or 0,
             "version_vector": row[4] or "{}",
         }
+
+    # C2 fix: include field_crdt data so the peer can apply
+    # per-field LWWES merges instead of note-level fallback.
+    if note_ids:
+        conn2 = sqlite3.connect(str(db), timeout=10)
+        conn2.execute("PRAGMA foreign_keys=ON")
+        try:
+            placeholders = ",".join("?" for _ in note_ids)
+            field_rows = conn2.execute(
+                f"""SELECT memory_id, field_name, value,
+                           version_vector, logical_clock,
+                           last_writer_agent
+                    FROM memory_field_crdt
+                    WHERE memory_id IN ({placeholders})
+                      AND is_deleted = 0""",
+                note_ids,
+            ).fetchall()
+            for fr in field_rows:
+                notes.setdefault(fr[0], {}).setdefault("field_crdt", []).append(
+                    {
+                        "field": fr[1],
+                        "value": fr[2],
+                        "version_vector": fr[3] or "{}",
+                        "logical_clock": int(fr[4] or 0),
+                        "last_writer_agent": fr[5] or "",
+                    }
+                )
+        finally:
+            conn2.close()
 
     push_url = f"{peer_url.rstrip('/')}/crdt/push"
     resp = _json_post(
@@ -590,12 +621,15 @@ def sync_skills_with_peer(
     remote_skills = resp.get("skills", [])
     applied = skipped = 0
     for skill_dict in remote_skills:
+        skill_conn = _open_conn(db_path)
         try:
-            merge_and_save_skill(_open_conn(db_path), skill_dict)
+            merge_and_save_skill(skill_conn, skill_dict)
             applied += 1
         except Exception as e:
             logger.warning("sync_skills_with_peer failed: %s", e)
             skipped += 1
+        finally:
+            skill_conn.close()
 
     local_rows = _query_skills_since(db_path, since_push, limit)
     local_skills = []

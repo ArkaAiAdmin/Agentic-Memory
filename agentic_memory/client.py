@@ -111,10 +111,43 @@ class MemoryClient:
         max_synthesis_sentences: int = 5,
         tags: list[str] | None = None,
     ) -> SearchResults:
-        """Search memories by semantic relevance.
+        """Search memories by semantic and keyword relevance.
 
-        Returns a ``SearchResults`` container with typed ``MemoryResult``
-        objects and optional synthesis.
+        Runs a hybrid search combining FTS5 BM25 with vector similarity,
+        optionally reranking results via a cross-encoder model.
+
+        Args:
+            query: Natural-language search query (required).
+            limit: Maximum number of results to return (default 5).
+            rerank: Enable cross-encoder reranking for higher precision
+                (default True).
+            boost_pinned: Boost pinned memories in ranking (default True).
+            recency_weight: Weight factor for recency in the final score;
+                0.0 disables recency bias (default 0.1).
+            include_global: Include global-scope memories (default True).
+            include_facts: Include KG facts in results (default True).
+            fact_limit: Maximum number of KG facts to return (default 5).
+            synthesize: Generate an LLM-synthesized answer from results
+                (default False, adds latency).
+            max_synthesis_sentences: Max sentences in synthesis output
+                when synthesize=True (default 5).
+            tags: Optional list of tag strings to filter results by.
+
+        Returns:
+            SearchResults containing a list of MemoryResult objects
+            sorted by relevance score, plus optional synthesis text.
+
+        Raises:
+            ValidationError: If query is empty.
+
+        Examples::
+
+            results = mc.search("dark mode", limit=10, rerank=True)
+            for r in results:
+                print(f"[{r.score:.2f}] {r.content}")
+
+            results = mc.search("python", synthesize=True)
+            print(results.synthesis)
         """
         from infra._lazy_imports import search_memories
 
@@ -513,7 +546,25 @@ class MemoryClient:
     # ── Summarization ─────────────────────────────────────────────────
 
     def summarize(self, note_id: str) -> str:
-        """Summarize a specific note using extractive TF-IDF."""
+        """Summarize a specific note using extractive TF-IDF.
+
+        Generates a concise summary by extracting the most relevant
+        sentences from the note's content.
+
+        Args:
+            note_id: The memory note ID to summarize.
+
+        Returns:
+            A summary string of the note's content.
+
+        Raises:
+            NotFoundError: If the note does not exist.
+
+        Examples::
+
+            summary = mc.summarize("notes/my-long-note")
+            print(summary)
+        """
         from mcp_summarization import memory_summarize
 
         return str(memory_summarize(note_id=note_id))
@@ -521,7 +572,24 @@ class MemoryClient:
     # ── Adaptive retention ────────────────────────────────────────────
 
     def adaptive_retention(self, dry_run: bool = False) -> str:
-        """Compute adaptive half-lives and neural forget curve scores."""
+        """Compute adaptive half-lives and neural forget curve scores.
+
+        Analyzes memory access patterns to compute personalized
+        retention half-lives and Ebbinghaus-based forget curve
+        scores for each memory.
+
+        Args:
+            dry_run: If True, preview scores without writing to DB
+                (default False).
+
+        Returns:
+            A summary string with retention metrics.
+
+        Examples::
+
+            mc.adaptive_retention(dry_run=True)  # Preview only
+            mc.adaptive_retention()  # Apply retention scores
+        """
         from mcp_retention import memory_adaptive_retention
 
         return str(memory_adaptive_retention(dry_run=dry_run))

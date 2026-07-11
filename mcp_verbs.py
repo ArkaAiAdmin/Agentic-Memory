@@ -111,9 +111,13 @@ def _check_authorization(action: str, resource: str = "memory") -> str | None:
             db_path=db_path,
         )
         return None
-    except Exception:
-        # Fail-open on any error
-        return None
+    except Exception as exc:
+        # Fail-closed: RBAC errors must not grant access
+        logger.warning("_check_authorization failed (fail-closed): %s", exc)
+        return _err(
+            ErrorCode.AUTHORIZATION_DENIED,
+            f"RBAC check failed for '{action}' on '{resource}'. Authorization denied (fail-closed).",
+        )
 
 # ---------------------------------------------------------------------------
 # Helpers

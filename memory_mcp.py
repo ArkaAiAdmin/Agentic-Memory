@@ -168,7 +168,7 @@ from search.scoring import (  # noqa: E402,F401
     _RERANK_WEIGHTS,
     _temporal_decay_factor,
     _apply_temporal_decay,
-    _apply_neural_forget_curve,
+    _apply_jaccard_surprise_penalty,
     _strong_match_float,
     _compute_final_score,
 )

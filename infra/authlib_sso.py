@@ -314,6 +314,7 @@ def verify_oidc_id_token(
     issuer: str = "",
     audience: str = "",
     alg: str = "RS256",
+    nonce: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Verify an OIDC ``id_token`` (signed by the IdP) against its JWKS."""
     options: Dict[str, Any] = {"exp": {"essential": True}}
@@ -330,6 +331,11 @@ def verify_oidc_id_token(
         JWTClaimsRegistry(now=int(time.time()), leeway=0, **options).validate(decoded.claims)
     except Exception as exc:  # noqa: BLE001
         raise SsoAuthError(f"id_token validation failed: {exc}") from exc
+    # R3: Validate nonce to prevent replay attacks.
+    if nonce is not None:
+        token_nonce = decoded.claims.get("nonce")
+        if token_nonce != nonce:
+            raise SsoAuthError("id_token nonce mismatch")
     return dict(decoded.claims)
 
 
@@ -631,6 +637,8 @@ class SsoSession:
 
     def __init__(self, config: SsoProviderConfig) -> None:
         self.config = config
+        self._nonce: Optional[str] = None
+        self._redirect_uri: Optional[str] = None
 
     def authorization_url(self, redirect_uri: str, state: str) -> str:
         if self.config.kind == "oidc":
@@ -642,6 +650,8 @@ class SsoSession:
                 "state": state,
                 "nonce": state,
             }
+            self._nonce = state
+            self._redirect_uri = redirect_uri
             return f"{self.config.authorize_url}?{urlencode(params)}"
         if self.config.kind == "saml":
             # For SAML we return the IdP SSO URL; the full AuthnRequest is
@@ -674,6 +684,7 @@ class SsoSession:
                 jwks or {},
                 issuer=cfg.issuer,
                 audience=cfg.client_id,
+                nonce=self._nonce,
             )
             sub = claims.get("sub", "")
             if not sub:
@@ -704,7 +715,7 @@ class SsoSession:
                 "code": code,
                 "client_id": cfg.client_id,
                 "client_secret": cfg.client_secret,
-                "redirect_uri": "",
+                "redirect_uri": self._redirect_uri or "",
             },
             timeout=10.0,
         )

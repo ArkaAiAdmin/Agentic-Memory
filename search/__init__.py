@@ -37,7 +37,7 @@ from search.scoring import (  # noqa: F401
     _reciprocal_rank_fusion,
     _temporal_decay_factor,
     _apply_temporal_decay,
-    _apply_neural_forget_curve,
+    _apply_jaccard_surprise_penalty,
     _strong_match_float,
     _compute_final_score,
     compute_channel_weights,

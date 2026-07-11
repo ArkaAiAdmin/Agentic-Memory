@@ -74,7 +74,7 @@ from search.rerankers import (
 from search.scoring import (
     _reciprocal_rank_fusion,
     _apply_temporal_decay,
-    _apply_neural_forget_curve,
+    _apply_jaccard_surprise_penalty,
     _apply_concept_boost,
     _apply_centrality_boost,
     _strong_match_float,
@@ -139,8 +139,8 @@ _apply_temporal_decay.__doc__ = (
         disabled or ``decay_weight <= 0``.
     """
 )
-_apply_neural_forget_curve.__doc__ = (
-    """Apply surprise-based neural-forget re-ranking to scored results.
+_apply_jaccard_surprise_penalty.__doc__ = (
+    """Apply Jaccard-distance surprise-based re-ranking to scored results.
 
     Penalises notes whose last-access query has low Jaccard overlap
     with the current query, reflecting the intuition that notes last
@@ -1507,7 +1507,7 @@ def _rerank_results(
                 )
             )
         if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
-            return _apply_neural_forget_curve(out, query), None
+            return _apply_jaccard_surprise_penalty(out, query), None
         return _apply_temporal_decay(out, as_of=as_of), None
 
     _qtype = _detect_query_type(query)
@@ -1576,7 +1576,7 @@ def _rerank_results(
     )
     out = _apply_late_interaction_rerank(query, out, top_k=min(len(out), limit * 2))
     if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
-        out = _apply_neural_forget_curve(out, query)
+        out = _apply_jaccard_surprise_penalty(out, query)
     else:
         out = _apply_temporal_decay(out, as_of=as_of)
     out = _apply_concept_boost(out, query, db_path)
@@ -2311,7 +2311,8 @@ def search_memories(
 
     # Reset per-call phase latency accumulator so results are not
     # polluted by stale entries from prior invocations.
-    _phase_latencies.clear()
+    with _phase_latencies_lock:
+        _phase_latencies.clear()
     _phase_reset()
 
     # Phase 1: Parse query

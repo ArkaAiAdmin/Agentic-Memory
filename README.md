@@ -2,8 +2,8 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-4%2C431%2B-brightgreen)](#testing)
-[![Schema](https://img.shields.io/badge/schema-v37-orange.svg)](docs/reference/schema.md)
+[![Tests](https://img.shields.io/badge/tests-4%2C766%2B-brightgreen)](#testing)
+[![Schema](https://img.shields.io/badge/schema-v56-orange.svg)](docs/reference/schema.md)
 [![MCP Tools](https://img.shields.io/badge/MCP-17%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
 [![Temporal KG](https://img.shields.io/badge/Temporal-KG-brightgreen)](docs/concepts/temporal-kg.md)
@@ -168,17 +168,17 @@ agentic-memory/
 ├── crdt/                        # Field-level CRDT merge
 ├── fact/                        # Fact extraction + temporal
 ├── background/                  # Daemon + worker + circuit breaker
-├── cron/                        # 39 scripts + consolidated scheduler
-├── hooks/                       # 8 lifecycle hooks
-├── migrations/                  # 38 reversible migrations
-├── eval/                        # 4,431+ tests
+├── cron/                        # 47+ cron jobs + consolidated scheduler
+├── hooks/                       # 6 lifecycle hooks
+├── migrations/                  # 57 reversible migrations
+├── eval/                        # 4,766+ tests
 ├── ts-sdk/                      # TypeScript SDK
-├── mcp_*.py                     # 30 MCP modules
+├── mcp_*.py                     # 31 MCP modules
 ├── mcp_health.py                # System health MCP tool
 └── dashboard.py                 # Streamlit observability
 ```
 
-**Production stats:** ~202K LOC, 271 test files, 4,431+ test functions, schema v37, 38 reversible migrations, 17 CORE MCP tools, 1 consolidated scheduler, 8 lifecycle hooks.
+**Production stats:** ~110K LOC, 297 test files, 4,766+ test functions, schema v56, 57 reversible migrations, 17 CORE MCP tools, 1 consolidated scheduler, 6 lifecycle hooks.
 
 ---
 
@@ -228,7 +228,7 @@ curl -X POST http://localhost:9878/api/v1/memories \
 
 ## MCP Server
 
-17 CORE tools always visible to your agent. 87 ADMIN + 3 DEPRECATED behind `memory_maintenance(operation="...")`.
+17 CORE tools always visible to your agent. 95 ADMIN + 3 DEPRECATED behind `memory_maintenance(operation="...")`.
 
 ### CORE Tools
 
@@ -322,7 +322,7 @@ pip install agentic-memory[all]         # Everything
 | **LangChain** | Yes | Yes | Yes | Yes |
 | **CrewAI** | Yes | Yes | Yes | No |
 | **OKF support** | Yes | No | No | No |
-| **Test coverage** | 4,431+ tests | ~500 | ~2,000 | ~300 |
+| **Test coverage** | 4,766+ tests | ~500 | ~2,000 | ~300 |
 | **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 
 ---

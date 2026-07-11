@@ -752,6 +752,26 @@ def list_trash(db_path, include_expired: bool = False, *, tenant_id: str | None 
     Returns:
         A list of dicts, oldest first. Empty list on any DB error.
     """
+    # Defense-in-depth RBAC check
+    try:
+        from infra.authorizer import mcp_authorize
+        principal_id = None
+        try:
+            from agent_context import get_agent
+            _rbac_ctx = get_agent()
+            principal_id = getattr(_rbac_ctx, "principal_id", None)
+            if not principal_id:
+                from agent_context import _AGENT_CONTEXT
+                principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
+        except (ImportError, AttributeError):
+            pass
+        if not mcp_authorize(principal_id, "list", "memory", str(db_path) if db_path else None):
+            logger.warning("RBAC denied: principal=%s action=list resource=memory", principal_id or "anonymous")
+            return []
+    except Exception as _rbac_exc:
+        # Fail-closed: a RBAC resolution error must never grant list access.
+        logger.warning("RBAC check failed (fail-closed) in list_trash: %s", _rbac_exc)
+        return []
     try:
         with open_db(db_path, row_factory=sqlite3.Row) as conn:
             if tenant_id is not None:

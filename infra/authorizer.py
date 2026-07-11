@@ -243,8 +243,7 @@ def _is_cross_tenant_admin(conn, principal_id) -> bool:
             "SELECT 1 FROM role_bindings rb "
             "JOIN roles r ON r.id = rb.role_id "
             "WHERE rb.principal_id = ? "
-            "  AND (r.name = 'memory:admin' OR r.name = 'ops:admin' "
-            "       OR r.name LIKE '%:admin') "
+            "  AND r.name IN ('memory:admin', 'ops:admin') "
             "LIMIT 1",
             (principal_id,),
         ).fetchone()
@@ -405,8 +404,8 @@ class Authorizer:
     """Thin object wrapper used by callers that prefer an instance API.
 
     Phase 1 RBAC: resolves authorization decisions via :func:`mcp_authorize`.
-    The fail-open contract of :func:`mcp_authorize` is preserved — a missing
-    principal or unavailable DB always allows (backward compat).
+    The fail-closed contract is enforced — a missing principal or
+    unavailable DB always denies (no silent allow on error).
     """
 
     def __init__(self, db_path: str | None = None) -> None:

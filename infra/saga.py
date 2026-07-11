@@ -860,22 +860,6 @@ def _build_save_memory_steps(
         params.wrote_file = True
         return file_path
 
-    def _read_new_content_for_file() -> str:
-        """Read the new file content that the saga is about to write.
-
-        The user's ``do_write_file`` callable writes to ``file_path``
-        directly, so we read it back.  This is a small I/O cost but
-        it's only paid when there's a pre-existing file to compare
-        against (the common case for an edit), and it's the only
-        way to know what the new content is without threading it
-        through the saga's parameter list.
-        """
-        try:
-            return file_path.read_text(encoding="utf-8")
-        except Exception as _read_exc:
-            logger.debug("_read_new_content_for_file failed for %s: %s", file_path, _read_exc)
-            return ""
-
     def _undo_file() -> None:
         if params.wrote_file:
             _unlink_file(file_path)

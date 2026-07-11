@@ -179,7 +179,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
             self._error("Authorization required: Bearer <token>", 401)
             return False
         token = auth[7:]
-        if token != SYNC_AUTH_TOKEN:
+        import hmac as _hmac
+        if not _hmac.compare_digest(token or '', SYNC_AUTH_TOKEN or ''):
             logger.warning(
                 "sync_server: auth rejected (invalid token, peer=%s): 403",
                 peer,

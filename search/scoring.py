@@ -6,7 +6,7 @@ decomposition. Contains:
 - _reciprocal_rank_fusion: RRF fusion of multiple ranked lists (BB3)
 - _temporal_decay_factor: Ebbinghaus-style temporal decay
 - _apply_temporal_decay: post-retrieval decay modifier
-- _apply_neural_forget_curve: surprise-based re-ranking (B19)
+- _apply_jaccard_surprise_penalty: surprise-based re-ranking (B19)
 - _strong_match_float: float unambiguous FTS5 hits to the top (QB6)
 - _compute_final_score: six-channel weighted scoring
 - compute_channel_weights: CTR-feedback-driven weight tuning
@@ -30,7 +30,7 @@ import re
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, cast
 
@@ -172,7 +172,10 @@ def _temporal_decay_factor(
     # Forgetting curve: decay based on last_accessed
     if _sp_lazy("_FORGETTING_CURVE_ENABLED", False) and last_accessed:
         try:
-            la_ts = datetime.fromisoformat(last_accessed).timestamp()
+            la_dt = datetime.fromisoformat(last_accessed)
+            if la_dt.tzinfo is None:
+                la_dt = la_dt.replace(tzinfo=timezone.utc)
+            la_ts = la_dt.timestamp()
             age_days = max(0.0, (now_ts - la_ts) / 86400.0)
             half_life = _sp_lazy("_FORGETTING_CURVE_HALF_LIFE", 30)
         except (ValueError, TypeError):
@@ -189,7 +192,10 @@ def _temporal_decay_factor(
     if not created:
         return 1.0
     try:
-        c_ts = datetime.fromisoformat(created).timestamp()
+        c_dt = datetime.fromisoformat(created)
+        if c_dt.tzinfo is None:
+            c_dt = c_dt.replace(tzinfo=timezone.utc)
+        c_ts = c_dt.timestamp()
         age_days = max(0.0, (now_ts - c_ts) / 86400.0)
     except (ValueError, TypeError):
         return 1.0
@@ -205,7 +211,7 @@ def _temporal_decay_factor(
     ))
 
 
-def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
+def _apply_jaccard_surprise_penalty(scored_results: list, query: str) -> list:
     """Apply neural-forget-curve surprise-based re-ranking.
 
     B19 fix: the original temporal decay is purely time-based. The
@@ -234,7 +240,7 @@ def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
     if not scored_results or not query:
         return scored_results
     try:
-        q_tokens = set(query.lower().split())
+        q_tokens = set(re.findall(r'\w+', query.lower()))
     except Exception:
         logger.warning("Failed to tokenize query for surprise scoring")
         return scored_results
@@ -257,7 +263,7 @@ def _apply_neural_forget_curve(scored_results: list, query: str) -> list:
             modified.append(r)
             continue
         try:
-            last_tokens = set(last_q.lower().split())
+            last_tokens = set(re.findall(r'\w+', last_q.lower()))
         except Exception:
             logger.warning("Failed to tokenize last query for surprise scoring")
             modified.append(r)
@@ -372,7 +378,7 @@ def _compute_final_score(ctx) -> float:
         tag_match:  0.05  fraction of query tokens present in tags
 
     Temporal decay / forgetting curve is applied AFTER this step by
-    ``_apply_temporal_decay`` or ``_apply_neural_forget_curve``.
+    ``_apply_temporal_decay`` or ``_apply_jaccard_surprise_penalty``.
     Recency is intentionally excluded here to avoid double-counting age.
 
     ``now_ts`` is injectable for deterministic tests.
@@ -469,7 +475,7 @@ def _apply_exploration(cached_stats) -> Optional[dict]:
     return cast(dict, expected)
 
 
-def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> list:
+def _apply_concept_boost(scored_results: list, query: str, db_path: Path, conn: Any = None) -> list:
     """Sprint 3 read path: boost results that share a concepts/ entry with the query.
 
     Compiles a list of concept note_ids from the DB (``category='concepts'``)
@@ -483,13 +489,17 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
     """
     if not scored_results or not query:
         return scored_results
-    try:
-        from infra._lazy_imports import connection_pool
+    _own_conn = False
+    db = conn
+    if db is None:
+        try:
+            from infra._lazy_imports import connection_pool
 
-        db = connection_pool.get(str(db_path), timeout=5.0)
-    except Exception as e:
-        logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
-        return scored_results
+            db = connection_pool.get(str(db_path), timeout=5.0)
+            _own_conn = True
+        except Exception as e:
+            logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
+            return scored_results
 
     try:
         concept_rows = db.execute(
@@ -499,10 +509,13 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path) -> lis
         logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
         return scored_results
     finally:
-        try:
-            connection_pool.put(db)
-        except Exception as e:
-            logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
+        if _own_conn:
+            try:
+                from infra._lazy_imports import connection_pool
+
+                connection_pool.put(db)
+            except Exception as e:
+                logger.warning("Unhandled exception in _apply_concept_boost: %s", e)
 
     if not concept_rows:
         return scored_results

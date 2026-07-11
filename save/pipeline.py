@@ -1707,7 +1707,6 @@ def materialize_journal_entry(
         try:
             _materialize_journal_once(entry, target_base, note_id, journal_path)
             returned = True
-            mark_applied(journal_path, entry["id"])
             logger.info("materialize_journal_entry: applied %s (attempt %d)", note_id, _attempt + 1)
             return str(note_id)
         except SaveValidationError as e:

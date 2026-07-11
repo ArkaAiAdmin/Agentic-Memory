@@ -69,26 +69,43 @@ def collect_gauges(db_path: Path) -> str:
             # Tenant scoping (GAP 10): when MEMORY_METRICS_TENANT is set,
             # metrics report only that tenant instead of a cross-tenant
             # aggregate. The value is operator-configured (env), not
-            # request-supplied, so interpolation here is safe.
+            # request-supplied, so parameterised queries are used for safety.
             tenant = os.environ.get("MEMORY_METRICS_TENANT", "").strip()
-            tclause = f" WHERE tenant_id = '{tenant}'" if tenant else ""
-            # Single query with scalar subqueries replaces 11+ round-trips
-            row = conn.execute(f"""
-                SELECT
-                  (SELECT COUNT(*) FROM memories{tclause}),
-                  (SELECT COUNT(*) FROM memories WHERE pinned=1{tclause}),
-                  (SELECT COUNT(*) FROM memory_embeddings),
-                  (SELECT COUNT(*) FROM kg_entities),
-                  (SELECT COUNT(*) FROM kg_edges),
-                  (SELECT COUNT(*) FROM memory_chunks),
-                  (SELECT COUNT(*) FROM memory_ctr_feedback),
-                  (SELECT COUNT(*) FROM concept_drift),
-                  (SELECT COUNT(*) FROM memory_audit_log{tclause}),
-                  (SELECT COUNT(*) FROM memory_audit_log WHERE error IS NOT NULL{tclause}),
-                  (SELECT AVG(latency_ms) FROM memory_audit_log{tclause}),
-                  (SELECT MIN(latency_ms) FROM memory_audit_log{tclause}),
-                  (SELECT MAX(latency_ms) FROM memory_audit_log{tclause})
-            """).fetchone()
+            if tenant:
+                params = (tenant, tenant, tenant, tenant, tenant, tenant, tenant)
+                row = conn.execute("""
+                    SELECT
+                      (SELECT COUNT(*) FROM memories WHERE tenant_id = ?),
+                      (SELECT COUNT(*) FROM memories WHERE pinned=1 AND tenant_id = ?),
+                      (SELECT COUNT(*) FROM memory_embeddings),
+                      (SELECT COUNT(*) FROM kg_entities),
+                      (SELECT COUNT(*) FROM kg_edges),
+                      (SELECT COUNT(*) FROM memory_chunks),
+                      (SELECT COUNT(*) FROM memory_ctr_feedback),
+                      (SELECT COUNT(*) FROM concept_drift),
+                      (SELECT COUNT(*) FROM memory_audit_log WHERE tenant_id = ?),
+                      (SELECT COUNT(*) FROM memory_audit_log WHERE error IS NOT NULL AND tenant_id = ?),
+                      (SELECT AVG(latency_ms) FROM memory_audit_log WHERE tenant_id = ?),
+                      (SELECT MIN(latency_ms) FROM memory_audit_log WHERE tenant_id = ?),
+                      (SELECT MAX(latency_ms) FROM memory_audit_log WHERE tenant_id = ?)
+                """, params).fetchone()
+            else:
+                row = conn.execute("""
+                    SELECT
+                      (SELECT COUNT(*) FROM memories),
+                      (SELECT COUNT(*) FROM memories WHERE pinned=1),
+                      (SELECT COUNT(*) FROM memory_embeddings),
+                      (SELECT COUNT(*) FROM kg_entities),
+                      (SELECT COUNT(*) FROM kg_edges),
+                      (SELECT COUNT(*) FROM memory_chunks),
+                      (SELECT COUNT(*) FROM memory_ctr_feedback),
+                      (SELECT COUNT(*) FROM concept_drift),
+                      (SELECT COUNT(*) FROM memory_audit_log),
+                      (SELECT COUNT(*) FROM memory_audit_log WHERE error IS NOT NULL),
+                      (SELECT AVG(latency_ms) FROM memory_audit_log),
+                      (SELECT MIN(latency_ms) FROM memory_audit_log),
+                      (SELECT MAX(latency_ms) FROM memory_audit_log)
+                """).fetchone()
             if row:
                 cols = [
                     ("memory_notes_total", 0),
