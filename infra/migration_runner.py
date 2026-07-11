@@ -108,12 +108,14 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-11: bumped to 44 — tenant_id NOT NULL + principals + audit tenant_id.
 # 2026-07-11: bumped to 46 — RBAC schema (roles, bindings, policies, acl, audit) + seed.
 # 2026-07-11: bumped to 47 — SSO addressable signing keys (idem_token_key) + IdP metadata cache.
-SCHEMA_VERSION = 48
+# 2026-07-11: bumped to 48 — principal_identities multi-tenant (UNIQUE includes tenant_id).
+# 2026-07-11: bumped to 49 — GDPR right-to-be-forgotten request tracking.
+SCHEMA_VERSION = 49
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the
 # new migration is committed.
-SCHEMA_STABLE = True
+SCHEMA_STABLE = False
 
 
 

@@ -406,6 +406,12 @@ def _get_handlers() -> dict:
             MaintenanceOp.COMPLIANCE_CHECK: lambda *, session_id="", **_: t[
                 "memory_compliance_check"
             ](session_id=session_id),
+            MaintenanceOp.GDPR_ERASE: lambda *, principal_id="", data_subject_sub="", tenant_id="default", confirm=False, **_: _op_gdpr_erase(
+                principal_id=principal_id,
+                data_subject_sub=data_subject_sub,
+                tenant_id=tenant_id,
+                confirm=confirm,
+            ),
             MaintenanceOp.PURGE_AUTO_SAVES: lambda *, dry_run=False, **_: t[
                 "memory_purge_auto_saves"
             ](dry_run=dry_run),
@@ -1392,6 +1398,80 @@ def _op_background_task_status(memory_id: str) -> str:
             return json.dumps(res)
     except Exception as e:
         logger.warning("Unhandled exception in _op_background_task_status: %s", e)
+        return _err(classify_exception(e), str(e))
+
+
+def _op_gdpr_erase(
+    principal_id: str = "",
+    data_subject_sub: str = "",
+    tenant_id: str = "default",
+    confirm: bool = False,
+) -> str:
+    """Cascading GDPR Right-to-Be-Forgotten erase for a data subject.
+
+    Gated by confirm=True (destructive operation) and RBAC role
+    ``compliance:gdpr-erase``.
+    """
+    if not data_subject_sub:
+        return _err(ErrorCode.INVALID_PARAMS, "data_subject_sub is required")
+    if not confirm:
+        return _err(ErrorCode.INVALID_PARAMS, "GDPR erase is destructive and requires confirm=True")
+    try:
+        from infra.authorizer import mcp_authorize, log_authorization_decision
+        from agent_context import get_agent
+
+        ctx = get_agent()
+        resolved_principal = principal_id or getattr(ctx, "principal_id", None)
+
+        from pathlib import Path
+        from infra.db import open_db
+
+        db_path_env = os.environ.get("MEMORY_DB_PATH")
+        db_path: Path | None = None
+        if db_path_env:
+            db_path = Path(db_path_env)
+        else:
+            from mcp_common import _resolve_memory_dir
+            memory_dir = _resolve_memory_dir()
+            if memory_dir:
+                candidate = Path(memory_dir) / "memory.db"
+                if candidate.exists():
+                    db_path = candidate
+
+        if not db_path or not db_path.exists():
+            return _err(ErrorCode.DB_ERROR, "Memory database not found")
+
+        allowed = mcp_authorize(
+            principal_id=resolved_principal,
+            action="compliance",
+            resource="gdpr-erase",
+            db_path=str(db_path),
+        )
+        if not allowed:
+            log_authorization_decision(
+                principal_id=resolved_principal,
+                action="compliance",
+                resource="gdpr-erase",
+                allowed=False,
+                db_path=str(db_path),
+            )
+            return _err(
+                ErrorCode.AUTHORIZATION_DENIED,
+                f"Not authorized for compliance:gdpr-erase. "
+                f"Principal '{resolved_principal or 'anonymous'}' lacks the required role.",
+            )
+
+        with open_db(db_path) as conn:
+            from infra.gdpr import gdpr_erase
+            result = gdpr_erase(
+                conn=conn,
+                principal_id=resolved_principal or "anonymous",
+                data_subject_sub=data_subject_sub,
+                tenant_id=tenant_id,
+            )
+        return json.dumps(result, default=str)
+    except Exception as e:
+        logger.warning("Unhandled exception in GDPR erase: %s", e)
         return _err(classify_exception(e), str(e))
 
 

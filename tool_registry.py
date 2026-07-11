@@ -51,6 +51,7 @@ ADMIN_TOOLS = [
     "memory_detect_contradictions",
     "memory_facts_list",
     "memory_facts_stats",
+    "memory_gdpr_erase",
     "memory_graph_stats",
     "memory_pinned_decay_check",
     "memory_profile_stats",
