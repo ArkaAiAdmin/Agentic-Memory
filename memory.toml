@@ -206,15 +206,6 @@ backend = "auto"                        # MEMORY_EMBEDDING_BACKEND
 model_id = "minishlab/potion-base-8M"   # MEMORY_EMBEDDING_MODEL_ID
 model_revision = ""                      # MEMORY_EMBEDDING_MODEL_REVISION — git revision/tag for model2vec backends; empty = latest
 
-[embedding.test]
-# Dedicated test embedding backend. Active only when MEMORY_TEST_EMBEDDING=1
-# is set (pytest env). Production [embedding] above is never modified.
-# Uses intfloat/e5-small-v2 (SentenceTransformer, ~500MB RAM on M5) for
-# high-quality CI embedding tests at ~5ms per encode.
-backend = "sentence-transformers"        # MEMORY_EMBEDDING_BACKEND (overridden by fixture when MEMORY_TEST_EMBEDDING=1)
-model_id = "intfloat/e5-small-v2"       # MEMORY_EMBEDDING_MODEL_ID (overridden by fixture when MEMORY_TEST_EMBEDDING=1)
-model_revision = ""                      # MEMORY_EMBEDDING_MODEL_REVISION (overridden by fixture when MEMORY_TEST_EMBEDDING=1)
-
 # ---------------------------------------------------------------------------
 # Config-drift enforcement policy (2026-07-09)
 # ---------------------------------------------------------------------------

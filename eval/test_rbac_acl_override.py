@@ -261,3 +261,140 @@ class TestRBACACLOverride:
                 "SELECT name FROM sqlite_master WHERE type='index'"
             ).fetchall()}
         assert any("acl_overrides" in i and "principal" in i for i in idxs)
+
+
+# ===================================================================
+# CLASS: ACL Override Maintenance Operations
+# ===================================================================
+
+@pytest.mark.rbac
+class TestACLOverrideMaintenanceOps:
+    """Test set_acl_override and remove_acl_override maintenance operations."""
+
+    def test_set_acl_override_allow(self, db_path: Path):
+        """set_acl_override with granted=True inserts an allow effect."""
+        from mcp_maintenance_ops import _op_set_acl_override
+        import json as _json
+
+        _create_principal(db_path, "maint-1")
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
+        try:
+            result = _op_set_acl_override(
+                principal_id="maint-1",
+                resource_id="memory/note-a",
+                action="read",
+                granted=True,
+            )
+            data = _json.loads(result)
+            assert data["ok"] is True
+            assert data["effect"] == "allow"
+            assert data["principal_id"] == "maint-1"
+            assert data["resource_id"] == "memory/note-a"
+            assert data["action"] == "read"
+            # Verify row exists in DB
+            overrides = _get_acl_overrides(db_path, "maint-1")
+            assert len(overrides) == 1
+            assert overrides[0]["effect"] == "allow"
+        finally:
+            os.environ.pop("MEMORY_DB_PATH", None)
+
+    def test_set_acl_override_deny(self, db_path: Path):
+        """set_acl_override with granted=False inserts a deny effect."""
+        from mcp_maintenance_ops import _op_set_acl_override
+        import json as _json
+
+        _create_principal(db_path, "maint-2")
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
+        try:
+            result = _op_set_acl_override(
+                principal_id="maint-2",
+                resource_id="memory/note-b",
+                action="write",
+                granted=False,
+            )
+            data = _json.loads(result)
+            assert data["ok"] is True
+            assert data["effect"] == "deny"
+            overrides = _get_acl_overrides(db_path, "maint-2")
+            assert len(overrides) == 1
+            assert overrides[0]["effect"] == "deny"
+        finally:
+            os.environ.pop("MEMORY_DB_PATH", None)
+
+    def test_set_acl_override_upserts(self, db_path: Path):
+        """Setting the same override twice upserts (no duplicates)."""
+        from mcp_maintenance_ops import _op_set_acl_override
+        import json as _json
+
+        _create_principal(db_path, "maint-3")
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
+        try:
+            _op_set_acl_override(
+                principal_id="maint-3",
+                resource_id="memory/note-c",
+                action="read",
+                granted=False,
+            )
+            result = _op_set_acl_override(
+                principal_id="maint-3",
+                resource_id="memory/note-c",
+                action="read",
+                granted=True,
+            )
+            data = _json.loads(result)
+            assert data["effect"] == "allow"
+            overrides = _get_acl_overrides(db_path, "maint-3")
+            assert len(overrides) == 1
+            assert overrides[0]["effect"] == "allow"
+        finally:
+            os.environ.pop("MEMORY_DB_PATH", None)
+
+    def test_remove_acl_override(self, db_path: Path):
+        """remove_acl_override deletes an existing override."""
+        from mcp_maintenance_ops import _op_set_acl_override, _op_remove_acl_override
+        import json as _json
+
+        _create_principal(db_path, "maint-4")
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
+        try:
+            _op_set_acl_override(
+                principal_id="maint-4",
+                resource_id="memory/note-d",
+                action="delete",
+                granted=True,
+            )
+            overrides = _get_acl_overrides(db_path, "maint-4")
+            assert len(overrides) == 1
+
+            result = _op_remove_acl_override(
+                principal_id="maint-4",
+                resource_id="memory/note-d",
+                action="delete",
+            )
+            data = _json.loads(result)
+            assert data["ok"] is True
+            assert data["deleted"] == 1
+
+            overrides = _get_acl_overrides(db_path, "maint-4")
+            assert len(overrides) == 0
+        finally:
+            os.environ.pop("MEMORY_DB_PATH", None)
+
+    def test_remove_acl_override_nonexistent(self, db_path: Path):
+        """remove_acl_override on a missing override returns deleted=0."""
+        from mcp_maintenance_ops import _op_remove_acl_override
+        import json as _json
+
+        _create_principal(db_path, "maint-5")
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
+        try:
+            result = _op_remove_acl_override(
+                principal_id="maint-5",
+                resource_id="memory/does-not-exist",
+                action="read",
+            )
+            data = _json.loads(result)
+            assert data["ok"] is True
+            assert data["deleted"] == 0
+        finally:
+            os.environ.pop("MEMORY_DB_PATH", None)

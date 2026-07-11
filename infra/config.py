@@ -1075,7 +1075,7 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "MEMORY_EMBEDDING_MODEL_REVISION", "embedding.model_revision", "", str, toml_data
         ),
         idle_unload_seconds=_b(
-            "MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS", "embedding.idle_unload_seconds", 600, int, toml_data
+            "MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS", "llm_extraction.idle_unload_seconds", 600, int, toml_data
         ),
     )
 

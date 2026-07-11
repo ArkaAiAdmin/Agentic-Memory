@@ -624,6 +624,66 @@ def _get_handlers() -> dict:
             MaintenanceOp.STRIP_PROVENANCE: lambda *, content, **_: t[
                 "memory_strip_provenance"
             ](content=content),
+            MaintenanceOp.SET_ACL_OVERRIDE: lambda *, principal_id, resource_id, action, granted=True, **_: (
+                _op_set_acl_override(
+                    principal_id=principal_id,
+                    resource_id=resource_id,
+                    action=action,
+                    granted=granted,
+                )
+            ),
+            MaintenanceOp.REMOVE_ACL_OVERRIDE: lambda *, principal_id, resource_id, action, **_: (
+                _op_remove_acl_override(
+                    principal_id=principal_id,
+                    resource_id=resource_id,
+                    action=action,
+                )
+            ),
+            MaintenanceOp.LOGIN_URL: lambda *, provider, redirect_uri="", db_path="", **_: t[
+                "memory_login_url"
+            ](provider=provider, redirect_uri=redirect_uri, db_path=db_path),
+            MaintenanceOp.CALLBACK: lambda *, provider, code="", id_token="", saml_response="", db_path="", **_: (
+                t["memory_callback"](
+                    provider=provider,
+                    code=code,
+                    id_token=id_token,
+                    saml_response=saml_response,
+                    db_path=db_path,
+                )
+            ),
+            MaintenanceOp.WHOAMI: lambda *, token, db_path="", **_: t[
+                "memory_whoami"
+            ](token=token, db_path=db_path),
+            MaintenanceOp.ROTATE_KEY: lambda *, db_path="", **_: t[
+                "memory_rotate_key"
+            ](db_path=db_path),
+            MaintenanceOp.SSO_SYNC_METADATA: lambda *, idp_id, metadata_url="", force=False, db_path="", **_: (
+                t["memory_sso_sync_metadata"](
+                    idp_id=idp_id,
+                    metadata_url=metadata_url,
+                    force=force,
+                    db_path=db_path,
+                )
+            ),
+            MaintenanceOp.SSO_IDP_LIST: lambda *, db_path="", **_: t[
+                "memory_sso_idp_list"
+            ](db_path=db_path),
+            MaintenanceOp.SSO_IDP_ADD: lambda *, name, kind="oidc", client_id="", client_secret="", authorize_url="", token_url="", jwks_url="", issuer="", metadata_url="", entity_id="", tenant_id="default", db_path="", **_: (
+                t["memory_sso_idp_add"](
+                    name=name,
+                    kind=kind,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    authorize_url=authorize_url,
+                    token_url=token_url,
+                    jwks_url=jwks_url,
+                    issuer=issuer,
+                    metadata_url=metadata_url,
+                    entity_id=entity_id,
+                    tenant_id=tenant_id,
+                    db_path=db_path,
+                )
+            ),
         }
     return _MAINTENANCE_HANDLERS
 
@@ -1169,6 +1229,105 @@ def _op_search_phase_stats(
     except Exception as e:
         logger.warning("Unhandled exception in _op_search_phase_stats: %s", e)
         return _err(classify_exception(e), str(e))
+
+
+def _op_set_acl_override(
+    *,
+    principal_id: str,
+    resource_id: str,
+    action: str,
+    granted: bool = True,
+) -> str:
+    """Set an ACL override entry for a principal on a specific resource+action.
+
+    Args:
+        principal_id: The principal to grant/deny.
+        resource_id: The resource to override (e.g. "memory/secret-note").
+        action: The action to override (e.g. "read", "write", "*").
+        granted: True = "allow", False = "deny".
+    """
+    try:
+        import sqlite3 as _sqlite3
+
+        db_path = _resolve_db_path()
+        if not db_path.exists():
+            return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
+        effect = "allow" if granted else "deny"
+        conn = _sqlite3.connect(str(db_path), timeout=10)
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute(
+                "INSERT OR REPLACE INTO acl_overrides "
+                "(principal_id, resource_id, action, effect, granted_at, granted_by) "
+                "VALUES (?, ?, ?, ?, datetime('now'), 'memory_maintenance')",
+                (principal_id, resource_id, action, effect),
+            )
+            conn.commit()
+            return json.dumps({
+                "ok": True,
+                "principal_id": principal_id,
+                "resource_id": resource_id,
+                "action": action,
+                "effect": effect,
+            })
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("Unhandled exception in _op_set_acl_override: %s", e)
+        return _err(classify_exception(e), str(e))
+
+
+def _op_remove_acl_override(
+    *,
+    principal_id: str,
+    resource_id: str,
+    action: str,
+) -> str:
+    """Remove an ACL override entry for a principal on a specific resource+action.
+
+    Args:
+        principal_id: The principal whose override to remove.
+        resource_id: The resource to remove the override for.
+        action: The action to remove the override for.
+    """
+    try:
+        import sqlite3 as _sqlite3
+
+        db_path = _resolve_db_path()
+        if not db_path.exists():
+            return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
+        conn = _sqlite3.connect(str(db_path), timeout=10)
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            cursor = conn.execute(
+                "DELETE FROM acl_overrides "
+                "WHERE principal_id = ? AND resource_id = ? AND action = ?",
+                (principal_id, resource_id, action),
+            )
+            conn.commit()
+            deleted = cursor.rowcount
+            return json.dumps({
+                "ok": True,
+                "deleted": deleted,
+                "principal_id": principal_id,
+                "resource_id": resource_id,
+                "action": action,
+            })
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning("Unhandled exception in _op_remove_acl_override: %s", e)
+        return _err(classify_exception(e), str(e))
+
+
+def _resolve_db_path() -> Path:
+    """Resolve the active memory.db path, respecting MEMORY_DB_PATH env var."""
+    env_db = os.environ.get("MEMORY_DB_PATH", "")
+    if env_db:
+        p = Path(env_db)
+        return p if p.suffix == ".db" else p / "memory.db"
+    from infra.infrastructure import resolve_active_memory_dir
+    return resolve_active_memory_dir() / "memory.db"
 
 
 def _op_recall_trace(

@@ -113,7 +113,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-11: bumped to 50 — tenant_id on kg_entities/kg_facts.
 # 2026-07-11: bumped to 52 — backfill kg tenant_id from parent memory (052).
 # 2026-07-11: bumped to 53 — tenant_id column on memory_field_crdt (051).
-SCHEMA_VERSION = 54
+SCHEMA_VERSION = 56
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the

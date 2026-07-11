@@ -578,9 +578,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
         Response:
           ``{"entity_ops": [...], "edge_ops": [...], "ts": <server_ts>}``
 
-        TODO(TENANT): kg_entity_crdt and kg_edge_crdt lack tenant_id
-        columns. Add tenant_id column + migration, then filter here
-        with ``AND tenant_id = ?`` using self.server_tenant_id.
+        Filters by tenant_id for tenant isolation.
         """
         if not self._require_auth():
             return
@@ -605,17 +603,20 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 ensure_kg_crdt_schema(conn)
                 params: tuple = (since,) if since is not None else (0.0,)
                 where_clause = "WHERE timestamp > ?" if since is not None else ""
+                # Tenant filter: always apply for tenant isolation
+                tenant_filter = f"{'AND' if where_clause else 'WHERE'} tenant_id = ?"
+                all_params = params + (self.server_tenant_id,)
                 # Entity ops
                 entity_rows = conn.execute(
                     f"""
                     SELECT entity_id, agent_id, op, version_vector, name,
                            entity_type, description, timestamp
                     FROM kg_entity_crdt
-                    {where_clause}
+                    {where_clause} {tenant_filter}
                     ORDER BY timestamp ASC
                     LIMIT ?
                     """,
-                    params + (limit,),
+                    all_params + (limit,),
                 ).fetchall()
                 # Edge ops
                 edge_rows = conn.execute(
@@ -623,11 +624,11 @@ class _SyncHandler(BaseHTTPRequestHandler):
                     SELECT edge_id, source_id, target_id, relation, weight,
                            valid_at, agent_id, version_vector, timestamp
                     FROM kg_edge_crdt
-                    {where_clause}
+                    {where_clause} {tenant_filter}
                     ORDER BY timestamp ASC
                     LIMIT ?
                     """,
-                    params + (limit,),
+                    all_params + (limit,),
                 ).fetchall()
                 entity_ops = [
                     {
@@ -684,9 +685,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
         ``compute_edge_crdt_state`` to project the merged state
         into the kg_entities / kg_edges tables.
 
-        TODO(TENANT): kg_entity_crdt and kg_edge_crdt lack tenant_id
-        columns. Add tenant_id column + migration, then inject
-        self.server_tenant_id into each INSERT.
+        Injects self.server_tenant_id into each CRDT row for tenant isolation.
         """
         if not self._require_auth():
             return
@@ -719,8 +718,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
                         """
                         INSERT OR REPLACE INTO kg_entity_crdt
                             (entity_id, agent_id, op, version_vector, name,
-                             entity_type, description, timestamp)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                             entity_type, description, timestamp, tenant_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             op.get("entity_id"),
@@ -731,6 +730,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                             op.get("entity_type", ""),
                             op.get("description", ""),
                             op.get("timestamp", 0.0),
+                            self.server_tenant_id,
                         ),
                     )
                     n_entities += 1
@@ -739,8 +739,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
                         """
                         INSERT OR REPLACE INTO kg_edge_crdt
                             (edge_id, source_id, target_id, relation, weight,
-                             valid_at, agent_id, version_vector, timestamp)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             valid_at, agent_id, version_vector, timestamp, tenant_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             op.get("edge_id"),
@@ -752,6 +752,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                             op.get("agent_id", ""),
                             json.dumps(op.get("version_vector", {})),
                             op.get("timestamp", 0.0),
+                            self.server_tenant_id,
                         ),
                     )
                     n_edges += 1
@@ -804,9 +805,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
           ``agent``  — Agent id for context (unused in filter, reserved for future use).
           ``limit``  — Max skills to return (default 500, capped at 5000).
 
-        TODO(TENANT): memory_skills lacks tenant_id column. Add
-        tenant_id column + migration, then filter here with
-        ``AND tenant_id = ?`` using self.server_tenant_id.
+        Filters by tenant_id for tenant isolation.
         """
         if not self._require_auth():
             return
@@ -830,16 +829,17 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 ensure_skill_schema(conn)
                 params: tuple = (since,) if since is not None else (0.0,)
                 where = "WHERE updated_at > ?" if since is not None else ""
+                tenant_filter = f"{'AND' if where else 'WHERE'} tenant_id = ?"
                 rows = conn.execute(
                     f"""SELECT id, name, source_memory_id, topic, description,
                                triggers, steps, content_hash, hit_count,
                                last_used_at, hit_vector, last_used_vector,
                                logical_clock, created_at, updated_at
                         FROM memory_skills
-                        {where}
+                        {where} {tenant_filter}
                         ORDER BY updated_at ASC
                         LIMIT ?""",
-                    params + (limit,),
+                    params + (self.server_tenant_id, limit),
                 ).fetchall()
                 skill_cols = [
                     "id", "name", "source_memory_id", "topic", "description",
@@ -889,9 +889,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
         ``merge_and_save_skill`` (idempotent LWW + G-Counter merge).
         Returns ``{"applied": N, "skipped": M}``.
 
-        TODO(TENANT): memory_skills lacks tenant_id column. Add
-        tenant_id column + migration, then inject
-        self.server_tenant_id into each skill dict before merge.
+        Injects self.server_tenant_id into each skill dict for tenant isolation.
         """
         if not self._require_auth():
             return
@@ -922,6 +920,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                     if not skill.get("name"):
                         skipped += 1
                         continue
+                    skill["tenant_id"] = self.server_tenant_id
                     try:
                         merge_and_save_skill(conn, skill)
                         applied += 1

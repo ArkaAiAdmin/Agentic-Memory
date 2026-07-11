@@ -963,6 +963,8 @@ class MaintenanceOp(str, Enum):
     SUPERSEDE = "supersede"
     SDK_DEMO = "sdk_demo"
     STRIP_PROVENANCE = "strip_provenance"
+    SET_ACL_OVERRIDE = "set_acl_override"
+    REMOVE_ACL_OVERRIDE = "remove_acl_override"
     POLICY_HASH_STATUS = "policy_hash_status"
 
     @classmethod
@@ -1100,6 +1102,8 @@ def memory_maintenance(
       ``temporal_contradictions``        since_ts, until_ts, reason, limit, offset
       ``temporal_query``                 as_of, fact_id, since_ts, query, limit
       ``background_task_status``         memory_id
+      ``set_acl_override``               principal_id, resource_id, action, granted
+      ``remove_acl_override``            principal_id, resource_id, action
 
     Per-operation validation is delegated to the handler — each
     operation extracts only the kwargs it needs. Unknown kwargs are
