@@ -477,9 +477,10 @@ def _cascading_delete_relations(conn: AnyConnection, note_id: str) -> None:
 
 
 def _remove_from_indices(conn: AnyConnection, note_id: str) -> None:
-    """Steps 2-5 of the hard-delete cascade: chunks, embeddings,
-    vec_keys, kg_facts. Each is gated on the table existing (older
-    databases may not have all of these). Extracted 2026-06-22.
+    """Steps 2-6 of the hard-delete cascade: chunks, embeddings,
+    vec_keys, kg_facts, field_crdt. Each is gated on the table
+    existing (older databases may not have all of these). Extracted
+    2026-06-22 from hard_delete_note().
     """
     if _table_exists(conn, "memory_chunks"):
         conn.execute("DELETE FROM memory_chunks WHERE parent_id = ?", (note_id,))
@@ -489,6 +490,10 @@ def _remove_from_indices(conn: AnyConnection, note_id: str) -> None:
         conn.execute("DELETE FROM memory_vec_keys WHERE memory_id = ?", (note_id,))
     if _table_exists(conn, "kg_facts"):
         conn.execute("DELETE FROM kg_facts WHERE source_memory = ?", (note_id,))
+    if _table_exists(conn, "memory_field_crdt"):
+        conn.execute(
+            "DELETE FROM memory_field_crdt WHERE memory_id = ?", (note_id,)
+        )
 
 
 def _purge_orphaned_kg(conn: AnyConnection) -> None:

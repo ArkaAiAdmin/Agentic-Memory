@@ -388,6 +388,11 @@ class _ConnectionPool:
                                 "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                                 "SELECT * FROM memories WHERE tenant_id = tenant_id()"
                             )
+                            conn.execute(
+                                "CREATE TEMP VIEW IF NOT EXISTS tenant_field_crdt AS "
+                                "SELECT * FROM memory_field_crdt "
+                                "WHERE tenant_id = tenant_id()"
+                            )
                         except Exception as e:
                             logger.warning("db: failed to create tenant view in pool get: %s", e)
                         return conn

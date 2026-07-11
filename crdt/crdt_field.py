@@ -290,6 +290,7 @@ def ensure_field_crdt_schema(conn: AnyConnection) -> None:
             logical_clock    INTEGER NOT NULL,
             last_writer_agent TEXT   NOT NULL,
             is_deleted       INTEGER NOT NULL DEFAULT 0,
+            tenant_id        TEXT    NOT NULL DEFAULT 'default',
             updated_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
             PRIMARY KEY (memory_id, field_name),
             FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
@@ -304,11 +305,27 @@ def ensure_field_crdt_schema(conn: AnyConnection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_memory_field_crdt_agent_updated "
         "ON memory_field_crdt(last_writer_agent, updated_at)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memory_field_crdt_tenant_id "
+        "ON memory_field_crdt(tenant_id)"
+    )
+
+
+def _tenant_id_for_memory(conn: AnyConnection, memory_id: str) -> str | None:
+    """Return the tenant_id for a memory row, or None if not found."""
+    try:
+        row = conn.execute(
+            "SELECT tenant_id FROM memories WHERE id = ?", (memory_id,)
+        ).fetchone()
+        return row[0] if row else None
+    except Exception:
+        return None
 
 
 def apply_field_updates_to_db(
     conn: AnyConnection,
     updates: Iterable[FieldUpdate],
+    tenant_id: str | None = None,
 ) -> list[FieldUpdate]:
     """Apply field updates to the DB using the LWWES rule.
 
@@ -317,17 +334,24 @@ def apply_field_updates_to_db(
     replacement only happens if the incoming update is causally
     after or LWW-wins over the existing row.
 
+    Args:
+        conn: Open SQLite connection.
+        updates: Field updates to apply.
+        tenant_id: Tenant identity for the rows. When None, the memory's
+            current ``memories.tenant_id`` is resolved automatically.
+
     Returns the list of updates that were ACTUALLY applied (i.e.,
     not rejected as stale). Useful for sync confirmations.
     """
     ensure_field_crdt_schema(conn)
     applied: list[FieldUpdate] = []
     for upd in updates:
+        resolved_tid = tenant_id or _tenant_id_for_memory(conn, upd.memory_id) or "default"
         try:
             row = conn.execute(
                 "SELECT value, version_vector, logical_clock, last_writer_agent, is_deleted "
-                "FROM memory_field_crdt WHERE memory_id = ? AND field_name = ?",
-                (upd.memory_id, upd.field_name),
+                "FROM memory_field_crdt WHERE memory_id = ? AND field_name = ? AND tenant_id = ?",
+                (upd.memory_id, upd.field_name, resolved_tid),
             ).fetchone()
         except sqlite3.Error:
             continue
@@ -336,8 +360,8 @@ def apply_field_updates_to_db(
                 conn.execute(
                     "INSERT OR IGNORE INTO memory_field_crdt "
                     "(memory_id, field_name, value, version_vector, logical_clock, "
-                    " last_writer_agent, is_deleted) "
-                    "VALUES (?, ?, ?, ?, ?, ?, 0)",
+                    " last_writer_agent, is_deleted, tenant_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
                     (
                         upd.memory_id,
                         upd.field_name,
@@ -345,6 +369,7 @@ def apply_field_updates_to_db(
                         json.dumps(upd.version_vector),
                         upd.logical_clock,
                         upd.last_writer_agent,
+                        resolved_tid,
                     ),
                 )
             except sqlite3.Error:
@@ -394,15 +419,18 @@ def apply_field_updates_to_db(
                 conn.execute(
                     "UPDATE memory_field_crdt SET value = ?, version_vector = ?, "
                     "logical_clock = ?, last_writer_agent = ?, is_deleted = 0, "
-                    "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
-                    "WHERE memory_id = ? AND field_name = ?",
+                    "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), "
+                    "tenant_id = ? "
+                    "WHERE memory_id = ? AND field_name = ? AND tenant_id = ?",
                     (
                         upd.value,
                         json.dumps(upd.version_vector),
                         upd.logical_clock,
                         upd.last_writer_agent,
+                        resolved_tid,
                         upd.memory_id,
                         upd.field_name,
+                        resolved_tid,
                     ),
                 )
             except sqlite3.Error:
@@ -415,16 +443,25 @@ def apply_field_updates_to_db(
 def read_fields(
     conn: AnyConnection,
     memory_id: str,
+    tenant_id: str | None = None,
 ) -> dict[str, str]:
     """Read all live (non-tombstoned) fields for a memory_id.
+
+    Args:
+        conn: Open SQLite connection.
+        memory_id: The memory to read.
+        tenant_id: When provided, restrict the read to this tenant's
+            rows. When None (default), all tenants' rows are returned.
 
     Returns a dict mapping field_name -> value. Missing fields
     are simply absent from the result.
     """
+    tid_filter = "AND tenant_id = ?" if tenant_id else ""
+    params = (memory_id,) if not tenant_id else (memory_id, tenant_id)
     rows = conn.execute(
-        "SELECT field_name, value FROM memory_field_crdt "
-        "WHERE memory_id = ? AND is_deleted = 0",
-        (memory_id,),
+        f"SELECT field_name, value FROM memory_field_crdt "
+        f"WHERE memory_id = ? AND is_deleted = 0 {tid_filter}",
+        params,
     ).fetchall()
     return {r[0]: r[1] for r in rows}
 
@@ -443,13 +480,13 @@ def project_sql_to_crdt(
     the SQL value won't overwrite it).
     """
     row = conn.execute(
-        "SELECT content, tags, category, version_vector, logical_clock "
+        "SELECT content, tags, category, version_vector, logical_clock, tenant_id "
         "FROM tenant_memories WHERE id=?",
         (memory_id,),
     ).fetchone()
     if not row:
         return
-    content, tags, category, vv_str, clock = row
+    content, tags, category, vv_str, clock, mem_tenant_id = row
     vv = json.loads(vv_str) if vv_str else {}
     clock = clock or 0
     ensure_field_crdt_schema(conn)
@@ -465,7 +502,7 @@ def project_sql_to_crdt(
         )
         for fname in REPLICATED_FIELDS
     ]
-    apply_field_updates_to_db(conn, updates)
+    apply_field_updates_to_db(conn, updates, tenant_id=mem_tenant_id)
 
 
 def project_crdt_to_sql(
@@ -481,7 +518,11 @@ def project_crdt_to_sql(
     Returns the set of field names that were updated (caller can use
     this to decide whether to enqueue background indexing tasks).
     """
-    fields = read_fields(conn, memory_id)
+    mem_row = conn.execute(
+        "SELECT tenant_id FROM memories WHERE id = ?", (memory_id,)
+    ).fetchone()
+    mem_tid = mem_row[0] if mem_row else None
+    fields = read_fields(conn, memory_id, tenant_id=mem_tid)
     if not fields:
         return set()
     allowed = set(REPLICATED_FIELDS)
@@ -528,7 +569,7 @@ def backfill_from_memories(conn: AnyConnection) -> int:
         table = "memories"
     rows = conn.execute(
         "SELECT id, content, tags, category, version_vector, logical_clock, "
-        "        COALESCE(repo_id, '') "
+        "        COALESCE(repo_id, ''), tenant_id "
         f"FROM {table} WHERE deleted_at IS NULL"
     ).fetchall()
     count = 0
@@ -539,23 +580,25 @@ def backfill_from_memories(conn: AnyConnection) -> int:
         category,
         vv_json,
         clock,
-        agent_id,
+        repo_id,
+        mem_tenant_id,
     ) in rows:
         existing = conn.execute(
-            "SELECT 1 FROM memory_field_crdt WHERE memory_id = ? LIMIT 1",
-            (memory_id,),
+            "SELECT 1 FROM memory_field_crdt WHERE memory_id = ? AND tenant_id = ? LIMIT 1",
+            (memory_id, mem_tenant_id or "default"),
         ).fetchone()
         if existing is not None:
-            continue  # already backfilled
+            continue  # already backfilled for this tenant
         vv = json.loads(vv_json) if vv_json else {}
-        # Use the note's existing clock/agent as the seed. If absent,
-        # fall back to agent_id + clock=1.
+        # Use the note's existing clock/repo as the seed. If absent,
+        # fall back to local agent + clock=1.
         if not vv:
-            vv = {agent_id or "local": 1}
+            vv = {repo_id or "local": 1}
             seed_clock = 1
         else:
             seed_clock = int(clock) if clock else 1
-        seed_agent = agent_id or "local"
+        seed_agent = repo_id or "local"
+        tid = mem_tenant_id or "default"
 
         for field_name, value in (
             ("content", content or ""),
@@ -565,9 +608,9 @@ def backfill_from_memories(conn: AnyConnection) -> int:
             conn.execute(
                 "INSERT OR IGNORE INTO memory_field_crdt "
                 "(memory_id, field_name, value, version_vector, logical_clock, "
-                " last_writer_agent, is_deleted) "
-                "VALUES (?, ?, ?, ?, ?, ?, 0)",
-                (memory_id, field_name, value, json.dumps(vv), seed_clock, seed_agent),
+                " last_writer_agent, is_deleted, tenant_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+                (memory_id, field_name, value, json.dumps(vv), seed_clock, seed_agent, tid),
             )
         count += 1
     conn.commit()
@@ -720,6 +763,10 @@ def crdt_field_save(
         _write_conn = conn
         conn.execute("PRAGMA foreign_keys=ON")
         ensure_field_crdt_schema(conn)
+        _tid_row = conn.execute(
+            "SELECT tenant_id FROM memories WHERE id = ?", (note_id,)
+        ).fetchone()
+        _note_tenant_id = _tid_row[0] if _tid_row else "default"
         _pre_state = _capture_crdt_pre_state(conn, note_id, db_path_obj)
 
         # Backfill on first read: if the note exists in memories but
@@ -742,7 +789,7 @@ def crdt_field_save(
                     continue
                 # If the caller didn't pass tags, fall back to current value.
                 if fvalue is None:
-                    existing = read_fields(conn, note_id)
+                    existing = read_fields(conn, note_id, tenant_id=_note_tenant_id)
                     fvalue = existing.get(fname, "")
                 if fvalue is None:
                     fvalue = ""
@@ -786,7 +833,7 @@ def crdt_field_save(
                     "UPDATE memories SET version_vector=?, logical_clock=? WHERE id=?",
                     (json.dumps(new_vv), remote_logical_clock or 1, note_id),
                 )
-                applied = apply_field_updates_to_db(conn, field_updates)
+                applied = apply_field_updates_to_db(conn, field_updates, tenant_id=_note_tenant_id)
                 result["applied"] = True
                 result["fields_applied"] = [u.field_name for u in applied]
                 _finalize_crdt_save(db_path_obj, note_id, content, conn)
@@ -828,7 +875,7 @@ def crdt_field_save(
             if _vv_dominates(incoming_vv, existing_vv):
                 new_vv = _bump_vv(incoming_vv, remote_agent_id)
                 new_clock = max(remote_logical_clock, existing_clock + 1)
-                applied = apply_field_updates_to_db(conn, field_updates)
+                applied = apply_field_updates_to_db(conn, field_updates, tenant_id=_note_tenant_id)
                 _write_note_level_vv(conn, note_id, new_vv, new_clock)
                 result["applied"] = True
                 result["fields_applied"] = [u.field_name for u in applied]
@@ -850,7 +897,7 @@ def crdt_field_save(
             # independently. THIS is the bug fix — concurrent edits to
             # different fields both win.
             result["conflict"] = True
-            applied = apply_field_updates_to_db(conn, field_updates)
+            applied = apply_field_updates_to_db(conn, field_updates, tenant_id=_note_tenant_id)
             result["applied"] = bool(applied)
             result["fields_applied"] = [u.field_name for u in applied]
             if result["applied"]:
@@ -893,6 +940,7 @@ class _CrdtPreState:
     field_rows: list[tuple]
     md_content: str | None
     md_path: Path | None
+    note_tenant_id: str | None = None
 
 
 def _capture_crdt_pre_state(
@@ -900,16 +948,21 @@ def _capture_crdt_pre_state(
 ) -> _CrdtPreState:
     memories_row = conn.execute(
         "SELECT content, tags, category, version_vector, logical_clock, "
-        "source_file FROM tenant_memories WHERE id=?",
+        "source_file, tenant_id FROM tenant_memories WHERE id=?",
         (note_id,),
     ).fetchone()
+    note_tenant_id: str | None = None
+    if memories_row:
+        # content, tags, category, vv, clock, source_file, tenant_id
+        note_tenant_id = memories_row[6] if len(memories_row) > 6 else None
     field_rows: list[tuple] = []
     try:
+        tid = note_tenant_id or "default"
         field_rows = conn.execute(
             "SELECT field_name, value, version_vector, logical_clock, "
-            "last_writer_agent, is_deleted FROM memory_field_crdt "
-            "WHERE memory_id=?",
-            (note_id,),
+            "last_writer_agent, is_deleted, tenant_id FROM memory_field_crdt "
+            "WHERE memory_id=? AND tenant_id=?",
+            (note_id, tid),
         ).fetchall()
     except Exception as e:
         logger.warning("_capture_crdt_pre_state failed: %s", e)
@@ -944,8 +997,12 @@ def _restore_crdt_pre_state(
     pre_state: _CrdtPreState,
     db_path_obj: Path | None,
 ) -> None:
+    tid = pre_state.note_tenant_id or "default"
     if pre_state.memories_row is not None:
-        content, tags, category, vv_json, clock, source_file = pre_state.memories_row
+        (
+            content, tags, category,
+            vv_json, clock, source_file, _pre_tid,
+        ) = pre_state.memories_row[:7]
         try:
             conn.execute(
                 "UPDATE memories SET content=?, tags=?, category=?, "
@@ -962,18 +1019,24 @@ def _restore_crdt_pre_state(
         except Exception as exc:
             logger.warning("crdt undo: delete memories for %s failed: %r", note_id, exc)
     try:
-        conn.execute("DELETE FROM memory_field_crdt WHERE memory_id=?", (note_id,))
+        conn.execute(
+            "DELETE FROM memory_field_crdt WHERE memory_id=? AND tenant_id=?",
+            (note_id, tid),
+        )
     except Exception as exc:
         logger.warning("crdt undo: delete fields for %s failed: %r", note_id, exc)
     for frow in pre_state.field_rows:
-        fname, fvalue, fvv, fclock, flwa, fdel = frow
         try:
+            elems = list(frow)
+            while len(elems) < 7:
+                elems.append(tid)
+            fname, fvalue, fvv, fclock, flwa, fdel, ftid = elems[:7]
             conn.execute(
                 "INSERT INTO memory_field_crdt "
                 "(memory_id, field_name, value, version_vector, logical_clock, "
-                " last_writer_agent, is_deleted) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (note_id, fname, fvalue, fvv, fclock, flwa, fdel),
+                " last_writer_agent, is_deleted, tenant_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (note_id, fname, fvalue, fvv, fclock, flwa, fdel, ftid),
             )
         except Exception as exc:
             logger.warning(
@@ -1107,29 +1170,33 @@ def _seed_note_into_field_crdt_if_needed(
     local_agent_id: str,
 ) -> None:
     """If the note exists in ``memories`` but not in
-    ``memory_field_crdt``, backfill the field rows from the note's
-    current content/tags/category.
+    ``memory_field_crdt`` for its tenant, backfill the field rows from
+    the note's current content/tags/category.
 
     This is the back-compat path for notes saved before v13. It
     runs on every save (cheap — the SELECT is indexed on
     memory_id) so the system converges to field-level state as
     notes are touched.
     """
+    row = conn.execute(
+        "SELECT tenant_id FROM memories WHERE id = ?", (note_id,)
+    ).fetchone()
+    mem_tenant_id = row[0] if row else "default"
     has_field = conn.execute(
-        "SELECT 1 FROM memory_field_crdt WHERE memory_id = ? LIMIT 1",
-        (note_id,),
+        "SELECT 1 FROM memory_field_crdt WHERE memory_id = ? AND tenant_id = ? LIMIT 1",
+        (note_id, mem_tenant_id),
     ).fetchone()
     if has_field is not None:
         return
 
     row = conn.execute(
-        "SELECT content, tags, category, version_vector, logical_clock "
+        "SELECT content, tags, category, version_vector, logical_clock, tenant_id "
         "FROM tenant_memories WHERE id = ?",
         (note_id,),
     ).fetchone()
     if row is None:
         return  # note doesn't exist; crdt_field_save will create it
-    content, tags, category, vv_json, clock = row
+    content, tags, category, vv_json, clock, _row_tid = row
     vv = json.loads(vv_json) if vv_json else {local_agent_id: clock or 1}
     seed_clock = int(clock) if clock else 1
     for fname, fvalue in (
@@ -1140,9 +1207,9 @@ def _seed_note_into_field_crdt_if_needed(
         conn.execute(
             "INSERT OR IGNORE INTO memory_field_crdt "
             "(memory_id, field_name, value, version_vector, logical_clock, "
-            " last_writer_agent, is_deleted) "
-            "VALUES (?, ?, ?, ?, ?, ?, 0)",
-            (note_id, fname, fvalue, json.dumps(vv), seed_clock, local_agent_id),
+            " last_writer_agent, is_deleted, tenant_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+            (note_id, fname, fvalue, json.dumps(vv), seed_clock, local_agent_id, mem_tenant_id),
         )
 
 

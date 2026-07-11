@@ -413,7 +413,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
             try:
                 rows = conn.execute(
                     """SELECT id, content, source_file, logical_clock,
-                              version_vector, updated_at
+                              version_vector, updated_at, tenant_id
                        FROM tenant_memories
                        WHERE deleted_at IS NULL
                          AND CAST(strftime('%s', updated_at) AS INTEGER) > ?
@@ -430,6 +430,11 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 # same note both win (the v12 bug).
                 field_crdt: dict = {}
                 if note_ids:
+                    # tenant_memories is already tenant-scoped, so all
+                    # returned rows share the same tenant_id. Use the
+                    # first row's tenant_id (index 6) to scope the
+                    # field-crdt read.
+                    sync_tenant_id = rows[0][6] if rows else "default"
                     placeholders = ",".join("?" for _ in note_ids)
                     field_rows = conn.execute(
                         f"""SELECT memory_id, field_name, value,
@@ -438,8 +443,9 @@ class _SyncHandler(BaseHTTPRequestHandler):
                             FROM memory_field_crdt
                             WHERE memory_id IN ({placeholders})
                               AND is_deleted = 0
+                              AND tenant_id = ?
                               AND CAST(strftime('%s', updated_at) AS INTEGER) > ?""",
-                        (*note_ids, since_epoch),
+                        (*note_ids, sync_tenant_id, since_epoch),
                     ).fetchall()
                     for fr in field_rows:
                         field_crdt.setdefault(fr[0], []).append(
