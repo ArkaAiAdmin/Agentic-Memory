@@ -116,6 +116,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
     # Set by SyncServer before passing to HTTPServer.
     db_path: str = ""
     server_agent_id: str = ""
+    server_tenant_id: str = "default"
 
     # ------------------------------------------------------------------
     # Helpers
@@ -305,8 +306,11 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 conn = sqlite3.connect(str(db), timeout=5)
                 conn.execute("PRAGMA foreign_keys=ON")
                 try:
+                    # SEC fix: scope count to this server's tenant to
+                    # avoid leaking cross-tenant memory counts.
                     row = conn.execute(
-                        "SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL"
+                        "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL AND tenant_id = ?",
+                        (self.server_tenant_id,),
                     ).fetchone()
                     if row:
                         note_count = row[0]
@@ -411,15 +415,20 @@ class _SyncHandler(BaseHTTPRequestHandler):
             conn = sqlite3.connect(str(db), timeout=10)
             conn.execute("PRAGMA foreign_keys=ON")
             try:
+                # SEC fix: query base memories table directly with
+                # explicit tenant_id filter to prevent cross-tenant
+                # data leaks. Raw sqlite3.connect() does not have the
+                # tenant_memories TEMP VIEW.
                 rows = conn.execute(
                     """SELECT id, content, source_file, logical_clock,
                               version_vector, updated_at, tenant_id
-                       FROM tenant_memories
+                       FROM memories
                        WHERE deleted_at IS NULL
+                         AND tenant_id = ?
                          AND CAST(strftime('%s', updated_at) AS INTEGER) > ?
                        ORDER BY updated_at ASC
                        LIMIT ?""",
-                    (since_epoch, limit),
+                    (self.server_tenant_id, since_epoch, limit),
                 ).fetchall()
                 note_ids = [r[0] for r in rows]
 
@@ -430,11 +439,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 # same note both win (the v12 bug).
                 field_crdt: dict = {}
                 if note_ids:
-                    # tenant_memories is already tenant-scoped, so all
-                    # returned rows share the same tenant_id. Use the
-                    # first row's tenant_id (index 6) to scope the
-                    # field-crdt read.
-                    sync_tenant_id = rows[0][6] if rows else "default"
+                    # Use the server's tenant_id for the field-crdt
+                    # read — consistent with the main query filter.
                     placeholders = ",".join("?" for _ in note_ids)
                     field_rows = conn.execute(
                         f"""SELECT memory_id, field_name, value,
@@ -445,7 +451,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                               AND is_deleted = 0
                               AND tenant_id = ?
                               AND CAST(strftime('%s', updated_at) AS INTEGER) > ?""",
-                        (*note_ids, sync_tenant_id, since_epoch),
+                        (*note_ids, self.server_tenant_id, since_epoch),
                     ).fetchall()
                     for fr in field_rows:
                         field_crdt.setdefault(fr[0], []).append(
@@ -571,6 +577,10 @@ class _SyncHandler(BaseHTTPRequestHandler):
 
         Response:
           ``{"entity_ops": [...], "edge_ops": [...], "ts": <server_ts>}``
+
+        TODO(TENANT): kg_entity_crdt and kg_edge_crdt lack tenant_id
+        columns. Add tenant_id column + migration, then filter here
+        with ``AND tenant_id = ?`` using self.server_tenant_id.
         """
         if not self._require_auth():
             return
@@ -673,6 +683,10 @@ class _SyncHandler(BaseHTTPRequestHandler):
         caller can run ``compute_entity_crdt_state`` /
         ``compute_edge_crdt_state`` to project the merged state
         into the kg_entities / kg_edges tables.
+
+        TODO(TENANT): kg_entity_crdt and kg_edge_crdt lack tenant_id
+        columns. Add tenant_id column + migration, then inject
+        self.server_tenant_id into each INSERT.
         """
         if not self._require_auth():
             return
@@ -789,6 +803,10 @@ class _SyncHandler(BaseHTTPRequestHandler):
           ``since``  — Unix epoch. Only return skills with updated_at > since.
           ``agent``  — Agent id for context (unused in filter, reserved for future use).
           ``limit``  — Max skills to return (default 500, capped at 5000).
+
+        TODO(TENANT): memory_skills lacks tenant_id column. Add
+        tenant_id column + migration, then filter here with
+        ``AND tenant_id = ?`` using self.server_tenant_id.
         """
         if not self._require_auth():
             return
@@ -870,6 +888,10 @@ class _SyncHandler(BaseHTTPRequestHandler):
         Each skill is merged into the local database via
         ``merge_and_save_skill`` (idempotent LWW + G-Counter merge).
         Returns ``{"applied": N, "skipped": M}``.
+
+        TODO(TENANT): memory_skills lacks tenant_id column. Add
+        tenant_id column + migration, then inject
+        self.server_tenant_id into each skill dict before merge.
         """
         if not self._require_auth():
             return
@@ -1108,6 +1130,7 @@ class SyncServer:
 
         _Handler.db_path = self.db_path
         _Handler.server_agent_id = self.agent_id
+        _Handler.server_tenant_id = self.tenant_id
 
         self._server = server_cls((self.host, self.port), _Handler)
         self._server.timeout = 1.0  # allow clean shutdown within 1s

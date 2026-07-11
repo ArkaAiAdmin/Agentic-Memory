@@ -4,7 +4,7 @@
 # Agentic Memory — MCP Surface Reference
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
-> Last updated: 2026-07-11. Schema v44. Multi-tenant isolation enforced.
+> Last updated: 2026-07-12. Schema v54. Multi-tenant isolation enforced.
 
 ---
 
@@ -90,7 +90,7 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 - `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.
 - `memory_advanced(operation="...", **kwargs)`: alias for `memory_maintenance`; interchangeable.
 
-> **Important:** 87 ADMIN + 3 DEPRECATED tools are not removed — they are accessible via the `memory_maintenance`
+> **Important:** 95 ADMIN + 3 DEPRECATED tools are not removed — they are accessible via the `memory_maintenance`
 > router. Calling `memory_maintenance` with an operation name is the supported path. The 3 DEPRECATED tools
 > are routed via their replacement verbs and also tracked for audit.
 
@@ -591,7 +591,7 @@ memory_maintenance(operation="duplicates", threshold=0.85)
 
 ## Schema Version
 
-Current: **v44** (45 migrations, 100% down-migration coverage)
+Current: **v54** (55 migrations, 100% down-migration coverage)
 
 ### Multi-Tenant Isolation (Phase 0)
 
@@ -608,8 +608,41 @@ Current: **v44** (45 migrations, 100% down-migration coverage)
 ### RBAC Authorization (Phase 1)
 
 - `infra/rbac.py` — engine: `Principal`, `Role`, `check_permission(principal, resource, action)`. Evaluation order: ACL overrides → role-binding policies → default **deny**.
-- `infra/authorizer.py` — `mcp_authorize(principal_id, action, resource, db_path)`. Returns `True` when no principal is resolved (unauthenticated/backward-compat mode) or RBAC grants access; fails **open** on exception.
+- `infra/authorizer.py` — `mcp_authorize(principal_id, action, resource, db_path)`. Returns `True` when no principal is resolved (unauthenticated/backward-compat mode) or RBAC grants access; fails **closed** on exception.
 - Schema (migrations 045/046): `roles`, `role_bindings`, `policies` (resource/action matrix), `acl_overrides` (explicit grant/deny), `principal_roles_audit`. Default roles seeded: `memory:read` / `memory:write` / `memory:delete` / `memory:admin`, `ops:read` / `ops:admin`.
 - Enforcement points (defense-in-depth): `save_memory` (`_save_memory_core`), `memory_delete` (`soft_delete_note`/`restore_note`/`hard_delete_note`/`purge_expired`), and the mutating MCP verbs (`mcp_memory`, `mcp_verbs`, `mcp_kg`, `mcp_dashboard`). `api_server` REST path enforces via middleware; `sdk` passes principal context.
 - Principal resolution (Phase 1, token-based): `resolve_principal` maps a bearer token to a `Principal` via the static `[api.principals]` table in `memory.toml` (`{token} = "kind:id"`), then falls back to the `principal_identities` table. The legacy `MEMORY_API_TOKEN` returns no principal (RBAC not enforced).
 - Denied calls return `ErrorCode.AUTHORIZATION_DENIED`.
+
+### SSO / OIDC / SAML (Phase 2)
+
+- `infra/authlib_sso.py` — `SsoSession`, `SsoIdentity`, OIDC callback parsing, SAML 2.0 assertion parsing, JWT validation via joserfc.
+- `mcp_auth.py` — `login_url`, `callback`, `whoami`, `rotate_key`, `sso_sync_metadata` verbs.
+- Schema (migrations 047/048): `idem_token_key` (addressable signing keys), `principal_identities` multi-tenant awareness.
+- Auth in `api_server.py`: three-phase `_require_auth` — JWT validation (joserfc), static bearer token fallback, loopback bypass.
+
+### Pluggable Audit Sink (Phase 3)
+
+- `infra/audit_sink.py` — `AuditSink` protocol: `emit(event)`, `flush()`.
+- Reference implementations: `audit_sink_file.py` (JSONL), `audit_sink_http.py` (Splunk HEC / Elasticsearch / Datadog HTTP intake), `audit_sink_prom.py` (Prometheus metrics).
+- Dead-letter log for events that fail all sinks (SOC2 CC7.2).
+
+### GDPR Right-to-Be-Forgotten (Phase 4)
+
+- `infra/gdpr.py` — `gdpr_erase(principal_id, data_subject_sub)` with full cascade across all tables.
+- Schema (migration 049): `gdpr_requests` tracking table.
+- MCP verb: `memory_gdpr_erase` under `memory_maintenance`.
+- REST endpoint: `POST /api/v1/compliance/gdpr/erase`.
+- Returns deletion certificate as JSON.
+
+### KG + CRDT Tenant Isolation
+
+- `tenant_id` column on `kg_entities`, `kg_facts` (migration 050).
+- `tenant_id` column on `memory_field_crdt` (migration 051).
+- Backfill: `kg_facts`/`kg_entities` tenant_id from parent memory (migration 052).
+- Sync server: tenant_id filtering on `/crdt/changes` and `/health` endpoints.
+
+### Default Principal Seeding
+
+- Migration 054 seeds `default` principal with `memory:admin` + `ops:admin` roles for local single-user mode.
+- Required for MCP flow in closed auth mode without SSO.

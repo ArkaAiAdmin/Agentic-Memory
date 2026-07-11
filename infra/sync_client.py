@@ -372,6 +372,7 @@ def push_to_peer(
     local_agent_id: str,
     since: float = 0.0,
     limit: int = 200,
+    tenant_id: str = "default",
 ) -> dict:
     """Push local changes since ``since`` to a peer server.
 
@@ -383,6 +384,7 @@ def push_to_peer(
         local_agent_id: This agent's id (sent in the push payload).
         since: Unix epoch timestamp. Only push notes modified after this.
         limit: Maximum number of notes per push.
+        tenant_id: Tenant scope for the push (default "default").
 
     Returns:
         Dict with peer's response (applied/conflict/rejected/total) or error.
@@ -400,15 +402,18 @@ def push_to_peer(
         conn = sqlite3.connect(str(db), timeout=10)
         conn.execute("PRAGMA foreign_keys=ON")
         try:
+            # SEC fix: filter by tenant_id to prevent pushing
+            # cross-tenant data to peers.
             rows = conn.execute(
                 """SELECT id, content, source_file, logical_clock,
                           version_vector
-                   FROM tenant_memories
+                   FROM memories
                    WHERE deleted_at IS NULL
+                     AND tenant_id = ?
                      AND CAST(strftime('%s', updated_at) AS INTEGER) > ?
                    ORDER BY updated_at ASC
                    LIMIT ?""",
-                (int(since), limit),
+                (tenant_id, int(since), limit),
             ).fetchall()
         finally:
             conn.close()
@@ -479,6 +484,7 @@ def sync_with_peer(
     peer_agent_id: str,
     local_agent_id: str,
     limit: int = 200,
+    tenant_id: str = "default",
 ) -> dict:
     """Run a full two-way sync with a peer (push local, then pull remote).
 
@@ -496,6 +502,7 @@ def sync_with_peer(
         local_agent_id,
         since=last_push_ts,
         limit=limit,
+        tenant_id=tenant_id,
     )
     pull_result = pull_from_peer(
         db_path,
@@ -652,6 +659,7 @@ def sync_once(
     peer_agent_id: str | None = None,
     local_agent_id: str | None = None,
     limit: int = 200,
+    tenant_id: str = "default",
 ) -> dict:
     """Run a one-shot two-way sync to a single peer.
 
@@ -698,6 +706,7 @@ def sync_once(
                     peer_agent_id=p["agent_id"],
                     local_agent_id=local_agent_id or "local",
                     limit=limit,
+                    tenant_id=tenant_id,
                 )
                 results.append(r)
             success = all(r.get("success", False) for r in results)
@@ -758,6 +767,7 @@ def sync_once(
         peer_agent_id=peer_agent_id,
         local_agent_id=local_agent_id,
         limit=limit,
+        tenant_id=tenant_id,
     )
 
 
