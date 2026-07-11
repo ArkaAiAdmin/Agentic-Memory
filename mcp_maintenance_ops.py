@@ -241,6 +241,14 @@ def _get_domain_tools() -> dict:
             "memory_scan_injection": memory_scan_injection,
             "memory_strip_provenance": memory_strip_provenance,
             "memory_profile_access": memory_profile_access,
+            # Phase 2 SSO verbs (admin-only).
+            "memory_login_url": memory_login_url,
+            "memory_callback": memory_callback,
+            "memory_whoami": memory_whoami,
+            "memory_rotate_key": memory_rotate_key,
+            "memory_sso_sync_metadata": memory_sso_sync_metadata,
+            "memory_sso_idp_list": memory_sso_idp_list,
+            "memory_sso_idp_add": memory_sso_idp_add,
         }
     return _domain_tools
 

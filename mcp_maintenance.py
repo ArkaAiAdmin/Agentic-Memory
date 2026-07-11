@@ -949,6 +949,14 @@ class MaintenanceOp(str, Enum):
     LIST_FEDERATED_SKILLS = "list_federated_skills"  # next-frontier: cross-agent skill corpus view
     RECALL_STATS = "recall_stats"
     BACKGROUND_TASK_STATUS = "background_task_status"
+    # Phase 2 SSO (OIDC + SAML) — admin-only, via memory_maintenance.
+    LOGIN_URL = "login_url"
+    CALLBACK = "callback"
+    WHOAMI = "whoami"
+    ROTATE_KEY = "rotate_key"
+    SSO_SYNC_METADATA = "sso_sync_metadata"
+    SSO_IDP_LIST = "sso_idp_list"
+    SSO_IDP_ADD = "sso_idp_add"
     RESTORE = "restore"
     SUPERSEDE = "supersede"
     SDK_DEMO = "sdk_demo"

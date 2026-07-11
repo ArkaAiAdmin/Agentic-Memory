@@ -217,8 +217,8 @@ def _flush_audit_rows(rows: list) -> None:
                     conn.executemany(
                         "INSERT INTO memory_audit_log "
                         "(ts, tool, args, results_count, top1_id, "
-                        "latency_ms, error, request_id) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        "latency_ms, error, request_id, principal_id) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         [
                             (
                                 r["ts"],
@@ -229,6 +229,7 @@ def _flush_audit_rows(rows: list) -> None:
                                 r["latency_ms"],
                                 r["error"],
                                 r["request_id"],
+                                r["principal_id"],
                             )
                             for r in batch
                         ],
@@ -264,6 +265,7 @@ def enqueue_audit(
     latency_ms: float = 0.0,
     error: Optional[str] = None,
     request_id: Optional[str] = None,
+    principal_id: Optional[str] = None,
 ) -> None:
     """Fire-and-forget audit row. Never blocks, never raises.
 
@@ -304,6 +306,7 @@ def enqueue_audit(
         "latency_ms": float(latency_ms),
         "error": error,
         "request_id": request_id,
+        "principal_id": principal_id,
         "db_path": db_path,
     }
     global _PENDING
@@ -361,6 +364,7 @@ def audit(
     args: Any = None,
     db_path: str,
     request_id: Optional[str] = None,
+    principal_id: Optional[str] = None,
 ) -> Iterator[dict]:
     """Context manager that records an audit row on exit.
 
@@ -407,7 +411,7 @@ def audit(
     finally:
         latency_ms = (time.time() - start) * 1000.0
         # Pull any caller-set fields off ctx; fall back to None.
-        enqueue_audit(
+            enqueue_audit(
             db_path=db_path,
             tool=tool,
             args=args,
@@ -416,4 +420,5 @@ def audit(
             latency_ms=latency_ms,
             error=error,
             request_id=ctx.get("request_id"),
+            principal_id=principal_id,
         )
