@@ -28,7 +28,6 @@ import logging
 
 import atexit
 import json
-import re
 import queue
 import threading
 import time
@@ -66,49 +65,13 @@ _AUDIT_LOCK = threading.Lock()
 logger = logging.getLogger(__name__)
 
 # --- OWASP A09-001: secret redaction for audit args -----------------------
-# Keys whose name matches this (case-insensitive) are treated as secrets
-# and their values are masked before the args are serialized to the audit
-# log. This prevents plaintext credentials leaking into memory_audit_log.
-_SECRET_KEY_RE = re.compile(
-    r"(token|secret|password|api_key|apikey|authorization|auth|passwd|credential)",
-    re.IGNORECASE,
-)
+# Centralized in infra/audit_sink so the local log AND external sinks share
+# one redaction implementation. Re-exported here to keep call-site imports
+# stable.
+from infra.audit_sink import redact_audit_value, REDACTED_MASK
 
-# High-entropy string values that look like bearer/secret tokens regardless
-# of their key name.
-_SECRET_VALUE_RE = re.compile(
-    r"(sk-[A-Za-z0-9]{20,})"  # OpenAI-style sk- tokens
-    r"|([A-Za-z0-9+/]{40,}={0,2})"  # long base64 token
-    r"|([A-Fa-f0-9]{40,})"  # long hex token (>=160 bits)
-)
-
-REDACTED_MASK = "***REDACTED***"
-
-
-def _redact_args(args: Any) -> Any:
-    """Recursively walk ``args`` and mask secret values.
-
-    A value is masked when:
-      * its dict KEY matches ``_SECRET_KEY_RE`` (case-insensitive), or
-      * the value is a string matching ``_SECRET_VALUE_RE`` (high-entropy
-        secret such as an ``sk-`` token, long base64, or long hex).
-
-    Non-sensitive args are returned unchanged (deeply, so the caller's
-    original structure is not mutated). Lists and dicts are traversed.
-    """
-    if isinstance(args, dict):
-        redacted: dict = {}
-        for key, value in args.items():
-            if isinstance(key, str) and _SECRET_KEY_RE.search(key):
-                redacted[key] = REDACTED_MASK
-            else:
-                redacted[key] = _redact_args(value)
-        return redacted
-    if isinstance(args, (list, tuple)):
-        return [_redact_args(v) for v in args]
-    if isinstance(args, str) and _SECRET_VALUE_RE.search(args):
-        return REDACTED_MASK
-    return args
+# Backwards-compatible alias (kept so any in-repo caller still works).
+_redact_args = redact_audit_value
 
 # Pending counter — incremented on enqueue, decremented after the
 # writer thread has finished processing (INSERT or drop). Lets
@@ -323,6 +286,16 @@ def enqueue_audit(
             _AUDIT_QUEUE.qsize(),
             tool,
         )
+    # Phase 3: fan the event out to configured sinks (file / prom / http).
+    # Fire-and-forget + bounded queue — never blocks the tool call and never
+    # raises into the caller. The local memory_audit_log write above remains
+    # the source of truth.
+    try:
+        from infra.audit_sink import dispatch_to_sinks
+
+        dispatch_to_sinks(row)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("audit sink dispatch skipped: %s", exc)
 
 
 def flush_audit(timeout: float = 5.0) -> bool:
