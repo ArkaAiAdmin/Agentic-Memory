@@ -245,11 +245,17 @@ def mcp_authorize(
     """
     open_mode = _auth_mode() == "open"
 
-    # No principal: deny in closed mode (SOC2/HIPAA safe default).
-    if not principal_id:
+    # No principal (None): deny in closed mode, allow in open mode for
+    # backward compat with legacy single-token deployments.
+    if principal_id is None:
         if open_mode:
             return True
         logger.warning("AUTH DENIED: no principal resolved (mode=closed)")
+        return False
+
+    # Empty-string principal_id is never valid — deny unconditionally.
+    if not principal_id:
+        logger.warning("AUTH DENIED: empty principal_id")
         return False
 
     # No DB: cannot enforce RBAC -> deny in closed mode.

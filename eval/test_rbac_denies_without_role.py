@@ -332,15 +332,8 @@ class TestRBACDeniesWithoutRole:
         )
         assert result is False or result == "deny"
 
-    @pytest.mark.xfail(
-        reason="BUG: authorizer should deny empty principal_id but returns True"
-    )
     def test_empty_principal_id_denied(self, db_path: Path):
-        """An empty principal_id should be denied.
-
-        BUG: The authorizer currently returns True for empty principal IDs.
-        This test documents the expected behavior — empty IDs must be denied.
-        """
+        """An empty principal_id should be denied."""
         authorizer = _get_authorizer(db_path)
         if authorizer is None:
             pytest.skip("infra.authorizer not yet implemented")
