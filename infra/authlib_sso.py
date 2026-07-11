@@ -1,6 +1,6 @@
 """SSO (OIDC + SAML 2.0) integration for agentic-memory.
 
-Dependency-light: only :mod:`authlib.jose` (JWT/JWK, pinned <1.8),
+Dependency-light: only :mod:`joserfc` (JWT/JWK),
 :mod:`cryptography` (key generation), :mod:`requests` (HTTP), and the
 stdlib are used. No native XML-security libraries are required to import
 or to parse/validate SAML assertions; SAML *signature* verification is
@@ -42,8 +42,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# Authlib 1.7.x exposes authlib.jose (deprecated but compatible before 2.0).
-from authlib.jose import JsonWebKey, JsonWebToken  # type: ignore[attr-defined]
+from joserfc.jwk import import_key
+from joserfc import jwt as jose_jwt
+from joserfc.jwt import JWTClaimsRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -134,9 +135,9 @@ class KeyManager:
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption(),
         )
-        key = JsonWebKey.import_key(priv_pem)
-        priv_dict = key.as_dict(is_private=True)
-        pub_dict = key.as_dict(is_private=False)
+        key = import_key(priv_pem)
+        priv_dict = key.as_dict(private=True)
+        pub_dict = key.as_dict(private=False)
         # Use the JWK's own thumbprint kid (Authlib sets it in the JWT
         # header automatically) so verification lookups line up.
         kid = priv_dict.get("kid") or f"kid-{int(time.time())}-{uuid.uuid4().hex[:8]}"
@@ -245,11 +246,11 @@ def sign_token(
     payload["exp"] = now + expires_in
     payload["iss"] = issuer
     payload["aud"] = audience
-    jwt = JsonWebToken([alg])
-    token = jwt.encode(
+    token = jose_jwt.encode(
         {"alg": alg, "kid": key["kid"], "typ": "JWT"},
         payload,
-        JsonWebKey.import_key(key["private_jwk"]),
+        import_key(key["private_jwk"]),
+        algorithms=[alg],
     )
     return token.decode("utf-8") if isinstance(token, bytes) else token, key["kid"]
 
@@ -272,27 +273,23 @@ def verify_token(
         raise SsoAuthError(f"Unknown signing key: {kid}")
     if key.get("revoked_at"):
         raise SsoAuthError(f"Signing key {kid} has been revoked")
-    jwt = JsonWebToken([alg])
-    claims = jwt.decode(
-        token,
-        JsonWebKey.import_key(key["public_jwk"]),
-        claims_options={
-            "exp": {"essential": True},
-            "iss": {"essential": True, "value": issuer},
-            "aud": {"essential": True, "value": audience},
-        },
-    )
+    decoded = jose_jwt.decode(token, import_key(key["public_jwk"]), algorithms=[alg])
     try:
-        claims.validate(leeway=0)
+        JWTClaimsRegistry(
+            now=int(time.time()), leeway=0,
+            exp={"essential": True},
+            iss={"essential": True, "value": issuer},
+            aud={"essential": True, "value": audience},
+        ).validate(decoded.claims)
     except Exception as exc:  # noqa: BLE001
         raise SsoAuthError(f"Token validation failed: {exc}") from exc
     # Explicit exp check: Authlib may truncate to integer seconds and
     # accept a token whose exp equals the current wall-clock second.
     # This ensures sub-second-granularity rejection on the exp boundary.
-    exp_ts = claims.get("exp", 0)
+    exp_ts = decoded.claims.get("exp", 0)
     if exp_ts and exp_ts < time.time():
         raise SsoAuthError("Token is expired (strict check)")
-    return dict(claims)
+    return dict(decoded.claims)
 
 
 def _jwt_unverified_header(token: str) -> Dict[str, Any]:
@@ -322,25 +319,16 @@ def verify_oidc_id_token(
         options["iss"] = {"essential": True, "value": issuer}
     if audience:
         options["aud"] = {"essential": True, "value": audience}
-    jwt = JsonWebToken([alg])
-    # Select the verifying key by kid (Authlib's JWKS import is fiddly;
-    # selecting explicitly is robust across 1.7.x).
+    # Select the verifying key by kid (joserfc's JWKS import is fiddly;
+    # selecting explicitly is robust).
     header = _jwt_unverified_header(id_token)
     signing_key = _select_jwk(jwks, header.get("kid"))
+    decoded = jose_jwt.decode(id_token, import_key(signing_key), algorithms=[alg])
     try:
-        claims = jwt.decode(
-            id_token,
-            JsonWebKey.import_key(signing_key),
-            claims_options=options,
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise SsoAuthError(f"id_token verification failed: {exc}") from exc
-    try:
-        claims.validate(leeway=0)
+        JWTClaimsRegistry(now=int(time.time()), leeway=0, **options).validate(decoded.claims)
     except Exception as exc:  # noqa: BLE001
         raise SsoAuthError(f"id_token validation failed: {exc}") from exc
-    result = dict(claims)
-    return result
+    return dict(decoded.claims)
 
 
 def _select_jwk(jwks: Dict[str, Any], kid: Optional[str]) -> Dict[str, Any]:
