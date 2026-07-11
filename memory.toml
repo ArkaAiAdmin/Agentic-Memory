@@ -279,6 +279,22 @@ escape_hatch_audit_every_secs = 60 # re-affirm every minute
 # MEMORY_RERANKER_DISABLED = "compliance"
 
 # ---------------------------------------------------------------------------
+# Phase 3: pluggable audit sink (SIEM forwarding)
+# ---------------------------------------------------------------------------
+# The local memory_audit_log is ALWAYS written. These sinks are ADDITIONAL
+# forwarders. The file + Prometheus sinks are always on. The HTTP sink is
+# enabled only when `url` is set below — leave it empty to stay local-only.
+[audit.sinks.http]
+# url = "https://splunk.example.com/services/collector/event"
+# headers = { "Authorization" = "Splunk XXXX" }   # or use `auth` below
+# auth = "Splunk XXXX"                              # convenience alias for Authorization
+# timeout_s = 5.0
+# max_retries = 5
+# backoff_base_s = 1.0
+# backoff_cap_s = 30.0
+# payload_format = "splunk"   # "splunk" -> {"event":..., "time":...}; "raw" -> whole event
+
+# ---------------------------------------------------------------------------
 # Static principal mapping (Phase 1 RBAC — no SSO)
 # ---------------------------------------------------------------------------
 # Maps bearer tokens to principals for authorization. Tokens listed here
