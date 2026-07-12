@@ -1,0 +1,360 @@
+Total: 4838 passed, 8 failed, 70 skipped, 0 xfailed
+Passed files: 291
+Failed/segfault files: 5
+
+  FAILED: test_integration_search_pipeline.py
+  FAILED: test_multiwriter_reconciler_fleet.py
+  FAILED: test_qw2_query_expansion.py
+  FAILED: test_search_pipeline_unit.py
+  FAILED: test_soft_delete.py
+
+  PASSED: test_add_flock_to_crons.py
+  PASSED: test_adaptive_retention.py
+  PASSED: test_agent_scoping_hooks.py
+  PASSED: test_advanced_features.py
+  PASSED: test_antonym_contradictions.py
+  PASSED: test_api_server.py
+  PASSED: test_arc_cache.py
+  PASSED: test_atomic_write_coverage.py
+  PASSED: test_audit_log.py
+  PASSED: test_audit_logging.py
+  PASSED: test_audit_sink_dead_letter.py
+  PASSED: test_audit_sink_drops_on_5xx.py
+  PASSED: test_audit_sink_http.py
+  PASSED: test_audit_sink_principal_redact.py
+  PASSED: test_agents_md_generator.py
+  PASSED: test_adversarial_e2e.py
+  PASSED: test_authz_fail_closed.py
+  PASSED: test_auto_backlinks.py
+  PASSED: test_b7_shared_memory_injection.py
+  PASSED: test_auto_save_integration.py
+  PASSED: test_auto_save_unit.py
+  PASSED: test_backfill_orphans.py
+  PASSED: test_backfill_safety.py
+  PASSED: test_background_queue.py
+  PASSED: test_backpressure.py
+  PASSED: test_background_worker_unit.py
+  PASSED: test_bb1_synthesis.py
+  PASSED: test_backfill_all.py
+  PASSED: test_bb3_rrf.py
+  PASSED: test_belief_behavior.py
+  PASSED: test_bb2_history.py
+  PASSED: test_belief_e2e_save.py
+  PASSED: test_cli.py
+  PASSED: test_compaction_synthesis.py
+  PASSED: test_cascade_preserve.py
+  PASSED: test_compliance_rate_limit.py
+  PASSED: test_circuit_breaker_telemetry.py
+  PASSED: test_concurrent.py
+  PASSED: test_config_drift_audit.py
+  PASSED: test_config_drift.py
+  PASSED: test_config_drift_enforcement.py
+  PASSED: test_config_drift_cron.py
+  PASSED: test_config_drift_escape.py
+  PASSED: test_config_drift_init_hook.py
+  PASSED: test_compilation_behavior.py
+  PASSED: test_config_drift_persistence.py
+  PASSED: test_config_drift_runtime.py
+  PASSED: test_config_drift_policy.py
+  PASSED: test_config_drift_tier_overrides.py
+  PASSED: test_config_drift_tier_reset.py
+  PASSED: test_config_loading.py
+  PASSED: test_config_drift_tier_patching.py
+  PASSED: test_config_log_resolution.py
+  PASSED: test_consolidation.py
+  PASSED: test_context_window.py
+  PASSED: test_contextual_enrichment.py
+  PASSED: test_contextual_retrieval.py
+  PASSED: test_contradiction_detector_unit.py
+  PASSED: test_contradiction_merge.py
+  PASSED: test_crdt_field.py
+  PASSED: test_crdt_injection.py
+  PASSED: test_contradiction_save.py
+  PASSED: test_crdt_merge_helpers.py
+  PASSED: test_crdt_merge.py
+  PASSED: test_crdt_integration.py
+  PASSED: test_crdt_saga.py
+  PASSED: test_crewai_tool.py
+  PASSED: test_crewai_memory.py
+  PASSED: test_cron_behavior.py
+  PASSED: test_cron_concept_drift.py
+  PASSED: test_crdt_sync.py
+  PASSED: test_cron_crdt_sync.py
+  PASSED: test_cron_coverage.py
+  PASSED: test_cron_cross_session_learn.py
+  PASSED: test_cron_kg_backfill.py
+  PASSED: test_cron_kg_backfill_monitor.py
+  PASSED: test_cron_review_beliefs.py
+  PASSED: test_cron_model_lock.py
+  PASSED: test_cron_skill_extraction.py
+  PASSED: test_cron_train_forget_model.py
+  PASSED: test_cron_watchdog.py
+  PASSED: test_cross_process_safety.py
+  PASSED: test_cross_session_learn.py
+  PASSED: test_cron_integration.py
+  PASSED: test_ctr_feedback.py
+  PASSED: test_db_path_flock.py
+  PASSED: test_decision_extraction.py
+  PASSED: test_db_drift.py
+  PASSED: test_dist_lock.py
+  PASSED: test_doc_drift.py
+  PASSED: test_doc_drift_unified.py
+  PASSED: test_docker_cron_runner.py
+  PASSED: test_dedup_audit_behavior.py
+  PASSED: test_drift_alarms.py
+  PASSED: test_embedding_cache.py
+  PASSED: test_e2e_validation.py
+  PASSED: test_embedding_search_unit.py
+  PASSED: test_embedding_recompute.py
+  PASSED: test_embedding_singleton.py
+  PASSED: test_entailment_validation.py
+  PASSED: test_enqueue_task_behavior.py
+  PASSED: test_event_time_extraction.py
+  PASSED: test_eval_judge.py
+  PASSED: test_fact_extraction.py
+  PASSED: test_fact_temporal.py
+  PASSED: test_feature_flags.py
+  PASSED: test_file_lock.py
+  PASSED: test_feature_composition.py
+  PASSED: test_five_channel.py
+  PASSED: test_frontmatter.py
+  PASSED: test_forgetting_curve.py
+  PASSED: test_fts.py
+  PASSED: test_fts_unit.py
+  PASSED: test_gdpr_erase_certificate.py
+  PASSED: test_gdpr_erase_full_cascade.py
+  PASSED: test_gdpr_erase_refuses_cross_tenant.py
+  PASSED: test_h21_fixture_smoke.py
+  PASSED: test_graph_behavior.py
+  PASSED: test_hybrid_strategy.py
+  PASSED: test_hook_resilience.py
+  PASSED: test_infra_log.py
+  PASSED: test_indexers.py
+  PASSED: test_injection.py
+  PASSED: test_install_crontab_lock.py
+  PASSED: test_integration_integrity.py
+  PASSED: test_integration_lifecycle.py
+  PASSED: test_integration_edge_cases.py
+  PASSED: test_integration_wiring.py
+  PASSED: test_integration_save_pipeline.py
+  PASSED: test_integrations_shared.py
+  PASSED: test_isolation_guard.py
+  PASSED: test_kg_crdt.py
+  PASSED: test_integrity.py
+  PASSED: test_kg_dedup.py
+  PASSED: test_kg_dedup_semantic.py
+  PASSED: test_kg_enhancements.py
+  PASSED: test_kg_entity_filter.py
+  PASSED: test_kg_facts_fts.py
+  PASSED: test_kg_self_editing_e2e.py
+  PASSED: test_kg_orphan_recovery.py
+  PASSED: test_kg_traversal.py
+  PASSED: test_kg_validation.py
+  PASSED: test_knowledge_graph.py
+  PASSED: test_langchain_retriever.py
+  PASSED: test_langchain_tool.py
+  PASSED: test_llm_contradiction.py
+  PASSED: test_llm_extraction_max_tokens.py
+  PASSED: test_langchain_history.py
+  PASSED: test_llm_summarization.py
+  PASSED: test_materialize_idempotent.py
+  PASSED: test_mcp_instance.py
+  PASSED: test_db_write_queue.py
+  PASSED: test_mcp_maintenance_dispatch.py
+  PASSED: test_mcp_maintenance_ops_unit.py
+  PASSED: test_llm_providers.py
+  PASSED: test_mcp_skill_ops.py
+  PASSED: test_mcp_live.py
+  PASSED: test_mcp_verbs.py
+  PASSED: test_memory_common_extras.py
+  PASSED: test_mdns_discovery.py
+  PASSED: test_memory_common_unit.py
+  PASSED: test_mcp_wrappers.py
+  PASSED: test_memory_injection_unit.py
+  PASSED: test_migration_applied.py
+  PASSED: test_multi_agent_unit.py
+  PASSED: test_migration_runner.py
+  PASSED: test_multi_vector.py
+  PASSED: test_neural_forget_model.py
+  PASSED: test_neural_forget_unit.py
+  PASSED: test_mutation_killers.py
+  PASSED: test_next_frontier.py
+  PASSED: test_observability.py
+  PASSED: test_okf_export.py
+  PASSED: test_okf_import.py
+  PASSED: test_memory_common_mutation_killers.py
+  PASSED: test_no_silent_search_failures.py
+  PASSED: test_okf_roundtrip.py
+  PASSED: test_phase1_debt_fixes.py
+  PASSED: test_phase2_3_smoke.py
+  PASSED: test_p2_share_and_sync_wireup.py
+  PASSED: test_phase2_debt_fixes.py
+  PASSED: test_phase4_debt_fixes.py
+  PASSED: test_p0_p1_p2_fixes.py
+  PASSED: test_phase2_instrumentation.py
+  PASSED: test_phase9.py
+  PASSED: test_policy_eligibility.py
+  PASSED: test_pipelines_aj.py
+  PASSED: test_policy_hash_cache.py
+  PASSED: test_policy_hash_status.py
+  PASSED: test_pool_inode_reopen.py
+  PASSED: test_production_hardening.py
+  PASSED: test_production_readiness.py
+  PASSED: test_quality_gates.py
+  PASSED: test_policy_hash_fetcher.py
+  PASSED: test_quirk_fixes_e2e.py
+  PASSED: test_query_cache.py
+  PASSED: test_qw3_query_types.py
+  PASSED: test_qw4_cross_encoder.py
+  PASSED: test_rate_limit_mcp.py
+  PASSED: test_qw5_chunk_indexing.py
+  PASSED: test_rate_limiter.py
+  PASSED: test_rbac_acl_override.py
+  PASSED: test_rbac_allows_with_role.py
+  PASSED: test_rbac_audit_trail.py
+  PASSED: test_rbac_multi_tenant.py
+  PASSED: test_rbac_denies_without_role.py
+  PASSED: test_read_path_remediation.py
+  PASSED: test_rbac_schema.py
+  PASSED: test_reasoning_expansion.py
+  PASSED: test_rebuild_concurrency.py
+  PASSED: test_rebuild_index.py
+  PASSED: test_rebuild_vec_index.py
+  PASSED: test_recent_save_hint.py
+  PASSED: test_refactor_helpers.py
+  PASSED: test_relational_storage.py
+  PASSED: test_recall.py
+  PASSED: test_reranker.py
+  PASSED: test_reranker_unit.py
+  PASSED: test_reranker_security.py
+  PASSED: test_rest_tenant_isolation_e2e.py
+  PASSED: test_retention_coordinator.py
+  PASSED: test_retrieval_regression_embedding.py
+  PASSED: test_rich_survival_note.py
+  PASSED: test_safe_call.py
+  PASSED: test_safe_close_db.py
+  PASSED: test_safety_wiring.py
+  PASSED: test_safety_wiring_signatures.py
+  PASSED: test_saga_crash_safety.py
+  PASSED: test_sarcasm_contradiction.py
+  PASSED: test_save_pipeline_behavioral.py
+  PASSED: test_retrieval_regression.py
+  PASSED: test_save_pipeline_unit.py
+  PASSED: test_save_skill_extraction.py
+  PASSED: test_scope.py
+  PASSED: test_sdk.py
+  PASSED: test_sdk_p2.py
+  PASSED: test_sdk_p3.py
+  PASSED: test_sdk_p1.py
+  PASSED: test_search_kg_facts.py
+  PASSED: test_search_memory_cli.py
+  PASSED: test_search_mutation_killers.py
+  PASSED: test_pipeline_integration.py
+  PASSED: test_search_skill_first.py
+  PASSED: test_search_pipeline_validation.py
+  PASSED: test_search_integration.py
+  PASSED: test_security_health_check.py
+  PASSED: test_security_sync_auth.py
+  PASSED: test_search_temporal_as_of.py
+  PASSED: test_self_directed.py
+  PASSED: test_semantic_correctness.py
+  PASSED: test_self_directed_validation.py
+  PASSED: test_self_editing_behavior.py
+  PASSED: test_session_migration.py
+  PASSED: test_session_admin.py
+  PASSED: test_shared_memory_state.py
+  PASSED: test_skill_extractor.py
+  PASSED: test_skill_extractor_full.py
+  PASSED: test_session_search.py
+  PASSED: test_session_manager.py
+  PASSED: test_spaced_repetition.py
+  PASSED: test_sso_idp_metadata_cache.py
+  PASSED: test_sso_principal_creation.py
+  PASSED: test_sql_safety.py
+  PASSED: test_subpackage_public_api.py
+  PASSED: test_sync_check.py
+  PASSED: test_sync_layer.py
+  PASSED: test_sso_jwt_validation.py
+  PASSED: test_sync_tenant_isolation.py
+  PASSED: test_temporal_facts.py
+  PASSED: test_sync_server_tls.py
+  PASSED: test_temporal_ssm_v2.py
+  PASSED: test_temporal_query_axes.py
+  PASSED: test_tier_migration.py
+  PASSED: test_tier_migration_assign_tier.py
+  PASSED: test_toml_watch.py
+  PASSED: test_tool_routing.py
+  PASSED: test_toml_hot_reload.py
+  PASSED: test_transformer_opt_in.py
+  PASSED: test_unicode_normalization.py
+  PASSED: test_uncovered_dedicated.py
+  PASSED: test_vec_index_search.py
+  PASSED: test_vector_store.py
+  PASSED: test_vec_index.py
+  PASSED: test_wal_checkpoint.py
+  PASSED: test_wave2c.py
+  PASSED: test_wiring_invariants.py
+  PASSED: test_wal_mode.py
+  PASSED: test_write_journal.py
+  PASSED: test_write_journal_multiworker.py
+  PASSED: test_zero_result_ux.py
+  PASSED: test_tenant_isolation_exhaustive.py
+
+
+Failure details:
+
+=== test_integration_search_pipeline.py ===
+...........F................................                             [100%]
+=================================== FAILURES ===================================
+E   assert 'database' in '("db")'
+/Users/arka/.config/agentic-memory/eval/test_integration_search_pipeline.py:405: assert 'database' in '("db")'
+=========================== short test summary info ============================
+FAILED eval/test_integration_search_pipeline.py::TestQueryExpansion::test_expand_db
+1 failed, 43 passed in 10.91s
+
+
+=== test_qw2_query_expansion.py ===
+unner:migration_runner.py:488 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
+WARNING  agent_context:agent_context.py:93 agent_context: no agent set in this thread, falling back to 'default'. Call init_agent() to set a real agent. This warning is emitted once per process.
+WARNING  infra.embedding_search:embedding_search.py:114 For semantic search, run with the venv python: /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/infra/embedding_search.py <query>
+WARNING  infra.db:db.py:280 _ensure_full_schema failed: Migration checksum verification FAILED. The following applied migration file(s) no longer match the SHA256 recorded when they were applied:
+  005 005_columns_indexes_chunks.sql: stored=0ea4f0bce7f43df24f9c499c47325ae42112e2bc7fa35ec5918ff819f20b57a3 current=8ca87c474478830a94559f8c54dc0c989a7cea0e87a8ac3f8a920df455468d82
+Refusing to apply further migrations. Restore the original migration file(s), or roll back and re-apply them cleanly.
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: 'lessons/db-note-1' not found in ['lessons/db-abbr-1'] : db query should ALSO find db-note-1 (via expansion), got ['lessons/db-abbr-1']
+=========================== short test summary info ============================
+FAILED eval/test_qw2_query_expansion.py::TestExpandQueryFunction::test_05_known_term_produces_or_group
+FAILED eval/test_qw2_query_expansion.py::TestExpandQueryFunction::test_06_quoted_phrases_preserved
+FAILED eval/test_qw2_query_expansion.py::TestExpandQueryFunction::test_08_mixed_known_and_unknown
+FAILED eval/test_qw2_query_expansion.py::TestExpandQueryFunction::test_09_dedupes_same_canonical_twice
+FAILED eval/test_qw2_query_expansion.py::TestEndToEndExpansion::test_12_db_query_finds_database_note
+5 failed, 10 passed in 0.74s
+Failed to load embedding model [auto]: [Errno 9] Bad file descriptor
+
+
+=== test_search_pipeline_unit.py ===
+...................F.............................                        [100%]
+=================================== FAILURES ===================================
+E   AssertionError: 'database' not found in '("db")'
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: 'database' not found in '("db")'
+=========================== short test summary info ============================
+FAILED eval/test_search_pipeline_unit.py::TestExpandQuery::test_expand_db - A...
+1 failed, 48 passed in 1.02s
+
+
+=== test_soft_delete.py ===
+idempotent, object already exists): duplicate column name: shared_with
+WARNING  infra.migration_runner:migration_runner.py:488 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
+WARNING  infra.audit:audit.py:230 audit flush failed for /var/folders/dj/vpjmm5lj7396z81xszrbt7680000gn/T/tmpo3kapyxp/memory.db (1 rows dropped): unable to open database file
+WARNING  memory_mcp:memory_mcp.py:260 tool_registry vs registered-tools mismatch: cannot remove 'memory_gdpr_erase' (Unknown tool: memory_gdpr_erase)
+WARNING  memory_mcp:memory_mcp.py:260 tool_registry vs registered-tools mismatch: cannot remove 'memory_login_url' (Unknown tool: memory_login_url)
+WARNING  memory_mcp:memory_mcp.py:260 tool_registry vs registered-tools mismatch: cannot remove 'memory_callback' (Unknown tool: memory_callback)
+WARNING  memory_mcp:memory_mcp.py:260 tool_registry vs registered-tools mismatch: cannot remove 'memory_whoami' (Unknown tool: memory_whoami)
+WARNING  memory_mcp:memory_mcp.py:260 tool_registry vs registered-tools mismatch: cannot remove 'memory_rotate_key' (Unknown tool: memory_rotate_key)
+WARNING  memory_mcp:memory_mcp.py:260 tool_registry vs registered-tools mismatch: cannot remove 'memory_sso_sync_metadata' (Unknown tool: memory_sso_sync_metadata)
+WARNING  memory_mcp:memory_mcp.py:260 tool_registry vs registered-tools mismatch: cannot remove 'memory_sso_idp_list' (Unknown tool: memory_sso_idp_list)
+WARNING  memory_mcp:memory_mcp.py:260 tool_registry vs registered-tools mismatch: cannot remove 'memory_sso_idp_add' (Unknown tool: memory_sso_idp_add)
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: 'lessons/restore-search' not found in []
+=========================== short test summary info ============================
+FAILED eval/test_soft_delete.py::TestSoftDeleteSearchIntegration::test_restored_note_reappears_in_search
+1 failed, 41 passed in 4.06s
+

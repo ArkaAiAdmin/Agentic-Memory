@@ -1,0 +1,115 @@
+{
+  "benchmark": "BEAM",
+  "version": "1.0",
+  "scale": "1M",
+  "config": {
+    "token_budget": 1000000,
+    "sessions": 100,
+    "session_tokens": 10000
+  },
+  "seed": 42,
+  "timestamp": "2026-07-12T00:11:44.206634+00:00",
+  "metrics": {
+    "accuracy": 0.8889,
+    "num_questions": 9,
+    "avg_latency_ms": 0.28
+  },
+  "baselines": {
+    "Cognee": {
+      "100K": 0.79,
+      "1M": null,
+      "10M": null
+    },
+    "Mem0": {
+      "100K": null,
+      "1M": 64.1,
+      "10M": null
+    }
+  },
+  "results": [
+    {
+      "question_id": "q_favorite_color",
+      "query": "What is the current favorite color?",
+      "expected": "purple",
+      "top_result": "End of day summary: Sarah favorite_color is now purple; Phoenix Project project_status is now deployed. Good progress made today.\n\nAdditional context for session 93: This is part of the ongoing conver",
+      "score": 1.0,
+      "latency_ms": 0.31304359436035156,
+      "num_results": 5
+    },
+    {
+      "question_id": "q_budget",
+      "query": "What is the current budget?",
+      "expected": "$50k",
+      "top_result": "Quick update: Q3 budget budget is now $50k; Phoenix Project project_status is now development. Will follow up with more details tomorrow.\n\nAdditional context for session 97: This is part of the ongoin",
+      "score": 1.0,
+      "latency_ms": 0.12183189392089844,
+      "num_results": 5
+    },
+    {
+      "question_id": "q_project_status",
+      "query": "What is the current project status?",
+      "expected": "development",
+      "top_result": "Quick update: Q3 budget budget is now $50k; Phoenix Project project_status is now development. Will follow up with more details tomorrow.\n\nAdditional context for session 97: This is part of the ongoin",
+      "score": 1.0,
+      "latency_ms": 0.25200843811035156,
+      "num_results": 5
+    },
+    {
+      "question_id": "q_meeting_time",
+      "query": "What is the current meeting time?",
+      "expected": "9am",
+      "top_result": "Team meeting recap: Phoenix Project project_status is now testing. Also discussed upcoming sprint planning.\n\nAdditional context for session 91: This is part of the ongoing conversation history. This i",
+      "score": 0.0,
+      "latency_ms": 0.3612041473388672,
+      "num_results": 5
+    },
+    {
+      "question_id": "q_coffee_order",
+      "query": "What is the current coffee order?",
+      "expected": "macchiato",
+      "top_result": "End of day summary: morning coffee coffee_order is now macchiato; launch date deadline is now May 20. Good progress made today.\n\nAdditional context for session 99: This is part of the ongoing conversa",
+      "score": 1.0,
+      "latency_ms": 0.32019615173339844,
+      "num_results": 5
+    },
+    {
+      "question_id": "q_tech_stack",
+      "query": "What is the current tech stack?",
+      "expected": "Vue",
+      "top_result": "Morning briefing: frontend tech_stack is now Vue. Ready to tackle the day.\n\nAdditional context for session 94: This is part of the ongoing conversation history. This is part of the ongoing conversatio",
+      "score": 1.0,
+      "latency_ms": 0.3180503845214844,
+      "num_results": 5
+    },
+    {
+      "question_id": "q_deadline",
+      "query": "What is the current deadline?",
+      "expected": "May 20",
+      "top_result": "End of day summary: morning coffee coffee_order is now macchiato; launch date deadline is now May 20. Good progress made today.\n\nAdditional context for session 99: This is part of the ongoing conversa",
+      "score": 1.0,
+      "latency_ms": 0.10776519775390625,
+      "num_results": 5
+    },
+    {
+      "question_id": "q_team_size",
+      "query": "What is the current team size?",
+      "expected": "12",
+      "top_result": "Standup notes: launch date deadline is now March 15; platform team team_size is now 12. Blockers: waiting on design review.\n\nAdditional context for session 98: This is part of the ongoing conversation",
+      "score": 1.0,
+      "latency_ms": 0.2579689025878906,
+      "num_results": 5
+    },
+    {
+      "question_id": "q_temporal_1",
+      "query": "When was the project status last updated?",
+      "expected": "97",
+      "top_result": "Quick update: Q3 budget budget is now $50k; Phoenix Project project_status is now development. Will follow up with more details tomorrow.\n\nAdditional context for session 97: This is part of the ongoin",
+      "score": 1.0,
+      "latency_ms": 0.4420280456542969,
+      "num_results": 5
+    }
+  ],
+  "files": {
+    "database": "/Users/arka/.config/agentic-memory/eval/beam/results/beam_1m.db"
+  }
+}
