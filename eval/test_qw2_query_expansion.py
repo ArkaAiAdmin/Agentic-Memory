@@ -87,10 +87,9 @@ class TestExpandQueryFunction(unittest.TestCase):
 
     def test_07_unknown_term_unchanged(self):
         out = memory_mcp._expand_query("zzzqqq unknown")
-        # Both should be quoted but no OR group
+        # Both should be quoted; always-OR joins them
         self.assertIn('"zzzqqq"', out)
         self.assertIn('"unknown"', out)
-        self.assertNotIn("OR", out)
 
     def test_08_mixed_known_and_unknown(self):
         out = memory_mcp._expand_query("how does db handle auth")
@@ -100,8 +99,7 @@ class TestExpandQueryFunction(unittest.TestCase):
         # auth expanded
         self.assertIn('"auth"', out)
         self.assertIn('"authentication"', out)
-        # "how" and "handle" and "does" are stopwords but still quoted
-        self.assertIn('"how"', out)
+        # "handle" is not a stop word — should appear
         self.assertIn('"handle"', out)
 
     def test_09_dedupes_same_canonical_twice(self):

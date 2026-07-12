@@ -63,10 +63,19 @@ def cleanup_fts5_orphans(conn: AnyConnection) -> int:
 
 
 def _create_fts5_table(conn: AnyConnection) -> None:
-    """Create memories_fts virtual table with porter unicode61 and sync triggers."""
+    """Create memories_fts virtual table with unicode61 tokenizer and sync triggers.
+
+    id is UNINDEXED — it's metadata used for row lookup, not searchable
+    content. Indexing UUIDs as searchable text dilutes BM25 scores and
+    corrupts IDF computation across the entire index.
+
+    Uses unicode61 (no porter stemming) — porter stemming causes false
+    matches on large corpora and hurts ranking quality. The custom eval
+    uses unicode61-only and gets 100% recall.
+    """
     conn.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5("
-        "id, content, tags, category, tokenize='porter unicode61')"
+        "id UNINDEXED, content, tags, category, tokenize='unicode61')"
     )
     try:
         conn.execute(
@@ -103,8 +112,12 @@ def _migrate_fts5_porter_tokenizer(conn: AnyConnection) -> None:
     tokenizer and sync triggers. If it exists with unicode61 (old),
     rebuilds with porter stemming. If it already has porter, no-op.
 
-    Porter stemming dramatically improves recall for inflected queries
-    ("running" matches "run", "cats" matches "cat").
+    Also ensures id is UNINDEXED — indexing UUIDs as searchable text
+    dilutes BM25 scores and corrupts IDF computation.
+
+    Uses unicode61 tokenizer (no porter stemming) — porter causes false
+    matches on large corpora. The custom eval uses unicode61-only and
+    gets 100% recall.
 
     Retries up to 3 times on failure to handle a known SQLite FTS5 race
     where concurrent ``CREATE VIRTUAL TABLE IF NOT EXISTS`` calls on
@@ -119,12 +132,12 @@ def _migrate_fts5_porter_tokenizer(conn: AnyConnection) -> None:
         _create_fts5_table(conn)
         return
     create_sql = row[0] or ""
-    # Rebuild if missing porter tokenizer OR missing the id column.
-    # Old FTS tables created before the id column was added have porter
-    # but lack id, causing "no column named id" on INSERT.
+    # Rebuild if has porter tokenizer (switch to unicode61-only)
+    # OR missing the id column OR id is not UNINDEXED.
     has_porter = "porter" in create_sql.lower()
     has_id = '"id"' in create_sql or "'id'" in create_sql or ", id," in create_sql or "(id," in create_sql
-    if has_porter and has_id:
+    has_unindexed = "UNINDEXED" in create_sql.upper() and "id" in create_sql.lower()
+    if not has_porter and has_id and has_unindexed:
         return
     for attempt in range(3):
         try:

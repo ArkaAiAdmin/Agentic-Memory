@@ -303,7 +303,6 @@ _QUERY_EXPANSIONS: dict[str, list[str]] = {
     "container": ["docker", "pod", "image"],
     "containers": ["docker", "pods", "images"],
     "orchestration": ["orchestrate", "orchestrates", "orchestrating"],
-    "kubernetes": ["k8s", "kube", "cluster"],
     "infrastructure": ["infra", "platform", "foundation"],
     "management": ["manage", "manages", "managing"],
     "platform": ["infrastructure", "framework", "system"],
@@ -333,7 +332,6 @@ _QUERY_EXPANSIONS: dict[str, list[str]] = {
     "self-healing": ["resilient", "fault-tolerant", "self-heal"],
     "cluster": ["clusters", "clustered", "orchestration", "orchestrating"],
     "orchestrat": ["orchestrate", "orchestrates", "orchestrated", "orchestrating", "orchestration", "orchestrator", "orchestrators"],
-    "kubernetes": ["k8s", "kube", "orchestrator"],
     "logging": ["log", "logs", "logger", "observability"],
     "observ": ["observe", "observes", "observed", "observing", "observation", "observations", "observability", "observable"],
     "package": ["pkg", "packages", "library", "containerize", "services"],
@@ -379,6 +377,7 @@ def _expand_query(query: str) -> str:
         return query
     expanded_tokens = []
     seen_aliases: set = set()
+    seen_forms: set = set()  # global dedup: prevent same form in multiple expansions
     for tok in bare_tokens:
         low = tok.lower()
         # Try synonym expansion first
@@ -388,16 +387,19 @@ def _expand_query(query: str) -> str:
             forms = [canon] + _query_expansions().get(canon, [])
             unique: list[str] = []
             for f in forms:
-                if f.lower() not in [u.lower() for u in unique]:
+                fl = f.lower()
+                if fl not in seen_forms:
                     unique.append(f)
-            quoted = " OR ".join((f'"{f}"' for f in unique))
-            expanded_tokens.append(f"({quoted})")
+                    seen_forms.add(fl)
+            if unique:
+                quoted = " OR ".join((f'"{f}"' for f in unique))
+                expanded_tokens.append(f"({quoted})")
         else:
             # Try word form expansion (porters-stemmer cross-form matching)
             expanded = False
             for stem, forms in _WORD_FORM_EXPANSIONS.items():
                 # Check if this token matches any form in the expansion set
-                if low in [f.lower() for f in forms] or low.startswith(stem):
+                if low in [f.lower() for f in forms] or (low.startswith(stem) and len(low) == len(stem)):
                     # Use all forms from this expansion set
                     unique: list[str] = []
                     for f in forms:

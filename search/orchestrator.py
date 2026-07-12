@@ -278,7 +278,7 @@ def _get_memories_columns(db: AnyConnection) -> set[str]:
 # Only allow safe SQL fragments in extra_filter to prevent injection.
 # Safe characters: spaces, alphanumeric, SQL punctuation (AND/OR/NOT/=, etc.)
 # Ban semicolons to prevent multi-statement injection.
-_SQL_SAFE_FILTER_RE = re.compile(r"^[ A-Za-z0-9_.,=<>!()'\"%\-/]+$")
+_SQL_SAFE_FILTER_RE = re.compile(r"^[ A-Za-z0-9_.,=<>!()'\"%\-/?]+$")
 _SQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -2471,7 +2471,7 @@ def search_memories(
                 try:
                     return _fts_search(
                         conn, fts_query,
-                        limit * 3 if _effective_rerank else limit,
+                        limit * 10 if _effective_rerank else limit,
                         has_fitness, repo_filter,
                         tag_filter_sql=_tag_filter_sql,
                         tag_filter_params=tuple(_tag_filter_params),
@@ -2510,7 +2510,7 @@ def search_memories(
                 _record_phase_latency("search.kg_facts", _t0)
         else:
             results = _fts_search(
-                db, fts_query, limit * 3 if _effective_rerank else limit, has_fitness,
+                db, fts_query, limit * 5 if _effective_rerank else limit, has_fitness,
                 repo_filter,
                 tag_filter_sql=_tag_filter_sql,
                 tag_filter_params=tuple(_tag_filter_params),

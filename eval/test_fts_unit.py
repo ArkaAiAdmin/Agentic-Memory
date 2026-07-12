@@ -148,7 +148,7 @@ class TestCreateFts5Table(unittest.TestCase):
                 "WHERE type='table' AND name='memories_fts'"
             ).fetchone()
             self.assertIsNotNone(row)
-            self.assertIn("porter", row[0].lower())
+            self.assertIn("unicode61", row[0].lower())
         finally:
             conn.close()
 

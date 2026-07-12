@@ -141,7 +141,7 @@ class TestMigratePorterTokenizer(unittest.TestCase):
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='memories_fts'"
         ).fetchone()
         self.assertIsNotNone(row)
-        self.assertIn("porter", (row[0] or "").lower())
+        self.assertIn("unicode61", (row[0] or "").lower())
 
     def test_creates_table_if_missing(self):
         from infra.fts import _migrate_fts5_porter_tokenizer
