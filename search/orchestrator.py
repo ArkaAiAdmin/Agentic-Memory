@@ -79,6 +79,7 @@ from search.scoring import (
     _apply_centrality_boost,
     _strong_match_float,
     _compute_final_score,
+    _normalize_bm25_ranks,
     compute_channel_weights,
     _sp_lazy,
 )
@@ -1516,7 +1517,10 @@ def _rerank_results(
     if _ctr_w is not None:
         _qweights = _ctr_w
     scored = []
-    for r in results:
+    # BM25 normalization: rescale raw FTS5 ranks to [0, 1] before sigmoid
+    # so BM25 contributes meaningful discrimination regardless of IDF magnitude.
+    _rank_normalized = _normalize_bm25_ranks(results)
+    for r in _rank_normalized:
         (
             note_id,
             content,
@@ -2562,8 +2566,10 @@ def search_memories(
                     related_facts=related_facts if include_facts else None,
                 )
 
-        # Phase 6: Hybrid fusion
-        if hybrid and results:
+        # Phase 6: Hybrid fusion — always run embedding search as parallel
+        # candidate source. With bge-large-en-v1.5, semantic search finds
+        # relevant results that FTS misses due to vocabulary mismatch.
+        if results:
             _t0 = time.time()
             results = _hybrid_fusion(
                 db, results, normalized_query, db_path, limit, repo_filter, category=category or None,

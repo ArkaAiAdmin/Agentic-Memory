@@ -130,9 +130,9 @@ threshold = 0.92                     # MEMORY_KG_DEDUP_THRESHOLD
 # Channel weights — multiply per-channel RRF contribution.
 # Default 1.0 = equal weight (same as no weight multiplier).
 fts_weight = 1.0                     # MEMORY_HYBRID_FTS_WEIGHT
-semantic_weight = 1.0                # MEMORY_HYBRID_SEMANTIC_WEIGHT
-rrf_k = 60                           # MEMORY_HYBRID_RRF_K
-semantic_overfetch = 3               # MEMORY_HYBRID_SEMANTIC_OVERFETCH
+semantic_weight = 2.0                # MEMORY_HYBRID_SEMANTIC_WEIGHT — boost semantic with bge-large
+rrf_k = 30                           # MEMORY_HYBRID_RRF_K — lower k = stronger rank signal
+semantic_overfetch = 8               # MEMORY_HYBRID_SEMANTIC_OVERFETCH — more candidates from embedding search
 rank_proxy_scale = 30.0              # MEMORY_HYBRID_RANK_PROXY_SCALE
 
 [auto_save]
@@ -202,8 +202,8 @@ insecure_loopback = false              # MEMORY_API_INSECURE_LOOPBACK — DEV-ON
 # "sentence-transformers" → SentenceTransformer
 # "transformers" → raw transformers/torch AutoModel + mean-pooling
 # "auto"        → detect from model_id string (current default behaviour)
-backend = "auto"                        # MEMORY_EMBEDDING_BACKEND
-model_id = "minishlab/potion-base-8M"   # MEMORY_EMBEDDING_MODEL_ID
+backend = "sentence-transformers"        # MEMORY_EMBEDDING_BACKEND
+model_id = "BAAI/bge-large-en-v1.5"     # MEMORY_EMBEDDING_MODEL_ID
 model_revision = ""                      # MEMORY_EMBEDDING_MODEL_REVISION — git revision/tag for model2vec backends; empty = latest
 
 # ---------------------------------------------------------------------------

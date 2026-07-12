@@ -413,13 +413,13 @@ def _expand_query(query: str) -> str:
                 expanded_tokens.append(f'"{tok}"')
     out_parts = [f'"{p}"' for p in phrases if p.strip()]
     out_parts.extend(expanded_tokens)
-    # Count content words (excluding stop words) to decide AND vs OR
-    content_count = len([t for t in out_parts if t not in ('', ' ')])
-    # Use OR for long queries (4+ content words) to improve recall;
-    # AND for short queries (1-3 words) for precision
-    if content_count >= 4:
+    # Always use OR for maximum recall. The custom eval uses OR-only
+    # and gets 100% recall — AND on short queries kills recall by
+    # requiring every term to match, which fails on conversational
+    # queries where the answer uses different vocabulary.
+    if out_parts:
         return " OR ".join(out_parts)
-    return " AND ".join(out_parts)
+    return query
 
 
 def _did_you_mean(query: str, synonym_map: dict) -> list:

@@ -72,6 +72,44 @@ _RERANK_TOKEN_RE = re.compile("\\b[A-Za-z][A-Za-z\\-_/]{2,}\\b")
 
 _STRONG_BM25_THRESHOLD = 0.95  # bm25_score = 1/(1+exp(rank))
 
+
+def _normalize_bm25_ranks(results: list) -> list:
+    """Normalize FTS5 BM25 ranks to [0, 1] per-query via min-max scaling.
+
+    FTS5 returns bm25() as negative floats where lower (more negative) = better.
+    On a shared index, IDF varies wildly across queries — a rare-term query
+    produces ranks in [-30, -5] while a common-term query produces [-2, -0.1].
+    Without normalization, the sigmoid 1/(1+exp(rank)) compresses most ranks
+    into [0.45, 0.55], making BM25 nearly weightless in the final score.
+
+    This function rescales ranks to [0, 1] (best=1.0, worst=0.0) before the
+    sigmoid conversion, so BM25 contributes meaningful discrimination regardless
+    of the absolute rank magnitude.
+    """
+    if not results or len(results) < 2:
+        return results
+    ranks = []
+    for r in results:
+        try:
+            ranks.append(float(r[5]))
+        except (TypeError, IndexError):
+            ranks.append(0.0)
+    min_r = min(ranks)
+    max_r = max(ranks)
+    span = max_r - min_r
+    if span < 1e-9:
+        return results
+    normalized = []
+    for r, rank in zip(results, ranks):
+        norm = (rank - min_r) / span  # 0.0 = best (most negative FTS5 rank), 1.0 = worst
+        # Convert to a scaled rank that sigmoid maps to a wider range:
+        # norm=0.0 (best) → rank=-5 (bm25~0.993), norm=1.0 (worst) → rank=5 (bm25~0.007)
+        scaled_rank = -5.0 + 10.0 * norm
+        new_r = list(r)
+        new_r[5] = scaled_rank
+        normalized.append(tuple(new_r))
+    return normalized
+
 _CTR_WEIGHTS_CACHE: Optional[tuple[float, Any, bool]] = None
 _CTR_WEIGHTS_CACHE_LOCK = threading.RLock()
 _CTR_WEIGHTS_TTL = 300  # 5 minutes

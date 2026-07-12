@@ -744,6 +744,10 @@ class MemoryConfig:
             "auto_save_health_check_minutes": lambda self: self.auto_save.health_check_minutes,
             "auto_save_keyword_routing": lambda self: self.auto_save.keyword_routing,
             "auto_save_always_sessions": lambda self: self.auto_save.always_sessions,
+            "embedding_backend": lambda self: self.embedding.backend,
+            "embedding_model_id": lambda self: self.embedding.model_id,
+            "embedding_model_revision": lambda self: self.embedding.model_revision,
+            "embedding_idle_unload_seconds": lambda self: self.embedding.idle_unload_seconds,
         }
         if name in _composed_aliases:
             return _composed_aliases[name](self)
