@@ -58,6 +58,7 @@ answer_rerank_blend = 0.3            # MEMORY_ANSWER_RERANK_BLEND — answer sni
 answer_rerank_enabled = true         # MEMORY_ANSWER_RERANK_ENABLED — enable answer-level reranking (Phase 5)
 ctr_weight_learning = true           # MEMORY_CTR_WEIGHT_LEARNING — enable per-query-type CTR weight learning (Phase 6)
 ctr_min_interactions = 10            # MEMORY_CTR_MIN_INTERACTIONS — min interactions per query type for learning
+search_compute_budget_ms = 0         # MEMORY_SEARCH_COMPUTE_BUDGET_MS — max ms for search (0=unlimited). <50 skips CE, <100 skips chunk CE, <300 skips ColBERT+answer rerank
 
 [features]
 # All features on by default so the agent gets the richest possible

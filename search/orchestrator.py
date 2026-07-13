@@ -1187,9 +1187,16 @@ def _hybrid_fusion(
     """Merge FTS, semantic, chunk FTS, and SPLADE results using RRF."""
     try:
         from infra._lazy_imports import get_config, get_embedding_search
+        from search.budget_aware import compute_adaptive_overfetch
 
         _es = get_embedding_search()
-        _overfetch = int(getattr(get_config(), "hybrid_semantic_overfetch", 3))
+        # Phase 7: adaptive overfetch based on corpus size
+        try:
+            _corpus_size = db.execute("SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL").fetchone()[0]
+        except Exception:
+            _corpus_size = 1000
+        _base_overfetch = int(getattr(get_config(), "hybrid_semantic_overfetch", 3))
+        _overfetch = compute_adaptive_overfetch(_corpus_size, _base_overfetch)
         _rrf_k = int(getattr(get_config(), "hybrid_rrf_k", 60))
         _rank_scale = float(getattr(get_config(), "hybrid_rank_proxy_scale", 30.0))
         _fts_w = float(getattr(get_config(), "hybrid_fts_weight", 1.0))
@@ -1484,6 +1491,7 @@ def _rerank_results(
     limit: int,
     deep_rerank: bool,
     as_of: float | None = None,
+    budget: "SearchBudget | None" = None,
 ) -> tuple[list, Optional[dict]]:
     """Phase 9 of search_memories: compute final scores and rerank.
 
@@ -1502,6 +1510,9 @@ def _rerank_results(
     with ``-rank`` as the final_score — a sensible default that keeps
     the result list sorted by FTS rank even without reranking.
     """
+    from search.budget_aware import get_search_budget, SearchBudget
+    if budget is None:
+        budget = get_search_budget()
     if not (has_fitness and rerank):
         # No reranking: pass through with -rank as final_score.
         out = []
@@ -1614,42 +1625,52 @@ def _rerank_results(
     _ce_mode = _select_ce_mode(query, deep_rerank)
     _ce_weak_k = min(len(scored), limit * 2)
     _ce_chunk_k = min(len(scored), limit * 3)
-    out = _apply_single_ce_rerank(
-        query, scored, top_k=_ce_chunk_k, mode=_ce_mode,
-        weak_k=_ce_weak_k, chunk_k=_ce_chunk_k,
-    )
+    # Budget check: skip chunk CE if tight budget
+    if budget.should_run("chunk_ce", 100):
+        out = _apply_single_ce_rerank(
+            query, scored, top_k=_ce_chunk_k, mode=_ce_mode,
+            weak_k=_ce_weak_k, chunk_k=_ce_chunk_k,
+        )
+    else:
+        # Fallback: just use weak CE
+        out = _apply_single_ce_rerank(
+            query, scored, top_k=_ce_weak_k, mode="weak",
+            weak_k=_ce_weak_k, chunk_k=_ce_chunk_k,
+        )
     out = _apply_late_interaction_rerank(query, out, top_k=min(len(out), limit * 2))
     # ColBERT MaxSim reranking (Phase 3): late-interaction via per-token
     # embeddings.  Only fires when index is populated, candidates ≤ 30,
-    # and query has ≥ 3 tokens.  Falls through unchanged otherwise.
-    try:
-        from search.colbert_rerank import colbert_rerank
-        from infra.db import open_db
-        _colbert_conn = open_db(db_path)
+    # query has ≥ 3 tokens, AND budget allows.
+    if budget.should_run("colbert", 100):
         try:
-            out = colbert_rerank(_colbert_conn, query, out, db_path=db_path)
-        finally:
+            from search.colbert_rerank import colbert_rerank
+            from infra.db import open_db
+            _colbert_conn = open_db(db_path)
             try:
-                _colbert_conn.close()
-            except Exception:
-                pass
-    except Exception as _cb_exc:
-        logger.debug("colbert_rerank skipped: %s", _cb_exc)
+                out = colbert_rerank(_colbert_conn, query, out, db_path=db_path)
+            finally:
+                try:
+                    _colbert_conn.close()
+                except Exception:
+                    pass
+        except Exception as _cb_exc:
+            logger.debug("colbert_rerank skipped: %s", _cb_exc)
     # Answer-level reranking (Phase 5): score best snippet per candidate.
     # Uses cross-encoder on extracted snippets, with pre-computed cache.
-    try:
-        from search.answer_rerank import answer_rerank
-        from infra.db import open_db
-        _answer_conn = open_db(db_path)
+    if budget.should_run("answer_rerank", 50):
         try:
-            out = answer_rerank(_answer_conn, query, out, db_path=db_path)
-        finally:
+            from search.answer_rerank import answer_rerank
+            from infra.db import open_db
+            _answer_conn = open_db(db_path)
             try:
-                _answer_conn.close()
-            except Exception:
-                pass
-    except Exception as _ar_exc:
-        logger.debug("answer_rerank skipped: %s", _ar_exc)
+                out = answer_rerank(_answer_conn, query, out, db_path=db_path)
+            finally:
+                try:
+                    _answer_conn.close()
+                except Exception:
+                    pass
+        except Exception as _ar_exc:
+            logger.debug("answer_rerank skipped: %s", _ar_exc)
     # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
     # late-interaction rerankers above, which sort on r[6] (the CE-blended
     # final_score). The four historical enrichment passes (temporal decay,
@@ -2724,6 +2745,8 @@ def search_memories(
         )
 
         # Phase 9: Reranking
+        from search.budget_aware import get_search_budget
+        _search_budget = get_search_budget()
         _t0 = time.time()
         try:
             results_to_display, _search_ctr_weights = _rerank_results(
@@ -2737,6 +2760,7 @@ def search_memories(
                 limit=limit,
                 deep_rerank=deep_rerank,
                 as_of=as_of,
+                budget=_search_budget,
             )
         except Exception as _rerank_exc:
             _phase_inc("search.rerank", _rerank_exc)
@@ -2899,6 +2923,8 @@ def search_memories(
             max_synthesis_sentences=max_synthesis_sentences,
             related_facts=related_facts if include_facts else None,
         )
+        # Phase 7: add budget status to envelope
+        result["compute_budget"] = _search_budget.to_dict()
         _cache_store_result(cache_key, result)
         _phase_errs = _phase_counts()
         if _phase_errs.get("total_count"):
