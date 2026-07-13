@@ -1643,18 +1643,14 @@ def _rerank_results(
     _ce_mode = _select_ce_mode(query, deep_rerank)
     _ce_weak_k = min(len(scored), limit * 2)
     _ce_chunk_k = min(len(scored), limit * 3)
-    # Budget check: skip chunk CE if tight budget
-    if budget.should_run("chunk_ce", 100):
-        out = _apply_single_ce_rerank(
-            query, scored, top_k=_ce_chunk_k, mode=_ce_mode,
-            weak_k=_ce_weak_k, chunk_k=_ce_chunk_k,
-        )
-    else:
-        # Fallback: just use weak CE
-        out = _apply_single_ce_rerank(
-            query, scored, top_k=_ce_weak_k, mode="weak",
-            weak_k=_ce_weak_k, chunk_k=_ce_chunk_k,
-        )
+    # Budget check: downgrade to weak CE if tight budget
+    if not budget.should_run("chunk_ce", 100):
+        _ce_mode = "weak"
+        _ce_chunk_k = _ce_weak_k
+    out = _apply_single_ce_rerank(
+        query, scored, top_k=_ce_chunk_k, mode=_ce_mode,
+        weak_k=_ce_weak_k, chunk_k=_ce_chunk_k,
+    )
     out = _apply_late_interaction_rerank(query, out, top_k=min(len(out), limit * 2))
     # ColBERT MaxSim reranking (Phase 3): late-interaction via per-token
     # embeddings.  Only fires when index is populated, candidates ≤ 30,
@@ -1689,14 +1685,6 @@ def _rerank_results(
                     pass
         except Exception as _ar_exc:
             logger.debug("answer_rerank skipped: %s", _ar_exc)
-    # Temporal decay (Phase 2 integration): boost recent notes, gently
-    # penalize old ones. This is a scoring modifier (not enrichment), so
-    # it legitimately mutates r[6] before the final sort.
-    try:
-        from search.scoring import _apply_temporal_decay
-        out = _apply_temporal_decay(out, as_of=as_of)
-    except Exception as _td_exc:
-        logger.debug("temporal_decay skipped: %s", _td_exc)
     # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
     # late-interaction rerankers above, which sort on r[6] (the CE-blended
     # final_score). The four historical enrichment passes (temporal decay,
