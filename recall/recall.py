@@ -24,6 +24,7 @@ __all__ = ["recall_context", "format_briefing", "session_recap"]
 
 import json
 import sqlite3
+import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -423,6 +424,36 @@ def session_recap(
             sections.append(("## Known Facts", tier3))
         if tier4:
             sections.append(("## Recent Activity", tier4))
+
+        # Phase 0 CTR producer: the items collected above are injected into the
+        # agent's system prompt (see plugin/agentic-memory-hooks.ts
+        # injectSystemPrompt), i.e. they are actually *shown* to the agent —
+        # the "used_in_response" signal.  Record one interaction row per
+        # (query_id, memory_id) so the re-ranker can learn from surfaced
+        # memories.  Best-effort: a failure here must never break recall.
+        try:
+            _recall_query_id = uuid.uuid4().hex
+            _recall_ids: list[str] = []
+            for _header, _items in sections:
+                for _item in _items:
+                    _mid = _item.get("id")
+                    if _mid:
+                        _recall_ids.append(str(_mid))
+            if _recall_ids:
+                from search.orchestrator import record_memory_used_in_response
+
+                record_memory_used_in_response(
+                    db_path_resolved,
+                    _recall_query_id,
+                    _recall_ids,
+                    tenant_id=(namespace if namespace != "default" else "default"),
+                    ranks=list(range(1, len(_recall_ids) + 1)),
+                )
+        except Exception as _recap_ctr_err:
+            logger.warning(
+                "session_recap used_in_response recording failed: %s",
+                _recap_ctr_err,
+            )
 
         if not sections:
             _trace_event(

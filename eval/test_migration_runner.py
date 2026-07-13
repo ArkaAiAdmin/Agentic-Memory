@@ -32,6 +32,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 INSTALL = Path(__file__).resolve().parent.parent
@@ -895,6 +896,163 @@ class TestChecksumBackfillM5(unittest.TestCase):
             self.assertEqual(stored_after[first_key], "0" * 64)
         finally:
             conn.close()
+
+
+class TestSearchRerankerFoundation(unittest.TestCase):
+    """Phase 0 SOTA — migration 057 creates the search-reranker foundation
+    tables (memory_search_interaction, memory_query_type_stats,
+    memory_temporal_priors) and seeds memory_temporal_priors with 7 rows.
+
+    Verifies the forward migration creates the expected schema + seed data,
+    and that rolling back to version 56 drops all three tables (zero
+    structural residue). Mirrors the helper conventions used elsewhere in
+    this file (_new_db / _create_base_schema / migration_runner entry
+    points). Uses a self-contained temp file DB — never memory/memory.db.
+    """
+
+    SEED_ROWS = {
+        "lessons": 180,
+        "concepts": 730,
+        "sessions": 14,
+        "preferences": 90,
+        "projects": 365,
+        "decisions": 365,
+        "facts": 90,
+    }
+
+    FOUNDATION_TABLES = (
+        "memory_search_interaction",
+        "memory_query_type_stats",
+        "memory_temporal_priors",
+    )
+
+    @contextmanager
+    def _migrated_db(self):
+        """Yield a fully-migrated connection on a self-contained temp file DB.
+
+        The temp file is removed on exit; the connection is closed.
+        """
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+            db_path = Path(tmp.name)
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA foreign_keys = ON")
+        try:
+            _create_base_schema(conn)
+            migration_runner.run_migrations(conn)
+            yield conn
+        finally:
+            conn.close()
+            db_path.unlink(missing_ok=True)
+
+    def _table_columns(self, conn: sqlite3.Connection, table: str) -> dict:
+        return {
+            r[1]: r[2]
+            for r in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+
+    def _index_names(self, conn: sqlite3.Connection, table: str) -> set:
+        return {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='index' AND tbl_name=?",
+                (table,),
+            ).fetchall()
+        }
+
+    def test_foundation_tables_created_with_expected_schema(self):
+        with self._migrated_db() as conn:
+            for table in self.FOUNDATION_TABLES:
+                with self.subTest(table=table):
+                    cols = self._table_columns(conn, table)
+                    self.assertGreater(len(cols), 0, f"{table} missing")
+
+            # memory_search_interaction columns + types + defaults.
+            msi = self._table_columns(conn, "memory_search_interaction")
+            for col in (
+                "id",
+                "query_id",
+                "memory_id",
+                "action",
+                "tenant_id",
+                "rank",
+                "ts",
+            ):
+                self.assertIn(
+                    col, msi, f"memory_search_interaction missing column {col}"
+                )
+            # Column types.
+            self.assertEqual(msi["tenant_id"], "TEXT")
+            self.assertEqual(msi["ts"], "REAL")
+            # DEFAULT values: insert a minimal row (omitting tenant_id/ts/rank)
+            # and confirm the defaults materialise.
+            conn.execute(
+                "INSERT INTO memory_search_interaction "
+                "(query_id, memory_id, action) VALUES (?, ?, ?)",
+                ("q_probe", "m_probe", "impression"),
+            )
+            default_row = conn.execute(
+                "SELECT tenant_id, ts FROM memory_search_interaction "
+                "WHERE query_id='q_probe' AND memory_id='m_probe'"
+            ).fetchone()
+            self.assertEqual(default_row[0], "default")
+            self.assertIsNotNone(default_row[1])
+            self.assertGreater(default_row[1], 0)
+
+            # Indexes on memory_search_interaction.
+            idx = self._index_names(conn, "memory_search_interaction")
+            self.assertEqual(
+                idx & {"idx_msi_query", "idx_msi_memory", "idx_msi_action"},
+                {"idx_msi_query", "idx_msi_memory", "idx_msi_action"},
+            )
+
+            # memory_query_type_stats columns.
+            qts = self._table_columns(conn, "memory_query_type_stats")
+            for col in ("query_type", "weights_json", "sample_count", "updated_at"):
+                self.assertIn(
+                    col, qts, f"memory_query_type_stats missing column {col}"
+                )
+
+            # memory_temporal_priors columns.
+            tp = self._table_columns(conn, "memory_temporal_priors")
+            for col in ("category", "half_life_days", "updated_at"):
+                self.assertIn(
+                    col, tp, f"memory_temporal_priors missing column {col}"
+                )
+
+    def test_temporal_priors_seeded_with_seven_rows(self):
+        with self._migrated_db() as conn:
+            rows = dict(
+                conn.execute(
+                    "SELECT category, half_life_days FROM memory_temporal_priors"
+                ).fetchall()
+            )
+            self.assertEqual(
+                len(rows), 7, f"expected 7 seed rows, got {len(rows)}"
+            )
+            self.assertEqual(rows, self.SEED_ROWS)
+
+    def test_rollback_to_56_drops_foundation_tables(self):
+        with self._migrated_db() as conn:
+            # Roll back just migration 057 (to version 56).
+            migration_runner.migrate_down(
+                conn, migration_runner.SCHEMA_VERSION - 1
+            )
+            version = conn.execute(
+                "SELECT version FROM schema_version WHERE id=1"
+            ).fetchone()[0]
+            self.assertEqual(version, migration_runner.SCHEMA_VERSION - 1)
+
+            remaining = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+                "('memory_search_interaction', 'memory_query_type_stats', "
+                "'memory_temporal_priors')"
+            ).fetchall()
+            self.assertEqual(
+                remaining,
+                [],
+                f"foundation tables still present after rollback: {remaining}",
+            )
 
 
 if __name__ == "__main__":

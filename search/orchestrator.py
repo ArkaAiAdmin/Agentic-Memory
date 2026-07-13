@@ -555,6 +555,18 @@ def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: 
             logger.warning("_skill_first_lookup: safe_close_db failed: %s", e)
 
 
+# Map the legacy ``memory_record_ctr_feedback`` action vocabulary onto the
+# unified ``memory_search_interaction`` action vocabulary.  Each legacy action
+# becomes its OWN row (keyed by (query_id, memory_id, action)), so a
+# returned+clicked pair for the same query/memory no longer collapses into a
+# single row the way ``INSERT OR REPLACE`` on ``memory_ctr_feedback`` did.
+_CTR_FEEDBACK_ACTION_MAP = {
+    "returned": "impression",
+    "clicked": "click",
+    "dismissed": "dismissed",
+}
+
+
 def record_ctr_feedback_db(
     db_path: str | Path,
     id: str,
@@ -565,30 +577,85 @@ def record_ctr_feedback_db(
     ranking_params: Optional[str] = None,
     tenant_id: str = "default",
 ) -> None:
-    """Record CTR feedback with connection lifecycle managed."""
-    import time as _time
+    """Record CTR feedback as an ``memory_search_interaction`` row.
 
+    Phase 0 (audit #9) fix: previously this wrote to ``memory_ctr_feedback``
+    with ``INSERT OR REPLACE``, which collapsed multi-event rows — a second
+    ``returned`` for an already-clicked (query_id, memory_id) pair would
+    ``DELETE``+re-``INSERT`` and wipe the ``clicked_at`` / ``dismissed_at``
+    columns.  We now write one row per (query_id, memory_id, action) into
+    ``memory_search_interaction`` using ``ON CONFLICT(query_id, memory_id,
+    action) DO UPDATE`` so re-recording only refreshes ``ts``/``rank`` and
+    never destroys the sibling action rows.
+
+    Args:
+        db_path: Path to the memory SQLite database.
+        id: Memory id (the legacy ``memory_ctr_feedback.id`` column maps to
+            ``memory_search_interaction.memory_id``).
+        query_id: Search query correlation id.
+        action: One of ``returned`` / ``clicked`` / ``dismissed`` (legacy) or
+            any ``memory_search_interaction`` action string.
+        returned_at: Optional explicit timestamp (epoch seconds).
+        source: Legacy column, no longer stored (kept for signature compat).
+        ranking_params: Legacy column, no longer stored (kept for compat).
+        tenant_id: Tenant namespace for multi-tenant isolation.
+    """
+    mapped_action = _CTR_FEEDBACK_ACTION_MAP.get(action, action)
     conn = connection_pool.get(str(db_path), tenant_id=tenant_id)
     try:
-        now = returned_at if returned_at is not None else _time.time()
-        if action == "returned":
+        conn.execute(
+            "INSERT INTO memory_search_interaction "
+            "(query_id, memory_id, action, tenant_id, rank) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(query_id, memory_id, action) "
+            "DO UPDATE SET ts=excluded.ts, rank=excluded.rank",
+            (query_id, id, mapped_action, tenant_id, None),
+        )
+        conn.commit()
+    finally:
+        safe_close_db(conn)
+
+
+def record_memory_used_in_response(
+    db_path: str | Path,
+    query_id: str,
+    memory_ids: list[str],
+    tenant_id: str = "default",
+    ranks: Optional[list[int]] = None,
+) -> None:
+    """Record that the given memories were actually presented to the
+    user/agent for ``query_id`` (the ``used_in_response`` CTR signal).
+
+    One row per (query_id, memory_id) is written to
+    ``memory_search_interaction`` with ``action='used_in_response'``.  Uses
+    ``ON CONFLICT(query_id, memory_id, action) DO UPDATE`` so re-recording the
+    same pair only bumps ``ts``/``rank`` (never collapses multi-event rows).
+
+    This is the producer counterpart to ``record_ctr_feedback_db``: it fires
+    when a recalled memory is surfaced in a response (e.g. the session-start
+    recap injected into the system prompt), which is a stronger signal than a
+    mere search impression.
+
+    Args:
+        db_path: Path to the memory SQLite database.
+        query_id: Search query correlation id.
+        memory_ids: Memory ids that were shown.
+        tenant_id: Tenant namespace for multi-tenant isolation.
+        ranks: Optional 1-based display ranks aligned to ``memory_ids``.
+    """
+    if not memory_ids:
+        return
+    conn = connection_pool.get(str(db_path), tenant_id=tenant_id)
+    try:
+        for i, memory_id in enumerate(memory_ids):
+            rank = ranks[i] if (ranks is not None and i < len(ranks)) else None
             conn.execute(
-                "INSERT OR REPLACE INTO memory_ctr_feedback "
-                "(id, query_id, returned_at, source, ranking_params) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (id, query_id, now, source, ranking_params),
-            )
-        elif action == "clicked":
-            conn.execute(
-                "UPDATE memory_ctr_feedback SET clicked_at = ? "
-                "WHERE id = ? AND query_id = ?",
-                (now, id, query_id),
-            )
-        elif action == "dismissed":
-            conn.execute(
-                "UPDATE memory_ctr_feedback SET dismissed_at = ? "
-                "WHERE id = ? AND query_id = ?",
-                (now, id, query_id),
+                "INSERT INTO memory_search_interaction "
+                "(query_id, memory_id, action, tenant_id, rank) "
+                "VALUES (?, ?, 'used_in_response', ?, ?) "
+                "ON CONFLICT(query_id, memory_id, action) "
+                "DO UPDATE SET ts=excluded.ts, rank=excluded.rank",
+                (query_id, memory_id, tenant_id, rank),
             )
         conn.commit()
     finally:
