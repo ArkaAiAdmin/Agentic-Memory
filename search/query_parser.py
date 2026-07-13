@@ -435,6 +435,52 @@ def _expand_query(query: str) -> str:
     return query
 
 
+def _semantic_expand(query: str, db_path: Any = None, top_k: int = 3) -> list[str]:
+    """Semantic expansion: find similar memories and extract key terms.
+
+    Uses the embedding model to find memories semantically similar to the
+    query, then extracts distinctive terms from those memories to expand
+    the query. This helps with synonym/paraphrase queries like
+    "package apps portably" finding "docker container basics".
+    """
+    if not query or not db_path:
+        return []
+    try:
+        from infra._lazy_imports import get_embedding_search
+        from pathlib import Path
+
+        _es = get_embedding_search()
+        # Search for similar memories
+        results = _es.search(query, Path(str(db_path)), limit=top_k)
+        if not results:
+            return []
+
+        # Extract distinctive terms from top results
+        query_words = set(w.lower() for w in query.split() if len(w) >= 3)
+        expansion_terms = []
+        seen = set()
+
+        for hit in results:
+            content = hit.get("preview", "") or hit.get("content", "")
+            if not content:
+                continue
+            # Extract meaningful terms (3+ chars, not stopwords)
+            for word in content.split():
+                w = word.lower().strip(".,;:!?()[]{}\"'`")
+                if (len(w) >= 3 and w not in query_words
+                    and w not in seen and w not in _STOP_WORDS):
+                    seen.add(w)
+                    expansion_terms.append(w)
+                    if len(expansion_terms) >= 5:
+                        break
+            if len(expansion_terms) >= 5:
+                break
+
+        return expansion_terms[:5]
+    except Exception:
+        return []
+
+
 def _did_you_mean(query: str, synonym_map: dict) -> list:
     """Return up to 3 expanded query strings based on the synonym map.
 
@@ -724,6 +770,22 @@ def _parse_search_query(query: str, db_path: Path) -> tuple[str, str, str, list[
     bigram_terms = [_escape_phrase(bg) for bg in bigrams]
 
     expanded = _expand_query(normalized_query)
+
+    # Semantic expansion: find similar memories and extract terms
+    # This helps with synonym/paraphrase queries
+    try:
+        semantic_terms = _semantic_expand(normalized_query, db_path)
+        if semantic_terms:
+            semantic_clause = " OR ".join(
+                _escape_phrase(t) for t in semantic_terms
+            )
+            if expanded:
+                expanded = f"({expanded}) OR ({semantic_clause})"
+            else:
+                expanded = semantic_clause
+    except Exception:
+        pass  # Best-effort — semantic expansion is optional
+
     if bigram_terms:
         bigram_clause = " OR ".join(bigram_terms)
         if expanded:

@@ -312,13 +312,10 @@ class EmbeddingSearch:
         self._QUERY_CACHE_ENABLED = get_config().query_cache
         self._chunk_index_cache: dict = {}
         self._CHUNK_SEARCH_ENABLED = os.environ.get("MEMORY_CHUNK_SEARCH", "1") not in ("0", "false", "no")
-        # Lazy model load: spawn background thread so __init__ never blocks
-        # the caller (prevents MCP server hangs on cold start / network stalls).
+        # Lazy model load: load on first use instead of background thread
+        # Background thread was hanging; synchronous first-use is more reliable.
         self._model_loaded = False
         self._model_load_failed = False
-        import threading
-        _load_thread = threading.Thread(target=self._load_model, daemon=True)
-        _load_thread.start()
 
     def _embed_query(self, query: str, category: str = "", tags: Optional[list] = None, source_file: str = "") -> Any:
         """Get query embedding with optional LRU cache."""
@@ -395,7 +392,16 @@ class EmbeddingSearch:
                 st_kwargs: dict[str, Any] = {"revision": model_revision or None}
                 if device:
                     st_kwargs["device"] = device
-                self.model = SentenceTransformer(model_id, **st_kwargs)
+                # Auto-detect: try MPS first, fall back to CPU on meta tensor errors
+                try:
+                    self.model = SentenceTransformer(model_id, **st_kwargs)
+                except Exception as _mps_err:
+                    if "meta tensor" in str(_mps_err).lower() or "Cannot copy" in str(_mps_err):
+                        logger.warning("MPS load failed (%s), falling back to CPU", _mps_err)
+                        st_kwargs["device"] = "cpu"
+                        self.model = SentenceTransformer(model_id, **st_kwargs)
+                    else:
+                        raise
                 self.model.dim = self.model.get_embedding_dimension()
                 self.is_transformer = True
                 self._model_revision = model_id  # sentence-transformers: model_id is the authority
@@ -461,7 +467,11 @@ class EmbeddingSearch:
 
     def encode(self, texts) -> np.ndarray | None:
         if self.model is None or getattr(self, "np", None) is None:
-            return None
+            # Lazy load on first use
+            if not self._model_loaded and not self._model_load_failed:
+                self._load_model()
+            if self.model is None:
+                return None
         if not texts:
             # model2vec raises on empty input; return an empty (0, dim) array
             # so callers (and tests) can rely on a stable shape contract.
