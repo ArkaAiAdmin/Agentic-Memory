@@ -2,7 +2,6 @@
 name: security-auditor
 description: "Security audit — OWASP checks, injection detection, permission audits, drift enforcement, config integrity"
 mode: subagent
-model: standard
 permission:
   edit: deny
 ---

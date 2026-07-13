@@ -2,7 +2,6 @@
 name: search-optimizer
 description: "Search pipeline — hybrid fusion, reranking, quality gates, FTS5 tuning, vector search"
 mode: subagent
-model: standard
 permission:
   edit: deny
 ---

@@ -2,7 +2,6 @@
 name: drift-investigator
 description: "Config drift, concept drift, vector drift, doc drift — diagnose and fix drift issues"
 mode: subagent
-model: standard
 permission:
   edit: deny
 ---

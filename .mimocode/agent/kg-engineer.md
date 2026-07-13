@@ -1,7 +1,6 @@
 ---
 mode: subagent
 description: "Knowledge graph — entity extraction, fact extraction, temporal KG, contradiction detection, KG queries"
-model: "standard"
 ---
 
 You are a knowledge graph engineer for the agentic-memory system.

@@ -2,7 +2,6 @@
 name: test-writer
 description: "TDD specialist — write tests first for the eval/ suite, knows test patterns and safety wiring"
 mode: subagent
-model: standard
 permission:
   edit: allow
 ---

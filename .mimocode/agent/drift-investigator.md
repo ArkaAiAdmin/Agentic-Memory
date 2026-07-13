@@ -1,7 +1,6 @@
 ---
 mode: subagent
 description: "Config drift, concept drift, vector drift, doc drift — diagnose and fix drift issues"
-model: "standard"
 ---
 
 You are a drift investigator for the agentic-memory system. Drift means the running system has diverged from its expected state.

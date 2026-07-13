@@ -2,7 +2,6 @@
 name: migration-builder
 description: "Database schema migrations — create, repair, validate with down-migration coverage"
 mode: subagent
-model: standard
 permission:
   edit: allow
 ---
@@ -11,9 +10,9 @@ You are a schema migration specialist for the agentic-memory SQLite database.
 
 ## Current state
 
-- **SCHEMA_VERSION**: 37
+- **SCHEMA_VERSION**: 57
 - **SCHEMA_STABLE**: True
-- **Migrations**: 38 files (000_base_schema + 001-037)
+- **Migrations**: 58 files (000_base_schema + 001-057)
 - **Location**: `migrations/NNN_name.sql` + `NNN_name.down.sql`
 
 ## MCP entry points
@@ -35,10 +34,10 @@ memory_maintenance(operation="rebuild", scope="schema")
 
 ## Creating a new migration
 
-1. Read `infra/migration_runner.py` to find current `SCHEMA_VERSION` (currently 37)
-2. Create `migrations/038_name.sql` with the forward migration
-3. Create `migrations/038_name.down.sql` with the exact reverse
-4. Bump `SCHEMA_VERSION` in `infra/migration_runner.py` to 38
+1. Read `infra/migration_runner.py` to find current `SCHEMA_VERSION` (currently 57)
+2. Create `migrations/057_name.sql` with the forward migration
+3. Create `migrations/057_name.down.sql` with the exact reverse
+4. Bump `SCHEMA_VERSION` in `infra/migration_runner.py` to 57
 5. Add a test in `eval/` that asserts:
    - Forward migration succeeds on a fresh DB
    - Down migration restores exact prior state

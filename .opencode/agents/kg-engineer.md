@@ -2,7 +2,6 @@
 name: kg-engineer
 description: "Knowledge graph — entity extraction, fact extraction, temporal KG, contradiction detection, KG queries"
 mode: subagent
-model: standard
 permission:
   edit: deny
 ---
