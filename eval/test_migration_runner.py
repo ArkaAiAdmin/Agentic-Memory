@@ -1034,14 +1034,12 @@ class TestSearchRerankerFoundation(unittest.TestCase):
 
     def test_rollback_to_56_drops_foundation_tables(self):
         with self._migrated_db() as conn:
-            # Roll back just migration 057 (to version 56).
-            migration_runner.migrate_down(
-                conn, migration_runner.SCHEMA_VERSION - 1
-            )
+            # Roll back to version 56 (drops migrations 058 and 057).
+            migration_runner.migrate_down(conn, 56)
             version = conn.execute(
                 "SELECT version FROM schema_version WHERE id=1"
             ).fetchone()[0]
-            self.assertEqual(version, migration_runner.SCHEMA_VERSION - 1)
+            self.assertEqual(version, 56)
 
             remaining = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
@@ -1052,6 +1050,26 @@ class TestSearchRerankerFoundation(unittest.TestCase):
                 remaining,
                 [],
                 f"foundation tables still present after rollback: {remaining}",
+            )
+
+    def test_rollback_to_57_drops_colbert_tokens(self):
+        with self._migrated_db() as conn:
+            # Roll back just migration 058 (to version 57).
+            migration_runner.migrate_down(
+                conn, migration_runner.SCHEMA_VERSION - 1
+            )
+            version = conn.execute(
+                "SELECT version FROM schema_version WHERE id=1"
+            ).fetchone()[0]
+            self.assertEqual(version, migration_runner.SCHEMA_VERSION - 1)
+
+            remaining = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name = 'colbert_tokens'"
+            ).fetchall()
+            self.assertEqual(
+                remaining,
+                [],
+                f"colbert_tokens still present after rollback: {remaining}",
             )
 
 

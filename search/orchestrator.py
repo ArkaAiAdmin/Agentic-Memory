@@ -1603,6 +1603,22 @@ def _rerank_results(
         weak_k=_ce_weak_k, chunk_k=_ce_chunk_k,
     )
     out = _apply_late_interaction_rerank(query, out, top_k=min(len(out), limit * 2))
+    # ColBERT MaxSim reranking (Phase 3): late-interaction via per-token
+    # embeddings.  Only fires when index is populated, candidates ≤ 30,
+    # and query has ≥ 3 tokens.  Falls through unchanged otherwise.
+    try:
+        from search.colbert_rerank import colbert_rerank
+        from infra.db import open_db
+        _colbert_conn = open_db(db_path)
+        try:
+            out = colbert_rerank(_colbert_conn, query, out, db_path=db_path)
+        finally:
+            try:
+                _colbert_conn.close()
+            except Exception:
+                pass
+    except Exception as _cb_exc:
+        logger.debug("colbert_rerank skipped: %s", _cb_exc)
     # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
     # late-interaction rerankers above, which sort on r[6] (the CE-blended
     # final_score). The four historical enrichment passes (temporal decay,

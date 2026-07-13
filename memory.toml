@@ -46,6 +46,11 @@ temporal_decay_weight = 0.15         # MEMORY_TEMPORAL_DECAY_WEIGHT
 ce_blend = 0.85                       # MEMORY_CE_BLEND — PR1.2 single-CE blend (weak/chunk/deep all use this)
 ce_chunk_blend = 0.7                   # MEMORY_CE_CHUNK_BLEND — PR1.2 chunk-CE blend (matches PR1.1-validated full pipeline; weak/deep use ce_blend=0.85)
 ce_deep_enabled = false              # MEMORY_CE_DEEP — gate deep (Qwen3) CE on env MEMORY_CE_DEEP=1
+colbert_enabled = true               # MEMORY_COLBERT_ENABLED — enable ColBERT MaxSim reranking (Phase 3)
+colbert_model = ""                   # MEMORY_COLBERT_MODEL — ColBERT model name (default: colbert-ir/colbertv2.0)
+colbert_blend = 0.4                  # MEMORY_COLBERT_BLEND — ColBERT score weight in final blend
+colbert_max_candidates = 30          # MEMORY_COLBERT_MAX_CANDIDATES — skip reranking when candidates exceed this
+colbert_min_query_tokens = 3         # MEMORY_COLBERT_MIN_QUERY_TOKENS — skip reranking for shorter queries
 
 [features]
 # All features on by default so the agent gets the richest possible

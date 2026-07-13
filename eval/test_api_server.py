@@ -100,14 +100,14 @@ class TestAPIServer(unittest.TestCase):
         conn.commit()
         conn.close()
 
-    def _http_request(self, path: str, method: str = "GET", body: dict | None = None) -> Tuple[int, dict]:
+    def _http_request(self, path: str, method: str = "GET", body: dict | None = None, timeout: float = 3.0) -> Tuple[int, dict]:
         url = f"http://{self.host}:{self.port}{path}"
         data = json.dumps(body).encode("utf-8") if body else None
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Content-Type", "application/json")
         req.add_header("Authorization", f"Bearer {self.token}")
         try:
-            with urllib.request.urlopen(req, timeout=3.0) as res:
+            with urllib.request.urlopen(req, timeout=timeout) as res:
                 return res.status, json.loads(res.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             try:
@@ -178,8 +178,8 @@ class TestAPIServer(unittest.TestCase):
         })
         self.assertEqual(status, 201)
 
-        # Search via GET
-        status, data = self._http_request("/api/v1/memories/search?query=borrow+checker")
+        # Search via GET — use longer timeout (embedding model cold-start)
+        status, data = self._http_request("/api/v1/memories/search?query=borrow+checker", timeout=30.0)
         self.assertEqual(status, 200)
         self.assertGreater(len(data["results"]), 0)
         self.assertIn("Rust memory safety", data["results"][0]["content"])
@@ -188,7 +188,7 @@ class TestAPIServer(unittest.TestCase):
         status, post_data = self._http_request("/api/v1/memories/search", "POST", {
             "query": "borrow checker",
             "limit": 5
-        })
+        }, timeout=30.0)
         self.assertEqual(status, 200)
         self.assertGreater(len(post_data["results"]), 0)
         self.assertIn("Rust memory safety", post_data["results"][0]["content"])
