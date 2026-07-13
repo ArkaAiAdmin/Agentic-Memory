@@ -23,6 +23,14 @@ $ sudo apt install -y nginx
 $ sudo vi /etc/nginx/sites-available/default
 """
 
+_QUANTUM = """\
+Quantum entanglement is a physical phenomenon where particles become correlated
+such that the quantum state of each particle cannot be described independently.
+When measured, the state of one immediately determines the state of the other,
+regardless of the distance between them. This was called "spooky action at a
+distance" by Einstein.
+"""
+
 
 def _bootstrap_db(db_path: Path, memories: list[tuple[str, str]]) -> None:
     """Create a minimal DB with the memories table + skill schema."""
@@ -77,12 +85,13 @@ class TestSkillFirstSearch(unittest.TestCase):
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp(prefix="skill_search_"))
         self.db_path = self.tmpdir / "memory.db"
-        _bootstrap_db(self.db_path, [("lessons/nginx", _PROC)])
+        _bootstrap_db(self.db_path, [("lessons/nginx", _PROC), ("lessons/quantum", _QUANTUM)])
         # Extract and save a skill
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
         ensure_skill_schema(conn)
         skill = extract_skill_from_memory("lessons/nginx", _PROC)
+        assert skill is not None, "skill extraction from nginx lesson should succeed"
         save_skill(conn, skill)
         conn.commit()
         conn.close()
@@ -103,8 +112,8 @@ class TestSkillFirstSearch(unittest.TestCase):
         result = search_memories(
             self.db_path, "quantum entanglement physics", skill_first=True
         )
-        # No skill matches, should fall back to RAG and find nothing
-        self.assertEqual(result["count"], 0)
+        # No skill matches, should fall back to RAG and find the quantum memory
+        self.assertGreater(result["count"], 0)
         self.assertNotIn("Skill match", result["output"])
 
     def test_skill_first_false_runs_normal_rag(self):

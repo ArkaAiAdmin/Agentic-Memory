@@ -131,6 +131,7 @@ threshold = 0.92                     # MEMORY_KG_DEDUP_THRESHOLD
 # Default 1.0 = equal weight (same as no weight multiplier).
 fts_weight = 1.0                     # MEMORY_HYBRID_FTS_WEIGHT
 semantic_weight = 2.0                # MEMORY_HYBRID_SEMANTIC_WEIGHT — boost semantic with bge-large
+chunk_fts_weight = 0.8               # MEMORY_HYBRID_CHUNK_FTS_WEIGHT — chunk-level FTS RRF channel weight
 rrf_k = 30                           # MEMORY_HYBRID_RRF_K — lower k = stronger rank signal
 semantic_overfetch = 8               # MEMORY_HYBRID_SEMANTIC_OVERFETCH — more candidates from embedding search
 rank_proxy_scale = 30.0              # MEMORY_HYBRID_RANK_PROXY_SCALE

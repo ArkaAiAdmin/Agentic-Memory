@@ -739,7 +739,12 @@ def _parse_search_query(query: str, db_path: Path) -> tuple[str, str, str, list[
         else:
             fts_query = bigram_clause
     else:
-        fts_query = expanded if expanded else ""
+        if expanded and expanded != normalized_query:
+            fts_query = expanded
+        else:
+            terms = [_escape_phrase(p) for p in phrases if p.strip()]
+            terms += [_escape_phrase(_escape_fts_query(w)) for w in content_words if w]
+            fts_query = " OR ".join(terms) if terms else ""
 
     if not fts_query.strip() and bare_words:
         # Fallback for stopword-only queries: use original bare words as FTS terms
