@@ -481,6 +481,9 @@ class RerankConfig:
     topic_similarity_threshold: float = 0.15
     concept_drift_threshold: float = 0.15
     temporal_decay_weight: float = 0.15
+    ce_blend: float = 0.85
+    ce_chunk_blend: float = 0.7
+    ce_deep_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -1291,6 +1294,15 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         temporal_decay_weight=_b(
             "MEMORY_TEMPORAL_DECAY_WEIGHT", "search.temporal_decay_weight", 0.15, float, toml_data
+        ),
+        ce_blend=_b(
+            "MEMORY_CE_BLEND", "search.ce_blend", 0.85, float, toml_data
+        ),
+        ce_chunk_blend=_b(
+            "MEMORY_CE_CHUNK_BLEND", "search.ce_chunk_blend", 0.7, float, toml_data
+        ),
+        ce_deep_enabled=_b(
+            "MEMORY_CE_DEEP", "search.ce_deep_enabled", False, bool, toml_data
         ),
     )
 

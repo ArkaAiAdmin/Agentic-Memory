@@ -67,7 +67,7 @@ def _get_rerank_weights() -> dict:
     return _RERANK_WEIGHTS
 
 
-_RERANK_TOKEN_RE = re.compile("\\b[A-Za-z][A-Za-z\\-_/]{2,}\\b")
+_RERANK_TOKEN_RE = re.compile(r"[A-Za-z0-9#@+][A-Za-z0-9\-_/+#]{2,}")
 
 
 _STRONG_BM25_THRESHOLD = 0.95  # bm25_score = 1/(1+exp(rank))

@@ -43,6 +43,9 @@ cross_encoder_blend = 0.6            # MEMORY_CROSS_ENCODER_BLEND
 late_interaction_blend = 0.3         # MEMORY_LATE_INTERACTION_BLEND
 topic_similarity_threshold = 0.15    # MEMORY_TOPIC_SIMILARITY_THRESHOLD
 temporal_decay_weight = 0.15         # MEMORY_TEMPORAL_DECAY_WEIGHT
+ce_blend = 0.85                       # MEMORY_CE_BLEND — PR1.2 single-CE blend (weak/chunk/deep all use this)
+ce_chunk_blend = 0.7                   # MEMORY_CE_CHUNK_BLEND — PR1.2 chunk-CE blend (matches PR1.1-validated full pipeline; weak/deep use ce_blend=0.85)
+ce_deep_enabled = false              # MEMORY_CE_DEEP — gate deep (Qwen3) CE on env MEMORY_CE_DEEP=1
 
 [features]
 # All features on by default so the agent gets the richest possible

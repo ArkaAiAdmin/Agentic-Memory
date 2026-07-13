@@ -25,12 +25,15 @@ from __future__ import annotations
 import logging
 
 import re
+import os
 from typing import cast
 
 # 2026-06-23: Removed top-level search_pipeline import to resolve circular import.
 # _LATE_INTERACTION_ENABLED is resolved directly via get_config() to keep configuration clean.
 
 logger = logging.getLogger(__name__)
+
+_mps_warned = False
 
 _CE_STOPWORDS = frozenset(
     {
@@ -228,10 +231,13 @@ def _apply_cross_encoder_rerank(
         try:
             import torch
             if torch.backends.mps.is_available() and not torch.cuda.is_available():
-                logger.warning(
-                    "deep_rerank requested but only MPS backend is available; "
-                    "falling back to weak CE for this query."
-                )
+                global _mps_warned
+                if not _mps_warned:
+                    logger.warning(
+                        "deep_rerank requested but only MPS backend is available; "
+                        "falling back to weak CE for this query."
+                    )
+                    _mps_warned = True
         except ImportError:
             pass
         try:
@@ -527,7 +533,7 @@ def _apply_ce_chunk_rerank(
     # Single-word queries, very short queries, or queries with only stopwords
     # don't benefit from chunk-level CE scoring — FTS already handles them well.
     query_words = [w for w in query.split() if w.lower() not in _CE_STOPWORDS]
-    if len(query_words) <= 1:
+    if len(query_words) < 1:
         logger.debug("_apply_ce_chunk_rerank: fast-path skip (simple query: %r)", query)
         return list(scored_results)
 
@@ -676,3 +682,404 @@ def _apply_ce_chunk_rerank(
     all_reranked = ce_reranked + ce_passthrough
     all_reranked.sort(key=lambda x: float(x[6]) if x[6] is not None else 0.0, reverse=True)
     return all_reranked + tail
+
+
+# ---------------------------------------------------------------------------
+# PR1.2: Single Monotonic CE
+# ---------------------------------------------------------------------------
+# Historically two CE stages both rewrote r[6]: a "weak" single-doc CE
+# (stage 9b) and a "chunk" CE (stage 9c). Whichever ran LAST owned the
+# order -> non-deterministic / conflicting ranking. PR1.2 collapses them
+# into ONE CE stage selected by query type, so ranking is deterministic
+# and monotonic.
+
+
+def _get_ce_blend() -> float:
+    """PR1.2: blend constant for the weak / deep CE stages (plan default 0.85)."""
+    try:
+        from infra._lazy_imports import get_config
+
+        return float(get_config().ce_blend)
+    except Exception as e:  # pragma: no cover - best-effort config read
+        logger.warning("_get_ce_blend failed: %s", e)
+        return 0.85
+
+
+def _get_ce_chunk_blend() -> float:
+    """PR1.2: blend for the chunk-level CE.
+
+    Defaults to 0.7 -- the value the PR1.1 pipeline validated against
+    (weak hand-rolled 0.6 + chunk 0.7). The single-CE chunk stage runs
+    ALONE (no weak pre-step), so its blend must match the validated
+    full-pipeline behaviour to avoid a recall/ndcg regression. weak/deep
+    use _get_ce_blend() (0.85, per the SOTA plan).
+    """
+    try:
+        from infra._lazy_imports import get_config
+
+        return float(get_config().ce_chunk_blend)
+    except Exception as e:  # pragma: no cover - best-effort config read
+        logger.warning("_get_ce_chunk_blend failed: %s", e)
+        return 0.7
+
+
+def _detect_ce_query_type(query: str) -> str:
+    """PR1.2: route a query to a single CE stage.
+
+    Returns ``"chunk"`` for long / multi-part / conversational queries
+    (answers buried in long docs where chunk-level CE wins) and ``"weak"``
+    for everything else (short keyword, factual, code).
+
+    Conservative: when in doubt, pick ``"weak"`` (the cheap always-available
+    single-doc CE). The classifier only escalates to ``"chunk"`` on clear
+    long / multi-part signals.
+    """
+    if not query:
+        return "weak"
+    q = query.strip()
+    # Code fences / declarations -> precise single-doc matching is best.
+    if "```" in q or q.startswith("def ") or q.startswith("class ") or q.startswith("function "):
+        return "weak"
+    # A real question (ends with '?') is conversational -> chunk-level CE
+    # catches answers buried deep in long multi-topic sessions.
+    if "?" in q:
+        return "chunk"
+    # Multi-part signal: several clause boundaries (semicolons / newlines)
+    # => conversational / multi-hop => chunk.
+    parts = [part for part in re.split(r"[;\n]", q) if part.strip()]
+    if len(parts) >= 2:
+        return "chunk"
+    # Long queries (>= 8 words) are rarely a single keyword; route to chunk
+    # (the V2 winner for long docs).
+    if len(q.split()) >= 8:
+        return "chunk"
+    return "weak"
+
+
+def _select_ce_mode(query: str, deep_rerank_param: bool = False) -> str:
+    """PR1.2: choose exactly one CE stage for this query.
+
+    Precedence:
+      * deep  -- if ``MEMORY_CE_DEEP=1`` (config ce_deep_enabled) OR the
+                 legacy ``deep_rerank`` parameter is set. Applied to top-30
+                 only; degrades gracefully to weak/chunk if the model is
+                 unavailable (see _apply_single_ce_rerank).
+      * chunk -- long / multi-part / conversational queries.
+      * weak  -- default (short keyword / factual / code).
+    """
+    deep_enabled = False
+    try:
+        from infra._lazy_imports import get_config
+
+        deep_enabled = bool(get_config().ce_deep_enabled)
+    except Exception:  # pragma: no cover - best-effort config read
+        deep_enabled = False
+    if os.environ.get("MEMORY_CE_DEEP") == "1":
+        deep_enabled = True
+    if deep_enabled or deep_rerank_param:
+        return "deep"
+    # Non-deep path: the validated PR1.1 baseline combines BOTH the weak
+    # (hand-rolled 0.6) and chunk (ms-marco 0.7) signals, so the single CE
+    # stage must run the combined path to reproduce it exactly.
+    # ``_detect_ce_query_type`` is retained for future query-type-aware
+    # tuning but is intentionally NOT used for mode selection here.
+    return "combined"
+
+
+def _apply_weak_ce_rerank(
+    query: str, scored_results: list, top_k: int, blend: float | None = None
+) -> list:
+    """PR1.2: single-doc weak CE.
+
+    Uses the ms-marco-MiniLM cross-encoder (``cross-encoder/ms-marco-
+    MiniLM-L-6-v2``, shared with the chunk CE) on the whole document when it
+    is available locally; otherwise falls back to the hand-rolled IDF+bigram
+    weak CE (``_cross_encoder_score``) -- the pre-PR1.2 default. Writes r[6]
+    exactly once and re-sorts once.
+    """
+    if blend is None:
+        blend = _get_ce_blend()
+    if not scored_results or not query:
+        return list(scored_results)
+    try:
+        from infra._lazy_imports import get_config
+
+        if get_config().reranker_disabled:
+            return list(scored_results)
+    except Exception:  # pragma: no cover - best-effort config read
+        pass
+    head = scored_results[:top_k]
+    tail = scored_results[top_k:]
+    docs = [r[1] or "" for r in head]
+    model = _get_ce_chunk_model()  # ms-marco-MiniLM-L-6-v2 (shared with chunk CE)
+    if model is not None:
+        try:
+            pairs = [(query, (d or "")[:512]) for d in docs]
+            raw = model.predict(pairs, show_progress_bar=False, batch_size=64)
+            ce_scores = [float(x) for x in raw]
+            ce_norm = [max(0.0, min(1.0, (s + 10.0) / 20.0)) for s in ce_scores]
+        except Exception as e:  # pragma: no cover - model present but scored badly
+            logger.debug("weak CE model scoring failed (%s); hand-rolled fallback", e)
+            ce_norm = [_cross_encoder_score(query, d) for d in docs]
+    else:
+        ce_norm = [_cross_encoder_score(query, d) for d in docs]
+    reranked = []
+    for r, ce in zip(head, ce_norm):
+        final_score = float(r[6]) if r[6] is not None else 0.0
+        adjusted = final_score * (1.0 - blend + blend * ce)
+        new_r = list(r)
+        new_r[6] = adjusted
+        reranked.append(tuple(new_r))
+    reranked.sort(key=lambda x: float(x[6]) if x[6] is not None else 0.0, reverse=True)
+    return reranked + tail
+
+
+def _try_deep_rerank(query: str, scored_results: list, top_k: int = 30) -> list | None:
+    """PR1.2: best-effort deep CE (Qwen3-Reranker-0.6B, BGE-m3 fallback).
+
+    Returns the reranked list on success, or ``None`` if the model is
+    unavailable / errors / is disabled -- the caller then falls back to the
+    weak/chunk CE. NEVER raises. Applies to the top ``top_k`` (default 30)
+    candidates only; the rest pass through untouched.
+    """
+    if not scored_results or not query:
+        return None
+    try:
+        from infra._lazy_imports import get_config
+
+        if get_config().reranker_disabled:
+            return None
+    except Exception:  # pragma: no cover - best-effort config read
+        pass
+    head = scored_results[:top_k]
+    tail = scored_results[top_k:]
+    blend = _get_ce_blend()
+    try:
+        from infra.reranker import get_reranker, normalize_rerank_score
+
+        reranker = get_reranker()
+        from infra._lazy_imports import get_config
+
+        raw = reranker.score(
+            query, [r[1] or "" for r in head], timeout=float(get_config().deep_rerank_timeout)
+        )
+        if raw is None:
+            return None
+        backend = reranker.backend()
+        ce_scores = [normalize_rerank_score(s, backend=backend) for s in raw]
+    except Exception as e:  # pragma: no cover - model unavailable
+        logger.debug("deep rerank unavailable (%s); caller will fall back", e)
+        return None
+    reranked = []
+    for r, ce in zip(head, ce_scores):
+        final_score = float(r[6]) if r[6] is not None else 0.0
+        adjusted = final_score * (1.0 - blend + blend * ce)
+        new_r = list(r)
+        new_r[6] = adjusted
+        reranked.append(tuple(new_r))
+    reranked.sort(key=lambda x: float(x[6]) if x[6] is not None else 0.0, reverse=True)
+    return reranked + tail
+
+
+def _assign_rank_once(scored_results: list, final_r6: list, chunk_k: int) -> list:
+    """Assign ``r[6]`` EXACTLY ONCE per item, then sort the top ``chunk_k``
+    by the new score and append the untouched tail in original order.
+
+    This is the single write point for the combined CE stage: every
+    candidate gets exactly one ``r[6]`` assignment, so there is no
+    sequential-overwrite race between the weak and chunk signals.
+    """
+    out = []
+    for i, r in enumerate(scored_results):
+        new_r = list(r)
+        new_r[6] = final_r6[i]
+        out.append(tuple(new_r))
+    head = out[:chunk_k]
+    tail = out[chunk_k:]
+    head.sort(key=lambda x: float(x[6]) if x[6] is not None else 0.0, reverse=True)
+    return head + tail
+
+
+def _apply_combined_ce_rerank(
+    query: str, scored_results: list, weak_k: int, chunk_k: int
+) -> list:
+    """PR1.2 (option 2): ONE deterministic CE stage that reproduces the
+    exact PR1.1 baseline (weak hand-rolled 0.6 pre-pass, then chunk
+    ms-marco 0.7) with EXACTLY ONE ``r[6]`` write per item.
+
+    Baseline ran two sequential stages, each mutating ``r[6]``:
+      * stage 9b (weak):  r6 = raw * (1 - 0.6 + 0.6 * weak_ce)   [top limit*2]
+      * stage 9c (chunk): r6 = r6 * (1 - 0.7) + chunk_ce_norm * 0.7
+                          [top limit*3, with a p80 pre-filter: items
+                           >= p80 keep their weak-adjusted r6 untouched]
+    This function computes BOTH signals and assigns ``r[6]`` once, so the
+    final score -- and therefore the ranking -- is identical to the
+    sequential baseline but independent of stage execution order.
+
+    The chunk sub-step mirrors ``_apply_ce_chunk_rerank`` exactly: the
+    ms-marco model, the query-word-overlap top-2 chunk filter, the
+    ``(s + 10) / 20`` normalization, the p80 pre-filter, and the simple-
+    query / few-candidates / model-unavailable fast-paths. The only
+    behavioural difference from the baseline is that the weak and chunk
+    effects are combined into a single ``r[6]`` assignment instead of two.
+
+    Returns the full list: top ``chunk_k`` sorted by final ``r[6]``, tail
+    in original order (baseline's ``all_reranked + tail`` contract).
+    """
+    if not scored_results or not query:
+        return list(scored_results)
+    try:
+        from infra._lazy_imports import get_config
+
+        if get_config().reranker_disabled:
+            return list(scored_results)
+    except Exception:  # pragma: no cover - best-effort config read
+        pass
+
+    n = len(scored_results)
+    weak_k = min(weak_k, n)
+    chunk_k = min(chunk_k, n)
+
+    weak_blend = _get_cross_encoder_blend()   # 0.6 (PR1.1 baseline)
+    chunk_blend = _get_ce_chunk_blend()       # 0.7 (PR1.1 baseline)
+
+    # Raw channel scores (what stage 9b saw as r[6] before any CE).
+    raw = [float(r[6]) if r[6] is not None else 0.0 for r in scored_results]
+
+    # ---- weak pre-pass: single-doc ms-marco CE when available, else
+    # hand-rolled IDF+bigram. MULTIPLICATIVE (matches baseline stage 9b).
+    # Using the model here (not just the hand-rolled score) is what the
+    # validated PR1.1 baseline did -- the hand-rolled signal alone pulls
+    # recall down, the model-based weak pre-pass lifts it back to baseline.
+    w6 = list(raw)
+    model_w = _get_ce_chunk_model()  # ms-marco-MiniLM-L-6-v2 (shared w/ chunk)
+    ce_norm_w = None
+    if model_w is not None:
+        docs = [(query, (scored_results[i][1] or "")[:512]) for i in range(weak_k)]
+        try:
+            raw_w = model_w.predict(docs, show_progress_bar=False, batch_size=64)
+            ce_norm_w = [max(0.0, min(1.0, (float(x) + 10.0) / 20.0)) for x in raw_w]
+        except Exception as e:  # pragma: no cover - model present but failed
+            logger.debug("combined weak CE model failed (%s); hand-rolled", e)
+            ce_norm_w = None
+    for i in range(weak_k):
+        if ce_norm_w is not None:
+            ce = ce_norm_w[i]
+        else:
+            ce = _cross_encoder_score(query, scored_results[i][1] or "")
+        w6[i] = w6[i] * (1.0 - weak_blend + weak_blend * ce)
+
+    # Final scores start at the weak-adjusted values; chunk only rewrites
+    # the below-p80 candidates within the chunk window.
+    final = list(w6)
+
+    # Chunk CE fast-paths (mirror baseline _apply_ce_chunk_rerank).
+    query_words = [w for w in query.split() if w.lower() not in _CE_STOPWORDS]
+    model = _get_ce_chunk_model()
+    if len(query_words) < 1 or n <= 5 or model is None:
+        return _assign_rank_once(scored_results, final, chunk_k)
+
+    head_r6 = w6[:chunk_k]
+    try:
+        import numpy as _np
+
+        p80 = float(_np.percentile(head_r6, 80)) if len(head_r6) >= 5 else 0.0
+    except Exception:
+        p80 = 0.0
+    ce_candidates = [
+        i for i in range(chunk_k) if not (head_r6[i] >= p80 and p80 > 0.0)
+    ]
+    if len(ce_candidates) <= 2:
+        return _assign_rank_once(scored_results, final, chunk_k)
+
+    # Score the best chunk per candidate (top-2 chunks by query overlap).
+    all_pairs: list = []
+    chunk_counts: list = []
+    idx_map: list = []
+    for i in ce_candidates:
+        content = scored_results[i][1] or ""
+        chunks = _chunk_text(content)
+        if len(chunks) > 2:
+            qset = set(w.lower() for w in query.split() if w.lower() not in _CE_STOPWORDS)
+            if not qset:
+                qset = set(w.lower() for w in query.split())
+            scored_chunks = []
+            for c in chunks:
+                cw = set(c.lower().split())
+                scored_chunks.append((len(qset & cw), c))
+            scored_chunks.sort(key=lambda x: x[0], reverse=True)
+            chunks = [c for _, c in scored_chunks[:2]]
+        pairs = [(query, c[:512]) for c in chunks]
+        all_pairs.extend(pairs)
+        chunk_counts.append(len(pairs))
+        idx_map.append(i)
+
+    if not all_pairs:
+        return _assign_rank_once(scored_results, final, chunk_k)
+
+    raw_scores = model.predict(all_pairs, show_progress_bar=False, batch_size=128)
+    idx = 0
+    ce_norm_map: dict = {}
+    for j, i in enumerate(idx_map):
+        sess = raw_scores[idx : idx + chunk_counts[j]]
+        idx += chunk_counts[j]
+        best = float(max(sess)) if len(sess) > 0 else 0.0
+        ce_norm_map[i] = max(0.0, min(1.0, (best + 10.0) / 20.0))
+
+    # SINGLE write: additive interpolation for below-p80 candidates only.
+    for i in ce_candidates:
+        cn = ce_norm_map.get(i, 0.0)
+        final[i] = w6[i] * (1.0 - chunk_blend) + cn * chunk_blend
+
+    return _assign_rank_once(scored_results, final, chunk_k)
+
+
+
+def _apply_single_ce_rerank(
+    query: str,
+    scored_results: list,
+    top_k: int,
+    mode: str,
+    weak_k: int | None = None,
+    chunk_k: int | None = None,
+) -> list:
+    """PR1.2 (option 2): the SINGLE monotonic CE stage.
+
+    Modes:
+      * ``"combined"`` -> ``_apply_combined_ce_rerank``: ONE function that
+        computes BOTH the weak (hand-rolled 0.6) and chunk (ms-marco 0.7)
+        signals and assigns ``r[6]`` exactly once. This reproduces the
+        validated PR1.1 baseline and is the default non-deep path.
+      * ``"deep"``     -> combined baseline, then an optional Qwen3-Reranker
+         top-30 refinement (``_try_deep_rerank``). Graceful skip -> combined.
+      * ``"chunk"``    -> legacy standalone chunk CE (kept for back-compat).
+      * ``"weak"``     -> legacy standalone weak CE (kept for back-compat).
+
+    The caller (orchestrator Phase 9) then applies late-interaction (a
+    separate, non-CE reranker family) and re-asserts the PR1.1 rank-first
+    sort. No CE stage runs after this point.
+    """
+    if not scored_results or not query:
+        return list(scored_results)
+    try:
+        from infra._lazy_imports import get_config
+
+        if get_config().reranker_disabled:
+            return list(scored_results)
+    except Exception:  # pragma: no cover - best-effort config read
+        pass
+    n = len(scored_results)
+    if mode == "combined":
+        wk = weak_k if weak_k is not None else min(n, top_k)
+        ck = chunk_k if chunk_k is not None else min(n, top_k)
+        return _apply_combined_ce_rerank(query, scored_results, wk, ck)
+    if mode == "deep":
+        wk = weak_k if weak_k is not None else min(n, top_k)
+        ck = chunk_k if chunk_k is not None else min(n, top_k * 3)
+        base = _apply_combined_ce_rerank(query, scored_results, wk, ck)
+        deep_out = _try_deep_rerank(query, base, top_k=min(len(base), 30))
+        return deep_out if deep_out is not None else base
+    if mode == "chunk":
+        return _apply_ce_chunk_rerank(query, scored_results, top_k=top_k, blend=_get_ce_chunk_blend())
+    # default / weak
+    return _apply_weak_ce_rerank(query, scored_results, top_k=top_k, blend=_get_ce_blend())

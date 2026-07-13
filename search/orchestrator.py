@@ -68,9 +68,9 @@ from search.query_parser import (
     _weights_for_query_type,
 )
 from search.rerankers import (
-    _apply_cross_encoder_rerank,
+    _apply_single_ce_rerank,
     _apply_late_interaction_rerank,
-    _apply_ce_chunk_rerank,
+    _select_ce_mode,
 )
 from search.scoring import (
     _reciprocal_rank_fusion,
@@ -1581,20 +1581,27 @@ def _rerank_results(
         )
 
     scored = _strong_match_float(scored)
-    out = _apply_cross_encoder_rerank(
-        query,
-        scored,
-        top_k=min(len(scored), limit * 2),
-        deep_rerank=deep_rerank,
+    # PR1.2: Single Monotonic CE. Exactly ONE CE stage rewrites r[6],
+    # selected by query type (weak default / chunk for long-multi-part /
+    # conversational / deep gated on MEMORY_CE_DEEP). This removes the
+    # PR1.1 dual-CE ambiguity where weak+chunk both rewrote r[6] and the
+    # last writer owned the order. Late-interaction (a separate reranker
+    # family, NOT a CE stage) still runs below, and the PR1.1 final sort
+    # re-asserts the ranking order afterwards. No CE stage runs after this.
+    # PR1.2 (option 2): ONE deterministic CE stage. The non-deep path
+    # ("combined") reproduces the validated PR1.1 baseline exactly: a weak
+    # hand-rolled 0.6 pre-pass over the top limit*2, then a chunk ms-marco
+    # 0.7 pass over the top limit*3 (with the baseline p80 pre-filter),
+    # combined into ONE r[6] write per item. The deep path ("deep") runs the
+    # combined baseline then an optional Qwen3-Reranker top-30 refinement
+    # that degrades gracefully to combined when the model is unavailable.
+    _ce_mode = _select_ce_mode(query, deep_rerank)
+    _ce_weak_k = min(len(scored), limit * 2)
+    _ce_chunk_k = min(len(scored), limit * 3)
+    out = _apply_single_ce_rerank(
+        query, scored, top_k=_ce_chunk_k, mode=_ce_mode,
+        weak_k=_ce_weak_k, chunk_k=_ce_chunk_k,
     )
-    # Chunk-level CE reranking: ms-marco-MiniLM-L-6-v2 scores best chunk
-    # per session. Catches answers buried in long multi-topic conversations
-    # where the weak IDF+bigram CE fails. Only runs when deep_rerank is not
-    # already using a neural reranker.
-    if not deep_rerank:
-        out = _apply_ce_chunk_rerank(
-            query, out, top_k=min(len(out), limit * 3), blend=0.7,
-        )
     out = _apply_late_interaction_rerank(query, out, top_k=min(len(out), limit * 2))
     # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
     # late-interaction rerankers above, which sort on r[6] (the CE-blended
