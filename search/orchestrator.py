@@ -1083,7 +1083,7 @@ def _fts_search(
             f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
             "          ORDER BY fts.rank\n"
             "          LIMIT ?",
-            (*params, limit * 3),
+            (*params, limit * 2),
         ).fetchall()
     params = (fts_query,)
     if category:

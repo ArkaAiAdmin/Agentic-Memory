@@ -338,6 +338,22 @@ _QUERY_EXPANSIONS: dict[str, list[str]] = {
     "applications": ["services", "apps", "app", "containerized"],
     "index": ["indexes", "indexed", "indexing", "indices", "search", "lookup"],
     "queries": ["search", "lookup", "find", "retrieval"],
+    # Personal/lifestyle expansions for LongMemEval-style queries
+    "yoga": ["yoga", "class", "studio", "practice", "pose"],
+    "class": ["class", "classes", "course", "lesson", "session"],
+    "studio": ["studio", "gym", "center", "school"],
+    "rice": ["rice", "grain", "short-grain", "long-grain", "basmati", "jasmine"],
+    "favorite": ["favorite", "favourite", "preferred", "best", "top"],
+    "music": ["music", "song", "songs", "playlist", "artist", "band", "album"],
+    "streaming": ["streaming", "stream", "spotify", "apple music", "youtube music", "tidal", "pandora"],
+    "service": ["service", "platform", "app", "application"],
+    "coffee": ["coffee", "cafe", "brew", "espresso", "latte"],
+    "recipe": ["recipe", "recipes", "dish", "meal", "cook", "cooking"],
+    "restaurant": ["restaurant", "dining", "eat", "food", "cuisine"],
+    "trip": ["trip", "travel", "vacation", "journey", "visit", "destination"],
+    "book": ["book", "novel", "read", "reading", "author"],
+    "movie": ["movie", "film", "watch", "show", "series", "tv"],
+    "gym": ["gym", "workout", "exercise", "fitness", "training"],
 }
 
 _QUERY_EXPANSION_REVERSE: dict[str, str] = {}
@@ -375,10 +391,15 @@ def _expand_query(query: str) -> str:
     bare_tokens = re.findall("[\\w@\\#\\.\\+\\-]+", bare, flags=re.UNICODE)
     if not bare_tokens and (not phrases):
         return query
+    # Filter stop words from expansion — they waste FTS5 match budget
+    # by matching many irrelevant sessions. Content words are kept.
+    content_tokens = [t for t in bare_tokens if t.lower() not in _STOP_WORDS]
+    if not content_tokens and not phrases:
+        return query
     expanded_tokens = []
     seen_aliases: set = set()
     seen_forms: set = set()  # global dedup: prevent same form in multiple expansions
-    for tok in bare_tokens:
+    for tok in content_tokens:
         low = tok.lower()
         # Try synonym expansion first
         canon = _query_expansion_reverse().get(low)
