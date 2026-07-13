@@ -2,10 +2,13 @@
   "description": "Golden evaluation set v3 \u2014 294 memories, 280 test cases with synonym, cross-category, multi-hop, temporal, single-session, and multi-session queries.",
   "version": 3,
   "targets": {
-    "recall_at_10": 0.92,
-    "recall_at_5": 0.85,
-    "mrr": 0.85,
-    "ndcg_at_10": 0.8,
+    "recall_at_5": 0.95,
+    "recall_at_10": 0.98,
+    "recall_at_25": 0.99,
+    "recall_at_50": 1.00,
+    "mrr": 0.95,
+    "ndcg_at_10": 0.95,
+    "hit_rate": 0.98,
     "p95_cold_latency_ms": 600,
     "p95_warm_latency_ms": 300
   },

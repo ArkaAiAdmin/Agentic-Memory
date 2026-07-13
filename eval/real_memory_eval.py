@@ -55,6 +55,13 @@ def _setup_db(db_path: Path) -> sqlite3.Connection:
     except Exception:
         pass
 
+    # Ensure KG tables exist for KG-based search
+    try:
+        from knowledge_graph import ensure_kg_schema
+        ensure_kg_schema(conn)
+    except Exception:
+        pass
+
     conn.commit()
     return conn
 
@@ -223,11 +230,16 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
 
     # Run test cases
     results = {
-        "recall_at_10": [],
         "recall_at_5": [],
+        "recall_at_10": [],
+        "recall_at_25": [],
+        "recall_at_50": [],
         "precision_at_5": [],
+        "precision_at_10": [],
         "mrr": [],
+        "mrr_at_5": [],
         "ndcg_at_10": [],
+        "hit_rate": [],  # 1 if any expected found, 0 otherwise
         "cold_latencies": [],
         "warm_latencies": [],
         "pass_per_query": [],
@@ -239,24 +251,34 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
 
         # Cold latency (first call after warmup)
         if i == 0:
-            retrieved, latency = _search_single(str(db_path), query, limit=10)
+            retrieved, latency = _search_single(str(db_path), query, limit=50)
             results["cold_latencies"].append(latency)
         else:
-            retrieved, latency = _search_single(str(db_path), query, limit=10)
+            retrieved, latency = _search_single(str(db_path), query, limit=50)
 
         results["warm_latencies"].append(latency)
 
-        recall_10 = _compute_recall_at_k(retrieved, expected, k=10)
         recall_5 = _compute_recall_at_k(retrieved, expected, k=5)
+        recall_10 = _compute_recall_at_k(retrieved, expected, k=10)
+        recall_25 = _compute_recall_at_k(retrieved, expected, k=25)
+        recall_50 = _compute_recall_at_k(retrieved, expected, k=50)
         precision_5 = _compute_precision_at_k(retrieved, expected, k=5)
+        precision_10 = _compute_precision_at_k(retrieved, expected, k=10)
         mrr = _compute_mrr(retrieved, expected)
+        mrr_5 = _compute_mrr(retrieved[:5], expected) if len(retrieved) >= 5 else mrr
         ndcg = _compute_ndcg_at_k(retrieved, expected, k=10)
+        hit = 1.0 if any(r in expected for r in retrieved) else 0.0
 
-        results["recall_at_10"].append(recall_10)
         results["recall_at_5"].append(recall_5)
+        results["recall_at_10"].append(recall_10)
+        results["recall_at_25"].append(recall_25)
+        results["recall_at_50"].append(recall_50)
         results["precision_at_5"].append(precision_5)
+        results["precision_at_10"].append(precision_10)
         results["mrr"].append(mrr)
+        results["mrr_at_5"].append(mrr_5)
         results["ndcg_at_10"].append(ndcg)
+        results["hit_rate"].append(hit)
 
         # Pass if recall@10 meets per-query threshold
         min_recall = tc.get("min_recall_at_10", 0.8)
@@ -267,11 +289,16 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
             print(f"  FAIL: '{query}' — recall@10={recall_10:.2f}, expected={expected}, got={retrieved[:5]}")
 
     # Compute aggregate metrics
-    avg_recall_10 = sum(results["recall_at_10"]) / len(results["recall_at_10"])
     avg_recall_5 = sum(results["recall_at_5"]) / len(results["recall_at_5"])
+    avg_recall_10 = sum(results["recall_at_10"]) / len(results["recall_at_10"])
+    avg_recall_25 = sum(results["recall_at_25"]) / len(results["recall_at_25"])
+    avg_recall_50 = sum(results["recall_at_50"]) / len(results["recall_at_50"])
     avg_precision_5 = sum(results["precision_at_5"]) / len(results["precision_at_5"])
+    avg_precision_10 = sum(results["precision_at_10"]) / len(results["precision_at_10"])
     avg_mrr = sum(results["mrr"]) / len(results["mrr"])
+    avg_mrr_5 = sum(results["mrr_at_5"]) / len(results["mrr_at_5"])
     avg_ndcg = sum(results["ndcg_at_10"]) / len(results["ndcg_at_10"])
+    avg_hit_rate = sum(results["hit_rate"]) / len(results["hit_rate"])
 
     cold_latencies = sorted(results["cold_latencies"])
     warm_latencies = sorted(results["warm_latencies"])
@@ -286,10 +313,13 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
 
     # Check targets
     checks = {
-        "recall_at_10": avg_recall_10 >= targets.get("recall_at_10", 0.92),
         "recall_at_5": avg_recall_5 >= targets.get("recall_at_5", 0.85),
+        "recall_at_10": avg_recall_10 >= targets.get("recall_at_10", 0.92),
+        "recall_at_25": avg_recall_25 >= targets.get("recall_at_25", 0.95),
+        "recall_at_50": avg_recall_50 >= targets.get("recall_at_50", 0.98),
         "mrr": avg_mrr >= targets.get("mrr", 0.85),
         "ndcg_at_10": avg_ndcg >= targets.get("ndcg_at_10", 0.80),
+        "hit_rate": avg_hit_rate >= targets.get("hit_rate", 0.95),
         "p95_cold_latency": p95_cold <= targets.get("p95_cold_latency_ms", 600),
         "p95_warm_latency": p95_warm <= targets.get("p95_warm_latency_ms", 300),
     }
@@ -297,9 +327,16 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
 
     summary = {
         "metrics": {
-            "recall_at_10": round(avg_recall_10, 4),
             "recall_at_5": round(avg_recall_5, 4),
+            "recall_at_10": round(avg_recall_10, 4),
+            "recall_at_25": round(avg_recall_25, 4),
+            "recall_at_50": round(avg_recall_50, 4),
             "precision_at_5": round(avg_precision_5, 4),
+            "precision_at_10": round(avg_precision_10, 4),
+            "mrr": round(avg_mrr, 4),
+            "mrr_at_5": round(avg_mrr_5, 4),
+            "ndcg_at_10": round(avg_ndcg, 4),
+            "hit_rate": round(avg_hit_rate, 4),
             "mrr": round(avg_mrr, 4),
             "ndcg_at_10": round(avg_ndcg, 4),
             "p95_cold_latency_ms": round(p95_cold, 1),
@@ -316,11 +353,16 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
         print("\n" + "=" * 70)
         print("REAL-MEMORY GOLDEN EVAL RESULTS")
         print("=" * 70)
-        print(f"  recall@10:      {avg_recall_10:.4f} (target: {targets.get('recall_at_10', 0.92)}) {'PASS' if checks['recall_at_10'] else 'FAIL'}")
         print(f"  recall@5:       {avg_recall_5:.4f} (target: {targets.get('recall_at_5', 0.85)}) {'PASS' if checks['recall_at_5'] else 'FAIL'}")
+        print(f"  recall@10:      {avg_recall_10:.4f} (target: {targets.get('recall_at_10', 0.92)}) {'PASS' if checks['recall_at_10'] else 'FAIL'}")
+        print(f"  recall@25:      {avg_recall_25:.4f} (target: {targets.get('recall_at_25', 0.95)}) {'PASS' if checks['recall_at_25'] else 'FAIL'}")
+        print(f"  recall@50:      {avg_recall_50:.4f} (target: {targets.get('recall_at_50', 0.98)}) {'PASS' if checks['recall_at_50'] else 'FAIL'}")
         print(f"  precision@5:    {avg_precision_5:.4f}")
+        print(f"  precision@10:   {avg_precision_10:.4f}")
         print(f"  MRR:            {avg_mrr:.4f} (target: {targets.get('mrr', 0.85)}) {'PASS' if checks['mrr'] else 'FAIL'}")
+        print(f"  MRR@5:          {avg_mrr_5:.4f}")
         print(f"  nDCG@10:        {avg_ndcg:.4f} (target: {targets.get('ndcg_at_10', 0.80)}) {'PASS' if checks['ndcg_at_10'] else 'FAIL'}")
+        print(f"  hit_rate:       {avg_hit_rate:.4f} (target: {targets.get('hit_rate', 0.95)}) {'PASS' if checks['hit_rate'] else 'FAIL'}")
         print(f"  P95 cold:       {p95_cold:.1f} ms (target: {targets.get('p95_cold_latency_ms', 600)} ms) {'PASS' if checks['p95_cold_latency'] else 'FAIL'}")
         print(f"  P95 warm:       {p95_warm:.1f} ms (target: {targets.get('p95_warm_latency_ms', 300)} ms) {'PASS' if checks['p95_warm_latency'] else 'FAIL'}")
         print(f"  queries passed: {passed_queries}/{total_queries}")
