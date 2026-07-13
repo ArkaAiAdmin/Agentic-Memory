@@ -16,8 +16,6 @@ CONFIG_DRIFT_SURFACE := \
 	infra/policy_hash_fetcher.py \
 	infra/policy_hash_diff.py \
 	mcp_maintenance_policy_hash.py \
-	hooks/memory_toml_reload.py \
-	hooks/memory_tier_patch.py \
 	eval/test_config_drift_tier_patching.py \
 	eval/test_config_drift_tier_reset.py \
 	eval/test_policy_hash_cache.py \
@@ -37,9 +35,7 @@ CONFIG_DRIFT_TYPECHECK_SURFACE := \
 	infra/policy_hash_cache.py \
 	infra/policy_hash_fetcher.py \
 	infra/policy_hash_diff.py \
-	mcp_maintenance_policy_hash.py \
-	hooks/memory_toml_reload.py \
-	hooks/memory_tier_patch.py
+	mcp_maintenance_policy_hash.py
 
 lint: ## Ruff over the config-drift surface (scoped, not repo-wide)
 	$(PYTHON) -m ruff check $(CONFIG_DRIFT_SURFACE)
