@@ -56,6 +56,8 @@ splade_model = ""                    # MEMORY_SPLADE_MODEL — SPLADE model name
 hybrid_splade_weight = 0.6           # MEMORY_HYBRID_SPLADE_WEIGHT — SPLADE weight in RRF fusion
 answer_rerank_blend = 0.3            # MEMORY_ANSWER_RERANK_BLEND — answer snippet score weight in final blend
 answer_rerank_enabled = true         # MEMORY_ANSWER_RERANK_ENABLED — enable answer-level reranking (Phase 5)
+ctr_weight_learning = true           # MEMORY_CTR_WEIGHT_LEARNING — enable per-query-type CTR weight learning (Phase 6)
+ctr_min_interactions = 10            # MEMORY_CTR_MIN_INTERACTIONS — min interactions per query type for learning
 
 [features]
 # All features on by default so the agent gets the richest possible

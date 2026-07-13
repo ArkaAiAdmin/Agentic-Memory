@@ -67,6 +67,62 @@ def _get_rerank_weights() -> dict:
     return _RERANK_WEIGHTS
 
 
+def _get_query_type_weights() -> dict:
+    """Return per-query-type weight overrides from memory_query_type_stats.
+
+    Returns {query_type: {"bm25": ..., "fitness": ..., ...}} for types
+    with ≥ MIN_INTERACTIONS learned weights.  Falls back to empty dict
+    if no learned weights exist or the table is missing.
+    """
+    try:
+        from infra._lazy_imports import connection_pool, get_config
+        from infra.memory_common import GLOBAL_MEM_DIR
+
+        db_path = str(GLOBAL_MEM_DIR / "memory.db")
+        db = connection_pool.get(db_path, timeout=5.0)
+        try:
+            rows = db.execute(
+                "SELECT query_type, weights_json, sample_count "
+                "FROM memory_query_type_stats "
+                "WHERE sample_count >= 10"
+            ).fetchall()
+            result = {}
+            for qtype, weights_json, count in rows:
+                try:
+                    weights = json.loads(weights_json)
+                    if isinstance(weights, dict) and all(
+                        k in weights for k in _RERANK_WEIGHTS
+                    ):
+                        result[qtype] = weights
+                except Exception:
+                    continue
+            return result
+        finally:
+            connection_pool.put(db)
+    except Exception as e:
+        logger.debug("_get_query_type_weights failed: %s", e)
+        return {}
+
+
+_MIN_INTERACTIONS = 10
+
+
+def apply_query_type_weights(query_type: str) -> dict:
+    """Return rerank weights, potentially overridden by learned CTR weights.
+
+    When the query_type has ≥ MIN_INTERACTIONS learned weights in
+    memory_query_type_stats, returns those.  Otherwise falls back to
+    the global prior from _get_rerank_weights().
+
+    The override must never degrade a known-good global prior — the cron
+    job only writes weights when cross-validated AUC > 0.5.
+    """
+    type_weights = _get_query_type_weights()
+    if query_type in type_weights:
+        return dict(type_weights[query_type])
+    return _get_rerank_weights()
+
+
 _RERANK_TOKEN_RE = re.compile(r"[A-Za-z0-9#@+][A-Za-z0-9\-_/+#]{2,}")
 
 

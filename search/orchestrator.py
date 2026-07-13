@@ -1534,7 +1534,10 @@ def _rerank_results(
         return out[:limit], None
 
     _qtype = _detect_query_type(query)
-    _qweights = _weights_for_query_type(_qtype)
+    # Phase 6: per-query-type CTR-learned weights override global prior
+    from search.scoring import apply_query_type_weights
+    _qweights = apply_query_type_weights(_qtype)
+    # Legacy global CTR tuning (gated behind MEMORY_CTR_TUNING=1)
     _ctr_w = compute_channel_weights(db_path)
     if _ctr_w is not None:
         _qweights = _ctr_w
