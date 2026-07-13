@@ -533,7 +533,7 @@ def _apply_ce_chunk_rerank(
     # Single-word queries, very short queries, or queries with only stopwords
     # don't benefit from chunk-level CE scoring — FTS already handles them well.
     query_words = [w for w in query.split() if w.lower() not in _CE_STOPWORDS]
-    if len(query_words) < 1:
+    if len(query_words) <= 1:
         logger.debug("_apply_ce_chunk_rerank: fast-path skip (simple query: %r)", query)
         return list(scored_results)
 
@@ -976,7 +976,7 @@ def _apply_combined_ce_rerank(
     # Chunk CE fast-paths (mirror baseline _apply_ce_chunk_rerank).
     query_words = [w for w in query.split() if w.lower() not in _CE_STOPWORDS]
     model = _get_ce_chunk_model()
-    if len(query_words) < 1 or n <= 5 or model is None:
+    if len(query_words) <= 1 or n <= 5 or model is None:
         return _assign_rank_once(scored_results, final, chunk_k)
 
     head_r6 = w6[:chunk_k]

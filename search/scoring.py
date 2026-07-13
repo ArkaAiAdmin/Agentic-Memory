@@ -455,9 +455,15 @@ def _compute_final_score(ctx) -> float:
             logger.warning("Failed to parse tags JSON for tag scoring")
             tags_list = []
         if tags_list:
-            tag_tokens = {
-                t.lower() for t in tags_list if isinstance(t, str) and len(t) >= 3
-            }
+            # Normalize tags through the same regex as query tokens so tags
+            # like "node.js", ".net", "react.ts" match their query counterparts.
+            tag_tokens = set()
+            for t in tags_list:
+                if not isinstance(t, str):
+                    continue
+                for token in _RERANK_TOKEN_RE.findall(t):
+                    if len(token) >= 3:
+                        tag_tokens.add(token.lower())
             if tag_tokens:
                 hits = len(query_tokens & tag_tokens)
                 tag_match = min(1.0, hits / max(1, len(query_tokens)))

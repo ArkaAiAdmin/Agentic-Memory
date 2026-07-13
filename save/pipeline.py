@@ -848,7 +848,9 @@ def _update_memory_index_incremental(
                                              asserting_agent_id=asserting_agent_id,
                                              evidence_chain=evidence_chain,
                                              fact_type=fact_type,
-                                             conn=conn)
+                                             conn=conn,
+                                             category=category,
+                                             tags=tags)
     except Exception as e:
         if external_db:
             raise
@@ -878,6 +880,8 @@ def _defer_indexing_background_tasks(
     asserting_agent_id: str = "", evidence_chain: list | None = None,
     fact_type: str = "observation",
     conn=None,
+    category: str = "",
+    tags: list | None = None,
 ) -> None:
     """Enqueue expensive indexing operations as background tasks.
 
@@ -900,7 +904,8 @@ def _defer_indexing_background_tasks(
         enqueue_task(
             bq_conn,
             "embedding_index",
-            {"memory_id": note_id, "content": content, "source_file": source_file},
+            {"memory_id": note_id, "content": content, "source_file": source_file,
+             "category": category, "tags": tags or []},
             max_queue_size=max_qs,
             reject_policy=reject_pol,
         )

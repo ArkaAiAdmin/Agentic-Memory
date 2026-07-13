@@ -236,8 +236,9 @@ def handle_embedding_index(
         source_file = payload.get("source_file", "")
         if not memory_id or not content:
             return "skipped: no memory_id or content in payload"
-        category = memory_id.split("/")[0] if "/" in memory_id else "general"
-        _index_embedding(conn, memory_id, content, category, [], source_file)
+        category = payload.get("category", "") or (memory_id.split("/")[0] if "/" in memory_id else "general")
+        tags = payload.get("tags", [])
+        _index_embedding(conn, memory_id, content, category, tags, source_file)
         conn.commit()
         return f"embedding indexed for {memory_id}"
     except Exception as e:
