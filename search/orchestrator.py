@@ -70,6 +70,7 @@ from search.query_parser import (
 from search.rerankers import (
     _apply_cross_encoder_rerank,
     _apply_late_interaction_rerank,
+    _apply_ce_chunk_rerank,
 )
 from search.scoring import (
     _reciprocal_rank_fusion,
@@ -1578,6 +1579,14 @@ def _rerank_results(
         top_k=min(len(scored), limit * 2),
         deep_rerank=deep_rerank,
     )
+    # Chunk-level CE reranking: ms-marco-MiniLM-L-6-v2 scores best chunk
+    # per session. Catches answers buried in long multi-topic conversations
+    # where the weak IDF+bigram CE fails. Only runs when deep_rerank is not
+    # already using a neural reranker.
+    if not deep_rerank:
+        out = _apply_ce_chunk_rerank(
+            query, out, top_k=min(len(out), limit * 3), blend=0.7,
+        )
     out = _apply_late_interaction_rerank(query, out, top_k=min(len(out), limit * 2))
     if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
         out = _apply_jaccard_surprise_penalty(out, query)

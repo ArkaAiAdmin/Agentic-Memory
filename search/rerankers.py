@@ -423,3 +423,133 @@ def _apply_late_interaction_rerank(
         reranked.append(tuple(new_r))
     reranked.sort(key=lambda x: x[6], reverse=True)
     return reranked + tail
+
+
+# ---------------------------------------------------------------------------
+# Chunk-level cross-encoder reranking (ms-marco-MiniLM-L-6-v2)
+# ---------------------------------------------------------------------------
+
+_CE_CHUNK_MODEL = None
+_CE_CHUNK_SIZE = 150
+_CE_CHUNK_OVERLAP = 30
+
+
+def _chunk_text(text: str, chunk_size: int = _CE_CHUNK_SIZE, overlap: int = _CE_CHUNK_OVERLAP) -> list[str]:
+    """Split text into overlapping word chunks for CE scoring."""
+    if not text:
+        return [""]
+    words = text.split()
+    chunks = []
+    i = 0
+    while i < len(words):
+        chunks.append(" ".join(words[i : i + chunk_size]))
+        i += chunk_size - overlap
+    return chunks if chunks else [text]
+
+
+def _get_ce_chunk_model():
+    """Lazily load the cross-encoder model for chunk-level reranking."""
+    global _CE_CHUNK_MODEL
+    if _CE_CHUNK_MODEL is not None:
+        return _CE_CHUNK_MODEL
+    try:
+        from sentence_transformers import CrossEncoder
+        _CE_CHUNK_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512)
+        return _CE_CHUNK_MODEL
+    except Exception as e:
+        logger.warning("_get_ce_chunk_model: failed to load CE model: %s", e)
+        return None
+
+
+def _apply_ce_chunk_rerank(
+    query: str,
+    scored_results: list,
+    top_k: int = 300,
+    blend: float = 0.7,
+) -> list:
+    """Chunk-level cross-encoder reranking using ms-marco-MiniLM-L-6-v2.
+
+    For each result, splits the content into overlapping word chunks,
+    scores each chunk against the query using the CE model, and uses
+    the best chunk score as the session score. Results are re-ranked
+    by blending the CE score with the existing final_score.
+
+    This catches answers buried deep in long multi-topic conversations
+    where the weak IDF+bigram CE fails.
+
+    Args:
+        query: Natural-language search query.
+        scored_results: List of 12-tuple result rows from prior phases.
+        top_k: Max results to rerank (rest pass through untouched).
+        blend: Weight for CE score in the final blend (0.0-1.0).
+            Higher = more CE influence. Default 0.7 (CE-dominated).
+
+    Returns:
+        Re-ranked list with CE-adjusted final_scores.
+    """
+    if not scored_results or not query:
+        return scored_results
+    try:
+        from infra._lazy_imports import get_config
+        if get_config().reranker_disabled:
+            return list(scored_results)
+    except Exception:
+        pass
+
+    model = _get_ce_chunk_model()
+    if model is None:
+        logger.warning("_apply_ce_chunk_rerank: CE model unavailable, skipping")
+        return scored_results
+
+    head = scored_results[:top_k]
+    tail = scored_results[top_k:]
+    logger.debug("_apply_ce_chunk_rerank: scoring %d candidates", len(head))
+
+    # Build all (query, chunk) pairs across all sessions at once,
+    # then batch-predict for ~10x speedup over per-session calls.
+    import time as _t
+    _t0 = _t.time()
+    all_pairs = []
+    chunk_counts = []  # how many chunks per session
+    for r in head:
+        content = r[1] or ""
+        chunks = _chunk_text(content)
+        chunk_pairs = [(query, c[:512]) for c in chunks]
+        all_pairs.extend(chunk_pairs)
+        chunk_counts.append(len(chunk_pairs))
+    logger.debug("_apply_ce_chunk_rerank: %d sessions, %d total chunks (%.2fms chunking)",
+                 len(head), len(all_pairs), (_t.time()-_t0)*1000)
+
+    # Single batched prediction
+    _t1 = _t.time()
+    all_scores = model.predict(all_pairs, show_progress_bar=False, batch_size=128)
+    logger.debug("_apply_ce_chunk_rerank: batch predict %.2fs", _t.time()-_t1)
+
+    # Extract best chunk score per session
+    ce_scores = []
+    idx = 0
+    for count in chunk_counts:
+        session_scores = all_scores[idx : idx + count]
+        if hasattr(session_scores, '__len__') and len(session_scores) > 0:
+            best = session_scores[0]
+            for s in session_scores[1:]:
+                if s > best:
+                    best = s
+            ce_scores.append(float(best))
+        else:
+            ce_scores.append(0.0)
+        idx += count
+
+    # Blend CE score with existing final_score
+    reranked = []
+    for r, ce_score in zip(head, ce_scores):
+        final_score = float(r[6]) if r[6] is not None else 0.0
+        # Normalize CE score to [0, 1] range (ms-marco scores are roughly [-10, 10])
+        ce_norm = max(0.0, min(1.0, (ce_score + 10.0) / 20.0))
+        adjusted = final_score * (1.0 - blend) + ce_norm * blend
+        new_r = list(r)
+        new_r[6] = adjusted
+        reranked.append(tuple(new_r))
+
+    reranked.sort(key=lambda x: float(x[6]) if x[6] is not None else 0.0, reverse=True)
+    return reranked + tail
