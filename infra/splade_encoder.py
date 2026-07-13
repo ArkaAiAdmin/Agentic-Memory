@@ -43,13 +43,15 @@ def _get_splade_model():
         model_name = os.environ.get("MEMORY_SPLADE_MODEL", _DEFAULT_MODEL)
         try:
             from transformers import AutoModel, AutoTokenizer
-            logger.info("Loading SPLADE model: %s", model_name)
+            # Auto-detect device: MPS if available, else CPU
+            device = "mps" if torch.backends.mps.is_available() else "cpu"
+            logger.info("Loading SPLADE model: %s on %s", model_name, device)
             tok = AutoTokenizer.from_pretrained(model_name)
-            mdl = AutoModel.from_pretrained(model_name)
+            mdl = AutoModel.from_pretrained(model_name).to(device)
             mdl.eval()
             _splade_model = mdl
             _splade_tokenizer = tok
-            logger.info("SPLADE model loaded (vocab=%d)", tok.vocab_size)
+            logger.info("SPLADE model loaded (vocab=%d, device=%s)", tok.vocab_size, device)
             return _splade_model, _splade_tokenizer
         except Exception as e:
             logger.warning("Failed to load SPLADE model %s: %s", model_name, e)
@@ -77,13 +79,15 @@ def encode_sparse(
     if model is None or tokenizer is None:
         return None
     try:
+        # Get device from model parameters
+        device = next(model.parameters()).device
         inputs = tokenizer(
             text,
             return_tensors="pt",
             truncation=True,
             max_length=max_length,
             padding=False,
-        )
+        ).to(device)
         with torch.no_grad():
             outputs = model(**inputs)
         # SPLADE: use the CLS token's representation, apply activation
@@ -146,13 +150,15 @@ def encode_sparse_batch(
     if model is None or tokenizer is None:
         return None
     try:
+        # Get device from model parameters
+        device = next(model.parameters()).device
         inputs = tokenizer(
             texts,
             return_tensors="pt",
             truncation=True,
             max_length=max_length,
             padding=True,
-        )
+        ).to(device)
         with torch.no_grad():
             outputs = model(**inputs)
 

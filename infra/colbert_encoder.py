@@ -52,17 +52,19 @@ def _get_colbert_model():
         model_name = os.environ.get("MEMORY_COLBERT_MODEL", _DEFAULT_MODEL)
         try:
             from transformers import AutoModel, AutoTokenizer
-            logger.info("Loading ColBERT model: %s", model_name)
+            # Auto-detect device: MPS if available, else CPU
+            device = "mps" if torch.backends.mps.is_available() else "cpu"
+            logger.info("Loading ColBERT model: %s on %s", model_name, device)
             tok = AutoTokenizer.from_pretrained(model_name)
-            mdl = AutoModel.from_pretrained(model_name)
+            mdl = AutoModel.from_pretrained(model_name).to(device)
             mdl.eval()
             _hidden_dim = mdl.config.hidden_size
-            proj = _ColbertProjection(_hidden_dim, _MODEL_DIM)
+            proj = _ColbertProjection(_hidden_dim, _MODEL_DIM).to(device)
             proj.eval()
             _colbert_model = mdl
             _colbert_tokenizer = tok
             _colbert_projection = proj
-            logger.info("ColBERT model loaded (hidden=%d, proj=%d)", _hidden_dim, _MODEL_DIM)
+            logger.info("ColBERT model loaded (hidden=%d, proj=%d, device=%s)", _hidden_dim, _MODEL_DIM, device)
             return _colbert_model, _colbert_tokenizer, _colbert_projection
         except Exception as e:
             logger.warning("Failed to load ColBERT model %s: %s", model_name, e)
@@ -79,13 +81,15 @@ def encode_tokens(text: str, max_length: int = 256) -> Optional[list[tuple[str, 
     if model is None or tokenizer is None or projection is None:
         return None
     try:
+        # Get device from model parameters
+        device = next(model.parameters()).device
         inputs = tokenizer(
             text,
             return_tensors="pt",
             truncation=True,
             max_length=max_length,
             padding=False,
-        )
+        ).to(device)
         with torch.no_grad():
             outputs = model(**inputs)
         hidden = outputs.last_hidden_state[0]  # [seq_len, hidden_dim]
@@ -112,13 +116,15 @@ def encode_query(text: str, max_length: int = 32) -> Optional[list[list[float]]]
     if model is None or tokenizer is None or projection is None:
         return None
     try:
+        # Get device from model parameters
+        device = next(model.parameters()).device
         inputs = tokenizer(
             text,
             return_tensors="pt",
             truncation=True,
             max_length=max_length,
             padding=False,
-        )
+        ).to(device)
         with torch.no_grad():
             outputs = model(**inputs)
         hidden = outputs.last_hidden_state[0]  # [seq_len, hidden_dim]
