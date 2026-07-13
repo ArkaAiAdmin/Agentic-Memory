@@ -1227,6 +1227,15 @@ def _hybrid_fusion(
         except Exception as _splade_exc:
             logger.debug("SPLADE search skipped: %s", _splade_exc)
 
+        # Adaptive weighting: boost semantic for abstract/synonym queries
+        # Check if FTS has few results (indicates vocabulary mismatch)
+        fts_count = len(fts_ranked)
+        if fts_count < limit // 2:
+            # FTS found few results — this is likely an abstract query
+            # Boost semantic weight to find semantically similar content
+            _sem_w = _sem_w * 2.0
+            logger.debug("hybrid_fusion: boosting semantic weight for abstract query (fts=%d)", fts_count)
+
         # Fusion over Document FTS, Semantic, Chunk FTS, and SPLADE
         rrf = _reciprocal_rank_fusion(
             [fts_ranked, sem_ranked, chunk_fts_ranked, splade_ranked],

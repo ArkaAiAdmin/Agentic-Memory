@@ -474,16 +474,38 @@ def _get_best_device() -> str:
 
 
 def _get_ce_chunk_model():
-    """Lazily load the cross-encoder model for chunk-level reranking."""
+    """Lazily load the cross-encoder model for chunk-level reranking.
+
+    Uses BAAI/bge-reranker-v2-m3 — state-of-the-art cross-encoder with
+    8192 token context, 100+ language support, and top MTEB benchmarks.
+    Falls back to ms-marco-MiniLM-L-6-v2 if bge-reranker is unavailable.
+    """
     global _CE_CHUNK_MODEL
     if _CE_CHUNK_MODEL is not None:
         return _CE_CHUNK_MODEL
     try:
         from sentence_transformers import CrossEncoder
         device = _get_best_device()
-        logger.debug("_get_ce_chunk_model: loading CrossEncoder on device=%r", device)
-        _CE_CHUNK_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512, device=device)
-        return _CE_CHUNK_MODEL
+        # Try SOTA model first (bge-reranker-v2-m3: 1024 hidden, 8192 max)
+        try:
+            logger.debug("_get_ce_chunk_model: loading BAAI/bge-reranker-v2-m3 on device=%r", device)
+            _CE_CHUNK_MODEL = CrossEncoder("BAAI/bge-reranker-v2-m3", device=device)
+            logger.info("Loaded SOTA cross-encoder: BAAI/bge-reranker-v2-m3 (1024d, 8192ctx)")
+            return _CE_CHUNK_MODEL
+        except Exception as _bge_err:
+            logger.warning("bge-reranker-v2-m3 failed: %s, falling back to ms-marco-MiniLM", _bge_err)
+        # Fallback to lighter model
+        try:
+            logger.debug("_get_ce_chunk_model: loading ms-marco-MiniLM-L-6-v2 on device=%r", device)
+            _CE_CHUNK_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512, device=device)
+            logger.info("Loaded fallback cross-encoder: ms-marco-MiniLM-L-6-v2")
+            return _CE_CHUNK_MODEL
+        except Exception as _ms_err:
+            logger.warning("ms-marco-MiniLM also failed: %s", _ms_err)
+        return None
+    except Exception as e:
+        logger.warning("Failed to load any cross-encoder model: %s", e)
+        return None
     except Exception as e:
         logger.warning("_get_ce_chunk_model: failed to load CE model: %s", e)
         return None

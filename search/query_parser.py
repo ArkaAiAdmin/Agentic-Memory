@@ -48,8 +48,10 @@ _STOP_WORDS = frozenset({
     'just', 'because', 'as', 'until', 'while', 'about', 'between',
     'through', 'during', 'before', 'after', 'above', 'below', 'up',
     'down', 'out', 'off', 'over', 'under', 'again', 'further', 'once',
-    'here', 'there', 'any', 'also', 'type', 'kind', 'sort', 'want',
-    'looking', 'tell', 'show',
+    'here', 'there', 'any', 'also',
+    # Removed: type, kind, sort, want, looking, tell, show, about
+    # These are query-intent words that matter for search memory queries.
+    # "what type of database" needs "type" to work.
 })
 
 # Word form expansions: porter stemming misses these cross-form matches.
