@@ -118,7 +118,7 @@ def _compute_mrr(retrieved: list[str], expected: list[str]) -> float:
 
 
 def _search_single(
-    conn: sqlite3.Connection, query: str, limit: int = 10
+    db_path: str, query: str, limit: int = 10
 ) -> tuple[list[str], float]:
     """Search for a query and return (result_ids, latency_ms)."""
     from search.orchestrator import search_memories
@@ -127,7 +127,7 @@ def _search_single(
     try:
         result = search_memories(
             query=query,
-            db_path=conn,
+            db_path=Path(db_path),
             limit=limit,
             hybrid=False,  # FTS only for consistent evaluation
         )
@@ -160,10 +160,35 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
     _insert_memories(conn, memories)
     _insert_fts(conn, memories)
 
-    # Warm up (first query loads models)
+    # Warm up: pre-load all models before timed queries
     if verbose:
         print("Warming up search pipeline...")
-    _search_single(conn, "warmup query", limit=5)
+    # Pre-load cross-encoder into module-level cache
+    try:
+        import search.rerankers as _rerankers
+        from sentence_transformers import CrossEncoder
+        _rerankers._CE_CHUNK_MODEL = CrossEncoder(
+            "cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512
+        )
+        if verbose:
+            print("  Cross-encoder loaded")
+    except Exception:
+        pass
+    # Pre-load SPLADE
+    try:
+        from infra.splade_encoder import encode_sparse
+        encode_sparse("warmup")
+        if verbose:
+            print("  SPLADE loaded")
+    except Exception:
+        pass
+    # Run warm-up queries to prime FTS cache
+    warmup_queries = [
+        "docker container basics", "python testing", "kubernetes deployment",
+        "redis caching", "postgresql transaction", "terraform infrastructure",
+    ]
+    for wq in warmup_queries:
+        _search_single(str(db_path), wq, limit=5)
 
     # Run test cases
     results = {
@@ -180,10 +205,10 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
 
         # Cold latency (first call after warmup)
         if i == 0:
-            retrieved, latency = _search_single(conn, query, limit=10)
+            retrieved, latency = _search_single(str(db_path), query, limit=10)
             results["cold_latencies"].append(latency)
         else:
-            retrieved, latency = _search_single(conn, query, limit=10)
+            retrieved, latency = _search_single(str(db_path), query, limit=10)
 
         results["warm_latencies"].append(latency)
 
