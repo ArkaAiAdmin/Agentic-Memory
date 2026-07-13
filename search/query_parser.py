@@ -49,7 +49,7 @@ _STOP_WORDS = frozenset({
     'through', 'during', 'before', 'after', 'above', 'below', 'up',
     'down', 'out', 'off', 'over', 'under', 'again', 'further', 'once',
     'here', 'there', 'any', 'also', 'type', 'kind', 'sort', 'want',
-    'looking', 'find', 'search', 'query', 'tell', 'show',
+    'looking', 'tell', 'show',
 })
 
 # Word form expansions: porter stemming misses these cross-form matches.
