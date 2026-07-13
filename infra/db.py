@@ -381,20 +381,20 @@ class _ConnectionPool:
                         self._depth.pop(key, None)
                         self._inodes.pop(key, None)
                     else:
-                        t_id = tenant_id or "default"
-                        try:
-                            conn.create_function("tenant_id", 0, lambda: t_id)
-                            conn.execute(
-                                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
-                                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-                            )
-                            conn.execute(
-                                "CREATE TEMP VIEW IF NOT EXISTS tenant_field_crdt AS "
-                                "SELECT * FROM memory_field_crdt "
-                                "WHERE tenant_id = tenant_id()"
-                            )
-                        except Exception as e:
-                            logger.warning("db: failed to create tenant view in pool get: %s", e)
+                        if tenant_id is not None:
+                            try:
+                                conn.create_function("tenant_id", 0, lambda: tenant_id)
+                                conn.execute(
+                                    "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                                    "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+                                )
+                                conn.execute(
+                                    "CREATE TEMP VIEW IF NOT EXISTS tenant_field_crdt AS "
+                                    "SELECT * FROM memory_field_crdt "
+                                    "WHERE tenant_id = tenant_id()"
+                                )
+                            except Exception as e:
+                                logger.warning("db: failed to create tenant view in pool get: %s", e)
                         return conn
             # C4: Close at most ONE idle same-path orphan (the evicted key)
             # rather than scanning every other thread's connections while

@@ -48,9 +48,35 @@ def is_evaluable(entry: dict) -> bool:
     return not entry["question_id"].endswith("_abs")
 
 
-def load_corpus(path: str) -> list[dict]:
-    with open(path) as f:
-        return json.load(f)
+def load_corpus(path: str, limit: int | None = None) -> list[dict]:
+    import json
+    if limit is None:
+        with open(path) as f:
+            return json.load(f)
+
+    evaluable_questions = []
+    current_lines = []
+    
+    with open(path, "r", encoding="utf-8") as f:
+        f.readline()  # skip [
+        for line in f:
+            if line.startswith("    {"):
+                current_lines = [line]
+            elif line.startswith("    },") or line.startswith("    }"):
+                current_lines.append(line)
+                obj_str = "".join(current_lines).rstrip().rstrip(",")
+                try:
+                    q = json.loads(obj_str)
+                    if not q["question_id"].endswith("_abs"):
+                        evaluable_questions.append(q)
+                        if len(evaluable_questions) >= limit:
+                            break
+                except Exception:
+                    pass
+            else:
+                current_lines.append(line)
+                
+    return evaluable_questions
 
 
 def _join_turns(session_turns: list[dict]) -> str:
@@ -244,6 +270,17 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
 
         # Use the main search pipeline — FTS + weak CE reranking, no hybrid
         try:
+            qdate = q.get("question_date")
+            as_of_val = None
+            if qdate:
+                try:
+                    dt_str = _parse_haystack_date(qdate)
+                    from datetime import datetime
+                    dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+                    as_of_val = dt.timestamp()
+                except Exception:
+                    pass
+
             result = search_memories(
                 db_path,
                 question,
@@ -254,6 +291,7 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
                 deep_rerank=False,
                 rerank=True,
                 light=False,
+                as_of=as_of_val,
             )
             ranked = [r["id"] for r in result.get("results", [])]
         except Exception as e:
@@ -314,7 +352,7 @@ def main():
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
 
-    corpus = load_corpus(args.input)
+    corpus = load_corpus(args.input, limit=args.limit)
     report = run(corpus, limit=args.limit)
 
     with open(args.output, "w") as f:
