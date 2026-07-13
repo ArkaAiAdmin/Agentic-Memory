@@ -1184,7 +1184,7 @@ def _hybrid_fusion(
     repo_filter: str,
     category: str | None = None,
 ) -> list:
-    """Merge FTS and semantic results using reciprocal rank fusion."""
+    """Merge FTS, semantic, chunk FTS, and SPLADE results using RRF."""
     try:
         from infra._lazy_imports import get_config, get_embedding_search
 
@@ -1195,26 +1195,39 @@ def _hybrid_fusion(
         _fts_w = float(getattr(get_config(), "hybrid_fts_weight", 1.0))
         _sem_w = float(getattr(get_config(), "hybrid_semantic_weight", 1.0))
         _chunk_fts_w = float(getattr(get_config(), "hybrid_chunk_fts_weight", 0.8))
+        _splade_w = float(getattr(get_config(), "hybrid_splade_weight", 0.6))
         _es_results = _es.search(normalized_query, db_path, limit=limit * _overfetch)
         if not isinstance(_es_results, list):
             _es_results = []
         fts_ranked = [r[0] for r in results]
         sem_ranked = [h.get("id") for h in _es_results if h.get("id")]
-        
+
         # Get chunk-level FTS hits and build their ranked parent ID list
         chunk_hits = _search_chunks_enhanced(db, fts_query, limit=limit * 2)
         merged_chunks = _merge_chunk_hits(chunk_hits)
         chunk_fts_ranked = [p_id for p_id, _, _, _, _ in merged_chunks]
 
-        # Fusion over Document FTS, Semantic, and Chunk FTS
+        # SPLADE sparse search (Phase 4)
+        splade_ranked = []
+        try:
+            from infra.splade_encoder import encode_sparse
+            from search.splade_index import splade_search
+            query_sparse = encode_sparse(normalized_query)
+            if query_sparse:
+                splade_results = splade_search(db, query_sparse, top_k=limit * _overfetch)
+                splade_ranked = [mid for mid, _ in splade_results]
+        except Exception as _splade_exc:
+            logger.debug("SPLADE search skipped: %s", _splade_exc)
+
+        # Fusion over Document FTS, Semantic, Chunk FTS, and SPLADE
         rrf = _reciprocal_rank_fusion(
-            [fts_ranked, sem_ranked, chunk_fts_ranked],
+            [fts_ranked, sem_ranked, chunk_fts_ranked, splade_ranked],
             k=_rrf_k,
-            weights=[_fts_w, _sem_w, _chunk_fts_w]
+            weights=[_fts_w, _sem_w, _chunk_fts_w, _splade_w]
         )
         existing_ids = {r[0]: i for i, r in enumerate(results)}
         new_hit_ids = []
-        for hit_id in sem_ranked + chunk_fts_ranked:
+        for hit_id in sem_ranked + chunk_fts_ranked + splade_ranked:
             if hit_id and hit_id not in existing_ids and hit_id not in new_hit_ids:
                 new_hit_ids.append(hit_id)
         new_hit_rows = _fetch_rows_by_ids(db, new_hit_ids, extra_filter=repo_filter, extra_params=(category,) if category else ())

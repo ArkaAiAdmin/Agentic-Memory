@@ -51,6 +51,9 @@ colbert_model = ""                   # MEMORY_COLBERT_MODEL — ColBERT model na
 colbert_blend = 0.4                  # MEMORY_COLBERT_BLEND — ColBERT score weight in final blend
 colbert_max_candidates = 30          # MEMORY_COLBERT_MAX_CANDIDATES — skip reranking when candidates exceed this
 colbert_min_query_tokens = 3         # MEMORY_COLBERT_MIN_QUERY_TOKENS — skip reranking for shorter queries
+splade_enabled = true                # MEMORY_SPLADE_ENABLED — enable SPLADE sparse recall (Phase 4)
+splade_model = ""                    # MEMORY_SPLADE_MODEL — SPLADE model name (default: naver/splade-cocondenser-ensembledistil)
+hybrid_splade_weight = 0.6           # MEMORY_HYBRID_SPLADE_WEIGHT — SPLADE weight in RRF fusion
 
 [features]
 # All features on by default so the agent gets the richest possible

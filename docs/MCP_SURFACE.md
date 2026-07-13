@@ -4,7 +4,7 @@
 # Agentic Memory — MCP Surface Reference
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
-> Last updated: 2026-07-13. Schema v58. Multi-tenant isolation enforced.
+> Last updated: 2026-07-13. Schema v59. Multi-tenant isolation enforced.
 
 ---
 
@@ -591,7 +591,7 @@ memory_maintenance(operation="duplicates", threshold=0.85)
 
 ## Schema Version
 
-Current: **v58** (59 migrations, 100% down-migration coverage)
+Current: **v59** (60 migrations, 100% down-migration coverage)
 
 ### Multi-Tenant Isolation (Phase 0)
 
