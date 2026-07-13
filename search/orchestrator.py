@@ -329,6 +329,7 @@ class ScoreContext:
     now_ts: Optional[float] = None
     weights: Optional[dict] = None
     is_entailed: Optional[int] = None
+    query_tokens: Optional[set] = None  # Pre-computed query tokens for tag matching
 
 
 class MemoryResultRow(NamedTuple):
@@ -1553,6 +1554,7 @@ def _rerank_results(
     if _ctr_w is not None:
         _qweights = _ctr_w
     scored = []
+    _pre_query_tokens = None  # Lazy-initialized in scoring loop
     # BM25 normalization: rescale raw FTS5 ranks to [0, 1] before sigmoid
     # so BM25 contributes meaningful discrimination regardless of IDF magnitude.
     _rank_normalized = _normalize_bm25_ranks(results)
@@ -1571,6 +1573,12 @@ def _rerank_results(
         last_accessed = r[9] if len(r) > 9 else None
         metadata_json = r[10] if len(r) > 10 else None
         access_count = r[11] if len(r) > 11 else 1
+        # Pre-compute query tokens once for tag matching (Phase 8 optimization)
+        if _pre_query_tokens is None:
+            from search.scoring import _RERANK_TOKEN_RE
+            _pre_query_tokens = {
+                t.lower() for t in _RERANK_TOKEN_RE.findall(query) if len(t) >= 3
+            }
         final_score = _compute_final_score(
             ScoreContext(
                 rank=rank,
@@ -1584,6 +1592,7 @@ def _rerank_results(
                 recency_weight=recency_weight,
                 weights=_qweights,
                 now_ts=as_of,
+                query_tokens=_pre_query_tokens,
             )
         )
         importance_val = importance if importance is not None else 3
@@ -1671,6 +1680,14 @@ def _rerank_results(
                     pass
         except Exception as _ar_exc:
             logger.debug("answer_rerank skipped: %s", _ar_exc)
+    # Temporal decay (Phase 2 integration): boost recent notes, gently
+    # penalize old ones. This is a scoring modifier (not enrichment), so
+    # it legitimately mutates r[6] before the final sort.
+    try:
+        from search.scoring import _apply_temporal_decay
+        out = _apply_temporal_decay(out, as_of=as_of)
+    except Exception as _td_exc:
+        logger.debug("temporal_decay skipped: %s", _td_exc)
     # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
     # late-interaction rerankers above, which sort on r[6] (the CE-blended
     # final_score). The four historical enrichment passes (temporal decay,
@@ -2557,7 +2574,17 @@ def search_memories(
                 category = "lessons"
             repo_filter = f"{repo_filter} AND m.category = ?"
         else:
-            repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
+            # Detect session-related queries and include sessions
+            _session_keywords = {"session", "sprint", "incident", "retrospective",
+                                 "retro", "debug", "review", "pair", "planning",
+                                 "today", "yesterday", "last week", "this week"}
+            _q_lower = normalized_query.lower()
+            _is_session_query = any(kw in _q_lower for kw in _session_keywords)
+            if _is_session_query:
+                # Include sessions for session-related queries
+                pass  # No filter — sessions are included
+            else:
+                repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
 
         # Sprint 3: tags filter — JSON array exact match via LIKE.
         # Parameterised to prevent SQL injection (was: f-string interpolation
