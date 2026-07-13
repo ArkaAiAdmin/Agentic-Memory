@@ -54,6 +54,8 @@ colbert_min_query_tokens = 3         # MEMORY_COLBERT_MIN_QUERY_TOKENS — skip 
 splade_enabled = true                # MEMORY_SPLADE_ENABLED — enable SPLADE sparse recall (Phase 4)
 splade_model = ""                    # MEMORY_SPLADE_MODEL — SPLADE model name (default: naver/splade-cocondenser-ensembledistil)
 hybrid_splade_weight = 0.6           # MEMORY_HYBRID_SPLADE_WEIGHT — SPLADE weight in RRF fusion
+answer_rerank_blend = 0.3            # MEMORY_ANSWER_RERANK_BLEND — answer snippet score weight in final blend
+answer_rerank_enabled = true         # MEMORY_ANSWER_RERANK_ENABLED — enable answer-level reranking (Phase 5)
 
 [features]
 # All features on by default so the agent gets the richest possible

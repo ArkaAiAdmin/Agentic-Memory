@@ -1632,6 +1632,21 @@ def _rerank_results(
                 pass
     except Exception as _cb_exc:
         logger.debug("colbert_rerank skipped: %s", _cb_exc)
+    # Answer-level reranking (Phase 5): score best snippet per candidate.
+    # Uses cross-encoder on extracted snippets, with pre-computed cache.
+    try:
+        from search.answer_rerank import answer_rerank
+        from infra.db import open_db
+        _answer_conn = open_db(db_path)
+        try:
+            out = answer_rerank(_answer_conn, query, out, db_path=db_path)
+        finally:
+            try:
+                _answer_conn.close()
+            except Exception:
+                pass
+    except Exception as _ar_exc:
+        logger.debug("answer_rerank skipped: %s", _ar_exc)
     # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
     # late-interaction rerankers above, which sort on r[6] (the CE-blended
     # final_score). The four historical enrichment passes (temporal decay,
