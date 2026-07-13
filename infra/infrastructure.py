@@ -203,7 +203,7 @@ def _resolve_principal_for_audit() -> str | None:
         ctx = get_agent()
         principal_id = getattr(ctx, "principal_id", None)
         if principal_id:
-            return principal_id
+            return str(principal_id)
     except (ImportError, Exception):
         pass
     return None

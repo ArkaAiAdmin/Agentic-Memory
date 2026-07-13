@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sqlite3
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -318,7 +317,13 @@ def mcp_authorize(
         from infra.db import open_db
 
         with open_db(Path(db_path), timeout=5.0) as conn:
-            allowed = check_permission(conn, principal_id, resource, action)
+            from infra.db import ProxyConnection
+            # ProxyConnection relays .execute() through the write-queue at runtime,
+            # so check_permission works against it; mypy just can't see the alias.
+            if isinstance(conn, ProxyConnection):
+                allowed = check_permission(conn, principal_id, resource, action)  # type: ignore[arg-type]
+            else:
+                allowed = check_permission(conn, principal_id, resource, action)
             if not allowed:
                 logger.warning(
                     "AUTH DENIED: principal=%s action=%s resource=%s",

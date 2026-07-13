@@ -1610,7 +1610,8 @@ def save_memory_journal(
     tags_list, _tags_str = _validate_save_params(req.content, req.category, req.title_slug, req.tags)
     from infra.memory_common import _resolve_tags
     tags_list = _resolve_tags(req.category, tags_list, context=req.context)
-    _scan_for_injection_or_skip(req.content, req.category, req.title_slug)
+    if req.safety_wiring:
+        _scan_for_injection_or_skip(req.content, req.category, req.title_slug)
     target_base, file_path, _category_dir, _project_root, effective_category = _resolve_save_paths(
         req.category, req.title_slug, req.is_global, req.db_path
     )
@@ -1680,7 +1681,6 @@ def materialize_journal_entry(
     """
     from infra.write_journal import (
         JOURNAL_MAX_RETRIES,
-        mark_applied,
         mark_dead_letter,
         mark_retry,
         verify_content_hash,
@@ -2016,9 +2016,12 @@ def _save_memory_core(
         from infra.memory_common import _resolve_tags
 
         tags_list = _resolve_tags(category, tags_list, context=context)
-        # H9: Prompt-injection scan — pure regex, no side effects, runs on every
-        # path (MCP tool + hook) since both delegate to save_memory.
-        _scan_for_injection_or_skip(content, category, title_slug)
+        # H9: Prompt-injection scan — pure regex, no side effects.
+        # Gated behind safety_wiring so trusted callers can bypass for
+        # legitimate structured content. auto_save already passes
+        # safety_wiring=False and runs its own scan before calling here.
+        if safety_wiring:
+            _scan_for_injection_or_skip(content, category, title_slug)
         target_base, file_path, _category_dir, _project_root, effective_category = _resolve_save_paths(
             category, title_slug, is_global, db_path
         )

@@ -614,14 +614,14 @@ def _apply_ce_chunk_rerank(
         chunks = _chunk_text(content)
         if len(chunks) > 2:
             # Filter chunks based on query word overlap to reduce CrossEncoder workload
-            query_words = set(w.lower() for w in query.split() if w.lower() not in _CE_STOPWORDS)
-            if not query_words:
-                query_words = set(w.lower() for w in query.split())
+            query_word_set = set(w.lower() for w in query.split() if w.lower() not in _CE_STOPWORDS)
+            if not query_word_set:
+                query_word_set = set(w.lower() for w in query.split())
             
             scored_chunks = []
             for chunk in chunks:
                 chunk_words = set(chunk.lower().split())
-                overlap = len(query_words.intersection(chunk_words))
+                overlap = len(query_word_set.intersection(chunk_words))
                 scored_chunks.append((overlap, chunk))
             
             # Sort descending by overlap, keep top 2

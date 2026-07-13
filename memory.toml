@@ -205,7 +205,7 @@ insecure_loopback = false              # MEMORY_API_INSECURE_LOOPBACK — DEV-ON
 # "transformers" → raw transformers/torch AutoModel + mean-pooling
 # "auto"        → detect from model_id string (current default behaviour)
 backend = "sentence-transformers"        # MEMORY_EMBEDDING_BACKEND
-model_id = "BAAI/bge-large-en-v1.5"     # MEMORY_EMBEDDING_MODEL_ID
+model_id = "BAAI/bge-base-en-v1.5"      # MEMORY_EMBEDDING_MODEL_ID
 model_revision = ""                      # MEMORY_EMBEDDING_MODEL_REVISION — git revision/tag for model2vec backends; empty = latest
 
 # ---------------------------------------------------------------------------

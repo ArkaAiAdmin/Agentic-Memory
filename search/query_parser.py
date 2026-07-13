@@ -110,7 +110,6 @@ _WORD_FORM_EXPANSIONS: dict[str, list[str]] = {
     'backup': ['backup', 'backups', 'backed', 'backing'],
     'restore': ['restore', 'restores', 'restored', 'restoring', 'restoration'],
     'purge': ['purge', 'purges', 'purged', 'purging'],
-    'compact': ['compact', 'compacts', 'compacted', 'compacting', 'compaction'],
     'revis': ['revision', 'revisions', 'revise', 'revises', 'revised', 'revising'],
     'assert': ['assertion', 'assertions', 'assert', 'asserts', 'asserted', 'asserting'],
     'bel': ['belief', 'beliefs', 'believe', 'believes', 'believed', 'believing'],
@@ -308,7 +307,7 @@ _QUERY_EXPANSIONS: dict[str, list[str]] = {
     "platform": ["infrastructure", "framework", "system"],
     "deployment": ["deploy", "deploying", "deployed"],
     "monitoring": ["observe", "observability", "telemetry"],
-    "logging": ["log", "logs", "logger"],
+    "logging": ["log", "logs", "logger", "observability"],
     "testing": ["test", "tests", "qa", "quality assurance"],
     "database": ["db", "dbs", "datastore", "store"],
     "search": ["query", "lookup", "find", "retrieval"],
@@ -319,20 +318,13 @@ _QUERY_EXPANSIONS: dict[str, list[str]] = {
     "serialization": ["serialize", "deserialize", "encoding"],
     "rollback": ["revert", "undo", "recovery"],
     "fixtures": ["setup", "config", "conftest", "helpers"],
-    "applications": ["services", "apps", "app"],
-    "queries": ["search", "lookup", "find", "retrieval"],
-    "self-healing": ["resilient", "fault-tolerant", "self-heal"],
     "assurance": ["quality", "testing", "qa"],
-    "package": ["pkg", "packages", "library"],
-    "cluster": ["clusters", "clustered"],
-    "healing": ["health", "healthy", "heal"],
     "pods": ["containers", "instances", "services", "containerized"],
     "dashboard": ["visualization", "grafana"],
     "healing": ["health", "healthy", "heal"],
     "self-healing": ["resilient", "fault-tolerant", "self-heal"],
     "cluster": ["clusters", "clustered", "orchestration", "orchestrating"],
     "orchestrat": ["orchestrate", "orchestrates", "orchestrated", "orchestrating", "orchestration", "orchestrator", "orchestrators"],
-    "logging": ["log", "logs", "logger", "observability"],
     "observ": ["observe", "observes", "observed", "observing", "observation", "observations", "observability", "observable"],
     "package": ["pkg", "packages", "library", "containerize", "services"],
     "applications": ["services", "apps", "app", "containerized"],
@@ -422,11 +414,11 @@ def _expand_query(query: str) -> str:
                 # Check if this token matches any form in the expansion set
                 if low in [f.lower() for f in forms] or (low.startswith(stem) and len(low) == len(stem)):
                     # Use all forms from this expansion set
-                    unique: list[str] = []
+                    exp_unique: list[str] = []
                     for f in forms:
-                        if f.lower() not in [u.lower() for u in unique]:
-                            unique.append(f)
-                    quoted = " OR ".join((f'"{f}"' for f in unique))
+                        if f.lower() not in [u.lower() for u in exp_unique]:
+                            exp_unique.append(f)
+                    quoted = " OR ".join((f'"{f}"' for f in exp_unique))
                     expanded_tokens.append(f"({quoted})")
                     expanded = True
                     break

@@ -16,6 +16,7 @@ from mcp_common import (
     with_audit,
 )
 from mcp_instance import mcp
+from typing import Any
 
 
 # ---------------------------------------------------------------------------
@@ -39,12 +40,12 @@ def _get_principal_from_context() -> str | None:
         ctx = get_agent()
         principal_id = getattr(ctx, "principal_id", None)
         if principal_id:
-            return principal_id
+            return str(principal_id)
         # AgentContext stores identifier as agent_id; fall back when
         # principal_id is not separately set (typical for local single-user mode).
         agent_id = getattr(ctx, "agent_id", None)
         if agent_id:
-            return agent_id
+            return str(agent_id)
     except (ImportError, Exception):
         pass
     return None
@@ -320,13 +321,13 @@ def memory_graph_insights(
     if not KG_ENABLED:
         return "Knowledge graph disabled. Set MEMORY_KNOWLEDGE_GRAPH=1 to enable."
     try:
-        from contextlib import nullcontext
+        from contextlib import nullcontext, AbstractContextManager
         from kg.graph_analytics import compute_pagerank
         from kg.graph_communities import connected_components
 
         out = ["Graph Analytics Insights"]
         if conn is not None:
-            _conn_ctx = nullcontext(conn)
+            _conn_ctx: AbstractContextManager[Any] = nullcontext(conn)
         else:
             from infra.db import open_db
             target_base = _resolve_memory_dir()

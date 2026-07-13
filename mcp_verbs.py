@@ -66,7 +66,7 @@ def _get_principal_from_context() -> str | None:
         ctx = get_agent()
         agent_id = getattr(ctx, "agent_id", None)
         if agent_id:
-            return agent_id
+            return str(agent_id)
     except (ImportError, Exception):
         pass
     return None
@@ -286,6 +286,7 @@ def memory_save(
     pinned: bool = False,
     importance: int = 3,
     is_global: bool = False,
+    safety_wiring: bool = True,
 ) -> str:
     """Save a memory note with sensible defaults.
 
@@ -297,6 +298,9 @@ def memory_save(
         pinned: Pin to hot tier (default False).
         importance: 1-5 (default 3).
         is_global: Save to global memory (default False).
+        safety_wiring: If False, skip prompt-injection scanning (default True).
+            Set to False for legitimate structured content with section headers
+            and requirement keywords that may trigger false positives.
     """
     auth_err = _check_authorization("write", "memory")
     if auth_err:
@@ -319,6 +323,7 @@ def memory_save(
                 pinned=pinned,
                 importance=importance,
                 is_global=is_global,
+                safety_wiring=safety_wiring,
                 defer_expensive=True,
             )
             return str(result)

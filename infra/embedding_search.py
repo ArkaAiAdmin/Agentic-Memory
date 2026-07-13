@@ -392,8 +392,12 @@ class EmbeddingSearch:
                 self.is_transformer = False
             elif backend == "sentence-transformers":
                 from sentence_transformers import SentenceTransformer
-                self.model = SentenceTransformer(model_id, revision=model_revision or None)
-                self.model.dim = self.model.get_sentence_embedding_dimension()
+                device = os.environ.get("MEMORY_EMBEDDING_DEVICE")
+                st_kwargs: dict[str, Any] = {"revision": model_revision or None}
+                if device:
+                    st_kwargs["device"] = device
+                self.model = SentenceTransformer(model_id, **st_kwargs)
+                self.model.dim = self.model.get_embedding_dimension()
                 self.is_transformer = True
                 self._model_revision = model_id  # sentence-transformers: model_id is the authority
             elif backend == "transformers":
@@ -422,7 +426,7 @@ class EmbeddingSearch:
                     try:
                         from sentence_transformers import SentenceTransformer
                         self.model = SentenceTransformer(model_id)
-                        self.model.dim = self.model.get_sentence_embedding_dimension()
+                        self.model.dim = self.model.get_embedding_dimension()
                         self.is_transformer = True
                         self._model_revision = model_id  # sentence-transformers path: model_id is the authority
                     except ImportError:

@@ -814,18 +814,20 @@ def index_facts_for_memory(
         # Single source of truth — previously in save/indexers.py behind a
         # guard that never matched (index_facts_for_memory returns a dict),
         # so belief_assertions was never populated in production.
-        if fact_id is not None and get_config() is not None:
-            try:
-                if get_config().feature_belief_layer:
-                    from belief.belief_lifecycle import ensure_belief_assertion
-                    ensure_belief_assertion(
-                        conn, fact_id, memory_id=memory_id,
-                        belief_status=belief_status, epistemic_source=epistemic_source,
-                        asserting_agent_id=None, evidence_chain=None,
-                        certainty_tier="likely",
-                    )
-            except Exception:
-                logger.warning("belief assertion creation failed for fact %d", fact_id)
+        if fact_id is not None and get_config is not None:
+            _cfg = get_config()
+            if _cfg is not None:
+                try:
+                    if _cfg.feature_belief_layer:
+                        from belief.belief_lifecycle import ensure_belief_assertion
+                        ensure_belief_assertion(
+                            conn, fact_id, memory_id=memory_id,
+                            belief_status=belief_status, epistemic_source=epistemic_source,
+                            asserting_agent_id=None, evidence_chain=None,
+                            certainty_tier="likely",
+                        )
+                except Exception:
+                    logger.warning("belief assertion creation failed for fact %d", fact_id)
         # T3.4: supersession reconciliation (gated by feature_temporal_kg)
         if fact_id is not None and temporal_kg_enabled:
             try:

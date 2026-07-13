@@ -935,7 +935,7 @@ def query_facts_at_time(
     """
     if time_axis == "transaction":
         clause = " AND f.transaction_time <= ? AND f.superseded_by IS NULL"
-        params = [as_of]
+        params: list = [as_of]
     else:
         clause, params = _temporal_fact_clause(as_of)
     where = f"WHERE 1=1{clause}"
