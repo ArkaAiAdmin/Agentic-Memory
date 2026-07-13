@@ -453,6 +453,11 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
 
     # Step 6: Apply pending migrations in a single transaction
     try:
+        # Disable foreign keys before DDL transaction
+        try:
+            conn.execute("PRAGMA foreign_keys = OFF")
+        except Exception:
+            pass
         with conn:
             for num, path in pending:
                 logger.info("Applying migration %03d: %s", num, path.name)
@@ -618,6 +623,11 @@ def migrate_down(conn: AnyConnection, target_version: int, dry_run: bool = False
         return
 
     try:
+        # Disable foreign keys before DDL transaction
+        try:
+            conn.execute("PRAGMA foreign_keys = OFF")
+        except Exception:
+            pass
         with conn:
             for num in to_rollback:
                 path = down_map[num]

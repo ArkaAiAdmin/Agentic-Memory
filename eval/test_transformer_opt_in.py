@@ -31,7 +31,10 @@ class TestTransformerOptIn(unittest.TestCase):
 
         with mock.patch.dict(
             os.environ,
-            {"MEMORY_EMBEDDING_MODEL_ID": "sentence-transformers/all-MiniLM-L6-v2"},
+            {
+                "MEMORY_EMBEDDING_MODEL_ID": "sentence-transformers/all-MiniLM-L6-v2",
+                "MEMORY_EMBEDDING_BACKEND": "auto",
+            },
         ):
             with mock.patch.dict(
                 "sys.modules",

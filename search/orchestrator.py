@@ -784,6 +784,18 @@ def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15, tenant_
         for (blob,) in rows:
             vec = _np.frombuffer(blob, dtype=_np.float32).copy()
             vectors.append(vec)
+        if not vectors:
+            return {
+                "drift_metric": 0.0,
+                "drifted_dimensions": [],
+                "alarm_id": "",
+                "n_embedded": 0,
+                "note": "no embeddings found",
+            }
+        from collections import Counter
+        dims = [len(v) for v in vectors]
+        most_common_dim = Counter(dims).most_common(1)[0][0]
+        vectors = [v for v in vectors if len(v) == most_common_dim]
         embeddings = _np.stack(vectors)
         centroid = embeddings.mean(axis=0)
         prev = conn.execute(
@@ -801,11 +813,10 @@ def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15, tenant_
                 / (_np.linalg.norm(centroid) * _np.linalg.norm(prev_centroid) + 1e-10)
             )
             drift = 1.0 - cos_sim
+            diff = centroid - prev_centroid
         else:
             drift = 0.0
-        diff = centroid - (
-            prev_centroid if prev_centroid is not None else _np.zeros_like(centroid)
-        )
+            diff = centroid
         top_dims = sorted(
             enumerate(abs(diff).tolist()),
             key=lambda x: -x[1],

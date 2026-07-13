@@ -950,6 +950,12 @@ def run_schema_setup(conn: AnyConnection) -> None:
     if not cols:
         return
 
+    # Disable foreign keys before schema migration DDL transaction
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+    except Exception:
+        pass
+
     with conn:
         # ------------------------------------------------------------------
         # 1. Ensure ALL dynamic tables exist BEFORE numbered SQL migrations

@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # 2026-06-29 fix: resolve from the test file location, not the user's home
 # dir. On CI runners the ~/.config/agentic-memory install dir does not exist.
@@ -86,9 +87,11 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         self.assertFalse(result["changed"])
         self.assertFalse(result["rebuilt"])
 
-    def test_check_and_rebuild_force(self):
+    @mock.patch("subprocess.run")
+    def test_check_and_rebuild_force(self, mock_run):
         from infra.embedding_recompute import check_and_rebuild, save_model_config
 
+        mock_run.return_value = mock.MagicMock(returncode=0)
         save_model_config(
             {
                 "model": "minishlab/potion-base-8M",
@@ -98,6 +101,7 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         )
         result = check_and_rebuild(force=True)
         self.assertTrue(result["changed"])
+        mock_run.assert_called_once()
 
     def test_check_and_rebuild_dry_run(self):
         from infra.embedding_recompute import check_and_rebuild, save_model_config

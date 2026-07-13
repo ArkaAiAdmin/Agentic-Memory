@@ -121,11 +121,16 @@ class TestBuildIndex(_VecIndexTestBase):
             ("lessons/four",  "usearch HNSW runs in a few milliseconds."),
             ("lessons/five",  "f16 quantization preserves recall near fp32."),
         ])
+        from infra._lazy_imports import get_embedding_search
+        es = get_embedding_search()
+        es.wait_for_model()
+        expected_dim = int(es.model.dim)
+
         stats = rebuild_vec_index.rebuild_vec_index(self.db_path)
         self.assertEqual(stats["n_memories"], 5)
         self.assertEqual(stats["n_indexed"], 5)
         self.assertEqual(stats["n_skipped"], 0)
-        self.assertEqual(stats["dim"], 256)            # potion-base-8M
+        self.assertEqual(stats["dim"], expected_dim)            # potion-base-8M
         self.assertEqual(stats["quantization"], "f16")
         self.assertEqual(stats["metric"], "cos")
         self.assertGreater(stats["serialized_bytes"], 0)
@@ -135,7 +140,7 @@ class TestBuildIndex(_VecIndexTestBase):
         row, keys = _read_singleton(self.db_path)
         self.assertIsNotNone(row)
         self.assertEqual(row[0], 5)                    # n_vectors
-        self.assertEqual(row[1], 256)                  # dim
+        self.assertEqual(row[1], expected_dim)                  # dim
         self.assertEqual(row[2], "cos")
         self.assertEqual(row[3], "f16")
         self.assertEqual(row[4], 16)                   # connectivity
