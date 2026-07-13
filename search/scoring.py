@@ -188,6 +188,7 @@ def _temporal_decay_factor(
     now_ts: Optional[float] = None,
     last_accessed: Optional[str] = None,
     as_of: Optional[float] = None,
+    half_life: Optional[float] = None,
 ) -> float:
     """Compute a temporal decay factor for a note.
 
@@ -215,16 +216,16 @@ def _temporal_decay_factor(
                 la_dt = la_dt.replace(tzinfo=timezone.utc)
             la_ts = la_dt.timestamp()
             age_days = max(0.0, (now_ts - la_ts) / 86400.0)
-            half_life = _sp_lazy("_FORGETTING_CURVE_HALF_LIFE", 30)
+            fc_half_life = _sp_lazy("_FORGETTING_CURVE_HALF_LIFE", 30)
         except (ValueError, TypeError):
             # Fall through to created-based decay
             pass
         else:
             if _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential") == "linear":
                 return max(
-                    0.0, 1.0 - float(age_days) / (3.0 * float(cast(float, half_life)))
+                    0.0, 1.0 - float(age_days) / (3.0 * float(cast(float, fc_half_life)))
                 )
-            return float(0.5 ** (float(age_days) / float(cast(float, half_life))))
+            return float(0.5 ** (float(age_days) / float(cast(float, fc_half_life))))
 
     # Standard decay based on created timestamp
     if not created:
@@ -237,15 +238,16 @@ def _temporal_decay_factor(
         age_days = max(0.0, (now_ts - c_ts) / 86400.0)
     except (ValueError, TypeError):
         return 1.0
+    hl = half_life if half_life is not None else float(cast(float, _sp_lazy("_TEMPORAL_DECAY_HALF_LIFE", 180)))
     if _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential") == "linear":
         return max(
             0.0,
             1.0
             - float(age_days)
-            / (3.0 * float(cast(float, _sp_lazy("_TEMPORAL_DECAY_HALF_LIFE", 180)))),
+            / (3.0 * hl),
         )
     return float(0.5 ** (
-        float(age_days) / float(cast(float, _sp_lazy("_TEMPORAL_DECAY_HALF_LIFE", 180)))
+        float(age_days) / hl
     ))
 
 

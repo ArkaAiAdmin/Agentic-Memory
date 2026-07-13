@@ -307,9 +307,8 @@ class EmbeddingSearch:
         # Query embedding cache (LRU 128) — opt-in via MEMORY_QUERY_CACHE=1
         # Maps query_text -> embedding_vector (numpy array).
         self._query_cache: OrderedDict = OrderedDict()
-        self._QUERY_CACHE_MAX = 128
         from infra._lazy_imports import get_config
-
+        self._QUERY_CACHE_MAX = get_config().query_cache_max
         self._QUERY_CACHE_ENABLED = get_config().query_cache
         self._chunk_index_cache: dict = {}
         self._CHUNK_SEARCH_ENABLED = os.environ.get("MEMORY_CHUNK_SEARCH", "1") not in ("0", "false", "no")
@@ -516,6 +515,23 @@ class EmbeddingSearch:
         if self.model is None:
             return
         try:
+            if not category or not tags or not source_file:
+                try:
+                    row = db.execute(
+                        "SELECT category, tags, source_file FROM memories WHERE id = ? AND deleted_at IS NULL",
+                        (memory_id,),
+                    ).fetchone()
+                    if row:
+                        db_category, db_tags_json, db_source_file = row
+                        if not category and db_category:
+                            category = db_category
+                        if not tags and db_tags_json:
+                            tags = _parse_tags(db_tags_json)
+                        if not source_file and db_source_file:
+                            source_file = db_source_file
+                except Exception as _re:
+                    logger.debug("Failed to query DB metadata for index_embedding of %s: %s", memory_id, _re)
+
             text = _embed_text_with_context(content, category, tags, source_file)
             chash = _content_hash(text)
             # P1-1 fix (2026-06-22): the previous version only checked

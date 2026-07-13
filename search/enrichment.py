@@ -65,9 +65,10 @@ def _apply_post_rank_metadata(
         concept_map = _load_concept_map(db_path)
         centrality_map = _load_centrality_map(db_path)
         jaccard_map = _load_jaccard_map(items, query)
+        temporal_priors = _load_temporal_priors(db_path)
     except Exception as exc:  # pragma: no cover - best-effort envelope
         logger.warning("Enrichment metadata degraded to neutral (best-effort): %s", exc)
-        concept_map, centrality_map, jaccard_map = {}, {}, {}
+        concept_map, centrality_map, jaccard_map, temporal_priors = {}, {}, {}, {}
 
     out = []
     for item in items:
@@ -79,7 +80,7 @@ def _apply_post_rank_metadata(
         new_item["concept_boost"] = _concept_factor(new_item, query, concept_map)
         new_item["centrality_boost"] = _centrality_factor(new_item, centrality_map)
         new_item["jaccard_surprise"] = _jaccard_factor(item, query, jaccard_map)
-        new_item["temporal_decay"] = _temporal_factor(item, as_of)
+        new_item["temporal_decay"] = _temporal_factor(item, as_of, temporal_priors)
         out.append(new_item)
     return out
 
@@ -231,7 +232,11 @@ def _jaccard_factor(item: dict, query: str, jaccard_map: dict) -> float:
     return 1.0 - 0.1 * surprise
 
 
-def _temporal_factor(item: dict, as_of: Optional[float]) -> float:
+def _temporal_factor(
+    item: dict,
+    as_of: Optional[float],
+    temporal_priors: Optional[dict[str, float]] = None,
+) -> float:
     from search.scoring import _sp_lazy, _temporal_decay_factor
 
     decay_weight = 0.15
@@ -245,6 +250,46 @@ def _temporal_factor(item: dict, as_of: Optional[float]) -> float:
         return 1.0
     created = item.get("created") or ""
     last_accessed = item.get("last_accessed")
+    category = item.get("category")
+
+    # Resolve half life: per-category DB prior -> per-category default -> global default
+    half_life = None
+    if category:
+        if temporal_priors and category in temporal_priors:
+            half_life = temporal_priors[category]
+        elif category in DEFAULT_TEMPORAL_PRIORS:
+            half_life = DEFAULT_TEMPORAL_PRIORS[category]
+
     now_ts = time.time() if as_of is None else as_of
-    decay = _temporal_decay_factor(created, now_ts, last_accessed, as_of)
+    decay = _temporal_decay_factor(created, now_ts, last_accessed, as_of, half_life=half_life)
     return 1.0 - decay_weight + decay_weight * decay
+
+
+DEFAULT_TEMPORAL_PRIORS = {
+    "lessons": 180.0,
+    "concepts": 730.0,
+    "sessions": 14.0,
+    "preferences": 90.0,
+    "projects": 365.0,
+    "decisions": 365.0,
+    "facts": 90.0,
+}
+
+
+def _load_temporal_priors(db_path: Any) -> dict[str, float]:
+    """Return ``{category: half_life_days}`` from memory_temporal_priors."""
+    from infra._lazy_imports import connection_pool
+
+    db = connection_pool.get(str(db_path), timeout=5.0)
+    try:
+        rows = db.execute(
+            "SELECT category, half_life_days FROM memory_temporal_priors"
+        ).fetchall()
+        return {str(cat): float(days) for cat, days in rows}
+    except Exception:
+        return {}
+    finally:
+        try:
+            connection_pool.put(db)
+        except Exception:
+            pass

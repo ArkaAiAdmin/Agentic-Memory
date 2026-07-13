@@ -1645,6 +1645,7 @@ def _build_result_items(
     result_items = []
     result_ids = [r[0] for r in results_to_display]
     backlinks_map: dict = {}
+    category_map: dict = {}
     if result_ids:
         ph = ",".join("?" * len(result_ids))
         try:
@@ -1660,6 +1661,14 @@ def _build_result_items(
                 backlinks_map.setdefault(row[0], []).append(row[1])
         except Exception as _oe:
             logger.warning("backlinks fetch failed: %s", _oe)
+        try:
+            for row in db.execute(
+                f"SELECT id, category FROM tenant_memories WHERE id IN ({ph})",
+                result_ids,
+            ).fetchall():
+                category_map[row[0]] = row[1]
+        except Exception as _ce:
+            logger.warning("category fetch failed: %s", _ce)
     for r in results_to_display:
         (
             note_id,
@@ -1709,6 +1718,7 @@ def _build_result_items(
                 "last_accessed": last_accessed,
                 "metadata": meta if meta is not None else {},
                 "summary": auto_summary,
+                "category": category_map.get(note_id),
             }
         )
     output = _format_search_results(

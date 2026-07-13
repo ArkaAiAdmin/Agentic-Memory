@@ -323,6 +323,7 @@ class SearchConfig:
     rerank_weights: str = ""
     query_type_weights: str = ""
     query_cache: bool = True
+    query_cache_max: int = 128
     search_parallel_enabled: bool = True
     reranker_disabled: bool = False
     llm_allow_remote_code: bool = False
@@ -605,6 +606,7 @@ class MemoryConfig:
             "rerank_weights": ("search", "rerank_weights"),
             "query_type_weights": ("search", "query_type_weights"),
             "query_cache": ("search", "query_cache"),
+            "query_cache_max": ("search", "query_cache_max"),
             "forgetting_curve_half_life": ("search", "forgetting_curve_half_life"),
             "write_journal": ("write", "write_journal"),
             "quality_gates": ("write", "quality_gates"),
@@ -891,6 +893,9 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         query_cache=_b(
             "MEMORY_QUERY_CACHE", "search.query_cache", True, bool, toml_data
+        ),
+        query_cache_max=_b(
+            "MEMORY_QUERY_CACHE_MAX", "search.query_cache_max", 128, int, toml_data
         ),
         search_parallel_enabled=_b(
             "MEMORY_SEARCH_PARALLEL", "search.search_parallel_enabled", True, bool, toml_data
