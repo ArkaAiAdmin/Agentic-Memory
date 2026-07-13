@@ -384,12 +384,23 @@ def main():
             compliance = _compliance_gate()
             # Phase 6: reinforce memories accessed this productive session
             reinforce_result = _auto_reinforce(marker)
+            # Run session-end findings extraction (no LLM, regex-based)
+            findings_result = {}
+            try:
+                sys_path = str(Path(__file__).resolve().parent.parent)
+                if sys_path not in sys.path:
+                    sys.path.insert(0, sys_path)
+                from save.session_end_extractor import extract_session_findings
+                findings_result = extract_session_findings(marker)
+            except Exception as _ex:
+                logger.warning("Session-end findings extraction failed: %s", _ex)
             combined = {
                 "session_end": session_end_result,
                 "auto_saved": result.get("saved", False),
                 "reason": result.get("reason", ""),
                 "compliance": compliance,
                 "reinforce": reinforce_result,
+                "findings": findings_result,
             }
             if result.get("saved"):
                 combined["detail"] = result

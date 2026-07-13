@@ -722,12 +722,25 @@ def _parse_search_query(query: str, db_path: Path) -> tuple[str, str, str, list[
     bare_words = re.findall("[\\w@\\#\\.\\+\\-]+", bare, flags=re.UNICODE)
     # Filter stop words from FTS terms (but keep bare_words for display)
     content_words = [w for w in bare_words if w.lower() not in _STOP_WORDS]
-    terms = [_escape_phrase(p) for p in phrases if p.strip()]
-    terms += [_escape_phrase(_escape_fts_query(w)) for w in content_words if w]
+    # Generate adjacent bigram phrase queries for bare words
+    bigrams = []
+    for i in range(len(content_words) - 1):
+        w1_esc = _escape_fts_query(content_words[i])
+        w2_esc = _escape_fts_query(content_words[i+1])
+        if w1_esc and w2_esc:
+            bigrams.append(f"{w1_esc} {w2_esc}")
+    bigram_terms = [_escape_phrase(bg) for bg in bigrams]
+
     expanded = _expand_query(normalized_query)
-    fts_query = (
-        expanded if expanded and expanded != normalized_query else " OR ".join(terms)
-    )
+    if bigram_terms:
+        bigram_clause = " OR ".join(bigram_terms)
+        if expanded:
+            fts_query = f"({bigram_clause}) OR ({expanded})"
+        else:
+            fts_query = bigram_clause
+    else:
+        fts_query = expanded if expanded else ""
+
     if not fts_query.strip() and bare_words:
         # Fallback for stopword-only queries: use original bare words as FTS terms
         terms = [_escape_phrase(_escape_fts_query(w)) for w in bare_words if w]

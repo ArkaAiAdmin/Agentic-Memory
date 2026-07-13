@@ -195,7 +195,7 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
         original_inc = orch._phase_inc
         calls = []
         orch._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
-        _hybrid_fusion(_tcast(_AnyConn, "not_a_db"), [], "test", Path("/tmp"), 5, "")
+        _hybrid_fusion(_tcast(_AnyConn, "not_a_db"), [], "test", "test", Path("/tmp"), 5, "")
         orch._phase_inc = original_inc
         self.assertTrue(
             any("hybrid_fusion" in c[0] for c in calls),
