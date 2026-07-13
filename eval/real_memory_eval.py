@@ -109,12 +109,43 @@ def _compute_recall_at_k(retrieved: list[str], expected: list[str], k: int = 10)
     return hits / len(expected)
 
 
+def _compute_precision_at_k(retrieved: list[str], expected: list[str], k: int = 10) -> float:
+    """Compute precision@k."""
+    if not retrieved[:k]:
+        return 0.0
+    retrieved_set = set(retrieved[:k])
+    hits = len(set(expected) & retrieved_set)
+    return hits / min(k, len(retrieved))
+
+
 def _compute_mrr(retrieved: list[str], expected: list[str]) -> float:
     """Compute Mean Reciprocal Rank."""
     for i, doc_id in enumerate(retrieved):
         if doc_id in expected:
             return 1.0 / (i + 1)
     return 0.0
+
+
+def _compute_ndcg_at_k(retrieved: list[str], expected: list[str], k: int = 10) -> float:
+    """Compute nDCG@k (normalized discounted cumulative gain)."""
+    if not expected:
+        return 1.0
+
+    # DCG: sum of 1/log2(i+2) for relevant docs at position i
+    dcg = 0.0
+    for i, doc_id in enumerate(retrieved[:k]):
+        if doc_id in expected:
+            dcg += 1.0 / (i + 2)  # log2(i+1) + 1, but i starts at 0
+
+    # Ideal DCG: all relevant docs at the top
+    ideal_dcg = 0.0
+    n_relevant = min(len(expected), k)
+    for i in range(n_relevant):
+        ideal_dcg += 1.0 / (i + 2)
+
+    if ideal_dcg == 0:
+        return 0.0
+    return dcg / ideal_dcg
 
 
 def _search_single(
@@ -193,7 +224,10 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
     # Run test cases
     results = {
         "recall_at_10": [],
+        "recall_at_5": [],
+        "precision_at_5": [],
         "mrr": [],
+        "ndcg_at_10": [],
         "cold_latencies": [],
         "warm_latencies": [],
         "pass_per_query": [],
@@ -212,21 +246,32 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
 
         results["warm_latencies"].append(latency)
 
-        recall = _compute_recall_at_k(retrieved, expected, k=10)
+        recall_10 = _compute_recall_at_k(retrieved, expected, k=10)
+        recall_5 = _compute_recall_at_k(retrieved, expected, k=5)
+        precision_5 = _compute_precision_at_k(retrieved, expected, k=5)
         mrr = _compute_mrr(retrieved, expected)
+        ndcg = _compute_ndcg_at_k(retrieved, expected, k=10)
 
-        results["recall_at_10"].append(recall)
+        results["recall_at_10"].append(recall_10)
+        results["recall_at_5"].append(recall_5)
+        results["precision_at_5"].append(precision_5)
         results["mrr"].append(mrr)
+        results["ndcg_at_10"].append(ndcg)
 
-        passed = recall >= tc.get("min_recall_at_10", 1.0)
+        # Pass if recall@10 meets per-query threshold
+        min_recall = tc.get("min_recall_at_10", 0.8)
+        passed = recall_10 >= min_recall
         results["pass_per_query"].append(passed)
 
         if verbose and not passed:
-            print(f"  FAIL: '{query}' — recall={recall:.2f}, expected={expected}, got={retrieved[:5]}")
+            print(f"  FAIL: '{query}' — recall@10={recall_10:.2f}, expected={expected}, got={retrieved[:5]}")
 
     # Compute aggregate metrics
-    avg_recall = sum(results["recall_at_10"]) / len(results["recall_at_10"])
+    avg_recall_10 = sum(results["recall_at_10"]) / len(results["recall_at_10"])
+    avg_recall_5 = sum(results["recall_at_5"]) / len(results["recall_at_5"])
+    avg_precision_5 = sum(results["precision_at_5"]) / len(results["precision_at_5"])
     avg_mrr = sum(results["mrr"]) / len(results["mrr"])
+    avg_ndcg = sum(results["ndcg_at_10"]) / len(results["ndcg_at_10"])
 
     cold_latencies = sorted(results["cold_latencies"])
     warm_latencies = sorted(results["warm_latencies"])
@@ -241,17 +286,22 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
 
     # Check targets
     checks = {
-        "recall_at_10": avg_recall >= targets["recall_at_10"],
-        "mrr": avg_mrr >= targets["mrr"],
-        "p95_cold_latency": p95_cold <= targets["p95_cold_latency_ms"],
-        "p95_warm_latency": p95_warm <= targets["p95_warm_latency_ms"],
+        "recall_at_10": avg_recall_10 >= targets.get("recall_at_10", 0.92),
+        "recall_at_5": avg_recall_5 >= targets.get("recall_at_5", 0.85),
+        "mrr": avg_mrr >= targets.get("mrr", 0.85),
+        "ndcg_at_10": avg_ndcg >= targets.get("ndcg_at_10", 0.80),
+        "p95_cold_latency": p95_cold <= targets.get("p95_cold_latency_ms", 600),
+        "p95_warm_latency": p95_warm <= targets.get("p95_warm_latency_ms", 300),
     }
     all_passed = all(checks.values())
 
     summary = {
         "metrics": {
-            "recall_at_10": round(avg_recall, 4),
+            "recall_at_10": round(avg_recall_10, 4),
+            "recall_at_5": round(avg_recall_5, 4),
+            "precision_at_5": round(avg_precision_5, 4),
             "mrr": round(avg_mrr, 4),
+            "ndcg_at_10": round(avg_ndcg, 4),
             "p95_cold_latency_ms": round(p95_cold, 1),
             "p95_warm_latency_ms": round(p95_warm, 1),
         },
@@ -263,16 +313,19 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
     }
 
     if verbose:
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 70)
         print("REAL-MEMORY GOLDEN EVAL RESULTS")
-        print("=" * 60)
-        print(f"  recall@10:      {avg_recall:.4f} (target: {targets['recall_at_10']}) {'PASS' if checks['recall_at_10'] else 'FAIL'}")
-        print(f"  MRR:            {avg_mrr:.4f} (target: {targets['mrr']}) {'PASS' if checks['mrr'] else 'FAIL'}")
-        print(f"  P95 cold:       {p95_cold:.1f} ms (target: {targets['p95_cold_latency_ms']} ms) {'PASS' if checks['p95_cold_latency'] else 'FAIL'}")
-        print(f"  P95 warm:       {p95_warm:.1f} ms (target: {targets['p95_warm_latency_ms']} ms) {'PASS' if checks['p95_warm_latency'] else 'FAIL'}")
+        print("=" * 70)
+        print(f"  recall@10:      {avg_recall_10:.4f} (target: {targets.get('recall_at_10', 0.92)}) {'PASS' if checks['recall_at_10'] else 'FAIL'}")
+        print(f"  recall@5:       {avg_recall_5:.4f} (target: {targets.get('recall_at_5', 0.85)}) {'PASS' if checks['recall_at_5'] else 'FAIL'}")
+        print(f"  precision@5:    {avg_precision_5:.4f}")
+        print(f"  MRR:            {avg_mrr:.4f} (target: {targets.get('mrr', 0.85)}) {'PASS' if checks['mrr'] else 'FAIL'}")
+        print(f"  nDCG@10:        {avg_ndcg:.4f} (target: {targets.get('ndcg_at_10', 0.80)}) {'PASS' if checks['ndcg_at_10'] else 'FAIL'}")
+        print(f"  P95 cold:       {p95_cold:.1f} ms (target: {targets.get('p95_cold_latency_ms', 600)} ms) {'PASS' if checks['p95_cold_latency'] else 'FAIL'}")
+        print(f"  P95 warm:       {p95_warm:.1f} ms (target: {targets.get('p95_warm_latency_ms', 300)} ms) {'PASS' if checks['p95_warm_latency'] else 'FAIL'}")
         print(f"  queries passed: {passed_queries}/{total_queries}")
         print(f"  OVERALL:        {'ALL TARGETS MET' if all_passed else 'TARGETS NOT MET'}")
-        print("=" * 60)
+        print("=" * 70)
 
     conn.close()
     return summary

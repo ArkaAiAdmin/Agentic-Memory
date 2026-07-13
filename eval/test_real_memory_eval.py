@@ -70,6 +70,31 @@ class TestMetrics:
         expected = ["a", "b"]
         assert _compute_recall_at_k(retrieved, expected, k=10) == 0.0
 
+    def test_precision_at_k_perfect(self):
+        from eval.real_memory_eval import _compute_precision_at_k
+        retrieved = ["a", "b", "c"]
+        expected = ["a", "b"]
+        assert _compute_precision_at_k(retrieved, expected, k=10) == pytest.approx(2/3, abs=0.01)
+
+    def test_precision_at_k_none_relevant(self):
+        from eval.real_memory_eval import _compute_precision_at_k
+        retrieved = ["x", "y", "z"]
+        expected = ["a", "b"]
+        assert _compute_precision_at_k(retrieved, expected, k=10) == 0.0
+
+    def test_ndcg_perfect(self):
+        from eval.real_memory_eval import _compute_ndcg_at_k
+        retrieved = ["a", "b"]
+        expected = ["a", "b"]
+        assert _compute_ndcg_at_k(retrieved, expected, k=10) == 1.0
+
+    def test_ndcg_partial(self):
+        from eval.real_memory_eval import _compute_ndcg_at_k
+        retrieved = ["a", "x", "b"]
+        expected = ["a", "b"]
+        score = _compute_ndcg_at_k(retrieved, expected, k=10)
+        assert 0.0 < score < 1.0
+
     def test_recall_at_k_empty_expected(self):
         from eval.real_memory_eval import _compute_recall_at_k
         retrieved = ["a", "b"]
