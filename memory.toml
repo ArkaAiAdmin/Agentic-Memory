@@ -177,6 +177,7 @@ decision_llm = false                    # MEMORY_SESSION_DECISION_LLM — use LL
 # Background queue backpressure settings (Phase 4).
 max_queue_size = 500                    # MEMORY_BACKGROUND_MAX_QUEUE_SIZE — cap on pending tasks. 0 = unlimited.
 reject_policy = "reject_new"            # MEMORY_BACKGROUND_REJECT_POLICY — reject_new | reject_old | block
+corpus_budget_multiple = 100            # MEMORY_CORPUS_BUDGET_MULTIPLE — budget = 50K tokens × this. Default 5 (250K). With 100 = 5M tokens (~20MB).
 
 [rate_limits]
 # Per-tool rate limits in RPM (requests per minute).

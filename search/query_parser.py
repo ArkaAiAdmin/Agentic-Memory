@@ -728,6 +728,10 @@ def _parse_search_query(query: str, db_path: Path) -> tuple[str, str, str, list[
     fts_query = (
         expanded if expanded and expanded != normalized_query else " OR ".join(terms)
     )
+    if not fts_query.strip() and bare_words:
+        # Fallback for stopword-only queries: use original bare words as FTS terms
+        terms = [_escape_phrase(_escape_fts_query(w)) for w in bare_words if w]
+        fts_query = " OR ".join(terms)
     graph_rag_terms = _graph_rag_expand(normalized_query, db_path)
     if graph_rag_terms:
         # 2026-06-29 fix: route KG expansion terms through _escape_phrase so
