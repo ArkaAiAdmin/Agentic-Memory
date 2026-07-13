@@ -15,10 +15,8 @@ import json
 import sqlite3
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -27,10 +25,11 @@ from eval._fixtures import bootstrap_temp_db_clean  # noqa: E402
 from search.orchestrator import (
     search_memories,
     _search_kg_facts,
-    _rerank_results,
-    _apply_temporal_decay,
 )
-from search.scoring import _temporal_decay_factor
+# NOTE: _apply_temporal_decay is the legacy scoring-module mutator. The
+# orchestrator no longer calls it for ordering (PR1.1 rank-first lock);
+# it lives in search.scoring and is exercised here as a unit test.
+from search.scoring import _apply_temporal_decay, _temporal_decay_factor
 
 
 class _TemporalTestFixtures:
@@ -378,7 +377,6 @@ class TestSearchKgFactsAsOf(unittest.TestCase):
         conn = self._seed_kg_facts()
         # 1740000000 > 1730000000 (invalid_at for coffee fact)
         facts = _search_kg_facts(conn, "coffee", 5, include_invalid=True, as_of=1740000000.0)
-        subjects = [f["subject"] for f in facts]
         assert "user1" not in [f["subject"] for f in facts if f.get("object") == "coffee"], (
             "coffee fact should be invalid at as_of=1740000000"
         )

@@ -74,16 +74,12 @@ from search.rerankers import (
 )
 from search.scoring import (
     _reciprocal_rank_fusion,
-    _apply_temporal_decay,
-    _apply_jaccard_surprise_penalty,
-    _apply_concept_boost,
-    _apply_centrality_boost,
     _strong_match_float,
     _compute_final_score,
     _normalize_bm25_ranks,
     compute_channel_weights,
-    _sp_lazy,
 )
+from search.enrichment import _apply_post_rank_metadata
 from search.synthesis import (
     _bb1_synthesize,
 )
@@ -120,81 +116,6 @@ _reciprocal_rank_fusion.__doc__ = (
     Returns:
         A ``dict`` mapping ``doc_id`` → float RRF score.  Documents
         appearing in multiple lists receive summed weighted scores.
-    """
-)
-_apply_temporal_decay.__doc__ = (
-    """Apply exponential temporal decay to scored search results.
-
-    Multiplies each result's ``final_score`` by a decay factor based
-    on the note's age, boosting recent notes and gently penalising
-    old ones without overriding relevance-based ranking.
-
-    Args:
-        scored_results: List of result tuples with ``final_score`` at
-            index 6 and ``created`` at index 4.
-        decay_weight: Blend weight for the decay term (default 0.15).
-        as_of: Optional epoch time anchor for time-travel queries.
-
-    Returns:
-        A new list of result tuples with updated ``final_score``.
-        Returns ``scored_results`` unchanged when temporal decay is
-        disabled or ``decay_weight <= 0``.
-    """
-)
-_apply_jaccard_surprise_penalty.__doc__ = (
-    """Apply Jaccard-distance surprise-based re-ranking to scored results.
-
-    Penalises notes whose last-access query has low Jaccard overlap
-    with the current query, reflecting the intuition that notes last
-    reviewed for dissimilar queries decay faster (Ebbinghaus
-    surprise term).
-
-    Args:
-        scored_results: List of result tuples with ``final_score`` at
-            index 6.
-        query: Current natural-language search query string.
-
-    Returns:
-        A new list of result tuples with adjusted ``final_score``.
-        Returns ``scored_results`` unchanged on any failure
-        (best-effort, never propagates exceptions).
-    """
-)
-_apply_concept_boost.__doc__ = (
-    """Boost results whose entities overlap with concept-note entities.
-
-    Reads ``category='concepts'`` memories to compile entity sets, then
-    multiplies ``final_score`` by up to 1.5× for matching results.
-    Results that ARE concept notes receive a stronger boost.
-
-    Args:
-        scored_results: List of result tuples with ``final_score`` at
-            index 6.
-        query: Current natural-language search query string.
-        db_path: Path to the SQLite DB (used for concept lookup).
-
-    Returns:
-        A new list of result tuples with updated ``final_score``.
-        Best-effort: returns ``scored_results`` unchanged on failure.
-    """
-)
-_apply_centrality_boost.__doc__ = (
-    """Boost results whose linked entities have high graph centrality.
-
-    Reads ``kg_entities.centrality`` scores and multiplies
-    ``final_score`` by up to 1.25× proportional to average entity
-    centrality for each result's linked entities.
-
-    Args:
-        scored_results: List of result tuples with ``final_score`` at
-            index 6.
-        db_path: Path to the SQLite DB (used for centrality lookup).
-
-    Returns:
-        A new list of result tuples with updated ``final_score``.
-        Returns ``scored_results`` unchanged when
-        ``MEMORY_GRAPH_CENTRALITY_BOOST`` is disabled.
-        Best-effort: never propagates exceptions.
     """
 )
 _compute_final_score.__doc__ = (
@@ -1593,9 +1514,11 @@ def _rerank_results(
                     None,
                 )
             )
-        if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
-            return _apply_jaccard_surprise_penalty(out, query), None
-        return _apply_temporal_decay(out, as_of=as_of), None
+        # RANK-FIRST LOCK (PR1.1): the no-rerank pass-through must not
+        # mutate the ranking score. Order is fixed by -rank (set above);
+        # enrichment is attached as order-invariant envelope fields by
+        # _apply_post_rank_metadata in Phase 10.
+        return out[:limit], None
 
     _qtype = _detect_query_type(query)
     _qweights = _weights_for_query_type(_qtype)
@@ -1673,17 +1596,26 @@ def _rerank_results(
             query, out, top_k=min(len(out), limit * 3), blend=0.7,
         )
     out = _apply_late_interaction_rerank(query, out, top_k=min(len(out), limit * 2))
-    if _sp_lazy("_FORGETTING_CURVE_ENABLED", False):
-        out = _apply_jaccard_surprise_penalty(out, query)
-    else:
-        out = _apply_temporal_decay(out, as_of=as_of)
-    out = _apply_concept_boost(out, query, db_path)
-    out = _apply_centrality_boost(out, db_path)
+    # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
+    # late-interaction rerankers above, which sort on r[6] (the CE-blended
+    # final_score). The four historical enrichment passes (temporal decay,
+    # Jaccard surprise, concept boost, centrality boost) must NOT mutate
+    # r[6] or re-sort here. They are attached as order-invariant envelope
+    # fields by _apply_post_rank_metadata in Phase 10. Re-assert the
+    # ranking order so any future in-place score mutation cannot leak into
+    # result ordering.
+    out = sorted(
+        out,
+        key=lambda r: (float(r[6]) if r[6] is not None else 0.0),
+        reverse=True,
+    )
     return out[:limit], _qweights
 
 
 def _build_result_items(
-    *, db: AnyConnection, results_to_display: list, query: str, rerank: bool
+    *, db: AnyConnection, results_to_display: list, query: str, rerank: bool,
+    db_path: Any = None,
+    as_of: Optional[float] = None,
 ) -> tuple[list, list[str], dict]:
     """Phase 10 of search_memories: build the public result list and output.
 
@@ -1742,6 +1674,7 @@ def _build_result_items(
             tags = []
         backlinks = backlinks_map.get(note_id, [])
         auto_summary = None
+        meta = None
         if metadata_json:
             try:
                 meta = (
@@ -1767,6 +1700,7 @@ def _build_result_items(
                 "pinned": pinned,
                 "backlinks": backlinks,
                 "last_accessed": last_accessed,
+                "metadata": meta if meta is not None else {},
                 "summary": auto_summary,
             }
         )
@@ -1777,6 +1711,13 @@ def _build_result_items(
         result_items,
         backlinks_map,
     )
+    # RANK-FIRST LOCK (PR1.1): attach enrichment as order-invariant
+    # envelope fields. This is the ONLY post-CE enrichment site; it never
+    # re-sorts or mutates the ranking final_score.
+    if db_path is not None:
+        result_items = _apply_post_rank_metadata(
+            result_items, query, db_path, as_of=as_of
+        )
     return result_items, output, backlinks_map
 
 
@@ -2761,6 +2702,8 @@ def search_memories(
             results_to_display=results_to_display,
             query=query,
             rerank=rerank,
+            db_path=db_path,
+            as_of=as_of,
         )
 
         # Phase 11: Safety demoting
