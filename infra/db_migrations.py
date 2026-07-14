@@ -675,8 +675,7 @@ def _migrate_ensure_chunks_table(conn) -> None:
     except Exception as e:
         import traceback
 
-        traceback.print_exc()
-        logger.warning("_migrate_ensure_chunks_table failed: %s", e)
+        logger.warning("_migrate_ensure_chunks_table failed: %s", traceback.format_exc())
 
 
 def _ensure_kg_facts_fts(conn) -> None:
