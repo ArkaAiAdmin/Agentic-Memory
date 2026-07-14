@@ -536,21 +536,27 @@ def record_ctr_feedback_db(
     ranking_params: Optional[str] = None,
     tenant_id: str = "default",
 ) -> None:
-    """Record CTR feedback as an ``memory_search_interaction`` row.
+    """Record CTR feedback as a ``memory_search_interaction`` row and correlate
+    the click/dismiss signal into ``memory_ctr_feedback``.
 
     Phase 0 (audit #9) fix: previously this wrote to ``memory_ctr_feedback``
-    with ``INSERT OR REPLACE``, which collapsed multi-event rows — a second
-    ``returned`` for an already-clicked (query_id, memory_id) pair would
-    ``DELETE``+re-``INSERT`` and wipe the ``clicked_at`` / ``dismissed_at``
-    columns.  We now write one row per (query_id, memory_id, action) into
+    with ``INSERT OR REPLACE``, which collapsed multi-event rows.  We now
+    write one row per (query_id, memory_id, action) into
     ``memory_search_interaction`` using ``ON CONFLICT(query_id, memory_id,
-    action) DO UPDATE`` so re-recording only refreshes ``ts``/``rank`` and
-    never destroys the sibling action rows.
+    action) DO UPDATE`` so re-recording only refreshes ``ts``/``rank``.
+
+    FIX 2 (search-pipeline review): the click/dismiss signal is also
+    correlated back onto the per-(query_id, id) impression row that
+    ``_record_search_telemetry`` wrote during the originating search, by
+    stamping ``clicked_at`` / ``dismissed_at``.  ``compute_channel_weights``
+    then reads the real CTR signal instead of always returning ``None``.
+    This is best-effort — a missing impression row (e.g. a DB at the legacy
+    single-PK schema) simply leaves the UPDATE as a no-op.
 
     Args:
         db_path: Path to the memory SQLite database.
-        id: Memory id (the legacy ``memory_ctr_feedback.id`` column maps to
-            ``memory_search_interaction.memory_id``).
+        id: Memory id; maps to the ``memory_ctr_feedback.id`` column and to
+            ``memory_search_interaction.memory_id``.
         query_id: Search query correlation id.
         action: One of ``returned`` / ``clicked`` / ``dismissed`` (legacy) or
             any ``memory_search_interaction`` action string.
@@ -582,6 +588,27 @@ def record_ctr_feedback_db(
             (query_id, id, mapped_action, tenant_id, None, query_type),
         )
         conn.commit()
+        # Correlate the click/dismiss signal onto the matching impression row
+        # so compute_channel_weights learns. Best-effort; never breaks the
+        # interaction write above.
+        if action in ("clicked", "dismissed"):
+            try:
+                _now = time.time()
+                if action == "clicked":
+                    conn.execute(
+                        "UPDATE memory_ctr_feedback SET clicked_at=? "
+                        "WHERE query_id=? AND id=?",
+                        (_now, query_id, id),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE memory_ctr_feedback SET dismissed_at=? "
+                        "WHERE query_id=? AND id=?",
+                        (_now, query_id, id),
+                    )
+                conn.commit()
+            except Exception as _ctr_exc:
+                logger.debug("CTR feedback correlation skipped: %s", _ctr_exc)
     finally:
         safe_close_db(conn)
 
@@ -2378,18 +2405,25 @@ def _record_search_telemetry(
     if db is None:
         return
     try:
-        db.execute(
-            "INSERT OR REPLACE INTO memory_ctr_feedback "
-            "(id, query_id, returned_at, source, ranking_params) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (
-                "__search__",
-                query_id,
-                time.time(),
-                "search",
-                json.dumps({"weights": ctr_weights}) if ctr_weights else "{}",
-            ),
-        )
+        _now = time.time()
+        _ranking = json.dumps({"weights": ctr_weights}) if ctr_weights else "{}"
+        # One impression row per returned result, keyed by (query_id, id),
+        # so a later click/dismiss (record_ctr_feedback_db) can stamp the
+        # same row and compute_channel_weights learns the real signal.
+        # ON CONFLICT preserves clicked_at/dismissed_at across re-impressions.
+        for _r in result_items:
+            _rid = _r.get("id") if isinstance(_r, dict) else None
+            if not _rid:
+                continue
+            db.execute(
+                "INSERT INTO memory_ctr_feedback "
+                "(query_id, id, returned_at, source, ranking_params) "
+                "VALUES (?, ?, ?, 'search', ?) "
+                "ON CONFLICT(query_id, id) DO UPDATE SET "
+                "returned_at=excluded.returned_at, "
+                "ranking_params=excluded.ranking_params",
+                (query_id, _rid, _now, _ranking),
+            )
         db.commit()
     except Exception as e:
         _phase_inc("search.telemetry.ctr_feedback", e)

@@ -150,8 +150,17 @@ def test_used_in_response_no_duplicate_updates_ts(tmp_path):
 
 
 def test_ctr_feedback_db_migrated_to_interaction(tmp_path):
-    """Audit #9 fix: record_ctr_feedback_db now writes to
-    memory_search_interaction and preserves multi-action rows."""
+    """Audit #9 (producer) + FIX 2 (CTR correlation):
+
+    - record_ctr_feedback_db writes per-(query_id, memory_id) rows to
+      memory_search_interaction and preserves multi-action rows
+      (returned->impression, clicked->click: two distinct rows).
+    - Search telemetry (_record_search_telemetry) writes one impression row
+      per returned result into memory_ctr_feedback keyed by (query_id, id).
+    - record_ctr_feedback_db correlates a click by stamping clicked_at on the
+      *existing* impression row — it does NOT insert a new per-memory row.
+      compute_channel_weights then reads the real signal.
+    """
     db_path = _make_db(tmp_path)
     query_id, memory_id = _recall(db_path, "gamma")
 
@@ -172,15 +181,20 @@ def test_ctr_feedback_db_migrated_to_interaction(tmp_path):
         assert actions == ["click", "impression"], (
             f"multi-action rows collapsed: {actions}"
         )
-        # The per-memory CTR event must no longer land in the legacy table.
-        # (Search-level telemetry still writes a sentinel row with id=
-        # '__search__' to memory_ctr_feedback — that is expected and out of
-        # scope for this producer fix.)
-        legacy_per_memory = conn.execute(
-            "SELECT COUNT(*) FROM memory_ctr_feedback WHERE id=?",
-            (memory_id,),
-        ).fetchone()[0]
-        assert legacy_per_memory == 0, "per-memory CTR event still in legacy table"
+        # The per-result impression row for this (query_id, id) must exist
+        # (written by search telemetry) and record_ctr_feedback_db must have
+        # stamped it, NOT inserted a duplicate row.
+        ctr_rows = conn.execute(
+            "SELECT clicked_at FROM memory_ctr_feedback "
+            "WHERE query_id=? AND id=?",
+            (query_id, memory_id),
+        ).fetchall()
+        assert len(ctr_rows) == 1, (
+            f"expected exactly 1 CTR impression row for (query_id, id), got {len(ctr_rows)}"
+        )
+        assert ctr_rows[0][0] is not None, (
+            "click was not correlated onto the CTR impression row"
+        )
     finally:
         conn.close()
 

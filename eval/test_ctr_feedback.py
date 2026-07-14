@@ -209,116 +209,108 @@ class TestComputeChannelWeights:
 
 
 class TestRecordCTRFeedback:
-    """Test that record_ctr_feedback correctly updates the CTR table."""
+    """End-to-end CTR correlation (FIX 2): record_ctr_feedback_db stamps
+    clicked_at/dismissed_at onto the (query_id, id) impression row that
+    search telemetry wrote, and never inserts a duplicate row.
 
-    def test_insert_returns_row(self, tmp_path):
-        """action='returned' inserts a new row."""
-        db_path = _make_ctr_db(tmp_path)
+    The impression row is seeded here the way ``_record_search_telemetry``
+    does it, because the unit tests don't run a full search pipeline.
+    """
+
+    def _seed_impression(self, db_path: "Path | str", qid: str, rid: str) -> None:
         conn = sqlite3.connect(str(db_path))
         try:
-            now = time.time()
             conn.execute(
                 "INSERT INTO memory_ctr_feedback "
-                "(id, query_id, returned_at, source, ranking_params) "
-                "VALUES (?, ?, ?, ?, ?)",
-                ("fb_001", "q_test", now, "unit_test", "{}"),
+                "(query_id, id, returned_at, source, ranking_params) "
+                "VALUES (?, ?, ?, 'search', ?)",
+                (qid, rid, time.time(), "{}"),
             )
             conn.commit()
+        finally:
+            conn.close()
 
-            row = conn.execute(
-                "SELECT id, query_id, returned_at FROM memory_ctr_feedback WHERE id = ?",
-                ("fb_001",),
+    def test_returned_no_duplicate_ctr_row(self, tmp_path):
+        """action='returned' writes the interaction row but does NOT add a
+        second CTR impression row."""
+        db_path = _make_ctr_db(tmp_path)
+        from search.orchestrator import record_ctr_feedback_db
+
+        self._seed_impression(str(db_path), "q_test", "fb_001")
+        record_ctr_feedback_db(str(db_path), id="fb_001", query_id="q_test", action="returned")
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            cnt = conn.execute(
+                "SELECT COUNT(*) FROM memory_ctr_feedback WHERE id=? AND query_id=?",
+                ("fb_001", "q_test"),
+            ).fetchone()[0]
+            assert cnt == 1, f"record_ctr_feedback_db must not duplicate CTR rows: {cnt}"
+            act = conn.execute(
+                "SELECT action FROM memory_search_interaction "
+                "WHERE query_id=? AND memory_id=?",
+                ("q_test", "fb_001"),
             ).fetchone()
-            assert row is not None
-            assert row[0] == "fb_001"
-            assert row[1] == "q_test"
+            assert act is not None and act[0] == "impression"
         finally:
             conn.close()
 
     def test_click_updates_row(self, tmp_path):
-        """action='clicked' sets clicked_at on existing row."""
+        """action='clicked' stamps clicked_at on the existing impression row."""
         db_path = _make_ctr_db(tmp_path)
+        from search.orchestrator import record_ctr_feedback_db
+
+        self._seed_impression(str(db_path), "q_test", "fb_002")
+        record_ctr_feedback_db(str(db_path), id="fb_002", query_id="q_test", action="clicked")
+
         conn = sqlite3.connect(str(db_path))
         try:
-            now = time.time()
-            conn.execute(
-                "INSERT INTO memory_ctr_feedback "
-                "(id, query_id, returned_at, source) "
-                "VALUES (?, ?, ?, ?)",
-                ("fb_002", "q_test", now, "unit_test"),
-            )
-            conn.commit()
-
-            click_time = now + 5
-            conn.execute(
-                "UPDATE memory_ctr_feedback SET clicked_at = ? "
-                "WHERE id = ? AND query_id = ?",
-                (click_time, "fb_002", "q_test"),
-            )
-            conn.commit()
-
             row = conn.execute(
-                "SELECT clicked_at FROM memory_ctr_feedback WHERE id = ?",
-                ("fb_002",),
+                "SELECT clicked_at FROM memory_ctr_feedback WHERE id=? AND query_id=?",
+                ("fb_002", "q_test"),
             ).fetchone()
-            assert row is not None
-            assert row[0] is not None
-            assert abs(row[0] - click_time) < 0.01
+            assert row is not None and row[0] is not None
         finally:
             conn.close()
 
     def test_dismiss_updates_row(self, tmp_path):
-        """action='dismissed' sets dismissed_at on existing row."""
+        """action='dismissed' stamps dismissed_at on the existing impression row."""
         db_path = _make_ctr_db(tmp_path)
+        from search.orchestrator import record_ctr_feedback_db
+
+        self._seed_impression(str(db_path), "q_test", "fb_003")
+        record_ctr_feedback_db(str(db_path), id="fb_003", query_id="q_test", action="dismissed")
+
         conn = sqlite3.connect(str(db_path))
         try:
-            now = time.time()
-            conn.execute(
-                "INSERT INTO memory_ctr_feedback "
-                "(id, query_id, returned_at, source) "
-                "VALUES (?, ?, ?, ?)",
-                ("fb_003", "q_test", now, "unit_test"),
-            )
-            conn.commit()
-
-            dismiss_time = now + 3
-            conn.execute(
-                "UPDATE memory_ctr_feedback SET dismissed_at = ? "
-                "WHERE id = ? AND query_id = ?",
-                (dismiss_time, "fb_003", "q_test"),
-            )
-            conn.commit()
-
             row = conn.execute(
-                "SELECT dismissed_at FROM memory_ctr_feedback WHERE id = ?",
-                ("fb_003",),
+                "SELECT dismissed_at FROM memory_ctr_feedback WHERE id=? AND query_id=?",
+                ("fb_003", "q_test"),
             ).fetchone()
-            assert row is not None
-            assert row[0] is not None
-            assert abs(row[0] - dismiss_time) < 0.01
+            assert row is not None and row[0] is not None
         finally:
             conn.close()
 
     def test_dedup_by_id_and_query_id(self, tmp_path):
-        """Same (id, query_id) pair is deduplicated via INSERT OR REPLACE."""
+        """Same (query_id, id) pair is deduplicated via INSERT OR REPLACE."""
         db_path = _make_ctr_db(tmp_path)
         conn = sqlite3.connect(str(db_path))
         try:
             now = time.time()
             conn.execute(
                 "INSERT INTO memory_ctr_feedback "
-                "(id, query_id, returned_at, source) "
+                "(query_id, id, returned_at, source) "
                 "VALUES (?, ?, ?, ?)",
-                ("fb_dup", "q_dup", now, "unit_test"),
+                ("q_dup", "fb_dup", now, "unit_test"),
             )
             conn.commit()
 
-            # Insert again with same id — should replace
+            # Insert again with same (query_id, id) — should replace.
             conn.execute(
                 "INSERT OR REPLACE INTO memory_ctr_feedback "
-                "(id, query_id, returned_at, source) "
+                "(query_id, id, returned_at, source) "
                 "VALUES (?, ?, ?, ?)",
-                ("fb_dup", "q_dup", now + 10, "unit_test_v2"),
+                ("q_dup", "fb_dup", now + 10, "unit_test_v2"),
             )
             conn.commit()
 
