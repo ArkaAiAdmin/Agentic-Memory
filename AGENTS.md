@@ -8,7 +8,7 @@ If you are an agent **using** the system (not maintaining it): read `AGENT_CONTR
 <!--AUTO-GEN:START key="what_this_system_is"-->
 - **Surface**: 17 CORE verbs + `memory_maintenance` router (95 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 50+ cron jobs
 - **Schema**: v61, ~76 tables
-- **Code**: ~115k LOC production, ~99k+ test LOC; see `docs/architecture.md`
+- **Code**: ~115k LOC production, ~100k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 
@@ -157,7 +157,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 - **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).
 - **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.
-- **Testing**: 317 test files, 4850+ test functions, ~99k+ test LOC. Subprocess-per-file runner.
+- **Testing**: 317 test files, 4850+ test functions, ~100k+ test LOC. Subprocess-per-file runner.
 - **Canonical refs**: `docs/architecture.md` · `docs/MCP_SURFACE.md` · `skills/memory-architecture/SKILL.md`.
 <!--AUTO-GEN:END key="current_state"-->
 

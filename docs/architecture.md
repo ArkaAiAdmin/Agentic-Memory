@@ -38,23 +38,24 @@ User/Agent
 ## Search Pipeline
 
 The search orchestrator (`search_memories` in `search/orchestrator.py`)
-runs the following **13 phases** in order:
+runs the following **14 phases** in order:
 
-> **Pipeline flow:** Input normalization & query type detection → FTS5 BM25 retrieval → Vector (usearch) retrieval → ColBERT late-interaction retrieval → Reciprocal Rank Fusion (RRF) merge → Cross-encoder reranking (optional) → Temporal decay application → Neural forget curve adjustment → Session-aware result clustering → KG concept/centrality boost → Final score computation & ranking → Result envelope construction → Error counter & latency logging
+> **Pipeline flow:** Parse query (normalization, reasoning expansion) → Skill-first lookup (conditional early return) → Cache check → DB setup + filter construction → Retrieval (FTS5 BM25 + KG facts) → Embedding fallback → Hybrid fusion (RRF merge of sparse + dense) → Temporal filtering → Chunk enhancement + session clustering → KG boost + multi-hop traversal → Reranking (cross-encoder, late-interaction) → Build output items → Postprocessing (safety, quality gates, profiling, strong-match, floater) → Finalization (record access, telemetry, envelope)
 
-1. Input normalization & query type detection
-2. FTS5 BM25 retrieval
-3. Vector (usearch) retrieval
-4. ColBERT late-interaction retrieval
-5. Reciprocal Rank Fusion (RRF) merge
-6. Cross-encoder reranking (optional)
-7. Temporal decay application
-8. Neural forget curve adjustment
-9. Session-aware result clustering
-10. KG concept/centrality boost
-11. Final score computation & ranking
-12. Result envelope construction
-13. Error counter & latency logging
+1. Parse query (normalization, reasoning expansion)
+2. Skill-first lookup (conditional early return)
+3. Cache check
+4. DB setup + filter construction
+5. Retrieval (FTS5 BM25 + KG facts)
+6. Embedding fallback
+7. Hybrid fusion (RRF merge of sparse + dense)
+8. Temporal filtering
+9. Chunk enhancement + session clustering
+10. KG boost + multi-hop traversal
+11. Reranking (cross-encoder, late-interaction)
+12. Build output items
+13. Postprocessing (safety, quality gates, profiling, strong-match, floater)
+14. Finalization (record access, telemetry, envelope)
 
 ## Save Pipeline
 
@@ -102,7 +103,7 @@ agentic-memory/                    # Repo root
 │   ├── synthesis.py                # BB1/BB2 synthesis
 │   ├── chunk_index.py              # Chunk search, Graph-RAG expansion
 │   ├── instrumentation.py          # Timing/log/observability
-│   └── orchestrator.py             # search_memories + 13-phase search
+│   └── orchestrator.py             # search_memories + 14-phase search
 ├── backfill_all.py                 # Audit pipeline shim → backfill/
 ├── backfill/                       # Audit pipeline subpackage
 │   ├── __init__.py                 # Public API
