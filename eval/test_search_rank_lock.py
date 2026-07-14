@@ -227,14 +227,16 @@ def test_graceful_degradation_on_empty_db(tmp_path: Path) -> None:
 
 
 def test_single_enrichment_site_wired() -> None:
+    # _apply_post_rank_metadata is called in envelope.py's _build_result_items
+    envelope_path = Path(__file__).resolve().parent.parent / "search" / "phases" / "envelope.py"
+    envelope_src = envelope_path.read_text(encoding="utf-8")
+    assert envelope_src.count("_apply_post_rank_metadata(") == 1
+    # The four legacy mutators must no longer steer ranking in envelope.
+    assert "_apply_temporal_decay(out" not in envelope_src
+    assert "_apply_jaccard_surprise_penalty(out" not in envelope_src
+    assert "_apply_concept_boost(out" not in envelope_src
+    assert "_apply_centrality_boost(out" not in envelope_src
+    # The final ranking still sorts explicitly by the ranking score (r[6]).
     orch_path = Path(__file__).resolve().parent.parent / "search" / "orchestrator.py"
     orch_src = orch_path.read_text(encoding="utf-8")
-    # The new single site is called inside _build_result_items.
-    assert orch_src.count("_apply_post_rank_metadata(") == 1
-    # The four legacy mutators must no longer steer ranking in orchestrator.
-    assert "_apply_temporal_decay(out" not in orch_src
-    assert "_apply_jaccard_surprise_penalty(out" not in orch_src
-    assert "_apply_concept_boost(out" not in orch_src
-    assert "_apply_centrality_boost(out" not in orch_src
-    # The final ranking still sorts explicitly by the ranking score (r[6]).
     assert "out = sorted(" in orch_src
