@@ -245,24 +245,24 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
         )
 
     def test_hybrid_fusion_calls_phase_inc_on_bad_db(self):
-        import search.phases.fusion as fusion_mod
-        original_inc = fusion_mod._phase_inc
+        import search.orchestrator as orch
+        original_inc = orch._phase_inc
         calls = []
-        fusion_mod._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
+        orch._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
         _hybrid_fusion(_tcast(_AnyConn, "not_a_db"), [], "test", "test", Path("/tmp"), 5, "")
-        fusion_mod._phase_inc = original_inc
+        orch._phase_inc = original_inc
         self.assertTrue(
             any("hybrid_fusion" in c[0] for c in calls),
             f"Expected hybrid_fusion phase call, got: {calls}",
         )
 
     def test_record_last_accessed_calls_phase_inc_on_bad_db(self):
-        import search.phases.envelope as env_mod
-        original_inc = env_mod._phase_inc
+        import search.orchestrator as orch
+        original_inc = orch._phase_inc
         calls = []
-        env_mod._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
+        orch._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
         _record_last_accessed(_tcast(_AnyConn, "not_a_db"), [{"id": "x"}])
-        env_mod._phase_inc = original_inc
+        orch._phase_inc = original_inc
         self.assertTrue(
             any("record_last_accessed" in c[0] for c in calls),
             f"Expected record_last_accessed phase call, got: {calls}",
