@@ -119,6 +119,11 @@ _ce_model_load_lock = threading.Lock()
 _CE_CACHE_TTL = 300  # 5 minutes
 _CE_CACHE_MAX = 128  # max cached entries
 
+# Late-interaction content tokenization and ngrams cache: memory_id -> (content_hash, content_tokens, content_ngrams)
+_li_content_cache: dict[str, tuple[int, list[str], list[set[str]]]] = {}
+_li_cache_lock = threading.Lock()
+_LI_CACHE_MAX = 1000
+
 
 def _get_cross_encoder_blend() -> float:
     try:
@@ -414,17 +419,38 @@ def _apply_late_interaction_rerank(
     blend = _get_late_interaction_blend()
     # B15 fix: pre-compute query ngrams once instead of recomputing per result
     q_ngrams = _precompute_query_ngrams(query)
-    # Precompute content tokens and ngrams for all candidates BEFORE the loop
-    content_tokens = [_tokenize_for_ce(r[1] or "") for r in head]
+    # Precompute content tokens and ngrams for all candidates BEFORE the loop, utilizing cache
+    content_tokens = []
     content_ngrams = []
-    for ct in content_tokens:
-        c_ng: list = []
-        for tok in ct:
-            if len(tok) >= 3:
-                c_ng.append({tok[i : i + 3] for i in range(len(tok) - 2)})
-            else:
-                c_ng.append(set())
-        content_ngrams.append(c_ng)
+    for r in head:
+        mid = r[0]
+        content = r[1] or ""
+        h_val = hash(content)
+
+        cached = None
+        with _li_cache_lock:
+            if mid in _li_content_cache:
+                c_hash, c_toks, c_ngs = _li_content_cache[mid]
+                if c_hash == h_val:
+                    cached = (c_toks, c_ngs)
+
+        if cached is not None:
+            c_toks, c_ngs = cached
+        else:
+            c_toks = _tokenize_for_ce(content)
+            c_ngs = []
+            for tok in c_toks:
+                if len(tok) >= 3:
+                    c_ngs.append({tok[i : i + 3] for i in range(len(tok) - 2)})
+                else:
+                    c_ngs.append(set())
+            with _li_cache_lock:
+                if len(_li_content_cache) >= _LI_CACHE_MAX:
+                    _li_content_cache.clear()
+                _li_content_cache[mid] = (h_val, c_toks, c_ngs)
+
+        content_tokens.append(c_toks)
+        content_ngrams.append(c_ngs)
     reranked = []
     for i, r in enumerate(head):
         content = r[1]

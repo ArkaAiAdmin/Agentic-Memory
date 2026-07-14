@@ -1045,7 +1045,7 @@ def _search_kg_facts(
     return results
 
 
-def _reasoning_expand(db_path: Path, query: str, limit: int = 5) -> list[str]:
+def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None) -> list[str]:
     """A3.1: expand a natural-language query using entailment-chain objects.
 
     When the query contains an entailment-predicate keyword (``is a``,
@@ -1092,34 +1092,41 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5) -> list[str]:
     # Collapse multi-word entity into a single LIKE token set.
     tokens = re.findall(r"[A-Za-z][A-Za-z\-_/]+", entity_term)
     like_pattern = "%" + "%".join(t for t in tokens if len(t) > 2) + "%" if tokens else "%" + entity_term + "%"
-    try:
-        from infra._lazy_imports import connection_pool
-
-        conn = connection_pool.get(str(db_path), timeout=10.0)
+    _pooled_conn = None
+    if conn is None:
         try:
-            rows = conn.execute(
-                """
-                SELECT DISTINCT kf.object
-                FROM kg_facts kf
-                JOIN entailment_chains ec ON ec.derived_fact_id = kf.id
-                WHERE kf.predicate IN ('is_a','is_type_of','instance_of',
-                                       'part_of','has_part','located_in','subclass_of')
-                  AND kf.belief_status = 'active'
-                  AND kf.is_entailed = 1
-                  AND (kf.subject LIKE ? OR kf.object LIKE ?)
-                LIMIT ?
-                """,
-                (like_pattern, like_pattern, limit),
-            ).fetchall()
-            return [row[0] for row in rows if row[0]]
-        finally:
-            try:
-                connection_pool.put(conn)
-            except Exception as e:
-                logger.warning("reasoning_expand: connection_pool.put failed: %s", e)
+            from infra._lazy_imports import connection_pool
+            _pooled_conn = connection_pool.get(str(db_path), timeout=10.0)
+            conn = _pooled_conn
+        except Exception as exc:
+            logger.warning("reasoning_expand connection failed: %s", exc)
+            return []
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT kf.object
+            FROM kg_facts kf
+            JOIN entailment_chains ec ON ec.derived_fact_id = kf.id
+            WHERE kf.predicate IN ('is_a','is_type_of','instance_of',
+                                   'part_of','has_part','located_in','subclass_of')
+              AND kf.belief_status = 'active'
+              AND kf.is_entailed = 1
+              AND (kf.subject LIKE ? OR kf.object LIKE ?)
+            LIMIT ?
+            """,
+            (like_pattern, like_pattern, limit),
+        ).fetchall()
+        return [row[0] for row in rows if row[0]]
     except Exception as exc:
         logger.warning("reasoning_expand failed: %s", exc)
         return []
+    finally:
+        if _pooled_conn is not None:
+            try:
+                from infra._lazy_imports import connection_pool
+                connection_pool.put(_pooled_conn)
+            except Exception as e:
+                logger.warning("reasoning_expand: connection_pool.put failed: %s", e)
 
 
 def _fts_search(
@@ -2954,22 +2961,47 @@ def search_memories(
             "query_id": uuid.uuid4().hex,
         }
 
+    # Guard: whitespace-only or empty queries should return 0 results
+    # immediately, before reasoning-expand can inject spurious OR terms.
+    if not query or not query.strip():
+        return {
+            "results": [],
+            "count": 0,
+            "output": f"No memories matched the query: '{query}'",
+            "suggestions": _build_zero_result_suggestions(db_path, query),
+            "agent_scope": _get_agent_scope(),
+            "query_id": uuid.uuid4().hex,
+        }
+
     # Reset per-call phase latency accumulator so results are not
     # polluted by stale entries from prior invocations.
     with _phase_latencies_lock:
         _phase_latencies.clear()
     _phase_reset()
 
+    db = None
+    try:
+        from infra._lazy_imports import connection_pool
+        db = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
+    except Exception as exc:
+        _phase_inc("search.orchestrator", exc)
+        logger.warning("search_memories failed to obtain DB connection: %s", exc)
+        return {
+            "results": [],
+            "count": 0,
+            "output": _err(ErrorCode.DB_ERROR, f"Search failed to obtain DB connection: {exc}"),
+        }
+
     # Phase 1: Parse query
     _t0 = time.time()
     normalized_query, fts_query, bare_text, graph_rag_terms = _parse_search_query(
-        query, db_path, conn=None
+        query, db_path, conn=db
     )
     _record_phase_latency("parse_query", _t0)
     # A3.2: Reasoning expansion — append entailment-chain objects as OR terms
     # before the cache key is computed so the expanded query is cached.
     _reasoning_t0 = time.time()
-    expansion_terms = _reasoning_expand(db_path, query)
+    expansion_terms = _reasoning_expand(db_path, query, conn=db)
     if expansion_terms:
         fts_query = f"{fts_query} OR {' OR '.join(expansion_terms[:5])}"
     _record_phase_latency("reasoning_expand", _reasoning_t0)
@@ -3030,14 +3062,15 @@ def search_memories(
                 cache_touch(cache_key)
                 cached_result = dict(cached_result)
                 cached_result["query_id"] = uuid.uuid4().hex
+                if db is not None:
+                    try:
+                        safe_close_db(db)
+                    except Exception:
+                        pass
                 return cached_result
             _search_cache.pop(cache_key)
 
-    db = None
     try:
-        from infra._lazy_imports import connection_pool
-
-        db = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
         _effective_rerank = rerank and not light
 
         # Phase 3: DB setup

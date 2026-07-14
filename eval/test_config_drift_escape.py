@@ -18,14 +18,19 @@ if not VENV_PYTHON.exists():
 
 
 def _run(code: str) -> subprocess.CompletedProcess:
+    import tempfile, shutil
+    tmp_root = tempfile.mkdtemp()
     env = {k: v for k, v in os.environ.items() if not k.startswith("MEMORY_")}
     env["PYTHONPATH"] = str(WORKTREE)
-    env["MEMORY_INSTALL_ROOT"] = str(WORKTREE)
-    return subprocess.run(
-        [str(VENV_PYTHON), "-c", code],
-        capture_output=True, text=True, timeout=30, env=env,
-        cwd=str(WORKTREE),
-    )
+    env["MEMORY_INSTALL_ROOT"] = tmp_root
+    try:
+        return subprocess.run(
+            [str(VENV_PYTHON), "-c", code],
+            capture_output=True, text=True, timeout=30, env=env,
+            cwd=str(WORKTREE),
+        )
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
 
 
 SETUP = """

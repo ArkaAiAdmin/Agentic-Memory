@@ -24,27 +24,32 @@ def _run_in_subprocess(env_overrides: dict) -> subprocess.CompletedProcess:
     variables so test-setup drift (from conftest fixtures) doesn't leak
     into the subprocess.
     """
+    import tempfile, shutil
+    tmp_root = tempfile.mkdtemp()
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "HOME": os.environ.get("HOME", "/tmp"),
         "OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES",
         "PYTHONPATH": str(WORKTREE),
-        "MEMORY_INSTALL_ROOT": str(WORKTREE),
+        "MEMORY_INSTALL_ROOT": tmp_root,
     }
     env.update(env_overrides)
-    proc = subprocess.run(
-        [
-            str(VENV_PYTHON), "-c",
-            "from infra.config_drift_policy import run_startup_enforcement; "
-            "run_startup_enforcement()",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        env=env,
-        cwd=str(WORKTREE),
-    )
-    return proc
+    try:
+        proc = subprocess.run(
+            [
+                str(VENV_PYTHON), "-c",
+                "from infra.config_drift_policy import run_startup_enforcement; "
+                "run_startup_enforcement()",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=env,
+            cwd=str(WORKTREE),
+        )
+        return proc
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
 
 
 class TestInitHookDefaultScope(unittest.TestCase):
