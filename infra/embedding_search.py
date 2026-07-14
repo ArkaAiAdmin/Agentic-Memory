@@ -317,9 +317,23 @@ class EmbeddingSearch:
         self._model_loaded = False
         self._model_load_failed = False
 
+    def _ensure_model(self) -> bool:
+        """Try to load the embedding model if not yet loaded.
+
+        Returns True if the model is ready, False if loading failed or
+        the model is genuinely unavailable.  Call this at the top of any
+        public method that needs the model so callers get a single
+        lazy-load attempt instead of scattered None-checks.
+        """
+        if self.model is not None and getattr(self, "np", None) is not None:
+            return True
+        if not self._model_loaded and not self._model_load_failed:
+            self._load_model()
+        return self.model is not None and getattr(self, "np", None) is not None
+
     def _embed_query(self, query: str, category: str = "", tags: Optional[list] = None, source_file: str = "") -> Any:
         """Get query embedding with optional LRU cache."""
-        if self.model is None or getattr(self, "np", None) is None:
+        if not self._ensure_model():
             return None
         if self._QUERY_CACHE_ENABLED:
             if query in self._query_cache:
@@ -466,12 +480,8 @@ class EmbeddingSearch:
         return bool(self._model_loaded)
 
     def encode(self, texts) -> np.ndarray | None:
-        if self.model is None or getattr(self, "np", None) is None:
-            # Lazy load on first use
-            if not self._model_loaded and not self._model_load_failed:
-                self._load_model()
-            if self.model is None:
-                return None
+        if not self._ensure_model():
+            return None
         if not texts:
             # model2vec raises on empty input; return an empty (0, dim) array
             # so callers (and tests) can rely on a stable shape contract.
@@ -514,7 +524,7 @@ class EmbeddingSearch:
     ) -> None:
         """Compute and persist the embedding for a single memory row.
 
-        No-op if the model isn't loaded. Best-effort — wraps the INSERT
+        No-op if the model can't be loaded. Best-effort — wraps the INSERT
         in try/except so callers (rebuild, save, incremental update) can
         call it without needing their own error handling.
 
@@ -522,8 +532,11 @@ class EmbeddingSearch:
         (category, tags, source_file) before embedding so the vector
         captures semantic context alongside raw text.
         """
-        if self.model is None:
-            return
+        if self.model is None or getattr(self, "np", None) is None:
+            if not self._model_loaded and not self._model_load_failed:
+                self._load_model()
+            if self.model is None:
+                return
         try:
             if not category or not tags or not source_file:
                 try:
@@ -582,7 +595,9 @@ class EmbeddingSearch:
         Returns the number of rows actually written (skips model2vec-
         unavailable case and DB write failures). Best-effort.
         """
-        if self.model is None or not items:
+        if not items:
+            return 0
+        if not self._ensure_model():
             return 0
         try:
             import sys
@@ -790,7 +805,7 @@ class EmbeddingSearch:
         discoverable: a LEFT JOIN against memory_vec_keys surfaces them,
         and they are reranked alongside the ANN candidates.
         """
-        if self.model is None or self.np is None:
+        if not self._ensure_model():
             return None
         n_vectors = meta["n_vectors"]
         if n_vectors == 0:
@@ -993,7 +1008,7 @@ class EmbeddingSearch:
         the indexed path returns None. Kept verbatim from the original
         search() implementation so behavior is bit-for-bit identical.
         """
-        if self.model is None or self.np is None:
+        if not self._ensure_model():
             return "Embedding model not loaded."
         # Get all memories (the candidate set).
         rows = db.execute(
@@ -1260,7 +1275,7 @@ class EmbeddingSearch:
         return results
 
     def search(self, query, db_path, limit=5, category="", tags=None, source_file="") -> str | list[dict]:
-        if self.model is None:
+        if not self._ensure_model():
             return "Embedding search unavailable. Install model2vec: pip install model2vec numpy"
 
         from infra.memory_common import connection_pool
@@ -1356,7 +1371,9 @@ class EmbeddingSearch:
 
 
     def index_chunk_embeddings_batch(self, db, chunks: list[dict]) -> int:
-        if self.model is None or not chunks:
+        if not chunks:
+            return 0
+        if not self._ensure_model():
             return 0
         try:
             texts = [_chunk_cache_text(c["content"]) for c in chunks]
@@ -1436,7 +1453,7 @@ class EmbeddingSearch:
         return idx, meta
 
     def _search_chunks_via_index(self, idx, meta, db, query, limit, category="", tags=None, source_file="") -> list[dict] | None:
-        if self.model is None or self.np is None:
+        if not self._ensure_model():
             return None
         n_vectors = meta["n_vectors"]
         if n_vectors == 0:
@@ -1477,7 +1494,7 @@ class EmbeddingSearch:
         return ranked
 
     def _search_chunks_full_scan(self, db, query, limit, category="", tags=None, source_file="") -> list[dict]:
-        if self.model is None or self.np is None:
+        if not self._ensure_model():
             return []
         try:
             rows = db.execute(

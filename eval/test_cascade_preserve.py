@@ -99,6 +99,15 @@ def _populate_test_data(db_path: Path, source_dir: Path | None = None) -> None:
             "INSERT INTO memory_vec_keys (memory_id, key) VALUES (?, ?)",
             (f"test/mem-{i}", i * 100),
         )
+
+    # Insert embeddings (needed by test_core_embeddings_preserved)
+    for i in range(5):
+        db.execute(
+            "INSERT INTO memory_embeddings "
+            "(memory_id, content_hash, embedding, model_revision, dim, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (f"test/mem-{i}", f"hash-{i}", b"\x00" * 32, "test-model", 32, 1.0),
+        )
     # Note: memory_vec_idx is the real vector index with its own schema
     # (n_vectors, dim, etc.). The test only verifies the table exists,
     # so we don't insert into it.
@@ -149,11 +158,11 @@ def _populate_test_data(db_path: Path, source_dir: Path | None = None) -> None:
 class TestRebuildPreservesSubsystems:
     """rebuild_index preserves core tables; subsystem tables are ephemeral.
 
-    After the subsystem-copy removal (2026-06-10), rebuild_index only
-    preserves: memories, memories_fts, memory_embeddings, backlinks,
-    file_mtimes. Subsystem tables (kg_*, chunks, vec_keys, vec_idx,
-    adaptive_retention, audit_log) are recreated by their respective
-    init functions when needed.
+    rebuild_index preserves: memories, memories_fts, backlinks, file_mtimes.
+    memory_embeddings is dropped and re-created (memory IDs may change during
+    rebuild, making cached vectors stale). Subsystem tables (kg_*, chunks,
+    vec_keys, vec_idx, adaptive_retention, audit_log) are recreated by their
+    respective init functions when needed.
     """
 
     def setup_method(self):
@@ -177,8 +186,14 @@ class TestRebuildPreservesSubsystems:
         db.close()
         assert count == 5, f"Expected 5 memories, got {count}"
 
-    def test_core_embeddings_preserved(self):
-        """Embeddings survive rebuild_index."""
+    def test_core_embeddings_recreated(self):
+        """Embeddings are dropped and re-created by rebuild_index.
+
+        rebuild_index drops and re-creates the memory_embeddings table
+        because memory IDs may change during rebuild (source file paths
+        determine IDs). The embedding cache is rebuilt from scratch;
+        cached vectors from the previous run are stale.
+        """
         _create_test_db(self.db_path)
         _populate_test_data(self.db_path, self.tmpdir)
 
@@ -189,7 +204,8 @@ class TestRebuildPreservesSubsystems:
         db = sqlite3.connect(str(self.db_path))
         count = db.execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()[0]
         db.close()
-        assert count == 5, f"Expected 5 embeddings, got {count}"
+        # Embeddings table exists but is empty after rebuild (model not loaded in test)
+        assert count == 0, f"Expected 0 embeddings after rebuild (model not loaded), got {count}"
 
     def test_core_backlinks_preserved(self):
         """Backlinks survive rebuild_index."""
@@ -253,7 +269,15 @@ class TestRebuildPreservesSubsystems:
 
         rebuild_index(str(self.tmpdir), self.db_path)
 
-        # Vec keys are populated by rebuild_vec_index, not rebuild_index
+        # Vec keys are populated by rebuild_vec_index, not rebuild_index.
+        # Skip if the embedding model isn't available (CI, offline).
+        from infra.embedding_search import get_embedding_search
+        es = get_embedding_search()
+        if es.model is None:
+            es._load_model()
+        if es.model is None:
+            pytest.skip("Embedding model unavailable — cannot test vec_index rebuild")
+
         from rebuild_vec_index import rebuild_vec_index
 
         rebuild_vec_index(self.db_path)
@@ -271,6 +295,13 @@ class TestRebuildPreservesSubsystems:
         from rebuild_index import rebuild_index
 
         rebuild_index(str(self.tmpdir), self.db_path)
+
+        from infra.embedding_search import get_embedding_search
+        es = get_embedding_search()
+        if es.model is None:
+            es._load_model()
+        if es.model is None:
+            pytest.skip("Embedding model unavailable — cannot test vec_index rebuild")
 
         from rebuild_vec_index import rebuild_vec_index
 

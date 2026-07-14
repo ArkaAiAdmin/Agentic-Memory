@@ -103,9 +103,10 @@ def colbert_rerank(
         )
         return candidates
 
-    # Quick check: skip if model not pre-loaded (avoid 3s cold-start)
-    from infra.colbert_encoder import _colbert_model
-    if _colbert_model is None:
+    # Try to lazy-load the ColBERT model; skip gracefully if unavailable.
+    from infra.colbert_encoder import _get_colbert_model
+    _cm, _ct, _cp = _get_colbert_model()
+    if _cm is None:
         logger.debug("colbert_rerank: skip (model not loaded)")
         return candidates
 

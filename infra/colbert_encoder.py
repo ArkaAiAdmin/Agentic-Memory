@@ -27,6 +27,7 @@ _colbert_model = None
 _colbert_tokenizer = None
 _colbert_projection = None
 _colbert_lock = threading.Lock()
+_colbert_load_attempted = False  # Prevents repeated failed load attempts
 _hidden_dim = 768  # BERT base; updated on first load
 
 
@@ -42,13 +43,18 @@ class _ColbertProjection(torch.nn.Module):
 
 
 def _get_colbert_model():
-    """Lazy-load the ColBERT model.  Returns (model, tokenizer, projection) or (None, None, None)."""
-    global _colbert_model, _colbert_tokenizer, _colbert_projection, _hidden_dim
-    if _colbert_model is not None:
+    """Lazy-load the ColBERT model.  Returns (model, tokenizer, projection) or (None, None, None).
+
+    Failure is cached: if loading fails once, subsequent calls return
+    (None, None, None) without retrying.
+    """
+    global _colbert_model, _colbert_tokenizer, _colbert_projection, _colbert_load_attempted, _hidden_dim
+    if _colbert_load_attempted:
         return _colbert_model, _colbert_tokenizer, _colbert_projection
     with _colbert_lock:
-        if _colbert_model is not None:
+        if _colbert_load_attempted:
             return _colbert_model, _colbert_tokenizer, _colbert_projection
+        _colbert_load_attempted = True
         model_name = os.environ.get("MEMORY_COLBERT_MODEL", _DEFAULT_MODEL)
         try:
             from transformers import AutoModel, AutoTokenizer

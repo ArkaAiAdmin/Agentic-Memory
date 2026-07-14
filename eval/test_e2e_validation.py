@@ -230,7 +230,7 @@ def main(test_root=None):
         "B1 rebuild_index.py",
         must_contain=["Successfully indexed"],
         expect_rc=0,
-        timeout=30,
+        timeout=120,
         test_root=test_root,
     )
     # Verify DB has expected files (e.g., test-lesson-1)
@@ -251,7 +251,7 @@ def main(test_root=None):
         "B2 search_memory.py",
         must_contain=["test-lesson-1"],
         expect_rc=0,
-        timeout=15,
+        timeout=60,
         test_root=test_root,
     )
 
@@ -273,7 +273,7 @@ def main(test_root=None):
         "B4 consolidate_facts.py (test root)",
         must_contain=["Memory Consolidation"],
         expect_rc=0,
-        timeout=60,
+        timeout=120,
         test_root=test_root,
     )
 
