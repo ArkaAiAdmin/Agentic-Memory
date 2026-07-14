@@ -224,6 +224,48 @@ def handle_chunk_embedding_index(
         raise RuntimeError(f"chunk_embedding_index failed: {e}") from e
 
 
+def handle_colbert_index(
+    payload: dict, conn: AnyConnection, db_path: Path
+) -> str:
+    """Index ColBERT token embeddings for a memory note (deferred from save)."""
+    try:
+        from save.indexers import _index_colbert
+
+        memory_id = payload.get("memory_id", "")
+        content = payload.get("content", "")
+        if not memory_id or not content:
+            return "skipped: no memory_id or content in payload"
+        category = payload.get("category", "") or (memory_id.split("/")[0] if "/" in memory_id else "general")
+        tags = payload.get("tags", [])
+        source_file = payload.get("source_file", "")
+        _index_colbert(conn, memory_id, content, category, tags, source_file)
+        conn.commit()
+        return f"colbert indexed for {memory_id}"
+    except Exception as e:
+        raise RuntimeError(f"colbert_index failed: {e}") from e
+
+
+def handle_splade_index(
+    payload: dict, conn: AnyConnection, db_path: Path
+) -> str:
+    """Index SPLADE sparse vectors for a memory note (deferred from save)."""
+    try:
+        from save.indexers import _index_splade
+
+        memory_id = payload.get("memory_id", "")
+        content = payload.get("content", "")
+        if not memory_id or not content:
+            return "skipped: no memory_id or content in payload"
+        category = payload.get("category", "") or (memory_id.split("/")[0] if "/" in memory_id else "general")
+        tags = payload.get("tags", [])
+        source_file = payload.get("source_file", "")
+        _index_splade(conn, memory_id, content, category, tags, source_file)
+        conn.commit()
+        return f"splade indexed for {memory_id}"
+    except Exception as e:
+        raise RuntimeError(f"splade_index failed: {e}") from e
+
+
 def handle_embedding_index(
     payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
@@ -439,6 +481,8 @@ HANDLERS = {
     "entity_resolution": handle_entity_resolution,
     "fact_consolidation": handle_fact_consolidation,
     "compact": handle_fact_consolidation,
+    "colbert_index": handle_colbert_index,
+    "splade_index": handle_splade_index,
     "embedding_index": handle_embedding_index,
     "chunk_embedding_index": handle_chunk_embedding_index,
     "kg_and_fact_index": handle_kg_and_fact_index,

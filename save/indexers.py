@@ -82,6 +82,30 @@ def _index_chunks(db, note_id: str, content: str):
         logger.warning("QW5 chunk indexing failed for %s: %s", note_id, ce)
 
 
+def _index_colbert(
+    conn, note_id: str, content: str, category: str, tags: list, source_file: str
+):
+    """Index ColBERT token embeddings for a single memory."""
+    try:
+        from search.colbert_index import index_memory_colbert
+
+        index_memory_colbert(conn, note_id, content)
+    except Exception as ce:
+        logger.warning("ColBERT index failed for %s: %s", note_id, ce)
+
+
+def _index_splade(
+    conn, note_id: str, content: str, category: str, tags: list, source_file: str
+):
+    """Index SPLADE sparse vectors for a single memory."""
+    try:
+        from search.splade_index import index_memory_splade
+
+        index_memory_splade(conn, note_id, content)
+    except Exception as se:
+        logger.warning("SPLADE index failed for %s: %s", note_id, se)
+
+
 def _index_embedding(
     db, note_id: str, content: str, category: str, tags: list, source_file: str
 ):

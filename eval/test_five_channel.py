@@ -22,8 +22,8 @@ class TestWeightsConfiguration(unittest.TestCase):
         self.assertAlmostEqual(sum(w.values()), 1.0, places=6)
         for k, v in w.items():
             self.assertGreaterEqual(v, 0.0, f"weight {k} must be non-negative")
-        self.assertEqual(len(w), 5)
-        for required in ("bm25", "fitness", "importance", "pinned", "tag_match"):
+        self.assertEqual(len(w), 6)
+        for required in ("bm25", "fitness", "importance", "pinned", "recency", "tag_match"):
             self.assertIn(required, w)
 
 

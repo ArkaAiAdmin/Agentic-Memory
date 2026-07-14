@@ -54,8 +54,8 @@ def _seed_ctr_data(conn: sqlite3.Connection, n_rows: int = 15, **overrides):
     now = time.time()
     default_params = {
         "weights": {
-            "bm25": 0.45, "fitness": 0.25, "importance": 0.15,
-            "pinned": 0.1, "tag_match": 0.05,
+            "bm25": 0.40, "fitness": 0.20, "importance": 0.15,
+            "pinned": 0.10, "recency": 0.10, "tag_match": 0.05,
         }
     }
     params_json = json.dumps(overrides.get("ranking_params", default_params))
@@ -165,7 +165,7 @@ class TestComputeChannelWeights:
             assert result is not None, "Expected weights dict with 15 data points"
             assert isinstance(result, dict)
             assert set(result.keys()) == {
-                "bm25", "fitness", "importance", "pinned", "tag_match"
+                "bm25", "fitness", "importance", "pinned", "recency", "tag_match"
             }
             # Weights should sum to ~1.0 (normalized)
             total = sum(result.values())
@@ -185,8 +185,8 @@ class TestComputeChannelWeights:
             # All clicks (no dismissals) → CTR=1.0, bm25-heavy params
             bm25_heavy = {
                 "weights": {
-                    "bm25": 0.7, "fitness": 0.1, "importance": 0.1,
-                    "pinned": 0.05, "tag_match": 0.05,
+                    "bm25": 0.60, "fitness": 0.10, "importance": 0.10,
+                    "pinned": 0.05, "recency": 0.10, "tag_match": 0.05,
                 }
             }
             _seed_ctr_data(conn, n_rows=20, n_distinct_queries=20, ranking_params=bm25_heavy)

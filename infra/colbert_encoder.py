@@ -52,11 +52,11 @@ def _get_colbert_model():
         model_name = os.environ.get("MEMORY_COLBERT_MODEL", _DEFAULT_MODEL)
         try:
             from transformers import AutoModel, AutoTokenizer
-            # Auto-detect device: MPS if available, else CPU
             device = "mps" if torch.backends.mps.is_available() else "cpu"
-            logger.info("Loading ColBERT model: %s on %s", model_name, device)
-            tok = AutoTokenizer.from_pretrained(model_name)
-            mdl = AutoModel.from_pretrained(model_name).to(device)
+            local_only = os.environ.get("HF_HUB_OFFLINE") == "1" or "PYTEST_CURRENT_TEST" in os.environ
+            logger.info("Loading ColBERT model: %s on %s (local_only=%s)", model_name, device, local_only)
+            tok = AutoTokenizer.from_pretrained(model_name, local_files_only=local_only)
+            mdl = AutoModel.from_pretrained(model_name, local_files_only=local_only).to(device)
             mdl.eval()
             _hidden_dim = mdl.config.hidden_size
             proj = _ColbertProjection(_hidden_dim, _MODEL_DIM).to(device)
@@ -81,7 +81,6 @@ def encode_tokens(text: str, max_length: int = 256) -> Optional[list[tuple[str, 
     if model is None or tokenizer is None or projection is None:
         return None
     try:
-        # Get device from model parameters
         device = next(model.parameters()).device
         inputs = tokenizer(
             text,
@@ -92,8 +91,8 @@ def encode_tokens(text: str, max_length: int = 256) -> Optional[list[tuple[str, 
         ).to(device)
         with torch.no_grad():
             outputs = model(**inputs)
-        hidden = outputs.last_hidden_state[0]  # [seq_len, hidden_dim]
-        projected = projection(hidden)  # [seq_len, 128]
+        hidden = outputs.last_hidden_state[0]
+        projected = projection(hidden)
         tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
         result = []
         for i, tok in enumerate(tokens):
@@ -105,6 +104,46 @@ def encode_tokens(text: str, max_length: int = 256) -> Optional[list[tuple[str, 
     except Exception as e:
         logger.warning("ColBERT encode_tokens failed: %s", e)
         return None
+
+
+def encode_tokens_batch(texts: list[str], max_length: int = 256) -> list[Optional[list[tuple[str, list[float]]]]]:
+    """Encode multiple texts into per-token embeddings in a single forward pass.
+
+    Returns a list of results (one per input text), each a list of
+    (token_text, embedding_vector) tuples or None if encoding failed.
+    """
+    model, tokenizer, projection = _get_colbert_model()
+    if model is None or tokenizer is None or projection is None:
+        return [None] * len(texts)
+    try:
+        device = next(model.parameters()).device
+        inputs = tokenizer(
+            texts,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_length,
+            padding=True,
+        ).to(device)
+        with torch.no_grad():
+            outputs = model(**inputs)
+        hidden = outputs.last_hidden_state  # [batch, seq_len, hidden_dim]
+        projected = projection(hidden)  # [batch, seq_len, 128]
+        attn_mask = inputs["attention_mask"]  # [batch, seq_len]
+        results = []
+        for b in range(len(texts)):
+            seq_len = attn_mask[b].sum().item()
+            tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][b][:seq_len])
+            batch_vecs = projected[b, :seq_len].tolist()
+            result = []
+            for i, tok in enumerate(tokens):
+                if tok in ("[CLS]", "[SEP]", "[PAD]"):
+                    continue
+                result.append((tok, batch_vecs[i]))
+            results.append(result)
+        return results
+    except Exception as e:
+        logger.warning("ColBERT encode_tokens_batch failed: %s", e)
+        return [None] * len(texts)
 
 
 def encode_query(text: str, max_length: int = 32) -> Optional[list[list[float]]]:

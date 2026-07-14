@@ -992,13 +992,12 @@ class TestComputeFinalScore(unittest.TestCase):
             total, 1.0, places=10, msg=f"weights should sum to 1.0, got {total}"
         )
 
-    def test_all_five_channels_present(self):
-        """Weight dict should have the five additive scoring channel keys.
+    def test_all_six_channels_present(self):
+        """Weight dict should have the six additive scoring channel keys.
 
-        Note: recency/temporal decay is applied by _apply_temporal_decay
-        AFTER _compute_final_score, so it is intentionally absent here.
+        Note: recency/temporal decay is now incorporated inside _compute_final_score.
         """
-        expected = {"bm25", "fitness", "importance", "pinned", "tag_match"}
+        expected = {"bm25", "fitness", "importance", "pinned", "recency", "tag_match"}
         self.assertEqual(set(_RERANK_WEIGHTS.keys()), expected)
 
     def test_bm25_uses_sigmoid(self):

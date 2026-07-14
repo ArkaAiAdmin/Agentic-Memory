@@ -252,7 +252,8 @@ def personalize_results(
     max_tag = max(tag_pref.values()) if tag_pref else 1
 
     for r in results:
-        base_score = r.get("score", 0) or 0
+        score_key = "final_score" if "final_score" in r else "score"
+        base_score = r.get(score_key, 0.0) or 0.0
         boost = 0.0
 
         cat = r.get("category", "")
@@ -270,9 +271,15 @@ def personalize_results(
             if tag in tag_pref:
                 boost += (tag_pref[tag] / max_tag) * (boost_factor - 1.0) * 0.5
 
-        r["score"] = base_score * (1.0 + min(boost, boost_factor - 1.0))
+        new_score = base_score * (1.0 + min(boost, boost_factor - 1.0))
+        r[score_key] = new_score
+        if score_key == "final_score":
+            r["score"] = new_score
 
-    results.sort(key=lambda x: x.get("score", 0), reverse=True)
+    results.sort(
+        key=lambda x: x.get("final_score") if "final_score" in x else x.get("score", 0.0),
+        reverse=True,
+    )
     return results
 
 

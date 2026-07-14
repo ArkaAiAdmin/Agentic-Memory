@@ -116,7 +116,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-13: bumped to 57 — search-reranker foundation (057):
 #   memory_search_interaction, memory_query_type_stats, memory_temporal_priors
 #   (+ seed 7 rows into memory_temporal_priors).
-SCHEMA_VERSION = 59
+SCHEMA_VERSION = 60
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the

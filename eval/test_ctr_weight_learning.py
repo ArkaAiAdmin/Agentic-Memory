@@ -98,7 +98,7 @@ class TestQueryTypeWeights:
         conn = self._make_db(tmp_path)
 
         # Insert learned weights for "code" query type
-        learned = {"bm25": 0.3, "fitness": 0.4, "importance": 0.1, "pinned": 0.1, "tag_match": 0.1}
+        learned = {"bm25": 0.25, "fitness": 0.25, "importance": 0.15, "pinned": 0.1, "recency": 0.20, "tag_match": 0.05}
         conn.execute(
             "INSERT INTO memory_query_type_stats (query_type, weights_json, sample_count, updated_at) "
             "VALUES (?, ?, ?, ?)",
@@ -136,7 +136,7 @@ class TestQueryTypeWeights:
         conn = self._make_db(tmp_path)
 
         # Insert weights with low sample count
-        learned = {"bm25": 0.3, "fitness": 0.4, "importance": 0.1, "pinned": 0.1, "tag_match": 0.1}
+        learned = {"bm25": 0.25, "fitness": 0.25, "importance": 0.15, "pinned": 0.1, "recency": 0.20, "tag_match": 0.05}
         conn.execute(
             "INSERT INTO memory_query_type_stats (query_type, weights_json, sample_count, updated_at) "
             "VALUES (?, ?, ?, ?)",
@@ -174,6 +174,7 @@ class TestTuneWeights:
                 tenant_id TEXT DEFAULT 'default',
                 rank INTEGER,
                 ts REAL NOT NULL DEFAULT (unixepoch()),
+                query_type TEXT,
                 UNIQUE (query_id, memory_id, action)
             )
             """
@@ -195,15 +196,18 @@ class TestTuneWeights:
                 content TEXT,
                 fitness_score REAL,
                 importance INTEGER,
-                pinned INTEGER
+                pinned INTEGER,
+                created_at TEXT,
+                last_accessed TEXT
             )
         """
         )
         # Insert memories
+        now_dt = time.strftime("%Y-%m-%dT%H:%M:%S")
         for i in range(15):
             conn.execute(
-                "INSERT INTO memories (id, content, fitness_score, importance, pinned) VALUES (?, ?, ?, ?, ?)",
-                (f"mem{i}", f"content {i}", 0.5 + (i % 3) * 0.1, 3, 0),
+                "INSERT INTO memories (id, content, fitness_score, importance, pinned, created_at, last_accessed) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (f"mem{i}", f"content {i}", 0.5 + (i % 3) * 0.1, 3, 0, now_dt, now_dt),
             )
         # Insert interactions: 2 query_ids, each with 15 interactions (enough for MIN_INTERACTIONS=10)
         now = time.time()
@@ -213,9 +217,9 @@ class TestTuneWeights:
                 # Vary action: first 8 are clicks, rest are impressions
                 action = "click" if mi < 8 else "impression"
                 conn.execute(
-                    "INSERT OR IGNORE INTO memory_search_interaction (query_id, memory_id, action, rank, ts) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (qid, f"mem{mi % 15}", action, (mi % 15) + 1, now - qi * 100 - mi),
+                    "INSERT OR IGNORE INTO memory_search_interaction (query_id, memory_id, action, rank, ts, query_type) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (qid, f"mem{mi % 15}", action, (mi % 15) + 1, now - qi * 100 - mi, "code"),
                 )
         conn.commit()
         return conn

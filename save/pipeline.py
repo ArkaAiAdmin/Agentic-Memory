@@ -693,6 +693,8 @@ from save.indexers import (  # noqa: E402, F401
     _index_chunks,
     _index_chunk_embeddings,
     _index_embedding,
+    _index_colbert,
+    _index_splade,
     _index_kg,
     _index_facts,
     _index_adaptive_retention,
@@ -767,7 +769,9 @@ def _update_memory_index_incremental(
       4.  _index_chunks                 → 2–3 (DELETE old chunks + INSERT new)
       5.  _index_chunk_embeddings       → 1 INSERT
       6.  _index_embedding              → 1 INSERT into memory_embeddings
-      7.  _index_kg                     → 2–3 (INSERT entities + edges)
+      7.  _index_colbert               → 1 INSERT into colbert_tokens
+      8.  _index_splade                → 1 INSERT into splade_tokens
+      9.  _index_kg                     → 2–3 (INSERT entities + edges)
       8.  _index_facts                  → 3–5 (INSERT facts + FTS triggers)
       9.  _enrich_context               → 1–2 context-enrichment INSERTs
       10. _auto_semantic_backlinks      → 2 (semantic edge INSERTs)
@@ -833,6 +837,8 @@ def _update_memory_index_incremental(
         _index_chunk_embeddings(conn, note_id)
         if not defer_expensive:
             _index_embedding(conn, note_id, content, category, tags, source_file)
+            _index_colbert(conn, note_id, content, category, tags, source_file)
+            _index_splade(conn, note_id, content, category, tags, source_file)
             _index_kg(conn, note_id, content)
             _index_facts(conn, note_id, content, belief_status, epistemic_source,
                          asserting_agent_id=asserting_agent_id, evidence_chain=evidence_chain,
@@ -930,6 +936,22 @@ def _defer_indexing_background_tasks(
             bq_conn,
             "chunk_embedding_index",
             {"memory_id": note_id, "content": content},
+            max_queue_size=max_qs,
+            reject_policy=reject_pol,
+        )
+        enqueue_task(
+            bq_conn,
+            "colbert_index",
+            {"memory_id": note_id, "content": content, "category": category,
+             "tags": tags or [], "source_file": source_file},
+            max_queue_size=max_qs,
+            reject_policy=reject_pol,
+        )
+        enqueue_task(
+            bq_conn,
+            "splade_index",
+            {"memory_id": note_id, "content": content, "category": category,
+             "tags": tags or [], "source_file": source_file},
             max_queue_size=max_qs,
             reject_policy=reject_pol,
         )

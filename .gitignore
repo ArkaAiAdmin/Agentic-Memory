@@ -46,3 +46,9 @@ scratch/
 ts-sdk/node_modules/
 cron/.drift_cron_*.json
 paper_pipeline/
+
+# Eval results and temp files (not source)
+eval/longmemeval_s/results/
+eval/real_memory_eval_results.json
+eval/prebuilt_db_path.txt
+SEARCH_SOTA_STATUS.md

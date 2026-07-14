@@ -30,24 +30,30 @@ _DEFAULT_MODEL = "naver/splade-cocondenser-ensembledistil"
 _splade_model = None
 _splade_tokenizer = None
 _splade_lock = threading.Lock()
+_splade_load_attempted = False  # Prevents repeated failed load attempts
 
 
 def _get_splade_model():
-    """Lazy-load the SPLADE model.  Returns (model, tokenizer) or (None, None)."""
-    global _splade_model, _splade_tokenizer
-    if _splade_model is not None:
+    """Lazy-load the SPLADE model.  Returns (model, tokenizer) or (None, None).
+
+    Failure is cached: if loading fails once, subsequent calls return
+    (None, None) without retrying.
+    """
+    global _splade_model, _splade_tokenizer, _splade_load_attempted
+    if _splade_load_attempted:
         return _splade_model, _splade_tokenizer
     with _splade_lock:
-        if _splade_model is not None:
+        if _splade_load_attempted:
             return _splade_model, _splade_tokenizer
+        _splade_load_attempted = True  # Mark as attempted before trying
         model_name = os.environ.get("MEMORY_SPLADE_MODEL", _DEFAULT_MODEL)
         try:
             from transformers import AutoModel, AutoTokenizer
-            # Auto-detect device: MPS if available, else CPU
             device = "mps" if torch.backends.mps.is_available() else "cpu"
-            logger.info("Loading SPLADE model: %s on %s", model_name, device)
-            tok = AutoTokenizer.from_pretrained(model_name)
-            mdl = AutoModel.from_pretrained(model_name).to(device)
+            local_only = os.environ.get("HF_HUB_OFFLINE") == "1" or "PYTEST_CURRENT_TEST" in os.environ
+            logger.info("Loading SPLADE model: %s on %s (local_only=%s)", model_name, device, local_only)
+            tok = AutoTokenizer.from_pretrained(model_name, local_files_only=local_only)
+            mdl = AutoModel.from_pretrained(model_name, local_files_only=local_only).to(device)
             mdl.eval()
             _splade_model = mdl
             _splade_tokenizer = tok

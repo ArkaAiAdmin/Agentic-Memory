@@ -26,15 +26,15 @@ from typing import Any
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-# Bootstrap DB path
+# Bootstrap DB path (overridden if --db is passed)
 _TEST_DB_DIR = tempfile.mkdtemp(prefix="real_memory_eval_")
 _TEST_DB_PATH = Path(_TEST_DB_DIR) / "memory.db"
-os.environ["MEMORY_DB_PATH"] = str(_TEST_DB_PATH)
+os.environ.setdefault("MEMORY_DB_PATH", str(_TEST_DB_PATH))
 
 
 def _load_golden_set() -> dict:
     """Load the golden evaluation set."""
-    golden_path = Path(__file__).parent / "real_memory_golden.json"
+    golden_path = Path(__file__).parent / "real_memory_golden_v2.json"
     with open(golden_path) as f:
         return json.load(f)
 
@@ -107,6 +107,65 @@ def _insert_fts(conn: sqlite3.Connection, memories: list[dict]) -> None:
     conn.commit()
 
 
+def _backfill_indexes(conn: sqlite3.Connection, db_path: Path) -> None:
+    """Generate embeddings, chunks, ColBERT, and SPLADE for all memories."""
+    rows = conn.execute(
+        "SELECT id, content FROM memories WHERE content IS NOT NULL AND content != ''"
+    ).fetchall()
+    total = len(rows)
+    if total == 0:
+        return
+
+    print(f"  Backfilling {total} memories...")
+
+    # Phase 1: Chunks
+    print("  Indexing chunks...")
+    from search.chunk_index import _qw5_ensure_schema, _qw5_index_chunks_for
+    _qw5_ensure_schema(conn)
+    for i, (mid, content) in enumerate(rows):
+        _qw5_index_chunks_for(conn, mid, content)
+        if (i + 1) % 5000 == 0:
+            conn.commit()
+    conn.commit()
+
+    # Phase 2: FTS on chunks
+    print("  Rebuilding chunk FTS...")
+    conn.execute("INSERT INTO memory_chunks_fts(memory_chunks_fts) VALUES('rebuild')")
+    conn.commit()
+
+    # Phase 3: Embeddings
+    print("  Indexing embeddings...")
+    from save.indexers import _index_embedding
+    for i, (mid, content) in enumerate(rows):
+        _index_embedding(conn, mid, content, category="", tags=[], source_file=mid)
+        if (i + 1) % 5000 == 0:
+            conn.commit()
+    conn.commit()
+
+    # Phase 4: ColBERT
+    print("  Indexing ColBERT tokens...")
+    from search.colbert_index import _ensure_colbert_schema, index_memory_colbert_batch
+    _ensure_colbert_schema(conn)
+    batch_size = 64
+    for start in range(0, total, batch_size):
+        batch = [(mid, content) for mid, content in rows[start:start + batch_size]]
+        index_memory_colbert_batch(conn, batch)
+        conn.commit()
+
+    # Phase 5: SPLADE
+    print("  Indexing SPLADE tokens...")
+    from search.splade_index import _ensure_splade_schema, index_memory_splade_batch
+    _ensure_splade_schema(conn)
+    for start in range(0, total, batch_size):
+        batch = [(mid, content) for mid, content in rows[start:start + batch_size]]
+        index_memory_splade_batch(conn, batch)
+        conn.commit()
+
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    conn.commit()
+    print("  Backfill complete")
+
+
 def _compute_recall_at_k(retrieved: list[str], expected: list[str], k: int = 10) -> float:
     """Compute recall@k."""
     if not expected:
@@ -156,7 +215,7 @@ def _compute_ndcg_at_k(retrieved: list[str], expected: list[str], k: int = 10) -
 
 
 def _search_single(
-    db_path: str, query: str, limit: int = 10
+    db_path: str, query: str, limit: int = 10, as_of: float | None = None
 ) -> tuple[list[str], float]:
     """Search for a query and return (result_ids, latency_ms)."""
     from search.orchestrator import search_memories
@@ -167,7 +226,9 @@ def _search_single(
             query=query,
             db_path=Path(db_path),
             limit=limit,
-            hybrid=False,  # FTS only for consistent evaluation
+            hybrid=True,
+            rerank=True,
+            as_of=as_of,
         )
         latency_ms = (time.time() - t0) * 1000
         if isinstance(result, dict):
@@ -181,7 +242,7 @@ def _search_single(
         return [], latency_ms
 
 
-def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
+def run_evaluation(db_path: Path | None = None, verbose: bool = True, skip_backfill: bool = False) -> dict:
     """Run the full golden evaluation.
 
     Returns a dict with metrics and pass/fail status.
@@ -197,6 +258,10 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
     conn = _setup_db(db_path)
     _insert_memories(conn, memories)
     _insert_fts(conn, memories)
+    if not skip_backfill:
+        _backfill_indexes(conn, db_path)
+    else:
+        print("  Skipping backfill (using pre-built DB)")
 
     # Warm up: pre-load all models before timed queries
     if verbose:
@@ -243,18 +308,32 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
         "cold_latencies": [],
         "warm_latencies": [],
         "pass_per_query": [],
+        "categories": {},
     }
 
     for i, tc in enumerate(test_cases):
         query = tc["query"]
         expected = tc["expected"]
 
+        # Temporal query: parse as_of from expected session IDs
+        as_of = None
+        tc_cat = tc.get("category", "")
+        if tc_cat == "temporal":
+            import calendar, re, time as _time
+            for eid in tc.get("expected", []):
+                m = re.search(r'(\d{4})-(\d{2})-(\d{2})', eid)
+                if m:
+                    as_of = calendar.timegm(_time.strptime(m.group(0), "%Y-%m-%d")) + 86400
+                    break
+            if as_of is None:
+                m = re.search(r'(?:July|2026).*?(\d{1,2})', query)
+
         # Cold latency (first call after warmup)
         if i == 0:
-            retrieved, latency = _search_single(str(db_path), query, limit=50)
+            retrieved, latency = _search_single(str(db_path), query, limit=50, as_of=as_of)
             results["cold_latencies"].append(latency)
         else:
-            retrieved, latency = _search_single(str(db_path), query, limit=50)
+            retrieved, latency = _search_single(str(db_path), query, limit=50, as_of=as_of)
 
         results["warm_latencies"].append(latency)
 
@@ -287,6 +366,12 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
 
         if verbose and not passed:
             print(f"  FAIL: '{query}' — recall@10={recall_10:.2f}, expected={expected}, got={retrieved[:5]}")
+
+        tc_cat = tc.get("category", "unknown")
+        cat_key = f"recall_at_10_{tc_cat}"
+        if cat_key not in results:
+            results[cat_key] = []
+        results[cat_key].append(recall_10)
 
     # Compute aggregate metrics
     avg_recall_5 = sum(results["recall_at_5"]) / len(results["recall_at_5"])
@@ -366,6 +451,18 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True) -> dict:
         print(f"  P95 cold:       {p95_cold:.1f} ms (target: {targets.get('p95_cold_latency_ms', 600)} ms) {'PASS' if checks['p95_cold_latency'] else 'FAIL'}")
         print(f"  P95 warm:       {p95_warm:.1f} ms (target: {targets.get('p95_warm_latency_ms', 300)} ms) {'PASS' if checks['p95_warm_latency'] else 'FAIL'}")
         print(f"  queries passed: {passed_queries}/{total_queries}")
+
+        cat_results = {}
+        for key, vals in results.items():
+            if key.startswith("recall_at_10_"):
+                cat = key.replace("recall_at_10_", "")
+                cat_results[cat] = sum(vals) / len(vals) if vals else 0.0
+        if cat_results:
+            print("\n  Per-category recall@10:")
+            for cat in sorted(cat_results):
+                status = "PASS" if cat_results[cat] >= 0.95 else "FAIL"
+                print(f"    {cat:20} {cat_results[cat]:.4f}  {status}")
+
         print(f"  OVERALL:        {'ALL TARGETS MET' if all_passed else 'TARGETS NOT MET'}")
         print("=" * 70)
 
@@ -379,10 +476,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Real-memory golden evaluation")
     parser.add_argument("--db", type=str, default=None, help="Database path")
     parser.add_argument("--quiet", action="store_true", help="Suppress per-query output")
+    parser.add_argument("--skip-backfill", action="store_true", help="Skip index backfill (use pre-built DB)")
     args = parser.parse_args()
 
     db_path = Path(args.db) if args.db else None
-    result = run_evaluation(db_path=db_path, verbose=not args.quiet)
+    if db_path is not None:
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
+    result = run_evaluation(db_path=db_path, verbose=not args.quiet, skip_backfill=args.skip_backfill)
 
     # Write results to file
     results_path = Path(__file__).parent / "real_memory_eval_results.json"

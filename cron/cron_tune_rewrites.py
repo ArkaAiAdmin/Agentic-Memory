@@ -41,10 +41,10 @@ DEFAULT_DB_PATH = str(GLOBAL_MEM_DIR / "memory.db")
 MIN_INTERACTIONS = 10
 
 # Channel keys that map to feature columns
-CHANNEL_KEYS = ["bm25", "fitness", "importance", "pinned", "tag_match"]
+CHANNEL_KEYS = ["bm25", "fitness", "importance", "pinned", "recency", "tag_match"]
 
-# Default uniform prior (must sum to 1.0)
-DEFAULT_WEIGHTS = {k: v for k, v in zip(CHANNEL_KEYS, [0.45, 0.25, 0.15, 0.10, 0.05])}
+# Default weights (must sum to 1.0)
+DEFAULT_WEIGHTS = {k: v for k, v in zip(CHANNEL_KEYS, [0.40, 0.20, 0.15, 0.10, 0.10, 0.05])}
 
 
 def _sigmoid(x: float) -> float:
@@ -164,19 +164,19 @@ def _compute_features(
 ) -> dict[str, float] | None:
     """Compute feature vector for a memory.
 
-    Returns {"bm25": ..., "fitness": ..., "importance": ..., "pinned": ..., "tag_match": ...}
+    Returns {"bm25": ..., "fitness": ..., "importance": ..., "pinned": ..., "recency": ..., "tag_match": ...}
     or None if the memory doesn't exist.
     """
     try:
         row = conn.execute(
-            "SELECT fitness_score, importance, pinned FROM memories "
+            "SELECT fitness_score, importance, pinned, created_at, last_accessed FROM memories "
             "WHERE id = ? AND deleted_at IS NULL",
             (memory_id,),
         ).fetchone()
     except Exception:
         # Fallback for test databases without deleted_at column
         row = conn.execute(
-            "SELECT fitness_score, importance, pinned FROM memories WHERE id = ?",
+            "SELECT fitness_score, importance, pinned, created_at, last_accessed FROM memories WHERE id = ?",
             (memory_id,),
         ).fetchone()
     if not row:
@@ -184,11 +184,19 @@ def _compute_features(
     fitness = row[0] if row[0] is not None else 0.5
     importance = (row[1] if row[1] is not None else 3) / 5.0
     pinned = 1.0 if row[2] else 0.0
+
+    # Calculate recency score using temporal decay factor
+    from search.scoring import _temporal_decay_factor
+    created = row[3] or ""
+    last_accessed = row[4]
+    recency = _temporal_decay_factor(created, time.time(), last_accessed=last_accessed)
+
     return {
         "bm25": 0.5,  # Placeholder — actual BM25 score not stored in interaction
         "fitness": fitness,
         "importance": importance,
         "pinned": pinned,
+        "recency": recency,
         "tag_match": 0.0,  # Placeholder — not stored in interaction
     }
 
@@ -202,39 +210,46 @@ def tune_weights(
     """
     from search.query_parser import _detect_query_type
 
-    # Get all interactions grouped by query_id
+    # Get all interactions from memory_search_interaction
     cutoff = time.time() - (days * 86400)
-    rows = conn.execute(
-        "SELECT query_id, memory_id, action, rank FROM memory_search_interaction "
-        "WHERE ts > ?",
-        (cutoff,),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            "SELECT query_id, memory_id, action, rank, query_type FROM memory_search_interaction "
+            "WHERE ts > ?",
+            (cutoff,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        # Fallback if query_type column is missing (e.g. before migrations are fully applied in a test)
+        rows_legacy = conn.execute(
+            "SELECT query_id, memory_id, action, rank FROM memory_search_interaction "
+            "WHERE ts > ?",
+            (cutoff,),
+        ).fetchall()
+        rows = [(r[0], r[1], r[2], r[3], "general") for r in rows_legacy]
 
     if not rows:
         logger.info("No interactions found in the last %d days", days)
         return {}
 
-    # Group by query_id (each query_id represents one search session)
-    by_query: dict[str, list[tuple[str, str, int]]] = {}
-    for query_id, memory_id, action, rank in rows:
-        by_query.setdefault(query_id, []).append((memory_id, action, rank))
+    # Group interactions by query_type -> query_id
+    by_type: dict[str, dict[str, list[tuple[str, str, int]]]] = {}
+    for query_id, memory_id, action, rank, qtype in rows:
+        qtype = qtype or "general"
+        by_type.setdefault(qtype, {}).setdefault(query_id, []).append((memory_id, action, rank))
 
     results = {}
-    for query_id, interactions in by_query.items():
-        if len(interactions) < MIN_INTERACTIONS:
-            continue
-
-        # Build feature matrix and labels
+    for qtype, sessions in by_type.items():
+        # Compile training samples across all sessions of this query type
         X = []
         y = []
-        for memory_id, action, rank in interactions:
-            features = _compute_features(conn, memory_id)
-            if features is None:
-                continue
-            # Label: clicked if action is "click" or "used_in_response"
-            label = 1 if action in ("click", "used_in_response") else 0
-            X.append([features[k] for k in CHANNEL_KEYS])
-            y.append(label)
+        for query_id, interactions in sessions.items():
+            for memory_id, action, rank in interactions:
+                features = _compute_features(conn, memory_id)
+                if features is None:
+                    continue
+                label = 1 if action in ("click", "used_in_response") else 0
+                X.append([features[k] for k in CHANNEL_KEYS])
+                y.append(label)
 
         if len(X) < MIN_INTERACTIONS or len(set(y)) < 2:
             continue
@@ -258,7 +273,7 @@ def tune_weights(
 
         # Only write if AUC > 0.5 (better than random)
         if auc > 0.5:
-            results[query_id] = {
+            results[qtype] = {
                 "weights": normalized,
                 "auc": round(auc, 4),
                 "n": len(X),
@@ -269,10 +284,10 @@ def tune_weights(
                     "INSERT OR REPLACE INTO memory_query_type_stats "
                     "(query_type, weights_json, sample_count, updated_at) "
                     "VALUES (?, ?, ?, ?)",
-                    (query_id, json.dumps(normalized), len(X), time.time()),
+                    (qtype, json.dumps(normalized), len(X), time.time()),
                 )
         else:
-            results[query_id] = {
+            results[qtype] = {
                 "weights": DEFAULT_WEIGHTS,
                 "auc": round(auc, 4),
                 "n": len(X),

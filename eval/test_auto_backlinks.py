@@ -248,12 +248,16 @@ class TestAutoSemanticBacklinks(unittest.TestCase):
         self.conn = _make_test_db()
         self.db = self.conn
         from infra._lazy_imports import get_embedding_search
+        import numpy as np
         self.es = get_embedding_search()
         self.orig_model = self.es.model
+        self.orig_np = getattr(self.es, "np", None)
         self.es.model = unittest.mock.MagicMock()
+        self.es.np = np
 
     def tearDown(self):
         self.es.model = self.orig_model
+        self.es.np = self.orig_np
         self.conn.close()
 
     def _call(self, note_id, content='', top_k=5):
@@ -483,12 +487,16 @@ class TestBacklinksIntegration(unittest.TestCase):
         self.conn = _make_test_db()
         self.db = self.conn
         from infra._lazy_imports import get_embedding_search
+        import numpy as np
         self.es = get_embedding_search()
         self.orig_model = self.es.model
+        self.orig_np = getattr(self.es, "np", None)
         self.es.model = unittest.mock.MagicMock()
+        self.es.np = np
 
     def tearDown(self):
         self.es.model = self.orig_model
+        self.es.np = self.orig_np
         self.conn.close()
 
     def test_both_features_coexist(self):

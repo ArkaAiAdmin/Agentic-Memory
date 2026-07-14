@@ -45,10 +45,11 @@ logger = logging.getLogger(__name__)
 
 _RRF_K = 60
 _RERANK_WEIGHTS = {
-    "bm25": 0.45,
-    "fitness": 0.25,
+    "bm25": 0.40,
+    "fitness": 0.20,
     "importance": 0.15,
-    "pinned": 0.1,
+    "pinned": 0.10,
+    "recency": 0.10,
     "tag_match": 0.05,
 }
 
@@ -523,6 +524,12 @@ def _compute_final_score(ctx) -> float:
             if tag_tokens:
                 hits = len(query_tokens & tag_tokens)
                 tag_match = min(1.0, hits / max(1, len(query_tokens)))
+    # Calculate recency score using temporal decay factor
+    created = getattr(ctx, "created", None) or ""
+    last_accessed = getattr(ctx, "last_accessed", None)
+    recency_score = _temporal_decay_factor(
+        created, now_ts, last_accessed=last_accessed, as_of=now_ts
+    )
     # A3.3: discount inferred (is_entailed=1) fact scores so directly
     # observed facts outrank derived knowledge.  is_entailed defaults to
     # 0 (direct fact) when absent on memory rows.
@@ -534,6 +541,7 @@ def _compute_final_score(ctx) -> float:
         * importance_normalized
         + float(weights.get("pinned", _get_rerank_weights()["pinned"])) * pinned_bonus
         + float(weights.get("tag_match", _get_rerank_weights()["tag_match"])) * tag_match
+        + float(weights.get("recency", _get_rerank_weights()["recency"])) * recency_score
     )
     return raw * _entailment_factor
 

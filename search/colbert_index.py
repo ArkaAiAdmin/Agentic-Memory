@@ -49,8 +49,6 @@ def index_memory_colbert(
     conn: Any,
     memory_id: str,
     content: str,
-    chunk_size: int = 600,
-    chunk_overlap: int = 81,
 ) -> int:
     """Index ColBERT token embeddings for a single memory.
 
@@ -67,7 +65,13 @@ def index_memory_colbert(
         # Model not available — skip silently
         return 0
 
-    chunks = _qw5_chunk_content(content, chunk_size, chunk_overlap)
+    chunk_tuples = _qw5_chunk_content(content)
+    chunks: list[str] = []
+    for c in chunk_tuples:
+        if isinstance(c, tuple) and len(c) >= 3:
+            chunks.append(str(c[2]))
+        else:
+            chunks.append(str(c))
     if not chunks:
         chunks = [content]
 
@@ -88,6 +92,66 @@ def index_memory_colbert(
                 (memory_id, chunk_idx, pos, tok_text, blob, now),
             )
             total += 1
+    return total
+
+
+def index_memory_colbert_batch(
+    conn: Any,
+    batch: list[tuple[str, str]],
+) -> int:
+    """Index ColBERT token embeddings for multiple memories in one forward pass.
+
+    Args:
+        conn: Database connection.
+        batch: List of (memory_id, content) tuples.
+
+    Returns the total number of token rows inserted.
+    """
+    from infra.colbert_encoder import encode_tokens_batch
+    from search.chunk_index import _qw5_chunk_content
+
+    probe = encode_tokens_batch([""])
+    if probe is None or probe[0] is None:
+        return 0
+
+    total = 0
+    now = time.time()
+
+    all_chunks: list[tuple[str, int, str]] = []  # (memory_id, chunk_idx, text)
+
+    for memory_id, content in batch:
+        chunk_tuples = _qw5_chunk_content(content)
+        chunks: list[str] = []
+        for c in chunk_tuples:
+            if isinstance(c, tuple) and len(c) >= 3:
+                chunks.append(str(c[2]))
+            else:
+                chunks.append(str(c))
+        if not chunks:
+            chunks = [content]
+        for chunk_idx, chunk_text in enumerate(chunks):
+            all_chunks.append((memory_id, chunk_idx, chunk_text))
+
+    for i in range(0, len(all_chunks), 32):
+        chunk_batch = all_chunks[i:i+32]
+        texts = [c[2] for c in chunk_batch]
+        encoded = encode_tokens_batch(texts)
+        if encoded is None:
+            continue
+        for j, token_list in enumerate(encoded):
+            if not token_list:
+                continue
+            mid, cidx = chunk_batch[j][0], chunk_batch[j][1]
+            conn.execute("DELETE FROM colbert_tokens WHERE memory_id = ? AND chunk_id = ?", (mid, cidx))
+            for pos, (tok_text, vec) in enumerate(token_list):
+                blob = _vec_to_blob(vec)
+                conn.execute(
+                    "INSERT INTO colbert_tokens (memory_id, chunk_id, position, token_text, vec, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (mid, cidx, pos, tok_text, blob, now),
+                )
+                total += 1
+
     return total
 
 

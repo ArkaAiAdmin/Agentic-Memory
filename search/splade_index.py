@@ -69,6 +69,41 @@ def index_memory_splade(
     return len(sparse)
 
 
+def index_memory_splade_batch(
+    conn: Any,
+    batch: list[tuple[str, str]],
+) -> int:
+    """Index SPLADE sparse vectors for multiple memories in one forward pass.
+
+    Args:
+        conn: Database connection.
+        batch: List of (memory_id, content) tuples.
+
+    Returns the total number of sparse entries inserted.
+    """
+    from infra.splade_encoder import encode_sparse_batch
+
+    texts = [content for _, content in batch]
+    sparse_results = encode_sparse_batch(texts)
+    if sparse_results is None:
+        return 0
+
+    total = 0
+    now = time.time()
+    for (memory_id, _), sparse in zip(batch, sparse_results):
+        if not sparse:
+            continue
+        conn.execute("DELETE FROM splade_tokens WHERE memory_id = ?", (memory_id,))
+        for vocab_id, weight in sparse:
+            conn.execute(
+                "INSERT INTO splade_tokens (memory_id, vocab_id, weight, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (memory_id, vocab_id, weight, now),
+            )
+            total += 1
+    return total
+
+
 def get_memory_sparse_count(conn: Any, memory_id: str) -> int:
     """Return the number of SPLADE entries for a memory."""
     row = conn.execute(
