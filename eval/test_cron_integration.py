@@ -48,12 +48,9 @@ class TestCronHealthCheckIntegration(TestCase):
             "MEMORY_LOCK_DIR": str(LOCK_DIR),
             "MEMORY_QUALITY_GATES": "0",
             "MEMORY_USER_PROFILE": "0",
+            # Redirect GLOBAL_MEM_DIR to temp dir so flock resolves there
+            "GLOBAL_MEM_DIR": str(db_path.parent),
         }
-        proc = os.system(
-            f"{sys.executable} {REPO / 'cron' / 'cron_health_check.py'} "
-            f"--minutes 5 >/dev/null 2>&1"
-        )
-        # Use subprocess for proper exit-code capture
         import subprocess
 
         proc = subprocess.run(

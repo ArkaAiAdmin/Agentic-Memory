@@ -48,18 +48,13 @@ QUERIES_THAT_MUST_NOT_FAIL = [
 
 
 def _bootstrap_temp_db(db_path: Path) -> None:
-    """Create a fully-bootstrapped temp DB by copying the live schema.
+    """Create a fully-bootstrapped temp DB with the full schema but NO data.
 
-    We can't easily run the full migration from scratch (some tables are
-    created on first-use), so we copy the schema from the live prod DB
-    via sqlite3 backup, then add our seed data.
+    Uses bootstrap_temp_db_clean which runs run_schema_setup + ensure_facts_schema
+    to create all tables, FTS5 virtual tables, and triggers from scratch.
     """
-    import shutil
-
-    _, _, global_mem = get_memory_paths()
-    prod_db = global_mem / "memory.db"
-    if prod_db.exists():
-        shutil.copy2(prod_db, db_path)
+    from eval._fixtures import bootstrap_temp_db_clean
+    bootstrap_temp_db_clean(db_path)
 
 
 def _seed_minimal_memory(c: sqlite3.Connection) -> None:

@@ -157,7 +157,10 @@ def tmp_db(tmp_path, monkeypatch):
     db_path = mem_dir / "memory.db"
     conn = connection_pool.get(str(db_path), timeout=30.0)
     run_db_migrations(conn)
-    _ensure_fts5(conn)
+    # FTS5 table + triggers already created by run_db_migrations -> run_schema_setup.
+    # Do NOT call _ensure_fts5() here — it replaces production triggers with
+    # broken ones that omit the 'id' column, causing the JOIN in _fts_search
+    # (m.id = fts.id) to always return 0 rows.
     safe_close_db(conn)
     return db_path
 

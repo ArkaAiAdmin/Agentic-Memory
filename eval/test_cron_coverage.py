@@ -328,11 +328,13 @@ class TestCronDetectVecDrift(unittest.TestCase):
 
         import io
         import contextlib
+        from unittest.mock import patch
 
         buf = io.StringIO()
-        with self.assertRaises(SystemExit):
-            with contextlib.redirect_stdout(buf):
-                self.mod.main(["--db-path", str(self.db_path)])
+        with patch.object(self.mod, "acquire_lock_or_exit"):
+            with self.assertRaises(SystemExit):
+                with contextlib.redirect_stdout(buf):
+                    self.mod.main(["--db-path", str(self.db_path)])
         output = buf.getvalue()
         self.assertIn("OK:", output)
         self.assertIn("vec_drift=0", output)
@@ -348,11 +350,13 @@ class TestCronDetectVecDrift(unittest.TestCase):
 
         import io
         import contextlib
+        from unittest.mock import patch
 
         buf = io.StringIO()
-        with self.assertRaises(SystemExit):
-            with contextlib.redirect_stdout(buf):
-                self.mod.main(["--db-path", str(self.db_path)])
+        with patch.object(self.mod, "acquire_lock_or_exit"):
+            with self.assertRaises(SystemExit):
+                with contextlib.redirect_stdout(buf):
+                    self.mod.main(["--db-path", str(self.db_path)])
         output = buf.getvalue()
         self.assertIn("vec_drift=", output)
 

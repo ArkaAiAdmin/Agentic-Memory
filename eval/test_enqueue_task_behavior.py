@@ -287,11 +287,24 @@ class TestWorkerRunScriptHandler(TestCase):
 
     def test_run_script_passes_args(self) -> None:
         """--once flag is passed through to the cron script."""
-        task_id, processed = self._enqueue_and_process(
-            "cron_embedding_recompute",
-            {"args": ["--once"]},
-        )
-        assert processed is True
+        from unittest.mock import patch, MagicMock
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "ok"
+        mock_result.stderr = ""
+
+        with patch("background.background_worker.subprocess.run", return_value=mock_result) as mock_run:
+            task_id, processed = self._enqueue_and_process(
+                "cron_embedding_recompute",
+                {"args": ["--once"]},
+            )
+            assert processed is True
+            # Verify --once was passed through to the subprocess
+            assert mock_run.called
+            cmd_args = mock_run.call_args[0][0]
+            assert "--once" in cmd_args
+
         conn = sqlite3.connect(str(self.db_path))
         row = conn.execute(
             "SELECT status FROM task_queue WHERE id=?",

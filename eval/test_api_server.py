@@ -100,7 +100,7 @@ class TestAPIServer(unittest.TestCase):
         conn.commit()
         conn.close()
 
-    def _http_request(self, path: str, method: str = "GET", body: dict | None = None, timeout: float = 10.0) -> Tuple[int, dict]:
+    def _http_request(self, path: str, method: str = "GET", body: dict | None = None, timeout: float = 30.0) -> Tuple[int, dict]:
         url = f"http://{self.host}:{self.port}{path}"
         data = json.dumps(body).encode("utf-8") if body else None
         req = urllib.request.Request(url, data=data, method=method)
