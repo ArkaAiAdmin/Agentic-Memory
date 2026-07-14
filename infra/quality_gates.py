@@ -354,11 +354,11 @@ def filter_results(results: list[dict]) -> tuple[list[dict], dict]:
                 )
                 continue
 
-            deduped.append(r)
             accepted.append((canonical, idx, r))
             seen_hashes.add(h)
 
-        filtered = deduped
+        accepted.sort(key=lambda x: x[1])
+        filtered = [x[2] for x in accepted]
     else:
         filtered = valid
 

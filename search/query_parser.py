@@ -1013,10 +1013,11 @@ def _escape_fts_query(query: str) -> str:
     q = q.replace('"', '""')
     q = q.replace("*", "\\*")
     q = q.replace("^", "\\^")
+    q = q.replace(":", "\\:")
     return q
 
 
-def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
+def _graph_rag_expand(query: str, db_path: Path, conn=None) -> list[str]:
     """Graph-RAG: extract entities from query, traverse KG, return related entity names.
 
     When the knowledge graph is enabled, this function:
@@ -1056,82 +1057,89 @@ def _graph_rag_expand(query: str, db_path: Path) -> list[str]:
     query_entities = extract_entities(query, min_occurrences=_min_occ_q)
     if not query_entities:
         return []
+    _pooled_conn = None
+    if conn is None:
+        try:
+            _pooled_conn = connection_pool.get(str(db_path), timeout=10.0)
+            conn = _pooled_conn
+        except Exception:
+            return []
     try:
-        from infra._lazy_imports import open_db
+        combined_query = " ".join(name for name, _ in query_entities[:5])
 
-        with open_db(db_path) as conn:
-            combined_query = " ".join(name for name, _ in query_entities[:5])
+        query_entity_ids: set[int] = set()
+        for name, _ in query_entities[:3]:
+            try:
+                rows = conn.execute(
+                    "SELECT id, community_id FROM kg_entities WHERE lower(name) = ? AND community_id IS NOT NULL AND community_id != 0 LIMIT 1",
+                    (name.lower(),),
+                ).fetchall()
+                if rows:
+                     query_entity_ids.add(int(rows[0][0]))
+            except Exception as exc:
+                logger.debug("kg_entities lookup failed for %r: %s", name, exc)
 
-            query_entity_ids: set[int] = set()
-            for name, _ in query_entities[:3]:
+        results = _graph_search(
+            conn,
+            combined_query,
+            limit=10,
+            max_hops=getattr(search_pipeline, "_GRAPH_RAG_MAX_HOPS", 3),
+        )
+        entity_communities: dict[str, int] = {}
+        for entity in results.get("entities", []):
+            eid = entity.get("id")
+            comm = entity.get("community_id")
+            if eid is not None and comm:
+                entity_communities[str(eid)] = int(comm)
+
+        same_community_terms: list[str] = []
+        other_terms: list[str] = []
+        for entity in results.get("entities", []):
+            display = entity.get("name", "")
+            if not display or display.lower() in {n.lower() for n, _ in query_entities}:
+                continue
+            eid = entity.get("id")
+            comm = entity.get("community_id")
+            if query_entity_ids and eid is not None and comm:
+                eid_int = int(eid)
                 try:
-                    rows = conn.execute(
-                        "SELECT id, community_id FROM kg_entities WHERE lower(name) = ? AND community_id IS NOT NULL AND community_id != 0 LIMIT 1",
-                        (name.lower(),),
-                    ).fetchall()
-                    if rows:
-                         query_entity_ids.add(int(rows[0][0]))
+                    in_same_community = any(
+                        conn.execute(
+                            "SELECT 1 FROM kg_entities WHERE id = ? AND community_id = (SELECT community_id FROM kg_entities WHERE id = ? LIMIT 1)",
+                            (eid_int, qid),
+                        ).fetchone()
+                        for qid in query_entity_ids
+                     )
                 except Exception as exc:
-                    logger.debug("kg_entities lookup failed for %r: %s", name, exc)
-
-            results = _graph_search(
-                conn,
-                combined_query,
-                limit=10,
-                max_hops=getattr(search_pipeline, "_GRAPH_RAG_MAX_HOPS", 3),
-            )
-            entity_communities: dict[str, int] = {}
-            for entity in results.get("entities", []):
-                eid = entity.get("id")
-                comm = entity.get("community_id")
-                if eid is not None and comm:
-                    entity_communities[str(eid)] = int(comm)
-
-            same_community_terms: list[str] = []
-            other_terms: list[str] = []
-            for entity in results.get("entities", []):
-                display = entity.get("name", "")
-                if not display or display.lower() in {n.lower() for n, _ in query_entities}:
+                    logger.debug("community check failed for entity %s: %s", eid_int, exc)
+                    in_same_community = False
+                if in_same_community:
+                    same_community_terms.append(display)
                     continue
-                eid = entity.get("id")
-                comm = entity.get("community_id")
-                if query_entity_ids and eid is not None and comm:
-                    eid_int = int(eid)
-                    try:
-                        in_same_community = any(
-                            conn.execute(
-                                "SELECT 1 FROM kg_entities WHERE id = ? AND community_id = (SELECT community_id FROM kg_entities WHERE id = ? LIMIT 1)",
-                                (eid_int, qid),
-                            ).fetchone()
-                            for qid in query_entity_ids
-                         )
-                    except Exception as exc:
-                        logger.debug("community check failed for entity %s: %s", eid_int, exc)
-                        in_same_community = False
-                    if in_same_community:
-                        same_community_terms.append(display)
-                        continue
-                other_terms.append(display)
+            other_terms.append(display)
 
-            combined = same_community_terms + other_terms
-            seen = set()
-            expanded = []
-            for name in combined:
-                key = name.lower()
-                if key not in seen:
-                    seen.add(key)
-                    expanded.append(name)
-                if len(expanded) >= getattr(
-                    search_pipeline, "_GRAPH_RAG_MAX_EXPANSIONS", 5
-                ):
-                    break
-            return expanded
+        combined = same_community_terms + other_terms
+        seen = set()
+        expanded = []
+        for name in combined:
+            key = name.lower()
+            if key not in seen:
+                seen.add(key)
+                expanded.append(name)
+            if len(expanded) >= getattr(
+                search_pipeline, "_GRAPH_RAG_MAX_EXPANSIONS", 5
+            ):
+                break
+        return expanded
     except Exception:
         logger.warning("Failed to expand query via graph RAG")
         return []
+    finally:
+        if _pooled_conn is not None:
+            connection_pool.put(_pooled_conn)
 
 
-def _parse_search_query(query: str, db_path: Path) -> tuple[str, str, str, list[str]]:
+def _parse_search_query(query: str, db_path: Path, conn=None) -> tuple[str, str, str, list[str]]:
     """Parse a search query into components.
 
     Returns (normalized_query, fts_query, bare_query_text, graph_rag_terms).
@@ -1186,7 +1194,7 @@ def _parse_search_query(query: str, db_path: Path) -> tuple[str, str, str, list[
         # Fallback for stopword-only queries: use original bare words as FTS terms
         terms = [_escape_phrase(_escape_fts_query(w)) for w in bare_words if w]
         fts_query = " OR ".join(terms)
-    graph_rag_terms = _graph_rag_expand(normalized_query, db_path)
+    graph_rag_terms = _graph_rag_expand(normalized_query, db_path, conn=conn)
     if graph_rag_terms:
         # 2026-06-29 fix: route KG expansion terms through _escape_phrase so
         # embedded double-quotes and `/` in malformed KG entities don't

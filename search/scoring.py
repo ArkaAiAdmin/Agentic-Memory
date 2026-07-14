@@ -44,6 +44,11 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 _RRF_K = 60
+_CONCEPT_BOOST = 1.35
+_CONCEPT_MEMBERSHIP_BOOST = 1.20
+_MAX_BOOST = 1.50
+_CENTRALITY_BOOST_FACTOR = 1.25
+_CENTRALITY_BOOST_MAX = 1.25
 _RERANK_WEIGHTS = {
     "bm25": 0.40,
     "fitness": 0.20,
@@ -127,7 +132,16 @@ def apply_query_type_weights(query_type: str) -> dict:
 _RERANK_TOKEN_RE = re.compile(r"[A-Za-z0-9#@+][A-Za-z0-9\-_/+#]{2,}")
 
 
-_STRONG_BM25_THRESHOLD = 0.95  # bm25_score = 1/(1+exp(rank))
+def _get_strong_bm25_threshold() -> float:
+    """Read strong BM25 threshold from config, falling back to 0.95."""
+    try:
+        from infra._lazy_imports import get_config
+        return float(get_config().strong_bm25_threshold)
+    except Exception:
+        return 0.95
+
+
+_STRONG_BM25_THRESHOLD = _get_strong_bm25_threshold()  # default 0.95
 
 
 def _normalize_bm25_ranks(results: list) -> list:
@@ -636,10 +650,6 @@ def _apply_concept_boost(scored_results: list, query: str, db_path: Path, conn: 
     if not concept_rows:
         return scored_results
 
-    _CONCEPT_BOOST = 1.35
-    _CONCEPT_MEMBERSHIP_BOOST = 1.20
-    _MAX_BOOST = 1.50
-
     concept_entities: dict[str, set[int]] = {}
     for note_id, meta_json in concept_rows:
         if not meta_json:
@@ -755,9 +765,6 @@ def _apply_centrality_boost(scored_results: list, db_path: Path) -> list:
 
     centrality_map: dict[int, float] = {int(eid): float(score) for eid, score in centrality_rows}
     max_centrality = max(centrality_map.values()) if centrality_map else 1.0
-
-    _CENTRALITY_BOOST_FACTOR = 1.25
-    _CENTRALITY_BOOST_MAX = 1.25
 
     modified = []
     for r in scored_results:

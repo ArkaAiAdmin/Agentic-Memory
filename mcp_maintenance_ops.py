@@ -1169,14 +1169,33 @@ def _op_search_phase_stats(
     phase_name: str = "",
     limit: int = 200,
 ) -> str:
-    """Return per-phase latency stats from the search_phase_stats table.
+    """Return per-phase latency + error stats from search_phase_stats table.
 
-    Aggregates latency_ms by phase_name, returning min/avg/max/p95 and
-    sample count. Optional time-window filter via since_ts/until_ts.
+    For each phase_name returns:
+      * count, min_ms, avg_ms, p50_ms, p95_ms, p99_ms, max_ms
+      * error_count (from the in-memory error counter, matched by phase key)
+
+    Phase keys in the error counter use a "search." prefix (e.g.
+    ``search.fts``, ``search.hybrid_fusion``) which map to the
+    ``search_phase_stats.phase_name`` values.
+
+    Optional time-window filter via since_ts/until_ts.
+    If the table doesn't exist or is empty, returns an empty dict.
     """
     try:
         from infra.infrastructure import resolve_active_memory_dir
         import sqlite3
+
+        # Fetch error counts from the in-memory error counter.
+        try:
+            from infra.error_counter import get_all as _ec_get_all, get_counts as _ec_get_counts
+
+            ec_since: float | None = since_ts
+            ec_until: float | None = until_ts
+            error_data = _ec_get_counts(since_ts=ec_since, until_ts=ec_until, limit=limit)
+            error_counts: dict[str, int] = error_data.get("phase_counts", {})
+        except Exception:
+            error_counts = {}
 
         db_path = resolve_active_memory_dir() / "memory.db"
         if not db_path.exists():
@@ -1202,28 +1221,42 @@ def _op_search_phase_stats(
                 f"GROUP BY phase_name ORDER BY phase_name",
                 params,
             ).fetchall()
-            p95_rows = conn.execute(
+            p_rows = conn.execute(
                 f"SELECT phase_name, latency_ms FROM search_phase_stats {where_sql}",
                 params,
             ).fetchall()
-            p95_map: dict[str, list[float]] = {}
-            for pname, lat in p95_rows:
-                p95_map.setdefault(pname, []).append(lat)
+            p_map: dict[str, list[float]] = {}
+            for pname, lat in p_rows:
+                p_map.setdefault(pname, []).append(lat)
             results = []
             for pname, count, mn, avg, mx in rows:
-                vals = sorted(p95_map.get(pname, []))
+                vals = sorted(p_map.get(pname, []))
+                p50 = vals[int(len(vals) * 0.50)] if vals else avg
                 p95 = vals[int(len(vals) * 0.95)] if vals else avg
+                p99 = vals[int(len(vals) * 0.99)] if vals else avg
+                # Map search_phase_stats phase_name to error-counter key.
+                # The error counter uses "search.<name>" keys while the
+                # search_phase_stats table uses the bare phase name.
+                ec_key = f"search.{pname}" if not pname.startswith("search.") else pname
+                ec_key2 = pname  # also try bare name
+                err_cnt = error_counts.get(ec_key, 0) or error_counts.get(ec_key2, 0)
                 results.append({
                     "phase": pname,
                     "count": count,
                     "min_ms": round(mn, 2),
                     "avg_ms": round(avg, 2),
+                    "p50_ms": round(p50, 2),
                     "p95_ms": round(p95, 2),
+                    "p99_ms": round(p99, 2),
                     "max_ms": round(mx, 2),
+                    "error_count": err_cnt,
                 })
             return json.dumps(
                 {"phases": results, "count": len(results)}, indent=2
             )
+        except sqlite3.OperationalError:
+            # Table does not exist or empty — return empty result
+            return json.dumps({"phases": [], "count": 0, "detail": "empty or missing table"})
         finally:
             conn.close()
     except Exception as e:

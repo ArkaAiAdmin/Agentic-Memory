@@ -86,28 +86,27 @@ def record_access(
             return False
     db = db_path if db_path is not None else str(local_mem / "memory.db")
 
-    try:
-        conn = sqlite_write_queue.start_session(Path(db))
-        try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS user_profile_access_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    note_id TEXT NOT NULL,
-                    source TEXT DEFAULT 'search',
-                    category TEXT,
-                    tags TEXT,
-                    accessed_at REAL NOT NULL
-                )
-            """)
-            conn.execute(
-                "INSERT INTO user_profile_access_log (note_id, source, category, tags, accessed_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (note_id, source, category, json.dumps(tags or []), time.time()),
+    def _run_write(conn):
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_profile_access_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id TEXT NOT NULL,
+                source TEXT DEFAULT 'search',
+                category TEXT,
+                tags TEXT,
+                accessed_at REAL NOT NULL
             )
-            conn.commit()
-            return True
-        finally:
-            conn.close()
+        """)
+        conn.execute(
+            "INSERT INTO user_profile_access_log (note_id, source, category, tags, accessed_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (note_id, source, category, json.dumps(tags or []), time.time()),
+        )
+
+    try:
+        future = sqlite_write_queue.enqueue_transaction(Path(db), _run_write)
+        future.result(timeout=10.0)
+        return True
     except Exception as _e:
         logger.warning("record_access failed: %s", _e)
         import logging
@@ -147,7 +146,8 @@ def get_user_profile(
     db = db_path if db_path is not None else str(local_mem / "memory.db")
 
     try:
-        conn = sqlite_write_queue.start_session(Path(db))
+        from infra.db import connection_pool
+        conn = connection_pool.get(db)
         try:
             # Ensure table exists
             conn.execute("""
@@ -168,7 +168,7 @@ def get_user_profile(
                 (cutoff,),
             ).fetchall()
         finally:
-            conn.close()
+            connection_pool.put(conn)
 
         if not rows:
             return {
@@ -303,7 +303,8 @@ def profile_stats(db_path: str | None = None) -> dict:
     db = db_path if db_path is not None else str(local_mem / "memory.db")
 
     try:
-        conn = sqlite_write_queue.start_session(Path(db))
+        from infra.db import connection_pool
+        conn = connection_pool.get(db)
         try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_profile_access_log (
@@ -335,7 +336,7 @@ def profile_stats(db_path: str | None = None) -> dict:
                 "unique_notes_accessed": unique_notes,
             }
         finally:
-            conn.close()
+            connection_pool.put(conn)
     except Exception as _e:
         logger.warning("profile_stats failed: %s", _e)
         import logging

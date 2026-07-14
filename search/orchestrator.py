@@ -278,20 +278,20 @@ def _entity_name_to_memory_id(
         f"%{entity_name}-%",
     ]
     found: list[str] = []
-    for pat in patterns:
-        try:
-            rows = db.execute(
-                "SELECT id FROM tenant_memories WHERE id LIKE ? AND deleted_at IS NULL LIMIT 3",
-                (pat,),
-            ).fetchall()
-            for row in rows:
-                mid = row[0] if isinstance(row, sqlite3.Row) else row[0]
-                if mid not in seen_ids and mid not in found:
-                    found.append(mid)
-                    if len(found) >= 3:
-                        return found
-        except sqlite3.Error:
-            continue
+    try:
+        placeholders = ' OR '.join('id LIKE ?' for _ in patterns)
+        rows = db.execute(
+            f"SELECT id FROM tenant_memories WHERE ({placeholders}) AND deleted_at IS NULL LIMIT 3",
+            patterns,
+        ).fetchall()
+        for row in rows:
+            mid = row[0] if isinstance(row, sqlite3.Row) else row[0]
+            if mid not in seen_ids and mid not in found:
+                found.append(mid)
+                if len(found) >= 3:
+                    return found
+    except sqlite3.Error:
+        pass
     return found
 
 
@@ -1142,7 +1142,7 @@ def _fts_search(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count\n"
             "          FROM memories_fts fts\n"
-            "          JOIN tenant_memories m ON m.id = (SELECT id FROM memories WHERE rowid = fts.rowid)\n"
+            "          JOIN tenant_memories m ON m.id = fts.id\n"
             f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
             "          ORDER BY fts.rank\n"
             "          LIMIT ?",
@@ -1156,7 +1156,7 @@ def _fts_search(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count\n"
         "      FROM memories_fts fts\n"
-        "      JOIN tenant_memories m ON m.id = (SELECT id FROM memories WHERE rowid = fts.rowid)\n"
+        "      JOIN tenant_memories m ON m.id = fts.id\n"
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
         "      ORDER BY fts.rank\n"
         "      LIMIT ?",
@@ -1645,6 +1645,7 @@ def _apply_safety_demoting(
 
 def _rerank_results(
     *,
+    db: Any = None,
     results: list,
     query: str,
     db_path: Path,
@@ -1868,13 +1869,12 @@ def _build_result_items(
         ph = ",".join("?" * len(result_ids))
         try:
             for row in db.execute(
-                f"SELECT target_id, source_id FROM backlinks WHERE target_id IN ({ph})",
-                result_ids,
-            ).fetchall():
-                backlinks_map.setdefault(row[0], []).append(row[1])
-            for row in db.execute(
-                f"SELECT source_id, target_id FROM backlinks WHERE source_id IN ({ph})",
-                result_ids,
+                f"""
+                SELECT target_id, source_id FROM backlinks WHERE target_id IN ({ph})
+                UNION ALL
+                SELECT source_id, target_id FROM backlinks WHERE source_id IN ({ph})
+                """,
+                result_ids + result_ids,
             ).fetchall():
                 backlinks_map.setdefault(row[0], []).append(row[1])
         except Exception as _oe:
@@ -2757,7 +2757,7 @@ def _phase_ten_multi_hop_kg(
             hp1 = ",".join("?" * len(hop1_ids))
             not_in_ids = list(query_entity_ids) + hop1_ids
             not_in_ph = ",".join("?" * len(not_in_ids))
-            hop2_params = tuple(hop1_ids) * 3 + tuple(not_in_ids) + (limit * 3,)
+            hop2_params = tuple(hop1_ids) * 4 + tuple(not_in_ids) + (limit * 3,)
             hop2_rows = db.execute(
                 f"SELECT DISTINCT "
                 f"  CASE WHEN ed.source_id IN ({hp1}) THEN ed.target_id ELSE ed.source_id END AS result_id, "
@@ -2963,7 +2963,7 @@ def search_memories(
     # Phase 1: Parse query
     _t0 = time.time()
     normalized_query, fts_query, bare_text, graph_rag_terms = _parse_search_query(
-        query, db_path
+        query, db_path, conn=None
     )
     _record_phase_latency("parse_query", _t0)
     # A3.2: Reasoning expansion — append entailment-chain objects as OR terms
@@ -3312,6 +3312,7 @@ def search_memories(
         _t0 = time.time()
         try:
             results_to_display, _search_ctr_weights = _rerank_results(
+                db=db,
                 results=results,
                 query=query,
                 db_path=db_path,

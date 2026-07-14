@@ -1,54 +1,60 @@
-Total: 4832 passed, 10 failed, 76 skipped, 0 xfailed
-Passed files: 288
-Failed/segfault files: 8
+Total: 5005 passed, 23 failed, 86 skipped, 0 xfailed
+Passed files: 295
+Failed/segfault files: 12
 
-  FAILED: test_auto_backlinks.py
-  FAILED: test_mcp_wrappers.py
-  FAILED: test_phase2_instrumentation.py
-  FAILED: test_embedding_recompute.py
-  FAILED: test_pipelines_aj.py
-  FAILED: test_pipeline_integration.py
+  FAILED: test_api_server.py
+  FAILED: test_embedding_cache.py
+  FAILED: test_hook_resilience.py
+  FAILED: test_integration_search_pipeline.py
+  FAILED: test_migration_runner.py
+  FAILED: test_qw2_query_expansion.py
+  FAILED: test_rest_tenant_isolation_e2e.py
+  FAILED: test_search_integration.py
+  FAILED: test_retrieval_regression.py
+  FAILED: test_search_pipeline_validation.py
   FAILED: test_transformer_opt_in.py
   FAILED: test_vec_index.py
 
-  PASSED: test_add_flock_to_crons.py
   PASSED: test_adaptive_retention.py
+  PASSED: test_add_flock_to_crons.py
   PASSED: test_agent_scoping_hooks.py
   PASSED: test_agents_md_generator.py
-  PASSED: test_advanced_features.py
-  PASSED: test_api_server.py
+  PASSED: test_answer_rerank.py
+  PASSED: test_antonym_contradictions.py
   PASSED: test_arc_cache.py
   PASSED: test_atomic_write_coverage.py
-  PASSED: test_antonym_contradictions.py
   PASSED: test_audit_log.py
+  PASSED: test_audit_logging.py
   PASSED: test_audit_sink_dead_letter.py
   PASSED: test_audit_sink_drops_on_5xx.py
-  PASSED: test_audit_logging.py
   PASSED: test_audit_sink_http.py
   PASSED: test_audit_sink_principal_redact.py
   PASSED: test_authz_fail_closed.py
+  PASSED: test_auto_backlinks.py
   PASSED: test_auto_save_integration.py
   PASSED: test_auto_save_unit.py
   PASSED: test_b7_shared_memory_injection.py
+  PASSED: test_advanced_features.py
   PASSED: test_backfill_orphans.py
   PASSED: test_backfill_safety.py
   PASSED: test_background_queue.py
   PASSED: test_background_worker_unit.py
   PASSED: test_backpressure.py
-  PASSED: test_bb1_synthesis.py
   PASSED: test_adversarial_e2e.py
+  PASSED: test_bb1_synthesis.py
   PASSED: test_bb3_rrf.py
   PASSED: test_belief_behavior.py
   PASSED: test_belief_e2e_save.py
+  PASSED: test_budget_aware.py
   PASSED: test_bb2_history.py
   PASSED: test_circuit_breaker_telemetry.py
   PASSED: test_cli.py
+  PASSED: test_colbert.py
   PASSED: test_compaction_synthesis.py
-  PASSED: test_cascade_preserve.py
+  PASSED: test_compilation_behavior.py
   PASSED: test_compliance_rate_limit.py
   PASSED: test_concurrent.py
   PASSED: test_config_drift.py
-  PASSED: test_compilation_behavior.py
   PASSED: test_config_drift_audit.py
   PASSED: test_config_drift_cron.py
   PASSED: test_config_drift_enforcement.py
@@ -58,8 +64,8 @@ Failed/segfault files: 8
   PASSED: test_config_drift_policy.py
   PASSED: test_config_drift_runtime.py
   PASSED: test_config_drift_tier_overrides.py
-  PASSED: test_config_drift_tier_reset.py
   PASSED: test_config_drift_tier_patching.py
+  PASSED: test_config_drift_tier_reset.py
   PASSED: test_config_loading.py
   PASSED: test_config_log_resolution.py
   PASSED: test_consolidation.py
@@ -68,80 +74,80 @@ Failed/segfault files: 8
   PASSED: test_contextual_retrieval.py
   PASSED: test_contradiction_detector_unit.py
   PASSED: test_contradiction_merge.py
+  PASSED: test_contradiction_save.py
   PASSED: test_crdt_field.py
   PASSED: test_crdt_injection.py
-  PASSED: test_contradiction_save.py
-  PASSED: test_backfill_all.py
+  PASSED: test_crdt_integration.py
   PASSED: test_crdt_merge.py
   PASSED: test_crdt_merge_helpers.py
-  PASSED: test_crdt_integration.py
   PASSED: test_crdt_saga.py
+  PASSED: test_crdt_sync.py
+  PASSED: test_cascade_preserve.py
   PASSED: test_crewai_tool.py
   PASSED: test_cron_behavior.py
-  PASSED: test_crdt_sync.py
-  PASSED: test_crewai_memory.py
   PASSED: test_cron_concept_drift.py
-  PASSED: test_cron_crdt_sync.py
   PASSED: test_cron_coverage.py
+  PASSED: test_crewai_memory.py
+  PASSED: test_cron_crdt_sync.py
   PASSED: test_cron_cross_session_learn.py
   PASSED: test_cron_kg_backfill.py
   PASSED: test_cron_kg_backfill_monitor.py
-  PASSED: test_cron_review_beliefs.py
   PASSED: test_cron_model_lock.py
+  PASSED: test_cron_review_beliefs.py
   PASSED: test_cron_skill_extraction.py
   PASSED: test_cron_train_forget_model.py
   PASSED: test_cron_watchdog.py
   PASSED: test_cross_process_safety.py
   PASSED: test_cross_session_learn.py
   PASSED: test_ctr_feedback.py
-  PASSED: test_db_path_flock.py
+  PASSED: test_ctr_producer.py
+  PASSED: test_ctr_weight_learning.py
   PASSED: test_db_drift.py
+  PASSED: test_db_path_flock.py
+  PASSED: test_cron_integration.py
   PASSED: test_decision_extraction.py
   PASSED: test_dedup_audit_behavior.py
   PASSED: test_dist_lock.py
   PASSED: test_doc_drift.py
   PASSED: test_doc_drift_unified.py
+  PASSED: test_db_write_queue.py
   PASSED: test_docker_cron_runner.py
   PASSED: test_drift_alarms.py
-  PASSED: test_e2e_validation.py
-  PASSED: test_embedding_cache.py
-  PASSED: test_cron_integration.py
+  PASSED: test_embedding_recompute.py
   PASSED: test_embedding_search_unit.py
-  PASSED: test_db_write_queue.py
+  PASSED: test_embedding_singleton.py
   PASSED: test_enqueue_task_behavior.py
   PASSED: test_entailment_validation.py
   PASSED: test_eval_judge.py
   PASSED: test_event_time_extraction.py
   PASSED: test_fact_extraction.py
-  PASSED: test_embedding_singleton.py
   PASSED: test_fact_temporal.py
+  PASSED: test_backfill_all.py
   PASSED: test_feature_flags.py
   PASSED: test_file_lock.py
   PASSED: test_five_channel.py
   PASSED: test_forgetting_curve.py
   PASSED: test_frontmatter.py
   PASSED: test_fts.py
+  PASSED: test_feature_composition.py
   PASSED: test_fts_unit.py
   PASSED: test_gdpr_erase_certificate.py
   PASSED: test_gdpr_erase_full_cascade.py
   PASSED: test_gdpr_erase_refuses_cross_tenant.py
-  PASSED: test_graph_behavior.py
   PASSED: test_h21_fixture_smoke.py
-  PASSED: test_feature_composition.py
-  PASSED: test_hook_resilience.py
+  PASSED: test_graph_behavior.py
   PASSED: test_hybrid_strategy.py
+  PASSED: test_indexers.py
   PASSED: test_infra_log.py
   PASSED: test_injection.py
   PASSED: test_install_crontab_lock.py
-  PASSED: test_indexers.py
+  PASSED: test_e2e_validation.py
   PASSED: test_integration_integrity.py
-  PASSED: test_integration_lifecycle.py
   PASSED: test_integration_edge_cases.py
-  PASSED: test_integration_search_pipeline.py
+  PASSED: test_integration_lifecycle.py
   PASSED: test_integration_wiring.py
   PASSED: test_integrations_shared.py
   PASSED: test_integrity.py
-  PASSED: test_integration_save_pipeline.py
   PASSED: test_isolation_guard.py
   PASSED: test_kg_crdt.py
   PASSED: test_kg_dedup.py
@@ -149,138 +155,143 @@ Failed/segfault files: 8
   PASSED: test_kg_enhancements.py
   PASSED: test_kg_entity_filter.py
   PASSED: test_kg_facts_fts.py
-  PASSED: test_kg_self_editing_e2e.py
   PASSED: test_kg_orphan_recovery.py
+  PASSED: test_kg_self_editing_e2e.py
   PASSED: test_kg_traversal.py
-  PASSED: test_knowledge_graph.py
   PASSED: test_kg_validation.py
-  PASSED: test_langchain_retriever.py
-  PASSED: test_langchain_tool.py
+  PASSED: test_knowledge_graph.py
+  PASSED: test_integration_save_pipeline.py
   PASSED: test_langchain_history.py
+  PASSED: test_langchain_tool.py
   PASSED: test_llm_contradiction.py
   PASSED: test_llm_extraction_max_tokens.py
-  PASSED: test_llm_summarization.py
-  PASSED: test_materialize_idempotent.py
-  PASSED: test_mcp_instance.py
   PASSED: test_llm_providers.py
+  PASSED: test_llm_summarization.py
+  PASSED: test_langchain_retriever.py
+  PASSED: test_mcp_instance.py
+  PASSED: test_materialize_idempotent.py
   PASSED: test_mcp_maintenance_dispatch.py
-  PASSED: test_mcp_maintenance_ops_unit.py
   PASSED: test_mcp_skill_ops.py
+  PASSED: test_mcp_maintenance_ops_unit.py
   PASSED: test_mcp_verbs.py
-  PASSED: test_mcp_live.py
-  PASSED: test_memory_common_extras.py
   PASSED: test_mdns_discovery.py
+  PASSED: test_memory_common_extras.py
+  PASSED: test_mcp_wrappers.py
   PASSED: test_memory_common_unit.py
   PASSED: test_memory_injection_unit.py
   PASSED: test_migration_applied.py
-  PASSED: test_migration_runner.py
-  PASSED: test_multi_agent_unit.py
   PASSED: test_memory_common_mutation_killers.py
-  PASSED: test_multiwriter_reconciler_fleet.py
+  PASSED: test_multi_agent_unit.py
   PASSED: test_multi_vector.py
+  PASSED: test_multiwriter_reconciler_fleet.py
   PASSED: test_neural_forget_model.py
   PASSED: test_neural_forget_unit.py
+  PASSED: test_mcp_live.py
   PASSED: test_next_frontier.py
-  PASSED: test_mutation_killers.py
   PASSED: test_observability.py
   PASSED: test_okf_export.py
   PASSED: test_okf_import.py
+  PASSED: test_mutation_killers.py
   PASSED: test_okf_roundtrip.py
-  PASSED: test_p0_p1_p2_fixes.py
   PASSED: test_p2_share_and_sync_wireup.py
   PASSED: test_phase1_debt_fixes.py
   PASSED: test_phase2_3_smoke.py
   PASSED: test_phase2_debt_fixes.py
-  PASSED: test_no_silent_search_failures.py
+  PASSED: test_phase2_instrumentation.py
+  PASSED: test_p0_p1_p2_fixes.py
   PASSED: test_phase4_debt_fixes.py
   PASSED: test_phase9.py
+  PASSED: test_pipelines_aj.py
   PASSED: test_policy_eligibility.py
   PASSED: test_policy_hash_cache.py
-  PASSED: test_policy_hash_fetcher.py
+  PASSED: test_no_silent_search_failures.py
   PASSED: test_policy_hash_status.py
   PASSED: test_pool_inode_reopen.py
+  PASSED: test_policy_hash_fetcher.py
   PASSED: test_production_readiness.py
   PASSED: test_production_hardening.py
-  PASSED: test_query_cache.py
   PASSED: test_quality_gates.py
+  PASSED: test_query_cache.py
   PASSED: test_quirk_fixes_e2e.py
   PASSED: test_qw3_query_types.py
-  PASSED: test_qw2_query_expansion.py
   PASSED: test_qw4_cross_encoder.py
   PASSED: test_rate_limit_mcp.py
-  PASSED: test_qw5_chunk_indexing.py
   PASSED: test_rate_limiter.py
   PASSED: test_rbac_acl_override.py
   PASSED: test_rbac_allows_with_role.py
   PASSED: test_rbac_audit_trail.py
-  PASSED: test_rbac_multi_tenant.py
   PASSED: test_rbac_denies_without_role.py
+  PASSED: test_rbac_multi_tenant.py
+  PASSED: test_pipeline_integration.py
+  PASSED: test_qw5_chunk_indexing.py
   PASSED: test_rbac_schema.py
-  PASSED: test_reasoning_expansion.py
+  PASSED: test_real_memory_eval.py
   PASSED: test_rebuild_concurrency.py
   PASSED: test_rebuild_index.py
   PASSED: test_rebuild_vec_index.py
-  PASSED: test_read_path_remediation.py
+  PASSED: test_reasoning_expansion.py
   PASSED: test_recent_save_hint.py
   PASSED: test_refactor_helpers.py
   PASSED: test_relational_storage.py
   PASSED: test_recall.py
   PASSED: test_reranker.py
   PASSED: test_reranker_unit.py
-  PASSED: test_rest_tenant_isolation_e2e.py
-  PASSED: test_retention_coordinator.py
   PASSED: test_reranker_security.py
+  PASSED: test_retention_coordinator.py
   PASSED: test_retrieval_regression_embedding.py
+  PASSED: test_read_path_remediation.py
   PASSED: test_safe_call.py
   PASSED: test_safe_close_db.py
   PASSED: test_safety_wiring.py
-  PASSED: test_rich_survival_note.py
   PASSED: test_safety_wiring_signatures.py
   PASSED: test_saga_crash_safety.py
+  PASSED: test_rich_survival_note.py
   PASSED: test_save_pipeline_behavioral.py
   PASSED: test_sarcasm_contradiction.py
   PASSED: test_save_skill_extraction.py
   PASSED: test_scope.py
-  PASSED: test_sdk.py
   PASSED: test_save_pipeline_unit.py
+  PASSED: test_sdk.py
   PASSED: test_sdk_p2.py
   PASSED: test_sdk_p3.py
-  PASSED: test_retrieval_regression.py
   PASSED: test_sdk_p1.py
   PASSED: test_search_kg_facts.py
   PASSED: test_search_mutation_killers.py
   PASSED: test_search_memory_cli.py
   PASSED: test_search_pipeline_unit.py
-  PASSED: test_search_integration.py
-  PASSED: test_search_skill_first.py
+  PASSED: test_search_rank_lock.py
+  PASSED: test_search_precision_fixes.py
+  PASSED: test_search_single_ce.py
   PASSED: test_security_health_check.py
+  PASSED: test_search_skill_first.py
   PASSED: test_security_sync_auth.py
   PASSED: test_self_directed.py
-  PASSED: test_search_pipeline_validation.py
-  PASSED: test_search_temporal_as_of.py
   PASSED: test_self_editing_behavior.py
   PASSED: test_self_directed_validation.py
-  PASSED: test_semantic_correctness.py
-  PASSED: test_session_migration.py
+  PASSED: test_search_temporal_as_of.py
   PASSED: test_session_admin.py
+  PASSED: test_session_migration.py
+  PASSED: test_semantic_correctness.py
   PASSED: test_shared_memory_state.py
   PASSED: test_skill_extractor.py
-  PASSED: test_session_search.py
   PASSED: test_skill_extractor_full.py
   PASSED: test_session_manager.py
+  PASSED: test_session_search.py
+  PASSED: test_splade.py
   PASSED: test_spaced_repetition.py
   PASSED: test_sso_idp_metadata_cache.py
-  PASSED: test_soft_delete.py
   PASSED: test_sso_jwt_validation.py
-  PASSED: test_subpackage_public_api.py
   PASSED: test_sso_principal_creation.py
+  PASSED: test_subpackage_public_api.py
   PASSED: test_sync_check.py
   PASSED: test_sync_layer.py
+  PASSED: test_soft_delete.py
+  PASSED: test_sync_server_tls.py
   PASSED: test_sync_tenant_isolation.py
   PASSED: test_temporal_facts.py
-  PASSED: test_sync_server_tls.py
-  PASSED: test_temporal_query_axes.py
+  PASSED: test_temporal_half_life.py
   PASSED: test_temporal_ssm_v2.py
+  PASSED: test_temporal_query_axes.py
   PASSED: test_tier_migration.py
   PASSED: test_tier_migration_assign_tier.py
   PASSED: test_toml_hot_reload.py
@@ -292,81 +303,54 @@ Failed/segfault files: 8
   PASSED: test_vec_index_search.py
   PASSED: test_vector_store.py
   PASSED: test_wal_checkpoint.py
+  PASSED: test_wal_mode.py
   PASSED: test_wave2c.py
   PASSED: test_wiring_invariants.py
-  PASSED: test_wal_mode.py
   PASSED: test_write_journal.py
   PASSED: test_write_journal_multiworker.py
-  PASSED: test_zero_result_ux.py
   PASSED: test_tenant_isolation_exhaustive.py
+  PASSED: test_zero_result_ux.py
 
 
 Failure details:
 
-=== test_auto_backlinks.py ===
-d — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+=== test_api_server.py ===
+and/or quality gates.
 warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-
-Loading weights:   0%|          | 0/391 [00:00<?, ?it/s]
-Loading weights: 100%|██████████| 391/391 [00:00<00:00, 19129.06it/s]
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
 ------------------------------ Captured log call -------------------------------
+WARNING  agent_context:agent_context.py:93 agent_context: no agent set in this thread, falling back to 'default'. Call init_agent() to set a real agent. This warning is emitted once per process.
 WARNING  infra.embedding_search:embedding_search.py:114 For semantic search, run with the venv python: /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/infra/embedding_search.py <query>
-WARNING  huggingface_hub.utils._http:_http.py:904 Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-/Users/arka/.config/agentic-memory/eval/test_auto_backlinks.py:420: TypeError: 'NoneType' object is not subscriptable
-=============================== warnings summary ===============================
-eval/test_auto_backlinks.py::TestAutoSemanticBacklinks::test_idempotent
-  /Users/arka/.config/agentic-memory/infra/embedding_search.py:396: FutureWarning: The `get_sentence_embedding_dimension` method has been renamed to `get_embedding_dimension`.
-    self.model.dim = self.model.get_sentence_embedding_dimension()
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+WARNING  infra.db:db.py:415 Failed to close orphaned connection during pool get
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py:729: TimeoutError: timed out
 =========================== short test summary info ============================
-FAILED eval/test_auto_backlinks.py::TestAutoSemanticBacklinks::test_bidirectional_edges_both_exist
-1 failed, 26 passed, 1 warning in 7.83s
+FAILED eval/test_api_server.py::TestAPIServer::test_add_and_get_memory - Time...
+1 failed, 6 passed in 21.31s
 
 
-=== test_mcp_wrappers.py ===
-ile_io.py", line 116, in load_file_path
-    return hf_hub_download(
-  File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
-    return fn(*args, **kwargs)
-  File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/huggingface_hub/file_download.py", line 1015, in hf_hub_download
-    return _hf_hub_download_to_cache_dir(
-  File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/huggingface_hub/file_download.py", line 1090, in _hf_hub_download_to_cache_dir
-    (url_to_download, etag, commit_hash, expected_size, xet_file_data, head_call_error) = _get_metadata_or_catch_error(
-  File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/huggingface_hub/file_download.py", line 1690, in _get_metadata_or_catch_error
-    metadata = get_hf_file_metadata(
-  File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
-    return fn(*args, **kwargs)
-  File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/huggingface_hub/file_download.py", line 1612, in get_hf_file_metadata
-    response = _httpx_follow_relative_redirects_with_backoff(
-  File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/huggingface_hub/utils/_http.py", line 692, in _httpx_follow_relative_redirects_with_backoff
-    hf_raise_for_status(response)
-  File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/huggingface_hub/utils/_http.py", line 755, in hf_raise_for_status
-    _warn_on_warning_headers(response)
-  File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/huggingface_hub/utils/_http.py", line 904, in _warn_on_warning_headers
-    logger.warning(message)
-Message: 'Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.'
-Arguments: ()
-
-
-=== test_phase2_instrumentation.py ===
-False is not true : Expected hybrid_fusion phase call, got: []
------------------------------ Captured stderr call -----------------------------
-warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:762: AssertionError: False is not true : Expected hybrid_fusion phase call, got: []
+=== test_embedding_cache.py ===
+licate column name: observed_at
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: content
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: source_file
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: tags
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: created_at
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: updated_at
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
+/Users/arka/.config/agentic-memory/infra/embedding_search.py:536: AttributeError: 'EmbeddingSearch' object has no attribute '_model_loaded'
 =========================== short test summary info ============================
-FAILED eval/test_phase2_instrumentation.py::TestInstrumentedPhaseFunctions::test_hybrid_fusion_calls_phase_inc_on_bad_db
-1 failed, 11 passed in 10.55s
-Failed to load embedding model [sentence-transformers]: [Errno 9] Bad file descriptor
+FAILED eval/test_embedding_cache.py::TestEmbeddingCache::test_index_embedding_is_noop_when_model_unavailable
+1 failed, 11 passed in 1.49s
 
 
-=== test_embedding_recompute.py ===
-/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/pluggy/_manager.py", line 120 in _hookexec
+=== test_hook_resilience.py ===
+, line 121 in _multicall
+  File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/pluggy/_manager.py", line 120 in _hookexec
   File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/pluggy/_hooks.py", line 512 in __call__
   File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/_pytest/main.py", line 384 in _main
   File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/_pytest/main.py", line 330 in wrap_session
@@ -379,87 +363,162 @@ Failed to load embedding model [sentence-transformers]: [Errno 9] Bad file descr
   File "/Users/arka/.config/agentic-memory/.venv/lib/python3.14/site-packages/pytest/__main__.py", line 9 in <module>
   File "<frozen runpy>", line 88 in _run_code
   File "<frozen runpy>", line 203 in _run_module_as_main
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/arka/.config/agentic-memory/venv/bin/python', '/Users/arka/.config/agentic-memory/rebuild_vec_index.py', '/Users/arka/.config/agentic-memory/memory/memory.db']' timed out after 300 seconds
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/subprocess.py:1268: subprocess.TimeoutExpired: Command '['/Users/arka/.config/agentic-memory/.venv/bin/python', '/Users/arka/.config/agentic-memory/hooks/memory-proactive-context.py']' timed out after 15.0 seconds
 =========================== short test summary info ============================
-FAILED eval/test_embedding_recompute.py::TestEmbeddingRecomputeConfig::test_check_and_rebuild_force
-1 failed, 7 passed in 300.32s (0:05:00)
+FAILED eval/test_hook_resilience.py::TestHookResilience::test_proactive_context_with_oversized_input
+1 failed, 14 passed in 64.36s (0:01:04)
 
 
-=== test_pipelines_aj.py ===
-he saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+=== test_integration_search_pipeline.py ===
+ees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
 warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
 warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+/Users/arka/.config/agentic-memory/eval/test_integration_search_pipeline.py:735: assert 1 == 0
+=========================== short test summary info ============================
+FAILED eval/test_integration_search_pipeline.py::TestPhraseSearch::test_phrase_no_match
+FAILED eval/test_integration_search_pipeline.py::TestZeroResultSuggestions::test_zero_result_misspelled
+FAILED eval/test_integration_search_pipeline.py::TestEmbeddingFallback::test_embedding_fallback_no_model_graceful
+3 failed, 39 passed, 2 skipped in 112.11s (0:01:52)
 
-Loading weights:   0%|          | 0/391 [00:00<?, ?it/s]
-Loading weights: 100%|██████████| 391/391 [00:00<00:00, 6130.72it/s]
+
+=== test_migration_runner.py ===
+r:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: source_file
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: tags
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: created_at
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: updated_at
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 000 statement failed (idempotent, object already exists): table kg_entities_fts already exists
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: Lists differ: [('splade_tokens',)] != []
+=========================== short test summary info ============================
+FAILED eval/test_migration_runner.py::TestSearchRerankerFoundation::test_rollback_to_58_drops_splade_tokens
+1 failed, 40 passed, 125 subtests passed in 4.06s
+
+
+=== test_qw2_query_expansion.py ===
+nfra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: source_file
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: tags
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: created_at
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: updated_at
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 3 != 1 : sunny should match only one note, got ['lessons/db-note-1', 'lessons/other-1', 'lessons/db-abbr-1']
+=========================== short test summary info ============================
+FAILED eval/test_qw2_query_expansion.py::TestEndToEndExpansion::test_14_unrelated_query_unaffected
+FAILED eval/test_qw2_query_expansion.py::TestEndToEndExpansion::test_15_unknown_query_backward_compat
+2 failed, 13 passed in 25.21s
+
+
+=== test_rest_tenant_isolation_e2e.py ===
+erge safety, the CQRS write journal, and/or quality gates.
 ------------------------------ Captured log call -------------------------------
-WARNING  huggingface_hub.utils._http:_http.py:904 Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-/Users/arka/.config/agentic-memory/eval/test_pipelines_aj.py:106: RuntimeError: search returned error: Embedding search unavailable. Install model2vec: pip install model2vec numpy
-=============================== warnings summary ===============================
-eval/test_pipelines_aj.py::test_H1_rebuild_preserves_core_tables
-  /Users/arka/.config/agentic-memory/infra/embedding_search.py:396: FutureWarning: The `get_sentence_embedding_dimension` method has been renamed to `get_embedding_dimension`.
-    self.model.dim = self.model.get_sentence_embedding_dimension()
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-=========================== short test summary info ============================
-FAILED eval/test_pipelines_aj.py::test_A2_vec_search_returns_saved - RuntimeE...
-1 failed, 29 passed, 1 warning in 24.65s
-
-
-=== test_pipeline_integration.py ===
-ity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
-/Users/arka/.config/agentic-memory/eval/test_pipeline_integration.py:358: assert 0 == 1
-=============================== warnings summary ===============================
-eval/test_pipeline_integration.py::TestSearchPipelineReadsAllSubsystems::test_search_respects_category_filter
-  /Users/arka/.config/agentic-memory/infra/embedding_search.py:396: FutureWarning: The `get_sentence_embedding_dimension` method has been renamed to `get_embedding_dimension`.
-    self.model.dim = self.model.get_sentence_embedding_dimension()
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-=========================== short test summary info ============================
-FAILED eval/test_pipeline_integration.py::TestSavePipelineWritesAllSubsystems::test_save_writes_embeddings
-FAILED eval/test_pipeline_integration.py::TestSavePipelineWritesAllSubsystems::test_save_writes_vec_keys
-FAILED eval/test_pipeline_integration.py::TestSavePipelineWritesAllSubsystems::test_save_upsert_does_not_cascade_delete
-3 failed, 40 passed, 1 warning in 82.36s (0:01:22)
-
-
-=== test_transformer_opt_in.py ===
-:498 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:488 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
-WARNING  infra.migration_runner:migration_runner.py:488 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
-WARNING  infra.migration_runner:migration_runner.py:488 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
+WARNING  infra.embedding_search:embedding_search.py:114 For semantic search, run with the venv python: /Users/arka/.config/agentic-memory/venv/bin/python /Users/arka/.config/agentic-memory/infra/embedding_search.py <query>
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py:729: TimeoutError: timed out
+E   TimeoutError: timed out
 ----------------------------- Captured stderr call -----------------------------
 warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
 warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
 ------------------------------ Captured log call -------------------------------
-ERROR    infra.embedding_search:embedding_search.py:437 Failed to load embedding model [sentence-transformers]: forcing fallback
+WARNING  huggingface_hub.utils._http:_http.py:904 Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py:729: TimeoutError: timed out
+=========================== short test summary info ============================
+FAILED eval/test_rest_tenant_isolation_e2e.py::TestRESTTenantIsolationE2E::test_search_as_b_excludes_a
+FAILED eval/test_rest_tenant_isolation_e2e.py::TestRESTTenantIsolationE2E::test_search_does_not_leak
+2 failed, 8 passed in 6.89s
+
+
+=== test_search_integration.py ===
+n 005 statement failed (idempotent, object already exists): duplicate column name: observed_at
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: content
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: source_file
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: tags
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: created_at
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: updated_at
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
+/Users/arka/.config/agentic-memory/eval/test_search_integration.py:102: assert 1 == 0
+=========================== short test summary info ============================
+FAILED eval/test_search_integration.py::TestSearchEndToEnd::test_search_returns_empty_for_no_match
+1 failed, 10 passed in 42.30s
+
+
+=== test_retrieval_regression.py ===
+unner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: content
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: source_file
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: tags
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: created_at
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: updated_at
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: 0.368 not greater than or equal to 0.4 : hybrid precision@5=0.368 fell below 0.4
+=========================== short test summary info ============================
+FAILED eval/test_retrieval_regression.py::TestHybridBaselineMetrics::test_hybrid_precision_at_5
+1 failed, 13 passed in 161.16s (0:02:41)
+
+
+=== test_search_pipeline_validation.py ===
+grity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:979: AssertionError: 0.39 != 0.315 within 2 places (0.07500000000000001 difference)
+=========================== short test summary info ============================
+FAILED eval/test_search_pipeline_validation.py::TestRecencyWeight::test_recency_weight_zero_removes_recency
+FAILED eval/test_search_pipeline_validation.py::TestComputeFinalScore::test_bm25_uses_sigmoid
+2 failed, 33 passed in 68.00s (0:01:07)
+
+
+=== test_transformer_opt_in.py ===
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: updated_at
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
+----------------------------- Captured stderr call -----------------------------
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
+warning: SECURITY: integrity-critical flag MEMORY_WRITE_JOURNAL_ENABLED overridden via env to disabled — crash-consistency / integrity guarantees are being downgraded. This bypasses the saga write path, CRDT merge safety, the CQRS write journal, and/or quality gates.
 /opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:965: AssertionError: Expected 'from_pretrained' to have been called once. Called 0 times.
 =========================== short test summary info ============================
 FAILED eval/test_transformer_opt_in.py::TestTransformerOptIn::test_transformer_opt_in_loading
-1 failed in 1.51s
+1 failed in 13.31s
 
 
 === test_vec_index.py ===
-ed_at
-WARNING  infra.migration_runner:migration_runner.py:488 Migration 005 statement failed (idempotent, object already exists): duplicate column name: updated_at
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:488 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
-WARNING  infra.migration_runner:migration_runner.py:488 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
-WARNING  infra.migration_runner:migration_runner.py:488 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
-WARNING  huggingface_hub.utils._http:_http.py:904 Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:918: AssertionError: 1024 != 256
-=============================== warnings summary ===============================
-eval/test_vec_index.py::TestBuildIndex::test_builds_index_for_populated_db
-  /Users/arka/.config/agentic-memory/infra/embedding_search.py:396: FutureWarning: The `get_sentence_embedding_dimension` method has been renamed to `get_embedding_dimension`.
-    self.model.dim = self.model.get_sentence_embedding_dimension()
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+ate column name: tags
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: created_at
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 005 statement failed (idempotent, object already exists): duplicate column name: updated_at
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:506 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
+WARNING  infra.migration_runner:migration_runner.py:496 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
+/Users/arka/.config/agentic-memory/rebuild_vec_index.py:233: RuntimeError: Embedding model unavailable. Run with venv python + model2vec installed.
 =========================== short test summary info ============================
 FAILED eval/test_vec_index.py::TestBuildIndex::test_builds_index_for_populated_db
-1 failed, 9 passed, 1 warning in 9.33s
+FAILED eval/test_vec_index.py::TestBuildIndex::test_persisted_index_is_searchable
+FAILED eval/test_vec_index.py::TestIdempotent::test_deletes_old_keys_on_rebuild
+FAILED eval/test_vec_index.py::TestIdempotent::test_rerun_replaces_in_place
+FAILED eval/test_vec_index.py::TestEdgeCases::test_empty_db_no_memories - Run...
+FAILED eval/test_vec_index.py::TestKeyDerivation::test_key_lookup_round_trip
+FAILED eval/test_vec_index.py::TestKeyDerivation::test_md5_keys_unique_for_distinct_ids
+7 failed, 3 passed in 243.08s (0:04:03)
 

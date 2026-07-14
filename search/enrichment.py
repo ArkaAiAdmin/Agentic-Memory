@@ -34,11 +34,10 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# -- Mirror constants from search.scoring (kept identical on purpose) -------
-_CONCEPT_BOOST = 1.35
+# -- Imported from search.scoring to avoid duplication --------------------
+from search.scoring import _CONCEPT_BOOST, _CENTRALITY_BOOST_FACTOR
 _CONCEPT_MEMBERSHIP_BOOST = 1.20
 _MAX_BOOST = 1.50
-_CENTRALITY_BOOST_FACTOR = 1.25
 _CENTRALITY_BOOST_MAX = 1.25
 
 

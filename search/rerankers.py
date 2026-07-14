@@ -28,6 +28,8 @@ import re
 import os
 from typing import cast
 
+import numpy as _np
+
 # 2026-06-23: Removed top-level search_pipeline import to resolve circular import.
 # _LATE_INTERACTION_ENABLED is resolved directly via get_config() to keep configuration clean.
 
@@ -113,6 +115,7 @@ _LATE_INTERACTION_BLEND = 0.3
 import threading
 _ce_score_cache: dict[str, tuple[float, list[float]]] = {}
 _ce_cache_lock = threading.Lock()
+_ce_model_load_lock = threading.Lock()
 _CE_CACHE_TTL = 300  # 5 minutes
 _CE_CACHE_MAX = 128  # max cached entries
 
@@ -411,23 +414,29 @@ def _apply_late_interaction_rerank(
     blend = _get_late_interaction_blend()
     # B15 fix: pre-compute query ngrams once instead of recomputing per result
     q_ngrams = _precompute_query_ngrams(query)
+    # Precompute content tokens and ngrams for all candidates BEFORE the loop
+    content_tokens = [_tokenize_for_ce(r[1] or "") for r in head]
+    content_ngrams = []
+    for ct in content_tokens:
+        c_ng: list = []
+        for tok in ct:
+            if len(tok) >= 3:
+                c_ng.append({tok[i : i + 3] for i in range(len(tok) - 2)})
+            else:
+                c_ng.append(set())
+        content_ngrams.append(c_ng)
     reranked = []
-    for r in head:
+    for i, r in enumerate(head):
         content = r[1]
         final_score = r[6]
-        # Use pre-computed query ngrams to avoid O(n²) recomputation
+        # Use pre-computed query ngrams AND pre-computed content ngrams
         if q_ngrams and content:
-            c_tokens = _tokenize_for_ce(content or "")
-            c_ngrams: list = []
-            for tok in c_tokens:
-                if len(tok) >= 3:
-                    c_ngrams.append({tok[i : i + 3] for i in range(len(tok) - 2)})
-                else:
-                    c_ngrams.append(set())
-            li_score, li_avg_dist = _late_interaction_score_batch(q_ngrams, c_tokens, c_ngrams)
+            c_tokens = content_tokens[i]
+            c_ng = content_ngrams[i]
+            li_score, li_avg_dist = _late_interaction_score_batch(q_ngrams, c_tokens, c_ng)
         else:
             li_score = 0.0
-            li_avg_dist = float(len(_tokenize_for_ce(content or "")))
+            li_avg_dist = float(len(content_tokens[i]))
         adjusted = final_score * (1.0 - blend) + li_score * blend
         new_r = list(r)
         new_r[6] = adjusted
@@ -443,6 +452,8 @@ def _apply_late_interaction_rerank(
 # ---------------------------------------------------------------------------
 
 _CE_CHUNK_MODEL = None
+_CE_CHUNK_MODEL_ERROR = None  # timestamp of last failed load attempt
+_CE_CHUNK_RETRY_COOLDOWN = 60.0  # seconds before retrying after failure
 _CE_CHUNK_SIZE = 150
 _CE_CHUNK_OVERLAP = 30
 
@@ -479,19 +490,34 @@ def _get_ce_chunk_model():
     Uses ms-marco-MiniLM-L-6-v2 — fast (1.2ms/doc) and accurate for
     the current pipeline. bge-reranker-v2-m3 was tested but is 11x slower
     with no ranking improvement on the golden eval.
+
+    Implements a retry/eviction mechanism: if loading fails, subsequent
+    calls retry after ``_CE_CHUNK_RETRY_COOLDOWN`` seconds rather than
+    staying broken permanently.
     """
-    global _CE_CHUNK_MODEL
+    global _CE_CHUNK_MODEL, _CE_CHUNK_MODEL_ERROR
     if _CE_CHUNK_MODEL is not None:
         return _CE_CHUNK_MODEL
-    try:
-        from sentence_transformers import CrossEncoder
-        device = _get_best_device()
-        logger.debug("_get_ce_chunk_model: loading CrossEncoder on device=%r", device)
-        _CE_CHUNK_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512, device=device)
-        return _CE_CHUNK_MODEL
-    except Exception as e:
-        logger.warning("_get_ce_chunk_model: failed to load CE model: %s", e)
-        return None
+    with _ce_model_load_lock:
+        if _CE_CHUNK_MODEL is not None:
+            return _CE_CHUNK_MODEL
+        # If previous load failed, check cooldown before retrying
+        if _CE_CHUNK_MODEL_ERROR is not None:
+            import time as _time_mod
+            if _time_mod.time() - _CE_CHUNK_MODEL_ERROR < _CE_CHUNK_RETRY_COOLDOWN:
+                return None
+        try:
+            from sentence_transformers import CrossEncoder
+            device = _get_best_device()
+            logger.debug("_get_ce_chunk_model: loading CrossEncoder on device=%r", device)
+            _CE_CHUNK_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512, device=device)
+            _CE_CHUNK_MODEL_ERROR = None  # Clear error on success
+            return _CE_CHUNK_MODEL
+        except Exception as e:
+            logger.warning("_get_ce_chunk_model: failed to load CE model: %s", e)
+            import time as _time_mod2
+            _CE_CHUNK_MODEL_ERROR = _time_mod2.time()
+            return None
 
 
 def _get_ce_score_cache() -> dict[str, tuple[float, list[float]]]:
@@ -563,7 +589,6 @@ def _apply_ce_chunk_rerank(
     # --- PRE-FILTER: skip CE for sessions with high FTS scores ---
     # If a session already has a strong FTS score (top 20%), it likely matches
     # well and doesn't need CE reranking. This cuts the CE candidate pool ~5x.
-    import numpy as _np
     fts_scores = [float(r[6]) if r[6] is not None else 0.0 for r in head]
     if fts_scores:
         p80 = _np.percentile(fts_scores, 80) if len(fts_scores) >= 5 else 0.0
@@ -986,8 +1011,6 @@ def _apply_combined_ce_rerank(
 
     head_r6 = w6[:chunk_k]
     try:
-        import numpy as _np
-
         p80 = float(_np.percentile(head_r6, 80)) if len(head_r6) >= 5 else 0.0
     except Exception:
         p80 = 0.0

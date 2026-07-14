@@ -121,13 +121,19 @@ def _format_merged_results(merged_rtd, query: str, rerank: bool) -> tuple[str, l
 def _rrf_fuse_local_global(
     local_raw: list,
     global_raw: list,
-    k: int = 60,
+    k: int | None = None,
 ) -> tuple[list[str], dict]:
     """RRF-fuse local and global raw_results into a single merged ranking.
 
     Returns (merged_ids, rrf_scores) where merged_ids is ordered by
     descending RRF score.  Falls back to local-only if global is empty.
     """
+    if k is None:
+        try:
+            from infra._lazy_imports import get_config
+            k = int(get_config().rrf_k)
+        except Exception:
+            k = 60
     def _ordered_ids(raw):
         seen: set = set()
         ordered: list = []
