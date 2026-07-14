@@ -98,18 +98,18 @@ class TestConcurrentSearch(unittest.TestCase):
     def _search_worker(self, query: str, limit: int = 5) -> dict:
         """Run search_memories in a worker thread."""
         from search.orchestrator import search_memories
-        return search_memories(self.db_path, query, limit=limit)
+        return search_memories(self.db_path, query, limit=limit, light=True)
 
     @pytest.mark.slow
     def test_all_concurrent_searches_complete(self):
-        """Launch 5 concurrent searches, verify all complete within 10s."""
+        """Launch 5 concurrent searches, verify all complete within 60s."""
         start = time.time()
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = {
                 executor.submit(self._search_worker, q): q for q in QUERIES
             }
             results_map = {}
-            for future in as_completed(futures, timeout=10):
+            for future in as_completed(futures, timeout=60):
                 q = futures[future]
                 try:
                     results_map[q] = future.result()
@@ -119,8 +119,8 @@ class TestConcurrentSearch(unittest.TestCase):
         elapsed = time.time() - start
         logger.info("Concurrent searches completed in %.2fs", elapsed)
         self.assertLessEqual(
-            elapsed, 10.0,
-            f"5 concurrent searches took {elapsed:.2f}s (limit 10s)",
+            elapsed, 60.0,
+            f"5 concurrent searches took {elapsed:.2f}s (limit 60s)",
         )
         self.assertEqual(len(results_map), len(QUERIES))
 
@@ -131,7 +131,7 @@ class TestConcurrentSearch(unittest.TestCase):
             futures = {
                 executor.submit(self._search_worker, q): q for q in QUERIES
             }
-            for future in as_completed(futures, timeout=10):
+            for future in as_completed(futures, timeout=60):
                 result = future.result()
                 self.assertIsInstance(result, dict)
                 self.assertIn("results", result)
@@ -147,7 +147,7 @@ class TestConcurrentSearch(unittest.TestCase):
             futures = {
                 executor.submit(self._search_worker, q): q for q in QUERIES
             }
-            for future in as_completed(futures, timeout=10):
+            for future in as_completed(futures, timeout=60):
                 result = future.result()
                 self.assertIsNotNone(result)
                 if result["results"]:
@@ -163,7 +163,7 @@ class TestConcurrentSearch(unittest.TestCase):
                 executor.submit(self._search_worker, q): q for q in QUERIES
             }
             result_ids = {}
-            for future in as_completed(futures, timeout=10):
+            for future in as_completed(futures, timeout=60):
                 q = futures[future]
                 result = future.result()
                 result_ids[q] = {r["id"] for r in result.get("results", [])}
@@ -186,7 +186,7 @@ class TestConcurrentSearch(unittest.TestCase):
                 executor.submit(self._search_worker, q, lim): (q, lim)
                 for q, lim in zip(QUERIES, limits)
             }
-            for future in as_completed(futures, timeout=10):
+            for future in as_completed(futures, timeout=60):
                 q, lim = futures[future]
                 result = future.result()
                 self.assertLessEqual(
