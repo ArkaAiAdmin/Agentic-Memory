@@ -89,6 +89,17 @@ for start in range(0, total, 64):
     conn.commit()
 print("done")
 
+print("KG...", end=" ", flush=True)
+from knowledge_graph import index_kg_for_memory
+for i, (mid, content) in enumerate(rows):
+    try:
+        index_kg_for_memory(conn, mid, content)
+    except Exception:
+        pass
+    if (i+1) % 50 == 0: conn.commit()
+conn.commit()
+print("done")
+
 conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 conn.commit()
 conn.close()

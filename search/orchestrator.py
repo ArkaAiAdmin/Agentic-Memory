@@ -1814,9 +1814,7 @@ def _rerank_results(
     if budget.should_run("colbert", 100):
         try:
             from search.colbert_rerank import colbert_rerank
-            from infra.db import open_db
-            with open_db(db_path) as _colbert_conn:
-                out = colbert_rerank(_colbert_conn, query, out, db_path=db_path)
+            out = colbert_rerank(db, query, out, db_path=db_path)
         except Exception as _cb_exc:
             logger.debug("colbert_rerank skipped: %s", _cb_exc)
     # Answer-level reranking (Phase 5): score best snippet per candidate.
@@ -1824,9 +1822,7 @@ def _rerank_results(
     if budget.should_run("answer_rerank", 50):
         try:
             from search.answer_rerank import answer_rerank
-            from infra.db import open_db
-            with open_db(db_path) as _answer_conn:
-                out = answer_rerank(_answer_conn, query, out, db_path=db_path)
+            out = answer_rerank(db, query, out, db_path=db_path)
         except Exception as _ar_exc:
             logger.debug("answer_rerank skipped: %s", _ar_exc)
     # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
@@ -2737,6 +2733,7 @@ def _phase_ten_multi_hop_kg(
         hop1_entities: dict[int, float] = {}
         eid_list = list(query_entity_ids)
         placeholders = ",".join("?" * len(eid_list))
+        hop1_params = tuple(eid_list) * 3 + (limit * 5,)
         hop1_rows = db.execute(
             f"SELECT DISTINCT "
             f"  CASE WHEN ed.source_id IN ({placeholders}) THEN ed.target_id ELSE ed.source_id END AS neighbor_id, "
@@ -2746,7 +2743,7 @@ def _phase_ten_multi_hop_kg(
             f"WHERE (ed.source_id IN ({placeholders}) OR ed.target_id IN ({placeholders})) "
             f"AND ed.invalid_at IS NULL "
             f"LIMIT ?",
-            eid_list + eid_list + [limit * 5],
+            hop1_params,
         ).fetchall()
         for row in hop1_rows:
             nid = row[0] if not isinstance(row, sqlite3.Row) else row["neighbor_id"]
@@ -2762,6 +2759,9 @@ def _phase_ten_multi_hop_kg(
         if hop1_entities:
             hop1_ids = list(hop1_entities.keys())
             hp1 = ",".join("?" * len(hop1_ids))
+            not_in_ids = list(query_entity_ids) + hop1_ids
+            not_in_ph = ",".join("?" * len(not_in_ids))
+            hop2_params = tuple(hop1_ids) * 3 + tuple(not_in_ids) + (limit * 3,)
             hop2_rows = db.execute(
                 f"SELECT DISTINCT "
                 f"  CASE WHEN ed.source_id IN ({hp1}) THEN ed.target_id ELSE ed.source_id END AS result_id, "
@@ -2771,9 +2771,9 @@ def _phase_ten_multi_hop_kg(
                 f"WHERE (ed.source_id IN ({hp1}) OR ed.target_id IN ({hp1})) "
                 f"AND ed.invalid_at IS NULL "
                 f"AND CASE WHEN ed.source_id IN ({hp1}) THEN ed.target_id ELSE ed.source_id END "
-                f"  NOT IN ({','.join('?' * (len(query_entity_ids) + len(hop1_ids)))}) "
+                f"  NOT IN ({not_in_ph}) "
                 f"LIMIT ?",
-                hop1_ids + hop1_ids + hop1_ids + list(query_entity_ids) + list(hop1_entities.keys()) + [limit * 3],
+                hop2_params,
             ).fetchall()
             for row in hop2_rows:
                 rid = row[0] if not isinstance(row, sqlite3.Row) else row["result_id"]

@@ -401,9 +401,11 @@ def _apply_jaccard_surprise_penalty(scored_results: list, query: str) -> list:
     return modified
 
 
+_UNSET = object()
+
 def _apply_temporal_decay(
     scored_results: list,
-    decay_weight: float = 0.15,
+    decay_weight: float = _UNSET,  # type: ignore[assignment]
     as_of: Optional[float] = None,
 ) -> list:
     """Apply temporal decay to scored results as a post-retrieval modifier.
@@ -418,13 +420,14 @@ def _apply_temporal_decay(
     When MEMORY_FORGETTING_CURVE=1, uses last_accessed for Ebbinghaus-style decay.
     decay_weight is read from config (temporal_decay_weight) when not explicitly passed.
     """
-    if decay_weight == 0.15:
+    if decay_weight is _UNSET:
         try:
             from infra._lazy_imports import get_config
 
             decay_weight = float(get_config().temporal_decay_weight)
         except Exception as e:
             logger.warning("Unhandled exception in _apply_temporal_decay: %s", e)
+            decay_weight = 0.15
     if _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential") == "off" or decay_weight <= 0:
         return scored_results
     now_ts = time.time() if as_of is None else as_of

@@ -10,8 +10,23 @@ eval_db = Path(os.environ.get("EVAL_DB", "")) or (INSTALL_DIR / "eval" / "prebui
 if eval_db.suffix == ".txt":
     eval_db = Path(eval_db.read_text().strip())
 os.environ["MEMORY_DB_PATH"] = str(eval_db)
+os.environ["MEMORY_CONFIG_DRIFT_SKIP_ENFORCEMENT"] = "1"
 
 from search.orchestrator import search_memories
+from infra._lazy_imports import get_embedding_search
+
+# Pre-load models before the eval loop
+print("Pre-loading models...", end=" ", flush=True)
+es = get_embedding_search()
+es.wait_for_model(timeout_s=60.0)
+print(f"embedding={'OK' if es.model else 'FAIL'}", end=" ", flush=True)
+try:
+    from search.rerankers import _get_ce_chunk_model
+    ce = _get_ce_chunk_model()
+    print(f"ce={'OK' if ce else 'skip'}", end=" ", flush=True)
+except Exception:
+    print("ce=skip", end=" ", flush=True)
+print("done")
 
 golden = json.load(open(INSTALL_DIR / "eval" / "real_memory_golden_v2.json"))
 targets = golden["targets"]
@@ -34,6 +49,8 @@ cat_results = {}
 
 print(f"\nRunning {len(test_cases)} golden queries...\n")
 for i, tc in enumerate(test_cases):
+    if (i + 1) % 20 == 0:
+        print(f"  [{i+1}/{len(test_cases)}] running...", flush=True)
     query = tc["query"]
     expected = tc["expected"]
     cat = tc.get("category", "unknown")
@@ -49,7 +66,7 @@ for i, tc in enumerate(test_cases):
 
     t0 = time.time()
     try:
-        res = search_memories(query=query, db_path=eval_db, limit=50, hybrid=True, rerank=True, as_of=as_of)
+        res = search_memories(query=query, db_path=eval_db, limit=50, hybrid=True, rerank=True, as_of=as_of, light=False)
         retrieved = [r.get("id", "") for r in res.get("results", [])] if isinstance(res, dict) else []
     except Exception as e:
         print(f"  ERROR [{cat}] {query[:60]}: {e}")
