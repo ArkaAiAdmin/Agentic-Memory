@@ -52,3 +52,4 @@ eval/longmemeval_s/results/
 eval/real_memory_eval_results.json
 eval/prebuilt_db_path.txt
 SEARCH_SOTA_STATUS.md
+eval/results/
