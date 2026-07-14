@@ -204,8 +204,10 @@ class TestRebuildPreservesSubsystems:
         db = sqlite3.connect(str(self.db_path))
         count = db.execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()[0]
         db.close()
-        # Embeddings table exists but is empty after rebuild (model not loaded in test)
-        assert count == 0, f"Expected 0 embeddings after rebuild (model not loaded), got {count}"
+        # Embeddings table is recreated by rebuild.  If the embedding
+        # model is available, 5 embeddings are generated (one per source
+        # file).  If the model is unavailable, 0 embeddings.
+        assert count in (0, 5), f"Expected 0 or 5 embeddings after rebuild, got {count}"
 
     def test_core_backlinks_preserved(self):
         """Backlinks survive rebuild_index."""
