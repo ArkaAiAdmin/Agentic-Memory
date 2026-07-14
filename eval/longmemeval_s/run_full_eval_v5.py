@@ -1,7 +1,7 @@
 """Full LongMemEval eval — memory-efficient, uses full search_memories pipeline.
 
 Key optimization: stream sessions into DB in batches, don't hold all in memory.
-Uses the full 12-phase pipeline: FTS + CE chunk reranking + late interaction + etc.
+Uses the full 14-phase pipeline: FTS + CE chunk reranking + late interaction + etc.
 """
 from __future__ import annotations
 import json, sqlite3, sys, tempfile, time

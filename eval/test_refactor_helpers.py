@@ -534,9 +534,9 @@ class TestPostSaveHooksOrchestrator(unittest.TestCase):
 
 
 class TestSearchOrchestratorHelpers(unittest.TestCase):
-    """Tests for the 11 helpers extracted from search_memories
+    """Tests for the helpers extracted from search_memories
     on 2026-06-22.  The original search_memories was 551 lines with
-    12 phases.  These helpers split the work into named, testable
+    12 phases; the pipeline is now 14 phases.  These helpers split the work into named, testable
     pieces; the orchestrator now reads as a sequence of named calls.
     """
 

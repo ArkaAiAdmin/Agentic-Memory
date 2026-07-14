@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Profile the 12-phase search pipeline to find bottleneck phases.
+"""Profile the 14-phase search pipeline to find bottleneck phases.
 
 Usage:
     venv/bin/python eval/profile_search.py [query] [limit]
