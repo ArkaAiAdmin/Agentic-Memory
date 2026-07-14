@@ -668,18 +668,34 @@ class TestSearchOrchestratorHelpers(unittest.TestCase):
     def test_apply_strong_match_boost_noop_without_results(self):
         """Empty result_items → no-op, no exception."""
         from search.orchestrator import _apply_strong_match_boost
+        from search.state import PipelineState
+        from pathlib import Path
 
-        ri, out, rtd = _apply_strong_match_boost(
+        _state = PipelineState(
+            db_path=Path("/tmp/nonexistent"),
+            query="hello",
+            limit=5,
+            rerank=True,
+            boost_pinned=True,
+            recency_weight=0.1,
+            include_invalid=True,
+            hybrid=True,
+            deep_rerank=False,
+            safety_wiring=True,
+            light=False,
+            as_of=None,
+            tenant_id="default",
+            category="",
+            shared_with_me=False,
             result_items=[],
             output=["existing output line"],
             results_to_display=[],
-            query="hello",
-            rerank=True,
             backlinks_map={},
         )
-        self.assertEqual(ri, [])
-        self.assertEqual(out, ["existing output line"])
-        self.assertEqual(rtd, [])
+        _apply_strong_match_boost(_state)
+        self.assertEqual(_state.result_items, [])
+        self.assertEqual(_state.output, ["existing output line"])
+        self.assertEqual(_state.results_to_display, [])
 
     def test_record_last_accessed_noop_empty(self):
         """Empty result_items → no-op, no exception."""
@@ -758,15 +774,33 @@ class TestSearchOrchestratorHelpers(unittest.TestCase):
                 None,
             )
         ]
-        ri_out, out_out, rtd_out = _apply_quality_gates(
+        from search.state import PipelineState
+        _state = PipelineState(
+            db_path=Path("/tmp/nonexistent"),
+            query="hello",
+            limit=5,
+            rerank=True,
+            boost_pinned=True,
+            recency_weight=0.1,
+            include_invalid=True,
+            hybrid=True,
+            deep_rerank=False,
+            safety_wiring=True,
+            light=False,
+            as_of=None,
+            tenant_id="default",
+            category="",
+            shared_with_me=False,
             result_items=ri_in,
             output=out_in,
             results_to_display=rtd_in,
-            query="hello",
-            rerank=True,
             backlinks_map={},
         )
-        # Helper returns a (result_items, output, results_to_display) tuple. The output
+        _apply_quality_gates(_state)
+        ri_out = _state.result_items
+        out_out = _state.output
+        rtd_out = _state.results_to_display
+        # Helper mutates state in place. The output
         # may have been re-formatted by quality gates (the production
         # default is QUALITY_GATES_ENABLED=True), so we just verify
         # the type contracts.

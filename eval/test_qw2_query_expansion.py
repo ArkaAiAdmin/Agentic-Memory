@@ -21,6 +21,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 # Make memory_mcp importable

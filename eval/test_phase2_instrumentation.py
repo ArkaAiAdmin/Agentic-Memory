@@ -122,27 +122,43 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
         return mod
 
     def test_apply_quality_gates_calls_phase_inc_on_failure(self):
-        import search.orchestrator as orch
-        original_inc = orch._phase_inc
+        import search.phases.postprocess as pp
+        original_inc = pp._phase_inc
         calls = []
-        orch._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
+        pp._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
         broken_mod = self._inject_failing_module(
             "quality_gates",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("qg boom")),
         )
         setattr(broken_mod, "QUALITY_GATES_ENABLED", True)
         try:
-            _apply_quality_gates(
+            from search.state import PipelineState
+            from pathlib import Path
+            _state = PipelineState(
+                db_path=Path("/tmp/nonexistent"),
+                query="test",
+                limit=5,
+                rerank=False,
+                boost_pinned=True,
+                recency_weight=0.1,
+                include_invalid=True,
+                hybrid=True,
+                deep_rerank=False,
+                safety_wiring=True,
+                light=False,
+                as_of=None,
+                tenant_id="default",
+                category="",
+                shared_with_me=False,
                 result_items=[{"id": "x"}],
                 output=[],
                 results_to_display=[],
-                query="test",
-                rerank=False,
                 backlinks_map={},
             )
+            _apply_quality_gates(_state)
         except Exception:
             pass
-        orch._phase_inc = original_inc
+        pp._phase_inc = original_inc
         sys.modules.pop("quality_gates", None)
         self.assertTrue(
             any("quality_gates" in c[0] for c in calls),
@@ -150,28 +166,43 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
         )
 
     def test_apply_user_profiling_calls_phase_inc_on_failure(self):
-        import search.orchestrator as orch
-        original_inc = orch._phase_inc
+        import search.phases.postprocess as pp
+        original_inc = pp._phase_inc
         calls = []
-        orch._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
+        pp._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
         broken_mod = self._inject_failing_module(
             "user_profile",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("up boom")),
         )
         setattr(broken_mod, "PROFILE_ENABLED", True)
         try:
-            _apply_user_profiling(
+            from search.state import PipelineState
+            from pathlib import Path
+            _state = PipelineState(
+                db_path=Path(str(PROD_DB)),
+                query="test",
+                limit=5,
+                rerank=False,
+                boost_pinned=True,
+                recency_weight=0.1,
+                include_invalid=True,
+                hybrid=True,
+                deep_rerank=False,
+                safety_wiring=True,
+                light=False,
+                as_of=None,
+                tenant_id="default",
+                category="",
+                shared_with_me=False,
                 result_items=[{"id": "x"}],
                 output=[],
                 results_to_display=[],
-                query="test",
-                rerank=False,
                 backlinks_map={},
-                db_path=str(PROD_DB),
             )
+            _apply_user_profiling(_state)
         except Exception:
             pass
-        orch._phase_inc = original_inc
+        pp._phase_inc = original_inc
         sys.modules.pop("user_profile", None)
         self.assertTrue(
             any("user_profiling" in c[0] for c in calls),
@@ -179,12 +210,35 @@ class TestInstrumentedPhaseFunctions(unittest.TestCase):
         )
 
     def test_apply_safety_demoting_calls_phase_inc_on_bad_input(self):
-        import search.orchestrator as orch
-        original_inc = orch._phase_inc
+        import search.phases.postprocess as pp
+        original_inc = pp._phase_inc
         calls = []
-        orch._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
-        _apply_safety_demoting(_tcast("list", "not_a_list"), [], [])
-        orch._phase_inc = original_inc
+        pp._phase_inc = lambda phase, err=None: calls.append((phase, type(err).__name__ if err else None))
+        from search.state import PipelineState
+        from pathlib import Path
+        _state = PipelineState(
+            db_path=Path("/tmp/nonexistent"),
+            query="test",
+            limit=5,
+            rerank=False,
+            boost_pinned=True,
+            recency_weight=0.1,
+            include_invalid=True,
+            hybrid=True,
+            deep_rerank=False,
+            safety_wiring=True,
+            light=False,
+            as_of=None,
+            tenant_id="default",
+            category="",
+            shared_with_me=False,
+            result_items=_tcast("list", "not_a_list"),
+            output=[],
+            results_to_display=[],
+            backlinks_map={},
+        )
+        _apply_safety_demoting(_state)
+        pp._phase_inc = original_inc
         self.assertTrue(
             any("safety_demoting" in c[0] for c in calls),
             f"Expected safety_demoting phase call, got: {calls}",

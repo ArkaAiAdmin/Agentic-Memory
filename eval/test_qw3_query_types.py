@@ -121,8 +121,8 @@ class TestQueryTypeWeights(unittest.TestCase):
                 total, 1.0, delta=1e-9, msg=f"{qt} weights sum to {total}, not 1.0"
             )
 
-    def test_09_weights_have_all_five_channels(self):
-        required = {"bm25", "fitness", "importance", "pinned", "tag_match"}
+    def test_09_weights_have_all_channels(self):
+        required = {"bm25", "fitness", "importance", "pinned", "recency", "tag_match"}
         for qt, w in memory_mcp._QUERY_TYPE_WEIGHTS.items():
             self.assertEqual(
                 set(w.keys()),
