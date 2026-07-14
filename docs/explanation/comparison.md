@@ -21,7 +21,7 @@ When choosing a memory system for your agent, you have several options — each 
 | Feature | Agentic Memory | Mem0 | Zep | MemGPT/Letta |
 |---------|---------------|------|-----|--------------|
 | **Storage** | Markdown + SQLite | PostgreSQL | PostgreSQL | PostgreSQL |
-| **Search** | 12-phase hybrid (BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost) | Vector + graph | Vector + graph | Vector + LLM |
+| **Search** | 14-phase hybrid (BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost) | Vector + graph | Vector + graph | Vector + LLM |
 | **Source of truth** | Markdown files | Database | Database | Database |
 | **Self-hosted** | Yes (default) | Yes | Yes | Yes |
 | **Cloud option** | Planned | Yes | Yes | Yes |
@@ -116,7 +116,7 @@ When choosing a memory system for your agent, you have several options — each 
 5. **Background task queue** — SQLite-backed, no external queue
 6. **Tier system** — Automatic memory lifecycle management
 7. **Injection detection** — Built-in safety without external tools
-8. **12-phase hybrid search** — BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost
+8. **14-phase hybrid search** — BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost
 9. **Field-level CRDT** — Concurrent edits to different fields both win
 10. **Temporal knowledge graph** — Bi-temporal validity with contradiction detection
 
@@ -152,7 +152,7 @@ When choosing a memory system for your agent, you have several options — each 
 | Aspect | Agentic Memory | Pinecone |
 |--------|---------------|----------|
 | **Architecture** | Markdown + SQLite | Managed vector DB |
-| **Search** | 12-phase hybrid | Vector similarity only |
+| **Search** | 14-phase hybrid | Vector similarity only |
 | **Self-hosted** | Yes (default) | No (managed only) |
 | **LLM required** | No | No |
 | **Pricing** | Free (self-hosted) | Pay-per-query |
@@ -177,7 +177,7 @@ When choosing a memory system for your agent, you have several options — each 
 | Aspect | Agentic Memory | Weaviate |
 |--------|---------------|----------|
 | **Architecture** | Markdown + SQLite | Vector DB + modules |
-| **Search** | 12-phase hybrid | Vector + BM25 + hybrid |
+| **Search** | 14-phase hybrid | Vector + BM25 + hybrid |
 | **Self-hosted** | Yes (trivial) | Yes (Docker) |
 | **LLM required** | No | Optional (generative modules) |
 | **Setup** | Single file | Docker Compose |
@@ -202,7 +202,7 @@ When choosing a memory system for your agent, you have several options — each 
 | Aspect | Agentic Memory | Qdrant |
 |--------|---------------|--------|
 | **Architecture** | Markdown + SQLite | Vector DB |
-| **Search** | 12-phase hybrid | Vector + payload filtering |
+| **Search** | 14-phase hybrid | Vector + payload filtering |
 | **Self-hosted** | Yes (trivial) | Yes (Docker) |
 | **LLM required** | No | No |
 | **Setup** | Single file | Docker |

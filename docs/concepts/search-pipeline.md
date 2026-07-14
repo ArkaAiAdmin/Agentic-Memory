@@ -1,6 +1,6 @@
 # Search Pipeline
 
-Agentic Memory uses a **12-phase hybrid search pipeline** that combines multiple retrieval methods, reranking, temporal decay, and knowledge graph boosting.
+Agentic Memory uses a **14-phase hybrid search pipeline** that combines multiple retrieval methods, reranking, temporal decay, and knowledge graph boosting.
 
 ## What is the Search Pipeline?
 
@@ -13,46 +13,56 @@ Without the search pipeline, agents would rely on exact-match queries that miss 
 ## How it works
 
 ```
-Query → Phase 0 (Normalize) → Phase 1 (FTS5 BM25)
-                                    ↓
-                              Phase 2 (Vector Search)
-                                    ↓
-                              Phase 3 (ColBERT Late-Interaction)
-                                    ↓
-                              Phase 4 (RRF Merge)
-                                    ↓
-                              Phase 5 (Cross-Encoder Rerank)
-                                    ↓
-                              Phase 6 (Temporal Decay)
-                                    ↓
-                              Phase 7 (Neural Forget Curve)
-                                    ↓
-                              Phase 8 (KG Concept Boost)
-                                    ↓
-                              Phase 9 (Final Scoring)
-                                    ↓
-                              Phase 10 (Result Envelope)
-                                    ↓
-                               Phase 11 (Error Counter + Latency)
+Query
+  ↓
+Phase 1  Query parsing + reasoning expansion
+  ↓
+Phase 2  Skill-first lookup (conditional early return)
+  ↓
+Phase 3  Cache check
+  ↓
+Phase 4  DB setup + filter construction (namespace, category, tags)
+  ↓
+Phase 5  Retrieval — FTS5 BM25 + KG facts (parallel)
+  ↓
+Phase 6  Embedding fallback (when FTS returns nothing)
+  ↓
+Phase 7  Hybrid fusion (RRF merge of FTS5 + vector)
+  ↓
+Phase 8  Temporal filtering (valid_to / as_of time-travel)
+  ↓
+Phase 9  Chunk enhancement + session-aware clustering
+  ↓
+Phase 10 KG boost + multi-hop traversal
+  ↓
+Phase 11 Reranking (cross-encoder, late-interaction, temporal decay, forget curve)
+  ↓
+Phase 12 Build output items
+  ↓
+Phase 13 Postprocessing (safety demoting, quality gates, user profiling, strong match boost)
+  ↓
+Phase 14 Finalization (record access, shared_with_me, audit, envelope, telemetry)
+  ↓
+Ranked results
 ```
 
 ```mermaid
 flowchart TD
-    Q["Query input"] --> P0["0 · Normalize & query-type detection"]
-    P0 --> P1["1 · FTS5 BM25 retrieval"]
-    P0 --> P2["2 · Vector retrieval (usearch)"]
-    P0 --> P3["3 · ColBERT late-interaction"]
-    P1 --> P4["4 · RRF merge"]
-    P2 --> P4
-    P3 --> P4
-    P4 --> P5["5 · Cross-encoder rerank (optional)"]
-    P5 --> P6["6 · Temporal decay"]
-    P6 --> P7["7 · Neural forget curve"]
-    P7 --> P8["8 · KG concept / centrality boost"]
-    P8 --> P9["9 · Final score & ranking"]
-    P9 --> P10["10 · Result envelope"]
-    P10 --> P11["11 · Error counter & latency log"]
-    P11 --> R["Ranked results"]
+    Q["Query input"] --> P1["1 · Parse + reasoning expansion"]
+    P1 --> P2["2 · Skill-first lookup (conditional)"]
+    P2 --> P3["3 · Cache check"]
+    P3 --> P4["4 · DB setup + filters"]
+    P4 --> P5["5 · FTS5 BM25 + KG facts"]
+    P5 --> P6["6 · Embedding fallback"]
+    P6 --> P7["7 · Hybrid fusion (RRF)"]
+    P7 --> P8["8 · Temporal filtering"]
+    P8 --> P9["9 · Chunk + session clustering"]
+    P9 --> P10["10 · KG boost + multi-hop"]
+    P10 --> P11["11 · Reranking (CE + late-interaction + temporal + forget)"]
+    P11 --> P12["12 · Build output"]
+    P12 --> P13["13 · Postprocessing"]
+    P13 --> P14["14 · Finalization + envelope"]
+    P14 --> R["Ranked results"]
 ```
 
 Each phase is independently isolated — no single failure kills the search.
@@ -61,18 +71,20 @@ Each phase is independently isolated — no single failure kills the search.
 
 | Phase | Technique | Purpose |
 |-------|-----------|---------|
-| 0 | Unicode normalization, query classification | Input normalization |
-| 1 | SQLite FTS5 BM25 | Keyword-based retrieval |
-| 2 | usearch ANN + model2vec embeddings | Semantic vector search |
-| 3 | Character n-gram late-interaction | Token-level matching |
-| 4 | Reciprocal Rank Fusion | Merge FTS5 + vector + ColBERT |
-| 5 | IDF+bigram weak CE or Qwen3-Reranker deep CE | Neural reranking |
-| 6 | Time-weighted scoring | Recency bias |
-| 7 | Surprise-based retention formula | Forget curve |
-| 8 | KG entity centrality boost | Knowledge graph boost |
-| 9 | Weighted combination | Final scoring |
-| 10 | JSON envelope | Output formatting |
-| 11 | Per-phase error tracking | Observability |
+| 1 | Query parsing, normalization, reasoning expansion | Input normalization + entailment OR terms |
+| 2 | Skill-first lookup | Short-circuit to skill matches when requested |
+| 3 | Result cache | Serve repeated queries without re-running the pipeline |
+| 4 | DB column probe + filter construction | Namespace, category, memory_source, tag filters |
+| 5 | SQLite FTS5 BM25 + KG fact search | Keyword retrieval + knowledge-graph facts (parallel) |
+| 6 | usearch ANN + model2vec embeddings | Semantic vector fallback when FTS returns nothing |
+| 7 | Reciprocal Rank Fusion | Merge FTS5 + vector results |
+| 8 | `valid_to` / `as_of` time-travel filter | Drop invalidated / out-of-window memories |
+| 9 | Chunk enrichment + session clustering | Surface chunk context; boost intra-session relatedness |
+| 10 | KG entity centrality + multi-hop traversal | Knowledge-graph boost |
+| 11 | Cross-encoder, ColBERT late-interaction, temporal decay, neural forget curve | Neural reranking + final scoring |
+| 12 | JSON envelope construction | Build display result items |
+| 13 | Safety demoting, quality gates, user profiling, strong-match boost | Post-filtering and personalization |
+| 14 | Record access, shared-with-me, audit, telemetry | Finalization + observability |
 
 ## Stage 1: FTS5 BM25
 
@@ -184,7 +196,7 @@ centrality_boost_enabled = true
 
 ## Key behaviors
 
-- **Phase isolation**: Each of the 12 phases is independently isolated — no single failure kills the search. Phase 11 tracks per-phase errors for observability.
+- **Phase isolation**: Each of the 14 phases is independently isolated — no single failure kills the search. Per-phase error counters (surfaced via `phase_errors`) track which phase failed.
 - **Graceful degradation**: If the vector index is missing or stale, search falls back to FTS5-only results. If the reranker fails, search returns RRF-merged results without reranking.
 - **Deterministic FTS5**: BM25 ranking is deterministic and repeatable — no model dependency for keyword queries.
 - **Defer-expensive mode**: By default, semantic search and deep reranking are deferred (returns <200ms). Results are cached for fast re-query.
@@ -206,7 +218,7 @@ Temporal decay (`recency_weight`) down-weights older memories. Adjust the scorin
 
 ### A phase is failing
 
-Phase 11 tracks per-phase error counts. Inspect `memory_maintenance(operation="phase_errors")` to see which phase errored; the remaining phases still return results.
+Per-phase error counts are tracked across all 14 phases. Inspect `memory_maintenance(operation="phase_errors")` to see which phase errored; the remaining phases still return results.
 
 ## Related
 

@@ -70,25 +70,21 @@ Save steps run in order within a single transaction:
 
 ### Search Pipeline (read path)
 
-search_memories() implements 12-phases with sub-numbered variants in search/orchestrator.py:
-0. Cache check
-1. Query parse (type detection)
-1b. Skill-first lookup
-2. Cache check
-3. DB setup
-4. FTS5 BM25 search
-4b. KG fact search (T10)
-5. Embedding fallback
-6. Hybrid RRF fusion
-7. Temporal filter
-8. Chunk enhancement
-9. Rerank (cross-encoder + late-interaction + temporal decay)
-10. Build output items
-11. Safety demoting (BLK-1 injection demotion)
-11b. Quality gates
-11c. User profile boost
-12. Record access + CTR feedback + cache store
-13. Envelope build with Related Facts append
+search_memories() implements 14 phases in search/orchestrator.py:
+1. Query parsing + reasoning expansion
+2. Skill-first lookup (conditional early return)
+3. Cache check
+4. DB setup + filter construction (namespace, category, tags)
+5. FTS5 BM25 + KG fact search
+6. Embedding fallback
+7. Hybrid fusion (RRF merge)
+8. Temporal filtering (valid_to / as_of)
+9. Chunk enhancement + session clustering
+10. KG boost + multi-hop traversal
+11. Reranking (cross-encoder, late-interaction, temporal decay, forget curve)
+12. Build output items
+13. Postprocessing (safety demoting, quality gates, user profiling, strong match boost)
+14. Finalization (record access, shared_with_me, audit, envelope, telemetry)
 
 ### Hook System
 

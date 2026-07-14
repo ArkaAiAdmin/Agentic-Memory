@@ -145,7 +145,7 @@ agentic-memory/
 │   ├── kg.py                    # KnowledgeGraph
 │   ├── integrations/            # LangChain + CrewAI adapters
 │   └── models.py                # 8 typed dataclasses
-├── search/                      # 12-phase search pipeline
+├── search/                      # 14-phase search pipeline
 │   ├── orchestrator.py          # Main pipeline (2,825 LOC)
 │   ├── scoring.py               # RRF, temporal decay, KG boost
 │   ├── rerankers.py             # Cross-encoder, ColBERT
@@ -312,7 +312,7 @@ pip install agentic-memory[all]         # Everything
 |---------|---------------|------|-------|-----|
 | **Local-first** | Yes | No | No | No |
 | **MCP-native** | 17 CORE tools | No | No | 1 tool |
-| **12-phase search** | Yes | No | No | No |
+| **14-phase search** | Yes | No | No | No |
 | **Temporal KG** | Yes | Partial | No | Yes |
 | **CRDT sync** | Field-level | No | No | No |
 | **CQRS journal** | Yes | No | No | No |

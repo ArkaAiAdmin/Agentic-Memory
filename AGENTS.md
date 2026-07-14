@@ -154,7 +154,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 - **Schema v61**: 62 migrations (100% down-coverage), ~76 tables.
 - **MCP surface**: 17 CORE + 1 router (95 ADMIN + 3 DEPRECATED). See `docs/MCP_SURFACE.md`.
 - **Write path**: Saga transaction (DB + vec_key + .md) with flock locking, crash-consistent rollback. `defer_expensive=True` → <200ms.
-- **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).
+- **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).
 - **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.
 - **Testing**: 315 test files, 4841+ test functions, ~99k+ test LOC. Subprocess-per-file runner.
