@@ -26,7 +26,10 @@ import logging
 
 import re
 import os
+from abc import ABC, abstractmethod
 from typing import cast
+
+from search.config import get_search_config
 
 import numpy as _np
 
@@ -126,24 +129,11 @@ _LI_CACHE_MAX = 1000
 
 
 def _get_cross_encoder_blend() -> float:
-    try:
-        from infra._lazy_imports import get_config
-
-        v = get_config().cross_encoder_blend
-        return float(v)
-    except Exception as e:
-        logger.warning("_get_cross_encoder_blend failed: %s", e)
-        return _CROSS_ENCODER_BLEND
+    return get_search_config().cross_encoder_blend
 
 
 def _get_late_interaction_blend() -> float:
-    try:
-        from infra._lazy_imports import get_config
-
-        return cast(float, get_config().late_interaction_blend)
-    except Exception as e:
-        logger.warning("_get_late_interaction_blend failed: %s", e)
-        return _LATE_INTERACTION_BLEND
+    return get_search_config().late_interaction_blend
 
 
 def _tokenize_for_ce(text: str | None) -> list:
@@ -752,13 +742,7 @@ def _apply_ce_chunk_rerank(
 
 def _get_ce_blend() -> float:
     """PR1.2: blend constant for the weak / deep CE stages (plan default 0.85)."""
-    try:
-        from infra._lazy_imports import get_config
-
-        return float(get_config().ce_blend)
-    except Exception as e:  # pragma: no cover - best-effort config read
-        logger.warning("_get_ce_blend failed: %s", e)
-        return 0.85
+    return get_search_config().ce_blend
 
 
 def _get_ce_chunk_blend() -> float:
@@ -770,13 +754,7 @@ def _get_ce_chunk_blend() -> float:
     full-pipeline behaviour to avoid a recall/ndcg regression. weak/deep
     use _get_ce_blend() (0.85, per the SOTA plan).
     """
-    try:
-        from infra._lazy_imports import get_config
-
-        return float(get_config().ce_chunk_blend)
-    except Exception as e:  # pragma: no cover - best-effort config read
-        logger.warning("_get_ce_chunk_blend failed: %s", e)
-        return 0.7
+    return get_search_config().ce_chunk_blend
 
 
 def _detect_ce_query_type(query: str) -> str:
@@ -1088,6 +1066,90 @@ def _apply_combined_ce_rerank(
     return _assign_rank_once(scored_results, final, chunk_k)
 
 
+class BaseReranker(ABC):
+    """Strategy interface for a single cross-encoder rerank stage.
+
+    Each concrete strategy implements :meth:`rerank`, which consumes the
+    pre-CE ``scored_results`` (``r[6]`` = channel score) and returns a new
+    list with ``r[6]`` rewritten exactly once. Selection by string ``mode``
+    happens in :func:`get_reranker_strategy`, replacing the old inline
+    ``if mode == "x"`` branching in ``_apply_single_ce_rerank``.
+    """
+
+    mode: str = "base"
+
+    @abstractmethod
+    def rerank(
+        self,
+        query: str,
+        scored_results: list,
+        top_k: int,
+        weak_k: int,
+        chunk_k: int,
+    ) -> list:
+        ...
+
+
+class CombinedReranker(BaseReranker):
+    """Default non-deep stage: ONE r[6] write reproducing the PR1.1 baseline."""
+
+    mode = "combined"
+
+    def rerank(self, query, scored_results, top_k, weak_k, chunk_k):
+        return _apply_combined_ce_rerank(query, scored_results, weak_k, chunk_k)
+
+
+class DeepReranker(BaseReranker):
+    """Combined baseline + optional Qwen3-Reranker top-30 refinement.
+
+    Degrades gracefully to the combined baseline when the deep model is
+    unavailable or errors.
+    """
+
+    mode = "deep"
+
+    def rerank(self, query, scored_results, top_k, weak_k, chunk_k):
+        base = _apply_combined_ce_rerank(query, scored_results, weak_k, chunk_k)
+        deep_out = _try_deep_rerank(query, base, top_k=min(len(base), 30))
+        return deep_out if deep_out is not None else base
+
+
+class ChunkReranker(BaseReranker):
+    """Legacy standalone chunk CE (kept for back-compat)."""
+
+    mode = "chunk"
+
+    def rerank(self, query, scored_results, top_k, weak_k, chunk_k):
+        return _apply_ce_chunk_rerank(
+            query, scored_results, top_k=top_k, blend=_get_ce_chunk_blend()
+        )
+
+
+class WeakReranker(BaseReranker):
+    """Legacy standalone weak CE (kept for back-compat)."""
+
+    mode = "weak"
+
+    def rerank(self, query, scored_results, top_k, weak_k, chunk_k):
+        return _apply_weak_ce_rerank(
+            query, scored_results, top_k=top_k, blend=_get_ce_blend()
+        )
+
+
+_RERANKER_REGISTRY: dict[str, BaseReranker] = {
+    cls.mode: cls()
+    for cls in (CombinedReranker, DeepReranker, ChunkReranker, WeakReranker)
+}
+
+
+def get_reranker_strategy(mode: str) -> BaseReranker:
+    """Return the reranker strategy for ``mode``.
+
+    Unknown modes fall back to :class:`WeakReranker` (the pre-PR1.2 default),
+    preserving the prior ``if mode == ... else weak`` behaviour.
+    """
+    return _RERANKER_REGISTRY.get(mode, WeakReranker())
+
 
 def _apply_single_ce_rerank(
     query: str,
@@ -1123,17 +1185,6 @@ def _apply_single_ce_rerank(
     except Exception:  # pragma: no cover - best-effort config read
         pass
     n = len(scored_results)
-    if mode == "combined":
-        wk = weak_k if weak_k is not None else min(n, top_k)
-        ck = chunk_k if chunk_k is not None else min(n, top_k)
-        return _apply_combined_ce_rerank(query, scored_results, wk, ck)
-    if mode == "deep":
-        wk = weak_k if weak_k is not None else min(n, top_k)
-        ck = chunk_k if chunk_k is not None else min(n, top_k * 3)
-        base = _apply_combined_ce_rerank(query, scored_results, wk, ck)
-        deep_out = _try_deep_rerank(query, base, top_k=min(len(base), 30))
-        return deep_out if deep_out is not None else base
-    if mode == "chunk":
-        return _apply_ce_chunk_rerank(query, scored_results, top_k=top_k, blend=_get_ce_chunk_blend())
-    # default / weak
-    return _apply_weak_ce_rerank(query, scored_results, top_k=top_k, blend=_get_ce_blend())
+    wk = weak_k if weak_k is not None else min(n, top_k)
+    ck = chunk_k if chunk_k is not None else min(n, top_k * 3 if mode == "deep" else top_k)
+    return get_reranker_strategy(mode).rerank(query, scored_results, top_k, wk, ck)

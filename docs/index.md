@@ -37,7 +37,7 @@ Local-first persistent memory for AI agents. Zero cloud dependency, MCP-native, 
 
 ### Search Pipeline
 
-12-phase hybrid search: FTS5 BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost. Each phase independently isolated.
+14-phase hybrid search: FTS5 BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost. Each phase independently isolated.
 
 ### Knowledge Graph
 

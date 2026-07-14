@@ -32,14 +32,20 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
-try:
+from search.config import get_search_config
+
+HAS_NUMPY = True  # Corrected at runtime if numpy is unavailable.
+
+if TYPE_CHECKING:
     import numpy as np
-    HAS_NUMPY = True
-except ImportError:
-    np = None  # type: ignore[assignment]
-    HAS_NUMPY = False
+else:
+    try:
+        import numpy as np
+    except ImportError:
+        np = None  # type: ignore[assignment]
+        HAS_NUMPY = False
 
 logger = logging.getLogger(__name__)
 
@@ -60,17 +66,7 @@ _RERANK_WEIGHTS = {
 
 
 def _get_rerank_weights() -> dict:
-    try:
-        from infra._lazy_imports import get_config
-
-        raw = get_config().rerank_weights
-        if raw:
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict):
-                return parsed
-    except Exception as e:
-        logger.warning("Unhandled exception in _get_rerank_weights: %s", e)
-    return _RERANK_WEIGHTS
+    return get_search_config().rerank_weights
 
 
 def _get_query_type_weights() -> dict:
@@ -134,11 +130,7 @@ _RERANK_TOKEN_RE = re.compile(r"[A-Za-z0-9#@+][A-Za-z0-9\-_/+#]{2,}")
 
 def _get_strong_bm25_threshold() -> float:
     """Read strong BM25 threshold from config, falling back to 0.95."""
-    try:
-        from infra._lazy_imports import get_config
-        return float(get_config().strong_bm25_threshold)
-    except Exception:
-        return 0.95
+    return get_search_config().strong_bm25_threshold
 
 
 _STRONG_BM25_THRESHOLD = _get_strong_bm25_threshold()  # default 0.95
@@ -200,22 +192,8 @@ def _sp_lazy(name: str, default: object = None) -> object:
 
 
 def _get_rerank_half_life_days() -> float:
-    """Resolve rerank_half_life_days from config; falls back to 180.0.
-
-    Tries the legacy flat name first (backwards-compat shim on MemoryConfig),
-    then falls back to the nested ``cfg.rerank.half_life_days`` path.
-    """
-    try:
-        from infra._lazy_imports import get_config
-
-        cfg = get_config()
-        try:
-            return float(cfg.rerank_half_life_days)
-        except AttributeError:
-            return float(cfg.rerank.half_life_days)
-    except Exception as e:
-        logger.warning("Unhandled exception in _get_rerank_half_life_days: %s", e)
-        return 180.0
+    """Resolve rerank_half_life_days from config; falls back to 180.0."""
+    return get_search_config().rerank_half_life_days
 
 
 _RERANK_HALF_LIFE_DAYS = _get_rerank_half_life_days()
@@ -436,9 +414,9 @@ def _apply_temporal_decay(
     """
     if decay_weight is _UNSET:
         try:
-            from infra._lazy_imports import get_config
+            from search.config import get_search_config
 
-            decay_weight = float(get_config().temporal_decay_weight)
+            decay_weight = get_search_config().temporal_decay_weight
         except Exception as e:
             logger.warning("Unhandled exception in _apply_temporal_decay: %s", e)
             decay_weight = 0.15

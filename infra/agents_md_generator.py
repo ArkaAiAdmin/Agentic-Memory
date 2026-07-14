@@ -329,7 +329,7 @@ def gen_current_state(data: dict[str, Any]) -> str:
         f"- **Schema v{data['schema_version']}**: {data['migration_count']} migrations (100% down-coverage), ~{data['table_count']} tables.",
         f"- **MCP surface**: {tc['core']} CORE + 1 router ({admin_label}). See `docs/MCP_SURFACE.md`.",
         "- **Write path**: Saga transaction (DB + vec_key + .md) with flock locking, crash-consistent rollback. `defer_expensive=True` → <200ms.",
-        "- **Read path**: 12-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).",
+        "- **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).",
         "- **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.",
         "- **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.",
         f"- **Testing**: {data['test_file_count']} test files, {data['test_function_count']}+ test functions, ~{data['test_loc'] // 1000}k+ test LOC. Subprocess-per-file runner.",

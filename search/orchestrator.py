@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""12-phase hybrid search orchestrator for agentic-memory.
+"""14-phase hybrid search orchestrator for agentic-memory.
 
 Pipeline phases (executed in order):
   Phase 0  — Input normalization & query type detection
@@ -83,6 +83,7 @@ from search.enrichment import _apply_post_rank_metadata
 from search.synthesis import (
     _bb1_synthesize,
 )
+from search.config import get_search_config
 
 # Docstrings for imported search functions (defined in search.query_parser /
 # search.scoring but exposed here as part of the orchestrator's public surface).
@@ -397,12 +398,7 @@ def _resolve_late_interaction_enabled() -> bool:
 
 
 def _get_embedding_score_threshold() -> float:
-    try:
-        from infra._lazy_imports import get_config
-
-        return float(get_config().embedding_score_threshold)
-    except (ImportError, AttributeError):
-        return 0.25
+    return get_search_config().embedding_score_threshold
 
 
 # Cache for skill-first lookups to prevent double-incrementing hit_count
@@ -1387,7 +1383,7 @@ def _hybrid_fusion(
         from search.budget_aware import compute_adaptive_overfetch
 
         _es = get_embedding_search()
-        # Phase 7: adaptive overfetch based on corpus size
+         # Adaptive overfetch based on corpus size
         try:
             if db is not None:
                 _row = db.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
@@ -1769,7 +1765,7 @@ def _rerank_results(
         return out[:limit], None
 
     _qtype = _detect_query_type(query)
-    # Phase 6: per-query-type CTR-learned weights override global prior
+    # Per-query-type CTR-learned weights override global prior
     from search.scoring import apply_query_type_weights
     _qweights = apply_query_type_weights(_qtype)
     # Legacy global CTR tuning (gated behind MEMORY_CTR_TUNING=1)
@@ -1819,7 +1815,7 @@ def _rerank_results(
                 last_accessed=last_accessed,
             )
         )
-        # Phase 8b: real session-cluster boost — applied to final_score after
+        # Session-cluster boost — applied to final_score after
         # BM25 normalization so it actually influences ranking (the old
         # pre-normalization rank multiply was erased downstream).
         if session_boost_ids is not None and note_id in session_boost_ids:
@@ -2430,7 +2426,8 @@ def _record_search_telemetry(
         logger.warning("record_search_telemetry CTR failed: %s", e)
     try:
         try:
-            tenant_id = db.execute("SELECT tenant_id()").fetchone()[0]
+            _tenant_row = db.execute("SELECT tenant_id()").fetchone()
+            tenant_id = _tenant_row[0] if _tenant_row else "default"
         except Exception:
             tenant_id = "default"
         for i, r in enumerate(result_items):
@@ -3001,7 +2998,23 @@ def search_memories(
     tags: list[str] | None = None,
     shared_with_me: bool = False,
 ) -> dict:
-    """Main entry point: 12-phase hybrid search returning ranked memories.
+    """Main entry point: 14-phase hybrid search returning ranked memories.
+
+    Pipeline phases (each individually isolated with degrade-on-failure):
+      1.  Query parsing + reasoning expansion
+      2.  Skill-first lookup (conditional early return)
+      3.  Cache check
+      4.  DB setup + filter construction (namespace, category, tags)
+      5.  Retrieval — FTS5 BM25 + KG facts (parallel)
+      6.  Embedding fallback (when FTS returns nothing)
+      7.  Hybrid fusion (RRF merge of FTS5 + vector)
+      8.  Temporal filtering (valid_to / as_of time-travel)
+      9.  Chunk enhancement + session-aware clustering
+      10. KG boost + multi-hop traversal
+      11. Reranking (cross-encoder, late-interaction, temporal decay, forget curve)
+      12. Build output items
+      13. Postprocessing (safety demoting, quality gates, user profiling, strong match boost)
+      14. Finalization (record access, shared_with_me, audit, envelope, telemetry)
 
     Orchestrates the full retrieval pipeline: query parsing, FTS5 BM25,
     vector search, ColBERT late-interaction, RRF fusion, cross-encoder
@@ -3128,13 +3141,13 @@ def search_memories(
             "query_id": uuid.uuid4().hex,
         }
 
-    # Phase 1b: Skill-first lookup (if requested)
+    # Phase 2: Skill-first lookup (conditional early return)
     if skill_first:
         skill_result = _skill_first_lookup(db_path, terms, limit, tenant_id=tenant_id)
         if skill_result is not None:
             return skill_result
 
-    # Phase 2: Cache check
+    # Phase 3: Cache check
     cache_key = (
         make_cache_key(
             db_path,
@@ -3175,7 +3188,7 @@ def search_memories(
     try:
         _effective_rerank = rerank and not light
 
-        # Phase 3: DB setup
+        # Phase 4: DB setup + filter construction
         cols = _get_memories_columns(db)
         has_fitness = "fitness_score" in cols
         repo_filter = ""
@@ -3202,7 +3215,7 @@ def search_memories(
             if clause:
                 repo_filter = f"{repo_filter} AND ({clause})" if repo_filter else f" AND ({clause})"
 
-        # Phase 1a: default category bias — exclude noisy auto-save session
+        # Category bias — exclude noisy auto-save session
         # transcripts from recall unless the caller explicitly requests a
         # category. The agent can opt back in via category='sessions' or
         # memory_source='auto_save'. The constraint is appended to
@@ -3240,7 +3253,7 @@ def search_memories(
         if _tag_filter_clauses:
             _tag_filter_sql = " AND (" + " AND ".join(_tag_filter_clauses) + ")"
 
-        # Phase 4 + Phase 4b: FTS + KG fact search
+        # Phase 5: Retrieval — FTS5 BM25 + KG facts
         # When search_parallel_enabled is on (default), run FTS and KG fact
         # lookup concurrently — they hit different tables and are independent.
         # When off (or if the feature flag is unavailable), fall back to the
@@ -3318,7 +3331,7 @@ def search_memories(
                 )
                 _record_phase_latency("search.kg_facts", _t0_kg)
 
-        # Phase 5: Fallback to embeddings
+        # Phase 6: Embedding fallback
         if not results:
             _is_opaque = bool(re.fullmatch(r"[A-Za-z0-9_\-]{6,}", query or ""))
             if not _is_opaque:
@@ -3352,9 +3365,9 @@ def search_memories(
                     related_facts=related_facts if include_facts else None,
                 )
 
-        # Phase 6: Hybrid fusion — merge semantic embedding results with FTS5
-        # when hybrid is enabled.  When disabled, Phase 2 vector search and
-        # Phase 4 RRF merge are skipped entirely.
+        # Phase 7: Hybrid fusion — merge semantic embedding results with FTS5
+        # when hybrid is enabled.  When disabled, Phase 6 vector search and
+        # Phase 7 RRF merge are skipped entirely.
         _merged_chunks = None
         _fusion_chunk_hits: list = []
         if results and hybrid:
@@ -3367,7 +3380,7 @@ def search_memories(
             if _fusion_chunk_hits:
                 _merged_chunks = _fusion_chunk_hits[0]
 
-        # Phase 7: Temporal filtering
+        # Phase 8: Temporal filtering
         if not include_invalid or as_of is not None:
             if "valid_to" in cols:
                 if as_of is not None:
@@ -3410,13 +3423,13 @@ def search_memories(
                         related_facts=related_facts if include_facts else None,
                     )
 
-        # Phase 8: Chunk enhancement
+        # Phase 9: Chunk enhancement + session clustering
         results = _enhance_with_chunks(
             db, results, fts_query, limit, include_invalid, repo_filter, category=category or None,
             merged_chunks=_merged_chunks,
         )
 
-        # Phase 8b: Session-aware clustering
+        # Session-aware clustering
         _t0_sc = time.time()
         session_boost_ids: set = set()
         try:
@@ -3428,7 +3441,7 @@ def search_memories(
             logger.warning("session_cluster failed (degraded): %s", _sc_exc)
         _record_phase_latency("search.session_cluster", _t0_sc)
 
-        # Phase 9: KG boost — traverse KG from result entities
+        # Phase 10: KG boost + multi-hop traversal
         _t0_kgb = time.time()
         try:
             results = _phase_nine_kg_boost(
@@ -3439,7 +3452,7 @@ def search_memories(
             logger.warning("kg_boost failed (degraded): %s", _kgb_exc)
         _record_phase_latency("search.kg_boost", _t0_kgb)
 
-        # Phase 9b: Multi-hop KG traversal
+        # Multi-hop KG traversal
         _t0_mhkg = time.time()
         try:
             results = _phase_ten_multi_hop_kg(
@@ -3450,7 +3463,7 @@ def search_memories(
             logger.warning("multi_hop_kg failed (degraded): %s", _mhkg_exc)
         _record_phase_latency("search.multi_hop_kg", _t0_mhkg)
 
-        # Phase 10: Reranking
+        # Phase 11: Reranking
         from search.budget_aware import get_search_budget
         _search_budget = get_search_budget()
         _t0 = time.time()
@@ -3492,7 +3505,7 @@ def search_memories(
                 results_to_display = list(results)
         _record_phase_latency("rerank", _t0)
 
-        # Phase 10: Build output
+        # Phase 12: Build output items
         result_items, output, backlinks_map = _build_result_items(
             db=db,
             results_to_display=results_to_display,
@@ -3502,15 +3515,20 @@ def search_memories(
             as_of=as_of,
         )
 
-        # Phase 11: Safety demoting
+        # Phase 13: Postprocessing passes — applied in a FIXED, explicit order.
+        # Order is contractually significant: safety demoting strips untrusted
+        # content first, then quality gates, user profiling, the strong-match
+        # boost, and finally the save-hint floater. Every pass is advisory and
+        # mutates (result_items, output, results_to_display) in place; do NOT
+        # reorder these without updating the documented order contract.
         if not light:
+            # 13.1 Safety demoting — strip untrusted content before scoring/gates.
             if safety_wiring and result_items:
                 result_items, output, results_to_display = _apply_safety_demoting(
                     result_items, output, results_to_display
                 )
 
-        # Phase 11b: Quality gates
-        if not light:
+            # 13.2 Quality gates
             result_items, output, results_to_display = _apply_quality_gates(
                 result_items=result_items,
                 output=output,
@@ -3520,8 +3538,7 @@ def search_memories(
                 backlinks_map=backlinks_map,
             )
 
-        # Phase 11c: User profiling
-        if not light:
+            # 13.3 User profiling
             result_items, output, results_to_display = _apply_user_profiling(
                 result_items=result_items,
                 output=output,
@@ -3532,8 +3549,7 @@ def search_memories(
                 db_path=db_path,
             )
 
-        # QB6 (final pass)
-        if not light:
+            # 13.4 Strong match boost
             result_items, output, results_to_display = _apply_strong_match_boost(
                 result_items=result_items,
                 output=output,
@@ -3543,8 +3559,7 @@ def search_memories(
                 backlinks_map=backlinks_map,
             )
 
-        # Save-then-search atomicity hint
-        if not light:
+            # 13.5 Save hint floater
             result_items, output, results_to_display = _apply_save_hint_floater(
                 db=db,
                 db_path=db_path,
@@ -3556,7 +3571,7 @@ def search_memories(
                 backlinks_map=backlinks_map,
             )
 
-        # Phase 12: Record access
+        # Phase 14: Finalization — record access
         _record_last_accessed(db, result_items)
 
         # B3.1: shared_with_me post-filter — append shared memories whose
@@ -3664,7 +3679,7 @@ def search_memories(
             max_synthesis_sentences=max_synthesis_sentences,
             related_facts=related_facts if include_facts else None,
         )
-        # Phase 7: add budget status to envelope
+        # Add budget status to envelope
         result["compute_budget"] = _search_budget.to_dict()
         _cache_store_result(cache_key, result)
         _phase_errs = _phase_counts()

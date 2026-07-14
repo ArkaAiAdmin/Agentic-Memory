@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 def count_search_phases() -> tuple[int, list[str], list[str]]:
     """Return (unique_phase_count, phase_numbers, phase_names).
 
-    Source: orchestrator.py docstring (the canonical 12-phase pipeline).
+    Source: orchestrator.py docstring (the canonical hybrid pipeline).
     """
     path = Path("search/orchestrator.py")
     content = path.read_text()

@@ -4,7 +4,7 @@
 
 Agentic-memory is a local-first, MCP-native memory system for AI agents. It combines:
 
-- **12-phase hybrid search pipeline** — FTS5 BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost
+- **14-phase hybrid search pipeline** — FTS5 BM25 + vector + ColBERT + RRF + cross-encoder + temporal decay + neural forget + KG boost
 - **CQRS write journal** — Lock-free multi-agent writes via separate journal database
 - **CRDT field-level merge** — Conflict-free replication for multi-agent sync
 - **Temporal knowledge graph** — Entity extraction, edge relationships with temporal validity, contradiction detection

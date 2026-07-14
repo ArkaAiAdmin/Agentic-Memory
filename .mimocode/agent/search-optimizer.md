@@ -22,24 +22,26 @@ memory_maintenance(operation="tier_stats")
 memory_maintenance(operation="compact")
 ```
 
-## 12-phase search pipeline
+## 14-phase search pipeline
 
 `search/orchestrator.py` → `search_memories()`:
 
 | Phase | Name | Description |
 |-------|------|-------------|
-| 0 | Input normalization | Query type detection, expansion, cache check |
-| 1 | FTS5 BM25 retrieval | `search/query_parser.py` — keyword matching |
-| 2 | Vector (usearch) retrieval | `embedding_search.py` — model2vec semantic similarity |
-| 3 | ColBERT late-interaction | `search/rerankers.py` — character-3-gram overlap |
-| 4 | RRF merge | `search/scoring.py` — Reciprocal Rank Fusion |
-| 5 | Cross-encoder reranking | Optional deep reranker (Qwen3-Reranker-0.6B) |
-| 6 | Temporal decay | Recency weighting (exponential/linear/off) |
-| 7 | Neural forget curve | `neural_forget.py` — spaced repetition adjustment |
-| 8 | KG concept/centrality boost | Graph-aware scoring |
-| 9 | Final score & ranking | 5-channel weighted sum |
-| 10 | Result envelope | Output formatting |
-| 11 | Error counter & latency | Observability logging |
+| 1 | Query parsing + reasoning expansion | Normalization, query-type detection, entailment OR terms |
+| 2 | Skill-first lookup | Conditional early return when a skill matches |
+| 3 | Cache check | Serve repeated queries without re-running the pipeline |
+| 4 | DB setup + filter construction | Namespace, category, memory_source, tag filters |
+| 5 | FTS5 BM25 + KG facts | Keyword retrieval + KG fact search (parallel) |
+| 6 | Embedding fallback | usearch/model2vec when FTS returns nothing |
+| 7 | Hybrid fusion (RRF) | Reciprocal Rank Fusion of FTS5 + vector |
+| 8 | Temporal filtering | `valid_to` / `as_of` time-travel window |
+| 9 | Chunk enhancement + session clustering | Chunk context + intra-session boosting |
+| 10 | KG boost + multi-hop | Entity centrality + multi-hop traversal |
+| 11 | Reranking | Cross-encoder, ColBERT late-interaction, temporal decay, neural forget curve |
+| 12 | Build output items | JSON envelope construction |
+| 13 | Postprocessing | Safety demoting, quality gates, user profiling, strong-match boost |
+| 14 | Finalization | Record access, shared-with-me, audit, telemetry |
 
 ## Reranker system (two-tier)
 
