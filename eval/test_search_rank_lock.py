@@ -227,7 +227,8 @@ def test_graceful_degradation_on_empty_db(tmp_path: Path) -> None:
 
 
 def test_single_enrichment_site_wired() -> None:
-    orch_src = Path("search/orchestrator.py").read_text(encoding="utf-8")
+    orch_path = Path(__file__).resolve().parent.parent / "search" / "orchestrator.py"
+    orch_src = orch_path.read_text(encoding="utf-8")
     # The new single site is called inside _build_result_items.
     assert orch_src.count("_apply_post_rank_metadata(") == 1
     # The four legacy mutators must no longer steer ranking in orchestrator.

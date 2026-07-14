@@ -100,8 +100,6 @@ class TestSearchPrecisionFixes(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        from search import orchestrator as orch
-
         def fake_search_chunks(db, fts_query, limit):
             return [("doc/chunk-only", 0, "buried sigmoid bug detail", 0, 100, 1.0)]
 
@@ -129,22 +127,25 @@ class TestSearchPrecisionFixes(unittest.TestCase):
         mock_cfg.hybrid_semantic_weight = 1.0
         mock_cfg.hybrid_chunk_fts_weight = 0.8
 
-        with mock.patch.object(orch, "_search_chunks_enhanced", side_effect=fake_search_chunks), \
-             mock.patch.object(orch, "_merge_chunk_hits", side_effect=fake_merge), \
-             mock.patch.object(orch, "_fetch_rows_by_ids", side_effect=fake_fetch_by_ids), \
-             mock.patch("infra._lazy_imports.get_embedding_search", return_value=mock_es), \
+        # Mock before importing orchestrator to prevent ML model loading under suite load
+        with mock.patch("infra._lazy_imports.get_embedding_search", return_value=mock_es), \
              mock.patch("infra._lazy_imports.get_config", return_value=mock_cfg):
+            from search import orchestrator as orch
 
-            fts_results = [("doc/fts-hit", None, None, None, None, 0.0, None, None, None, None)]
-            merged = orch._hybrid_fusion(
-                db=sqlite3.connect(str(db_path)),
-                results=fts_results,
-                normalized_query="sigmoid bug",
-                fts_query='"sigmoid" OR "bug"',
-                db_path=db_path,
-                limit=10,
-                repo_filter="",
-            )
+            with mock.patch.object(orch, "_search_chunks_enhanced", side_effect=fake_search_chunks), \
+                 mock.patch.object(orch, "_merge_chunk_hits", side_effect=fake_merge), \
+                 mock.patch.object(orch, "_fetch_rows_by_ids", side_effect=fake_fetch_by_ids):
+
+                fts_results = [("doc/fts-hit", None, None, None, None, 0.0, None, None, None, None)]
+                merged = orch._hybrid_fusion(
+                    db=sqlite3.connect(str(db_path)),
+                    results=fts_results,
+                    normalized_query="sigmoid bug",
+                    fts_query='"sigmoid" OR "bug"',
+                    db_path=db_path,
+                    limit=10,
+                    repo_filter="",
+                )
 
         merged_ids = {r[0] for r in merged}
         self.assertIn("doc/fts-hit", merged_ids)
