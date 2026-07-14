@@ -1244,6 +1244,12 @@ def _fallback_embedding_search(
         return []
 
 
+# Multiplier applied to final_score for results belonging to the
+# best-represented session under single-session intent.  Applied AFTER
+# BM25 normalization in _rerank_results so it is not erased (the old
+# rank-multiply hack was neutralized by the later re-normalization).
+_SESSION_BOOST_FACTOR = 1.25
+
 # Session keyword sets for intent detection in _phase_eight_session_cluster.
 _SESSION_SINGLE_KW = frozenset({
     "session", "meeting", "discussed", "talked about", "talked",
@@ -1264,6 +1270,7 @@ def _phase_eight_session_cluster(
     results: list,
     query: str,
     limit: int,
+    boost_ids: set | None = None,
 ) -> list:
     """Phase 8: session-aware result clustering and score adjustment.
 
@@ -1304,17 +1311,16 @@ def _phase_eight_session_cluster(
 
     if has_single and not has_multi:
         best_session = max(session_groups, key=lambda s: len(session_groups[s]))
-        modified = []
-        for r in results:
-            sf = r[2] or ""
-            if sf.startswith("sessions/") and sf == best_session:
-                new_r = list(r)
-                new_r[5] = new_r[5] * 0.5
-                modified.append(tuple(new_r))
-            else:
-                modified.append(r)
-        modified.sort(key=lambda x: x[5])
-        return modified
+        # Collect the best-session result ids so _rerank_results can apply a
+        # real final_score boost (post-normalization).  The previous approach
+        # multiplied the raw rank here, which the later re-normalization
+        # erased — a no-op.  We no longer mutate ranks in this phase.
+        if boost_ids is not None:
+            for r in results:
+                sf = r[2] or ""
+                if sf.startswith("sessions/") and sf == best_session:
+                    boost_ids.add(r[0])
+        return results
 
     if has_multi and not has_single:
         n_sessions = len(session_groups)
@@ -1679,6 +1685,7 @@ def _rerank_results(
     recency_weight: float,
     limit: int,
     deep_rerank: bool,
+    session_boost_ids: set | None = None,
     as_of: float | None = None,
     budget: "Any | None" = None,
 ) -> tuple[list, Optional[dict]]:
@@ -1785,6 +1792,11 @@ def _rerank_results(
                 last_accessed=last_accessed,
             )
         )
+        # Phase 8b: real session-cluster boost — applied to final_score after
+        # BM25 normalization so it actually influences ranking (the old
+        # pre-normalization rank multiply was erased downstream).
+        if session_boost_ids is not None and note_id in session_boost_ids:
+            final_score = final_score * _SESSION_BOOST_FACTOR
         importance_val = importance if importance is not None else 3
         fitness_score = fitness if fitness is not None else 0.5
         scored.append(
@@ -2552,6 +2564,13 @@ def _get_agent_scope() -> str:
         return "default"
 
 
+# Gap (in rank units) below the best genuine result where KG-discovered
+# items are placed.  They are strictly supplementary: a weak direct match
+# is never displaced by an arbitrary synthetic rank, and within the
+# supplementary block stronger edges rank higher.
+_KG_SUPPLEMENT_GAP = 0.5
+
+
 def _phase_nine_kg_boost(
     db: AnyConnection,
     results: list,
@@ -2638,31 +2657,44 @@ def _phase_nine_kg_boost(
         if not related_rows:
             return results
 
-        # Map related entity names to memory IDs.
+        # Map related entity names to memory IDs, carrying the max edge
+        # weight seen for each memory.  The weight (not an arbitrary
+        # synthetic rank) drives how KG-discovered items are ordered.
         new_memory_ids: list[str] = []
+        new_memory_weights: dict[str, float] = {}
         for row in related_rows:
             if isinstance(row, sqlite3.Row):
                 entity_name = row["name"]
+                edge_weight = row["weight"]
             else:
                 entity_name = row[1]
+                edge_weight = row[2]
+            edge_weight = float(edge_weight) if edge_weight is not None else 1.0
             matches = _entity_name_to_memory_id(db, entity_name, seen_ids)
             for mid in matches:
                 if mid not in new_memory_ids:
                     new_memory_ids.append(mid)
-                    if len(new_memory_ids) >= limit:
-                        break
+                prev = new_memory_weights.get(mid)
+                if prev is None or edge_weight > prev:
+                    new_memory_weights[mid] = edge_weight
+                if len(new_memory_ids) >= limit:
+                    break
             if len(new_memory_ids) >= limit:
                 break
 
         if not new_memory_ids:
             return results
 
-        # Fetch full rows and append them.
+        # Fetch full rows and append them.  KG-discovered items are placed
+        # *below* the genuine result set (supplementary) and ordered by edge
+        # weight, so a weak direct match is never displaced by an arbitrary
+        # synthetic rank.  base_rank is the best (smallest) genuine rank.
         new_rows = _fetch_rows_by_ids(
             db, new_memory_ids,
             extra_filter=repo_filter,
             extra_params=(category,) if category else (),
         )
+        base_rank = min((float(r[5]) for r in results if len(r) > 5), default=0.0)
         added = 0
         for mid in new_memory_ids:
             row = new_rows.get(mid)
@@ -2670,7 +2702,9 @@ def _phase_nine_kg_boost(
                 # Build a 12-element tuple matching the canonical results format:
                 # (id, content, source_file, tags, created_at, rank, fitness,
                 #  importance, pinned, last_accessed, metadata, access_count)
-                rank_val = float(max(-float(limit), -min(float(limit), float(added + 1))))
+                w = new_memory_weights.get(mid, 1.0)
+                w_norm = min(1.0, max(0.0, w))
+                rank_val = base_rank + _KG_SUPPLEMENT_GAP * (1.0 - w_norm)
                 results.append((
                     mid,
                     row[1] if len(row) > 1 else "",
@@ -2863,36 +2897,39 @@ def _phase_ten_multi_hop_kg(
         if not new_memory_scores:
             return results
 
-        # Merge into results: new memories get added, existing get a score boost.
+        # Merge into results.  Multi-hop discoveries are placed strictly
+        # below the genuine result set (and below phase-9 KG boosts),
+        # ordered by their hop/edge score — never via an arbitrary synthetic
+        # rank, so a weak direct match is never displaced.
         new_rows = _fetch_rows_by_ids(
             db, [m[0] for m in new_memory_scores],
             extra_filter=repo_filter,
             extra_params=(category,) if category else (),
         )
-        scored_updates: dict[str, float] = {}
+        base_rank = min((float(r[5]) for r in results if len(r) > 5), default=0.0)
         for mid, score in new_memory_scores:
             row = new_rows.get(mid)
             if row is None:
                 continue
             if mid in seen_ids:
-                scored_updates[mid] = score
-            else:
-                seen_ids.add(mid)
-                rank_val = float(max(-float(limit), -score * float(limit)))
-                results.append((
-                    mid,
-                    row[1] if len(row) > 1 else "",
-                    row[2] if len(row) > 2 else "",
-                    row[3] if len(row) > 3 else None,
-                    row[4] if len(row) > 4 else "",
-                    rank_val,
-                    row[5] if len(row) > 5 else None,
-                    row[6] if len(row) > 6 else None,
-                    row[7] if len(row) > 7 else None,
-                    row[8] if len(row) > 8 else None,
-                    row[9] if len(row) > 9 else None,
-                    row[10] if len(row) > 10 else 1,
-                ))
+                continue
+            seen_ids.add(mid)
+            s_norm = min(1.0, max(0.0, float(score)))
+            rank_val = base_rank + _KG_SUPPLEMENT_GAP * (1.0 - s_norm)
+            results.append((
+                mid,
+                row[1] if len(row) > 1 else "",
+                row[2] if len(row) > 2 else "",
+                row[3] if len(row) > 3 else None,
+                row[4] if len(row) > 4 else "",
+                rank_val,
+                row[5] if len(row) > 5 else None,
+                row[6] if len(row) > 6 else None,
+                row[7] if len(row) > 7 else None,
+                row[8] if len(row) > 8 else None,
+                row[9] if len(row) > 9 else None,
+                row[10] if len(row) > 10 else 1,
+            ))
 
         return results
     except Exception as e:
@@ -3347,8 +3384,11 @@ def search_memories(
 
         # Phase 8b: Session-aware clustering
         _t0_sc = time.time()
+        session_boost_ids: set = set()
         try:
-            results = _phase_eight_session_cluster(results, query, limit)
+            results = _phase_eight_session_cluster(
+                results, query, limit, boost_ids=session_boost_ids
+            )
         except Exception as _sc_exc:
             _phase_inc("search.session_cluster", _sc_exc)
             logger.warning("session_cluster failed (degraded): %s", _sc_exc)
@@ -3392,6 +3432,7 @@ def search_memories(
                 recency_weight=recency_weight,
                 limit=limit,
                 deep_rerank=deep_rerank,
+                session_boost_ids=session_boost_ids,
                 as_of=as_of,
                 budget=_search_budget,
             )
