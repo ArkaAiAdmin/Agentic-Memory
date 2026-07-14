@@ -260,18 +260,27 @@ def _migrate_kg_edges_tenant_id(conn) -> None:
 
 
 def _migrate_memory_ctr_feedback(conn) -> None:
-    """Create CTR feedback table if absent (P2a)."""
+    """Create CTR feedback table if absent (P2a).
+
+    Schema is the composite primary key (query_id, id) introduced by
+    migration 061: one row per (query_id, returned result) so CTR click/
+    dismiss signals correlate back to the impression that produced them.
+    The numbered migration rebuilds pre-existing single-PK tables; this
+    safety-net only creates the table for DBs that reach it before the
+    migration runner (e.g. direct safety-net callers).
+    """
     try:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS memory_ctr_feedback (
-                id            TEXT PRIMARY KEY,
                 query_id      TEXT NOT NULL,
+                id            TEXT NOT NULL,
                 returned_at   REAL NOT NULL,
                 clicked_at    REAL,
                 dismissed_at  REAL,
                 source        TEXT,
-                ranking_params TEXT
+                ranking_params TEXT,
+                PRIMARY KEY (query_id, id)
             )
         """
         )

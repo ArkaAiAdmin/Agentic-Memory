@@ -536,21 +536,27 @@ def record_ctr_feedback_db(
     ranking_params: Optional[str] = None,
     tenant_id: str = "default",
 ) -> None:
-    """Record CTR feedback as an ``memory_search_interaction`` row.
+    """Record CTR feedback as a ``memory_search_interaction`` row and correlate
+    the click/dismiss signal into ``memory_ctr_feedback``.
 
     Phase 0 (audit #9) fix: previously this wrote to ``memory_ctr_feedback``
-    with ``INSERT OR REPLACE``, which collapsed multi-event rows — a second
-    ``returned`` for an already-clicked (query_id, memory_id) pair would
-    ``DELETE``+re-``INSERT`` and wipe the ``clicked_at`` / ``dismissed_at``
-    columns.  We now write one row per (query_id, memory_id, action) into
+    with ``INSERT OR REPLACE``, which collapsed multi-event rows.  We now
+    write one row per (query_id, memory_id, action) into
     ``memory_search_interaction`` using ``ON CONFLICT(query_id, memory_id,
-    action) DO UPDATE`` so re-recording only refreshes ``ts``/``rank`` and
-    never destroys the sibling action rows.
+    action) DO UPDATE`` so re-recording only refreshes ``ts``/``rank``.
+
+    FIX 2 (search-pipeline review): the click/dismiss signal is also
+    correlated back onto the per-(query_id, id) impression row that
+    ``_record_search_telemetry`` wrote during the originating search, by
+    stamping ``clicked_at`` / ``dismissed_at``.  ``compute_channel_weights``
+    then reads the real CTR signal instead of always returning ``None``.
+    This is best-effort — a missing impression row (e.g. a DB at the legacy
+    single-PK schema) simply leaves the UPDATE as a no-op.
 
     Args:
         db_path: Path to the memory SQLite database.
-        id: Memory id (the legacy ``memory_ctr_feedback.id`` column maps to
-            ``memory_search_interaction.memory_id``).
+        id: Memory id; maps to the ``memory_ctr_feedback.id`` column and to
+            ``memory_search_interaction.memory_id``.
         query_id: Search query correlation id.
         action: One of ``returned`` / ``clicked`` / ``dismissed`` (legacy) or
             any ``memory_search_interaction`` action string.
@@ -582,6 +588,27 @@ def record_ctr_feedback_db(
             (query_id, id, mapped_action, tenant_id, None, query_type),
         )
         conn.commit()
+        # Correlate the click/dismiss signal onto the matching impression row
+        # so compute_channel_weights learns. Best-effort; never breaks the
+        # interaction write above.
+        if action in ("clicked", "dismissed"):
+            try:
+                _now = time.time()
+                if action == "clicked":
+                    conn.execute(
+                        "UPDATE memory_ctr_feedback SET clicked_at=? "
+                        "WHERE query_id=? AND id=?",
+                        (_now, query_id, id),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE memory_ctr_feedback SET dismissed_at=? "
+                        "WHERE query_id=? AND id=?",
+                        (_now, query_id, id),
+                    )
+                conn.commit()
+            except Exception as _ctr_exc:
+                logger.debug("CTR feedback correlation skipped: %s", _ctr_exc)
     finally:
         safe_close_db(conn)
 
@@ -1244,6 +1271,12 @@ def _fallback_embedding_search(
         return []
 
 
+# Multiplier applied to final_score for results belonging to the
+# best-represented session under single-session intent.  Applied AFTER
+# BM25 normalization in _rerank_results so it is not erased (the old
+# rank-multiply hack was neutralized by the later re-normalization).
+_SESSION_BOOST_FACTOR = 1.25
+
 # Session keyword sets for intent detection in _phase_eight_session_cluster.
 _SESSION_SINGLE_KW = frozenset({
     "session", "meeting", "discussed", "talked about", "talked",
@@ -1264,6 +1297,7 @@ def _phase_eight_session_cluster(
     results: list,
     query: str,
     limit: int,
+    boost_ids: set | None = None,
 ) -> list:
     """Phase 8: session-aware result clustering and score adjustment.
 
@@ -1304,17 +1338,16 @@ def _phase_eight_session_cluster(
 
     if has_single and not has_multi:
         best_session = max(session_groups, key=lambda s: len(session_groups[s]))
-        modified = []
-        for r in results:
-            sf = r[2] or ""
-            if sf.startswith("sessions/") and sf == best_session:
-                new_r = list(r)
-                new_r[5] = new_r[5] * 0.5
-                modified.append(tuple(new_r))
-            else:
-                modified.append(r)
-        modified.sort(key=lambda x: x[5])
-        return modified
+        # Collect the best-session result ids so _rerank_results can apply a
+        # real final_score boost (post-normalization).  The previous approach
+        # multiplied the raw rank here, which the later re-normalization
+        # erased — a no-op.  We no longer mutate ranks in this phase.
+        if boost_ids is not None:
+            for r in results:
+                sf = r[2] or ""
+                if sf.startswith("sessions/") and sf == best_session:
+                    boost_ids.add(r[0])
+        return results
 
     if has_multi and not has_single:
         n_sessions = len(session_groups)
@@ -1340,8 +1373,15 @@ def _hybrid_fusion(
     limit: int,
     repo_filter: str,
     category: str | None = None,
+    chunk_hits_out: list | None = None,
 ) -> list:
-    """Merge FTS, semantic, chunk FTS, and SPLADE results using RRF."""
+    """Merge FTS, semantic, chunk FTS, and SPLADE results using RRF.
+
+    FIX 4: when ``chunk_hits_out`` is provided (a list), the merged chunk
+    FTS hits are appended to it so the caller can thread them into
+    ``_enhance_with_chunks`` without re-querying the chunk index. This
+    keeps the return type a flat result list (as callers/tests expect).
+    """
     try:
         from infra._lazy_imports import get_config, get_embedding_search
         from search.budget_aware import compute_adaptive_overfetch
@@ -1350,7 +1390,7 @@ def _hybrid_fusion(
         # Phase 7: adaptive overfetch based on corpus size
         try:
             if db is not None:
-                _row = db.execute("SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL").fetchone()
+                _row = db.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
                 _corpus_size = _row[0] if _row else 1000
             else:
                 _corpus_size = 1000
@@ -1373,6 +1413,8 @@ def _hybrid_fusion(
         # Get chunk-level FTS hits and build their ranked parent ID list
         chunk_hits = _search_chunks_enhanced(db, fts_query, limit=limit * 2)
         merged_chunks = _merge_chunk_hits(chunk_hits)
+        if chunk_hits_out is not None:
+            chunk_hits_out.append(merged_chunks)
         chunk_fts_ranked = [p_id for p_id, _, _, _, _ in merged_chunks]
 
         # SPLADE sparse search (Phase 4)
@@ -1466,15 +1508,24 @@ def _enhance_with_chunks(
     include_invalid: bool,
     repo_filter: str,
     category: str | None = None,
+    merged_chunks: list | None = None,
 ) -> list:
-    """Add chunk-level matches to results."""
+    """Add chunk-level matches to results.
+
+    FIX 4: when ``merged_chunks`` is supplied (the chunk FTS hits already
+    computed by ``_hybrid_fusion``), reuse it instead of re-querying the
+    chunk index, avoiding a redundant FTS pass over ``memory_chunks_fts``.
+    """
     try:
-        chunk_hits = _search_chunks_enhanced(db, fts_query, limit=limit * 2)
-        if not chunk_hits:
+        if merged_chunks is None:
+            chunk_hits = _search_chunks_enhanced(db, fts_query, limit=limit * 2)
+            if not chunk_hits:
+                return results
+            merged_chunks = _merge_chunk_hits(chunk_hits)
+        if not merged_chunks:
             return results
-        merged = _merge_chunk_hits(chunk_hits)
         seen_ids = {r[0] for r in results}
-        chunk_parent_ids = [p_id for p_id, _, _, _, _ in merged if p_id not in seen_ids]
+        chunk_parent_ids = [p_id for p_id, _, _, _, _ in merged_chunks if p_id not in seen_ids]
         chunk_rows = _fetch_rows_by_ids(db, chunk_parent_ids, extra_filter=repo_filter, extra_params=(category,) if category else ())
         # P0-6 fix (2026-06-23): batch the valid_to check instead of
         # one query per chunk hit. Previously we ran a separate
@@ -1490,7 +1541,7 @@ def _enhance_with_chunks(
             if "valid_to" in cols:
                 check_ids = [
                     p_id
-                    for p_id, _, _, _, _ in merged
+                    for p_id, _, _, _, _ in merged_chunks
                     if p_id not in seen_ids and p_id in chunk_rows
                 ]
                 if check_ids:
@@ -1500,7 +1551,7 @@ def _enhance_with_chunks(
                         check_ids,
                     ).fetchall()
                     invalid_ids = {row[0] for row in _rows if row[1] not in (None, "")}
-        for parent_id, chunk_idx, chunk_text, chunk_rank, chunk_count in merged:
+        for parent_id, chunk_idx, chunk_text, chunk_rank, chunk_count in merged_chunks:
             if parent_id in seen_ids:
                 continue
             if parent_id in invalid_ids:
@@ -1661,6 +1712,7 @@ def _rerank_results(
     recency_weight: float,
     limit: int,
     deep_rerank: bool,
+    session_boost_ids: set | None = None,
     as_of: float | None = None,
     budget: "Any | None" = None,
 ) -> tuple[list, Optional[dict]]:
@@ -1767,6 +1819,11 @@ def _rerank_results(
                 last_accessed=last_accessed,
             )
         )
+        # Phase 8b: real session-cluster boost — applied to final_score after
+        # BM25 normalization so it actually influences ranking (the old
+        # pre-normalization rank multiply was erased downstream).
+        if session_boost_ids is not None and note_id in session_boost_ids:
+            final_score = final_score * _SESSION_BOOST_FACTOR
         importance_val = importance if importance is not None else 3
         fitness_score = fitness if fitness is not None else 0.5
         scored.append(
@@ -2047,6 +2104,16 @@ def _cache_store_result(cache_key: str, result: dict) -> None:
         if item.get("id")
     ]
     cache_put(cache_key, result, max_size=SEARCH_CACHE_MAX)
+    # FIX 1: also mirror the result into the module-level _search_cache dict
+    # that the Phase 2 read path inspects, so identical queries register a
+    # cache hit. cache_put writes to the same dict, but we mirror it
+    # explicitly to keep the inline read path independent of infra.cache
+    # internals (TTL/eviction/MAX are applied identically here).
+    with _search_cache_lock:
+        _search_cache[cache_key] = (time.time(), result)
+        _search_cache.move_to_end(cache_key)
+        while len(_search_cache) > SEARCH_CACHE_MAX:
+            _search_cache.popitem(last=False)
     if note_ids:
         try:
             register_cache_note_ids(cache_key, note_ids)
@@ -2338,18 +2405,25 @@ def _record_search_telemetry(
     if db is None:
         return
     try:
-        db.execute(
-            "INSERT OR REPLACE INTO memory_ctr_feedback "
-            "(id, query_id, returned_at, source, ranking_params) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (
-                "__search__",
-                query_id,
-                time.time(),
-                "search",
-                json.dumps({"weights": ctr_weights}) if ctr_weights else "{}",
-            ),
-        )
+        _now = time.time()
+        _ranking = json.dumps({"weights": ctr_weights}) if ctr_weights else "{}"
+        # One impression row per returned result, keyed by (query_id, id),
+        # so a later click/dismiss (record_ctr_feedback_db) can stamp the
+        # same row and compute_channel_weights learns the real signal.
+        # ON CONFLICT preserves clicked_at/dismissed_at across re-impressions.
+        for _r in result_items:
+            _rid = _r.get("id") if isinstance(_r, dict) else None
+            if not _rid:
+                continue
+            db.execute(
+                "INSERT INTO memory_ctr_feedback "
+                "(query_id, id, returned_at, source, ranking_params) "
+                "VALUES (?, ?, ?, 'search', ?) "
+                "ON CONFLICT(query_id, id) DO UPDATE SET "
+                "returned_at=excluded.returned_at, "
+                "ranking_params=excluded.ranking_params",
+                (query_id, _rid, _now, _ranking),
+            )
         db.commit()
     except Exception as e:
         _phase_inc("search.telemetry.ctr_feedback", e)
@@ -2524,6 +2598,13 @@ def _get_agent_scope() -> str:
         return "default"
 
 
+# Gap (in rank units) below the best genuine result where KG-discovered
+# items are placed.  They are strictly supplementary: a weak direct match
+# is never displaced by an arbitrary synthetic rank, and within the
+# supplementary block stronger edges rank higher.
+_KG_SUPPLEMENT_GAP = 0.5
+
+
 def _phase_nine_kg_boost(
     db: AnyConnection,
     results: list,
@@ -2610,31 +2691,44 @@ def _phase_nine_kg_boost(
         if not related_rows:
             return results
 
-        # Map related entity names to memory IDs.
+        # Map related entity names to memory IDs, carrying the max edge
+        # weight seen for each memory.  The weight (not an arbitrary
+        # synthetic rank) drives how KG-discovered items are ordered.
         new_memory_ids: list[str] = []
+        new_memory_weights: dict[str, float] = {}
         for row in related_rows:
             if isinstance(row, sqlite3.Row):
                 entity_name = row["name"]
+                edge_weight = row["weight"]
             else:
                 entity_name = row[1]
+                edge_weight = row[2]
+            edge_weight = float(edge_weight) if edge_weight is not None else 1.0
             matches = _entity_name_to_memory_id(db, entity_name, seen_ids)
             for mid in matches:
                 if mid not in new_memory_ids:
                     new_memory_ids.append(mid)
-                    if len(new_memory_ids) >= limit:
-                        break
+                prev = new_memory_weights.get(mid)
+                if prev is None or edge_weight > prev:
+                    new_memory_weights[mid] = edge_weight
+                if len(new_memory_ids) >= limit:
+                    break
             if len(new_memory_ids) >= limit:
                 break
 
         if not new_memory_ids:
             return results
 
-        # Fetch full rows and append them.
+        # Fetch full rows and append them.  KG-discovered items are placed
+        # *below* the genuine result set (supplementary) and ordered by edge
+        # weight, so a weak direct match is never displaced by an arbitrary
+        # synthetic rank.  base_rank is the best (smallest) genuine rank.
         new_rows = _fetch_rows_by_ids(
             db, new_memory_ids,
             extra_filter=repo_filter,
             extra_params=(category,) if category else (),
         )
+        base_rank = min((float(r[5]) for r in results if len(r) > 5), default=0.0)
         added = 0
         for mid in new_memory_ids:
             row = new_rows.get(mid)
@@ -2642,7 +2736,9 @@ def _phase_nine_kg_boost(
                 # Build a 12-element tuple matching the canonical results format:
                 # (id, content, source_file, tags, created_at, rank, fitness,
                 #  importance, pinned, last_accessed, metadata, access_count)
-                rank_val = float(max(-float(limit), -min(float(limit), float(added + 1))))
+                w = new_memory_weights.get(mid, 1.0)
+                w_norm = min(1.0, max(0.0, w))
+                rank_val = base_rank + _KG_SUPPLEMENT_GAP * (1.0 - w_norm)
                 results.append((
                     mid,
                     row[1] if len(row) > 1 else "",
@@ -2835,36 +2931,39 @@ def _phase_ten_multi_hop_kg(
         if not new_memory_scores:
             return results
 
-        # Merge into results: new memories get added, existing get a score boost.
+        # Merge into results.  Multi-hop discoveries are placed strictly
+        # below the genuine result set (and below phase-9 KG boosts),
+        # ordered by their hop/edge score — never via an arbitrary synthetic
+        # rank, so a weak direct match is never displaced.
         new_rows = _fetch_rows_by_ids(
             db, [m[0] for m in new_memory_scores],
             extra_filter=repo_filter,
             extra_params=(category,) if category else (),
         )
-        scored_updates: dict[str, float] = {}
+        base_rank = min((float(r[5]) for r in results if len(r) > 5), default=0.0)
         for mid, score in new_memory_scores:
             row = new_rows.get(mid)
             if row is None:
                 continue
             if mid in seen_ids:
-                scored_updates[mid] = score
-            else:
-                seen_ids.add(mid)
-                rank_val = float(max(-float(limit), -score * float(limit)))
-                results.append((
-                    mid,
-                    row[1] if len(row) > 1 else "",
-                    row[2] if len(row) > 2 else "",
-                    row[3] if len(row) > 3 else None,
-                    row[4] if len(row) > 4 else "",
-                    rank_val,
-                    row[5] if len(row) > 5 else None,
-                    row[6] if len(row) > 6 else None,
-                    row[7] if len(row) > 7 else None,
-                    row[8] if len(row) > 8 else None,
-                    row[9] if len(row) > 9 else None,
-                    row[10] if len(row) > 10 else 1,
-                ))
+                continue
+            seen_ids.add(mid)
+            s_norm = min(1.0, max(0.0, float(score)))
+            rank_val = base_rank + _KG_SUPPLEMENT_GAP * (1.0 - s_norm)
+            results.append((
+                mid,
+                row[1] if len(row) > 1 else "",
+                row[2] if len(row) > 2 else "",
+                row[3] if len(row) > 3 else None,
+                row[4] if len(row) > 4 else "",
+                rank_val,
+                row[5] if len(row) > 5 else None,
+                row[6] if len(row) > 6 else None,
+                row[7] if len(row) > 7 else None,
+                row[8] if len(row) > 8 else None,
+                row[9] if len(row) > 9 else None,
+                row[10] if len(row) > 10 else 1,
+            ))
 
         return results
     except Exception as e:
@@ -3256,12 +3355,17 @@ def search_memories(
         # Phase 6: Hybrid fusion — merge semantic embedding results with FTS5
         # when hybrid is enabled.  When disabled, Phase 2 vector search and
         # Phase 4 RRF merge are skipped entirely.
+        _merged_chunks = None
+        _fusion_chunk_hits: list = []
         if results and hybrid:
             _t0 = time.time()
             results = _hybrid_fusion(
                 db, results, normalized_query, fts_query, db_path, limit, repo_filter, category=category or None,
+                chunk_hits_out=_fusion_chunk_hits,
             )
             _record_phase_latency("search.hybrid_fusion", _t0)
+            if _fusion_chunk_hits:
+                _merged_chunks = _fusion_chunk_hits[0]
 
         # Phase 7: Temporal filtering
         if not include_invalid or as_of is not None:
@@ -3309,12 +3413,16 @@ def search_memories(
         # Phase 8: Chunk enhancement
         results = _enhance_with_chunks(
             db, results, fts_query, limit, include_invalid, repo_filter, category=category or None,
+            merged_chunks=_merged_chunks,
         )
 
         # Phase 8b: Session-aware clustering
         _t0_sc = time.time()
+        session_boost_ids: set = set()
         try:
-            results = _phase_eight_session_cluster(results, query, limit)
+            results = _phase_eight_session_cluster(
+                results, query, limit, boost_ids=session_boost_ids
+            )
         except Exception as _sc_exc:
             _phase_inc("search.session_cluster", _sc_exc)
             logger.warning("session_cluster failed (degraded): %s", _sc_exc)
@@ -3358,6 +3466,7 @@ def search_memories(
                 recency_weight=recency_weight,
                 limit=limit,
                 deep_rerank=deep_rerank,
+                session_boost_ids=session_boost_ids,
                 as_of=as_of,
                 budget=_search_budget,
             )
@@ -3480,6 +3589,39 @@ def search_memories(
                         ).fetchall()
                         if _swm_extra:
                             results_to_display = list(results_to_display) + list(_swm_extra)
+                            # FIX 7: also surface shared items in result_items so
+                            # the public count/results stay consistent with
+                            # raw_results. Build canonical display rows and reuse
+                            # the standard result_item builder.
+                            _swm_display_rows = []
+                            for _r in _swm_extra:
+                                try:
+                                    (
+                                        _sid, _content, _sf, _tags, _created,
+                                        _imp, _cat, _fit, _la, _meta,
+                                    ) = _r
+                                except ValueError:
+                                    continue
+                                _swm_display_rows.append(
+                                    (
+                                        _sid, _content, _sf, _tags, _created,
+                                        0.0, 0.0, _fit, _imp, 0, _la, _meta,
+                                    )
+                                )
+                            if _swm_display_rows:
+                                try:
+                                    _swm_items, _, _ = _build_result_items(
+                                        db=db,
+                                        results_to_display=_swm_display_rows,
+                                        query=query,
+                                        rerank=rerank,
+                                        db_path=db_path,
+                                    )
+                                    result_items.extend(_swm_items)
+                                except Exception as _swm_rie:
+                                    logger.warning(
+                                        "shared_with_me result_items build failed: %s", _swm_rie
+                                    )
                 except Exception as _swm_exc:
                     _phase_inc("search.shared_with_me", _swm_exc)
                     logger.warning("shared_with_me filter failed: %s", _swm_exc)
