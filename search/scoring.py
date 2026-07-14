@@ -501,7 +501,7 @@ def _compute_final_score(ctx) -> float:
     importance_normalized = importance_val / 5.0
     pinned_bonus = 1.0 if ctx.pinned and ctx.boost_pinned else 0.0
     tag_match = 0.0
-    query_tokens = {
+    query_tokens = ctx.query_tokens if ctx.query_tokens is not None else {
         t.lower() for t in _RERANK_TOKEN_RE.findall(ctx.query) if len(t) >= 3
     }
     if query_tokens:
