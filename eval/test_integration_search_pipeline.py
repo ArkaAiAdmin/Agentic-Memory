@@ -107,9 +107,13 @@ def clear_caches():
 @pytest.fixture
 def no_embedding(monkeypatch):
     import search_pipeline
+    import search.query_parser
 
     monkeypatch.setattr(
         search_pipeline, "_fallback_embedding_search", lambda *a, **kw: []
+    )
+    monkeypatch.setattr(
+        search.query_parser, "_semantic_expand", lambda *a, **kw: []
     )
 
 

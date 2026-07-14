@@ -1016,11 +1016,11 @@ class TestComputeFinalScore(unittest.TestCase):
                 now_ts=time.time(),
             )
         )
-        # rank=0 → sigmoid(0)=0.5 → bm25=0.45*0.5=0.225
-        # fitness=0.25*0.0=0, importance=0.15*0.6=0.09
-        # pinned=0, tag=0
-        # total = 0.225 + 0 + 0.09 = 0.315
-        self.assertAlmostEqual(score, 0.315, places=2)
+        # rank=0 → sigmoid(0)=0.5 → bm25=0.40*0.5=0.200
+        # fitness=0.20*0.0=0, importance=0.15*0.6=0.09
+        # pinned=0, tag=0, recency=0 (recency_weight=0.0)
+        # total = 0.200 + 0 + 0.09 = 0.290
+        self.assertAlmostEqual(score, 0.290, places=2)
 
     def test_pinned_boost(self):
         """Pinned note with boost_pinned=True should score higher."""

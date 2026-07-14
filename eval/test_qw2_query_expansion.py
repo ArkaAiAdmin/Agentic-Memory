@@ -137,8 +137,14 @@ class TestEndToEndExpansion(unittest.TestCase):
         # H21: use full prod schema instead of inline minimal schema
         bootstrap_temp_db_clean(self.db_path)
         self._insert_test_notes()
+        # Patch semantic expansion to isolate FTS+expansion testing
+        self._semantic_patcher = unittest.mock.patch(
+            "search.query_parser._semantic_expand", return_value=[]
+        )
+        self._semantic_patcher.start()
 
     def tearDown(self):
+        self._semantic_patcher.stop()
         import shutil
 
         shutil.rmtree(self.tmpdir, ignore_errors=True)

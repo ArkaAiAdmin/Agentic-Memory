@@ -65,13 +65,8 @@ class TestTransformerOptIn(unittest.TestCase):
                             # Instantiate EmbeddingSearch (falls back to pure transformers)
                             es = EmbeddingSearch()
 
-                            # Wait for background thread to load the model
-                            import time
-                            deadline = time.monotonic() + 10.0
-                            while time.monotonic() < deadline:
-                                if es._model_loaded or es._model_load_failed:
-                                    break
-                                time.sleep(0.05)
+                            # Trigger lazy model load (was background thread, now first-use)
+                            es._ensure_model()
 
                             # Verify it loaded the transformer model via fallback AutoModel
                             mock_auto_model.from_pretrained.assert_called_once()

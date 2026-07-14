@@ -1072,14 +1072,12 @@ class TestSearchRerankerFoundation(unittest.TestCase):
 
     def test_rollback_to_58_drops_splade_tokens(self):
         with self._migrated_db() as conn:
-            # Roll back just migration 059 (to version 58).
-            migration_runner.migrate_down(
-                conn, migration_runner.SCHEMA_VERSION - 1
-            )
+            # Roll back to version 58 (drops migrations 060 and 059).
+            migration_runner.migrate_down(conn, 58)
             version = conn.execute(
                 "SELECT version FROM schema_version WHERE id=1"
             ).fetchone()[0]
-            self.assertEqual(version, migration_runner.SCHEMA_VERSION - 1)
+            self.assertEqual(version, 58)
 
             remaining = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name = 'splade_tokens'"

@@ -465,18 +465,15 @@ def _strong_match_float(rows):
 
 
 def _compute_final_score(ctx) -> float:
-    """Combine five retrieval channels into a single final score.
+    """Combine six retrieval channels into a single final score.
 
     Channels (default weights, sum to 1.0):
-        bm25:       0.45  text relevance, FTS5 rank negated
-        fitness:    0.25  success/recency score from ARC
+        bm25:       0.40  text relevance, FTS5 rank negated
+        fitness:    0.20  success/recency score from ARC
         importance: 0.15  user-set importance 1-5, /5
         pinned:     0.10  always-on boost, scaled by boost_pinned
+        recency:    0.10  temporal decay factor from created/accessed timestamps
         tag_match:  0.05  fraction of query tokens present in tags
-
-    Temporal decay / forgetting curve is applied AFTER this step by
-    ``_apply_temporal_decay`` or ``_apply_jaccard_surprise_penalty``.
-    Recency is intentionally excluded here to avoid double-counting age.
 
     ``now_ts`` is injectable for deterministic tests.
     """
@@ -534,6 +531,12 @@ def _compute_final_score(ctx) -> float:
     # observed facts outrank derived knowledge.  is_entailed defaults to
     # 0 (direct fact) when absent on memory rows.
     _entailment_factor = 0.8 if getattr(ctx, "is_entailed", None) == 1 else 1.0
+    # recency_weight on ScoreContext overrides the recency channel weight.
+    # When explicitly set to 0.0, recency is suppressed entirely.
+    _ctx_rw = getattr(ctx, "recency_weight", None)
+    _recency_weight = float(_ctx_rw) if _ctx_rw is not None else float(
+        weights.get("recency", _get_rerank_weights()["recency"])
+    )
     raw = (
         float(weights.get("bm25", _get_rerank_weights()["bm25"])) * bm25_score
         + float(weights.get("fitness", _get_rerank_weights()["fitness"])) * fitness_score
@@ -541,7 +544,7 @@ def _compute_final_score(ctx) -> float:
         * importance_normalized
         + float(weights.get("pinned", _get_rerank_weights()["pinned"])) * pinned_bonus
         + float(weights.get("tag_match", _get_rerank_weights()["tag_match"])) * tag_match
-        + float(weights.get("recency", _get_rerank_weights()["recency"])) * recency_score
+        + _recency_weight * recency_score
     )
     return raw * _entailment_factor
 

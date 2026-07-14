@@ -94,11 +94,13 @@ class TestSearchEndToEnd(TestCase):
 
     def test_search_returns_empty_for_no_match(self) -> None:
         from search.orchestrator import search_memories
+        from unittest.mock import patch
 
         db = self._seed_db([
             ("lessons/python-basics", "Python programming language.", ["python"], "lessons"),
         ])
-        result = search_memories(db, "zzzz-no-match-query-xyz", limit=5)
+        with patch("search.query_parser._semantic_expand", return_value=[]):
+            result = search_memories(db, "zzzz-no-match-query-xyz", limit=5)
         assert result["count"] == 0
         assert result["results"] == []
 

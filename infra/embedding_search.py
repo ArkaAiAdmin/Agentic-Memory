@@ -468,6 +468,7 @@ class EmbeddingSearch:
         out.  Safe to call from tests and CLI entry points that require the
         model before proceeding.
         """
+        self._ensure_model()
         import time
 
         deadline = time.monotonic() + timeout_s

@@ -76,6 +76,8 @@ def _make_stub_search() -> EmbeddingSearch:
     es._QUERY_CACHE_ENABLED = False
     es._query_cache = {}
     es._QUERY_CACHE_MAX = 128
+    es._model_loaded = True
+    es._model_load_failed = False
     return es
 
 

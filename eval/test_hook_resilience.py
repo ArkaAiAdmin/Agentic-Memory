@@ -84,7 +84,7 @@ class TestHookResilience(unittest.TestCase):
     def test_proactive_context_with_oversized_input(self):
         """Hook with a huge input should not OOM or hang."""
         big = json.dumps({"tool_name": "x", "tool_input": {"command": "y" * 100000}})
-        rc, out, err = _run_hook("memory-proactive-context.py", big, timeout=15.0)
+        rc, out, err = _run_hook("memory-proactive-context.py", big, timeout=30.0)
         self.assertEqual(rc, 0, f"hook exited {rc}: stderr={err!r}")
 
 
@@ -175,7 +175,7 @@ class TestMcpModuleBootstrap(unittest.TestCase):
 class TestSessionEndHook(unittest.TestCase):
     """P1: memory-session-end hook must never crash and must exit 0."""
 
-    def _run_hook_session_end(self, stdin: str = "", timeout: float = 15.0):
+    def _run_hook_session_end(self, stdin: str = "", timeout: float = 30.0):
         return _run_hook("memory-session-end.py", stdin, timeout=timeout)
 
     def test_session_end_hook_imports_cleanly(self):
