@@ -1782,20 +1782,16 @@ def _rerank_results(
         )
 
     scored = _strong_match_float(scored)
-    # PR1.2: Single Monotonic CE. Exactly ONE CE stage rewrites r[6],
+    # PR1.2: CE reranking writes r[6] first (single monotonic CE stage),
     # selected by query type (weak default / chunk for long-multi-part /
     # conversational / deep gated on MEMORY_CE_DEEP). This removes the
     # PR1.1 dual-CE ambiguity where weak+chunk both rewrote r[6] and the
-    # last writer owned the order. Late-interaction (a separate reranker
-    # family, NOT a CE stage) still runs below, and the PR1.1 final sort
-    # re-asserts the ranking order afterwards. No CE stage runs after this.
-    # PR1.2 (option 2): ONE deterministic CE stage. The non-deep path
-    # ("combined") reproduces the validated PR1.1 baseline exactly: a weak
-    # hand-rolled 0.6 pre-pass over the top limit*2, then a chunk ms-marco
-    # 0.7 pass over the top limit*3 (with the baseline p80 pre-filter),
-    # combined into ONE r[6] write per item. The deep path ("deep") runs the
-    # combined baseline then an optional Qwen3-Reranker top-30 refinement
-    # that degrades gracefully to combined when the model is unavailable.
+    # last writer owned the order. After CE, ColBERT and answer_rerank
+    # may also mutate r[6] (late-interaction and answer-level scoring
+    # respectively). The final sort at line ~1840 re-asserts ranking order
+    # after all writers. The deep path ("deep") runs the combined baseline
+    # then an optional Qwen3-Reranker top-30 refinement that degrades
+    # gracefully to combined when the model is unavailable.
     _ce_mode = _select_ce_mode(query, deep_rerank)
     _ce_weak_k = min(len(scored), limit * 2)
     _ce_chunk_k = min(len(scored), limit * 3)

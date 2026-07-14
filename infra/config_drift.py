@@ -49,7 +49,6 @@ class DriftSeverity(str, Enum):
 
 # Per-flag tier table.  Default for unlisted flags is NEUTRAL.
 _FLAG_TIERS: dict[str, DriftSeverity] = {
-    "MEMORY_SAGA_ENABLED":            DriftSeverity.INTEGRITY,
     "MEMORY_CRDT_ENABLED":            DriftSeverity.INTEGRITY,
     "MEMORY_WRITE_JOURNAL_ENABLED":   DriftSeverity.INTEGRITY,
     "MEMORY_QUALITY_GATES":           DriftSeverity.INTEGRITY,
