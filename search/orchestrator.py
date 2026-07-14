@@ -1340,8 +1340,15 @@ def _hybrid_fusion(
     limit: int,
     repo_filter: str,
     category: str | None = None,
+    chunk_hits_out: list | None = None,
 ) -> list:
-    """Merge FTS, semantic, chunk FTS, and SPLADE results using RRF."""
+    """Merge FTS, semantic, chunk FTS, and SPLADE results using RRF.
+
+    FIX 4: when ``chunk_hits_out`` is provided (a list), the merged chunk
+    FTS hits are appended to it so the caller can thread them into
+    ``_enhance_with_chunks`` without re-querying the chunk index. This
+    keeps the return type a flat result list (as callers/tests expect).
+    """
     try:
         from infra._lazy_imports import get_config, get_embedding_search
         from search.budget_aware import compute_adaptive_overfetch
@@ -1350,7 +1357,7 @@ def _hybrid_fusion(
         # Phase 7: adaptive overfetch based on corpus size
         try:
             if db is not None:
-                _row = db.execute("SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL").fetchone()
+                _row = db.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
                 _corpus_size = _row[0] if _row else 1000
             else:
                 _corpus_size = 1000
@@ -1373,6 +1380,8 @@ def _hybrid_fusion(
         # Get chunk-level FTS hits and build their ranked parent ID list
         chunk_hits = _search_chunks_enhanced(db, fts_query, limit=limit * 2)
         merged_chunks = _merge_chunk_hits(chunk_hits)
+        if chunk_hits_out is not None:
+            chunk_hits_out.append(merged_chunks)
         chunk_fts_ranked = [p_id for p_id, _, _, _, _ in merged_chunks]
 
         # SPLADE sparse search (Phase 4)
@@ -1466,15 +1475,24 @@ def _enhance_with_chunks(
     include_invalid: bool,
     repo_filter: str,
     category: str | None = None,
+    merged_chunks: list | None = None,
 ) -> list:
-    """Add chunk-level matches to results."""
+    """Add chunk-level matches to results.
+
+    FIX 4: when ``merged_chunks`` is supplied (the chunk FTS hits already
+    computed by ``_hybrid_fusion``), reuse it instead of re-querying the
+    chunk index, avoiding a redundant FTS pass over ``memory_chunks_fts``.
+    """
     try:
-        chunk_hits = _search_chunks_enhanced(db, fts_query, limit=limit * 2)
-        if not chunk_hits:
+        if merged_chunks is None:
+            chunk_hits = _search_chunks_enhanced(db, fts_query, limit=limit * 2)
+            if not chunk_hits:
+                return results
+            merged_chunks = _merge_chunk_hits(chunk_hits)
+        if not merged_chunks:
             return results
-        merged = _merge_chunk_hits(chunk_hits)
         seen_ids = {r[0] for r in results}
-        chunk_parent_ids = [p_id for p_id, _, _, _, _ in merged if p_id not in seen_ids]
+        chunk_parent_ids = [p_id for p_id, _, _, _, _ in merged_chunks if p_id not in seen_ids]
         chunk_rows = _fetch_rows_by_ids(db, chunk_parent_ids, extra_filter=repo_filter, extra_params=(category,) if category else ())
         # P0-6 fix (2026-06-23): batch the valid_to check instead of
         # one query per chunk hit. Previously we ran a separate
@@ -1490,7 +1508,7 @@ def _enhance_with_chunks(
             if "valid_to" in cols:
                 check_ids = [
                     p_id
-                    for p_id, _, _, _, _ in merged
+                    for p_id, _, _, _, _ in merged_chunks
                     if p_id not in seen_ids and p_id in chunk_rows
                 ]
                 if check_ids:
@@ -1500,7 +1518,7 @@ def _enhance_with_chunks(
                         check_ids,
                     ).fetchall()
                     invalid_ids = {row[0] for row in _rows if row[1] not in (None, "")}
-        for parent_id, chunk_idx, chunk_text, chunk_rank, chunk_count in merged:
+        for parent_id, chunk_idx, chunk_text, chunk_rank, chunk_count in merged_chunks:
             if parent_id in seen_ids:
                 continue
             if parent_id in invalid_ids:
@@ -2047,6 +2065,16 @@ def _cache_store_result(cache_key: str, result: dict) -> None:
         if item.get("id")
     ]
     cache_put(cache_key, result, max_size=SEARCH_CACHE_MAX)
+    # FIX 1: also mirror the result into the module-level _search_cache dict
+    # that the Phase 2 read path inspects, so identical queries register a
+    # cache hit. cache_put writes to the same dict, but we mirror it
+    # explicitly to keep the inline read path independent of infra.cache
+    # internals (TTL/eviction/MAX are applied identically here).
+    with _search_cache_lock:
+        _search_cache[cache_key] = (time.time(), result)
+        _search_cache.move_to_end(cache_key)
+        while len(_search_cache) > SEARCH_CACHE_MAX:
+            _search_cache.popitem(last=False)
     if note_ids:
         try:
             register_cache_note_ids(cache_key, note_ids)
@@ -3256,12 +3284,17 @@ def search_memories(
         # Phase 6: Hybrid fusion — merge semantic embedding results with FTS5
         # when hybrid is enabled.  When disabled, Phase 2 vector search and
         # Phase 4 RRF merge are skipped entirely.
+        _merged_chunks = None
+        _fusion_chunk_hits: list = []
         if results and hybrid:
             _t0 = time.time()
             results = _hybrid_fusion(
                 db, results, normalized_query, fts_query, db_path, limit, repo_filter, category=category or None,
+                chunk_hits_out=_fusion_chunk_hits,
             )
             _record_phase_latency("search.hybrid_fusion", _t0)
+            if _fusion_chunk_hits:
+                _merged_chunks = _fusion_chunk_hits[0]
 
         # Phase 7: Temporal filtering
         if not include_invalid or as_of is not None:
@@ -3309,6 +3342,7 @@ def search_memories(
         # Phase 8: Chunk enhancement
         results = _enhance_with_chunks(
             db, results, fts_query, limit, include_invalid, repo_filter, category=category or None,
+            merged_chunks=_merged_chunks,
         )
 
         # Phase 8b: Session-aware clustering
@@ -3480,6 +3514,39 @@ def search_memories(
                         ).fetchall()
                         if _swm_extra:
                             results_to_display = list(results_to_display) + list(_swm_extra)
+                            # FIX 7: also surface shared items in result_items so
+                            # the public count/results stay consistent with
+                            # raw_results. Build canonical display rows and reuse
+                            # the standard result_item builder.
+                            _swm_display_rows = []
+                            for _r in _swm_extra:
+                                try:
+                                    (
+                                        _sid, _content, _sf, _tags, _created,
+                                        _imp, _cat, _fit, _la, _meta,
+                                    ) = _r
+                                except ValueError:
+                                    continue
+                                _swm_display_rows.append(
+                                    (
+                                        _sid, _content, _sf, _tags, _created,
+                                        0.0, 0.0, _fit, _imp, 0, _la, _meta,
+                                    )
+                                )
+                            if _swm_display_rows:
+                                try:
+                                    _swm_items, _, _ = _build_result_items(
+                                        db=db,
+                                        results_to_display=_swm_display_rows,
+                                        query=query,
+                                        rerank=rerank,
+                                        db_path=db_path,
+                                    )
+                                    result_items.extend(_swm_items)
+                                except Exception as _swm_rie:
+                                    logger.warning(
+                                        "shared_with_me result_items build failed: %s", _swm_rie
+                                    )
                 except Exception as _swm_exc:
                     _phase_inc("search.shared_with_me", _swm_exc)
                     logger.warning("shared_with_me filter failed: %s", _swm_exc)
