@@ -149,6 +149,7 @@ fts_weight = 1.0                     # MEMORY_HYBRID_FTS_WEIGHT
 semantic_weight = 2.0                # MEMORY_HYBRID_SEMANTIC_WEIGHT — boost semantic with bge-large
 chunk_fts_weight = 0.8               # MEMORY_HYBRID_CHUNK_FTS_WEIGHT — chunk-level FTS RRF channel weight
 rrf_k = 30                           # MEMORY_HYBRID_RRF_K — lower k = stronger rank signal
+strong_bm25_threshold = 0.95         # MEMORY_SEARCH_STRONG_BM25_THRESHOLD — hard strong-match boost gate
 semantic_overfetch = 8               # MEMORY_HYBRID_SEMANTIC_OVERFETCH — more candidates from embedding search
 rank_proxy_scale = 30.0              # MEMORY_HYBRID_RANK_PROXY_SCALE
 

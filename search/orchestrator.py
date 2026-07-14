@@ -66,7 +66,6 @@ from search.query_parser import (
     _parse_search_query,
     _build_zero_result_suggestions,
     _detect_query_type,
-    _weights_for_query_type,
 )
 from search.rerankers import (  # type: ignore[import]
     _apply_single_ce_rerank,  # type: ignore[name-defined]
@@ -2572,19 +2571,20 @@ def _phase_nine_kg_boost(
         if not entity_tokens:
             return results
 
-        # Look up matching KG entities.
+        # Look up matching KG entities (WARN-2: batched IN instead of per-token round trips).
         kg_entity_ids: set[int] = set()
         token_sample = list(entity_tokens)[:20]
-        for token in token_sample:
+        if token_sample:
+            kg_ph = ",".join("?" * len(token_sample))
             try:
                 rows = db.execute(
-                    "SELECT id FROM kg_entities WHERE name = ? LIMIT 1",
-                    (token,),
+                    f"SELECT id FROM kg_entities WHERE name IN ({kg_ph})",
+                    token_sample,
                 ).fetchall()
                 for row in rows:
                     kg_entity_ids.add(row[0] if not isinstance(row, sqlite3.Row) else row[0])
             except sqlite3.Error:
-                continue
+                pass
 
         if not kg_entity_ids:
             return results
@@ -2713,13 +2713,16 @@ def _phase_ten_multi_hop_kg(
     try:
         seen_ids = {r[0] for r in results}
         # Round 1: find KG entities matching query tokens.
+        # Round 1: find KG entities matching query tokens (WARN-2: batched IN).
         query_entity_ids: set[int] = set()
         entity_name_to_id: dict[str, int] = {}
-        for token in query_tokens[:10]:
+        token_sample = query_tokens[:10]
+        if token_sample:
+            mh_ph = ",".join("?" * len(token_sample))
             try:
                 rows = db.execute(
-                    "SELECT id, name FROM kg_entities WHERE name = ? LIMIT 1",
-                    (token,),
+                    f"SELECT id, name FROM kg_entities WHERE name IN ({mh_ph})",
+                    token_sample,
                 ).fetchall()
                 for row in rows:
                     eid = row[0] if not isinstance(row, sqlite3.Row) else row[0]
@@ -2727,7 +2730,7 @@ def _phase_ten_multi_hop_kg(
                     query_entity_ids.add(eid)
                     entity_name_to_id[ename] = eid
             except sqlite3.Error:
-                continue
+                pass
 
         if not query_entity_ids:
             return results
