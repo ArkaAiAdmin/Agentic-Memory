@@ -13,6 +13,7 @@ maybe_checkpoint_on_startup, configure_logging.
 
 
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -309,19 +310,40 @@ class TestGetMemoryPathsMutationKillers(unittest.TestCase):
 class TestCountRowsMutationKillers(unittest.TestCase):
     """Target survived mutations in count_rows."""
 
-    def test_returns_int_not_none(self):
-        result = count_rows(PROD_GLOBAL)
-        self.assertIsNotNone(result)
-        self.assertIsInstance(result, int)
+    def _make_temp_db_with_rows(self, n_rows: int = 3) -> Path:
+        """Create a temp DB via bootstrap_temp_db_clean, then insert rows into memories."""
+        tmpdir = Path(tempfile.mkdtemp())
+        db_path = tmpdir / "memory.db"
+        bootstrap_temp_db_clean(db_path)
+        conn = sqlite3.connect(str(db_path))
+        for i in range(n_rows):
+            conn.execute(
+                "INSERT OR REPLACE INTO memories (id, content, source_file, tags, created_at, updated_at, observed_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (f"test/row-{i}", f"content {i}", "test/file.md", "[]", "2026-01-01", "2026-01-01", "2026-01-01"),
+            )
+        conn.commit()
+        conn.close()
+        return tmpdir
 
-    def test_returns_positive_for_prod(self):
-        # 2026-06-29 fix: skip on CI where the prod DB is not seeded.
-        if os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true":
-            self.skipTest("CI: production DB not seeded on the runner")
-        result = count_rows(PROD_GLOBAL)
-        if result == -1:
-            self.skipTest("production DB locked or unreachable under suite load")
-        self.assertGreater(result, 0)
+    def test_returns_int_not_none(self):
+        tmpdir = self._make_temp_db_with_rows()
+        try:
+            result = count_rows(tmpdir)
+            self.assertIsNotNone(result)
+            self.assertIsInstance(result, int)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_returns_positive_for_real_db(self):
+        """count_rows returns > 0 for a DB that has rows."""
+        tmpdir = self._make_temp_db_with_rows(5)
+        try:
+            result = count_rows(tmpdir)
+            self.assertGreater(result, 0)
+            self.assertEqual(result, 5)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     def test_returns_minus1_for_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
