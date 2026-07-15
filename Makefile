@@ -1,6 +1,6 @@
 .PHONY: test test-quick test-file test-clean test-results update-agents-md help
 .PHONY: lint typecheck
-.PHONY: update-docs update-architecture update-mcp-tools update-schema update-config
+.PHONY: update-docs update-architecture update-mcp-tools update-schema update-config update-readme
 
 PYTHON := ./venv/bin/python
 
@@ -72,7 +72,7 @@ update-agents-md: ## Regenerate AUTO-GEN sections in AGENTS.md + docs/_meta.json
 # Run these when the relevant source of truth changes.
 # Always run `make update-docs` after significant code changes.
 
-update-docs: update-agents-md update-architecture update-mcp-tools ## Regenerate all docs (run before every commit)
+update-docs: update-agents-md update-architecture update-mcp-tools update-readme ## Regenerate all docs (run before every commit)
 	@echo "All docs regenerated."
 
 update-architecture: ## Regenerate docs/architecture.md — run when adding/removing modules or changing LOC significantly
@@ -86,6 +86,9 @@ update-schema: ## Regenerate schema docs — run after any migration (adds/alter
 
 update-config: ## Regenerate config docs — run after changing memory.toml or infra/config.py flags
 	$(PYTHON) scripts/gen_config_doc.py
+
+update-readme: ## Update README badges from live code — run after schema/tool/test count changes
+	$(PYTHON) scripts/gen_readme_badges.py
 test-clean: ## Clear pytest cache + temp junit XML
 	rm -rf eval/.pytest_cache eval/__pycache__ /tmp/junit_*.xml /tmp/full_suite*.log
 

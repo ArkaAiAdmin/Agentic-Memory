@@ -2,9 +2,9 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-4%2C766%2B-brightgreen)](#testing)
-[![Schema](https://img.shields.io/badge/schema-v56-orange.svg)](docs/reference/schema.md)
-[![MCP Tools](https://img.shields.io/badge/MCP-17%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
+[![Tests](https://img.shields.io/badge/tests-5,131\+-brightgreen)](#testing)
+[![Schema](https://img.shields.io/badge/schema-v61-orange.svg)](docs/reference/schema.md)
+[![MCP Tools](https://img.shields.io/badge/MCP-18%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
 [![Temporal KG](https://img.shields.io/badge/Temporal-KG-brightgreen)](docs/concepts/temporal-kg.md)
 [![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
@@ -28,8 +28,8 @@ graph TD
     B --> E[.md files - Git-ready]
     C --> F[Temporal Knowledge Graph]
     D --> G[CQRS + CRDT Multi-Agent Sync]
-    A --> H[17 MCP tools]
-    A --> I[39 cron scripts -> 1 scheduler]
+    A --> H[18 MCP tools]
+    A --> I[44 cron scripts -> 1 scheduler]
     A --> J[8 hooks]
     A --> K[Python SDK + TypeScript SDK + REST API]
 ```
