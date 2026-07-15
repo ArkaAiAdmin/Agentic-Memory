@@ -1,34 +1,30 @@
 # Knowledge Graph Dashboard
 
-The KG dashboard provides real-time visibility into the knowledge graph
-state — entity counts, fact distribution, extraction health, and
-temporal contradictions.
+The KG dashboard is a **Streamlit web app** (`dashboard.py`) that provides
+real-time visibility into the knowledge graph state — entity counts,
+fact distribution, extraction health, temporal contradictions, backup
+management, and CTR analytics.
 
-> **Note:** The dashboard is a CLI tool (`python mcp_maintenance.py` with
-> graph ops), not a web UI. For MCP-driven graph exploration, use the
-> `memory_maintenance(operation="graph_traverse")` and
-> `memory_maintenance(operation="graph_shortest_path")` admin tools.
+> **Note:** This is a web UI, not a CLI tool. Run it with:
+> ```bash
+> streamlit run dashboard.py
+> ```
+> For MCP-driven graph exploration (no browser), use the admin tools below.
 
 ## Quick Start
 
 ```bash
-# Graph statistics
+# Launch the dashboard
+streamlit run dashboard.py
+
+# Or query graph stats via MCP (no browser needed)
 ./venv/bin/python -c "
 from mcp_maintenance_ops import _op_memory_stats
 print(_op_memory_stats())
 "
-
-# List all facts (latest 20)
-./venv/bin/python -c "
-from db import connection_pool
-from infra.config import get_db_path
-conn = connection_pool.get(get_db_path())
-rows = conn.execute('SELECT id, fact, confidence FROM kg_facts ORDER BY id DESC LIMIT 20').fetchall()
-for r in rows: print(r)
-"
 ```
 
-## Admin Ops
+## Admin Ops (MCP)
 
 | Operation | Description |
 |-----------|-------------|
@@ -39,7 +35,7 @@ for r in rows: print(r)
 | `graph_traverse` | Walk the graph from a starting entity |
 | `graph_shortest_path` | Shortest path between two entities |
 
-## Metrics Dashboard (MCP)
+## MCP Quick Access
 
 ```python
 # In agent session:
@@ -48,4 +44,4 @@ memory_maintenance(operation="facts_stats")
 memory_maintenance(operation="temporal_contradictions")
 ```
 
-See `docs/reference/mcp-tools.md` for full argument details.
+See `docs/MCP_SURFACE.md` for full argument details.
