@@ -778,14 +778,75 @@ with overview_tab:
 # MEMORIES (table)
 # ═══════════════════════════════════════════════════════════════════════════
 with memories_tab:
-    st.subheader("Memories")
-    m_search = st.text_input("\U0001f50d Filter memories", placeholder="content LIKE ...", key="mem_search")
-    m_min_fit = st.slider("Min fitness", 0.0, 1.0, 0.0, 0.05, key="mem_fit")
-    m_cat_filter = st.selectbox(
-        "Category",
-        ["all"] + sorted([r[0] for r in get_conn().execute("SELECT DISTINCT category FROM memories WHERE category IS NOT NULL").fetchall() if r[0]]),
-        key="mem_cat",
-    )
+    st.subheader("Memory Management")
+
+    # ── Summary stats ──
+    n_total_m = try_count("memories")
+    n_pinned_m = try_count("memories", "pinned=1")
+    n_cats = len([r[0] for r in get_conn().execute("SELECT DISTINCT category FROM memories WHERE category IS NOT NULL").fetchall() if r[0]])
+    avg_fit = get_conn().execute("SELECT AVG(fitness_score) FROM memories WHERE fitness_score IS NOT NULL").fetchone()[0]
+    n_hot = try_count("memories", "tier='hot'")
+    n_warm = try_count("memories", "tier='warm'")
+    n_cold = try_count("memories", "tier='cold'")
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Total", n_total_m)
+    c2.metric("Pinned", n_pinned_m)
+    c3.metric("Categories", n_cats)
+    c4.metric("Avg Fitness", f"{avg_fit:.2f}" if avg_fit else "—")
+    c5.metric("Hot / Warm / Cold", f"{n_hot} / {n_warm} / {n_cold}")
+
+    st.divider()
+
+    # ── Category distribution + Tier breakdown ──
+    col_cat, col_tier = st.columns([2, 1])
+    with col_cat:
+        cat_df = query(
+            "SELECT COALESCE(category, 'uncategorized') cat, COUNT(*) cnt "
+            "FROM memories GROUP BY cat ORDER BY cnt DESC"
+        )
+        if cat_df is not None and not cat_df.empty:
+            fig_cat = px.bar(
+                cat_df, x="cat", y="cnt", color="cnt",
+                color_continuous_scale="Viridis", text_auto=True,
+            )
+            fig_cat.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, xaxis_title=None, yaxis_title="Count")
+            st.plotly_chart(fig_cat, width="stretch")
+
+    with col_tier:
+        tier_df = query(
+            "SELECT COALESCE(tier, 'unassigned') tier, COUNT(*) cnt "
+            "FROM memories GROUP BY tier ORDER BY cnt DESC"
+        )
+        if tier_df is not None and not tier_df.empty:
+            cmap = {"hot": "#ef4444", "warm": "#f59e0b", "cold": "#3b82f6", "unassigned": "#4b5563"}
+            fig_tier = px.pie(
+                tier_df, names="tier", values="cnt", color="tier",
+                color_discrete_map=cmap,
+            )
+            fig_tier.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig_tier, width="stretch")
+
+    # ── Fitness distribution ──
+    fit_df = query("SELECT fitness_score FROM memories WHERE fitness_score IS NOT NULL")
+    if fit_df is not None and not fit_df.empty:
+        fig_fit = px.histogram(
+            fit_df, x="fitness_score", nbins=30, color_discrete_sequence=["#6366f1"],
+        )
+        fig_fit.update_layout(**DARK, height=180, margin=dict(t=10, b=10, l=10, r=10), bargap=0.1, xaxis_title="Fitness Score", yaxis_title="Count")
+        st.plotly_chart(fig_fit, width="stretch")
+
+    st.divider()
+
+    # ── Filters ──
+    f_col1, f_col2, f_col3 = st.columns([2, 1, 1])
+    with f_col1:
+        m_search = st.text_input("\U0001f50d Filter memories", placeholder="content LIKE ...", key="mem_search")
+    with f_col2:
+        m_min_fit = st.slider("Min fitness", 0.0, 1.0, 0.0, 0.05, key="mem_fit")
+    with f_col3:
+        cat_options = ["all"] + sorted([r[0] for r in get_conn().execute("SELECT DISTINCT category FROM memories WHERE category IS NOT NULL").fetchall() if r[0]])
+        m_cat_filter = st.selectbox("Category", cat_options, key="mem_cat")
 
     where_clauses = []
     params = []
@@ -801,14 +862,40 @@ with memories_tab:
 
     where_sql = " AND ".join(where_clauses) if where_clauses else "1"
     m_df = query(
-        f"SELECT id, substr(content,1,250) preview, category, created_at, pinned, fitness_score, tier, importance "
+        f"SELECT id, substr(content,1,250) preview, category, created_at, pinned, "
+        f"COALESCE(fitness_score, 0.5) as fitness, COALESCE(tier, 'unassigned') as tier, "
+        f"COALESCE(importance, 3) as importance "
         f"FROM memories WHERE {where_sql} ORDER BY created_at DESC LIMIT 200",
         params,
     )
+
     if m_df is not None and not m_df.empty:
-        st.caption(f"{len(m_df)} memories")
-        for _, r in m_df.iterrows():
-            _render_memory_content(r["id"])
+        st.caption(f"**{len(m_df)}** memories matching filters")
+
+        # ── Interactive table ──
+        display_df = m_df[["id", "category", "fitness", "tier", "importance", "pinned"]].copy()
+        display_df["preview"] = m_df["preview"].str[:80]
+        display_df["created"] = pd.to_datetime(m_df["created_at"], errors="coerce").dt.strftime("%Y-%m-%d")
+        display_df.columns = ["ID", "Category", "Fitness", "Tier", "Importance", "Pinned", "Preview", "Created"]
+
+        selected = st.dataframe(
+            display_df, width="stretch", hide_index=True,
+            column_config={
+                "Fitness": st.column_config.ProgressColumn("Fitness", min_value=0, max_value=1, format="%.2f"),
+                "Pinned": st.column_config.CheckboxColumn("Pinned"),
+                "Preview": st.column_config.TextColumn("Preview", width="large"),
+            },
+            selection_mode="single",
+            key="mem_table",
+        )
+
+        # ── Selected memory detail ──
+        if selected and len(selected) > 0:
+            sel_idx = selected[0]
+            sel_id = m_df.iloc[sel_idx]["id"]
+            st.divider()
+            st.markdown(f"### {sel_id}")
+            _render_memory_content(sel_id, expanded=True)
     else:
         st.info("No memories match the filters")
 
@@ -1392,70 +1479,174 @@ with embed_tab:
 # FACTS SEARCH
 # ═══════════════════════════════════════════════════════════════════════════
 with facts_tab:
-    st.subheader("Knowledge Graph Facts")
+    st.subheader("Fact Management")
     if table("kg_facts"):
         n_facts = try_count("kg_facts")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Facts", n_facts)
         n_locked = try_count("kg_facts", "locked=1")
-        c2.metric("Locked", n_locked)
         avg_conf = get_conn().execute("SELECT AVG(confidence) FROM kg_facts").fetchone()[0]
+        n_high_conf = try_count("kg_facts", "confidence >= 0.7")
+        n_subjects = try_count("kg_facts", "1=1")
+
+        # ── Summary stats ──
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Total Facts", n_facts)
+        c2.metric("Locked", n_locked)
         c3.metric("Avg Confidence", f"{avg_conf:.2f}" if avg_conf else "—")
+        c4.metric("High Confidence", n_high_conf)
+        c5.metric("Open", n_facts - n_locked)
 
         st.divider()
 
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            f_search = st.text_input("\U0001f50d Filter", placeholder="subject, predicate, object...", key="fact_search")
-            f_min_conf = st.slider("Min confidence", 0.0, 1.0, 0.0, 0.05, key="fact_conf")
-            lock_filter = st.selectbox("Locked", ["all", "locked", "unlocked"], key="fact_lock")
-            st.caption("Showing top 200 by confidence")
+        # ── Confidence distribution + Top predicates ──
+        col_conf, col_pred = st.columns([1, 1])
 
-            where_clauses = ["1=1"]
-            f_params = []
-            if f_search:
-                where_clauses.append("(subject LIKE ? OR predicate LIKE ? OR object LIKE ?)")
-                like = f"%{f_search}%"
-                f_params.extend([like, like, like])
-            if f_min_conf > 0:
-                where_clauses.append("confidence >= ?")
-                f_params.append(str(f_min_conf))
-            if lock_filter == "locked":
-                where_clauses.append("locked = 1")
-            elif lock_filter == "unlocked":
-                where_clauses.append("locked = 0")
-            where_sql = " AND ".join(where_clauses)
-
-        with col2:
-            f_df = query(
-                f"SELECT id, subject, predicate, object, confidence, mention_count, "
-                f"first_seen, last_seen, locked "
-                f"FROM kg_facts WHERE {where_sql} ORDER BY confidence DESC, mention_count DESC LIMIT 200",
-                f_params,
+        with col_conf:
+            conf_dist = query(
+                "SELECT "
+                "CASE WHEN confidence >= 0.7 THEN 'high (>=0.7)' "
+                "WHEN confidence >= 0.4 THEN 'medium (0.4-0.7)' "
+                "ELSE 'low (<0.4)' END as bucket, "
+                "COUNT(*) cnt FROM kg_facts GROUP BY bucket ORDER BY bucket"
             )
-            if f_df is not None and not f_df.empty:
-                st.caption(f"{len(f_df)} facts")
-                for _, r in f_df.iterrows():
-                    conf_col = "#10b981" if r["confidence"] >= 0.7 else "#f59e0b" if r["confidence"] >= 0.4 else "#ef4444"
-                    conf_badge = f'<span style="background:{conf_col};color:#fff;padding:0.15rem 0.5rem;border-radius:999px;font-size:0.7rem;font-weight:600;">{r["confidence"]:.2f}</span>'
-                    lock_badge = _badge_html("warning" if r.get("locked") else "ok", "LOCKED" if r.get("locked") else "OPEN")
-                    with st.expander(f"{r['subject'][:35]} → {r['predicate'][:25]} → {r['object'][:50]}"):
-                        st.markdown(f"{lock_badge} &nbsp; {conf_badge} &nbsp; **{html.escape(str(r['subject'])[:35])}** → **{html.escape(str(r['predicate'])[:25])}** → **{html.escape(str(r['object'])[:50])}**", unsafe_allow_html=True)
-                        c1, c2, c3 = st.columns(3)
-                        c1.markdown(f"**Subject**\n\n`{r['subject']}`")
-                        c2.markdown(f"**Predicate**\n\n`{r['predicate']}`")
-                        c3.markdown(f"**Object**\n\n`{r['object']}`")
-                        st.divider()
-                        m1, m2, m3, m4 = st.columns(4)
-                        m1.metric("Confidence", f"{r['confidence']:.2f}")
-                        m2.metric("Mentions", r["mention_count"])
-                        m3.metric("Locked", "Yes" if r.get("locked") else "No")
-                        if pd.notna(r.get("first_seen")):
-                            m4.caption(f"First: {datetime.fromtimestamp(r['first_seen'], tz=timezone.utc).strftime('%Y-%m-%d')}")
-                        if pd.notna(r.get("last_seen")):
-                            st.caption(f"Last seen: {datetime.fromtimestamp(r['last_seen'], tz=timezone.utc).strftime('%Y-%m-%d')}")
-            else:
-                st.info("No facts match the filters")
+            if conf_dist is not None and not conf_dist.empty:
+                cmap = {"high (>=0.7)": "#10b981", "medium (0.4-0.7)": "#f59e0b", "low (<0.4)": "#ef4444"}
+                fig_conf = px.pie(
+                    conf_dist, names="bucket", values="cnt", color="bucket",
+                    color_discrete_map=cmap,
+                )
+                fig_conf.update_layout(**DARK, height=220, margin=dict(t=10, b=10, l=10, r=10), title="Confidence Distribution")
+                st.plotly_chart(fig_conf, width="stretch")
+
+        with col_pred:
+            pred_dist = query(
+                "SELECT predicate, COUNT(*) cnt FROM kg_facts "
+                "GROUP BY predicate ORDER BY cnt DESC LIMIT 10"
+            )
+            if pred_dist is not None and not pred_dist.empty:
+                fig_pred = px.bar(
+                    pred_dist, x="cnt", y="predicate", orientation="h",
+                    color="cnt", color_continuous_scale="Viridis", text_auto=True,
+                )
+                fig_pred.update_layout(**DARK, height=220, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, yaxis=dict(autorange="reversed"), xaxis_title="Count", title="Top Predicates")
+                st.plotly_chart(fig_pred, width="stretch")
+
+        st.divider()
+
+        # ── Filters ──
+        f_col1, f_col2, f_col3 = st.columns([2, 1, 1])
+        with f_col1:
+            f_search = st.text_input("\U0001f50d Filter", placeholder="subject, predicate, object...", key="fact_search")
+        with f_col2:
+            f_min_conf = st.slider("Min confidence", 0.0, 1.0, 0.0, 0.05, key="fact_conf")
+        with f_col3:
+            lock_filter = st.selectbox("Locked", ["all", "locked", "unlocked"], key="fact_lock")
+
+        where_clauses = ["1=1"]
+        f_params = []
+        if f_search:
+            where_clauses.append("(subject LIKE ? OR predicate LIKE ? OR object LIKE ?)")
+            like = f"%{f_search}%"
+            f_params.extend([like, like, like])
+        if f_min_conf > 0:
+            where_clauses.append("confidence >= ?")
+            f_params.append(str(f_min_conf))
+        if lock_filter == "locked":
+            where_clauses.append("locked = 1")
+        elif lock_filter == "unlocked":
+            where_clauses.append("locked = 0")
+        where_sql = " AND ".join(where_clauses)
+
+        # ── Interactive fact table ──
+        f_df = query(
+            f"SELECT id, subject, predicate, object, confidence, mention_count, "
+            f"first_seen, last_seen, locked "
+            f"FROM kg_facts WHERE {where_sql} ORDER BY confidence DESC, mention_count DESC LIMIT 200",
+            f_params,
+        )
+
+        if f_df is not None and not f_df.empty:
+            st.caption(f"**{len(f_df)}** facts matching filters")
+
+            # Confidence badge column
+            def _conf_badge(conf):
+                color = "#10b981" if conf >= 0.7 else "#f59e0b" if conf >= 0.4 else "#ef4444"
+                return f'<span style="background:{color};color:#fff;padding:0.1rem 0.4rem;border-radius:999px;font-size:0.65rem;font-weight:600;">{conf:.2f}</span>'
+
+            display_f = f_df[["subject", "predicate", "object", "confidence", "mention_count", "locked"]].copy()
+            display_f["confidence"] = display_f["confidence"].apply(lambda x: f"{x:.2f}")
+            display_f.columns = ["Subject", "Predicate", "Object", "Confidence", "Mentions", "Locked"]
+
+            selected_f = st.dataframe(
+                display_f, width="stretch", hide_index=True,
+                column_config={
+                    "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
+                    "Locked": st.column_config.CheckboxColumn("Locked"),
+                    "Subject": st.column_config.TextColumn("Subject", width="medium"),
+                    "Predicate": st.column_config.TextColumn("Predicate", width="small"),
+                    "Object": st.column_config.TextColumn("Object", width="large"),
+                },
+                selection_mode="single",
+                key="fact_table",
+            )
+
+            # ── Selected fact detail ──
+            if selected_f and len(selected_f) > 0:
+                sel_idx = selected_f[0]
+                sel_row = f_df.iloc[sel_idx]
+                st.divider()
+
+                # Fact header with badges
+                conf_val = float(sel_row["confidence"])
+                conf_color = "#10b981" if conf_val >= 0.7 else "#f59e0b" if conf_val >= 0.4 else "#ef4444"
+                st.markdown(
+                    f"<div style='display:flex;align-items:center;gap:10px;'>"
+                    f"<span style='background:{conf_color};color:#fff;padding:0.2rem 0.7rem;border-radius:999px;font-size:0.8rem;font-weight:700;'>{conf_val:.2f}</span>"
+                    f"{'🔒 LOCKED' if sel_row.get('locked') else '🔓 OPEN'}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+                # Subject → Predicate → Object
+                st.markdown(
+                    f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:1.2rem;margin:0.8rem 0;'>"
+                    f"<div style='display:flex;align-items:center;gap:12px;flex-wrap:wrap;'>"
+                    f"<span style='background:#3b82f622;color:#60a5fa;padding:0.3rem 0.8rem;border-radius:8px;font-weight:600;'>{html.escape(str(sel_row['subject']))}</span>"
+                    f"<span style='color:#6b7280;font-size:1.2rem;'>→</span>"
+                    f"<span style='background:#8b5cf622;color:#a78bfa;padding:0.3rem 0.8rem;border-radius:8px;font-size:0.85rem;'>{html.escape(str(sel_row['predicate']))}</span>"
+                    f"<span style='color:#6b7280;font-size:1.2rem;'>→</span>"
+                    f"<span style='background:#10b98122;color:#34d399;padding:0.3rem 0.8rem;border-radius:8px;font-weight:600;'>{html.escape(str(sel_row['object']))}</span>"
+                    f"</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+                # Metrics row
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Confidence", f"{conf_val:.2f}")
+                m2.metric("Mentions", sel_row["mention_count"])
+                m3.metric("Locked", "Yes" if sel_row.get("locked") else "No")
+                if pd.notna(sel_row.get("first_seen")):
+                    m4.metric("First Seen", datetime.fromtimestamp(sel_row['first_seen'], tz=timezone.utc).strftime('%Y-%m-%d'))
+
+                # Related memories
+                mems = query(
+                    "SELECT id, substr(content,1,150) preview, category FROM memories "
+                    "WHERE content LIKE ? ORDER BY created_at DESC LIMIT 5",
+                    (f"%{sel_row['subject']}%",),
+                )
+                if mems is not None and not mems.empty:
+                    st.markdown("**Related Memories**")
+                    for _, mr in mems.iterrows():
+                        cat_color = {"lessons": "#10b981", "decisions": "#3b82f6", "projects": "#f59e0b"}.get(mr["category"], "#6b7280")
+                        st.markdown(
+                            f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:8px;padding:8px;margin:3px 0;'>"
+                            f"<span style='background:{cat_color}22;color:{cat_color};padding:0.1rem 0.4rem;border-radius:999px;font-size:0.6rem;'>{mr['category']}</span> "
+                            f"<span style='color:#9ca3af;font-size:0.72rem;'>{mr['preview'][:100]}</span>"
+                            f"</div>",
+                            unsafe_allow_html=True,
+                        )
+        else:
+            st.info("No facts match the filters")
     else:
         st.info("Table `kg_facts` not available — enable MEMORY_KNOWLEDGE_GRAPH=1")
 
@@ -2467,28 +2658,105 @@ with audit_tab:
 with search_tab:
     st.subheader("Memory Explorer")
 
-    q_text = st.text_input(
-        "Search (LIKE %term%)", placeholder="e.g. memory, agent, config"
-    )
+    # ── Search bar with category filter ──
+    s_col1, s_col2 = st.columns([3, 1])
+    with s_col1:
+        q_text = st.text_input(
+            "\U0001f50d Search memories", placeholder="e.g. 'database migration', 'search quality', 'CTR feedback'",
+            key="explorer_search",
+        )
+    with s_col2:
+        search_cat = st.selectbox(
+            "Category",
+            ["all"] + sorted([r[0] for r in get_conn().execute("SELECT DISTINCT category FROM memories WHERE category IS NOT NULL").fetchall() if r[0]]),
+            key="explorer_cat",
+        )
+
+    # ── Search or browse ──
     if q_text:
+        cat_where = "AND category = ?" if search_cat and search_cat != "all" else ""
+        cat_params = [search_cat] if search_cat and search_cat != "all" else []
+
+        import time as _time
+        _t0 = _time.time()
         df = query(
-            "SELECT id, substr(content,1,300) preview, category, "
-            "created_at, pinned, fitness_score, tier "
-            "FROM memories WHERE content LIKE ? "
-            "ORDER BY created_at DESC LIMIT 50",
-            (f"%{q_text}%",),
+            f"SELECT id, substr(content,1,400) preview, category, "
+            f"created_at, pinned, COALESCE(fitness_score, 0.5) as fitness, "
+            f"COALESCE(tier, 'unassigned') as tier, COALESCE(importance, 3) as importance "
+            f"FROM memories WHERE content LIKE ? {cat_where} "
+            f"ORDER BY created_at DESC LIMIT 50",
+            [f"%{q_text}%"] + cat_params,
         )
+        _elapsed = (_time.time() - _t0) * 1000
+
         if df is None or df.empty:
-            st.info("No matches")
+            st.info(f"No matches for '{q_text}'")
         else:
-            st.caption(f"{len(df)} results")
+            # ── Search stats ──
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Results", len(df))
+            c2.metric("Search Time", f"{_elapsed:.0f} ms")
+            c3.metric("Category", search_cat if search_cat != "all" else "All")
+
+            st.divider()
+
+            # ── Category breakdown of results ──
+            if len(df) > 3:
+                res_cats = df["category"].value_counts().reset_index()
+                res_cats.columns = ["Category", "Count"]
+                fig_res = px.bar(
+                    res_cats, x="Category", y="Count", color="Count",
+                    color_continuous_scale="Viridis", text_auto=True,
+                )
+                fig_res.update_layout(**DARK, height=160, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, xaxis_title=None)
+                st.plotly_chart(fig_res, width="stretch")
+
+            # ── Results as cards ──
             for _, r in df.iterrows():
-                _render_memory_content(r["id"])
+                cat_color = {"lessons": "#10b981", "decisions": "#3b82f6", "projects": "#f59e0b", "sessions": "#8b5cf6", "concepts": "#ec4899", "preferences": "#06b6d4"}.get(r["category"], "#6b7280")
+                tier_bg = {"hot": "#ef444422", "warm": "#f59e0b22", "cold": "#3b82f622"}.get(r["tier"], "#4b556322")
+                tier_fg = {"hot": "#fca5a5", "warm": "#fbbf24", "cold": "#93c5fd"}.get(r["tier"], "#9ca3af")
+                tier_badge = f"<span style='background:{tier_bg};color:{tier_fg};padding:0.1rem 0.4rem;border-radius:999px;font-size:0.6rem;margin-left:4px;'>{r['tier']}</span>"
+                pinned_badge = " 📌" if r.get("pinned") else ""
+
+                st.markdown(
+                    f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:12px 16px;margin:6px 0;'>"
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'>"
+                    f"<div>"
+                    f"<span style='background:{cat_color}22;color:{cat_color};padding:0.15rem 0.5rem;border-radius:999px;font-size:0.65rem;font-weight:600;'>{r['category']}</span>"
+                    f"{tier_badge}{pinned_badge}"
+                    f"</div>"
+                    f"<span style='color:#4b5563;font-size:0.65rem;'>{r.get('created', '—')}</span>"
+                    f"</div>"
+                    f"<div style='color:#9ca3af;font-size:0.78rem;line-height:1.4;'>{r['preview'][:200]}</div>"
+                    f"<div style='display:flex;gap:12px;margin-top:6px;'>"
+                    f"<span style='color:#4b5563;font-size:0.65rem;'>fitness: {r['fitness']:.2f}</span>"
+                    f"<span style='color:#4b5563;font-size:0.65rem;'>importance: {r['importance']}</span>"
+                    f"</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
     else:
-        df = query(
-            "SELECT id FROM memories ORDER BY created_at DESC LIMIT 20"
+        # ── Browse mode: recent memories ──
+        st.markdown("#### Recent Memories")
+        recent = query(
+            "SELECT id, substr(content,1,200) preview, category, created_at, "
+            "pinned, COALESCE(fitness_score, 0.5) as fitness, COALESCE(tier, 'unassigned') as tier "
+            "FROM memories ORDER BY created_at DESC LIMIT 20"
         )
-        if df is not None and not df.empty:
-            st.caption(f"Recent {len(df)} notes (enter a search term above)")
-            for _, r in df.iterrows():
-                _render_memory_content(r["id"])
+        if recent is not None and not recent.empty:
+            for _, r in recent.iterrows():
+                cat_color = {"lessons": "#10b981", "decisions": "#3b82f6", "projects": "#f59e0b", "sessions": "#8b5cf6"}.get(r["category"], "#6b7280")
+                pinned_badge = " 📌" if r.get("pinned") else ""
+                st.markdown(
+                    f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:8px;padding:10px 14px;margin:4px 0;'>"
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
+                    f"<span style='background:{cat_color}22;color:{cat_color};padding:0.1rem 0.4rem;border-radius:999px;font-size:0.65rem;font-weight:600;'>{r['category']}</span>{pinned_badge}"
+                    f"<span style='color:#4b5563;font-size:0.65rem;'>{r.get('created', '—')[:10]}</span>"
+                    f"</div>"
+                    f"<div style='color:#9ca3af;font-size:0.72rem;margin-top:4px;'>{r['preview'][:120]}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.info("No memories yet — save some notes first")
