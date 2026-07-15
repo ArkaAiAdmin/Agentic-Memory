@@ -518,6 +518,7 @@ class FeatureFlagsConfig:
     ner_spacy_enabled: bool = False
     session_memory: bool = False
     session_decision_llm: bool = False
+    session_cross_entity_boost: bool = True
 
 
 @dataclass(frozen=True)
@@ -1052,6 +1053,9 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         session_decision_llm=_b(
             "MEMORY_SESSION_DECISION_LLM", "session_memory.decision_llm", False, bool, toml_data
+        ),
+        session_cross_entity_boost=_b(
+            "MEMORY_SESSION_CROSS_ENTITY_BOOST", "session_memory.cross_entity_boost", True, bool, toml_data
         ),
     )
 

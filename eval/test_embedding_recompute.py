@@ -58,9 +58,9 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         from infra.embedding_recompute import get_stored_model_config, save_model_config
 
         expected = {
-            "model": "minishlab/potion-base-8M",
+            "model": "BAAI/bge-base-en-v1.5",
             "api_base": "local",
-            "dimensions": 256,
+            "dimensions": 768,
         }
         save_model_config(expected)
         config = get_stored_model_config()
@@ -78,9 +78,9 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
 
         save_model_config(
             {
-                "model": "minishlab/potion-base-8M",
+                "model": "BAAI/bge-base-en-v1.5",
                 "api_base": "local",
-                "dimensions": 256,
+                "dimensions": 768,
             }
         )
         result = check_and_rebuild()
@@ -94,9 +94,9 @@ class TestEmbeddingRecomputeConfig(unittest.TestCase):
         mock_run.return_value = mock.MagicMock(returncode=0)
         save_model_config(
             {
-                "model": "minishlab/potion-base-8M",
+                "model": "BAAI/bge-base-en-v1.5",
                 "api_base": "local",
-                "dimensions": 256,
+                "dimensions": 768,
             }
         )
         result = check_and_rebuild(force=True)

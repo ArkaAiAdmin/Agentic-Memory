@@ -949,7 +949,7 @@ def search_memories(
         session_boost_ids: set = set()
         try:
             results = _phase_eight_session_cluster(
-                results, query, limit, boost_ids=session_boost_ids
+                results, query, limit, boost_ids=session_boost_ids, db=db
             )
         except Exception as _sc_exc:
             _phase_inc("search.session_cluster", _sc_exc)

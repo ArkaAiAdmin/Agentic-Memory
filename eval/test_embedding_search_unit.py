@@ -31,7 +31,7 @@ class TestPinnedConstants(unittest.TestCase):
     def test_model_id_is_potion(self):
         from infra.embedding_search import MODEL_ID
 
-        self.assertEqual(MODEL_ID, "minishlab/potion-base-8M")
+        self.assertEqual(MODEL_ID, "BAAI/bge-base-en-v1.5")
 
     def test_model_revision_is_pinned_sha(self):
         from infra.embedding_search import MODEL_REVISION

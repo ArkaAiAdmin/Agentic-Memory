@@ -123,10 +123,10 @@ if (
 # resolve the pinned snapshot ourselves via huggingface_hub.snapshot_download
 # and feed the resulting local path to from_pretrained. This guarantees the
 # same weights across machines and reruns, so embedding scores are stable.
-MODEL_ID = "minishlab/potion-base-8M"
-MODEL_REVISION = "bf8b056651a2c21b8d2565580b8569da283cab23"
+MODEL_ID = "BAAI/bge-base-en-v1.5"
+MODEL_REVISION = "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a"
 # To refresh the pin run:
-#   ~/.config/agentic-memory/venv/bin/python -c "from huggingface_hub import HfApi; print(HfApi().model_info('minishlab/potion-base-8M').sha)"
+#   ~/.config/agentic-memory/venv/bin/python -c "from huggingface_hub import HfApi; print(HfApi().model_info('BAAI/bge-base-en-v1.5').sha)"
 
 
 # Cap on the unindexed-memory safety-net LEFT JOIN inside the indexed

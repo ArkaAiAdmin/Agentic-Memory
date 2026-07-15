@@ -263,7 +263,7 @@ def run_bench(quick: bool = False) -> dict:
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "host": os.uname().nodename,
             "venv_python": sys.executable,
-            "model_id": "minishlab/potion-base-8M",
+            "model_id": "BAAI/bge-base-en-v1.5",
             "embedding_speed": embed_speed,
             "corpora": corpus_results,
         }

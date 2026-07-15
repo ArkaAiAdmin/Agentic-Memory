@@ -27,27 +27,27 @@ VEC_META_FILE = GLOBAL_MEM_DIR / "vec_index.meta.json"
 def get_current_model_config() -> dict:
     """Get the current embedding model configuration."""
     try:
-        # Try model2vec static model (local)
-        from pathlib import Path
-        model_dir = Path.home() / ".cache" / "huggingface" / "hub"
-        potion_dirs = list(model_dir.glob("models--minishlab--potion-base-8M*"))
-        if potion_dirs:
-            return {
-                "model": "minishlab/potion-base-8M",
-                "api_base": "local",
-                "dimensions": 256,
-            }
-        # Fallback: try embedding_search module
-        from infra.embedding_search import get_embedding_search
+        # Try embedding_search module first (reads config + env vars)
+        from infra.embedding_search import get_embedding_search, MODEL_ID
 
         es = get_embedding_search()
         if es.model is not None:
             return {
-                "model": "minishlab/potion-base-8M",
+                "model": MODEL_ID,
                 "api_base": "local",
-                "dimensions": getattr(es.model, "dim", 256),
+                "dimensions": getattr(es.model, "dim", 768),
             }
-        return {"model": "minishlab/potion-base-8M", "api_base": "local", "dimensions": 256}
+        # Fallback: check if model is cached locally
+        from pathlib import Path
+        model_dir = Path.home() / ".cache" / "huggingface" / "hub"
+        bge_dirs = list(model_dir.glob("models--BAAI--bge-base-en-v1.5*"))
+        if bge_dirs:
+            return {
+                "model": "BAAI/bge-base-en-v1.5",
+                "api_base": "local",
+                "dimensions": 768,
+            }
+        return {"model": MODEL_ID, "api_base": "local", "dimensions": 768}
     except Exception as e:
         logger.warning("get_current_model_config failed: %s", e)
         return {"model": "", "api_base": "", "dimensions": 0}

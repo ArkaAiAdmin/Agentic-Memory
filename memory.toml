@@ -190,6 +190,7 @@ tier_fallback_threshold = 5           # MEMORY_RECALL_TIER_FALLBACK_THRESHOLD �
 [session_memory]
 enabled = false                         # MEMORY_SESSION_MEMORY — enable session/thread/compaction tracking (v22). Off by default.
 decision_llm = false                    # MEMORY_SESSION_DECISION_LLM — use LLM to enrich decision candidates (Sprint 6 opt-in). Adds ~100-200ms per save in decisions/lessons/projects/architecture categories.
+cross_entity_boost = true              # MEMORY_SESSION_CROSS_ENTITY_BOOST — cross-session entity affinity boosting. Detects shared entities between sessions via KG and boosts results from sessions with overlapping topics. Default ON.
 
 [background]
 # Background queue backpressure settings (Phase 4).
