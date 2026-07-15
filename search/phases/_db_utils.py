@@ -82,7 +82,7 @@ def _fetch_rows_by_ids(
     db: AnyConnection,
     ids: list,
     table: str = "tenant_memories",
-    columns: str = "id, content, source_file, tags, created_at, fitness_score, importance, pinned, last_accessed, metadata, access_count",
+    columns: str = "id, content, source_file, tags, created_at, fitness_score, importance, pinned, last_accessed, metadata, access_count, score",
     extra_filter: str = "",
     extra_params: tuple = (),
 ) -> dict:

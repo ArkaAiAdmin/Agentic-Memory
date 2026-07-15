@@ -117,8 +117,10 @@ def _fallback_embedding_search(
             ) = row[:8]
             last_accessed = row[8] if len(row) > 8 else None
             metadata_json = row[9] if len(row) > 9 else None
-            score = float(hit.get("score", 0.0))
-            rank = -score
+            access_count = row[10] if len(row) > 10 else 1
+            forget_score = row[11] if len(row) > 11 else None
+            es_score = float(hit.get("score", 0.0))
+            rank = -es_score
             fb_rows.append(
                 (
                     mid,
@@ -132,6 +134,8 @@ def _fallback_embedding_search(
                     pinned,
                     last_accessed,
                     metadata_json,
+                    access_count,
+                    forget_score,
                 )
             )
         return fb_rows
