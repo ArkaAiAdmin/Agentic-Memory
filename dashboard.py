@@ -412,6 +412,14 @@ def _live_health():
         except Exception as e:
             logger.warning("_live_health failed: %s", e)
             checks.append((tbl, "error", str(e)))
+
+    # LTR model check
+    ltr_model = Path(__file__).parent / "models" / "ltr" / "model.txt"
+    if ltr_model.exists():
+        size_kb = ltr_model.stat().st_size / 1024
+        checks.append(("ltr_model", "ok", f"{size_kb:.0f} KB"))
+    else:
+        checks.append(("ltr_model", "warning", "not trained yet"))
     try:
         r = conn.execute("SELECT COUNT(*) FROM memories WHERE pinned=1").fetchone()
         checks.append(("pinned", "ok", f"{r[0]} notes"))
@@ -590,7 +598,9 @@ with overview_tab:
         logger.warning("operation failed: %s", e)
     db_size_mb = DB.stat().st_size / 1024 / 1024
 
-    cols = st.columns(7)
+    n_mem = try_count("memories")
+
+    cols = st.columns(8)
     for i, (label, val, sub) in enumerate(
         [
             ("Total", n_mem, "memory notes"),
@@ -600,6 +610,7 @@ with overview_tab:
             ("Ops Today", n_ops_today, "MCP calls"),
             ("Avg Latency", f"{avg_lat or '?'} ms", "today"),
             ("Embeddings", n_emb, "vectorized"),
+            ("CTR Impressions", n_ctr, "search results"),
         ]
     ):
         cols[i].markdown(
@@ -1269,7 +1280,6 @@ with embed_tab:
                 if len(cats) >= 20:
                     st.markdown("---")
                     st.markdown("#### Category Concentration")
-                    from collections import Counter
                     cat_counts = Counter(cats)
                     total = sum(cat_counts.values())
                     cat_df = pd.DataFrame([
@@ -1598,7 +1608,7 @@ with ctr_tab:
                 qid_where = "AND query_id LIKE ?"
                 qid_params = [f"%{search_qid}%"]
 
-            src_placeholders = ",".join("?" * len(source_filter)) if source_filter else "?"
+            src_placeholders = ",".join("?" * len(source_filter)) if source_filter else ""
             src_where = f"AND COALESCE(source,'unknown') IN ({src_placeholders})" if source_filter else ""
 
             fdf = query(
@@ -1993,11 +2003,22 @@ with cron_tab:
         ("emb-recompute",  "embedding-recompute.log", "Embedding refresh",       "on schema change","🧠"),
         ("crdt-sync",      "crdt-sync.log",        "CRDT merge sync",           "on conflict",   "🔄"),
         ("digest",         "digest.log",           "Daily session digest",      "nightly",        "📰"),
+        ("ltr-trainer",    None,                   "LambdaMART LTR training",   "weekly Mon 05:00","🎯"),
     ]
 
     status_counts: Counter[str] = Counter()
     job_statuses = []
     for name, filename, desc, trigger, emoji in jobs:
+        if filename is None:
+            # Jobs without log files (e.g. ltr-trainer) — check model file instead
+            model_path = Path(__file__).parent / "models" / "ltr" / "model.txt"
+            if model_path.exists():
+                sev, status_label, pct = "ok", "model trained", 60
+            else:
+                sev, status_label, pct = "warning", "awaiting training data", 10
+            status_counts[sev] += 1
+            job_statuses.append((name, None, desc, trigger, emoji, sev, status_label, pct, model_path.exists(), model_path))
+            continue
         fp = MEM_DIR / filename
         exists = fp.exists()
         size = fp.stat().st_size if exists else 0
@@ -2037,7 +2058,7 @@ with cron_tab:
           <div class="progress-track">
             <div class="progress-fill" style="width:{pct}%;background:{bar_color}"></div>
           </div>
-          <div class="card-body" style="margin-top:6px">{status_label} · <code>{filename}</code></div>
+          <div class="card-body" style="margin-top:6px">{status_label} · <code>{filename or 'models/ltr/model.txt'}</code></div>
         </div>
         """, unsafe_allow_html=True)
 
