@@ -2692,15 +2692,17 @@ with health_tab:
         try:
             from infra._lazy_imports import get_config
             cfg = get_config()
+            feat = cfg.features
+            search = cfg.search
             features = {
-                "Knowledge Graph": getattr(cfg, "knowledge_graph_enabled", False),
-                "Adaptive Retention": getattr(cfg, "adaptive_retention_enabled", False),
-                "Temporal KG": getattr(cfg, "temporal_kg_enabled", False),
+                "Knowledge Graph": getattr(search, "knowledge_graph", False),
+                "Adaptive Retention": getattr(feat, "adaptive_retention", False),
+                "Temporal KG": getattr(feat, "feature_temporal_kg", False),
                 "CTR Tuning": os.environ.get("MEMORY_CTR_TUNING") == "1",
-                "LLM Extraction": getattr(cfg, "llm_extraction_enabled", False),
-                "Session Memory": getattr(cfg, "session_memory", False),
-                "CRDT Sync": getattr(cfg, "crdt_enabled", False),
-                "LTR Model": ltr_model.exists() if 'ltr_model' in dir() else (Path(__file__).parent / "models" / "ltr" / "model.txt").exists(),
+                "LLM Extraction": getattr(feat, "llm_extraction", False),
+                "Session Memory": getattr(feat, "session_memory", False),
+                "CRDT Sync": getattr(feat, "crdt_enabled", False),
+                "LTR Model": (Path(__file__).parent / "models" / "ltr" / "model.txt").exists(),
             }
             for feat_name, enabled in features.items():
                 status_color = "#10b981" if enabled else "#4b5563"
