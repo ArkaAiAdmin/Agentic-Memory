@@ -26,7 +26,6 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from infra.memory_common import open_db
 from infra.infrastructure import resolve_active_memory_dir
 
 from infra.log import setup_logging
@@ -51,9 +50,13 @@ def rebuild_all_fts(db_path: Path) -> dict:
     """Run ``INSERT INTO fts(fts) VALUES('rebuild')`` on every FTS5 table.
 
     Returns a dict with table→rowcount results.
+    Uses direct sqlite3.connect (not open_db) to avoid flock conflict
+    with the MCP server's write queue.
     """
     results: dict[str, str] = {}
-    with open_db(db_path, timeout=10.0) as conn:
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
+    try:
         tables = _fts_tables(conn)
         if not tables:
             logger.info("No FTS5 tables found — nothing to rebuild")
@@ -68,6 +71,8 @@ def rebuild_all_fts(db_path: Path) -> dict:
             except sqlite3.Error as exc:
                 results[table] = f"error: {exc}"
                 logger.warning("FTS5 rebuild failed for %s: %s", table, exc)
+    finally:
+        conn.close()
     return results
 
 

@@ -66,7 +66,6 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from infra.memory_common import open_db
 from infra.infrastructure import resolve_active_memory_dir
 
 from infra.log import setup_logging
@@ -104,7 +103,9 @@ def _table_count(conn: AnyConnection, table: str) -> int:
 
 def preflight_stats(db_path: Path) -> dict:
     """Snapshot row counts before the backfill."""
-    with open_db(db_path, timeout=10.0) as conn:
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
+    try:
         return {
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "db_path": str(db_path),
@@ -113,6 +114,8 @@ def preflight_stats(db_path: Path) -> dict:
             "kg_edges": _table_count(conn, "kg_edges"),
             "memories": _table_count(conn, "memories"),
         }
+    finally:
+        conn.close()
 
 
 def run_backfill(
@@ -182,13 +185,17 @@ def run_backfill(
 
 def postflight_stats(db_path: Path, pre: dict) -> dict:
     """Snapshot row counts after the backfill; return deltas."""
-    with open_db(db_path, timeout=10.0) as conn:
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
+    try:
         post = {
             "kg_facts": _table_count(conn, "kg_facts"),
             "kg_entities": _table_count(conn, "kg_entities"),
             "kg_edges": _table_count(conn, "kg_edges"),
             "memories": _table_count(conn, "memories"),
         }
+    finally:
+        conn.close()
     deltas: dict[str, int] = {k: post[k] - pre.get(k, 0) for k in post}
     return {**post, "deltas": deltas}
 

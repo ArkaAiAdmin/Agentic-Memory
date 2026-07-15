@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import os
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -25,7 +26,6 @@ if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
 
-from infra.memory_common import connection_pool, safe_close_db
 from infra.infrastructure import resolve_active_memory_dir
 
 WARN_PENDING_THRESHOLD = int(os.environ.get("MEMORY_TASK_QUEUE_WARN_THRESHOLD", "50"))
@@ -33,7 +33,8 @@ WARN_STALE_SECONDS = int(os.environ.get("MEMORY_TASK_STALE_THRESHOLD_S", "86400"
 
 
 def check(db_path: Path) -> list[str]:
-    conn = connection_pool.get(str(db_path), timeout=10)
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
     warnings: list[str] = []
     try:
         from background.background_queue import init_task_queue, pending_count
@@ -72,7 +73,7 @@ def check(db_path: Path) -> list[str]:
             except (ValueError, TypeError):
                 pass
     finally:
-        safe_close_db(conn)
+        conn.close()
     return warnings
 
 

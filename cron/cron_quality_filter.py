@@ -12,7 +12,7 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from infra.memory_common import safe_close_db, connection_pool
+import sqlite3
 from infra.infrastructure import resolve_active_memory_dir
 import quality_gates as qg
 
@@ -34,7 +34,7 @@ def main() -> int:
     if not db_path.exists():
         print(f"ERROR: no memory.db at {db_path}")
         sys.exit(1)
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
     try:
         stats = qg.quality_stats(conn)
@@ -42,7 +42,7 @@ def main() -> int:
     except Exception as e:
         print(f"Error: {e}")
     finally:
-        safe_close_db(conn)
+        conn.close()
     return 0
 
 

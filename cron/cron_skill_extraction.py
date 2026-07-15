@@ -38,7 +38,7 @@ if os.path.basename(_parent) == "cron":
 sys.path.insert(0, _parent)
 
 
-from infra.memory_common import safe_close_db, connection_pool
+from infra.memory_common import safe_close_db
 from infra.infrastructure import resolve_active_memory_dir
 from skill_extractor import (
     ensure_skill_schema,
@@ -190,7 +190,7 @@ def main() -> None:
         print(f"ERROR: no memory.db at {db_path}")
         sys.exit(1)
 
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
     # 2026-06-19 fix: row_factory=sqlite3.Row so that ``r["col"]`` style
     # access in _existing_skill_hashes / _memory_updated_since works.
@@ -208,7 +208,7 @@ def main() -> None:
             f"elapsed={elapsed:.1f}s"
         )
     finally:
-        safe_close_db(conn)
+        conn.close()
 
 
 if __name__ == "__main__":

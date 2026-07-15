@@ -18,6 +18,7 @@ FTS5 index entries.
 
 from _flock import acquire_lock_or_exit
 import os
+import sqlite3
 import sys
 import json
 import hashlib
@@ -36,9 +37,7 @@ sys.path.insert(0, _parent)
 
 
 from infra.memory_common import (
-    safe_close_db,
     cleanup_fts5_orphans,
-    connection_pool,
 )
 from infra.infrastructure import resolve_active_memory_dir
 
@@ -173,7 +172,7 @@ def consolidate(dry_run: bool = True):
         return
     acquire_lock_or_exit("cron_consolidate")
 
-    db = connection_pool.get(str(db_path), timeout=30.0)
+    db = sqlite3.connect(str(db_path), timeout=30.0)
     db.execute("PRAGMA busy_timeout = 30000;")
 
     rows = _rows(db)
@@ -259,7 +258,7 @@ def consolidate(dry_run: bool = True):
     if orphans_removed:
         print(f"FTS5 cleanup: removed {orphans_removed} orphaned entries")
 
-    safe_close_db(db)
+    db.close()
 
 
 def consolidate_light():

@@ -3,6 +3,7 @@
 
 from _flock import acquire_lock_or_exit
 import os
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -19,7 +20,6 @@ _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
-from infra.memory_common import safe_close_db, connection_pool
 from infra.infrastructure import resolve_active_memory_dir
 from self_directed import run_heartbeat
 
@@ -42,7 +42,7 @@ def main() -> int:
     if not db_path.exists():
         print(f"ERROR: no memory.db at {db_path}")
         sys.exit(1)
-    conn = connection_pool.get(str(db_path), timeout=30.0)
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
     try:
         result = run_heartbeat(conn, dry_run=False, db_path=str(db_path))
@@ -53,7 +53,7 @@ def main() -> int:
             f"{result['archived']} archived."
         )
     finally:
-        safe_close_db(conn)
+        conn.close()
     return 0
 
 
