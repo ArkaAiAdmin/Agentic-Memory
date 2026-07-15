@@ -167,6 +167,19 @@ def record_memory_used_in_response(
                 "DO UPDATE SET ts=excluded.ts, rank=excluded.rank, query_type=coalesce(excluded.query_type, memory_search_interaction.query_type)",
                 (query_id, memory_id, tenant_id, rank, query_type),
             )
+            # Implicit click signal: stamp clicked_at on CTR impressions
+            # for memories used in the response.  This closes the feedback
+            # loop — the search pipeline records impressions (Phase 14),
+            # and when the agent cites a memory, we treat that as a click.
+            try:
+                conn.execute(
+                    "UPDATE memory_ctr_feedback "
+                    "SET clicked_at = COALESCE(clicked_at, ?) "
+                    "WHERE query_id = ? AND id = ? AND clicked_at IS NULL",
+                    (time.time(), query_id, memory_id),
+                )
+            except Exception:
+                pass  # Best-effort; never breaks the primary write
         conn.commit()
     finally:
         safe_close_db(conn)

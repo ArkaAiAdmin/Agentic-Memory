@@ -133,7 +133,12 @@ def splade_search(
     query_sparse: list[tuple[int, float]],
     top_k: int = 100,
 ) -> list[tuple[str, float]]:
-    """Search for memories using sparse dot product with query vector.
+    """Search for memories using SPLADE maxsim scoring.
+
+    For each query token, finds the maximum-weight matching document
+    token, then sums those maxima.  This is more accurate than dot
+    product for sparse retrieval — a document only needs to match the
+    query tokens it's best at.
 
     Args:
         conn: Database connection with splade_tokens populated.
@@ -146,7 +151,6 @@ def splade_search(
     if not query_sparse:
         return []
 
-    # Build WHERE clause for query vocab_ids
     vocab_ids = [vid for vid, _ in query_sparse]
     weight_map = {vid: w for vid, w in query_sparse}
 
@@ -156,13 +160,21 @@ def splade_search(
         vocab_ids,
     ).fetchall()
 
-    # Compute dot product per memory
-    scores: dict[str, float] = {}
-    for mid, vid, weight in rows:
-        if mid not in scores:
-            scores[mid] = 0.0
-        scores[mid] += weight * weight_map.get(vid, 0.0)
+    # Maxsim: for each (memory_id, query_vocab_id), track max doc weight
+    max_weights: dict[str, dict[int, float]] = {}
+    for mid, vid, doc_weight in rows:
+        if mid not in max_weights:
+            max_weights[mid] = {}
+        qw = weight_map.get(vid, 0.0)
+        # Maxsim = max over doc tokens of (query_weight * doc_weight)
+        combined = qw * doc_weight
+        if vid not in max_weights[mid] or combined > max_weights[mid][vid]:
+            max_weights[mid][vid] = combined
 
-    # Sort by score descending
+    # Sum max weights per memory
+    scores: dict[str, float] = {}
+    for mid, vid_scores in max_weights.items():
+        scores[mid] = sum(vid_scores.values())
+
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     return ranked[:top_k]

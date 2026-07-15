@@ -434,6 +434,19 @@ def _rerank_results(
             out = answer_rerank(db, query, out, db_path=db_path)
         except Exception as _ar_exc:
             logger.debug("answer_rerank skipped: %s", _ar_exc)
+    # LTR reranking: LambdaMART takes over ordering after all CE /
+    # late-interaction work.  CE / late-interaction become features
+    # into LTR, not final rank owners.  Writes r[6] exactly once.
+    if out and budget.should_run("ltr_rerank", 50):
+        try:
+            from search.ltr.scorer import ltr_rerank, ltr_enabled
+            if ltr_enabled():
+                from search.ltr.session_ctx import build_session_ctx
+                _session_ctx = build_session_ctx(db, lookback=10, time_window_hours=4.0)
+                out = ltr_rerank(query, out, db=db, db_path=db_path,
+                                limit=limit, session_ctx=_session_ctx)
+        except Exception as _ltr_exc:
+            logger.debug("ltr_rerank skipped: %s", _ltr_exc)
     # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
     # late-interaction rerankers above, which sort on r[6] (the CE-blended
     # final_score). The four historical enrichment passes (temporal decay,

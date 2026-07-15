@@ -401,6 +401,35 @@ def memory_reinforce(memory_ids: list, success: bool) -> str:
     ``memory_record_ctr_feedback`` for that.
     """
     delta = 1.0 if success else -1.0
+    # Implicit click signal: when a memory is reinforced as successful,
+    # stamp clicked_at on the most recent CTR impression for that memory
+    # so LTR has training data.
+    if success:
+        try:
+            import time as _time
+            _db_path = str(_resolve_memory_dir() / "memory.db")
+            from infra._lazy_imports import connection_pool, safe_close_db
+            _conn = connection_pool.get(_db_path, tenant_id="default")
+            try:
+                for mid in memory_ids:
+                    try:
+                        _conn.execute(
+                            "UPDATE memory_ctr_feedback "
+                            "SET clicked_at = COALESCE(clicked_at, ?) "
+                            "WHERE id = ? AND clicked_at IS NULL "
+                            "AND returned_at = ("
+                            "  SELECT MAX(returned_at) FROM memory_ctr_feedback "
+                            "  WHERE id = ?"
+                            ")",
+                            (_time.time(), mid, mid),
+                        )
+                    except Exception:
+                        pass
+                _conn.commit()
+            finally:
+                safe_close_db(_conn)
+        except Exception:
+            pass
     try:
         by_db: dict[str, list[str]] = {}
         not_found: list[str] = []

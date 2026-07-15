@@ -53,3 +53,10 @@ eval/real_memory_eval_results.json
 eval/prebuilt_db_path.txt
 SEARCH_SOTA_STATUS.md
 eval/results/
+
+# Cron runtime artifacts (generated, not source)
+cron/.peer_policy_cache.json
+cron/fleet-policy-hash.log
+cron/audit_sink.jsonl
+.mimocode/.cron-lock
+dummy

@@ -13,6 +13,7 @@ import html
 import json
 import struct
 import sqlite3
+import time
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -1520,6 +1521,58 @@ with ctr_tab:
         c3.metric("Dismissed", n_dismissed)
         c4.metric("CTR", f"{ctr_pct:.1f}%")
 
+        # ── Search Quality (live nDCG from CTR data) ──
+        st.markdown("#### Search Quality")
+        if n_clicked > 0:
+            try:
+                qdf_quality = query(
+                    "SELECT query_id, id, clicked_at, dismissed_at, returned_at "
+                    "FROM memory_ctr_feedback ORDER BY query_id, returned_at"
+                )
+                if qdf_quality is not None and not qdf_quality.empty:
+                    from math import log2
+
+                    ndcg_scores = []
+                    for qid, grp in qdf_quality.groupby("query_id"):
+                        grp = grp.sort_values("returned_at")
+                        rels = [1 if pd.notna(r["clicked_at"]) else 0 for _, r in grp.iterrows()]
+                        dcg = sum(rel / log2(i + 2) for i, rel in enumerate(rels))
+                        ideal = sorted(rels, reverse=True)
+                        idcg = sum(r / log2(i + 2) for i, r in enumerate(ideal))
+                        ndcg = dcg / idcg if idcg > 0 else 0.0
+                        ndcg_scores.append({
+                            "query_id": qid,
+                            "nDCG@10": round(ndcg, 4),
+                            "results": len(rels),
+                            "clicks": sum(rels),
+                        })
+                    ndcg_df = pd.DataFrame(ndcg_scores)
+                    avg_ndcg = ndcg_df["nDCG@10"].mean()
+                    col_q1, col_q2, col_q3 = st.columns(3)
+                    col_q1.metric("Avg nDCG@10", f"{avg_ndcg:.4f}")
+                    col_q2.metric("Queries with clicks", f"{len(ndcg_df[ndcg_df['clicks'] > 0])}/{len(ndcg_df)}")
+                    col_q3.metric("Total queries", len(ndcg_df))
+                    with st.expander("Per-query nDCG"):
+                        st.dataframe(ndcg_df, width="stretch", hide_index=True)
+            except Exception as e:
+                st.caption(f"nDCG computation failed: {e}")
+        else:
+            bench_file = Path(__file__).parent / "eval" / "results" / "retrieval-baseline.json"
+            if bench_file.exists():
+                try:
+                    baseline = json.loads(bench_file.read_text())
+                    bc1, bc2 = st.columns(2)
+                    bc1.metric("Baseline nDCG@5", f"{baseline.get('ndcg_at_5', 0):.4f}", help="From offline eval (eval/gold/v1.jsonl)")
+                    bc2.metric("Baseline MRR", f"{baseline.get('mrr', 0):.4f}")
+                    st.caption(
+                        "Click 👍/👎 on results above to build live nDCG data. "
+                        "Baseline is from offline retrieval eval."
+                    )
+                except Exception:
+                    st.caption("No click data yet. Click results to start building training data for LTR.")
+            else:
+                st.caption("No click data yet. Click results to start building training data for LTR.")
+
         st.divider()
 
         col1, col2 = st.columns([1, 2])
@@ -1567,31 +1620,69 @@ with ctr_tab:
                         r["status"].upper(),
                     )
                     ts = r["returned"].strftime("%Y-%m-%d %H:%M") if pd.notna(r["returned"]) else "?"
-                with st.expander(f"`{r['query_id'][:24]}` &nbsp;·&nbsp; {ts} &nbsp;·&nbsp; src={r['source']}"):
-                    st.markdown(f"{status_badge} **Query ID**: `{html.escape(str(r['query_id']))}`", unsafe_allow_html=True)
-                    st.markdown(f"**Source**: {r['source']}")
-                    st.markdown(f"**Status**: {r['status']}")
-                    if pd.notna(r["returned_at"]):
-                        st.caption(f"Returned: {r['returned'].isoformat()}")
-                    if pd.notna(r["clicked_at"]):
-                        st.caption(f"Clicked: {pd.to_datetime(r['clicked_at'], unit='s', errors='coerce').isoformat()}")
-                    if pd.notna(r["dismissed_at"]):
-                        st.caption(f"Dismissed: {pd.to_datetime(r['dismissed_at'], unit='s', errors='coerce').isoformat()}")
-                    if r.get("ranking_params"):
-                        try:
-                            rp = json.loads(r["ranking_params"])
-                            st.markdown("**Ranking weights**:")
-                            w = rp.get("weights", rp)
-                            if isinstance(w, dict):
-                                wdf = pd.DataFrame(list(w.items()), columns=["factor", "weight"])
-                                fig_w = px.bar(wdf, x="factor", y="weight", color="weight", color_continuous_scale="Viridis")
-                                fig_w.update_layout(**DARK, height=180, margin=dict(t=10, b=5, l=5, r=5), showlegend=False)
-                                st.plotly_chart(fig_w, width="stretch")
-                            else:
-                                st.json(rp)
-                        except Exception as e:
-                            logger.warning("operation failed: %s", e)
-                            st.code(r["ranking_params"])
+                    with st.expander(f"`{r['query_id'][:24]}` &nbsp;·&nbsp; {ts} &nbsp;·&nbsp; src={r['source']}"):
+                        st.markdown(f"{status_badge} **Query ID**: `{html.escape(str(r['query_id']))}`", unsafe_allow_html=True)
+                        st.markdown(f"**Source**: {r['source']}")
+                        st.markdown(f"**Status**: {r['status']}")
+                        if pd.notna(r["returned_at"]):
+                            st.caption(f"Returned: {r['returned'].isoformat()}")
+                        if pd.notna(r["clicked_at"]):
+                            st.caption(f"Clicked: {pd.to_datetime(r['clicked_at'], unit='s', errors='coerce').isoformat()}")
+                        if pd.notna(r["dismissed_at"]):
+                            st.caption(f"Dismissed: {pd.to_datetime(r['dismissed_at'], unit='s', errors='coerce').isoformat()}")
+                        if r.get("ranking_params"):
+                            try:
+                                rp = json.loads(r["ranking_params"])
+                                st.markdown("**Ranking weights**:")
+                                w = rp.get("weights", rp)
+                                if isinstance(w, dict):
+                                    wdf = pd.DataFrame(list(w.items()), columns=["factor", "weight"])
+                                    fig_w = px.bar(wdf, x="factor", y="weight", color="weight", color_continuous_scale="Viridis")
+                                    fig_w.update_layout(**DARK, height=180, margin=dict(t=10, b=5, l=5, r=5), showlegend=False)
+                                    st.plotly_chart(fig_w, width="stretch")
+                                else:
+                                    st.json(rp)
+                            except Exception as e:
+                                logger.warning("operation failed: %s", e)
+                                st.code(r["ranking_params"])
+                        # Click/Dismiss buttons
+                        btn_cols = st.columns(2)
+                        if btn_cols[0].button(
+                            "👍 Click", key=f"click_{r['query_id']}_{r['id']}",
+                            use_container_width=True,
+                        ):
+                            try:
+                                w_conn = sqlite3.connect(
+                                    f"file:{DB}?mode=rwc", uri=True, timeout=10,
+                                )
+                                w_conn.execute(
+                                    "UPDATE memory_ctr_feedback SET clicked_at=? "
+                                    "WHERE query_id=? AND id=?",
+                                    (time.time(), r["query_id"], r["id"]),
+                                )
+                                w_conn.commit()
+                                w_conn.close()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to record click: {e}")
+                        if btn_cols[1].button(
+                            "👎 Dismiss", key=f"dismiss_{r['query_id']}_{r['id']}",
+                            use_container_width=True,
+                        ):
+                            try:
+                                w_conn = sqlite3.connect(
+                                    f"file:{DB}?mode=rwc", uri=True, timeout=10,
+                                )
+                                w_conn.execute(
+                                    "UPDATE memory_ctr_feedback SET dismissed_at=? "
+                                    "WHERE query_id=? AND id=?",
+                                    (time.time(), r["query_id"], r["id"]),
+                                )
+                                w_conn.commit()
+                                w_conn.close()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to record dismissal: {e}")
             else:
                 st.info("No events match the filters")
 

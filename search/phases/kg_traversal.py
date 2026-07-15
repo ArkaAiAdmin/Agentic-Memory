@@ -15,6 +15,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Stop words for content-based entity extraction — common words that
+# aren't useful as KG entity names.
+_STOP_WORDS = frozenset({
+    "this", "that", "with", "from", "have", "been", "were", "they",
+    "their", "about", "would", "could", "should", "will", "just",
+    "also", "into", "more", "than", "when", "what", "which", "where",
+    "some", "only", "other", "each", "very", "most", "such", "then",
+    "them", "these", "those", "does", "done", "make", "like", "over",
+    "tell", "back", "been", "many", "much", "well", "your", "they",
+    "file", "data", "user", "type", "name", "line", "code", "test",
+    "func", "true", "false", "none", "self", "init", "main", "http",
+    "com", "org", "net", "www", "path", "link", "edit", "view",
+})
+
 # Gap (in rank units) below the best genuine result where KG-discovered
 # items are placed. They are strictly supplementary: a weak direct match
 # is never displaced by an arbitrary synthetic rank, and within the
@@ -90,16 +104,27 @@ def _phase_nine_kg_boost(
 
     try:
         seen_ids = {r[0] for r in results}
-        # Extract entity tokens from result memory IDs.
+        # Extract entity tokens from result memory IDs AND content.
         entity_tokens: set[str] = set()
         for r in results:
             mid = r[0]
+            # Slug-based extraction (legacy)
             if "/" in mid:
                 slug = mid.split("/", 1)[1]
-                # Add the full slug and each hyphenated/dashed component.
                 entity_tokens.add(slug.lower())
                 for word in re.findall(r"[a-z0-9]+", slug.lower()):
                     if len(word) > 2:
+                        entity_tokens.add(word)
+            # Content-based extraction: pull tokens from the content field
+            # (r[1] is content in the result tuple).  This catches entities
+            # that aren't reflected in the slug.
+            content = r[1] if len(r) > 1 and isinstance(r[1], str) else ""
+            if content:
+                for word in re.findall(r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*", content[:3000]):
+                    if len(word) > 3:
+                        entity_tokens.add(word.lower())
+                for word in re.findall(r"[a-z0-9]{4,}", content[:3000].lower()):
+                    if word not in _STOP_WORDS and len(word) > 3:
                         entity_tokens.add(word)
 
         if not entity_tokens:

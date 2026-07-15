@@ -1,8 +1,9 @@
 """Tool registry: defines tool visibility tiers for the MCP server.
 
 Phase A (2026-07-01): 17 CORE tools + escape hatch (memory_advanced).
+Phase B (2026-07-15): +1 CORE tool (memory_record_ctr_feedback) for CTR feedback.
 
-CORE_TOOLS:    17 tools total — all visible directly on the MCP surface.
+CORE_TOOLS:    18 tools total — all visible directly on the MCP surface.
                 Everything else is accessible via memory_maintenance(operation="...")
                 or memory_advanced(operation="...").
 ADMIN_TOOLS:    Legacy tools callable via memory_maintenance / memory_advanced.
@@ -28,6 +29,7 @@ CORE_TOOLS = [
     "memory_curate_autosave",
     "memory_health_check",
     "memory_system_health",
+    "memory_record_ctr_feedback",
 ]
 
 ADMIN_TOOLS = [
@@ -59,7 +61,6 @@ ADMIN_TOOLS = [
     "memory_purge_auto_saves",
     "memory_quality_filter",
     "memory_quality_stats",
-    "memory_record_ctr_feedback",
     "memory_list_drift_alarms",
     "memory_reinforce",
     "memory_retention_stats",

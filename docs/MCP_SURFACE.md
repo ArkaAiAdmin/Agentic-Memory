@@ -84,13 +84,13 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 - **Contradiction merge:** LIVE — `memory_resolve_contradiction(strategy="merge")` delegates to resolver (G3).
 - **Belief review:** LIVE — `cron_review_beliefs` queues stale beliefs; `memory_review_beliefs` reads queue (G4).
 
-**Surface: 17 CORE verbs + `memory_maintenance` router (escape hatch)**
+**Surface: 18 CORE verbs + `memory_maintenance` router (escape hatch)**
 
 - CORE tools: visible directly — call them by name.
 - `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.
 - `memory_advanced(operation="...", **kwargs)`: alias for `memory_maintenance`; interchangeable.
 
-> **Important:** 95 ADMIN + 3 DEPRECATED tools are not removed — they are accessible via the `memory_maintenance`
+> **Important:** 94 ADMIN + 3 DEPRECATED tools are not removed — they are accessible via the `memory_maintenance`
 > router. Calling `memory_maintenance` with an operation name is the supported path. The 3 DEPRECATED tools
 > are routed via their replacement verbs and also tracked for audit.
 
@@ -112,6 +112,7 @@ What do you want to do?
 ├─ Update/delete a memory?   → memory_note(note_id, action="update|delete|patch|supersede|revert_supersede", ...)
 ├─ Recall recent context?    → memory_recall(query, session_id)
 ├─ Review beliefs?           → memory_review_beliefs(...)
+├─ Record CTR feedback?      → memory_record_ctr_feedback(id, query_id, action="clicked|dismissed|returned", ...)
 ├─ Curate auto-saves?        → memory_curate_autosave(action="list|promote|discard", ...)
 ├─ Learn a lesson/skill?     → memory_learn(content, as_skill, skill_name, ...)
 ├─ Audit recent activity?    → memory_audit(hours, limit, ...)
@@ -339,6 +340,21 @@ connection-pool depth, background-worker liveness, disk space, and
 schema version.
 
 **Args:** None.
+
+### memory_record_ctr_feedback
+Record click-through rate feedback for a search result.
+
+When an agent cites a memory in a response, the system automatically
+stamps `clicked_at` on the matching CTR impression.  Use this tool
+explicitly when the user or agent wants to record a click or dismissal
+that wasn't captured automatically.
+
+**Args:**
+| Param | Type | Required | Default | Notes |
+|-------|------|----------|---------|-------|
+| id | str | Yes | — | Memory id (the impression to stamp) |
+| query_id | str | Yes | — | The query_id from the search that returned this result |
+| action | str | No | "returned" | "clicked", "dismissed", or "returned" |
 
 ### memory_advanced (escape hatch)
 Power user escape hatch — pass through to any memory_maintenance operation.
