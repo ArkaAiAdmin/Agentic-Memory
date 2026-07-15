@@ -6,36 +6,35 @@
 #     venv/bin/streamlit run dashboard.py
 from __future__ import annotations
 
-import logging
-logger = logging.getLogger(__name__)
 import html
 import json
+import logging
 import struct
 import sqlite3
-import time
 import sys
+import typing
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent))
+logger = logging.getLogger(__name__)
 
 # ── Page config ──────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Agentic Memory",
-    page_icon="\U0001fa84",
+    page_icon="\U0001f9e0",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ── Theme CSS ────────────────────────────────────────────────────────────
-st.markdown(
+st.html(
     """
 <style>
     .main > div { padding: 0 1rem; }
@@ -309,7 +308,6 @@ st.markdown(
     }
 </style>
 """,
-    unsafe_allow_html=True,
 )
 
 # ── Plotly style ─────────────────────────────────────────────────────────
@@ -368,6 +366,7 @@ def query(sql: str, params=()) -> pd.DataFrame | None:
         return None
 
 
+@st.cache_data(ttl=30)
 def table(name: str) -> bool:
     try:
         r = (
@@ -383,6 +382,7 @@ def table(name: str) -> bool:
         return False
 
 
+@st.cache_data(ttl=30)
 def try_count(table_name: str, where: str | None = None) -> int:
     try:
         sql = f"SELECT COUNT(*) FROM {table_name}"
@@ -395,24 +395,65 @@ def try_count(table_name: str, where: str | None = None) -> int:
         return 0
 
 
+_EXPECTED_EMPTY_TABLES = frozenset({
+    "concept_drift", "drift_alarms", "memory_ctr_feedback",
+    "sync_log", "shared_memories", "kg_edges",
+})
+
+
+def _table_status(name: str) -> tuple[str, str]:
+    try:
+        r = get_conn().execute(f"SELECT COUNT(*) FROM {name}").fetchone()
+        n = r[0] if r else 0
+        if n > 0:
+            return ("ok", f"{n} rows")
+        if name in _EXPECTED_EMPTY_TABLES:
+            return ("info", "0 rows (expected)")
+        return ("warning", "0 rows (unexpected)")
+    except Exception as e:
+        return ("error", str(e))
+
+
+@st.cache_data(ttl=60)
+def _get_schema_version() -> str:
+    try:
+        r = get_conn().execute("SELECT value FROM config WHERE key='schema_version'").fetchone()
+        if r:
+            return "v" + str(r[0])
+    except Exception:
+        pass
+    return "? (pre-migration)"
+
+
+def _fmt_date(ts) -> str:
+    try:
+        return datetime.fromtimestamp(int(ts)).strftime("%Y-%m-%d")
+    except (ValueError, TypeError, OSError):
+        return str(ts)[:10] if ts else "—"
+
+
 def _live_health():
     checks = []
-    conn = get_conn()
-    try:
-        r = conn.execute("SELECT COUNT(*) FROM memories").fetchone()
-        checks.append(("memories", "ok" if r and r[0] > 0 else "error", f"{r[0]} notes"))
-    except Exception as e:
-        logger.warning("_live_health failed: %s", e)
-        checks.append(("memories", "error", str(e)))
-    for tbl in ("kg_entities", "kg_edges", "kg_facts", "memory_chunks", "memory_embeddings", "memory_audit_log", "backlinks"):
-        try:
-            r = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()
-            checks.append((tbl, "ok" if r and r[0] > 0 else "warning", f"{r[0]} rows"))
-        except Exception as e:
-            logger.warning("_live_health failed: %s", e)
-            checks.append((tbl, "error", str(e)))
-
-    # LTR model check
+    core_tables = {
+        "memories": "error",
+        "kg_entities": "warning",
+        "kg_facts": "warning",
+        "memory_chunks": "warning",
+        "memory_embeddings": "warning",
+        "memory_audit_log": "warning",
+        "backlinks": "warning",
+    }
+    for tbl, default_if_empty in core_tables.items():
+        sev, detail = _table_status(tbl)
+        if sev in ("ok", "error"):
+            pass
+        elif sev == "info":
+            sev = "info"
+        elif sev == "warning":
+            sev = default_if_empty
+        checks.append((tbl, sev, detail))
+    for tbl in ("kg_edges", "concept_drift", "drift_alarms", "memory_ctr_feedback", "sync_log", "shared_memories"):
+        checks.append((tbl,) + _table_status(tbl))
     ltr_model = Path(__file__).parent / "models" / "ltr" / "model.txt"
     if ltr_model.exists():
         size_kb = ltr_model.stat().st_size / 1024
@@ -420,7 +461,7 @@ def _live_health():
     else:
         checks.append(("ltr_model", "warning", "not trained yet"))
     try:
-        r = conn.execute("SELECT COUNT(*) FROM memories WHERE pinned=1").fetchone()
+        r = get_conn().execute("SELECT COUNT(*) FROM memories WHERE pinned=1").fetchone()
         checks.append(("pinned", "ok", f"{r[0]} notes"))
     except Exception as e:
         logger.warning("_live_health failed: %s", e)
@@ -450,9 +491,8 @@ def _render_memory_content(mid: str, expanded: bool = True):
         if s.startswith("# ") and not s.startswith("##"):
             title = s[2:].strip()
             break
-    meta.get("tags", "")
     with st.expander(f"**{title or mid}**", expanded=expanded):
-        st.markdown(f"`{html.escape(str(mid))}`", unsafe_allow_html=True)
+        st.html(f"`{html.escape(str(mid))}`")
         cols = st.columns(4)
         if meta.get("created"):
             cols[0].caption(f"\U0001f4c5 {meta['created'][:10]}")
@@ -461,26 +501,15 @@ def _render_memory_content(mid: str, expanded: bool = True):
             tags_clean = " ".join(t.strip().strip("\"").strip("'") for t in raw_tags[:5])
             cols[1].caption(f"\U0001f3f7 {tags_clean}")
         if meta.get("pinned") and meta["pinned"].lower() in ("true", "1"):
-            cols[2].markdown("\U000f04d3 Pinned", unsafe_allow_html=True)
+            cols[2].html("\U0001f4cc Pinned")
         if meta.get("importance"):
             cols[3].caption(f"Importance: {meta['importance']}")
         st.divider()
-        st.markdown(body, unsafe_allow_html=True)
-
-
-def _get_cron_logs() -> list[Path]:
-    return sorted(MEM_DIR.glob("*.log"))
-
-
-def _badge_html(severity: str, text: str) -> str:
-    cls = {"ok": "badge-ok", "warning": "badge-warn", "failure": "badge-err", "error": "badge-err"}.get(
-        severity, "badge-warn"
-    )
-    return f'<span class="{cls}">{text}</span>'
+        st.html(body)
 
 
 # ── Sidebar ─────────────────────────────────────────────────────────────
-st.sidebar.markdown(
+st.sidebar.html(
     """<div style='display:flex;align-items:center;gap:10px;margin-bottom:4px;'>
         <div style='width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#8b5cf6,#6366f1);display:flex;align-items:center;justify-content:center;font-size:1.1rem;box-shadow:0 2px 8px rgba(139,92,246,0.3);'>🧠</div>
         <div>
@@ -488,7 +517,6 @@ st.sidebar.markdown(
             <div style='color:#6b7280;font-size:0.55rem;letter-spacing:0.08em;text-transform:uppercase;font-weight:500;'>Local Agent Memory System</div>
         </div>
     </div>""",
-    unsafe_allow_html=True,
 )
 st.sidebar.caption(
     f"`{DB.parent.name}`  \u00b7 "
@@ -519,21 +547,20 @@ with st.sidebar:
     st.caption("Quick Actions")
     if st.button("\u21bb Refresh Now", key="sidebar_refresh", width="stretch"):
         st.rerun()
-    st.markdown(
+    st.html(
         f"<div style='display:flex;align-items:center;gap:6px;margin-top:4px;'>"
         f"<span style='width:6px;height:6px;border-radius:50%;background:#10b981;animation:pulse-dot 2s ease-in-out infinite;display:inline-block;'></span>"
         f"<span style='color:#6b7280;font-size:0.6rem;'>live · {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC</span>"
         f"</div>",
-        unsafe_allow_html=True,
     )
-    st.markdown("""
+    st.html("""
     <style>
     @keyframes pulse-dot {
         0%, 100% { opacity: 1; transform: scale(1); }
         50% { opacity: 0.5; transform: scale(0.8); }
     }
     </style>
-    """, unsafe_allow_html=True)
+    """)
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -618,16 +645,15 @@ with overview_tab:
             ("CTR Impressions", n_ctr, "search results"),
         ]
     ):
-        cols[i].markdown(
+        cols[i].html(
             f"<div class='metric-card'>"
             f"<div class='label'>{label}</div>"
             f"<div class='value'>{val}</div>"
             f"<div class='sub'>{sub}</div>"
             f"</div>",
-            unsafe_allow_html=True,
         )
 
-    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+    st.html("<div style='height:12px;'></div>")
 
     # ── System health indicator ──
     n_entities = try_count("kg_entities")
@@ -638,13 +664,16 @@ with overview_tab:
 
     # Health score: 0-100
     health_score = 100
-    if n_alarms > 0: health_score -= min(30, n_alarms * 5)
-    if n_entities == 0: health_score -= 20
-    if not ltr_model.exists(): health_score -= 10
+    if n_alarms > 0:
+        health_score -= min(30, n_alarms * 5)
+    if n_entities == 0:
+        health_score -= 20
+    if not ltr_model.exists():
+        health_score -= 10
     health_color = "#10b981" if health_score >= 80 else "#f59e0b" if health_score >= 60 else "#ef4444"
     health_label = "Healthy" if health_score >= 80 else "Needs Attention" if health_score >= 60 else "Critical"
 
-    st.markdown(
+    st.html(
         f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:12px;padding:1rem 1.5rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;'>"
         f"<div style='display:flex;align-items:center;gap:12px;'>"
         f"<div style='width:48px;height:48px;border-radius:50%;background:{health_color}22;display:flex;align-items:center;justify-content:center;font-size:1.5rem;'>"
@@ -656,10 +685,9 @@ with overview_tab:
         f"<div style='text-align:right;'><div style='color:{health_color};font-size:2rem;font-weight:700;'>{health_score}</div>"
         f"<div style='color:#6b7280;font-size:0.7rem;'>health score</div></div>"
         f"</div>",
-        unsafe_allow_html=True,
     )
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.html("<br>")
 
     # ── Category pie + Tier bar ──
     col1, col2 = st.columns(2)
@@ -785,51 +813,47 @@ with overview_tab:
                 ts_str = ts.strftime("%H:%M:%S") if pd.notna(ts) else "?"
                 status = "❌" if pd.notna(r.get("error")) else "✅"
                 lat = f"{r['latency_ms']:.0f}ms" if pd.notna(r.get("latency_ms")) else "?"
-                st.markdown(
+                st.html(
                     f"<div style='display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid #1f2937;'>"
                     f"<span style='font-size:0.8rem;'>{status}</span>"
                     f"<span style='color:#d1d5db;font-size:0.75rem;font-weight:600;'>{r['tool']}</span>"
                     f"<span style='color:#4b5563;font-size:0.65rem;margin-left:auto;'>{lat}</span>"
                     f"<span style='color:#6b7280;font-size:0.65rem;'>{ts_str}</span>"
                     f"</div>",
-                    unsafe_allow_html=True,
                 )
         else:
             st.info("No recent activity")
 
     # ── System summary cards ──
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.html("<br>")
     sum_col1, sum_col2, sum_col3 = st.columns(3)
     with sum_col1:
-        st.markdown(
+        st.html(
             f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:12px;'>"
             f"<div style='color:#8b8fa3;font-size:0.7rem;text-transform:uppercase;'>Knowledge Graph</div>"
             f"<div style='color:#f0f2f6;font-size:1.3rem;font-weight:700;'>{n_entities} entities</div>"
             f"<div style='color:#6b7280;font-size:0.7rem;'>{n_facts} facts · {n_edg} edges</div>"
             f"</div>",
-            unsafe_allow_html=True,
         )
     with sum_col2:
         ltr_status = "ready" if ltr_model.exists() else "awaiting data"
         ltr_color = "#10b981" if ltr_model.exists() else "#f59e0b"
-        st.markdown(
+        st.html(
             f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:12px;'>"
             f"<div style='color:#8b8fa3;font-size:0.7rem;text-transform:uppercase;'>LTR Model</div>"
             f"<div style='color:{ltr_color};font-size:1.3rem;font-weight:700;'>{ltr_status}</div>"
             f"<div style='color:#6b7280;font-size:0.7rem;'>{n_ctr} impressions · 29 features</div>"
             f"</div>",
-            unsafe_allow_html=True,
         )
     with sum_col3:
         sync_status = f"{n_sync} cycles" if n_sync > 0 else "not synced"
         sync_color = "#10b981" if n_sync > 0 else "#6b7280"
-        st.markdown(
+        st.html(
             f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:12px;'>"
             f"<div style='color:#8b8fa3;font-size:0.7rem;text-transform:uppercase;'>Sync Status</div>"
             f"<div style='color:{sync_color};font-size:1.3rem;font-weight:700;'>{sync_status}</div>"
             f"<div style='color:#6b7280;font-size:0.7rem;'>{n_alarms} drift alarms</div>"
             f"</div>",
-            unsafe_allow_html=True,
         )
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -841,8 +865,14 @@ with memories_tab:
     # ── Summary stats ──
     n_total_m = try_count("memories")
     n_pinned_m = try_count("memories", "pinned=1")
-    n_cats = len([r[0] for r in get_conn().execute("SELECT DISTINCT category FROM memories WHERE category IS NOT NULL").fetchall() if r[0]])
-    avg_fit = get_conn().execute("SELECT AVG(fitness_score) FROM memories WHERE fitness_score IS NOT NULL").fetchone()[0]
+    try:
+        n_cats = len([r[0] for r in get_conn().execute("SELECT DISTINCT category FROM memories WHERE category IS NOT NULL").fetchall() if r[0]])
+    except Exception:
+        n_cats = 0
+    try:
+        avg_fit = get_conn().execute("SELECT AVG(fitness_score) FROM memories WHERE fitness_score IS NOT NULL").fetchone()[0]
+    except Exception:
+        avg_fit = None
     n_hot = try_count("memories", "tier='hot'")
     n_warm = try_count("memories", "tier='warm'")
     n_cold = try_count("memories", "tier='cold'")
@@ -903,7 +933,10 @@ with memories_tab:
     with f_col2:
         m_min_fit = st.slider("Min fitness", 0.0, 1.0, 0.0, 0.05, key="mem_fit")
     with f_col3:
-        cat_options = ["all"] + sorted([r[0] for r in get_conn().execute("SELECT DISTINCT category FROM memories WHERE category IS NOT NULL").fetchall() if r[0]])
+        try:
+            cat_options = ["all"] + sorted([r[0] for r in get_conn().execute("SELECT DISTINCT category FROM memories WHERE category IS NOT NULL").fetchall() if r[0]])
+        except Exception:
+            cat_options = ["all"]
         m_cat_filter = st.selectbox("Category", cat_options, key="mem_cat")
 
     where_clauses = []
@@ -987,11 +1020,7 @@ with kg_tab:
     with col_ctrl1:
         search_entity = st.text_input("\U0001f50d Find entity", placeholder="bash, tool, python\u2026", key="kg_search")
     with col_ctrl2:
-        focus_opts = [""] + sorted(set(
-            name_map.get(n, str(n))
-            for n in (G_sub.nodes() if 'G_sub' in dir() else [])
-        ))
-        focus_pick = st.selectbox("\U0001f4d1 Focus", focus_opts, key="kg_focus", placeholder="Focus on entity")
+        st.caption("Use search above \u2192 or select from menu below after graph loads")
 
     # ── Query entities ──
     ent = query(
@@ -1002,6 +1031,7 @@ with kg_tab:
     if ent is None or ent.empty:
         st.info("No entities yet. Run KG backfill to populate.")
         st.stop()
+        raise SystemExit(0)
 
     eid_list = [int(x) for x in ent["id"].values]
     name_map = dict(zip(ent["id"], ent["name"]))
@@ -1085,6 +1115,13 @@ with kg_tab:
             st.session_state["kg_layout"] = nx.spring_layout(G_sub, k=0.4, seed=42, iterations=50)
             st.session_state["kg_layout_n"] = len(filtered_nodes)
     pos = st.session_state["kg_layout"]
+
+    # ── Entity focus dropdown ──
+    focus_opts = [""] + sorted(set(
+        name_map.get(n, str(n))
+        for n in G_sub.nodes()
+    ))
+    focus_pick = st.selectbox("\U0001f4d1 Focus", focus_opts, key="kg_focus", placeholder="Focus on entity")
 
     # ── Resolve focus ──
     focus_id = None
@@ -1255,14 +1292,13 @@ with kg_tab:
             for n, w in ns_weighted[:15]:
                 rel = next((d.get("relation", "") for _, _, d in G_sub.edges([focus_id], data=True) if n in d), "")
                 rel_badge = f"<span style='background:#1e293b;color:#94a3b8;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.65rem;margin-left:4px;'>{rel}</span>" if rel else ""
-                st.markdown(
+                st.html(
                     f"<div style='display:flex;align-items:center;gap:6px;font-size:0.78rem;padding:2px 0;'>"
                     f"<span style='color:{type_colors.get(type_map.get(n, ''), '#6b7280')};font-size:1.1rem;'>\u25cf</span>"
                     f"<span style='color:#d1d5db;'>{name_map.get(n, str(n))}</span>"
                     f"{rel_badge}"
                     f"<span style='color:#4b5563;font-size:0.65rem;'>w={w:.1f}</span>"
                     f"</div>",
-                    unsafe_allow_html=True,
                 )
             if len(ns) > 15:
                 st.caption(f"\u2026 and {len(ns) - 15} more")
@@ -1279,7 +1315,7 @@ with kg_tab:
             if mems is not None and not mems.empty:
                 for _, r in mems.iterrows():
                     cat_color = {"lessons": "#10b981", "decisions": "#3b82f6", "projects": "#f59e0b", "sessions": "#8b5cf6"}.get(r["category"], "#6b7280")
-                    st.markdown(
+                    st.html(
                         f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:8px;padding:8px;margin:4px 0;'>"
                         f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
                         f"<span style='background:{cat_color}22;color:{cat_color};padding:0.1rem 0.5rem;border-radius:999px;font-size:0.65rem;font-weight:600;'>{r['category']}</span>"
@@ -1287,7 +1323,6 @@ with kg_tab:
                         f"</div>"
                         f"<div style='color:#9ca3af;font-size:0.72rem;margin-top:4px;'>{r['preview'][:120]}</div>"
                         f"</div>",
-                        unsafe_allow_html=True,
                     )
             else:
                 st.caption("No memories reference this entity")
@@ -1345,6 +1380,7 @@ with embed_tab:
             cat_params + [lim],
         )
         if df is not None and not df.empty:
+            import numpy as np
             dim = int(df["dim"].iloc[0])
             vecs, cats, mids, tiers, fits, previews = [], [], [], [], [], []
             for _, r in df.iterrows():
@@ -1480,9 +1516,9 @@ with embed_tab:
                             mode="markers+text",
                             marker=dict(
                                 size=[marker_sizes[i] * 1.5 for i in hl.index],
-                                color=px.colors.qualitative.Set2[hl.index.to_series().map({i: cats[i] for i in range(len(cats))}).map(
+                                color=hl.index.to_series().map({i: cats[i] for i in range(len(cats))}).map(
                                     {c: px.colors.qualitative.Set2[i % len(px.colors.qualitative.Set2)] for i, c in enumerate(sorted(set(cats)))}
-                                ).fillna("#8b5cf6")],
+                                ).fillna("#8b5cf6").tolist(),
                                 opacity=0.95,
                                 line=dict(width=1.5, color="#8b5cf6"),
                             ),
@@ -1658,11 +1694,6 @@ with facts_tab:
         if f_df is not None and not f_df.empty:
             st.caption(f"**{len(f_df)}** facts matching filters")
 
-            # Confidence badge column
-            def _conf_badge(conf):
-                color = "#10b981" if conf >= 0.7 else "#f59e0b" if conf >= 0.4 else "#ef4444"
-                return f'<span style="background:{color};color:#fff;padding:0.1rem 0.4rem;border-radius:999px;font-size:0.65rem;font-weight:600;">{conf:.2f}</span>'
-
             display_f = f_df[["subject", "predicate", "object", "confidence", "mention_count", "locked"]].copy()
             display_f["confidence"] = display_f["confidence"].apply(lambda x: f"{x:.2f}")
             display_f.columns = ["Subject", "Predicate", "Object", "Confidence", "Mentions", "Locked"]
@@ -1690,16 +1721,15 @@ with facts_tab:
                 # Fact header with badges
                 conf_val = float(sel_row["confidence"])
                 conf_color = "#10b981" if conf_val >= 0.7 else "#f59e0b" if conf_val >= 0.4 else "#ef4444"
-                st.markdown(
+                st.html(
                     f"<div style='display:flex;align-items:center;gap:10px;'>"
                     f"<span style='background:{conf_color};color:#fff;padding:0.2rem 0.7rem;border-radius:999px;font-size:0.8rem;font-weight:700;'>{conf_val:.2f}</span>"
                     f"{'🔒 LOCKED' if sel_row.get('locked') else '🔓 OPEN'}"
                     f"</div>",
-                    unsafe_allow_html=True,
                 )
 
                 # Subject → Predicate → Object
-                st.markdown(
+                st.html(
                     f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:1.2rem;margin:0.8rem 0;'>"
                     f"<div style='display:flex;align-items:center;gap:12px;flex-wrap:wrap;'>"
                     f"<span style='background:#3b82f622;color:#60a5fa;padding:0.3rem 0.8rem;border-radius:8px;font-weight:600;'>{html.escape(str(sel_row['subject']))}</span>"
@@ -1709,7 +1739,6 @@ with facts_tab:
                     f"<span style='background:#10b98122;color:#34d399;padding:0.3rem 0.8rem;border-radius:8px;font-weight:600;'>{html.escape(str(sel_row['object']))}</span>"
                     f"</div>"
                     f"</div>",
-                    unsafe_allow_html=True,
                 )
 
                 # Metrics row
@@ -1730,12 +1759,11 @@ with facts_tab:
                     st.markdown("**Related Memories**")
                     for _, mr in mems.iterrows():
                         cat_color = {"lessons": "#10b981", "decisions": "#3b82f6", "projects": "#f59e0b"}.get(mr["category"], "#6b7280")
-                        st.markdown(
+                        st.html(
                             f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:8px;padding:8px;margin:3px 0;'>"
                             f"<span style='background:{cat_color}22;color:{cat_color};padding:0.1rem 0.4rem;border-radius:999px;font-size:0.6rem;'>{mr['category']}</span> "
                             f"<span style='color:#9ca3af;font-size:0.72rem;'>{mr['preview'][:100]}</span>"
                             f"</div>",
-                            unsafe_allow_html=True,
                         )
         else:
             st.info("No facts match the filters")
@@ -1770,6 +1798,23 @@ with drift_tab:
     c3.metric("Unacknowledged", n_unack)
     c4.metric("Avg Drift Score", f"{avg_drift:.3f}" if avg_drift else "—")
 
+    _ACK_PATH = MEM_DIR / "_alarms_acked.json"
+    def _load_acks() -> dict:
+        try:
+            return json.loads(_ACK_PATH.read_text()) if _ACK_PATH.exists() else {}
+        except Exception:
+            return {}
+    def _save_ack(alarm_id: int) -> None:
+        acks = _load_acks()
+        acks[str(alarm_id)] = {"ts": datetime.now(timezone.utc).isoformat(), "operator": "dashboard"}
+        _ACK_PATH.write_text(json.dumps(acks, indent=2))
+
+    # Health banner for unacknowledged critical alarms
+    if n_unack > 0:
+        _critical_unack = try_count("drift_alarms", "alarm_level='critical' AND acknowledged_at IS NULL")
+        if _critical_unack > 0:
+            st.error(f"\U0001f6a8 {_critical_unack} critical alarm(s) unacknowledged. Check the Drift Alarms section below.")
+
     st.divider()
 
     # ── Drift timeline + Alarm distribution ──
@@ -1792,9 +1837,14 @@ with drift_tab:
                     line=dict(width=3, color="#ef4444", shape="spline", smoothing=1.3),
                     marker=dict(size=6, color="#ef4444"),
                 )
+                import tomllib
+                try:
+                    _drift_thresh = tomllib.loads((Path(__file__).parent / "memory.toml").read_text()).get("search", {}).get("concept_drift_threshold", 0.15)
+                except Exception:
+                    _drift_thresh = 0.15
                 fig.add_hline(
-                    y=0.15, line_dash="dash", line_color="#f59e0b",
-                    annotation_text="threshold (0.15)",
+                    y=_drift_thresh, line_dash="dash", line_color="#f59e0b",
+                    annotation_text=f"threshold ({_drift_thresh})",
                 )
                 fig.add_hrect(y0=0, y1=0.15, fillcolor="rgba(16,185,129,0.06)", line_width=0)
                 fig.add_hrect(y0=0.15, y1=0.3, fillcolor="rgba(245,158,11,0.06)", line_width=0)
@@ -1834,7 +1884,7 @@ with drift_tab:
                             fig_dim = px.bar(
                                 dim_df, x="dim", y="weight",
                                 color="weight", color_continuous_scale="RdBu",
-                                title=f"Top drifted dimensions (latest event)",
+                                title="Top drifted dimensions (latest event)",
                             )
                             fig_dim.update_layout(**DARK, height=220, margin=dict(t=30, b=10, l=10, r=10))
                             st.plotly_chart(fig_dim, width="stretch")
@@ -1889,12 +1939,11 @@ with drift_tab:
                 level_color = {"info": "#3b82f6", "warning": "#f59e0b", "critical": "#ef4444"}.get(r.get("alarm_level", ""), "#6b7280")
                 ack = bool(pd.notna(r.get("acknowledged_at")))
 
-                st.markdown(
+                st.html(
                     f"<div style='display:flex;align-items:center;gap:10px;'>"
                     f"<span style='background:{level_color};color:#fff;padding:0.2rem 0.7rem;border-radius:999px;font-size:0.8rem;font-weight:700;'>{r.get('alarm_level', '?').upper()}</span>"
                     f"{'✅ ACK' if ack else '⏳ PENDING'}"
                     f"</div>",
-                    unsafe_allow_html=True,
                 )
 
                 st.markdown(f"**Concept**: {html.escape(str(r.get('concept', '—')))}")
@@ -1912,6 +1961,17 @@ with drift_tab:
                     if mem_full is not None and not mem_full.empty:
                         st.markdown("**Memory preview**:")
                         st.text(mem_full.iloc[0]["preview"])
+                col_ack, _ = st.columns([1, 4])
+                with col_ack:
+                    alarm_id_val = int(r.get("id", 0))
+                    if not ack and alarm_id_val:
+                        ack_key = f"ack_alarm_{alarm_id_val}"
+                        if st.button("\U00002705 Acknowledge", key=ack_key, type="secondary"):
+                            _save_ack(alarm_id_val)
+                            st.toast(f"Alarm {alarm_id_val} acknowledged", icon="\U00002705")
+                            st.rerun()
+                    elif ack:
+                        st.caption("Acknowledged (in DB)")
         else:
             st.info("No drift alarms match the filter")
 
@@ -2113,12 +2173,11 @@ with ctr_tab:
 
                 # Event header
                 status_color = {"clicked": "#10b981", "dismissed": "#ef4444", "pending": "#f59e0b"}.get(sel_row["status"], "#6b7280")
-                st.markdown(
+                st.html(
                     f"<div style='display:flex;align-items:center;gap:10px;'>"
                     f"<span style='background:{status_color};color:#fff;padding:0.2rem 0.7rem;border-radius:999px;font-size:0.8rem;font-weight:700;'>{sel_row['status'].upper()}</span>"
                     f"<span style='color:#9ca3af;font-size:0.85rem;'>{sel_row['source']}</span>"
                     f"</div>",
-                    unsafe_allow_html=True,
                 )
 
                 st.markdown(f"**Query ID**: `{sel_row['query_id']}`")
@@ -2142,15 +2201,15 @@ with ctr_tab:
                 btn_cols = st.columns(2)
                 if btn_cols[0].button("👍 Click", key=f"click_{sel_row['query_id']}_{sel_row['id']}", use_container_width=True):
                     try:
-                        from search.feedback import record_ctr_feedback_db
-                        record_ctr_feedback_db(str(DB), id=sel_row["id"], query_id=sel_row["query_id"], action="clicked")
+                        from search.feedback import record_ctr_feedback_db as _record_ctr
+                        _record_ctr(str(DB), id=sel_row["id"], query_id=sel_row["query_id"], action="clicked")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed: {e}")
                 if btn_cols[1].button("👎 Dismiss", key=f"dismiss_{sel_row['query_id']}_{sel_row['id']}", use_container_width=True):
                     try:
-                        from search.feedback import record_ctr_feedback_db
-                        record_ctr_feedback_db(str(DB), id=sel_row["id"], query_id=sel_row["query_id"], action="dismissed")
+                        from search.feedback import record_ctr_feedback_db as _record_ctr
+                        _record_ctr(str(DB), id=sel_row["id"], query_id=sel_row["query_id"], action="dismissed")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed: {e}")
@@ -2255,13 +2314,12 @@ with benchmarks_tab:
                 p50_ms = r["p50_s"] * 1000
                 p95_ms = r["p95_s"] * 1000
                 max_ms = r["max_s"] * 1000
-                cols[i].markdown(
+                cols[i].html(
                     f"""<div class="metric-card">
                         <div class="label">{op_labels.get(op_name, op_name)}</div>
                         <div class="value">{p50_ms:.2f} ms</div>
                         <div class="sub">p95 {p95_ms:.2f} · max {max_ms:.2f} @ {int(max_sz):,}</div>
                     </div>""",
-                    unsafe_allow_html=True,
                 )
 
             st.markdown("#### Index Build Time")
@@ -2273,14 +2331,13 @@ with benchmarks_tab:
                         st.caption(f"**{int(sz_group):,} notes**")
                         for _, br in build_df.iterrows():
                             label = br["op"].replace("_", " ").title()
-                            st.markdown(
+                            st.html(
                                 f"""<div style="display:flex;justify-content:space-between;
                                 background:#1a1d23;padding:0.3rem 0.7rem;border-radius:6px;margin:2px 0;
                                 font-size:0.8rem;">
                                     <span style="color:#9ca3af;">{label}</span>
                                     <span style="color:#f0f2f6;font-weight:600;">{br['time_s']:.1f}s</span>
                                 </div>""",
-                                unsafe_allow_html=True,
                             )
 
             st.markdown("---")
@@ -2410,9 +2467,21 @@ with cron_tab:
         ("ltr-trainer",    None,                   "LambdaMART LTR training",   "weekly Mon 05:00","🎯"),
     ]
 
-    # ── Compute job statuses ──
+    _INTERVAL_S: dict[str, int] = {
+        "every 1 min": 60, "every 5 min": 300, "every 6 h": 21600,
+        "nightly": 86400, "weekly Mon 05:00": 604800,
+    }
+
+    def _check_log(fp: Path, n: int = 20) -> int:
+        try:
+            tail = fp.read_bytes().splitlines()[-n:]
+            return sum(1 for line in tail if any(p in line for p in (b"ERROR", b"Traceback", b"exception")))
+        except Exception:
+            return 0
+
     status_counts: Counter[str] = Counter()
     job_data = []
+    now = datetime.now(timezone.utc).timestamp()
     for name, filename, desc, trigger, emoji in jobs:
         if filename is None:
             model_path = Path(__file__).parent / "models" / "ltr" / "model.txt"
@@ -2421,21 +2490,26 @@ with cron_tab:
             else:
                 sev, status_label, pct = "warning", "awaiting training data", 10
             status_counts[sev] += 1
-            job_data.append({"name": name, "desc": desc, "trigger": trigger, "emoji": emoji, "sev": sev, "status": status_label, "pct": pct, "log_file": None, "log_path": model_path})
+            job_data.append({"name": name, "desc": desc, "trigger": trigger, "emoji": emoji, "sev": sev, "status": status_label, "pct": pct, "log_file": None, "log_path": None})
             continue
         fp = MEM_DIR / filename
-        exists = fp.exists()
-        size = fp.stat().st_size if exists else 0
-        if not exists:
+        if not fp.exists():
             sev, status_label, pct = "warning", "no activity", 0
-        elif size < 50:
-            sev, status_label, pct = "warning", "empty", 5
-        elif size < 5000:
-            sev, status_label, pct = "ok", f"{size/1024:.0f} KB", 40
-        elif size < 100000:
-            sev, status_label, pct = "ok", f"{size/1024:.0f} KB", 75
         else:
-            sev, status_label, pct = "warning", f"{size/1024:.0f} KB (large)", 95
+            mtime = fp.stat().st_mtime
+            interval = _INTERVAL_S.get(trigger, 600)
+            age = now - mtime
+            errors = _check_log(fp)
+            if age > 6 * interval:
+                sev, status_label, pct = "error", f"stale ({age / 3600:.0f}h since update)", 0
+            elif age > 2 * interval:
+                sev, status_label, pct = "warning", f"delayed ({age / 60:.0f}min since update)", 30
+            elif errors >= 3:
+                sev, status_label, pct = "error", f"{errors} errors in tail", 5
+            elif errors > 0:
+                sev, status_label, pct = "warning", f"{errors} warnings in tail", 55
+            else:
+                sev, status_label, pct = "ok", f"updated {age / 60:.0f}min ago", 85
         status_counts[sev] += 1
         job_data.append({"name": name, "desc": desc, "trigger": trigger, "emoji": emoji, "sev": sev, "status": status_label, "pct": pct, "log_file": filename, "log_path": fp})
 
@@ -2483,6 +2557,9 @@ with cron_tab:
             if job["log_path"] and job["log_path"].exists():
                 log_text = job["log_path"].read_text(errors="replace")
                 lines = log_text.strip().split("\n")
+                if not lines:
+                    st.info("Log file is empty")
+                    continue
                 st.caption(f"Log: {len(lines)} lines, {job['log_path'].stat().st_size / 1024:.0f} KB")
 
                 col_s, col_t = st.columns([3, 1])
@@ -2495,8 +2572,16 @@ with cron_tab:
                     lines = [line for line in lines if log_search.lower() in line.lower()]
                 shown = lines[-tail_n:] if tail_n > 0 else lines
                 st.code("\n".join(shown), language="text")
+                st.divider()
+                col_trig, col_cmd = st.columns([1, 3])
+                with col_trig:
+                    job_name = job["name"]
+                    if st.button("\u25b6\ufe0f Trigger now", key=f"run_{job_name}"):
+                        st.info(f"Run `agentic-memory memory_maintenance(operation='{job_name}', confirm=true)` from CLI")
+                with col_cmd:
+                    st.code(f"agentic-memory memory_maintenance(operation=\"{job_name}\", confirm=true)", language="text")
             else:
-                st.info(f"No log file yet")
+                st.info("No log file yet")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MULTI-AGENT SYNC
@@ -2512,6 +2597,8 @@ with multi_agent_tab:
     cols[0].metric("Shared memories", shared_total)
     cols[1].metric("Sync peers (config)", len(_peers))
     cols[2].metric("CRDT enabled", "Yes" if _cfg().crdt_enabled else "No")
+    if len(_peers) == 0 and shared_total == 0:
+        st.caption("Single-agent install \u2014 no sync peers configured. Add peers under `[sync]` in `memory.toml` to enable cross-agent sharing.")
 
     st.divider()
 
@@ -2618,9 +2705,18 @@ with health_tab:
         st.caption(f"Checked at {live['ts'][:19]} · {total_checks} total checks")
 
         # Health score
-        health_score = round(n_ok / total_checks * 100) if total_checks > 0 else 0
+        n_alarms_h = try_count("drift_alarms", "acknowledged_at IS NULL")
+        n_entities_h = try_count("kg_entities")
+        ltr_h = (Path(__file__).parent / "models" / "ltr" / "model.txt").exists()
+        health_score = 100
+        if n_alarms_h > 0:
+            health_score -= min(30, n_alarms_h * 5)
+        if n_entities_h == 0:
+            health_score -= 20
+        if not ltr_h:
+            health_score -= 10
         health_color = "#10b981" if health_score >= 80 else "#f59e0b" if health_score >= 60 else "#ef4444"
-        st.markdown(
+        st.html(
             f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:12px;margin-top:8px;'>"
             f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
             f"<span style='color:#8b8fa3;font-size:0.75rem;'>Health Score</span>"
@@ -2628,7 +2724,6 @@ with health_tab:
             f"</div>"
             f"<div class='progress-track' style='margin-top:6px;'><div class='progress-fill' style='width:{health_score}%;background:{health_color};'></div></div>"
             f"</div>",
-            unsafe_allow_html=True,
         )
 
     with col_pie:
@@ -2653,13 +2748,12 @@ with health_tab:
         for j, (name, sev, detail) in enumerate(row_checks):
             color = {"ok": "#10b981", "warning": "#f59e0b", "failure": "#ef4444", "error": "#dc2626"}.get(sev, "#6b7280")
             icon = {"ok": "✅", "warning": "⚠️", "failure": "❌", "error": "☠️"}.get(sev, "❓")
-            cols[j].markdown(
+            cols[j].html(
                 f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:8px;padding:10px;text-align:center;'>"
                 f"<div style='font-size:1.2rem;'>{icon}</div>"
                 f"<div style='color:#d1d5db;font-size:0.75rem;font-weight:600;margin:4px 0;'>{name}</div>"
                 f"<div style='color:#6b7280;font-size:0.65rem;'>{detail}</div>"
                 f"</div>",
-                unsafe_allow_html=True,
             )
 
     st.divider()
@@ -2674,48 +2768,38 @@ with health_tab:
             "Python": platform.python_version(),
             "Platform": f"{platform.system()} {platform.release()}",
             "DB Path": str(DB),
-            "Schema": "v61",
+            "Schema": _get_schema_version(),
             "DB Size": f"{DB.stat().st_size / 1024 / 1024:.1f} MB",
             "Memory Dir": f"{sum(f.stat().st_size for f in MEM_DIR.rglob('*') if f.is_file()) / 1024 / 1024:.1f} MB",
         }
         for k, v in sys_info.items():
-            st.markdown(
+            st.html(
                 f"<div style='display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1f2937;'>"
                 f"<span style='color:#8b8fa3;font-size:0.75rem;'>{k}</span>"
                 f"<span style='color:#d1d5db;font-size:0.75rem;font-weight:600;'>{v}</span>"
                 f"</div>",
-                unsafe_allow_html=True,
             )
 
     with col_feat:
         st.markdown("#### Feature Flags")
         try:
-            from infra._lazy_imports import get_config
-            cfg = get_config()
-            feat = cfg.features
-            search = cfg.search
-            features = {
-                "Knowledge Graph": getattr(search, "knowledge_graph", False),
-                "Adaptive Retention": getattr(feat, "adaptive_retention", False),
-                "Temporal KG": getattr(feat, "feature_temporal_kg", False),
-                "CTR Tuning": os.environ.get("MEMORY_CTR_TUNING") == "1",
-                "LLM Extraction": getattr(feat, "llm_extraction", False),
-                "Session Memory": getattr(feat, "session_memory", False),
-                "CRDT Sync": getattr(feat, "crdt_enabled", False),
-                "LTR Model": (Path(__file__).parent / "models" / "ltr" / "model.txt").exists(),
-            }
-            for feat_name, enabled in features.items():
+            import tomllib
+            toml_path = Path(__file__).parent / "memory.toml"
+            raw = tomllib.loads(toml_path.read_text())
+            feat_section = {k: str(v) for k, v in raw.get("features", {}).items()}
+            for flag_name, val in feat_section.items():
+                enabled = val.lower() in ("true", "yes", "1")
                 status_color = "#10b981" if enabled else "#4b5563"
                 status_text = "ON" if enabled else "OFF"
                 st.markdown(
                     f"<div style='display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #1f2937;'>"
-                    f"<span style='color:#d1d5db;font-size:0.75rem;'>{feat_name}</span>"
+                    f"<span style='color:#d1d5db;font-size:0.75rem;'>{flag_name}</span>"
                     f"<span style='background:{status_color}22;color:{status_color};padding:0.1rem 0.4rem;border-radius:999px;font-size:0.65rem;font-weight:600;'>{status_text}</span>"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
-        except Exception:
-            st.info("Could not load feature flags")
+        except Exception as e:
+            st.info(f"Feature flags unavailable: {e}")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # BACKUPS
@@ -2761,18 +2845,50 @@ with backups_tab:
         fig_bp.update_layout(**DARK, height=200, margin=dict(t=30, b=10, l=10, r=10), xaxis_title=None, yaxis_title="Size (MB)")
         st.plotly_chart(fig_bp, width="stretch")
 
-        # ── Backup table ──
-        rows = []
+        def _validate_backup(path: Path) -> bool:
+            import gzip
+            for opener in (gzip.open, open):
+                try:
+                    inner = opener(path, "rb")
+                    sig = inner.read(16)
+                    inner.close()
+                    return sig == b"SQLite format 3\x00" or sig == b""
+                except Exception:
+                    continue
+            return False
+
         for bp in backups:
             mtime = datetime.fromtimestamp(bp.stat().st_mtime, tz=timezone.utc)
             age_days = (datetime.now(timezone.utc) - mtime).days
-            rows.append({
-                "Name": bp.name,
-                "Size": f"{bp.stat().st_size / 1024 / 1024:.1f} MB",
-                "Created": mtime.strftime("%Y-%m-%d %H:%M UTC"),
-                "Age": f"{age_days}d ago" if age_days > 0 else "today",
-            })
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            valid = _validate_backup(bp)
+            valid_badge = "\U00002705 OK" if valid else "\U0000274c Corrupt"
+            valid_color = "#10b981" if valid else "#ef4444"
+            restore_key = f"restore_{bp.name}"
+
+            st.html(
+                f"<div style='display:flex;align-items:center;gap:10px;background:#1a1d23;"
+                f"border:1px solid #2d3139;border-radius:8px;padding:8px 12px;margin:3px 0;'>"
+                f"<span style='flex:2;color:#d1d5db;font-size:0.78rem;'>{bp.name}</span>"
+                f"<span style='color:#6b7280;font-size:0.7rem;'>{bp.stat().st_size/1024/1024:.1f} MB</span>"
+                f"<span style='color:#6b7280;font-size:0.7rem;'>{mtime.strftime('%Y-%m-%d')} ({age_days}d)</span>"
+                f"<span style='background:{valid_color}22;color:{valid_color};padding:0.1rem 0.4rem;"
+                f"border-radius:999px;font-size:0.65rem;font-weight:600;'>{valid_badge}</span>"
+                f"</div>",
+            )
+            col_r1, col_r2 = st.columns([1, 8])
+            with col_r1:
+                if st.button("\U0001f504 Restore", key=restore_key):
+                    import gzip
+                    import shutil
+                    from datetime import date as _d
+                    pre_name = f"pre-restore-{_d.today().isoformat()}.db.gz"
+                    pre_path = backup_dir / pre_name
+                    with open(DB, "rb") as fin, gzip.open(pre_path, "wb") as fout:
+                        shutil.copyfileobj(fin, fout)
+                    with gzip.open(bp, "rb") as fin, open(DB, "wb") as fout:
+                        shutil.copyfileobj(fin, fout)
+                    st.success(f"Restored from {bp.name}. Pre-restore backup saved.")
+                    st.rerun()
     else:
         st.info("No backups yet")
 
@@ -2815,7 +2931,7 @@ with backups_tab:
                         shutil.copyfileobj(fin, fout)
                     # Restore
                     with gzip.open(restore_path, "rb") as fin, open(DB, "wb") as fout:
-                        shutil.copyfileobj(fin, fout)
+                        shutil.copyfileobj(typing.cast(typing.BinaryIO, fin), fout)
                     st.success(f"Restored from {restore_name}. Pre-restore backup saved as {pre_restore_name}")
                     st.rerun()
 
@@ -2931,6 +3047,22 @@ with audit_tab:
             "Error %": st.column_config.ProgressColumn("Error %", min_value=0, max_value=100, format="%.1f%%"),
         })
 
+        # ── Per-tool drill-in ──
+        with st.expander("Drill in by tool", expanded=False):
+            drill_tool = st.selectbox("Select tool", ["all"] + sorted(tool_perf["tool"].tolist()), key="drill_tool")
+            drill_df = df if drill_tool == "all" else df[df["tool"] == drill_tool]
+            st.dataframe(
+                drill_df[["ts_dt", "tool", "latency_ms", "results_count", "error"]]
+                .head(100).copy(),
+                width="stretch", hide_index=True,
+                column_config={
+                    "ts_dt": st.column_config.DatetimeColumn("Time"),
+                    "latency_ms": "Latency (ms)",
+                    "results_count": "Results",
+                    "error": st.column_config.TextColumn("Error", width="large"),
+                },
+            )
+
         # ── Recent errors ──
         errs = df[df["has_err"]]
         if not errs.empty:
@@ -2944,6 +3076,7 @@ with audit_tab:
 # ═══════════════════════════════════════════════════════════════════════════
 with search_tab:
     st.subheader("Memory Explorer")
+    st.caption("Basic `LIKE` text search — does not use the 14-phase agent search pipeline. For semantic/FTS/reranked search, use `memory_search` via MCP or CLI.")
 
     # ── Search bar with category filter ──
     s_col1, s_col2 = st.columns([3, 1])
@@ -3005,15 +3138,14 @@ with search_tab:
                 tier_fg = {"hot": "#fca5a5", "warm": "#fbbf24", "cold": "#93c5fd"}.get(r["tier"], "#9ca3af")
                 tier_badge = f"<span style='background:{tier_bg};color:{tier_fg};padding:0.1rem 0.4rem;border-radius:999px;font-size:0.6rem;margin-left:4px;'>{r['tier']}</span>"
                 pinned_badge = " 📌" if r.get("pinned") else ""
-
-                st.markdown(
+                st.html(
                     f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:12px 16px;margin:6px 0;'>"
                     f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'>"
                     f"<div>"
                     f"<span style='background:{cat_color}22;color:{cat_color};padding:0.15rem 0.5rem;border-radius:999px;font-size:0.65rem;font-weight:600;'>{r['category']}</span>"
                     f"{tier_badge}{pinned_badge}"
                     f"</div>"
-                    f"<span style='color:#4b5563;font-size:0.65rem;'>{r.get('created', '—')}</span>"
+                    f"<span style='color:#4b5563;font-size:0.65rem;'>{_fmt_date(r.get('created_at'))}</span>"
                     f"</div>"
                     f"<div style='color:#9ca3af;font-size:0.78rem;line-height:1.4;'>{r['preview'][:200]}</div>"
                     f"<div style='display:flex;gap:12px;margin-top:6px;'>"
@@ -3021,7 +3153,6 @@ with search_tab:
                     f"<span style='color:#4b5563;font-size:0.65rem;'>importance: {r['importance']}</span>"
                     f"</div>"
                     f"</div>",
-                    unsafe_allow_html=True,
                 )
     else:
         # ── Browse mode: recent memories ──
@@ -3035,15 +3166,14 @@ with search_tab:
             for _, r in recent.iterrows():
                 cat_color = {"lessons": "#10b981", "decisions": "#3b82f6", "projects": "#f59e0b", "sessions": "#8b5cf6"}.get(r["category"], "#6b7280")
                 pinned_badge = " 📌" if r.get("pinned") else ""
-                st.markdown(
+                st.html(
                     f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:8px;padding:10px 14px;margin:4px 0;'>"
                     f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
                     f"<span style='background:{cat_color}22;color:{cat_color};padding:0.1rem 0.4rem;border-radius:999px;font-size:0.65rem;font-weight:600;'>{r['category']}</span>{pinned_badge}"
-                    f"<span style='color:#4b5563;font-size:0.65rem;'>{r.get('created', '—')[:10]}</span>"
+                    f"<span style='color:#4b5563;font-size:0.65rem;'>{_fmt_date(r.get('created_at'))}</span>"
                     f"</div>"
                     f"<div style='color:#9ca3af;font-size:0.72rem;margin-top:4px;'>{r['preview'][:120]}</div>"
                     f"</div>",
-                    unsafe_allow_html=True,
                 )
         else:
             st.info("No memories yet — save some notes first")
