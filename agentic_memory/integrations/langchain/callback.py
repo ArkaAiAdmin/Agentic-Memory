@@ -19,10 +19,13 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from langchain_core.callbacks import BaseCallbackHandler
+try:
+    from langchain_core.callbacks import BaseCallbackHandler
+except ImportError:
+    BaseCallbackHandler = object  # type: ignore[misc,assignment]
 
 
-class AgenticMemoryCallbackHandler(BaseCallbackHandler):
+class AgenticMemoryCallbackHandler(BaseCallbackHandler):  # type: ignore[misc]
     """Auto-saves LLM prompts and responses to agentic-memory.
 
     Fires on ``on_llm_start`` (prompts) and ``on_llm_end`` (responses)

@@ -21,11 +21,18 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from langchain_core.retrievers import BaseRetriever
-from pydantic import Field
+try:
+    from langchain_core.retrievers import BaseRetriever
+except ImportError:
+    BaseRetriever = object  # type: ignore[misc,assignment]
+
+try:
+    from pydantic import Field
+except ImportError:
+    Field = None  # type: ignore[assignment,misc]
 
 
-class AgenticMemoryRetriever(BaseRetriever):
+class AgenticMemoryRetriever(BaseRetriever):  # type: ignore[misc]
     """Adapts MemoryClient.search() into LangChain's retriever interface.
 
     Inherits from LangChain ``BaseRetriever`` which is itself a Pydantic

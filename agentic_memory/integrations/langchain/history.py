@@ -20,17 +20,24 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+try:
+    from langchain_core.chat_history import BaseChatMessageHistory
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+except ImportError:
+    BaseChatMessageHistory = object  # type: ignore[misc,assignment]
+    AIMessage = HumanMessage = SystemMessage = type(None)  # type: ignore[misc,assignment]
 
 
 def _role_tag(message: Any) -> str:
-    if isinstance(message, HumanMessage):
-        return "human"
-    if isinstance(message, AIMessage):
-        return "ai"
-    if isinstance(message, SystemMessage):
-        return "system"
+    try:
+        if isinstance(message, HumanMessage):
+            return "human"
+        if isinstance(message, AIMessage):
+            return "ai"
+        if isinstance(message, SystemMessage):
+            return "system"
+    except NameError:
+        pass
     return "message"
 
 
