@@ -1832,7 +1832,7 @@ with drift_tab:
             # Interactive table
             display_alarms = alarms_df[["alarm_level", "concept", "drift_score", "threshold", "memory_id"]].copy()
             display_alarms["acknowledged"] = alarms_df["acknowledged_at"].apply(lambda x: pd.notna(x))
-            display_alarms.columns = ["Level", "Concept", "Drift Score", "Threshold", "Memory ID"]
+            display_alarms.columns = ["Level", "Concept", "Drift Score", "Threshold", "Memory ID", "Acknowledged"]
             display_alarms["Memory ID"] = display_alarms["Memory ID"].str[:40]
 
             sel_alarm = st.dataframe(
