@@ -1557,21 +1557,20 @@ with ctr_tab:
             except Exception as e:
                 st.caption(f"nDCG computation failed: {e}")
         else:
-            bench_file = Path(__file__).parent / "eval" / "results" / "retrieval-baseline.json"
-            if bench_file.exists():
-                try:
-                    baseline = json.loads(bench_file.read_text())
+            st.caption("Click 👍/👎 on results above to build live nDCG data for LTR training.")
+
+        # Offline baseline (separate section — different metric, not comparable to live)
+        bench_file = Path(__file__).parent / "eval" / "results" / "retrieval-baseline.json"
+        if bench_file.exists():
+            try:
+                baseline = json.loads(bench_file.read_text())
+                with st.expander("Offline retrieval baseline (eval/gold/v1.jsonl)"):
+                    st.caption("Different eval set and metric (nDCG@5) — not directly comparable to live nDCG@10 above.")
                     bc1, bc2 = st.columns(2)
-                    bc1.metric("Offline nDCG@5", f"{baseline.get('ndcg_at_5', 0):.4f}", help="From offline eval (eval/gold/v1.jsonl) — different metric than live nDCG@10")
-                    bc2.metric("Offline MRR", f"{baseline.get('mrr', 0):.4f}")
-                    st.caption(
-                        "Click 👍/👎 on results above to build live nDCG data. "
-                        "Offline baseline is from a different eval set and metric — not directly comparable."
-                    )
-                except Exception:
-                    st.caption("No click data yet. Click results to start building training data for LTR.")
-            else:
-                st.caption("No click data yet. Click results to start building training data for LTR.")
+                    bc1.metric("nDCG@5", f"{baseline.get('ndcg_at_5', 0):.4f}")
+                    bc2.metric("MRR", f"{baseline.get('mrr', 0):.4f}")
+            except Exception:
+                pass
 
         st.divider()
 
