@@ -106,6 +106,48 @@ class TestEntityExtraction(KGTestBase):
         """Empty text returns empty list."""
         self.assertEqual(extract_entities(""), [])
 
+    def test_ner_spacy_augments_without_dropping_regex(self):
+        """When ner_spacy_enabled, spaCy additions are appended to the regex
+        entities — the regex results must NOT be discarded.
+
+        Regression: augment_entities returns only new spaCy entities, and the
+        caller previously overwrote `unique` with that result, dropping every
+        regex-extracted entity.
+        """
+        import infra._lazy_imports as _li
+        from types import SimpleNamespace
+        from unittest import mock
+
+        spoof = SimpleNamespace(ner_spacy_enabled=False)
+        strue = SimpleNamespace(ner_spacy_enabled=True)
+
+        text = (
+            "Sundar Pichai announced that Google is opening a lab in Zurich, "
+            "Switzerland. Dr. Jane Smith from MIT will lead it with OpenAI."
+        )
+
+        with mock.patch.object(_li, "get_config", return_value=spoof):
+            regex_only = extract_entities(text, min_occurrences=1)
+        with mock.patch.object(_li, "get_config", return_value=strue):
+            with_spacy = extract_entities(text, min_occurrences=1)
+
+        regex_names = {e[0] for e in regex_only}
+        spacy_names = {e[0] for e in with_spacy}
+
+        # All regex entities must survive when spaCy is enabled.
+        self.assertTrue(
+            regex_names <= spacy_names,
+            f"regex entities dropped by NER: {regex_names - spacy_names}",
+        )
+        # spaCy must add at least one entity the regex path missed.
+        self.assertLess(
+            len(regex_only), len(with_spacy),
+            "spaCy NER added nothing — augmentation not wired",
+        )
+        # Spot-check a regex (Google) and a spaCy-only (Zurich) entity.
+        self.assertIn("Google", spacy_names)
+        self.assertIn("Zurich", spacy_names)
+
     def test_index_kg_entities_in_db(self):
         """index_kg_for_memory writes entities to kg_entities table."""
         index_kg_for_memory(

@@ -776,7 +776,7 @@ def extract_entities(text: str, min_occurrences: int = 2) -> list[tuple[str, str
         from infra._lazy_imports import get_config
         if get_config().ner_spacy_enabled:
             from knowledge_graph.ner_spacy import augment_entities
-            unique = augment_entities(cleaned, unique)
+            unique = unique + augment_entities(cleaned, unique)
     except Exception as e:
         logger.warning("extract_entities failed: %s", e)
 
