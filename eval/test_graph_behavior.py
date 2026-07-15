@@ -32,10 +32,15 @@ if not VENV_PYTHON.exists():
 
 
 def _run_subprocess(code: str, extra_env: dict | None = None) -> subprocess.CompletedProcess:
+    import tempfile
     env = {k: v for k, v in os.environ.items() if not k.startswith("MEMORY_")}
     env["PYTHONPATH"] = str(REPO_ROOT)
     env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
     env["REPO_ROOT"] = str(REPO_ROOT)
+    # Isolate each subprocess to its own temp dir so module-level singletons
+    # (mcp_kg, background_worker, etc.) don't contend for the real memory.db flock.
+    _tmp_db_dir = tempfile.mkdtemp(prefix="graph_test_")
+    env["MEMORY_DB_PATH"] = str(Path(_tmp_db_dir) / "memory.db")
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
@@ -385,6 +390,12 @@ class TestGraphSnapshots(unittest.TestCase):
 class TestGraphInsightsAndCentrality(unittest.TestCase):
     def test_graph_insights_returns_density_and_centrality(self):
         code = _SCHEMA_SETUP + textwrap.dedent("""\
+            from unittest import mock as _mock
+            # Bypass RBAC authorization in the subprocess so the test
+            # doesn't depend on a real memory.db for auth lookups.
+            import mcp_kg as _mcp_kg
+            _mcp_kg._check_authorization = lambda *a, **kw: None
+
             conn = sqlite3.connect(":memory:")
             setup_schema(conn)
             a = add_entity(conn, "Alpha")

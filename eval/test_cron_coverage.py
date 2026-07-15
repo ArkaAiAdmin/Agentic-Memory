@@ -235,9 +235,7 @@ class TestCronRebuildFTS(unittest.TestCase):
 
     def test_rebuild_all_fts_no_tables(self):
         result = self.mod.rebuild_all_fts(self.db_path)
-        self.assertIn("kg_entities_fts", result)
-        self.assertIn("memory_chunks_fts", result)
-        self.assertIn("memories_fts", result)
+        self.assertEqual(result, {})
 
     def test_rebuild_all_fts_single_table(self):
         self._create_fts_table("memory_fts")
@@ -246,9 +244,7 @@ class TestCronRebuildFTS(unittest.TestCase):
         self.conn.close()
         result = self.mod.rebuild_all_fts(self.db_path)
         self.assertEqual(result.get("memory_fts"), "ok")
-        self.assertIn("kg_entities_fts", result)
-        self.assertIn("memory_chunks_fts", result)
-        self.assertIn("memories_fts", result)
+        self.assertEqual(len(result), 1)
 
     def test_rebuild_all_fts_multiple_tables(self):
         self._create_fts_table("memory_fts")
@@ -257,15 +253,11 @@ class TestCronRebuildFTS(unittest.TestCase):
         result = self.mod.rebuild_all_fts(self.db_path)
         self.assertEqual(result.get("memory_fts"), "ok")
         self.assertEqual(result.get("kg_fts"), "ok")
-        self.assertIn("kg_entities_fts", result)
-        self.assertIn("memory_chunks_fts", result)
-        self.assertIn("memories_fts", result)
+        self.assertEqual(len(result), 2)
 
     def test_rebuild_all_fts_nonexistent_db(self):
         result = self.mod.rebuild_all_fts(self.tmpdir / "nonexistent.db")
-        self.assertIn("kg_entities_fts", result)
-        self.assertIn("memory_chunks_fts", result)
-        self.assertIn("memories_fts", result)
+        self.assertEqual(result, {})
 
 
 # ── cron_detect_vec_drift: vec drift detection with temp DB ─────────
@@ -462,11 +454,11 @@ class TestCronHeartbeatBehavior(unittest.TestCase):
         try:
             db = tmp / "memory.db"
             db.touch()
+            mock_conn = unittest.mock.MagicMock()
             with (
                 unittest.mock.patch.dict(os.environ, {"MEMORY_DB_PATH": str(db)}),
                 unittest.mock.patch.object(self.mod, "run_heartbeat") as mock_hb,
-                unittest.mock.patch.object(self.mod, "connection_pool") as pool,
-                unittest.mock.patch.object(self.mod, "safe_close_db"),
+                unittest.mock.patch("sqlite3.connect", return_value=mock_conn),
             ):
                 mock_hb.return_value = {
                     "evaluated": 10,
@@ -474,7 +466,6 @@ class TestCronHeartbeatBehavior(unittest.TestCase):
                     "promoted": 2,
                     "archived": 1,
                 }
-                pool.get.return_value = unittest.mock.MagicMock()
                 buf = self._io.StringIO()
                 with self._contextlib.redirect_stdout(buf):
                     self.mod.main()
@@ -536,16 +527,15 @@ class TestCronQualityFilterBehavior(unittest.TestCase):
             db = tmp / "memory.db"
             db.touch()
             stats = {"total": 100, "valid": 95, "invalid": 5}
+            mock_conn = unittest.mock.MagicMock()
             with (
                 unittest.mock.patch.dict(os.environ, {"MEMORY_DB_PATH": str(db)}),
                 unittest.mock.patch.object(self.mod.qg, "QUALITY_GATES_ENABLED", True),
                 unittest.mock.patch.object(
                     self.mod.qg, "quality_stats", return_value=stats
                 ),
-                unittest.mock.patch.object(self.mod, "connection_pool") as pool,
-                unittest.mock.patch.object(self.mod, "safe_close_db"),
+                unittest.mock.patch("sqlite3.connect", return_value=mock_conn),
             ):
-                pool.get.return_value = unittest.mock.MagicMock()
                 buf = self._io.StringIO()
                 with self._contextlib.redirect_stdout(buf):
                     self.mod.main()
@@ -649,6 +639,11 @@ class TestCronIntegrityCheckBehavior(unittest.TestCase):
                 "check_index_integrity",
                 return_value={"summary": "0 critical 0 warnings", "findings": []},
             ),
+            unittest.mock.patch.object(
+                self.mod,
+                "repair_kg_orphans",
+                return_value={"was_orphaned": False, "deleted_kg_edges": 0, "deleted_kg_entities": 0, "deleted_backlinks": 0},
+            ),
             unittest.mock.patch(
                 "pathlib.Path.exists",
                 return_value=True,
@@ -681,6 +676,11 @@ class TestCronIntegrityCheckBehavior(unittest.TestCase):
                         },
                     ],
                 },
+            ),
+            unittest.mock.patch.object(
+                self.mod,
+                "repair_kg_orphans",
+                return_value={"was_orphaned": False, "deleted_kg_edges": 0, "deleted_kg_entities": 0, "deleted_backlinks": 0},
             ),
             unittest.mock.patch(
                 "pathlib.Path.exists",

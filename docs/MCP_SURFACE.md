@@ -4,7 +4,7 @@
 # Agentic Memory — MCP Surface Reference
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
-> Last updated: 2026-07-15. Schema v61. Multi-tenant isolation enforced.
+> Last updated: 2026-07-16. Schema v62. Multi-tenant isolation enforced.
 
 ---
 
@@ -607,7 +607,7 @@ memory_maintenance(operation="duplicates", threshold=0.85)
 
 ## Schema Version
 
-Current: **v61** (62 migrations, 100% down-migration coverage)
+Current: **v62** (63 migrations, 100% down-migration coverage)
 
 - `memory_ctr_feedback` composite primary key `(query_id, id)` (migration 061): one row per returned result so CTR click/dismiss signals correlate onto the originating impression. Previously a single `id TEXT PRIMARY KEY` sentinel row (`id='__search__'`) meant only one impression ever existed and `compute_channel_weights` never accumulated signal.
 

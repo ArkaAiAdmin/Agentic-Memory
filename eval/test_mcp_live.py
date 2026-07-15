@@ -190,7 +190,9 @@ class TestLiveMCPRateLimit(unittest.TestCase):
 
     @pytest.mark.timeout(240)
     def test_burst_returns_rate_limited(self):
-        os.environ["MEMORY_RATE_LIMIT_MEMORY_SEARCH"] = "3600,60"
+        # Set burst=60 with near-zero refill so the 61st call is rate-limited
+        # even when the loop takes >60s (tokens won't replenish meaningfully).
+        os.environ["MEMORY_RATE_LIMIT_MEMORY_SEARCH"] = "0.001,60"
         reset_config()
         reset_rate_limiter()
         try:

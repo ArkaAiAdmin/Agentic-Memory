@@ -40,15 +40,10 @@ def _load_cron_kg():
 
 
 def _fake_db_connection(counts: dict[str, int]) -> MagicMock:
-    """Return a MagicMock that mimics open_db() context manager.
-
-    Yields a connection whose .execute(...).fetchone() returns the
-    appropriate count for each kg_* / memories table.
+    """Return a MagicMock connection whose .execute(...).fetchone() returns
+    the appropriate count for each kg_* / memories table.
     """
-    cm = MagicMock()
     conn = MagicMock()
-    cm.__enter__ = MagicMock(return_value=conn)
-    cm.__exit__ = MagicMock(return_value=False)
 
     def fake_execute(sql, *args, **kwargs):
         result = MagicMock()
@@ -63,7 +58,7 @@ def _fake_db_connection(counts: dict[str, int]) -> MagicMock:
         return result
 
     conn.execute = fake_execute
-    return cm
+    return conn
 
 
 class TestPreflightStats(unittest.TestCase):
@@ -73,7 +68,7 @@ class TestPreflightStats(unittest.TestCase):
         fake_conn = _fake_db_connection(
             {"kg_facts": 100, "kg_entities": 50, "kg_edges": 25, "memories": 200}
         )
-        with patch.object(mod, "open_db", return_value=fake_conn):
+        with patch("sqlite3.connect", return_value=fake_conn):
             pre = mod.preflight_stats(Path("/tmp/fake.db"))
         self.assertEqual(pre["kg_facts"], 100)
         self.assertEqual(pre["kg_entities"], 50)
@@ -93,7 +88,7 @@ class TestPreflightStats(unittest.TestCase):
             "kg_edges": 2,
             "memories": 10,
         }
-        with patch.object(mod, "open_db", return_value=fake_conn):
+        with patch("sqlite3.connect", return_value=fake_conn):
             post = mod.postflight_stats(Path("/tmp/fake.db"), pre)
         self.assertEqual(post["deltas"]["kg_facts"], 2 - 5)  # -3
         self.assertEqual(post["deltas"]["kg_entities"], 1 - 3)  # -2
@@ -108,7 +103,7 @@ class TestPreflightStats(unittest.TestCase):
             {"kg_facts": 1, "kg_entities": 1, "memories": 1}
         )
         pre = {"kg_facts": 0, "kg_entities": 0, "kg_edges": 0, "memories": 0}
-        with patch.object(mod, "open_db", return_value=fake_conn):
+        with patch("sqlite3.connect", return_value=fake_conn):
             post = mod.postflight_stats(Path("/tmp/fake.db"), pre)
         # Missing table = default 0 in the fake (since no match)
         # Actually since "kg_edges" isn't in the counts dict, the fake returns 0
@@ -198,7 +193,7 @@ class TestMainExitCodes(unittest.TestCase):
         fake_conn = _fake_db_connection(
             {"kg_facts": 100, "kg_entities": 50, "kg_edges": 25, "memories": 200}
         )
-        with patch.object(mod, "open_db", return_value=fake_conn):
+        with patch("sqlite3.connect", return_value=fake_conn):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = "All good"

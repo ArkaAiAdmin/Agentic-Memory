@@ -310,6 +310,17 @@ def memory_search(
     RETURNS:
     A human-readable formatted string listing the ranked memories, their content, category, tags, and related facts.
     """
+    # Rate-limit gate: check budget before any processing.
+    try:
+        from infra.memory_common import rate_limit_check
+        if not rate_limit_check("memory_search"):
+            return _err(
+                ErrorCode.RATE_LIMITED,
+                "Rate limited for memory_search. Wait and retry.",
+            )
+    except ImportError:
+        pass
+
     # R1: gate query length before any processing
     if len(query) > MAX_QUERY_LENGTH:
         return _err(
