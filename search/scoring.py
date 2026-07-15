@@ -543,6 +543,20 @@ def _compute_final_score(ctx) -> float:
         + float(weights.get("tag_match", _get_rerank_weights()["tag_match"])) * tag_match
         + _recency_weight * recency_score
     )
+    # Neural retention blend: memories.score (from neural_forget) is a
+    # retention probability in [0, 1].  Blend it multiplicatively so
+    # high-retention memories get a gentle boost and low-retention
+    # memories get discounted — without dominating the signal channels.
+    forget = getattr(ctx, "forget_score", None)
+    if forget is not None:
+        try:
+            _forget = float(forget)
+            _forget = max(0.0, min(1.0, _forget))
+            # Blend: 85% raw score + 15% retention-scaled score.
+            # At forget=1.0 → no change; at forget=0.0 → 15% discount.
+            raw = raw * (0.85 + 0.15 * _forget)
+        except (TypeError, ValueError):
+            pass
     return raw * _entailment_factor
 
 
@@ -598,28 +612,31 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
     Returns adjusted weights dict if ≥10 data points exist, otherwise ``None``
     (caller should fall back to ``_RERANK_WEIGHTS``).
 
-    Gated behind ``MEMORY_CTR_TUNING=1`` env var.  Results are cached for
-    ``_CTR_WEIGHTS_TTL`` seconds so at most one DB query runs per search.
+    CTR tuning is ON by default.  Set ``MEMORY_CTR_TUNING=0`` to disable.
+    Results are cached for ``_CTR_WEIGHTS_TTL`` seconds so at most one DB
+    query runs per search.
     """
+    # CTR tuning is on by default.  Set MEMORY_CTR_TUNING=0 to opt out.
     # If the gating env var changed since the cache was populated, drop
     # the cache. Otherwise we'd return a stale result from before the
     # flag flipped. (Discovered during audit; testing tooling toggles
     # the env var between sessions.)
     with _CTR_WEIGHTS_CACHE_LOCK:
-        env_now = os.environ.get("MEMORY_CTR_TUNING") == "1"
+        env_val = os.environ.get("MEMORY_CTR_TUNING", "1").strip()
+        ctr_enabled = env_val != "0"
         global _CTR_WEIGHTS_CACHE
 
         if _CTR_WEIGHTS_CACHE is not None:
             ts, cached, cached_env = _CTR_WEIGHTS_CACHE
-            if cached_env != env_now or time.time() - ts >= _CTR_WEIGHTS_TTL:
+            if cached_env != ctr_enabled or time.time() - ts >= _CTR_WEIGHTS_TTL:
                 _CTR_WEIGHTS_CACHE = None
 
         if _CTR_WEIGHTS_CACHE is not None:
             ts, cached, _cached_env = _CTR_WEIGHTS_CACHE
             return _apply_exploration(cached)
 
-        if not env_now:
-            _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
+        if not ctr_enabled:
+            _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled)
             return None
 
     try:
@@ -635,7 +652,7 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
             }
             if "memory_ctr_feedback" not in tables:
                 with _CTR_WEIGHTS_CACHE_LOCK:
-                    _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
+                    _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled)
                 return None
 
             from config import get_config
@@ -655,7 +672,7 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
 
             if len(rows) < 10:
                 with _CTR_WEIGHTS_CACHE_LOCK:
-                    _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
+                    _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled)
                 return None
 
             alphas = {ch: 1.0 for ch in _RERANK_WEIGHTS}
@@ -682,7 +699,7 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
 
             if total_weight <= 0:
                 with _CTR_WEIGHTS_CACHE_LOCK:
-                    _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
+                    _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled)
                 return None
 
             adjusted = {ch: channel_sums[ch] / total_weight for ch in _RERANK_WEIGHTS}
@@ -694,14 +711,14 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
 
             stats = (alphas, betas, adjusted)
             with _CTR_WEIGHTS_CACHE_LOCK:
-                _CTR_WEIGHTS_CACHE = (time.time(), stats, env_now)
+                _CTR_WEIGHTS_CACHE = (time.time(), stats, ctr_enabled)
             return _apply_exploration(stats)
         finally:
             connection_pool.put(db)
     except Exception:
         logger.warning("Failed to compute CTR weights from feedback")
         with _CTR_WEIGHTS_CACHE_LOCK:
-            _CTR_WEIGHTS_CACHE = (time.time(), None, env_now)
+            _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled)
         return None
 
 

@@ -21,18 +21,16 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from langchain_core.retrievers import BaseRetriever
+from pydantic import Field
 
 
-class AgenticMemoryRetriever(BaseModel):
+class AgenticMemoryRetriever(BaseRetriever):
     """Adapts MemoryClient.search() into LangChain's retriever interface.
 
-    Inherits from Pydantic ``BaseModel`` (LangChain's ``BaseRetriever``
-    is itself a Pydantic ``Runnable`` subclass). ``model_config`` is
-    required to accept arbitrary types in the field annotations.
+    Inherits from LangChain ``BaseRetriever`` which is itself a Pydantic
+    ``Runnable`` subclass.
     """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     db_path: str | None = Field(
         default=None,
@@ -78,11 +76,3 @@ class AgenticMemoryRetriever(BaseModel):
             }
         )
         return Document(page_content=r.content, metadata=meta)
-
-    # LangChain BaseRetriever.invoke (sync) and
-    # BaseRetriever.ainvoke (async) both delegate here.
-    def invoke(self, input: str, config: Any = None, **kwargs: Any) -> list[Any]:
-        return self._get_relevant_documents(input)
-
-    async def ainvoke(self, input: str, config: Any = None, **kwargs: Any) -> list[Any]:
-        return self._get_relevant_documents(input)

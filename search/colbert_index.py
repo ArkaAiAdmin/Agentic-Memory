@@ -168,7 +168,7 @@ def delete_memory_colbert(conn: Any, memory_id: str) -> int:
     cur = conn.execute(
         "DELETE FROM colbert_tokens WHERE memory_id = ?", (memory_id,)
     )
-    return cur.rowcount
+    return int(cur.rowcount)
 
 
 def get_indexed_memory_ids(conn: Any, limit: int = 1000) -> list[str]:

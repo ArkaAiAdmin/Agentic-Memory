@@ -26,6 +26,7 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from infra.infrastructure import _normalize_unicode
 from infra.memory_common import connection_pool, safe_close_db

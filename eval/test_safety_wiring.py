@@ -124,5 +124,44 @@ def test_safety_wiring_module_loads():
     assert hasattr(save_pipeline, "save_memory")
 
 
+# ---------------------------------------------------------------------------
+# 2. _ProdDBGuarded functional test — verifies snapshot/restore actually works
+# ---------------------------------------------------------------------------
+
+
+class TestProdDBGuardedMixin(_ProdDBGuarded, unittest.TestCase):
+    """Functional test: _ProdDBGuarded snapshots DB, allows writes, restores on tearDown."""
+
+    def setUp(self):
+        if not _get_prod_db():
+            self.skipTest("MEMORY_DB_PATH not set — skipping prod DB guard test")
+        super().setUp()
+
+    def test_snapshot_restore_roundtrip(self):
+        """Write a row, then verify tearDown restores the original DB."""
+        prod_db = _get_prod_db()
+        if not prod_db or not prod_db.exists():
+            self.skipTest("MEMORY_DB_PATH not set or DB missing")
+
+        import sqlite3
+        # Record pre-test row count
+        with sqlite3.connect(str(prod_db)) as conn:
+            before = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+
+        # After setUp, prod_db has been snapshotted. Write a dummy row.
+        with sqlite3.connect(str(prod_db)) as conn:
+            conn.execute(
+                "INSERT INTO memories (id, content, category, importance, created_at) "
+                "VALUES ('_prod_db_guarded_test', 'test', 'lessons', 1, datetime('now'))"
+            )
+            conn.commit()
+            after = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        self.assertEqual(after, before + 1)
+
+        # tearDown will restore the snapshot — the inserted row should vanish.
+        # We can't assert here (tearDown hasn't run), but the md5 check in
+        # tearDown will catch any failure to restore.
+
+
 if __name__ == "__main__":
     unittest.main()

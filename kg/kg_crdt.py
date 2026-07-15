@@ -357,15 +357,23 @@ def merge_edge_ops(ops: Iterable[EdgeOp]) -> dict[int, dict[str, Any]]:
 
     result: dict[int, dict[str, Any]] = {}
     for edge_id, ops_for_edge in by_edge.items():
-        # Winner = op with highest (vv_sum, timestamp, agent_id).
-        winner = max(
-            ops_for_edge,
-            key=lambda o: (
-                sum(o.version_vector.values()),
-                o.timestamp,
-                o.agent_id,
-            ),
-        )
+        # Winner = op with highest version_vector (causal partial order).
+        # Ties broken by (timestamp desc, agent_id asc) — a proper total
+        # order for concurrent ops, not sum() which is not a partial order.
+        winner = ops_for_edge[0]
+        for candidate in ops_for_edge[1:]:
+            if vv_dominates(candidate.version_vector, winner.version_vector):
+                winner = candidate
+            elif not vv_dominates(winner.version_vector, candidate.version_vector):
+                # Concurrent: break tie by timestamp then agent_id
+                if (
+                    candidate.timestamp > winner.timestamp
+                    or (
+                        candidate.timestamp == winner.timestamp
+                        and candidate.agent_id < winner.agent_id
+                    )
+                ):
+                    winner = candidate
         result[edge_id] = {
             "source_id": winner.source_id,
             "target_id": winner.target_id,

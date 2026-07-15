@@ -209,6 +209,7 @@ class ScoreContext:
     is_entailed: Optional[int] = None
     query_tokens: Optional[set] = None  # Pre-computed query tokens for tag matching
     last_accessed: Optional[str] = None
+    forget_score: Optional[float] = None  # Neural retention score from memories.score
 
 
 class MemoryResultRow(NamedTuple):
@@ -282,6 +283,7 @@ def _rerank_results(
             last_accessed_col = r[9] if len(r) > 9 else None
             metadata_json = r[10] if len(r) > 10 else None
             access_count = r[11] if len(r) > 11 else 1
+            forget_score = r[12] if len(r) > 12 else None
             out.append(
                 (
                     r[0],
@@ -297,7 +299,7 @@ def _rerank_results(
                     last_accessed_col,
                     metadata_json,
                     access_count,
-                    None,
+                    forget_score,
                 )
             )
         # RANK-FIRST LOCK (PR1.1): the no-rerank pass-through must not
@@ -310,7 +312,7 @@ def _rerank_results(
     # Per-query-type CTR-learned weights override global prior
     from search.scoring import apply_query_type_weights
     _qweights = apply_query_type_weights(_qtype)
-    # Legacy global CTR tuning (gated behind MEMORY_CTR_TUNING=1)
+    # Global CTR tuning (on by default; MEMORY_CTR_TUNING=0 to disable)
     _ctr_w = compute_channel_weights(db_path)
     if _ctr_w is not None:
         _qweights = _ctr_w
@@ -334,6 +336,7 @@ def _rerank_results(
         last_accessed = r[9] if len(r) > 9 else None
         metadata_json = r[10] if len(r) > 10 else None
         access_count = r[11] if len(r) > 11 else 1
+        forget_score = r[12] if len(r) > 12 else None
         # Pre-compute query tokens once for tag matching (Phase 8 optimization)
         if _pre_query_tokens is None:
             from search.scoring import _RERANK_TOKEN_RE
@@ -355,6 +358,7 @@ def _rerank_results(
                 now_ts=as_of,
                 query_tokens=_pre_query_tokens,
                 last_accessed=last_accessed,
+                forget_score=forget_score,
             )
         )
         # Session-cluster boost — applied to final_score after

@@ -19,10 +19,10 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from langchain_core.callbacks import BaseCallbackHandler
 
 
-class AgenticMemoryCallbackHandler(BaseModel):
+class AgenticMemoryCallbackHandler(BaseCallbackHandler):
     """Auto-saves LLM prompts and responses to agentic-memory.
 
     Fires on ``on_llm_start`` (prompts) and ``on_llm_end`` (responses)
@@ -35,24 +35,18 @@ class AgenticMemoryCallbackHandler(BaseModel):
         auto_tags: Tags appended to every auto-saved memory entry.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    db_path: str | None = Field(
-        default=None,
-        description="Path to the agentic-memory SQLite database.",
-    )
-    save_prompts: bool = Field(
-        default=False,
-        description="Whether to persist LLM input prompts.",
-    )
-    save_responses: bool = Field(
-        default=True,
-        description="Whether to persist LLM output text.",
-    )
-    auto_tags: list[str] = Field(
-        default_factory=lambda: ["auto-saved"],
-        description="Tags appended to every auto-saved memory entry.",
-    )
+    def __init__(
+        self,
+        db_path: str | None = None,
+        save_prompts: bool = False,
+        save_responses: bool = True,
+        auto_tags: list[str] | None = None,
+    ) -> None:
+        super().__init__()
+        self.db_path = db_path
+        self.save_prompts = save_prompts
+        self.save_responses = save_responses
+        self.auto_tags = auto_tags if auto_tags is not None else ["auto-saved"]
 
     def _resolve_db_path(self) -> str | None:
         if self.db_path:
@@ -69,9 +63,6 @@ class AgenticMemoryCallbackHandler(BaseModel):
             category="sessions",
             tags=self.auto_tags + [role_tag],
         )
-
-    # LangChain CallbackHandler interface — on_llm_start and on_llm_end
-    # are the two hooks that fire for every LLM call in a chain/agent run.
 
     def on_llm_start(self, serialized: Any, prompts: list[str], **kwargs: Any) -> None:
         if not self.save_prompts:

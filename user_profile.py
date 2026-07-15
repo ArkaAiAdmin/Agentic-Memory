@@ -277,7 +277,7 @@ def personalize_results(
             r["score"] = new_score
 
     results.sort(
-        key=lambda x: x.get("final_score") if "final_score" in x else x.get("score", 0.0),
+        key=lambda x: float(x.get("final_score", 0.0) if "final_score" in x else x.get("score", 0.0)),
         reverse=True,
     )
     return results

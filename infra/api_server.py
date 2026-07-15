@@ -619,7 +619,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
             with open_db(Path(str(self.server.db_path))) as conn:
                 result = gdpr_erase(
-                    conn=conn,
+                    conn=conn,  # type: ignore[arg-type]
                     principal_id=getattr(self, "_principal_id", "api"),
                     data_subject_sub=data_subject_sub,
                     tenant_id=tenant_id,

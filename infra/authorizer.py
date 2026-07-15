@@ -102,9 +102,11 @@ def resolve_principal(
       - Checks static config mapping from ``memory.toml`` ``[api.principals]``.
       - Falls through to ``principals`` table lookup via
         ``principal_identities.external_sub``.
+      - Falls back to ``MEMORY_AGENT_ID`` env var for local/stdio
+        deployments where no token is configured.
 
     Returns ``None`` if:
-      - No token provided.
+      - No token provided AND no MEMORY_AGENT_ID is set.
       - Token does not map to any principal (unknown token).
       - Database is unavailable.
 
@@ -112,6 +114,16 @@ def resolve_principal(
     existing single-token deployments continue to work without RBAC.
     """
     if not token:
+        # Local/stdio fallback: auto-resolve a default principal from
+        # MEMORY_AGENT_ID so closed-mode works without token config.
+        local_id = os.environ.get("MEMORY_AGENT_ID", "")
+        if local_id:
+            return Principal(
+                id=local_id,
+                kind="local",
+                tenant_id="default",
+                display_name=local_id,
+            )
         return None
 
     # Backward compat: if the token matches the legacy API token,

@@ -242,4 +242,4 @@ def clear_stale_cache(conn: Any, max_age_days: int = 7) -> int:
     cur = conn.execute(
         f"DELETE FROM {_PRECOMPUTE_TABLE} WHERE created_at < ?", (cutoff,)
     )
-    return cur.rowcount
+    return int(cur.rowcount)

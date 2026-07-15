@@ -34,9 +34,9 @@ def _blob_to_vec(blob: bytes) -> list[float]:
 
 def _cosine_sim(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
+    dot: float = sum(x * y for x, y in zip(a, b))
+    norm_a: float = sum(x * x for x in a) ** 0.5
+    norm_b: float = sum(x * x for x in b) ** 0.5
     if norm_a < 1e-9 or norm_b < 1e-9:
         return 0.0
     return dot / (norm_a * norm_b)

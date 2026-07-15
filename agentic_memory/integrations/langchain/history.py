@@ -20,14 +20,11 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from agentic_memory.models import MemoryResult  # noqa: F401 — re-export
+from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 
 def _role_tag(message: Any) -> str:
-    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-
     if isinstance(message, HumanMessage):
         return "human"
     if isinstance(message, AIMessage):
@@ -37,7 +34,7 @@ def _role_tag(message: Any) -> str:
     return "message"
 
 
-class AgenticMemoryChatHistory(BaseModel):
+class AgenticMemoryChatHistory(BaseChatMessageHistory):
     """Stores LangChain ``BaseMessage`` objects as agentic-memory saves.
 
     Each call to ``add_message`` calls :meth:`MemoryClient.save` with the
@@ -47,21 +44,14 @@ class AgenticMemoryChatHistory(BaseModel):
     the underlying pipeline (see follow-up task).
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    db_path: str | None = Field(
-        default=None,
-        description="Path to the agentic-memory SQLite database. "
-        "Falls back to AGENTIC_MEMORY_DB_PATH env var.",
-    )
-    session_id: str = Field(
-        default="default",
-        description="Session identifier used as a tag for look-back.",
-    )
-    messages: list[Any] = Field(
-        default_factory=list,
-        description="In-memory message cache (not the source of truth).",
-    )
+    def __init__(
+        self,
+        db_path: str | None = None,
+        session_id: str = "default",
+    ) -> None:
+        self.db_path = db_path
+        self.session_id = session_id
+        self.messages: list[Any] = []
 
     def _resolve_db_path(self) -> str | None:
         if self.db_path:

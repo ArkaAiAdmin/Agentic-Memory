@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Temporal Knowledge Graph Contradiction Resolution.
+"""Temporal Knowledge Graph Contradiction Resolution — DEPRECATED.
+
+.. deprecated::
+    This module is superseded by :mod:`fact.fact_temporal` for write-path
+    temporal resolution (fact supersession via ``reconcile_fact_supersession``).
+    The ``resolve_temporal_contradiction`` function here operates at the
+    memory-note level, while ``fact_temporal`` operates at the KG-fact level
+    with proper bi-temporal validity and entailment-chain propagation.
+
+    Retained for backward compatibility and tests.  Will be removed in a
+    future release.
 
 Uses the existing ``valid_from`` / ``valid_to`` / ``superseded_by``
 columns (already on the ``memories`` table) to automatically resolve

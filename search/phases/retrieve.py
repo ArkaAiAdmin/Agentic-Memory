@@ -40,7 +40,8 @@ def _fts_search(
         params = params + tag_filter_params
         return db.execute(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
-            "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count\n"
+            "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count,\n"
+            "                 m.score\n"
             "          FROM memories_fts fts\n"
             "          JOIN tenant_memories m ON m.id = fts.id\n"
             f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
@@ -54,7 +55,8 @@ def _fts_search(
     params = params + tag_filter_params
     return db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
-        "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count\n"
+        "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count,\n"
+        "             m.score\n"
         "      FROM memories_fts fts\n"
         "      JOIN tenant_memories m ON m.id = fts.id\n"
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"

@@ -48,7 +48,7 @@ Each entry shows the default value and where it's read in the codebase.
 | `MEMORY_CHUNK_SEARCH` | `"1"` | Enable chunk-level vector search (`infra/embedding_search.py:315`). Set to `"0"`, `"false"`, or `"no"` to disable. |
 | `MEMORY_CTR_CLICK_WINDOW_HOURS` | `4` | Hours to look back for CTR click events (`save/indexers.py:207`). Converts to seconds internally (default 14400s). |
 | `MEMORY_CTR_EPSILON` | `0.1` | Epsilon for epsilon-greedy exploration in CTR tuning (`search/scoring.py:459`). Higher = more exploration. |
-| `MEMORY_CTR_TUNING` | _(disabled)_ | When set to `"1"`, enables CTR-driven rerank weight tuning via Thompson sampling (`search/scoring.py:693`). Results cached for 5 minutes. |
+| `MEMORY_CTR_TUNING` | _(enabled)_ | Set to `"0"` to disable CTR-driven rerank weight tuning. When enabled, learns per-query-type channel weights from `memory_ctr_feedback` via Thompson sampling. Results cached for 5 minutes. |
 
 ## Write Queue
 

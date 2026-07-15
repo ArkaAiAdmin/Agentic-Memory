@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentic-memory"
 version = "1.1.0"
-description = "Local-first persistent memory for AI agents — markdown-native, MCP server with 102 tools (15 CORE + 87 ADMIN + 3 DEPRECATED; 16 visible), temporal KG, CRDT sync, hybrid search. Apache 2.0."
+description = "Local-first persistent memory for AI agents — markdown-native, MCP server with 115 tools (18 CORE + 94 ADMIN + 3 DEPRECATED; 3 visible), temporal KG, CRDT sync, hybrid search. Apache 2.0."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
@@ -129,12 +129,8 @@ data_file = ".coverage"
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
-# 2026-06-20: was 0, then 60, then 70. Measured coverage is now 58-59% on
-# CI (the matrix runs are noisy because some coverage is in modules only
-# loaded in the user's install dir). 55 gives us headroom while still
-# catching real regressions; the goal is to ratchet back up to 70+ as
-# the matrix stabilises. See pyproject.toml git log for the history.
-fail_under = 55
+# Aligned with CI (--cov-fail-under=70 in .github/workflows/ci.yml).
+fail_under = 70
 
 [tool.pyright]
 include = ["*.py"]

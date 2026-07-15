@@ -11,6 +11,7 @@ save_pipeline. Re-exported there for backward compat.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 
@@ -146,9 +147,97 @@ def _index_kg(db, note_id: str, content: str):
 
         if KG_ENABLED:
             ensure_kg_schema(db)
+            pre_entity_ids = {
+                row[0]
+                for row in db.execute("SELECT id FROM kg_entities").fetchall()
+            }
             index_kg_for_memory(db, note_id, content)
+            post_entity_ids = {
+                row[0]
+                for row in db.execute("SELECT id FROM kg_entities").fetchall()
+            }
+            new_entity_ids = post_entity_ids - pre_entity_ids
+            _record_kg_crdt_ops(db, note_id, new_entity_ids)
     except Exception as ke:
         logger.debug("KG indexing skipped for %s: %s", note_id, ke)
+
+
+def _record_kg_crdt_ops(
+    db, note_id: str, new_entity_ids: set[int] | None = None
+) -> None:
+    """After entity/fact extraction, write CRDT ops for the written entities/edges.
+
+    Uses the CRDT tables (kg_entity_crdt, kg_edge_crdt) so multi-agent
+    peers can sync KG state without data loss (S2). Version vector is
+    {agent_id: 1} for new entities. All writes are in the same transaction.
+
+    When ``new_entity_ids`` is provided, only those entities are recorded
+    (scope to this save call). When None, falls back to entities with
+    mentions > 0 (legacy behavior).
+    """
+    try:
+        from kg.kg_crdt import record_entity_add, record_edge_add, ensure_kg_crdt_schema
+
+        ensure_kg_crdt_schema(db)
+        agent_id = "default"
+        try:
+            from agent_context import get_agent
+            _ctx = get_agent()
+            if _ctx.agent_id:
+                agent_id = _ctx.agent_id
+        except (ImportError, AttributeError):
+            pass
+        if new_entity_ids is not None and new_entity_ids:
+            placeholders = ",".join("?" for _ in new_entity_ids)
+            entity_rows = db.execute(
+                f"SELECT id, name, entity_type FROM kg_entities WHERE id IN ({placeholders})",
+                list(new_entity_ids),
+            ).fetchall()
+        else:
+            entity_rows = db.execute(
+                "SELECT id, name, entity_type FROM kg_entities WHERE mentions > 0"
+            ).fetchall()
+        for eid, name, etype in entity_rows:
+            existing_row = db.execute(
+                "SELECT version_vector FROM kg_entity_crdt WHERE entity_id = ? AND op = 'add' ORDER BY timestamp DESC LIMIT 1",
+                (eid,),
+            ).fetchone()
+            existing_vv = json.loads(existing_row[0]) if existing_row and existing_row[0] else {}
+            merged_vv = {k: max(existing_vv.get(k, 0), {agent_id: 1}.get(k, 0))
+                         for k in set(existing_vv) | {agent_id}}
+            record_entity_add(
+                db, entity_id=eid, agent_id=agent_id,
+                version_vector=merged_vv, name=name, entity_type=etype or "",
+            )
+        # Record CRDT ops for edges whose source or target is a new entity
+        if new_entity_ids is not None and new_entity_ids:
+            placeholders = ",".join("?" for _ in new_entity_ids)
+            edge_rows = db.execute(
+                f"SELECT source_id, target_id, relation, weight, valid_at "
+                f"FROM kg_edges WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})",
+                list(new_entity_ids) + list(new_entity_ids),
+            ).fetchall()
+        else:
+            edge_rows = db.execute(
+                "SELECT source_id, target_id, relation, weight, valid_at FROM kg_edges"
+            ).fetchall()
+        from kg.kg_crdt import _edge_key as _ek
+        for src, tgt, rel, w, valid_at in edge_rows:
+            eid = _ek(src, tgt, rel)
+            existing_row = db.execute(
+                "SELECT version_vector FROM kg_edge_crdt WHERE edge_id = ? ORDER BY timestamp DESC LIMIT 1",
+                (eid,),
+            ).fetchone()
+            existing_vv = json.loads(existing_row[0]) if existing_row and existing_row[0] else {}
+            merged_vv = {k: max(existing_vv.get(k, 0), {agent_id: 1}.get(k, 0))
+                         for k in set(existing_vv) | {agent_id}}
+            record_edge_add(
+                db, source_id=src, target_id=tgt, relation=rel,
+                weight=w or 1.0, agent_id=agent_id,
+                version_vector=merged_vv, valid_at=valid_at,
+            )
+    except Exception as crdt_exc:
+        logger.debug("KG CRDT op recording skipped for %s: %s", note_id, crdt_exc)
 
 
 def _index_facts(db, note_id: str, content: str, belief_status: str = "active",
