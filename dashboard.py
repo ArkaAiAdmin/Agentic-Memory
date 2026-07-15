@@ -2558,130 +2558,236 @@ with multi_agent_tab:
 # HEALTH
 # ═══════════════════════════════════════════════════════════════════════════
 with health_tab:
-    st.subheader("Health & Integrity")
+    st.subheader("System Health & Integrity")
     live = _live_health()
     checks = live.get("checks", [])
     summary = Counter(s for _, s, _ in checks)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("✅ OK", summary.get("ok", 0))
-    c2.metric("⚠️ Warning", summary.get("warning", 0))
-    c3.metric("❌ Failure", summary.get("failure", 0))
-    c4.metric("☠️ Error", summary.get("error", 0))
-    st.caption(f"Checked at {live['ts'][:19]}")
 
-    st.divider()
-    st.markdown("#### Tables")
-    for name, sev, detail in checks:
-        dot_cls = {"ok": "dot-green", "warning": "dot-yellow", "failure": "dot-red", "error": "dot-red"}.get(sev, "dot-gray")
+    # ── Health summary with pie chart ──
+    n_ok = summary.get("ok", 0)
+    n_warn = summary.get("warning", 0)
+    n_fail = summary.get("failure", 0)
+    n_err = summary.get("error", 0)
+    total_checks = n_ok + n_warn + n_fail + n_err
+
+    col_stats, col_pie = st.columns([1, 1])
+    with col_stats:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("✅ OK", n_ok)
+        c2.metric("⚠️ Warning", n_warn)
+        c3.metric("❌ Failure", n_fail)
+        c4.metric("☠️ Error", n_err)
+        st.caption(f"Checked at {live['ts'][:19]} · {total_checks} total checks")
+
+        # Health score
+        health_score = round(n_ok / total_checks * 100) if total_checks > 0 else 0
+        health_color = "#10b981" if health_score >= 80 else "#f59e0b" if health_score >= 60 else "#ef4444"
         st.markdown(
-            f"<div style='display:flex;align-items:center;gap:8px;padding:2px 0;'>"
-            f"<span class='{dot_cls}'></span>"
-            f"<code style='color:#d1d5db;font-size:0.8rem;'>{name}</code>"
-            f"<span style='color:#9ca3af;font-size:0.75rem;'>{detail}</span>"
+            f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:12px;margin-top:8px;'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
+            f"<span style='color:#8b8fa3;font-size:0.75rem;'>Health Score</span>"
+            f"<span style='color:{health_color};font-size:1.5rem;font-weight:700;'>{health_score}%</span>"
+            f"</div>"
+            f"<div class='progress-track' style='margin-top:6px;'><div class='progress-fill' style='width:{health_score}%;background:{health_color};'></div></div>"
             f"</div>",
             unsafe_allow_html=True,
         )
 
-    st.divider()
-    st.markdown("#### Disk Usage")
-    db_size = DB.stat().st_size
-    mem_dir_size = sum(f.stat().st_size for f in MEM_DIR.rglob("*") if f.is_file())
+    with col_pie:
+        if total_checks > 0:
+            pie_data = pd.DataFrame({"Status": ["OK", "Warning", "Failure", "Error"], "Count": [n_ok, n_warn, n_fail, n_err]})
+            pie_data = pie_data[pie_data["Count"] > 0]
+            fig_pie = px.pie(
+                pie_data, names="Status", values="Count", color="Status",
+                color_discrete_map={"OK": "#10b981", "Warning": "#f59e0b", "Failure": "#ef4444", "Error": "#dc2626"},
+            )
+            fig_pie.update_layout(**DARK, height=220, margin=dict(t=10, b=10, l=10, r=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)))
+            st.plotly_chart(fig_pie, width="stretch")
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        db_pct = min(100, db_size / (500 * 1024 * 1024) * 100)
-        db_color = "#10b981" if db_pct < 50 else "#f59e0b" if db_pct < 80 else "#ef4444"
-        st.markdown(f"""
-        <div class="card">
-          <div class="card-sub">Database size</div>
-          <div class="card-title">{db_size / 1024 / 1024:.1f} MB</div>
-          <div class="progress-track">
-            <div class="progress-fill" style="width:{db_pct}%;background:{db_color}"></div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-    with c2:
-        dir_pct = min(100, mem_dir_size / (2 * 1024 * 1024 * 1024) * 100)
-        dir_color = "#10b981" if dir_pct < 50 else "#f59e0b" if dir_pct < 80 else "#ef4444"
-        st.markdown(f"""
-        <div class="card">
-          <div class="card-sub">Memory directory</div>
-          <div class="card-title">{mem_dir_size / 1024 / 1024:.1f} MB</div>
-          <div class="progress-track">
-            <div class="progress-fill" style="width:{dir_pct}%;background:{dir_color}"></div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-    with c3:
-        st.markdown(f"""
-        <div class="card">
-          <div class="card-sub">DB file path</div>
-          <div class="card-body" style="word-break:break-all;margin-top:4px"><code>{DB}</code></div>
-        </div>
-        """, unsafe_allow_html=True)
+    st.divider()
+
+    # ── Table health cards ──
+    st.markdown("#### Table Health")
+    cols_per_row = 4
+    for i in range(0, len(checks), cols_per_row):
+        row_checks = checks[i:i+cols_per_row]
+        cols = st.columns(cols_per_row)
+        for j, (name, sev, detail) in enumerate(row_checks):
+            color = {"ok": "#10b981", "warning": "#f59e0b", "failure": "#ef4444", "error": "#dc2626"}.get(sev, "#6b7280")
+            icon = {"ok": "✅", "warning": "⚠️", "failure": "❌", "error": "☠️"}.get(sev, "❓")
+            cols[j].markdown(
+                f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:8px;padding:10px;text-align:center;'>"
+                f"<div style='font-size:1.2rem;'>{icon}</div>"
+                f"<div style='color:#d1d5db;font-size:0.75rem;font-weight:600;margin:4px 0;'>{name}</div>"
+                f"<div style='color:#6b7280;font-size:0.65rem;'>{detail}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+
+    # ── System info + Feature flags ──
+    col_sys, col_feat = st.columns(2)
+
+    with col_sys:
+        st.markdown("#### System Info")
+        import platform
+        sys_info = {
+            "Python": platform.python_version(),
+            "Platform": f"{platform.system()} {platform.release()}",
+            "DB Path": str(DB),
+            "Schema": "v61",
+            "DB Size": f"{DB.stat().st_size / 1024 / 1024:.1f} MB",
+            "Memory Dir": f"{sum(f.stat().st_size for f in MEM_DIR.rglob('*') if f.is_file()) / 1024 / 1024:.1f} MB",
+        }
+        for k, v in sys_info.items():
+            st.markdown(
+                f"<div style='display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1f2937;'>"
+                f"<span style='color:#8b8fa3;font-size:0.75rem;'>{k}</span>"
+                f"<span style='color:#d1d5db;font-size:0.75rem;font-weight:600;'>{v}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+    with col_feat:
+        st.markdown("#### Feature Flags")
+        try:
+            from infra._lazy_imports import get_config
+            cfg = get_config()
+            features = {
+                "Knowledge Graph": getattr(cfg, "knowledge_graph_enabled", False),
+                "Adaptive Retention": getattr(cfg, "adaptive_retention_enabled", False),
+                "Temporal KG": getattr(cfg, "temporal_kg_enabled", False),
+                "CTR Tuning": os.environ.get("MEMORY_CTR_TUNING") == "1",
+                "LLM Extraction": getattr(cfg, "llm_extraction_enabled", False),
+                "Session Memory": getattr(cfg, "session_memory", False),
+                "CRDT Sync": getattr(cfg, "crdt_enabled", False),
+                "LTR Model": ltr_model.exists() if 'ltr_model' in dir() else (Path(__file__).parent / "models" / "ltr" / "model.txt").exists(),
+            }
+            for feat_name, enabled in features.items():
+                status_color = "#10b981" if enabled else "#4b5563"
+                status_text = "ON" if enabled else "OFF"
+                st.markdown(
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #1f2937;'>"
+                    f"<span style='color:#d1d5db;font-size:0.75rem;'>{feat_name}</span>"
+                    f"<span style='background:{status_color}22;color:{status_color};padding:0.1rem 0.4rem;border-radius:999px;font-size:0.65rem;font-weight:600;'>{status_text}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        except Exception:
+            st.info("Could not load feature flags")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # BACKUPS
 # ═══════════════════════════════════════════════════════════════════════════
 with backups_tab:
-    st.subheader("Backups")
+    st.subheader("Backup Management")
+
     backup_dir = MEM_DIR / "backups"
-    if backup_dir.exists():
-        backups = sorted(
-            [p for p in backup_dir.glob("*") if p.suffix in (".db", ".gz", ".db.gz") and not p.name.startswith(".")],
-            key=lambda p: p.stat().st_mtime, reverse=True,
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    backups = sorted(
+        [p for p in backup_dir.glob("*") if p.suffix in (".db", ".gz", ".db.gz") and not p.name.startswith(".")],
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )
+
+    # ── Backup stats ──
+    if backups:
+        total_size = sum(bp.stat().st_size for bp in backups)
+        oldest = datetime.fromtimestamp(backups[-1].stat().st_mtime, tz=timezone.utc) if backups else None
+        newest = datetime.fromtimestamp(backups[0].stat().st_mtime, tz=timezone.utc) if backups else None
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Backups", len(backups))
+        c2.metric("Total Size", f"{total_size / 1024 / 1024:.1f} MB")
+        c3.metric("Newest", newest.strftime("%Y-%m-%d") if newest else "—")
+        c4.metric("Oldest", oldest.strftime("%Y-%m-%d") if oldest else "—")
+
+        st.divider()
+
+        # ── Backup timeline chart ──
+        bp_data = []
+        for bp in backups:
+            mtime = datetime.fromtimestamp(bp.stat().st_mtime, tz=timezone.utc)
+            bp_data.append({"name": bp.name, "size_mb": bp.stat().st_size / 1024 / 1024, "date": mtime})
+        bp_df = pd.DataFrame(bp_data)
+
+        fig_bp = px.bar(
+            bp_df, x="date", y="size_mb",
+            color_discrete_sequence=["#6366f1"],
+            hover_data=["name"],
+            text_auto=".1f",
         )
-        if backups:
-            st.caption(f"{len(backups)} backup(s)")
-            rows = []
-            for bp in backups:
-                mtime = datetime.fromtimestamp(bp.stat().st_mtime, tz=timezone.utc)
-                rows.append(
-                    {
-                        "name": bp.name,
-                        "size": f"{bp.stat().st_size / 1024 / 1024:.1f} MB",
-                        "modified": mtime.strftime("%Y-%m-%d %H:%M UTC"),
-                    }
-                )
-            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
-            if st.button("\U0001f4e4 Create backup now", width="stretch"):
-                import gzip
-                import shutil
-                from datetime import date
-                backup_name = f"memory-{date.today().isoformat()}.db.gz"
-                backup_path = backup_dir / backup_name
-                if backup_path.exists():
-                    st.warning(f"Backup for today already exists: {backup_name}")
-                else:
-                    with open(DB, "rb") as fin, gzip.open(backup_path, "wb") as fout:
-                        shutil.copyfileobj(fin, fout)
-                    st.success(f"Created {backup_name} ({backup_path.stat().st_size / 1024:.0f} KB)")
-                    st.rerun()
-        else:
-            st.info("No backups found in memory/backups/")
-            if st.button("\U0001f4e4 Create backup", width="stretch"):
-                import gzip
-                import shutil
-                backup_dir.mkdir(parents=True, exist_ok=True)
-                from datetime import date
-                backup_name = f"memory-{date.today().isoformat()}.db.gz"
-                backup_path = backup_dir / backup_name
-                with open(DB, "rb") as fin, gzip.open(backup_path, "wb") as fout:
-                    shutil.copyfileobj(fin, fout)
-                st.success(f"Created {backup_name} ({backup_path.stat().st_size / 1024:.0f} KB)")
-                st.rerun()
+        fig_bp.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10), xaxis_title=None, yaxis_title="Size (MB)")
+        st.plotly_chart(fig_bp, width="stretch")
+
+        # ── Backup table ──
+        rows = []
+        for bp in backups:
+            mtime = datetime.fromtimestamp(bp.stat().st_mtime, tz=timezone.utc)
+            age_days = (datetime.now(timezone.utc) - mtime).days
+            rows.append({
+                "Name": bp.name,
+                "Size": f"{bp.stat().st_size / 1024 / 1024:.1f} MB",
+                "Created": mtime.strftime("%Y-%m-%d %H:%M UTC"),
+                "Age": f"{age_days}d ago" if age_days > 0 else "today",
+            })
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
     else:
-        st.info("No backups directory — backups not enabled or none taken yet")
-        if st.button("\U0001f4e4 Create backup directory & backup", width="stretch"):
+        st.info("No backups yet")
+
+    st.divider()
+
+    # ── Create backup ──
+    st.markdown("#### Create Backup")
+    col_create, col_manage = st.columns([1, 1])
+
+    with col_create:
+        if st.button("\U0001f4e4 Create Backup Now", width="stretch", type="primary"):
             import gzip
             import shutil
-            backup_dir.mkdir(parents=True, exist_ok=True)
             from datetime import date
-            backup_name = f"memory-{date.today().isoformat()}.db.gz"
+            backup_name = f"memory-{date.today().isoformat()}-{datetime.now().strftime('%H%M')}.db.gz"
             backup_path = backup_dir / backup_name
             with open(DB, "rb") as fin, gzip.open(backup_path, "wb") as fout:
                 shutil.copyfileobj(fin, fout)
             st.success(f"Created {backup_name} ({backup_path.stat().st_size / 1024:.0f} KB)")
+            st.rerun()
+
+    with col_manage:
+        if backups:
+            # ── Restore from backup ──
+            restore_name = st.selectbox(
+                "Select backup to restore",
+                [bp.name for bp in backups],
+                key="restore_select",
+            )
+            if st.button("\U0001f504 Restore from Backup", width="stretch"):
+                restore_path = backup_dir / restore_name
+                if restore_path.exists():
+                    import gzip
+                    import shutil
+                    # Create a backup of current DB first
+                    from datetime import date
+                    pre_restore_name = f"pre-restore-{date.today().isoformat()}.db.gz"
+                    pre_restore_path = backup_dir / pre_restore_name
+                    with open(DB, "rb") as fin, gzip.open(pre_restore_path, "wb") as fout:
+                        shutil.copyfileobj(fin, fout)
+                    # Restore
+                    with gzip.open(restore_path, "rb") as fin, open(DB, "wb") as fout:
+                        shutil.copyfileobj(fin, fout)
+                    st.success(f"Restored from {restore_name}. Pre-restore backup saved as {pre_restore_name}")
+                    st.rerun()
+
+    # ── Backup retention ──
+    if backups and len(backups) > 7:
+        st.divider()
+        st.markdown("#### Backup Retention")
+        st.caption(f"You have {len(backups)} backups. Consider keeping only the last 7.")
+        if st.button("\U0001f5d1\ufe0f Clean Old Backups (keep last 7)", width="stretch"):
+            for bp in backups[7:]:
+                bp.unlink()
+            st.success(f"Deleted {len(backups) - 7} old backups")
             st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════════════
