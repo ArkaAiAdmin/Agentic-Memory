@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
+# Agentic Memory — Local Agent Memory Dashboard.
+#
+# Run:
+#     cd ~/.config/agentic-memory
+#     venv/bin/streamlit run dashboard.py
 from __future__ import annotations
 
 import logging
 logger = logging.getLogger(__name__)
-"""Agentic Memory — Local Agent Memory Dashboard.
-
-Run:
-    cd ~/.config/agentic-memory
-    venv/bin/streamlit run dashboard.py
-"""
 import html
 import json
 import struct
