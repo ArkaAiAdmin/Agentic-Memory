@@ -10,5 +10,8 @@ usearch>=2.0.0
 torch>=2.0.0
 transformers>=4.0.0
 
+# Optional: LTR (LambdaMART) reranking
+lightgbm>=4.0.0
+
 # Dev: type checking & linting
 mypy>=1.0
