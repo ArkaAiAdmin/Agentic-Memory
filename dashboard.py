@@ -1758,9 +1758,9 @@ with drift_tab:
                     y=0.15, line_dash="dash", line_color="#f59e0b",
                     annotation_text="threshold (0.15)",
                 )
-                fig.add_hrect(y0=0, y1=0.15, fillcolor="#10b98110", line_width=0)
-                fig.add_hrect(y0=0.15, y1=0.3, fillcolor="#f59e0b10", line_width=0)
-                fig.add_hrect(y0=0.3, y1=1, fillcolor="#ef444410", line_width=0)
+                fig.add_hrect(y0=0, y1=0.15, fillcolor="rgba(16,185,129,0.06)", line_width=0)
+                fig.add_hrect(y0=0.15, y1=0.3, fillcolor="rgba(245,158,11,0.06)", line_width=0)
+                fig.add_hrect(y0=0.3, y1=1, fillcolor="rgba(239,68,68,0.06)", line_width=0)
                 fig.update_layout(
                     **DARK,
                     xaxis_title=None, yaxis_title="Drift Metric",
@@ -1988,7 +1988,7 @@ with ctr_tab:
 
                     # nDCG distribution
                     fig_ndcg = px.histogram(ndcg_df, x="nDCG@10", nbins=20, color_discrete_sequence=["#6366f1"])
-                    fig_ndcg.update_layout(**DARK, height=180, margin=dict(t=10, b=10, l=10, r=10), bargap=0.1, xaxis_title="nDCG@10", yaxis_title="Queries")
+                    fig_ndcg.update_layout(**DARK, height=200, margin=dict(t=30, b=10, l=10, r=10), bargap=0.1, xaxis_title="nDCG@10", yaxis_title="Queries")
                     st.plotly_chart(fig_ndcg, width="stretch")
             except Exception as e:
                 st.caption(f"nDCG computation failed: {e}")
@@ -2420,7 +2420,7 @@ with cron_tab:
             health_df, names="Status", values="Count", color="Status",
             color_discrete_map={"Healthy": "#10b981", "Warnings": "#f59e0b", "Errors": "#ef4444"},
         )
-        fig_health.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)))
+        fig_health.update_layout(**DARK, height=220, margin=dict(t=30, b=10, l=10, r=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)))
         st.plotly_chart(fig_health, width="stretch")
 
     st.divider()
