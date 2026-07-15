@@ -150,7 +150,7 @@ def encode_tokens_batch(texts: list[str], max_length: int = 256) -> list[Optiona
         hidden = outputs.last_hidden_state  # [batch, seq_len, hidden_dim]
         projected = projection(hidden)  # [batch, seq_len, 128]
         attn_mask = inputs["attention_mask"]  # [batch, seq_len]
-        results = []
+        results: list[list[tuple[str, list[float]]] | None] = []
         for b in range(len(texts)):
             seq_len = attn_mask[b].sum().item()
             tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][b][:seq_len])

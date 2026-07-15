@@ -970,13 +970,13 @@ with memories_tab:
         display_df.columns = ["ID", "Category", "Fitness", "Tier", "Importance", "Pinned", "Preview", "Created"]
 
         selected = st.dataframe(
-            display_df, width="stretch", hide_index=True,
+            display_df, use_container_width=True, hide_index=True,
             column_config={
                 "Fitness": st.column_config.ProgressColumn("Fitness", min_value=0, max_value=1, format="%.2f"),
                 "Pinned": st.column_config.CheckboxColumn("Pinned"),
                 "Preview": st.column_config.TextColumn("Preview", width="large"),
             },
-            selection_mode="single",
+            selection_mode="single-row",
             key="mem_table",
         )
 
@@ -1699,7 +1699,7 @@ with facts_tab:
             display_f.columns = ["Subject", "Predicate", "Object", "Confidence", "Mentions", "Locked"]
 
             selected_f = st.dataframe(
-                display_f, width="stretch", hide_index=True,
+                display_f, use_container_width=True, hide_index=True,
                 column_config={
                     "Confidence": st.column_config.ProgressColumn("Confidence", min_value=0, max_value=1, format="%.2f"),
                     "Locked": st.column_config.CheckboxColumn("Locked"),
@@ -1707,7 +1707,7 @@ with facts_tab:
                     "Predicate": st.column_config.TextColumn("Predicate", width="small"),
                     "Object": st.column_config.TextColumn("Object", width="large"),
                 },
-                selection_mode="single",
+                selection_mode="single-row",
                 key="fact_table",
             )
 
@@ -1924,8 +1924,8 @@ with drift_tab:
             display_alarms["Memory ID"] = display_alarms["Memory ID"].str[:40]
 
             sel_alarm = st.dataframe(
-                display_alarms, width="stretch", hide_index=True,
-                selection_mode="single",
+                display_alarms, use_container_width=True, hide_index=True,
+                selection_mode="single-row",
                 key="alarm_table",
             )
 
@@ -2154,13 +2154,13 @@ with ctr_tab:
             display_ctr.columns = ["Query ID", "Source", "Status", "Time"]
 
             sel_ctr = st.dataframe(
-                display_ctr, width="stretch", hide_index=True,
+                display_ctr, use_container_width=True, hide_index=True,
                 column_config={
                     "Query ID": st.column_config.TextColumn("Query ID", width="medium"),
                     "Source": st.column_config.TextColumn("Source", width="small"),
                     "Status": st.column_config.TextColumn("Status", width="small"),
                 },
-                selection_mode="single",
+                selection_mode="single-row",
                 key="ctr_table",
             )
 
@@ -2550,17 +2550,18 @@ with cron_tab:
 
     # ── Expandable job details ──
     for job in job_data:
-        status_color = {"ok": "#10b981", "warning": "#f59e0b", "error": "#ef4444"}.get(job["sev"], "#6b7280")
+        status_color = {"ok": "#10b981", "warning": "#f59e0b", "error": "#ef4444"}.get(str(job["sev"]), "#6b7280")
         with st.expander(f"{job['emoji']} {job['name']} — {job['status']}", expanded=False):
             st.caption(f"{job['desc']} · Schedule: `{job['trigger']}`")
 
-            if job["log_path"] and job["log_path"].exists():
-                log_text = job["log_path"].read_text(errors="replace")
+            log_path = job["log_path"]
+            if log_path and isinstance(log_path, Path) and log_path.exists():
+                log_text = log_path.read_text(errors="replace")
                 lines = log_text.strip().split("\n")
                 if not lines:
                     st.info("Log file is empty")
                     continue
-                st.caption(f"Log: {len(lines)} lines, {job['log_path'].stat().st_size / 1024:.0f} KB")
+                st.caption(f"Log: {len(lines)} lines, {log_path.stat().st_size / 1024:.0f} KB")
 
                 col_s, col_t = st.columns([3, 1])
                 with col_s:
@@ -2817,7 +2818,7 @@ with backups_tab:
     backup_dir = MEM_DIR / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
 
-    backups = sorted(
+    backups: list[Path] = sorted(
         [p for p in backup_dir.glob("*") if p.suffix in (".db", ".gz", ".db.gz") and not p.name.startswith(".")],
         key=lambda p: p.stat().st_mtime, reverse=True,
     )
@@ -2838,9 +2839,10 @@ with backups_tab:
 
         # ── Backup timeline chart ──
         bp_data = []
+        bp: Path
         for bp in backups:
-            mtime = datetime.fromtimestamp(bp.stat().st_mtime, tz=timezone.utc)
-            bp_data.append({"name": bp.name, "size_mb": bp.stat().st_size / 1024 / 1024, "date": mtime})
+            bp_mtime = datetime.fromtimestamp(bp.stat().st_mtime, tz=timezone.utc)
+            bp_data.append({"name": bp.name, "size_mb": bp.stat().st_size / 1024 / 1024, "date": bp_mtime})
         bp_df = pd.DataFrame(bp_data)
 
         fig_bp = px.bar(
@@ -2865,8 +2867,8 @@ with backups_tab:
             return False
 
         for bp in backups:
-            mtime = datetime.fromtimestamp(bp.stat().st_mtime, tz=timezone.utc)
-            age_days = (datetime.now(timezone.utc) - mtime).days
+            bp_mtime = datetime.fromtimestamp(bp.stat().st_mtime, tz=timezone.utc)
+            age_days = (datetime.now(timezone.utc) - bp_mtime).days
             valid = _validate_backup(bp)
             valid_badge = "\U00002705 OK" if valid else "\U0000274c Corrupt"
             valid_color = "#10b981" if valid else "#ef4444"
@@ -2877,7 +2879,7 @@ with backups_tab:
                 f"border:1px solid #2d3139;border-radius:8px;padding:8px 12px;margin:3px 0;'>"
                 f"<span style='flex:2;color:#d1d5db;font-size:0.78rem;'>{bp.name}</span>"
                 f"<span style='color:#6b7280;font-size:0.7rem;'>{bp.stat().st_size/1024/1024:.1f} MB</span>"
-                f"<span style='color:#6b7280;font-size:0.7rem;'>{mtime.strftime('%Y-%m-%d')} ({age_days}d)</span>"
+                f"<span style='color:#6b7280;font-size:0.7rem;'>{bp_mtime.strftime('%Y-%m-%d')} ({age_days}d)</span>"
                 f"<span style='background:{valid_color}22;color:{valid_color};padding:0.1rem 0.4rem;"
                 f"border-radius:999px;font-size:0.65rem;font-weight:600;'>{valid_badge}</span>"
                 f"</div>",
@@ -2892,7 +2894,7 @@ with backups_tab:
                     pre_path = backup_dir / pre_name
                     with open(DB, "rb") as fin, gzip.open(pre_path, "wb") as fout:
                         shutil.copyfileobj(fin, fout)
-                    with gzip.open(bp, "rb") as fin, open(DB, "wb") as fout:
+                    with gzip.open(bp, "rb") as fin, open(DB, "wb") as fout:  # type: ignore[assignment]
                         shutil.copyfileobj(fin, fout)
                     st.success(f"Restored from {bp.name}. Pre-restore backup saved.")
                     st.rerun()
@@ -2937,8 +2939,8 @@ with backups_tab:
                     with open(DB, "rb") as fin, gzip.open(pre_restore_path, "wb") as fout:
                         shutil.copyfileobj(fin, fout)
                     # Restore
-                    with gzip.open(restore_path, "rb") as fin, open(DB, "wb") as fout:
-                        shutil.copyfileobj(typing.cast(typing.BinaryIO, fin), fout)
+                    with gzip.open(restore_path, "rb") as fin, open(DB, "wb") as fout:  # type: ignore[assignment]
+                        shutil.copyfileobj(fin, fout)
                     st.success(f"Restored from {restore_name}. Pre-restore backup saved as {pre_restore_name}")
                     st.rerun()
 
