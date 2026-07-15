@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 logger = logging.getLogger(__name__)
-"""Agentic Memory Dashboard — state-of-the-art local observability.
+"""Agentic Memory — Local Agent Memory Dashboard.
 
 Run:
     cd ~/.config/agentic-memory
@@ -482,7 +482,7 @@ def _badge_html(severity: str, text: str) -> str:
 
 # ── Sidebar ─────────────────────────────────────────────────────────────
 st.sidebar.markdown(
-    "<h2 style='margin-bottom:0;color:#f0f2f6;font-weight:700;letter-spacing:-0.02em'>\U0001fa84 Agentic Memory</h2>",
+    "<h2 style='margin-bottom:0;color:#f0f2f6;font-weight:700;letter-spacing:-0.02em'>Agentic Memory</h2>",
     unsafe_allow_html=True,
 )
 st.sidebar.caption(
@@ -491,7 +491,7 @@ st.sidebar.caption(
 )
 
 with st.sidebar:
-    st.markdown("### \U0001fa84 Agentic Memory")
+    st.markdown("### System Overview")
 
     n_mem = try_count("memories")
     n_ent = try_count("kg_entities")
@@ -1793,7 +1793,7 @@ with drift_tab:
 # CTR FEEDBACK
 # ═══════════════════════════════════════════════════════════════════════════
 with ctr_tab:
-    st.subheader("CTR Feedback Loop")
+    st.subheader("CTR Feedback & Search Quality")
 
     if not table("memory_ctr_feedback"):
         st.info(
@@ -1804,24 +1804,84 @@ with ctr_tab:
         n_clicked = try_count("memory_ctr_feedback", "clicked_at IS NOT NULL")
         n_dismissed = try_count("memory_ctr_feedback", "dismissed_at IS NOT NULL")
         ctr_pct = (n_clicked / n_total * 100) if n_total > 0 else 0
+        n_queries = len([r[0] for r in get_conn().execute("SELECT DISTINCT query_id FROM memory_ctr_feedback").fetchall()])
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Results Returned", n_total)
+        # ── Summary stats ──
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Impressions", n_total)
         c2.metric("Clicked", n_clicked)
         c3.metric("Dismissed", n_dismissed)
         c4.metric("CTR", f"{ctr_pct:.1f}%")
+        c5.metric("Unique Queries", n_queries)
 
-        # ── Search Quality (live nDCG from CTR data) ──
-        st.markdown("#### Search Quality")
+        st.divider()
+
+        # ── CTR trend + Source breakdown ──
+        col_trend, col_source = st.columns([2, 1])
+
+        with col_trend:
+            st.markdown("#### CTR Over Time")
+            trend_df = query(
+                "SELECT DATE(returned_at, 'unixepoch') day, "
+                "COUNT(*) as impressions, "
+                "SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicks "
+                "FROM memory_ctr_feedback GROUP BY day ORDER BY day"
+            )
+            if trend_df is not None and len(trend_df) > 1:
+                trend_df["day"] = pd.to_datetime(trend_df["day"])
+                trend_df["ctr"] = (trend_df["clicks"] / trend_df["impressions"] * 100).round(1)
+                fig_trend = go.Figure()
+                fig_trend.add_trace(go.Bar(
+                    x=trend_df["day"], y=trend_df["impressions"],
+                    name="Impressions", marker_color="#6366f1", opacity=0.6,
+                ))
+                fig_trend.add_trace(go.Bar(
+                    x=trend_df["day"], y=trend_df["clicks"],
+                    name="Clicks", marker_color="#10b981", opacity=0.9,
+                ))
+                fig_trend.add_trace(go.Scatter(
+                    x=trend_df["day"], y=trend_df["ctr"],
+                    name="CTR %", yaxis="y2", mode="lines+markers",
+                    line=dict(color="#f59e0b", width=2),
+                ))
+                fig_trend.update_layout(
+                    **DARK, barmode="overlay", height=250,
+                    margin=dict(t=10, b=10, l=10, r=10),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=9)),
+                    yaxis=dict(title="Count"),
+                    yaxis2=dict(title="CTR %", overlaying="y", side="right", showgrid=False),
+                )
+                st.plotly_chart(fig_trend, width="stretch")
+            else:
+                st.info("Not enough data for trend chart")
+
+        with col_source:
+            st.markdown("#### By Source")
+            src_df = query(
+                "SELECT COALESCE(source, 'unknown') source, COUNT(*) cnt, "
+                "SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) clicks "
+                "FROM memory_ctr_feedback GROUP BY source ORDER BY cnt DESC"
+            )
+            if src_df is not None and not src_df.empty:
+                src_df["ctr"] = (src_df["clicks"] / src_df["cnt"] * 100).round(1)
+                fig_src = px.bar(
+                    src_df, x="source", y="cnt", color="source",
+                    text_auto=True, color_discrete_sequence=px.colors.qualitative.Set2,
+                )
+                fig_src.update_layout(**DARK, height=250, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, xaxis_title=None, yaxis_title="Impressions")
+                st.plotly_chart(fig_src, width="stretch")
+            else:
+                st.info("No source data")
+
+        # ── nDCG section ──
         if n_clicked > 0:
             try:
+                from math import log2
                 qdf_quality = query(
                     "SELECT query_id, id, clicked_at, dismissed_at, returned_at "
                     "FROM memory_ctr_feedback ORDER BY query_id, returned_at"
                 )
                 if qdf_quality is not None and not qdf_quality.empty:
-                    from math import log2
-
                     ndcg_scores = []
                     for qid, grp in qdf_quality.groupby("query_id"):
                         grp = grp.sort_values("returned_at")
@@ -1830,26 +1890,22 @@ with ctr_tab:
                         ideal = sorted(rels, reverse=True)
                         idcg = sum(r / log2(i + 2) for i, r in enumerate(ideal))
                         ndcg = dcg / idcg if idcg > 0 else 0.0
-                        ndcg_scores.append({
-                            "query_id": qid,
-                            "nDCG@10": round(ndcg, 4),
-                            "results": len(rels),
-                            "clicks": sum(rels),
-                        })
+                        ndcg_scores.append({"query_id": qid, "nDCG@10": round(ndcg, 4), "results": len(rels), "clicks": sum(rels)})
                     ndcg_df = pd.DataFrame(ndcg_scores)
                     avg_ndcg = ndcg_df["nDCG@10"].mean()
                     col_q1, col_q2, col_q3 = st.columns(3)
                     col_q1.metric("Avg nDCG@10", f"{avg_ndcg:.4f}")
                     col_q2.metric("Queries with clicks", f"{len(ndcg_df[ndcg_df['clicks'] > 0])}/{len(ndcg_df)}")
                     col_q3.metric("Total queries", len(ndcg_df))
-                    with st.expander("Per-query nDCG"):
-                        st.dataframe(ndcg_df, width="stretch", hide_index=True)
+
+                    # nDCG distribution
+                    fig_ndcg = px.histogram(ndcg_df, x="nDCG@10", nbins=20, color_discrete_sequence=["#6366f1"])
+                    fig_ndcg.update_layout(**DARK, height=180, margin=dict(t=10, b=10, l=10, r=10), bargap=0.1, xaxis_title="nDCG@10", yaxis_title="Queries")
+                    st.plotly_chart(fig_ndcg, width="stretch")
             except Exception as e:
                 st.caption(f"nDCG computation failed: {e}")
-        else:
-            st.caption("Click 👍/👎 on results above to build live nDCG data for LTR training.")
 
-        # Offline baseline (separate section — different metric, not comparable to live)
+        # ── Offline baseline ──
         bench_file = Path(__file__).parent / "eval" / "results" / "retrieval-baseline.json"
         if bench_file.exists():
             try:
@@ -1864,172 +1920,116 @@ with ctr_tab:
 
         st.divider()
 
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("#### Filters")
+        # ── Filters ──
+        f_col1, f_col2, f_col3 = st.columns([2, 1, 1])
+        with f_col1:
             sources = [r[0] for r in get_conn().execute("SELECT DISTINCT COALESCE(source,'unknown') FROM memory_ctr_feedback").fetchall()]
             source_filter = st.multiselect("Source", sources, default=sources, key="ctr_src")
+        with f_col2:
             action_filter = st.selectbox("Action", ["all", "clicked", "dismissed", "neither"], key="ctr_act")
+        with f_col3:
             search_qid = st.text_input("Search query_id", placeholder="partial match...", key="ctr_qid")
-            st.caption("Showing up to 200 rows")
 
-            action_where = ""
-            action_params: list[str] = []
-            if action_filter == "clicked":
-                action_where = "AND clicked_at IS NOT NULL"
-            elif action_filter == "dismissed":
-                action_where = "AND dismissed_at IS NOT NULL"
-            elif action_filter == "neither":
-                action_where = "AND clicked_at IS NULL AND dismissed_at IS NULL"
+        action_where = ""
+        action_params: list[str] = []
+        if action_filter == "clicked":
+            action_where = "AND clicked_at IS NOT NULL"
+        elif action_filter == "dismissed":
+            action_where = "AND dismissed_at IS NOT NULL"
+        elif action_filter == "neither":
+            action_where = "AND clicked_at IS NULL AND dismissed_at IS NULL"
 
-            qid_where = ""
-            qid_params = []
-            if search_qid:
-                qid_where = "AND query_id LIKE ?"
-                qid_params = [f"%{search_qid}%"]
+        qid_where = ""
+        qid_params = []
+        if search_qid:
+            qid_where = "AND query_id LIKE ?"
+            qid_params = [f"%{search_qid}%"]
 
-            src_placeholders = ",".join("?" * len(source_filter)) if source_filter else ""
-            src_where = f"AND COALESCE(source,'unknown') IN ({src_placeholders})" if source_filter else ""
+        src_placeholders = ",".join("?" * len(source_filter)) if source_filter else ""
+        src_where = f"AND COALESCE(source,'unknown') IN ({src_placeholders})" if source_filter else ""
 
-            fdf = query(
-                f"SELECT id, query_id, returned_at, clicked_at, dismissed_at, source, ranking_params "
-                f"FROM memory_ctr_feedback "
-                f"WHERE 1=1 {src_where} {action_where} {qid_where} "
-                f"ORDER BY returned_at DESC LIMIT 200",
-                source_filter + action_params + qid_params,
+        # ── Interactive table ──
+        fdf = query(
+            f"SELECT id, query_id, returned_at, clicked_at, dismissed_at, source, ranking_params "
+            f"FROM memory_ctr_feedback "
+            f"WHERE 1=1 {src_where} {action_where} {qid_where} "
+            f"ORDER BY returned_at DESC LIMIT 200",
+            source_filter + action_params + qid_params,
+        )
+
+        if fdf is not None and not fdf.empty:
+            st.caption(f"**{len(fdf)}** events")
+
+            # Status column
+            fdf["status"] = fdf.apply(lambda r: "clicked" if pd.notna(r["clicked_at"]) else "dismissed" if pd.notna(r["dismissed_at"]) else "pending", axis=1)
+            fdf["returned_ts"] = pd.to_datetime(fdf["returned_at"], unit="s", errors="coerce").dt.strftime("%Y-%m-%d %H:%M")
+
+            display_ctr = fdf[["query_id", "source", "status", "returned_ts"]].copy()
+            display_ctr.columns = ["Query ID", "Source", "Status", "Time"]
+
+            sel_ctr = st.dataframe(
+                display_ctr, width="stretch", hide_index=True,
+                column_config={
+                    "Query ID": st.column_config.TextColumn("Query ID", width="medium"),
+                    "Source": st.column_config.TextColumn("Source", width="small"),
+                    "Status": st.column_config.TextColumn("Status", width="small"),
+                },
+                selection_mode="single",
+                key="ctr_table",
             )
-            if fdf is not None and not fdf.empty:
-                fdf["returned"] = pd.to_datetime(fdf["returned_at"], unit="s", errors="coerce")
-                fdf["status"] = fdf.apply(lambda r: "clicked" if pd.notna(r["clicked_at"]) else "dismissed" if pd.notna(r["dismissed_at"]) else "pending", axis=1)
-                st.markdown(f"**{len(fdf)}** events")
 
-                for _, r in fdf.iterrows():
-                    status_badge = _badge_html(
-                        {"clicked": "ok", "dismissed": "err", "pending": "warning"}.get(r["status"], "warning"),
-                        r["status"].upper(),
-                    )
-                    ts = r["returned"].strftime("%Y-%m-%d %H:%M") if pd.notna(r["returned"]) else "?"
-                    with st.expander(f"`{r['query_id'][:24]}` &nbsp;·&nbsp; {ts} &nbsp;·&nbsp; src={r['source']}"):
-                        st.markdown(f"{status_badge} **Query ID**: `{html.escape(str(r['query_id']))}`", unsafe_allow_html=True)
-                        st.markdown(f"**Source**: {r['source']}")
-                        st.markdown(f"**Status**: {r['status']}")
-                        if pd.notna(r["returned_at"]):
-                            st.caption(f"Returned: {r['returned'].isoformat()}")
-                        if pd.notna(r["clicked_at"]):
-                            st.caption(f"Clicked: {pd.to_datetime(r['clicked_at'], unit='s', errors='coerce').isoformat()}")
-                        if pd.notna(r["dismissed_at"]):
-                            st.caption(f"Dismissed: {pd.to_datetime(r['dismissed_at'], unit='s', errors='coerce').isoformat()}")
-                        if r.get("ranking_params"):
-                            try:
-                                rp = json.loads(r["ranking_params"])
-                                st.markdown("**Ranking weights**:")
-                                w = rp.get("weights", rp)
-                                if isinstance(w, dict):
-                                    wdf = pd.DataFrame(list(w.items()), columns=["factor", "weight"])
-                                    fig_w = px.bar(wdf, x="factor", y="weight", color="weight", color_continuous_scale="Viridis")
-                                    fig_w.update_layout(**DARK, height=180, margin=dict(t=10, b=5, l=5, r=5), showlegend=False)
-                                    st.plotly_chart(fig_w, width="stretch")
-                                else:
-                                    st.json(rp)
-                            except Exception as e:
-                                logger.warning("operation failed: %s", e)
-                                st.code(r["ranking_params"])
-                        # Click/Dismiss buttons
-                        btn_cols = st.columns(2)
-                        if btn_cols[0].button(
-                            "👍 Click", key=f"click_{r['query_id']}_{r['id']}",
-                            use_container_width=True,
-                        ):
-                            try:
-                                from search.feedback import record_ctr_feedback_db
-                                record_ctr_feedback_db(
-                                    str(DB), id=r["id"], query_id=r["query_id"],
-                                    action="clicked",
-                                )
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Failed to record click: {e}")
-                        if btn_cols[1].button(
-                            "👎 Dismiss", key=f"dismiss_{r['query_id']}_{r['id']}",
-                            use_container_width=True,
-                        ):
-                            try:
-                                from search.feedback import record_ctr_feedback_db
-                                record_ctr_feedback_db(
-                                    str(DB), id=r["id"], query_id=r["query_id"],
-                                    action="dismissed",
-                                )
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Failed to record dismissal: {e}")
-            else:
-                st.info("No events match the filters")
+            # Selected event detail
+            sel_ctr_rows = st.session_state.get("ctr_table", {}).get("selection", {}).get("rows", [])
+            if sel_ctr_rows:
+                sel_idx = sel_ctr_rows[0]
+                sel_row = fdf.iloc[sel_idx]
+                st.divider()
 
-        with col2:
-            st.markdown("#### Timeline")
-            tdf = query(
-                f"SELECT returned_at, clicked_at, dismissed_at, query_id, source "
-                f"FROM memory_ctr_feedback "
-                f"WHERE 1=1 {src_where} {action_where} {qid_where} "
-                f"ORDER BY returned_at DESC LIMIT 200",
-                source_filter + action_params + qid_params,
-            )
-            if tdf is not None and not tdf.empty:
-                events = []
-                for _, r in tdf.iterrows():
-                    ts = pd.to_datetime(r["returned_at"], unit="s", errors="coerce")
-                    if pd.isna(ts):
-                        continue
-                    events.append({"time": ts, "event": "returned", "qid": r["query_id"][:20], "source": r["source"]})
-                    if pd.notna(r["clicked_at"]):
-                        cts = pd.to_datetime(r["clicked_at"], unit="s", errors="coerce")
-                        events.append({"time": cts, "event": "clicked", "qid": r["query_id"][:20], "source": r["source"]})
-                    if pd.notna(r["dismissed_at"]):
-                        dts = pd.to_datetime(r["dismissed_at"], unit="s", errors="coerce")
-                        events.append({"time": dts, "event": "dismissed", "qid": r["query_id"][:20], "source": r["source"]})
+                # Event header
+                status_color = {"clicked": "#10b981", "dismissed": "#ef4444", "pending": "#f59e0b"}.get(sel_row["status"], "#6b7280")
+                st.markdown(
+                    f"<div style='display:flex;align-items:center;gap:10px;'>"
+                    f"<span style='background:{status_color};color:#fff;padding:0.2rem 0.7rem;border-radius:999px;font-size:0.8rem;font-weight:700;'>{sel_row['status'].upper()}</span>"
+                    f"<span style='color:#9ca3af;font-size:0.85rem;'>{sel_row['source']}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
-                if events:
-                    edf = pd.DataFrame(events)
-                    edf = edf.sort_values("time")
-                    colors = {"returned": "#6366f1", "clicked": "#10b981", "dismissed": "#ef4444"}
-                    fig_t = px.scatter(
-                        edf, x="time", y="event", color="event",
-                        color_discrete_map=colors,
-                        hover_data=["qid", "source"],
-                        opacity=0.8,
-                    )
-                    fig_t.update_traces(marker=dict(size=8, line=dict(width=0.5, color="#1f2937")))
-                    fig_t.update_layout(
-                        **DARK,
-                        height=400,
-                        margin=dict(t=10, b=10, l=10, r=10),
-                        yaxis_title=None,
-                    )
-                    st.plotly_chart(fig_t, width="stretch")
-                else:
-                    st.info("No timeline events")
-            else:
-                st.info("No events to timeline")
+                st.markdown(f"**Query ID**: `{sel_row['query_id']}`")
+                if pd.notna(sel_row["returned_at"]):
+                    st.caption(f"Returned: {pd.to_datetime(sel_row['returned_at'], unit='s').isoformat()}")
 
-            st.divider()
-            st.markdown("#### Per-Query Breakdown")
-            qdf = query(
-                f"SELECT query_id, COUNT(*) total, "
-                f"SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) clicks, "
-                f"SUM(CASE WHEN dismissed_at IS NOT NULL THEN 1 ELSE 0 END) dismissals "
-                f"FROM memory_ctr_feedback "
-                f"WHERE 1=1 {src_where} {action_where} {qid_where} "
-                f"GROUP BY query_id ORDER BY total DESC LIMIT 20",
-                source_filter + action_params + qid_params,
-            )
-            if qdf is not None and not qdf.empty:
-                qdf["ctr"] = (qdf["clicks"] / qdf["total"] * 100).round(1)
-                qdf["dismissal_rate"] = (qdf["dismissals"] / qdf["total"] * 100).round(1)
-                qdf_disp = qdf[["query_id", "total", "clicks", "dismissals", "ctr", "dismissal_rate"]].copy()
-                qdf_disp.columns = ["Query ID", "Shown", "Clicked", "Dismissed", "CTR %", "Dismissal %"]
-                st.dataframe(qdf_disp, width="stretch", hide_index=True)
-            else:
-                st.info("No queries match")
+                # Ranking weights
+                if sel_row.get("ranking_params"):
+                    try:
+                        rp = json.loads(sel_row["ranking_params"])
+                        w = rp.get("weights", rp)
+                        if isinstance(w, dict):
+                            wdf = pd.DataFrame(list(w.items()), columns=["Factor", "Weight"])
+                            fig_w = px.bar(wdf, x="Factor", y="Weight", color="Weight", color_continuous_scale="Viridis")
+                            fig_w.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10), showlegend=False)
+                            st.plotly_chart(fig_w, width="stretch")
+                    except Exception:
+                        pass
+
+                # Click/Dismiss buttons
+                btn_cols = st.columns(2)
+                if btn_cols[0].button("👍 Click", key=f"click_{sel_row['query_id']}_{sel_row['id']}", use_container_width=True):
+                    try:
+                        from search.feedback import record_ctr_feedback_db
+                        record_ctr_feedback_db(str(DB), id=sel_row["id"], query_id=sel_row["query_id"], action="clicked")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed: {e}")
+                if btn_cols[1].button("👎 Dismiss", key=f"dismiss_{sel_row['query_id']}_{sel_row['id']}", use_container_width=True):
+                    try:
+                        from search.feedback import record_ctr_feedback_db
+                        record_ctr_feedback_db(str(DB), id=sel_row["id"], query_id=sel_row["query_id"], action="dismissed")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed: {e}")
+        else:
+            st.info("No events match the filters")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # BENCHMARKS
@@ -2271,33 +2271,31 @@ with benchmarks_tab:
 # CRON
 # ═══════════════════════════════════════════════════════════════════════════
 with cron_tab:
-    st.subheader("Cron / Background Jobs")
-    logs = _get_cron_logs()
-    log_map = {p.name: p for p in logs}
+    st.subheader("Scheduled Jobs")
 
     jobs = [
-        ("heartbeat",      "heartbeat.log",       "Daemon liveness",            "every 1 min",   "🫀"),
-        ("integrity",      "integrity.log",        "DB integrity + FTS5 drift",  "every 6 h",     "🔍"),
-        ("worker",         "worker.log",           "Background task executor",   "every 5 min",   "⚙️"),
-        ("fts-rebuild",    "fts-rebuild.log",      "FTS5 index rebuild",        "on WAL trigger", "📑"),
-        ("emb-recompute",  "embedding-recompute.log", "Embedding refresh",       "on schema change","🧠"),
-        ("crdt-sync",      "crdt-sync.log",        "CRDT merge sync",           "on conflict",   "🔄"),
-        ("digest",         "digest.log",           "Daily session digest",      "nightly",        "📰"),
+        ("heartbeat",      "heartbeat.log",       "Daemon liveness",            "every 1 min",   "\U0001fa78"),
+        ("integrity",      "integrity.log",        "DB integrity + FTS5 drift",  "every 6 h",     "\U0001f50d"),
+        ("worker",         "worker.log",           "Background task executor",   "every 5 min",   "\u2699\ufe0f"),
+        ("fts-rebuild",    "fts-rebuild.log",      "FTS5 index rebuild",        "on WAL trigger", "\U0001f4d1"),
+        ("emb-recompute",  "embedding-recompute.log", "Embedding refresh",       "on schema change","\U0001f9e0"),
+        ("crdt-sync",      "crdt-sync.log",        "CRDT merge sync",           "on conflict",   "\U0001f504"),
+        ("digest",         "digest.log",           "Daily session digest",      "nightly",        "\U0001f4f0"),
         ("ltr-trainer",    None,                   "LambdaMART LTR training",   "weekly Mon 05:00","🎯"),
     ]
 
+    # ── Compute job statuses ──
     status_counts: Counter[str] = Counter()
-    job_statuses = []
+    job_data = []
     for name, filename, desc, trigger, emoji in jobs:
         if filename is None:
-            # Jobs without log files (e.g. ltr-trainer) — check model file instead
             model_path = Path(__file__).parent / "models" / "ltr" / "model.txt"
             if model_path.exists():
                 sev, status_label, pct = "ok", "model trained", 60
             else:
                 sev, status_label, pct = "warning", "awaiting training data", 10
             status_counts[sev] += 1
-            job_statuses.append((name, None, desc, trigger, emoji, sev, status_label, pct, model_path.exists(), model_path))
+            job_data.append({"name": name, "desc": desc, "trigger": trigger, "emoji": emoji, "sev": sev, "status": status_label, "pct": pct, "log_file": None, "log_path": model_path})
             continue
         fp = MEM_DIR / filename
         exists = fp.exists()
@@ -2313,49 +2311,66 @@ with cron_tab:
         else:
             sev, status_label, pct = "warning", f"{size/1024:.0f} KB (large)", 95
         status_counts[sev] += 1
-        job_statuses.append((name, filename, desc, trigger, emoji, sev, status_label, pct, exists, fp))
+        job_data.append({"name": name, "desc": desc, "trigger": trigger, "emoji": emoji, "sev": sev, "status": status_label, "pct": pct, "log_file": filename, "log_path": fp})
+
+    # ── Summary stats ──
+    n_ok = status_counts.get("ok", 0)
+    n_warn = status_counts.get("warning", 0)
+    n_err = status_counts.get("error", 0) + status_counts.get("failure", 0)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Jobs", len(jobs))
-    c2.metric("Healthy", status_counts.get("ok", 0))
-    c3.metric("Warnings", status_counts.get("warning", 0))
-    c4.metric("Errors", status_counts.get("error", 0) + status_counts.get("failure", 0))
+    c1.metric("Total Jobs", len(jobs))
+    c2.metric("Healthy", n_ok)
+    c3.metric("Warnings", n_warn)
+    c4.metric("Errors", n_err)
+
+    # ── Health summary chart ──
+    health_df = pd.DataFrame({"Status": ["Healthy", "Warnings", "Errors"], "Count": [n_ok, n_warn, n_err]})
+    health_df = health_df[health_df["Count"] > 0]
+    if not health_df.empty:
+        fig_health = px.pie(
+            health_df, names="Status", values="Count", color="Status",
+            color_discrete_map={"Healthy": "#10b981", "Warnings": "#f59e0b", "Errors": "#ef4444"},
+        )
+        fig_health.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)))
+        st.plotly_chart(fig_health, width="stretch")
 
     st.divider()
 
-    # ── Job cards ──
-    for name, filename, desc, trigger, emoji, sev, status_label, pct, exists, fp in job_statuses:
-        dot_cls = {"ok": "dot-green", "warning": "dot-yellow", "error": "dot-red", "failure": "dot-red"}.get(sev, "dot-gray")
-        bar_color = {"ok": "#10b981", "warning": "#f59e0b", "error": "#ef4444", "failure": "#ef4444"}.get(sev, "#4b5563")
+    # ── Job status table ──
+    job_table_df = pd.DataFrame([
+        {"Job": f"{j['emoji']} {j['name']}", "Description": j["desc"], "Schedule": j["trigger"], "Status": j["status"], "Health": j["sev"]}
+        for j in job_data
+    ])
+    st.dataframe(job_table_df, width="stretch", hide_index=True, column_config={
+        "Health": st.column_config.TextColumn("Health", width="small"),
+    })
 
-        st.markdown(f"""
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title">{emoji} {name}</span>
-            <span class="{dot_cls} dot"></span>
-          </div>
-          <div class="card-sub">{desc} · `{trigger}`</div>
-          <div class="progress-track">
-            <div class="progress-fill" style="width:{pct}%;background:{bar_color}"></div>
-          </div>
-          <div class="card-body" style="margin-top:6px">{status_label} · <code>{filename or 'models/ltr/model.txt'}</code></div>
-        </div>
-        """, unsafe_allow_html=True)
+    st.divider()
 
-        if exists:
-            log_text = fp.read_text(errors="replace")
-            lines = log_text.strip().split("\n")
-            f1, f2 = st.columns([3, 1])
-            with f1:
-                log_search = st.text_input("Search", placeholder="filter lines...", key=f"ls_{name}", label_visibility="collapsed")
-            with f2:
-                tail_n = st.slider("Tail", 5, min(200, len(lines)), 40, key=f"tn_{name}", label_visibility="collapsed")
-            if log_search:
-                lines = [line for line in lines if log_search.lower() in line.lower()]
-            shown = lines[-tail_n:] if tail_n > 0 else lines
-            st.code("\n".join(shown), language="text")
-        else:
-            st.info(f"`{filename}` not found in {MEM_DIR.name}/")
+    # ── Expandable job details ──
+    for job in job_data:
+        status_color = {"ok": "#10b981", "warning": "#f59e0b", "error": "#ef4444"}.get(job["sev"], "#6b7280")
+        with st.expander(f"{job['emoji']} {job['name']} — {job['status']}", expanded=False):
+            st.caption(f"{job['desc']} · Schedule: `{job['trigger']}`")
+
+            if job["log_path"] and job["log_path"].exists():
+                log_text = job["log_path"].read_text(errors="replace")
+                lines = log_text.strip().split("\n")
+                st.caption(f"Log: {len(lines)} lines, {job['log_path'].stat().st_size / 1024:.0f} KB")
+
+                col_s, col_t = st.columns([3, 1])
+                with col_s:
+                    log_search = st.text_input("Filter", placeholder="search lines...", key=f"ls_{job['name']}", label_visibility="collapsed")
+                with col_t:
+                    tail_n = st.slider("Last N lines", 5, min(200, len(lines)), 20, key=f"tn_{job['name']}", label_visibility="collapsed")
+
+                if log_search:
+                    lines = [line for line in lines if log_search.lower() in line.lower()]
+                shown = lines[-tail_n:] if tail_n > 0 else lines
+                st.code("\n".join(shown), language="text")
+            else:
+                st.info(f"No log file yet")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MULTI-AGENT SYNC
