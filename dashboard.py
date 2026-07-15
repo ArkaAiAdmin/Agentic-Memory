@@ -728,7 +728,7 @@ with overview_tab:
             **DARK,
             xaxis_title=None,
             yaxis_title="Notes",
-            margin=dict(t=10, b=10, l=10, r=10),
+            margin=dict(t=30, b=10, l=10, r=10),
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -757,7 +757,7 @@ with overview_tab:
                 fig.update_layout(
                     **DARK,
                     yaxis=dict(autorange="reversed"),
-                    margin=dict(t=10, b=10, l=10, r=10),
+                    margin=dict(t=30, b=10, l=10, r=10),
                     height=350,
                 )
                 st.plotly_chart(fig, width="stretch")
