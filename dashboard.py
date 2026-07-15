@@ -819,24 +819,70 @@ with kg_tab:
     st.subheader("Knowledge Graph")
     import networkx as nx
 
-    # ── Query data first (outside columns so it's available everywhere) ──
-    max_n = st.slider("Entities", 10, 500, 150, key="kg_n", help="Number of top entities to load")
+    # ── Summary stats row ──
+    n_entities = try_count("kg_entities")
+    n_edges_total = try_count("kg_edges")
+    n_facts = try_count("kg_facts") if table("kg_facts") else 0
 
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Entities", n_entities)
+    c2.metric("Edges", n_edges_total)
+    c3.metric("Facts", n_facts)
+    density = f"{2 * n_edges_total / (n_entities * (n_entities - 1)):.3f}" if n_entities > 1 else "0"
+    c4.metric("Density", density, help="edges / possible edges")
+
+    st.divider()
+
+    # ── Controls row ──
+    max_n = st.slider("Show top", 10, 500, 150, key="kg_n", help="Number of top entities to load")
+
+    col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([2, 1.5, 1.5])
+    with col_ctrl1:
+        search_entity = st.text_input("\U0001f50d Find entity", placeholder="bash, tool, python\u2026", key="kg_search")
+    with col_ctrl2:
+        focus_opts = [""] + sorted(set(
+            name_map.get(n, str(n))
+            for n in (G_sub.nodes() if 'G_sub' in dir() else [])
+        ))
+        focus_pick = st.selectbox("\U0001f4d1 Focus", focus_opts, key="kg_focus", placeholder="Focus on entity")
+
+    # ── Query entities ──
     ent = query(
         "SELECT id, name, entity_type, mentions FROM kg_entities "
         "ORDER BY mentions DESC LIMIT ?",
         (max_n,),
     )
     if ent is None or ent.empty:
-        st.info("No entities")
+        st.info("No entities yet. Run KG backfill to populate.")
         st.stop()
 
-    assert ent is not None
     eid_list = [int(x) for x in ent["id"].values]
     name_map = dict(zip(ent["id"], ent["name"]))
     type_map = dict(zip(ent["id"], ent["entity_type"]))
     ment_map = dict(zip(ent["id"], ent["mentions"]))
 
+    # ── Entity type distribution chart ──
+    type_counts = ent["entity_type"].value_counts().reset_index()
+    type_counts.columns = ["Type", "Count"]
+    fig_types = px.bar(
+        type_counts, x="Type", y="Count", color="Type",
+        color_discrete_sequence=px.colors.qualitative.Set2,
+        text_auto=True,
+    )
+    fig_types.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10), showlegend=False)
+    st.plotly_chart(fig_types, width="stretch")
+
+    # ── Type filter (compact) ──
+    all_types = sorted(ent["entity_type"].unique())
+    with st.popover(f"Filter types ({len(all_types)})", use_container_width=False):
+        sel_types = []
+        for t in all_types:
+            if st.checkbox(t, value=True, key=f"kg_t_{t}"):
+                sel_types.append(t)
+        if not sel_types:
+            sel_types = all_types
+
+    # ── Query edges ──
     placeholders = ",".join("?" for _ in eid_list)
     edges_df = query(
         f"SELECT source_id, target_id, relation, weight FROM kg_edges "
@@ -845,35 +891,38 @@ with kg_tab:
         f"ORDER BY weight DESC LIMIT 1000",
         eid_list + eid_list,
     )
-    if edges_df is None or edges_df.empty:
-        st.info("No edges connect top entities. Increase count or check data.")
-        st.stop()
 
-    assert edges_df is not None
-    G = nx.Graph()
-    for _, r in edges_df.iterrows():
-        G.add_edge(
-            r["source_id"], r["target_id"],
-            relation=r.get("relation", ""),
-            weight=_blob_weight(r.get("weight", 1)),
+    # ── Edge statistics ──
+    if edges_df is not None and not edges_df.empty:
+        col_e1, col_e2, col_e3 = st.columns(3)
+        col_e1.metric("Visible Edges", len(edges_df))
+        rel_counts = edges_df["relation"].value_counts()
+        top_rel = rel_counts.index[0] if len(rel_counts) > 0 else "—"
+        col_e2.metric("Top Relation", top_rel)
+        avg_w = edges_df["weight"].mean() if "weight" in edges_df.columns else 0
+        col_e3.metric("Avg Weight", f"{avg_w:.2f}")
+
+        # Relation distribution chart
+        rel_df = rel_counts.head(10).reset_index()
+        rel_df.columns = ["Relation", "Count"]
+        fig_rel = px.bar(
+            rel_df, x="Relation", y="Count", color="Count",
+            color_continuous_scale="Viridis", text_auto=True,
         )
+        fig_rel.update_layout(**DARK, height=180, margin=dict(t=10, b=10, l=10, r=10), showlegend=False)
+        st.plotly_chart(fig_rel, width="stretch")
+    else:
+        st.info("No edges connect the selected entities.")
 
-    # ── Controls ──
-    c1, c2, c3 = st.columns([1.2, 1.2, 1])
-    with c1:
-        search_entity = st.text_input("\U0001f50d Find", placeholder="bash, tool, python\u2026", key="kg_search", label_visibility="collapsed")
-    with c2:
-        all_types = sorted(set(type_map.get(e, "other") for e in G.nodes()))
-        sel_types = []
-        with st.popover("Types", use_container_width=True):
-            for t in all_types:
-                if st.checkbox(t, value=True, key=f"kg_t_{t}"):
-                    sel_types.append(t)
-        if not sel_types:
-            sel_types = all_types
-    with c3:
-        focus_opts = [""] + sorted(name_map.get(n, str(n)) for n in G.nodes())
-        focus_pick = st.selectbox("\U0001f50d Focus", focus_opts, key="kg_focus", label_visibility="collapsed", placeholder="Focus on entity")
+    # ── Build graph ──
+    G = nx.Graph()
+    if edges_df is not None and not edges_df.empty:
+        for _, r in edges_df.iterrows():
+            G.add_edge(
+                r["source_id"], r["target_id"],
+                relation=r.get("relation", ""),
+                weight=_blob_weight(r.get("weight", 1)),
+            )
 
     # ── Subset by type filter ──
     filtered_nodes = [n for n in G.nodes() if type_map.get(n, "other") in sel_types]
@@ -886,7 +935,7 @@ with kg_tab:
     # ── Compute layout once ──
     if "kg_layout" not in st.session_state or st.session_state.get("kg_layout_n") != len(filtered_nodes):
         with st.spinner("Laying out graph \u2026"):
-            st.session_state["kg_layout"] = nx.spring_layout(G_sub, k=0.3, seed=42, iterations=40)
+            st.session_state["kg_layout"] = nx.spring_layout(G_sub, k=0.4, seed=42, iterations=50)
             st.session_state["kg_layout_n"] = len(filtered_nodes)
     pos = st.session_state["kg_layout"]
 
@@ -930,7 +979,7 @@ with kg_tab:
     type_colors = {
         "tool": "#ef4444", "library": "#10b981", "project": "#3b82f6",
         "concept": "#f59e0b", "person": "#8b5cf6", "framework": "#ec4899",
-        "language": "#06b6d4",
+        "language": "#06b6d4", "other": "#6b7280",
     }
 
     # Edge traces
@@ -943,7 +992,10 @@ with kg_tab:
         edge_traces.append(go.Scatter(
             x=(x0, x1, None), y=(y0, y1, None),
             mode="lines",
-            line=dict(width=w * (2 if is_focus else 1), color="#8b5cf6" if is_focus else "#374151"),
+            line=dict(
+                width=w * (2.5 if is_focus else 1.2),
+                color="#8b5cf6" if is_focus else "rgba(100,116,139,0.3)",
+            ),
             hoverinfo="text",
             hovertext=f"{name_map.get(u, u)} \u2014[{d.get('relation', '')}]\u2014> {name_map.get(v, v)}",
             showlegend=False,
@@ -960,19 +1012,19 @@ with kg_tab:
             types.append(type_map.get(n, "other"))
             ments.append(ment_map.get(n, 1))
         cols = [color_override or type_colors.get(t, "#6b7280") for t in types]
-        sz = [min(28, 6 + m * 1.8) * size_mult for m in ments]
+        sz = [min(32, 8 + m * 2.0) * size_mult for m in ments]
         return go.Scatter(
             x=xs, y=ys,
             mode="markers+text" if text_visible else "markers",
             text=labels if text_visible else None,
             textposition="top center",
-            textfont=dict(size=10, color="#f0f2f6", weight=700),
+            textfont=dict(size=11, color="#f0f2f6", weight=700),
             marker=dict(
                 size=sz, color=cols,
-                line=dict(width=1.5 if text_visible else 0.3, color="#f0f2f6" if text_visible else "#1f2937"),
+                line=dict(width=2 if text_visible else 0.5, color="#f0f2f6" if text_visible else "#1f2937"),
                 opacity=opacity,
             ),
-            hovertext=[f"<b>{name_map.get(n, n)}</b><br>type: {type_map.get(n, '?')}<br>mentions: {ment_map.get(n, 0)}" for n in nodes],
+            hovertext=[f"<b>{name_map.get(n, n)}</b><br>type: {type_map.get(n, '?')}<br>mentions: {ment_map.get(n, 0)}<br>edges: {G_sub.degree(n)}" for n in nodes],
             hoverinfo="text",
             showlegend=False,
         )
@@ -988,11 +1040,11 @@ with kg_tab:
 
     traces = list(edge_traces)
     if hl_other:
-        traces.append(_node_trace(hl_other, 0.8, opacity=0.2 if focus_id else 0.5))
+        traces.append(_node_trace(hl_other, 0.8, opacity=0.15 if focus_id else 0.4))
     if hl_nbr:
-        traces.append(_node_trace(hl_nbr, 1.1, opacity=0.85))
+        traces.append(_node_trace(hl_nbr, 1.2, opacity=0.9))
     if hl_self:
-        traces.append(_node_trace(hl_self, 1.5, color_override="#8b5cf6", text_visible=True, opacity=1.0))
+        traces.append(_node_trace(hl_self, 1.8, color_override="#8b5cf6", text_visible=True, opacity=1.0))
 
     fig = go.Figure(data=traces)
     fig.update_layout(
@@ -1000,7 +1052,7 @@ with kg_tab:
         + (f" \u00b7 focused: {focus_name}" if focus_name else ""),
         **DARK, showlegend=False, hovermode="closest",
         xaxis=dict(visible=False), yaxis=dict(visible=False),
-        height=620,
+        height=650,
         margin=dict(t=30, b=10, l=10, r=10),
     )
     st.plotly_chart(fig, width="stretch")
@@ -1008,42 +1060,76 @@ with kg_tab:
     # ── Detail panel ──
     if focus_id is not None and focus_name:
         st.divider()
-        col_d1, col_d2 = st.columns([1, 1])
+        col_d1, col_d2, col_d3 = st.columns([1, 1.5, 1.5])
         with col_d1:
-            st.markdown(f"**{focus_name}** \u00b7 `{type_map.get(focus_id, '?')}` \u00b7 {ment_map.get(focus_id, 0)} mentions")
+            st.markdown(f"**{focus_name}**")
+            st.caption(f"Type: `{type_map.get(focus_id, '?')}` | Mentions: {ment_map.get(focus_id, 0)} | Connections: {G_sub.degree(focus_id)}")
             ns = list(G_sub.neighbors(focus_id))
-            st.caption(f"Direct connections ({len(ns)})")
-            for n in ns[:25]:
+            # Sort neighbors by edge weight
+            ns_weighted = []
+            for n in ns:
+                w = 0
+                for _, _, d in G_sub.edges([focus_id, n], data=True):
+                    w = d.get("weight", 0)
+                ns_weighted.append((n, w))
+            ns_weighted.sort(key=lambda x: -x[1])
+            st.markdown("**Connections**")
+            for n, w in ns_weighted[:15]:
                 rel = next((d.get("relation", "") for _, _, d in G_sub.edges([focus_id], data=True) if n in d), "")
+                rel_badge = f"<span style='background:#1e293b;color:#94a3b8;padding:0.1rem 0.4rem;border-radius:4px;font-size:0.65rem;margin-left:4px;'>{rel}</span>" if rel else ""
                 st.markdown(
-                    f"<div style='display:flex;gap:6px;font-size:0.78rem;padding:1px 0;'>"
-                    f"<span style='color:#6b7280;'>\u2502</span>"
+                    f"<div style='display:flex;align-items:center;gap:6px;font-size:0.78rem;padding:2px 0;'>"
+                    f"<span style='color:{type_colors.get(type_map.get(n, ''), '#6b7280')};font-size:1.1rem;'>\u25cf</span>"
                     f"<span style='color:#d1d5db;'>{name_map.get(n, str(n))}</span>"
-                    f"<span style='color:#6b7280;font-size:0.7rem;'>{rel}</span>"
+                    f"{rel_badge}"
+                    f"<span style='color:#4b5563;font-size:0.65rem;'>w={w:.1f}</span>"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
-            if len(ns) > 25:
-                st.caption(f"\u2026 and {len(ns) - 25} more")
+            if len(ns) > 15:
+                st.caption(f"\u2026 and {len(ns) - 15} more")
 
         with col_d2:
             st.markdown("**Related Memories**")
             mems = query(
-                "SELECT id, substr(content,1,200) preview, category FROM memories "
-                "WHERE content LIKE ? ORDER BY created_at DESC LIMIT 10",
+                "SELECT id, substr(content,1,150) preview, category, "
+                "COALESCE(fitness_score, 0.5) as fitness "
+                "FROM memories WHERE content LIKE ? "
+                "ORDER BY fitness DESC, created_at DESC LIMIT 8",
                 (f"%{focus_name}%",),
             )
             if mems is not None and not mems.empty:
                 for _, r in mems.iterrows():
+                    cat_color = {"lessons": "#10b981", "decisions": "#3b82f6", "projects": "#f59e0b", "sessions": "#8b5cf6"}.get(r["category"], "#6b7280")
                     st.markdown(
-                        f"<div style='font-size:0.72rem;padding:2px 0;border-bottom:1px solid #1f2937;'>"
-                        f"<span style='color:#6b7280;'>{r['category']}</span> "
-                        f"<span style='color:#d1d5db;'>{r['preview'][:80]}</span>"
+                        f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:8px;padding:8px;margin:4px 0;'>"
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
+                        f"<span style='background:{cat_color}22;color:{cat_color};padding:0.1rem 0.5rem;border-radius:999px;font-size:0.65rem;font-weight:600;'>{r['category']}</span>"
+                        f"<span style='color:#4b5563;font-size:0.65rem;'>fitness: {r['fitness']:.2f}</span>"
+                        f"</div>"
+                        f"<div style='color:#9ca3af;font-size:0.72rem;margin-top:4px;'>{r['preview'][:120]}</div>"
                         f"</div>",
                         unsafe_allow_html=True,
                     )
             else:
                 st.caption("No memories reference this entity")
+
+        with col_d3:
+            st.markdown("**Top Entities by Mentions**")
+            top_entities = ent.head(15)
+            fig_top = px.bar(
+                top_entities, x="mentions", y="name", orientation="h",
+                color="entity_type", color_discrete_map=type_colors,
+            )
+            fig_top.update_layout(**DARK, height=300, margin=dict(t=5, b=5, l=5, r=5), showlegend=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig_top, width="stretch")
+
+    # ── Full entity table ──
+    with st.expander(f"All {len(ent)} entities", expanded=False):
+        st.dataframe(
+            ent[["name", "entity_type", "mentions"]].rename(columns={"name": "Name", "entity_type": "Type", "mentions": "Mentions"}),
+            width="stretch", hide_index=True,
+        )
 
 # ═══════════════════════════════════════════════════════════════════════════
 # EMBEDDINGS
