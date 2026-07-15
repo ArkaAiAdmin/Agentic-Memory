@@ -482,7 +482,13 @@ def _badge_html(severity: str, text: str) -> str:
 
 # ── Sidebar ─────────────────────────────────────────────────────────────
 st.sidebar.markdown(
-    "<h2 style='margin-bottom:0;color:#f0f2f6;font-weight:700;letter-spacing:-0.02em'>Agentic Memory</h2>",
+    """<div style='display:flex;align-items:center;gap:10px;margin-bottom:4px;'>
+        <div style='width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#8b5cf6,#6366f1);display:flex;align-items:center;justify-content:center;font-size:1.1rem;box-shadow:0 2px 8px rgba(139,92,246,0.3);'>🧠</div>
+        <div>
+            <div style='color:#f0f2f6;font-weight:800;font-size:1.05rem;letter-spacing:-0.03em;line-height:1.1;'>Agentic Memory</div>
+            <div style='color:#6b7280;font-size:0.55rem;letter-spacing:0.08em;text-transform:uppercase;font-weight:500;'>Local Agent Memory System</div>
+        </div>
+    </div>""",
     unsafe_allow_html=True,
 )
 st.sidebar.caption(
