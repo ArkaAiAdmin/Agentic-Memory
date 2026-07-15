@@ -48,12 +48,12 @@ def _get_splade_model():
         _splade_load_attempted = True  # Mark as attempted before trying
         model_name = os.environ.get("MEMORY_SPLADE_MODEL", _DEFAULT_MODEL)
         try:
-            from transformers import AutoModel, AutoTokenizer
+            from transformers import AutoModelForMaskedLM, AutoTokenizer
             device = "mps" if torch.backends.mps.is_available() else "cpu"
             local_only = os.environ.get("HF_HUB_OFFLINE") == "1" or "PYTEST_CURRENT_TEST" in os.environ
             logger.info("Loading SPLADE model: %s on %s (local_only=%s)", model_name, device, local_only)
             tok = AutoTokenizer.from_pretrained(model_name, local_files_only=local_only)
-            mdl = AutoModel.from_pretrained(model_name, local_files_only=local_only).to(device)
+            mdl = AutoModelForMaskedLM.from_pretrained(model_name, local_files_only=local_only).to(device)
             mdl.eval()
             _splade_model = mdl
             _splade_tokenizer = tok
@@ -96,36 +96,11 @@ def encode_sparse(
         ).to(device)
         with torch.no_grad():
             outputs = model(**inputs)
-        # SPLADE: use the CLS token's representation, apply activation
-        # The model outputs logits over the vocabulary for each position.
-        # We take the max across positions for each vocab dimension.
-        logits = outputs.last_hidden_state[0]  # [seq_len, hidden_dim]
-
-        # For SPLADE, we need to project to vocabulary space.
-        # The model's MLM head does this, but we can also use the
-        # hidden states directly with a learned projection.
-        # For cocondenser-ensembledistil, the hidden dim matches vocab dim.
-        if logits.shape[-1] == tokenizer.vocab_size:
-            # Already in vocab space
-            activated = _splade_activation(logits)
-            # Max pooling across sequence positions
-            sparse_vec = activated.max(dim=0).values
-        else:
-            # Need to project to vocab space via MLM head
-            # Get the MLM head weights
-            if hasattr(model, "cls") and hasattr(model.cls, "predictions"):
-                mlm_head = model.cls.predictions
-                if hasattr(mlm_head, "transform") and hasattr(mlm_head.transform, "dense"):
-                    proj = mlm_head.transform.dense
-                    activated = _splade_activation(proj(logits))
-                    sparse_vec = activated.max(dim=0).values
-                else:
-                    # Fallback: use hidden states directly
-                    activated = _splade_activation(logits)
-                    sparse_vec = activated.max(dim=0).values
-            else:
-                activated = _splade_activation(logits)
-                sparse_vec = activated.max(dim=0).values
+        # SPLADE: use the MLM logits directly!
+        logits = outputs.logits[0]  # [seq_len, vocab_size]
+        activated = _splade_activation(logits)
+        # Max pooling across sequence positions
+        sparse_vec = activated.max(dim=0).values
 
         # Extract non-zero entries
         non_zero = torch.nonzero(sparse_vec, as_tuple=False)
@@ -168,26 +143,12 @@ def encode_sparse_batch(
         with torch.no_grad():
             outputs = model(**inputs)
 
-        logits = outputs.last_hidden_state  # [batch, seq_len, hidden_dim]
+        logits = outputs.logits  # [batch, seq_len, vocab_size]
         results = []
 
         for i in range(len(texts)):
-            if logits.shape[-1] == tokenizer.vocab_size:
-                activated = _splade_activation(logits[i])
-                sparse_vec = activated.max(dim=0).values
-            else:
-                if hasattr(model, "cls") and hasattr(model.cls, "predictions"):
-                    mlm_head = model.cls.predictions
-                    if hasattr(mlm_head, "transform") and hasattr(mlm_head.transform, "dense"):
-                        proj = mlm_head.transform.dense
-                        activated = _splade_activation(proj(logits[i]))
-                        sparse_vec = activated.max(dim=0).values
-                    else:
-                        activated = _splade_activation(logits[i])
-                        sparse_vec = activated.max(dim=0).values
-                else:
-                    activated = _splade_activation(logits[i])
-                    sparse_vec = activated.max(dim=0).values
+            activated = _splade_activation(logits[i])
+            sparse_vec = activated.max(dim=0).values
 
             non_zero = torch.nonzero(sparse_vec, as_tuple=False)
             sparse = []

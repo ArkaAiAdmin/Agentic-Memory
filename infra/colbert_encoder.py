@@ -36,7 +36,7 @@ class _ColbertProjection(torch.nn.Module):
 
     def __init__(self, in_dim: int, out_dim: int = 128):
         super().__init__()
-        self.linear = torch.nn.Linear(in_dim, out_dim)
+        self.linear = torch.nn.Linear(in_dim, out_dim, bias=False)
 
     def forward(self, x):
         return self.linear(x)
@@ -66,6 +66,21 @@ def _get_colbert_model():
             mdl.eval()
             _hidden_dim = mdl.config.hidden_size
             proj = _ColbertProjection(_hidden_dim, _MODEL_DIM).to(device)
+            try:
+                from huggingface_hub import hf_hub_download
+                weights_path = hf_hub_download(
+                    repo_id=model_name,
+                    filename="pytorch_model.bin",
+                    local_files_only=local_only,
+                )
+                state_dict = torch.load(weights_path, map_location="cpu")
+                if "linear.weight" in state_dict:
+                    proj.linear.weight.data.copy_(state_dict["linear.weight"])
+                    logger.info("Loaded ColBERT projection weights from checkpoint")
+                else:
+                    logger.warning("linear.weight not found in ColBERT checkpoint")
+            except Exception as _pe:
+                logger.warning("Failed to load ColBERT projection weights from checkpoint: %s", _pe)
             proj.eval()
             _colbert_model = mdl
             _colbert_tokenizer = tok

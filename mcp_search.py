@@ -280,6 +280,7 @@ def memory_search(
     fact_type: str | None = None,
     memory_source: str | None = None,
     shared_with_me: bool = False,
+    mode: str = "hybrid",
 ) -> str:
     """Perform FTS5 (full-text) and semantic hybrid search across local and global memories.
 
@@ -303,6 +304,8 @@ def memory_search(
     - epistemic_source: Optional filter — only return facts from this source (agent, auto_save, hook, import, cron).
     - fact_type: Optional filter — only return facts of this type (observation, agent_inference, external_stated, hypothesis, derived).
     - memory_source: Filter memories by source type ("agent", "auto_save", "import"). Only returns memories whose source file category matches the given type.
+    - mode: Search mode: "hybrid" (FTS5 + semantic), "semantic" (vector-only),
+        "fts" (BM25-only), "facts" (facts-only), "graph" (graph-only). Default is "hybrid".
 
     RETURNS:
     A human-readable formatted string listing the ranked memories, their content, category, tags, and related facts.
@@ -367,6 +370,7 @@ def memory_search(
                 fact_type=fact_type,
                 memory_source=memory_source,
                 shared_with_me=shared_with_me,
+                mode=mode,
             )
         except Exception as exc:
             logger.warning("Local search failed for query %r: %s", expanded_query, exc)
@@ -392,6 +396,7 @@ def memory_search(
                 fact_type=fact_type,
                 memory_source=memory_source,
                 shared_with_me=shared_with_me,
+                mode=mode,
             )
         except Exception as exc:
             logger.warning("Global search failed for query %r: %s", expanded_query, exc)

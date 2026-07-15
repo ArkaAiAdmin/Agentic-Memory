@@ -162,9 +162,9 @@ _reciprocal_rank_fusion.__doc__ = (
 _compute_final_score.__doc__ = (
     """Compute the weighted final score for a single search result.
 
-    Combines five retrieval channels into a single float:
-        bm25 (0.45), fitness (0.25), importance (0.15),
-        pinned (0.10), tag_match (0.05).
+    Combines six retrieval channels into a single float:
+        bm25 (0.40), fitness (0.20), importance (0.15),
+        pinned (0.10), recency (0.10), tag_match (0.05).
 
     Weights are loaded from config ``rerank_weights`` JSON if set,
     otherwise the defaults are used.  Temporal decay / forgetting
@@ -528,6 +528,7 @@ def search_memories(
     category: str = "",
     tags: list[str] | None = None,
     shared_with_me: bool = False,
+    mode: str = "hybrid",
 ) -> dict:
     """Main entry point: 14-phase hybrid search returning ranked memories.
 
@@ -583,6 +584,8 @@ def search_memories(
         category: Filter by category slug.
         tags: Filter by tag list (JSON exact-match via LIKE).
         shared_with_me: Append memories shared with the current agent.
+        mode: Search mode: "hybrid" (FTS5 + semantic), "semantic" (vector-only),
+            "fts" (BM25-only), "facts" (facts-only), "graph" (graph-only).
 
     Returns:
         A public-API result dict with keys:
@@ -640,6 +643,8 @@ def search_memories(
 
     # Phase 1: Parse query
     _t0 = time.time()
+    from search.budget_aware import get_search_budget
+    _search_budget = get_search_budget()
     normalized_query, fts_query, bare_text, graph_rag_terms = _parse_search_query(
         query, db_path, conn=db
     )
@@ -799,50 +804,34 @@ def search_memories(
         except (ImportError, AttributeError):
             _search_parallel = True
 
-        if _search_parallel and include_facts:
-            def _fts_worker() -> list:
-                conn = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
+        if mode == "facts":
+            if include_facts:
+                _t0_kg = time.time()
                 try:
-                    return _fts_search(
-                        conn, fts_query,
-                        limit * 10 if _effective_rerank else limit,
-                        has_fitness, repo_filter,
-                        tag_filter_sql=_tag_filter_sql,
-                        tag_filter_params=tuple(_tag_filter_params),
-                        category=category or None,
-                    )
-                except Exception as _fts_exc:
-                    _phase_inc("search.fts", _fts_exc)
-                    logger.warning("fts_worker failed: %s", _fts_exc)
-                    return []
-                finally:
-                    connection_pool.put(conn)
-
-            def _kg_worker() -> list:
-                conn = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
-                try:
-                    return _search_kg_facts(
-                        conn, fts_query, fact_limit, include_invalid,
+                    related_facts = _search_kg_facts(
+                        db, fts_query, fact_limit, include_invalid,
                         as_of=as_of,
                         belief_status=belief_status,
                         epistemic_source=epistemic_source,
                         fact_type=fact_type,
                     )
+                    _record_phase_latency("search.kg_facts", _t0_kg)
                 except Exception as _kg_exc:
                     _phase_inc("search.kg_facts", _kg_exc)
-                    logger.warning("kg_worker failed: %s", _kg_exc)
-                    return []
-                finally:
-                    connection_pool.put(conn)
+                    logger.warning("KG fact retrieval failed: %s", _kg_exc)
+            result = _build_search_result_envelope(
+                result_items=[],
+                output=["Facts mode search completed."],
+                results_to_display=[],
+                synthesize=synthesize,
+                query=query,
+                max_synthesis_sentences=max_synthesis_sentences,
+                related_facts=related_facts,
+            )
+            result["compute_budget"] = _search_budget.to_dict()
+            return result
 
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                fts_future = executor.submit(_fts_worker)
-                kg_future = executor.submit(_kg_worker)
-                results = fts_future.result()
-                _record_phase_latency("search.fts", _t0)
-                related_facts = kg_future.result()
-                _record_phase_latency("search.kg_facts", _t0)
-        else:
+        elif mode == "fts":
             results = _fts_search(
                 db, fts_query, limit * 5 if _effective_rerank else limit, has_fitness,
                 repo_filter,
@@ -861,11 +850,109 @@ def search_memories(
                     fact_type=fact_type,
                 )
                 _record_phase_latency("search.kg_facts", _t0_kg)
+            hybrid = False
+
+        elif mode == "semantic":
+            import search_pipeline
+            results = search_pipeline._fallback_embedding_search(
+                db, normalized_query, db_path, limit * 5 if _effective_rerank else limit, repo_filter, category,
+                tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
+            )
+            _record_phase_latency("search.embedding_fallback", _t0)
+            if include_facts:
+                _t0_kg = time.time()
+                related_facts = _search_kg_facts(
+                    db, fts_query, fact_limit, include_invalid,
+                    as_of=as_of,
+                    belief_status=belief_status,
+                    epistemic_source=epistemic_source,
+                    fact_type=fact_type,
+                )
+                _record_phase_latency("search.kg_facts", _t0_kg)
+            hybrid = False
+
+        elif mode == "graph":
+            results = []
+            if include_facts:
+                _t0_kg = time.time()
+                related_facts = _search_kg_facts(
+                    db, fts_query, fact_limit, include_invalid,
+                    as_of=as_of,
+                    belief_status=belief_status,
+                    epistemic_source=epistemic_source,
+                    fact_type=fact_type,
+                )
+                _record_phase_latency("search.kg_facts", _t0_kg)
+            hybrid = False
+
+        else:  # mode == "hybrid" (or fallback)
+            if _search_parallel and include_facts:
+                def _fts_worker() -> list:
+                    conn = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
+                    try:
+                        return _fts_search(
+                            conn, fts_query,
+                            limit * 10 if _effective_rerank else limit,
+                            has_fitness, repo_filter,
+                            tag_filter_sql=_tag_filter_sql,
+                            tag_filter_params=tuple(_tag_filter_params),
+                            category=category or None,
+                        )
+                    except Exception as _fts_exc:
+                        _phase_inc("search.fts", _fts_exc)
+                        logger.warning("fts_worker failed: %s", _fts_exc)
+                        return []
+                    finally:
+                        connection_pool.put(conn)
+
+                def _kg_worker() -> list:
+                    conn = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
+                    try:
+                        return _search_kg_facts(
+                            conn, fts_query, fact_limit, include_invalid,
+                            as_of=as_of,
+                            belief_status=belief_status,
+                            epistemic_source=epistemic_source,
+                            fact_type=fact_type,
+                        )
+                    except Exception as _kg_exc:
+                        _phase_inc("search.kg_facts", _kg_exc)
+                        logger.warning("kg_worker failed: %s", _kg_exc)
+                        return []
+                    finally:
+                        connection_pool.put(conn)
+
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    fts_future = executor.submit(_fts_worker)
+                    kg_future = executor.submit(_kg_worker)
+                    results = fts_future.result()
+                    _record_phase_latency("search.fts", _t0)
+                    related_facts = kg_future.result()
+                    _record_phase_latency("search.kg_facts", _t0)
+            else:
+                results = _fts_search(
+                    db, fts_query, limit * 5 if _effective_rerank else limit, has_fitness,
+                    repo_filter,
+                    tag_filter_sql=_tag_filter_sql,
+                    tag_filter_params=tuple(_tag_filter_params),
+                    category=category or None,
+                )
+                _record_phase_latency("search.fts", _t0)
+                if include_facts:
+                    _t0_kg = time.time()
+                    related_facts = _search_kg_facts(
+                        db, fts_query, fact_limit, include_invalid,
+                        as_of=as_of,
+                        belief_status=belief_status,
+                        epistemic_source=epistemic_source,
+                        fact_type=fact_type,
+                    )
+                    _record_phase_latency("search.kg_facts", _t0_kg)
 
         # Phase 6: Embedding fallback
         if not results:
             _is_opaque = bool(re.fullmatch(r"[A-Za-z0-9_\-]{6,}", query or ""))
-            if not _is_opaque:
+            if not _is_opaque and mode == "hybrid":
                 import search_pipeline
                 _t0 = time.time()
                 results = search_pipeline._fallback_embedding_search(
@@ -887,7 +974,7 @@ def search_memories(
                         "slugs/IDs have no useful semantic neighbours)."
                     )
                 else:
-                    hint = "FTS5 and embedding fallback both returned no results."
+                    hint = f"{mode.upper()} search returned no results."
                 return _build_empty_result_with_hint(
                     cache_key=cache_key,
                     query=query,
@@ -995,8 +1082,6 @@ def search_memories(
         _record_phase_latency("search.multi_hop_kg", _t0_mhkg)
 
         # Phase 11: Reranking
-        from search.budget_aware import get_search_budget
-        _search_budget = get_search_budget()
         _t0 = time.time()
         try:
             results_to_display, _search_ctr_weights = _rerank_results(

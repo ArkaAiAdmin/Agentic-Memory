@@ -215,6 +215,7 @@ def memory_search(
             memory_source=memory_source,
             category=category,
             shared_with_me=shared_with_me,
+            mode=mode,
         )
         output = cast(str, result.get("output", str(result)))
         from config import get_config
