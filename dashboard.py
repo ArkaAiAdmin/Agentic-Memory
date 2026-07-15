@@ -2788,9 +2788,16 @@ with health_tab:
             raw = tomllib.loads(toml_path.read_text())
             feat_section = {k: str(v) for k, v in raw.get("features", {}).items()}
             for flag_name, val in feat_section.items():
-                enabled = val.lower() in ("true", "yes", "1")
-                status_color = "#10b981" if enabled else "#4b5563"
-                status_text = "ON" if enabled else "OFF"
+                val_lower = val.lower()
+                if val_lower in ("true", "yes", "1"):
+                    status_color, status_text = "#10b981", "ON"
+                elif val_lower in ("false", "no", "0"):
+                    status_color, status_text = "#4b5563", "OFF"
+                else:
+                    # Enum/mode-valued flag (e.g. neural_forget_mode="learned",
+                    # temporal_kg_llm_tier="light"). Show the active mode rather
+                    # than misreporting it as OFF.
+                    status_color, status_text = "#60a5fa", val
                 st.markdown(
                     f"<div style='display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #1f2937;'>"
                     f"<span style='color:#d1d5db;font-size:0.75rem;'>{flag_name}</span>"

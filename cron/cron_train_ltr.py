@@ -17,10 +17,9 @@ from __future__ import annotations
 from _flock import acquire_lock_or_exit
 import json
 import logging
-import os
 import sys
-import time
 from pathlib import Path
+from types import SimpleNamespace
 
 logger = logging.getLogger(__name__)
 
@@ -108,20 +107,19 @@ def _build_training_data(db_path: str) -> tuple[list[list[float]], list[int], li
                 meta = mem_map.get(mid, {})
 
                 # Build candidate with actual content from DB
-                class _Candidate:
-                    pass
-                c = _Candidate()
-                c.id = mid
-                c.content = meta.get("content", "")
-                c.source_file = meta.get("source_file", "")
-                c.tags = meta.get("tags", "[]")
-                c.created = meta.get("created", "")
-                c.rank = 0.0
-                c.final_score = 0.0
-                c.fitness = meta.get("fitness", 0.5)
-                c.importance = meta.get("importance", 3)
-                c.pinned = meta.get("pinned", 0)
-                c.last_accessed = meta.get("last_accessed", None)
+                c = SimpleNamespace(
+                    id=mid,
+                    content=meta.get("content", ""),
+                    source_file=meta.get("source_file", ""),
+                    tags=meta.get("tags", "[]"),
+                    created=meta.get("created", ""),
+                    rank=0.0,
+                    final_score=0.0,
+                    fitness=meta.get("fitness", 0.5),
+                    importance=meta.get("importance", 3),
+                    pinned=meta.get("pinned", 0),
+                    last_accessed=meta.get("last_accessed", None),
+                )
 
                 # Extract features with real content
                 feats = extract_ltr_features(c, qid, db=conn)
@@ -273,8 +271,8 @@ def train_ltr_model(dry_run: bool = False) -> dict:
         "samples": len(X_arr),
         "features": X_arr.shape[1],
         "queries": len(group_counts),
-        "clicks": int(y_binary.sum()),
-        "total": len(y_binary),
+        "clicks": int((y_arr == 2).sum()),
+        "total": len(y_arr),
         "top_features": [{"name": n, "importance": float(v)} for n, v in top_features],
     }
 
