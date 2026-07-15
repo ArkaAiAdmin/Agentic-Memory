@@ -622,6 +622,36 @@ with overview_tab:
             unsafe_allow_html=True,
         )
 
+    # ── System health indicator ──
+    n_entities = try_count("kg_entities")
+    n_facts = try_count("kg_facts") if table("kg_facts") else 0
+    n_sync = try_count("sync_log") if table("sync_log") else 0
+    n_alarms = try_count("drift_alarms") if table("drift_alarms") else 0
+    ltr_model = Path(__file__).parent / "models" / "ltr" / "model.txt"
+
+    # Health score: 0-100
+    health_score = 100
+    if n_alarms > 0: health_score -= min(30, n_alarms * 5)
+    if n_entities == 0: health_score -= 20
+    if not ltr_model.exists(): health_score -= 10
+    health_color = "#10b981" if health_score >= 80 else "#f59e0b" if health_score >= 60 else "#ef4444"
+    health_label = "Healthy" if health_score >= 80 else "Needs Attention" if health_score >= 60 else "Critical"
+
+    st.markdown(
+        f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:12px;padding:1rem 1.5rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;'>"
+        f"<div style='display:flex;align-items:center;gap:12px;'>"
+        f"<div style='width:48px;height:48px;border-radius:50%;background:{health_color}22;display:flex;align-items:center;justify-content:center;font-size:1.5rem;'>"
+        f"{'🟢' if health_score >= 80 else '🟡' if health_score >= 60 else '🔴'}"
+        f"</div>"
+        f"<div><div style='color:#f0f2f6;font-weight:700;font-size:1.1rem;'>System Health: {health_label}</div>"
+        f"<div style='color:#6b7280;font-size:0.75rem;'>Score: {health_score}/100 · KG: {n_entities} entities · LTR: {'ready' if ltr_model.exists() else 'pending'}</div></div>"
+        f"</div>"
+        f"<div style='text-align:right;'><div style='color:{health_color};font-size:2rem;font-weight:700;'>{health_score}</div>"
+        f"<div style='color:#6b7280;font-size:0.7rem;'>health score</div></div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ── Category pie + Tier bar ──
@@ -702,7 +732,7 @@ with overview_tab:
         )
         st.plotly_chart(fig, width="stretch")
 
-    # ── Tags + Fitness ──
+    # ── Tags + Recent Activity ──
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("#### Top Tags")
@@ -715,7 +745,7 @@ with overview_tab:
                 except Exception as e:
                     logger.warning("operation failed: %s", e)
             if c:
-                td = pd.DataFrame(c.most_common(20), columns=["tag", "count"])
+                td = pd.DataFrame(c.most_common(15), columns=["tag", "count"])
                 fig = px.bar(
                     td,
                     x="count",
@@ -728,6 +758,7 @@ with overview_tab:
                     **DARK,
                     yaxis=dict(autorange="reversed"),
                     margin=dict(t=10, b=10, l=10, r=10),
+                    height=350,
                 )
                 st.plotly_chart(fig, width="stretch")
             else:
@@ -736,43 +767,63 @@ with overview_tab:
             st.info("No tagged notes")
 
     with col2:
-        st.markdown("#### Fitness Distribution")
-        df = query("SELECT fitness_score FROM memories WHERE fitness_score IS NOT NULL")
-        if df is not None and not df.empty:
-            fig = px.histogram(
-                df, x="fitness_score", nbins=40, color_discrete_sequence=["#6366f1"]
-            )
-            fig.update_layout(
-                **DARK,
-                bargap=0.1,
-                xaxis_title="Fitness",
-                yaxis_title="Count",
-                margin=dict(t=10, b=10, l=10, r=10),
-            )
-            st.plotly_chart(fig, width="stretch")
+        st.markdown("#### Recent Activity")
+        recent_ops = query(
+            "SELECT ts, tool, latency_ms, error "
+            "FROM memory_audit_log ORDER BY ts DESC LIMIT 10"
+        )
+        if recent_ops is not None and not recent_ops.empty:
+            for _, r in recent_ops.iterrows():
+                ts = pd.to_datetime(r["ts"], unit="s", errors="coerce")
+                ts_str = ts.strftime("%H:%M:%S") if pd.notna(ts) else "?"
+                status = "❌" if pd.notna(r.get("error")) else "✅"
+                lat = f"{r['latency_ms']:.0f}ms" if pd.notna(r.get("latency_ms")) else "?"
+                st.markdown(
+                    f"<div style='display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid #1f2937;'>"
+                    f"<span style='font-size:0.8rem;'>{status}</span>"
+                    f"<span style='color:#d1d5db;font-size:0.75rem;font-weight:600;'>{r['tool']}</span>"
+                    f"<span style='color:#4b5563;font-size:0.65rem;margin-left:auto;'>{lat}</span>"
+                    f"<span style='color:#6b7280;font-size:0.65rem;'>{ts_str}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
         else:
-            st.info("No fitness scores")
+            st.info("No recent activity")
 
-    # ── Activity timeline ──
-    st.markdown("#### MCP Activity")
-    df = query(
-        "SELECT DATE(ts,'unixepoch') day, tool, COUNT(*) calls "
-        "FROM memory_audit_log GROUP BY day, tool ORDER BY day"
-    )
-    if df is not None and not df.empty:
-        fig = px.area(
-            df, x="day", y="calls", color="tool", line_shape="spline", groupnorm=None
+    # ── System summary cards ──
+    st.markdown("<br>", unsafe_allow_html=True)
+    sum_col1, sum_col2, sum_col3 = st.columns(3)
+    with sum_col1:
+        st.markdown(
+            f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:12px;'>"
+            f"<div style='color:#8b8fa3;font-size:0.7rem;text-transform:uppercase;'>Knowledge Graph</div>"
+            f"<div style='color:#f0f2f6;font-size:1.3rem;font-weight:700;'>{n_entities} entities</div>"
+            f"<div style='color:#6b7280;font-size:0.7rem;'>{n_facts} facts · {n_edg} edges</div>"
+            f"</div>",
+            unsafe_allow_html=True,
         )
-        fig.update_layout(
-            **DARK,
-            xaxis_title=None,
-            yaxis_title="Calls",
-            margin=dict(t=10, b=10, l=10, r=10),
-            legend=dict(font=dict(size=9)),
+    with sum_col2:
+        ltr_status = "ready" if ltr_model.exists() else "awaiting data"
+        ltr_color = "#10b981" if ltr_model.exists() else "#f59e0b"
+        st.markdown(
+            f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:12px;'>"
+            f"<div style='color:#8b8fa3;font-size:0.7rem;text-transform:uppercase;'>LTR Model</div>"
+            f"<div style='color:{ltr_color};font-size:1.3rem;font-weight:700;'>{ltr_status}</div>"
+            f"<div style='color:#6b7280;font-size:0.7rem;'>{n_ctr} impressions · 29 features</div>"
+            f"</div>",
+            unsafe_allow_html=True,
         )
-        st.plotly_chart(fig, width="stretch")
-    else:
-        st.info("No audit log data yet — make some MCP tool calls first")
+    with sum_col3:
+        sync_status = f"{n_sync} cycles" if n_sync > 0 else "not synced"
+        sync_color = "#10b981" if n_sync > 0 else "#6b7280"
+        st.markdown(
+            f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:10px;padding:12px;'>"
+            f"<div style='color:#8b8fa3;font-size:0.7rem;text-transform:uppercase;'>Sync Status</div>"
+            f"<div style='color:{sync_color};font-size:1.3rem;font-weight:700;'>{sync_status}</div>"
+            f"<div style='color:#6b7280;font-size:0.7rem;'>{n_alarms} drift alarms</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MEMORIES (table)
@@ -1657,28 +1708,33 @@ with facts_tab:
 # CONCEPT DRIFT
 # ═══════════════════════════════════════════════════════════════════════════
 with drift_tab:
-    st.subheader("Concept Drift")
+    st.subheader("Concept Drift & Quality")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        has_drift = table("concept_drift")
-        has_alarms = table("drift_alarms")
-        if has_drift:
-            n_drift = try_count("concept_drift")
-            n_alarms = try_count("drift_alarms") if has_alarms else 0
-            c1, c2 = st.columns(2)
-            c1.metric("Drift Events", n_drift)
-            c2.metric("Drift Alarms", n_alarms)
-    with col2:
-        alarm_level_filter = None
-        if has_alarms:
-            alarm_level_filter = st.selectbox(
-                "Alarm level filter", ["all", "info", "warning", "critical"], key="drift_level"
-            )
+    has_drift = table("concept_drift")
+    has_alarms = table("drift_alarms")
+
+    # ── Summary stats ──
+    n_drift = try_count("concept_drift") if has_drift else 0
+    n_alarms = try_count("drift_alarms") if has_alarms else 0
+    n_unack = 0
+    avg_drift = 0
+    if has_alarms:
+        try:
+            row = get_conn().execute("SELECT AVG(drift_score) FROM drift_alarms").fetchone()
+            avg_drift = row[0] if row and row[0] else 0
+            n_unack = try_count("drift_alarms", "acknowledged_at IS NULL")
+        except Exception:
+            pass
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Drift Events", n_drift)
+    c2.metric("Alarms", n_alarms)
+    c3.metric("Unacknowledged", n_unack)
+    c4.metric("Avg Drift Score", f"{avg_drift:.3f}" if avg_drift else "—")
 
     st.divider()
 
-    # ── Drift metric timeline ──
+    # ── Drift timeline + Alarm distribution ──
     if has_drift:
         df = query(
             "SELECT id, drift_metric, drifted_dimensions, triggered_at, acknowledged "
@@ -1688,61 +1744,77 @@ with drift_tab:
             df["ts"] = pd.to_datetime(df["triggered_at"], unit="s", errors="coerce")
             df = df.dropna(subset=["ts"]).sort_values("ts")
 
-            fig = px.line(
-                df, x="ts", y="drift_metric", markers=True, line_shape="spline"
-            )
-            fig.update_traces(
-                line=dict(width=3, color="#ef4444", shape="spline", smoothing=1.3),
-                marker=dict(size=6, color="#ef4444"),
-            )
-            fig.add_hline(
-                y=0.15, line_dash="dash", line_color="#f59e0b",
-                annotation_text="threshold (0.15)",
-            )
-            fig.update_layout(
-                **DARK,
-                xaxis_title=None, yaxis_title="Drift Metric",
-                margin=dict(t=10, b=10, l=10, r=10),
-                height=300,
-            )
-            st.plotly_chart(fig, width="stretch")
+            col_timeline, col_dist = st.columns([2, 1])
 
-            # ── Drifted dimensions visualization ──
+            with col_timeline:
+                fig = px.line(
+                    df, x="ts", y="drift_metric", markers=True, line_shape="spline"
+                )
+                fig.update_traces(
+                    line=dict(width=3, color="#ef4444", shape="spline", smoothing=1.3),
+                    marker=dict(size=6, color="#ef4444"),
+                )
+                fig.add_hline(
+                    y=0.15, line_dash="dash", line_color="#f59e0b",
+                    annotation_text="threshold (0.15)",
+                )
+                fig.add_hrect(y0=0, y1=0.15, fillcolor="#10b98110", line_width=0)
+                fig.add_hrect(y0=0.15, y1=0.3, fillcolor="#f59e0b10", line_width=0)
+                fig.add_hrect(y0=0.3, y1=1, fillcolor="#ef444410", line_width=0)
+                fig.update_layout(
+                    **DARK,
+                    xaxis_title=None, yaxis_title="Drift Metric",
+                    margin=dict(t=10, b=10, l=10, r=10),
+                    height=300,
+                )
+                st.plotly_chart(fig, width="stretch")
+
+            with col_dist:
+                if has_alarms:
+                    alarm_dist = query(
+                        "SELECT alarm_level, COUNT(*) cnt FROM drift_alarms GROUP BY alarm_level"
+                    )
+                    if alarm_dist is not None and not alarm_dist.empty:
+                        cmap = {"info": "#3b82f6", "warning": "#f59e0b", "critical": "#ef4444"}
+                        fig_dist = px.pie(
+                            alarm_dist, names="alarm_level", values="cnt",
+                            color="alarm_level", color_discrete_map=cmap,
+                        )
+                        fig_dist.update_layout(**DARK, height=250, margin=dict(t=10, b=10, l=10, r=10), title="Alarm Distribution")
+                        st.plotly_chart(fig_dist, width="stretch")
+
+            # ── Drifted dimensions ──
             if "drifted_dimensions" in df.columns:
                 latest_row = df.iloc[-1]
                 if latest_row.get("drifted_dimensions"):
                     try:
                         dims = json.loads(latest_row["drifted_dimensions"])
                         if isinstance(dims, (list, tuple)) and len(dims) > 0:
-                            dim_df = pd.DataFrame({
-                                "dim": range(len(dims)),
-                                "weight": dims,
-                            })
+                            dim_df = pd.DataFrame({"dim": range(len(dims)), "weight": dims})
                             dim_df["abs"] = dim_df["weight"].abs()
-                            dim_df = dim_df.sort_values("abs", ascending=False).head(30)
+                            dim_df = dim_df.sort_values("abs", ascending=False).head(20)
                             fig_dim = px.bar(
                                 dim_df, x="dim", y="weight",
                                 color="weight", color_continuous_scale="RdBu",
-                                title=f"Top drifted dimensions (latest event: {latest_row.get('id','')})",
+                                title=f"Top drifted dimensions (latest event)",
                             )
-                            fig_dim.update_layout(**DARK, height=250, margin=dict(t=25, b=5, l=5, r=5))
+                            fig_dim.update_layout(**DARK, height=220, margin=dict(t=30, b=10, l=10, r=10))
                             st.plotly_chart(fig_dim, width="stretch")
                     except (json.JSONDecodeError, TypeError):
                         pass
-
-            with st.expander("All Drift Events"):
-                disp = df[["id", "ts", "drift_metric", "acknowledged"]].copy()
-                disp.columns = ["ID", "Timestamp", "Drift", "Acknowledged"]
-                st.dataframe(disp, width="stretch", hide_index=True)
         else:
-            st.info("No drift events recorded. Run `memory_check_concept_drift()` first.")
+            st.info("No drift events recorded.")
     else:
-        st.info("Table `concept_drift` not yet created. Call `memory_check_concept_drift()` to start.")
+        st.info("Table `concept_drift` not yet created.")
 
     # ── Drift Alarms ──
     if has_alarms:
         st.divider()
         st.markdown("#### Drift Alarms")
+
+        alarm_level_filter = st.selectbox(
+            "Filter by level", ["all", "info", "warning", "critical"], key="drift_level"
+        )
 
         where = ""
         params = []
@@ -1757,35 +1829,51 @@ with drift_tab:
             params,
         )
         if alarms_df is not None and not alarms_df.empty:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Alarms", len(alarms_df))
-            c2.metric("Unacknowledged", alarms_df["acknowledged_at"].isna().sum())
-            c3.metric("Avg Drift Score", f"{alarms_df['drift_score'].mean():.3f}")
-            c4.metric("Above Threshold", (alarms_df["drift_score"] > alarms_df["threshold"]).sum())
+            # Interactive table
+            display_alarms = alarms_df[["alarm_level", "concept", "drift_score", "threshold", "memory_id"]].copy()
+            display_alarms["acknowledged"] = alarms_df["acknowledged_at"].apply(lambda x: pd.notna(x))
+            display_alarms.columns = ["Level", "Concept", "Drift Score", "Threshold", "Memory ID"]
+            display_alarms["Memory ID"] = display_alarms["Memory ID"].str[:40]
 
-            for _, r in alarms_df.iterrows():
+            sel_alarm = st.dataframe(
+                display_alarms, width="stretch", hide_index=True,
+                selection_mode="single",
+                key="alarm_table",
+            )
+
+            # Selected alarm detail
+            sel_alarm_rows = st.session_state.get("alarm_table", {}).get("selection", {}).get("rows", [])
+            if sel_alarm_rows:
+                sel_idx = sel_alarm_rows[0]
+                r = alarms_df.iloc[sel_idx]
+                st.divider()
+
+                level_color = {"info": "#3b82f6", "warning": "#f59e0b", "critical": "#ef4444"}.get(r.get("alarm_level", ""), "#6b7280")
                 ack = bool(pd.notna(r.get("acknowledged_at")))
-                alarm_badge = _badge_html(
-                    {"info": "ok", "warning": "warning", "critical": "error"}.get(r.get("alarm_level", ""), "warning"),
-                    r.get("alarm_level", "?").upper(),
-                )
-                ack_label = _badge_html("ok" if ack else "warning", "ACK" if ack else "PENDING")
-                with st.expander(f"drift={r['drift_score']:.3f} &nbsp;·&nbsp; {r['memory_id'][:50]}"):
-                    st.markdown(f"{alarm_badge} &nbsp; {ack_label} &nbsp; **Concept**: {html.escape(str(r.get('concept', '—')))}", unsafe_allow_html=True)
-                    st.markdown(f"**Drift Score**: {r['drift_score']:.3f} (threshold: {r['threshold']})")
-                    st.markdown(f"**Detected**: {r.get('detected_at', '—')}")
-                    if ack:
-                        st.markdown(f"**Acknowledged**: {r['acknowledged_at']} by {r.get('acknowledged_by', '?')}")
-                    if r.get("notes"):
-                        st.markdown(f"**Notes**: {r['notes']}")
 
-                    # Inline view of the flagged memory
-                    mem_id = r["memory_id"]
-                    if mem_id:
-                        mem_full = query("SELECT substr(content,1,500) preview FROM memories WHERE id=?", (mem_id,))
-                        if mem_full is not None and not mem_full.empty:
-                            st.markdown("**Memory preview**:")
-                            st.text(mem_full.iloc[0]["preview"])
+                st.markdown(
+                    f"<div style='display:flex;align-items:center;gap:10px;'>"
+                    f"<span style='background:{level_color};color:#fff;padding:0.2rem 0.7rem;border-radius:999px;font-size:0.8rem;font-weight:700;'>{r.get('alarm_level', '?').upper()}</span>"
+                    f"{'✅ ACK' if ack else '⏳ PENDING'}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+                st.markdown(f"**Concept**: {html.escape(str(r.get('concept', '—')))}")
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Drift Score", f"{r['drift_score']:.3f}")
+                m2.metric("Threshold", f"{r['threshold']}")
+                m3.metric("Memory", r['memory_id'][:30])
+
+                if r.get("notes"):
+                    st.markdown(f"**Notes**: {r['notes']}")
+
+                mem_id = r["memory_id"]
+                if mem_id:
+                    mem_full = query("SELECT substr(content,1,500) preview FROM memories WHERE id=?", (mem_id,))
+                    if mem_full is not None and not mem_full.empty:
+                        st.markdown("**Memory preview**:")
+                        st.text(mem_full.iloc[0]["preview"])
         else:
             st.info("No drift alarms match the filter")
 
@@ -2600,7 +2688,7 @@ with backups_tab:
 # AUDIT LOG
 # ═══════════════════════════════════════════════════════════════════════════
 with audit_tab:
-    st.subheader("Audit Log")
+    st.subheader("Audit Log & API Performance")
 
     df = query(
         "SELECT ts, tool, latency_ms, results_count, error, args "
@@ -2611,64 +2699,99 @@ with audit_tab:
     else:
         df["ts_dt"] = pd.to_datetime(df["ts"], unit="s", errors="coerce")
         df["has_err"] = df["error"].notna()
+        df["day"] = df["ts_dt"].dt.date
 
-        c1, c2, c3 = st.columns(3)
+        # ── Summary stats ──
+        p50 = df["latency_ms"].quantile(0.5)
+        p95 = df["latency_ms"].quantile(0.95)
+        err_count = df["has_err"].sum()
+        n_tools = df["tool"].nunique()
+
+        c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Total Calls", len(df))
         c2.metric("Avg Latency", f"{df['latency_ms'].mean():.0f} ms")
-        c3.metric("Error Rate", f"{df['has_err'].mean() * 100:.1f}%")
+        c3.metric("p50 / p95", f"{p50:.0f} / {p95:.0f} ms")
+        c4.metric("Error Rate", f"{df['has_err'].mean() * 100:.1f}%")
+        c5.metric("Unique Tools", n_tools)
 
-        col1, col2 = st.columns(2)
-        with col1:
+        st.divider()
+
+        # ── Tool calls + Latency trend ──
+        col_calls, col_trend = st.columns([1, 2])
+
+        with col_calls:
             tc = df["tool"].value_counts().reset_index()
-            tc.columns = ["tool", "count"]
-            fig = px.bar(
-                tc, x="tool", y="count", color="count", color_continuous_scale="Viridis"
+            tc.columns = ["Tool", "Calls"]
+            fig_calls = px.bar(
+                tc, x="Calls", y="Tool", orientation="h",
+                color="Calls", color_continuous_scale="Viridis", text_auto=True,
             )
-            fig.update_layout(
-                **DARK,
-                xaxis_title=None,
-                yaxis_title="Calls",
+            fig_calls.update_layout(**DARK, height=300, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig_calls, width="stretch")
+
+        with col_trend:
+            # Latency trend by day
+            daily = df.groupby("day").agg(
+                avg_lat=("latency_ms", "mean"),
+                p95_lat=("latency_ms", lambda x: x.quantile(0.95)),
+                calls=("latency_ms", "count"),
+                errors=("has_err", "sum"),
+            ).reset_index()
+            daily["error_rate"] = (daily["errors"] / daily["calls"] * 100).round(1)
+
+            fig_trend = go.Figure()
+            fig_trend.add_trace(go.Scatter(
+                x=daily["day"], y=daily["avg_lat"],
+                name="Avg Latency", mode="lines+markers",
+                line=dict(color="#6366f1", width=2),
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=daily["day"], y=daily["p95_lat"],
+                name="p95 Latency", mode="lines+markers",
+                line=dict(color="#f59e0b", width=2, dash="dot"),
+            ))
+            fig_trend.add_trace(go.Bar(
+                x=daily["day"], y=daily["errors"],
+                name="Errors", marker_color="#ef4444", opacity=0.5, yaxis="y2",
+            ))
+            fig_trend.update_layout(
+                **DARK, height=300,
                 margin=dict(t=10, b=10, l=10, r=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)),
+                yaxis=dict(title="Latency (ms)"),
+                yaxis2=dict(title="Errors", overlaying="y", side="right", showgrid=False),
             )
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig_trend, width="stretch")
 
-        with col2:
-            agg = (
-                df.groupby("tool")
-                .agg(
-                    avg_lat=("latency_ms", "mean"),
-                    calls=("latency_ms", "count"),
-                    errs=("has_err", "sum"),
-                )
-                .reset_index()
-            )
-            fig = px.scatter(
-                agg,
-                x="calls",
-                y="avg_lat",
-                size="errs",
-                hover_name="tool",
-                color="tool",
-                title="Latency vs Calls",
-            )
-            fig.update_layout(**DARK, margin=dict(t=30, b=10, l=10, r=10))
-            st.plotly_chart(fig, width="stretch")
+        # ── Tool performance table ──
+        st.markdown("#### Tool Performance")
+        tool_perf = df.groupby("tool").agg(
+            calls=("latency_ms", "count"),
+            avg_lat=("latency_ms", "mean"),
+            p50_lat=("latency_ms", lambda x: x.quantile(0.5)),
+            p95_lat=("latency_ms", lambda x: x.quantile(0.95)),
+            errors=("has_err", "sum"),
+        ).reset_index()
+        tool_perf["error_rate"] = (tool_perf["errors"] / tool_perf["calls"] * 100).round(1)
+        tool_perf = tool_perf.sort_values("calls", ascending=False)
 
+        display_perf = tool_perf[["tool", "calls", "avg_lat", "p50_lat", "p95_lat", "error_rate"]].copy()
+        display_perf.columns = ["Tool", "Calls", "Avg (ms)", "p50 (ms)", "p95 (ms)", "Error %"]
+        display_perf["Avg (ms)"] = display_perf["Avg (ms)"].round(0)
+        display_perf["p50 (ms)"] = display_perf["p50 (ms)"].round(0)
+        display_perf["p95 (ms)"] = display_perf["p95 (ms)"].round(0)
+
+        st.dataframe(display_perf, width="stretch", hide_index=True, column_config={
+            "Error %": st.column_config.ProgressColumn("Error %", min_value=0, max_value=100, format="%.1f%%"),
+        })
+
+        # ── Recent errors ──
         errs = df[df["has_err"]]
         if not errs.empty:
             st.markdown("#### Recent Errors")
-            st.dataframe(
-                errs[["ts_dt", "tool", "error"]],
-                width="stretch",
-                hide_index=True,
-            )
-
-        with st.expander("Raw Log"):
-            st.dataframe(
-                df[["ts_dt", "tool", "latency_ms", "results_count", "error"]],
-                width="stretch",
-                hide_index=True,
-            )
+            err_display = errs[["ts_dt", "tool", "error"]].copy()
+            err_display.columns = ["Time", "Tool", "Error"]
+            st.dataframe(err_display, width="stretch", hide_index=True)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # EXPLORER
