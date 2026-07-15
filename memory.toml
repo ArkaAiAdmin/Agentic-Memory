@@ -119,14 +119,14 @@ idle_unload_seconds = 1800              # MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECO
 
 [sync]
 # Auto multi-agent sync via HTTP. Off by default.
-enable_server = false                 # MEMORY_SYNC_ENABLE_SERVER — start HTTP sync server
+enable_server = true                  # MEMORY_SYNC_ENABLE_SERVER — start HTTP sync server
 listen_host = "127.0.0.1"            # MEMORY_SYNC_LISTEN_HOST
 listen_port = 9877                    # MEMORY_SYNC_LISTEN_PORT
 
 [[sync.peers]]                        # MEMORY_SYNC_PEERS_<N>_URL, ..._AGENT_ID
-# name = "peer-1"
-# url = "http://127.0.0.1:9877"
-# agent_id = "peer-1"
+name = "local"
+url = "http://127.0.0.1:9877"
+agent_id = "mimo-main"
 
 [sync.schedule]
 interval_minutes = 5                  # MEMORY_SYNC_INTERVAL_MINUTES

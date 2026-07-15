@@ -2109,7 +2109,7 @@ with multi_agent_tab:
                 color="Direction",
                 color_discrete_sequence=["#3b82f6", "#10b981", "#f59e0b"],
             )
-            fig.update_layout(**DARK, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, height=300)
+            fig.update_layout(**DARK, margin=dict(t=30, b=10, l=10, r=10), showlegend=False, height=300)
             st.plotly_chart(fig, width="stretch")
 
             st.divider()
@@ -2118,15 +2118,16 @@ with multi_agent_tab:
             peer_status.columns = ["Peer", "Success rate", "Cycles"]
             peer_status["Success rate"] = (peer_status["Success rate"] * 100).round(1)
             peer_status = peer_status.sort_values("Success rate", ascending=True)
-            fig2 = px.barh(
+            fig2 = px.bar(
                 peer_status,
                 x="Success rate",
                 y="Peer",
                 color="Success rate",
                 color_continuous_scale="RdYlGn",
                 range_color=[0, 100],
+                orientation="h",
             )
-            fig2.update_layout(**DARK, margin=dict(t=10, b=10, l=10, r=10), height=max(200, len(peer_status) * 40))
+            fig2.update_layout(**DARK, margin=dict(t=30, b=10, l=10, r=10), height=max(200, len(peer_status) * 40))
             st.plotly_chart(fig2, width="stretch")
         else:
             st.info("No sync cycles recorded. Configure `[[sync.peers]]` in `memory.toml` to get started.")
@@ -2137,8 +2138,9 @@ with multi_agent_tab:
     st.markdown("#### Shared memory pool")
     if table("shared_memories"):
         df_shared = query(
-            "SELECT source_note_id, agent_id, category, created_at, valid_until "
-            "FROM shared_memories ORDER BY created_at DESC LIMIT 50"
+            "SELECT source_note_id, agent_id, category, shared_with, "
+            "datetime(shared_at, 'unixepoch') as shared "
+            "FROM shared_memories ORDER BY shared_at DESC LIMIT 50"
         )
         if df_shared is not None and not df_shared.empty:
             st.caption(f"Showing {len(df_shared)} most recent shared entries")
