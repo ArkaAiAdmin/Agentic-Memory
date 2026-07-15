@@ -87,7 +87,7 @@ knowledge_compilation = true          # MEMORY_KNOWLEDGE_COMPILATION (Sprint 3, 
 graph_centrality_boost = true         # MEMORY_GRAPH_CENTRALITY_BOOST (Sprint 4, 2026-07-03) — centrality-boosted search scoring. Default ON. Set to false to disable centrality weighting in search.
 graph_communities = true              # MEMORY_GRAPH_COMMUNITIES (Sprint 4, 2026-07-03) — community detection (connected components + Louvain). Default ON. Set to false to disable background community detection tasks.
 graph_evolution_tracking = true       # MEMORY_GRAPH_EVOLUTION_TRACKING (Sprint 4, 2026-07-03) — graph snapshot and evolution diff tracking. Default ON. Set to false to disable snapshot capture.
-ner_spacy_enabled = false             # MEMORY_NER_SPACY — optional spaCy NER augmentation. Requires pip install agentic-memory[ner].
+ner_spacy_enabled = true              # MEMORY_NER_SPACY — optional spaCy NER augmentation. Requires: pip install agentic-memory[ner] && python -m spacy download en_core_web_trf
 
 [cache]
 fts5_cache = true                     # MEMORY_FTS5_CACHE — LRU result cache for search
