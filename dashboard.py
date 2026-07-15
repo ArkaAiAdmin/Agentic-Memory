@@ -2420,7 +2420,7 @@ with cron_tab:
             health_df, names="Status", values="Count", color="Status",
             color_discrete_map={"Healthy": "#10b981", "Warnings": "#f59e0b", "Errors": "#ef4444"},
         )
-        fig_health.update_layout(**DARK, height=220, margin=dict(t=30, b=10, l=10, r=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)))
+        fig_health.update_layout(**DARK, height=250, margin=dict(t=40, b=10, l=10, r=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=8)))
         st.plotly_chart(fig_health, width="stretch")
 
     st.divider()
@@ -2601,7 +2601,7 @@ with health_tab:
                 pie_data, names="Status", values="Count", color="Status",
                 color_discrete_map={"OK": "#10b981", "Warning": "#f59e0b", "Failure": "#ef4444", "Error": "#dc2626"},
             )
-            fig_pie.update_layout(**DARK, height=250, margin=dict(t=30, b=10, l=10, r=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)))
+            fig_pie.update_layout(**DARK, height=250, margin=dict(t=40, b=10, l=10, r=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=8)))
             st.plotly_chart(fig_pie, width="stretch")
 
     st.divider()
