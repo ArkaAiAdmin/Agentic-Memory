@@ -16,3 +16,25 @@ Install::
 """
 
 from __future__ import annotations
+
+try:
+    from agentic_memory.integrations.langchain.retriever import (
+        AgenticMemoryRetriever,
+    )
+    from agentic_memory.integrations.langchain.history import (
+        AgenticMemoryChatHistory,
+    )
+    from agentic_memory.integrations.langchain.callback import (
+        AgenticMemoryCallbackHandler,
+    )
+except ImportError as _e:
+    raise ImportError(
+        "langchain-core is required for LangChain integrations. "
+        "Install with: pip install agentic-memory[langchain]"
+    ) from _e
+
+__all__ = [
+    "AgenticMemoryRetriever",
+    "AgenticMemoryChatHistory",
+    "AgenticMemoryCallbackHandler",
+]

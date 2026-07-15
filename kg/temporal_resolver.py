@@ -36,8 +36,17 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import warnings
 from typing import Optional
 from pathlib import Path
+
+warnings.warn(
+    "kg.temporal_resolver is deprecated. Use fact.fact_temporal for "
+    "write-path temporal resolution, or kg.fact_temporal for fact-level "
+    "supersession. This module will be removed in a future release.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 

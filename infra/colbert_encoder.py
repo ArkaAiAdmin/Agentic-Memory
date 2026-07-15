@@ -66,6 +66,7 @@ def _get_colbert_model():
             mdl.eval()
             _hidden_dim = mdl.config.hidden_size
             proj = _ColbertProjection(_hidden_dim, _MODEL_DIM).to(device)
+            _weights_loaded = False
             try:
                 from huggingface_hub import hf_hub_download
                 weights_path = hf_hub_download(
@@ -76,12 +77,22 @@ def _get_colbert_model():
                 state_dict = torch.load(weights_path, map_location="cpu")
                 if "linear.weight" in state_dict:
                     proj.linear.weight.data.copy_(state_dict["linear.weight"])
+                    _weights_loaded = True
                     logger.info("Loaded ColBERT projection weights from checkpoint")
                 else:
                     logger.warning("linear.weight not found in ColBERT checkpoint")
             except Exception as _pe:
-                logger.warning("Failed to load ColBERT projection weights from checkpoint: %s", _pe)
-            proj.eval()
+                logger.warning(
+                    "Failed to load ColBERT projection weights from checkpoint: %s. "
+                    "ColBERT reranking will be disabled (random weights would corrupt "
+                    "rankings). Set MEMORY_COLBERT_MODEL to a local path or ensure "
+                    "HF Hub access.",
+                    _pe,
+                )
+            if not _weights_loaded:
+                proj = None
+            else:
+                proj.eval()
             _colbert_model = mdl
             _colbert_tokenizer = tok
             _colbert_projection = proj
