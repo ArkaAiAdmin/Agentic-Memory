@@ -1,16 +1,15 @@
-Total: 5129 passed, 2 failed, 72 skipped, 0 xfailed
-Passed files: 315
-Failed/segfault files: 2
+Total: 5131 passed, 0 failed, 72 skipped, 0 xfailed
+Passed files: 317
+Failed/segfault files: 0
 
-  FAILED: test_add_flock_to_crons.py
-  FAILED: test_doc_drift_unified.py
 
   PASSED: test_adaptive_retention.py
+  PASSED: test_add_flock_to_crons.py
   PASSED: test_agent_scoping_hooks.py
   PASSED: test_agents_md_generator.py
   PASSED: test_answer_rerank.py
+  PASSED: test_advanced_features.py
   PASSED: test_antonym_contradictions.py
-  PASSED: test_api_server.py
   PASSED: test_arc_cache.py
   PASSED: test_atomic_write_coverage.py
   PASSED: test_audit_log.py
@@ -20,42 +19,43 @@ Failed/segfault files: 2
   PASSED: test_audit_sink_http.py
   PASSED: test_audit_sink_principal_redact.py
   PASSED: test_authz_fail_closed.py
+  PASSED: test_api_server.py
   PASSED: test_auto_backlinks.py
-  PASSED: test_adversarial_e2e.py
   PASSED: test_auto_save_integration.py
   PASSED: test_auto_save_unit.py
-  PASSED: test_b7_shared_memory_injection.py
+  PASSED: test_adversarial_e2e.py
   PASSED: test_backfill_orphans.py
   PASSED: test_backfill_safety.py
   PASSED: test_background_queue.py
   PASSED: test_background_worker_unit.py
   PASSED: test_backpressure.py
+  PASSED: test_b7_shared_memory_injection.py
+  PASSED: test_bb2_history.py
   PASSED: test_bb1_synthesis.py
-  PASSED: test_backfill_all.py
-  PASSED: test_bb3_rrf.py
   PASSED: test_belief_behavior.py
+  PASSED: test_bb3_rrf.py
   PASSED: test_belief_e2e_save.py
   PASSED: test_budget_aware.py
-  PASSED: test_bb2_history.py
   PASSED: test_circuit_breaker_telemetry.py
   PASSED: test_cli.py
-  PASSED: test_cascade_preserve.py
-  PASSED: test_compaction_synthesis.py
   PASSED: test_colbert.py
+  PASSED: test_compaction_synthesis.py
+  PASSED: test_backfill_all.py
   PASSED: test_compliance_rate_limit.py
   PASSED: test_concurrent.py
+  PASSED: test_cascade_preserve.py
   PASSED: test_config_drift.py
   PASSED: test_config_drift_audit.py
-  PASSED: test_config_drift_cron.py
   PASSED: test_config_drift_enforcement.py
+  PASSED: test_config_drift_cron.py
   PASSED: test_config_drift_escape.py
   PASSED: test_config_drift_init_hook.py
   PASSED: test_config_drift_persistence.py
   PASSED: test_config_drift_policy.py
   PASSED: test_config_drift_runtime.py
   PASSED: test_config_drift_tier_overrides.py
-  PASSED: test_config_drift_tier_patching.py
   PASSED: test_config_drift_tier_reset.py
+  PASSED: test_config_drift_tier_patching.py
   PASSED: test_config_loading.py
   PASSED: test_config_log_resolution.py
   PASSED: test_consolidation.py
@@ -64,25 +64,24 @@ Failed/segfault files: 2
   PASSED: test_contextual_retrieval.py
   PASSED: test_contradiction_detector_unit.py
   PASSED: test_contradiction_merge.py
-  PASSED: test_contradiction_save.py
   PASSED: test_crdt_field.py
+  PASSED: test_contradiction_save.py
   PASSED: test_crdt_injection.py
-  PASSED: test_advanced_features.py
   PASSED: test_crdt_merge.py
   PASSED: test_crdt_merge_helpers.py
   PASSED: test_crdt_saga.py
-  PASSED: test_compilation_behavior.py
   PASSED: test_crdt_sync.py
+  PASSED: test_crdt_integration.py
   PASSED: test_crewai_tool.py
   PASSED: test_cron_behavior.py
   PASSED: test_cron_concept_drift.py
   PASSED: test_cron_coverage.py
   PASSED: test_cron_crdt_sync.py
-  PASSED: test_crdt_integration.py
   PASSED: test_cron_cross_session_learn.py
+  PASSED: test_cron_integration.py
+  PASSED: test_compilation_behavior.py
   PASSED: test_cron_kg_backfill.py
   PASSED: test_cron_kg_backfill_monitor.py
-  PASSED: test_cron_integration.py
   PASSED: test_cron_review_beliefs.py
   PASSED: test_cron_model_lock.py
   PASSED: test_cron_skill_extraction.py
@@ -90,15 +89,16 @@ Failed/segfault files: 2
   PASSED: test_cron_watchdog.py
   PASSED: test_cross_process_safety.py
   PASSED: test_ctr_feedback.py
+  PASSED: test_crewai_memory.py
   PASSED: test_cross_session_learn.py
   PASSED: test_ctr_weight_learning.py
-  PASSED: test_crewai_memory.py
   PASSED: test_db_path_flock.py
   PASSED: test_ctr_producer.py
   PASSED: test_decision_extraction.py
   PASSED: test_db_drift.py
   PASSED: test_dist_lock.py
   PASSED: test_doc_drift.py
+  PASSED: test_doc_drift_unified.py
   PASSED: test_docker_cron_runner.py
   PASSED: test_drift_alarms.py
   PASSED: test_dedup_audit_behavior.py
@@ -142,13 +142,13 @@ Failed/segfault files: 2
   PASSED: test_isolation_guard.py
   PASSED: test_kg_crdt.py
   PASSED: test_kg_dedup.py
-  PASSED: test_integration_search_pipeline.py
   PASSED: test_kg_dedup_semantic.py
+  PASSED: test_integration_search_pipeline.py
   PASSED: test_kg_enhancements.py
   PASSED: test_kg_entity_filter.py
   PASSED: test_kg_facts_fts.py
-  PASSED: test_kg_self_editing_e2e.py
   PASSED: test_kg_orphan_recovery.py
+  PASSED: test_kg_self_editing_e2e.py
   PASSED: test_kg_traversal.py
   PASSED: test_knowledge_graph.py
   PASSED: test_kg_validation.py
@@ -158,24 +158,24 @@ Failed/segfault files: 2
   PASSED: test_llm_extraction_max_tokens.py
   PASSED: test_langchain_retriever.py
   PASSED: test_llm_summarization.py
-  PASSED: test_llm_providers.py
-  PASSED: test_mcp_instance.py
   PASSED: test_integration_save_pipeline.py
+  PASSED: test_mcp_instance.py
+  PASSED: test_llm_providers.py
   PASSED: test_mcp_maintenance_dispatch.py
   PASSED: test_mcp_maintenance_ops_unit.py
   PASSED: test_mcp_skill_ops.py
   PASSED: test_materialize_idempotent.py
   PASSED: test_mcp_verbs.py
   PASSED: test_mcp_wrappers.py
-  PASSED: test_mcp_live.py
   PASSED: test_memory_common_extras.py
+  PASSED: test_mcp_live.py
   PASSED: test_memory_common_unit.py
   PASSED: test_memory_injection_unit.py
   PASSED: test_migration_applied.py
-  PASSED: test_migration_runner.py
   PASSED: test_mdns_discovery.py
-  PASSED: test_multi_vector.py
   PASSED: test_multi_agent_unit.py
+  PASSED: test_migration_runner.py
+  PASSED: test_multi_vector.py
   PASSED: test_multiwriter_reconciler_fleet.py
   PASSED: test_neural_forget_model.py
   PASSED: test_neural_forget_unit.py
@@ -190,9 +190,9 @@ Failed/segfault files: 2
   PASSED: test_phase1_debt_fixes.py
   PASSED: test_phase2_3_smoke.py
   PASSED: test_phase2_debt_fixes.py
+  PASSED: test_p0_p1_p2_fixes.py
   PASSED: test_phase2_instrumentation.py
   PASSED: test_phase4_debt_fixes.py
-  PASSED: test_p0_p1_p2_fixes.py
   PASSED: test_no_silent_search_failures.py
   PASSED: test_phase9.py
   PASSED: test_policy_eligibility.py
@@ -209,11 +209,11 @@ Failed/segfault files: 2
   PASSED: test_qw3_query_types.py
   PASSED: test_pipeline_integration.py
   PASSED: test_qw2_query_expansion.py
-  PASSED: test_rate_limit_mcp.py
   PASSED: test_qw4_cross_encoder.py
+  PASSED: test_rate_limit_mcp.py
   PASSED: test_rate_limiter.py
-  PASSED: test_qw5_chunk_indexing.py
   PASSED: test_rbac_acl_override.py
+  PASSED: test_qw5_chunk_indexing.py
   PASSED: test_rbac_allows_with_role.py
   PASSED: test_rbac_audit_trail.py
   PASSED: test_rbac_denies_without_role.py
@@ -237,9 +237,9 @@ Failed/segfault files: 2
   PASSED: test_retrieval_regression_embedding.py
   PASSED: test_rich_survival_note.py
   PASSED: test_safe_call.py
+  PASSED: test_rest_tenant_isolation_e2e.py
   PASSED: test_safe_close_db.py
   PASSED: test_safety_wiring.py
-  PASSED: test_rest_tenant_isolation_e2e.py
   PASSED: test_safety_wiring_signatures.py
   PASSED: test_saga_crash_safety.py
   PASSED: test_sarcasm_contradiction.py
@@ -290,9 +290,9 @@ Failed/segfault files: 2
   PASSED: test_sso_idp_metadata_cache.py
   PASSED: test_soft_delete.py
   PASSED: test_sso_jwt_validation.py
-  PASSED: test_subpackage_public_api.py
   PASSED: test_sso_principal_creation.py
   PASSED: test_sync_check.py
+  PASSED: test_subpackage_public_api.py
   PASSED: test_sync_layer.py
   PASSED: test_sync_tenant_isolation.py
   PASSED: test_sync_server_tls.py
@@ -306,63 +306,20 @@ Failed/segfault files: 2
   PASSED: test_toml_watch.py
   PASSED: test_tool_routing.py
   PASSED: test_transformer_opt_in.py
-  PASSED: test_sql_safety.py
-  PASSED: test_unicode_normalization.py
   PASSED: test_uncovered_dedicated.py
+  PASSED: test_unicode_normalization.py
+  PASSED: test_vec_index.py
   PASSED: test_vec_index_search.py
   PASSED: test_vector_store.py
   PASSED: test_wal_checkpoint.py
-  PASSED: test_vec_index.py
+  PASSED: test_wal_mode.py
   PASSED: test_wave2c.py
   PASSED: test_wiring_invariants.py
-  PASSED: test_wal_mode.py
   PASSED: test_write_journal.py
-  PASSED: test_zero_result_ux.py
   PASSED: test_write_journal_multiworker.py
+  PASSED: test_zero_result_ux.py
   PASSED: test_tenant_isolation_exhaustive.py
+  PASSED: test_sql_safety.py
 
 
 Failure details:
-
-=== test_add_flock_to_crons.py ===
-infra.migration_runner:migration_runner.py:498 Migration 005 statement failed (idempotent, object already exists): duplicate column name: source_file
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 005 statement failed (idempotent, object already exists): duplicate column name: tags
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 005 statement failed (idempotent, object already exists): duplicate column name: created_at
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 005 statement failed (idempotent, object already exists): duplicate column name: updated_at
-WARNING  infra.migration_runner:migration_runner.py:508 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:508 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
-WARNING  infra.migration_runner:migration_runner.py:508 Migration 061 statement references object created by a later migration (no such table: memory_ctr_feedback); this is expected.
-/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:750: AssertionError: Lists differ: ['cron/cron_train_ltr.py'] != []
-=========================== short test summary info ============================
-FAILED eval/test_add_flock_to_crons.py::TestPatchFile::test_all_crons_have_flock
-1 failed, 4 passed in 0.12s
-
-
-=== test_doc_drift_unified.py ===
-potent, object already exists): duplicate column name: tags
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 005 statement failed (idempotent, object already exists): duplicate column name: created_at
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 005 statement failed (idempotent, object already exists): duplicate column name: updated_at
-WARNING  infra.migration_runner:migration_runner.py:508 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:508 Migration 006 statement references object created by a later migration (no such table: task_queue); this is expected.
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 035 statement failed (idempotent, object already exists): duplicate column name: target_agent_id
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 035 statement failed (idempotent, object already exists): duplicate column name: shared_with
-WARNING  infra.migration_runner:migration_runner.py:498 Migration 042 statement failed (idempotent, object already exists): duplicate column name: tenant_id
-WARNING  infra.migration_runner:migration_runner.py:508 Migration 061 statement references object created by a later migration (no such table: memory_ctr_feedback); this is expected.
------------------------------ Captured stdout call -----------------------------
-=== doc_drift_check ===
-[OK]    architecture.md
-[OK]    AGENTS.md
-
-[DRIFT] MCP_SURFACE.md:
-  - MCP_SURFACE.md ADMIN count: expected 94, got 95
-
-1 drift issue(s) found. Fix then re-run.
-
-/Users/arka/.config/agentic-memory/eval/test_doc_drift_unified.py:37: AssertionError: Documentation has drifted from live code. Run: python scripts/doc_drift_check.py
-=========================== short test summary info ============================
-FAILED eval/test_doc_drift_unified.py::test_unified_doc_drift - AssertionErro...
-1 failed in 0.22s
-

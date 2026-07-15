@@ -37,6 +37,50 @@ def _sigmoid(rank: float) -> float:
 
 _default_session_ctx: dict = {}
 
+# KG feature cache: {memory_id: (edge_count, has_entity)}
+# Populated by prefetch_kg_features() before the feature extraction loop.
+_kg_cache: dict[str, tuple[float, float]] = {}
+
+
+def prefetch_kg_features(db: "AnyConnection | None", memory_ids: list[str]) -> None:
+    """Batch-prefetch KG features for a list of memory IDs.
+
+    Populates _kg_cache so extract_ltr_features() avoids per-candidate
+    SQL round-trips.  Call once before the feature extraction loop.
+    """
+    global _kg_cache
+    _kg_cache = {}
+    if db is None or not memory_ids:
+        return
+
+    try:
+        ph = ",".join("?" * len(memory_ids))
+        # Batch: edge count per memory_id
+        rows = db.execute(
+            f"SELECT en.source_memory_id, COUNT(*) "
+            f"FROM kg_edges e "
+            f"JOIN kg_entities en ON e.source_id = en.id OR e.target_id = en.id "
+            f"WHERE en.source_memory_id IN ({ph}) "
+            f"GROUP BY en.source_memory_id",
+            memory_ids,
+        ).fetchall()
+        edge_counts = {r[0]: r[1] for r in rows}
+
+        # Batch: has entity per memory_id
+        rows2 = db.execute(
+            f"SELECT DISTINCT source_memory_id FROM kg_entities "
+            f"WHERE source_memory_id IN ({ph})",
+            memory_ids,
+        ).fetchall()
+        has_entities = {r[0] for r in rows2}
+
+        for mid in memory_ids:
+            ec = min(1.0, edge_counts.get(mid, 0) / 10.0)
+            he = 1.0 if mid in has_entities else 0.0
+            _kg_cache[mid] = (ec, he)
+    except Exception:
+        pass
+
 
 def extract_ltr_features(
     candidate,
@@ -191,27 +235,10 @@ def extract_ltr_features(
     else:
         features["ce_weak_first500"] = 0.0
 
-    # --- 13. KG features (if db available) ---
-    if db is not None and mid:
-        try:
-            # 1-hop edge count
-            row = db.execute(
-                "SELECT COUNT(*) FROM kg_edges e "
-                "JOIN kg_entities en ON e.source_id = en.id OR e.target_id = en.id "
-                "WHERE en.source_memory_id = ? OR en.name LIKE ?",
-                (mid, f"%{mid.split('/')[-1] if '/' in mid else mid}%"),
-            ).fetchone()
-            features["kg_edge_count"] = min(1.0, (row[0] if row else 0) / 10.0)
-
-            # Has KG entities (binary)
-            row2 = db.execute(
-                "SELECT 1 FROM kg_entities WHERE source_memory_id = ? LIMIT 1",
-                (mid,),
-            ).fetchone()
-            features["has_kg_entity"] = 1.0 if row2 else 0.0
-        except Exception:
-            features["kg_edge_count"] = 0.0
-            features["has_kg_entity"] = 0.0
+    # --- 13. KG features (from batch cache, not per-candidate SQL) ---
+    if mid and mid in _kg_cache:
+        features["kg_edge_count"] = _kg_cache[mid][0]
+        features["has_kg_entity"] = _kg_cache[mid][1]
     else:
         features["kg_edge_count"] = 0.0
         features["has_kg_entity"] = 0.0

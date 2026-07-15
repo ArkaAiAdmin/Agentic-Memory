@@ -1562,11 +1562,11 @@ with ctr_tab:
                 try:
                     baseline = json.loads(bench_file.read_text())
                     bc1, bc2 = st.columns(2)
-                    bc1.metric("Baseline nDCG@5", f"{baseline.get('ndcg_at_5', 0):.4f}", help="From offline eval (eval/gold/v1.jsonl)")
-                    bc2.metric("Baseline MRR", f"{baseline.get('mrr', 0):.4f}")
+                    bc1.metric("Offline nDCG@5", f"{baseline.get('ndcg_at_5', 0):.4f}", help="From offline eval (eval/gold/v1.jsonl) — different metric than live nDCG@10")
+                    bc2.metric("Offline MRR", f"{baseline.get('mrr', 0):.4f}")
                     st.caption(
                         "Click 👍/👎 on results above to build live nDCG data. "
-                        "Baseline is from offline retrieval eval."
+                        "Offline baseline is from a different eval set and metric — not directly comparable."
                     )
                 except Exception:
                     st.caption("No click data yet. Click results to start building training data for LTR.")
@@ -1652,16 +1652,11 @@ with ctr_tab:
                             use_container_width=True,
                         ):
                             try:
-                                w_conn = sqlite3.connect(
-                                    f"file:{DB}?mode=rwc", uri=True, timeout=10,
+                                from search.feedback import record_ctr_feedback_db
+                                record_ctr_feedback_db(
+                                    str(DB), id=r["id"], query_id=r["query_id"],
+                                    action="clicked",
                                 )
-                                w_conn.execute(
-                                    "UPDATE memory_ctr_feedback SET clicked_at=? "
-                                    "WHERE query_id=? AND id=?",
-                                    (time.time(), r["query_id"], r["id"]),
-                                )
-                                w_conn.commit()
-                                w_conn.close()
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Failed to record click: {e}")
@@ -1670,16 +1665,11 @@ with ctr_tab:
                             use_container_width=True,
                         ):
                             try:
-                                w_conn = sqlite3.connect(
-                                    f"file:{DB}?mode=rwc", uri=True, timeout=10,
+                                from search.feedback import record_ctr_feedback_db
+                                record_ctr_feedback_db(
+                                    str(DB), id=r["id"], query_id=r["query_id"],
+                                    action="dismissed",
                                 )
-                                w_conn.execute(
-                                    "UPDATE memory_ctr_feedback SET dismissed_at=? "
-                                    "WHERE query_id=? AND id=?",
-                                    (time.time(), r["query_id"], r["id"]),
-                                )
-                                w_conn.commit()
-                                w_conn.close()
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Failed to record dismissal: {e}")
@@ -1811,6 +1801,8 @@ with benchmarks_tab:
             for size_str, modes in results_block.items():
                 sz = int(size_str)
                 for mode_name, stats in modes.items():
+                    if not isinstance(stats, dict):
+                        continue
                     rows.append(
                         {
                             "source": fp.stem,

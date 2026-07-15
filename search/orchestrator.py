@@ -448,8 +448,9 @@ def _rerank_results(
         except Exception as _ltr_exc:
             logger.debug("ltr_rerank skipped: %s", _ltr_exc)
     # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
-    # late-interaction rerankers above, which sort on r[6] (the CE-blended
-    # final_score). The four historical enrichment passes (temporal decay,
+    # late-interaction rerankers above (and optionally the LTR stage,
+    # which writes r[6] as the final rank owner when a model exists).
+    # The four historical enrichment passes (temporal decay,
     # Jaccard surprise, concept boost, centrality boost) must NOT mutate
     # r[6] or re-sort here. They are attached as order-invariant envelope
     # fields by _apply_post_rank_metadata in Phase 10. Re-assert the

@@ -12,9 +12,9 @@ Can also be triggered via:
     memory_maintenance(operation="train_ltr")
 """
 
-from _flock import acquire_lock_or_exit
 from __future__ import annotations
 
+from _flock import acquire_lock_or_exit
 import json
 import logging
 import os
@@ -35,9 +35,13 @@ MIN_CLICKS = 10  # Need at least some positive labels
 def _build_training_data(db_path: str) -> tuple[list[list[float]], list[int], list[str]]:
     """Build training data from CTR feedback.
 
+    Loads actual content, tags, and metadata from tenant_memories so
+    content-dependent features (tag_overlap, query_coverage, exact_phrase,
+    ce_weak_first500, content_length) are real values, not zeros.
+
     Returns:
         X: Feature matrix (list of feature dicts)
-        y: Labels (1=clicked, 0=returned-not-clicked, -1=dismissed)
+        y: Labels (2=clicked, 1=returned, 0=dismissed) for graded LambdaMART
         query_ids: Query IDs for group-based ranking
     """
     import sqlite3
@@ -58,6 +62,36 @@ def _build_training_data(db_path: str) -> tuple[list[list[float]], list[int], li
             logger.info("No CTR feedback data")
             return [], [], []
 
+        # Batch-load memory metadata for all impression IDs
+        all_ids = [r["id"] for r in rows]
+        if all_ids:
+            ph = ",".join("?" * len(all_ids))
+            mem_rows = conn.execute(
+                f"SELECT id, content, source_file, tags, created, "
+                f"COALESCE(fitness_score, 0.5) as fitness, "
+                f"COALESCE(importance, 3) as importance, "
+                f"COALESCE(pinned, 0) as pinned, "
+                f"last_accessed "
+                f"FROM tenant_memories "
+                f"WHERE id IN ({ph}) AND deleted_at IS NULL",
+                all_ids,
+            ).fetchall()
+        else:
+            mem_rows = []
+
+        mem_map: dict[str, dict] = {}
+        for m in mem_rows:
+            mem_map[m["id"]] = {
+                "content": m["content"] or "",
+                "source_file": m["source_file"] or "",
+                "tags": m["tags"] or "[]",
+                "created": m["created"] or "",
+                "fitness": m["fitness"],
+                "importance": m["importance"],
+                "pinned": m["pinned"],
+                "last_accessed": m["last_accessed"],
+            }
+
         # Group by query_id
         from collections import defaultdict
         query_groups: dict[str, list] = defaultdict(list)
@@ -70,34 +104,36 @@ def _build_training_data(db_path: str) -> tuple[list[list[float]], list[int], li
 
         for qid, group in query_groups.items():
             for row in group:
-                # Build a minimal candidate object for feature extraction
+                mid = row["id"]
+                meta = mem_map.get(mid, {})
+
+                # Build candidate with actual content from DB
                 class _Candidate:
                     pass
                 c = _Candidate()
-                c.id = row["id"]
-                c.content = ""
-                c.source_file = ""
-                c.tags = "[]"
-                c.created = ""
+                c.id = mid
+                c.content = meta.get("content", "")
+                c.source_file = meta.get("source_file", "")
+                c.tags = meta.get("tags", "[]")
+                c.created = meta.get("created", "")
                 c.rank = 0.0
                 c.final_score = 0.0
-                c.fitness = 0.5
-                c.importance = 3
-                c.pinned = 0
-                c.last_accessed = None
+                c.fitness = meta.get("fitness", 0.5)
+                c.importance = meta.get("importance", 3)
+                c.pinned = meta.get("pinned", 0)
+                c.last_accessed = meta.get("last_accessed", None)
 
-                # Extract features (content-based features will be 0
-                # since we don't load full content here — channel scores
-                # and metadata features are what matter for LTR)
-                feats = extract_ltr_features(c, "", db=conn)
+                # Extract features with real content
+                feats = extract_ltr_features(c, qid, db=conn)
 
-                # Label: 1=clicked, 0=returned, -1=dismissed
+                # Graded labels: clicked=2, returned=1, dismissed=0
+                # LambdaMART uses these as relevance grades, not binary
                 if row["clicked_at"]:
-                    label = 1
+                    label = 2
                 elif row["dismissed_at"]:
-                    label = -1
-                else:
                     label = 0
+                else:
+                    label = 1
 
                 X.append([feats.get(k, 0.0) for k in feature_names()])
                 y.append(label)
@@ -164,18 +200,12 @@ def train_ltr_model(dry_run: bool = False) -> dict:
         return {"status": "error", "reason": f"Missing dependency: {e}"}
 
     X_arr = np.array(X, dtype=np.float32)
-    y_arr = np.array(y, dtype=np.int32)
-
-    # Map labels: -1 (dismissed) -> 0, 0 (returned) -> 0, 1 (clicked) -> 1
-    # LambdaMART needs non-negative labels; we use binary relevance
-    y_binary = (y_arr == 1).astype(int)
+    y_arr = np.array(y, dtype=np.int32)  # Graded: 0=dismissed, 1=returned, 2=clicked
 
     # Build group array for LambdaMART (queries -> result count)
     from collections import OrderedDict
-    group_counts = []
-    for qid in OrderedDict.fromkeys(query_ids):
-        count = query_ids.count(qid)
-        group_counts.append(count)
+    unique_qids = list(OrderedDict.fromkeys(query_ids))
+    group_counts = [query_ids.count(qid) for qid in unique_qids]
 
     if dry_run:
         return {
@@ -183,14 +213,28 @@ def train_ltr_model(dry_run: bool = False) -> dict:
             "samples": len(X_arr),
             "features": X_arr.shape[1],
             "queries": len(group_counts),
-            "clicks": int(y_binary.sum()),
-            "total": len(y_binary),
+            "clicks": int((y_arr == 2).sum()),
+            "total": len(y_arr),
         }
 
-    # Train LambdaMART
+    # Held-out group split: last 20% of unique queries for validation
+    split_idx = max(1, int(len(unique_qids) * 0.8))
+    train_qids = set(unique_qids[:split_idx])
+    val_qids = set(unique_qids[split_idx:])
+
+    train_mask = np.array([qid in train_qids for qid in query_ids])
+    val_mask = np.array([qid in val_qids for qid in query_ids])
+
+    # Build group arrays for train and val
+    train_groups = [query_ids.count(qid) for qid in unique_qids if qid in train_qids]
+    val_groups = [query_ids.count(qid) for qid in unique_qids if qid in val_qids]
+
+    # Train LambdaMART with graded relevance labels
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    dtrain = lgb.Dataset(X_arr, label=y_binary, group=group_counts)
+    dtrain = lgb.Dataset(X_arr[train_mask], label=y_arr[train_mask], group=train_groups)
+    dval = lgb.Dataset(X_arr[val_mask], label=y_arr[val_mask], group=val_groups,
+                       reference=dtrain)
 
     params = {
         "objective": "lambdarank",
@@ -211,7 +255,7 @@ def train_ltr_model(dry_run: bool = False) -> dict:
         params,
         dtrain,
         num_boost_round=200,
-        valid_sets=[dtrain],
+        valid_sets=[dval],
         callbacks=[lgb.log_evaluation(0)],
     )
 

@@ -351,4 +351,11 @@ JOBS: dict[str, dict] = {
         "args": ["--task-type", "cron_revalidate_entailments"],
         "timeout": 300,
     },
+    "train_ltr": {
+        "freq": "1w",
+        "dow": 1,
+        "offset_min": 300,
+        "script": "cron/cron_train_ltr.py",
+        "timeout": 600,
+    },
 }

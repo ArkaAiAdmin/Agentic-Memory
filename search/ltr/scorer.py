@@ -97,7 +97,11 @@ def ltr_rerank(
     if model is None:
         return results
 
-    from search.ltr.features import extract_ltr_features, feature_names
+    from search.ltr.features import extract_ltr_features, feature_names, prefetch_kg_features
+
+    # Batch-prefetch KG features to avoid per-candidate SQL round-trips
+    candidate_ids = [r[0] for r in results if hasattr(r, '__getitem__') and r[0]]
+    prefetch_kg_features(db, candidate_ids)
 
     # Extract features for each candidate
     feature_matrix = []
