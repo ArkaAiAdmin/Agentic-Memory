@@ -1225,7 +1225,6 @@ with kg_tab:
         **DARK, showlegend=False, hovermode="closest",
         xaxis=dict(visible=False, showgrid=False, zeroline=False),
         yaxis=dict(visible=False, showgrid=False, zeroline=False),
-        plot_bgcolor="#0a0c10",
         height=680,
         margin=dict(t=40, b=10, l=10, r=10),
     )
