@@ -2457,78 +2457,106 @@ with cron_tab:
     st.subheader("Scheduled Jobs")
 
     jobs = [
-        ("heartbeat",      "heartbeat.log",       "Daemon liveness",            "every 1 min",   "\U0001fa78"),
-        ("integrity",      "integrity.log",        "DB integrity + FTS5 drift",  "every 6 h",     "\U0001f50d"),
-        ("worker",         "worker.log",           "Background task executor",   "every 5 min",   "\u2699\ufe0f"),
-        ("fts-rebuild",    "fts-rebuild.log",      "FTS5 index rebuild",        "on WAL trigger", "\U0001f4d1"),
-        ("emb-recompute",  "embedding-recompute.log", "Embedding refresh",       "on schema change","\U0001f9e0"),
-        ("crdt-sync",      "crdt-sync.log",        "CRDT merge sync",           "on conflict",   "\U0001f504"),
-        ("digest",         "digest.log",           "Daily session digest",      "nightly",        "\U0001f4f0"),
-        ("ltr-trainer",    None,                   "LambdaMART LTR training",   "weekly Mon 05:00","🎯"),
+        ("heartbeat",      "cron_heartbeat",        "Daemon liveness",            "every 1 min",   "\U0001fa78"),
+        ("integrity",      "cron_integrity_check",   "DB integrity + FTS5 drift",  "every 6 h",     "\U0001f50d"),
+        ("worker",         "cron_monitor_task_queue","Background task executor",   "every 5 min",   "\u2699\ufe0f"),
+        ("fts-rebuild",    "cron_rebuild_fts",       "FTS5 index rebuild",         "on WAL trigger", "\U0001f4d1"),
+        ("emb-recompute",  "cron_embedding_recompute","Embedding refresh",         "on schema change","\U0001f9e0"),
+        ("crdt-sync",      "cron_crdt_sync",         "CRDT merge sync",            "on conflict",   "\U0001f504"),
+        ("digest",         "cron_daily_digest",      "Daily session digest",       "nightly",        "\U0001f4f0"),
+        ("backfill",       "cron_backfill_all",      "KG + FTS backfill",          "weekly",         "\U0001f504"),
     ]
 
     _INTERVAL_S: dict[str, int] = {
         "every 1 min": 60, "every 5 min": 300, "every 6 h": 21600,
-        "nightly": 86400, "weekly Mon 05:00": 604800,
+        "nightly": 86400, "weekly": 604800,
     }
 
-    # Mapping from dashboard job names to task_queue task types
-    _JOB_TASK_MAP: dict[str, str] = {
-        "heartbeat": "cron_heartbeat",
-        "integrity": "cron_integrity_check",
-        "worker": "cron_monitor_task_queue",
-        "fts-rebuild": "cron_rebuild_fts",
-        "emb-recompute": "cron_embedding_recompute",
-        "crdt-sync": "cron_crdt_sync",
-        "digest": "cron_daily_digest",
-        "ltr-trainer": "cron_ltr_train",
-    }
-
-    def _check_log(fp: Path, n: int = 20) -> int:
+    # ── Fetch latest task status from task_queue ──
+    def _get_task_status(conn, task_type: str) -> dict:
         try:
-            tail = fp.read_bytes().splitlines()[-n:]
-            return sum(1 for line in tail if any(p in line for p in (b"ERROR", b"Traceback", b"exception")))
+            row = conn.execute(
+                "SELECT status, completed_at, error, attempts "
+                "FROM task_queue WHERE task_type = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (task_type,),
+            ).fetchone()
+            if not row:
+                return {"status": "unknown", "last_run": None, "error": None, "attempts": 0}
+            return {"status": row[0] or "unknown", "last_run": row[1], "error": row[2], "attempts": row[3] or 0}
+        except Exception:
+            return {"status": "unknown", "last_run": None, "error": None, "attempts": 0}
+
+    def _get_pending_count(conn, task_type: str) -> int:
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM task_queue WHERE task_type = ? AND status = 'pending'",
+                (task_type,),
+            ).fetchone()
+            return row[0] if row else 0
         except Exception:
             return 0
+
+    try:
+        _cron_conn = sqlite3.connect(str(MEM_DIR / "memory.db"), timeout=5.0)
+        _cron_conn.execute("PRAGMA busy_timeout=5000")
+    except Exception:
+        _cron_conn = None
 
     status_counts: Counter[str] = Counter()
     job_data = []
     now = datetime.now(timezone.utc).timestamp()
-    for name, filename, desc, trigger, emoji in jobs:
-        if filename is None:
-            model_path = Path(__file__).parent / "models" / "ltr" / "model.txt"
-            if model_path.exists():
-                sev, status_label, pct = "ok", "model trained", 60
-            else:
-                sev, status_label, pct = "warning", "awaiting training data", 10
-            status_counts[sev] += 1
-            job_data.append({"name": name, "desc": desc, "trigger": trigger, "emoji": emoji, "sev": sev, "status": status_label, "pct": pct, "log_file": None, "log_path": None})
-            continue
-        fp = MEM_DIR / filename
-        if not fp.exists():
-            sev, status_label, pct = "warning", "no activity", 0
+
+    for name, task_type, desc, trigger, emoji in jobs:
+        if _cron_conn:
+            task_info = _get_task_status(_cron_conn, task_type)
+            pending = _get_pending_count(_cron_conn, task_type)
         else:
-            mtime = fp.stat().st_mtime
-            interval = _INTERVAL_S.get(trigger, 600)
-            age = now - mtime
-            errors = _check_log(fp)
-            if age > 6 * interval:
-                sev, status_label, pct = "error", f"stale ({age / 3600:.0f}h since update)", 0
-            elif age > 2 * interval:
-                sev, status_label, pct = "warning", f"delayed ({age / 60:.0f}min since update)", 30
-            elif errors >= 3:
-                sev, status_label, pct = "error", f"{errors} errors in tail", 5
-            elif errors > 0:
-                sev, status_label, pct = "warning", f"{errors} warnings in tail", 55
+            task_info = {"status": "unknown", "last_run": None, "error": None, "attempts": 0}
+            pending = 0
+
+        ts = task_info["status"]
+        last_run = task_info["last_run"]
+        error = task_info["error"]
+
+        if ts == "completed":
+            if last_run:
+                try:
+                    completed_dt = datetime.strptime(last_run, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    age_s = now - completed_dt.timestamp()
+                except Exception:
+                    age_s = 0
+                interval = _INTERVAL_S.get(trigger, 600)
+                if age_s > 6 * interval:
+                    sev, status_label = "warning", f"completed but stale ({age_s / 3600:.0f}h ago)"
+                else:
+                    sev, status_label = "ok", f"completed {age_s / 60:.0f}min ago"
             else:
-                sev, status_label, pct = "ok", f"updated {age / 60:.0f}min ago", 85
+                sev, status_label = "ok", "completed"
+        elif ts == "failed":
+            err_short = (error[:60] + "...") if error and len(error) > 60 else (error or "unknown error")
+            sev, status_label = "error", f"failed: {err_short}"
+        elif ts == "processing":
+            sev, status_label = "warning", "running now"
+        elif ts == "pending":
+            sev, status_label = "warning", f"queued ({pending} pending)"
+        else:
+            sev, status_label = "warning", "no runs yet"
+
         status_counts[sev] += 1
-        job_data.append({"name": name, "desc": desc, "trigger": trigger, "emoji": emoji, "sev": sev, "status": status_label, "pct": pct, "log_file": filename, "log_path": fp})
+        job_data.append({
+            "name": name, "task_type": task_type, "desc": desc,
+            "trigger": trigger, "emoji": emoji, "sev": sev,
+            "status": status_label, "error": error, "pending": pending,
+        })
+
+    if _cron_conn:
+        _cron_conn.close()
 
     # ── Summary stats ──
     n_ok = status_counts.get("ok", 0)
     n_warn = status_counts.get("warning", 0)
-    n_err = status_counts.get("error", 0) + status_counts.get("failure", 0)
+    n_err = status_counts.get("error", 0)
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Jobs", len(jobs))
@@ -2551,68 +2579,42 @@ with cron_tab:
 
     # ── Job status table ──
     job_table_df = pd.DataFrame([
-        {"Job": f"{j['emoji']} {j['name']}", "Description": j["desc"], "Schedule": j["trigger"], "Status": j["status"], "Health": j["sev"]}
+        {"Job": f"{j['emoji']} {j['name']}", "Description": j["desc"], "Schedule": j["trigger"], "Status": j["status"], "Pending": j["pending"]}
         for j in job_data
     ])
-    st.dataframe(job_table_df, width="stretch", hide_index=True, column_config={
-        "Health": st.column_config.TextColumn("Health", width="small"),
-    })
+    st.dataframe(job_table_df, width="stretch", hide_index=True)
 
     st.divider()
 
-    # ── Expandable job details ──
+    # ── Expandable job details with Run button ──
     for job in job_data:
-        status_color = {"ok": "#10b981", "warning": "#f59e0b", "error": "#ef4444"}.get(str(job["sev"]), "#6b7280")
         with st.expander(f"{job['emoji']} {job['name']} — {job['status']}", expanded=False):
             st.caption(f"{job['desc']} · Schedule: `{job['trigger']}`")
 
-            log_path = job["log_path"]
-            if log_path and isinstance(log_path, Path) and log_path.exists():
-                log_text = log_path.read_text(errors="replace")
-                lines = log_text.strip().split("\n")
-                if not lines:
-                    st.info("Log file is empty")
-                    continue
-                st.caption(f"Log: {len(lines)} lines, {log_path.stat().st_size / 1024:.0f} KB")
+            if job["error"] and job["sev"] == "error":
+                st.error(f"Last error:\n```\n{job['error'][:500]}\n```")
 
-                col_s, col_t = st.columns([3, 1])
-                with col_s:
-                    log_search = st.text_input("Filter", placeholder="search lines...", key=f"ls_{job['name']}", label_visibility="collapsed")
-                with col_t:
-                    tail_n = st.slider("Last N lines", 5, min(200, len(lines)), 20, key=f"tn_{job['name']}", label_visibility="collapsed")
-
-                if log_search:
-                    lines = [line for line in lines if log_search.lower() in line.lower()]
-                shown = lines[-tail_n:] if tail_n > 0 else lines
-                st.code("\n".join(shown), language="text")
-                st.divider()
-                col_trig, col_cmd = st.columns([1, 3])
-                with col_trig:
-                    job_name = job["name"]
-                    if st.button("\u25b6\ufe0f Trigger now", key=f"run_{job_name}"):
-                        task_type = _JOB_TASK_MAP.get(job_name)
-                        if not task_type:
-                            st.warning(f"No task mapping for '{job_name}'")
-                        else:
-                            try:
-                                from infra.db_write_queue import sqlite_write_queue
-                                from background.background_queue import init_task_queue, enqueue_task as _enqueue
-                                _conn = sqlite_write_queue.start_session(MEM_DIR / "memory.db")
-                                try:
-                                    init_task_queue(_conn)
-                                    task_id = _enqueue(_conn, task_type, payload={"source": "dashboard"})
-                                    if isinstance(task_id, dict):
-                                        st.warning(f"Queue full or rejected: {task_id.get('reason', '?')}")
-                                    else:
-                                        st.success(f"Enqueued {task_type} (id={task_id}). Worker will pick it up.")
-                                finally:
-                                    _conn.close()
-                            except Exception as _e:
-                                st.error(f"Failed to enqueue: {_e}")
-                with col_cmd:
-                    st.code(f"agentic-memory memory_maintenance(operation=\"{job_name}\", confirm=true)", language="text")
-            else:
-                st.info("No log file yet")
+            col_trig, col_info = st.columns([1, 3])
+            with col_trig:
+                if st.button("\u25b6\ufe0f Run now", key=f"run_{job['name']}", type="primary"):
+                    try:
+                        from infra.db_write_queue import sqlite_write_queue
+                        from background.background_queue import init_task_queue, enqueue_task as _enqueue
+                        _conn = sqlite_write_queue.start_session(MEM_DIR / "memory.db")
+                        try:
+                            init_task_queue(_conn)
+                            task_id = _enqueue(_conn, job["task_type"], payload={"source": "dashboard"})
+                            if isinstance(task_id, dict):
+                                st.warning(f"Rejected: {task_id.get('reason', '?')}")
+                            else:
+                                st.success(f"Enqueued (id={task_id}). Worker will process it.")
+                        finally:
+                            _conn.close()
+                    except Exception as _e:
+                        st.error(f"Failed: {_e}")
+            with col_info:
+                if job["pending"] > 0:
+                    st.caption(f"{job['pending']} tasks pending in queue")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MULTI-AGENT SYNC
