@@ -869,7 +869,7 @@ with kg_tab:
         color_discrete_sequence=px.colors.qualitative.Set2,
         text_auto=True,
     )
-    fig_types.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10), showlegend=False)
+    fig_types.update_layout(**DARK, height=220, margin=dict(t=30, b=10, l=10, r=10), showlegend=False)
     st.plotly_chart(fig_types, width="stretch")
 
     # ── Type filter (compact) ──
@@ -909,7 +909,7 @@ with kg_tab:
             rel_df, x="Relation", y="Count", color="Count",
             color_continuous_scale="Viridis", text_auto=True,
         )
-        fig_rel.update_layout(**DARK, height=180, margin=dict(t=10, b=10, l=10, r=10), showlegend=False)
+        fig_rel.update_layout(**DARK, height=200, margin=dict(t=30, b=10, l=10, r=10), showlegend=False)
         st.plotly_chart(fig_rel, width="stretch")
     else:
         st.info("No edges connect the selected entities.")
@@ -1121,7 +1121,7 @@ with kg_tab:
                 top_entities, x="mentions", y="name", orientation="h",
                 color="entity_type", color_discrete_map=type_colors,
             )
-            fig_top.update_layout(**DARK, height=300, margin=dict(t=5, b=5, l=5, r=5), showlegend=False, yaxis=dict(autorange="reversed"))
+            fig_top.update_layout(**DARK, height=320, margin=dict(t=20, b=10, l=10, r=10), showlegend=False, yaxis=dict(autorange="reversed"))
             st.plotly_chart(fig_top, width="stretch")
 
     # ── Full entity table ──
