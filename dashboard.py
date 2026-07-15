@@ -622,6 +622,8 @@ with overview_tab:
             unsafe_allow_html=True,
         )
 
+    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+
     # ── System health indicator ──
     n_entities = try_count("kg_entities")
     n_facts = try_count("kg_facts") if table("kg_facts") else 0
