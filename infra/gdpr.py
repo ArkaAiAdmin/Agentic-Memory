@@ -45,18 +45,32 @@ def _hash_email(email: str) -> str:
     return hashlib.sha256(email.encode("utf-8")).hexdigest()
 
 
-def _get_md_file_paths(conn: sqlite3.Connection, tenant_id: str) -> list[Path]:
-    """Resolve .md file paths for all memories in the tenant.
+def _get_md_file_paths(
+    conn: sqlite3.Connection,
+    tenant_id: str,
+    data_subject_sub: str | None = None,
+) -> list[Path]:
+    """Resolve .md file paths for memories belonging to a data subject.
 
-    Walks memories with a matching tenant_id and resolves the on-disk path
-    via the source_file column. Returns only paths that actually exist.
+    Walks memories with a matching tenant_id (and optionally a matching
+    data_subject_sub) and resolves the on-disk path via the source_file
+    column. Returns only paths that actually exist.
     """
     paths: list[Path] = []
     try:
-        rows = conn.execute(
-            "SELECT source_file FROM memories WHERE tenant_id = ? AND source_file IS NOT NULL",
-            (tenant_id,),
-        ).fetchall()
+        if data_subject_sub:
+            rows = conn.execute(
+                "SELECT source_file FROM memories "
+                "WHERE tenant_id = ? AND data_subject_sub = ? "
+                "AND source_file IS NOT NULL",
+                (tenant_id, data_subject_sub),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT source_file FROM memories "
+                "WHERE tenant_id = ? AND source_file IS NOT NULL",
+                (tenant_id,),
+            ).fetchall()
         for (sf,) in rows:
             p = Path(sf)
             if p.exists():
@@ -97,7 +111,7 @@ def gdpr_erase(
     md_files_deleted = 0
 
     # Step 2: collect .md file paths before deletion
-    md_paths = _get_md_file_paths(conn, tenant_id)
+    md_paths = _get_md_file_paths(conn, tenant_id, data_subject_sub)
 
     try:
         # Step 3: cascading delete — dependency-safe order
@@ -106,13 +120,25 @@ def gdpr_erase(
         # have a tenant_id column. We resolve the tenant's memory IDs
         # first, then walk the KG graph to find the affected rows.
 
-        # Collect memory IDs for the target tenant (used by KG backlinks)
-        memory_ids = [
-            r[0]
-            for r in conn.execute(
-                "SELECT id FROM memories WHERE tenant_id = ?", (tenant_id,)
-            ).fetchall()
-        ]
+        # Collect memory IDs for the target tenant + subject.
+        # When data_subject_sub is set, only erase that subject's memories.
+        # When NULL (backward compat), erase the entire tenant.
+        if data_subject_sub:
+            memory_ids = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT id FROM memories "
+                    "WHERE tenant_id = ? AND data_subject_sub = ?",
+                    (tenant_id, data_subject_sub),
+                ).fetchall()
+            ]
+        else:
+            memory_ids = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT id FROM memories WHERE tenant_id = ?", (tenant_id,)
+                ).fetchall()
+            ]
 
         # backlinks reference memory IDs; no tenant_id column on the table
         if memory_ids:
@@ -184,86 +210,153 @@ def gdpr_erase(
         # memory_vec_keys.
         # memory_chunk_vec_keys — FK to memory_chunk_embeddings
         try:
-            cur = conn.execute(
-                "DELETE FROM memory_chunk_vec_keys WHERE chunk_id IN "
-                "(SELECT id FROM memory_chunks WHERE parent_id IN "
-                "(SELECT id FROM memories WHERE tenant_id = ?))",
-                (tenant_id,),
-            )
+            if data_subject_sub:
+                cur = conn.execute(
+                    "DELETE FROM memory_chunk_vec_keys WHERE chunk_id IN "
+                    "(SELECT id FROM memory_chunks WHERE parent_id IN "
+                    "(SELECT id FROM memories WHERE tenant_id = ? "
+                    "AND data_subject_sub = ?))",
+                    (tenant_id, data_subject_sub),
+                )
+            else:
+                cur = conn.execute(
+                    "DELETE FROM memory_chunk_vec_keys WHERE chunk_id IN "
+                    "(SELECT id FROM memory_chunks WHERE parent_id IN "
+                    "(SELECT id FROM memories WHERE tenant_id = ?))",
+                    (tenant_id,),
+                )
             rows_deleted["memory_chunk_vec_keys"] = cur.rowcount
         except sqlite3.OperationalError:
             rows_deleted["memory_chunk_vec_keys"] = 0
 
         # memory_chunk_embeddings — FK to memories via parent_id
         try:
-            cur = conn.execute(
-                "DELETE FROM memory_chunk_embeddings WHERE chunk_id IN "
-                "(SELECT id FROM memory_chunks WHERE parent_id IN "
-                "(SELECT id FROM memories WHERE tenant_id = ?))",
-                (tenant_id,),
-            )
+            if data_subject_sub:
+                cur = conn.execute(
+                    "DELETE FROM memory_chunk_embeddings WHERE chunk_id IN "
+                    "(SELECT id FROM memory_chunks WHERE parent_id IN "
+                    "(SELECT id FROM memories WHERE tenant_id = ? "
+                    "AND data_subject_sub = ?))",
+                    (tenant_id, data_subject_sub),
+                )
+            else:
+                cur = conn.execute(
+                    "DELETE FROM memory_chunk_embeddings WHERE chunk_id IN "
+                    "(SELECT id FROM memory_chunks WHERE parent_id IN "
+                    "(SELECT id FROM memories WHERE tenant_id = ?))",
+                    (tenant_id,),
+                )
             rows_deleted["memory_chunk_embeddings"] = cur.rowcount
         except sqlite3.OperationalError:
             rows_deleted["memory_chunk_embeddings"] = 0
 
         # memory_chunks — parent_id = memories.id
-        cur = conn.execute(
-            "DELETE FROM memory_chunks WHERE parent_id IN "
-            "(SELECT id FROM memories WHERE tenant_id = ?)",
-            (tenant_id,),
-        )
+        if data_subject_sub:
+            cur = conn.execute(
+                "DELETE FROM memory_chunks WHERE parent_id IN "
+                "(SELECT id FROM memories WHERE tenant_id = ? "
+                "AND data_subject_sub = ?)",
+                (tenant_id, data_subject_sub),
+            )
+        else:
+            cur = conn.execute(
+                "DELETE FROM memory_chunks WHERE parent_id IN "
+                "(SELECT id FROM memories WHERE tenant_id = ?)",
+                (tenant_id,),
+            )
         rows_deleted["memory_chunks"] = cur.rowcount
 
         # memory_embeddings — memory_id = memories.id
         try:
-            cur = conn.execute(
-                "DELETE FROM memory_embeddings WHERE memory_id IN "
-                "(SELECT id FROM memories WHERE tenant_id = ?)",
-                (tenant_id,),
-            )
+            if data_subject_sub:
+                cur = conn.execute(
+                    "DELETE FROM memory_embeddings WHERE memory_id IN "
+                    "(SELECT id FROM memories WHERE tenant_id = ? "
+                    "AND data_subject_sub = ?)",
+                    (tenant_id, data_subject_sub),
+                )
+            else:
+                cur = conn.execute(
+                    "DELETE FROM memory_embeddings WHERE memory_id IN "
+                    "(SELECT id FROM memories WHERE tenant_id = ?)",
+                    (tenant_id,),
+                )
             rows_deleted["memory_embeddings"] = cur.rowcount
         except sqlite3.OperationalError:
             rows_deleted["memory_embeddings"] = 0
 
         # memory_vec_keys — memory_id = memories.id
         try:
-            cur = conn.execute(
-                "DELETE FROM memory_vec_keys WHERE memory_id IN "
-                "(SELECT id FROM memories WHERE tenant_id = ?)",
-                (tenant_id,),
-            )
+            if data_subject_sub:
+                cur = conn.execute(
+                    "DELETE FROM memory_vec_keys WHERE memory_id IN "
+                    "(SELECT id FROM memories WHERE tenant_id = ? "
+                    "AND data_subject_sub = ?)",
+                    (tenant_id, data_subject_sub),
+                )
+            else:
+                cur = conn.execute(
+                    "DELETE FROM memory_vec_keys WHERE memory_id IN "
+                    "(SELECT id FROM memories WHERE tenant_id = ?)",
+                    (tenant_id,),
+                )
             rows_deleted["memory_vec_keys"] = cur.rowcount
         except sqlite3.OperationalError:
             rows_deleted["memory_vec_keys"] = 0
 
         # memories
-        cur = conn.execute(
-            "DELETE FROM memories WHERE tenant_id = ?",
-            (tenant_id,),
-        )
+        if data_subject_sub:
+            cur = conn.execute(
+                "DELETE FROM memories WHERE tenant_id = ? "
+                "AND data_subject_sub = ?",
+                (tenant_id, data_subject_sub),
+            )
+        else:
+            cur = conn.execute(
+                "DELETE FROM memories WHERE tenant_id = ?",
+                (tenant_id,),
+            )
         rows_deleted["memories"] = cur.rowcount
 
         # memory_audit_log — ANONYMIZE, never bulk-delete (GAP 3).
         # Audit evidence must be retained for SOC2 (>=1yr) / HIPAA (>=6yr).
         # We tombstone the principal and redact the args payload, preserving
         # the structural row so the audit trail survives a data-subject erase.
+        # When data_subject_sub is provided, only anonymize rows matching
+        # that subject's principal_id (subject-scoped erase).
         tombstone = f"erased-subject-{data_subject_hash}"
         try:
-            cur = conn.execute(
-                "UPDATE memory_audit_log "
-                "SET principal_id = ?, args = ? "
-                "WHERE tenant_id = ?",
-                (tombstone, '{"redacted": true}', tenant_id),
-            )
+            if data_subject_sub:
+                cur = conn.execute(
+                    "UPDATE memory_audit_log "
+                    "SET principal_id = ?, args = ? "
+                    "WHERE tenant_id = ? AND principal_id = ?",
+                    (tombstone, '{"redacted": true}', tenant_id, data_subject_sub),
+                )
+            else:
+                cur = conn.execute(
+                    "UPDATE memory_audit_log "
+                    "SET principal_id = ?, args = ? "
+                    "WHERE tenant_id = ?",
+                    (tombstone, '{"redacted": true}', tenant_id),
+                )
             rows_deleted["memory_audit_log_anonymized"] = cur.rowcount
         except sqlite3.OperationalError:
             # Pre-V44 schema (no tenant_id column): never bulk-delete audit
-            # evidence. Anonymize all rows instead of erasing them.
+            # evidence. Anonymize matching rows instead of erasing them.
             try:
-                cur = conn.execute(
-                    "UPDATE memory_audit_log SET principal_id = ?, args = ?",
-                    (tombstone, '{"redacted": true}'),
-                )
+                if data_subject_sub:
+                    cur = conn.execute(
+                        "UPDATE memory_audit_log "
+                        "SET principal_id = ?, args = ? "
+                        "WHERE principal_id = ?",
+                        (tombstone, '{"redacted": true}', data_subject_sub),
+                    )
+                else:
+                    cur = conn.execute(
+                        "UPDATE memory_audit_log SET principal_id = ?, args = ?",
+                        (tombstone, '{"redacted": true}'),
+                    )
                 rows_deleted["memory_audit_log_anonymized"] = cur.rowcount
             except sqlite3.OperationalError:
                 rows_deleted["memory_audit_log_anonymized"] = 0

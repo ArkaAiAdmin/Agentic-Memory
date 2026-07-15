@@ -50,16 +50,16 @@ def db_path() -> Generator[Path, None, None]:
 
 def _seed_two_tenants(conn: sqlite3.Connection) -> int:
     """Insert memories for two tenants with overlapping KG data.
-    
+
     Returns the shared entity ID.
     """
     conn.execute(
-        "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-        ("mem-tenant-a", "A data", "tenant-a"),
+        "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+        ("mem-tenant-a", "A data", "tenant-a", "a@co.com"),
     )
     conn.execute(
-        "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-        ("mem-tenant-b", "B data", "tenant-b"),
+        "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+        ("mem-tenant-b", "B data", "tenant-b", "b@co.com"),
     )
     # Shared entity referenced by both tenants' facts (INTEGER PK)
     conn.execute(
@@ -138,12 +138,12 @@ class TestGDPREraseRefusesCrossTenant:
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("default-mem", "default data", "default"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("default-mem", "default data", "default", "default@x.com"),
         )
         conn.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("named-mem", "named data", "tenant-x"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("named-mem", "named data", "tenant-x", "named@x.com"),
         )
         conn.commit()
         result = gdpr_erase(conn, principal_id="admin", data_subject_sub="default@x.com", tenant_id="default")

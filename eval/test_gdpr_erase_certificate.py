@@ -57,8 +57,8 @@ class TestGDPREraseCertificate:
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("cert-mem", "test data", "default"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("cert-mem", "test data", "default", "user@example.com"),
         )
         conn.commit()
         result = gdpr_erase(conn, principal_id="principal-42", data_subject_sub="user@example.com")
@@ -75,8 +75,8 @@ class TestGDPREraseCertificate:
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("hash-mem", "data", "default"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("hash-mem", "data", "default", "hash-test@x.com"),
         )
         conn.commit()
         result = gdpr_erase(conn, principal_id="p1", data_subject_sub="hash-test@x.com")
@@ -88,12 +88,12 @@ class TestGDPREraseCertificate:
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("c1", "alpha", "default"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("c1", "alpha", "default", "user1@x.com"),
         )
         conn.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("c2", "beta", "default"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("c2", "beta", "default", "user1@x.com"),
         )
         conn.commit()
         r1 = gdpr_erase(conn, principal_id="p1", data_subject_sub="user1@x.com")
@@ -102,8 +102,8 @@ class TestGDPREraseCertificate:
         conn2 = sqlite3.connect(str(db_path))
         conn2.execute("PRAGMA foreign_keys=ON")
         conn2.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("c3", "gamma", "default"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("c3", "gamma", "default", "user2@x.com"),
         )
         conn2.commit()
         r2 = gdpr_erase(conn2, principal_id="p2", data_subject_sub="user2@x.com")
@@ -116,8 +116,8 @@ class TestGDPREraseCertificate:
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("cert-mem-2", "data", "default"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("cert-mem-2", "data", "default", "persist@x.com"),
         )
         conn.commit()
         result = gdpr_erase(conn, principal_id="p1", data_subject_sub="persist@x.com")
@@ -136,15 +136,15 @@ class TestGDPREraseCertificate:
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("m1", "alpha", "default"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("m1", "alpha", "default", "alpha@x.com"),
         )
         conn.commit()
         r1 = gdpr_erase(conn, principal_id="admin", data_subject_sub="alpha@x.com")
 
         conn.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("m2", "beta", "default"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("m2", "beta", "default", "beta@x.com"),
         )
         conn.commit()
         r2 = gdpr_erase(conn, principal_id="admin", data_subject_sub="beta@x.com")

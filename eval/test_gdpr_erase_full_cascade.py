@@ -52,13 +52,14 @@ def db_path() -> Generator[Path, None, None]:
         p.unlink(missing_ok=True)
 
 
-def _seed_tenant_data(conn: sqlite3.Connection, tenant_id: str = "tenant-a", prefix: str = "a") -> None:
+def _seed_tenant_data(conn: sqlite3.Connection, tenant_id: str = "tenant-a", prefix: str = "a",
+                      data_subject_sub: str = "user@a.com") -> None:
     """Insert memories + KG rows for a tenant."""
     mem_id = f"{prefix}-mem-1"
     conn.execute(
-        "INSERT INTO memories (id, content, source_file, tags, created_at, tenant_id) "
-        "VALUES (?, ?, ?, ?, datetime('now'), ?)",
-        (mem_id, f"{prefix} memory content", f"/tmp/{prefix}_memory.md", "tag1", tenant_id),
+        "INSERT INTO memories (id, content, source_file, tags, created_at, tenant_id, data_subject_sub) "
+        "VALUES (?, ?, ?, ?, datetime('now'), ?, ?)",
+        (mem_id, f"{prefix} memory content", f"/tmp/{prefix}_memory.md", "tag1", tenant_id, data_subject_sub),
     )
     conn.execute(
         "INSERT INTO kg_entities (name, entity_type, created_at) VALUES (?, ?, datetime('now'))",
@@ -158,13 +159,13 @@ class TestGDPREraseFullCascade:
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute(
-            "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
-            ("audit-mem", "test", "tenant-a"),
+            "INSERT INTO memories (id, content, tenant_id, data_subject_sub) VALUES (?, ?, ?, ?)",
+            ("audit-mem", "test", "tenant-a", "user@a.com"),
         )
         conn.execute(
             "INSERT INTO memory_audit_log (ts, tool, args, latency_ms, tenant_id, principal_id) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (1712345678.0, "gdpr_test", "{}", 0.0, "tenant-a", "orig-principal"),
+            (1712345678.0, "gdpr_test", "{}", 0.0, "tenant-a", "user@a.com"),
         )
         conn.commit()
         result = gdpr_erase(conn, principal_id="p1", data_subject_sub="user@a.com", tenant_id="tenant-a")
