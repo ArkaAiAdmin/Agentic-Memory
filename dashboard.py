@@ -1124,49 +1124,79 @@ with kg_tab:
         "language": "#06b6d4", "other": "#6b7280",
     }
 
-    # Edge traces
+    # ── Edge traces (curved, weight-colored) ──
     edge_traces = []
-    for u, v, d in G_sub.edges(data=True):
+    for i, (u, v, d) in enumerate(G_sub.edges(data=True)):
         x0, y0 = pos[u]
         x1, y1 = pos[v]
-        w = d.get("weight", 1) * 0.4 + 0.2
+        w = d.get("weight", 1)
+        w_scaled = w * 0.4 + 0.2
         is_focus = focus_id is not None and (u == focus_id or v == focus_id)
+
+        # Curved edges using mid-point offset
+        mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+        dx, dy = x1 - x0, y1 - y0
+        offset = 0.05 * (1 if i % 2 == 0 else -1)
+        cx, cy = mx + dy * offset, my - dx * offset
+
+        # Color by weight intensity
+        if is_focus:
+            edge_color = "#8b5cf6"
+            edge_width = w_scaled * 3.5
+        else:
+            intensity = min(1.0, w / 3.0)
+            r_val = int(100 + intensity * 55)
+            g_val = int(116 + intensity * 30)
+            b_val = int(139 + intensity * 50)
+            edge_color = f"rgba({r_val},{g_val},{b_val},{0.15 + intensity * 0.25})"
+            edge_width = w_scaled * 1.5
+
         edge_traces.append(go.Scatter(
-            x=(x0, x1, None), y=(y0, y1, None),
+            x=(x0, cx, x1, None), y=(y0, cy, y1, None),
             mode="lines",
-            line=dict(
-                width=w * (2.5 if is_focus else 1.2),
-                color="#8b5cf6" if is_focus else "rgba(100,116,139,0.3)",
-            ),
+            line=dict(width=edge_width, color=edge_color, shape="spline"),
             hoverinfo="text",
-            hovertext=f"{name_map.get(u, u)} \u2014[{d.get('relation', '')}]\u2014> {name_map.get(v, v)}",
+            hovertext=f"<b>{name_map.get(u, u)}</b> <i>{d.get('relation', '')}</i> <b>{name_map.get(v, v)}</b><br>weight: {w:.2f}",
             showlegend=False,
         ))
 
-    def _node_trace(nodes, size_mult, color_override=None, text_visible=False, opacity=0.9):
+    def _node_trace(nodes, size_mult, color_override=None, text_visible=False, opacity=0.9, glow=False):
         if not nodes:
             return None
         xs, ys, labels, types, ments = [], [], [], [], []
         for n in nodes:
             xs.append(pos[n][0])
             ys.append(pos[n][1])
-            labels.append(name_map.get(n, str(n))[:24])
+            labels.append(name_map.get(n, str(n))[:20])
             types.append(type_map.get(n, "other"))
             ments.append(ment_map.get(n, 1))
         cols = [color_override or type_colors.get(t, "#6b7280") for t in types]
-        sz = [min(32, 8 + m * 2.0) * size_mult for m in ments]
+        sz = [min(36, 10 + m * 2.5) * size_mult for m in ments]
+
+        # Build marker with optional glow effect
+        marker_dict = dict(
+            size=sz, color=cols,
+            line=dict(
+                width=3 if glow else (1.5 if text_visible else 0.5),
+                color="#ffffff" if glow else ("#f0f2f6" if text_visible else "#0e1117"),
+            ),
+            opacity=opacity,
+        )
+
         return go.Scatter(
             x=xs, y=ys,
             mode="markers+text" if text_visible else "markers",
             text=labels if text_visible else None,
             textposition="top center",
-            textfont=dict(size=11, color="#f0f2f6", weight=700),
-            marker=dict(
-                size=sz, color=cols,
-                line=dict(width=2 if text_visible else 0.5, color="#f0f2f6" if text_visible else "#1f2937"),
-                opacity=opacity,
-            ),
-            hovertext=[f"<b>{name_map.get(n, n)}</b><br>type: {type_map.get(n, '?')}<br>mentions: {ment_map.get(n, 0)}<br>edges: {G_sub.degree(n)}" for n in nodes],
+            textfont=dict(size=12 if text_visible else 10, color="#f0f2f6", family="Arial Black" if text_visible else "Arial"),
+            marker=marker_dict,
+            hovertext=[
+                f"<b>{name_map.get(n, n)}</b><br>"
+                f"<span style='color:{type_colors.get(type_map.get(n, ''), '#6b7280')}'>●</span> {type_map.get(n, '?')}<br>"
+                f"Mentions: {ment_map.get(n, 0)}<br>"
+                f"Connections: {G_sub.degree(n)}"
+                for n in nodes
+            ],
             hoverinfo="text",
             showlegend=False,
         )
@@ -1182,20 +1212,22 @@ with kg_tab:
 
     traces = list(edge_traces)
     if hl_other:
-        traces.append(_node_trace(hl_other, 0.8, opacity=0.15 if focus_id else 0.4))
+        traces.append(_node_trace(hl_other, 0.7, opacity=0.1 if focus_id else 0.35))
     if hl_nbr:
-        traces.append(_node_trace(hl_nbr, 1.2, opacity=0.9))
+        traces.append(_node_trace(hl_nbr, 1.3, opacity=0.9))
     if hl_self:
-        traces.append(_node_trace(hl_self, 1.8, color_override="#8b5cf6", text_visible=True, opacity=1.0))
+        traces.append(_node_trace(hl_self, 2.0, color_override="#8b5cf6", text_visible=True, opacity=1.0, glow=True))
 
     fig = go.Figure(data=traces)
     fig.update_layout(
-        title=f"{G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges"
-        + (f" \u00b7 focused: {focus_name}" if focus_name else ""),
+        title=f"<b>{G_sub.number_of_nodes()} nodes</b> · {G_sub.number_of_edges()} edges"
+        + (f" · focused: <b>{focus_name}</b>" if focus_name else ""),
         **DARK, showlegend=False, hovermode="closest",
-        xaxis=dict(visible=False), yaxis=dict(visible=False),
-        height=650,
-        margin=dict(t=30, b=10, l=10, r=10),
+        xaxis=dict(visible=False, showgrid=False, zeroline=False),
+        yaxis=dict(visible=False, showgrid=False, zeroline=False),
+        plot_bgcolor="#0a0c10",
+        height=680,
+        margin=dict(t=40, b=10, l=10, r=10),
     )
     st.plotly_chart(fig, width="stretch")
 
