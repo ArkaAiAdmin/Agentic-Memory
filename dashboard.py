@@ -890,8 +890,10 @@ with memories_tab:
         )
 
         # ── Selected memory detail ──
-        if selected and len(selected) > 0:
-            sel_idx = selected[0]
+        # st.dataframe returns a DeltaGenerator; selection is in session_state
+        sel_rows = st.session_state.get("mem_table", {}).get("selection", {}).get("rows", [])
+        if sel_rows:
+            sel_idx = sel_rows[0]
             sel_id = m_df.iloc[sel_idx]["id"]
             st.divider()
             st.markdown(f"### {sel_id}")
@@ -1590,8 +1592,9 @@ with facts_tab:
             )
 
             # ── Selected fact detail ──
-            if selected_f and len(selected_f) > 0:
-                sel_idx = selected_f[0]
+            sel_fact_rows = st.session_state.get("fact_table", {}).get("selection", {}).get("rows", [])
+            if sel_fact_rows:
+                sel_idx = sel_fact_rows[0]
                 sel_row = f_df.iloc[sel_idx]
                 st.divider()
 
