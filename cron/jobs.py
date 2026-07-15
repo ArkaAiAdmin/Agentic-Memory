@@ -259,6 +259,13 @@ JOBS: dict[str, dict] = {
         "script": "cron/cron_train_forget_model.py",
         "timeout": 300,
     },
+    "train_temporal_ssm": {
+        "freq": "1w",
+        "dow": 0,
+        "offset_min": 345,
+        "script": "cron/cron_train_temporal_ssm.py",
+        "timeout": 300,
+    },
     "semantic_clusters": {
         "freq": "1w",
         "dow": 0,

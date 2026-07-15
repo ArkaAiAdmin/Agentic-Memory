@@ -77,7 +77,7 @@ def _get_query_type_weights() -> dict:
     if no learned weights exist or the table is missing.
     """
     try:
-        from infra._lazy_imports import connection_pool, get_config
+        from infra._lazy_imports import connection_pool
         from infra.memory_common import GLOBAL_MEM_DIR
 
         db_path = str(GLOBAL_MEM_DIR / "memory.db")
@@ -797,3 +797,147 @@ class TemporalAttentionModel:
         parts.extend(f"{v:.6f}" for v in flat_input)
         parts.append(f"{self.b_input:.6f}")
         return ",".join(parts)
+
+    @classmethod
+    def from_config(cls) -> "TemporalAttentionModel":
+        """Build a model, loading trained weights from config if present.
+
+        ``temporal_ssm_enabled`` must be on (the model is opt-in; __init__
+        raises otherwise). When ``temporal_ssm_weights`` is populated by
+        cron_train_temporal_ssm the learned weights are used; otherwise a
+        zero-weight instance is returned whose ``score()`` is neutral (0.5)
+        until trained.
+        """
+        from config import get_config
+
+        raw = getattr(get_config(), "temporal_ssm_weights", "")
+        weights = None
+        if raw:
+            try:
+                parts = [float(x) for x in raw.split(",")]
+                if len(parts) == _W_TOTAL:
+                    weights = parts
+            except (ValueError, TypeError):
+                logger.warning("TemporalAttentionModel.from_config: bad weights, using zeros")
+        return cls(weights=weights)
+
+
+# ---------------------------------------------------------------------------
+# Temporal SSM recency reranker (gated by temporal_ssm_enabled).
+#
+# The model is only ever instantiated when the feature flag is on.  With
+# zero (untrained) weights its score() is exactly 0.5, so the reranker is a
+# no-op until cron_train_temporal_ssm has written temporal_ssm_weights —
+# this keeps the feature inert (and the RANK-FIRST LOCK respected) until a
+# trained checkpoint exists.
+# ---------------------------------------------------------------------------
+_SSM_MODEL = None
+_SSM_MODEL_LOCK = threading.Lock()
+_SSM_BLEND = 0.25  # max ±12.5% swing on final_score when fully trained
+
+
+def _get_ssm_model() -> Optional["TemporalAttentionModel"]:
+    global _SSM_MODEL
+    if _SSM_MODEL is not None:
+        return _SSM_MODEL
+    try:
+        from config import get_config
+
+        if not getattr(get_config(), "temporal_ssm_enabled", False):
+            return None
+    except Exception as e:
+        logger.debug("_get_ssm_model flag check failed: %s", e)
+        return None
+    with _SSM_MODEL_LOCK:
+        if _SSM_MODEL is None:
+            _SSM_MODEL = TemporalAttentionModel.from_config()
+    return _SSM_MODEL
+
+
+def reset_ssm_model() -> None:
+    """Drop the cached SSM model (after config reload or in tests)."""
+    global _SSM_MODEL
+    with _SSM_MODEL_LOCK:
+        _SSM_MODEL = None
+
+
+def _ssm_input_vector(access_count, query_surprise, importance, fitness, recency_penalty):
+    """6-dim input matching the training-time feature layout.
+
+    [access_signal, query_surprise, importance_norm, fitness,
+    recency_penalty, 0.0].  The 6th slot is padding the model learns to
+    ignore, keeping the layout identical between training and inference so
+    trained weights transfer.
+    """
+    access_signal = min((access_count or 1) / 20.0, 1.0)
+    importance_norm = (importance or 3) / 5.0
+    return [
+        access_signal,
+        float(query_surprise),
+        importance_norm,
+        float(fitness if fitness is not None else 0.5),
+        min(float(recency_penalty), 1.0),
+        0.0,
+    ]
+
+
+def _apply_temporal_ssm_rerank(query, scored_results, as_of=None):
+    """Multiply each result's final_score (r[6]) by the SSM recency nudge.
+
+    Placed as the final gated reranker stage (after CE / late-interaction /
+    LTR) so the trained temporal signal has maximum impact on ranking.  The
+    nudge is in [0, 1]; with untrained weights it is 0.5 → blend factor 1.0
+    (no ranking effect), so enabling the flag before training is safe.
+
+    Expected tuple layout (same as the scoring loop):
+        r[0]=note_id, r[1]=content, r[6]=final_score, r[7]=fitness,
+        r[8]=importance, r[10]=last_accessed, r[12]=access_count
+    """
+    model = _get_ssm_model()
+    if model is None or not scored_results or not HAS_NUMPY:
+        return scored_results
+    now_ts = time.time() if as_of is None else as_of
+    q_tokens = set(re.findall(r"\w+", (query or "").lower()))
+    modified = []
+    for r in scored_results:
+        if not r or len(r) <= 6 or r[6] is None:
+            modified.append(r)
+            continue
+        note_id = r[0]
+        content = r[1] if len(r) > 1 else ""
+        fitness = r[7] if len(r) > 7 else 0.5
+        importance = r[8] if len(r) > 8 else 3
+        last_accessed = r[10] if len(r) > 10 else None
+        access_count = r[12] if len(r) > 12 else 1
+
+        recency_days = 0.0
+        if last_accessed:
+            try:
+                ts = datetime.fromisoformat(last_accessed).timestamp()
+                recency_days = max(0.0, (now_ts - ts) / 86400.0)
+            except (ValueError, TypeError):
+                pass
+        recency_penalty = min(recency_days / 365.0, 1.0)
+
+        query_surprise = 0.5
+        if q_tokens and content:
+            c_tokens = set(re.findall(r"\w+", content.lower()))
+            if c_tokens:
+                union = len(q_tokens | c_tokens)
+                query_surprise = 1.0 - (len(q_tokens & c_tokens) / union if union else 0.0)
+
+        q = _ssm_input_vector(access_count, query_surprise, importance, fitness, recency_penalty)
+        try:
+            model.observe(note_id, np.array(q, dtype=float), hours_since_access=recency_days * 24.0)
+            nudge = model.score(note_id)
+        except Exception as e:
+            logger.debug("_apply_temporal_ssm_rerank per-row failed: %s", e)
+            modified.append(r)
+            continue
+
+        blend = 1.0 + _SSM_BLEND * (nudge - 0.5)
+        blend = max(0.5, min(1.5, blend))
+        new_r = list(r)
+        new_r[6] = float(r[6]) * blend
+        modified.append(tuple(new_r))
+    return modified

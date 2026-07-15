@@ -27,9 +27,7 @@ Thread safety: uses module-level ``_db_columns_cache`` (RLock) and
 ``_phase_latencies`` (RLock) for cross-call shared state.
 """
 
-import json
 import logging
-import math
 import re
 import sqlite3
 import threading
@@ -49,7 +47,6 @@ from infra.cache import (
     make_cache_key,
 )
 from infra.memory_common import (
-    connection_pool,
     safe_close_db,
 )
 from infra.infrastructure import (
@@ -57,10 +54,6 @@ from infra.infrastructure import (
     ErrorCode,
 )
 from infra.error_counter import increment as _phase_inc, get_counts as _phase_counts, reset as _phase_reset
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from infra.db import AnyConnection
 
 # Import functions from other search submodules
 from search.query_parser import (
@@ -74,7 +67,6 @@ from search.rerankers import (  # type: ignore[import]
     _select_ce_mode,  # type: ignore[name-defined]
 )
 from search.phases.postprocess import (
-    _format_search_results,
     apply_safety_demoting as _apply_safety_demoting,
     apply_quality_gates as _apply_quality_gates,
     apply_user_profiling as _apply_user_profiling,
@@ -88,37 +80,30 @@ from search.scoring import (
     _normalize_bm25_ranks,
     compute_channel_weights,
 )
-from search.enrichment import _apply_post_rank_metadata
-from search.synthesis import (
-    _bb1_synthesize,
-)
-from search.config import get_search_config
 
 # Functions extracted to phase modules
 from search.phases._db_utils import (
     _get_memories_columns,
-    _validate_sql_columns,
-    _fetch_rows_by_ids,
+    _fetch_rows_by_ids,  # noqa: F401  (imported by search_pipeline.py from orchestrator)
 )
 from search.phases.fusion import (
-    _merge_chunk_hits,
-    _search_chunks_enhanced,
+    _merge_chunk_hits,  # noqa: F401  (re-exported via search/__init__.py)
+    _search_chunks_enhanced,  # noqa: F401  (imported by search_pipeline.py from orchestrator)
     _hybrid_fusion,
     _enhance_with_chunks,
 )
 from search.phases.retrieve import (
-    _get_embedding_score_threshold,
+    _get_embedding_score_threshold,  # noqa: F401  (imported dynamically by eval/test_search_config_unit.py)
     _fts_search,
-    _fallback_embedding_search,
+    _fallback_embedding_search,  # noqa: F401  (re-exported via search/__init__.py + used at runtime)
     _search_kg_facts,
     _reasoning_expand,
 )
 from search.phases.kg_traversal import (
-    _entity_name_to_memory_id,
     _phase_nine_kg_boost,
     _phase_ten_multi_hop_kg,
 )
-from search.phases.session import _phase_eight_session_cluster
+from search.phases.session import _phase_eight_session_cluster, _SESSION_BOOST_FACTOR
 from search.phases.envelope import (
     _get_agent_scope,
     _build_result_items,
@@ -130,8 +115,14 @@ from search.phases.telemetry import (
     _record_search_telemetry,
     _record_search_phase_latencies,
 )
-from search.drift import _record_drift_event, check_concept_drift_db
-from search.feedback import record_ctr_feedback_db, record_memory_used_in_response
+from search.drift import (  # noqa: F401
+    _record_drift_event,  # imported dynamically by cron/cron_concept_drift.py
+    check_concept_drift_db,  # imported dynamically by eval/test_drift_alarms.py
+)
+from search.feedback import (  # noqa: F401
+    record_ctr_feedback_db,  # imported dynamically by mcp_ctr_drift.py / eval
+    record_memory_used_in_response,  # imported dynamically by recall/recall.py / eval
+)
 from search.skill_lookup import _skill_first_lookup
 
 # Docstrings for imported search functions (defined in search.query_parser /
@@ -201,8 +192,6 @@ _db_columns_cache_lock = threading.Lock()
 _phase_latencies: dict[str, float] = {}
 _phase_latencies_lock = threading.Lock()
 
-
-from dataclasses import dataclass
 
 @dataclass
 class ScoreContext:
@@ -447,14 +436,27 @@ def _rerank_results(
                                 limit=limit, session_ctx=_session_ctx)
         except Exception as _ltr_exc:
             logger.debug("ltr_rerank skipped: %s", _ltr_exc)
+    # Temporal SSM recency reranking (gated by temporal_ssm_enabled).  Final
+    # recency-aware multiplier on r[6]; neutral (blend 1.0) until
+    # cron_train_temporal_ssm has written temporal_ssm_weights, so it cannot
+    # destabilize ranking when off or untrained.  Placed after LTR so the
+    # trained temporal signal has maximum impact on the final order.
+    if out and budget.should_run("temporal_ssm", 20):
+        try:
+            from search.scoring import _apply_temporal_ssm_rerank
+            out = _apply_temporal_ssm_rerank(query, out, as_of=as_of)
+        except Exception as _ssm_exc:
+            logger.debug("temporal_ssm_rerank skipped: %s", _ssm_exc)
     # RANK-FIRST LOCK (PR1.1): order is owned exclusively by the CE /
     # late-interaction rerankers above (and optionally the LTR stage,
     # which writes r[6] as the final rank owner when a model exists).
     # The four historical enrichment passes (temporal decay,
     # Jaccard surprise, concept boost, centrality boost) must NOT mutate
     # r[6] or re-sort here. They are attached as order-invariant envelope
-    # fields by _apply_post_rank_metadata in Phase 10. Re-assert the
-    # ranking order so any future in-place score mutation cannot leak into
+    # fields by _apply_post_rank_metadata in Phase 10. The gated temporal
+    # SSM reranker above is the single sanctioned exception: it is opt-in,
+    # neutral until trained, and deliberately the last r[6] writer. Re-assert
+    # the ranking order so any future in-place score mutation cannot leak into
     # result ordering.
     out = sorted(
         out,
