@@ -671,7 +671,7 @@ with overview_tab:
             )
             fig.update_layout(
                 **DARK,
-                margin=dict(t=10, b=10, l=10, r=10),
+                margin=dict(t=30, b=10, l=10, r=10),
                 showlegend=True,
                 legend=dict(font=dict(size=9)),
             )
@@ -705,7 +705,7 @@ with overview_tab:
                 showlegend=False,
                 xaxis_title=None,
                 yaxis_title="Count",
-                margin=dict(t=10, b=10, l=10, r=10),
+                margin=dict(t=30, b=10, l=10, r=10),
             )
             fig.update_traces(textposition="outside")
             st.plotly_chart(fig, width="stretch")
@@ -861,7 +861,7 @@ with memories_tab:
                 cat_df, x="cat", y="cnt", color="cnt",
                 color_continuous_scale="Viridis", text_auto=True,
             )
-            fig_cat.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, xaxis_title=None, yaxis_title="Count")
+            fig_cat.update_layout(**DARK, height=220, margin=dict(t=30, b=10, l=10, r=10), showlegend=False, xaxis_title=None, yaxis_title="Count")
             st.plotly_chart(fig_cat, width="stretch")
 
     with col_tier:
@@ -875,7 +875,7 @@ with memories_tab:
                 tier_df, names="tier", values="cnt", color="tier",
                 color_discrete_map=cmap,
             )
-            fig_tier.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10))
+            fig_tier.update_layout(**DARK, height=200, margin=dict(t=30, b=10, l=10, r=10))
             st.plotly_chart(fig_tier, width="stretch")
 
     # ── Fitness distribution ──
@@ -884,7 +884,7 @@ with memories_tab:
         fig_fit = px.histogram(
             fit_df, x="fitness_score", nbins=30, color_discrete_sequence=["#6366f1"],
         )
-        fig_fit.update_layout(**DARK, height=180, margin=dict(t=10, b=10, l=10, r=10), bargap=0.1, xaxis_title="Fitness Score", yaxis_title="Count")
+        fig_fit.update_layout(**DARK, height=200, margin=dict(t=30, b=10, l=10, r=10), bargap=0.1, xaxis_title="Fitness Score", yaxis_title="Count")
         st.plotly_chart(fig_fit, width="stretch")
 
     st.divider()
@@ -1567,7 +1567,7 @@ with facts_tab:
                     conf_dist, names="bucket", values="cnt", color="bucket",
                     color_discrete_map=cmap,
                 )
-                fig_conf.update_layout(**DARK, height=220, margin=dict(t=10, b=10, l=10, r=10), title="Confidence Distribution")
+                fig_conf.update_layout(**DARK, height=250, margin=dict(t=30, b=10, l=10, r=10), title="Confidence Distribution")
                 st.plotly_chart(fig_conf, width="stretch")
 
         with col_pred:
@@ -1580,7 +1580,7 @@ with facts_tab:
                     pred_dist, x="cnt", y="predicate", orientation="h",
                     color="cnt", color_continuous_scale="Viridis", text_auto=True,
                 )
-                fig_pred.update_layout(**DARK, height=220, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, yaxis=dict(autorange="reversed"), xaxis_title="Count", title="Top Predicates")
+                fig_pred.update_layout(**DARK, height=250, margin=dict(t=30, b=10, l=10, r=10), showlegend=False, yaxis=dict(autorange="reversed"), xaxis_title="Count", title="Top Predicates")
                 st.plotly_chart(fig_pred, width="stretch")
 
         st.divider()
@@ -1764,7 +1764,7 @@ with drift_tab:
                 fig.update_layout(
                     **DARK,
                     xaxis_title=None, yaxis_title="Drift Metric",
-                    margin=dict(t=10, b=10, l=10, r=10),
+                    margin=dict(t=30, b=10, l=10, r=10),
                     height=300,
                 )
                 st.plotly_chart(fig, width="stretch")
@@ -1780,7 +1780,7 @@ with drift_tab:
                             alarm_dist, names="alarm_level", values="cnt",
                             color="alarm_level", color_discrete_map=cmap,
                         )
-                        fig_dist.update_layout(**DARK, height=250, margin=dict(t=10, b=10, l=10, r=10), title="Alarm Distribution")
+                        fig_dist.update_layout(**DARK, height=250, margin=dict(t=30, b=10, l=10, r=10), title="Alarm Distribution")
                         st.plotly_chart(fig_dist, width="stretch")
 
             # ── Drifted dimensions ──
@@ -1934,7 +1934,7 @@ with ctr_tab:
                 ))
                 fig_trend.update_layout(
                     **DARK, barmode="overlay", height=250,
-                    margin=dict(t=10, b=10, l=10, r=10),
+                    margin=dict(t=30, b=10, l=10, r=10),
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=9)),
                     yaxis=dict(title="Count"),
                     yaxis2=dict(title="CTR %", overlaying="y", side="right", showgrid=False),
@@ -1956,7 +1956,7 @@ with ctr_tab:
                     src_df, x="source", y="cnt", color="source",
                     text_auto=True, color_discrete_sequence=px.colors.qualitative.Set2,
                 )
-                fig_src.update_layout(**DARK, height=250, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, xaxis_title=None, yaxis_title="Impressions")
+                fig_src.update_layout(**DARK, height=280, margin=dict(t=35, b=10, l=10, r=10), showlegend=False, xaxis_title=None, yaxis_title="Impressions")
                 st.plotly_chart(fig_src, width="stretch")
             else:
                 st.info("No source data")
@@ -2095,7 +2095,7 @@ with ctr_tab:
                         if isinstance(w, dict):
                             wdf = pd.DataFrame(list(w.items()), columns=["Factor", "Weight"])
                             fig_w = px.bar(wdf, x="Factor", y="Weight", color="Weight", color_continuous_scale="Viridis")
-                            fig_w.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10), showlegend=False)
+                            fig_w.update_layout(**DARK, height=200, margin=dict(t=30, b=10, l=10, r=10), showlegend=False)
                             st.plotly_chart(fig_w, width="stretch")
                     except Exception:
                         pass
@@ -2601,7 +2601,7 @@ with health_tab:
                 pie_data, names="Status", values="Count", color="Status",
                 color_discrete_map={"OK": "#10b981", "Warning": "#f59e0b", "Failure": "#ef4444", "Error": "#dc2626"},
             )
-            fig_pie.update_layout(**DARK, height=220, margin=dict(t=10, b=10, l=10, r=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)))
+            fig_pie.update_layout(**DARK, height=250, margin=dict(t=30, b=10, l=10, r=10), showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)))
             st.plotly_chart(fig_pie, width="stretch")
 
     st.divider()
@@ -2718,7 +2718,7 @@ with backups_tab:
             hover_data=["name"],
             text_auto=".1f",
         )
-        fig_bp.update_layout(**DARK, height=200, margin=dict(t=10, b=10, l=10, r=10), xaxis_title=None, yaxis_title="Size (MB)")
+        fig_bp.update_layout(**DARK, height=200, margin=dict(t=30, b=10, l=10, r=10), xaxis_title=None, yaxis_title="Size (MB)")
         st.plotly_chart(fig_bp, width="stretch")
 
         # ── Backup table ──
@@ -2832,7 +2832,7 @@ with audit_tab:
                 tc, x="Calls", y="Tool", orientation="h",
                 color="Calls", color_continuous_scale="Viridis", text_auto=True,
             )
-            fig_calls.update_layout(**DARK, height=300, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, yaxis=dict(autorange="reversed"))
+            fig_calls.update_layout(**DARK, height=300, margin=dict(t=30, b=10, l=10, r=10), showlegend=False, yaxis=dict(autorange="reversed"))
             st.plotly_chart(fig_calls, width="stretch")
 
         with col_trend:
@@ -2862,7 +2862,7 @@ with audit_tab:
             ))
             fig_trend.update_layout(
                 **DARK, height=300,
-                margin=dict(t=10, b=10, l=10, r=10),
+                margin=dict(t=30, b=10, l=10, r=10),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=9)),
                 yaxis=dict(title="Latency (ms)"),
                 yaxis2=dict(title="Errors", overlaying="y", side="right", showgrid=False),
@@ -2955,7 +2955,7 @@ with search_tab:
                     res_cats, x="Category", y="Count", color="Count",
                     color_continuous_scale="Viridis", text_auto=True,
                 )
-                fig_res.update_layout(**DARK, height=160, margin=dict(t=10, b=10, l=10, r=10), showlegend=False, xaxis_title=None)
+                fig_res.update_layout(**DARK, height=160, margin=dict(t=30, b=10, l=10, r=10), showlegend=False, xaxis_title=None)
                 st.plotly_chart(fig_res, width="stretch")
 
             # ── Results as cards ──
