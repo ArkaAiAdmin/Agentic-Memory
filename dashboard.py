@@ -2472,6 +2472,18 @@ with cron_tab:
         "nightly": 86400, "weekly Mon 05:00": 604800,
     }
 
+    # Mapping from dashboard job names to task_queue task types
+    _JOB_TASK_MAP: dict[str, str] = {
+        "heartbeat": "cron_heartbeat",
+        "integrity": "cron_integrity_check",
+        "worker": "cron_monitor_task_queue",
+        "fts-rebuild": "cron_rebuild_fts",
+        "emb-recompute": "cron_embedding_recompute",
+        "crdt-sync": "cron_crdt_sync",
+        "digest": "cron_daily_digest",
+        "ltr-trainer": "cron_ltr_train",
+    }
+
     def _check_log(fp: Path, n: int = 20) -> int:
         try:
             tail = fp.read_bytes().splitlines()[-n:]
@@ -2578,7 +2590,25 @@ with cron_tab:
                 with col_trig:
                     job_name = job["name"]
                     if st.button("\u25b6\ufe0f Trigger now", key=f"run_{job_name}"):
-                        st.info(f"Run `agentic-memory memory_maintenance(operation='{job_name}', confirm=true)` from CLI")
+                        task_type = _JOB_TASK_MAP.get(job_name)
+                        if not task_type:
+                            st.warning(f"No task mapping for '{job_name}'")
+                        else:
+                            try:
+                                from infra.db_write_queue import sqlite_write_queue
+                                from background.background_queue import init_task_queue, enqueue_task as _enqueue
+                                _conn = sqlite_write_queue.start_session(MEM_DIR / "memory.db")
+                                try:
+                                    init_task_queue(_conn)
+                                    task_id = _enqueue(_conn, task_type, payload={"source": "dashboard"})
+                                    if isinstance(task_id, dict):
+                                        st.warning(f"Queue full or rejected: {task_id.get('reason', '?')}")
+                                    else:
+                                        st.success(f"Enqueued {task_type} (id={task_id}). Worker will pick it up.")
+                                finally:
+                                    _conn.close()
+                            except Exception as _e:
+                                st.error(f"Failed to enqueue: {_e}")
                 with col_cmd:
                     st.code(f"agentic-memory memory_maintenance(operation=\"{job_name}\", confirm=true)", language="text")
             else:
