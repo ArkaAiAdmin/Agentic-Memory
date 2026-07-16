@@ -384,7 +384,7 @@ def crdt_save(
     # would deadlock the write queue (both need a session).
     _has_table = False
     try:
-        with open_db(db_path, timeout=10.0) as _probe:
+        with open_db(db_path, timeout=10.0, tenant_id=_tid) as _probe:
             _probe.execute("PRAGMA foreign_keys=ON")
             _has_table = (
                 _probe.execute(
@@ -413,13 +413,14 @@ def crdt_save(
                 remote_vv_str=remote_vv_str,
                 remote_logical_clock=remote_logical_clock,
                 conflict_policy=conflict_policy,
+                tenant_id=_tid,
             )
 
             if _result.get("applied"):
                 try:
                     from infra._lazy_imports import open_db
 
-                    with open_db(db_path, timeout=10.0) as _proj_conn:
+                    with open_db(db_path, timeout=10.0, tenant_id=_tid) as _proj_conn:
                         _updated = project_crdt_to_sql(_proj_conn, note_id)
                         if _updated:
                             from background.background_queue import (
