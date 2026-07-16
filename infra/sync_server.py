@@ -544,13 +544,39 @@ class _SyncHandler(BaseHTTPRequestHandler):
 
         try:
             from crdt.crdt_merge import crdt_sync_all
+            from crdt.crdt_field import crdt_field_save
 
+            notes, field_crdt_map = self._normalize_notes(remote_notes)
             result = crdt_sync_all(
                 self.db_path,
                 remote_agent,
                 self.server_agent_id,
-                self._normalize_notes(remote_notes),
+                notes,
             )
+
+            # Sprint 1.4: Apply field_crdt data after note-level merge
+            field_applied = 0
+            for note_id, field_entries in field_crdt_map.items():
+                if note_id in notes:
+                    for field_entry in field_entries:
+                        try:
+                            crdt_field_save(
+                                self.db_path,
+                                note_id,
+                                field_entry.get("value", ""),
+                                remote_agent,
+                                self.server_agent_id,
+                                source_file=field_entry.get("source_file", ""),
+                                category=field_entry.get("category", ""),
+                                remote_vv_str=field_entry.get("version_vector", "{}"),
+                                remote_logical_clock=field_entry.get("logical_clock", 0),
+                                tags=field_entry.get("tags"),
+                            )
+                            field_applied += 1
+                        except Exception as field_exc:
+                            logger.warning("sync_server: field_crdt apply failed for %s: %s", note_id, field_exc)
+
+            result["field_crdt_applied"] = field_applied
             self._json_response(result)
         except Exception as e:
             logger.error("sync_server: push merge failed: %s", e)
@@ -776,9 +802,14 @@ class _SyncHandler(BaseHTTPRequestHandler):
             self._error(str(e), 500)
 
     @staticmethod
-    def _normalize_notes(raw: dict) -> dict:
-        """Normalize incoming note data into crdt_sync_all's expected format."""
+    def _normalize_notes(raw: dict) -> tuple[dict, dict]:
+        """Normalize incoming note data into crdt_sync_all's expected format.
+
+        Sprint 1.4: Returns (notes, field_crdt_map) where field_crdt_map
+        contains per-note field_crdt data for separate application.
+        """
         notes: dict = {}
+        field_crdt_map: dict = {}
         for note_id, data_list in raw.items():
             if isinstance(data_list, dict):
                 notes[note_id] = (
@@ -788,6 +819,9 @@ class _SyncHandler(BaseHTTPRequestHandler):
                     data_list.get("version_vector", "{}"),
                     int(data_list.get("sender_clock", 0)),
                 )
+                # Sprint 1.4: Preserve field_crdt for separate application
+                if "field_crdt" in data_list:
+                    field_crdt_map[note_id] = data_list["field_crdt"]
             elif isinstance(data_list, (list, tuple)) and len(data_list) >= 5:
                 notes[note_id] = (
                     str(data_list[0]),
@@ -796,7 +830,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                     str(data_list[3]),
                     int(data_list[4]),
                 )
-        return notes
+        return notes, field_crdt_map
 
     def _handle_skill_changes(self, query: dict) -> None:
         """GET /skills/changes — return skills updated since a given timestamp.
