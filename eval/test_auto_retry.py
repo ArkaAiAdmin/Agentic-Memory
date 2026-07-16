@@ -16,8 +16,6 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -76,9 +74,6 @@ def test_auto_retry_re_enqueues_failed_task(tmp_path: Path) -> None:
         ("test_auto_retry_type", past_timestamp),
     )
     conn.commit()
-    failed_id = conn.execute(
-        "SELECT id FROM task_queue WHERE status = 'failed' LIMIT 1"
-    ).fetchone()[0]
 
     env = os.environ.copy()
     env["MEMORY_DB_PATH"] = str(db_path)
@@ -205,6 +200,32 @@ def test_auto_retry_no_config_type(tmp_path: Path) -> None:
     assert data["total"] == 0
 
     conn.close()
+
+
+def test_retry_wait_jitter_bounds() -> None:
+    """_retry_wait_s jitters within [base*JITTER_MIN, base*JITTER_MAX]."""
+    import cron.cron_retry_dead_tasks as rt
+
+    base = 900
+    samples = [rt._retry_wait_s(base) for _ in range(500)]
+    lo, hi = base * rt.JITTER_MIN, base * rt.JITTER_MAX
+    assert all(lo - 1e-9 <= s <= hi + 1e-9 for s in samples)
+    # Should vary across samples (not a constant).
+    assert max(samples) - min(samples) > base * 0.1
+
+
+def test_retry_jitter_never_shortens_base_window() -> None:
+    """Jitter only lengthens (or equals) the base wait; retries never
+    fire earlier than auto_retry_after_s would on its own."""
+    import cron.cron_retry_dead_tasks as rt
+
+    # Pin jitter to the minimum factor so the wait is shortest.
+    rt.JITTER_MIN = 0.5
+    rt.JITTER_MAX = 0.5
+    assert rt._retry_wait_s(900) == 450.0
+    # Jitter can never drop below base * JITTER_MIN, so a caller using
+    # the returned value as a floor is safe.
+    assert rt._retry_wait_s(900) >= 900 * 0.5
 
 
 def test_auto_retry_too_soon(tmp_path: Path) -> None:

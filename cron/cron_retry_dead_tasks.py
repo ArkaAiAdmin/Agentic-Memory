@@ -6,7 +6,9 @@ and re-enqueues them if auto-retry is configured for their task_type
 in the cron_task_timeouts table (migration 063).
 
 Each task type gets up to auto_retry_max_extra extra retry rounds,
-spaced by auto_retry_after_s seconds after the previous failure.
+spaced by auto_retry_after_s seconds (jittered, see JITTER_MIN/MAX)
+after the previous failure. The jitter spreads retries for a burst of
+same-type failures so they don't all fire at once.
 
 Usage:
     python cron/cron_retry_dead_tasks.py          # normal run
@@ -18,8 +20,8 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import sys
-import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -27,6 +29,17 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from cron._flock import acquire_lock_or_exit
 from infra.infrastructure import resolve_active_memory_dir
+
+# Jitter factor applied to auto_retry_after_s so that a burst of failures
+# for the same task type does not retry in lockstep (thundering herd).
+# Effective wait = auto_retry_after_s * uniform(JITTER_MIN, JITTER_MAX).
+JITTER_MIN = float(os.environ.get("MEMORY_RETRY_JITTER_MIN", "0.5"))
+JITTER_MAX = float(os.environ.get("MEMORY_RETRY_JITTER_MAX", "1.5"))
+
+
+def _retry_wait_s(base: int) -> float:
+    """Effective retry wait (seconds) for a base auto_retry_after_s, with jitter."""
+    return base * random.uniform(JITTER_MIN, JITTER_MAX)
 
 
 def _get_db_path() -> Path:
@@ -64,8 +77,6 @@ def retry_dead_tasks(
             "WHERE t.status = 'failed'"
         ).fetchall()
 
-        now = time.time()
-
         for row in failed:
             task_id = row["id"]
             task_type = row["task_type"]
@@ -83,11 +94,15 @@ def retry_dead_tasks(
 
             # Check if enough time has passed since the task failed.
             # Use SQLite's datetime comparison to avoid timezone issues.
+            # The wait window is jittered (auto_retry_after_s * uniform
+            # factor) so a burst of same-type failures retries spread out
+            # rather than in lockstep.
             completed_at_str = row["completed_at"]
             if completed_at_str:
+                wait_s = _retry_wait_s(auto_retry_after_s)
                 row_still_fresh = conn.execute(
                     "SELECT 1 WHERE datetime(?) > datetime('now', ?)",
-                    (completed_at_str, f"-{auto_retry_after_s} seconds"),
+                    (completed_at_str, f"-{wait_s} seconds"),
                 ).fetchone()
                 if row_still_fresh:
                     continue
