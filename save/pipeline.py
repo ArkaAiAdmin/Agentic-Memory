@@ -1386,35 +1386,6 @@ def _try_saga_persist(
     )
 
 
-def _audit_save_failure(
-    *,
-    db_path_obj,
-    note_id: str,
-    category: str,
-    title_slug: str,
-    _start_time: float,
-) -> None:
-    """Fire-and-forget audit of a save failure.
-
-    This is the very last thing save_memory does on the error path.
-    It must **never** raise — an audit failure must not mask the
-    original save failure.
-    """
-    try:
-        import time
-        elapsed = time.time() - _start_time
-        logger.debug(
-            "audit_save_failure: note_id=%s category=%s slug=%s elapsed=%.3fs db=%s",
-            note_id[:200] if note_id else "",
-            category,
-            title_slug,
-            elapsed,
-            db_path_obj,
-        )
-    except Exception as _audit_exc:  # noqa: BLE001 — must never raise (audit guard)
-        logger.warning("audit_save_failure failed (non-fatal): %s", _audit_exc)
-
-
 def _persist_via_saga(
     *,
     conn,

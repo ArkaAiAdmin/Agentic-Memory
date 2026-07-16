@@ -361,7 +361,6 @@ class TestSavePipelineSagaHelpers(unittest.TestCase):
 
     * _is_saga_enabled() — config check
     * _try_saga_persist() — saga call wiring
-    * _audit_save_failure() — error audit
 
     The fallback policy (_apply_saga_fallback_policy) and legacy
     _persist_to_db were removed 2026-07-07 — a failed saga always
@@ -377,35 +376,6 @@ class TestSavePipelineSagaHelpers(unittest.TestCase):
         """_is_saga_enabled() returns a boolean without raising."""
         result = self._sp._is_saga_enabled()
         self.assertIsInstance(result, bool)
-
-    def test_audit_save_failure_swallows_exceptions(self):
-        """_audit_save_failure must not raise even if audit fails.
-
-        A non-existent path will cause the audit call to fail, but the
-        helper must swallow that — the very last thing save_memory
-        does is audit, and an audit failure must never become a save
-        failure.
-        """
-        # No real DB, audit will fail, but the helper must swallow it.
-        self._sp._audit_save_failure(
-            db_path_obj=Path("/nonexistent/memory.db"),
-            note_id="lessons/foo",
-            category="lessons",
-            title_slug="foo",
-            _start_time=0.0,
-        )
-        # If we get here without an exception, the test passes.
-
-    def test_audit_save_failure_truncates_long_envelope(self):
-        """_audit_save_failure should not raise even for very long strings."""
-        long_err = "Error [DB_ERROR]: " + "x" * 5000
-        self._sp._audit_save_failure(
-            db_path_obj=Path("/nonexistent/memory.db"),
-            note_id=long_err,
-            category="lessons",
-            title_slug="foo",
-            _start_time=0.0,
-        )
 
     def test_persist_via_saga_signature(self):
         """The helper takes only keyword args, no positional surprises."""

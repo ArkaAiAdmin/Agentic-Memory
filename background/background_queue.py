@@ -54,10 +54,15 @@ class RejectPolicy(str, Enum):
 
 # Default queue cap (can be overridden via config at runtime).
 # Set to 0 to disable the cap entirely.
-DEFAULT_MAX_QUEUE_SIZE: int = 500
+DEFAULT_MAX_QUEUE_SIZE: int = 200
 
 # Default backpressure policy when the cap is reached.
-DEFAULT_REJECT_POLICY: RejectPolicy = RejectPolicy.REJECT_NEW
+# REJECT_OLD evicts the lowest-priority / oldest pending task to make
+# room — this is safer than REJECT_NEW when the caller's task is
+# idempotent and the queue backs up because the worker is slow, not
+# because the task is unwanted. Cron health-monitor tasks will
+# naturally re-enqueue on the next tick if evicted.
+DEFAULT_REJECT_POLICY: RejectPolicy = RejectPolicy.REJECT_OLD
 
 # Backpressure wait timeout for BLOCK policy (seconds).
 BLOCK_TIMEOUT_S: float = 5.0
