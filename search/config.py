@@ -51,6 +51,8 @@ class SearchConfig(BaseModel):
     ce_blend: float = 0.85
     ce_chunk_blend: float = 0.7
     embedding_score_threshold: float = 0.25
+    embedding_prefilter_enabled: bool = True
+    embedding_prefilter_k: int = 200
     temporal_decay_weight: float = 0.15
 
 
@@ -116,6 +118,8 @@ def _build_search_config() -> SearchConfig:
         embedding_score_threshold=_coerce_float(
             getattr(cfg, "embedding_score_threshold", 0.25), 0.25
         ),
+        embedding_prefilter_enabled=bool(getattr(cfg, "embedding_prefilter_enabled", True)),
+        embedding_prefilter_k=int(getattr(cfg, "embedding_prefilter_k", 200)),
         temporal_decay_weight=_coerce_float(
             getattr(cfg, "temporal_decay_weight", 0.15), 0.15
         ),

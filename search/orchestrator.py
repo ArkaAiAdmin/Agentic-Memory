@@ -902,6 +902,14 @@ def search_memories(
             hybrid = False
 
         else:  # mode == "hybrid" (or fallback)
+            _prefilter_id_set: set[str] = set()
+            try:
+                from search.phases.retrieve import _prefilter_ids as _pf  # noqa
+
+                _prefilter_id_set = _pf(db, normalized_query, db_path, limit * 10)
+            except Exception as _pf_exc:
+                logger.debug("embedding prefilter skipped: %s", _pf_exc)
+
             if _search_parallel and include_facts:
                 def _fts_worker() -> list:
                     conn = connection_pool.get(str(db_path), timeout=10.0, tenant_id=tenant_id)
@@ -913,6 +921,7 @@ def search_memories(
                             tag_filter_sql=_tag_filter_sql,
                             tag_filter_params=tuple(_tag_filter_params),
                             category=category or None,
+                            prefilter_ids=_prefilter_id_set or None,
                         )
                     except Exception as _fts_exc:
                         _phase_inc("search.fts", _fts_exc)
@@ -952,6 +961,7 @@ def search_memories(
                     tag_filter_sql=_tag_filter_sql,
                     tag_filter_params=tuple(_tag_filter_params),
                     category=category or None,
+                    prefilter_ids=_prefilter_id_set or None,
                 )
                 _record_phase_latency("search.fts", _t0)
                 if include_facts:

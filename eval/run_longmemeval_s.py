@@ -32,11 +32,11 @@ DATASET_PATH = EVAL_ROOT / "datasets" / "longmemeval_s_synth.jsonl"
 sys.path.insert(0, str(EVAL_ROOT.parent))
 import memory_mcp  # noqa: E402
 
-# Bug shim: memory_mcp.search_memories references an undefined global
-# `safety_wiring` at line 1313 (`+ f":sw={int(safety_wiring)}"`), causing a
-# NameError on every call. Set it to False so the cache key uses a stable
-# value and the function completes. This is a runtime shim only — the
-# production file is not modified.
+# Defensive guard: `memory_mcp` re-exports `safety_wiring` from the cache
+# module (memory_mcp.py:74). Older revisions referenced an undefined global
+# and crashed on every search call; that is fixed at source, but we keep the
+# guard so a future regression fails closed with a stable cache key instead
+# of a NameError.
 if not hasattr(memory_mcp, "safety_wiring"):
     setattr(memory_mcp, "safety_wiring", False)
 
@@ -527,6 +527,73 @@ SYNTHETIC = [
             "Sunday ritual: Konditori on Smith Street in Cobble Hill is my Sunday morning spot. The cardamom bun is the best pastry in the borough and they do a cortado that rivals any specialty shop. I usually sit at the same table in the back, work on a personal writing project for an hour, then head home to make lunch."
         ],
     },
+    # ---- Relational / multi-condition AND queries (gold_ids span 2+ memories) ----
+    {
+        "question_id": "r01",
+        "query": "what coffee does the person who introduced me to rock climbing drink",
+        "answer": "Sey Coffee",
+        "sessions": [
+            "Maya introduced me to rock climbing at the Brooklyn Boulders gym last spring. We've been climbing partners ever since and she's the one who got me hooked on it.",
+            "My coffee loyalty is absolute: Sey Coffee in Bushwick is the only pour-over I'll drive across the borough for. Their washed Ethiopians are untouchable.",
+            "Unrelated: I started learning the banjo during the lockdown and it's been a quiet joy.",
+        ],
+        "gold_ids": ["lmeval/r01-1", "lmeval/r01-2"],
+    },
+    {
+        "question_id": "r02",
+        "query": "which coworker from the platform team also goes to the jazz show at Smalls",
+        "answer": "Sarah",
+        "sessions": [
+            "Sarah from the platform team and I pair on the ingestion service every Tuesday. She's sharp and unflappable under incident pressure.",
+            "My partner and I caught a late set at Smalls jazz club in the Village last weekend. Sarah was there too — turns out she's a diehard jazz head and knows the bassists by name.",
+            "Unrelated: the new espresso machine at the office makes a respectable flat white.",
+        ],
+        "gold_ids": ["lmeval/r02-1", "lmeval/r02-2"],
+    },
+    {
+        "question_id": "r03",
+        "query": "where did the friend who recommended the Three-Body Problem live",
+        "answer": "Austin",
+        "sessions": [
+            "Diego, my oldest friend from high school, pushed me to read The Three-Body Problem and lent me his copy. Best sci-fi recommendation I've gotten in years.",
+            "Diego relocated to Austin about three years ago for a robotics startup and keeps trying to get me to visit.",
+            "Unrelated: I've been meal-prepping on Sundays to save money during the week.",
+        ],
+        "gold_ids": ["lmeval/r03-1", "lmeval/r03-2"],
+    },
+    {
+        "question_id": "r04",
+        "query": "what dog breed belongs to the neighbor who also bakes sourdough",
+        "answer": "golden retriever",
+        "sessions": [
+            "Linda next door has a golden retriever named Biscuit who greets me every morning on the stoop. Friendly to a fault.",
+            "Linda's other obsession is sourdough — she dropped off a loaf last week and the crumb was textbook. She runs a tiny bake-for-neighbors club.",
+            "Unrelated: my gym switched to a new booking app and it's been a headache.",
+        ],
+        "gold_ids": ["lmeval/r04-1", "lmeval/r04-2"],
+    },
+    {
+        "question_id": "r05",
+        "query": "which barista remembered my oat milk order and also works near the awning",
+        "answer": "Devoción",
+        "sessions": [
+            "The barista at the corner shop remembers my oat milk latte order without asking now. Small touch that makes the commute bearable.",
+            "Devoción on Williamsburg's main drag has the best pour-over and a gorgeous plant-filled back room. The morning awning setup out front is where I usually sit.",
+            "Unrelated: I finally finished the taxes this weekend, a weight off.",
+        ],
+        "gold_ids": ["lmeval/r05-1", "lmeval/r05-2"],
+    },
+    {
+        "question_id": "r06",
+        "query": "what car does the person who moved to Portland from Boston drive",
+        "answer": "Subaru Outback",
+        "sessions": [
+            "I was born in Boston and lived there through my twenties before I moved to Portland for the mountains and the rain.",
+            "Out here everyone drives a Subaru and I finally caved — picked up a Subaru Outback Wilderness and it handles the logging roads to the trailheads perfectly.",
+            "Unrelated: the local co-op has the best miso paste I've found outside Japan.",
+        ],
+        "gold_ids": ["lmeval/r06-1", "lmeval/r06-2"],
+    },
 ]
 
 
@@ -664,6 +731,37 @@ def score_hit(top_content: str | None, expected_answer: str) -> tuple[int, list[
     return (1 if matches else 0), matches
 
 
+def score_hit_topk(top_contents: list[str], expected_answer: str) -> tuple[int, list[str]]:
+    """Recall@k signal: 1 if the answer tokens appear in ANY of the top-k
+    returned result contents (not just the single top-1 result).  Catches
+    cases where the right memory is retrieved in the top-k but not ranked #1.
+    """
+    answer_tokens = [t for t in normalize_text(expected_answer).split() if t]
+    if not answer_tokens:
+        return 0, []
+    for content in top_contents:
+        norm = set(normalize_text(content).split())
+        matches = [t for t in answer_tokens if t in norm]
+        if matches:
+            return 1, matches
+    return 0, []
+
+
+def score_relational(top_ids: list[str], gold_ids: list[str]) -> tuple[float, int]:
+    """Strict AND coverage for relational/multi-condition queries.
+
+    ``gold_ids`` is the set of memory ids that *together* answer the query
+    (e.g. "the person who introduced me to rock climbing also likes what
+    coffee" -> 2 memories joined via KG).  Returns the fraction of gold
+    memories present in the top-k result set.  A single-hop query with no
+    ``gold_ids`` is not scored here (returns 0.0, 0 and is ignored upstream).
+    """
+    if not gold_ids:
+        return 0.0, 0
+    present = sum(1 for gid in gold_ids if gid in top_ids)
+    return present / len(gold_ids), present
+
+
 def main():
     # Write synthetic dataset to disk for the record
     DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -681,6 +779,11 @@ def main():
     per_question: list[dict] = []
     hybrid_hits = 0
     baseline_hits = 0
+    hybrid_recall_hits = 0
+    baseline_recall_hits = 0
+    hybrid_relational_hits = 0.0
+    baseline_relational_hits = 0.0
+    relational_total = 0
     latencies_ms: list[float] = []
     t_start = time.perf_counter()
 
@@ -735,18 +838,43 @@ def main():
         latencies_ms.append(t_baseline_ms)
 
         # Score
-        top_hybrid = (r_hybrid.get("results") or [{}])[0]
-        top_baseline = (r_baseline.get("results") or [{}])[0]
-        # search_memories doesn't return 'content' in result dicts; fetch
-        # it from the DB using the returned id.
+        # Collect full top-k (limit=10) id + content lists so we can measure
+        # recall@k coverage and relational AND coverage, not just top-1.
+        hybrid_results = r_hybrid.get("results") or []
+        baseline_results = r_baseline.get("results") or []
+        hybrid_ids = [r.get("id", "") for r in hybrid_results]
+        baseline_ids = [r.get("id", "") for r in baseline_results]
+        hybrid_contents = [fetch_content(db_path, rid) for rid in hybrid_ids]
+        baseline_contents = [fetch_content(db_path, rid) for rid in baseline_ids]
+
+        top_hybrid = hybrid_results[0] if hybrid_results else {}
+        top_baseline = baseline_results[0] if baseline_results else {}
         hybrid_id = top_hybrid.get("id", "")
         baseline_id = top_baseline.get("id", "")
-        hybrid_content = fetch_content(db_path, hybrid_id)
-        baseline_content = fetch_content(db_path, baseline_id)
+        hybrid_content = hybrid_contents[0] if hybrid_contents else ""
+        baseline_content = baseline_contents[0] if baseline_contents else ""
+
+        # Top-1 precision (existing signal)
         h_hit, h_matches = score_hit(hybrid_content, answer)
         b_hit, b_matches = score_hit(baseline_content, answer)
         hybrid_hits += h_hit
         baseline_hits += b_hit
+
+        # Recall@k (top-k coverage) — is the answer anywhere in the top-10?
+        h_recall, _ = score_hit_topk(hybrid_contents, answer)
+        b_recall, _ = score_hit_topk(baseline_contents, answer)
+        hybrid_recall_hits += h_recall
+        baseline_recall_hits += b_recall
+
+        # Relational / multi-condition AND coverage (only for queries that
+        # declare a gold set spanning multiple memories).
+        gold_ids = q.get("gold_ids", [])
+        h_rel, h_rel_present = score_relational(hybrid_ids, gold_ids)
+        b_rel, b_rel_present = score_relational(baseline_ids, gold_ids)
+        if gold_ids:
+            relational_total += 1
+            hybrid_relational_hits += h_rel
+            baseline_relational_hits += b_rel
 
         per_question.append(
             {
@@ -764,6 +892,10 @@ def main():
                 "hybrid_matched_tokens": h_matches,
                 "baseline_hit": b_hit,
                 "baseline_matched_tokens": b_matches,
+                "hybrid_recall_at_k": h_recall,
+                "baseline_recall_at_k": b_recall,
+                "relational_coverage": round(h_rel, 2) if gold_ids else None,
+                "relational_gold_ids": gold_ids,
                 "hybrid_top_id": hybrid_id,
                 "baseline_top_id": baseline_id,
                 "hybrid_latency_ms": round(t_hybrid_ms, 2),
@@ -776,6 +908,10 @@ def main():
     hybrid_score = hybrid_hits / n
     baseline_score = baseline_hits / n
     lift = hybrid_score - baseline_score
+    hybrid_recall = hybrid_recall_hits / n
+    baseline_recall = baseline_recall_hits / n
+    hybrid_rel_score = (hybrid_relational_hits / relational_total) if relational_total else None
+    baseline_rel_score = (baseline_relational_hits / relational_total) if relational_total else None
 
     # Percentiles over all latencies (hybrid + baseline)
     p50 = sorted(latencies_ms)[int(len(latencies_ms) * 0.5)]
@@ -799,6 +935,12 @@ def main():
         "hybrid_score": round(hybrid_score, 4),
         "baseline_ft5_score": round(baseline_score, 4),
         "hybrid_minus_baseline": round(lift, 4),
+        "hybrid_recall_at_k": round(hybrid_recall, 4),
+        "baseline_recall_at_k": round(baseline_recall, 4),
+        "hybrid_minus_baseline_recall": round(hybrid_recall - baseline_recall, 4),
+        "relational_question_count": relational_total,
+        "hybrid_relational_coverage": round(hybrid_rel_score, 4) if hybrid_rel_score is not None else None,
+        "baseline_relational_coverage": round(baseline_rel_score, 4) if baseline_rel_score is not None else None,
         "wall_time_seconds": round(wall_time_s, 3),
         "p50_p95_ms": [round(p50, 1), round(p95, 1)],
         "avg_latency_ms_per_query": round(avg_latency_ms, 1),

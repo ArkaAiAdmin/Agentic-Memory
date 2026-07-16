@@ -1,27 +1,27 @@
 {
   "schema_version": 1,
-  "timestamp": "2026-06-07T11:48:23+00:00",
+  "timestamp": "2026-07-16T13:00:19+00:00",
   "benchmark": "LongMemEval_S",
   "source": "synthetic",
-  "synthetic_dataset_path": "eval/datasets/longmemeval_s_synth.jsonl",
+  "synthetic_dataset_path": "/Users/arka/.config/agentic-memory/eval/datasets/longmemeval_s_synth.jsonl",
   "question_count": 60,
   "hybrid_score": 0.9833,
   "baseline_ft5_score": 0.9833,
   "hybrid_minus_baseline": 0.0,
-  "wall_time_seconds": 1.207,
+  "wall_time_seconds": 115.748,
   "p50_p95_ms": [
-    5.8,
-    7.6
+    742.0,
+    1178.1
   ],
-  "avg_latency_ms_per_query": 10.1,
+  "avg_latency_ms_per_query": 964.6,
   "per_question_results": [
     {
       "qid": "s01",
       "query": "Sarah daughter",
       "answer": "Emma",
       "top_result_id": "lmeval/s01-1",
-      "top_score": 0.3900009469339516,
-      "top_content_preview": "We had lunch with Sarah from the platform team today. She showed me a photo on her phone of her daughter Emma dressed up for her school play last Friday. The ki…",
+      "top_score": 0.5368053587685024,
+      "top_content_preview": "We had lunch with Sarah from the platform team today. She showed me a photo on her phone of her daughter Emma dressed up for her school play last Friday. The ki\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "emma"
@@ -32,16 +32,16 @@
       ],
       "hybrid_top_id": "lmeval/s01-1",
       "baseline_top_id": "lmeval/s01-1",
-      "hybrid_latency_ms": 687.94,
-      "baseline_latency_ms": 0.05
+      "hybrid_latency_ms": 24233.15,
+      "baseline_latency_ms": 642.24
     },
     {
       "qid": "s02",
       "query": "promoted senior engineer",
       "answer": "March 2024",
       "top_result_id": "lmeval/s02-1",
-      "top_score": 0.47125669061009573,
-      "top_content_preview": "Career update: I officially moved up to senior engineer in March 2024 after the Q1 review cycle. My manager Priya had flagged the promotion back in December and…",
+      "top_score": 0.5640239605454304,
+      "top_content_preview": "Career update: I officially moved up to senior engineer in March 2024 after the Q1 review cycle. My manager Priya had flagged the promotion back in December and\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "march",
@@ -54,16 +54,16 @@
       ],
       "hybrid_top_id": "lmeval/s02-1",
       "baseline_top_id": "lmeval/s02-1",
-      "hybrid_latency_ms": 9.19,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 834.54,
+      "baseline_latency_ms": 624.64
     },
     {
       "qid": "s03",
       "query": "vacation last summer Lisbon",
       "answer": "Lisbon",
       "top_result_id": "lmeval/s03-1",
-      "top_score": 0.29988292406119876,
-      "top_content_preview": "Trip recap from August: I spent a week in Lisbon with my college roommate Diego. We stayed in a tiny apartment in Alfama and ate pastéis de nata almost every mo…",
+      "top_score": 0.313377378206308,
+      "top_content_preview": "Trip recap from August: I spent a week in Lisbon with my college roommate Diego. We stayed in a tiny apartment in Alfama and ate past\u00e9is de nata almost every mo\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "lisbon"
@@ -74,16 +74,16 @@
       ],
       "hybrid_top_id": "lmeval/s03-1",
       "baseline_top_id": "lmeval/s03-1",
-      "hybrid_latency_ms": 7.64,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 840.49,
+      "baseline_latency_ms": 643.97
     },
     {
       "qid": "s04",
       "query": "oat milk latte order",
       "answer": "oat milk latte",
       "top_result_id": "lmeval/s04-1",
-      "top_score": 0.42120172796663835,
-      "top_content_preview": "Quick morning note before standup: I usually grab an oat milk latte from the place on the corner of Mission and 24th, the one with the green awning. The barista…",
+      "top_score": 0.5538825650892856,
+      "top_content_preview": "Quick morning note before standup: I usually grab an oat milk latte from the place on the corner of Mission and 24th, the one with the green awning. The barista\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "oat",
@@ -98,16 +98,16 @@
       ],
       "hybrid_top_id": "lmeval/s04-1",
       "baseline_top_id": "lmeval/s04-1",
-      "hybrid_latency_ms": 6.99,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 967.55,
+      "baseline_latency_ms": 630.27
     },
     {
       "qid": "s05",
       "query": "rock climbing recently",
       "answer": "rock climbing",
       "top_result_id": "lmeval/s05-1",
-      "top_score": 0.5283004220696017,
-      "top_content_preview": "New hobby unlocked: I started rock climbing about six weeks ago at the Brooklyn Boulders gym near the office. Started with top-roping and worked my way up to a …",
+      "top_score": 0.4937080954791442,
+      "top_content_preview": "New hobby unlocked: I started rock climbing about six weeks ago at the Brooklyn Boulders gym near the office. Started with top-roping and worked my way up to a \u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "rock",
@@ -120,16 +120,16 @@
       ],
       "hybrid_top_id": "lmeval/s05-1",
       "baseline_top_id": "lmeval/s05-1",
-      "hybrid_latency_ms": 6.98,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 813.07,
+      "baseline_latency_ms": 617.16
     },
     {
       "qid": "s06",
       "query": "Han Dynasty Italian",
       "answer": "Han Dynasty",
       "top_result_id": "lmeval/s06-1",
-      "top_score": 0.4085730577678818,
-      "top_content_preview": "I keep coming back to Han Dynasty in the East Village for the dan dan noodles. My friend Maya introduced me to the spot two years ago and now I drag every visit…",
+      "top_score": 0.3907521051623566,
+      "top_content_preview": "I keep coming back to Han Dynasty in the East Village for the dan dan noodles. My friend Maya introduced me to the spot two years ago and now I drag every visit\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "han",
@@ -142,16 +142,16 @@
       ],
       "hybrid_top_id": "lmeval/s06-1",
       "baseline_top_id": "lmeval/s06-1",
-      "hybrid_latency_ms": 6.97,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 742.82,
+      "baseline_latency_ms": 656.26
     },
     {
       "qid": "s07",
       "query": "Three-Body Problem reading",
       "answer": "The Three-Body Problem",
       "top_result_id": "lmeval/s07-1",
-      "top_score": 0.4134012719705914,
-      "top_content_preview": "Reading log: I am halfway through The Three-Body Problem by Liu Cixin. The cultural revolution opening was rougher than I expected but the virtual reality game …",
+      "top_score": 0.628633178313891,
+      "top_content_preview": "Reading log: I am halfway through The Three-Body Problem by Liu Cixin. The cultural revolution opening was rougher than I expected but the virtual reality game \u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "the",
@@ -168,16 +168,16 @@
       ],
       "hybrid_top_id": "lmeval/s07-1",
       "baseline_top_id": "lmeval/s07-1",
-      "hybrid_latency_ms": 6.22,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 802.12,
+      "baseline_latency_ms": 714.08
     },
     {
       "qid": "s08",
       "query": "cat vet",
       "answer": "Mochi",
       "top_result_id": "lmeval/s08-1",
-      "top_score": 0.4103361706526664,
-      "top_content_preview": "Vet appointment update: took Mochi in for his annual checkup on Tuesday. The vet said his weight is stable at 11 pounds and his teeth look great for a seven-yea…",
+      "top_score": 0.4414688145729925,
+      "top_content_preview": "Vet appointment update: took Mochi in for his annual checkup on Tuesday. The vet said his weight is stable at 11 pounds and his teeth look great for a seven-yea\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "mochi"
@@ -188,16 +188,16 @@
       ],
       "hybrid_top_id": "lmeval/s08-1",
       "baseline_top_id": "lmeval/s08-1",
-      "hybrid_latency_ms": 6.56,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 817.57,
+      "baseline_latency_ms": 648.14
     },
     {
       "qid": "s09",
       "query": "apartment unit buzzer",
       "answer": "7B",
       "top_result_id": "lmeval/s09-1",
-      "top_score": 0.2988994588674524,
-      "top_content_preview": "Package was misdelivered again. The Postman left it at 7C this time even though the unit number is clearly 7B on the buzzer. I had to go down three flights to r…",
+      "top_score": 0.3037967757133344,
+      "top_content_preview": "Package was misdelivered again. The Postman left it at 7C this time even though the unit number is clearly 7B on the buzzer. I had to go down three flights to r\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "7b"
@@ -208,32 +208,32 @@
       ],
       "hybrid_top_id": "lmeval/s09-1",
       "baseline_top_id": "lmeval/s09-1",
-      "hybrid_latency_ms": 6.65,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 1042.22,
+      "baseline_latency_ms": 707.67
     },
     {
       "qid": "s10",
       "query": "Thanksgiving siblings family",
       "answer": "two",
       "top_result_id": "lmeval/s10-1",
-      "top_score": 0.46388646314253884,
-      "top_content_preview": "Family gathering recap: Thanksgiving at my parents' place in Portland this year. All three of us kids were there — my older brother Marcus, my younger sister Li…",
+      "top_score": 0.5711096146004041,
+      "top_content_preview": "Family gathering recap: Thanksgiving at my parents' place in Portland this year. All three of us kids were there \u2014 my older brother Marcus, my younger sister Li\u2026",
       "hybrid_hit": 0,
       "hybrid_matched_tokens": [],
       "baseline_hit": 0,
       "baseline_matched_tokens": [],
       "hybrid_top_id": "lmeval/s10-1",
       "baseline_top_id": "lmeval/s10-1",
-      "hybrid_latency_ms": 6.39,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 808.65,
+      "baseline_latency_ms": 678.14
     },
     {
       "qid": "s11",
       "query": "dentist cleaning",
       "answer": "Dr. Patel",
       "top_result_id": "lmeval/s11-1",
-      "top_score": 0.4109410993845981,
-      "top_content_preview": "Six month cleaning done. Dr. Patel said the new electric toothbrush is doing its job — much less plaque buildup than last visit. No cavities this round which is…",
+      "top_score": 0.3828871004339882,
+      "top_content_preview": "Six month cleaning done. Dr. Patel said the new electric toothbrush is doing its job \u2014 much less plaque buildup than last visit. No cavities this round which is\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "dr",
@@ -246,16 +246,16 @@
       ],
       "hybrid_top_id": "lmeval/s11-1",
       "baseline_top_id": "lmeval/s11-1",
-      "hybrid_latency_ms": 6.66,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 758.84,
+      "baseline_latency_ms": 654.85
     },
     {
       "qid": "s12",
       "query": "moved New York current job",
       "answer": "New York",
       "top_result_id": "lmeval/s12-1",
-      "top_score": 0.4153947356474004,
-      "top_content_preview": "Two year anniversary of the move to New York for the search infra role at Anyscale. Left a fully remote job in Madison to take it. The team is great, the work i…",
+      "top_score": 0.412354994271105,
+      "top_content_preview": "Two year anniversary of the move to New York for the search infra role at Anyscale. Left a fully remote job in Madison to take it. The team is great, the work i\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "new",
@@ -268,16 +268,16 @@
       ],
       "hybrid_top_id": "lmeval/s12-1",
       "baseline_top_id": "lmeval/s12-1",
-      "hybrid_latency_ms": 6.43,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 853.61,
+      "baseline_latency_ms": 671.65
     },
     {
       "qid": "s13",
       "query": "Subaru car Outback",
       "answer": "Subaru",
       "top_result_id": "lmeval/s13-1",
-      "top_score": 0.39000119997151533,
-      "top_content_preview": "Car update: my Subaru Outback just rolled over to 87,000 miles. The mechanic at the dealership said the timing belt should be replaced around 100k so I have som…",
+      "top_score": 0.6877646955855625,
+      "top_content_preview": "Car update: my Subaru Outback just rolled over to 87,000 miles. The mechanic at the dealership said the timing belt should be replaced around 100k so I have som\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "subaru"
@@ -288,16 +288,16 @@
       ],
       "hybrid_top_id": "lmeval/s13-1",
       "baseline_top_id": "lmeval/s13-1",
-      "hybrid_latency_ms": 6.36,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 749.67,
+      "baseline_latency_ms": 1132.66
     },
     {
       "qid": "s14",
       "query": "partner jazz Smalls",
       "answer": "jazz",
       "top_result_id": "lmeval/s14-1",
-      "top_score": 0.2787968959621579,
-      "top_content_preview": "Date night last Friday: I took Jordan to Smalls in the village for some live jazz. He has been on a Coltrane kick lately and they played A Love Supreme in the s…",
+      "top_score": 0.40629350793882946,
+      "top_content_preview": "Date night last Friday: I took Jordan to Smalls in the village for some live jazz. He has been on a Coltrane kick lately and they played A Love Supreme in the s\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "jazz"
@@ -308,16 +308,16 @@
       ],
       "hybrid_top_id": "lmeval/s14-1",
       "baseline_top_id": "lmeval/s14-1",
-      "hybrid_latency_ms": 6.96,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 987.33,
+      "baseline_latency_ms": 680.43
     },
     {
       "qid": "s15",
       "query": "Japanese language tutor",
       "answer": "Japanese",
       "top_result_id": "lmeval/s15-1",
-      "top_score": 0.44394375989626256,
-      "top_content_preview": "Studying Japanese for the third year in a row. Made it to the upper intermediate plateau where progress feels glacial. Watching Terrace House with Japanese subt…",
+      "top_score": 0.4362985032805293,
+      "top_content_preview": "Studying Japanese for the third year in a row. Made it to the upper intermediate plateau where progress feels glacial. Watching Terrace House with Japanese subt\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "japanese"
@@ -328,16 +328,16 @@
       ],
       "hybrid_top_id": "lmeval/s15-1",
       "baseline_top_id": "lmeval/s15-1",
-      "hybrid_latency_ms": 6.18,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 1059.86,
+      "baseline_latency_ms": 721.72
     },
     {
       "qid": "s16",
       "query": "manager 1:1 Priya",
       "answer": "Priya",
       "top_result_id": "lmeval/s16-1",
-      "top_score": 0.45067524786093066,
-      "top_content_preview": "1:1 with Priya this morning. She wants me to start mentoring the new hire joining the platform team in two weeks. He is coming from a fintech background and is …",
+      "top_score": 0.4913561875158359,
+      "top_content_preview": "1:1 with Priya this morning. She wants me to start mentoring the new hire joining the platform team in two weeks. He is coming from a fintech background and is \u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "priya"
@@ -348,16 +348,16 @@
       ],
       "hybrid_top_id": "lmeval/s16-1",
       "baseline_top_id": "lmeval/s16-1",
-      "hybrid_latency_ms": 6.31,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 925.28,
+      "baseline_latency_ms": 894.99
     },
     {
       "qid": "s17",
       "query": "gym Soho switch",
       "answer": "Equinox",
       "top_result_id": "lmeval/s17-1",
-      "top_score": 0.4848976821625436,
-      "top_content_preview": "Switched to Equinox in Soho six months ago after my old gym raised the rates again. The locker rooms are way nicer and the equipment is all under three years ol…",
+      "top_score": 0.5749021842053975,
+      "top_content_preview": "Switched to Equinox in Soho six months ago after my old gym raised the rates again. The locker rooms are way nicer and the equipment is all under three years ol\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "equinox"
@@ -368,16 +368,16 @@
       ],
       "hybrid_top_id": "lmeval/s17-1",
       "baseline_top_id": "lmeval/s17-1",
-      "hybrid_latency_ms": 7.63,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 910.73,
+      "baseline_latency_ms": 704.32
     },
     {
       "qid": "s18",
       "query": "barista morning awning",
       "answer": "Diego",
       "top_result_id": "lmeval/s18-1",
-      "top_score": 0.4164277381668704,
-      "top_content_preview": "Morning coffee run: Diego had the oat milk latte ready before I even got to the counter today. We talked briefly about his sister's wedding which is happening i…",
+      "top_score": 0.380918060292542,
+      "top_content_preview": "Morning coffee run: Diego had the oat milk latte ready before I even got to the counter today. We talked briefly about his sister's wedding which is happening i\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "diego"
@@ -388,16 +388,16 @@
       ],
       "hybrid_top_id": "lmeval/s18-1",
       "baseline_top_id": "lmeval/s18-1",
-      "hybrid_latency_ms": 6.41,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 930.13,
+      "baseline_latency_ms": 1289.18
     },
     {
       "qid": "s19",
       "query": "Thai cuisine home cooking",
       "answer": "Thai",
       "top_result_id": "lmeval/s19-1",
-      "top_score": 0.36208045194762345,
-      "top_content_preview": "Food thought of the week: I think Thai is my most-cooked-at-home cuisine. The pantry always has fish sauce, palm sugar, and a few types of dried chiles. I make …",
+      "top_score": 0.5314494696505279,
+      "top_content_preview": "Food thought of the week: I think Thai is my most-cooked-at-home cuisine. The pantry always has fish sauce, palm sugar, and a few types of dried chiles. I make \u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "thai"
@@ -408,16 +408,16 @@
       ],
       "hybrid_top_id": "lmeval/s19-1",
       "baseline_top_id": "lmeval/s19-1",
-      "hybrid_latency_ms": 9.12,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 815.34,
+      "baseline_latency_ms": 663.31
     },
     {
       "qid": "s20",
       "query": "Hardcore History podcast Dan Carlin",
       "answer": "Hardcore History",
       "top_result_id": "lmeval/s20-1",
-      "top_score": 0.46659912927180025,
-      "top_content_preview": "Listening queue: I am three episodes behind on Hardcore History. The new series on the Mongols is fantastic — Dan Carlin's research is wild. Saving the longer e…",
+      "top_score": 0.527330230296087,
+      "top_content_preview": "Listening queue: I am three episodes behind on Hardcore History. The new series on the Mongols is fantastic \u2014 Dan Carlin's research is wild. Saving the longer e\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "hardcore",
@@ -430,16 +430,16 @@
       ],
       "hybrid_top_id": "lmeval/s20-1",
       "baseline_top_id": "lmeval/s20-1",
-      "hybrid_latency_ms": 6.69,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 764.92,
+      "baseline_latency_ms": 633.94
     },
     {
       "qid": "s21",
       "query": "autumn favorite season",
       "answer": "autumn",
       "top_result_id": "lmeval/s21-1",
-      "top_score": 0.31200095997817884,
-      "top_content_preview": "Seasonal mood: autumn is hands down my favorite season. The light gets lower and the air smells like leaves. I look forward to wearing the heavier sweaters and …",
+      "top_score": 0.6786220256839651,
+      "top_content_preview": "Seasonal mood: autumn is hands down my favorite season. The light gets lower and the air smells like leaves. I look forward to wearing the heavier sweaters and \u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "autumn"
@@ -450,16 +450,16 @@
       ],
       "hybrid_top_id": "lmeval/s21-1",
       "baseline_top_id": "lmeval/s21-1",
-      "hybrid_latency_ms": 6.11,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 756.76,
+      "baseline_latency_ms": 674.72
     },
     {
       "qid": "s22",
       "query": "guitar fingerstyle teacher",
       "answer": "guitar",
       "top_result_id": "lmeval/s22-1",
-      "top_score": 0.3900011999715504,
-      "top_content_preview": "Music practice log: I have been working on a fingerstyle arrangement of Blackbird on the guitar for the past month. The thumb pattern is tricky and I keep losin…",
+      "top_score": 0.5236199895187255,
+      "top_content_preview": "Music practice log: I have been working on a fingerstyle arrangement of Blackbird on the guitar for the past month. The thumb pattern is tricky and I keep losin\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "guitar"
@@ -470,16 +470,16 @@
       ],
       "hybrid_top_id": "lmeval/s22-1",
       "baseline_top_id": "lmeval/s22-1",
-      "hybrid_latency_ms": 6.41,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 771.22,
+      "baseline_latency_ms": 643.59
     },
     {
       "qid": "s23",
       "query": "first pet beagle childhood",
       "answer": "Biscuit",
       "top_result_id": "lmeval/s23-1",
-      "top_score": 0.4056016639701449,
-      "top_content_preview": "Childhood memory: my first pet was a beagle named Biscuit. We got him from a farm in upstate New York when I was seven. He lived to be fourteen and slept at the…",
+      "top_score": 0.679732656035161,
+      "top_content_preview": "Childhood memory: my first pet was a beagle named Biscuit. We got him from a farm in upstate New York when I was seven. He lived to be fourteen and slept at the\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "biscuit"
@@ -490,16 +490,16 @@
       ],
       "hybrid_top_id": "lmeval/s23-1",
       "baseline_top_id": "lmeval/s23-1",
-      "hybrid_latency_ms": 6.48,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 795.16,
+      "baseline_latency_ms": 645.85
     },
     {
       "qid": "s24",
       "query": "Spring Street office Soho",
       "answer": "Spring",
       "top_result_id": "lmeval/s24-1",
-      "top_score": 0.4056016639719485,
-      "top_content_preview": "Office is on Spring Street in Soho, third floor of a converted warehouse. The commute from Brooklyn is a single subway transfer and the door-to-door time is aro…",
+      "top_score": 0.7103227622474382,
+      "top_content_preview": "Office is on Spring Street in Soho, third floor of a converted warehouse. The commute from Brooklyn is a single subway transfer and the door-to-door time is aro\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "spring"
@@ -510,16 +510,16 @@
       ],
       "hybrid_top_id": "lmeval/s24-1",
       "baseline_top_id": "lmeval/s24-1",
-      "hybrid_latency_ms": 6.08,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 801.79,
+      "baseline_latency_ms": 705.94
     },
     {
       "qid": "s25",
       "query": "software engineer career search infra",
       "answer": "software engineer",
       "top_result_id": "lmeval/s25-1",
-      "top_score": 0.4134021199668394,
-      "top_content_preview": "Career check-in: I have been a software engineer for about nine years now, the last three on the search infra team at my current company. The work is a mix of d…",
+      "top_score": 0.6235195783941276,
+      "top_content_preview": "Career check-in: I have been a software engineer for about nine years now, the last three on the search infra team at my current company. The work is a mix of d\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "software",
@@ -532,16 +532,16 @@
       ],
       "hybrid_top_id": "lmeval/s25-1",
       "baseline_top_id": "lmeval/s25-1",
-      "hybrid_latency_ms": 7.14,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 766.67,
+      "baseline_latency_ms": 920.38
     },
     {
       "qid": "s26",
       "query": "Spirited Away rewatch movie",
       "answer": "Spirited Away",
       "top_result_id": "lmeval/s26-1",
-      "top_score": 0.40560166396797553,
-      "top_content_preview": "Movie rewatch night: I put on Spirited Away again for probably the twentieth time. The animation holds up impossibly well. The train sequence across the water i…",
+      "top_score": 0.677769541289885,
+      "top_content_preview": "Movie rewatch night: I put on Spirited Away again for probably the twentieth time. The animation holds up impossibly well. The train sequence across the water i\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "spirited",
@@ -554,16 +554,16 @@
       ],
       "hybrid_top_id": "lmeval/s26-1",
       "baseline_top_id": "lmeval/s26-1",
-      "hybrid_latency_ms": 6.95,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 794.85,
+      "baseline_latency_ms": 639.58
     },
     {
       "qid": "s27",
       "query": "iPhone Apple Pro Max",
       "answer": "iPhone",
       "top_result_id": "lmeval/s27-1",
-      "top_score": 0.5336895113669601,
-      "top_content_preview": "Tech audit: I have been on iPhone for about six years now and probably will not switch. The integration with the MacBook and the AirPods is the killer feature f…",
+      "top_score": 0.46311875194836716,
+      "top_content_preview": "Tech audit: I have been on iPhone for about six years now and probably will not switch. The integration with the MacBook and the AirPods is the killer feature f\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "iphone"
@@ -574,16 +574,16 @@
       ],
       "hybrid_top_id": "lmeval/s27-1",
       "baseline_top_id": "lmeval/s27-1",
-      "hybrid_latency_ms": 6.91,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 794.27,
+      "baseline_latency_ms": 669.48
     },
     {
       "qid": "s28",
       "query": "roommate Sam apartment cleaning",
       "answer": "Sam",
       "top_result_id": "lmeval/s28-1",
-      "top_score": 0.4056016639683082,
-      "top_content_preview": "Apartment dynamics: my roommate Sam and I split the cleaning chores on a rotating schedule. He handles the kitchen and bathrooms, I take the living room and the…",
+      "top_score": 0.670106639017704,
+      "top_content_preview": "Apartment dynamics: my roommate Sam and I split the cleaning chores on a rotating schedule. He handles the kitchen and bathrooms, I take the living room and the\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "sam"
@@ -594,16 +594,16 @@
       ],
       "hybrid_top_id": "lmeval/s28-1",
       "baseline_top_id": "lmeval/s28-1",
-      "hybrid_latency_ms": 6.9,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 762.21,
+      "baseline_latency_ms": 887.96
     },
     {
       "qid": "s29",
       "query": "Northwestern college undergrad",
       "answer": "Northwestern",
       "top_result_id": "lmeval/s29-1",
-      "top_score": 0.3900011999722241,
-      "top_content_preview": "Throwback: I went to Northwestern for undergrad, studied computer science and a minor in music. Lived in a residential college all four years and made most of m…",
+      "top_score": 0.5925840519851404,
+      "top_content_preview": "Throwback: I went to Northwestern for undergrad, studied computer science and a minor in music. Lived in a residential college all four years and made most of m\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "northwestern"
@@ -614,16 +614,16 @@
       ],
       "hybrid_top_id": "lmeval/s29-1",
       "baseline_top_id": "lmeval/s29-1",
-      "hybrid_latency_ms": 6.26,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 849.61,
+      "baseline_latency_ms": 625.94
     },
     {
       "qid": "s30",
       "query": "morning pour-over journaling",
       "answer": "coffee and journaling",
       "top_result_id": "lmeval/s30-1",
-      "top_score": 0.3900013499674285,
-      "top_content_preview": "Morning flow: I wake up at six, brew a pour-over, and sit at the kitchen counter for twenty minutes doing a journaling practice. After that I do a quick stretch…",
+      "top_score": 0.6309034493717588,
+      "top_content_preview": "Morning flow: I wake up at six, brew a pour-over, and sit at the kitchen counter for twenty minutes doing a journaling practice. After that I do a quick stretch\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "and",
@@ -636,16 +636,16 @@
       ],
       "hybrid_top_id": "lmeval/s30-1",
       "baseline_top_id": "lmeval/s30-1",
-      "hybrid_latency_ms": 7.34,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 909.5,
+      "baseline_latency_ms": 662.84
     },
     {
       "qid": "s31",
       "query": "sister Lina baby Austin",
       "answer": "Zoe",
       "top_result_id": "lmeval/s31-1",
-      "top_score": 0.4056018199678275,
-      "top_content_preview": "Family news: my sister Lina had her first baby in February, a girl named Zoe. She was seven pounds four ounces and came two weeks early. Lina and her husband Th…",
+      "top_score": 0.6268569475126186,
+      "top_content_preview": "Family news: my sister Lina had her first baby in February, a girl named Zoe. She was seven pounds four ounces and came two weeks early. Lina and her husband Th\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "zoe"
@@ -656,16 +656,16 @@
       ],
       "hybrid_top_id": "lmeval/s31-1",
       "baseline_top_id": "lmeval/s31-1",
-      "hybrid_latency_ms": 6.95,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 1233.04,
+      "baseline_latency_ms": 635.16
     },
     {
       "qid": "s32",
       "query": "hiking Saturday Hudson Valley",
       "answer": "hiking",
       "top_result_id": "lmeval/s32-1",
-      "top_score": 0.40560166396556424,
-      "top_content_preview": "Weekend plans: hiking has become my default Saturday morning activity. There is a great six mile loop in the Hudson Valley that I have been doing most weekends …",
+      "top_score": 0.6230809754240273,
+      "top_content_preview": "Weekend plans: hiking has become my default Saturday morning activity. There is a great six mile loop in the Hudson Valley that I have been doing most weekends \u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "hiking"
@@ -676,16 +676,16 @@
       ],
       "hybrid_top_id": "lmeval/s32-1",
       "baseline_top_id": "lmeval/s32-1",
-      "hybrid_latency_ms": 7.44,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 745.44,
+      "baseline_latency_ms": 626.76
     },
     {
       "qid": "s33",
       "query": "Spanish studied college refresher",
       "answer": "Spanish",
       "top_result_id": "lmeval/s33-1",
-      "top_score": 0.390001749936096,
-      "top_content_preview": "Language reminder: I studied Spanish throughout college and was intermediate-fluent at graduation. Have not used it seriously in five years and have lost a lot.…",
+      "top_score": 0.6029799885040844,
+      "top_content_preview": "Language reminder: I studied Spanish throughout college and was intermediate-fluent at graduation. Have not used it seriously in five years and have lost a lot.\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "spanish"
@@ -696,16 +696,16 @@
       ],
       "hybrid_top_id": "lmeval/s33-1",
       "baseline_top_id": "lmeval/s33-1",
-      "hybrid_latency_ms": 14.34,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 756.68,
+      "baseline_latency_ms": 640.12
     },
     {
       "qid": "s34",
       "query": "Sky Ting Canal yoga vinyasa",
       "answer": "Sky Ting",
       "top_result_id": "lmeval/s34-1",
-      "top_score": 0.5144844669050503,
-      "top_content_preview": "Studio update: I have been going to Sky Ting on Canal Street twice a week for the past three months. The vinyasa flow class on Wednesday evenings with instructo…",
+      "top_score": 0.5330282073851331,
+      "top_content_preview": "Studio update: I have been going to Sky Ting on Canal Street twice a week for the past three months. The vinyasa flow class on Wednesday evenings with instructo\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "sky",
@@ -718,16 +718,16 @@
       ],
       "hybrid_top_id": "lmeval/s34-1",
       "baseline_top_id": "lmeval/s34-1",
-      "hybrid_latency_ms": 7.22,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 767.37,
+      "baseline_latency_ms": 631.34
     },
     {
       "qid": "s35",
       "query": "Thanksgiving Macy parade holiday",
       "answer": "Thanksgiving",
       "top_result_id": "lmeval/s35-1",
-      "top_score": 0.3900015999714802,
-      "top_content_preview": "Holiday preference: I am a big Thanksgiving person. The food, the family time, the four day weekend — all of it. My family does a long hike in the morning befor…",
+      "top_score": 0.5346173137790915,
+      "top_content_preview": "Holiday preference: I am a big Thanksgiving person. The food, the family time, the four day weekend \u2014 all of it. My family does a long hike in the morning befor\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "thanksgiving"
@@ -738,16 +738,16 @@
       ],
       "hybrid_top_id": "lmeval/s35-1",
       "baseline_top_id": "lmeval/s35-1",
-      "hybrid_latency_ms": 6.35,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 771.58,
+      "baseline_latency_ms": 621.45
     },
     {
       "qid": "s36",
       "query": "Diego high school oldest friend",
       "answer": "Diego",
       "top_result_id": "lmeval/s36-1",
-      "top_score": 0.35490181997562803,
-      "top_content_preview": "Old friendships: Diego from high school is my oldest friend. We have known each other since sophomore year and have stayed close even after he moved to the Bay …",
+      "top_score": 0.6967443842949701,
+      "top_content_preview": "Old friendships: Diego from high school is my oldest friend. We have known each other since sophomore year and have stayed close even after he moved to the Bay \u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "diego"
@@ -758,16 +758,16 @@
       ],
       "hybrid_top_id": "lmeval/s36-1",
       "baseline_top_id": "lmeval/s36-1",
-      "hybrid_latency_ms": 6.04,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 741.39,
+      "baseline_latency_ms": 639.92
     },
     {
       "qid": "s37",
       "query": "Gouda cheese Court Street aged",
       "answer": "Gouda",
       "top_result_id": "lmeval/s37-1",
-      "top_score": 0.4017022144706192,
-      "top_content_preview": "Snack log: aged Gouda is my cheese of choice. The local cheese shop on Court Street carries a really good Dutch version that I stock up on weekly. Pairs well wi…",
+      "top_score": 0.6638324306376964,
+      "top_content_preview": "Snack log: aged Gouda is my cheese of choice. The local cheese shop on Court Street carries a really good Dutch version that I stock up on weekly. Pairs well wi\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "gouda"
@@ -778,16 +778,16 @@
       ],
       "hybrid_top_id": "lmeval/s37-1",
       "baseline_top_id": "lmeval/s37-1",
-      "hybrid_latency_ms": 6.46,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 718.34,
+      "baseline_latency_ms": 625.48
     },
     {
       "qid": "s38",
       "query": "therapist Rachel weekly telehealth",
       "answer": "Rachel",
       "top_result_id": "lmeval/s38-1",
-      "top_score": 0.5712355375962709,
-      "top_content_preview": "Therapy update: I have been seeing Rachel weekly for about a year now. We have been working through some work-related anxiety patterns and she has helped me get…",
+      "top_score": 0.5957993289601808,
+      "top_content_preview": "Therapy update: I have been seeing Rachel weekly for about a year now. We have been working through some work-related anxiety patterns and she has helped me get\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "rachel"
@@ -798,16 +798,16 @@
       ],
       "hybrid_top_id": "lmeval/s38-1",
       "baseline_top_id": "lmeval/s38-1",
-      "hybrid_latency_ms": 7.04,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 745.66,
+      "baseline_latency_ms": 623.36
     },
     {
       "qid": "s39",
       "query": "Hoka Clifton Brooks running",
       "answer": "Hoka",
       "top_result_id": "lmeval/s39-1",
-      "top_score": 0.34710142397240346,
-      "top_content_preview": "Gear update: I switched to Hoka Clifton nine running shoes about four months ago after years in Brooks. The cushioning is unreal and my knee pain on long runs h…",
+      "top_score": 0.6048915432678643,
+      "top_content_preview": "Gear update: I switched to Hoka Clifton nine running shoes about four months ago after years in Brooks. The cushioning is unreal and my knee pain on long runs h\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "hoka"
@@ -818,16 +818,16 @@
       ],
       "hybrid_top_id": "lmeval/s39-1",
       "baseline_top_id": "lmeval/s39-1",
-      "hybrid_latency_ms": 7.09,
-      "baseline_latency_ms": 0.03
+      "hybrid_latency_ms": 739.81,
+      "baseline_latency_ms": 641.89
     },
     {
       "qid": "s40",
       "query": "born Boston moved Portland",
       "answer": "Boston",
       "top_result_id": "lmeval/s40-1",
-      "top_score": 0.39000189997237183,
-      "top_content_preview": "Origin story: I was born in Boston and lived there until I was twelve. We moved to Portland, Oregon for my dad's job. I do not remember much of Boston except th…",
+      "top_score": 0.5819265120365311,
+      "top_content_preview": "Origin story: I was born in Boston and lived there until I was twelve. We moved to Portland, Oregon for my dad's job. I do not remember much of Boston except th\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "boston"
@@ -838,16 +838,16 @@
       ],
       "hybrid_top_id": "lmeval/s40-1",
       "baseline_top_id": "lmeval/s40-1",
-      "hybrid_latency_ms": 6.19,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 742.03,
+      "baseline_latency_ms": 626.18
     },
     {
       "qid": "s41",
       "query": "Wingspan Ark Nova game night",
       "answer": "Wingspan",
       "top_result_id": "lmeval/s41-1",
-      "top_score": 0.41340211997058685,
-      "top_content_preview": "Game night recap: we played Wingspan again last Saturday. I pulled off a clutch win with a heavy bird engine — about 110 points on a perfect engine turn. My par…",
+      "top_score": 0.5911332299743123,
+      "top_content_preview": "Game night recap: we played Wingspan again last Saturday. I pulled off a clutch win with a heavy bird engine \u2014 about 110 points on a perfect engine turn. My par\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "wingspan"
@@ -858,16 +858,16 @@
       ],
       "hybrid_top_id": "lmeval/s41-1",
       "baseline_top_id": "lmeval/s41-1",
-      "hybrid_latency_ms": 6.28,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 741.84,
+      "baseline_latency_ms": 614.67
     },
     {
       "qid": "s42",
       "query": "tiramisu Carroll Gardens mascarpone",
       "answer": "tiramisu",
       "top_result_id": "lmeval/s42-1",
-      "top_score": 0.4056018199725785,
-      "top_content_preview": "Dessert ranking: tiramisu is the answer every time. I am not a big sweets person in general but a well-made tiramisu is something I cannot pass up. The version …",
+      "top_score": 0.5503185746563201,
+      "top_content_preview": "Dessert ranking: tiramisu is the answer every time. I am not a big sweets person in general but a well-made tiramisu is something I cannot pass up. The version \u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "tiramisu"
@@ -878,16 +878,16 @@
       ],
       "hybrid_top_id": "lmeval/s42-1",
       "baseline_top_id": "lmeval/s42-1",
-      "hybrid_latency_ms": 5.95,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 799.95,
+      "baseline_latency_ms": 649.62
     },
     {
       "qid": "s43",
       "query": "barber Astor Place fade",
       "answer": "Marcus",
       "top_result_id": "lmeval/s43-1",
-      "top_score": 0.5010597103336357,
-      "top_content_preview": "Grooming: I have been going to Marcus at the Astor Place shop for about three years. He gives a great fade and is fast — fifteen minutes start to finish. Charge…",
+      "top_score": 0.5050468236539177,
+      "top_content_preview": "Grooming: I have been going to Marcus at the Astor Place shop for about three years. He gives a great fade and is fast \u2014 fifteen minutes start to finish. Charge\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "marcus"
@@ -898,16 +898,16 @@
       ],
       "hybrid_top_id": "lmeval/s43-1",
       "baseline_top_id": "lmeval/s43-1",
-      "hybrid_latency_ms": 6.57,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 724.02,
+      "baseline_latency_ms": 1178.15
     },
     {
       "qid": "s44",
       "query": "search infrastructure team role",
       "answer": "senior engineer",
       "top_result_id": "lmeval/s44-1",
-      "top_score": 0.40560181997057154,
-      "top_content_preview": "Role context: I am a senior engineer on the search infrastructure team. The team owns the indexing pipeline, the query planner, and the relevance ranking layer.…",
+      "top_score": 0.6383360958707318,
+      "top_content_preview": "Role context: I am a senior engineer on the search infrastructure team. The team owns the indexing pipeline, the query planner, and the relevance ranking layer.\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "senior",
@@ -920,16 +920,16 @@
       ],
       "hybrid_top_id": "lmeval/s44-1",
       "baseline_top_id": "lmeval/s44-1",
-      "hybrid_latency_ms": 6.38,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 855.57,
+      "baseline_latency_ms": 1127.72
     },
     {
       "qid": "s45",
       "query": "Netflix streaming Apple TV",
       "answer": "Netflix",
       "top_result_id": "lmeval/s45-1",
-      "top_score": 0.4056016639711186,
-      "top_content_preview": "Media consumption: Netflix is still my most-used streaming service despite the password sharing crackdown. I have a single screen plan and rotate between it and…",
+      "top_score": 0.5678270433065704,
+      "top_content_preview": "Media consumption: Netflix is still my most-used streaming service despite the password sharing crackdown. I have a single screen plan and rotate between it and\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "netflix"
@@ -940,36 +940,36 @@
       ],
       "hybrid_top_id": "lmeval/s45-1",
       "baseline_top_id": "lmeval/s45-1",
-      "hybrid_latency_ms": 6.27,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 774.97,
+      "baseline_latency_ms": 647.45
     },
     {
       "qid": "s46",
-      "query": "Devoción Williamsburg pour-over remote",
-      "answer": "Devoción",
+      "query": "Devoci\u00f3n Williamsburg pour-over remote",
+      "answer": "Devoci\u00f3n",
       "top_result_id": "lmeval/s46-1",
-      "top_score": 0.4376490368601419,
-      "top_content_preview": "Remote work spot: Devoción in Williamsburg is my go-to when I need a change of scenery from the apartment. The space is huge, the wifi is fast, and the coffee i…",
+      "top_score": 0.5797181067681221,
+      "top_content_preview": "Remote work spot: Devoci\u00f3n in Williamsburg is my go-to when I need a change of scenery from the apartment. The space is huge, the wifi is fast, and the coffee i\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
-        "devoción"
+        "devoci\u00f3n"
       ],
       "baseline_hit": 1,
       "baseline_matched_tokens": [
-        "devoción"
+        "devoci\u00f3n"
       ],
       "hybrid_top_id": "lmeval/s46-1",
       "baseline_top_id": "lmeval/s46-1",
-      "hybrid_latency_ms": 6.35,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 781.74,
+      "baseline_latency_ms": 643.04
     },
     {
       "qid": "s47",
       "query": "fall Rockaway beach September",
       "answer": "fall",
       "top_result_id": "lmeval/s47-1",
-      "top_score": 0.39000174997223686,
-      "top_content_preview": "Beach preference: fall is the best season for the beach in my opinion. The water is still warm from the summer, the crowds have died down, and the light is incr…",
+      "top_score": 0.5896329207348339,
+      "top_content_preview": "Beach preference: fall is the best season for the beach in my opinion. The water is still warm from the summer, the crowds have died down, and the light is incr\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "fall"
@@ -980,16 +980,16 @@
       ],
       "hybrid_top_id": "lmeval/s47-1",
       "baseline_top_id": "lmeval/s47-1",
-      "hybrid_latency_ms": 6.28,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 766.76,
+      "baseline_latency_ms": 630.53
     },
     {
       "qid": "s48",
       "query": "Priya Mehta founded company",
       "answer": "Priya",
       "top_result_id": "lmeval/s48-1",
-      "top_score": 0.4056016639715993,
-      "top_content_preview": "Company context: my current employer was founded by Priya Mehta about six years ago. She was an early engineer at two well-known search companies before startin…",
+      "top_score": 0.6518315168831934,
+      "top_content_preview": "Company context: my current employer was founded by Priya Mehta about six years ago. She was an early engineer at two well-known search companies before startin\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "priya"
@@ -1000,16 +1000,16 @@
       ],
       "hybrid_top_id": "lmeval/s48-1",
       "baseline_top_id": "lmeval/s48-1",
-      "hybrid_latency_ms": 6.16,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 740.53,
+      "baseline_latency_ms": 655.91
     },
     {
       "qid": "s49",
       "query": "indie rock National Big Thief",
       "answer": "indie rock",
       "top_result_id": "lmeval/s49-1",
-      "top_score": 0.425102506969569,
-      "top_content_preview": "Listening habits: indie rock is probably the genre I come back to most. The National, Big Thief, Radiohead, Mitski. I have a few core albums I have been listeni…",
+      "top_score": 0.60314226399392,
+      "top_content_preview": "Listening habits: indie rock is probably the genre I come back to most. The National, Big Thief, Radiohead, Mitski. I have a few core albums I have been listeni\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "indie",
@@ -1022,16 +1022,16 @@
       ],
       "hybrid_top_id": "lmeval/s49-1",
       "baseline_top_id": "lmeval/s49-1",
-      "hybrid_latency_ms": 6.33,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 730.67,
+      "baseline_latency_ms": 636.38
     },
     {
       "qid": "s50",
       "query": "Sey Coffee Bushwick Brooklyn pour-over",
       "answer": "Sey Coffee",
       "top_result_id": "lmeval/s50-1",
-      "top_score": 0.40170205997060165,
-      "top_content_preview": "Cafe list: I rotate between a few spots in Brooklyn for working remotely. Sey Coffee in Bushwick is the best for pour-over and atmosphere, though it is small an…",
+      "top_score": 0.6007209929680969,
+      "top_content_preview": "Cafe list: I rotate between a few spots in Brooklyn for working remotely. Sey Coffee in Bushwick is the best for pour-over and atmosphere, though it is small an\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "sey",
@@ -1044,16 +1044,16 @@
       ],
       "hybrid_top_id": "lmeval/s50-1",
       "baseline_top_id": "lmeval/s50-1",
-      "hybrid_latency_ms": 6.47,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 792.65,
+      "baseline_latency_ms": 629.75
     },
     {
       "qid": "s51",
       "query": "neighbor dog golden retriever Linda",
       "answer": "Biscuit",
       "top_result_id": "lmeval/s51-1",
-      "top_score": 0.3549019564731913,
-      "top_content_preview": "Building characters: my neighbor in 7A has the sweetest golden retriever named Biscuit. He barks at me every time I come up the stairs but it is friendly barkin…",
+      "top_score": 0.5733895946731422,
+      "top_content_preview": "Building characters: my neighbor in 7A has the sweetest golden retriever named Biscuit. He barks at me every time I come up the stairs but it is friendly barkin\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "biscuit"
@@ -1064,16 +1064,16 @@
       ],
       "hybrid_top_id": "lmeval/s51-1",
       "baseline_top_id": "lmeval/s51-1",
-      "hybrid_latency_ms": 6.6,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 739.85,
+      "baseline_latency_ms": 642.61
     },
     {
       "qid": "s52",
       "query": "Subaru Outback Wilderness drive",
       "answer": "Subaru",
       "top_result_id": "lmeval/s52-1",
-      "top_score": 0.4056018199697637,
-      "top_content_preview": "Car details: I drive a Subaru Outback, the 2021 model. It is the Wilderness trim which has the slightly higher ground clearance. The all-wheel-drive has been a …",
+      "top_score": 0.6634481168002647,
+      "top_content_preview": "Car details: I drive a Subaru Outback, the 2021 model. It is the Wilderness trim which has the slightly higher ground clearance. The all-wheel-drive has been a \u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "subaru"
@@ -1084,16 +1084,16 @@
       ],
       "hybrid_top_id": "lmeval/s52-1",
       "baseline_top_id": "lmeval/s52-1",
-      "hybrid_latency_ms": 6.48,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 745.33,
+      "baseline_latency_ms": 650.76
     },
     {
       "qid": "s53",
       "query": "Big Thief Brooklyn Steel concert",
       "answer": "Big Thief",
       "top_result_id": "lmeval/s53-1",
-      "top_score": 0.4134021199709923,
-      "top_content_preview": "Concert recap: I saw Big Thief at Brooklyn Steel at the end of last month. They played a strong set with most of my favorite tracks from Dragon New Warm Mountai…",
+      "top_score": 0.6790934015370066,
+      "top_content_preview": "Concert recap: I saw Big Thief at Brooklyn Steel at the end of last month. They played a strong set with most of my favorite tracks from Dragon New Warm Mountai\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "big",
@@ -1106,16 +1106,16 @@
       ],
       "hybrid_top_id": "lmeval/s53-1",
       "baseline_top_id": "lmeval/s53-1",
-      "hybrid_latency_ms": 6.14,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 762.96,
+      "baseline_latency_ms": 634.07
     },
     {
       "qid": "s54",
       "query": "McCarren Park Greenpoint apartment",
       "answer": "McCarren",
       "top_result_id": "lmeval/s54-1",
-      "top_score": 0.34710155747722676,
-      "top_content_preview": "Park life: McCarren Park in Greenpoint is the closest green space to my apartment. I run the loop there maybe twice a week and walk through it on the way to the…",
+      "top_score": 0.6815083809864115,
+      "top_content_preview": "Park life: McCarren Park in Greenpoint is the closest green space to my apartment. I run the loop there maybe twice a week and walk through it on the way to the\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "mccarren"
@@ -1126,16 +1126,16 @@
       ],
       "hybrid_top_id": "lmeval/s54-1",
       "baseline_top_id": "lmeval/s54-1",
-      "hybrid_latency_ms": 5.78,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 769.57,
+      "baseline_latency_ms": 657.14
     },
     {
       "qid": "s55",
       "query": "Harney Sons Paris Sencha tea",
       "answer": "Harney & Sons",
       "top_result_id": "lmeval/s55-1",
-      "top_score": 0.40170221447090926,
-      "top_content_preview": "Tea stash: Harney & Sons is my default for loose leaf. Their Paris blend is what I drink in the morning most days — a fruity black tea that goes well with a sma…",
+      "top_score": 0.6286513557619218,
+      "top_content_preview": "Tea stash: Harney & Sons is my default for loose leaf. Their Paris blend is what I drink in the morning most days \u2014 a fruity black tea that goes well with a sma\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "harney",
@@ -1148,16 +1148,16 @@
       ],
       "hybrid_top_id": "lmeval/s55-1",
       "baseline_top_id": "lmeval/s55-1",
-      "hybrid_latency_ms": 6.37,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 791.87,
+      "baseline_latency_ms": 794.32
     },
     {
       "qid": "s56",
       "query": "retire Lisbon Portugal savings",
       "answer": "Lisbon",
       "top_result_id": "lmeval/s56-1",
-      "top_score": 0.4084537677567716,
-      "top_content_preview": "Future planning: I have been telling myself for years that I want to retire in Lisbon. The cost of living is reasonable, the food is excellent, the people are w…",
+      "top_score": 0.4624352614974504,
+      "top_content_preview": "Future planning: I have been telling myself for years that I want to retire in Lisbon. The cost of living is reasonable, the food is excellent, the people are w\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "lisbon"
@@ -1168,16 +1168,16 @@
       ],
       "hybrid_top_id": "lmeval/s56-1",
       "baseline_top_id": "lmeval/s56-1",
-      "hybrid_latency_ms": 6.36,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 1060.16,
+      "baseline_latency_ms": 734.76
     },
     {
       "qid": "s57",
       "query": "subway L train Bedford commute",
       "answer": "subway",
       "top_result_id": "lmeval/s57-1",
-      "top_score": 0.40170221447069365,
-      "top_content_preview": "Commute preference: the subway is my preferred way to get to work. The L train from Bedford to 8th Avenue takes twenty minutes door to door. I read on the train…",
+      "top_score": 0.6332215490069542,
+      "top_content_preview": "Commute preference: the subway is my preferred way to get to work. The L train from Bedford to 8th Avenue takes twenty minutes door to door. I read on the train\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "subway"
@@ -1188,16 +1188,16 @@
       ],
       "hybrid_top_id": "lmeval/s57-1",
       "baseline_top_id": "lmeval/s57-1",
-      "hybrid_latency_ms": 6.43,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 1195.99,
+      "baseline_latency_ms": 712.6
     },
     {
       "qid": "s58",
       "query": "Death Co first date partner Jordan",
       "answer": "Death & Co",
       "top_result_id": "lmeval/s58-1",
-      "top_score": 0.493462869158596,
-      "top_content_preview": "Anniversary approaching: Jordan and I are about to hit our five year anniversary. We had our first date at Death & Co on East 6th Street — the bartender made us…",
+      "top_score": 0.5516587032215776,
+      "top_content_preview": "Anniversary approaching: Jordan and I are about to hit our five year anniversary. We had our first date at Death & Co on East 6th Street \u2014 the bartender made us\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "death",
@@ -1210,16 +1210,16 @@
       ],
       "hybrid_top_id": "lmeval/s58-1",
       "baseline_top_id": "lmeval/s58-1",
-      "hybrid_latency_ms": 6.61,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 1369.08,
+      "baseline_latency_ms": 692.3
     },
     {
       "qid": "s59",
       "query": "soccer high school center midfielder",
       "answer": "soccer",
       "top_result_id": "lmeval/s59-1",
-      "top_score": 0.35490209297531583,
-      "top_content_preview": "High school days: I played soccer all four years of high school, mostly as a center midfielder. Varsity captain my senior year. We made it to the state semifina…",
+      "top_score": 0.5897524494327097,
+      "top_content_preview": "High school days: I played soccer all four years of high school, mostly as a center midfielder. Varsity captain my senior year. We made it to the state semifina\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "soccer"
@@ -1230,16 +1230,16 @@
       ],
       "hybrid_top_id": "lmeval/s59-1",
       "baseline_top_id": "lmeval/s59-1",
-      "hybrid_latency_ms": 6.16,
-      "baseline_latency_ms": 0.02
+      "hybrid_latency_ms": 766.23,
+      "baseline_latency_ms": 644.92
     },
     {
       "qid": "s60",
       "query": "Konditori Smith Street Sunday morning",
       "answer": "Konditori",
       "top_result_id": "lmeval/s60-1",
-      "top_score": 0.41340227897148796,
-      "top_content_preview": "Sunday ritual: Konditori on Smith Street in Cobble Hill is my Sunday morning spot. The cardamom bun is the best pastry in the borough and they do a cortado that…",
+      "top_score": 0.7089185475520212,
+      "top_content_preview": "Sunday ritual: Konditori on Smith Street in Cobble Hill is my Sunday morning spot. The cardamom bun is the best pastry in the borough and they do a cortado that\u2026",
       "hybrid_hit": 1,
       "hybrid_matched_tokens": [
         "konditori"
@@ -1250,12 +1250,12 @@
       ],
       "hybrid_top_id": "lmeval/s60-1",
       "baseline_top_id": "lmeval/s60-1",
-      "hybrid_latency_ms": 6.01,
-      "baseline_latency_ms": 0.01
+      "hybrid_latency_ms": 757.4,
+      "baseline_latency_ms": 641.45
     }
   ],
   "comparison_to_sota": {
-    "emergence_86pct_at_5_65s": "we are at 98.3% at 0.02s/item (Emergence 86% at 5.65s/item)",
+    "emergence_86pct_at_5_65s": "we are at 98.3% at 1.93s/item (Emergence 86% at 5.65s/item)",
     "zep_plus_18_5pct_on_lme": "we are at 98.3% which is +0.0% over our FTS5 baseline (Zep cites +18.5% on LongMemEval)"
   },
   "worst_5_misses": [
@@ -1264,7 +1264,7 @@
       "query": "Thanksgiving siblings family",
       "expected_answer": "two",
       "top_result_id": "lmeval/s10-1",
-      "top_content_preview": "Family gathering recap: Thanksgiving at my parents' place in Portland this year. All three of us kids were there — my older brother Marcus, my younger sister Li…"
+      "top_content_preview": "Family gathering recap: Thanksgiving at my parents' place in Portland this year. All three of us kids were there \u2014 my older brother Marcus, my younger sister Li\u2026"
     }
   ],
   "notes": [

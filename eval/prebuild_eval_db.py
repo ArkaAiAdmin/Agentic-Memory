@@ -24,11 +24,13 @@ run_schema_setup(conn)
 
 try:
     from fact import ensure_facts_schema; ensure_facts_schema(conn)
-except Exception: pass
+except Exception as e:
+    print(f"[warn] facts schema skipped: {e}")
 
 try:
     from knowledge_graph import ensure_kg_schema; ensure_kg_schema(conn)
-except Exception: pass
+except Exception as e:
+    print(f"[warn] kg schema skipped: {e}")
 
 from search.chunk_index import _qw5_ensure_schema; _qw5_ensure_schema(conn)
 from search.colbert_index import _ensure_colbert_schema; _ensure_colbert_schema(conn)
@@ -90,15 +92,43 @@ for start in range(0, total, 64):
 print("done")
 
 print("KG...", end=" ", flush=True)
-from knowledge_graph import index_kg_for_memory
-for i, (mid, content) in enumerate(rows):
-    try:
-        index_kg_for_memory(conn, mid, content)
-    except Exception:
-        pass
-    if (i+1) % 50 == 0: conn.commit()
+try:
+    from knowledge_graph import index_kg_for_memory
+except Exception as e:
+    index_kg_for_memory = None
+    print(f"\n[warn] KG indexing unavailable: {e}")
+kg_ok = 0
+if index_kg_for_memory is not None:
+    for i, (mid, content) in enumerate(rows):
+        try:
+            index_kg_for_memory(conn, mid, content)
+            kg_ok += 1
+        except Exception as e:
+            if (i + 1) % 50 == 0:
+                print(f"\n[warn] KG index failed on {mid}: {e}")
+        if (i+1) % 50 == 0: conn.commit()
 conn.commit()
-print("done")
+print(f"done ({kg_ok}/{len(rows)} memories indexed)")
+
+print("Facts...", end=" ", flush=True)
+try:
+    from fact import ensure_facts_schema, index_facts_for_memory
+    ensure_facts_schema(conn)
+    fact_ok = 0
+    for i, (mid, content) in enumerate(rows):
+        try:
+            res = index_facts_for_memory(conn, mid, content)
+            if res.get("facts"):
+                fact_ok += 1
+        except Exception as e:
+            if (i + 1) % 50 == 0:
+                print(f"\n[warn] fact extract failed on {mid}: {e}")
+        if (i+1) % 50 == 0:
+            conn.commit()
+    conn.commit()
+    print(f"done ({fact_ok}/{len(rows)} memories with facts)")
+except Exception as e:
+    print(f"skipped: {e}")
 
 conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 conn.commit()
