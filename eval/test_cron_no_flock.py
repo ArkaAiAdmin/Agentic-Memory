@@ -176,3 +176,30 @@ def test_worker_env_no_flock_ignores_external_lock() -> None:
     finally:
         holder.kill()
         holder.wait()
+
+
+def test_jobs_background_worker_coexists_with_launchd_daemon() -> None:
+    """The cron/jobs.py entry point (--drain --max-tasks=50) must exit 0 as a
+    clean no-op when the launchd daemon already holds the background_worker
+    flock. This is the two-mode singleton-cron + launchd coexistence path:
+    an install that skips launchd relies on this cron job, while an install
+    that runs launchd must see this tick skip without double-draining.
+    """
+    holder = _spawn_holder(WORKER_LOCK)
+    try:
+        res = _run_worker(
+            ["--drain", "--max-tasks=50"],
+            {"MEMORY_LLM_EXTRACTION": "0"},
+            timeout=40.0,
+        )
+        assert res.returncode == 0, (
+            f"cron --drain tick must exit 0 under flock contention: "
+            f"rc={res.returncode} {res.stdout}{res.stderr}"
+        )
+        assert _skipped(res.stdout + res.stderr), (
+            f"cron --drain tick must skip (not do work) while launchd daemon "
+            f"holds the lock: {res.stdout}{res.stderr}"
+        )
+    finally:
+        holder.kill()
+        holder.wait()
