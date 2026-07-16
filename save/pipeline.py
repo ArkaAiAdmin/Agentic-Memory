@@ -1928,9 +1928,8 @@ def _materialize_journal_once(
                 _project_sql_to_crdt(_db_path_parsed, note_id, conn=conn)
             logger.info("materialize_journal_entry: materialized %s", note_id_out)
             try:
-                from infra.write_journal import mark_applied as _mark_applied, mark_hooks_completed as _mark_hooks
-                _mark_applied(journal_path, entry["id"])
-                _mark_hooks(journal_path, entry["id"])
+                from infra.write_journal import mark_applied_and_hooks_completed as _mark_both
+                _mark_both(journal_path, entry["id"])
                 logger.info("materialize_journal_entry: mark_applied + hooks_completed %s (id=%d)", note_id_out, entry["id"])
             except Exception as _ma_exc:
                 logger.warning("materialize_journal_entry: mark_applied/hooks failed for %s: %s", note_id_out, _ma_exc)

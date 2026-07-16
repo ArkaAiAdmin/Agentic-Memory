@@ -530,6 +530,28 @@ def mark_hooks_completed(journal_path: Path, entry_id: int) -> None:
     conn.commit()
 
 
+def mark_applied_and_hooks_completed(journal_path: Path, entry_id: int) -> None:
+    """Atomically mark a journal entry applied AND hooks-completed in one
+    transaction.
+
+    Replaces the two separate commits that ``mark_applied`` +
+    ``mark_hooks_completed`` performed, so a crash between the two writes
+    can no longer leave an entry in the ``applied`` but
+    ``hooks_completed=0`` state that crash-recovery would then re-run.
+    """
+    conn = _get_journal_conn(journal_path)
+    try:
+        conn.execute(
+            "UPDATE write_journal "
+            "SET status='applied', processed_at=datetime('now'), hooks_completed=1 "
+            "WHERE id=?",
+            (entry_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def mark_failed(journal_path: Path, entry_id: int, error: str) -> None:
     """Mark a journal entry as failed with an error message.
 

@@ -1,6 +1,6 @@
 {
   "schema_version": 64,
-  "num_migrations": 66,
+  "num_migrations": 67,
   "num_core_tools": 21,
   "num_admin_tools": 92,
   "num_deprecated_tools": 3,
@@ -10,7 +10,7 @@
   "loc_production": 120740,
   "loc_test": 103466,
   "loc_total": 224206,
-  "num_cron_scripts": 55,
+  "num_cron_scripts": 46,
   "num_tables_visible": 79,
   "num_hooks": 6,
   "num_agents_ported": 6,

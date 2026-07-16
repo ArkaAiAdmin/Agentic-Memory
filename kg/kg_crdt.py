@@ -544,7 +544,67 @@ def ensure_kg_crdt_schema(conn: AnyConnection) -> None:
     """
     conn.executescript(_KG_CRDT_SCHEMA_SQL)
     _ensure_kg_crdt_tenant_columns(conn)
+    ensure_kg_entity_redirect_schema(conn)
     conn.commit()
+
+
+def ensure_kg_entity_redirect_schema(conn: AnyConnection) -> None:
+    """Create the durable entity redirect map table if it doesn't exist.
+
+    Sprint 2.4: persists loser_id -> winner_id mappings so that
+    name/fingerprint collisions resolved during projection remain
+    resolvable across sessions.  Idempotent.
+    """
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS kg_entity_redirect (
+            loser_id    INTEGER NOT NULL,
+            winner_id   INTEGER NOT NULL,
+            reason      TEXT    DEFAULT 'collision',
+            created_at  TEXT    DEFAULT (datetime('now')),
+            tenant_id   TEXT    DEFAULT '',
+            PRIMARY KEY (loser_id, winner_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_kg_entity_redirect_winner
+            ON kg_entity_redirect(winner_id);
+        CREATE INDEX IF NOT EXISTS idx_kg_entity_redirect_tenant
+            ON kg_entity_redirect(tenant_id);
+        """
+    )
+
+
+def resolve_entity_id(conn: AnyConnection, entity_id: int) -> int:
+    """Resolve a possibly-stale entity_id to its current winner.
+
+    If ``entity_id`` was merged away during a collision resolution,
+    returns the live winner.  Returns ``entity_id`` unchanged when no
+    redirect exists.
+    """
+    row = conn.execute(
+        "SELECT winner_id FROM kg_entity_redirect WHERE loser_id=? ORDER BY rowid DESC LIMIT 1",
+        (entity_id,),
+    ).fetchone()
+    return int(row[0]) if row else entity_id
+
+
+def persist_entity_redirects(
+    conn: AnyConnection,
+    redirects: dict[int, int],
+    tenant_id: str = "",
+) -> None:
+    """Persist a loser_id -> winner_id redirect map durably.
+
+    Idempotent via the PRIMARY KEY; re-projection only widens the map.
+    """
+    if not redirects:
+        return
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO kg_entity_redirect (loser_id, winner_id, tenant_id)
+        VALUES (?, ?, ?)
+        """,
+        [(loser, winner, tenant_id) for loser, winner in redirects.items()],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -783,6 +843,11 @@ def project_crdt_to_entities(
     edge_state = compute_edge_crdt_state(conn)
     if redirects:
         edge_state = redirect_edge_ids(edge_state, redirects)
+
+    # Sprint 2.4: persist the redirect map durably so loser->winner
+    # resolution survives across projection runs (and outside the
+    # projection path, e.g. external edge lookups).
+    persist_entity_redirects(conn, redirects)
     n_edges = apply_edge_crdt_to_db(conn, edge_state)
 
     return n_entities, n_edges, redirects

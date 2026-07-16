@@ -254,6 +254,7 @@ def _rerank_results(
     session_boost_ids: set | None = None,
     as_of: float | None = None,
     budget: "Any | None" = None,
+    use_history: bool = True,
 ) -> tuple[list, Optional[dict]]:
     """Phase 9 of search_memories: compute final scores and rerank.
 
@@ -435,9 +436,15 @@ def _rerank_results(
             from search.ltr.scorer import ltr_rerank, ltr_enabled
             if ltr_enabled():
                 from search.ltr.session_ctx import build_session_ctx
-                _session_ctx = build_session_ctx(db, lookback=10, time_window_hours=4.0)
-                out = ltr_rerank(query, out, db=db, db_path=db_path,
-                                limit=limit, session_ctx=_session_ctx)
+                _session_ctx = (
+                    build_session_ctx(db, lookback=10, time_window_hours=4.0)
+                    if use_history
+                    else None
+                )
+                out = ltr_rerank(
+                    query, out, db=db, db_path=db_path,
+                    limit=limit, session_ctx=_session_ctx,
+                )
         except Exception as _ltr_exc:
             logger.debug("ltr_rerank skipped: %s", _ltr_exc)
     # Temporal SSM recency reranking (gated by temporal_ssm_enabled).  Final
@@ -709,6 +716,7 @@ def search_memories(
         + f":bs={belief_status or ''}:es={epistemic_source or ''}:ft={fact_type or ''}:ms={memory_source or ''}"
         + (f":tags={','.join(sorted(tags))}" if tags else "")
         + f":swm={int(shared_with_me)}"
+        + f":uh={int(use_history)}"
         + f":tid={tenant_id}"
     )
     from infra.cache import cache_touch
@@ -1106,6 +1114,7 @@ def search_memories(
                 session_boost_ids=session_boost_ids,
                 as_of=as_of,
                 budget=_search_budget,
+                use_history=use_history,
             )
         except Exception as _rerank_exc:
             _phase_inc("search.rerank", _rerank_exc)
