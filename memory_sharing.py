@@ -26,6 +26,9 @@ import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    MULTI_AGENT_ENABLED: bool
+
+if TYPE_CHECKING:
     from infra.db import AnyConnection
 import time
 from pathlib import Path
@@ -37,7 +40,7 @@ from config import resolve_db_path
 
 from infra.db_write_queue import sqlite_write_queue
 
-__all__ = [
+__all__ = [  # pyright: ignore[reportUnsupportedDunderAll]
     "MULTI_AGENT_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "share_memory",
     "list_shared_memories",
