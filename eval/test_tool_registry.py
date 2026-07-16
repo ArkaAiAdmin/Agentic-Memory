@@ -26,9 +26,9 @@ def test_core_count():
 
 
 def test_admin_count():
-    """ADMIN_TOOLS has 94 entries (matches AGENTS.md)."""
-    assert len(tool_registry.ADMIN_TOOLS) == 94, (
-        f"Expected 94 ADMIN tools, got {len(tool_registry.ADMIN_TOOLS)}"
+    """ADMIN_TOOLS has 95 entries (matches AGENTS.md)."""
+    assert len(tool_registry.ADMIN_TOOLS) == 95, (
+        f"Expected 95 ADMIN tools, got {len(tool_registry.ADMIN_TOOLS)}"
     )
 
 
@@ -102,6 +102,62 @@ def test_total_tool_count():
     """Total unique tools across CORE + ADMIN (DEPRECATED ⊂ ADMIN, not counted separately)."""
     unique = set(tool_registry.CORE_TOOLS) | set(tool_registry.ADMIN_TOOLS)
     # DEPRECATED ⊂ ADMIN, so unique = CORE ∪ ADMIN
-    assert len(unique) == 112, (
-        f"Expected 112 unique tools (18 CORE + 94 ADMIN), got {len(unique)}"
+    assert len(unique) == 113, (
+        f"Expected 113 unique tools (18 CORE + 95 ADMIN), got {len(unique)}"
     )
+
+
+def test_all_admin_tools_reachable_via_router():
+    """Every ADMIN_TOOLS name maps to a MaintenanceOp enum + handler.
+
+    The `memory_maintenance(operation="...")` router is the only supported
+    path to ADMIN tools (Hard Rule 6). Each tool name must have a matching
+    MaintenanceOp enum member and a callable handler in MAINTENANCE_HANDLERS.
+
+    A few ADMIN_TOOLS names use a different prefix than the MaintenanceOp
+    value (e.g. memory_pinned_decay_check → pinned_decay); those are mapped
+    explicitly below rather than via the naive "strip memory_" rule.
+    """
+    from mcp_maintenance import MaintenanceOp
+    from mcp_maintenance_ops import MAINTENANCE_HANDLERS
+
+    # ADMIN_TOOLS name → MaintenanceOp value (overrides naive prefix strip)
+    _OP_ALIASES = {
+        "memory_pinned_decay_check": "pinned_decay",
+        "memory_run_tier_migration": "tier_migration",
+        "memory_check_embedding_model": "embedding_model_check",
+        "memory_admin_policy_hash": "policy_hash_status",
+    }
+
+    # memory_maintenance itself is the router, not a routed op
+    admin_ops = [t for t in tool_registry.ADMIN_TOOLS if t != "memory_maintenance"]
+
+    missing_enum = []
+    missing_handler = []
+    for name in admin_ops:
+        op_value = _OP_ALIASES.get(name, name[len("memory_"):])
+        try:
+            op_enum = MaintenanceOp(op_value)
+        except ValueError:
+            missing_enum.append(name)
+            continue
+        if op_enum not in MAINTENANCE_HANDLERS:
+            missing_handler.append(name)
+
+    assert not missing_enum, (
+        f"ADMIN tools without MaintenanceOp enum: {missing_enum}"
+    )
+    assert not missing_handler, (
+        f"ADMIN tools without handler: {missing_handler}"
+    )
+
+
+def test_pipeline_coverage_registered():
+    """pipeline_coverage is a registered ADMIN op with a working handler."""
+    from mcp_maintenance import MaintenanceOp
+    from mcp_maintenance_ops import MAINTENANCE_HANDLERS
+
+    assert "memory_pipeline_coverage" in tool_registry.ADMIN_TOOLS
+    op_enum = MaintenanceOp("pipeline_coverage")
+    assert op_enum in MAINTENANCE_HANDLERS
+    assert callable(MAINTENANCE_HANDLERS[op_enum])
