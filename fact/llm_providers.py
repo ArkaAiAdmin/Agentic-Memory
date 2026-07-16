@@ -394,7 +394,13 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             data = json.loads(raw)
             choices = data.get("choices") or []
             if choices:
-                return str(choices[0].get("message", {}).get("content", ""))
+                content = str(choices[0].get("message", {}).get("content", "")).strip()
+                if content.startswith("```"):
+                    lines = content.split("\n", 1)
+                    if len(lines) > 1:
+                        content = lines[1]
+                    content = content.rsplit("```", 1)[0].strip()
+                return content
             return ""
         except Exception as e:
             logger.debug("OpenAICompatibleProvider: generate failed: %s", e)
