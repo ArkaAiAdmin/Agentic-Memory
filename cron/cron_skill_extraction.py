@@ -184,8 +184,7 @@ def main() -> None:
     args = parser.parse_args()
     acquire_lock_or_exit('cron_skill_extraction')
 
-    env = os.environ.get("MEMORY_DB_PATH")
-    db_path = Path(env) if env else resolve_active_memory_dir() / "memory.db"
+    db_path = Path(os.environ.get("MEMORY_DB_PATH", resolve_active_memory_dir() / "memory.db"))
     if not db_path.exists():
         print(f"ERROR: no memory.db at {db_path}")
         sys.exit(1)

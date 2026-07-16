@@ -212,6 +212,47 @@ class ProxyConnection:
         if status == "error":
             raise res
 
+    def commit_release(self) -> None:
+        """Commit the session transaction WITHOUT re-acquiring BEGIN IMMEDIATE.
+
+        Releases the RESERVED lock so other processes (e.g. cron subprocesses)
+        can write to the database. Caller must call ``acquire_lock()`` before
+        the next write operation.
+        """
+        if self._closed:
+            return
+        self._cmd_queue.put(("commit_release", None))
+        status, res = self._wait_response()
+        if status == "error":
+            raise res
+
+    def acquire_lock(self) -> None:
+        """Re-acquire BEGIN IMMEDIATE after ``commit_release()``."""
+        if self._closed:
+            return
+        self._cmd_queue.put(("acquire_lock", None))
+        status, res = self._wait_response()
+        if status == "error":
+            raise res
+
+    def release_flock(self) -> None:
+        """Release the per-DB-path flock so subprocesses can write."""
+        if self._closed:
+            return
+        self._cmd_queue.put(("release_flock", None))
+        status, res = self._wait_response()
+        if status == "error":
+            raise res
+
+    def acquire_flock(self) -> None:
+        """Re-acquire the per-DB-path flock after ``release_flock()``."""
+        if self._closed:
+            return
+        self._cmd_queue.put(("acquire_flock", None))
+        status, res = self._wait_response()
+        if status == "error":
+            raise res
+
     def rollback(self) -> None:
         if self._closed:
             return
@@ -457,6 +498,20 @@ class SQLiteWriteQueue:
                                         elif action == "commit":
                                             conn.commit()
                                             conn.execute("BEGIN IMMEDIATE")
+                                            resp_queue.put(("success", None))
+                                        elif action == "commit_release":
+                                            conn.commit()
+                                            resp_queue.put(("success", None))
+                                        elif action == "acquire_lock":
+                                            conn.execute("BEGIN IMMEDIATE")
+                                            resp_queue.put(("success", None))
+                                        elif action == "release_flock":
+                                            from infra.db_path_flock import release_db_path_flock
+                                            release_db_path_flock(db_path)
+                                            resp_queue.put(("success", None))
+                                        elif action == "acquire_flock":
+                                            from infra.db_path_flock import acquire_db_path_flock
+                                            acquire_db_path_flock(db_path)
                                             resp_queue.put(("success", None))
                                         elif action == "rollback":
                                             conn.rollback()

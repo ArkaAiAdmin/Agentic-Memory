@@ -460,13 +460,25 @@ def handle_run_script(
     env = os.environ.copy()
     env.update(payload.get("env", {}))
     env["MEMORY_DB_PATH"] = str(db_path)
-    result = subprocess.run(
-        [str(venv_py), str(script), *extra_args],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env=env,
-    )
+    # Release SQLite RESERVED lock + per-DB-path flock before the
+    # subprocess so the child can write to the DB without blocking.
+    if hasattr(conn, "commit_release"):
+        conn.commit_release()
+    if hasattr(conn, "release_flock"):
+        conn.release_flock()
+    try:
+        result = subprocess.run(
+            [str(venv_py), str(script), *extra_args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+    finally:
+        if hasattr(conn, "acquire_flock"):
+            conn.acquire_flock()
+        if hasattr(conn, "acquire_lock"):
+            conn.acquire_lock()
     stdout = (result.stdout or "").strip()
     stderr = (result.stderr or "").strip()
     if result.returncode != 0:

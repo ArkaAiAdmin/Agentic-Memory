@@ -3117,7 +3117,7 @@ with audit_tab:
 # ═══════════════════════════════════════════════════════════════════════════
 with search_tab:
     st.subheader("Memory Explorer")
-    st.caption("Basic `LIKE` text search — does not use the 14-phase agent search pipeline. For semantic/FTS/reranked search, use `memory_search` via MCP or CLI.")
+    st.caption("Full 14-phase pipeline — hybrid search via `search_memories`.")
 
     # ── Search bar with category filter ──
     s_col1, s_col2 = st.columns([3, 1])
@@ -3135,20 +3135,37 @@ with search_tab:
 
     # ── Search or browse ──
     if q_text:
-        cat_where = "AND category = ?" if search_cat and search_cat != "all" else ""
-        cat_params = [search_cat] if search_cat and search_cat != "all" else []
-
         import time as _time
         _t0 = _time.time()
-        df = query(
-            f"SELECT id, substr(content,1,400) preview, category, "
-            f"created_at, pinned, COALESCE(fitness_score, 0.5) as fitness, "
-            f"COALESCE(tier, 'unassigned') as tier, COALESCE(importance, 3) as importance "
-            f"FROM memories WHERE content LIKE ? {cat_where} "
-            f"ORDER BY created_at DESC LIMIT 50",
-            [f"%{q_text}%"] + cat_params,
+        from search.orchestrator import search_memories
+        _cat = search_cat if search_cat and search_cat != "all" else ""
+        result = search_memories(
+            db_path=DB,
+            query=q_text,
+            limit=50,
+            category=_cat,
+            light=True,
+            include_global=True,
         )
         _elapsed = (_time.time() - _t0) * 1000
+        items = result.get("results", [])
+        if items:
+            import pandas as pd
+            rows = []
+            for r in items:
+                rows.append({
+                    "id": r.get("id", ""),
+                    "preview": (r.get("content") or "")[:400],
+                    "category": r.get("category", ""),
+                    "created_at": r.get("created"),
+                    "pinned": r.get("pinned", False),
+                    "fitness": r.get("fitness_score", 0.5),
+                    "tier": "unassigned",
+                    "importance": r.get("importance", 3),
+                })
+            df = pd.DataFrame(rows)
+        else:
+            df = None
 
         if df is None or df.empty:
             st.info(f"No matches for '{q_text}'")

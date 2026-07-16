@@ -123,6 +123,7 @@ def run_backfill(
     commit_every: int = 25,
     progress_every: int = 100,
     dry_run: bool = False,
+    incremental: bool = False,
 ) -> dict:
     """Run backfill_all.py --incremental and capture results.
 
@@ -140,10 +141,13 @@ def run_backfill(
     cmd = [
         str(venv_python),
         str(scripts_dir / "backfill_all.py"),
-        "--incremental",
+    ]
+    if incremental:
+        cmd.append("--incremental")
+    cmd.extend([
         f"--commit-every={commit_every}",
         f"--progress-every={progress_every}",
-    ]
+    ])
     if dry_run:
         cmd.append("--health")  # dry run = health check only
 
@@ -206,6 +210,7 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="Weekly KG backfill cron")
     parser.add_argument("--dry-run", action="store_true", help="Health check only")
+    parser.add_argument("--incremental", action="store_true", default=False, help="Incremental backfill (safe, no table drops)")
     parser.add_argument("--commit-every", type=int, default=25)
     parser.add_argument("--progress-every", type=int, default=100)
     parser.add_argument(
@@ -243,6 +248,7 @@ def main() -> int:
             commit_every=args.commit_every,
             progress_every=args.progress_every,
             dry_run=args.dry_run,
+            incremental=args.incremental,
         )
 
     post = postflight_stats(db_path, pre)

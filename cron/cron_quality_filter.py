@@ -29,8 +29,7 @@ def main() -> int:
     if not qg.QUALITY_GATES_ENABLED:
         print("MEMORY_QUALITY_GATES not enabled, skipping.")
         return 0
-    env = os.environ.get("MEMORY_DB_PATH")
-    db_path = Path(env) if env else resolve_active_memory_dir() / "memory.db"
+    db_path = Path(os.environ.get("MEMORY_DB_PATH", resolve_active_memory_dir() / "memory.db"))
     if not db_path.exists():
         print(f"ERROR: no memory.db at {db_path}")
         sys.exit(1)
