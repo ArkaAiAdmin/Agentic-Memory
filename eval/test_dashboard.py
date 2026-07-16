@@ -130,6 +130,11 @@ _schema_conn.executescript(
     );
     INSERT OR IGNORE INTO config (key, value) VALUES ('schema_version', '61');
 
+    CREATE TABLE IF NOT EXISTS schema_version (
+        id INTEGER PRIMARY KEY, version INTEGER
+    );
+    INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, 68);
+
     CREATE TABLE IF NOT EXISTS memories (
         id TEXT PRIMARY KEY, content TEXT, category TEXT,
         created_at TEXT, pinned INTEGER DEFAULT 0,
@@ -947,12 +952,12 @@ class TestDashboardIntegration(unittest.TestCase):
         self.assertIsInstance(result, Path)
 
     def test_schema_version_reads_from_config(self) -> None:
-        """``_get_schema_version()`` reads from the config table.
+        """``_get_schema_version()`` reads from the schema_version table.
 
-        Our test DB has schema_version=61 in the config table.
+        Our test DB has schema_version=68 in the schema_version table.
         """
         version = dashboard._get_schema_version()
-        self.assertEqual(version, "v61")
+        self.assertEqual(version, "v68")
 
     def test_table_function_with_real_db(self) -> None:
         """``table()`` returns True for existing tables in the test DB."""

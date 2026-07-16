@@ -5,7 +5,7 @@
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
 <!--AUTO-GEN:START key="mcp_surface_schema_header"-->
-> Last updated: 2026-07-16. Schema v67. Multi-tenant isolation enforced.
+> Last updated: 2026-07-16. Schema v68. Multi-tenant isolation enforced.
 <!--AUTO-GEN:END key="mcp_surface_schema_header"-->
 
 ---
@@ -86,7 +86,7 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 - **Contradiction merge:** LIVE — `memory_resolve_contradiction(strategy="merge")` delegates to resolver (G3).
 - **Belief review:** LIVE — `cron_review_beliefs` queues stale beliefs; `memory_review_beliefs` reads queue (G4).
 
-**Surface: 21 CORE verbs + `memory_maintenance` router (escape hatch)**
+**Surface: 22 CORE verbs + `memory_maintenance` router (escape hatch)**
 
 - CORE tools: visible directly — call them by name.
 - `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.
@@ -652,7 +652,7 @@ memory_maintenance(operation="duplicates", threshold=0.85)
 ## Schema Version
 
 <!--AUTO-GEN:START key="mcp_surface_schema_version"-->
-Current: **v67** (68 migrations, 100% down-migration coverage)
+Current: **v68** (69 migrations, 100% down-migration coverage)
 <!--AUTO-GEN:END key="mcp_surface_schema_version"-->
 
 - `memory_ctr_feedback` composite primary key `(query_id, id)` (migration 061): one row per returned result so CTR click/dismiss signals correlate onto the originating impression. Previously a single `id TEXT PRIMARY KEY` sentinel row (`id='__search__'`) meant only one impression ever existed and `compute_channel_weights` never accumulated signal.

@@ -113,7 +113,7 @@ class TestSearchBudget:
         import os
         os.environ.pop("MEMORY_SEARCH_COMPUTE_BUDGET_MS", None)
         budget = get_search_budget()
-        assert budget.budget_ms == 0  # Unlimited
+        assert budget.budget_ms == 200.0  # Default warm latency target
 
     def test_env_var_invalid(self):
         from search.budget_aware import get_search_budget
@@ -121,7 +121,7 @@ class TestSearchBudget:
         os.environ["MEMORY_SEARCH_COMPUTE_BUDGET_MS"] = "not_a_number"
         try:
             budget = get_search_budget()
-            assert budget.budget_ms == 0  # Falls back to unlimited
+            assert budget.budget_ms == 200.0  # Falls back to default
         finally:
             del os.environ["MEMORY_SEARCH_COMPUTE_BUDGET_MS"]
 

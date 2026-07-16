@@ -734,14 +734,14 @@ def _run_pipeline_health(json_output: bool = False) -> str:
     try:
         _result = subprocess.run(
             [sys.executable, _script],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=120,
         )
         _lines = (_result.stdout + "\n" + _result.stderr).strip()
         if json_output:
             return _lines
         return f"exit_code={_result.returncode}\n{_lines}"
     except subprocess.TimeoutExpired:
-        return "pipeline_coverage: timed out after 60s"
+        return "pipeline_coverage: timed out after 120s"
 
 
 # ---------------------------------------------------------------------------

@@ -132,6 +132,14 @@ def _get_journal_conn(journal_path: Path, timeout: float = 10.0) -> sqlite3.Conn
     if not hasattr(_local, "conns"):
         _local.conns = {}
     conn: sqlite3.Connection | None = _local.conns.get(key)
+    # Detect closed connections: if the cached conn was closed externally
+    # (e.g. by mark_applied's finally block), rebuild it.
+    if conn is not None:
+        try:
+            conn.execute("SELECT 1")
+        except Exception:
+            conn = None
+            _local.conns.pop(key, None)
     if conn is not None and _is_stale_transaction(conn):
         # 2026-07-08: stale transaction detected. Roll back before returning
         # so subsequent BEGIN IMMEDIATE on the same cached conn doesn't
@@ -540,16 +548,13 @@ def mark_applied_and_hooks_completed(journal_path: Path, entry_id: int) -> None:
     ``hooks_completed=0`` state that crash-recovery would then re-run.
     """
     conn = _get_journal_conn(journal_path)
-    try:
-        conn.execute(
-            "UPDATE write_journal "
-            "SET status='applied', processed_at=datetime('now'), hooks_completed=1 "
-            "WHERE id=?",
-            (entry_id,),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    conn.execute(
+        "UPDATE write_journal "
+        "SET status='applied', processed_at=datetime('now'), hooks_completed=1 "
+        "WHERE id=?",
+        (entry_id,),
+    )
+    conn.commit()
 
 
 def mark_failed(journal_path: Path, entry_id: int, error: str) -> None:

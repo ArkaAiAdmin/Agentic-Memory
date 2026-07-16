@@ -1770,16 +1770,13 @@ def _check_already_materialized(db_path: Path, note_id: str, journal_path: Optio
                 try:
                     from infra.write_journal import _get_journal_conn
                     jconn = _get_journal_conn(journal_path, timeout=5.0)
-                    try:
-                        jrow = jconn.execute(
-                            "SELECT hooks_completed FROM write_journal WHERE note_id=? "
-                            "ORDER BY id DESC LIMIT 1",
-                            (note_id,),
-                        ).fetchone()
-                        if jrow is not None and not jrow[0]:
-                            return False
-                    finally:
-                        jconn.close()
+                    jrow = jconn.execute(
+                        "SELECT hooks_completed FROM write_journal WHERE note_id=? "
+                        "ORDER BY id DESC LIMIT 1",
+                        (note_id,),
+                    ).fetchone()
+                    if jrow is not None and not jrow[0]:
+                        return False
                 except Exception as _hc_exc:
                     logger.debug("_check_already_materialized hooks_completed check failed: %s", _hc_exc)
             return True

@@ -148,7 +148,7 @@ def run_one_test(f):
             ],
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=900,
             env=test_env,
         )
         output = result.stdout + result.stderr

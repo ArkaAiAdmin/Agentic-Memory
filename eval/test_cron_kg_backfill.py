@@ -125,6 +125,7 @@ class TestRunBackfill(unittest.TestCase):
             commit_every=10,
             progress_every=50,
             dry_run=False,
+            incremental=True,
         )
 
         self.assertEqual(result["exit_code"], 0)
@@ -150,6 +151,7 @@ class TestRunBackfill(unittest.TestCase):
             commit_every=25,
             progress_every=100,
             dry_run=True,
+            incremental=True,
         )
         cmd = result["command"]
         self.assertIn("--health", cmd)

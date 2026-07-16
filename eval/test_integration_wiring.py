@@ -41,15 +41,18 @@ def _run_subprocess(code: str, env: dict) -> subprocess.CompletedProcess:
 class TestCrontabWiresTierPatching(unittest.TestCase):
     def test_crontab_contains_tier_patch_flags(self):
         code = textwrap.dedent(f"""
+            import json
             import sys
             sys.path.insert(0, {repr(os.path.join(REPO_ROOT))})
             from cron.jobs import JOBS
             drift_job = JOBS.get("config_drift", {{}})
             args = drift_job.get("args", [])
-            assert "--apply-tier-patches" in args, (
+            # Flags may be in top-level args or nested in --payload JSON
+            all_text = " ".join(str(a) for a in args)
+            assert "--apply-tier-patches" in all_text, (
                 f"config_drift job missing --apply-tier-patches: {{args}}"
             )
-            assert "--reload-policy" in args, (
+            assert "--reload-policy" in all_text, (
                 f"config_drift job missing --reload-policy: {{args}}"
             )
             print("PASS")

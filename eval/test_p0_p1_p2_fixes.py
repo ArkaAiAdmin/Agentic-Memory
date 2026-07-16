@@ -225,7 +225,7 @@ class TestCtrClickProxy(unittest.TestCase):
         os.remove(db)
 
     def test_click_proxy_window_respected(self):
-        """An old returned event (5h ago) is NOT auto-clicked at default 4h window."""
+        """An old returned event (200h ago) is NOT auto-clicked at default 168h window."""
         from save_pipeline import _index_adaptive_retention
 
         db = _temp_db()
@@ -234,7 +234,7 @@ class TestCtrClickProxy(unittest.TestCase):
 
         conn = sqlite3.connect(db)
         try:
-            old_time = _time.time() - 5 * 3600
+            old_time = _time.time() - 200 * 3600
             conn.execute(
                 "INSERT INTO memory_ctr_feedback (id, query_id, returned_at, source, ranking_params) "
                 "VALUES (?, ?, ?, ?, ?)",

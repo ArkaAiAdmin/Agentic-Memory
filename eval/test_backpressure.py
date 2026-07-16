@@ -38,7 +38,7 @@ class TestRejectNew:
             r = enqueue_task(conn, "t", {"i": i}, max_queue_size=3)
             assert isinstance(r, int)
             ids.append(r)
-        r = enqueue_task(conn, "t", {"i": 99}, max_queue_size=3)
+        r = enqueue_task(conn, "t", {"i": 99}, max_queue_size=3, reject_policy="reject_new")
         assert isinstance(r, dict)
         assert r["queued"] is False
         assert r["reason"] == "queue_full"

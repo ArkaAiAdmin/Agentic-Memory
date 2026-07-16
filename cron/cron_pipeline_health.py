@@ -15,6 +15,8 @@ import sys
 import time
 from pathlib import Path
 
+from _flock import acquire_lock_or_exit
+
 SENTINEL_TYPE = "cron_pipeline_sentinel"
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -275,6 +277,7 @@ def _try_start_worker() -> bool:
 
 
 def main() -> int:
+    acquire_lock_or_exit("cron_pipeline_health")
     db_path = _resolve_db()
     if not db_path.exists():
         print(f"CRITICAL: database not found at {db_path}", file=sys.stderr)

@@ -440,6 +440,9 @@ class TestIndexAdaptiveRetention(unittest.TestCase):
                 query_id TEXT NOT NULL,
                 returned_at REAL NOT NULL,
                 clicked_at REAL,
+                dismissed_at REAL,
+                source TEXT,
+                ranking_params TEXT,
                 PRIMARY KEY (id, query_id)
             )
         """)

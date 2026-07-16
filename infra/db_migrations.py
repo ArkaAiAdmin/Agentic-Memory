@@ -554,6 +554,12 @@ def _migrate_add_fk_constraints(conn) -> None:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_shared_shared_with ON shared_memories(shared_with)"
                 )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_shared_tenant_id ON shared_memories(tenant_id)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_shared_tenant_id ON shared_memories(tenant_id)"
+                )
             elif table == "user_profile_access_log":
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_user_profile_note ON user_profile_access_log(note_id)"

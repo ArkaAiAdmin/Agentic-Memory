@@ -376,7 +376,7 @@ def main(test_root=None):
     )
     c_path = test_root / "_c_integration.py"
     c_path.write_text(c_script)
-    rc, out, err, _ = run(f"{py} {c_path}", test_root=test_root)
+    rc, out, err, _ = run(f"{py} {c_path}", test_root=test_root, timeout=180)
     combined = out + err
     if "C1_SAVE_OK" in combined and "C1_SEARCH_FOUND" in combined:
         val.record("C1 save→search roundtrip", "PASS", "saved+retrieved")

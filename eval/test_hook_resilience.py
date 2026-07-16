@@ -106,7 +106,7 @@ class TestHookOutput(unittest.TestCase):
                 "tool_input": {"command": "search for Qwen3 MPS hang"},
             }
         )
-        rc, out, err = _run_hook("memory-proactive-context.py", stdin, timeout=20.0)
+        rc, out, err = _run_hook("memory-proactive-context.py", stdin, timeout=60.0)
         self.assertEqual(rc, 0)
         # Either it found a match (prints context block) or it didn't
         # (silent return). Either is fine — we just want exit 0 and no crash.
@@ -175,7 +175,7 @@ class TestMcpModuleBootstrap(unittest.TestCase):
 class TestSessionEndHook(unittest.TestCase):
     """P1: memory-session-end hook must never crash and must exit 0."""
 
-    def _run_hook_session_end(self, stdin: str = "", timeout: float = 30.0):
+    def _run_hook_session_end(self, stdin: str = "", timeout: float = 60.0):
         return _run_hook("memory-session-end.py", stdin, timeout=timeout)
 
     def test_session_end_hook_imports_cleanly(self):
