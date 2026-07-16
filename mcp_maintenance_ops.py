@@ -580,6 +580,9 @@ def _get_handlers() -> dict:
                 _op_config_drift(persist=persist, severity_floor=severity_floor,
                                   compare_to_last=compare_to_last, format=format)
             ),
+            MaintenanceOp.PIPELINE_COVERAGE: lambda *, json_output=False, **_: (
+                _run_pipeline_health(json_output=json_output)
+            ),
             MaintenanceOp.POLICY_HASH_STATUS: lambda *, peer_timeout_s=5.0, max_concurrent=4,
                                               cache_ttl_s=60.0, force_refresh=False,
                                               include_full_policy=False, since_ts=None, **_: (
@@ -715,6 +718,30 @@ class _MaintenanceHandlersProxy:
 
     def items(self):
         return _get_handlers().items()
+
+
+# ---------------------------------------------------------------------------
+# Pipeline coverage helper
+# ---------------------------------------------------------------------------
+
+
+def _run_pipeline_health(json_output: bool = False) -> str:
+    """Run cron/cron_pipeline_health.py and return its output."""
+    import subprocess, sys
+    _script = str(
+        Path(__file__).resolve().parent / "cron" / "cron_pipeline_health.py"
+    )
+    try:
+        _result = subprocess.run(
+            [sys.executable, _script],
+            capture_output=True, text=True, timeout=60,
+        )
+        _lines = (_result.stdout + "\n" + _result.stderr).strip()
+        if json_output:
+            return _lines
+        return f"exit_code={_result.returncode}\n{_lines}"
+    except subprocess.TimeoutExpired:
+        return "pipeline_coverage: timed out after 60s"
 
 
 # ---------------------------------------------------------------------------

@@ -6,9 +6,9 @@ If you are an agent **using** the system (not maintaining it): read `AGENT_CONTR
 
 ---
 <!--AUTO-GEN:START key="what_this_system_is"-->
-- **Surface**: 18 CORE verbs + `memory_maintenance` router (94 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 52+ cron jobs
-- **Schema**: v62, ~76 tables
-- **Code**: ~119k LOC production, ~101k+ test LOC; see `docs/architecture.md`
+- **Surface**: 18 CORE verbs + `memory_maintenance` router (94 ADMIN + 3 DEPRECATED behind router) + 6 lifecycle hooks + 55+ cron jobs
+- **Schema**: v64, ~77 tables
+- **Code**: ~119k LOC production, ~102k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 
@@ -34,7 +34,7 @@ Minimum every session: #1 + #5. Save a **context-rich** `projects` note (importa
 2. **Connection pool is per-DB-path.** `connection_pool.get(str(db_path))` returns stale FD if the path doesn't exist; active connections cannot be evicted.
 3. **Vec key/index drift after warm-up.** Run `venv/bin/python rebuild_vec_index.py` after any warm-up chain, never before.
 4. **Schema changes are numbered migrations only.** `migrations/NNN_name.sql` + `NNN_name.down.sql`, then bump `SCHEMA_VERSION`. Current: <!--AUTO-GEN:START key="hard_rule_4"-->
-62
+64
 <!--AUTO-GEN:END key="hard_rule_4"-->. Never `ALTER TABLE` in Python.
 5. **Default search: `include_global=True`** with blended RRF. Don't override "for safety."
 6. **<!--AUTO-GEN:START key="hard_rule_6"-->
@@ -69,11 +69,11 @@ agentic-memory/
 ├── background/
 │   ├── auto_save.py   ← async inbox+daemon
 │   └── background_worker.py ← CQRS write-journal daemon
-├── cron/             ← 52+ scheduled jobs
+├── cron/             ← 55+ scheduled jobs
 ├── mcp_*.py (31 modules) ← MCP tool surface
 ├── memory/           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md
-└── eval/             ← 323 test files, 4933+ test functions
+└── eval/             ← 328 test files, 4944+ test functions
 <!--AUTO-GEN:END key="critical_path"-->
 
 **Message contract:** CORE tools return user-facing JSON. All writes go through `save_memory` (direct) or `save_memory_journal` (CQRS journal, gated by `MEMORY_WRITE_JOURNAL_ENABLED`); the saga ensures crash-consistent rollback. `defer_expensive=True` by default — returns <200ms.
@@ -152,13 +152,13 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 
 ---
 <!--AUTO-GEN:START key="current_state"-->
-- **Schema v62**: 63 migrations (100% down-coverage), ~76 tables.
+- **Schema v64**: 65 migrations (100% down-coverage), ~77 tables.
 - **MCP surface**: 18 CORE + 1 router (94 ADMIN + 3 DEPRECATED). See `docs/MCP_SURFACE.md`.
 - **Write path**: Saga transaction (DB + vec_key + .md) with flock locking, crash-consistent rollback. `defer_expensive=True` → <200ms.
 - **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).
 - **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.
-- **Testing**: 323 test files, 4933+ test functions, ~101k+ test LOC. Subprocess-per-file runner.
+- **Testing**: 328 test files, 4944+ test functions, ~102k+ test LOC. Subprocess-per-file runner.
 - **Canonical refs**: `docs/architecture.md` · `docs/MCP_SURFACE.md` · `skills/memory-architecture/SKILL.md`.
 <!--AUTO-GEN:END key="current_state"-->
 

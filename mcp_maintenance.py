@@ -965,6 +965,7 @@ class MaintenanceOp(str, Enum):
     STRIP_PROVENANCE = "strip_provenance"
     SET_ACL_OVERRIDE = "set_acl_override"
     REMOVE_ACL_OVERRIDE = "remove_acl_override"
+    PIPELINE_COVERAGE = "pipeline_coverage"
     POLICY_HASH_STATUS = "policy_hash_status"
 
     @classmethod
