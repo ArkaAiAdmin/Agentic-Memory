@@ -164,19 +164,6 @@ def handle_fact_consolidation(
         from pathlib import Path as _P
         from fact.consolidate_facts import consolidate_memory_facts
 
-        # Guard: skip if corpus is too large (>2000 notes) — consolidate_facts
-        # uses O(n²) contradiction detection and will return immediately with
-        # a warning, but the module-level imports (llm_extraction, sentence
-        # transformers) still happen at import time and can load a 3B LLM
-        # consuming 6-8GB. Check + short-circuit here to skip the expensive
-        # import entirely when the guard would immediately return.
-        row = conn.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
-        n = int(row[0]) if row else 0
-        if n > 2000:
-            raise RuntimeError(
-                f"corpus {n} notes exceeds consolidation guard (2000) "
-                f"— run compaction manually or increase guard"
-            )
         try:
             consolidate_memory_facts(db_path=_P(db_path))
         except Exception as _wp_exc:
