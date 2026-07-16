@@ -61,16 +61,16 @@ _AUTO_SHARE_MAX_PER_CYCLE = 25
 _SHARED_TABLE = "shared_memories"
 
 
-def _purge_expired_shared(conn: AnyConnection) -> None:
-    """Delete TTL-expired entries from the shared pool."""
+def _purge_expired_shared(conn: AnyConnection, tenant_id: str = "default") -> None:
+    """Delete TTL-expired entries from the shared pool, scoped to a tenant."""
     import sys
 
     this_mod = sys.modules[__name__]
     if this_mod._SHARED_POOL_TTL_DAYS > 0:
         cutoff = time.time() - (this_mod._SHARED_POOL_TTL_DAYS * 86400)
         conn.execute(
-            f"DELETE FROM {_SHARED_TABLE} WHERE shared_at < ?",
-            (cutoff,),
+            f"DELETE FROM {_SHARED_TABLE} WHERE shared_at < ? AND tenant_id = ?",
+            (cutoff, tenant_id),
         )
 
 
@@ -177,10 +177,12 @@ def share_memory(
 
             content, category, tags_json, meta_json, note_tenant_id = row
 
-            _purge_expired_shared(conn)
+            _tid = note_tenant_id or "default"
+            _purge_expired_shared(conn, tenant_id=_tid)
             try:
                 count_row = conn.execute(
-                    f"SELECT COUNT(*) FROM {_SHARED_TABLE}"
+                    f"SELECT COUNT(*) FROM {_SHARED_TABLE} WHERE tenant_id = ?",
+                    (_tid,),
                 ).fetchone()
                 count = int(count_row[0]) if count_row is not None else 0
                 this_mod = sys.modules[__name__]
@@ -190,9 +192,10 @@ def share_memory(
                         f"DELETE FROM {_SHARED_TABLE} WHERE id IN "
                         f"(SELECT s.id FROM {_SHARED_TABLE} s "
                         f"LEFT JOIN memories m ON s.source_note_id = m.id "
+                        f"WHERE s.tenant_id = ? "
                         f"ORDER BY COALESCE(m.importance, 0) ASC, s.shared_at ASC "
                         f"LIMIT ?)",
-                        (to_evict,),
+                        (_tid, to_evict,)
                     )
 
                 shared_id = f"shared:{agent_id}:{note_id}"
@@ -241,8 +244,9 @@ def list_shared_memories(
     limit: int = 50,
     shared_with_me: bool = False,
     db_path: str | None = None,
+    tenant_id: str = "default",
 ) -> list[dict] | dict:
-    """List memories in the shared pool.
+    """List memories in the shared pool, scoped to a tenant.
 
     Args:
         agent_id: filter by sharing agent
@@ -251,6 +255,7 @@ def list_shared_memories(
         shared_with_me: if True, restrict to rows where target_agent_id or
             shared_with matches the current agent (directed shares only).
         db_path: optional path to memory.db
+        tenant_id: tenant scope (default "default")
 
     Returns:
         list of shared memory dicts
@@ -290,7 +295,8 @@ def list_shared_memories(
                 f"FROM {_SHARED_TABLE}"
             )
             params: list = []
-            conditions = []
+            conditions = ["tenant_id = ?"]
+            params.append(tenant_id)
             if agent_id:
                 conditions.append("agent_id = ?")
                 params.append(agent_id)

@@ -1018,7 +1018,10 @@ def _restore_crdt_pre_state(
             )
     else:
         try:
-            conn.execute("DELETE FROM memories WHERE id=? AND tenant_id=tenant_id()", (note_id,))
+            conn.execute(
+                "DELETE FROM memories WHERE id=? AND tenant_id=?",
+                (note_id, tid),
+            )
         except Exception as exc:
             logger.warning("crdt undo: delete memories for %s failed: %r", note_id, exc)
     try:
