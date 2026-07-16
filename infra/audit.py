@@ -98,7 +98,14 @@ def _resolve_audit_principal_and_tenant() -> tuple[str | None, str | None]:
         principal_id = getattr(ctx, "principal_id", None) or getattr(ctx, "agent_id", None)
     except (ImportError, Exception):
         pass
-    return principal_id, principal_id  # In this codebase, agent_id IS the tenant id.
+    tenant_id: str | None = None
+    if principal_id:
+        try:
+            from infra.authorizer import resolve_tenant_for_principal
+            tenant_id = resolve_tenant_for_principal(principal_id)
+        except Exception:
+            tenant_id = principal_id
+    return principal_id, tenant_id
 
 
 # Pending counter — incremented on enqueue, decremented after the

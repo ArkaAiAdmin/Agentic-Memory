@@ -252,7 +252,7 @@ def _entity_name_to_memory_id(
     return found
 
 
-def _phase_nine_kg_boost(
+def _phase_ten_kg_boost(
     db: AnyConnection,
     results: list,
     query: str,
@@ -418,7 +418,7 @@ def _phase_nine_kg_boost(
         return results
     except Exception as e:
         _phase_inc("search.kg_boost", e)
-        logger.warning("_phase_nine_kg_boost failed: %s", e)
+        logger.warning("_phase_ten_kg_boost failed: %s", e)
         return results
 
 

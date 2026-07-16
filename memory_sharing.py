@@ -26,6 +26,9 @@ import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    MULTI_AGENT_ENABLED: bool
+
+if TYPE_CHECKING:
     from infra.db import AnyConnection
 import time
 from pathlib import Path
@@ -37,7 +40,7 @@ from config import resolve_db_path
 
 from infra.db_write_queue import sqlite_write_queue
 
-__all__ = [
+__all__ = [  # pyright: ignore[reportUnsupportedDunderAll]
     "MULTI_AGENT_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "share_memory",
     "list_shared_memories",
@@ -61,16 +64,16 @@ _AUTO_SHARE_MAX_PER_CYCLE = 25
 _SHARED_TABLE = "shared_memories"
 
 
-def _purge_expired_shared(conn: AnyConnection) -> None:
-    """Delete TTL-expired entries from the shared pool."""
+def _purge_expired_shared(conn: AnyConnection, tenant_id: str = "default") -> None:
+    """Delete TTL-expired entries from the shared pool, scoped to a tenant."""
     import sys
 
     this_mod = sys.modules[__name__]
     if this_mod._SHARED_POOL_TTL_DAYS > 0:
         cutoff = time.time() - (this_mod._SHARED_POOL_TTL_DAYS * 86400)
         conn.execute(
-            f"DELETE FROM {_SHARED_TABLE} WHERE shared_at < ?",
-            (cutoff,),
+            f"DELETE FROM {_SHARED_TABLE} WHERE shared_at < ? AND tenant_id = ?",
+            (cutoff, tenant_id),
         )
 
 
@@ -87,11 +90,15 @@ def _ensure_shared_table(conn: AnyConnection) -> None:
             source_note_id TEXT,
             metadata TEXT,
             target_agent_id TEXT DEFAULT NULL,
-            shared_with TEXT DEFAULT NULL
+            shared_with TEXT DEFAULT NULL,
+            tenant_id TEXT NOT NULL DEFAULT 'default'
         )
     """)
     try:
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({_SHARED_TABLE})").fetchall()}
+        if "tenant_id" not in cols:
+            conn.execute(f"ALTER TABLE {_SHARED_TABLE} ADD COLUMN tenant_id TEXT DEFAULT 'default'")
+            conn.execute(f"UPDATE {_SHARED_TABLE} SET tenant_id = 'default' WHERE tenant_id IS NULL")
         if "target_agent_id" not in cols:
             conn.execute(f"ALTER TABLE {_SHARED_TABLE} ADD COLUMN target_agent_id TEXT DEFAULT NULL")
         if "shared_with" not in cols:
@@ -110,6 +117,9 @@ def _ensure_shared_table(conn: AnyConnection) -> None:
     conn.execute(
         f"CREATE INDEX IF NOT EXISTS idx_shared_shared_with ON {_SHARED_TABLE}(shared_with)"
     )
+    conn.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_shared_tenant_id ON {_SHARED_TABLE}(tenant_id)"
+    )
 
 
 def share_memory(
@@ -118,6 +128,7 @@ def share_memory(
     target_agent_id: str | None = None,
     shared_with: str | None = None,
     db_path: str | None = None,
+    tenant_id: str = "default",
 ) -> dict:
     """Share a memory from one agent's workspace to the shared pool.
 
@@ -157,9 +168,9 @@ def share_memory(
             # transaction.  Otherwise a concurrent unshare could remove
             # the row between our SELECT and INSERT.
             conn.execute("BEGIN IMMEDIATE")
-            # Read the source note
+            # Read the source note (include tenant_id for pool scoping).
             row = conn.execute(
-                "SELECT content, category, tags, metadata FROM memories "
+                "SELECT content, category, tags, metadata, tenant_id FROM memories "
                 "WHERE id = ? AND deleted_at IS NULL",
                 (note_id,),
             ).fetchone()
@@ -167,12 +178,14 @@ def share_memory(
                 conn.rollback()
                 return {"enabled": True, "error": f"note {note_id} not found"}
 
-            content, category, tags_json, meta_json = row
+            content, category, tags_json, meta_json, note_tenant_id = row
 
-            _purge_expired_shared(conn)
+            _tid = note_tenant_id or "default"
+            _purge_expired_shared(conn, tenant_id=_tid)
             try:
                 count_row = conn.execute(
-                    f"SELECT COUNT(*) FROM {_SHARED_TABLE}"
+                    f"SELECT COUNT(*) FROM {_SHARED_TABLE} WHERE tenant_id = ?",
+                    (_tid,),
                 ).fetchone()
                 count = int(count_row[0]) if count_row is not None else 0
                 this_mod = sys.modules[__name__]
@@ -182,22 +195,25 @@ def share_memory(
                         f"DELETE FROM {_SHARED_TABLE} WHERE id IN "
                         f"(SELECT s.id FROM {_SHARED_TABLE} s "
                         f"LEFT JOIN memories m ON s.source_note_id = m.id "
+                        f"WHERE s.tenant_id = ? "
                         f"ORDER BY COALESCE(m.importance, 0) ASC, s.shared_at ASC "
                         f"LIMIT ?)",
-                        (to_evict,),
+                        (_tid, to_evict,)
                     )
 
                 shared_id = f"shared:{agent_id}:{note_id}"
+                _tid = note_tenant_id or "default"
                 conn.execute(
                     f"INSERT INTO {_SHARED_TABLE} "
                     f"(id, agent_id, content, category, tags, shared_at, source_note_id, metadata, "
-                    f"target_agent_id, shared_with) "
-                    f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    f"target_agent_id, shared_with, tenant_id) "
+                    f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                     f"ON CONFLICT(id) DO UPDATE SET "
                     f"content=excluded.content, category=excluded.category, "
                     f"tags=excluded.tags, shared_at=excluded.shared_at, "
                     f"source_note_id=excluded.source_note_id, metadata=excluded.metadata, "
-                    f"target_agent_id=excluded.target_agent_id, shared_with=excluded.shared_with",
+                    f"target_agent_id=excluded.target_agent_id, shared_with=excluded.shared_with, "
+                    f"tenant_id=excluded.tenant_id",
                     (
                         shared_id,
                         agent_id,
@@ -209,6 +225,7 @@ def share_memory(
                         meta_json,
                         target_agent_id,
                         shared_with or target_agent_id,
+                        _tid,
                     ),
                 )
                 conn.commit()
@@ -230,8 +247,9 @@ def list_shared_memories(
     limit: int = 50,
     shared_with_me: bool = False,
     db_path: str | None = None,
+    tenant_id: str = "default",
 ) -> list[dict] | dict:
-    """List memories in the shared pool.
+    """List memories in the shared pool, scoped to a tenant.
 
     Args:
         agent_id: filter by sharing agent
@@ -240,6 +258,7 @@ def list_shared_memories(
         shared_with_me: if True, restrict to rows where target_agent_id or
             shared_with matches the current agent (directed shares only).
         db_path: optional path to memory.db
+        tenant_id: tenant scope (default "default")
 
     Returns:
         list of shared memory dicts
@@ -279,7 +298,8 @@ def list_shared_memories(
                 f"FROM {_SHARED_TABLE}"
             )
             params: list = []
-            conditions = []
+            conditions = ["tenant_id = ?"]
+            params.append(tenant_id)
             if agent_id:
                 conditions.append("agent_id = ?")
                 params.append(agent_id)
@@ -506,7 +526,7 @@ def _run_import_indexers(
 
 
 def import_shared_memory(
-    shared_id: str, target_agent_id: str, db_path: str | None = None
+    shared_id: str, target_agent_id: str, db_path: str | None = None, tenant_id: str = "default"
 ) -> dict:
     """Import a shared memory into the target agent's workspace.
 
@@ -541,9 +561,9 @@ def import_shared_memory(
             _ensure_shared_table(conn)
 
             row = conn.execute(
-                f"SELECT agent_id, content, category, tags, source_note_id, metadata "
-                f"FROM {_SHARED_TABLE} WHERE id = ?",
-                (shared_id,),
+                f"SELECT agent_id, content, category, tags, source_note_id, metadata, tenant_id "
+                f"FROM {_SHARED_TABLE} WHERE id = ? AND tenant_id = ?",
+                (shared_id, tenant_id),
             ).fetchone()
             if not row:
                 return {
@@ -551,7 +571,7 @@ def import_shared_memory(
                     "error": f"shared memory {shared_id} not found",
                 }
 
-            source_agent, content, category, tags_json, source_id, meta_json = row
+            source_agent, content, category, tags_json, source_id, meta_json, _sm_tenant_id = row
 
             new_id = f"imported:{target_agent_id}:{source_id or shared_id}"
             from datetime import datetime, timezone
@@ -629,8 +649,8 @@ def import_shared_memory(
         return {"enabled": True, "error": str(e)}
 
 
-def shared_pool_stats(db_path: str | None = None) -> dict:
-    """Return shared pool statistics."""
+def shared_pool_stats(db_path: str | None = None, tenant_id: str = "default") -> dict:
+    """Return shared pool statistics, scoped to a tenant."""
     import sys
 
     if not sys.modules[__name__].MULTI_AGENT_ENABLED:
@@ -654,14 +674,20 @@ def shared_pool_stats(db_path: str | None = None) -> dict:
             _purge_expired_shared(conn)
             conn.commit()
 
-            total_row = conn.execute(f"SELECT COUNT(*) FROM {_SHARED_TABLE}").fetchone()
+            total_row = conn.execute(
+                f"SELECT COUNT(*) FROM {_SHARED_TABLE} WHERE tenant_id = ?",
+                (tenant_id,),
+            ).fetchone()
             total = int(total_row[0]) if total_row is not None else 0
             agents_row = conn.execute(
-                f"SELECT COUNT(DISTINCT agent_id) FROM {_SHARED_TABLE}"
+                f"SELECT COUNT(DISTINCT agent_id) FROM {_SHARED_TABLE} WHERE tenant_id = ?",
+                (tenant_id,),
             ).fetchone()
             agents = int(agents_row[0]) if agents_row is not None else 0
             categories_row = conn.execute(
-                f"SELECT COUNT(DISTINCT category) FROM {_SHARED_TABLE} WHERE category IS NOT NULL"
+                f"SELECT COUNT(DISTINCT category) FROM {_SHARED_TABLE} "
+                f"WHERE category IS NOT NULL AND tenant_id = ?",
+                (tenant_id,),
             ).fetchone()
             categories = int(categories_row[0]) if categories_row is not None else 0
         finally:
@@ -683,6 +709,7 @@ def list_share_candidates(
     min_fitness: float = _AUTO_SHARE_MIN_FITNESS,
     limit: int = _AUTO_SHARE_MAX_PER_CYCLE,
     db_path: str | None = None,
+    tenant_id: str = "default",
 ) -> list[dict] | dict:
     """Return memory notes that look share-worthy and are not already in the pool.
 
@@ -727,13 +754,16 @@ def list_share_candidates(
         from infra.db import open_db
         with open_db(Path(db), pooled=True, write=True) as conn:
             _ensure_shared_table(conn)
+            _purge_expired_shared(conn)
             rows = conn.execute(
                 """
                 SELECT m.id, m.content, m.category, m.tags,
                        COALESCE(m.importance, 3), COALESCE(m.fitness_score, 1.0)
                 FROM memories m
                 LEFT JOIN shared_memories s ON s.source_note_id = m.id
+                    AND s.tenant_id = ?
                 WHERE m.deleted_at IS NULL
+                  AND m.tenant_id = ?
                   AND COALESCE(m.importance, 3) >= ?
                   AND COALESCE(m.fitness_score, 1.0) >= ?
                   AND s.id IS NULL
@@ -741,7 +771,7 @@ def list_share_candidates(
                          COALESCE(m.fitness_score, 1.0) DESC
                 LIMIT ?
                 """,
-                (min_importance, min_fitness, limit),
+                (tenant_id, tenant_id, min_importance, min_fitness, limit),
             ).fetchall()
             return [
                 {
@@ -765,6 +795,7 @@ def auto_share_high_value(
     min_fitness: float = _AUTO_SHARE_MIN_FITNESS,
     limit: int = _AUTO_SHARE_MAX_PER_CYCLE,
     db_path: str | None = None,
+    tenant_id: str = "default",
 ) -> dict:
     """Scan high-importance notes and share them into the shared pool.
 
@@ -813,6 +844,7 @@ def auto_share_high_value(
         min_fitness=min_fitness,
         limit=limit,
         db_path=db_path,
+        tenant_id=tenant_id,
     )
     if isinstance(candidates, dict) and "error" in candidates:
         return {
@@ -829,7 +861,7 @@ def auto_share_high_value(
     shared_ids: list[str] = []
     skipped = 0
     for cand in candidates:
-        result = share_memory(cand["id"], agent_id, db_path=db_path)
+        result = share_memory(cand["id"], agent_id, db_path=db_path, tenant_id=tenant_id)
         if isinstance(result, dict) and "shared_id" in result:
             shared_ids.append(result["shared_id"])
         else:

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 _SESSION_BOOST_FACTOR = 1.25
 _SESSION_AFFINITY_BOOST = 1.15
 
-# Session keyword sets for intent detection in _phase_eight_session_cluster.
+# Session keyword sets for intent detection in _phase_nine_session_cluster.
 _SESSION_SINGLE_KW = frozenset({
     "session", "meeting", "discussed", "talked about", "talked",
     "today", "this morning", "yesterday",
@@ -106,7 +106,7 @@ def _compute_session_affinity_scores(
     return scores
 
 
-def _phase_eight_session_cluster(
+def _phase_nine_session_cluster(
     results: list,
     query: str,
     limit: int,
@@ -225,5 +225,5 @@ def _phase_eight_session_cluster(
         return results
 
     except Exception as e:
-        logger.debug("_phase_eight_session_cluster cross-entity boost failed: %s", e)
+        logger.debug("_phase_nine_session_cluster cross-entity boost failed: %s", e)
         return results

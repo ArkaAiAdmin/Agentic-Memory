@@ -82,6 +82,47 @@ def _set_saga_deferred(conn: AnyConnection, deferred: bool) -> None:
     else:
         _deferred_state.conns.discard(id(conn))
 
+
+def _write_rollback_audit(
+    conn: AnyConnection,
+    saga_name: str,
+    original_error: Optional[BaseException],
+    rollback_errors: List[BaseException],
+) -> None:
+    """Persist a saga rollback-failure record for post-mortem queries.
+
+    Writes to ``saga_audit_log`` if the table exists; best-effort so
+    a schema mismatch on an old DB does not mask the original failure.
+    """
+    import time as _time
+
+    try:
+        errors_text = "; ".join(
+            f"{type(e).__name__}: {e}" for e in rollback_errors
+        )
+        original_text = (
+            f"{type(original_error).__name__}: {original_error}"
+            if original_error is not None
+            else None
+        )
+        conn.execute(
+            "INSERT INTO saga_audit_log "
+            "(ts, saga_name, failed_step, original_error, rollback_count, rollback_errors) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                _time.time(),
+                saga_name,
+                "",
+                original_text,
+                len(rollback_errors),
+                errors_text,
+            ),
+        )
+        if not _is_saga_deferred(conn):
+            conn.commit()
+    except Exception as _audit_exc:
+        logger.warning("saga rollback audit write failed: %r", _audit_exc)
+
 class SagaMode(str, Enum):
     PER_STEP = "per_step"
     DEFERRED = "deferred"
@@ -486,6 +527,9 @@ class Saga:
                 record.rolled_back = True
         self.rolled_back = True
 
+        if rollback_errors and self.conn is not None:
+            _write_rollback_audit(self.conn, self.name, self._error, rollback_errors)
+
         if rollback_errors and self._error is not None:
             # Attach to the original error so the caller's except
             # clause sees both. ``__exit__`` raises SagaError elsewhere
@@ -571,6 +615,7 @@ class _SaveMemoryParams:
     file_path: Path
     db_path: Path
     conn: AnyConnection
+    tenant_id: str = "default"
     wrote_file: bool = False
     wrote_vec_key: bool = False
     vec_key_value: Optional[int] = None
@@ -599,7 +644,7 @@ class _SaveMemoryParams:
             self.pre_existing_kg_fact_ids = set()
 
 
-def _delete_memory_row(conn: AnyConnection, note_id: str) -> None:
+def _delete_memory_row(conn: AnyConnection, note_id: str, tenant_id: str = "default") -> None:
     """Delete a single memory row as part of saga rollback.
 
     Always commits the DELETE so it survives the saga's own
@@ -608,7 +653,9 @@ def _delete_memory_row(conn: AnyConnection, note_id: str) -> None:
     leaving the row in place after the saga raised.
     """
     try:
-        conn.execute("DELETE FROM memories WHERE id = ?", (note_id,))
+        conn.execute(
+            "DELETE FROM memories WHERE id = ? AND tenant_id = ?", (note_id, tenant_id)
+        )
         try:
             conn.commit()
         except Exception as commit_exc:
@@ -689,14 +736,16 @@ def _restore_memory_row(
     tier: Optional[str] = None,
     importance_score: Optional[float] = None,
     fitness_score: Optional[float] = None,
+    tenant_id: str = "default",
 ) -> None:
-    """Best-effort restore of a pre-existing memory row."""
+    """Best-effort restore of a pre-existing memory row on rollback."""
     if not content:
         return
     try:
         conn.execute(
             "UPDATE memories SET content = ?, tags = ?, pinned = ?, "
-            "tier = ?, importance_score = ?, fitness_score = ? WHERE id = ?",
+            "tier = ?, importance_score = ?, fitness_score = ? "
+            "WHERE id = ? AND tenant_id = ?",
             (
                 content,
                 tags,
@@ -705,18 +754,16 @@ def _restore_memory_row(
                 importance_score,
                 fitness_score,
                 note_id,
+                tenant_id,
             ),
         )
         if metadata_json is not None:
             try:
                 conn.execute(
-                    "UPDATE memories SET metadata = ? WHERE id = ?",
-                    (metadata_json, note_id),
+                    "UPDATE memories SET metadata = ? WHERE id = ? AND tenant_id = ?",
+                    (metadata_json, note_id, tenant_id),
                 )
             except sqlite3.OperationalError:
-                # metadata column may not exist on databases that haven't
-                # applied migration 005 (_migrate_columns_indexes_chunks).
-                # Graceful degradation — metadata is best-effort.
                 pass
         if not _is_saga_deferred(conn):
             conn.commit()
@@ -724,7 +771,7 @@ def _restore_memory_row(
         logger.warning("saga undo: restore UPDATE for %s failed: %r", note_id, exc)
 
 
-def _restore_full_row(conn: AnyConnection, note_id: str, row: dict) -> None:
+def _restore_full_row(conn: AnyConnection, note_id: str, row: dict, tenant_id: str = "default") -> None:
     """Restore a pre-existing memories row to its exact pre-save snapshot.
 
     Sprint 1.1 hardening: unlike :func:`_restore_memory_row` (which only
@@ -741,18 +788,21 @@ def _restore_full_row(conn: AnyConnection, note_id: str, row: dict) -> None:
         return
     try:
         placeholders = ", ".join(f"{c} = ?" for c in cols)
-        sql = f"UPDATE memories SET {placeholders} WHERE id = ?"
-        conn.execute(sql, [row[c] for c in cols] + [note_id])
+        sql = f"UPDATE memories SET {placeholders} WHERE id = ? AND tenant_id = ?"
+        conn.execute(sql, [row[c] for c in cols] + [note_id, tenant_id])
         if not _is_saga_deferred(conn):
             conn.commit()
     except Exception as exc:
         logger.warning("saga undo: full-row restore for %s failed: %r", note_id, exc)
 
 
-def _remove_vec_key(conn: AnyConnection, note_id: str) -> None:
+def _remove_vec_key(conn: AnyConnection, note_id: str, tenant_id: str = "default") -> None:
     """Best-effort removal of the usearch key->memory_id mapping."""
     try:
-        conn.execute("DELETE FROM memory_vec_keys WHERE memory_id = ?", (note_id,))
+        conn.execute(
+            "DELETE FROM memory_vec_keys WHERE memory_id = ? AND tenant_id = ?",
+            (note_id, tenant_id),
+        )
         if not _is_saga_deferred(conn):
             conn.commit()
     except Exception as exc:
@@ -818,6 +868,7 @@ def _build_save_memory_steps(
     do_upsert_db,
     do_write_vec_key,
     do_write_file,
+    tenant_id: str = "default",
 ) -> tuple[list[SagaStep], _SaveMemoryParams]:
     """Build the (steps, params) tuple for the save-memory saga.
 
@@ -882,6 +933,7 @@ def _build_save_memory_steps(
         pre_existing_embedding_ids=pre_existing_embedding_ids,
         pre_existing_kg_fact_ids=pre_existing_kg_fact_ids,
         initial_row=_capture_full_row(conn, note_id) if pre_existing is not None else None,
+        tenant_id=tenant_id,
     )
 
     def _do_upsert() -> str:
@@ -891,13 +943,14 @@ def _build_save_memory_steps(
     def _undo_upsert() -> None:
         if params.initial_existed:
             if params.initial_row is not None:
-                _restore_full_row(params.conn, params.note_id, params.initial_row)
+                _restore_full_row(params.conn, params.note_id, params.initial_row, params.tenant_id)
             else:
                 _restore_memory_row(
                     params.conn,
                     params.note_id,
                     params.initial_content or "",
                     params.initial_tags or "[]",
+                    tenant_id=params.tenant_id,
                 )
             # Sprint 1.1: For UPDATE rollback, preserve pre-existing rows
             # by passing the snapshot of IDs that existed before the update.
@@ -911,7 +964,7 @@ def _build_save_memory_steps(
                 preserve_kg_fact_ids=params.pre_existing_kg_fact_ids,
             )
         else:
-            _delete_memory_row(params.conn, params.note_id)
+            _delete_memory_row(params.conn, params.note_id, params.tenant_id)
             # B-3 fix: clean up any dependent rows that were written
             # between the INSERT and the failure point.  Without this
             # the saga rollback would leave orphan kg_facts / kg_edges
@@ -929,7 +982,7 @@ def _build_save_memory_steps(
 
     def _undo_vec_key() -> None:
         if params.wrote_vec_key:
-            _remove_vec_key(params.conn, params.note_id)
+            _remove_vec_key(params.conn, params.note_id, params.tenant_id)
 
     def _do_file() -> Path:
         # Scenario 4 fix (2026-06-22): concurrent-edit detection.
@@ -1015,6 +1068,7 @@ def saga_save_memory(
     do_upsert_db,
     do_write_vec_key,
     do_write_file,
+    tenant_id: str = "default",
 ) -> str:
     """Triple-store save wrapped in a saga. Returns ``note_id`` on success.
 
@@ -1064,6 +1118,7 @@ def saga_save_memory(
         do_upsert_db=do_upsert_db,
         do_write_vec_key=do_write_vec_key,
         do_write_file=do_write_file,
+        tenant_id=tenant_id,
     )
 
     try:

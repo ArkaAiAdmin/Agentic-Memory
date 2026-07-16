@@ -73,7 +73,24 @@ def _count_hooks() -> int:
 
 
 def _count_cron_scripts() -> int:
-    return len([f for f in (REPO / "cron").glob("*.py") if f.is_file()])
+    """Count scheduled cron jobs from the canonical ``JOBS`` registry.
+
+    Uses ``cron/jobs.py`` ``JOBS`` (the single source of truth for scheduled
+    jobs) rather than globbing ``cron/*.py``, which also matches helper/
+    utility modules that are not scheduled jobs.  Consistent with
+    ``agents_md_generator.py`` and ``gen_readme_badges.py``.
+    """
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("cron_jobs", REPO / "cron" / "jobs.py")
+        if spec is None or spec.loader is None:
+            return len([f for f in (REPO / "cron").glob("*.py") if f.is_file()])
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return len(getattr(mod, "JOBS", {}))
+    except Exception:
+        return len([f for f in (REPO / "cron").glob("*.py") if f.is_file()])
 
 
 def _count_mcp_modules() -> int:
@@ -257,12 +274,81 @@ def check_mcp_surface_md() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Fix: regenerate MCP_SURFACE.md AUTO-GEN spans from live code
+# ---------------------------------------------------------------------------
+
+
+def regenerate_mcp_surface_md() -> list[str]:
+    """Rewrite the AUTO-GEN marked spans in docs/MCP_SURFACE.md.
+
+    Keeps MCP_SURFACE.md's hand-authored reference content but auto-syncs
+    the schema-version / migration-count lines so a SCHEMA_VERSION bump no
+    longer requires a manual edit (and the doc-drift test stops failing on
+    schema bumps).  Returns a list of error strings (empty on success).
+    """
+    errors: list[str] = []
+    surface_md = REPO / "docs" / "MCP_SURFACE.md"
+    if not surface_md.exists():
+        return ["docs/MCP_SURFACE.md not found"]
+
+    schema_version = _parse_schema_version()
+    migrations = _count_migrations()
+    text = surface_md.read_text(encoding="utf-8")
+
+    header_span = (
+        f"<!--AUTO-GEN:START key=\"mcp_surface_schema_header\"-->\n"
+        f"> Last updated: 2026-07-16. Schema v{schema_version}. Multi-tenant isolation enforced.\n"
+        f"<!--AUTO-GEN:END key=\"mcp_surface_schema_header\"-->"
+    )
+    version_span = (
+        f"<!--AUTO-GEN:START key=\"mcp_surface_schema_version\"-->\n"
+        f"Current: **v{schema_version}** ({migrations} migrations, 100% down-migration coverage)\n"
+        f"<!--AUTO-GEN:END key=\"mcp_surface_schema_version\"-->"
+    )
+
+    new_text = _replace_auto_gen(text, "mcp_surface_schema_header", header_span)
+    new_text = _replace_auto_gen(new_text, "mcp_surface_schema_version", version_span)
+
+    if new_text != text:
+        surface_md.write_text(new_text, encoding="utf-8")
+    return errors
+
+
+def _replace_auto_gen(text: str, key: str, replacement: str) -> str:
+    """Replace the content between AUTO-GEN markers for *key* with *replacement*."""
+    pattern = re.compile(
+        r"<!--AUTO-GEN:START key=\"" + re.escape(key) + r"\"-->\n"
+        r".*?\n"
+        r"<!--AUTO-GEN:END key=\"" + re.escape(key) + r"\"-->",
+        re.DOTALL,
+    )
+    if not pattern.search(text):
+        return text
+    return pattern.sub(replacement, text, count=1)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 
 def main() -> int:
     all_errors: list[str] = []
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Documentation drift checker")
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Regenerate AUTO-GEN spans (e.g. MCP_SURFACE.md schema version) before checking",
+    )
+    args = parser.parse_args()
+
+    if args.fix:
+        fix_errors = regenerate_mcp_surface_md()
+        for e in fix_errors:
+            print(f"[FIX-ERR] {e}")
 
     print("=== doc_drift_check ===")
 

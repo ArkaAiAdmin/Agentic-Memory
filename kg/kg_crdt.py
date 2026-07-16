@@ -62,6 +62,7 @@ that, when merged, reproduce the state.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -134,6 +135,29 @@ def vv_merge(a: dict[str, int], b: dict[str, int]) -> dict[str, int]:
     return result
 
 
+def vv_sum(v: dict[str, int]) -> int:
+    """Total counter value across all peers — used as primary LWW sort key."""
+    return sum(v.values())
+
+
+def _serialise_vv(v: dict[str, int]) -> str:
+    """Deterministic serialisation for stable sorting (paper canonical form)."""
+    return ",".join(f"{k}:{v[k]}" for k in sorted(v))
+
+
+def _parse_vv(s: str) -> dict[str, int]:
+    """Deserialise a version vector from 'peer:count,...' format."""
+    result: dict[str, int] = {}
+    if not s or s == "{}":
+        return result
+    for item in s.split(","):
+        item = item.strip()
+        if ":" in item:
+            peer, _, count = item.partition(":")
+            result[peer] = int(count)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entity CRDT: 2P-Set + LWW per field
 # ---------------------------------------------------------------------------
@@ -189,7 +213,7 @@ def merge_entity_ops(ops: Iterable[EntityOp]) -> dict[int, dict[str, Any]]:
         # broken by version_vector comparison (higher wins).
         sorted_ops = sorted(
             ops_for_entity,
-            key=lambda o: (o.timestamp, json.dumps(o.version_vector, sort_keys=True)),
+            key=lambda o: (o.timestamp, _serialise_vv(o.version_vector)),
         )
         # 2P-Set: an add wins if no later remove from the same peer.
         # If add and remove are concurrent, add wins.
@@ -349,8 +373,6 @@ def _edge_key(source_id: int, target_id: int, relation: str) -> int:
     of the three fields, which is collision-resistant enough for
     practical use.
     """
-    import hashlib
-
     raw = f"{source_id}|{target_id}|{relation}".encode("utf-8")
     h = hashlib.sha256(raw).digest()
     # Take 8 bytes, convert to signed int for SQLite INTEGER PRIMARY KEY.
@@ -358,11 +380,18 @@ def _edge_key(source_id: int, target_id: int, relation: str) -> int:
 
 
 def merge_edge_ops(ops: Iterable[EdgeOp]) -> dict[int, dict[str, Any]]:
-    """Merge a set of EdgeOps into a per-edge state.
+    """Merge edge ops using causal dominance (vv_dominates) with timestamp/agent tiebreak.
 
-    Edges are add-only. The "winner" for each (source, target,
-    relation) triple is the op with the highest version_vector
-    (ties broken by timestamp then agent_id).
+    The correct CRDT merge: if one op's version vector causally dominates
+    another's, it wins. Only truly concurrent ops (neither dominates) fall
+    back to (timestamp desc, agent_id asc) tiebreak. This preserves causal
+    ordering guarantees — a later op from the same or causally-following
+    peer always wins over an earlier one.
+
+    The paper previously used vv_sum as the primary sort key, but that
+    conflates concurrent ops with different component-wise clocks
+    (e.g. {A:3,B:0} vs {A:0,B:3} both sum to 3). vv_dominates is the
+    correct partial-order comparator and is what production uses.
     """
     by_edge: dict[int, list[EdgeOp]] = {}
     for op in ops:
@@ -370,15 +399,11 @@ def merge_edge_ops(ops: Iterable[EdgeOp]) -> dict[int, dict[str, Any]]:
 
     result: dict[int, dict[str, Any]] = {}
     for edge_id, ops_for_edge in by_edge.items():
-        # Winner = op with highest version_vector (causal partial order).
-        # Ties broken by (timestamp desc, agent_id asc) — a proper total
-        # order for concurrent ops, not sum() which is not a partial order.
         winner = ops_for_edge[0]
         for candidate in ops_for_edge[1:]:
             if vv_dominates(candidate.version_vector, winner.version_vector):
                 winner = candidate
             elif not vv_dominates(winner.version_vector, candidate.version_vector):
-                # Concurrent: break tie by timestamp then agent_id
                 if (
                     candidate.timestamp > winner.timestamp
                     or (
@@ -721,64 +746,43 @@ def record_edge_add(
 # them get redirected.
 
 
+def _compute_fingerprint(name: str, entity_type: str, description: str = "") -> str:
+    canonical = lambda s: " ".join(s.lower().strip().split())
+    payload = f"{canonical(name)}|{canonical(entity_type)}|{canonical(description)}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def entity_dedup_via_crdt(
     state: dict[int, dict[str, Any]],
 ) -> dict[str, Any]:
     """Resolve name-collisions in a merged entity state.
 
-    Sprint 2.2: Uses inception fingerprint for dedup when available,
-    falling back to (name, entity_type) for backward compatibility.
-
-    The CRDT merge produces a dict keyed by entity_id. If two
-    different entity_ids resolve to the same fingerprint or
-    (name, entity_type), the UNIQUE constraint on kg_entities
-    will reject the second. This helper picks the LWW winner
-    and returns a "redirect map": the losing entity_ids are
-    mapped to the winning entity_id.
-
-    Returns:
-      ``{"merged_state": <state with only winners>,
-        "redirects": {loser_id: winner_id, ...}}``
-
-    The caller should:
-      1. Apply ``merged_state`` to kg_entities.
-      2. Update any kg_edges.source_id / target_id that match a
-         loser to use the winner's id.
+    Matches paper (paper_pipeline/crdt_projection.py §2.5):
+    groups by inception fingerprint; backfills missing fingerprints
+    from (name, entity_type, description) so that entities differing
+    only in description are treated as distinct.
     """
-    # Sprint 2.2: Group by fingerprint first, then by (name, entity_type)
     by_fingerprint: dict[str, list[int]] = {}
-    by_key: dict[tuple[str, str], list[int]] = {}
     for entity_id, info in state.items():
         if info.get("tombstone"):
             continue
         fp = info.get("fingerprint")
-        if fp:
-            by_fingerprint.setdefault(fp, []).append(entity_id)
-        else:
-            key = (info["name"], info.get("entity_type", ""))
-            by_key.setdefault(key, []).append(entity_id)
+        if not fp:
+            fp = _compute_fingerprint(
+                info.get("name", ""),
+                info.get("entity_type", ""),
+                info.get("description", "") or "",
+            )
+            info["fingerprint"] = fp
+        by_fingerprint.setdefault(fp, []).append(entity_id)
 
     merged_state: dict[int, dict[str, Any]] = {}
     redirects: dict[int, int] = {}
 
-    # Merge by fingerprint (same entity across peers)
-    for fp, ids in by_fingerprint.items():
+    for _fp, ids in by_fingerprint.items():
         if len(ids) == 1:
             merged_state[ids[0]] = state[ids[0]]
             continue
-        # Multiple entity_ids with same fingerprint - LWW winner
-        winner_id = max(ids)
-        merged_state[winner_id] = state[winner_id]
-        for loser_id in ids:
-            if loser_id != winner_id:
-                redirects[loser_id] = winner_id
-
-    # Merge by (name, entity_type) for entities without fingerprint
-    for _key, ids in by_key.items():
-        if len(ids) == 1:
-            merged_state[ids[0]] = state[ids[0]]
-            continue
-        # Multiple entity_ids collide. Pick the LWW winner.
         winner_id = max(ids)
         merged_state[winner_id] = state[winner_id]
         for loser_id in ids:

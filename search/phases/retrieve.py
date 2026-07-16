@@ -18,6 +18,41 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _get_prefilter_config() -> tuple[bool, int]:
+    cfg = get_search_config()
+    return cfg.embedding_prefilter_enabled, cfg.embedding_prefilter_k
+
+
+def _prefilter_ids(
+    db: AnyConnection,
+    normalized_query: str,
+    db_path: Path,
+    limit: int,
+) -> set[str]:
+    """Return a set of memory ids pre-selected by ANN embedding similarity.
+
+    Uses the embedding index as a cheap ANN shortlist before the more
+    expensive FTS+ColBERT+vector phases.  Returns an empty set when:
+    - prefilter is disabled in config
+    - the embedding model/index is unavailable
+    - the ANN lookup returns no hits above threshold
+    """
+    enabled, k = _get_prefilter_config()
+    if not enabled:
+        return set()
+    try:
+        from infra.embedding_search import EmbeddingSearch  # type: ignore[attr-defined]
+
+        es = EmbeddingSearch()
+        hits = es.search(normalized_query, db_path, limit=k, category="")
+        if not isinstance(hits, list) or not hits:
+            return set()
+        return {hit["id"] for hit in hits if hit.get("id")}
+    except Exception as exc:
+        logger.debug("embedding prefilter skipped: %s", exc)
+        return set()
+
+
 def _get_embedding_score_threshold() -> float:
     return get_search_config().embedding_score_threshold
 
@@ -31,13 +66,20 @@ def _fts_search(
     tag_filter_sql: str = "",
     tag_filter_params: tuple = (),
     category: str | None = None,
+    prefilter_ids: set[str] | None = None,
 ) -> list:
     _base_filter = repo_filter + tag_filter_sql
+    if prefilter_ids:
+        _id_list = ",".join("?" for _ in prefilter_ids)
+        _base_filter = _base_filter + f" AND m.id IN ({_id_list})"
+        _params = tuple(prefilter_ids)
+    else:
+        _params = ()
     if has_fitness:
         params: tuple = (fts_query,)
         if category:
             params = (fts_query, category)
-        params = params + tag_filter_params
+        params = params + tag_filter_params + _params
         return db.execute(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count,\n"
@@ -52,7 +94,7 @@ def _fts_search(
     params = (fts_query,)
     if category:
         params = (fts_query, category)
-    params = params + tag_filter_params
+    params = params + tag_filter_params + _params
     return db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count,\n"

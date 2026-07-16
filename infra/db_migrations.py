@@ -419,6 +419,7 @@ def _migrate_add_fk_constraints(conn) -> None:
                 metadata TEXT,
                 target_agent_id TEXT DEFAULT NULL,
                 shared_with TEXT DEFAULT NULL,
+                tenant_id TEXT NOT NULL DEFAULT 'default',
                 FOREIGN KEY (source_note_id) REFERENCES memories(id) ON DELETE SET NULL
             )
         """,

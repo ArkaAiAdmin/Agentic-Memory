@@ -290,8 +290,9 @@ def resolve_tenant_for_principal(principal_id: str | None, db_path: str | None =
         from memory_config import resolve_db_path
         db_path = str(resolve_db_path())
     try:
+        from pathlib import Path
         from infra.db import open_db
-        with open_db(db_path, timeout=5.0) as conn:
+        with open_db(Path(db_path), timeout=5.0) as conn:
             return _principal_tenant(conn, principal_id)
     except Exception:
         return "default"
@@ -397,6 +398,7 @@ def log_authorization_decision(
     *,
     note_id: str | None = None,
     db_path: str | None = None,
+    tenant_id: str | None = None,
 ) -> None:
     """Record an authorization decision in ``memory_audit_log``.
 
@@ -418,6 +420,7 @@ def log_authorization_decision(
                     "rbac_authorize",
                     __import__("json").dumps({
                         "principal_id": principal_id or "anonymous",
+                        "tenant_id": tenant_id or "default",
                         "action": action,
                         "resource": resource,
                         "allowed": allowed,
@@ -457,8 +460,9 @@ class Authorizer:
     ) -> bool:
         """Return ``True`` if *principal_id* may perform *action* on *resource*.
 
-        Mirrors :func:`mcp_authorize`: a ``None`` principal or ``None`` DB
-        path yields ``True``; only an explicit RBAC denial returns ``False``.
+        Mirrors :func:`mcp_authorize`: fail-closed — a ``None`` principal
+        or missing DB denies (no silent allow). Only an explicit RBAC
+        denial (policy check fails or tenant mismatch) returns ``False``.
         """
         return mcp_authorize(
             principal_id=principal_id,

@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 import json
 import re
 import time
+from pathlib import Path
 from typing import Optional
 from typing import TYPE_CHECKING
 
@@ -341,6 +342,64 @@ def extract_skill_from_memory(
         "steps": steps,
         "content_hash": _content_hash(content),
     }
+
+
+def write_skill_md(
+    skill: dict,
+    skills_dir: "Path | None" = None,
+) -> "Path | None":
+    """Write a compiled SKILL.md for *skill* to ~/.agents/skills/{name}/.
+
+    Best-effort: silently skips on any error so the save path is never
+    blocked by a filesystem failure.  Skips the write when the
+    content_hash matches what's already on disk (idempotent).
+    """
+    try:
+        from pathlib import Path
+        from infra.memory_common import atomic_write
+
+        name = skill.get("name", "")
+        if not name:
+            return None
+        base = skills_dir or (Path.home() / ".agents" / "skills")
+        target_dir = base / name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / "SKILL.md"
+        # Idempotent: skip write if content_hash matches existing file.
+        if target.exists():
+            existing = target.read_text(encoding="utf-8")
+            if f"content_hash: {skill.get('content_hash', '')}" in existing:
+                return target
+        triggers = skill.get("triggers", [])
+        primary = ", ".join(triggers[:5]) if triggers else "general"
+        yaml_header = (
+            f"---\n"
+            f"name: {name}\n"
+            f"description: '{skill.get('description', '')}'\n"
+            f"when_to_use: 'Use when the task involves: {primary}'\n"
+            f"disable-model-invocation: true\n"
+            f"triggers:\n"
+            f"  keywords:\n"
+            f"    primary:\n"
+            + "".join(f"      - {t}\n" for t in triggers[:10])
+            + f"    secondary: []\n"
+            f"---\n"
+        )
+        steps_md = "\n".join(
+            f"{i+1}. {s}" for i, s in enumerate(skill.get("steps", [])[:20])
+        )
+        body = (
+            f"# Skill: {skill.get('topic', name)}\n\n"
+            f"> Auto-extracted from memory `{skill.get('source_memory_id', '')}`\n\n"
+            f"{steps_md}\n"
+        )
+        content_hash = skill.get("content_hash", "")
+        full = f"{yaml_header}\n{body}\n<!-- content_hash: {content_hash} -->\n"
+        atomic_write(target, full, encoding="utf-8")
+        return target
+    except Exception as _md_exc:
+        logger.debug("write_skill_md skipped for %s: %s", skill.get("name", "?"), _md_exc)
+        return None
 
 
 def save_skill(conn: AnyConnection, skill: dict) -> int:
@@ -710,6 +769,7 @@ def extract_skill_for_memory(
         if skill is None:
             return None
         save_skill(conn, skill)
+        write_skill_md(skill)
         conn.commit()
         return skill
     except Exception as e:

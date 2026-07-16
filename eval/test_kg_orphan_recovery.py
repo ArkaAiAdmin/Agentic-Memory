@@ -272,43 +272,101 @@ class TestSagaRollbackCleansOrphans(_KgTestBase):
     """The saga rollback path should call cleanup_memory_relations."""
 
     def test_undo_upsert_fresh_insert_cleans_kg_rows(self) -> None:
-        """When a saga fails after the INSERT, undo deletes the row AND
-        the dependent kg_facts/backlinks that an intermediate hook wrote."""
+        """When a saga fails after a fresh INSERT, undo deletes the row AND
+        the dependent kg_facts/backlinks that were inserted during the saga."""
         from infra.saga import _build_save_memory_steps, Saga, SagaError
 
-        self._seed_memory("lessons/foo")
-        self._seed_fact("a", "b", "lessons/foo")
-        self._seed_backlink("lessons/foo", "lessons/bar")
+        # Do NOT seed before the saga — that would make it an UPDATE.
+        # For a true fresh-insert rollback the forward do_upsert_db must
+        # insert the memories row and the dependent rows, and the undo
+        # must delete them all (no preserve sets for a fresh insert).
+        _injected = {}
 
-        # Simulate a saga that did:
-        #   1. INSERT/UPDATE the memories row (success)
-        #   2. vec key write (success)
-        #   3. file write (FAIL)
-        # and an intermediate post-save hook that wrote kg_facts +
-        # backlinks for this note (this is the pattern that left
-        # orphans before the fix).
+        def do_upsert_db():
+            # Use the outer conn (already in the saga's transaction) so
+            # we don't deadlock on the per-DB-path flock.
+            with open_db(self.db_path) as c:
+                c.execute(
+                    "INSERT INTO memories (id, content, source_file, created_at, "
+                    "updated_at, observed_at, tags) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        "lessons/foo",
+                        "hook content",
+                        "lessons/foo.md",
+                        "2026-06-22T00:00:00Z",
+                        "2026-06-22T00:00:00Z",
+                        "2026-06-22T00:00:00Z",
+                        json.dumps(["hook"]),
+                    ),
+                )
+                c.execute(
+                    "INSERT INTO kg_facts (id, subject, predicate, object, source_memory) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (999, "a", "related_to", "b", "lessons/foo"),
+                )
+                c.execute(
+                    "INSERT INTO backlinks (source_id, target_id) VALUES (?, ?)",
+                    ("lessons/foo", "lessons/bar"),
+                )
+                _injected["kg_facts"] = True
+                _injected["backlinks"] = True
+
         with open_db(self.db_path) as conn:
+            _injected = {}
+
+            def do_upsert_db():
+                c = conn  # reuse the saga's connection; avoids flock deadlock
+                c.execute(
+                    "INSERT INTO memories (id, content, source_file, created_at, "
+                    "updated_at, observed_at, tags) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        "lessons/foo",
+                        "hook content",
+                        "lessons/foo.md",
+                        "2026-06-22T00:00:00Z",
+                        "2026-06-22T00:00:00Z",
+                        "2026-06-22T00:00:00Z",
+                        json.dumps(["hook"]),
+                    ),
+                )
+                c.execute(
+                    "INSERT INTO kg_facts (id, subject, predicate, object, source_memory) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (999, "a", "related_to", "b", "lessons/foo"),
+                )
+                c.execute(
+                    "INSERT INTO backlinks (source_id, target_id) VALUES (?, ?)",
+                    ("lessons/foo", "lessons/bar"),
+                )
+                _injected["kg_facts"] = True
+                _injected["backlinks"] = True
+
             steps, _params = _build_save_memory_steps(
                 conn=conn,
                 note_id="lessons/foo",
                 file_path=self.tmp / "lessons" / "foo.md",
                 db_path=self.db_path,
-                do_upsert_db=lambda: None,  # already inserted in setUp
+                do_upsert_db=do_upsert_db,
                 do_write_vec_key=lambda: 1,
                 do_write_file=lambda: (_ for _ in ()).throw(
                     RuntimeError("simulated failure")
                 ),
             )
             with self.assertRaises(SagaError):
-                with Saga(name="test_undo", steps=steps):
+                with Saga(name="test_undo_insert", steps=steps):
                     pass
 
-        # Memories row was restored (or the INSERT was rolled back).
-        # Either way, the dependent rows should be cleaned up.
+        # Fresh-insert rollback: _delete_memory_row + _cleanup_dependent_rows
+        # (no preserve sets) deletes every dependent row.
+        self.assertTrue(
+            _injected.get("kg_facts"), "kg_facts must have been inserted during the saga"
+        )
         self.assertEqual(
             self._count("kg_facts", "source_memory = ?", ("lessons/foo",)), 0
         )
-        self.assertEqual(self._count("backlinks", "source_id = ?", ("lessons/foo",)), 0)
+        self.assertEqual(
+            self._count("backlinks", "source_id = ?", ("lessons/foo",)), 0
+        )
 
     def test_undo_upsert_update_path_cleans_kg_rows(self) -> None:
         """UPDATE-style rollback (pre-existing row) also cleans up."""
@@ -359,9 +417,13 @@ class TestSagaRollbackCleansOrphans(_KgTestBase):
             ).fetchone()
         self.assertIsNotNone(row)
         self.assertEqual(row[0], "original content")
-        # And the dependent rows are cleaned up.
+        # UPDATE-style rollback: pre-existing kg_facts are preserved
+        # (they existed before the saga), but backlinks are always
+        # cleaned up by _cleanup_dependent_rows.
         self.assertEqual(
-            self._count("kg_facts", "source_memory = ?", ("lessons/foo",)), 0
+            self._count("kg_facts", "source_memory = ?", ("lessons/foo",)),
+            1,
+            "pre-existing kg_facts must be preserved on UPDATE rollback",
         )
         self.assertEqual(self._count("backlinks", "source_id = ?", ("lessons/foo",)), 0)
 

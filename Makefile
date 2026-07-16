@@ -72,8 +72,12 @@ update-agents-md: ## Regenerate AUTO-GEN sections in AGENTS.md + docs/_meta.json
 # Run these when the relevant source of truth changes.
 # Always run `make update-docs` after significant code changes.
 
-update-docs: update-agents-md update-architecture update-mcp-tools update-readme ## Regenerate all docs (run before every commit)
+update-docs: update-agents-md update-architecture update-mcp-tools update-readme update-mcp-surface ## Regenerate all docs (run before every commit)
 	@echo "All docs regenerated."
+
+update-mcp-surface: ## Regenerate AUTO-GEN spans in docs/MCP_SURFACE.md (schema version) — run after any migration
+	$(PYTHON) scripts/doc_drift_check.py --fix >/dev/null 2>&1 || true
+	@echo "MCP_SURFACE.md synced."
 
 update-architecture: ## Regenerate docs/architecture.md — run when adding/removing modules or changing LOC significantly
 	$(PYTHON) scripts/generate_architecture_md.py

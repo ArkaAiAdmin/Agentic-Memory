@@ -123,13 +123,13 @@ Character n-gram proxy for late-interaction reranking. Pre-computed query ngrams
 
 ## Stage 4: Reciprocal Rank Fusion (RRF)
 
-Merges results from FTS5, vector, and ColBERT using RRF:
+Merges results from FTS5 (BM25), dense-vector search, chunk-level FTS, and SPLADE sparse vectors:
 
 ```
 RRF_score(d) = Σ 1 / (k + rank_i(d))
 ```
 
-Where `k=60` (standard constant) and `rank_i(d)` is the rank of document `d` in retrieval method `i`.
+Where `k=60` (configurable via `hybrid_rrf_k`) and `rank_i(d)` is the rank of document `d` in retrieval list `i`. Each list is weighted via `hybrid_*_weight` config keys. ColBERT late-interaction reranking runs after RRF, not as part of the fusion.
 
 ## Stage 5: Cross-Encoder Reranking
 

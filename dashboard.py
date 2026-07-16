@@ -418,7 +418,7 @@ def _table_status(name: str) -> tuple[str, str]:
 @st.cache_data(ttl=60)
 def _get_schema_version() -> str:
     try:
-        r = get_conn().execute("SELECT value FROM config WHERE key='schema_version'").fetchone()
+        r = get_conn().execute("SELECT version FROM schema_version WHERE id=1").fetchone()
         if r:
             return "v" + str(r[0])
     except Exception:
@@ -2468,9 +2468,10 @@ with cron_tab:
         ("backfill",       "cron_backfill_all",      "KG + FTS backfill",          "weekly",         "\U0001f504"),
     ]
 
-    _INTERVAL_S: dict[str, int] = {
+    _INTERVAL_S: dict[str, int | None] = {
         "every 1 min": 60, "every 5 min": 300, "every 6 h": 21600,
         "nightly": 86400, "weekly": 604800,
+        "on WAL trigger": None, "on schema change": None, "on conflict": None,
     }
 
     # ── Fetch latest task status from task_queue ──
@@ -2528,7 +2529,9 @@ with cron_tab:
                 except Exception:
                     age_s = 0
                 interval = _INTERVAL_S.get(trigger, 600)
-                if age_s > 6 * interval:
+                if interval is None:
+                    sev, status_label = "ok", f"completed {age_s / 60:.0f}min ago (event-triggered)"
+                elif age_s > 6 * interval:
                     sev, status_label = "warning", f"completed but stale ({age_s / 3600:.0f}h ago)"
                 else:
                     sev, status_label = "ok", f"completed {age_s / 60:.0f}min ago"

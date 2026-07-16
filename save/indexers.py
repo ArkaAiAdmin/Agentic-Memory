@@ -307,32 +307,36 @@ def _index_adaptive_retention(
         )
     except Exception as _up_e:
         logger.debug("user_profile_access_log on save failed: %s", _up_e)
-    # P1.3 click proxy: if this note_id had a `returned` CTR event in
-    # the last 4 hours, mark it `clicked_at=now`. The proxy works
-    # because the user's recall-and-save loop is tight (they save
-    # shortly after reading the recalled note). 4h is configurable via
-    # MEMORY_CTR_CLICK_WINDOW_HOURS for users with different cadences.
+    # P1.3 click proxy: when a note is saved, mark all unclicked
+    # impressions from the SAME search sessions (query_ids) as clicked.
+    # Default window is 7 days — the user's recall-and-save loop isn't
+    # always tight; 4h was too short and left most impressions stuck
+    # in "pending". Expand via MEMORY_CTR_CLICK_WINDOW_HOURS if needed.
     try:
         import os as _os
         import time as _time
 
         _click_window_s = (
-            float(_os.environ.get("MEMORY_CTR_CLICK_WINDOW_HOURS", "4")) * 3600.0
+            float(_os.environ.get("MEMORY_CTR_CLICK_WINDOW_HOURS", "168")) * 3600.0
         )
         _cutoff = _time.time() - _click_window_s
-        # Mark the most recent unclicked returned event as clicked.
-        # If multiple query_ids surfaced the same note, we click them
-        # all (they all count as a click).
-        _rows = db.execute(
-            "SELECT query_id, returned_at FROM memory_ctr_feedback "
+        # Find every search session (query_id) that returned this note
+        # within the window. Then mark ALL unclicked, undismissed
+        # impressions from those sessions — saving one result implies
+        # the search itself was useful, so the whole result set gets
+        # the implicit click signal. This is what makes the LTR model
+        # actually trainable on everyday usage.
+        _qid_rows = db.execute(
+            "SELECT DISTINCT query_id FROM memory_ctr_feedback "
             "WHERE id = ? AND returned_at > ? AND clicked_at IS NULL",
             (note_id, _cutoff),
         ).fetchall()
-        for _qid, _rat in _rows:
+        for (_qid,) in _qid_rows:
             db.execute(
                 "UPDATE memory_ctr_feedback SET clicked_at = ? "
-                "WHERE id = ? AND query_id = ?",
-                (_time.time(), note_id, _qid),
+                "WHERE query_id = ? AND clicked_at IS NULL "
+                "AND dismissed_at IS NULL",
+                (_time.time(), _qid),
             )
     except Exception as _ctr_click_e:
         logger.debug("CTR click-proxy failed: %s", _ctr_click_e)

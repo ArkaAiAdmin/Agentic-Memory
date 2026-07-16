@@ -35,6 +35,7 @@ writing to this note, typically 1-3).
 from __future__ import annotations
 
 import logging
+import os
 
 import json
 from typing import Optional
@@ -331,6 +332,12 @@ def crdt_save(
 
     db_path = Path(db_path)
 
+    # Resolve tenant_id so open_db installs the tenant_id() UDF and
+    # tenant_memories TEMP VIEW. This is required by the saga undo
+    # DELETE statements (which use tenant_id=tenant_id()) and by
+    # _capture_pre_state_main (which reads from tenant_memories).
+    _tid = os.environ.get("MEMORY_CRON_TENANT_ID") or os.environ.get("MEMORY_TENANT_ID") or "default"
+
     # P0-1 fix (2026-07-03): scan remote content for prompt injection
     # before any DB mutation. This closes the CRDT injection bypass where
     # pull_from_peer feeds unvalidated remote content directly into
@@ -377,7 +384,7 @@ def crdt_save(
     # would deadlock the write queue (both need a session).
     _has_table = False
     try:
-        with open_db(db_path, timeout=10.0) as _probe:
+        with open_db(db_path, timeout=10.0, tenant_id=_tid) as _probe:
             _probe.execute("PRAGMA foreign_keys=ON")
             _has_table = (
                 _probe.execute(
@@ -406,13 +413,14 @@ def crdt_save(
                 remote_vv_str=remote_vv_str,
                 remote_logical_clock=remote_logical_clock,
                 conflict_policy=conflict_policy,
+                tenant_id=_tid,
             )
 
             if _result.get("applied"):
                 try:
                     from infra._lazy_imports import open_db
 
-                    with open_db(db_path, timeout=10.0) as _proj_conn:
+                    with open_db(db_path, timeout=10.0, tenant_id=_tid) as _proj_conn:
                         _updated = project_crdt_to_sql(_proj_conn, note_id)
                         if _updated:
                             from background.background_queue import (
@@ -460,7 +468,7 @@ def crdt_save(
 
     now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    with open_db(db_path, timeout=10.0) as conn:
+    with open_db(db_path, timeout=10.0, tenant_id=_tid) as conn:
         conn.execute("PRAGMA foreign_keys=ON")
 
         # S4 fix (2026-06-18): capture pre-state for the saga's undo.
@@ -741,7 +749,10 @@ def crdt_save(
             # logical_clock).
             if pre_existing_main is None:
                 try:
-                    conn.execute("DELETE FROM memories WHERE id=? AND tenant_id=tenant_id()", (note_id,))
+                    conn.execute(
+                        "DELETE FROM memories WHERE id=? AND tenant_id=?",
+                        (note_id, _tid),
+                    )
                     conn.commit()
                 except Exception as undo_exc:
                     logger.error("crdt saga undo: delete main row failed: %r", undo_exc)
@@ -749,13 +760,14 @@ def crdt_save(
                 try:
                     conn.execute(
                         """UPDATE memories SET content=?, source_file=?, version_vector=?,
-                           logical_clock=? WHERE id=?""",
+                           logical_clock=? WHERE id=? AND tenant_id=?""",
                         (
                             pre_existing_main["content"],
                             pre_existing_main["source_file"],
                             pre_existing_main["version_vector"],
                             pre_existing_main["logical_clock"],
                             note_id,
+                            _tid,
                         ),
                     )
                     conn.commit()
@@ -769,8 +781,8 @@ def crdt_save(
             if pre_existing_conflict is None:
                 try:
                     conn.execute(
-                        "DELETE FROM memories WHERE id=? AND tenant_id=tenant_id()",
-                        (f"{note_id}__conflict_{remote_agent_id}",),
+                        "DELETE FROM memories WHERE id=? AND tenant_id=?",
+                        (f"{note_id}__conflict_{remote_agent_id}", _tid),
                     )
                     conn.commit()
                 except Exception as undo_exc:
@@ -781,13 +793,14 @@ def crdt_save(
                 try:
                     conn.execute(
                         """UPDATE memories SET content=?, source_file=?, version_vector=?,
-                           logical_clock=? WHERE id=?""",
+                           logical_clock=? WHERE id=? AND tenant_id=?""",
                         (
                             pre_existing_conflict["content"],
                             pre_existing_conflict["source_file"],
                             pre_existing_conflict["version_vector"],
                             pre_existing_conflict["logical_clock"],
                             f"{note_id}__conflict_{remote_agent_id}",
+                            _tid,
                         ),
                     )
                     conn.commit()
@@ -801,8 +814,8 @@ def crdt_save(
             # so we always delete on undo, never restore.
             try:
                 conn.execute(
-                    "DELETE FROM memories WHERE id LIKE ? AND id != ? AND tenant_id=tenant_id()",
-                    (f"{note_id}__v_%", note_id),
+                    "DELETE FROM memories WHERE id LIKE ? AND id != ? AND tenant_id=?",
+                    (f"{note_id}__v_%", note_id, _tid),
                 )
                 conn.commit()
             except Exception as undo_exc:

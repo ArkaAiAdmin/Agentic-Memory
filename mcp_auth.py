@@ -80,6 +80,7 @@ from infra.authlib_sso import (
 from infra.audit import enqueue_audit
 from infra.infrastructure import ErrorCode, _err
 from infra.infrastructure import resolve_active_memory_dir
+from infra._lazy_imports import open_db
 
 logger = logging.getLogger(__name__)
 
@@ -185,9 +186,9 @@ def memory_callback(
 
             cert = cfg.__dict__.get("signing_cert_pem")
             verify_saml_signature(saml_response, cert_pem=cert)
-        with sqlite3.connect(resolved_db) as conn:
+        with open_db(Path(resolved_db)) as conn:
             principal_id = resolve_or_create_principal(
-                conn, identity, tenant_id=cfg.tenant_id
+                conn, identity, tenant_id=cfg.tenant_id or "default"
             )
             token, kid = sign_token(conn, {"sub": identity.external_sub, "provider": provider})
         enqueue_audit(
@@ -215,7 +216,7 @@ def memory_whoami(token: str, db_path: str = "") -> str:
     """Introspect a locally-issued SSO JWT. Returns the principal claims."""
     resolved_db = _resolve_db_path(db_path)
     try:
-        with sqlite3.connect(resolved_db) as conn:
+        with open_db(Path(resolved_db)) as conn:
             claims = verify_token(conn, token)
         return json.dumps({"valid": True, "claims": claims})
     except SsoError as exc:
@@ -230,7 +231,7 @@ def memory_rotate_key(db_path: str = "") -> str:
     """Rotate the SSO signing key: revoke the current active key, mint a new one."""
     resolved_db = _resolve_db_path(db_path)
     try:
-        with sqlite3.connect(resolved_db) as conn:
+        with open_db(Path(resolved_db)) as conn:
             old = KeyManager.get_active(conn)
             old_kid = old["kid"] if old else None
             if old_kid:
@@ -266,7 +267,7 @@ def memory_sso_sync_metadata(
         url = metadata_url or cfg.get("metadata_url", "")
         if not url:
             raise SsoConfigError(f"No metadata_url for IdP '{idp_id}'")
-        with sqlite3.connect(resolved_db) as conn:
+        with open_db(Path(resolved_db)) as conn:
             xml_text = IdPMetadataCache.fetch(
                 conn, idp_id, url, force=force, timeout=10.0
             )

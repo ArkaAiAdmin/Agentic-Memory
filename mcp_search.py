@@ -321,6 +321,28 @@ def memory_search(
     except ImportError:
         pass
 
+    # RBAC: check read authorization before searching
+    try:
+        from infra.authorizer import mcp_authorize, log_authorization_decision
+        from mcp_memory import _resolve_principal_for_rbac
+        principal_id, resolved_tenant = _resolve_principal_for_rbac()
+        if not mcp_authorize(principal_id, "read", "memory", None, tenant_id=resolved_tenant):
+            log_authorization_decision(
+                principal_id=principal_id,
+                action="read",
+                resource="memory",
+                allowed=False,
+                db_path=None,
+                tenant_id=resolved_tenant,
+            )
+            return _err(
+                ErrorCode.AUTHORIZATION_DENIED,
+                f"Not authorized to search memories. "
+                f"Principal '{principal_id or 'anonymous'}' lacks the required role.",
+            )
+    except ImportError:
+        pass
+
     # R1: gate query length before any processing
     if len(query) > MAX_QUERY_LENGTH:
         return _err(

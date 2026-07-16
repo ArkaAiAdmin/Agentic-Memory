@@ -149,7 +149,7 @@ def main():
     t0 = time.time()
     try:
         conn = sqlite3.connect(args.db)
-    install_tenant_context(conn, os.environ.get("MEMORY_CRON_TENANT_ID"))
+        install_tenant_context(conn, os.environ.get("MEMORY_CRON_TENANT_ID"))
 
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=10000")

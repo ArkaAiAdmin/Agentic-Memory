@@ -66,6 +66,7 @@ The module exposes:
 from __future__ import annotations
 
 import logging
+import os
 
 import json
 import sqlite3
@@ -644,6 +645,7 @@ def crdt_field_save(
     remote_logical_clock: int = 0,
     conflict_policy: str | None = None,
     tags: str | None = None,
+    tenant_id: str | None = None,
 ) -> dict:
     """Save a memory note with field-level LWWES CRDT semantics.
 
@@ -710,7 +712,8 @@ def crdt_field_save(
         db_path_obj: Path | None = None
     else:
         db_path_obj = Path(cast(str | Path, db_path))
-        conn_context = open_db(db_path_obj, timeout=10.0)
+        _tid = tenant_id or os.environ.get("MEMORY_CRON_TENANT_ID") or os.environ.get("MEMORY_TENANT_ID") or "default"
+        conn_context = open_db(db_path_obj, timeout=10.0, tenant_id=_tid)
 
     # P0-1 fix (2026-07-03): scan remote content for prompt injection
     # before any DB mutation. Closes the CRDT injection bypass where
@@ -1015,7 +1018,10 @@ def _restore_crdt_pre_state(
             )
     else:
         try:
-            conn.execute("DELETE FROM memories WHERE id=? AND tenant_id=tenant_id()", (note_id,))
+            conn.execute(
+                "DELETE FROM memories WHERE id=? AND tenant_id=?",
+                (note_id, tid),
+            )
         except Exception as exc:
             logger.warning("crdt undo: delete memories for %s failed: %r", note_id, exc)
     try:
@@ -1114,14 +1120,10 @@ def _finalize_crdt_save(
         # Build the full markdown body: frontmatter + content.
         # We re-use _build_memory_file from save_pipeline to keep
         # the frontmatter format consistent with save_memory.
-        body: str | None = None
+        body: str = content  # fallback to raw content if _build_memory_file fails
         try:
             from save_pipeline import _build_memory_file
 
-            # _build_memory_file signature: (content, category,
-            # title_slug, tags_list, pinned, now_iso=None)
-            # We can recover the slug from the note_id.
-            # note_id format: "<category>/<slug>".
             category_str = note_id.split("/", 1)[0] if "/" in note_id else "imported"
             slug = note_id.split("/", 1)[-1]
             markdown, _fm, _now, _md = _build_memory_file(

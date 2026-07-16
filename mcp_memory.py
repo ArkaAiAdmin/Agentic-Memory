@@ -30,20 +30,25 @@ from mcp_common import (
 from mcp_instance import mcp
 
 
-def _resolve_principal_for_rbac() -> str | None:
-    """Resolve principal ID from agent context for RBAC checks."""
+def _resolve_principal_for_rbac() -> tuple[str | None, str | None]:
+    """Resolve (principal_id, tenant_id) from agent context for RBAC checks."""
+    principal_id: str | None = None
     try:
         from agent_context import get_agent
         ctx = get_agent()
-        principal_id = getattr(ctx, "principal_id", None)
+        principal_id = getattr(ctx, "principal_id", None) or getattr(ctx, "agent_id", None)
         if principal_id:
-            return str(principal_id)
-        agent_id = getattr(ctx, "agent_id", None)
-        if agent_id:
-            return str(agent_id)
+            principal_id = str(principal_id)
     except (ImportError, Exception):
         pass
-    return None
+    tenant_id: str | None = None
+    if principal_id:
+        try:
+            from infra.authorizer import resolve_tenant_for_principal
+            tenant_id = resolve_tenant_for_principal(principal_id)
+        except Exception:
+            tenant_id = principal_id
+    return principal_id, tenant_id
 from save_pipeline import save_memory, SaveValidationError
 
 
@@ -85,6 +90,34 @@ def memory_save(
     """
     if len(content) > 100_000:
         return _err(ErrorCode.INVALID_PARAMS, f"content exceeds 100,000 character limit ({len(content)} chars)")
+
+    # RBAC: check write authorization before saving
+    try:
+        from infra.authorizer import mcp_authorize, log_authorization_decision
+        principal_id, tenant_id = _resolve_principal_for_rbac()
+        auth_db = None
+        try:
+            from infra.memory_common import get_memory_paths
+            _, local_mem, _ = get_memory_paths()
+            auth_db = str(local_mem / "memory.db") if (local_mem / "memory.db").exists() else None
+        except Exception:
+            pass
+        if not mcp_authorize(principal_id, "write", "memory", auth_db, tenant_id=tenant_id):
+            log_authorization_decision(
+                principal_id=principal_id,
+                action="write",
+                resource="memory",
+                allowed=False,
+                db_path=auth_db,
+                tenant_id=tenant_id,
+            )
+            return _err(
+                ErrorCode.AUTHORIZATION_DENIED,
+                f"Not authorized to save memory. "
+                f"Principal '{principal_id or 'anonymous'}' lacks the required role.",
+            )
+    except ImportError:
+        pass
 
     try:
         # C1: route through the durable CQRS write-journal when the
@@ -509,14 +542,15 @@ def memory_delete(note_id: str, hard: bool = False) -> str:
             # Resolve DB path for RBAC check
             _, local_mem, _ = get_memory_paths()
             auth_db = str(local_mem / "memory.db") if (local_mem / "memory.db").exists() else None
-            principal_id = _resolve_principal_for_rbac()
-            if not mcp_authorize(principal_id, "delete", "memory", auth_db):
+            principal_id, tenant_id = _resolve_principal_for_rbac()
+            if not mcp_authorize(principal_id, "delete", "memory", auth_db, tenant_id=tenant_id):
                 log_authorization_decision(
                     principal_id=principal_id,
                     action="delete",
                     resource="memory",
                     allowed=False,
                     db_path=auth_db,
+                    tenant_id=tenant_id,
                 )
                 return _err(
                     ErrorCode.AUTHORIZATION_DENIED,
@@ -588,14 +622,15 @@ def memory_restore(note_id: str) -> str:
 
             _, local_mem, _ = get_memory_paths()
             auth_db = str(local_mem / "memory.db") if (local_mem / "memory.db").exists() else None
-            principal_id = _resolve_principal_for_rbac()
-            if not mcp_authorize(principal_id, "write", "memory", auth_db):
+            principal_id, tenant_id = _resolve_principal_for_rbac()
+            if not mcp_authorize(principal_id, "write", "memory", auth_db, tenant_id=tenant_id):
                 log_authorization_decision(
                     principal_id=principal_id,
                     action="write",
                     resource="memory",
                     allowed=False,
                     db_path=auth_db,
+                    tenant_id=tenant_id,
                 )
                 return _err(
                     ErrorCode.AUTHORIZATION_DENIED,
