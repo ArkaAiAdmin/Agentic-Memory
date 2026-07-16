@@ -138,7 +138,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 
 - **Tool registry:** `tool_registry.ADMIN_TOOLS` (in `memory_mcp.py` ~line 231) is the single source of truth. Any name there must be reachable only via `memory_maintenance`.
 - **Hook wiring:** `opencode.jsonc` registers the TS plugin → Python subprocess pipeline. Don't call `hooks/*.py` directly. Full event→script map: `docs/MCP_SURFACE.md`. (`plugin/index.ts` + `plugin/agentic-memory-hooks.ts`)
-- **Feature flags:** See `memory.toml` for all 17 flags. Key ones: `MEMORY_WRITE_JOURNAL_ENABLED` (OFF, CQRS), `MEMORY_TEMPORAL_KG` (ON), `MEMORY_TOML_HOT_RELOAD` (OFF).
+- **Feature flags:** See `memory.toml` for all 17 flags. Key ones: `MEMORY_WRITE_JOURNAL_ENABLED` (ON — CQRS write journal; requires `background_worker` daemon to drain `journal.db`), `MEMORY_TEMPORAL_KG` (ON), `MEMORY_TOML_HOT_RELOAD` (OFF).
 - **Entry point:** Always start via `memory_mcp.py` or `cli.py`. `mcp_tools.py` auto-discovery is not the server entry point.
 
 ---

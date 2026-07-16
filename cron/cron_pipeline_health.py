@@ -23,7 +23,7 @@ if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
 
-from infra.infrastructure import resolve_active_memory_dir
+from infra.memory_config import GLOBAL_MEM_DIR
 from infra.db_write_queue import sqlite_write_queue
 
 
@@ -31,7 +31,11 @@ def _resolve_db() -> Path:
     env_path = os.environ.get("MEMORY_DB_PATH")
     if env_path:
         return Path(env_path)
-    return resolve_active_memory_dir() / "memory.db"
+    # Use GLOBAL_MEM_DIR directly (CWD-independent). The default
+    # resolve_active_memory_dir() is CWD-relative and resolves to the
+    # wrong dir when this script chdir's into cron/ (see top of file),
+    # silently pointing the health check at an empty local DB.
+    return GLOBAL_MEM_DIR / "memory.db"
 
 
 def _enqueue_sentinel(conn) -> int:
@@ -80,6 +84,43 @@ def _pending_depth(conn) -> int:
     return row[0] if row else 0
 
 
+# CQRS write-journal backlog guard (Step 8 follow-up). When
+# MEMORY_WRITE_JOURNAL_ENABLED is ON, agents enqueue writes to
+# journal.db and the background_worker daemon drains them. If the
+# daemon is not live (e.g. cron not installed, or it crashed and
+# the watchdog hasn't restarted it yet), pending rows accumulate and
+# writes are silently deferred. Surface this through the same health
+# channel so pipeline-coverage can alert + the daemon can be restarted.
+JOURNAL_PENDING_WARN = 50
+
+
+def _journal_pending_depth(db_path: Path) -> int | None:
+    """Count pending rows in journal.db, or None if the journal is off/absent.
+
+    Opens journal.db directly (read-only SELECT) rather than via
+    ``sqlite_write_queue.start_session``, because the journal DB carries
+    only the ``write_journal`` table and is not managed by the numbered
+    migration runner that ``start_session`` would apply.
+    """
+    import sqlite3
+
+    journal_path = db_path.parent / "journal.db"
+    if not journal_path.exists():
+        return None
+    try:
+        jconn = sqlite3.connect(str(journal_path))
+        try:
+            row = jconn.execute(
+                "SELECT COUNT(*) FROM write_journal WHERE status = 'pending'"
+            ).fetchone()
+            return row[0] if row else 0
+        finally:
+            jconn.close()
+    except Exception:
+        # Journal unreachable (locked, corrupt, no table) — treat as unknown.
+        return None
+
+
 def main() -> int:
     db_path = _resolve_db()
     if not db_path.exists():
@@ -93,15 +134,33 @@ def main() -> int:
         task_id = _enqueue_sentinel(conn)
         print(f"sentinel enqueued: task_id={task_id}")
 
+        failures = _count_failures(conn, hours=24)
+        pending = _pending_depth(conn)
+        journal_pending = _journal_pending_depth(db_path)
+
+        # Report depth probes BEFORE the sentinel poll so they are always
+        # emitted even when the worker is down (poll would raise/timeout).
+        # The journal_pending line is the CQRS-backlog signal: a growing
+        # count means the background_worker daemon isn't draining journal.db.
+        print(f"failed_last_24h: {failures}")
+        print(f"pending_queue_depth: {pending}")
+        if journal_pending is not None:
+            print(f"journal_pending: {journal_pending}")
+        else:
+            print("journal_pending: n/a (journal off or absent)")
+
+        if journal_pending is not None and journal_pending > JOURNAL_PENDING_WARN:
+            print(
+                f"WARNING: journal.db has {journal_pending} pending writes "
+                f"(> {JOURNAL_PENDING_WARN}); background_worker daemon may not "
+                f"be draining the CQRS journal",
+                file=sys.stderr,
+            )
+
         _poll_sentinel(conn, task_id, timeout_s=30.0)
         elapsed = time.time() - t0
 
-        failures = _count_failures(conn, hours=24)
-        pending = _pending_depth(conn)
-
         print(f"sentinel_completed: elapsed={elapsed:.2f}s")
-        print(f"failed_last_24h: {failures}")
-        print(f"pending_queue_depth: {pending}")
 
         if elapsed > 20.0:
             print(f"WARNING: sentinel took {elapsed:.1f}s (>20s threshold)", file=sys.stderr)
