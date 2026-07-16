@@ -37,8 +37,9 @@ JOBS: dict[str, dict] = {
     },
     "health_check": {
         "freq": "15m",
-        "script": "cron/cron_health_check.py",
-        "timeout": 120,
+        "script": "cron/enqueue_task.py",
+        "args": ["--task-type", "cron_health_check"],
+        "timeout": 60,
     },
     "daemon_watchdog": {
         "freq": "15m",
@@ -82,14 +83,15 @@ JOBS: dict[str, dict] = {
     "auto_retry_dead_tasks": {
         "freq": "1h",
         "offset_min": 7,
-        "script": "cron/cron_retry_dead_tasks.py",
-        "timeout": 120,
+        "script": "cron/enqueue_task.py",
+        "args": ["--task-type", "cron_auto_retry_dead_tasks"],
+        "timeout": 60,
     },
     "policy_hash_status": {
         "freq": "1h",
         "offset_min": 0,
-        "script": "cron/cron_policy_hash_status.py",
-        "args": ["--alert-stdout"],
+        "script": "cron/enqueue_task.py",
+        "args": ["--task-type", "cron_policy_hash_status", "--payload", '{"args": ["--alert-stdout"]}'],
         "timeout": 60,
     },
 
@@ -186,9 +188,12 @@ JOBS: dict[str, dict] = {
     "config_drift": {
         "freq": "1d",
         "offset_min": 270,
-        "script": "cron/cron_check_config_drift.py",
-        "args": ["--severity-floor", "stability", "--reload-policy", "--apply-tier-patches", "--alert-stdout"],
-        "timeout": 120,
+        "script": "cron/enqueue_task.py",
+        "args": [
+            "--task-type", "cron_check_config_drift",
+            "--payload", '{"args": ["--severity-floor", "stability", "--reload-policy", "--apply-tier-patches", "--alert-stdout"]}',
+        ],
+        "timeout": 60,
     },
     "resolve_contradictions": {
         "freq": "1d",
@@ -291,15 +296,17 @@ JOBS: dict[str, dict] = {
         "freq": "1w",
         "dow": 0,
         "offset_min": 330,
-        "script": "cron/cron_train_forget_model.py",
-        "timeout": 300,
+        "script": "cron/enqueue_task.py",
+        "args": ["--task-type", "cron_train_forget_model"],
+        "timeout": 60,
     },
     "train_temporal_ssm": {
         "freq": "1w",
         "dow": 0,
         "offset_min": 345,
-        "script": "cron/cron_train_temporal_ssm.py",
-        "timeout": 300,
+        "script": "cron/enqueue_task.py",
+        "args": ["--task-type", "cron_train_temporal_ssm"],
+        "timeout": 60,
     },
     "semantic_clusters": {
         "freq": "1w",
@@ -408,7 +415,8 @@ JOBS: dict[str, dict] = {
         "freq": "1w",
         "dow": 1,
         "offset_min": 300,
-        "script": "cron/cron_train_ltr.py",
-        "timeout": 600,
+        "script": "cron/enqueue_task.py",
+        "args": ["--task-type", "cron_train_ltr"],
+        "timeout": 60,
     },
 }

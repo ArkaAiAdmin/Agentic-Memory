@@ -698,6 +698,14 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_sync": "cron/cron_sync.py",
     "cron_crdt_sync": "cron/cron_crdt_sync.py",
     "cron_monitor_task_queue": "cron/monitor_task_queue.py",
+    # Phase B v2 — Step 4: converted from direct-script to enqueue_task
+    "cron_health_check": "cron/cron_health_check.py",
+    "cron_policy_hash_status": "cron/cron_policy_hash_status.py",
+    "cron_check_config_drift": "cron/cron_check_config_drift.py",
+    "cron_train_forget_model": "cron/cron_train_forget_model.py",
+    "cron_train_temporal_ssm": "cron/cron_train_temporal_ssm.py",
+    "cron_train_ltr": "cron/cron_train_ltr.py",
+    "cron_auto_retry_dead_tasks": "cron/cron_retry_dead_tasks.py",
     # Pre-Phase B — already mapped
     # Z-7 fix: rename cron/cleanup_auto_logs.py → cron/cron_cleanup_auto_logs.py
     # to match the cron_*.py naming convention. Old path kept as fallback
