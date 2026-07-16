@@ -604,13 +604,15 @@ def entity_dedup_via_crdt(
 ) -> dict[str, Any]:
     """Resolve name-collisions in a merged entity state.
 
+    Sprint 2.2: Uses inception fingerprint for dedup when available,
+    falling back to (name, entity_type) for backward compatibility.
+
     The CRDT merge produces a dict keyed by entity_id. If two
-    different entity_ids resolve to the same (name, entity_type)
-    (e.g., because two peers created "Apple" independently), the
-    UNIQUE constraint on kg_entities will reject the second. This
-    helper picks the LWW winner per (name, entity_type) and
-    returns a "redirect map": the losing entity_ids are mapped to
-    the winning entity_id.
+    different entity_ids resolve to the same fingerprint or
+    (name, entity_type), the UNIQUE constraint on kg_entities
+    will reject the second. This helper picks the LWW winner
+    and returns a "redirect map": the losing entity_ids are
+    mapped to the winning entity_id.
 
     Returns:
       ``{"merged_state": <state with only winners>,
@@ -621,35 +623,46 @@ def entity_dedup_via_crdt(
       2. Update any kg_edges.source_id / target_id that match a
          loser to use the winner's id.
     """
-    # Group by (name, entity_type).
+    # Sprint 2.2: Group by fingerprint first, then by (name, entity_type)
+    by_fingerprint: dict[str, list[int]] = {}
     by_key: dict[tuple[str, str], list[int]] = {}
     for entity_id, info in state.items():
         if info.get("tombstone"):
             continue
-        key = (info["name"], info.get("entity_type", ""))
-        by_key.setdefault(key, []).append(entity_id)
+        fp = info.get("fingerprint")
+        if fp:
+            by_fingerprint.setdefault(fp, []).append(entity_id)
+        else:
+            key = (info["name"], info.get("entity_type", ""))
+            by_key.setdefault(key, []).append(entity_id)
 
     merged_state: dict[int, dict[str, Any]] = {}
     redirects: dict[int, int] = {}
-    for _key, ids in by_key.items():
+
+    # Merge by fingerprint (same entity across peers)
+    for fp, ids in by_fingerprint.items():
         if len(ids) == 1:
             merged_state[ids[0]] = state[ids[0]]
             continue
-        # Multiple entity_ids collide. Pick the LWW winner.
-        # Tiebreak: higher entity_id wins (deterministic, no
-        # version_vector info in the merged state). The caller
-        # is expected to have called merge_entity_ops first, which
-        # already did the LWW merge at the field level; the
-        # only remaining ambiguity is which entity_id to keep
-        # when two peers created the same (name, type) under
-        # different ids. In practice the merged state should
-        # already have the higher-clock metadata, so the entity_id
-        # choice is mostly cosmetic.
+        # Multiple entity_ids with same fingerprint - LWW winner
         winner_id = max(ids)
         merged_state[winner_id] = state[winner_id]
         for loser_id in ids:
             if loser_id != winner_id:
                 redirects[loser_id] = winner_id
+
+    # Merge by (name, entity_type) for entities without fingerprint
+    for _key, ids in by_key.items():
+        if len(ids) == 1:
+            merged_state[ids[0]] = state[ids[0]]
+            continue
+        # Multiple entity_ids collide. Pick the LWW winner.
+        winner_id = max(ids)
+        merged_state[winner_id] = state[winner_id]
+        for loser_id in ids:
+            if loser_id != winner_id:
+                redirects[loser_id] = winner_id
+
     return {
         "merged_state": merged_state,
         "redirects": redirects,
