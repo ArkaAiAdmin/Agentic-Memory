@@ -699,6 +699,10 @@ def search_memories(
             include_invalid,
             include_global,
         )
+        + f":mode={mode}"
+        + f":cat={category}"
+        + f":hybrid={int(hybrid)}"
+        + f":light={int(light)}"
         + f":sw={int(safety_wiring)}:dr={int(deep_rerank)}:sf={int(skill_first)}"
         + f":if={int(include_facts)}:fl={int(fact_limit)}"
         + f":as_of={as_of}"

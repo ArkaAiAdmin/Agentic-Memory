@@ -516,6 +516,20 @@ def mark_applied(journal_path: Path, entry_id: int) -> None:
     conn.commit()
 
 
+def mark_hooks_completed(journal_path: Path, entry_id: int) -> None:
+    """Mark a journal entry's hooks as completed.
+
+    Called after post-save hooks finish successfully so the reconciler
+    knows not to re-run them on crash recovery.
+    """
+    conn = _get_journal_conn(journal_path)
+    conn.execute(
+        "UPDATE write_journal SET hooks_completed=1 WHERE id=?",
+        (entry_id,),
+    )
+    conn.commit()
+
+
 def mark_failed(journal_path: Path, entry_id: int, error: str) -> None:
     """Mark a journal entry as failed with an error message.
 

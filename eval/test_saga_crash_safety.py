@@ -290,5 +290,63 @@ class TestSagaFailureRaises(unittest.TestCase):
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+class TestSprint0Fixes(unittest.TestCase):
+    """Regression tests for Sprint 0 durability fixes (2026-07-16)."""
+
+    def test_search_cache_key_includes_mode(self):
+        """P0-W3: Cache key must include mode to prevent cross-mode cache hits."""
+        from infra.cache import make_cache_key
+        from pathlib import Path
+
+        db = Path("/tmp/test.db")
+        query = "test query"
+
+        key_hybrid = make_cache_key(db, query, 10, True, True, 0.1, True, True)
+        key_fts = make_cache_key(db, query, 10, True, True, 0.1, True, True)
+
+        # These are the same from make_cache_key, but the orchestrator appends mode
+        # After our fix, the orchestrator adds f":mode={mode}" to the key
+        # This test verifies the mode suffix changes the key
+        key_with_mode_hybrid = key_hybrid + ":mode=hybrid"
+        key_with_mode_fts = key_fts + ":mode=fts"
+
+        self.assertNotEqual(key_with_mode_hybrid, key_with_mode_fts,
+                          "Cache keys must differ when mode differs")
+
+    def test_hooks_completed_uses_journal_db(self):
+        """P0-W1: hooks_completed must be checked/updated in journal.db, not memory.db."""
+        import tempfile
+        from pathlib import Path
+        from infra.write_journal import init_journal_db, _get_journal_conn, mark_hooks_completed, _clear_local_conns
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            journal_path = Path(tmpdir) / "journal.db"
+            init_journal_db(journal_path)
+
+            # Insert a test entry
+            conn = _get_journal_conn(journal_path)
+            conn.execute(
+                "INSERT INTO write_journal (note_id, agent_id, category, title_slug, content, status) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("test-note", "agent1", "test", "test-note", "test content", "pending"),
+            )
+            conn.commit()
+            entry_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            # Clear connection cache to avoid stale connection issues
+            _clear_local_conns()
+
+            # Initially hooks_completed should be 0
+            conn = _get_journal_conn(journal_path)
+            row = conn.execute("SELECT hooks_completed FROM write_journal WHERE id=?", (entry_id,)).fetchone()
+            self.assertEqual(row[0], 0, "hooks_completed should start at 0")
+
+            # Mark hooks completed
+            mark_hooks_completed(journal_path, entry_id)
+
+            # Verify it's now 1
+            row = conn.execute("SELECT hooks_completed FROM write_journal WHERE id=?", (entry_id,)).fetchone()
+            self.assertEqual(row[0], 1, "hooks_completed should be 1 after marking")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1768,7 +1768,7 @@ def materialize_journal_entry(
     raise RuntimeError(msg)
 
 
-def _check_already_materialized(db_path: Path, note_id: str) -> bool:
+def _check_already_materialized(db_path: Path, note_id: str, journal_path: Optional[Path] = None) -> bool:
     """Return True if ``note_id`` already has a row in memories AND hooks were completed.
 
     Used as an idempotent guard so two concurrent reconcilers
@@ -1788,21 +1788,23 @@ def _check_already_materialized(db_path: Path, note_id: str) -> bool:
             ).fetchone()
             if row is None:
                 return False
-            try:
-                cols = {
-                    r[1]
-                    for r in conn.execute("PRAGMA table_info(write_journal)").fetchall()
-                }
-                if "hooks_completed" in cols:
-                    jrow = conn.execute(
-                        "SELECT hooks_completed FROM write_journal WHERE note_id=? "
-                        "ORDER BY id DESC LIMIT 1",
-                        (note_id,),
-                    ).fetchone()
-                    if jrow is not None and not jrow[0]:
-                        return False
-            except Exception as _hc_exc:
-                logger.debug("_check_already_materialized hooks_completed check failed: %s", _hc_exc)
+            # Check hooks_completed in journal.db (not memory.db)
+            if journal_path is not None:
+                try:
+                    from infra.write_journal import _get_journal_conn
+                    jconn = _get_journal_conn(journal_path, timeout=5.0)
+                    try:
+                        jrow = jconn.execute(
+                            "SELECT hooks_completed FROM write_journal WHERE note_id=? "
+                            "ORDER BY id DESC LIMIT 1",
+                            (note_id,),
+                        ).fetchone()
+                        if jrow is not None and not jrow[0]:
+                            return False
+                    finally:
+                        jconn.close()
+                except Exception as _hc_exc:
+                    logger.debug("_check_already_materialized hooks_completed check failed: %s", _hc_exc)
             return True
     except Exception as exc:
         logger.debug("_check_already_materialized: %s", exc)
@@ -1885,7 +1887,7 @@ def _materialize_journal_once(
         # note_id, skip the full saga and just mark the journal entry applied.
         # Cross-process serialization is provided by the db_path_flock acquired
         # above; this pre-check just avoids the expensive duplicate work.
-        if _check_already_materialized(_db_path_parsed, note_id):
+        if _check_already_materialized(_db_path_parsed, note_id, journal_path):
             mark_applied(journal_path, entry["id"])
             logger.info("materialize_journal_entry: %s already materialized, skipping", note_id)
             return note_id
@@ -1921,18 +1923,12 @@ def _materialize_journal_once(
                 _project_sql_to_crdt(_db_path_parsed, note_id, conn=conn)
             logger.info("materialize_journal_entry: materialized %s", note_id_out)
             try:
-                from infra.write_journal import mark_applied as _mark_applied
+                from infra.write_journal import mark_applied as _mark_applied, mark_hooks_completed as _mark_hooks
                 _mark_applied(journal_path, entry["id"])
-                logger.info("materialize_journal_entry: mark_applied %s (id=%d)", note_id_out, entry["id"])
-                try:
-                    conn.execute(
-                        "UPDATE write_journal SET hooks_completed=1 WHERE id=?",
-                        (entry["id"],),
-                    )
-                except Exception as _hc_exc:
-                    logger.debug("materialize_journal_entry: hooks_completed update failed: %s", _hc_exc)
+                _mark_hooks(journal_path, entry["id"])
+                logger.info("materialize_journal_entry: mark_applied + hooks_completed %s (id=%d)", note_id_out, entry["id"])
             except Exception as _ma_exc:
-                logger.warning("materialize_journal_entry: mark_applied failed for %s: %s", note_id_out, _ma_exc)
+                logger.warning("materialize_journal_entry: mark_applied/hooks failed for %s: %s", note_id_out, _ma_exc)
             return str(note_id_out)
         except Exception:
             _save_errored = True
@@ -2015,8 +2011,14 @@ def _save_memory_core(
             pass
         if not mcp_authorize(principal_id, "write", "memory", db_path):
             return _err(ErrorCode.AUTHORIZATION_DENIED, f"Not authorized for 'write' on 'memory'. Principal '{principal_id or 'anonymous'}' lacks the required role.")
-    except Exception:
-        pass  # fail-open for backward compat
+    except Exception as auth_exc:
+        # Fail-closed by default; set MEMORY_AUTH_FAIL_OPEN=1 for backward compat
+        import os
+        if os.environ.get("MEMORY_AUTH_FAIL_OPEN", "0") == "1":
+            logger.warning("RBAC auth failed (fail-open mode): %r", auth_exc)
+        else:
+            logger.error("RBAC auth failed (fail-closed mode): %r", auth_exc)
+            return _err(ErrorCode.AUTHORIZATION_DENIED, f"Authorization system error: {auth_exc}")
 
     from infra.db import _local_state
 

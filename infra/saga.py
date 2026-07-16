@@ -412,7 +412,9 @@ class Saga:
                     else:
                         self.conn.execute("RELEASE SAVEPOINT saga_sp")
                 except Exception as sp_err:
-                    logger.warning("saga commit/release in exit failed: %r", sp_err)
+                    logger.error("saga commit/release failed: %r", sp_err)
+                    self.committed = False
+                    raise SagaError(f"Saga commit failed: {sp_err}") from sp_err
         self.committed = True
         logger.info("saga[%s] committed (%d steps)", self.name, len(self._steps))
         return False
