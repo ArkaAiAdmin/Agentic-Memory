@@ -121,6 +121,7 @@ ADMIN_TOOLS = [
     "memory_list_federated_skills",
     "memory_resolve_contradiction",
     "memory_background_task_status",
+    "memory_pipeline_coverage",
     "memory_login_url",
     "memory_callback",
     "memory_whoami",

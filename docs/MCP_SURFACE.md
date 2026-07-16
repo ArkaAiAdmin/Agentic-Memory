@@ -4,7 +4,7 @@
 # Agentic Memory — MCP Surface Reference
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
-> Last updated: 2026-07-16. Schema v62. Multi-tenant isolation enforced.
+> Last updated: 2026-07-16. Schema v64. Multi-tenant isolation enforced.
 
 ---
 
@@ -90,7 +90,7 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 - `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.
 - `memory_advanced(operation="...", **kwargs)`: alias for `memory_maintenance`; interchangeable.
 
-> **Important:** 94 ADMIN + 3 DEPRECATED tools are not removed — they are accessible via the `memory_maintenance`
+> **Important:** 95 ADMIN + 3 DEPRECATED tools are not removed — they are accessible via the `memory_maintenance`
 > router. Calling `memory_maintenance` with an operation name is the supported path. The 3 DEPRECATED tools
 > are routed via their replacement verbs and also tracked for audit.
 
@@ -418,6 +418,7 @@ All legacy/diagnostic tools are accessible via `memory_maintenance(operation="..
 | `session_admin_stats` | Database stats for sessions/threads/compactions | type |
 | `recall_stats` | Retrieve recall context, trace, or status | action, query, limit |
 | `background_task_status` | Status of deferred background tasks | memory_id |
+| `pipeline_coverage` | Cron pipeline e2e health — sentinel enqueue + poll, 24h failures, pending depth | json_output |
 | `policy_hash_status` | Fleet posture diff — local policy hash vs peers | peer_timeout_s, max_concurrent, cache_ttl_s, force_refresh, include_full_policy, since_ts |
 
 **Full list with all parameters:** Call `memory_maintenance(operation="help")` to get a
