@@ -105,6 +105,7 @@ In addition to the maintenance tools above, use these during the migration proce
 - `memory_search(query="migration <NNN> <topic>")` — look up past migration patterns before creating a new one
 - `memory_save(category="decisions", content="...")` — document design decisions for each migration (schema change, rationale, alternatives considered)
 - `memory_learn(content="...")` — save any migration pitfalls discovered
+- `memory_note(note_id, action="supersede", rationale="...")` — if a new lesson contradicts a past migration note, supersede it (records in `memory_revision_log`) instead of saving a fresh conflicting memory
 
 ## Output format
 

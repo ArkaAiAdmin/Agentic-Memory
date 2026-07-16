@@ -3,7 +3,7 @@
 Phase A (2026-07-01): 17 CORE tools + escape hatch (memory_advanced).
 Phase B (2026-07-15): +1 CORE tool (memory_record_ctr_feedback) for CTR feedback.
 
-CORE_TOOLS:    18 tools total — all visible directly on the MCP surface.
+CORE_TOOLS:    21 tools total — all visible directly on the MCP surface.
                 Everything else is accessible via memory_maintenance(operation="...")
                 or memory_advanced(operation="...").
 ADMIN_TOOLS:    Legacy tools callable via memory_maintenance / memory_advanced.
@@ -30,6 +30,13 @@ CORE_TOOLS = [
     "memory_health_check",
     "memory_system_health",
     "memory_record_ctr_feedback",
+    # Agent-facing self-editing surface (promoted from ADMIN — see AGENTS.md
+    # "Self-editing" section). Auto skill extraction already runs on every
+    # save; these let agents trigger/inspect skill compile + extraction
+    # directly instead of going through the memory_maintenance router.
+    "memory_list_skills",
+    "memory_extract_skills",
+    "memory_compile_skill",
 ]
 
 ADMIN_TOOLS = [
@@ -48,7 +55,6 @@ ADMIN_TOOLS = [
     "memory_check_integrity",
     "memory_compact",
     "memory_consolidate",
-    "memory_compile_skill",
     "memory_daily_digest",
     "memory_detect_contradictions",
     "memory_facts_list",
@@ -96,8 +102,6 @@ ADMIN_TOOLS = [
     "memory_agent_clear",
     "memory_agent_list",
     "memory_arc_reset",
-    "memory_extract_skills",
-    "memory_list_skills",
     "memory_sdk_demo",
     "memory_auto_share",
     "memory_graph_shortest_path",

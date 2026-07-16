@@ -157,6 +157,7 @@ Use these alongside writing tests:
 
 - `memory_search(query="test_<feature> pattern")` — discover existing test patterns before writing new ones
 - `memory_learn(content="...", tags=["flaky"])` — save flaky tests when discovered (see Flaky test handling above)
+- `memory_note(note_id, action="supersede", rationale="...")` — if a new lesson contradicts a past test note, supersede it (records in `memory_revision_log`) instead of saving a fresh conflicting memory
 - `memory_save(category="decisions", content="...")` — document test architecture decisions
 
 ## Pre-commit checks (Hard Rules #17-18)

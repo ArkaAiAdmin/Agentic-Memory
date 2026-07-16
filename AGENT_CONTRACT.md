@@ -43,6 +43,10 @@ agentic-memory_memory_save(category="lessons"|"decisions"|"projects", importance
 
 Save after: bug fixes (`lessons`), architectural decisions (`decisions`), significant milestones (`projects`, importance=4). Include context — what was the problem, what were the options, why was this one chosen, tradeoffs. The auto-save hook also captures tool calls; use this for deliberate, curated saves.
 
+> **Self-editing happens automatically.** On every `memory_save` with procedural content, the system auto-extracts a reusable skill into `memory_skills` (verify with `memory_list_skills`). You do not need to invoke skill compilation yourself — but you can: `memory_learn(content=..., as_skill=True, skill_name=...)` compiles a skill in one call, and `memory_extract_skills` / `memory_compile_skill` are now CORE tools.
+>
+> **If your new lesson contradicts an existing one**, prefer `memory_note(note_id, action="supersede", rationale="...")` over a fresh `memory_save`. That records the revision in `memory_revision_log` and supersedes the stale note instead of leaving two conflicting memories. Use `memory_search` first to find the note you'd supersede.
+
 ## 4. End Every Session
 
 ```

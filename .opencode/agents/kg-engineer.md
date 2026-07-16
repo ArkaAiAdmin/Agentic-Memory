@@ -27,6 +27,13 @@ memory_maintenance(operation="dedup")
 memory_maintenance(operation="temporal_query", as_of="2026-03-15")
 ```
 
+When a KG-resolution lesson you'd save contradicts a prior note, supersede it
+rather than leaving two conflicting memories:
+`memory_note(note_id, action="supersede", rationale="...")` — writes to
+`memory_revision_log` and retires the stale note. (Self-editing also runs
+automatically on every `memory_save`; verify extracted skills with
+`memory_list_skills`, now a CORE tool.)
+
 ## Key files
 
 ### `kg/` directory

@@ -19,16 +19,16 @@ import tool_registry  # noqa: E402
 
 
 def test_core_count():
-    """CORE_TOOLS has 18 entries (matches AGENTS.md and pyproject.toml)."""
-    assert len(tool_registry.CORE_TOOLS) == 18, (
-        f"Expected 18 CORE tools, got {len(tool_registry.CORE_TOOLS)}"
+    """CORE_TOOLS has 21 entries (matches AGENTS.md and pyproject.toml)."""
+    assert len(tool_registry.CORE_TOOLS) == 21, (
+        f"Expected 21 CORE tools, got {len(tool_registry.CORE_TOOLS)}"
     )
 
 
 def test_admin_count():
-    """ADMIN_TOOLS has 95 entries (matches AGENTS.md)."""
-    assert len(tool_registry.ADMIN_TOOLS) == 95, (
-        f"Expected 95 ADMIN tools, got {len(tool_registry.ADMIN_TOOLS)}"
+    """ADMIN_TOOLS has 92 entries (matches AGENTS.md)."""
+    assert len(tool_registry.ADMIN_TOOLS) == 92, (
+        f"Expected 92 ADMIN tools, got {len(tool_registry.ADMIN_TOOLS)}"
     )
 
 
@@ -92,10 +92,11 @@ def test_admin_names_valid():
 
 
 def test_total_visible():
-    """Total visible tools (CORE only) is 18, matching docs claim of '3 visible'."""
-    # The '3 visible' claim in pyproject refers to the MCP surface.
-    # CORE tools are the directly-exposed ones.
-    assert len(tool_registry.CORE_TOOLS) == 18
+    """Total visible tools (CORE only) is 21 after promoting the 3 self-editing
+    skill tools (memory_list_skills, memory_extract_skills, memory_compile_skill)
+    from ADMIN to CORE. See AGENTS.md 'Agent Self-Editing' section.
+    """
+    assert len(tool_registry.CORE_TOOLS) == 21
 
 
 def test_total_tool_count():
@@ -103,7 +104,7 @@ def test_total_tool_count():
     unique = set(tool_registry.CORE_TOOLS) | set(tool_registry.ADMIN_TOOLS)
     # DEPRECATED ⊂ ADMIN, so unique = CORE ∪ ADMIN
     assert len(unique) == 113, (
-        f"Expected 113 unique tools (18 CORE + 95 ADMIN), got {len(unique)}"
+        f"Expected 113 unique tools (21 CORE + 92 ADMIN), got {len(unique)}"
     )
 
 

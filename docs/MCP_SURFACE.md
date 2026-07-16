@@ -84,15 +84,19 @@ Local-first, MCP-server-shaped memory layer for AI agents. All data lives at
 - **Contradiction merge:** LIVE — `memory_resolve_contradiction(strategy="merge")` delegates to resolver (G3).
 - **Belief review:** LIVE — `cron_review_beliefs` queues stale beliefs; `memory_review_beliefs` reads queue (G4).
 
-**Surface: 18 CORE verbs + `memory_maintenance` router (escape hatch)**
+**Surface: 21 CORE verbs + `memory_maintenance` router (escape hatch)**
 
 - CORE tools: visible directly — call them by name.
 - `memory_maintenance(operation="...", **kwargs)`: single entry point for all ADMIN/diagnostic tools.
 - `memory_advanced(operation="...", **kwargs)`: alias for `memory_maintenance`; interchangeable.
 
-> **Important:** 95 ADMIN + 3 DEPRECATED tools are not removed — they are accessible via the `memory_maintenance`
+> **Important:** 92 ADMIN + 3 DEPRECATED tools are not removed — they are accessible via the `memory_maintenance`
 > router. Calling `memory_maintenance` with an operation name is the supported path. The 3 DEPRECATED tools
 > are routed via their replacement verbs and also tracked for audit.
+>
+> **Self-editing is wired-and-visible.** The three skill tools — `memory_list_skills`, `memory_extract_skills`,
+> and `memory_compile_skill` — are CORE (promoted from ADMIN). Auto skill extraction also runs on every
+> `memory_save` with procedural content; verify with `memory_list_skills`.
 
 > **There is exactly one `memory_save` MCP tool.** It is registered as a CORE verb in
 > `mcp_verbs.py` and exported through `memory_mcp.py`. Do not call `save_pipeline.save_memory`
@@ -645,7 +649,7 @@ memory_maintenance(operation="duplicates", threshold=0.85)
 
 ## Schema Version
 
-Current: **v62** (63 migrations, 100% down-migration coverage)
+Current: **v64** (65 migrations, 100% down-migration coverage)
 
 - `memory_ctr_feedback` composite primary key `(query_id, id)` (migration 061): one row per returned result so CTR click/dismiss signals correlate onto the originating impression. Previously a single `id TEXT PRIMARY KEY` sentinel row (`id='__search__'`) meant only one impression ever existed and `compute_channel_weights` never accumulated signal.
 
