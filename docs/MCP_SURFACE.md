@@ -492,6 +492,16 @@ crontab -l | grep agentic-memory
 bash cron/install_crontab.sh --show
 ```
 
+**Lock-free mode (Step 8 of the cron-pipeline plan):** the scheduler
+(`cron_pipeline_scheduler`) and background worker (`background_worker`)
+process-singleton flocks are on by default. Set `MEMORY_CRON_NO_FLOCK=1`
+(or pass `cron/scheduler.py --no-flock`) to skip them. Overlapping runs
+then become **observable + recoverable** via the `pipeline_coverage`
+health check (`cron_pipeline_health.py` + `memory_maintenance(operation="pipeline_coverage")`)
+instead of being hard-gated by `fcntl.flock`. Only enable after the
+pipeline-coverage check is live; leave off in production unless you have
+confirmed the health check catches overlaps.
+
 **Manual maintenance (rare):**
 - Only call `memory_maintenance` directly if cron is **not running** or you need
   an immediate result.

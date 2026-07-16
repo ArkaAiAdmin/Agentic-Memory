@@ -10,6 +10,9 @@ Usage:
     python cron/scheduler.py --dry-run    # show what would run
     python cron/scheduler.py --list       # list all jobs and next run times
     python cron/scheduler.py --status     # show recent cron_runs summary
+    python cron/scheduler.py --no-flock   # skip process-singleton lock
+                                            (observability via pipeline-coverage)
+    MEMORY_CRON_NO_FLOCK=1 python cron/scheduler.py  # same, via env
 """
 
 from __future__ import annotations
@@ -230,7 +233,18 @@ def _write_status(due_jobs: list[str], results: dict[str, dict]) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    if _sched_lock is not None:
+    args = sys.argv[1:]
+    no_flock = "--no-flock" in args
+    dry_run = "--dry-run" in args
+    list_mode = "--list" in args
+    status_mode = "--status" in args
+
+    # Step 8 (cron-pipeline-no-flock): when the process-singleton lock is
+    # skipped, overlapping scheduler instances are observable + recoverable
+    # via the pipeline-coverage health check (cron_pipeline_health.py) instead
+    # of being hard-gated by flock. Default behaviour keeps the lock.
+    _skip_sched_lock = no_flock or os.environ.get("MEMORY_CRON_NO_FLOCK", "") == "1"
+    if _sched_lock is not None and not _skip_sched_lock:
         lock_wait_s = int(os.environ.get("MEMORY_SCHEDULER_LOCK_WAIT_S", "0"))
         if lock_wait_s > 0:
             _sched_lock(
@@ -239,11 +253,6 @@ def main() -> int:
             )
         else:
             _sched_lock("cron_pipeline_scheduler")
-
-    args = sys.argv[1:]
-    dry_run = "--dry-run" in args
-    list_mode = "--list" in args
-    status_mode = "--status" in args
 
     now = datetime.now(timezone.utc)
 
