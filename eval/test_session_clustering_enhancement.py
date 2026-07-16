@@ -14,7 +14,7 @@ from infra.memory_common import reset_all_lazy_config_attrs
 reset_all_lazy_config_attrs()
 
 from search.phases.session import (
-    _phase_eight_session_cluster,
+    _phase_nine_session_cluster,
     _compute_query_entities,
     _compute_session_affinity_scores,
     _get_session_entities,
@@ -119,7 +119,7 @@ class TestPhaseEightSessionCluster(unittest.TestCase):
             ("id3", "content3", "sessions/session2", "[]", "2026-01-03", 3.0),
         ]
         boost_ids = set()
-        result = _phase_eight_session_cluster(
+        result = _phase_nine_session_cluster(
             results, "the session we had", 10, boost_ids=boost_ids
         )
         self.assertEqual(len(result), 3)
@@ -134,7 +134,7 @@ class TestPhaseEightSessionCluster(unittest.TestCase):
             ("id3", "content3", "sessions/session2", "[]", "2026-01-03", 3.0),
             ("id4", "content4", "sessions/session2", "[]", "2026-01-04", 4.0),
         ]
-        result = _phase_eight_session_cluster(
+        result = _phase_nine_session_cluster(
             results, "patterns across sessions", 4
         )
         self.assertEqual(len(result), 4)
@@ -144,14 +144,14 @@ class TestPhaseEightSessionCluster(unittest.TestCase):
         results = [
             ("id1", "content1", "memory/lessons/test.md", "[]", "2026-01-01", 1.0),
         ]
-        result = _phase_eight_session_cluster(
+        result = _phase_nine_session_cluster(
             results, "test query", 10
         )
         self.assertEqual(len(result), 1)
 
     def test_empty_results(self):
         """Empty results return empty."""
-        result = _phase_eight_session_cluster([], "test", 10)
+        result = _phase_nine_session_cluster([], "test", 10)
         self.assertEqual(result, [])
 
     def test_no_boost_ids_when_disabled(self):
@@ -161,7 +161,7 @@ class TestPhaseEightSessionCluster(unittest.TestCase):
             ("id2", "content2", "sessions/session2", "[]", "2026-01-02", 2.0),
         ]
         boost_ids = set()
-        result = _phase_eight_session_cluster(
+        result = _phase_nine_session_cluster(
             results, "database patterns", 10, boost_ids=boost_ids, db=self.conn
         )
         # Without feature flag enabled, only keyword-based boosting happens

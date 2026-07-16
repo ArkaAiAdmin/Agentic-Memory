@@ -35,6 +35,7 @@ writing to this note, typically 1-3).
 from __future__ import annotations
 
 import logging
+import os
 
 import json
 from typing import Optional
@@ -331,6 +332,12 @@ def crdt_save(
 
     db_path = Path(db_path)
 
+    # Resolve tenant_id so open_db installs the tenant_id() UDF and
+    # tenant_memories TEMP VIEW. This is required by the saga undo
+    # DELETE statements (which use tenant_id=tenant_id()) and by
+    # _capture_pre_state_main (which reads from tenant_memories).
+    _tid = os.environ.get("MEMORY_CRON_TENANT_ID") or os.environ.get("MEMORY_TENANT_ID") or "default"
+
     # P0-1 fix (2026-07-03): scan remote content for prompt injection
     # before any DB mutation. This closes the CRDT injection bypass where
     # pull_from_peer feeds unvalidated remote content directly into
@@ -460,7 +467,7 @@ def crdt_save(
 
     now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    with open_db(db_path, timeout=10.0) as conn:
+    with open_db(db_path, timeout=10.0, tenant_id=_tid) as conn:
         conn.execute("PRAGMA foreign_keys=ON")
 
         # S4 fix (2026-06-18): capture pre-state for the saga's undo.

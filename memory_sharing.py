@@ -727,6 +727,7 @@ def list_share_candidates(
         from infra.db import open_db
         with open_db(Path(db), pooled=True, write=True) as conn:
             _ensure_shared_table(conn)
+            _purge_expired_shared(conn)
             rows = conn.execute(
                 """
                 SELECT m.id, m.content, m.category, m.tags,
