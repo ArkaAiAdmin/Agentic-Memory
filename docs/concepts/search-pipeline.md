@@ -77,7 +77,7 @@ Each phase is independently isolated — no single failure kills the search.
 | 4 | DB column probe + filter construction | Namespace, category, memory_source, tag filters |
 | 5 | SQLite FTS5 BM25 + KG fact search | Keyword retrieval + knowledge-graph facts (parallel) |
 | 6 | usearch ANN + model2vec embeddings | Semantic vector fallback when FTS returns nothing |
-| 7 | Reciprocal Rank Fusion | Merge FTS5 + vector results |
+| 7 | Reciprocal Rank Fusion (4 lists) | Merge FTS5 + dense + chunk-FTS + SPLADE results |
 | 8 | `valid_to` / `as_of` time-travel filter | Drop invalidated / out-of-window memories |
 | 9 | Chunk enrichment + session clustering | Surface chunk context; boost intra-session relatedness |
 | 10 | KG entity centrality + multi-hop traversal | Knowledge-graph boost |
