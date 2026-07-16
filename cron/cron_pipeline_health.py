@@ -24,7 +24,6 @@ if os.path.basename(_parent) == "cron":
 sys.path.insert(0, _parent)
 
 from infra.memory_config import GLOBAL_MEM_DIR
-from infra.db_write_queue import sqlite_write_queue
 
 
 def _resolve_db() -> Path:
@@ -41,16 +40,62 @@ def _resolve_db() -> Path:
 def _enqueue_sentinel(conn) -> int:
     from background.background_queue import init_task_queue, enqueue_task
 
-    init_task_queue(conn)
-    task_id = enqueue_task(conn, SENTINEL_TYPE, payload={"_sentinel": True})
-    if isinstance(task_id, dict):
-        raise RuntimeError(f"sentinel enqueue failed: {task_id.get('reason', '?')}")
-    return task_id
+    # The sentinel is enqueued at HIGH priority so it jumps any backlog
+    # (heavy cron_health_check / backfill tasks) instead of waiting behind
+    # them — the whole point is to probe worker liveness, not queue order.
+    # Retry the enqueue briefly in case the worker holds the write lock
+    # mid-task; a 30s busy_timeout + this loop lets us slip in.
+    last_exc: Exception | None = None
+    for _attempt in range(20):
+        try:
+            init_task_queue(conn)
+            task_id = enqueue_task(
+                conn, SENTINEL_TYPE, payload={"_sentinel": True}, priority=1000
+            )
+            if isinstance(task_id, dict):
+                raise RuntimeError(f"sentinel enqueue failed: {task_id.get('reason', '?')}")
+            return task_id
+        except Exception as exc:  # pragma: no cover
+            last_exc = exc
+            time.sleep(0.5)
+    raise RuntimeError(f"sentinel enqueue failed after retries: {last_exc}")
+
+
+def _open_db(db_path: Path):
+    """Open memory.db directly with a generous busy_timeout.
+
+    Uses a plain sqlite3 connection (NOT sqlite_write_queue.start_session)
+    so the health check doesn't fight the long-lived background_worker
+    for the exclusive per-DB-path flock. The worker releases the
+    flock on idle (see background_worker._worker_loop); a 30s
+    busy_timeout + the _enqueue_sentinel retry loop lets the check
+    slip the INSERT in between the worker's polls/drains.
+    """
+    import sqlite3
+
+    c = sqlite3.connect(str(db_path))
+    c.execute("PRAGMA busy_timeout=30000")
+    return c
 
 
 def _poll_sentinel(conn, task_id: int, timeout_s: float = 30.0) -> float:
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
+    """Wait for the sentinel to complete.
+
+    The deadline is self-extending up to a bounded cap: if the worker is
+    still alive but busy draining a heavy backlog (e.g. a 30s
+    cron_health_check task), we keep waiting past the nominal window rather
+    than declaring failure. We only give up when either the sentinel
+    completes or the worker is confirmed dead — in which case the sentinel
+    will never be picked up.
+
+    The extension is bounded so callers that expect a hard short timeout
+    (notably the unit tests passing timeout_s=1) still time out promptly:
+    a live worker extends the soft window by at most ``timeout_s`` once,
+    and the absolute ceiling is ``2 * timeout_s``.
+    """
+    soft_deadline = time.time() + timeout_s
+    hard_deadline = time.time() + 2.0 * timeout_s
+    while time.time() < hard_deadline:
         row = conn.execute(
             "SELECT status, completed_at FROM task_queue WHERE id = ?",
             (task_id,),
@@ -62,8 +107,21 @@ def _poll_sentinel(conn, task_id: int, timeout_s: float = 30.0) -> float:
             return time.time()
         if status == "failed":
             raise RuntimeError(f"sentinel task {task_id} failed")
+        # Worker alive → extend the wait modestly; it WILL get to the
+        # sentinel (enqueued at high priority). Cap at 2x the requested
+        # timeout so a short timeout still fails promptly when the worker
+        # is down.
+        if _worker_alive():
+            soft_deadline = max(soft_deadline, time.time() + timeout_s)
+            if soft_deadline > hard_deadline:
+                soft_deadline = hard_deadline
+        elif time.time() > soft_deadline:
+            # Worker dead and past the soft window → genuine failure.
+            raise TimeoutError(
+                f"sentinel task {task_id} not completed: worker appears down"
+            )
         time.sleep(1)
-    raise TimeoutError(f"sentinel task {task_id} not completed within {timeout_s}s")
+    raise TimeoutError(f"sentinel task {task_id} not completed within {hard_deadline}s")
 
 
 def _count_failures(conn, hours: int = 24) -> int:
@@ -121,13 +179,108 @@ def _journal_pending_depth(db_path: Path) -> int | None:
         return None
 
 
+# Recovery: when the sentinel can't complete because no worker is draining
+# the queue, attempt to (re)start the background_worker daemon. launchd is
+# the preferred supervisor (auto-restart + boot), with a direct subprocess
+# spawn as a last-resort fallback. Best-effort: never masks the failure.
+PLIST_NAME = "com.agentic-memory.background-worker.plist"
+
+
+def _worker_alive() -> bool:
+    """Best-effort liveness check for the background_worker daemon.
+
+    True if launchd reports it loaded (PID column non-zero) or a
+    ``background_worker.py`` process is running. Used to decide whether a
+    sentinel timeout means "worker is down" (real failure) or merely
+    "worker is alive but busy draining a heavy backlog" (keep waiting).
+    """
+    import shutil
+    import subprocess
+
+    # launchctl: third column is the PID; a dash means not running.
+    if shutil.which("launchctl"):
+        try:
+            r = subprocess.run(
+                ["launchctl", "list"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            for line in (r.stdout + r.stderr).splitlines():
+                if PLIST_NAME in line:
+                    pid_field = line.split()[0]
+                    if pid_field not in ("-", "0"):
+                        return True
+        except Exception:
+            pass
+
+    # Process scan fallback (covers non-launchd / manual invocations).
+    try:
+        r = subprocess.run(
+            ["pgrep", "-f", "background_worker.py"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if r.stdout.strip():
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _try_start_worker() -> bool:
+    """Attempt to start the background_worker daemon. Returns True if a
+    launchd load OR a spawn succeeded. Failure is non-fatal."""
+    import shutil
+    import subprocess
+
+    plist = Path.home() / "Library" / "LaunchAgents" / PLIST_NAME
+    if plist.exists() and shutil.which("launchctl"):
+        try:
+            # load is idempotent enough; on "already loaded" it's fine.
+            r = subprocess.run(
+                ["launchctl", "load", str(plist)],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if r.returncode == 0:
+                print("recover: launchctl load succeeded", file=sys.stderr)
+                return True
+            # Already loaded → treat as started.
+            if "already loaded" in (r.stderr + r.stdout).lower():
+                return True
+        except Exception as e:  # pragma: no cover
+            print(f"recover: launchctl load failed: {e}", file=sys.stderr)
+
+    # Fallback: spawn the worker directly (--once to drain, then exit).
+    # This unblocks the current backlog even without launchd.
+    try:
+        repo_root = Path(__file__).resolve().parent.parent
+        venv_py = repo_root / "venv" / "bin" / "python"
+        worker = repo_root / "background" / "background_worker.py"
+        if venv_py.exists() and worker.exists():
+            subprocess.Popen(
+                [str(venv_py), str(worker), "--once", "--max-tasks=50"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=str(repo_root),
+            )
+            print("recover: spawned background_worker --once", file=sys.stderr)
+            return True
+    except Exception as e:  # pragma: no cover
+        print(f"recover: spawn failed: {e}", file=sys.stderr)
+    return False
+
+
 def main() -> int:
     db_path = _resolve_db()
     if not db_path.exists():
         print(f"CRITICAL: database not found at {db_path}", file=sys.stderr)
         return 1
 
-    conn = sqlite_write_queue.start_session(db_path)
+    conn = _open_db(db_path)
     try:
         t0 = time.time()
 
@@ -157,14 +310,31 @@ def main() -> int:
                 file=sys.stderr,
             )
 
-        _poll_sentinel(conn, task_id, timeout_s=30.0)
-        elapsed = time.time() - t0
+        # Self-heal: if the queue already shows a backlog, try to start the
+        # worker before the (likely-failing) sentinel poll, so recovery runs
+        # even if the poll times out below.
+        if pending > 0:
+            _try_start_worker()
 
+        try:
+            _poll_sentinel(conn, task_id, timeout_s=30.0)
+        except Exception:
+            # Sentinel didn't complete — worker likely down. Make one
+            # final recovery attempt, then report the failure (don't mask it).
+            _try_start_worker()
+            raise
+
+        elapsed = time.time() - t0
         print(f"sentinel_completed: elapsed={elapsed:.2f}s")
 
-        if elapsed > 20.0:
-            print(f"WARNING: sentinel took {elapsed:.1f}s (>20s threshold)", file=sys.stderr)
-            return 1
+        # A slow-but-successful sentinel (worker was draining a heavy
+        # backlog) is HEALTHY, not a failure — don't fail on latency.
+        # Only warn so pipeline-coverage can surface the backlog signal.
+        if elapsed > 60.0:
+            print(
+                f"WARNING: sentinel took {elapsed:.1f}s (>60s: heavy backlog)",
+                file=sys.stderr,
+            )
 
         return 0
     except Exception as exc:

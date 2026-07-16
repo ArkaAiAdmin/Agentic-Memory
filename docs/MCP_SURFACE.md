@@ -502,6 +502,33 @@ instead of being hard-gated by `fcntl.flock`. Only enable after the
 pipeline-coverage check is live; leave off in production unless you have
 confirmed the health check catches overlaps.
 
+**Persistent worker via launchd (recommended for always-on liveness):**
+the background worker is best run as a `launchd` LaunchAgent so it is
+auto-restarted on crash and started at boot. Install with:
+
+```bash
+bash cron/install_launchagent.sh          # install + load (idempotent)
+bash cron/install_launchagent.sh --show   # print the resolved plist
+bash cron/install_launchagent.sh --uninstall
+bash cron/install_launchagent.sh --dry-run  # print resolved paths, no install
+```
+
+The plist (`cron/com.agentic-memory.background-worker.plist.in`) runs
+`background_worker.py --interval=5` (poll mode, **not** `--drain` — drain
+exits after one batch and would defeat persistence), with
+`KeepAlive/SuccessfulExit=false` + `ThrottleInterval=10` so launchd
+restarts it on any exit. The worker opens a **fresh `sqlite3` connection
+per task** (wrapped in the per-DB-path `db_path_flock`), so it never
+holds the RESERVED write lock or the flock between tasks, and there is no
+singleton writer thread to wedge — a persistent worker therefore stays
+alive indefinitely (the old `sqlite_write_queue.start_session` design
+force-rolled-back after 300s and silently killed it). `cron_pipeline_health.py`
+verifies the worker by enqueuing a high-priority (`priority=1000`)
+`cron_pipeline_sentinel` task and waiting for completion; if the queue is
+backed up it self-extends the wait while the worker is alive rather than
+falsely failing, and attempts `launchctl load` recovery if the worker is
+down.
+
 **Manual maintenance (rare):**
 - Only call `memory_maintenance` directly if cron is **not running** or you need
   an immediate result.
