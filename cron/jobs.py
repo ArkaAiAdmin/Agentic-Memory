@@ -35,6 +35,12 @@ JOBS: dict[str, dict] = {
         "args": ["--drain", "--max-tasks=50"],
         "timeout": 60,
     },
+    "pipeline_health": {
+        "freq": "15m",
+        "offset_min": 1,
+        "script": "cron/cron_pipeline_health.py",
+        "timeout": 60,
+    },
     "health_check": {
         "freq": "15m",
         "script": "cron/enqueue_task.py",

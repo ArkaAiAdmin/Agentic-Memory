@@ -530,6 +530,7 @@ HANDLERS = {
     "wal_checkpoint": handle_wal_checkpoint,
     "run_script": handle_run_script,
     "evidence_chain_staleness": handle_evidence_chain_staleness,
+    "cron_pipeline_sentinel": lambda payload, conn, db_path: "pipeline_healthy",
 }
 
 
