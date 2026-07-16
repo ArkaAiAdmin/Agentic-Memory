@@ -158,6 +158,8 @@ def run_backfill(
     # User can override these by setting env vars before running.
     env.setdefault("MEMORY_LLM_HYBRID_THRESHOLD", "0.7")
     env.setdefault("MEMORY_LLM_FORCE", "0")
+    # Ensure the subprocess targets the same DB this cron resolved.
+    env["MEMORY_DB_PATH"] = str(db_path)
 
     logger.info("Running: %s", " ".join(cmd))
     t_start = time.time()

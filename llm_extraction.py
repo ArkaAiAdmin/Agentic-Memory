@@ -36,7 +36,7 @@ __all__ = [
 _EXTRACTION_PROMPT = """Extract facts and entities from the text below. Return ONLY a JSON object with "facts" and "entities" arrays. No explanation, no markdown — just raw JSON.
 
 Expected format:
-{{"facts":[{{"subject":"...","predicate":"...","object":"...","event_time":"YYYY-MM-DD or null","event_time_granularity":"day|month|year|unknown"}}],"entities":[{{"name":"...","type":"concept","description":"..."}}]}}
+{{"facts":[{{"subject":"...","predicate":"...","object":"...","event_time":"YYYY-MM-DD or null","event_time_granularity":"day|month|year|unknown"}}],"entities":[{{"name":"...","type":"person|organization|technology|framework|concept|process|file|function|module|language|place","description":"..."}}]}}
 
 Predicate options: is_a, has_description, defines, uses, creates, stores, requires, depends_on, provides, handles, manages, processes, connects_to, triggers, implements, replaces, configures, monitors, tracks, computes, validates, extracts
 
@@ -48,6 +48,7 @@ Rules:
 - event_time: when the fact was true in the world (ISO date YYYY-MM-DD, or YYYY-MM for month precision, or YYYY for year, or null if no time reference)
 - event_time_granularity: "day" if exact date, "month" if month precision, "year" if year only, "unknown" if no time reference or uncertain
 - Entity descriptions one short sentence
+- Choose the entity type that BEST matches the entity — do NOT default everything to "concept"
 - Only extract things clearly present in the text
 - If nothing found, return {{"facts":[],"entities":[]}}
 
