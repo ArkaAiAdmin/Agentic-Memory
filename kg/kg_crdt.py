@@ -62,6 +62,7 @@ that, when merged, reproduce the state.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -372,8 +373,6 @@ def _edge_key(source_id: int, target_id: int, relation: str) -> int:
     of the three fields, which is collision-resistant enough for
     practical use.
     """
-    import hashlib
-
     raw = f"{source_id}|{target_id}|{relation}".encode("utf-8")
     h = hashlib.sha256(raw).digest()
     # Take 8 bytes, convert to signed int for SQLite INTEGER PRIMARY KEY.
@@ -747,64 +746,43 @@ def record_edge_add(
 # them get redirected.
 
 
+def _compute_fingerprint(name: str, entity_type: str, description: str = "") -> str:
+    canonical = lambda s: " ".join(s.lower().strip().split())
+    payload = f"{canonical(name)}|{canonical(entity_type)}|{canonical(description)}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def entity_dedup_via_crdt(
     state: dict[int, dict[str, Any]],
 ) -> dict[str, Any]:
     """Resolve name-collisions in a merged entity state.
 
-    Sprint 2.2: Uses inception fingerprint for dedup when available,
-    falling back to (name, entity_type) for backward compatibility.
-
-    The CRDT merge produces a dict keyed by entity_id. If two
-    different entity_ids resolve to the same fingerprint or
-    (name, entity_type), the UNIQUE constraint on kg_entities
-    will reject the second. This helper picks the LWW winner
-    and returns a "redirect map": the losing entity_ids are
-    mapped to the winning entity_id.
-
-    Returns:
-      ``{"merged_state": <state with only winners>,
-        "redirects": {loser_id: winner_id, ...}}``
-
-    The caller should:
-      1. Apply ``merged_state`` to kg_entities.
-      2. Update any kg_edges.source_id / target_id that match a
-         loser to use the winner's id.
+    Matches paper (paper_pipeline/crdt_projection.py §2.5):
+    groups by inception fingerprint; backfills missing fingerprints
+    from (name, entity_type, description) so that entities differing
+    only in description are treated as distinct.
     """
-    # Sprint 2.2: Group by fingerprint first, then by (name, entity_type)
     by_fingerprint: dict[str, list[int]] = {}
-    by_key: dict[tuple[str, str], list[int]] = {}
     for entity_id, info in state.items():
         if info.get("tombstone"):
             continue
         fp = info.get("fingerprint")
-        if fp:
-            by_fingerprint.setdefault(fp, []).append(entity_id)
-        else:
-            key = (info["name"], info.get("entity_type", ""))
-            by_key.setdefault(key, []).append(entity_id)
+        if not fp:
+            fp = _compute_fingerprint(
+                info.get("name", ""),
+                info.get("entity_type", ""),
+                info.get("description", "") or "",
+            )
+            info["fingerprint"] = fp
+        by_fingerprint.setdefault(fp, []).append(entity_id)
 
     merged_state: dict[int, dict[str, Any]] = {}
     redirects: dict[int, int] = {}
 
-    # Merge by fingerprint (same entity across peers)
-    for fp, ids in by_fingerprint.items():
+    for _fp, ids in by_fingerprint.items():
         if len(ids) == 1:
             merged_state[ids[0]] = state[ids[0]]
             continue
-        # Multiple entity_ids with same fingerprint - LWW winner
-        winner_id = max(ids)
-        merged_state[winner_id] = state[winner_id]
-        for loser_id in ids:
-            if loser_id != winner_id:
-                redirects[loser_id] = winner_id
-
-    # Merge by (name, entity_type) for entities without fingerprint
-    for _key, ids in by_key.items():
-        if len(ids) == 1:
-            merged_state[ids[0]] = state[ids[0]]
-            continue
-        # Multiple entity_ids collide. Pick the LWW winner.
         winner_id = max(ids)
         merged_state[winner_id] = state[winner_id]
         for loser_id in ids:
