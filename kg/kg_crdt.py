@@ -281,6 +281,10 @@ def apply_entity_crdt_to_db(
 ) -> int:
     """Apply a merged entity state to the kg_entities table.
 
+    Sprint 2.3: Preserves entity_id from CRDT state to maintain
+    stable identity across peers. Falls back to auto-increment
+    when entity_id is not in state.
+
     Returns the number of entities written. This is idempotent: the
     caller can re-apply the same state without creating duplicates
     because we use ``INSERT OR REPLACE`` on the (name, entity_type)
@@ -290,13 +294,22 @@ def apply_entity_crdt_to_db(
     for entity_id, info in state.items():
         if info.get("tombstone"):
             continue
+        if info.get("_redirect"):
+            # This entity was merged - skip
+            continue
+        # Sprint 2.3: Include entity_id and fingerprint in INSERT
         conn.execute(
             """
             INSERT OR REPLACE INTO kg_entities
-                (name, entity_type, mentions, created_at, updated_at)
-            VALUES (?, ?, 1, datetime('now'), datetime('now'))
+                (id, name, entity_type, fingerprint, mentions, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1, datetime('now'), datetime('now'))
             """,
-            (info["name"], info.get("entity_type", "")),
+            (
+                entity_id,
+                info["name"],
+                info.get("entity_type", ""),
+                info.get("fingerprint"),
+            ),
         )
         written += 1
     return written
