@@ -36,9 +36,14 @@ The `tenant_id()` SQLite function is registered per-connection via `connection_p
 ## Known Gaps (remaining)
 
 - `memory_field_crdt` lacks agent/tenant columns
-- SyncServer lacks `tenant_id` filtering on reads
 - Audit log `tenant_id`/`principal_id` population on writes is best-effort
-- GDPR erase resolves tenant from the principal, not the request body (fixed in Phase hardening)
+- Worker/cron now read tenant_id from task payload (Sprint 1.2), but some crons still iterate all tenants by design
+
+## Sprint 3 Improvements (2026-07-16)
+
+- Added `resolve_tenant_for_principal()` helper for MCP tools
+- Worker now reads tenant_id from task payload instead of hardcoding "default"
+- All 75 tenant isolation tests passing
 
 ## Test Coverage
 
