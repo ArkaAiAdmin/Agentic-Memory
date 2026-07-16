@@ -2529,7 +2529,9 @@ with cron_tab:
                 except Exception:
                     age_s = 0
                 interval = _INTERVAL_S.get(trigger, 600)
-                if interval is None or age_s <= 6 * interval:
+                if interval is None:
+                    sev, status_label = "ok", f"completed {age_s / 60:.0f}min ago (event-triggered)"
+                elif age_s > 6 * interval:
                     sev, status_label = "warning", f"completed but stale ({age_s / 3600:.0f}h ago)"
                 else:
                     sev, status_label = "ok", f"completed {age_s / 60:.0f}min ago"
