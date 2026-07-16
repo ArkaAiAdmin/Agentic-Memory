@@ -33,8 +33,10 @@ graph TD
 ```mermaid
 flowchart TD
     ENQ["save_pipeline / tool handler<br/>enqueue_task()"] --> Q[("task_queue")]
-    CRON["cron → background_worker<br/>--drain / --interval"] --> LOCK["acquire_flock_with_retry"]
-    LOCK --> POLL["poll task_queue<br/>dequeue_task()"]
+    CRON["cron → scheduler.py"] --> SCHED_LOCK["acquire_lock_or_exit('cron_pipeline_scheduler')<br/>MEMORY_SCHEDULER_LOCK_WAIT_S"]
+    SCHED_LOCK --> BG["background_worker --drain"]
+    BG --> WORKER_LOCK["acquire_lock_or_exit('background_worker')<br/>prevents overlapping workers"]
+    WORKER_LOCK --> POLL["poll task_queue<br/>dequeue_task()"]
     Q --> POLL
     POLL --> H["dispatch by task_type<br/>(entity_resolution / fact_consolidation / contradiction / custom)"]
     H --> EXEC["handler executes<br/>(watchdog timeout)"]

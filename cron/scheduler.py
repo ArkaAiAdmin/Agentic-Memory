@@ -29,6 +29,12 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from cron.jobs import JOBS, REPO_ROOT as JOB_ROOT
 
+# Lock to prevent overlapping scheduler instances
+try:
+    from cron._flock import acquire_lock_or_exit as _sched_lock
+except ImportError:
+    _sched_lock = None  # flock module not available; continue without lock
+
 
 # ---------------------------------------------------------------------------
 # Frequency matching
@@ -224,6 +230,16 @@ def _write_status(due_jobs: list[str], results: dict[str, dict]) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
+    if _sched_lock is not None:
+        lock_wait_s = int(os.environ.get("MEMORY_SCHEDULER_LOCK_WAIT_S", "0"))
+        if lock_wait_s > 0:
+            _sched_lock(
+                "cron_pipeline_scheduler",
+                max_attempts=max(5, lock_wait_s + 5),
+            )
+        else:
+            _sched_lock("cron_pipeline_scheduler")
+
     args = sys.argv[1:]
     dry_run = "--dry-run" in args
     list_mode = "--list" in args

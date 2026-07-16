@@ -12,6 +12,12 @@ Each entry shows the default value and where it's read in the codebase.
 | `MEMORY_DB_LOCK_ATTEMPTS` | `20` | Max flock acquisition attempts in `save/pipeline.py:352`. Each attempt sleeps briefly before retrying. |
 | `MEMORY_REBUILD_VEC_INDEX` | _(none)_ | Path to `rebuild_vec_index.py`. Overrides auto-detection in `background/background_worker.py:306`. When unset, the worker resolves the script relative to install root. |
 
+## Scheduler
+
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `MEMORY_SCHEDULER_LOCK_WAIT_S` | `0` | How long (seconds) the cron scheduler waits for a previous overlapping run to finish before exiting as a no-op. Default 0 = skip immediately; set >0 to wait up to N seconds (`cron/scheduler.py`). |
+
 ## Background Worker
 
 | Env Var | Default | Description |
