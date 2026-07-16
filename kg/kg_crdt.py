@@ -134,6 +134,29 @@ def vv_merge(a: dict[str, int], b: dict[str, int]) -> dict[str, int]:
     return result
 
 
+def vv_sum(v: dict[str, int]) -> int:
+    """Total counter value across all peers — used as primary LWW sort key."""
+    return sum(v.values())
+
+
+def _serialise_vv(v: dict[str, int]) -> str:
+    """Deterministic serialisation for stable sorting (paper canonical form)."""
+    return ",".join(f"{k}:{v[k]}" for k in sorted(v))
+
+
+def _parse_vv(s: str) -> dict[str, int]:
+    """Deserialise a version vector from 'peer:count,...' format."""
+    result: dict[str, int] = {}
+    if not s or s == "{}":
+        return result
+    for item in s.split(","):
+        item = item.strip()
+        if ":" in item:
+            peer, _, count = item.partition(":")
+            result[peer] = int(count)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entity CRDT: 2P-Set + LWW per field
 # ---------------------------------------------------------------------------
@@ -189,7 +212,7 @@ def merge_entity_ops(ops: Iterable[EntityOp]) -> dict[int, dict[str, Any]]:
         # broken by version_vector comparison (higher wins).
         sorted_ops = sorted(
             ops_for_entity,
-            key=lambda o: (o.timestamp, json.dumps(o.version_vector, sort_keys=True)),
+            key=lambda o: (o.timestamp, _serialise_vv(o.version_vector)),
         )
         # 2P-Set: an add wins if no later remove from the same peer.
         # If add and remove are concurrent, add wins.
@@ -358,11 +381,18 @@ def _edge_key(source_id: int, target_id: int, relation: str) -> int:
 
 
 def merge_edge_ops(ops: Iterable[EdgeOp]) -> dict[int, dict[str, Any]]:
-    """Merge a set of EdgeOps into a per-edge state.
+    """Merge edge ops using causal dominance (vv_dominates) with timestamp/agent tiebreak.
 
-    Edges are add-only. The "winner" for each (source, target,
-    relation) triple is the op with the highest version_vector
-    (ties broken by timestamp then agent_id).
+    The correct CRDT merge: if one op's version vector causally dominates
+    another's, it wins. Only truly concurrent ops (neither dominates) fall
+    back to (timestamp desc, agent_id asc) tiebreak. This preserves causal
+    ordering guarantees — a later op from the same or causally-following
+    peer always wins over an earlier one.
+
+    The paper previously used vv_sum as the primary sort key, but that
+    conflates concurrent ops with different component-wise clocks
+    (e.g. {A:3,B:0} vs {A:0,B:3} both sum to 3). vv_dominates is the
+    correct partial-order comparator and is what production uses.
     """
     by_edge: dict[int, list[EdgeOp]] = {}
     for op in ops:
@@ -370,15 +400,11 @@ def merge_edge_ops(ops: Iterable[EdgeOp]) -> dict[int, dict[str, Any]]:
 
     result: dict[int, dict[str, Any]] = {}
     for edge_id, ops_for_edge in by_edge.items():
-        # Winner = op with highest version_vector (causal partial order).
-        # Ties broken by (timestamp desc, agent_id asc) — a proper total
-        # order for concurrent ops, not sum() which is not a partial order.
         winner = ops_for_edge[0]
         for candidate in ops_for_edge[1:]:
             if vv_dominates(candidate.version_vector, winner.version_vector):
                 winner = candidate
             elif not vv_dominates(winner.version_vector, candidate.version_vector):
-                # Concurrent: break tie by timestamp then agent_id
                 if (
                     candidate.timestamp > winner.timestamp
                     or (
