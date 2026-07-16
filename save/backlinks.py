@@ -121,7 +121,7 @@ def _auto_semantic_backlinks(
             return
 
         scores = [
-            (r["id"], r["score"])
+            (r["id"], float(r["score"]))
             for r in results
             if r["score"] >= 0.30 and r["id"] != note_id
         ]

@@ -82,6 +82,7 @@ from backfill.index_backfills import (  # noqa: E402, F401
     _backfill_vec_index_raw,
     _backfill_crdt_vectors,
     _backfill_tiers,
+    _backfill_shared_memories,
 )
 
 # ---------------------------------------------------------------------------
@@ -404,13 +405,11 @@ def backfill_full(
     #   - Concept drift metrics (concept_drift, drift_alarms)
     #   - ARC ghosts & stats (arc_ghosts, arc_stats)
     #   - Task queue (task_queue), sync log (sync_log)
-    #   - CRDT shared pool (shared_memories, shared_*)
     #   - CTR feedback, review schedule, auto-save status
     #
-    # The canonical fix (not yet implemented) is to save this
-    # relational metadata as sidecar .json files alongside each
-    # markdown note, then restore them during rebuild. Until then,
-    # prefer --incremental over --full whenever possible.
+    # Restored from sidecars: shared_memories is persisted as
+    # `*.shared.json` alongside each markdown note and restored
+    # during rebuild via _backfill_shared_memories.
     logger.warning(
         "FULL REBUILD: relational metadata tables (CRDT vectors, "
         "KG edges, access logs, drift metrics, ARC state, task queue, "
@@ -491,6 +490,12 @@ def backfill_full(
         stats["operations"].append({"op": "crdt_vectors", **crdt_stats})
         tier_stats = _backfill_tiers(conn)
         stats["operations"].append({"op": "tiers", **tier_stats})
+
+        # 11. shared memories — restore from sidecar JSON files so they
+        # survive full rebuilds (the canonical durable fix, see
+        # backfill_all.py DATA-LOSS WARNING block).
+        shared_stats = _backfill_shared_memories(conn, source_dir)
+        stats["operations"].append({"op": "shared_memories", **shared_stats})
 
         conn.commit()
     finally:

@@ -127,10 +127,15 @@ enable_server = true                  # MEMORY_SYNC_ENABLE_SERVER — start HTTP
 listen_host = "127.0.0.1"            # MEMORY_SYNC_LISTEN_HOST
 listen_port = 9877                    # MEMORY_SYNC_LISTEN_PORT
 
-[[sync.peers]]                        # MEMORY_SYNC_PEERS_<N>_URL, ..._AGENT_ID
-name = "local"
+[[sync.peers]]                        # MIMOCODE workspace (main DB, port 9877)
+name = "MIMOCODE"
 url = "http://127.0.0.1:9877"
-agent_id = "mimo-main"
+agent_id = "MIMOCODE"
+
+[[sync.peers]]                        # OPENCODE workspace (separate DB, port 9878)
+name = "OPENCODE"
+url = "http://127.0.0.1:9878"
+agent_id = "OPENCODE"
 
 [sync.schedule]
 interval_minutes = 5                  # MEMORY_SYNC_INTERVAL_MINUTES

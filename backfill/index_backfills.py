@@ -25,6 +25,7 @@ import logging
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -294,3 +295,52 @@ def _backfill_tiers(conn: AnyConnection) -> dict:
         "cold": colds,
         "skipped": missing - count,
     }
+
+
+def _backfill_shared_memories(conn, source_dir: Path) -> dict:
+    """Restore shared_memories from sidecar JSON files.
+
+    Each sidecar is a `*.shared.json` file sitting alongside the source
+    markdown note.  It contains a JSON array of share records written
+    by ``_write_shared_sidecar`` in ``memory_sharing.py``.
+
+    Idempotent: uses ``INSERT OR IGNORE`` so re-running the backfill
+    does not create duplicates.
+    """
+    try:
+        from memory_sharing import _load_shared_sidecars, _SHARED_TABLE
+    except ImportError:
+        return {"result": "skipped", "reason": "memory_sharing unavailable"}
+
+    entries = _load_shared_sidecars(source_dir)
+    if not entries:
+        return {"result": "ok", "count": 0}
+
+    count = 0
+    for entry in entries:
+        try:
+            conn.execute(
+                f"INSERT OR IGNORE INTO {_SHARED_TABLE} "
+                "(id, agent_id, content, category, tags, shared_at, "
+                "source_note_id, metadata, target_agent_id, shared_with, tenant_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    entry.get("shared_id", ""),
+                    entry.get("agent_id", ""),
+                    entry.get("content", ""),
+                    entry.get("category"),
+                    entry.get("tags"),
+                    entry.get("shared_at", time.time()),
+                    entry.get("source_note_id"),
+                    entry.get("metadata"),
+                    entry.get("target_agent_id"),
+                    entry.get("shared_with"),
+                    entry.get("tenant_id", "default"),
+                ),
+            )
+            count += 1
+        except Exception as e:
+            logger.warning("_backfill_shared_memories failed: %s", e)
+
+    logger.info("Shared memories backfilled: %d entries", count)
+    return {"result": "completed", "count": count}

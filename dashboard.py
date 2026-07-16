@@ -1072,6 +1072,8 @@ with kg_tab:
 
     # ── Edge statistics ──
     if edges_df is not None and not edges_df.empty:
+        if "weight" in edges_df.columns:
+            edges_df["weight"] = pd.to_numeric(edges_df["weight"], errors="coerce").fillna(1.0)
         col_e1, col_e2, col_e3 = st.columns(3)
         col_e1.metric("Visible Edges", len(edges_df))
         rel_counts = edges_df["relation"].value_counts()

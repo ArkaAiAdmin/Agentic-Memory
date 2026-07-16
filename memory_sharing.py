@@ -122,6 +122,72 @@ def _ensure_shared_table(conn: AnyConnection) -> None:
     )
 
 
+def _sidecar_path(local_mem: Path, note_id: str) -> Path:
+    """Return the sidecar file path for a note's shared-metadata.
+
+    The sidecar lives in the same category directory as the source
+    markdown note so it is picked up by normal backup / sync tooling.
+    Falls back to `memory/shared/` if the category directory doesn't
+    exist (e.g., for synthetic notes with no backing file).
+    """
+    category = note_id.split("/")[0] if "/" in note_id else ""
+    if category:
+        slug = note_id.split("/", 1)[1]
+        candidate = local_mem / category / f"{slug}.shared.json"
+    else:
+        candidate = local_mem / f"{note_id}.shared.json"
+    if candidate.parent.exists() or category:
+        return candidate
+    return local_mem / "shared" / f"{note_id}.shared.json"
+
+
+def _write_shared_sidecar(local_mem: Path, note_id: str, entry: dict) -> None:
+    """Append a single share entry to the note's sidecar file.
+
+    The sidecar is a JSON array of share records.  It is written
+    atomically to avoid partial writes on crash.
+    """
+    path = _sidecar_path(local_mem, note_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        existing: list[dict] = []
+        if path.exists():
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(existing, list):
+                    existing = [existing]
+            except (json.JSONDecodeError, OSError):
+                existing = []
+        existing.append(entry)
+        tmp = path.with_suffix(".shared.json.tmp")
+        tmp.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    except Exception as e:
+        logger.debug("_write_shared_sidecar failed for %s: %s", note_id, e)
+
+
+def _load_shared_sidecars(local_mem: Path) -> list[dict]:
+    """Load all shared-memory sidecar entries from the memory directory.
+
+    Scans recursively for `*.shared.json` files and flattens them
+    into a single list of share records suitable for INSERT into
+    ``shared_memories``.
+    """
+    entries: list[dict] = []
+    if not local_mem.exists():
+        return entries
+    for path in local_mem.rglob("*.shared.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                entries.extend(data)
+            elif isinstance(data, dict):
+                entries.append(data)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug("_load_shared_sidecars: skipping %s: %s", path, e)
+    return entries
+
+
 def share_memory(
     note_id: str,
     agent_id: str,
@@ -233,6 +299,23 @@ def share_memory(
                 logger.warning("share_memory failed: %s", e)
                 conn.rollback()
                 raise
+            sidecar_entry = {
+                "shared_id": shared_id,
+                "agent_id": agent_id,
+                "content": content,
+                "category": category,
+                "tags": tags_json,
+                "shared_at": time.time(),
+                "source_note_id": note_id,
+                "metadata": meta_json,
+                "target_agent_id": target_agent_id,
+                "shared_with": shared_with or target_agent_id,
+                "tenant_id": _tid,
+            }
+            try:
+                _write_shared_sidecar(local_mem, note_id, sidecar_entry)
+            except Exception as sidecar_exc:
+                logger.debug("shared sidecar write failed for %s: %s", note_id, sidecar_exc)
             return {"enabled": True, "shared_id": shared_id, "agent_id": agent_id}
         finally:
             conn.close()

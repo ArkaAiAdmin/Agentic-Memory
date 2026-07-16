@@ -14,6 +14,8 @@ backfill_all for backward compat.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 
 import os
@@ -687,6 +689,25 @@ def _backfill_kg_graph(conn):
         if pred not in exclude_predicates:
             mention_counts[obj.lower()] = mention_counts.get(obj.lower(), 0) + 1
 
+    # Run pattern-based NER over each memory's content to get the
+    # correct entity_type for each entity name.  Without this step
+    # every entity would be tagged "concept", losing the person/org/
+    # place/technology diversity that extract_entities() produces.
+    from knowledge_graph.kg_extract import extract_entities
+
+    type_map: dict[str, str] = {}
+    source_ids = {row[0] for row in conn.execute(
+        "SELECT DISTINCT source_memory FROM kg_facts WHERE source_memory IS NOT NULL"
+    ).fetchall()}
+    for sid in source_ids:
+        row = conn.execute(
+            "SELECT content FROM memories WHERE id = ?", (sid,)
+        ).fetchone()
+        if not row or not row[0]:
+            continue
+        for name, etype in extract_entities(row[0], min_occurrences=1):
+            type_map[name.lower().strip()] = etype
+
     kept_count = 0
     dropped = {"too_short": 0, "stopword": 0, "punctuation": 0, "low_mentions": 0}
     for name, count in mention_counts.items():
@@ -702,10 +723,11 @@ def _backfill_kg_graph(conn):
             dropped["low_mentions"] += 1
             continue
         try:
+            etype = type_map.get(name, "concept")
             conn.execute(
                 "INSERT OR IGNORE INTO kg_entities (name, entity_type, mentions, created_at, updated_at) "
                 "VALUES (?, ?, ?, datetime('now'), datetime('now'))",
-                (name, "concept", count),
+                (name, etype, count),
             )
             kept_count += 1
         except Exception as e:
