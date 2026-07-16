@@ -54,7 +54,7 @@ import sqlite3
 import sys
 import threading
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Generator, List, Literal, Optional, Union
 from enum import Enum
@@ -414,7 +414,12 @@ class Saga:
                 except Exception as sp_err:
                     logger.error("saga commit/release failed: %r", sp_err)
                     self.committed = False
-                    raise SagaError(f"Saga commit failed: {sp_err}") from sp_err
+                    raise SagaError(
+                        f"Saga commit failed: {sp_err}",
+                        saga_name=self.name,
+                        failed_step="<commit>",
+                        original_error=sp_err,
+                    ) from sp_err
         self.committed = True
         logger.info("saga[%s] committed (%d steps)", self.name, len(self._steps))
         return False
@@ -578,9 +583,12 @@ class _SaveMemoryParams:
     initial_file_content: Optional[str] = None
     # Sprint 1.1: Snapshot of pre-existing dependent row IDs for selective rollback
     # These are populated before the saga starts for UPDATE-style saves.
-    pre_existing_chunk_ids: set = None
-    pre_existing_embedding_ids: set = None
-    pre_existing_kg_fact_ids: set = None
+    pre_existing_chunk_ids: set = field(default_factory=set)
+    pre_existing_embedding_ids: set = field(default_factory=set)
+    pre_existing_kg_fact_ids: set = field(default_factory=set)
+    # Sprint 1.1 hardening: full pre-image of the memories row so an
+    # UPDATE rollback restores every column, not just content/tags.
+    initial_row: Optional[dict] = None
 
     def __post_init__(self):
         if self.pre_existing_chunk_ids is None:
@@ -716,6 +724,31 @@ def _restore_memory_row(
         logger.warning("saga undo: restore UPDATE for %s failed: %r", note_id, exc)
 
 
+def _restore_full_row(conn: AnyConnection, note_id: str, row: dict) -> None:
+    """Restore a pre-existing memories row to its exact pre-save snapshot.
+
+    Sprint 1.1 hardening: unlike :func:`_restore_memory_row` (which only
+    rewrites a fixed subset of columns), this rebuilds the UPDATE from the
+    captured full-row dict so a failed UPDATE rolls every touched column
+    (valid_from/valid_to/superseded_by/asserting_agent_id/epistemic_source/
+    tier/scores/...) back to its pre-save value. ``id`` and ``note_id`` are
+    never overwritten. Best-effort: unknown/removed columns are skipped.
+    """
+    # Columns that must never be mutated by a restore.
+    _immutable = {"id", "note_id"}
+    cols = [c for c in row.keys() if c not in _immutable and row.get(c) is not None]
+    if not cols:
+        return
+    try:
+        placeholders = ", ".join(f"{c} = ?" for c in cols)
+        sql = f"UPDATE memories SET {placeholders} WHERE id = ?"
+        conn.execute(sql, [row[c] for c in cols] + [note_id])
+        if not _is_saga_deferred(conn):
+            conn.commit()
+    except Exception as exc:
+        logger.warning("saga undo: full-row restore for %s failed: %r", note_id, exc)
+
+
 def _remove_vec_key(conn: AnyConnection, note_id: str) -> None:
     """Best-effort removal of the usearch key->memory_id mapping."""
     try:
@@ -752,6 +785,27 @@ def _capture_pre_existing(conn, note_id: str):
             return (row[0], row[1])
     except Exception as _capture_exc:
         logger.debug("_capture_pre_existing failed for %s: %s", note_id, _capture_exc)
+
+
+def _capture_full_row(conn, note_id: str) -> dict | None:
+    """Snapshot the *complete* memories row before the save runs.
+
+    Sprint 1.1 hardening: restoring only content/tags (the prior undo
+    path) left an UPDATE-rolled-back row inconsistent if the save had
+    touched other columns (valid_from, superseded_by, asserting_agent_id,
+    epistemic_source, tier, scores, ...).  Capturing the full row lets the
+    undo restore every column the forward write may have changed, so a
+    failed UPDATE rolls the row back to its exact pre-save state.
+    """
+    try:
+        cur = conn.execute("SELECT * FROM memories WHERE id = ?", (note_id,))
+        cols = [c[0] for c in cur.description] if cur.description else []
+        row = cur.fetchone()
+        if row is not None:
+            return dict(zip(cols, row))
+    except Exception as _capture_exc:
+        logger.debug("_capture_full_row failed for %s: %s", note_id, _capture_exc)
+    return None
     return None
 
 
@@ -827,6 +881,7 @@ def _build_save_memory_steps(
         pre_existing_chunk_ids=pre_existing_chunk_ids,
         pre_existing_embedding_ids=pre_existing_embedding_ids,
         pre_existing_kg_fact_ids=pre_existing_kg_fact_ids,
+        initial_row=_capture_full_row(conn, note_id) if pre_existing is not None else None,
     )
 
     def _do_upsert() -> str:
@@ -835,12 +890,15 @@ def _build_save_memory_steps(
 
     def _undo_upsert() -> None:
         if params.initial_existed:
-            _restore_memory_row(
-                params.conn,
-                params.note_id,
-                params.initial_content or "",
-                params.initial_tags or "[]",
-            )
+            if params.initial_row is not None:
+                _restore_full_row(params.conn, params.note_id, params.initial_row)
+            else:
+                _restore_memory_row(
+                    params.conn,
+                    params.note_id,
+                    params.initial_content or "",
+                    params.initial_tags or "[]",
+                )
             # Sprint 1.1: For UPDATE rollback, preserve pre-existing rows
             # by passing the snapshot of IDs that existed before the update.
             # Only delete rows that were created during this saga, not
