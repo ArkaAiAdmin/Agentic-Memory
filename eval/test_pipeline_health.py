@@ -7,10 +7,7 @@ Tests:
   - pending depth
 """
 
-import json
-import os
 import tempfile
-import time
 from pathlib import Path
 
 import pytest
@@ -116,3 +113,84 @@ class TestPipelineHealth:
         monkeypatch.setenv("MEMORY_DB_PATH", str(d))
         from cron.cron_pipeline_health import _resolve_db
         assert _resolve_db() == d
+
+
+class TestJournalBacklogProbe:
+    """Step 8 follow-up: surface a stalled CQRS write-journal.
+
+    When MEMORY_WRITE_JOURNAL_ENABLED is ON, agents enqueue writes to
+    journal.db and the background_worker daemon drains them. If the daemon
+    is not live, pending rows accumulate. The probe must count them so
+    pipeline-coverage can alert, and return None when the journal is
+    absent (flag off) so it never false-positives.
+    """
+
+    def test_absent_journal_returns_none(self, tmp_path):
+        from cron.cron_pipeline_health import _journal_pending_depth
+
+        db = tmp_path / "memory.db"
+        db.write_text("")
+        assert _journal_pending_depth(db) is None
+
+    def test_counts_pending_rows(self, tmp_path):
+        from cron.cron_pipeline_health import _journal_pending_depth
+        from infra.write_journal import init_journal_db
+
+        db = tmp_path / "memory.db"
+        db.write_text("")
+        journal = tmp_path / "journal.db"
+        init_journal_db(journal)
+
+        jconn = sqlite_write_queue.start_session(journal)
+        try:
+            for _ in range(3):
+                jconn.execute(
+                    "INSERT INTO write_journal "
+                    "(note_id, agent_id, category, title_slug, content, status) "
+                    "VALUES ('n', 'a', 'lessons', 's', 'c', 'pending')"
+                )
+            jconn.execute(
+                "INSERT INTO write_journal "
+                "(note_id, agent_id, category, title_slug, content, status) "
+                "VALUES ('n', 'a', 'lessons', 's', 'c', 'applied')"
+            )
+            jconn.commit()
+        finally:
+            jconn.close()
+
+        assert _journal_pending_depth(db) == 3
+
+    def test_main_reports_journal_pending(self, monkeypatch, tmp_path, capsys):
+        from cron.cron_pipeline_health import main
+        from infra.write_journal import init_journal_db
+
+        db = tmp_path / "memory.db"
+        init_task_queue(sqlite_write_queue.start_session(db))
+        journal = tmp_path / "journal.db"
+        init_journal_db(journal)
+        jconn = sqlite_write_queue.start_session(journal)
+        try:
+            for _ in range(2):
+                jconn.execute(
+                    "INSERT INTO write_journal "
+                    "(note_id, agent_id, category, title_slug, content, status) "
+                    "VALUES ('n', 'a', 'lessons', 's', 'c', 'pending')"
+                )
+            jconn.commit()
+        finally:
+            jconn.close()
+
+        monkeypatch.setenv("MEMORY_DB_PATH", str(db))
+        # Force the sentinel poll to fail immediately (no worker draining),
+        # so main() returns 1 but still prints the journal_pending line.
+        def _boom(*_a, **_k):
+            raise TimeoutError("no worker")
+
+        import cron.cron_pipeline_health as _cph
+
+        monkeypatch.setattr(_cph, "_poll_sentinel", _boom)
+
+        rc = main()
+        assert rc != 0  # sentinel never completed (no worker)
+        captured = capsys.readouterr()
+        assert "journal_pending: 2" in captured.out
