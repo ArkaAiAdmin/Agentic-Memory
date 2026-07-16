@@ -504,6 +504,146 @@ def push_to_peer(
 
 
 # ---------------------------------------------------------------------------
+# Sprint 2.4: KG CRDT sync
+# ---------------------------------------------------------------------------
+
+
+def pull_kg_changes(
+    peer_url: str,
+    since_ts: float,
+    limit: int = 500,
+) -> list[dict]:
+    """Pull KG CRDT changes from a peer.
+
+    Sprint 2.4: Calls /crdt/kg/changes endpoint.
+    """
+    url = f"{peer_url.rstrip('/')}/crdt/kg/changes?since={int(since_ts)}&limit={limit}"
+    resp = _json_get(url)
+    if resp is None:
+        return []
+    return resp.get("changes", [])
+
+
+def push_kg_changes(
+    peer_url: str,
+    local_agent_id: str,
+    changes: list[dict],
+) -> dict:
+    """Push KG CRDT changes to a peer.
+
+    Sprint 2.4: Calls /crdt/kg/push endpoint.
+    """
+    url = f"{peer_url.rstrip('/')}/crdt/kg/push"
+    resp = _json_post(url, {"agent_id": local_agent_id, "ops": changes})
+    if resp is None:
+        return {"error": f"Failed to push to {url}"}
+    return resp
+
+
+def sync_kg_with_peer(
+    db_path: str | Path,
+    peer_url: str,
+    peer_name: str,
+    local_agent_id: str,
+    since_ts: float = 0,
+) -> dict:
+    """Full KG sync cycle with a peer.
+
+    Sprint 2.4: Pull remote KG changes, then push local changes.
+    """
+    from kg.kg_crdt import (
+        ensure_kg_crdt_schema,
+        record_entity_add,
+        record_edge_add,
+        compute_entity_crdt_state,
+        compute_edge_crdt_state,
+    )
+    from infra.db import open_db
+
+    results = {"pulled": 0, "pushed": 0, "errors": []}
+
+    # Pull remote changes
+    try:
+        remote_changes = pull_kg_changes(peer_url, since_ts)
+        if remote_changes:
+            with open_db(db_path, timeout=10.0) as conn:
+                ensure_kg_crdt_schema(conn)
+                for op in remote_changes:
+                    try:
+                        if op.get("type") == "entity":
+                            record_entity_add(
+                                conn,
+                                op["entity_id"],
+                                op.get("agent_id", peer_name),
+                                op.get("version_vector", {}),
+                                op.get("name", ""),
+                                op.get("entity_type", ""),
+                                op.get("description", ""),
+                                op.get("fingerprint"),
+                            )
+                            results["pulled"] += 1
+                        elif op.get("type") == "edge":
+                            record_edge_add(
+                                conn,
+                                op["source_id"],
+                                op["target_id"],
+                                op.get("relation", ""),
+                                op.get("weight", 1.0),
+                                op.get("agent_id", peer_name),
+                                op.get("version_vector", {}),
+                                op.get("valid_at"),
+                            )
+                            results["pulled"] += 1
+                    except Exception as op_exc:
+                        results["errors"].append(str(op_exc))
+                conn.commit()
+    except Exception as exc:
+        results["errors"].append(f"pull failed: {exc}")
+
+    # Push local changes
+    try:
+        with open_db(db_path, timeout=10.0) as conn:
+            ensure_kg_crdt_schema(conn)
+            entity_state = compute_entity_crdt_state(conn)
+            edge_state = compute_edge_crdt_state(conn)
+
+            local_ops = []
+            for entity_id, info in entity_state.items():
+                local_ops.append({
+                    "type": "entity",
+                    "entity_id": entity_id,
+                    "agent_id": local_agent_id,
+                    "name": info.get("name", ""),
+                    "entity_type": info.get("entity_type", ""),
+                    "description": info.get("description", ""),
+                    "fingerprint": info.get("fingerprint"),
+                    "version_vector": info.get("version_vector", {}),
+                    "timestamp": info.get("timestamp", 0),
+                })
+            for edge_id, info in edge_state.items():
+                local_ops.append({
+                    "type": "edge",
+                    "edge_id": edge_id,
+                    "source_id": info.get("source_id", 0),
+                    "target_id": info.get("target_id", 0),
+                    "relation": info.get("relation", ""),
+                    "weight": info.get("weight", 1.0),
+                    "valid_at": info.get("valid_at"),
+                    "agent_id": local_agent_id,
+                    "version_vector": info.get("version_vector", {}),
+                    "timestamp": info.get("timestamp", 0),
+                })
+
+            if local_ops:
+                push_resp = push_kg_changes(peer_url, local_agent_id, local_ops)
+                results["pushed"] = push_resp.get("applied", 0)
+    except Exception as exc:
+        results["errors"].append(f"push failed: {exc}")
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Full sync: push then pull
 # ---------------------------------------------------------------------------
 

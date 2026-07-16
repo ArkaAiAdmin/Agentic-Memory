@@ -98,6 +98,25 @@ def main() -> int:
                     "pull", {}
                 ).get("error", "")
                 print(f"  FAILED: {err}")
+
+            # Sprint 2.4: Also sync KG with this peer
+            try:
+                from infra.sync_client import sync_kg_with_peer
+                kg_result = sync_kg_with_peer(
+                    db_path=str(db_path),
+                    peer_url=peer_url,
+                    peer_name=peer_name,
+                    local_agent_id=local_agent_id,
+                )
+                if kg_result.get("pulled", 0) > 0 or kg_result.get("pushed", 0) > 0:
+                    print(
+                        f"  KG: pulled {kg_result.get('pulled', 0)}, "
+                        f"pushed {kg_result.get('pushed', 0)}"
+                    )
+                if kg_result.get("errors"):
+                    print(f"  KG errors: {kg_result['errors']}")
+            except Exception as kg_exc:
+                logger.debug("cron_crdt_sync: KG sync with %s failed: %s", peer_name, kg_exc)
         except Exception as e:
             logger.error("cron_crdt_sync: sync with %s failed: %s", peer_name, e)
             print(f"  ERROR: {e}")
