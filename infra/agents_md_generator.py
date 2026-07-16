@@ -54,9 +54,36 @@ def _count_test_files() -> tuple[int, int]:
 
 
 def _count_cron_jobs() -> int:
-    """Return count of executable cron Python scripts."""
-    cron_dir = REPO / "cron"
-    return len([f for f in cron_dir.glob("*.py") if f.is_file()])
+    """Return count of scheduled cron jobs.
+
+    Counts entries in the consolidated job registry (``cron/jobs.py`` ->
+    ``JOBS``) rather than ``*.py`` files in ``cron/``.  The directory also
+    contains helper scripts, one-off backfills, and the registry module
+    itself, so a file count over-reports the number of actually-scheduled
+    jobs (audit P1-W1).
+    """
+    jobs_mod = REPO / "cron" / "jobs.py"
+    if not jobs_mod.is_file():
+        return 0
+    import importlib.util as _ilu
+
+    spec = _ilu.spec_from_file_location("_cron_jobs_meta", str(jobs_mod))
+    if spec is None or spec.loader is None:
+        return 0
+    mod = _ilu.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:
+        # Fallback: a registry module that fails to import should not
+        # break doc generation.
+        return 0
+    jobs = getattr(mod, "JOBS", None)
+    if isinstance(jobs, dict):
+        return len(jobs)
+    # Some registries expose a list; count that instead.
+    if isinstance(jobs, (list, tuple)):
+        return len(jobs)
+    return 0
 
 
 def _count_hooks() -> int:

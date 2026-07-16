@@ -3,14 +3,18 @@
 > Current limitations and open problems. Each entry includes severity,
 > impact, and planned mitigation path.
 
-## CRDT Push Not Field-Aware
+## CRDT Push Not Field-Aware — RESOLVED (2026-07-16)
 
-**Severity**: Medium  
+**Severity**: Medium (was)  
 **Impact**: Multi-agent sync loses granular field-level merges when using the legacy `crdt_save` path.
 
-The field-level CRDT (`crdt_field.py`, migration 013) correctly merges per-field updates, but the `crdt_push` / `crdt_save` sync path still operates at the note level for pre-v13 peers. When two agents edit different fields of the same note and one peer is pre-v13, the entire note wins via LWW instead of per-field merge.
+The field-level CRDT (`crdt_field.py`, migration 013) correctly merges per-field updates, but the `crdt_push` / `crdt_save` sync path still operated at the note level for pre-v13 peers. When two agents edited different fields of the same note and one peer was pre-v13, the entire note won via LWW instead of per-field merge.
 
-**Mitigation**: Upgrade all peers to v13+ schema. The field-level path is the default for v13+; the legacy path is a backward-compatibility fallback only.
+**Status**: Fixed. The sync server (`infra/sync_server.py`) now applies incoming `field_crdt` entries through `FieldUpdate` + `merge_field_updates` + `apply_field_updates_to_db` (per-field LWWES registers in `memory_field_crdt`) instead of `crdt_field_save`, which previously collapsed every field onto the note-level `content` column and discarded the field discriminator. The wire format (`field`) is normalized to `field_name` in `_normalize_notes`.
+
+**Related fixes in this branch:**
+- KG CRDT sync (`infra/sync_client.py` / `infra/sync_server.py`) now uses the correct op keys (`entity_ops` / `edge_ops`) and projects merged CRDT ops into `kg_entities` / `kg_edges` after both pull and push.
+- Collision resolution now persists a durable `kg_entity_redirect` map (`resolve_entity_id` / `persist_entity_redirects`) so loser→winner entity resolution survives across projection runs.
 
 ## Saga Doesn't Cover Post-Save Hooks
 
