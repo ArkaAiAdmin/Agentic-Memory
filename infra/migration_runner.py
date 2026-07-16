@@ -119,7 +119,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-15: bumped to 62 for data_subject_sub on memories (GDPR subject-scoped erase).
 # 2026-07-15: bumped to 61 for composite (query_id, id) PK on
 #   memory_ctr_feedback (FIX 2 — real CTR click/dismiss correlation).
-SCHEMA_VERSION = 62
+SCHEMA_VERSION = 63
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the

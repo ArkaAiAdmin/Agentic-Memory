@@ -1223,6 +1223,24 @@ def _maybe_run_wal_checkpoint(conn: AnyConnection, db_path: Path) -> None:
 _last_wal_checkpoint_at: float = 0.0
 
 
+def _resolve_task_timeout(conn: AnyConnection, task_type: str) -> int:
+    """Read the per-task-type timeout from cron_task_timeouts (v063+).
+
+    Falls back to MEMORY_WORKER_TASK_TIMEOUT_S env var (default 120s)
+    if the table or row doesn't exist.
+    """
+    try:
+        row = conn.execute(
+            "SELECT timeout_s FROM cron_task_timeouts WHERE task_type = ?",
+            (task_type,),
+        ).fetchone()
+        if row is not None:
+            return int(row[0])
+    except Exception:
+        pass
+    return int(os.environ.get("MEMORY_WORKER_TASK_TIMEOUT_S", "120"))
+
+
 def process_one_task(
     conn: AnyConnection, db_path: Path, task_type: str | None = None
 ) -> bool:
@@ -1275,9 +1293,13 @@ def process_one_task(
     # 28+ minutes. If a task runs >120s, log a warning and mark it
     # failed so the queue can progress. Threshold is conservative —
     # KG extraction on 3K memories legitimately takes 5-10s.
+    #
+    # v063: per-task-type timeout is read from cron_task_timeouts table.
+    # Fall back to the env var (default 120s) if the table or row is
+    # missing.
     import signal as _sig
 
-    _PER_TASK_TIMEOUT_S = int(os.environ.get("MEMORY_WORKER_TASK_TIMEOUT_S", "120"))
+    _PER_TASK_TIMEOUT_S = _resolve_task_timeout(conn, ttype)
 
     class _TaskTimeout(Exception):
         pass
