@@ -1301,6 +1301,18 @@ def process_one_task(
     ttype = task["task_type"]
     payload = task["payload"]
 
+    # Sprint 1.2: Apply task-specific tenant_id if provided in payload
+    task_tenant_id = payload.get("tenant_id", "default")
+    try:
+        conn.create_function("tenant_id", 0, lambda: task_tenant_id)
+        conn.execute("DROP VIEW IF EXISTS tenant_memories")
+        conn.execute(
+            "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+            "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+        )
+    except Exception:
+        pass
+
     # Resolve cron script paths from CRON_SCRIPT_MAP for cron-style task types.
     if not payload.get("script") and ttype in CRON_SCRIPT_MAP:
         payload = {**payload, "script": CRON_SCRIPT_MAP[ttype]}
@@ -1448,7 +1460,7 @@ class WorkerPool:
         import sqlite3
         from infra.db_path_flock import db_path_flock
 
-        def _open():
+        def _open(tenant_id: str = "default"):
             fc = db_path_flock(self._db_path)
             fc.__enter__()
             c = sqlite3.connect(str(self._db_path), timeout=30.0)
@@ -1456,7 +1468,7 @@ class WorkerPool:
             c.execute("PRAGMA busy_timeout=30000")
             c.execute("PRAGMA foreign_keys=ON")
             try:
-                c.create_function("tenant_id", 0, lambda: "default")
+                c.create_function("tenant_id", 0, lambda: tenant_id)
                 c.execute(
                     "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                     "SELECT * FROM memories WHERE tenant_id = tenant_id()"
@@ -1692,7 +1704,7 @@ def run_worker(
     import sqlite3
     from infra.db_path_flock import db_path_flock
 
-    def _open_task_conn():
+    def _open_task_conn(tenant_id: str = "default"):
         flock_ctx = db_path_flock(db_path)
         flock_ctx.__enter__()
         c = sqlite3.connect(str(db_path), timeout=30.0)
@@ -1701,7 +1713,7 @@ def run_worker(
         c.execute("PRAGMA foreign_keys=ON")
         # Match connection_pool.get() tenant isolation primitives.
         try:
-            c.create_function("tenant_id", 0, lambda: "default")
+            c.create_function("tenant_id", 0, lambda: tenant_id)
             c.execute(
                 "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                 "SELECT * FROM memories WHERE tenant_id = tenant_id()"
