@@ -122,7 +122,7 @@ agentic-memory/                    # Repo root
 ├── embedding_search.py             # Semantic search via model2vec
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
-├── migration_runner.py             # Schema migrations (current v67)
+├── migration_runner.py             # Schema migrations (current v68)
 └── ... (124 modules total)
 ```
 
@@ -140,11 +140,11 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v67, 68 migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v68, 69 migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
-- **113 MCP tools** (21 CORE + 92 ADMIN).
+- **114 MCP tools** (22 CORE + 92 ADMIN).
   Single source of truth: `tool_registry.py`.
 - **47 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.

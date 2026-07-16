@@ -458,6 +458,9 @@ class LLMConfig:
     llama_cpp_host: str = "http://localhost:8080"
     llama_cpp_model: str = ""
     llama_cpp_timeout_s: float = 30.0
+    openai_compatible_host: str = "http://127.0.0.1:1234"
+    openai_compatible_model: str = "qwen/qwen3.5-9b"
+    openai_compatible_timeout_s: float = 120.0
     extraction_model_id: str = "Qwen/Qwen2.5-3B-Instruct"
     extraction_max_tokens: int = 256
     extraction_hybrid_threshold: float = 0.5
@@ -1250,6 +1253,15 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         llama_cpp_timeout_s=_b(
             "MEMORY_LLAMA_CPP_TIMEOUT_S", "llm_extraction.llama_cpp_timeout_s", 30.0, float, toml_data
+        ),
+        openai_compatible_host=_b(
+            "MEMORY_OPENAI_COMPATIBLE_HOST", "llm_extraction.openai_compatible_host", "http://127.0.0.1:1234", str, toml_data
+        ),
+        openai_compatible_model=_b(
+            "MEMORY_OPENAI_COMPATIBLE_MODEL", "llm_extraction.openai_compatible_model", "qwen/qwen3.5-9b", str, toml_data
+        ),
+        openai_compatible_timeout_s=_b(
+            "MEMORY_OPENAI_COMPATIBLE_TIMEOUT_S", "llm_extraction.openai_compatible_timeout_s", 120.0, float, toml_data
         ),
         extraction_model_id=_b(
             "MEMORY_LLM_EXTRACTION_MODEL_ID", "llm_extraction.model_id", "Qwen/Qwen2.5-3B-Instruct", str, toml_data

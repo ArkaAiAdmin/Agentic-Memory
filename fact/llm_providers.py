@@ -330,6 +330,79 @@ class LlamaCppProvider(BaseLLMProvider):
             return ""
 
 
+class OpenAICompatibleProvider(BaseLLMProvider):
+    """HTTP client for any OpenAI-compatible local server (LM Studio, etc).
+
+    Uses the standard ``/v1/chat/completions`` endpoint. This covers
+    LM Studio, llama.cpp in OpenAI-compat mode, vLLM, TGI, and any
+    server that speaks the OpenAI chat schema.
+    """
+
+    name = "openai_compatible"
+
+    def __init__(self, host: str, model: str, timeout_s: float = 30.0):
+        self.host = host.rstrip("/")
+        self.model = model
+        self.timeout_s = timeout_s
+        self._available_cache: Optional[bool] = None
+        self._available_cache_ts: float = 0.0
+        self._lock = threading.Lock()
+
+    def is_available(self) -> bool:
+        with self._lock:
+            now = time.time()
+            if (
+                self._available_cache is not None
+                and (now - self._available_cache_ts) < 30.0
+            ):
+                return bool(self._available_cache)
+        cached: bool = False
+        try:
+            url = f"{self.host}/v1/models"
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=2.0) as resp:
+                cached = resp.status == 200
+        except Exception as e:
+            logger.warning("OpenAICompatibleProvider: is_available failed: %s", e)
+            cached = False
+        with self._lock:
+            self._available_cache = cached
+            self._available_cache_ts = now
+        return cached
+
+    def generate(
+        self, prompt: str, max_tokens: int = 256, temperature: float = 0.0
+    ) -> str:
+        url = f"{self.host}/v1/chat/completions"
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "reasoning_effort": "none",
+        }
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=body,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                raw = resp.read().decode("utf-8")
+            data = json.loads(raw)
+            choices = data.get("choices") or []
+            if choices:
+                return str(choices[0].get("message", {}).get("content", ""))
+            return ""
+        except Exception as e:
+            logger.debug("OpenAICompatibleProvider: generate failed: %s", e)
+            with self._lock:
+                self._available_cache = None
+            return ""
+
+
 # ---------------------------------------------------------------------------
 # HuggingFace (in-process, the original implementation)
 # ---------------------------------------------------------------------------
@@ -476,11 +549,14 @@ def _resolve_provider_name() -> str:
       1. ``MEMORY_LLM_PROVIDER`` env var (highest — allows per-run override)
       2. ``MemoryConfig.llm.provider`` (TOML config; ``"none"`` means unset)
       3. ``"huggingface"`` (hard fallback)
+
+    Accepted values: ``ollama``, ``llama_cpp``, ``openai_compatible`` (LM Studio,
+    llama.cpp OpenAI-compat mode, vLLM, TGI, etc.), ``huggingface``.
     """
     env_name = os.environ.get("MEMORY_LLM_PROVIDER")
     if env_name:
         name = env_name.strip().lower()
-        if name not in ("ollama", "llama_cpp", "huggingface"):
+        if name not in ("ollama", "llama_cpp", "openai_compatible", "huggingface"):
             logger.warning("Unknown LLM provider %r, falling back to huggingface", name)
             return "huggingface"
         return name
@@ -491,7 +567,7 @@ def _resolve_provider_name() -> str:
         config_name = getattr(cfg, "provider", "none")
         if config_name and config_name != "none":
             name = config_name.strip().lower()
-            if name in ("ollama", "llama_cpp", "huggingface"):
+            if name in ("ollama", "llama_cpp", "openai_compatible", "huggingface"):
                 return name
             logger.warning("Unknown LLM provider %r from config, falling back to huggingface", name)
     except Exception:
@@ -512,6 +588,17 @@ def _make_provider(name: str) -> BaseLLMProvider:
         model = os.environ.get("MEMORY_LLAMA_CPP_MODEL", "")
         timeout = float(os.environ.get("MEMORY_LLAMA_CPP_TIMEOUT_S", "30"))
         return LlamaCppProvider(host=host, model=model, timeout_s=timeout)
+    if name == "openai_compatible":
+        host = os.environ.get(
+            "MEMORY_OPENAI_COMPATIBLE_HOST",
+            os.environ.get("MEMORY_LLAMA_CPP_HOST", "http://127.0.0.1:1234"),
+        )
+        model = os.environ.get(
+            "MEMORY_OPENAI_COMPATIBLE_MODEL",
+            os.environ.get("MEMORY_LLM_EXTRACTION_MODEL_ID", "qwen/qwen3.5-9b"),
+        )
+        timeout = float(os.environ.get("MEMORY_OPENAI_COMPATIBLE_TIMEOUT_S", "120"))
+        return OpenAICompatibleProvider(host=host, model=model, timeout_s=timeout)
     # huggingface (default)
     model_id = os.environ.get(
         "MEMORY_LLM_EXTRACTION_MODEL_ID", "Qwen/Qwen2.5-3B-Instruct"
@@ -521,7 +608,7 @@ def _make_provider(name: str) -> BaseLLMProvider:
 
 # Fallback chain order. If the requested provider is unavailable,
 # try these in order before giving up.
-_FALLBACK_CHAIN: list[str] = ["ollama", "llama_cpp", "huggingface"]
+_FALLBACK_CHAIN: list[str] = ["ollama", "llama_cpp", "openai_compatible", "huggingface"]
 
 
 def get_provider() -> Optional[BaseLLMProvider]:
