@@ -749,7 +749,10 @@ def crdt_save(
             # logical_clock).
             if pre_existing_main is None:
                 try:
-                    conn.execute("DELETE FROM memories WHERE id=? AND tenant_id=tenant_id()", (note_id,))
+                    conn.execute(
+                        "DELETE FROM memories WHERE id=? AND tenant_id=?",
+                        (note_id, _tid),
+                    )
                     conn.commit()
                 except Exception as undo_exc:
                     logger.error("crdt saga undo: delete main row failed: %r", undo_exc)
@@ -757,13 +760,14 @@ def crdt_save(
                 try:
                     conn.execute(
                         """UPDATE memories SET content=?, source_file=?, version_vector=?,
-                           logical_clock=? WHERE id=?""",
+                           logical_clock=? WHERE id=? AND tenant_id=?""",
                         (
                             pre_existing_main["content"],
                             pre_existing_main["source_file"],
                             pre_existing_main["version_vector"],
                             pre_existing_main["logical_clock"],
                             note_id,
+                            _tid,
                         ),
                     )
                     conn.commit()
@@ -777,8 +781,8 @@ def crdt_save(
             if pre_existing_conflict is None:
                 try:
                     conn.execute(
-                        "DELETE FROM memories WHERE id=? AND tenant_id=tenant_id()",
-                        (f"{note_id}__conflict_{remote_agent_id}",),
+                        "DELETE FROM memories WHERE id=? AND tenant_id=?",
+                        (f"{note_id}__conflict_{remote_agent_id}", _tid),
                     )
                     conn.commit()
                 except Exception as undo_exc:
@@ -789,13 +793,14 @@ def crdt_save(
                 try:
                     conn.execute(
                         """UPDATE memories SET content=?, source_file=?, version_vector=?,
-                           logical_clock=? WHERE id=?""",
+                           logical_clock=? WHERE id=? AND tenant_id=?""",
                         (
                             pre_existing_conflict["content"],
                             pre_existing_conflict["source_file"],
                             pre_existing_conflict["version_vector"],
                             pre_existing_conflict["logical_clock"],
                             f"{note_id}__conflict_{remote_agent_id}",
+                            _tid,
                         ),
                     )
                     conn.commit()
@@ -809,8 +814,8 @@ def crdt_save(
             # so we always delete on undo, never restore.
             try:
                 conn.execute(
-                    "DELETE FROM memories WHERE id LIKE ? AND id != ? AND tenant_id=tenant_id()",
-                    (f"{note_id}__v_%", note_id),
+                    "DELETE FROM memories WHERE id LIKE ? AND id != ? AND tenant_id=?",
+                    (f"{note_id}__v_%", note_id, _tid),
                 )
                 conn.commit()
             except Exception as undo_exc:

@@ -1382,6 +1382,7 @@ def _try_saga_persist(
         do_upsert_db=_do_upsert_db,
         do_write_vec_key=_do_write_vec_key,
         do_write_file=_do_write_file,
+        tenant_id=tenant_id,
     )
 
 

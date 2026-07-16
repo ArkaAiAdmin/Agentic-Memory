@@ -209,5 +209,140 @@ class TestSagaErrorCommitFailure(unittest.TestCase):
         real_conn.close()
 
 
+class TestTenantScopedUndo(unittest.TestCase):
+    """Undo SQL must filter by tenant_id to avoid cross-tenant leaks."""
+
+    def test_restore_full_row_does_not_touch_other_tenant(self):
+        from infra.saga import _restore_full_row, _capture_full_row
+
+        db = _fresh_db()
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS memories ("
+                "  id TEXT PRIMARY KEY, content TEXT, tenant_id TEXT DEFAULT 'default')"
+            )
+            conn.execute(
+                "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
+                ("test/note_a", "tenant-a content", "tenant-a"),
+            )
+            conn.execute(
+                "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
+                ("test/note_b", "tenant-b content", "tenant-b"),
+            )
+            conn.commit()
+
+            snapshot_a = _capture_full_row(conn, "test/note_a")
+            assert snapshot_a is not None
+            # Mutate tenant-b's row using wrong-tenant WHERE...
+            conn.execute(
+                "UPDATE memories SET content=? WHERE id=? AND tenant_id=?",
+                ("mutated", "test/note_b", "tenant-b"),
+            )
+            conn.commit()
+
+            # Undo with tenant_id="tenant-a" must NOT touch tenant-b's row.
+            _restore_full_row(conn, "test/note_a", snapshot_a, tenant_id="tenant-a")
+            conn.commit()
+
+            row_a = conn.execute(
+                "SELECT content FROM memories WHERE id=? AND tenant_id=?",
+                ("test/note_a", "tenant-a"),
+            ).fetchone()
+            row_b = conn.execute(
+                "SELECT content FROM memories WHERE id=? AND tenant_id=?",
+                ("test/note_b", "tenant-b"),
+            ).fetchone()
+            self.assertEqual(row_a[0], "tenant-a content")
+            self.assertEqual(row_b[0], "mutated")
+
+    def test_delete_memory_row_does_not_touch_other_tenant(self):
+        from infra.saga import _delete_memory_row
+
+        db = _fresh_db()
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS memories ("
+                "  id TEXT PRIMARY KEY, content TEXT, tenant_id TEXT DEFAULT 'default')"
+            )
+            conn.execute(
+                "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
+                ("undotest/a", "keep-tenant-a", "tenant-a"),
+            )
+            conn.execute(
+                "INSERT INTO memories (id, content, tenant_id) VALUES (?, ?, ?)",
+                ("undotest/b", "keep-tenant-b", "tenant-b"),
+            )
+            conn.commit()
+
+            # Delete by wrong-tenant id must NOT affect the other tenant
+            _delete_memory_row(conn, "undotest/a", tenant_id="tenant-b")
+            conn.commit()
+
+            row_a = conn.execute(
+                "SELECT COUNT(*) FROM memories WHERE id=? AND tenant_id=?",
+                ("undotest/a", "tenant-a"),
+            ).fetchone()[0]
+            row_b = conn.execute(
+                "SELECT COUNT(*) FROM memories WHERE id=? AND tenant_id=?",
+                ("undotest/b", "tenant-b"),
+            ).fetchone()[0]
+            self.assertEqual(row_a, 1, "tenant-a row must be preserved")
+            self.assertEqual(row_b, 1, "tenant-b row must be preserved")
+
+
+class TestRollbackAuditLog(unittest.TestCase):
+    """Saga._rollback must persist a record when undos fail."""
+
+    def test_rollback_errors_are_written_to_audit_log(self):
+        from infra.saga import Saga, SagaStep
+
+        db = _fresh_db()
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS t (id TEXT PRIMARY KEY)"
+            )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS saga_audit_log "
+                "(id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, "
+                " saga_name TEXT, failed_step TEXT, original_error TEXT, "
+                " rollback_count INTEGER, rollback_errors TEXT)"
+            )
+            conn.commit()
+
+        real_conn = sqlite3.connect(str(db))
+
+        class _ProxyConn:
+            def __getattr__(self, name):
+                return getattr(real_conn, name)
+
+        conn = _ProxyConn()
+
+        def do_step():
+            conn.execute("INSERT INTO t (id) VALUES (?)", ("ok",))
+
+        def undo_step():
+            raise RuntimeError("undo exploded")
+
+        saga = Saga(
+            name="audit_test",
+            steps=[SagaStep(name="step1", do=do_step, undo=undo_step)],
+            conn=conn,
+        )
+        # Force a step failure so __exit__ triggers rollback.
+        with self.assertRaises(Exception):
+            with saga:
+                raise RuntimeError("injected step failure")
+
+        # saga_audit_log must have one row documenting the partial rollback.
+        row = conn.execute(
+            "SELECT saga_name, rollback_count, rollback_errors FROM saga_audit_log"
+        ).fetchone()
+        self.assertIsNotNone(row, "saga_audit_log must record the failed rollback")
+        self.assertEqual(row[0], "audit_test")
+        self.assertGreaterEqual(row[1], 1, "at least one undo error must be recorded")
+        self.assertIn("undo exploded", row[2])
+        real_conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()
