@@ -757,11 +757,12 @@ def resolve_or_create_principal(
     conn: sqlite3.Connection,
     identity: SsoIdentity,
     *,
-    tenant_id: str = "default",
+    tenant_id: str | None = None,
 ) -> str:
     """Return the principal_id for *identity*, creating it on first login."""
+    _tid = tenant_id or "default"
     existing = resolve_principal_by_external_sub(
-        conn, identity.provider, identity.external_sub, tenant_id=tenant_id,
+        conn, identity.provider, identity.external_sub, tenant_id=_tid,
     )
     if existing:
         return existing
@@ -770,12 +771,12 @@ def resolve_or_create_principal(
         "INSERT INTO principals (id, kind, display_name, tenant_id, created_at)"
         " VALUES (?, 'user', ?, ?, ?)",
         (principal_id, identity.display_name or identity.email or principal_id,
-         tenant_id, _now()),
+         _tid, _now()),
     )
     conn.execute(
         "INSERT INTO principal_identities (principal_id, provider, external_sub, tenant_id, created_at)"
         " VALUES (?, ?, ?, ?, ?)",
-        (principal_id, identity.provider, identity.external_sub, tenant_id, _now()),
+        (principal_id, identity.provider, identity.external_sub, _tid, _now()),
     )
     conn.commit()
     return principal_id

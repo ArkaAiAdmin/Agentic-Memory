@@ -69,7 +69,7 @@ def memory_shared_import(shared_id: str, target_agent_id: str) -> str:
     if not ma.MULTI_AGENT_ENABLED:
         return json.dumps({"enabled": False})
     try:
-        result = ma.import_shared_memory(shared_id, target_agent_id)
+        result = ma.import_shared_memory(shared_id, target_agent_id, tenant_id="default")
         return json.dumps(result, indent=2)
     except Exception:
         logger.exception("Import shared failed")
@@ -85,7 +85,7 @@ def memory_shared_stats() -> str:
     if not ma.MULTI_AGENT_ENABLED:
         return json.dumps({"enabled": False})
     try:
-        return json.dumps(ma.shared_pool_stats(), indent=2)
+        return json.dumps(ma.shared_pool_stats(tenant_id="default"), indent=2)
     except Exception:
         logger.exception("Shared stats failed")
         return _err(ErrorCode.SHARE_ERROR, "Shared stats failed")
