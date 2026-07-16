@@ -599,7 +599,7 @@ def sync_kg_with_peer(
     try:
         remote_changes = pull_kg_changes(peer_url, since_ts)
         if remote_changes:
-            with open_db(db_path, timeout=10.0) as conn:
+            with open_db(Path(db_path), timeout=10.0) as conn:
                 ensure_kg_crdt_schema(conn)
                 for op in remote_changes:
                     try:
@@ -641,7 +641,7 @@ def sync_kg_with_peer(
 
     # Push local changes
     try:
-        with open_db(db_path, timeout=10.0) as conn:
+        with open_db(Path(db_path), timeout=10.0) as conn:
             ensure_kg_crdt_schema(conn)
             entity_state = compute_entity_crdt_state(conn)
             edge_state = compute_edge_crdt_state(conn)

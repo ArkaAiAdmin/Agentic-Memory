@@ -119,7 +119,13 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 # 2026-07-15: bumped to 62 for data_subject_sub on memories (GDPR subject-scoped erase).
 # 2026-07-15: bumped to 61 for composite (query_id, id) PK on
 #   memory_ctr_feedback (FIX 2 — real CTR click/dismiss correlation).
-SCHEMA_VERSION = 64
+# 2026-07-16: bumped to 67 — migrations 065 (append-only KG CRDT op-log),
+#   066 (kg_*_crdt applied + entity fingerprint), and 067 (durable
+#   kg_entity_redirect map) were added by the audit-fix branch but the
+#   version was left at 64, so run_migrations refused to apply them under
+#   SCHEMA_STABLE=True and every freshly-bootstrapped test DB lacked those
+#   tables.  Bumping to 67 makes the three additive migrations apply.
+SCHEMA_VERSION = 67
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the

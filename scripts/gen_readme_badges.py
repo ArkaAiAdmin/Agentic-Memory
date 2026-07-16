@@ -89,8 +89,23 @@ def _count_core_tools() -> int:
 
 
 def _count_cron_scripts() -> int:
-    """Count cron/cron_*.py scripts."""
-    return len(list((ROOT / "cron").glob("cron_*.py")))
+    """Count scheduled cron jobs from the canonical ``JOBS`` registry.
+
+    Uses the ``cron/jobs.py`` ``JOBS`` dict (the single source of truth for
+    scheduled jobs) rather than globbing ``cron_*.py`` files, which also
+    matches over helper/utility modules that are not scheduled jobs.
+    """
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("cron_jobs", ROOT / "cron" / "jobs.py")
+        if spec is None or spec.loader is None:
+            return len(list((ROOT / "cron").glob("cron_*.py")))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return len(getattr(mod, "JOBS", {}))
+    except Exception:
+        return len(list((ROOT / "cron").glob("cron_*.py")))
 
 
 def _count_hooks() -> int:
