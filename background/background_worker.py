@@ -1445,8 +1445,26 @@ class WorkerPool:
                     logger.exception("worker pool: worker thread crashed")
 
     def _worker_loop(self, worker_id: int, drain: bool, max_tasks: int) -> None:
-        from infra.db_write_queue import sqlite_write_queue
-        conn = sqlite_write_queue.start_session(self._db_path)
+        import sqlite3
+        from infra.db_path_flock import db_path_flock
+
+        def _open():
+            fc = db_path_flock(self._db_path)
+            fc.__enter__()
+            c = sqlite3.connect(str(self._db_path), timeout=30.0)
+            c.execute("PRAGMA journal_mode=WAL")
+            c.execute("PRAGMA busy_timeout=30000")
+            c.execute("PRAGMA foreign_keys=ON")
+            try:
+                c.create_function("tenant_id", 0, lambda: "default")
+                c.execute(
+                    "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                    "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+                )
+            except Exception:
+                pass
+            return c, fc
+
         processed = 0
         t_drain = time.time()
         last_reset_time = time.time()
@@ -1455,16 +1473,35 @@ class WorkerPool:
                 os.environ.get("MEMORY_WORKER_DRAIN_MAX_WALL_S", "600")
             )
             while not _shutdown:
-                if time.time() - last_reset_time >= 60.0:
+                # Direct per-task sqlite3 connection (same cross-process
+                # serialisation via db_path_flock that sqlite_write_queue
+                # provided), so a wedged singleton writer thread can never
+                # kill the pool. The lock + RESERVED write lock are
+                # released between tasks.
+                c, fc = _open()
+                try:
+                    if time.time() - last_reset_time >= 60.0:
+                        try:
+                            reset_stuck_processing_tasks(c)
+                        except Exception as _reset_exc:
+                            logger.debug("worker pool: stuck task reset failed: %s", _reset_exc)
+                        last_reset_time = time.time()
+                    ok = process_one_task(c, self._db_path, task_type=self._task_type)
+                finally:
                     try:
-                        reset_stuck_processing_tasks(conn)
-                    except Exception as _reset_exc:
-                        logger.debug("worker pool: stuck task reset failed: %s", _reset_exc)
-                    last_reset_time = time.time()
-                ok = process_one_task(conn, self._db_path, task_type=self._task_type)
+                        c.close()
+                    except Exception:
+                        pass
+                    try:
+                        fc.__exit__(None, None, None)
+                    except Exception:
+                        pass
                 if not ok:
                     if drain:
                         break
+                    # Idle (no work): the per-task connection is closed, so
+                    # the flock/write-lock is released and other writers can
+                    # enqueue freely. Just sleep briefly.
                     for _ in range(15):
                         if _shutdown:
                             return
@@ -1482,11 +1519,6 @@ class WorkerPool:
         except Exception:
             logger.exception("worker pool: worker %d crashed", worker_id)
         finally:
-            try:
-                conn.close()
-            except Exception as _wp_exc:
-                logger.warning("_worker_loop: broad except swallowed: %s", _wp_exc)
-                pass
             logger.info(
                 "worker pool: worker %d stopped (processed %d tasks)",
                 worker_id, processed,
@@ -1640,8 +1672,44 @@ def run_worker(
         return
 
     # Single-threaded path
-    from infra.db_write_queue import sqlite_write_queue
-    conn = sqlite_write_queue.start_session(db_path)
+    #
+    # Robustness note (2026-07-16): this path previously opened ONE
+    # ``sqlite_write_queue.start_session`` for the whole process. That
+    # session is bounded to MEMORY_WRITE_QUEUE_MAX_S (300s) and
+    # force-rolls-back past that, which silently killed persistent
+    # (launchd) workers after 5 minutes. Worse, the queue's singleton
+    # writer thread becomes wedged once a session force-closes, so every
+    # subsequent start_session timed out and raised — taking the whole
+    # worker down with it.
+    #
+    # The worker IS the single writer (Rule 13: single-writer on main
+    # DB). So instead of routing through the fragile proxy+writer-thread,
+    # we open a direct sqlite3 connection PER TASK, wrapped in the
+    # same per-DB-path ``db_path_flock`` cross-process serialisation the
+    # queue provided. No singleton thread to wedge, no 300s ceiling, and
+    # the RESERVED write lock + flock are released between tasks so other
+    # writers (health check, cron) can enqueue while this worker polls.
+    import sqlite3
+    from infra.db_path_flock import db_path_flock
+
+    def _open_task_conn():
+        flock_ctx = db_path_flock(db_path)
+        flock_ctx.__enter__()
+        c = sqlite3.connect(str(db_path), timeout=30.0)
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA busy_timeout=30000")
+        c.execute("PRAGMA foreign_keys=ON")
+        # Match connection_pool.get() tenant isolation primitives.
+        try:
+            c.create_function("tenant_id", 0, lambda: "default")
+            c.execute(
+                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+            )
+        except Exception:
+            pass
+        return c, flock_ctx
+
     last_reset_time = time.time()
     try:
         # Process-level safety timeout: kill the entire process if any
@@ -1664,6 +1732,20 @@ def run_worker(
             _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
         _proc_sig.alarm(_PROCESS_TIMEOUT_S)
 
+        def _process_one():
+            c, flock_ctx = _open_task_conn()
+            try:
+                return process_one_task(c, db_path, task_type=task_type)
+            finally:
+                try:
+                    c.close()
+                except Exception:
+                    pass
+                try:
+                    flock_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
+
         if drain:
             _DRAIN_MAX_WALL_S = int(
                 os.environ.get("MEMORY_WORKER_DRAIN_MAX_WALL_S", "600")
@@ -1673,7 +1755,12 @@ def run_worker(
             while not _shutdown and processed < max_tasks:
                 if time.time() - last_reset_time >= 60.0:
                     try:
-                        reset_stuck_processing_tasks(conn)
+                        c, flock_ctx = _open_task_conn()
+                        try:
+                            reset_stuck_processing_tasks(c)
+                        finally:
+                            c.close()
+                            flock_ctx.__exit__(None, None, None)
                     except Exception as _reset_exc:
                         logger.debug("worker: stuck task reset failed: %s", _reset_exc)
                     last_reset_time = time.time()
@@ -1684,7 +1771,7 @@ def run_worker(
                         processed,
                     )
                     break
-                ok = process_one_task(conn, db_path, task_type=task_type)
+                ok = _process_one()
                 if not ok:
                     break
                 processed += 1
@@ -1704,11 +1791,6 @@ def run_worker(
                 elapsed,
                 processed / elapsed if elapsed > 0 else 0,
             )
-            # Return cleanly so callers (e.g. tests) are not killed.
-            # The write-queue thread is a daemon and does not need a
-            # force-exit; pytest/cron will close the connection pool on
-            # teardown.  Cancel the process-watchdog alarm so it does
-            # not fire after we return.
             _proc_sig.alarm(0)
             return
         else:
@@ -1716,13 +1798,18 @@ def run_worker(
             while not _shutdown:
                 if time.time() - last_reset_time >= 60.0:
                     try:
-                        reset_stuck_processing_tasks(conn)
+                        c, flock_ctx = _open_task_conn()
+                        try:
+                            reset_stuck_processing_tasks(c)
+                        finally:
+                            c.close()
+                            flock_ctx.__exit__(None, None, None)
                     except Exception as _reset_exc:
                         logger.debug("worker: stuck task reset failed: %s", _reset_exc)
                     last_reset_time = time.time()
                 batch_processed = 0
                 while batch_processed < batch_size:
-                    ok = process_one_task(conn, db_path, task_type=task_type)
+                    ok = _process_one()
                     if not ok:
                         break
                     batch_processed += 1
@@ -1732,8 +1819,16 @@ def run_worker(
                     for _ in range(interval):
                         if _shutdown:
                             break
-                        if _check_high_priority_pending(conn):
-                            break
+                        try:
+                            c, flock_ctx = _open_task_conn()
+                            try:
+                                if _check_high_priority_pending(c):
+                                    break
+                            finally:
+                                c.close()
+                                flock_ctx.__exit__(None, None, None)
+                        except Exception as _hp_exc:
+                            logger.debug("worker: hp probe failed: %s", _hp_exc)
                         time.sleep(1)
     finally:
         if _use_proc_signal:
@@ -1743,11 +1838,6 @@ def run_worker(
             reconciler_thread.join(timeout=5)
         except NameError:
             pass
-        except Exception as _wp_exc:
-            logger.warning("run_worker: broad except swallowed: %s", _wp_exc)
-            pass
-        try:
-            conn.close()
         except Exception as _wp_exc:
             logger.warning("run_worker: broad except swallowed: %s", _wp_exc)
             pass

@@ -194,3 +194,114 @@ class TestJournalBacklogProbe:
         assert rc != 0  # sentinel never completed (no worker)
         captured = capsys.readouterr()
         assert "journal_pending: 2" in captured.out
+
+
+class TestWorkerRecovery:
+    """Self-healing: when the worker is down, the health check tries to
+    (re)start it via launchd (preferred) or a direct spawn (fallback).
+    Recovery is best-effort and must NOT mask a real failure.
+    """
+
+    def test_recover_via_launchctl(self, monkeypatch, tmp_path):
+        import cron.cron_pipeline_health as cph
+
+        plist = tmp_path / "Library" / "LaunchAgents" / "com.x.plist"
+        plist.parent.mkdir(parents=True, exist_ok=True)
+        plist.write_text("<plist/>")
+        monkeypatch.setattr(cph, "PLIST_NAME", plist.name)
+        monkeypatch.setenv("HOME", str(tmp_path))
+
+        calls = {}
+
+        def _fake_which(cmd):
+            return "/usr/bin/launchctl" if cmd == "launchctl" else None
+
+        def _fake_run(args, **kw):
+            calls["args"] = list(args)
+
+            class _R:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            return _R()
+
+        monkeypatch.setattr("shutil.which", _fake_which)
+        monkeypatch.setattr("subprocess.run", _fake_run)
+
+        ok = cph._try_start_worker()
+        assert ok is True
+        assert calls["args"] == ["launchctl", "load", str(plist)]
+
+    def test_recover_launchctl_missing_falls_back_to_spawn(self, monkeypatch, tmp_path):
+        import cron.cron_pipeline_health as cph
+
+        # No plist + no launchctl -> spawn fallback.
+        monkeypatch.setattr(cph, "PLIST_NAME", "no-such.plist")
+        monkeypatch.setenv("HOME", str(tmp_path))
+
+        spawned = {}
+
+        def _fake_which(cmd):
+            return None  # no launchctl
+
+        class _FakePopen:
+            def __init__(self, args, **kw):
+                spawned["args"] = list(args)
+
+        monkeypatch.setattr("shutil.which", _fake_which)
+        monkeypatch.setattr("subprocess.Popen", _FakePopen)
+
+        ok = cph._try_start_worker()
+        assert ok is True
+        assert spawned["args"][-2:] == ["--once", "--max-tasks=50"]
+
+    def test_recover_returns_false_when_all_fail(self, monkeypatch, tmp_path):
+        import cron.cron_pipeline_health as cph
+
+        monkeypatch.setattr(cph, "PLIST_NAME", "no-such.plist")
+        monkeypatch.setenv("HOME", str(tmp_path))
+
+        def _fake_which(cmd):
+            return None
+
+        def _fake_Popen(*a, **k):
+            raise OSError("boom")
+
+        monkeypatch.setattr("shutil.which", _fake_which)
+        monkeypatch.setattr("subprocess.Popen", _fake_Popen)
+
+        assert cph._try_start_worker() is False
+
+    def test_main_attempts_recovery_on_sentinel_timeout(self, monkeypatch, tmp_path, capsys):
+        import cron.cron_pipeline_health as cph
+
+        db = tmp_path / "memory.db"
+        init_task_queue(sqlite_write_queue.start_session(db))
+        monkeypatch.setenv("MEMORY_DB_PATH", str(db))
+
+        # Sentinel poll fails (no worker); make recovery succeed so the
+        # "recover:" line is emitted, but main() still returns 1.
+        def _boom(*_a, **_k):
+            raise TimeoutError("no worker")
+
+        recovered = {}
+
+        def _fake_recover():
+            recovered["called"] = True
+            # Mirror the real _try_start_worker: emit the recover: line.
+            import sys as _sys
+
+            print("recover: test-stub recovery invoked", file=_sys.stderr)
+            return True
+
+        import cron.cron_pipeline_health as _cph
+
+        monkeypatch.setattr(_cph, "_poll_sentinel", _boom)
+        monkeypatch.setattr(_cph, "_try_start_worker", _fake_recover)
+
+        rc = cph.main()
+        assert rc != 0
+        assert recovered.get("called") is True
+        captured = capsys.readouterr()
+        assert "recover:" in captured.err

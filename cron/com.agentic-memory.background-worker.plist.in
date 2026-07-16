@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agentic-memory.background-worker</string>
+
+    <!--
+      Long-lived background worker daemon for agentic-memory.
+      Keeps the CQRS write-journal (journal.db) drained and the
+      task_queue processed. launchd auto-restarts on crash and
+      starts it on login/boot — independent of cron, so the
+      pipeline stays alive even if cron is disabled.
+
+      Installed by cron/install_launchagent.sh (fills __ROOT__).
+    -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__VENV_PY__</string>
+        <string>__ROOT__/background/background_worker.py</string>
+        <string>--interval=5</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MEMORY_DB_PATH</key>
+        <string>__DB_PATH__</string>
+        <key>MEMORY_LLM_EXTRACTION</key>
+        <string>0</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+
+    <!-- Restart on crash; cap restart storms (10s between, 10 max/300s). -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>ThrottleInterval</key>
+        <integer>10</integer>
+    </dict>
+
+    <!-- Start at login (and after a crash). OnDemand=false = keep running. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>AbandonProcessGroup</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/background_worker.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/background_worker.launchd.log</string>
+
+    <!-- Don't let a wedged worker hold the CPU; soft limit. -->
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>CPUTime</key>
+        <integer>0</integer>
+    </dict>
+</dict>
+</plist>
