@@ -79,6 +79,12 @@ JOBS: dict[str, dict] = {
         "env": {"MEMORY_MULTI_AGENT": "1", "MEMORY_CRDT_ENABLED": "1"},
         "timeout": 60,
     },
+    "auto_retry_dead_tasks": {
+        "freq": "1h",
+        "offset_min": 7,
+        "script": "cron/cron_retry_dead_tasks.py",
+        "timeout": 120,
+    },
     "policy_hash_status": {
         "freq": "1h",
         "offset_min": 0,

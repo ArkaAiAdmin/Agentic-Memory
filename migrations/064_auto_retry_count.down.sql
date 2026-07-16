@@ -1,0 +1,3 @@
+-- 064 down: extra_retry_count column is harmless on rollback.
+-- SQLite < 3.35 has no DROP COLUMN; leaving it in place is additive.
+-- No data loss: the column is simply unused after rollback.
