@@ -89,14 +89,16 @@ class SearchBudget:
 def get_search_budget() -> SearchBudget:
     """Create a SearchBudget from MEMORY_SEARCH_COMPUTE_BUDGET_MS env var.
 
-    Returns a SearchBudget with budget_ms=0 (unlimited) if the env var
-    is not set or set to 0.
+    Sprint 4.1: Default budget is 200ms for warm latency target.
+    Set to 0 for unlimited (legacy behavior).
+
+    Returns a SearchBudget with budget_ms from env var or default.
     """
     try:
-        budget_str = os.environ.get("MEMORY_SEARCH_COMPUTE_BUDGET_MS", "0")
+        budget_str = os.environ.get("MEMORY_SEARCH_COMPUTE_BUDGET_MS", "200")
         budget_ms = float(budget_str)
     except (ValueError, TypeError):
-        budget_ms = 0.0
+        budget_ms = 200.0
 
     return SearchBudget(budget_ms=budget_ms)
 
