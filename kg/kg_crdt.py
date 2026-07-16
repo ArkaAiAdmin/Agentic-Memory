@@ -441,22 +441,29 @@ def apply_edge_crdt_to_db(
 
 
 _KG_CRDT_SCHEMA_SQL = """
+-- Sprint 2.1: Append-only op log tables (migration 065)
 CREATE TABLE IF NOT EXISTS kg_entity_crdt (
-    entity_id      INTEGER PRIMARY KEY,
+    op_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id      INTEGER NOT NULL,
     agent_id       TEXT NOT NULL,
     op             TEXT NOT NULL CHECK (op IN ('add', 'remove')),
     version_vector TEXT NOT NULL,
     name           TEXT,
     entity_type    TEXT,
     description    TEXT,
-    timestamp      REAL NOT NULL
+    fingerprint    TEXT,
+    timestamp      REAL NOT NULL,
+    applied        INTEGER DEFAULT 0
 );
 
+CREATE INDEX IF NOT EXISTS idx_kg_entity_crdt_entity ON kg_entity_crdt(entity_id);
 CREATE INDEX IF NOT EXISTS idx_kg_entity_crdt_agent ON kg_entity_crdt(agent_id);
 CREATE INDEX IF NOT EXISTS idx_kg_entity_crdt_ts ON kg_entity_crdt(timestamp);
+CREATE INDEX IF NOT EXISTS idx_kg_entity_crdt_applied ON kg_entity_crdt(applied);
 
 CREATE TABLE IF NOT EXISTS kg_edge_crdt (
-    edge_id        INTEGER PRIMARY KEY,
+    op_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    edge_id        INTEGER NOT NULL,
     source_id      INTEGER NOT NULL,
     target_id      INTEGER NOT NULL,
     relation       TEXT NOT NULL,
@@ -464,12 +471,14 @@ CREATE TABLE IF NOT EXISTS kg_edge_crdt (
     valid_at       TEXT,
     agent_id       TEXT NOT NULL,
     version_vector TEXT NOT NULL,
-    timestamp      REAL NOT NULL
+    timestamp      REAL NOT NULL,
+    applied        INTEGER DEFAULT 0
 );
 
+CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_edge ON kg_edge_crdt(edge_id);
 CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_agent ON kg_edge_crdt(agent_id);
 CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_ts ON kg_edge_crdt(timestamp);
-CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_pair ON kg_edge_crdt(source_id, target_id, relation);
+CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_applied ON kg_edge_crdt(applied);
 """
 
 
@@ -495,14 +504,15 @@ def record_entity_add(
     name: str,
     entity_type: str = "",
     description: str = "",
+    fingerprint: str | None = None,
 ) -> None:
-    """Record an "add" op for an entity. Idempotent on (entity_id, op)."""
+    """Record an "add" op for an entity. Append-only (Sprint 2.1)."""
     conn.execute(
         """
-        INSERT OR REPLACE INTO kg_entity_crdt
+        INSERT INTO kg_entity_crdt
             (entity_id, agent_id, op, version_vector, name,
-             entity_type, description, timestamp)
-        VALUES (?, ?, 'add', ?, ?, ?, ?, ?)
+             entity_type, description, fingerprint, timestamp)
+        VALUES (?, ?, 'add', ?, ?, ?, ?, ?, ?)
         """,
         (
             entity_id,
@@ -511,6 +521,7 @@ def record_entity_add(
             name,
             entity_type,
             description,
+            fingerprint,
             time.time(),
         ),
     )
@@ -522,10 +533,10 @@ def record_entity_remove(
     agent_id: str,
     version_vector: dict[str, int],
 ) -> None:
-    """Record a "remove" op for an entity. Add-wins on conflict."""
+    """Record a "remove" op for an entity. Append-only (Sprint 2.1)."""
     conn.execute(
         """
-        INSERT OR REPLACE INTO kg_entity_crdt
+        INSERT INTO kg_entity_crdt
             (entity_id, agent_id, op, version_vector, name,
              entity_type, description, timestamp)
         VALUES (?, ?, 'remove', ?, '', '', '', ?)
@@ -549,11 +560,11 @@ def record_edge_add(
     version_vector: dict[str, int],
     valid_at: Optional[str] = None,
 ) -> None:
-    """Record an "add" op for an edge. Idempotent on edge_id."""
+    """Record an "add" op for an edge. Append-only (Sprint 2.1)."""
     edge_id = _edge_key(source_id, target_id, relation)
     conn.execute(
         """
-        INSERT OR REPLACE INTO kg_edge_crdt
+        INSERT INTO kg_edge_crdt
             (edge_id, source_id, target_id, relation, weight,
              valid_at, agent_id, version_vector, timestamp)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
