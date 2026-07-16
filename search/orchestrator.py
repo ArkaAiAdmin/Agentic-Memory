@@ -100,10 +100,10 @@ from search.phases.retrieve import (
     _reasoning_expand,
 )
 from search.phases.kg_traversal import (
-    _phase_nine_kg_boost,
+    _phase_ten_kg_boost,
     _phase_ten_multi_hop_kg,
 )
-from search.phases.session import _phase_eight_session_cluster, _SESSION_BOOST_FACTOR
+from search.phases.session import _phase_nine_session_cluster, _SESSION_BOOST_FACTOR
 from search.phases.envelope import (
     _get_agent_scope,
     _build_result_items,
@@ -1077,7 +1077,7 @@ def search_memories(
         _t0_sc = time.time()
         session_boost_ids: set = set()
         try:
-            results = _phase_eight_session_cluster(
+            results = _phase_nine_session_cluster(
                 results, query, limit, boost_ids=session_boost_ids, db=db
             )
         except Exception as _sc_exc:
@@ -1088,7 +1088,7 @@ def search_memories(
         # Phase 10: KG boost + multi-hop traversal
         _t0_kgb = time.time()
         try:
-            results = _phase_nine_kg_boost(
+            results = _phase_ten_kg_boost(
                 db, results, normalized_query, limit, repo_filter, category=category or None,
             )
         except Exception as _kgb_exc:
