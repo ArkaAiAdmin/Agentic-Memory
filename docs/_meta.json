@@ -1,22 +1,22 @@
 {
   "schema_version": 64,
-  "num_migrations": 65,
+  "num_migrations": 66,
   "num_core_tools": 21,
   "num_admin_tools": 92,
   "num_deprecated_tools": 3,
   "num_total_tools": 116,
   "num_tests": 4431,
   "num_test_files": 330,
-  "loc_production": 120269,
-  "loc_test": 103330,
-  "loc_total": 223599,
+  "loc_production": 120740,
+  "loc_test": 103466,
+  "loc_total": 224206,
   "num_cron_scripts": 55,
-  "num_tables_visible": 77,
+  "num_tables_visible": 79,
   "num_hooks": 6,
   "num_agents_ported": 6,
   "last_verified": "2026-07-16",
   "num_mcp_modules": 31,
-  "num_test_functions": 4958,
+  "num_test_functions": 4961,
   "provenance": {
     "what_this_system_is_auto_gen_key": "what_this_system_is",
     "tool_surface_auto_gen_key": "mcp_surface_contract",
@@ -30,6 +30,6 @@
     "truth_rank_2": "AGENTS.md AUTO-GEN sections (via agents_md_generator.py -> gen_doc_meta.py)",
     "truth_rank_3": "docs/MCP_SURFACE.md + docs/architecture.md (manual, cross-check via gen_schema_doc.py)",
     "last_meta_regenerated": "2026-07-16",
-    "num_total_tools_note": "113 = len(CORE_TOOLS) + len(ADMIN_TOOLS) = 21 + 92 (unique, DEPRECATED subset of ADMIN). num_total_tools=116 is deliberately larger: it counts the MCP router entry points + aliased/legacy names that are registered on the surface but live outside the tier lists (e.g. memory_maintenance router, memory_advanced alias, plus deprecated-replacement verbs). The two numbers measure different things; do NOT 'fix' num_total_tools to 113 — only reconcile if the registry's own counts drift, not the surface-exposure superset."
+    "num_total_tools_note": "113 = len(CORE_TOOLS) + len(ADMIN_TOOLS) = 21 + 92 (unique, DEPRECATED subset of ADMIN). num_total_tools=116 is deliberately larger: it counts the MCP router entry points + aliased/legacy names that are registered on the surface but live outside the tier lists (e.g. memory_maintenance router, memory_advanced alias, plus deprecated-replacement verbs). The two numbers measure different things; do NOT 'fix' num_total_tools to 113 \u2014 only reconcile if the registry's own counts drift, not the surface-exposure superset."
   }
 }

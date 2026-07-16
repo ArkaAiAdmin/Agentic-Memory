@@ -649,9 +649,10 @@ memory_maintenance(operation="duplicates", threshold=0.85)
 
 ## Schema Version
 
-Current: **v64** (65 migrations, 100% down-migration coverage)
+Current: **v64** (66 migrations, 100% down-migration coverage)
 
 - `memory_ctr_feedback` composite primary key `(query_id, id)` (migration 061): one row per returned result so CTR click/dismiss signals correlate onto the originating impression. Previously a single `id TEXT PRIMARY KEY` sentinel row (`id='__search__'`) meant only one impression ever existed and `compute_channel_weights` never accumulated signal.
+- KG CRDT op log now append-only with auto-increment `op_id` (migration 065): `kg_entity_crdt` and `kg_edge_crdt` tables replaced with `kg_entity_crdt_append` / `kg_edge_crdt_append` using `INSERT` instead of `INSERT OR REPLACE`. Added `fingerprint` column for inception-based dedup, `applied` column to track projection state.
 
 ### Multi-Tenant Isolation (Phase 0)
 
