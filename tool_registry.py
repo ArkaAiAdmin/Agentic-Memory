@@ -24,6 +24,7 @@ CORE_TOOLS = [
     "memory_graph",
     "memory_profile",
     "memory_session_start",
+    "memory_list_revisions",
     "memory_advanced",
     "memory_review_beliefs",
     "memory_curate_autosave",

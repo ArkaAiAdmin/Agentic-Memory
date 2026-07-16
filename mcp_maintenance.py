@@ -830,6 +830,29 @@ def memory_compile_skill(
         skills_dir.mkdir(parents=True, exist_ok=True)
         skill_file_path = skills_dir / "SKILL.md"
         atomic_write(skill_file_path, skill_content, encoding="utf-8")
+        try:
+            from infra.db import open_db
+            from skill_extractor import save_skill, ensure_skill_schema
+
+            db_row = {
+                "name": skill_name,
+                "source_memory_id": lesson_slug,
+                "topic": metadata.get("title", lesson_slug),
+                "description": metadata.get("description", f"Compiled from lesson: {lesson_slug}"),
+                "triggers": primary_triggers + (secondary_triggers or []),
+                "steps": [body.strip()[:200]],
+                "content_hash": "",
+            }
+            _skill_db = (
+                Path(os.environ["MEMORY_DB_PATH"])
+                if os.environ.get("MEMORY_DB_PATH")
+                else (active_dir / "memory.db")
+            )
+            with open_db(_skill_db, timeout=5.0) as _sconn:
+                ensure_skill_schema(_sconn)
+                save_skill(_sconn, db_row)
+        except Exception as _db_exc:
+            logger.warning("memory_compile_skill: DB row insert skipped: %s", _db_exc)
         from mcp_common import recompile_skills_catalog
 
         recompile_skills_catalog()

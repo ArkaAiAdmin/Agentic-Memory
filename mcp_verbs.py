@@ -1102,10 +1102,74 @@ def memory_profile(
         elif action == "arc":
             return str(memory_arc_stats())
         else:
-            return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'")
+             return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'")
     except Exception as e:
         logger.exception("in memory_profile verb")
         return _wrap_db_error("memory_profile", e)
+
+
+@mcp.tool()
+@with_audit("memory_list_revisions")
+def memory_list_revisions(
+    memory_id: str = "",
+    limit: int = 20,
+    revision_type: str = "",
+) -> str:
+    """List revision-log entries for a memory or across the store.
+
+    Surfaces supersede / amend / revert / delete events recorded in
+    ``memory_revision_log`` so the operator can audit what changed.
+
+    Args:
+        memory_id: Filter to a specific memory id (empty = all).
+        limit: Max results (default 20).
+        revision_type: Filter by type: supersede, amend, revert, delete
+            (empty = all types).
+    """
+    auth_err = _check_authorization("read", "memory")
+    if auth_err:
+        return auth_err
+    try:
+        db_path = _resolve_db_path()
+        from infra.db import open_db
+        import json as _json
+        import time as _time
+
+        where = ["1=1"]
+        params: list = []
+        if memory_id:
+            where.append("memory_id = ?")
+            params.append(memory_id)
+        if revision_type:
+            where.append("revision_type = ?")
+            params.append(revision_type)
+        since_ts = _time.time() - (7 * 86400)
+        where.append("created_at >= ?")
+        params.append(since_ts)
+        with open_db(db_path, timeout=5.0) as conn:
+            rows = conn.execute(
+                f"SELECT id, memory_id, revision_type, old_content, new_content, "
+                f"rationale, agent_id, created_at FROM memory_revision_log "
+                f"WHERE {' AND '.join(where)} ORDER BY created_at DESC LIMIT ?",
+                (*params, limit),
+            ).fetchall()
+        if not rows:
+            return "No revision log entries found."
+        lines = ["# Memory Revision Log", ""]
+        for r in rows:
+            rid, mid, rtype, old_c, new_c, rationale, agent, ts = r
+            lines.append(f"- **{mid}** [{rtype}] at {_time.strftime('%Y-%m-%d %H:%M', _time.localtime(ts))}")
+            if rationale:
+                lines.append(f"  - rationale: {rationale[:200]}")
+            if agent:
+                lines.append(f"  - agent: {agent}")
+            if old_c or new_c:
+                lines.append(f"  - old: {(old_c or '')[:80]}")
+                lines.append(f"  - new: {(new_c or '')[:80]}")
+        return "\n".join(lines)
+    except Exception as e:
+        logger.exception("in memory_list_revisions verb")
+        return _wrap_db_error("memory_list_revisions", e)
 
 
 @mcp.tool()

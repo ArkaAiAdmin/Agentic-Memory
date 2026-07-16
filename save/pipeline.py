@@ -2254,7 +2254,7 @@ def _record_revision_log(
         return int(cur.lastrowid) if cur.lastrowid is not None else None
     except Exception as e:
         logger.warning("Failed to record revision log for %s/%s: %s", memory_id, revision_type, e)
-        return None
+        raise
 
 
 def memory_supersede_db(
@@ -2350,20 +2350,25 @@ def memory_supersede_db(
                 old_content = db.execute(
                     "SELECT content FROM tenant_memories WHERE id = ?", (old_id,)
                 ).fetchone()
-                db.execute(
-                    """UPDATE memories
-                       SET valid_to = ?, superseded_by = ?, updated_at = ?
-                       WHERE id = ?""",
-                    (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
-                )
-                _record_revision_log(
-                    db, old_id, "supersede", rationale=rationale,
-                    old_content=old_content[0] if old_content else None,
-                    metadata_json=json.dumps({"superseded_by": new_id}),
-                )
-                # Store rationale in metadata if provided
-                if rationale:
-                    try:
+                # Atomic three-write: valid_to UPDATE + revision_log + metadata.
+                # Any failure rolls back all three so the note is left in a
+                # consistent state. The explicit transaction (B/E) ensures
+                # the three writes are indivisible — unlike the prior best-effort
+                # path where _record_revision_log failures left valid_to applied.
+                db.execute("BEGIN IMMEDIATE")
+                try:
+                    db.execute(
+                        """UPDATE memories
+                           SET valid_to = ?, superseded_by = ?, updated_at = ?
+                           WHERE id = ?""",
+                        (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
+                    )
+                    _record_revision_log(
+                        db, old_id, "supersede", rationale=rationale,
+                        old_content=old_content[0] if old_content else None,
+                        metadata_json=json.dumps({"superseded_by": new_id}),
+                    )
+                    if rationale:
                         meta_row = db.execute(
                             "SELECT metadata FROM tenant_memories WHERE id = ?", (old_id,)
                         ).fetchone()
@@ -2376,8 +2381,13 @@ def memory_supersede_db(
                             "UPDATE memories SET metadata = ? WHERE id = ?",
                             (json.dumps(meta), old_id),
                         )
-                    except Exception as _supersede_meta_exc:
-                        logger.warning("supersession metadata update failed for %s: %s", old_id, _supersede_meta_exc)
+                    db.execute("COMMIT")
+                except Exception:
+                    try:
+                        db.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    raise
                 return (True, None)
     except Exception as e:
         return (False, str(e))
