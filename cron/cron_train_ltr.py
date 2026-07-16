@@ -14,6 +14,8 @@ Can also be triggered via:
 
 from __future__ import annotations
 
+import os
+
 from _flock import acquire_lock_or_exit
 import json
 import logging
@@ -25,6 +27,19 @@ logger = logging.getLogger(__name__)
 
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+try:
+    from infra.tenant_query import install_tenant_context
+except Exception:  # pragma: no cover
+    def install_tenant_context(conn, tenant_id=None):  # minimal fallback
+        import os
+        tid = tenant_id or os.environ.get('MEMORY_CRON_TENANT_ID') or 'default'
+        conn.create_function('tenant_id', 0, lambda: tid)
+        conn.execute(
+            'CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS '
+            'SELECT * FROM memories WHERE tenant_id = tenant_id()'
+        )
+        return tid
 
 
 MIN_IMPRESSIONS = 500
@@ -48,6 +63,9 @@ def _build_training_data(db_path: str) -> tuple[list[list[float]], list[int], li
 
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
     conn.row_factory = sqlite3.Row
+    # Sprint 3: scope this subprocess connection to the configured tenant so
+    # the `FROM tenant_memories` query below only sees this tenant's rows.
+    install_tenant_context(conn, os.environ.get("MEMORY_CRON_TENANT_ID"))
 
     try:
         # Get all impressions with their labels
@@ -157,6 +175,7 @@ def train_ltr_model(dry_run: bool = False) -> dict:
     # Check minimum data requirements
     import sqlite3
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10)
+    install_tenant_context(conn, os.environ.get("MEMORY_CRON_TENANT_ID"))
     try:
         row = conn.execute(
             "SELECT COUNT(*), "
@@ -282,7 +301,14 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Train LTR model")
     parser.add_argument("--dry-run", action="store_true", help="Preview without training")
+    parser.add_argument("--db-path", default=None, help="Path to memory.db (overrides MEMORY_DB_PATH)")
+    parser.add_argument("--tenant", default=None, help="Tenant id to scope the query (overrides MEMORY_CRON_TENANT_ID)")
     args = parser.parse_args()
+
+    if args.db_path:
+        os.environ["MEMORY_DB_PATH"] = args.db_path
+    if args.tenant:
+        os.environ["MEMORY_CRON_TENANT_ID"] = args.tenant
 
     result = train_ltr_model(dry_run=args.dry_run)
     print(json.dumps(result, indent=2))

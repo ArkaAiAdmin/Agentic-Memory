@@ -29,6 +29,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+try:
+    from infra.tenant_query import install_tenant_context
+except Exception:  # pragma: no cover
+    def install_tenant_context(conn, tenant_id=None):
+        import os
+        tid = tenant_id or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
+        conn.create_function("tenant_id", 0, lambda: tid)
+        conn.execute('CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS SELECT * FROM memories WHERE tenant_id = tenant_id()')
+        return tid
+
 import sys
 import time
 from pathlib import Path
@@ -154,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
         import sqlite3
 
         conn = sqlite3.connect(str(db_path), timeout=10)
+        install_tenant_context(conn, os.environ.get("MEMORY_CRON_TENANT_ID"))
+
         try:
             embeddings = _load_embeddings(conn)
             if not embeddings:
