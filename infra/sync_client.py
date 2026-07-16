@@ -516,12 +516,28 @@ def pull_kg_changes(
     """Pull KG CRDT changes from a peer.
 
     Sprint 2.4: Calls /crdt/kg/changes endpoint.
+
+    The server returns ``{"entity_ops": [...], "edge_ops": [...]}``. We
+    normalise both into a single list tagged with a ``type`` field
+    ("entity" / "edge") so the caller's dispatch loop (which keys on
+    ``op["type"]``) works. A bug fix: the original code read
+    ``resp.get("changes", [])`` which never matched the server's keys,
+    so pulls silently returned nothing.
     """
     url = f"{peer_url.rstrip('/')}/crdt/kg/changes?since={int(since_ts)}&limit={limit}"
     resp = _json_get(url)
     if resp is None:
         return []
-    return resp.get("changes", [])
+    merged: list[dict] = []
+    for op in resp.get("entity_ops", []) or []:
+        op = dict(op)
+        op["type"] = "entity"
+        merged.append(op)
+    for op in resp.get("edge_ops", []) or []:
+        op = dict(op)
+        op["type"] = "edge"
+        merged.append(op)
+    return merged
 
 
 def push_kg_changes(
@@ -532,9 +548,21 @@ def push_kg_changes(
     """Push KG CRDT changes to a peer.
 
     Sprint 2.4: Calls /crdt/kg/push endpoint.
+
+    The server expects ``{"entity_ops": [...], "edge_ops": [...]}``. We
+    split the mixed ``changes`` list (each tagged with a ``type`` field)
+    into those two lists. A bug fix: the original code sent
+    ``{"ops": changes}`` which the server ignored (it reads
+    ``entity_ops`` / ``edge_ops``), so pushes silently applied nothing.
     """
+    entity_ops = [op for op in changes if op.get("type") == "entity"]
+    edge_ops = [op for op in changes if op.get("type") == "edge"]
     url = f"{peer_url.rstrip('/')}/crdt/kg/push"
-    resp = _json_post(url, {"agent_id": local_agent_id, "ops": changes})
+    resp = _json_post(url, {
+        "agent_id": local_agent_id,
+        "entity_ops": entity_ops,
+        "edge_ops": edge_ops,
+    })
     if resp is None:
         return {"error": f"Failed to push to {url}"}
     return resp
@@ -549,7 +577,11 @@ def sync_kg_with_peer(
 ) -> dict:
     """Full KG sync cycle with a peer.
 
-    Sprint 2.4: Pull remote KG changes, then push local changes.
+    Sprint 2.4: Pull remote KG changes, then push local changes. After
+    both directions, project the merged CRDT ops into the canonical
+    ``kg_entities`` / ``kg_edges`` tables so the graph actually converges
+    (previously the ops were stored but never projected, leaving the
+    canonical tables stale).
     """
     from kg.kg_crdt import (
         ensure_kg_crdt_schema,
@@ -557,10 +589,11 @@ def sync_kg_with_peer(
         record_edge_add,
         compute_entity_crdt_state,
         compute_edge_crdt_state,
+        project_crdt_to_entities,
     )
     from infra.db import open_db
 
-    results = {"pulled": 0, "pushed": 0, "errors": []}
+    results = {"pulled": 0, "pushed": 0, "projected": None, "errors": []}
 
     # Pull remote changes
     try:
@@ -597,6 +630,12 @@ def sync_kg_with_peer(
                     except Exception as op_exc:
                         results["errors"].append(str(op_exc))
                 conn.commit()
+                # Project pulled ops into canonical tables.
+                try:
+                    n_e, n_g, _ = project_crdt_to_entities(conn)
+                    results["projected"] = {"entities": n_e, "edges": n_g}
+                except Exception as proj_exc:
+                    results["errors"].append(f"project(pull) failed: {proj_exc}")
     except Exception as exc:
         results["errors"].append(f"pull failed: {exc}")
 
@@ -637,6 +676,13 @@ def sync_kg_with_peer(
             if local_ops:
                 push_resp = push_kg_changes(peer_url, local_agent_id, local_ops)
                 results["pushed"] = push_resp.get("applied", 0)
+                # Re-project after recording any locally-new ops so the
+                # canonical tables reflect the full merged state.
+                try:
+                    n_e, n_g, _ = project_crdt_to_entities(conn)
+                    results["projected"] = {"entities": n_e, "edges": n_g}
+                except Exception as proj_exc:
+                    results["errors"].append(f"project(push) failed: {proj_exc}")
     except Exception as exc:
         results["errors"].append(f"push failed: {exc}")
 

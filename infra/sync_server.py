@@ -554,24 +554,49 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 notes,
             )
 
-            # Sprint 1.4: Apply field_crdt data after note-level merge
+            # Sprint 1.4: Apply field_crdt data after note-level merge.
+            # Use the field-level LWWES merge (per-field registers in
+            # memory_field_crdt) rather than crdt_field_save, which would
+            # collapse every field onto the note-level ``content`` column
+            # and destroy the field discriminator.
             field_applied = 0
             for note_id, field_entries in field_crdt_map.items():
                 if note_id in notes:
                     for field_entry in field_entries:
                         try:
-                            crdt_field_save(
-                                self.db_path,
-                                note_id,
-                                field_entry.get("value", ""),
-                                remote_agent,
-                                self.server_agent_id,
-                                source_file=field_entry.get("source_file", ""),
-                                category=field_entry.get("category", ""),
-                                remote_vv_str=field_entry.get("version_vector", "{}"),
-                                remote_logical_clock=field_entry.get("logical_clock", 0),
-                                tags=field_entry.get("tags"),
+                            from crdt.crdt_field import (
+                                FieldUpdate,
+                                apply_field_updates_to_db,
+                                merge_field_updates,
                             )
+
+                            _raw_vv = field_entry.get("version_vector") or "{}"
+                            if isinstance(_raw_vv, dict):
+                                _vv: dict = _raw_vv
+                            else:
+                                try:
+                                    _vv = json.loads(_raw_vv)
+                                except (TypeError, ValueError):
+                                    _vv = {}
+                            upd = FieldUpdate(
+                                memory_id=note_id,
+                                field_name=field_entry.get("field_name")
+                                or field_entry.get("field", ""),
+                                value=str(field_entry.get("value", "")),
+                                version_vector=_vv,
+                                logical_clock=int(field_entry.get("logical_clock", 0)),
+                                last_writer_agent=field_entry.get("last_writer_agent", "")
+                                or remote_agent,
+                            )
+                            winners = merge_field_updates([upd])
+                            _fconn = _open_server_db(self.db_path)
+                            try:
+                                apply_field_updates_to_db(
+                                    _fconn, winners, self.server_tenant_id
+                                )
+                                _fconn.commit()
+                            finally:
+                                _fconn.close()
                             field_applied += 1
                         except Exception as field_exc:
                             logger.warning("sync_server: field_crdt apply failed for %s: %s", note_id, field_exc)
@@ -784,11 +809,24 @@ class _SyncHandler(BaseHTTPRequestHandler):
                     )
                     n_edges += 1
                 conn.commit()
+                # Sprint 2.4 fix: project the merged CRDT ops into the
+                # canonical kg_entities / kg_edges tables so the receiving
+                # peer's graph actually converges (previously ops were
+                # stored but never projected).
+                projected = {}
+                try:
+                    from kg.kg_crdt import project_crdt_to_entities
+
+                    n_e, n_g, _ = project_crdt_to_entities(conn)
+                    projected = {"entities": n_e, "edges": n_g}
+                except Exception as proj_exc:
+                    logger.warning("sync_server: kg push projection failed: %s", proj_exc)
                 self._json_response(
                     {
                         "applied": n_entities + n_edges,
                         "entity_ops": n_entities,
                         "edge_ops": n_edges,
+                        "projected": projected,
                     }
                 )
             finally:
@@ -821,7 +859,16 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 )
                 # Sprint 1.4: Preserve field_crdt for separate application
                 if "field_crdt" in data_list:
-                    field_crdt_map[note_id] = data_list["field_crdt"]
+                    # Normalize each entry so it carries the field discriminator
+                    # under a single stable key ("field_name") before hand-off
+                    # to the field-CRDT apply path. The wire format uses "field".
+                    norm_entries = []
+                    for _fe in data_list["field_crdt"]:
+                        _fe = dict(_fe)
+                        if "field_name" not in _fe and "field" in _fe:
+                            _fe["field_name"] = _fe["field"]
+                        norm_entries.append(_fe)
+                    field_crdt_map[note_id] = norm_entries
             elif isinstance(data_list, (list, tuple)) and len(data_list) >= 5:
                 notes[note_id] = (
                     str(data_list[0]),

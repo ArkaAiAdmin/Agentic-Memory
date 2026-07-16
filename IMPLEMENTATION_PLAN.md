@@ -209,10 +209,9 @@ These are fixes that prevent incorrect behavior or misleading claims.
 **Files**: Various (10 files cited)
 **Change**: Fix type errors. Most are likely trivial (missing type annotations, incorrect Optional handling).
 
-#### 4.5 Update SEARCH_SOTA_STATUS.md
-**Effort**: Trivial (15 min)
-**File**: `docs/SEARCH_SOTA_STATUS.md`
-**Change**: Update schema version from 57 to 61. Mark ColBERT/SPLADE/LTR as "implemented but inert/defective" rather than "missing."
+#### 4.5 SEARCH_SOTA_STATUS.md — deleted
+**Effort**: Trivial
+**Change**: The stale snapshot file was deleted (2026-07-16). It contradicted the live orchestrator state and was more misleading than useful; search-pipeline status now lives in the orchestrator docstrings and `docs/architecture.md`.
 
 ### Phase 5: Test Infrastructure (Week 4)
 

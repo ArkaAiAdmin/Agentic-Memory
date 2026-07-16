@@ -34,6 +34,7 @@ def _setup_crdt_schema(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             entity_type TEXT,
+            fingerprint TEXT,
             mentions INTEGER DEFAULT 1,
             created_at TEXT,
             updated_at TEXT,
@@ -481,6 +482,24 @@ class TestNameCollisionDedup(unittest.TestCase):
         # Verify the kg_entities table has exactly one Apple row.
         rows = conn.execute("SELECT name, entity_type FROM kg_entities").fetchall()
         self.assertEqual(rows, [("Apple", "fruit")])
+
+    def test_redirect_map_persisted_durably(self) -> None:
+        """Sprint 2.4: collision resolution writes a durable loser->winner
+        map into kg_entity_redirect, resolvable via resolve_entity_id."""
+        conn = _new_db()
+        _setup_crdt_schema(conn)
+        kg_crdt.record_entity_add(conn, 1, "p1", {"p1": 1}, "Apple", "fruit")
+        kg_crdt.record_entity_add(conn, 2, "p2", {"p2": 1}, "Apple", "fruit")
+        _n_entities, _n_edges, redirects = kg_crdt.project_crdt_to_entities(conn)
+        self.assertEqual(redirects, {1: 2})
+        # The redirect must be durable in the table.
+        rrows = conn.execute(
+            "SELECT loser_id, winner_id FROM kg_entity_redirect"
+        ).fetchall()
+        self.assertIn((1, 2), rrows)
+        # And resolvable via the lookup helper.
+        self.assertEqual(kg_crdt.resolve_entity_id(conn, 1), 2)
+        self.assertEqual(kg_crdt.resolve_entity_id(conn, 2), 2)
 
 
 if __name__ == "__main__":

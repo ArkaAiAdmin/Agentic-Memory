@@ -487,6 +487,13 @@ def handle_run_script(
     env = os.environ.copy()
     env.update(payload.get("env", {}))
     env["MEMORY_DB_PATH"] = str(db_path)
+    # Sprint 3: scope the subprocess cron to the task's tenant. The child
+    # process opens its own DB connection and would otherwise read ALL
+    # tenants' rows. The cron script installs the tenant_id() UDF + the
+    # tenant_memories TEMP VIEW from this env var at startup
+    # (see infra.tenant_query.install_tenant_context).
+    task_tenant_id = payload.get("tenant_id", os.environ.get("MEMORY_CRON_TENANT_ID", "default"))
+    env["MEMORY_CRON_TENANT_ID"] = str(task_tenant_id)
     # Release SQLite RESERVED lock + per-DB-path flock before the
     # subprocess so the child can write to the DB without blocking.
     if hasattr(conn, "commit_release"):

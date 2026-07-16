@@ -40,6 +40,16 @@ from infra.memory_common import (
     cleanup_fts5_orphans,
 )
 from infra.infrastructure import resolve_active_memory_dir
+try:
+    from infra.tenant_query import install_tenant_context
+except Exception:  # pragma: no cover
+    def install_tenant_context(conn, tenant_id=None):
+        import os
+        tid = tenant_id or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
+        conn.create_function("tenant_id", 0, lambda: tid)
+        conn.execute('CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS SELECT * FROM memories WHERE tenant_id = tenant_id()')
+        return tid
+
 
 
 # Threshold above which a note is "high value" and should be the merge
@@ -174,6 +184,7 @@ def consolidate(dry_run: bool = True):
 
     db = sqlite3.connect(str(db_path), timeout=30.0)
     db.execute("PRAGMA busy_timeout = 30000;")
+    install_tenant_context(db, os.environ.get("MEMORY_CRON_TENANT_ID"))
 
     rows = _rows(db)
     rows_by_id = {r[0]: r for r in rows}

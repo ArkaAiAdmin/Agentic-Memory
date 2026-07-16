@@ -48,6 +48,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _flock import acquire_lock_or_exit  # type: ignore[import]
 
 from infra.infrastructure import resolve_active_memory_dir
+try:
+    from infra.tenant_query import install_tenant_context
+except Exception:  # pragma: no cover
+    def install_tenant_context(conn, tenant_id=None):
+        import os
+        tid = tenant_id or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
+        conn.create_function("tenant_id", 0, lambda: tid)
+        conn.execute('CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS SELECT * FROM memories WHERE tenant_id = tenant_id()')
+        return tid
+
 
 _ACQUIRE_WITH_BACKLINKS = 1    # ≥ 1 access + KG/backlinks → eligible
 _DEFAULT_THRESHOLD = 2          # minimum retrieval count for promotion
@@ -139,6 +149,8 @@ def _is_eligible(note: dict, conn, threshold: int = 2) -> tuple[bool, str]:
 
 def promote_drafts(db_path: Path, threshold: int = 2, dry_run: bool = False) -> dict:
     conn = sqlite3.connect(str(db_path), timeout=10)
+    install_tenant_context(conn, os.environ.get("MEMORY_CRON_TENANT_ID"))
+
     conn.execute("PRAGMA busy_timeout = 30000;")
     try:
         rows = conn.execute(

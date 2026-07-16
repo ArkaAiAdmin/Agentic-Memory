@@ -40,6 +40,16 @@ sys.path.insert(0, _parent)
 
 from infra.memory_common import safe_close_db
 from infra.infrastructure import resolve_active_memory_dir
+try:
+    from infra.tenant_query import install_tenant_context
+except Exception:  # pragma: no cover
+    def install_tenant_context(conn, tenant_id=None):
+        import os
+        tid = tenant_id or os.environ.get("MEMORY_CRON_TENANT_ID") or "default"
+        conn.create_function("tenant_id", 0, lambda: tid)
+        conn.execute('CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS SELECT * FROM memories WHERE tenant_id = tenant_id()')
+        return tid
+
 from skill_extractor import (
     ensure_skill_schema,
     extract_skill_from_memory,
@@ -191,6 +201,7 @@ def main() -> None:
 
     conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.execute("PRAGMA busy_timeout = 30000;")
+    install_tenant_context(conn, os.environ.get("MEMORY_CRON_TENANT_ID"))
     # 2026-06-19 fix: row_factory=sqlite3.Row so that ``r["col"]`` style
     # access in _existing_skill_hashes / _memory_updated_since works.
     # Without this the cron was crashing silently on every Monday 03:45
