@@ -9,6 +9,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import os
 import struct
 import sqlite3
 import sys
@@ -2596,20 +2597,47 @@ with cron_tab:
 
             col_trig, col_info = st.columns([1, 3])
             with col_trig:
+                _drain_key = f"drain_{job['name']}"
+                _drain_on = st.session_state.get(_drain_key, False)
+                st.checkbox("Drain immediately", key=_drain_key, value=_drain_on)
                 if st.button("\u25b6\ufe0f Run now", key=f"run_{job['name']}", type="primary"):
                     try:
                         from infra.db_write_queue import sqlite_write_queue
                         from background.background_queue import init_task_queue, enqueue_task as _enqueue
                         _conn = sqlite_write_queue.start_session(MEM_DIR / "memory.db")
+                        _task_id = None
                         try:
                             init_task_queue(_conn)
-                            task_id = _enqueue(_conn, job["task_type"], payload={"source": "dashboard"})
-                            if isinstance(task_id, dict):
-                                st.warning(f"Rejected: {task_id.get('reason', '?')}")
+                            _task_id = _enqueue(_conn, job["task_type"], payload={"source": "dashboard"})
+                            if isinstance(_task_id, dict):
+                                st.warning(f"Rejected: {_task_id.get('reason', '?')}")
                             else:
-                                st.success(f"Enqueued (id={task_id}). Worker will process it.")
+                                msg = f"Enqueued (id={_task_id})."
+                                if st.session_state.get(_drain_key, False):
+                                    st.info(f"{msg} Draining worker...")
+                                else:
+                                    st.success(f"{msg} Worker will process it.")
                         finally:
                             _conn.close()
+                        if not isinstance(_task_id, dict) and st.session_state.get(_drain_key, False):
+                            import subprocess, sys
+                            _worker_script = str(MEM_DIR.parent / "background_worker.py")
+                            if not os.path.isfile(_worker_script):
+                                _worker_script = str(Path(__file__).resolve().parent / "background_worker.py")
+                            _env = os.environ.copy()
+                            _env.setdefault("MEMORY_DB_PATH", str(MEM_DIR / "memory.db"))
+                            _result = subprocess.run(
+                                [sys.executable, _worker_script, "--once", "--task-type", job["task_type"]],
+                                capture_output=True, text=True, timeout=120, env=_env,
+                            )
+                            if _result.returncode == 0:
+                                _out = _result.stdout.strip()
+                                st.success(f"Drained task {_task_id}. Output:\n```\n{_out[:300]}\n```")
+                            else:
+                                _err = (_result.stdout + "\n" + _result.stderr).strip()[:500]
+                                st.error(f"Drain failed:\n```\n{_err}\n```")
+                    except subprocess.TimeoutExpired:
+                        st.warning("Worker drain timed out (120s). The task may still complete.")
                     except Exception as _e:
                         st.error(f"Failed: {_e}")
             with col_info:
@@ -2972,7 +3000,7 @@ with backups_tab:
                         shutil.copyfileobj(fin, fout)
                     # Restore
                     with gzip.open(restore_path, "rb") as fin, open(DB, "wb") as fout:  # type: ignore[assignment]
-                        shutil.copyfileobj(fin, fout)
+                        shutil.copyfileobj(fin, fout)  # type: ignore[arg-type]
                     st.success(f"Restored from {restore_name}. Pre-restore backup saved as {pre_restore_name}")
                     st.rerun()
 
