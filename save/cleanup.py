@@ -234,3 +234,110 @@ def remove_chunks_and_embeddings_for_note(
     except Exception as exc:
         logger.warning("remove_vec_keys(%s): %r", note_id, exc)
     return counts
+
+
+def remove_kg_facts_selective(
+    conn: AnyConnection, note_id: str, preserve_ids: set
+) -> dict[str, int]:
+    """Remove kg_facts for note_id, preserving rows whose IDs are in preserve_ids.
+
+    Sprint 1.1: Used during UPDATE-style saga rollback to preserve
+    pre-existing kg_facts from before the update.
+    """
+    counts: dict[str, int] = {}
+    try:
+        if preserve_ids:
+            placeholders = ",".join("?" * len(preserve_ids))
+            cur = conn.execute(
+                f"DELETE FROM kg_facts WHERE source_memory = ? AND id NOT IN ({placeholders})",
+                [note_id] + list(preserve_ids),
+            )
+        else:
+            cur = conn.execute(
+                "DELETE FROM kg_facts WHERE source_memory = ?", (note_id,)
+            )
+        counts["kg_facts"] = int(cur.rowcount or 0)
+    except Exception as exc:
+        logger.warning("remove_kg_facts_selective(%s): %r", note_id, exc)
+
+    # Also clean up orphaned edges (same as cleanup_memory_relations)
+    try:
+        cur = conn.execute("""
+            DELETE FROM kg_edges WHERE id IN (
+                SELECT e.id FROM kg_edges e
+                LEFT JOIN kg_facts f ON e.fact_id = f.id
+                WHERE f.id IS NULL
+            )
+        """)
+        counts["kg_edges"] = int(cur.rowcount or 0)
+    except Exception as exc:
+        logger.warning("remove_kg_facts_selective(%s) kg_edges: %r", note_id, exc)
+
+    # Clean orphaned entities
+    try:
+        cur = conn.execute(
+            "DELETE FROM kg_entities WHERE name = ? AND entity_type = 'memory'",
+            (note_id,),
+        )
+        counts["kg_entities"] = int(cur.rowcount or 0)
+    except Exception as exc:
+        logger.warning("remove_kg_facts_selective(%s) kg_entities: %r", note_id, exc)
+
+    # Clean backlinks
+    try:
+        cur = conn.execute("DELETE FROM backlinks WHERE source_id = ?", (note_id,))
+        counts["backlinks"] = int(cur.rowcount or 0)
+    except Exception as exc:
+        logger.warning("remove_kg_facts_selective(%s) backlinks: %r", note_id, exc)
+
+    return counts
+
+
+def remove_chunks_selective(
+    conn: AnyConnection, note_id: str, preserve_ids: set
+) -> dict[str, int]:
+    """Remove memory_chunks for note_id, preserving rows whose IDs are in preserve_ids.
+
+    Sprint 1.1: Used during UPDATE-style saga rollback to preserve
+    pre-existing chunks from before the update.
+    """
+    counts: dict[str, int] = {}
+    try:
+        if preserve_ids:
+            placeholders = ",".join("?" * len(preserve_ids))
+            cur = conn.execute(
+                f"DELETE FROM memory_chunks WHERE parent_id = ? AND id NOT IN ({placeholders})",
+                [note_id] + list(preserve_ids),
+            )
+        else:
+            cur = conn.execute("DELETE FROM memory_chunks WHERE parent_id = ?", (note_id,))
+        counts["memory_chunks"] = int(cur.rowcount or 0)
+    except Exception as exc:
+        logger.warning("remove_chunks_selective(%s): %r", note_id, exc)
+    return counts
+
+
+def remove_embeddings_selective(
+    conn: AnyConnection, note_id: str, preserve_ids: set
+) -> dict[str, int]:
+    """Remove memory_embeddings for note_id, preserving rows whose IDs are in preserve_ids.
+
+    Sprint 1.1: Used during UPDATE-style saga rollback to preserve
+    pre-existing embeddings from before the update.
+    """
+    counts: dict[str, int] = {}
+    try:
+        if preserve_ids:
+            placeholders = ",".join("?" * len(preserve_ids))
+            cur = conn.execute(
+                f"DELETE FROM memory_embeddings WHERE memory_id = ? AND id NOT IN ({placeholders})",
+                [note_id] + list(preserve_ids),
+            )
+        else:
+            cur = conn.execute(
+                "DELETE FROM memory_embeddings WHERE memory_id = ?", (note_id,)
+            )
+        counts["memory_embeddings"] = int(cur.rowcount or 0)
+    except Exception as exc:
+        logger.warning("remove_embeddings_selective(%s): %r", note_id, exc)
+    return counts

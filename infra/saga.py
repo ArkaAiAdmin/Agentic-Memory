@@ -576,6 +576,19 @@ class _SaveMemoryParams:
     # content at saga start.  Used by _do_file to detect concurrent
     # edits and preserve the "losing" version as a conflict file.
     initial_file_content: Optional[str] = None
+    # Sprint 1.1: Snapshot of pre-existing dependent row IDs for selective rollback
+    # These are populated before the saga starts for UPDATE-style saves.
+    pre_existing_chunk_ids: set = None
+    pre_existing_embedding_ids: set = None
+    pre_existing_kg_fact_ids: set = None
+
+    def __post_init__(self):
+        if self.pre_existing_chunk_ids is None:
+            self.pre_existing_chunk_ids = set()
+        if self.pre_existing_embedding_ids is None:
+            self.pre_existing_embedding_ids = set()
+        if self.pre_existing_kg_fact_ids is None:
+            self.pre_existing_kg_fact_ids = set()
 
 
 def _delete_memory_row(conn: AnyConnection, note_id: str) -> None:
@@ -598,7 +611,13 @@ def _delete_memory_row(conn: AnyConnection, note_id: str) -> None:
         )
 
 
-def _cleanup_dependent_rows(conn: AnyConnection, note_id: str) -> None:
+def _cleanup_dependent_rows(
+    conn: AnyConnection,
+    note_id: str,
+    preserve_chunk_ids: Optional[set] = None,
+    preserve_embedding_ids: Optional[set] = None,
+    preserve_kg_fact_ids: Optional[set] = None,
+) -> None:
     """Best-effort cleanup of kg_facts / kg_edges / backlinks rows for *note_id*.
 
     B-3 fix (2026-06-22 follow-up): the saga rollback path can leave
@@ -611,6 +630,10 @@ def _cleanup_dependent_rows(conn: AnyConnection, note_id: str) -> None:
     rollback for an UPDATE).  This helper ensures those dependent
     rows go away too.
 
+    Sprint 1.1: When preserve_*_ids are provided (UPDATE rollback case),
+    only delete rows NOT in the preserve set. This preserves pre-existing
+    chunks/embeddings/kg_facts from before the update.
+
     All operations are best-effort: each is wrapped in try/except so
     a schema mismatch on a legacy DB logs and continues, matching
     the convention in ``memory_delete._purge_orphaned_kg``.
@@ -619,10 +642,27 @@ def _cleanup_dependent_rows(conn: AnyConnection, note_id: str) -> None:
         from save.cleanup import (
             cleanup_memory_relations,
             remove_chunks_and_embeddings_for_note,
+            remove_kg_facts_selective,
+            remove_chunks_selective,
+            remove_embeddings_selective,
         )
 
-        cleanup_memory_relations(conn, note_id)
-        remove_chunks_and_embeddings_for_note(conn, note_id)
+        # For UPDATE rollback: only delete rows created during this saga
+        if preserve_kg_fact_ids is not None:
+            remove_kg_facts_selective(conn, note_id, preserve_kg_fact_ids)
+        else:
+            cleanup_memory_relations(conn, note_id)
+
+        if preserve_chunk_ids is not None or preserve_embedding_ids is not None:
+            remove_chunks_selective(conn, note_id, preserve_chunk_ids or set())
+            remove_embeddings_selective(conn, note_id, preserve_embedding_ids or set())
+            # Also clean vec_keys for the note
+            try:
+                conn.execute("DELETE FROM memory_vec_keys WHERE memory_id = ?", (note_id,))
+            except Exception as exc:
+                logger.warning("saga undo: remove_vec_keys for %s: %r", note_id, exc)
+        else:
+            remove_chunks_and_embeddings_for_note(conn, note_id)
     except Exception as exc:
         logger.warning(
             "saga undo: cleanup_memory_relations for %s failed: %r",
@@ -748,6 +788,33 @@ def _build_save_memory_steps(
     except Exception as _read_exc:
         logger.debug("pre-existing file read failed for %s: %s", file_path, _read_exc)
         pre_existing_file = None
+    # Sprint 1.1: Snapshot pre-existing dependent row IDs for selective rollback
+    pre_existing_chunk_ids = set()
+    pre_existing_embedding_ids = set()
+    pre_existing_kg_fact_ids = set()
+    if pre_existing is not None:
+        try:
+            rows = conn.execute(
+                "SELECT id FROM memory_chunks WHERE parent_id = ?", (note_id,)
+            ).fetchall()
+            pre_existing_chunk_ids = {r[0] for r in rows}
+        except Exception:
+            pass
+        try:
+            rows = conn.execute(
+                "SELECT id FROM memory_embeddings WHERE memory_id = ?", (note_id,)
+            ).fetchall()
+            pre_existing_embedding_ids = {r[0] for r in rows}
+        except Exception:
+            pass
+        try:
+            rows = conn.execute(
+                "SELECT id FROM kg_facts WHERE source_memory = ?", (note_id,)
+            ).fetchall()
+            pre_existing_kg_fact_ids = {r[0] for r in rows}
+        except Exception:
+            pass
+
     params = _SaveMemoryParams(
         note_id=note_id,
         file_path=file_path,
@@ -757,6 +824,9 @@ def _build_save_memory_steps(
         initial_content=pre_existing[0] if pre_existing else None,
         initial_tags=pre_existing[1] if pre_existing else None,
         initial_file_content=pre_existing_file,
+        pre_existing_chunk_ids=pre_existing_chunk_ids,
+        pre_existing_embedding_ids=pre_existing_embedding_ids,
+        pre_existing_kg_fact_ids=pre_existing_kg_fact_ids,
     )
 
     def _do_upsert() -> str:
@@ -771,14 +841,17 @@ def _build_save_memory_steps(
                 params.initial_content or "",
                 params.initial_tags or "[]",
             )
-            # B-3 fix (2026-06-22 follow-up): even for an UPDATE-style
-            # rollback (where the row is restored, not deleted), the
-            # dependent rows that were written between the upsert and
-            # the failure point must be cleaned up.  Without this, an
-            # intermediate post-save hook that wrote kg_facts /
-            # backlinks would leave orphan rows even though the
-            # memories row is back to its original state.
-            _cleanup_dependent_rows(params.conn, params.note_id)
+            # Sprint 1.1: For UPDATE rollback, preserve pre-existing rows
+            # by passing the snapshot of IDs that existed before the update.
+            # Only delete rows that were created during this saga, not
+            # pre-existing ones from before the update.
+            _cleanup_dependent_rows(
+                params.conn,
+                params.note_id,
+                preserve_chunk_ids=params.pre_existing_chunk_ids,
+                preserve_embedding_ids=params.pre_existing_embedding_ids,
+                preserve_kg_fact_ids=params.pre_existing_kg_fact_ids,
+            )
         else:
             _delete_memory_row(params.conn, params.note_id)
             # B-3 fix: clean up any dependent rows that were written

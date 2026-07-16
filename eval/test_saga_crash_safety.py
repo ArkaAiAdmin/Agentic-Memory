@@ -291,7 +291,84 @@ class TestSagaFailureRaises(unittest.TestCase):
 
 
 class TestSprint0Fixes(unittest.TestCase):
-    """Regression tests for Sprint 0 durability fixes (2026-07-16)."""
+    """Regression tests for Sprint 0 + Sprint 1.1 durability fixes."""
+
+    def test_update_rollback_preserves_preexisting_chunks(self):
+        """Sprint 1.1: UPDATE rollback must preserve pre-existing chunks/kg_facts."""
+        import tempfile
+        from pathlib import Path
+        from infra.saga import _cleanup_dependent_rows
+        from infra.db import open_db
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "memory.db"
+            with open_db(db_path) as conn:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS memories (
+                        id TEXT PRIMARY KEY,
+                        content TEXT NOT NULL,
+                        source_file TEXT NOT NULL,
+                        tags TEXT DEFAULT '[]',
+                        created_at TEXT,
+                        updated_at TEXT,
+                        observed_at TEXT,
+                        pinned INTEGER DEFAULT 0,
+                        deleted_at TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS memory_chunks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        parent_id TEXT NOT NULL,
+                        chunk_idx INTEGER NOT NULL,
+                        start_offset INTEGER NOT NULL,
+                        end_offset INTEGER NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at TEXT DEFAULT (datetime('now'))
+                    );
+                    CREATE TABLE IF NOT EXISTS kg_facts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        subject TEXT,
+                        predicate TEXT,
+                        object TEXT,
+                        source_memory TEXT,
+                        confidence REAL DEFAULT 1.0
+                    );
+                """)
+                conn.execute(
+                    "INSERT INTO memories (id, content, source_file, created_at, updated_at, observed_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    ("test-note", "original", "test.md", "2026-01-01", "2026-01-01", "2026-01-01"),
+                )
+                conn.execute("INSERT INTO memory_chunks (parent_id, chunk_idx, start_offset, end_offset, content) VALUES (?, ?, ?, ?, ?)",
+                           ("test-note", 0, 0, 10, "chunk 0"))
+                conn.execute("INSERT INTO memory_chunks (parent_id, chunk_idx, start_offset, end_offset, content) VALUES (?, ?, ?, ?, ?)",
+                           ("test-note", 1, 10, 20, "chunk 1"))
+                pre_chunk_ids = {r[0] for r in conn.execute("SELECT id FROM memory_chunks WHERE parent_id = ?", ("test-note",)).fetchall()}
+                conn.execute("INSERT INTO kg_facts (subject, predicate, object, source_memory) VALUES (?, ?, ?, ?)",
+                           ("subject", "predicate", "object", "test-note"))
+                pre_fact_ids = {r[0] for r in conn.execute("SELECT id FROM kg_facts WHERE source_memory = ?", ("test-note",)).fetchall()}
+                conn.commit()
+
+            with open_db(db_path) as conn:
+                conn.execute("INSERT INTO memory_chunks (parent_id, chunk_idx, start_offset, end_offset, content) VALUES (?, ?, ?, ?, ?)",
+                           ("test-note", 2, 20, 30, "new chunk"))
+                conn.execute("INSERT INTO kg_facts (subject, predicate, object, source_memory) VALUES (?, ?, ?, ?)",
+                           ("new_subj", "new_pred", "new_obj", "test-note"))
+                conn.commit()
+
+            with open_db(db_path) as conn:
+                _cleanup_dependent_rows(conn, "test-note",
+                    preserve_chunk_ids=pre_chunk_ids,
+                    preserve_embedding_ids=None,
+                    preserve_kg_fact_ids=pre_fact_ids)
+                conn.commit()
+
+            with open_db(db_path) as conn:
+                chunks = {r[0] for r in conn.execute("SELECT id FROM memory_chunks WHERE parent_id = ?", ("test-note",)).fetchall()}
+                facts = {r[0] for r in conn.execute("SELECT id FROM kg_facts WHERE source_memory = ?", ("test-note",)).fetchall()}
+                self.assertTrue(pre_chunk_ids.issubset(chunks))
+                self.assertTrue(pre_fact_ids.issubset(facts))
+                self.assertEqual(len(chunks - pre_chunk_ids), 0)
+                self.assertEqual(len(facts - pre_fact_ids), 0)
 
     def test_search_cache_key_includes_mode(self):
         """P0-W3: Cache key must include mode to prevent cross-mode cache hits."""
