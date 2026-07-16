@@ -61,6 +61,9 @@ logger = logging.getLogger(__name__)
 # Graceful shutdown flag
 _shutdown = False
 
+# Grace period (seconds) for in-flight task to complete after SIGTERM/SIGINT
+_SHUTDOWN_GRACE_S = int(os.environ.get("MEMORY_WORKER_SHUTDOWN_GRACE_S", "10"))
+
 # LLM fact-extractor guard.  When True, the worker skips any task that
 # requires the LLM extractor (Qwen/Qwen2.5-3B-Instruct, ~2 GB mmap +
 # torch/tokenizers/rayon).  Set automatically for drain/once/short-lived
@@ -98,9 +101,33 @@ _BACKGROUND_WORKER_LOCK_FD = None
 
 def _handle_signal(signum, frame):
     global _shutdown
+    if _shutdown:
+        return
     _shutdown = True
     _RECONCILER_SHUTDOWN.set()
-    logger.info("worker: received signal %d, shutting down after current task", signum)
+    logger.info(
+        "worker: received signal %d — shutting down after current task "
+        "(%ds grace before force-exit)",
+        signum, _SHUTDOWN_GRACE_S,
+    )
+    # Give in-flight tasks time to finish their DB writes
+    threading.Thread(
+        target=_shutdown_force_exit,
+        daemon=True,
+        name="shutdown-force-exit",
+    ).start()
+
+
+def _shutdown_force_exit() -> None:
+    """Force-exit the worker process if grace period expires."""
+    import time
+    time.sleep(_SHUTDOWN_GRACE_S)
+    if _shutdown:
+        logger.warning(
+            "worker: grace period of %ds expired — force-exiting",
+            _SHUTDOWN_GRACE_S,
+        )
+        os._exit(0)
 
 
 # ---------------------------------------------------------------------------
@@ -1241,6 +1268,18 @@ def _resolve_task_timeout(conn: AnyConnection, task_type: str) -> int:
     return int(os.environ.get("MEMORY_WORKER_TASK_TIMEOUT_S", "120"))
 
 
+def _cleanup_task_artifacts(ttype: str, payload: dict) -> None:
+    """Clean up subprocess or temp artifacts left by a failed/timed-out task."""
+    _temp_dir = payload.get("temp_dir") or payload.get("working_dir")
+    if _temp_dir and os.path.isdir(_temp_dir):
+        import shutil
+        try:
+            shutil.rmtree(_temp_dir, ignore_errors=True)
+            logger.debug("worker: cleaned up temp dir %s for timed-out task %s", _temp_dir, ttype)
+        except Exception as _cln_exc:
+            logger.warning("worker: cleanup of %s failed: %s", _temp_dir, _cln_exc)
+
+
 def process_one_task(
     conn: AnyConnection, db_path: Path, task_type: str | None = None
 ) -> bool:
@@ -1341,6 +1380,7 @@ def process_one_task(
             ttype,
             elapsed,
         )
+        _cleanup_task_artifacts(ttype, payload)
     except Exception as e:
         elapsed = time.time() - t_start
         error_msg = str(e)[:500]
