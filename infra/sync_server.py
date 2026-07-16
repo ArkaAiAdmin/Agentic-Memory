@@ -784,11 +784,24 @@ class _SyncHandler(BaseHTTPRequestHandler):
                     )
                     n_edges += 1
                 conn.commit()
+                # Sprint 2.4 fix: project the merged CRDT ops into the
+                # canonical kg_entities / kg_edges tables so the receiving
+                # peer's graph actually converges (previously ops were
+                # stored but never projected).
+                projected = {}
+                try:
+                    from kg.kg_crdt import project_crdt_to_entities
+
+                    n_e, n_g, _ = project_crdt_to_entities(conn)
+                    projected = {"entities": n_e, "edges": n_g}
+                except Exception as proj_exc:
+                    logger.warning("sync_server: kg push projection failed: %s", proj_exc)
                 self._json_response(
                     {
                         "applied": n_entities + n_edges,
                         "entity_ops": n_entities,
                         "edge_ops": n_edges,
+                        "projected": projected,
                     }
                 )
             finally:

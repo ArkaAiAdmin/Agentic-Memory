@@ -34,6 +34,7 @@ def _setup_crdt_schema(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             entity_type TEXT,
+            fingerprint TEXT,
             mentions INTEGER DEFAULT 1,
             created_at TEXT,
             updated_at TEXT,

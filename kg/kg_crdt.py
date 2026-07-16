@@ -466,13 +466,14 @@ CREATE TABLE IF NOT EXISTS kg_entity_crdt (
     description    TEXT,
     fingerprint    TEXT,
     timestamp      REAL NOT NULL,
-    applied        INTEGER DEFAULT 0
+    applied        INTEGER DEFAULT 0,
+    tenant_id      TEXT DEFAULT 'default'
 );
 
 CREATE INDEX IF NOT EXISTS idx_kg_entity_crdt_entity ON kg_entity_crdt(entity_id);
 CREATE INDEX IF NOT EXISTS idx_kg_entity_crdt_agent ON kg_entity_crdt(agent_id);
 CREATE INDEX IF NOT EXISTS idx_kg_entity_crdt_ts ON kg_entity_crdt(timestamp);
-CREATE INDEX IF NOT EXISTS idx_kg_entity_crdt_applied ON kg_entity_crdt(applied);
+CREATE INDEX IF NOT EXISTS idx_kg_entity_crdt_tenant ON kg_entity_crdt(tenant_id);
 
 CREATE TABLE IF NOT EXISTS kg_edge_crdt (
     op_id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -485,14 +486,55 @@ CREATE TABLE IF NOT EXISTS kg_edge_crdt (
     agent_id       TEXT NOT NULL,
     version_vector TEXT NOT NULL,
     timestamp      REAL NOT NULL,
-    applied        INTEGER DEFAULT 0
+    applied        INTEGER DEFAULT 0,
+    tenant_id      TEXT DEFAULT 'default'
 );
 
 CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_edge ON kg_edge_crdt(edge_id);
 CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_agent ON kg_edge_crdt(agent_id);
 CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_ts ON kg_edge_crdt(timestamp);
-CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_applied ON kg_edge_crdt(applied);
+CREATE INDEX IF NOT EXISTS idx_kg_edge_crdt_tenant ON kg_edge_crdt(tenant_id);
 """
+
+
+def _ensure_kg_crdt_tenant_columns(conn: AnyConnection) -> None:
+    """Add tenant_id (and applied) columns to the CRDT tables if missing.
+
+    ``ensure_kg_crdt_schema`` uses ``CREATE TABLE IF NOT EXISTS``, which does
+    not alter already-created tables. Databases created by earlier migrations
+    (e.g. 021) have ``kg_entity_crdt`` / ``kg_edge_crdt`` without the
+    ``tenant_id`` and ``applied`` columns that the append-only op-log design
+    requires. Without this idempotent ``ALTER TABLE`` the sync server's
+    tenant-scoped INSERT/SELECT and the applied-tracking UPDATE would fail
+    with "no such column". Safe to call on every connection open.
+    """
+    for table in ("kg_entity_crdt", "kg_edge_crdt"):
+        try:
+            cols = {
+                r[1]
+                for r in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            if "tenant_id" not in cols:
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN tenant_id TEXT DEFAULT 'default'"
+                )
+            if "applied" not in cols:
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN applied INTEGER DEFAULT 0"
+                )
+                conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{table}_applied ON {table}(applied)"
+                )
+            if table == "kg_entity_crdt" and "fingerprint" not in cols:
+                # fingerprint was added to the append-only op-log design
+                # (migration 065) but the live kg_entity_crdt table created
+                # by migration 021 predates it. Align so record_entity_add
+                # / compute_entity_crdt_state can store and read it.
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN fingerprint TEXT"
+                )
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("_ensure_kg_crdt_tenant_columns: %s.%s: %s", table, e, type(conn).__name__)
 
 
 def ensure_kg_crdt_schema(conn: AnyConnection) -> None:
@@ -501,6 +543,7 @@ def ensure_kg_crdt_schema(conn: AnyConnection) -> None:
     Idempotent — safe to call on every connection open.
     """
     conn.executescript(_KG_CRDT_SCHEMA_SQL)
+    _ensure_kg_crdt_tenant_columns(conn)
     conn.commit()
 
 
@@ -518,14 +561,15 @@ def record_entity_add(
     entity_type: str = "",
     description: str = "",
     fingerprint: str | None = None,
+    tenant_id: str = "default",
 ) -> None:
     """Record an "add" op for an entity. Append-only (Sprint 2.1)."""
     conn.execute(
         """
         INSERT INTO kg_entity_crdt
             (entity_id, agent_id, op, version_vector, name,
-             entity_type, description, fingerprint, timestamp)
-        VALUES (?, ?, 'add', ?, ?, ?, ?, ?, ?)
+             entity_type, description, fingerprint, timestamp, tenant_id)
+        VALUES (?, ?, 'add', ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             entity_id,
@@ -536,6 +580,7 @@ def record_entity_add(
             description,
             fingerprint,
             time.time(),
+            tenant_id,
         ),
     )
 
@@ -545,20 +590,22 @@ def record_entity_remove(
     entity_id: int,
     agent_id: str,
     version_vector: dict[str, int],
+    tenant_id: str = "default",
 ) -> None:
     """Record a "remove" op for an entity. Append-only (Sprint 2.1)."""
     conn.execute(
         """
         INSERT INTO kg_entity_crdt
             (entity_id, agent_id, op, version_vector, name,
-             entity_type, description, timestamp)
-        VALUES (?, ?, 'remove', ?, '', '', '', ?)
+             entity_type, description, timestamp, tenant_id)
+        VALUES (?, ?, 'remove', ?, '', '', '', ?, ?)
         """,
         (
             entity_id,
             agent_id,
             json.dumps(version_vector, sort_keys=True),
             time.time(),
+            tenant_id,
         ),
     )
 
@@ -572,6 +619,7 @@ def record_edge_add(
     agent_id: str,
     version_vector: dict[str, int],
     valid_at: Optional[str] = None,
+    tenant_id: str = "default",
 ) -> None:
     """Record an "add" op for an edge. Append-only (Sprint 2.1)."""
     edge_id = _edge_key(source_id, target_id, relation)
@@ -579,8 +627,8 @@ def record_edge_add(
         """
         INSERT INTO kg_edge_crdt
             (edge_id, source_id, target_id, relation, weight,
-             valid_at, agent_id, version_vector, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             valid_at, agent_id, version_vector, timestamp, tenant_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             edge_id,
@@ -592,6 +640,7 @@ def record_edge_add(
             agent_id,
             json.dumps(version_vector, sort_keys=True),
             time.time(),
+            tenant_id,
         ),
     )
 
