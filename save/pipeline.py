@@ -1513,10 +1513,15 @@ def save_memory(
     """
     if isinstance(content, SaveRequest):
         return _save_memory_core(content, _now_iso=_now_iso, _conn=_conn)
+    # Sprint 1.3: tenant_id resolution with explicit fallback chain
+    # Priority: explicit param > agent_id (for backward compat) > "default"
+    # For multi-tenant use, always pass tenant_id explicitly.
     if tenant_id is None:
         try:
             from agent_context import get_agent
             _ctx = get_agent()
+            # Use agent_id as tenant_id for single-tenant backward compatibility
+            # when no explicit tenant_id is provided
             if _ctx.agent_id and _ctx.agent_id != "default" and not is_global:
                 tenant_id = _ctx.agent_id
             else:
