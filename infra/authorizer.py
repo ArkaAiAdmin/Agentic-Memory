@@ -277,6 +277,26 @@ def _principal_tenant(conn, principal_id) -> str:
         return "default"
 
 
+def resolve_tenant_for_principal(principal_id: str | None, db_path: str | None = None) -> str:
+    """Resolve tenant_id from principal_id for MCP tool use.
+
+    Sprint 3.2: Used by MCP tools to bind the correct tenant_id
+    based on the authenticated principal. Falls back to "default"
+    when no principal is resolved or RBAC is disabled.
+    """
+    if not principal_id:
+        return "default"
+    if db_path is None:
+        from memory_config import resolve_db_path
+        db_path = str(resolve_db_path())
+    try:
+        from infra.db import open_db
+        with open_db(db_path, timeout=5.0) as conn:
+            return _principal_tenant(conn, principal_id)
+    except Exception:
+        return "default"
+
+
 def mcp_authorize(
     principal_id: str | None,
     action: str,
