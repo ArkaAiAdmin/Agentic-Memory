@@ -54,6 +54,9 @@ eval/prebuilt_db_path.txt
 SEARCH_SOTA_STATUS.md
 eval/results/
 
+# Plans and scratch (not source)
+plans/
+
 # Cron runtime artifacts (generated, not source)
 cron/.peer_policy_cache.json
 cron/fleet-policy-hash.log
