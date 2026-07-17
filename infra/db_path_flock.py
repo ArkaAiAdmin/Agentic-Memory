@@ -149,43 +149,38 @@ class PathLockFd:
         return open(lock_path, "w")
 
     def acquire(self) -> None:
-        """Acquire the flock.  Per-process re-entrant."""
+        """Acquire the flock.  Per-process re-entrant.
+
+        Uses blocking ``LOCK_EX`` so the kernel suspends the thread until
+        the lock is available — no polling, no missed windows.  Safe
+        because the lock is held for <100ms per operation and lock order
+        is consistent (always acquire DB flock first).
+        """
         with self._lock:
             if self._ref_count == 0:
                 self._fd = self._ensure_fd()
-                from infra._lazy_imports import acquire_flock_with_retry
+                import fcntl
 
                 try:
-                    acquire_flock_with_retry(
-                        self._fd,
-                        max_attempts=10,
-                        initial_backoff=0.05,
-                        strict=True,
-                    )
+                    fcntl.flock(self._fd.fileno(), fcntl.LOCK_EX)
                 except Exception as e:
-                    # Check if the lock is stale (held by a dead process).
                     lock_path = self.path.parent / f"{self.path.name}.flock"
                     if self._is_stale(lock_path):
                         logger.info(
                             "db_path_flock: stale lock detected on %s — recovering",
                             lock_path,
                         )
-                        # Close the old fd and reopen to steal the stale lock.
                         try:
                             self._fd.close()
                         except Exception:
                             pass
                         self._fd = self._ensure_fd()
                         try:
-                            acquire_flock_with_retry(
-                                self._fd,
-                                max_attempts=3,
-                                initial_backoff=0.05,
-                                strict=True,
-                            )
-                            # Successfully recovered — fall through to ref_count++
+                            fcntl.flock(self._fd.fileno(), fcntl.LOCK_EX)
                         except Exception as e2:
-                            logger.warning("acquire failed after stale recovery: %s", e2)
+                            logger.warning(
+                                "acquire failed after stale recovery: %s", e2
+                            )
                             try:
                                 self._fd.close()
                             except Exception:
@@ -193,13 +188,11 @@ class PathLockFd:
                             self._fd = None
                             raise
                     else:
-                        # On failure, close the fd so a subsequent
-                        # attempt can re-open it.
                         logger.warning("acquire failed: %s", e)
                         try:
                             self._fd.close()
-                        except Exception as e:
-                            logger.warning("acquire failed: %s", e)
+                        except Exception:
+                            pass
                         self._fd = None
                         raise
             self._ref_count += 1

@@ -38,8 +38,6 @@ from typing import Any
 
 from config import resolve_db_path
 
-from infra.db_write_queue import sqlite_write_queue
-
 __all__ = [  # pyright: ignore[reportUnsupportedDunderAll]
     "MULTI_AGENT_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
     "share_memory",
@@ -225,100 +223,107 @@ def share_memory(
     db = db_path if db_path is not None else str(local_mem / "memory.db")
 
     try:
-        conn = sqlite_write_queue.start_session(Path(db))
-        try:
-            _ensure_shared_table(conn)
+        from infra.db_path_flock import db_path_flock
+        import sqlite3
 
-            # B12 fix: BEGIN IMMEDIATE before the SELECT so the existence
-            # check and the subsequent write are in the same write
-            # transaction.  Otherwise a concurrent unshare could remove
-            # the row between our SELECT and INSERT.
-            conn.execute("BEGIN IMMEDIATE")
-            # Read the source note (include tenant_id for pool scoping).
-            row = conn.execute(
-                "SELECT content, category, tags, metadata, tenant_id FROM memories "
-                "WHERE id = ? AND deleted_at IS NULL",
-                (note_id,),
-            ).fetchone()
-            if not row:
-                conn.rollback()
-                return {"enabled": True, "error": f"note {note_id} not found"}
-
-            content, category, tags_json, meta_json, note_tenant_id = row
-
-            _tid = note_tenant_id or "default"
-            _purge_expired_shared(conn, tenant_id=_tid)
+        # Direct per-task connection under the per-DB-path cross-process
+        # flock.  Avoids the singleton sqlite_write_queue writer thread,
+        # which can block/hang a share behind an in-flight save session.
+        with db_path_flock(Path(db)):
+            conn = sqlite3.connect(str(db), timeout=30.0)
             try:
-                count_row = conn.execute(
-                    f"SELECT COUNT(*) FROM {_SHARED_TABLE} WHERE tenant_id = ?",
-                    (_tid,),
+                _ensure_shared_table(conn)
+
+                # B12 fix: BEGIN IMMEDIATE before the SELECT so the existence
+                # check and the subsequent write are in the same write
+                # transaction.  Otherwise a concurrent unshare could remove
+                # the row between our SELECT and INSERT.
+                conn.execute("BEGIN IMMEDIATE")
+                # Read the source note (include tenant_id for pool scoping).
+                row = conn.execute(
+                    "SELECT content, category, tags, metadata, tenant_id FROM memories "
+                    "WHERE id = ? AND deleted_at IS NULL",
+                    (note_id,),
                 ).fetchone()
-                count = int(count_row[0]) if count_row is not None else 0
-                this_mod = sys.modules[__name__]
-                if count >= this_mod._MAX_SHARED_POOL_SIZE:
-                    to_evict = count - this_mod._MAX_SHARED_POOL_SIZE + 1
-                    conn.execute(
-                        f"DELETE FROM {_SHARED_TABLE} WHERE id IN "
-                        f"(SELECT s.id FROM {_SHARED_TABLE} s "
-                        f"LEFT JOIN memories m ON s.source_note_id = m.id "
-                        f"WHERE s.tenant_id = ? "
-                        f"ORDER BY COALESCE(m.importance, 0) ASC, s.shared_at ASC "
-                        f"LIMIT ?)",
-                        (_tid, to_evict,)
-                    )
+                if not row:
+                    conn.rollback()
+                    return {"enabled": True, "error": f"note {note_id} not found"}
 
-                shared_id = f"shared:{agent_id}:{note_id}"
+                content, category, tags_json, meta_json, note_tenant_id = row
+
                 _tid = note_tenant_id or "default"
-                conn.execute(
-                    f"INSERT INTO {_SHARED_TABLE} "
-                    f"(id, agent_id, content, category, tags, shared_at, source_note_id, metadata, "
-                    f"target_agent_id, shared_with, tenant_id) "
-                    f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                    f"ON CONFLICT(id) DO UPDATE SET "
-                    f"content=excluded.content, category=excluded.category, "
-                    f"tags=excluded.tags, shared_at=excluded.shared_at, "
-                    f"source_note_id=excluded.source_note_id, metadata=excluded.metadata, "
-                    f"target_agent_id=excluded.target_agent_id, shared_with=excluded.shared_with, "
-                    f"tenant_id=excluded.tenant_id",
-                    (
-                        shared_id,
-                        agent_id,
-                        content,
-                        category,
-                        tags_json,
-                        time.time(),
-                        note_id,
-                        meta_json,
-                        target_agent_id,
-                        shared_with or target_agent_id,
-                        _tid,
-                    ),
-                )
-                conn.commit()
-            except Exception as e:
-                logger.warning("share_memory failed: %s", e)
-                conn.rollback()
-                raise
-            sidecar_entry = {
-                "shared_id": shared_id,
-                "agent_id": agent_id,
-                "content": content,
-                "category": category,
-                "tags": tags_json,
-                "shared_at": time.time(),
-                "source_note_id": note_id,
-                "metadata": meta_json,
-                "target_agent_id": target_agent_id,
-                "shared_with": shared_with or target_agent_id,
-                "tenant_id": _tid,
-            }
-            try:
-                _write_shared_sidecar(local_mem, note_id, sidecar_entry)
-            except Exception as sidecar_exc:
-                logger.debug("shared sidecar write failed for %s: %s", note_id, sidecar_exc)
-            return {"enabled": True, "shared_id": shared_id, "agent_id": agent_id}
-        finally:
-            conn.close()
+                _purge_expired_shared(conn, tenant_id=_tid)
+                try:
+                    count_row = conn.execute(
+                        f"SELECT COUNT(*) FROM {_SHARED_TABLE} WHERE tenant_id = ?",
+                        (_tid,),
+                    ).fetchone()
+                    count = int(count_row[0]) if count_row is not None else 0
+                    this_mod = sys.modules[__name__]
+                    if count >= this_mod._MAX_SHARED_POOL_SIZE:
+                        to_evict = count - this_mod._MAX_SHARED_POOL_SIZE + 1
+                        conn.execute(
+                            f"DELETE FROM {_SHARED_TABLE} WHERE id IN "
+                            f"(SELECT s.id FROM {_SHARED_TABLE} s "
+                            f"LEFT JOIN memories m ON s.source_note_id = m.id "
+                            f"WHERE s.tenant_id = ? "
+                            f"ORDER BY COALESCE(m.importance, 0) ASC, s.shared_at ASC "
+                            f"LIMIT ?)",
+                            (_tid, to_evict,)
+                        )
+
+                    shared_id = f"shared:{agent_id}:{note_id}"
+                    _tid = note_tenant_id or "default"
+                    conn.execute(
+                        f"INSERT INTO {_SHARED_TABLE} "
+                        f"(id, agent_id, content, category, tags, shared_at, source_note_id, metadata, "
+                        f"target_agent_id, shared_with, tenant_id) "
+                        f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                        f"ON CONFLICT(id) DO UPDATE SET "
+                        f"content=excluded.content, category=excluded.category, "
+                        f"tags=excluded.tags, shared_at=excluded.shared_at, "
+                        f"source_note_id=excluded.source_note_id, metadata=excluded.metadata, "
+                        f"target_agent_id=excluded.target_agent_id, shared_with=excluded.shared_with, "
+                        f"tenant_id=excluded.tenant_id",
+                        (
+                            shared_id,
+                            agent_id,
+                            content,
+                            category,
+                            tags_json,
+                            time.time(),
+                            note_id,
+                            meta_json,
+                            target_agent_id,
+                            shared_with or target_agent_id,
+                            _tid,
+                        ),
+                    )
+                    conn.commit()
+                except Exception as e:
+                    logger.warning("share_memory failed: %s", e)
+                    conn.rollback()
+                    raise
+                sidecar_entry = {
+                    "shared_id": shared_id,
+                    "agent_id": agent_id,
+                    "content": content,
+                    "category": category,
+                    "tags": tags_json,
+                    "shared_at": time.time(),
+                    "source_note_id": note_id,
+                    "metadata": meta_json,
+                    "target_agent_id": target_agent_id,
+                    "shared_with": shared_with or target_agent_id,
+                    "tenant_id": _tid,
+                }
+                try:
+                    _write_shared_sidecar(local_mem, note_id, sidecar_entry)
+                except Exception as sidecar_exc:
+                    logger.debug("shared sidecar write failed for %s: %s", note_id, sidecar_exc)
+                return {"enabled": True, "shared_id": shared_id, "agent_id": agent_id}
+            finally:
+                conn.close()
     except Exception as e:
         logger.warning("share_memory failed: %s", e)
         return {"enabled": True, "error": str(e)}
@@ -372,7 +377,9 @@ def list_shared_memories(
 
     try:
         from infra.db import open_db
-        with open_db(Path(db), pooled=True, write=True) as conn:
+        # Read path (write=False) avoids the singleton sqlite_write_queue
+        # writer thread, which can stall behind an in-flight save session.
+        with open_db(Path(db), pooled=True, write=False) as conn:
             _ensure_shared_table(conn)
 
             query = (
@@ -639,94 +646,100 @@ def import_shared_memory(
     db = db_or_error
 
     try:
-        conn = sqlite_write_queue.start_session(Path(db))
-        try:
-            _ensure_shared_table(conn)
+        from infra.db_path_flock import db_path_flock
+        import sqlite3
 
-            row = conn.execute(
-                f"SELECT agent_id, content, category, tags, source_note_id, metadata, tenant_id "
-                f"FROM {_SHARED_TABLE} WHERE id = ? AND tenant_id = ?",
-                (shared_id, tenant_id),
-            ).fetchone()
-            if not row:
+        # Direct connection under per-DB-path flock (avoids the singleton
+        # write-queue writer thread, which can stall behind a save session).
+        with db_path_flock(Path(db)):
+            conn = sqlite3.connect(str(db), timeout=30.0)
+            try:
+                _ensure_shared_table(conn)
+
+                row = conn.execute(
+                    f"SELECT agent_id, content, category, tags, source_note_id, metadata, tenant_id "
+                    f"FROM {_SHARED_TABLE} WHERE id = ? AND tenant_id = ?",
+                    (shared_id, tenant_id),
+                ).fetchone()
+                if not row:
+                    return {
+                        "enabled": True,
+                        "error": f"shared memory {shared_id} not found",
+                    }
+
+                source_agent, content, category, tags_json, source_id, meta_json, _sm_tenant_id = row
+
+                new_id = f"imported:{target_agent_id}:{source_id or shared_id}"
+                from datetime import datetime, timezone
+
+                datetime.now(timezone.utc).isoformat()
+                source_file = f"imported/{new_id.replace(':', '_')}.md"
+
+                scan_result = _scan_shared_content(content, source_agent, shared_id)
+                if scan_result.get("_rejected"):
+                    # Strip the internal sentinel before returning.
+                    return {k: v for k, v in scan_result.items() if not k.startswith("_")}
+
+                is_suspicious = scan_result["is_suspicious"]
+                tier = "untrusted" if is_suspicious else "warm"
+                meta = _build_untrusted_meta(
+                    meta_json, source_agent, shared_id, scan_result
+                )
+                tags_list = _add_provenance_tags(tags_json, is_suspicious)
+
+                from save_pipeline import upsert_row
+
+                upsert_row(
+                    conn,
+                    new_id,
+                    content,
+                    source_file=source_file,
+                    tags=tags_list,
+                    category=category or "imported",
+                    pinned=False,
+                    tier=tier,
+                    metadata=meta,
+                )
+
+                # Run indexers before the CRDT write. crdt_field_save commits
+                # the session connection internally (project_crdt_to_sql),
+                # so writing CRDT first would prematurely commit the uncommitted
+                # memories row and break rollback on indexer failure.
+                _run_import_indexers(
+                    conn,
+                    new_id,
+                    content,
+                    category,
+                    tags_list,
+                    source_file,
+                    is_suspicious,
+                )
+                _write_imported_note_crdt(
+                    conn,
+                    new_id,
+                    content,
+                    source_agent,
+                    target_agent_id,
+                    source_file,
+                    category,
+                    tags_list,
+                )
+
+                conn.commit()
                 return {
                     "enabled": True,
-                    "error": f"shared memory {shared_id} not found",
+                    "new_note_id": new_id,
+                    "source_agent": source_agent,
                 }
-
-            source_agent, content, category, tags_json, source_id, meta_json, _sm_tenant_id = row
-
-            new_id = f"imported:{target_agent_id}:{source_id or shared_id}"
-            from datetime import datetime, timezone
-
-            datetime.now(timezone.utc).isoformat()
-            source_file = f"imported/{new_id.replace(':', '_')}.md"
-
-            scan_result = _scan_shared_content(content, source_agent, shared_id)
-            if scan_result.get("_rejected"):
-                # Strip the internal sentinel before returning.
-                return {k: v for k, v in scan_result.items() if not k.startswith("_")}
-
-            is_suspicious = scan_result["is_suspicious"]
-            tier = "untrusted" if is_suspicious else "warm"
-            meta = _build_untrusted_meta(
-                meta_json, source_agent, shared_id, scan_result
-            )
-            tags_list = _add_provenance_tags(tags_json, is_suspicious)
-
-            from save_pipeline import upsert_row
-
-            upsert_row(
-                conn,
-                new_id,
-                content,
-                source_file=source_file,
-                tags=tags_list,
-                category=category or "imported",
-                pinned=False,
-                tier=tier,
-                metadata=meta,
-            )
-
-            # Run indexers before the CRDT write. crdt_field_save commits
-            # the session connection internally (project_crdt_to_sql),
-            # so writing CRDT first would prematurely commit the uncommitted
-            # memories row and break rollback on indexer failure.
-            _run_import_indexers(
-                conn,
-                new_id,
-                content,
-                category,
-                tags_list,
-                source_file,
-                is_suspicious,
-            )
-            _write_imported_note_crdt(
-                conn,
-                new_id,
-                content,
-                source_agent,
-                target_agent_id,
-                source_file,
-                category,
-                tags_list,
-            )
-
-            conn.commit()
-            return {
-                "enabled": True,
-                "new_note_id": new_id,
-                "source_agent": source_agent,
-            }
-        except Exception as e:
-            logger.warning("import_shared_memory failed: %s", e)
-            try:
-                conn.rollback()
             except Exception as e:
                 logger.warning("import_shared_memory failed: %s", e)
-            raise
-        finally:
-            conn.close()
+                try:
+                    conn.rollback()
+                except Exception as e:
+                    logger.warning("import_shared_memory failed: %s", e)
+                raise
+            finally:
+                conn.close()
     except Exception as e:
         logger.warning("import_shared_memory failed: %s", e)
         return {"enabled": True, "error": str(e)}
@@ -751,30 +764,36 @@ def shared_pool_stats(db_path: str | None = None, tenant_id: str = "default") ->
             return {"enabled": True, "error": "memory_common not found"}
 
     try:
-        conn = sqlite_write_queue.start_session(Path(db))
-        try:
-            _ensure_shared_table(conn)
-            _purge_expired_shared(conn)
-            conn.commit()
+        from infra.db_path_flock import db_path_flock
+        import sqlite3
 
-            total_row = conn.execute(
-                f"SELECT COUNT(*) FROM {_SHARED_TABLE} WHERE tenant_id = ?",
-                (tenant_id,),
-            ).fetchone()
-            total = int(total_row[0]) if total_row is not None else 0
-            agents_row = conn.execute(
-                f"SELECT COUNT(DISTINCT agent_id) FROM {_SHARED_TABLE} WHERE tenant_id = ?",
-                (tenant_id,),
-            ).fetchone()
-            agents = int(agents_row[0]) if agents_row is not None else 0
-            categories_row = conn.execute(
-                f"SELECT COUNT(DISTINCT category) FROM {_SHARED_TABLE} "
-                f"WHERE category IS NOT NULL AND tenant_id = ?",
-                (tenant_id,),
-            ).fetchone()
-            categories = int(categories_row[0]) if categories_row is not None else 0
-        finally:
-            conn.close()
+        # Direct connection under per-DB-path flock (avoids the singleton
+        # write-queue writer thread, which can stall behind a save session).
+        with db_path_flock(Path(db)):
+            conn = sqlite3.connect(str(db), timeout=30.0)
+            try:
+                _ensure_shared_table(conn)
+                _purge_expired_shared(conn)
+                conn.commit()
+
+                total_row = conn.execute(
+                    f"SELECT COUNT(*) FROM {_SHARED_TABLE} WHERE tenant_id = ?",
+                    (tenant_id,),
+                ).fetchone()
+                total = int(total_row[0]) if total_row is not None else 0
+                agents_row = conn.execute(
+                    f"SELECT COUNT(DISTINCT agent_id) FROM {_SHARED_TABLE} WHERE tenant_id = ?",
+                    (tenant_id,),
+                ).fetchone()
+                agents = int(agents_row[0]) if agents_row is not None else 0
+                categories_row = conn.execute(
+                    f"SELECT COUNT(DISTINCT category) FROM {_SHARED_TABLE} "
+                    f"WHERE category IS NOT NULL AND tenant_id = ?",
+                    (tenant_id,),
+                ).fetchone()
+                categories = int(categories_row[0]) if categories_row is not None else 0
+            finally:
+                conn.close()
         return {
             "enabled": True,
             "total_shared": total,
@@ -835,7 +854,9 @@ def list_share_candidates(
 
     try:
         from infra.db import open_db
-        with open_db(Path(db), pooled=True, write=True) as conn:
+        # Read path (write=False) avoids the singleton sqlite_write_queue
+        # writer thread, which can stall behind an in-flight save session.
+        with open_db(Path(db), pooled=True, write=False) as conn:
             _ensure_shared_table(conn)
             _purge_expired_shared(conn)
             rows = conn.execute(
@@ -847,7 +868,7 @@ def list_share_candidates(
                     AND s.tenant_id = ?
                 WHERE m.deleted_at IS NULL
                   AND m.tenant_id = ?
-                  AND m.category NOT IN ('sessions', 'tests')
+                  AND (m.category IS NULL OR m.category NOT IN ('sessions', 'tests'))
                   AND COALESCE(m.importance, 3) >= ?
                   AND COALESCE(m.fitness_score, 1.0) >= ?
                   AND s.id IS NULL
