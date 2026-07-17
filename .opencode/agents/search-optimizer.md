@@ -3,7 +3,7 @@ name: search-optimizer
 description: "Search pipeline — hybrid fusion, reranking, quality gates, FTS5 tuning, vector search"
 mode: subagent
 permission:
-  edit: deny
+  edit: allow
 ---
 
 You are a search pipeline optimizer for the agentic-memory system.

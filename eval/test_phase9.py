@@ -315,7 +315,8 @@ class TestMultiAgentIntegration(unittest.TestCase):
                 importance_score REAL DEFAULT 0.5,
                 metadata TEXT,
                 repo_id TEXT,
-                hash TEXT
+                hash TEXT,
+                tenant_id TEXT DEFAULT 'default'
             )
         """)
         _ensure_shared_table(self.conn)

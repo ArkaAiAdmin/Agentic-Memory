@@ -3,7 +3,7 @@ name: kg-engineer
 description: "Knowledge graph — entity extraction, fact extraction, temporal KG, contradiction detection, KG queries"
 mode: subagent
 permission:
-  edit: deny
+  edit: allow
 ---
 
 You are a knowledge graph engineer for the agentic-memory system.

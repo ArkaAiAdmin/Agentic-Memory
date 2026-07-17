@@ -157,6 +157,8 @@ __all__ = [
     # rate-limit facade (delegates to infra.rate_limiter)
     "rate_limit_check",
     "reset_rate_limiter",
+    "RateLimiter",
+    "get_default_limiter",
     # decorators
     "deprecated",
 ]
@@ -320,6 +322,56 @@ def reset_rate_limiter(tool_name: str | None = None) -> None:
     """
     from infra.rate_limiter import reset_rate_limiter as _reset
     _reset(tool_name)
+
+
+class RateLimiter:
+    """Backward-compatible sliding-window rate limiter.
+
+    Maps the old ``max_calls`` / ``window_seconds`` API to the canonical
+    ``TokenBucket`` in ``infra.rate_limiter``.  Rate = max_calls / window_seconds;
+    burst = max_calls.
+    """
+
+    def __init__(self, max_calls: int, window_seconds: float) -> None:
+        if max_calls <= 0:
+            raise ValueError("max_calls must be positive")
+        if window_seconds <= 0:
+            raise ValueError("window_seconds must be positive")
+        from infra.rate_limiter import TokenBucket
+        rate = max_calls / window_seconds
+        self._bucket = TokenBucket(rate=rate, burst=max_calls)
+        self._buckets: dict[str, "TokenBucket"] = {}
+        self._max_calls = max_calls
+        self._window = window_seconds
+
+    def _get_bucket(self, name: str) -> "TokenBucket":
+        if name not in self._buckets:
+            from infra.rate_limiter import TokenBucket
+            rate = self._max_calls / self._window
+            self._buckets[name] = TokenBucket(rate=rate, burst=self._max_calls)
+        return self._buckets[name]
+
+    def check(self, name: str = "_default") -> bool:
+        """Return True if the call is allowed (within budget)."""
+        return self._get_bucket(name).allow()
+
+    def reset(self, name: str | None = None) -> None:
+        """Reset one bucket (by name) or all buckets."""
+        if name is None:
+            self._buckets.clear()
+        else:
+            self._buckets.pop(name, None)
+
+
+_default_limiter: RateLimiter | None = None
+
+
+def get_default_limiter() -> RateLimiter:
+    """Return the singleton default RateLimiter (for tests)."""
+    global _default_limiter
+    if _default_limiter is None:
+        _default_limiter = RateLimiter(max_calls=100, window_seconds=1.0)
+    return _default_limiter
 
 
 # ---------------------------------------------------------------------------

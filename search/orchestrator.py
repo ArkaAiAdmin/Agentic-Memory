@@ -61,10 +61,11 @@ from search.query_parser import (
     _build_zero_result_suggestions,
     _detect_query_type,
 )
-from search.rerankers import (  # type: ignore[import]
-    _apply_single_ce_rerank,  # type: ignore[name-defined]
+from search.rerankers import (
+    _apply_cross_encoder_rerank,
+    _apply_single_ce_rerank,
     _apply_late_interaction_rerank,
-    _select_ce_mode,  # type: ignore[name-defined]
+    _select_ce_mode,
 )
 from search.phases.postprocess import (
     apply_safety_demoting as _apply_safety_demoting,
