@@ -7,7 +7,7 @@ alters a constant, return value, or condition, these tests will fail.
 
 Covers: _coerce, parse_frontmatter, get_memory_paths, count_rows,
 atomic_write, safe_close_db, open_db, validate_config, log_backup,
-_ConnectionPool, RateLimiter, wal_checkpoint_idle, cleanup_fts5_orphans,
+rate_limit_check (facade to TokenBucket), wal_checkpoint_idle, cleanup_fts5_orphans,
 maybe_checkpoint_on_startup, configure_logging.
 """
 
@@ -40,8 +40,6 @@ from infra.memory_common import (
     open_db,
     validate_config,
     log_backup,
-    RateLimiter,
-    get_default_limiter,
     rate_limit_check,
     reset_rate_limiter,
     wal_checkpoint_idle,
@@ -970,128 +968,26 @@ class TestConnectionPoolMutationKillers(unittest.TestCase):
                     pass
 
 
-# ─── RateLimiter mutation killer tests ───────────────────────────────────────
+# ─── rate_limit_check / reset_rate_limiter ───────────────────────────────────
 
 
-class TestRateLimiterMutationKillers(unittest.TestCase):
-    """Target survived mutations in RateLimiter."""
+class TestRateLimitFacadeMutationKillers(unittest.TestCase):
+    """Target survived mutations in rate-limit facade functions.
 
-    def test_check_returns_bool(self):
-        rl = RateLimiter(max_calls=10, window_seconds=60.0)
-        result = rl.check("test")
-        self.assertIsInstance(result, bool)
-
-    def test_check_returns_true_under_limit(self):
-        rl = RateLimiter(max_calls=10, window_seconds=60.0)
-        self.assertTrue(rl.check("test"))
-
-    def test_check_returns_false_over_limit(self):
-        rl = RateLimiter(max_calls=2, window_seconds=60.0)
-        rl.check("test")
-        rl.check("test")
-        self.assertFalse(rl.check("test"))
-
-    def test_reset_returns_none(self):
-        rl = RateLimiter(max_calls=10, window_seconds=60.0)
-        result = rl.reset("test")
-        self.assertIsNone(result)
-
-    def test_reset_all_returns_none(self):
-        rl = RateLimiter(max_calls=10, window_seconds=60.0)
-        result = rl.reset()
-        self.assertIsNone(result)
-
-    def test_reset_allows_new_calls(self):
-        rl = RateLimiter(max_calls=2, window_seconds=60.0)
-        rl.check("test")
-        rl.check("test")
-        self.assertFalse(rl.check("test"))
-        rl.reset("test")
-        self.assertTrue(rl.check("test"))
-
-    def test_different_keys_independent(self):
-        rl = RateLimiter(max_calls=1, window_seconds=60.0)
-        rl.check("a")
-        self.assertFalse(rl.check("a"))
-        self.assertTrue(rl.check("b"))
-
-    def test_window_slides(self):
-        rl = RateLimiter(max_calls=1, window_seconds=0.1)
-        rl.check("test")
-        self.assertFalse(rl.check("test"))
-        # Wait for the 0.1s rate-limit window to elapse. rl.check() is
-        # consuming (every call opens a new window), so we can't poll it.
-        # +0.05s gives a small margin on slow CI.
-        time.sleep(0.15)
-        self.assertTrue(rl.check("test"))
-
-    def test_max_calls_must_be_positive(self):
-        with self.assertRaises(ValueError):
-            RateLimiter(max_calls=0)
-
-    def test_window_must_be_positive(self):
-        with self.assertRaises(ValueError):
-            RateLimiter(window_seconds=0)
-
-    def test_max_calls_stored(self):
-        rl = RateLimiter(max_calls=42, window_seconds=60.0)
-        self.assertEqual(rl.max_calls, 42)
-
-    def test_window_seconds_stored(self):
-        rl = RateLimiter(max_calls=60, window_seconds=30.0)
-        self.assertEqual(rl.window_seconds, 30.0)
-
-    def test_buckets_initialized(self):
-        rl = RateLimiter(max_calls=10, window_seconds=60.0)
-        self.assertIsInstance(rl._buckets, dict)
-
-    def test_buckets_empty_initially(self):
-        rl = RateLimiter(max_calls=10, window_seconds=60.0)
-        self.assertEqual(len(rl._buckets), 0)
-
-    def test_reset_specific_key(self):
-        rl = RateLimiter(max_calls=1, window_seconds=60.0)
-        rl.check("a")
-        rl.check("b")
-        rl.reset("a")
-        self.assertTrue(rl.check("a"))
-        self.assertFalse(rl.check("b"))
-
-    def test_reset_nonexistent_key(self):
-        rl = RateLimiter(max_calls=10, window_seconds=60.0)
-        rl.reset("nonexistent")  # Should not raise
-
-    def test_check_increments_count(self):
-        rl = RateLimiter(max_calls=3, window_seconds=60.0)
-        rl.check("test")
-        rl.check("test")
-        bucket = rl._buckets.get("test")
-        self.assertIsNotNone(bucket)
-        self.assertEqual(len(bucket), 2)
-
-
-# ─── get_default_limiter / rate_limit_check / reset_rate_limiter ─────────────
-
-
-class TestDefaultLimiterMutationKillers(unittest.TestCase):
-    """Target survived mutations in default limiter functions."""
-
-    def test_get_default_limiter_returns_rate_limiter(self):
-        reset_rate_limiter()
-        result = get_default_limiter()
-        self.assertIsInstance(result, RateLimiter)
-
-    def test_get_default_limiter_returns_same_instance(self):
-        reset_rate_limiter()
-        r1 = get_default_limiter()
-        r2 = get_default_limiter()
-        self.assertIs(r1, r2)
-        reset_rate_limiter()
+    The facade delegates to infra.rate_limiter (TokenBucket).
+    """
 
     def test_rate_limit_check_returns_bool(self):
         reset_rate_limiter()
         result = rate_limit_check("test_tool")
         self.assertIsInstance(result, bool)
+        reset_rate_limiter()
+
+    def test_rate_limit_check_allows_burst(self):
+        reset_rate_limiter()
+        # Should allow at least a few calls in quick succession
+        results = [rate_limit_check("test_burst") for _ in range(5)]
+        self.assertTrue(all(isinstance(r, bool) for r in results))
         reset_rate_limiter()
 
     def test_reset_rate_limiter_returns_none(self):

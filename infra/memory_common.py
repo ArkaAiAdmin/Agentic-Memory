@@ -10,8 +10,9 @@ above. All public names that used to live here are re-exported so
 
 Code that DID NOT move (still defined here):
   * ``atomic_write`` — generic filesystem helper, not DB-specific.
-  * ``RateLimiter`` class + ``get_default_limiter`` / ``rate_limit_check``
-    / ``reset_rate_limiter`` — process-wide throttling for MCP tools.
+  * ``rate_limit_check`` / ``reset_rate_limiter`` — facade that delegates
+    to ``infra.rate_limiter`` (TokenBucket). Collapsed from a dual
+    sliding-window implementation on 2026-07-17.
 
 Migration helpers and ``run_db_migrations`` now live in ``db_migrations.py``
 (imported from there and re-exported for backward compat).
@@ -153,9 +154,7 @@ __all__ = [
     "atomic_write",
     "run_db_migrations",
     "SCHEMA_VERSION",
-    # RateLimiter
-    "RateLimiter",
-    "get_default_limiter",
+    # rate-limit facade (delegates to infra.rate_limiter)
     "rate_limit_check",
     "reset_rate_limiter",
     # decorators
@@ -294,145 +293,33 @@ def safe_atomic_write(
 
 
 # ---------------------------------------------------------------------------
-# RateLimiter — process-wide throttling for MCP tools
+# Rate-limit facade — delegates to infra.rate_limiter (token-bucket)
 # ---------------------------------------------------------------------------
 
-import collections as _collections
-import threading as _threading
-import time as _time
-
-
-class RateLimiter:
-    """Thread-safe sliding-window rate limiter, keyed by name.
-
-    Each call to ``check(name)`` returns True if the call is allowed
-    under the configured ``max_calls`` per ``window_seconds`` and
-    records the call's timestamp; False if the call would exceed the
-    budget. Old timestamps are dropped on each check so the window
-    slides forward.
-
-    Per-tool limits can be supplied via ``per_tool_limits``: a dict of
-    ``tool_name → (max_calls, window_seconds)``. When a tool has an
-    entry there that entry overrides the class-level defaults.
-
-    Args:
-        max_calls: Default maximum calls allowed per window (default 60).
-        window_seconds: Default window length in seconds (default 60).
-        per_tool_limits: Per-tool overrides ``{name: (max_calls, window_seconds)}``.
-    """
-
-    def __init__(
-        self,
-        max_calls: int = 60,
-        window_seconds: float = 60.0,
-        per_tool_limits: dict[str, tuple[int, float]] | None = None,
-    ):
-        if max_calls <= 0:
-            raise ValueError("max_calls must be positive")
-        if window_seconds <= 0:
-            raise ValueError("window_seconds must be positive")
-        self.max_calls = max_calls
-        self.window_seconds = float(window_seconds)
-        self.per_tool_limits = per_tool_limits or {}
-        self._buckets: dict = {}
-        self._lock = _threading.Lock()
-
-    def _get_limit(self, name: str) -> tuple[int, float]:
-        if name in self.per_tool_limits:
-            return self.per_tool_limits[name]
-        return self.max_calls, self.window_seconds
-
-    def check(self, name: str) -> bool:
-        """Return True if a call to ``name`` is allowed right now.
-
-        Side effect: records the current timestamp under ``name`` if
-        the call is allowed. The call is rejected (returns False) if
-        the recorded timestamps in the last ``window_seconds`` are
-        already at the cap.
-        """
-        now = _time.monotonic()
-        max_calls, window_seconds = self._get_limit(name)
-        cutoff = now - window_seconds
-        with self._lock:
-            bucket = self._buckets.setdefault(name, _collections.deque())
-            while bucket and bucket[0] < cutoff:
-                bucket.popleft()
-            if len(bucket) >= max_calls:
-                return False
-            bucket.append(now)
-            return True
-
-    def reset(self, name: Optional[str] = None) -> None:
-        """Clear the bucket for ``name`` (or all names if None).
-
-        Useful in tests and for the operator who wants to manually
-        unstick a hot tool.
-        """
-        with self._lock:
-            if name is None:
-                self._buckets.clear()
-            else:
-                self._buckets.pop(name, None)
-
-
-_default_limiter: Optional[RateLimiter] = None
-_default_limiter_lock = _threading.Lock()
-
-
-def get_default_limiter() -> RateLimiter:
-    """Return the process-wide default ``RateLimiter`` (lazy-initialized).
-
-    Reads per-tool limits from ``get_config().rate_limits`` when
-    available so operators get the configured defaults without extra code.
-    """
-    global _default_limiter
-    with _default_limiter_lock:
-        if _default_limiter is None:
-            per_tool: dict[str, tuple[int, float]] = {}
-            try:
-                from config import get_config
-                cfg = get_config()
-                toml_limits = dict(cfg.rate_limits or {})
-                try:
-                    from infra.rate_limiter import _resolve_tool_limits, _default_limits
-                    known_tools = set(_default_limits()) - {"_default"}
-                    for tool in known_tools:
-                        limits = _resolve_tool_limits(tool, toml_limits)
-                        per_tool[tool] = (limits["burst"], 60.0)
-                    _resolve_tool_limits("_default", toml_limits)
-                except Exception as e:
-                    logger.warning(
-                        "get_default_limiter: failed to resolve per-tool limits: %s", e
-                    )
-                    for tool, entry in toml_limits.items():
-                        if isinstance(entry, dict):
-                            rpm = float(entry.get("rate", 60.0 / 60.0)) * 60.0
-                            burst = int(entry.get("burst", max(1, int(rpm))))
-                            per_tool[tool] = (burst, 60.0)
-            except Exception as e:
-                logger.warning(
-                    "get_default_limiter: falling back to default limiter: %s", e
-                )
-            _default_limiter = RateLimiter(max_calls=60, window_seconds=60.0, per_tool_limits=per_tool)
-        return _default_limiter
+# The canonical rate limiter lives in infra.rate_limiter (TokenBucket).
+# This module previously contained a separate sliding-window RateLimiter
+# class, but two competing algorithms for the same gate created undefined
+# behavior.  Collapsed to TokenBucket on 2026-07-17; see git log for
+# the dual-implementation audit.
 
 
 def rate_limit_check(name: str) -> bool:
-    """Convenience wrapper around the default limiter's ``check()``.
+    """Check whether a call to *name* is within the token-bucket limit.
 
-    Uses ``get_default_limiter()`` as the single source of truth so that
-    ``limiter.reset(name)`` in tests correctly resets the rate-limit
-    state.  The previous implementation delegated to a separate
-    ``infra.rate_limiter.RATE_LIMITERS`` dict which caused a mismatch.
+    Delegates to ``infra.rate_limiter.check_rate_limit`` — the single
+    source of truth for MCP tool throttling.
     """
-    return get_default_limiter().check(name)
+    from infra.rate_limiter import check_rate_limit
+    return check_rate_limit(name)
 
 
-def reset_rate_limiter() -> None:
-    """Reset the default rate limiter (for tests)."""
-    global _default_limiter
-    with _default_limiter_lock:
-        _default_limiter = None
+def reset_rate_limiter(tool_name: str | None = None) -> None:
+    """Reset the token-bucket rate limiter (for tests).
+
+    Delegates to ``infra.rate_limiter.reset_rate_limiter``.
+    """
+    from infra.rate_limiter import reset_rate_limiter as _reset
+    _reset(tool_name)
 
 
 # ---------------------------------------------------------------------------
