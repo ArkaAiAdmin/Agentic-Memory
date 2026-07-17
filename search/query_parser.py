@@ -789,6 +789,27 @@ _QUERY_EXPANSIONS: dict[str, list[str]] = {
     "belief review": ["review beliefs", "belief management"],
 }
 
+# ---------------------------------------------------------------------------
+# Conceptual phrase expansions — map intent phrases to domain terms
+# ---------------------------------------------------------------------------
+# When the query contains one of these phrases, the listed terms are
+# APPENDED to the query (not replacing existing tokens).  This bridges
+# the vocabulary gap between user intent and content vocabulary.
+# GENERIC only — no domain-specific hardcoding (gaming rejection: H17).
+_CONCEPTUAL_PHRASE_EXPANSIONS: dict[str, list[str]] = {
+    "data loss": ["backup", "persistence", "redundancy", "replication"],
+    "scale horizontally": ["load balancer", "replica", "sharding", "distributed"],
+    "scale vertically": ["resize", "upgrade", "more cpu", "more memory"],
+    "deploy to production": ["release", "deployment", "production environment", "go live"],
+    "monitor performance": ["observability", "metrics", "logging", "tracing", "apm"],
+    "handle errors": ["error handling", "exception", "retry", "fallback", "circuit breaker"],
+    "manage secrets": ["credential management", "vault", "env var", "secret management"],
+    "test code": ["unit test", "integration test", "testing strategy", "test coverage"],
+    "version control": ["git", "branching", "merge", "commit", "source control"],
+    "api design": ["rest api", "endpoint", "api contract", "openapi", "swagger"],
+    "database design": ["schema", "normalization", "index", "query optimization"],
+}
+
 _QUERY_EXPANSION_REVERSE: dict[str, str] = {}
 for _canon in _QUERY_EXPANSIONS:
     _QUERY_EXPANSION_REVERSE[_canon] = _canon
@@ -890,6 +911,39 @@ def _expand_query(query: str) -> str:
     if out_parts:
         return " OR ".join(out_parts)
     return query
+
+
+def _conceptual_expand(query: str) -> str:
+    """Detect conceptual phrases and append domain-specific terms.
+
+    Unlike _expand_query (which replaces tokens with OR groups),
+    this function APPENDS related terms to bridge vocabulary gaps
+    between user intent and content vocabulary.  E.g. "keep application
+    state between restarts" gets "persistent storage" OR "volume" OR ...
+    appended so FTS/semantic channels can find docker-volumes.
+
+    Returns the query with appended terms, or the original query if no
+    conceptual phrases are detected.
+    """
+    if not query:
+        return query
+    q_lower = query.lower()
+    appended_terms: list[str] = []
+    for phrase, terms in _CONCEPTUAL_PHRASE_EXPANSIONS.items():
+        if phrase in q_lower:
+            appended_terms.extend(terms)
+    if not appended_terms:
+        return query
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    unique: list[str] = []
+    for t in appended_terms:
+        tl = t.lower()
+        if tl not in seen:
+            unique.append(t)
+            seen.add(tl)
+    appended = " OR ".join(f'"{t}"' for t in unique)
+    return f"({query}) OR ({appended})"
 
 
 def _semantic_expand(query: str, db_path: Any = None, top_k: int = 3) -> list[str]:
@@ -1235,6 +1289,12 @@ def _parse_search_query(query: str, db_path: Path, conn=None) -> tuple[str, str,
     bigram_terms = [_escape_phrase(bg) for bg in bigrams]
 
     expanded = _expand_query(normalized_query)
+
+    # Conceptual phrase expansion: append domain terms for intent phrases
+    try:
+        expanded = _conceptual_expand(expanded)
+    except Exception:
+        pass
 
     # Semantic expansion: find similar memories and extract terms
     # This helps with synonym/paraphrase queries

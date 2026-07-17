@@ -154,6 +154,28 @@ def _hybrid_fusion(
             k=_rrf_k,
             weights=[_fts_w, _sem_w, _chunk_fts_w, _splade_w]
         )
+
+        # Single-channel rescue: documents appearing in only 1 channel
+        # but ranking high there get a floor score so they aren't buried.
+        # This is domain-agnostic — it boosts ANY high-ranking single-channel
+        # hit, not just specific topics.
+        _channel_presence: dict[str, int] = {}
+        for ch_ranked in [fts_ranked, sem_ranked, chunk_fts_ranked, splade_ranked]:
+            for rank, doc_id in enumerate(ch_ranked):
+                if doc_id:
+                    _channel_presence[doc_id] = _channel_presence.get(doc_id, 0) + 1
+        _SINGLE_CHANNEL_FLOOR_RANK = 15  # top-N in a single channel
+        _SINGLE_CHANNEL_FLOOR_SCORE = 0.008  # enough to surface in top-20
+        for ch_ranked in [fts_ranked, sem_ranked, chunk_fts_ranked, splade_ranked]:
+            for rank, doc_id in enumerate(ch_ranked):
+                if doc_id and _channel_presence.get(doc_id, 0) == 1 and rank < _SINGLE_CHANNEL_FLOOR_RANK:
+                    current = rrf.get(doc_id, 0.0)
+                    if current < _SINGLE_CHANNEL_FLOOR_SCORE:
+                        rrf[doc_id] = _SINGLE_CHANNEL_FLOOR_SCORE
+                        logger.debug(
+                            "single-channel rescue: %s rank=%d floor=%.4f",
+                            doc_id, rank, _SINGLE_CHANNEL_FLOOR_SCORE,
+                        )
         existing_ids = {r[0]: i for i, r in enumerate(results)}
         new_hit_ids = []
         for hit_id in sem_ranked + chunk_fts_ranked + splade_ranked:
