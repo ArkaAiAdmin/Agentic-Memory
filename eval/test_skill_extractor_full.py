@@ -154,7 +154,7 @@ class TestRecordHit(unittest.TestCase):
         from skill_extractor import ensure_skill_schema, save_skill
 
         ensure_skill_schema(c)
-        save_skill(c, {"name": "test", "topic": "T", "triggers": ["t"]})
+        save_skill(c, {"name": "test", "topic": "T", "triggers": ["t"], "steps": ["install the package"]})
         c.commit()
         c.close()
 

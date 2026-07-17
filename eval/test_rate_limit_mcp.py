@@ -1,8 +1,8 @@
 """Tests for BLK-5: rate limiting folded into with_audit decorator.
 
 Covers:
-  1. with_audit returns RATE_LIMITED after 60 rapid calls.
-  2. rate_limit_check resets after window elapses.
+  1. with_audit returns RATE_LIMITED after burst exceeds token bucket.
+  2. rate_limit_check resets after tokens refill.
   3. Different tools have independent rate limit buckets.
 """
 
@@ -16,14 +16,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 class TestWithAuditRateLimit(unittest.TestCase):
-    """with_audit applies per-tool rate limiting automatically."""
+    """with_audit applies per-tool rate limiting via TokenBucket."""
 
     def test_burst_returns_rate_limited(self):
-        """61 rapid calls to the same tool => 61st returns RATE_LIMITED."""
-        import infra.memory_common as memory_common
+        """Rapid calls exceeding burst => RATE_LIMITED."""
+        from infra.rate_limiter import configure_rate_limits, reset_rate_limiter
 
-        limiter = memory_common.get_default_limiter()
-        limiter.reset("test_burst_tool")
+        # Configure a tight limit for testing
+        import os
+        os.environ["MEMORY_RATE_LIMIT_TEST_BURST_TOOL"] = "60,60"
+        configure_rate_limits()
+        reset_rate_limiter("test_burst_tool")
 
         from memory_mcp import with_audit
 
@@ -39,20 +42,24 @@ class TestWithAuditRateLimit(unittest.TestCase):
         for _ in range(61):
             results.append(dummy_tool())
 
-        # First 60 should succeed, 61st should be RATE_LIMITED
+        # First 60 should succeed (burst=60), 61st should be RATE_LIMITED
         self.assertEqual(len(results), 61)
         self.assertTrue(all(r == "ok" for r in results[:60]))
         self.assertIn("RATE_LIMITED", results[60])
 
-        limiter.reset("test_burst_tool")
+        reset_rate_limiter("test_burst_tool")
+        os.environ.pop("MEMORY_RATE_LIMIT_TEST_BURST_TOOL", None)
 
     def test_different_tools_independent_buckets(self):
         """Rate limit is per-tool, not global."""
-        import infra.memory_common as memory_common
+        from infra.rate_limiter import configure_rate_limits, reset_rate_limiter
 
-        limiter = memory_common.get_default_limiter()
-        limiter.reset("tool_a")
-        limiter.reset("tool_b")
+        import os
+        os.environ["MEMORY_RATE_LIMIT_TOOL_A"] = "60,60"
+        os.environ["MEMORY_RATE_LIMIT_TOOL_B"] = "60,60"
+        configure_rate_limits()
+        reset_rate_limiter("tool_a")
+        reset_rate_limiter("tool_b")
 
         from memory_mcp import with_audit
 
@@ -74,24 +81,24 @@ class TestWithAuditRateLimit(unittest.TestCase):
         # tool_b should still work
         self.assertEqual(tool_b(), "b")
 
-        limiter.reset("tool_a")
-        limiter.reset("tool_b")
+        reset_rate_limiter("tool_a")
+        reset_rate_limiter("tool_b")
+        os.environ.pop("MEMORY_RATE_LIMIT_TOOL_A", None)
+        os.environ.pop("MEMORY_RATE_LIMIT_TOOL_B", None)
 
     def test_rate_limit_check_resets_after_window(self):
-        """Rate limit resets after the window passes."""
-        import infra.memory_common as memory_common
+        """Token bucket refills after time passes."""
+        from infra.rate_limiter import TokenBucket
 
-        # Create a short-window limiter for testing
-        short_limiter = memory_common.RateLimiter(max_calls=3, window_seconds=0.1)
-        self.assertTrue(short_limiter.check("reset_test"))
-        self.assertTrue(short_limiter.check("reset_test"))
-        self.assertTrue(short_limiter.check("reset_test"))
-        self.assertFalse(short_limiter.check("reset_test"))
-        # Wait for the 0.1s window to elapse. We can't use wait_until polling
-        # rl.check() because every check consumes a slot. A short fixed sleep
-        # is the right tool here.
-        time.sleep(0.15)
-        self.assertTrue(short_limiter.check("reset_test"))
+        # Create a bucket with rate=10 tokens/sec, burst=3
+        bucket = TokenBucket(rate=10.0, burst=3)
+        self.assertTrue(bucket.allow())
+        self.assertTrue(bucket.allow())
+        self.assertTrue(bucket.allow())
+        self.assertFalse(bucket.allow())
+        # Wait for refill (0.4s at 10 tokens/sec = 4 tokens refilled)
+        time.sleep(0.4)
+        self.assertTrue(bucket.allow())
 
 
 if __name__ == "__main__":

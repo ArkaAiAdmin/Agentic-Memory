@@ -149,6 +149,13 @@ def configure_rate_limits(toml_limits: dict[str, Any] | None = None) -> None:
     known_tools = set(_default_limits()) - {"_default"}
     all_tools = list(known_tools) + ["_default"]
 
+    # Also discover tools configured via env vars (MEMORY_RATE_LIMIT_<TOOL>)
+    for env_key, env_val in os.environ.items():
+        if env_key.startswith("MEMORY_RATE_LIMIT_") and env_key != "MEMORY_RATE_LIMIT__":
+            tool = env_key[len("MEMORY_RATE_LIMIT_"):].lower()
+            if tool and tool not in all_tools:
+                all_tools.append(tool)
+
     new_registry: dict[str, TokenBucket] = {}
     for tool in all_tools:
         limits = _resolve_tool_limits(tool, toml_limits)

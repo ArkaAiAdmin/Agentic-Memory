@@ -194,6 +194,8 @@ class TestLiveMCPRateLimit(unittest.TestCase):
         # even when the loop takes >60s (tokens won't replenish meaningfully).
         os.environ["MEMORY_RATE_LIMIT_MEMORY_SEARCH"] = "0.001,60"
         reset_config()
+        from infra.rate_limiter import configure_rate_limits
+        configure_rate_limits()
         reset_rate_limiter()
         try:
             for _ in range(60):
@@ -207,6 +209,8 @@ class TestLiveMCPRateLimit(unittest.TestCase):
         finally:
             os.environ.pop("MEMORY_RATE_LIMIT_MEMORY_SEARCH", None)
             reset_config()
+            from infra.rate_limiter import configure_rate_limits
+            configure_rate_limits()
             reset_rate_limiter()
 
 
