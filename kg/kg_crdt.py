@@ -747,7 +747,9 @@ def record_edge_add(
 
 
 def _compute_fingerprint(name: str, entity_type: str, description: str = "") -> str:
-    canonical = lambda s: " ".join(s.lower().strip().split())
+    def canonical(s: str) -> str:
+        return " ".join(s.lower().strip().split())
+
     payload = f"{canonical(name)}|{canonical(entity_type)}|{canonical(description)}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -822,6 +824,32 @@ def redirect_edge_ids(
 # ---------------------------------------------------------------------------
 
 
+def verify_crdt_consistency(conn: AnyConnection) -> bool:
+    """Assert the no-orphan invariant after a projection run.
+
+    Every edge endpoint (source_id / target_id) in kg_edges must reference an
+    id present in kg_entities. A violation indicates either a bug in the
+    redirect logic (Phase 2/3) or a concurrent write that was not captured in
+    the operation log.
+
+    Mirrors the reference check in paper_pipeline/crdt_projection.py but is
+    adapted to the production schema (kg_entities.id primary key).
+
+    Returns True if the invariant holds, raises AssertionError otherwise.
+    """
+    row = conn.execute(
+        "SELECT COUNT(*) FROM kg_edges e "
+        "WHERE e.source_id NOT IN (SELECT id FROM kg_entities) "
+        "   OR e.target_id NOT IN (SELECT id FROM kg_entities)"
+    ).fetchone()
+    orphan_count = row[0] if row else 0
+    assert orphan_count == 0, (
+        f"no-orphan invariant violated: {orphan_count} edge(s) reference "
+        f"non-canonical entities"
+    )
+    return True
+
+
 def project_crdt_to_entities(
     conn: AnyConnection,
 ) -> tuple[int, int, dict[int, int]]:
@@ -853,5 +881,10 @@ def project_crdt_to_entities(
     # projection path, e.g. external edge lookups).
     persist_entity_redirects(conn, redirects)
     n_edges = apply_edge_crdt_to_db(conn, edge_state)
+
+    # No-orphan invariant: every projected edge endpoint must resolve to a
+    # canonical entity. Raises AssertionError (and aborts the transaction via
+    # the caller's rollback) if redirect logic missed an endpoint.
+    verify_crdt_consistency(conn)
 
     return n_entities, n_edges, redirects

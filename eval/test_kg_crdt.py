@@ -502,5 +502,42 @@ class TestNameCollisionDedup(unittest.TestCase):
         self.assertEqual(kg_crdt.resolve_entity_id(conn, 2), 2)
 
 
+class TestVerifyCrdtConsistency(unittest.TestCase):
+    """The no-orphan invariant check wired into project_crdt_to_entities."""
+
+    def test_clean_projection_passes(self) -> None:
+        conn = _new_db()
+        _setup_crdt_schema(conn)
+        kg_crdt.record_entity_add(conn, 1, "p1", {"p1": 1}, "Apple", "fruit")
+        kg_crdt.record_entity_add(conn, 2, "p2", {"p2": 1}, "Banana", "fruit")
+        kg_crdt.project_crdt_to_entities(conn)
+        self.assertTrue(kg_crdt.verify_crdt_consistency(conn))
+
+    def test_orphan_edge_raises(self) -> None:
+        """An edge referencing a non-canonical entity_id fails the check."""
+        conn = _new_db()
+        _setup_crdt_schema(conn)
+        conn.execute(
+            "INSERT INTO kg_edges (source_id, target_id, relation) "
+            "VALUES (999, 1, 'related_to')"
+        )
+        with self.assertRaises(AssertionError):
+            kg_crdt.verify_crdt_consistency(conn)
+
+    def test_projection_invokes_check_clean(self) -> None:
+        """project_crdt_to_entities reaches the check and passes on clean data."""
+        conn = _new_db()
+        _setup_crdt_schema(conn)
+        kg_crdt.record_entity_add(conn, 1, "p1", {"p1": 1}, "Apple", "fruit")
+        kg_crdt.record_entity_add(conn, 2, "p2", {"p2": 1}, "Banana", "fruit")
+        kg_crdt.record_edge_add(
+            conn, 1, 2, "related_to", 1.0, "p1", {"p1": 1}
+        )
+        # Must not raise — edge endpoints resolve to canonical entities.
+        n_e, n_g, _ = kg_crdt.project_crdt_to_entities(conn)
+        self.assertEqual(n_e, 2)
+        self.assertEqual(n_g, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
