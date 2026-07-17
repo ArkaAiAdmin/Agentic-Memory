@@ -136,7 +136,9 @@ def vv_merge(a: dict[str, int], b: dict[str, int]) -> dict[str, int]:
 
 
 def vv_sum(v: dict[str, int]) -> int:
-    """Total counter value across all peers — used as primary LWW sort key."""
+    """Total counter value across all peers. Retained for diagnostics; the
+    merge uses ``vv_dominates`` for causal ordering (see corrigendum in the
+    paper, §4.4)."""
     return sum(v.values())
 
 
