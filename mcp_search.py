@@ -700,7 +700,21 @@ def memory_session_start(query: str = "") -> str:
         except Exception as e:
             logger.warning("Unhandled exception in memory_session_start: %s", e)
 
-        return f"{briefing}{embedding_status}\n{stats_section}{review_section}"
+        shared_section = ""
+        try:
+            from memory_sharing import list_shared_memories
+            shared = list_shared_memories(limit=5, db_path=str(db_path))
+            if shared and len(shared) > 0:
+                items = "\n".join(
+                    f"  · {s.get('title_slug','?')} [{s.get('category','?')}] "
+                    f"from {s.get('agent_id','?')} (importance={s.get('importance','?')})"
+                    for s in shared[:5]
+                )
+                shared_section = f"\n**Shared Memories** (latest {min(len(shared),5)}):\n{items}\n"
+        except Exception:
+            pass
+
+        return f"{briefing}{embedding_status}\n{stats_section}{shared_section}{review_section}"
     except Exception:
         logger.exception("Session start failed")
         return _err(ErrorCode.SESSION_START_ERROR, "Session start failed")
