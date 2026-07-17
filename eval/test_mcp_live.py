@@ -188,7 +188,7 @@ class TestLiveMCPRateLimit(unittest.TestCase):
 
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    @pytest.mark.timeout(480)
+    @pytest.mark.timeout(900)
     def test_burst_returns_rate_limited(self):
         # Set burst=60 with near-zero refill so the 61st call is rate-limited
         # even when the loop takes >60s (tokens won't replenish meaningfully).

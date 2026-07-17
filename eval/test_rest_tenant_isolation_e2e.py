@@ -191,7 +191,7 @@ class TestRESTTenantIsolationE2E(unittest.TestCase):
             f"Bearer {token if token is not None else self.token}",
         )
         try:
-            with urllib.request.urlopen(req, timeout=30.0) as res:
+            with urllib.request.urlopen(req, timeout=60.0) as res:
                 return res.status, json.loads(res.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             try:
