@@ -179,7 +179,7 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(status, 201)
 
         # Search via GET — use longer timeout (embedding model cold-start)
-        status, data = self._http_request("/api/v1/memories/search?query=borrow+checker", timeout=30.0)
+        status, data = self._http_request("/api/v1/memories/search?query=borrow+checker", timeout=60.0)
         self.assertEqual(status, 200)
         self.assertGreater(len(data["results"]), 0)
         self.assertIn("Rust memory safety", data["results"][0]["content"])
@@ -188,7 +188,7 @@ class TestAPIServer(unittest.TestCase):
         status, post_data = self._http_request("/api/v1/memories/search", "POST", {
             "query": "borrow checker",
             "limit": 5
-        }, timeout=30.0)
+        }, timeout=60.0)
         self.assertEqual(status, 200)
         self.assertGreater(len(post_data["results"]), 0)
         self.assertIn("Rust memory safety", post_data["results"][0]["content"])

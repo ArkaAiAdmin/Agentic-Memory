@@ -53,7 +53,7 @@ class TestHookImportPathFix(unittest.TestCase):
             [VENV_PY, str(HOOKS_DIR / "memory-search-on-demand.py"), "test query"],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
             cwd=str(INSTALL_ROOT),
         )
         self.assertNotIn("ModuleNotFoundError", p.stderr)

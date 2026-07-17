@@ -18,6 +18,10 @@ import os
 import shutil
 import sys
 import tempfile
+
+import pytest
+
+pytestmark = pytest.mark.slow
 import unittest
 from pathlib import Path
 

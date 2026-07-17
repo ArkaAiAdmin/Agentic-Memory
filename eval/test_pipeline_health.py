@@ -181,6 +181,7 @@ class TestJournalBacklogProbe:
             jconn.close()
 
         monkeypatch.setenv("MEMORY_DB_PATH", str(db))
+        monkeypatch.setenv("MEMORY_DB_FLOCK", "0")
         # Force the sentinel poll to fail immediately (no worker draining),
         # so main() returns 1 but still prints the journal_pending line.
         def _boom(*_a, **_k):
@@ -189,6 +190,7 @@ class TestJournalBacklogProbe:
         import cron.cron_pipeline_health as _cph
 
         monkeypatch.setattr(_cph, "_poll_sentinel", _boom)
+        monkeypatch.setattr(_cph, "acquire_lock_or_exit", lambda *_a, **_kw: None)
 
         rc = main()
         assert rc != 0  # sentinel never completed (no worker)
@@ -279,6 +281,7 @@ class TestWorkerRecovery:
         db = tmp_path / "memory.db"
         init_task_queue(sqlite_write_queue.start_session(db))
         monkeypatch.setenv("MEMORY_DB_PATH", str(db))
+        monkeypatch.setenv("MEMORY_DB_FLOCK", "0")
 
         # Sentinel poll fails (no worker); make recovery succeed so the
         # "recover:" line is emitted, but main() still returns 1.
@@ -299,6 +302,7 @@ class TestWorkerRecovery:
 
         monkeypatch.setattr(_cph, "_poll_sentinel", _boom)
         monkeypatch.setattr(_cph, "_try_start_worker", _fake_recover)
+        monkeypatch.setattr(_cph, "acquire_lock_or_exit", lambda *_a, **_kw: None)
 
         rc = cph.main()
         assert rc != 0

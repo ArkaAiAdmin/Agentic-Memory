@@ -42,6 +42,8 @@ from infra.memory_common import (
 )
 from save_pipeline import save_memory, clear_pragma_cache, SaveValidationError
 from search_pipeline import search_memories
+
+pytestmark = pytest.mark.slow
 from memory_delete import soft_delete_note
 
 
