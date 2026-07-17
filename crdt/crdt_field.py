@@ -913,6 +913,22 @@ def crdt_field_save(
             raise
 
 
+def crdt_field_delete_note(conn: AnyConnection, note_id: str, tenant_id: str = "default") -> None:
+    """Delete all CRDT field state for a superseded memory.
+
+    Step 4d: when a memory is superseded, its CRDT field state in
+    memory_field_crdt should be cleaned up to prevent stale field
+    data from appearing in sync projections.
+    """
+    try:
+        conn.execute(
+            "DELETE FROM memory_field_crdt WHERE memory_id=? AND tenant_id=?",
+            (note_id, tenant_id),
+        )
+    except Exception as exc:
+        logger.warning("crdt_field_delete_note: failed for %s: %r", note_id, exc)
+
+
 def _parse_incoming_vv(remote_vv_str: str, remote_agent_id: str) -> dict[str, int]:
     """Parse the caller's remote_vv_str, or fall back to a sensible default."""
     if remote_vv_str:

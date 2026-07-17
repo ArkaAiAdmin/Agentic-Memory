@@ -56,6 +56,7 @@ __all__ = [
     "record_skill_hit",
     "list_skills",
     "is_skill_worthy",
+    "verify_skill_contract",
 ]
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS "memory_skills" (
     steps           TEXT DEFAULT '[]',
     content_hash    TEXT,
     hit_count       INTEGER DEFAULT 0,
+    fitness_score   REAL DEFAULT 1.0,
     last_used_at    REAL,
     created_at      REAL NOT NULL,
     updated_at      REAL NOT NULL
@@ -344,6 +346,73 @@ def extract_skill_from_memory(
     }
 
 
+# ---------------------------------------------------------------------------
+# Skill contract validation (Step 4a)
+# ---------------------------------------------------------------------------
+
+# Modules whose names suggest actionable code references
+_CODE_MODULES = re.compile(
+    r"(crdt/|save/|search/|infra/|kg/|fact/|cron/|hooks/|background/"
+    r"|mcp_[a-z]+\.py|memory_[a-z]+\.py|pipeline\.py|orchestrator\.py"
+    r"|migration_runner\.py|db_migrations\.py|rate_limiter\.py"
+    r"|skill_extractor\.py|session_manager\.py|memory_common\.py"
+    r"|rebuild_index\.py|rebuild_vec_index\.py|consolidate_facts\.py"
+    r"|tier_migration\.py|rewrite_links\.py|spaced_repetition\.py"
+    r"|neural_forget\.py|consolidation\.py|context_monitor\.py"
+    r"|auto_save\.py|background_worker\.py|background_queue\.py"
+    r"|embedding_search\.py|embedding_incremental\.py)"
+)
+
+
+def verify_skill_contract(skill: dict) -> tuple[bool, str]:
+    """Validate that an extracted skill has actionable content.
+
+    A skill that is pure prose without actionable steps is discarded.
+    This prevents "junk skills" from accumulating.
+
+    Returns:
+        (True, "") if the skill passes validation.
+        (False, reason) if the skill should be rejected.
+    """
+    triggers = skill.get("triggers", [])
+    steps = skill.get("steps", [])
+    description = skill.get("description", "")
+    topic = skill.get("topic", "")
+
+    # Reject pure prose without actionable steps
+    if not steps:
+        return (False, "no_steps")
+
+    # Reject skills with too few triggers (noise threshold)
+    if len(triggers) < 1:
+        return (False, "insufficient_triggers")
+
+    # Check if steps contain actionable content (commands, code blocks,
+    # numbered steps, shell commands, or code module references)
+    all_text = " ".join(steps + [description, topic])
+    has_action = (
+        _CODE_MODULES.search(all_text)
+        or re.search(r"^\$\s", all_text, re.MULTILINE)  # shell commands
+        or re.search(r"^\d+\.\s", all_text, re.MULTILINE)  # numbered steps
+        or re.search(r"```", all_text)  # code blocks
+        or re.search(r"\b(install|create|run|set|configure|deploy|build|fix|update|add|remove|delete|enable|disable)\b", all_text, re.IGNORECASE)  # action verbs
+    )
+    if not has_action:
+        return (False, "no_actionable_content")
+
+    return (True, "")
+
+
+def _emit_skill_rejected(skill: dict, reason: str) -> None:
+    """Emit a skill_rejected event to the trace log."""
+    logger.info(
+        "skill_rejected: name=%s reason=%s source=%s",
+        skill.get("name", "?"),
+        reason,
+        skill.get("source_memory_id", "?"),
+    )
+
+
 def write_skill_md(
     skill: dict,
     skills_dir: "Path | None" = None,
@@ -406,8 +475,15 @@ def save_skill(conn: AnyConnection, skill: dict) -> int:
     """Insert or update a skill in the memory_skills table. Returns the skill id.
 
     If a skill with the same name exists, updates it (idempotent re-extraction).
+    Validates the skill contract before saving — rejects junk skills.
     """
     import json
+
+    # Step 4a: validate skill contract before persisting
+    passed, reason = verify_skill_contract(skill)
+    if not passed:
+        _emit_skill_rejected(skill, reason)
+        return -1
 
     now = time.time()
     existing = conn.execute(
@@ -720,11 +796,18 @@ def merge_and_save_skill(conn: AnyConnection, incoming: dict) -> dict:
 
 
 def list_skills(conn: AnyConnection, limit: int = 50) -> list[dict]:
-    """List all skills, ordered by hit_count desc (most-used first)."""
+    """List all skills, ordered by hit_count desc (most-used first).
+
+    Step 4b: suppresses skills with fitness_score < 0.2. Fitness decays
+    when a skill is never used; skills below the threshold are hidden
+    from the list but not deleted (they can recover if reinforced).
+    """
 
     rows = conn.execute(
-        """SELECT id, name, topic, description, hit_count, last_used_at, created_at
+        """SELECT id, name, topic, description, hit_count, last_used_at,
+                  created_at, fitness_score
            FROM memory_skills
+           WHERE fitness_score >= 0.2 OR fitness_score IS NULL
            ORDER BY hit_count DESC, created_at DESC
            LIMIT ?""",
         (limit,),
@@ -738,9 +821,53 @@ def list_skills(conn: AnyConnection, limit: int = 50) -> list[dict]:
             "hit_count": r[4] or 0,
             "last_used_at": r[5],
             "created_at": r[6],
+            "fitness_score": r[7] if r[7] is not None else 1.0,
         }
         for r in rows
     ]
+
+
+def decay_skill_fitness(conn: AnyConnection, decay_rate: float = 0.05) -> int:
+    """Decay fitness_score for skills that haven't been used recently.
+
+    Step 4b: skills with last_used_at older than 7 days lose
+    ``decay_rate`` from their fitness_score per call. Skills that
+    have never been used (last_used_at IS NULL) decay faster.
+
+    Returns the number of skills affected.
+    """
+    import time as _time
+
+    now = _time.time()
+    seven_days = 7 * 86400
+
+    # Decay skills not used in 7+ days
+    cur = conn.execute(
+        """UPDATE memory_skills
+           SET fitness_score = MAX(0.0, fitness_score - ?),
+               updated_at = ?
+           WHERE last_used_at IS NOT NULL
+             AND (? - last_used_at) > ?
+             AND fitness_score > 0.0""",
+        (decay_rate, now, now, seven_days),
+    )
+    affected = cur.rowcount or 0
+
+    # Decay never-used skills faster (2x rate)
+    cur2 = conn.execute(
+        """UPDATE memory_skills
+           SET fitness_score = MAX(0.0, fitness_score - ?),
+               updated_at = ?
+           WHERE last_used_at IS NULL
+             AND fitness_score > 0.0""",
+        (decay_rate * 2, now),
+    )
+    affected += cur2.rowcount or 0
+
+    conn.commit()
+    if affected:
+        logger.info("decay_skill_fitness: decayed %d skills", affected)
+    return affected
 
 
 def extract_skill_for_memory(

@@ -263,7 +263,7 @@ def _rerank_results(
     * ``results_to_display`` is the per-row tuple list (note_id,
       content, source_file, tags_json, created, rank, final_score,
       fitness_score, importance_val, pinned, last_accessed,
-      metadata_json) — ready for the build-output phase.
+      metadata_json, supersedes) — ready for the build-output phase.
     * ``ctr_weights`` is the per-query channel-weight dict used to
       compute final scores, returned for CTR feedback persistence.
       ``None`` when ``rerank=False`` or no fitness column.
@@ -285,6 +285,7 @@ def _rerank_results(
             metadata_json = r[10] if len(r) > 10 else None
             access_count = r[11] if len(r) > 11 else 1
             forget_score = r[12] if len(r) > 12 else None
+            supersedes = r[13] if len(r) > 13 else None
             out.append(
                 (
                     r[0],
@@ -299,8 +300,7 @@ def _rerank_results(
                     None,
                     last_accessed_col,
                     metadata_json,
-                    access_count,
-                    forget_score,
+                    supersedes,
                 )
             )
         # RANK-FIRST LOCK (PR1.1): the no-rerank pass-through must not
@@ -338,6 +338,7 @@ def _rerank_results(
         metadata_json = r[10] if len(r) > 10 else None
         access_count = r[11] if len(r) > 11 else 1
         forget_score = r[12] if len(r) > 12 else None
+        supersedes = r[13] if len(r) > 13 else None
         # Pre-compute query tokens once for tag matching (Phase 8 optimization)
         if _pre_query_tokens is None:
             from search.scoring import _RERANK_TOKEN_RE
@@ -383,8 +384,7 @@ def _rerank_results(
                 pinned,
                 last_accessed,
                 metadata_json,
-                access_count,
-                None,
+                supersedes,
             )
         )
 

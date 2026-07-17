@@ -2282,6 +2282,12 @@ def memory_supersede_db(
                 old_content=old_content[0] if old_content else None,
                 metadata_json=json.dumps({"superseded_by": new_id}),
             )
+            # Step 4d: clean up CRDT field state for the superseded memory
+            try:
+                from crdt.crdt_field import crdt_field_delete_note
+                crdt_field_delete_note(db, old_id)
+            except Exception as _crdt_cleanup_exc:
+                logger.debug("CRDT cleanup on supersede failed for %s: %s", old_id, _crdt_cleanup_exc)
             # Store rationale in metadata if provided
             if rationale:
                 try:
@@ -2356,6 +2362,12 @@ def memory_supersede_db(
                     except Exception:
                         pass
                     raise
+                # Step 4d: clean up CRDT field state for the superseded memory
+                try:
+                    from crdt.crdt_field import crdt_field_delete_note
+                    crdt_field_delete_note(db, old_id)
+                except Exception as _crdt_cleanup_exc:
+                    logger.debug("CRDT cleanup on supersede failed for %s: %s", old_id, _crdt_cleanup_exc)
                 return (True, None)
     except Exception as e:
         return (False, str(e))

@@ -91,6 +91,7 @@ def _build_result_items(
         ) = r[:10]
         last_accessed = r[10] if len(r) > 10 else None
         metadata_json = r[11] if len(r) > 11 else None
+        supersedes = r[12] if len(r) > 12 else None
         try:
             tags = json.loads(tags_json) if tags_json else []
         except (json.JSONDecodeError, TypeError):
@@ -126,6 +127,7 @@ def _build_result_items(
                 "metadata": meta if meta is not None else {},
                 "summary": auto_summary,
                 "category": category_map.get(note_id),
+                "supersedes": supersedes,
             }
         )
     output = _format_search_results(

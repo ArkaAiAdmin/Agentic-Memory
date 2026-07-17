@@ -41,9 +41,9 @@ def _prefilter_ids(
     if not enabled:
         return set()
     try:
-        from infra.embedding_search import EmbeddingSearch  # type: ignore[attr-defined]
+        from infra._lazy_imports import get_embedding_search
 
-        es = EmbeddingSearch()
+        es = get_embedding_search()
         hits = es.search(normalized_query, db_path, limit=k, category="")
         if not isinstance(hits, list) or not hits:
             return set()
@@ -83,7 +83,7 @@ def _fts_search(
         return db.execute(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count,\n"
-            "                 m.score\n"
+            "                 m.score, m.supersedes\n"
             "          FROM memories_fts fts\n"
             "          JOIN tenant_memories m ON m.id = fts.id\n"
             f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
@@ -98,7 +98,7 @@ def _fts_search(
     return db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count,\n"
-        "             m.score\n"
+        "             m.score, m.supersedes\n"
         "      FROM memories_fts fts\n"
         "      JOIN tenant_memories m ON m.id = fts.id\n"
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
