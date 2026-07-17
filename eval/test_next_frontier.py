@@ -128,7 +128,17 @@ class TestSkillCRDTConvergence(unittest.TestCase):
 
         conn = _make_db(self.tmp)
         ensure_skill_schema(conn)
-        result = merge_and_save_skill(conn, {"name": "new-skill", "description": "d", "hit_count": 0})
+        for col in ("hit_vector", "last_used_vector", "logical_clock"):
+            try:
+                conn.execute(f"ALTER TABLE memory_skills ADD COLUMN {col} TEXT")
+            except Exception:
+                pass
+        conn.commit()
+        result = merge_and_save_skill(conn, {
+            "name": "new-skill", "description": "d", "hit_count": 0,
+            "triggers": json.dumps(["test"]),
+            "steps": json.dumps(["$ run command"]),
+        })
         self.assertEqual(result["name"], "new-skill")
         row = conn.execute("SELECT name FROM memory_skills WHERE name='new-skill'").fetchone()
         self.assertIsNotNone(row)
@@ -140,10 +150,24 @@ class TestSkillCRDTConvergence(unittest.TestCase):
 
         conn = _make_db(self.tmp)
         ensure_skill_schema(conn)
+        for col in ("hit_vector", "last_used_vector", "logical_clock"):
+            try:
+                conn.execute(f"ALTER TABLE memory_skills ADD COLUMN {col} TEXT")
+            except Exception:
+                pass
+        conn.commit()
         now = time.time()
-        merge_and_save_skill(conn, {"name": "upd-skill", "description": "old", "updated_at": now})
-        merge_and_save_skill(conn, {"name": "upd-skill", "description": "new", "updated_at": now + 1,
-                                     "hit_vector": json.dumps({"agent-a": 2})})
+        merge_and_save_skill(conn, {
+            "name": "upd-skill", "description": "old", "updated_at": now,
+            "triggers": json.dumps(["test"]),
+            "steps": json.dumps(["$ run command"]),
+        })
+        merge_and_save_skill(conn, {
+            "name": "upd-skill", "description": "new", "updated_at": now + 1,
+            "hit_vector": json.dumps({"agent-a": 2}),
+            "triggers": json.dumps(["test"]),
+            "steps": json.dumps(["$ run command"]),
+        })
         row = conn.execute("SELECT description, hit_count FROM memory_skills WHERE name='upd-skill'").fetchone()
         self.assertEqual(row["description"], "new")
         self.assertEqual(row["hit_count"], 2)

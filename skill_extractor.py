@@ -723,8 +723,24 @@ def merge_and_save_skill(conn: AnyConnection, incoming: dict) -> dict:
 
     Looks up the skill by ``name``; if found, merges with existing record;
     otherwise inserts the incoming record. Returns the merged skill dict.
+
+    Validates the skill contract before persisting — rejects junk skills
+    that lack actionable content.
     """
     ensure_skill_schema(conn)
+    # Normalize triggers/steps: verify_skill_contract expects lists,
+    # but incoming from sync may have them as JSON strings.
+    check_skill = dict(incoming)
+    for _key in ("triggers", "steps"):
+        if isinstance(check_skill.get(_key), str):
+            try:
+                check_skill[_key] = json.loads(check_skill[_key])
+            except (json.JSONDecodeError, TypeError):
+                check_skill[_key] = []
+    passed, reason = verify_skill_contract(check_skill)
+    if not passed:
+        _emit_skill_rejected(incoming, reason)
+        return {}
     row = conn.execute(
         "SELECT * FROM memory_skills WHERE name = ?",
         (incoming.get("name"),),

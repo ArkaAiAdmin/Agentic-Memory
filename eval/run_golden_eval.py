@@ -6,7 +6,8 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-eval_db = Path(os.environ.get("EVAL_DB", "")) or (INSTALL_DIR / "eval" / "prebuilt_db_path.txt")
+eval_db_str = os.environ.get("EVAL_DB", "")
+eval_db = Path(eval_db_str) if eval_db_str else (INSTALL_DIR / "eval" / "prebuilt_db_path.txt")
 if eval_db.suffix == ".txt":
     eval_db = Path(eval_db.read_text().strip())
 os.environ["MEMORY_DB_PATH"] = str(eval_db)

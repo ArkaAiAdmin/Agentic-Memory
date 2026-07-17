@@ -30,6 +30,8 @@ from skill_extractor import (
     record_skill_hit,
     list_skills,
     is_skill_worthy,
+    verify_skill_contract,
+    merge_and_save_skill,
 )
 
 
@@ -116,6 +118,137 @@ docker run -d myapp
 ```
 """
         self.assertTrue(is_skill_worthy(content))
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: verify_skill_contract
+# ---------------------------------------------------------------------------
+
+
+class TestVerifySkillContract(unittest.TestCase):
+    """Direct unit tests for verify_skill_contract() — Step 4a."""
+
+    def test_rejects_no_steps(self):
+        skill = {"name": "test", "triggers": ["a"], "steps": [], "description": "prose"}
+        ok, reason = verify_skill_contract(skill)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "no_steps")
+
+    def test_rejects_insufficient_triggers(self):
+        skill = {"name": "test", "triggers": [], "steps": ["$ run command"], "description": ""}
+        ok, reason = verify_skill_contract(skill)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "insufficient_triggers")
+
+    def test_rejects_no_actionable_content(self):
+        skill = {
+            "name": "test",
+            "triggers": ["thoughtful"],
+            "steps": ["Think about the problem carefully", "Consider all options"],
+            "description": "A thoughtful process",
+        }
+        ok, reason = verify_skill_contract(skill)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "no_actionable_content")
+
+    def test_accepts_shell_command_in_steps(self):
+        skill = {
+            "name": "deploy-app",
+            "triggers": ["deploy"],
+            "steps": ["$ docker build -t app .", "$ docker push app"],
+            "description": "Deploy the application",
+        }
+        ok, reason = verify_skill_contract(skill)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+
+    def test_accepts_numbered_steps(self):
+        skill = {
+            "name": "setup-db",
+            "triggers": ["database"],
+            "steps": ["1. Install PostgreSQL", "2. Create the database", "3. Run migrations"],
+            "description": "Set up the database",
+        }
+        ok, reason = verify_skill_contract(skill)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+
+    def test_accepts_code_block_in_steps(self):
+        skill = {
+            "name": "configure-nginx",
+            "triggers": ["nginx", "proxy"],
+            "steps": ["Edit nginx.conf:", "```\nserver { listen 80; }\n```"],
+            "description": "Configure nginx",
+        }
+        ok, reason = verify_skill_contract(skill)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+
+    def test_accepts_action_verbs_in_description(self):
+        skill = {
+            "name": "fix-auth",
+            "triggers": ["auth"],
+            "steps": ["Fix the authentication flow"],
+            "description": "Deploy the fix to production after testing",
+        }
+        ok, reason = verify_skill_contract(skill)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+
+    def test_accepts_code_module_reference(self):
+        skill = {
+            "name": "search-optimizer",
+            "triggers": ["optimizer"],
+            "steps": ["Tune the search/orchestrator.py reranker parameters"],
+            "description": "Optimize search pipeline",
+        }
+        ok, reason = verify_skill_contract(skill)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+
+    def test_save_skill_rejects_invalid_and_returns_neg_one(self):
+        conn = _make_test_db()
+        try:
+            skill = {"name": "junk", "triggers": [], "steps": [], "description": "pure prose"}
+            result = save_skill(conn, skill)
+            self.assertEqual(result, -1)
+        finally:
+            conn.close()
+
+    def test_merge_and_save_skill_rejects_invalid(self):
+        conn = _make_test_db()
+        try:
+            skill = {"name": "sync-junk", "triggers": [], "steps": [], "description": "pure prose"}
+            result = merge_and_save_skill(conn, skill)
+            self.assertEqual(result, {})
+            row = conn.execute(
+                "SELECT COUNT(*) FROM memory_skills WHERE name = ?", (skill["name"],)
+            ).fetchone()
+            self.assertEqual(row[0], 0)
+        finally:
+            conn.close()
+
+    def test_merge_and_save_skill_accepts_valid(self):
+        conn = _make_test_db()
+        try:
+            for col in ("hit_vector", "last_used_vector", "logical_clock"):
+                try:
+                    conn.execute(f"ALTER TABLE memory_skills ADD COLUMN {col} TEXT")
+                except Exception:
+                    pass
+            conn.commit()
+            skill = {
+                "name": "sync-valid",
+                "triggers": json.dumps(["test"]),
+                "steps": json.dumps(["$ run the test suite"]),
+                "description": "Run tests",
+                "source_memory_id": "m1",
+            }
+            result = merge_and_save_skill(conn, skill)
+            self.assertIn("name", result)
+            self.assertEqual(result["name"], "sync-valid")
+        finally:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------

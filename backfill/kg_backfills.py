@@ -776,6 +776,50 @@ def _backfill_kg_graph(conn):
                 except Exception as e:
                     logger.warning("_backfill_kg_graph failed: %s", e)
 
+    # Co-occurrence edges: entities that appear together in the same note
+    # get a lightweight "co_occurs" edge so multi-hop traversal can bridge
+    # gaps that SPO facts alone miss (e.g. "database" → "postgresql").
+    _cooccur_inserted = 0
+    _cooccur_seen: set[tuple[int, int, str]] = set()
+    for sid in source_ids:
+        row = conn.execute(
+            "SELECT content FROM memories WHERE id = ?", (sid,)
+        ).fetchone()
+        if not row or not row[0]:
+            continue
+        note_entities = []
+        for name, _etype in extract_entities(row[0], min_occurrences=1):
+            eid = entity_ids.get(name.lower().strip())
+            if eid is not None:
+                note_entities.append(eid)
+        note_entities = list(set(note_entities))
+        if len(note_entities) < 2:
+            continue
+        for i in range(len(note_entities)):
+            for j in range(i + 1, len(note_entities)):
+                a, b = note_entities[i], note_entities[j]
+                for src, tgt in ((a, b), (b, a)):
+                    if src == tgt:
+                        continue
+                    key = (src, tgt, "co_occurs")
+                    if key in _cooccur_seen:
+                        continue
+                    _cooccur_seen.add(key)
+                    try:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO kg_edges "
+                            "(source_id, target_id, relation, weight, created_at) "
+                            "VALUES (?, ?, ?, ?, datetime('now'))",
+                            (src, tgt, "co_occurs", 0.7),
+                        )
+                        _cooccur_inserted += 1
+                    except Exception as e:
+                        logger.warning("_backfill_kg_graph co-occur failed: %s", e)
+
     logger.info(
-        "KG graph backfilled: %d entities, %d edges", kept_count, len(seen_edges)
+        "KG graph backfilled: %d entities, %d edges (SPO=%d, co_occurs=%d)",
+        kept_count,
+        len(seen_edges) + _cooccur_inserted,
+        len(seen_edges),
+        _cooccur_inserted,
     )
