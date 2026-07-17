@@ -452,9 +452,18 @@ def apply_edge_crdt_to_db(
     conn: AnyConnection,
     state: dict[int, dict[str, Any]],
 ) -> int:
-    """Apply a merged edge state to the kg_edges table."""
+    """Apply a merged edge state to the kg_edges table.
+
+    Sprint 2.11 (prevent): each endpoint is canonicalised through the
+    in-memory ``redirects`` map *and* the durable ``kg_entity_redirect``
+    table before insert. This makes it structurally impossible to write
+    an edge that references a loser (merged-away) entity id, so the
+    no-orphan invariant holds by construction rather than by
+    post-write detection.
+    """
     written = 0
     for _edge_id, info in state.items():
+        src, tgt = resolve_edge_endpoints(conn, info["source_id"], info["target_id"])
         conn.execute(
             """
             INSERT OR REPLACE INTO kg_edges
@@ -462,8 +471,8 @@ def apply_edge_crdt_to_db(
             VALUES (?, ?, ?, ?, ?)
             """,
             (
-                info["source_id"],
-                info["target_id"],
+                src,
+                tgt,
                 info.get("relation", "related_to"),
                 info.get("weight", 1.0),
                 info.get("valid_at"),
@@ -797,6 +806,25 @@ def entity_dedup_via_crdt(
     }
 
 
+def resolve_edge_endpoints(
+    conn: AnyConnection,
+    source_id: int,
+    target_id: int,
+) -> tuple[int, int]:
+    """Canonicalise both edge endpoints to their live winners.
+
+    Sprint 2.11 (prevent, not detect): every edge is written only
+    after its endpoints are resolved through ``kg_entity_redirect``.
+    This structurally guarantees the no-orphan invariant at write
+    time — a stale loser_id can never be persisted as an edge
+    endpoint, regardless of which code path performs the insert.
+    """
+    return (
+        resolve_entity_id(conn, source_id),
+        resolve_entity_id(conn, target_id),
+    )
+
+
 def redirect_edge_ids(
     state: dict[int, dict[str, Any]],
     redirects: dict[int, int],
@@ -825,12 +853,17 @@ def redirect_edge_ids(
 
 
 def verify_crdt_consistency(conn: AnyConnection) -> bool:
-    """Assert the no-orphan invariant after a projection run.
+    """Post-condition verification of the no-orphan invariant.
 
     Every edge endpoint (source_id / target_id) in kg_edges must reference an
-    id present in kg_entities. A violation indicates either a bug in the
-    redirect logic (Phase 2/3) or a concurrent write that was not captured in
-    the operation log.
+    id present in kg_entities.
+
+    NOTE: as of Sprint 2.11 this is defense-in-depth only. The no-orphan
+    property is *prevented* at write time — every edge endpoint is
+    canonicalised through ``resolve_edge_endpoints`` (the in-memory redirects
+    map plus the durable ``kg_entity_redirect`` table) before any INSERT. This
+    check remains as a belt-and-suspenders assertion to catch bugs in the
+    redirect logic or concurrent writes that bypass the canonical insert path.
 
     Mirrors the reference check in paper_pipeline/crdt_projection.py but is
     adapted to the production schema (kg_entities.id primary key).

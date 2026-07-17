@@ -162,7 +162,16 @@ def _upsert_edge(
     now: float,
     context: str = "",
 ) -> None:
-    """Insert or update an edge."""
+    """Insert or update an edge.
+
+    Sprint 2.11 (prevent, not detect): endpoints are canonicalised
+    through ``kg_entity_redirect`` before any write, so an edge can
+    never reference a merged-away (loser) entity id.
+    """
+    from kg.kg_crdt import resolve_entity_id
+
+    source_id = resolve_entity_id(conn, source_id)
+    target_id = resolve_entity_id(conn, target_id)
     row = conn.execute(
         "SELECT id FROM kg_edges WHERE source_id = ? AND target_id = ? AND relation = ?",
         (source_id, target_id, relation),
