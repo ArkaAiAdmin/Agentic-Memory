@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import signal
 import sys
 from pathlib import Path
@@ -45,6 +46,17 @@ _QUERY_EXPANSION_REVERSE = search_pipeline._QUERY_EXPANSION_REVERSE
 # H1 fix: configure root logging once at module load (idempotent).
 configure_logging()
 logger = logging.getLogger(__name__)
+
+# Initialize agent context from MEMORY_AGENT_ID so RBAC resolves the
+# correct principal instead of falling back to "default".
+try:
+    from agent_context import init_agent
+    _agent_id = os.environ.get("MEMORY_AGENT_ID", "")
+    if _agent_id:
+        init_agent(_agent_id)
+        logger.info("memory_mcp: initialized agent context for %s", _agent_id)
+except Exception:
+    pass
 
 # Phase 4: configure per-tool rate limits from memory.toml [rate_limits].
 try:

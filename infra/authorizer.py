@@ -349,7 +349,9 @@ def mcp_authorize(
         from pathlib import Path
         from infra.db import open_db
 
-        with open_db(Path(db_path), timeout=5.0) as conn:
+        # Auth checks are read-only — use write=False to acquire a shared
+        # lock instead of competing with the write queue's exclusive flock.
+        with open_db(Path(db_path), timeout=5.0, write=False) as conn:
             from infra.db import ProxyConnection
             # ProxyConnection relays .execute() through the write-queue at runtime,
             # so check_permission works against it; mypy just can't see the alias.
@@ -411,7 +413,7 @@ def log_authorization_decision(
         from pathlib import Path
         from infra.db import open_db
 
-        with open_db(Path(db_path), timeout=5.0) as conn:
+        with open_db(Path(db_path), timeout=5.0, write=True) as conn:
             conn.execute(
                 "INSERT INTO memory_audit_log "
                 "(tool_name, args_json, status, duration_ms, created_at) "

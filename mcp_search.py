@@ -326,13 +326,15 @@ def memory_search(
         from infra.authorizer import mcp_authorize, log_authorization_decision
         from mcp_memory import _resolve_principal_for_rbac
         principal_id, resolved_tenant = _resolve_principal_for_rbac()
-        if not mcp_authorize(principal_id, "read", "memory", None, tenant_id=resolved_tenant):
+        _mem_dir = _resolve_memory_dir()
+        auth_db = str(_mem_dir / "memory.db") if _mem_dir else None
+        if not mcp_authorize(principal_id, "read", "memory", auth_db, tenant_id=resolved_tenant):
             log_authorization_decision(
                 principal_id=principal_id,
                 action="read",
                 resource="memory",
                 allowed=False,
-                db_path=None,
+                db_path=auth_db,
                 tenant_id=resolved_tenant,
             )
             return _err(

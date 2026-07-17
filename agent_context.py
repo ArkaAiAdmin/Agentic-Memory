@@ -81,25 +81,32 @@ def init_agent(
 
 
 def get_agent() -> AgentContext:
-    """Return the current agent context, or a default singleton."""
+    """Return the current agent context, or a default singleton.
+
+    In MCP server mode (FastMCP), tool calls run in a thread pool where
+    each thread has its own thread-local storage.  On first access per
+    thread, we read ``MEMORY_AGENT_ID`` from the process environment and
+    cache the result for that thread.  This ensures every tool call
+    resolves the correct agent identity without requiring an explicit
+    ``init_agent()`` call in every thread.
+    """
     try:
         val = getattr(_AGENT_CONTEXT, "current", None)
         if isinstance(val, AgentContext):
             return val
         raise AttributeError
     except AttributeError:
-        global _default_fallback_emitted
-        if not _default_fallback_emitted:
-            logger.warning(
-                "agent_context: no agent set in this thread, "
-                "falling back to 'default'. Call init_agent() to set a real agent. "
-                "This warning is emitted once per process."
-            )
-            _default_fallback_emitted = True
-        env_agent = os.environ.get("MEMORY_AGENT_ID")
-        if env_agent and env_agent.strip():
+        env_agent = os.environ.get("MEMORY_AGENT_ID", "").strip()
+        if env_agent:
             ctx = AgentContext(agent_id=env_agent, namespace=env_agent)
         else:
+            global _default_fallback_emitted
+            if not _default_fallback_emitted:
+                logger.warning(
+                    "agent_context: no agent set in this thread and "
+                    "MEMORY_AGENT_ID not set. Falling back to 'default'."
+                )
+                _default_fallback_emitted = True
             ctx = AgentContext(agent_id="default", namespace="default")
         _AGENT_CONTEXT.current = ctx
         _AGENT_REGISTRY[ctx.agent_id] = {

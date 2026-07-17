@@ -981,7 +981,7 @@ def memory_share(
         share_with: Target agent ID (for action=share).
         action: "list" | "share" | "import" | "stats".
     """
-    auth_err = _check_authorization("share", "memory")
+    auth_err = _check_authorization("admin", "memory")
     if auth_err:
         return auth_err
     try:
