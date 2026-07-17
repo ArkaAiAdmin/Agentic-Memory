@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from infra.db import AnyConnection
 
+# P0-3 fix: enforce entity_min_occurrences from memory.toml
+_ENTITY_MIN_OCCURRENCES = 2
 
 
 def find_shortest_path(

@@ -1,9 +1,12 @@
-# backward compat — real implementation is in recall/search_memory
+# DEPRECATED (G fix 2026-07-17): backward compat wrapper.
+# Use search_memories() from search/orchestrator.py directly.
+# Real implementation: recall/search_memory
 import os as _os
 import sys
 import io as _io
 from pathlib import Path
 
+import warnings as _warnings
 import recall.search_memory as _real
 
 # Pre-load common attributes so unittest.mock.patch works on this module
@@ -15,6 +18,7 @@ get_memory_paths = getattr(_real, "get_memory_paths", None)
 GLOBAL_MEM_DIR = getattr(_real, "GLOBAL_MEM_DIR", None)
 
 def __getattr__(name):
+    _warnings.warn("search_memory is deprecated; use search_memories()", DeprecationWarning, stacklevel=2)
     return getattr(_real, name)
 
 def __dir__():
