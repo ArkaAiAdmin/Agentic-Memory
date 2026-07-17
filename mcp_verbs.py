@@ -993,12 +993,7 @@ def memory_share(
         )
 
         if action == "list":
-            try:
-                from agent_context import get_agent as _share_list_agent
-                _current_agent = _share_list_agent().agent_id
-            except (ImportError, Exception):
-                _current_agent = "default"
-            return str(memory_shared_list(agent_id=_current_agent, category="", limit=50))
+            return str(memory_shared_list(agent_id="", category="", limit=50))
         elif action == "share":
             if not share_with:
                 return _err(ErrorCode.INVALID_PARAMS, "share_with required for action=share")

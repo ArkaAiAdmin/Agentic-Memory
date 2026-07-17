@@ -54,8 +54,8 @@ __all__ = [  # pyright: ignore[reportUnsupportedDunderAll]
 # pass their own thresholds to ``auto_share_high_value``. Constants are
 # module-level so the cron wrapper and the MCP tool agree on the
 # definition of "share-worthy".
-_AUTO_SHARE_MIN_IMPORTANCE = 3
-_AUTO_SHARE_MIN_FITNESS = 0.5
+_AUTO_SHARE_MIN_IMPORTANCE = 4
+_AUTO_SHARE_MIN_FITNESS = 0.6
 _AUTO_SHARE_MAX_PER_CYCLE = 25
 
 # MULTI_AGENT_ENABLED is dynamically resolved via __getattr__
@@ -847,6 +847,7 @@ def list_share_candidates(
                     AND s.tenant_id = ?
                 WHERE m.deleted_at IS NULL
                   AND m.tenant_id = ?
+                  AND m.category NOT IN ('sessions', 'tests')
                   AND COALESCE(m.importance, 3) >= ?
                   AND COALESCE(m.fitness_score, 1.0) >= ?
                   AND s.id IS NULL
@@ -883,11 +884,9 @@ def auto_share_high_value(
     """Scan high-importance notes and share them into the shared pool.
 
     The "share-worthy" threshold is intentionally *strict* so the cron
-    doesn't flood the pool with low-signal content. The defaults
-    (importance>=4, fitness>=0.6) are the P2 #1 wiring choice —
-    auto-share should be opt-in by virtue of being gated on
-    multi_agent + importance/fitness thresholds, not on the entire
-    corpus.
+    doesn't flood the pool with low-signal content. Sessions and tests
+    are excluded entirely. Defaults (importance>=4, fitness>=0.6) gate
+    auto-share to high-signal content only.
 
     Args:
         agent_id:        identifier of the agent performing the share;
