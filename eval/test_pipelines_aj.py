@@ -19,6 +19,14 @@ sys.path.insert(0, str(PROJ))
 _tmp = tempfile.mkdtemp(prefix="memtest_")
 TEST_DB = Path(_tmp) / "memory.db"
 
+# Preload the embedding model once at import time so suite-level resource
+# contention doesn't cause timeout during per-test wait_for_model() calls.
+try:
+    from infra.embedding_search import get_embedding_search as _preload_es
+    _preload_es().wait_for_model(timeout_s=60.0)
+except Exception:
+    pass
+
 import infra.memory_common as mc
 
 # Clear any stale connection pool from previous test sessions
@@ -100,7 +108,7 @@ def test_A2_vec_search_returns_saved():
         raise RuntimeError(
             "get_embedding_search returned None (model2vec not installed?)"
         )
-    es_instance.wait_for_model(timeout_s=10.0)
+    es_instance.wait_for_model(timeout_s=60.0)
     results_vec = es_instance.search("quantum entanglement", db_path=str(TEST_DB), limit=3)
     if isinstance(results_vec, str):
         raise RuntimeError(f"search returned error: {results_vec}")

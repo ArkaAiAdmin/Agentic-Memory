@@ -15,6 +15,15 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Preload the embedding model once at import time so suite-level resource
+# contention doesn't cause timeout during per-test setUp rebuild_index() calls.
+try:
+    from infra.embedding_search import get_embedding_search
+    _es = get_embedding_search()
+    _es.wait_for_model(timeout_s=60.0)
+except Exception:
+    pass
+
 
 class _TempDirMixin:
     """Mixin that sets up a temporary directory with env vars and
