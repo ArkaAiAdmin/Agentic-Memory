@@ -336,7 +336,7 @@ The CK-CRDT framework has three structural failure modes. **First, content-key c
 
 ## 9. Extensions
 
-We address the four questions from §1.2. Theorems 5 and 6 follow directly from Theorem 4. Theorems 7 and 8 are sufficient conditions under their stated assumptions.
+We address the four questions from §1.2. Theorems 5 and 6 follow directly from Theorem 4. Theorems 6 and 7 are sufficient conditions under their stated assumptions.
 
 ### 9.1 Theorem 4: Multi-key CK-CRDTs
 
@@ -356,7 +356,7 @@ Let $\kappa'(o) = (\kappa_1(o), \kappa_2(o))$ where $\kappa_i : \mathcal{O} \to 
 
 ### 9.2 Theorem 5: Deterministic Approximate Keys
 
-**Theorem 6 (Deterministic approximate keys).** Let $\kappa : \mathcal{O} \to K$ be an approximate content key (e.g., based on Levenshtein distance or Jaccard similarity). If $\kappa$ is deterministic — same inputs produce the same key — then the CK-CRDT $(\kappa, \rho)$ converges. If $\kappa$ is non-deterministic (same inputs produce different keys on different peers), convergence fails by (K1) violation.
+**Theorem 5 (Deterministic approximate keys).** Let $\kappa : \mathcal{O} \to K$ be an approximate content key (e.g., based on Levenshtein distance or Jaccard similarity). If $\kappa$ is deterministic — same inputs produce the same key — then the CK-CRDT $(\kappa, \rho)$ converges. If $\kappa$ is non-deterministic (same inputs produce different keys on different peers), convergence fails by (K1) violation.
 
 *Proof:* If $\kappa$ is deterministic, (K1) holds by definition. For (K2): the similarity metric operates on the operation's content fields as its sole input — peer-local reference sets are not used in $\kappa$ computation. For (K3): a metadata update that does not change content fields leaves the similarity between any two operations unchanged. Convergence follows from Theorem 3. If $\kappa$ is non-deterministic, (K1) is violated, and convergence may fail (per the K1 violation construction in §6). $\square$
 
@@ -376,7 +376,7 @@ Let $\kappa'(o) = (\kappa_1(o), \kappa_2(o))$ where $\kappa_i : \mathcal{O} \to 
 
 **Corollary 5.** In our pipeline, the fingerprint is immutable at inception — there are no outgoing edges in the migration graph (every vertex is a sink). This is the trivially acyclic case. A system that allows fingerprint re-computation (e.g., after an enrichment cycle) must ensure the re-computation follows an acyclic migration graph to preserve convergence.
 
-### 9.4 Theorem 8: Delta-CRDT Composition
+### 9.4 Theorem 7: Delta-CRDT Composition
 
 **Theorem 7 (Delta-CRDT Composition — Sufficiency).** Let $(\kappa, \{\rho_k\}, M)$ be a CK-CRDT and let $\delta : S \to \Delta$ be a delta-computation function that computes a compact representation of the state transition, where $S$ is the set of canonical states (subsets of $\mathcal{O}$). We say $\delta$ is *stratified* if it depends only on $M(B)$ (the merge output), not on $B$ directly. If $\delta$ is stratified, then the composition $\delta \circ M$ preserves convergence.
 
@@ -499,7 +499,7 @@ Paper 1 proves convergence for one specific pipeline. Paper 2 proves convergence
 
 2. **Necessity:** Paper 1 assumes K1-K3 hold but doesn't prove they're necessary. Paper 2 proves K1 is both necessary and sufficient (Theorem 4 + counterexample in §6).
 
-3. **Composition:** Paper 1 doesn't address how CK-CRDTs compose with other CRDTs. Paper 2 proves composition with delta-CRDTs (Theorem 8) and multi-key systems (Theorem 5).
+3. **Composition:** Paper 1 doesn't address how CK-CRDTs compose with other CRDTs. Paper 2 proves composition with delta-CRDTs (Theorem 7) and multi-key systems (Theorem 5).
 
 4. **Limits:** Paper 1 doesn't identify where the pipeline breaks. Paper 2 identifies three structural failure modes (§8.4): key collisions, cross-class causality, and adaptive key cycles.
 
