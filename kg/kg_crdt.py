@@ -115,7 +115,10 @@ def vv_dominates(a: dict[str, int], b: dict[str, int]) -> bool:
 
     a dominates b iff for every agent, a's clock >= b's clock,
     AND a has at least one strict greater.
+    Empty VVs never dominate (consistent with paper_pipeline/crdt_projection.py).
     """
+    if not a or not b:
+        return False
     a_at_least = all(a.get(agent, 0) >= b.get(agent, 0) for agent in set(a) | set(b))
     a_strict = any(a.get(agent, 0) > b.get(agent, 0) for agent in set(a) | set(b))
     return a_at_least and a_strict
@@ -189,7 +192,8 @@ class EntityOp:
     name: str
     entity_type: str
     description: str
-    timestamp: float
+    fingerprint: str = ""
+    timestamp: float = 0.0
 
 
 def merge_entity_ops(ops: Iterable[EntityOp]) -> dict[int, dict[str, Any]]:
@@ -262,11 +266,20 @@ def merge_entity_ops(ops: Iterable[EntityOp]) -> dict[int, dict[str, Any]]:
                         winner_op = candidate
             return str(winner_op.__dict__[field_name])
 
+        # Fingerprint: immutable at inception; take from first add op that has one.
+        # All adds for the same entity_id carry the same fingerprint.
+        fp = ""
+        for a in adds:
+            if a.fingerprint:
+                fp = a.fingerprint
+                break
+
         result[entity_id] = {
             "tombstone": False,
             "name": _winner("name"),
             "entity_type": _winner("entity_type"),
             "description": _winner("description"),
+            "fingerprint": fp,
         }
     return result
 
@@ -281,7 +294,7 @@ def compute_entity_crdt_state(conn: AnyConnection) -> dict[int, dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT entity_id, agent_id, op, version_vector, name,
-               entity_type, description, timestamp
+               entity_type, description, fingerprint, timestamp
         FROM kg_entity_crdt
         """
     ).fetchall()
@@ -294,7 +307,8 @@ def compute_entity_crdt_state(conn: AnyConnection) -> dict[int, dict[str, Any]]:
             name=row[4] or "",
             entity_type=row[5] or "",
             description=row[6] or "",
-            timestamp=row[7] or 0.0,
+            fingerprint=row[7] or "",
+            timestamp=row[8] or 0.0,
         )
         for row in rows
     ]
