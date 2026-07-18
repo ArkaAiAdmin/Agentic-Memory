@@ -68,6 +68,11 @@ _mock_st.popover = MagicMock(return_value=_cm)
 _mock_st.columns = lambda n=2, **kw: [MagicMock() for _ in range(n if isinstance(n, int) else len(n))]
 _mock_st.tabs = MagicMock(return_value=[MagicMock() for _ in range(14)])
 
+# Save the real modules so we can restore them after importing the
+# dashboard package. Leaving the mocks in sys.modules permanently leaks
+# into other test modules run later in the same pytest process.
+_real_streamlit = sys.modules.get("streamlit")
+_real_infra_infra = sys.modules.get("infra.infrastructure")
 sys.modules["streamlit"] = _mock_st
 
 # Mock infra.infrastructure
@@ -130,6 +135,20 @@ from dashboard.tabs import (
     render_multi_agent,
     render_overview,
 )
+
+# Restore the real streamlit / infra.infrastructure modules now that the
+# dashboard package has finished importing. The dashboard's own st reference
+# was captured at import time, so removing the mock from sys.modules does not
+# affect this test's behaviour but prevents the mock from leaking into other
+# test modules (e.g. mcp_audit's @with_audit decorator) in the same process.
+if _real_streamlit is not None:
+    sys.modules["streamlit"] = _real_streamlit
+else:
+    sys.modules.pop("streamlit", None)
+if _real_infra_infra is not None:
+    sys.modules["infra.infrastructure"] = _real_infra_infra
+else:
+    sys.modules.pop("infra.infrastructure", None)
 
 
 def _mock_conn(fetchone_return: tuple | None = (42,)) -> MagicMock:

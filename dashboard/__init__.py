@@ -500,3 +500,24 @@ TABS = [
     "Audit Log",
     "Explorer",
 ]
+
+__all__ = [
+    "CSS",
+    "DARK",
+    "TABS",
+    "DB",
+    "MEM_DIR",
+    "ROOT",
+    "resolve_db",
+    "get_conn",
+    "query",
+    "table",
+    "try_count",
+    "_table_status",
+    "_get_schema_version",
+    "_fmt_date",
+    "_live_health",
+    "_render_memory_content",
+    "_auto_refresh",
+    "_blob_weight",
+]
