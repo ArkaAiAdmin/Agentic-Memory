@@ -1,0 +1,262 @@
+- generic [ref=e2]:
+  - generic [ref=e11]:
+    - generic [ref=e14]:
+      - generic [ref=e15]: 🧠
+      - generic [ref=e16]:
+        - generic [ref=e17]: Agentic Memory
+        - generic [ref=e18]: Local Agent Memory System
+    - paragraph [ref=e23]:
+      - code [ref=e24]: memory
+      - text: · 391 MB
+    - heading "System Overview" [level=3] [ref=e29]
+    - generic [ref=e31]:
+      - generic [ref=e33]:
+        - generic [ref=e36]:
+          - paragraph [ref=e39]: Memories
+          - paragraph [ref=e42]: "7044"
+        - generic [ref=e45]:
+          - paragraph [ref=e48]: Edges
+          - paragraph [ref=e51]: "800"
+      - generic [ref=e53]:
+        - generic [ref=e56]:
+          - paragraph [ref=e59]: Entities
+          - paragraph [ref=e62]: "417"
+        - generic [ref=e65]:
+          - paragraph [ref=e68]: Pinned
+          - paragraph [ref=e71]: "4"
+      - generic [ref=e73]:
+        - generic [ref=e76]:
+          - paragraph [ref=e79]: Facts
+          - paragraph [ref=e82]: "234"
+        - generic [ref=e85]:
+          - paragraph [ref=e88]: DB
+          - paragraph [ref=e91]: 391 MB
+    - separator [ref=e93]
+    - paragraph [ref=e98]: Quick Actions
+    - button "↻ Refresh Now" [ref=e101] [cursor=pointer]:
+      - generic:
+        - generic:
+          - generic:
+            - paragraph: ↻ Refresh Now
+    - generic [ref=e106]: live · 17:59:30 UTC
+  - generic [ref=e3]:
+    - banner [ref=e113]:
+      - generic [ref=e115]:
+        - button "keyboard_double_arrow_right" [ref=e639] [cursor=pointer]
+        - generic [ref=e116]:
+          - button "Deploy" [ref=e118] [cursor=pointer]
+          - button "Main menu" [ref=e122] [cursor=pointer]
+    - generic [ref=e128]:
+      - tablist [ref=e130]:
+        - tab [ref=e131] [cursor=pointer]:
+          - paragraph [ref=e133]: Overview
+        - tab [ref=e134] [cursor=pointer]:
+          - paragraph [ref=e136]: Memories
+        - tab [ref=e137] [cursor=pointer]:
+          - paragraph [ref=e139]: Knowledge Graph
+        - tab [ref=e140] [cursor=pointer]:
+          - paragraph [ref=e142]: Embeddings
+        - tab [ref=e143] [cursor=pointer]:
+          - paragraph [ref=e145]: Facts
+        - tab [ref=e146] [cursor=pointer]:
+          - paragraph [ref=e148]: Concept Drift
+        - tab [active] [selected] [ref=e149] [cursor=pointer]:
+          - paragraph [ref=e151]: CTR Feedback
+        - tab [ref=e152] [cursor=pointer]:
+          - paragraph [ref=e154]: Benchmarks
+        - tab [ref=e155] [cursor=pointer]:
+          - paragraph [ref=e157]: Cron
+        - tab [ref=e158] [cursor=pointer]:
+          - paragraph [ref=e160]: Multi-Agent
+        - tab [ref=e161] [cursor=pointer]:
+          - paragraph [ref=e163]: Health
+        - tab [ref=e164] [cursor=pointer]:
+          - paragraph [ref=e166]: Backups
+        - tab [ref=e167] [cursor=pointer]:
+          - paragraph [ref=e169]: Audit Log
+        - tab [ref=e170] [cursor=pointer]:
+          - paragraph [ref=e172]: Explorer
+      - tabpanel "CTR Feedback" [ref=e1955]:
+        - generic [ref=e1956]:
+          - heading "CTR Feedback & Search Quality" [level=3] [ref=e1961]:
+            - text: CTR Feedback & Search Quality
+            - generic [ref=e1962]:
+              - link "Link to heading":
+                - /url: "#ctr-feedback-and-search-quality"
+          - generic [ref=e1964]:
+            - generic [ref=e1969]:
+              - paragraph [ref=e1972]: Impressions
+              - paragraph [ref=e1975]: "1217"
+            - generic [ref=e1980]:
+              - paragraph [ref=e1983]: Clicked
+              - paragraph [ref=e1986]: "1"
+            - generic [ref=e1991]:
+              - paragraph [ref=e1994]: Dismissed
+              - paragraph [ref=e1997]: "1"
+            - generic [ref=e2002]:
+              - paragraph [ref=e2005]: CTR
+              - paragraph [ref=e2008]: 0.1%
+            - generic [ref=e2013]:
+              - paragraph [ref=e2016]: Unique Queries
+              - paragraph [ref=e2019]: "351"
+          - separator [ref=e2024]
+          - generic [ref=e2026]:
+            - generic [ref=e2028]:
+              - heading "CTR Over Time" [level=4] [ref=e2034]:
+                - text: CTR Over Time
+                - generic [ref=e2035]:
+                  - link "Link to heading":
+                    - /url: "#ctr-over-time"
+              - generic [ref=e2041]:
+                - img:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: 12:00Jul 13, 2026
+                        - generic: 00:00Jul 14, 2026
+                        - generic: 12:00
+                        - generic: 00:00Jul 15, 2026
+                        - generic: 12:00
+                        - generic: 00:00Jul 16, 2026
+                        - generic: 12:00
+                      - generic:
+                        - generic: "0"
+                        - generic: "200"
+                        - generic: "400"
+                        - generic: "600"
+                        - generic: "800"
+                      - generic:
+                        - generic:
+                          - generic: "0"
+                          - generic: "0.1"
+                          - generic: "0.2"
+                          - generic: "0.3"
+                - img:
+                  - generic:
+                    - generic [ref=e2062]:
+                      - generic [ref=e2063]: Impressions
+                      - generic [ref=e2070]: Clicks
+                      - generic [ref=e2077]: CTR %
+                    - generic: undefined
+                    - generic: Count
+                    - generic: CTR %
+                - toolbar [ref=e2084]:
+                  - button "Download plot as a PNG" [ref=e2086] [cursor=pointer]
+                  - generic [ref=e2089]:
+                    - button "Zoom" [ref=e2090] [cursor=pointer]
+                    - button "Pan" [ref=e2093] [cursor=pointer]
+                  - generic [ref=e2096]:
+                    - button "Zoom in" [ref=e2097] [cursor=pointer]
+                    - button "Zoom out" [ref=e2100] [cursor=pointer]
+                    - button "Autoscale" [ref=e2103] [cursor=pointer]
+                    - button "Reset axes" [ref=e2106] [cursor=pointer]
+                  - button "Fullscreen" [ref=e2110] [cursor=pointer]
+            - generic [ref=e2114]:
+              - heading "By Source" [level=4] [ref=e2120]:
+                - text: By Source
+                - generic [ref=e2121]:
+                  - link "Link to heading":
+                    - /url: "#by-source"
+              - generic [ref=e2127]:
+                - img:
+                  - generic:
+                    - generic:
+                      - generic: "1217"
+                      - generic: search
+                      - generic:
+                        - generic: "0"
+                        - generic: "500"
+                        - generic: "1000"
+                - img:
+                  - generic:
+                    - generic: undefined
+                    - generic: Impressions
+                - toolbar [ref=e2141]:
+                  - button "Download plot as a PNG" [ref=e2143] [cursor=pointer]
+                  - generic [ref=e2146]:
+                    - button "Zoom" [ref=e2147] [cursor=pointer]
+                    - button "Pan" [ref=e2150] [cursor=pointer]
+                  - generic [ref=e2153]:
+                    - button "Zoom in" [ref=e2154] [cursor=pointer]
+                    - button "Zoom out" [ref=e2157] [cursor=pointer]
+                    - button "Autoscale" [ref=e2160] [cursor=pointer]
+                    - button "Reset axes" [ref=e2163] [cursor=pointer]
+                  - button "Fullscreen" [ref=e2167] [cursor=pointer]
+          - generic [ref=e2171]:
+            - generic [ref=e2176]:
+              - paragraph [ref=e2179]: Avg nDCG@10
+              - paragraph [ref=e2182]: "0.0028"
+            - generic [ref=e2187]:
+              - paragraph [ref=e2190]: Queries with clicks
+              - paragraph [ref=e2193]: 1/351
+            - generic [ref=e2198]:
+              - paragraph [ref=e2201]: Total queries
+              - paragraph [ref=e2204]: "351"
+          - generic [ref=e2210]:
+            - img:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic: "0"
+                    - generic: "0.2"
+                    - generic: "0.4"
+                    - generic: "0.6"
+                    - generic: "0.8"
+                    - generic: "1"
+                  - generic:
+                    - generic: "0"
+                    - generic: "100"
+                    - generic: "200"
+                    - generic: "300"
+            - img:
+              - generic:
+                - generic: undefined
+                - generic: nDCG@10
+                - generic: Queries
+            - toolbar [ref=e2224]:
+              - button "Download plot as a PNG" [ref=e2226] [cursor=pointer]
+              - generic [ref=e2229]:
+                - button "Zoom" [ref=e2230] [cursor=pointer]
+                - button "Pan" [ref=e2233] [cursor=pointer]
+              - generic [ref=e2236]:
+                - button "Zoom in" [ref=e2237] [cursor=pointer]
+                - button "Zoom out" [ref=e2240] [cursor=pointer]
+                - button "Autoscale" [ref=e2243] [cursor=pointer]
+                - button "Reset axes" [ref=e2246] [cursor=pointer]
+              - button "Fullscreen" [ref=e2250] [cursor=pointer]
+          - group [ref=e2255]:
+            - generic "keyboard_arrow_right Offline retrieval baseline (eval/gold/v1.jsonl)" [ref=e2256] [cursor=pointer]:
+              - generic [ref=e2257]:
+                - generic [ref=e2258]: keyboard_arrow_right
+                - paragraph [ref=e2262]: Offline retrieval baseline (eval/gold/v1.jsonl)
+          - separator [ref=e2267]
+          - generic [ref=e2269]:
+            - generic [ref=e2273]:
+              - paragraph [ref=e2277]: Source
+              - generic [ref=e2280]:
+                - generic [ref=e2281]:
+                  - button "search, close by backspace":
+                    - generic "search" [ref=e2282]
+                  - combobox "Selected search. Source" [ref=e2287]
+                - generic [ref=e2288]:
+                  - button "Clear all" [ref=e2289] [cursor=pointer]
+                  - img "open" [ref=e2291] [cursor=pointer]
+            - generic [ref=e2296]:
+              - paragraph [ref=e2300]: Action
+              - generic [ref=e2302]:
+                - generic [ref=e2303]:
+                  - generic [ref=e2304]: all
+                  - combobox "Selected all. Action" [ref=e2306]
+                - img "open" [ref=e2308]
+            - generic [ref=e2313]:
+              - paragraph [ref=e2317]: Search query_id
+              - textbox "Search query_id" [ref=e2320]:
+                - /placeholder: partial match...
+          - paragraph [ref=e2325]:
+            - strong [ref=e2326]: "200"
+            - text: events
+          - generic [ref=e2331]:
+            - button "Show/hide columns" [ref=e2335] [cursor=pointer]
+            - button "Download as CSV" [ref=e2341] [cursor=pointer]
+            - button "Search" [ref=e2347] [cursor=pointer]
+            - button "Fullscreen" [ref=e2353] [cursor=pointer]

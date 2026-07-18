@@ -1,0 +1,162 @@
+- generic [ref=e2]:
+  - generic [ref=e11]:
+    - generic [ref=e14]:
+      - generic [ref=e15]: 🧠
+      - generic [ref=e16]:
+        - generic [ref=e17]: Agentic Memory
+        - generic [ref=e18]: Local Agent Memory System
+    - paragraph [ref=e23]:
+      - code [ref=e24]: memory
+      - text: · 391 MB
+    - heading "System Overview" [level=3] [ref=e29]
+    - generic [ref=e31]:
+      - generic [ref=e33]:
+        - generic [ref=e36]:
+          - paragraph [ref=e39]: Memories
+          - paragraph [ref=e42]: "7044"
+        - generic [ref=e45]:
+          - paragraph [ref=e48]: Edges
+          - paragraph [ref=e51]: "800"
+      - generic [ref=e53]:
+        - generic [ref=e56]:
+          - paragraph [ref=e59]: Entities
+          - paragraph [ref=e62]: "417"
+        - generic [ref=e65]:
+          - paragraph [ref=e68]: Pinned
+          - paragraph [ref=e71]: "4"
+      - generic [ref=e73]:
+        - generic [ref=e76]:
+          - paragraph [ref=e79]: Facts
+          - paragraph [ref=e82]: "234"
+        - generic [ref=e85]:
+          - paragraph [ref=e88]: DB
+          - paragraph [ref=e91]: 391 MB
+    - separator [ref=e93]
+    - paragraph [ref=e98]: Quick Actions
+    - button "↻ Refresh Now" [ref=e101] [cursor=pointer]:
+      - generic:
+        - generic:
+          - generic:
+            - paragraph: ↻ Refresh Now
+    - generic [ref=e106]: live · 17:59:30 UTC
+  - generic [ref=e3]:
+    - banner [ref=e113]:
+      - generic [ref=e115]:
+        - button "keyboard_double_arrow_right" [ref=e639] [cursor=pointer]
+        - generic [ref=e116]:
+          - button "Deploy" [ref=e118] [cursor=pointer]
+          - button "Main menu" [ref=e122] [cursor=pointer]
+    - generic [ref=e128]:
+      - tablist [ref=e130]:
+        - tab [ref=e131] [cursor=pointer]:
+          - paragraph [ref=e133]: Overview
+        - tab [ref=e134] [cursor=pointer]:
+          - paragraph [ref=e136]: Memories
+        - tab [ref=e137] [cursor=pointer]:
+          - paragraph [ref=e139]: Knowledge Graph
+        - tab [ref=e140] [cursor=pointer]:
+          - paragraph [ref=e142]: Embeddings
+        - tab [ref=e143] [cursor=pointer]:
+          - paragraph [ref=e145]: Facts
+        - tab [ref=e146] [cursor=pointer]:
+          - paragraph [ref=e148]: Concept Drift
+        - tab [ref=e149] [cursor=pointer]:
+          - paragraph [ref=e151]: CTR Feedback
+        - tab [ref=e152] [cursor=pointer]:
+          - paragraph [ref=e154]: Benchmarks
+        - tab [active] [selected] [ref=e155] [cursor=pointer]:
+          - paragraph [ref=e157]: Cron
+        - tab [ref=e158] [cursor=pointer]:
+          - paragraph [ref=e160]: Multi-Agent
+        - tab [ref=e161] [cursor=pointer]:
+          - paragraph [ref=e163]: Health
+        - tab [ref=e164] [cursor=pointer]:
+          - paragraph [ref=e166]: Backups
+        - tab [ref=e167] [cursor=pointer]:
+          - paragraph [ref=e169]: Audit Log
+        - tab [ref=e170] [cursor=pointer]:
+          - paragraph [ref=e172]: Explorer
+      - tabpanel "Cron" [ref=e3052]:
+        - generic [ref=e3053]:
+          - heading "Scheduled Jobs" [level=3] [ref=e3058]:
+            - text: Scheduled Jobs
+            - generic [ref=e3059]:
+              - link "Link to heading":
+                - /url: "#scheduled-jobs"
+          - generic [ref=e3061]:
+            - generic [ref=e3066]:
+              - paragraph [ref=e3069]: Total Jobs
+              - paragraph [ref=e3072]: "8"
+            - generic [ref=e3077]:
+              - paragraph [ref=e3080]: Healthy
+              - paragraph [ref=e3083]: "4"
+            - generic [ref=e3088]:
+              - paragraph [ref=e3091]: Warnings
+              - paragraph [ref=e3094]: "3"
+            - generic [ref=e3099]:
+              - paragraph [ref=e3102]: Errors
+              - paragraph [ref=e3105]: "1"
+          - generic [ref=e3111]:
+            - img:
+              - generic:
+                - generic:
+                  - generic: 50%
+                  - generic: 37.5%
+                  - generic: 12.5%
+            - img:
+              - generic:
+                - generic [ref=e3118]:
+                  - generic [ref=e3119]: Healthy
+                  - generic [ref=e3126]: Warnings
+                  - generic [ref=e3133]: Errors
+                - generic: undefined
+            - toolbar [ref=e3140]:
+              - button "Download plot as a PNG" [ref=e3142] [cursor=pointer]
+              - button "Fullscreen" [ref=e3146] [cursor=pointer]
+          - separator [ref=e3153]
+          - generic [ref=e3158]:
+            - button "Show/hide columns" [ref=e3162] [cursor=pointer]
+            - button "Download as CSV" [ref=e3168] [cursor=pointer]
+            - button "Search" [ref=e3174] [cursor=pointer]
+            - button "Fullscreen" [ref=e3180] [cursor=pointer]
+          - separator [ref=e3196]
+          - group [ref=e3199]:
+            - generic "keyboard_arrow_right 🩸 heartbeat — queued (1 pending)" [ref=e3200] [cursor=pointer]:
+              - generic [ref=e3201]:
+                - generic [ref=e3202]: keyboard_arrow_right
+                - paragraph [ref=e3206]: 🩸 heartbeat — queued (1 pending)
+          - group [ref=e3209]:
+            - 'generic "keyboard_arrow_right 🔍 integrity — failed: cron_integrity_check.py exited 1: stderr= stdout=ERROR: no m..." [ref=e3210] [cursor=pointer]':
+              - generic [ref=e3211]:
+                - generic [ref=e3212]: keyboard_arrow_right
+                - paragraph [ref=e3216]: "🔍 integrity — failed: cron_integrity_check.py exited 1: stderr= stdout=ERROR: no m..."
+          - group [ref=e3219]:
+            - generic "keyboard_arrow_right ⚙️ worker — queued (1 pending)" [ref=e3220] [cursor=pointer]:
+              - generic [ref=e3221]:
+                - generic [ref=e3222]: keyboard_arrow_right
+                - paragraph [ref=e3226]: ⚙️ worker — queued (1 pending)
+          - group [ref=e3229]:
+            - generic "keyboard_arrow_right 📑 fts-rebuild — completed 3717min ago (event-triggered)" [ref=e3230] [cursor=pointer]:
+              - generic [ref=e3231]:
+                - generic [ref=e3232]: keyboard_arrow_right
+                - paragraph [ref=e3236]: 📑 fts-rebuild — completed 3717min ago (event-triggered)
+          - group [ref=e3239]:
+            - generic "keyboard_arrow_right 🧠 emb-recompute — queued (1 pending)" [ref=e3240] [cursor=pointer]:
+              - generic [ref=e3241]:
+                - generic [ref=e3242]: keyboard_arrow_right
+                - paragraph [ref=e3246]: 🧠 emb-recompute — queued (1 pending)
+          - group [ref=e3249]:
+            - generic "keyboard_arrow_right 🔄 crdt-sync — completed 3709min ago (event-triggered)" [ref=e3250] [cursor=pointer]:
+              - generic [ref=e3251]:
+                - generic [ref=e3252]: keyboard_arrow_right
+                - paragraph [ref=e3256]: 🔄 crdt-sync — completed 3709min ago (event-triggered)
+          - group [ref=e3259]:
+            - generic "keyboard_arrow_right 📰 digest — completed 3709min ago" [ref=e3260] [cursor=pointer]:
+              - generic [ref=e3261]:
+                - generic [ref=e3262]: keyboard_arrow_right
+                - paragraph [ref=e3266]: 📰 digest — completed 3709min ago
+          - group [ref=e3269]:
+            - generic "keyboard_arrow_right 🔄 backfill — completed 3706min ago" [ref=e3270] [cursor=pointer]:
+              - generic [ref=e3271]:
+                - generic [ref=e3272]: keyboard_arrow_right
+                - paragraph [ref=e3276]: 🔄 backfill — completed 3706min ago

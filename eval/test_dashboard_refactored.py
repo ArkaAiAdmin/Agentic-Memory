@@ -211,24 +211,18 @@ class TestPackageImports(_ut.TestCase):
 
     def test_tabs_list_matches_render_functions(self) -> None:
         expected = [
-            "Overview",
+            "Dashboard",
             "Memories",
-            "Knowledge Graph",
-            "Embeddings",
-            "Facts",
-            "Concept Drift",
-            "CTR Feedback",
-            "Benchmarks",
-            "Cron",
-            "Multi-Agent",
-            "Health",
-            "Backups",
-            "Audit Log",
-            "Explorer",
+            "Knowledge",
+            "Quality",
+            "Operations",
+            "Compliance",
+            "Audit",
+            "Settings",
         ]
         self.assertEqual(TABS, expected)
-        # 14 tabs = 14 render functions
-        self.assertEqual(len(TABS), 14)
+        # 8 purpose-driven tabs
+        self.assertEqual(len(TABS), 8)
 
     def test_dark_config_has_expected_keys(self) -> None:
         self.assertIn("paper_bgcolor", DARK)
@@ -444,8 +438,9 @@ class TestSharedHelpersIntegration(_ut.TestCase):
     def test_live_health_includes_core_tables(self) -> None:
         result = _dk._live_health()
         names = [c[0] for c in result["checks"]]
-        self.assertIn("memories", names)
-        self.assertIn("kg_entities", names)
+        # New subsystem checks (replaces old per-table checks)
+        self.assertIn("Database", names)
+        self.assertIn("Knowledge Graph", names)
 
     def test_auto_refresh_exists(self) -> None:
         self.assertTrue(callable(_dk._auto_refresh))

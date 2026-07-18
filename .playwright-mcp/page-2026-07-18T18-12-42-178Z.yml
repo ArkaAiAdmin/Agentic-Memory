@@ -1,0 +1,204 @@
+- generic [ref=f2e2]:
+  - generic [ref=f2e8]:
+    - generic [ref=f2e11]:
+      - generic [ref=f2e12]: 🧠
+      - generic [ref=f2e13]:
+        - generic [ref=f2e14]: Agentic Memory
+        - generic [ref=f2e15]: Local Agent Memory System
+    - paragraph [ref=f2e20]:
+      - code [ref=f2e21]: memory
+      - text: · 391 MB
+    - heading "System Overview" [level=3] [ref=f2e26]
+    - generic [ref=f2e28]:
+      - generic [ref=f2e29]:
+        - generic [ref=f2e32]:
+          - paragraph [ref=f2e35]: Memories
+          - paragraph [ref=f2e38]: "7044"
+        - generic [ref=f2e41]:
+          - paragraph [ref=f2e44]: Edges
+          - paragraph [ref=f2e47]: "800"
+      - generic [ref=f2e48]:
+        - generic [ref=f2e51]:
+          - paragraph [ref=f2e54]: Entities
+          - paragraph [ref=f2e57]: "417"
+        - generic [ref=f2e60]:
+          - paragraph [ref=f2e63]: Pinned
+          - paragraph [ref=f2e66]: "4"
+      - generic [ref=f2e68]:
+        - generic [ref=f2e71]:
+          - paragraph [ref=f2e74]: Facts
+          - paragraph [ref=f2e77]: "234"
+        - generic [ref=f2e80]:
+          - paragraph [ref=f2e83]: DB
+          - paragraph [ref=f2e86]: 391 MB
+    - separator [ref=f2e88]
+    - paragraph [ref=f2e93]: Quick Actions
+    - button "↻ Refresh Now" [ref=f2e96] [cursor=pointer]:
+      - generic:
+        - generic:
+          - generic:
+            - paragraph: ↻ Refresh Now
+    - generic [ref=f2e97]: live · 18:12:29 UTC
+  - generic [ref=f2e3]:
+    - banner [ref=f2e103]:
+      - generic [ref=f2e105]:
+        - button "keyboard_double_arrow_right" [ref=f2e108] [cursor=pointer]
+        - generic [ref=f2e111]:
+          - button "Deploy" [ref=f2e113] [cursor=pointer]
+          - button "Main menu" [ref=f2e117] [cursor=pointer]
+    - generic [ref=f2e122]:
+      - generic [ref=f2e123]:
+        - tablist [ref=f2e125]:
+          - tab [ref=f2e126] [cursor=pointer]:
+            - paragraph [ref=f2e128]: Overview
+          - tab [ref=f2e129] [cursor=pointer]:
+            - paragraph [ref=f2e131]: Memories
+          - tab [ref=f2e132] [cursor=pointer]:
+            - paragraph [ref=f2e134]: Knowledge Graph
+          - tab [ref=f2e135] [cursor=pointer]:
+            - paragraph [ref=f2e137]: Embeddings
+          - tab [ref=f2e138] [cursor=pointer]:
+            - paragraph [ref=f2e140]: Facts
+          - tab [ref=f2e141] [cursor=pointer]:
+            - paragraph [ref=f2e143]: Concept Drift
+          - tab [ref=f2e144] [cursor=pointer]:
+            - paragraph [ref=f2e146]: CTR Feedback
+          - tab [ref=f2e147] [cursor=pointer]:
+            - paragraph [ref=f2e149]: Benchmarks
+          - tab [ref=f2e150] [cursor=pointer]:
+            - paragraph [ref=f2e152]: Cron
+          - tab [active] [selected] [ref=f2e153] [cursor=pointer]:
+            - paragraph [ref=f2e155]: Multi-Agent
+          - tab [ref=f2e156] [cursor=pointer]:
+            - paragraph [ref=f2e158]: Health
+          - tab [ref=f2e159] [cursor=pointer]:
+            - paragraph [ref=f2e161]: Backups
+          - tab [ref=f2e162] [cursor=pointer]:
+            - paragraph [ref=f2e164]: Audit Log
+          - tab [ref=f2e165] [cursor=pointer]:
+            - paragraph [ref=f2e167]: Explorer
+        - tabpanel "Multi-Agent" [ref=f2e632]:
+          - generic [ref=f2e633]:
+            - heading "Multi-Agent Sync" [level=3] [ref=f2e638]:
+              - text: Multi-Agent Sync
+              - generic [ref=f2e639]:
+                - link "Link to heading":
+                  - /url: "#multi-agent-sync"
+            - generic [ref=f2e641]:
+              - generic [ref=f2e646]:
+                - paragraph [ref=f2e649]: Shared memories
+                - paragraph [ref=f2e652]: "25"
+              - generic [ref=f2e657]:
+                - paragraph [ref=f2e660]: Sync peers (config)
+                - paragraph [ref=f2e663]: "2"
+              - generic [ref=f2e668]:
+                - paragraph [ref=f2e671]: CRDT enabled
+                - paragraph [ref=f2e674]: "Yes"
+            - separator [ref=f2e679]
+            - heading "Recent sync cycles" [level=4] [ref=f2e685]:
+              - text: Recent sync cycles
+              - generic [ref=f2e686]:
+                - link "Link to heading":
+                  - /url: "#recent-sync-cycles"
+            - generic [ref=f2e691]:
+              - button "Show/hide columns" [ref=f2e695] [cursor=pointer]
+              - button "Download as CSV" [ref=f2e701] [cursor=pointer]
+              - button "Search" [ref=f2e707] [cursor=pointer]
+              - button "Fullscreen" [ref=f2e713] [cursor=pointer]
+            - separator [ref=f2e729]
+            - heading "Direction breakdown (last 200 cycles)" [level=4] [ref=f2e735]:
+              - text: Direction breakdown (last 200 cycles)
+              - generic [ref=f2e736]:
+                - link "Link to heading":
+                  - /url: "#direction-breakdown-last-200-cycles"
+            - generic [ref=f2e742]:
+              - img:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic: sync
+                      - generic: pull
+                      - generic: push
+                    - generic:
+                      - generic: "0"
+                      - generic: "2"
+                      - generic: "4"
+                      - generic: "6"
+                      - generic: "8"
+                      - generic: "10"
+              - img:
+                - generic:
+                  - generic: undefined
+                  - generic: Direction
+                  - generic: Count
+              - toolbar [ref=f2e756]:
+                - button "Download plot as a PNG" [ref=f2e758] [cursor=pointer]
+                - generic [ref=f2e761]:
+                  - button "Zoom" [ref=f2e762] [cursor=pointer]
+                  - button "Pan" [ref=f2e765] [cursor=pointer]
+                - generic [ref=f2e768]:
+                  - button "Zoom in" [ref=f2e769] [cursor=pointer]
+                  - button "Zoom out" [ref=f2e772] [cursor=pointer]
+                  - button "Autoscale" [ref=f2e775] [cursor=pointer]
+                  - button "Reset axes" [ref=f2e778] [cursor=pointer]
+                - button "Fullscreen" [ref=f2e782] [cursor=pointer]
+            - separator [ref=f2e789]
+            - heading "Peer success rate (last 200 cycles)" [level=4] [ref=f2e795]:
+              - text: Peer success rate (last 200 cycles)
+              - generic [ref=f2e796]:
+                - link "Link to heading":
+                  - /url: "#peer-success-rate-last-200-cycles"
+            - generic [ref=f2e802]:
+              - img:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic: "0"
+                      - generic: "10"
+                      - generic: "20"
+                      - generic: "30"
+                      - generic: "40"
+                      - generic: "50"
+                      - generic: "60"
+                      - generic: "70"
+                      - generic: "80"
+                      - generic: "90"
+                    - generic:
+                      - generic: local
+                      - generic: 127.0.0.1:9877
+              - img:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic: "0"
+                      - generic: "50"
+                      - generic: "100"
+                    - generic: Success rate
+                  - generic: undefined
+                  - generic: Success rate
+                  - generic: Peer
+              - toolbar [ref=f2e816]:
+                - button "Download plot as a PNG" [ref=f2e818] [cursor=pointer]
+                - generic [ref=f2e821]:
+                  - button "Zoom" [ref=f2e822] [cursor=pointer]
+                  - button "Pan" [ref=f2e825] [cursor=pointer]
+                - generic [ref=f2e828]:
+                  - button "Zoom in" [ref=f2e829] [cursor=pointer]
+                  - button "Zoom out" [ref=f2e832] [cursor=pointer]
+                  - button "Autoscale" [ref=f2e835] [cursor=pointer]
+                  - button "Reset axes" [ref=f2e838] [cursor=pointer]
+                - button "Fullscreen" [ref=f2e842] [cursor=pointer]
+            - separator [ref=f2e849]
+            - heading "Shared memory pool" [level=4] [ref=f2e855]:
+              - text: Shared memory pool
+              - generic [ref=f2e856]:
+                - link "Link to heading":
+                  - /url: "#shared-memory-pool"
+            - paragraph [ref=f2e861]: Showing 25 of 25 shared entries (2 local + 23 from partner agent)
+            - generic [ref=f2e866]:
+              - button "Show/hide columns" [ref=f2e870] [cursor=pointer]
+              - button "Download as CSV" [ref=f2e876] [cursor=pointer]
+              - button "Search" [ref=f2e882] [cursor=pointer]
+              - button "Fullscreen" [ref=f2e888] [cursor=pointer]
+      - button "Scroll tabs left" [ref=f2e900] [cursor=pointer]
+      - button "Scroll tabs right" [ref=f2e626] [cursor=pointer]

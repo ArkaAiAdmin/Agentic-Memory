@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""LEGACY tab module — kept for backward compatibility with tests.
+
+The active dashboard now uses tab_dashboard.py, tab_memories.py, tab_knowledge.py,
+tab_operations.py, tab_audit.py, tab_settings.py instead.
+"""
 from __future__ import annotations
 
 import gzip

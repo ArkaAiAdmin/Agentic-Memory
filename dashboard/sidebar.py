@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 import streamlit as st
 
 import dashboard
+from dashboard import _run_health_checks, _compute_health_score, try_count
 
 
 def render_sidebar():
@@ -19,9 +21,6 @@ def render_sidebar():
     )
 
     # ── Agent selector ──────────────────────────────────────────────────
-    # The install runs two agent processes (OpenCode + MIMOCODE), each with
-    # its own physical DB. Surface a switcher so the dashboard can show
-    # EITHER agent's full store instead of being hard-wired to one.
     _base = dashboard.resolve_db().parent
     _agents = {
         "OpenCode": _base / "memory.db",
@@ -37,8 +36,6 @@ def render_sidebar():
             index=list(_valid.keys()).index(st.session_state["agent_view"]),
             key="agent_view_select",
         )
-        # Switching the active agent store must invalidate the data caches
-        # (try_count/table/query are keyed only on their SQL args, not on DB).
         if st.session_state.get("agent_view_db") != str(_valid[_choice]):
             st.cache_data.clear()
         st.session_state["agent_view"] = _choice
@@ -54,12 +51,11 @@ def render_sidebar():
     with st.sidebar:
         st.markdown("### System Overview")
 
-        n_mem = dashboard.try_count("memories")
-        n_ent = dashboard.try_count("kg_entities")
-        n_edg = dashboard.try_count("kg_edges")
-        n_audit = dashboard.try_count("memory_audit_log")
-        n_pin = dashboard.try_count("memories", "pinned=1")
-        n_facts = dashboard.try_count("kg_facts")
+        n_mem = try_count("memories")
+        n_ent = try_count("kg_entities")
+        n_edg = try_count("kg_edges")
+        n_facts = try_count("kg_facts")
+        n_pin = try_count("memories", "pinned=1")
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Memories", n_mem)
@@ -72,9 +68,36 @@ def render_sidebar():
 
         st.divider()
 
-        st.caption("Quick Actions")
+        # ── Quick health snapshot ────────────────────────────────────────
+        st.markdown("### Health")
+        checks = _run_health_checks()
+        score, label = _compute_health_score(checks)
+        color = "#10b981" if score >= 80 else "#f59e0b" if score >= 60 else "#ef4444"
+        st.html(
+            f"<div style='display:flex;align-items:center;gap:8px;padding:6px 0;'>"
+            f"<span style='color:{color};font-size:1.3rem;font-weight:700;'>{score}</span>"
+            f"<span style='color:#9ca3af;font-size:0.75rem;'>{label}</span>"
+            f"</div>"
+        )
+
+        n_warn = sum(1 for c in checks if c["status"] == "warning")
+        n_err = sum(1 for c in checks if c["status"] == "error")
+        if n_err > 0:
+            st.sidebar.error(f"{n_err} error(s) detected")
+        elif n_warn > 0:
+            st.sidebar.warning(f"{n_warn} warning(s)")
+        else:
+            st.sidebar.success("All systems nominal")
+
+        st.divider()
+
+        # ── Quick Actions ────────────────────────────────────────────────
+        st.markdown("### Quick Actions")
+
         if st.button("\u21bb Refresh Now", key="sidebar_refresh", width="stretch"):
             st.rerun()
+
+        # Live indicator
         st.html(
             f"<div style='display:flex;align-items:center;gap:6px;margin-top:4px;'>"
             f"<span style='width:6px;height:6px;border-radius:50%;background:#10b981;animation:pulse-dot 2s ease-in-out infinite;display:inline-block;'></span>"
@@ -89,3 +112,13 @@ def render_sidebar():
         }
         </style>
         """)
+
+        # ── Keyboard shortcuts ──────────────────────────────────────────
+        with st.expander("\u2328\ufe0f Shortcuts", expanded=False):
+            st.html(
+                "<div style='font-size:0.7rem;color:#9ca3af;line-height:1.8;'>"
+                "<b>/</b> — Focus search &nbsp; <b>r</b> — Refresh<br>"
+                "<b>1-6</b> — Switch tabs &nbsp; <b>e</b> — Edit memory<br>"
+                "<b>?</b> — Show this help"
+                "</div>"
+            )

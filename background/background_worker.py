@@ -713,6 +713,7 @@ HANDLERS.update(
         "graph_communities": _lazy_graph_communities,
         "graph_snapshots": _lazy_graph_snapshots,
         "revalidate_entailments": _lazy_revalidate_entailments,
+        "cron_revalidate_entailments": _lazy_revalidate_entailments,
         "cron_resolve_contradictions": _lazy_resolve_contradictions,
         "cron_review_beliefs": _lazy_review_beliefs,
     }

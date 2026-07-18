@@ -1,0 +1,200 @@
+- generic [ref=e2]:
+  - generic [ref=e11]:
+    - generic [ref=e14]:
+      - generic [ref=e15]: 🧠
+      - generic [ref=e16]:
+        - generic [ref=e17]: Agentic Memory
+        - generic [ref=e18]: Local Agent Memory System
+    - paragraph [ref=e23]:
+      - code [ref=e24]: memory
+      - text: · 391 MB
+    - heading "System Overview" [level=3] [ref=e29]
+    - generic [ref=e31]:
+      - generic [ref=e33]:
+        - generic [ref=e36]:
+          - paragraph [ref=e39]: Memories
+          - paragraph [ref=e42]: "7044"
+        - generic [ref=e45]:
+          - paragraph [ref=e48]: Edges
+          - paragraph [ref=e51]: "800"
+      - generic [ref=e53]:
+        - generic [ref=e56]:
+          - paragraph [ref=e59]: Entities
+          - paragraph [ref=e62]: "417"
+        - generic [ref=e65]:
+          - paragraph [ref=e68]: Pinned
+          - paragraph [ref=e71]: "4"
+      - generic [ref=e73]:
+        - generic [ref=e76]:
+          - paragraph [ref=e79]: Facts
+          - paragraph [ref=e82]: "234"
+        - generic [ref=e85]:
+          - paragraph [ref=e88]: DB
+          - paragraph [ref=e91]: 391 MB
+    - separator [ref=e93]
+    - paragraph [ref=e98]: Quick Actions
+    - button "↻ Refresh Now" [ref=e101] [cursor=pointer]:
+      - generic:
+        - generic:
+          - generic:
+            - paragraph: ↻ Refresh Now
+    - generic [ref=e106]: live · 17:59:30 UTC
+  - generic [ref=e3]:
+    - banner [ref=e113]:
+      - generic [ref=e115]:
+        - button "keyboard_double_arrow_right" [ref=e639] [cursor=pointer]
+        - generic [ref=e116]:
+          - button "Deploy" [ref=e118] [cursor=pointer]
+          - button "Main menu" [ref=e122] [cursor=pointer]
+    - generic [ref=e128]:
+      - tablist [ref=e130]:
+        - tab [ref=e131] [cursor=pointer]:
+          - paragraph [ref=e133]: Overview
+        - tab [ref=e134] [cursor=pointer]:
+          - paragraph [ref=e136]: Memories
+        - tab [ref=e137] [cursor=pointer]:
+          - paragraph [ref=e139]: Knowledge Graph
+        - tab [ref=e140] [cursor=pointer]:
+          - paragraph [ref=e142]: Embeddings
+        - tab [ref=e143] [cursor=pointer]:
+          - paragraph [ref=e145]: Facts
+        - tab [active] [selected] [ref=e146] [cursor=pointer]:
+          - paragraph [ref=e148]: Concept Drift
+        - tab [ref=e149] [cursor=pointer]:
+          - paragraph [ref=e151]: CTR Feedback
+        - tab [ref=e152] [cursor=pointer]:
+          - paragraph [ref=e154]: Benchmarks
+        - tab [ref=e155] [cursor=pointer]:
+          - paragraph [ref=e157]: Cron
+        - tab [ref=e158] [cursor=pointer]:
+          - paragraph [ref=e160]: Multi-Agent
+        - tab [ref=e161] [cursor=pointer]:
+          - paragraph [ref=e163]: Health
+        - tab [ref=e164] [cursor=pointer]:
+          - paragraph [ref=e166]: Backups
+        - tab [ref=e167] [cursor=pointer]:
+          - paragraph [ref=e169]: Audit Log
+        - tab [ref=e170] [cursor=pointer]:
+          - paragraph [ref=e172]: Explorer
+      - tabpanel "Concept Drift" [ref=e1702]:
+        - generic [ref=e1703]:
+          - heading "Concept Drift & Quality" [level=3] [ref=e1708]:
+            - text: Concept Drift & Quality
+            - generic [ref=e1709]:
+              - link "Link to heading":
+                - /url: "#concept-drift-and-quality"
+          - generic [ref=e1711]:
+            - generic [ref=e1716]:
+              - paragraph [ref=e1719]: Drift Events
+              - paragraph [ref=e1722]: "1"
+            - generic [ref=e1727]:
+              - paragraph [ref=e1730]: Alarms
+              - paragraph [ref=e1733]: "10"
+            - generic [ref=e1738]:
+              - paragraph [ref=e1741]: Unacknowledged
+              - paragraph [ref=e1744]: "10"
+            - generic [ref=e1749]:
+              - paragraph [ref=e1752]: Avg Drift Score
+              - paragraph [ref=e1755]: —
+          - separator [ref=e1760]
+          - generic [ref=e1762]:
+            - generic [ref=e1770]:
+              - img:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic: 13:35:03.2145Jul 14, 2026
+                      - generic: 13:35:03.215
+                      - generic: 13:35:03.2155
+                      - generic: 13:35:03.216
+                    - generic:
+                      - generic: "0"
+                      - generic: "0.2"
+                      - generic: "0.4"
+                      - generic: "0.6"
+                      - generic: "0.8"
+                      - generic: "1"
+              - img:
+                - generic:
+                  - generic: undefined
+                  - generic: Drift Metric
+                  - generic: threshold (0.15)
+              - toolbar [ref=e1784]:
+                - button "Download plot as a PNG" [ref=e1786] [cursor=pointer]
+                - generic [ref=e1789]:
+                  - button "Zoom" [ref=e1790] [cursor=pointer]
+                  - button "Pan" [ref=e1793] [cursor=pointer]
+                - generic [ref=e1796]:
+                  - button "Zoom in" [ref=e1797] [cursor=pointer]
+                  - button "Zoom out" [ref=e1800] [cursor=pointer]
+                  - button "Autoscale" [ref=e1803] [cursor=pointer]
+                  - button "Reset axes" [ref=e1806] [cursor=pointer]
+                - button "Fullscreen" [ref=e1810] [cursor=pointer]
+            - generic [ref=e1820]:
+              - img:
+                - generic: 100%
+              - img:
+                - generic:
+                  - generic [ref=e1822]: info
+                  - generic: Alarm Distribution
+              - toolbar [ref=e1833]:
+                - button "Download plot as a PNG" [ref=e1835] [cursor=pointer]
+                - button "Fullscreen" [ref=e1839] [cursor=pointer]
+          - generic [ref=e1847]:
+            - img:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic: "100"
+                    - generic: "200"
+                    - generic: "300"
+                    - generic: "400"
+                    - generic: "500"
+                    - generic: "600"
+                    - generic: "700"
+                  - generic:
+                    - generic: −0.2
+                    - generic: −0.1
+                    - generic: "0"
+                    - generic: "0.1"
+            - img:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic: −0.2
+                    - generic: −0.1
+                    - generic: "0"
+                    - generic: "0.1"
+                  - generic: weight
+                - generic: Top drifted dimensions (latest event)
+                - generic: dim
+                - generic: weight
+            - toolbar [ref=e1861]:
+              - button "Download plot as a PNG" [ref=e1863] [cursor=pointer]
+              - generic [ref=e1866]:
+                - button "Zoom" [ref=e1867] [cursor=pointer]
+                - button "Pan" [ref=e1870] [cursor=pointer]
+              - generic [ref=e1873]:
+                - button "Zoom in" [ref=e1874] [cursor=pointer]
+                - button "Zoom out" [ref=e1877] [cursor=pointer]
+                - button "Autoscale" [ref=e1880] [cursor=pointer]
+                - button "Reset axes" [ref=e1883] [cursor=pointer]
+              - button "Fullscreen" [ref=e1887] [cursor=pointer]
+          - separator [ref=e1894]
+          - heading "Drift Alarms" [level=4] [ref=e1900]:
+            - text: Drift Alarms
+            - generic [ref=e1901]:
+              - link "Link to heading":
+                - /url: "#drift-alarms"
+          - generic [ref=e1903]:
+            - paragraph [ref=e1907]: Filter by level
+            - generic [ref=e1909]:
+              - generic [ref=e1910]:
+                - generic [ref=e1911]: all
+                - combobox "Selected all. Filter by level" [ref=e1913]
+              - img "open" [ref=e1915]
+          - generic [ref=e1921]:
+            - button "Show/hide columns" [ref=e1925] [cursor=pointer]
+            - button "Download as CSV" [ref=e1931] [cursor=pointer]
+            - button "Search" [ref=e1937] [cursor=pointer]
+            - button "Fullscreen" [ref=e1943] [cursor=pointer]

@@ -11,22 +11,14 @@ import streamlit as st
 import dashboard  # noqa: E402
 from dashboard import CSS, DARK, TABS, resolve_db
 from dashboard.sidebar import render_sidebar
-from dashboard.tabs import (
-    render_audit_log,
-    render_backups,
-    render_benchmarks,
-    render_concept_drift,
-    render_cron,
-    render_ctr_feedback,
-    render_embeddings,
-    render_explorer,
-    render_facts,
-    render_health,
-    render_knowledge_graph,
-    render_memories,
-    render_multi_agent,
-    render_overview,
-)
+from dashboard.tab_dashboard import render_dashboard
+from dashboard.tab_memories import render_memories
+from dashboard.tab_knowledge import render_knowledge
+from dashboard.tab_quality import render_quality
+from dashboard.tab_operations import render_operations
+from dashboard.tab_compliance import render_compliance
+from dashboard.tab_audit import render_audit
+from dashboard.tab_settings import render_settings
 
 logger = logging.getLogger(__name__)
 
@@ -54,104 +46,62 @@ _dk.MEM_DIR = _dk.DB.parent
 # ── Sidebar ──────────────────────────────────────────────────────────────
 render_sidebar()
 
-# ── Tabs ─────────────────────────────────────────────────────────────────
+# ── Tabs (8 purpose-driven) ─────────────────────────────────────────────
 (
-    overview_tab,
+    dashboard_tab,
     memories_tab,
-    kg_tab,
-    embed_tab,
-    facts_tab,
-    drift_tab,
-    ctr_tab,
-    benchmarks_tab,
-    cron_tab,
-    multi_agent_tab,
-    health_tab,
-    backups_tab,
+    knowledge_tab,
+    quality_tab,
+    operations_tab,
+    compliance_tab,
     audit_tab,
-    search_tab,
+    settings_tab,
 ) = st.tabs(TABS)
 
 # ═══════════════════════════════════════════════════════════════════════════
-# OVERVIEW
+# DASHBOARD (Overview + Health + Activity + Command Palette)
 # ═══════════════════════════════════════════════════════════════════════════
-with overview_tab:
-    render_overview()
+with dashboard_tab:
+    render_dashboard()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# MEMORIES (table)
+# MEMORIES (Browse + Search + Edit + Create)
 # ═══════════════════════════════════════════════════════════════════════════
 with memories_tab:
     render_memories()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# KNOWLEDGE GRAPH
+# KNOWLEDGE (KG + Facts + Embeddings)
 # ═══════════════════════════════════════════════════════════════════════════
-with kg_tab:
-    render_knowledge_graph()
+with knowledge_tab:
+    render_knowledge()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# EMBEDDINGS
+# QUALITY (Quality Center + Staleness + Impact + Timeline + Merges + Sandbox + Gaps)
 # ═══════════════════════════════════════════════════════════════════════════
-with embed_tab:
-    render_embeddings()
+with quality_tab:
+    render_quality()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# FACTS SEARCH
+# OPERATIONS (Cron + Backups + Multi-Agent + Runbook)
 # ═══════════════════════════════════════════════════════════════════════════
-with facts_tab:
-    render_facts()
+with operations_tab:
+    render_operations()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CONCEPT DRIFT
+# COMPLIANCE (RBAC + ACL + GDPR + Tenants + Policy + Audit Check)
 # ═══════════════════════════════════════════════════════════════════════════
-with drift_tab:
-    render_concept_drift()
+with compliance_tab:
+    render_compliance()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CTR FEEDBACK
-# ═══════════════════════════════════════════════════════════════════════════
-with ctr_tab:
-    render_ctr_feedback()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# BENCHMARKS
-# ═══════════════════════════════════════════════════════════════════════════
-with benchmarks_tab:
-    render_benchmarks()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# CRON
-# ═══════════════════════════════════════════════════════════════════════════
-with cron_tab:
-    render_cron()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# MULTI-AGENT SYNC
-# ═══════════════════════════════════════════════════════════════════════════
-with multi_agent_tab:
-    render_multi_agent()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# HEALTH
-# ═══════════════════════════════════════════════════════════════════════════
-with health_tab:
-    render_health()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# BACKUPS
-# ═══════════════════════════════════════════════════════════════════════════
-with backups_tab:
-    render_backups()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# AUDIT LOG
+# AUDIT (Full audit log + Performance)
 # ═══════════════════════════════════════════════════════════════════════════
 with audit_tab:
-    render_audit_log()
+    render_audit()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# EXPLORER
+# SETTINGS (Feature Flags + System Info + Onboarding + Export)
 # ═══════════════════════════════════════════════════════════════════════════
-with search_tab:
-    render_explorer()
+with settings_tab:
+    render_settings()

@@ -108,7 +108,7 @@ Three-layer audit comparing Paper 1 (Three-Phase CRDT Pipeline), Paper 2 (Conten
 
 | Priority | Improvement | Location | Paper Source |
 |----------|------------|----------|-------------|
-| **P0** | Add content-keyed dedup to production — before `_upsert_edge`, compute SHA-256(name\|type\|desc) fingerprint, check if entity exists with same fingerprint, redirect if so | `kg/kg_crdt.py` around `_upsert_edge` (line 680) | Both papers |
+| **P0** | ✅ Fix: Add content-keyed dedup to `_upsert_entity` — compute fingerprint, check before INSERT, backfill on existing rows, normalize entity_type casing | `knowledge_graph/kg_db.py:52` + `knowledge_graph/kg_schema.py:20,106` | Both papers |
 | **P1** | ✅ Fix: Add NFKC normalization + Unicode category stripping to `_compute_fingerprint` | `kg/kg_crdt.py:76` | Paper 1 §2.5 |
 | **P2** | ✅ Fix: Unify `_serialise_vv` format with papers' JSON format | `kg/kg_crdt.py:144` | Paper 1 §5.1 |
 | **P3** | Add `persist_entity_redirects` to write redirects to `kg_entity_redirect` table | Production | Paper 1 §6.2 |
@@ -122,8 +122,8 @@ Three-layer audit comparing Paper 1 (Three-Phase CRDT Pipeline), Paper 2 (Conten
 
 | Dimension | Paper 1 | Paper 2 | Production |
 |-----------|---------|---------|------------|
-| Algorithm-paper alignment | ✅ (3 phases) | ✅ (T1-T4) | ⚠️ Partial (no dedup) |
+| Algorithm-paper alignment | ✅ (3 phases) | ✅ (T1-T4) | ✅ (dedup at write + batch) |
 | Benchmark verifiability | ❌ 5 contradictions | ❌ K mismatch | N/A |
 | Test adequacy | ✅ 86 tests | ✅ 35 tests | N/A |
-| Production relevance | ⚠️ 3 missing functions | ❌ Core algorithm missing | — |
+| Production relevance | ⚠️ 3 missing functions | ✅ (descriptive fingerprint at write + commit) | — |
 | Theorem proof support | N/A (engineering paper) | ⚠️ T1, T5-T8 untested | N/A |

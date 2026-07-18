@@ -1,0 +1,167 @@
+- generic [ref=e2]:
+  - generic [ref=e11]:
+    - generic [ref=e14]:
+      - generic [ref=e15]: 🧠
+      - generic [ref=e16]:
+        - generic [ref=e17]: Agentic Memory
+        - generic [ref=e18]: Local Agent Memory System
+    - paragraph [ref=e23]:
+      - code [ref=e24]: memory
+      - text: · 391 MB
+    - heading "System Overview" [level=3] [ref=e29]
+    - generic [ref=e31]:
+      - generic [ref=e33]:
+        - generic [ref=e36]:
+          - paragraph [ref=e39]: Memories
+          - paragraph [ref=e42]: "7044"
+        - generic [ref=e45]:
+          - paragraph [ref=e48]: Edges
+          - paragraph [ref=e51]: "800"
+      - generic [ref=e53]:
+        - generic [ref=e56]:
+          - paragraph [ref=e59]: Entities
+          - paragraph [ref=e62]: "417"
+        - generic [ref=e65]:
+          - paragraph [ref=e68]: Pinned
+          - paragraph [ref=e71]: "4"
+      - generic [ref=e73]:
+        - generic [ref=e76]:
+          - paragraph [ref=e79]: Facts
+          - paragraph [ref=e82]: "234"
+        - generic [ref=e85]:
+          - paragraph [ref=e88]: DB
+          - paragraph [ref=e91]: 391 MB
+    - separator [ref=e93]
+    - paragraph [ref=e98]: Quick Actions
+    - button "↻ Refresh Now" [ref=e101] [cursor=pointer]:
+      - generic:
+        - generic:
+          - generic:
+            - paragraph: ↻ Refresh Now
+    - generic [ref=e106]: live · 17:59:30 UTC
+  - generic [ref=e3]:
+    - banner [ref=e113]:
+      - generic [ref=e115]:
+        - button "keyboard_double_arrow_right" [ref=e639] [cursor=pointer]
+        - generic [ref=e116]:
+          - button "Deploy" [ref=e118] [cursor=pointer]
+          - button "Main menu" [ref=e122] [cursor=pointer]
+    - generic [ref=e128]:
+      - tablist [ref=e130]:
+        - tab [ref=e131] [cursor=pointer]:
+          - paragraph [ref=e133]: Overview
+        - tab [ref=e134] [cursor=pointer]:
+          - paragraph [ref=e136]: Memories
+        - tab [ref=e137] [cursor=pointer]:
+          - paragraph [ref=e139]: Knowledge Graph
+        - tab [active] [selected] [ref=e140] [cursor=pointer]:
+          - paragraph [ref=e142]: Embeddings
+        - tab [ref=e143] [cursor=pointer]:
+          - paragraph [ref=e145]: Facts
+        - tab [ref=e146] [cursor=pointer]:
+          - paragraph [ref=e148]: Concept Drift
+        - tab [ref=e149] [cursor=pointer]:
+          - paragraph [ref=e151]: CTR Feedback
+        - tab [ref=e152] [cursor=pointer]:
+          - paragraph [ref=e154]: Benchmarks
+        - tab [ref=e155] [cursor=pointer]:
+          - paragraph [ref=e157]: Cron
+        - tab [ref=e158] [cursor=pointer]:
+          - paragraph [ref=e160]: Multi-Agent
+        - tab [ref=e161] [cursor=pointer]:
+          - paragraph [ref=e163]: Health
+        - tab [ref=e164] [cursor=pointer]:
+          - paragraph [ref=e166]: Backups
+        - tab [ref=e167] [cursor=pointer]:
+          - paragraph [ref=e169]: Audit Log
+        - tab [ref=e170] [cursor=pointer]:
+          - paragraph [ref=e172]: Explorer
+      - tabpanel "Embeddings" [ref=e1266]:
+        - generic [ref=e1267]:
+          - heading "Embedding Space" [level=3] [ref=e1272]:
+            - text: Embedding Space
+            - generic [ref=e1273]:
+              - link "Link to heading":
+                - /url: "#embedding-space"
+          - generic [ref=e1275]:
+            - generic [ref=e1279]:
+              - paragraph [ref=e1283]: Filter category
+              - generic [ref=e1286]:
+                - generic [ref=e1287]:
+                  - combobox "Filter category" [ref=e1289]
+                  - generic: Choose options
+                - img "open" [ref=e1291] [cursor=pointer]
+            - generic [ref=e1297]:
+              - paragraph [ref=e1301]: Sample
+              - generic [ref=e1302]:
+                - slider "Sample" [ref=e1306]:
+                  - generic:
+                    - generic:
+                      - paragraph: "600"
+                - generic:
+                  - generic:
+                    - paragraph: "50"
+                  - generic:
+                    - paragraph: "2000"
+            - generic [ref=e1312] [cursor=pointer]:
+              - checkbox "3D view"
+              - paragraph [ref=e1317]: 3D view
+          - generic [ref=e1319]:
+            - paragraph [ref=e1323]: 🔍 Filter by preview text
+            - textbox "🔍 Filter by preview text" [ref=e1326]:
+              - /placeholder: e.g. 'database migration'
+          - generic [ref=e1328]:
+            - paragraph [ref=e1332]: 🔍 Highlight a memory + its neighbors on the plot
+            - generic [ref=e1334]:
+              - combobox "🔍 Highlight a memory + its neighbors on the plot" [ref=e1337]
+              - img "open" [ref=e1339]
+          - generic [ref=e1346]:
+            - img:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic: −0.3
+                    - generic: −0.2
+                    - generic: −0.1
+                    - generic: "0"
+                    - generic: "0.1"
+                    - generic: "0.2"
+                    - generic: "0.3"
+                    - generic: "0.4"
+                  - generic:
+                    - generic: −0.4
+                    - generic: −0.3
+                    - generic: −0.2
+                    - generic: −0.1
+                    - generic: "0"
+                    - generic: "0.1"
+                    - generic: "0.2"
+            - img:
+              - generic: PCA 2D (600 pts, PC1=25% PC2=10%)
+            - toolbar [ref=e1360]:
+              - button "Download plot as a PNG" [ref=e1362] [cursor=pointer]
+              - generic [ref=e1365]:
+                - button "Zoom" [ref=e1366] [cursor=pointer]
+                - button "Pan" [ref=e1369] [cursor=pointer]
+              - generic [ref=e1372]:
+                - button "Zoom in" [ref=e1373] [cursor=pointer]
+                - button "Zoom out" [ref=e1376] [cursor=pointer]
+                - button "Autoscale" [ref=e1379] [cursor=pointer]
+                - button "Reset axes" [ref=e1382] [cursor=pointer]
+              - button "Fullscreen" [ref=e1386] [cursor=pointer]
+          - separator [ref=e1393]
+          - heading "Category Concentration" [level=4] [ref=e1399]:
+            - text: Category Concentration
+            - generic [ref=e1400]:
+              - link "Link to heading":
+                - /url: "#category-concentration"
+          - generic [ref=e1405]:
+            - button "Show/hide columns" [ref=e1409] [cursor=pointer]
+            - button "Download as CSV" [ref=e1415] [cursor=pointer]
+            - button "Search" [ref=e1421] [cursor=pointer]
+            - button "Fullscreen" [ref=e1427] [cursor=pointer]
+          - group [ref=e1441]:
+            - generic "keyboard_arrow_right PCA Dimension Weights (top contributing features)" [ref=e1442] [cursor=pointer]:
+              - generic [ref=e1443]:
+                - generic [ref=e1444]: keyboard_arrow_right
+                - paragraph [ref=e1448]: PCA Dimension Weights (top contributing features)

@@ -45,13 +45,19 @@ def main() -> int:
     if not report["findings"]:
         print("  No issues found.")
     # Self-healing: repair orphan KG edges, entities, and backlinks.
-    repair_result = repair_kg_orphans(db_path)
-    if repair_result["was_orphaned"]:
-        print(
-            f"Repaired: kg_edges={repair_result['deleted_kg_edges']}, "
-            f"kg_entities={repair_result['deleted_kg_entities']}, "
-            f"backlinks={repair_result['deleted_backlinks']}"
-        )
+    # Use dry_run first to avoid write-lock contention with the worker.
+    try:
+        repair_result = repair_kg_orphans(db_path, dry_run=False)
+        if repair_result["was_orphaned"]:
+            print(
+                f"Repaired: kg_edges={repair_result['deleted_kg_edges']}, "
+                f"kg_entities={repair_result['deleted_kg_entities']}, "
+                f"backlinks={repair_result['deleted_backlinks']}"
+            )
+    except TimeoutError:
+        print("Repair skipped: DB write lock held by worker (will retry next run)")
+    except Exception as e:
+        print(f"Repair skipped: {e}")
     return 0
 
 

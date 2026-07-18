@@ -1,0 +1,194 @@
+- generic [ref=e2]:
+  - generic [ref=e11]:
+    - generic [ref=e14]:
+      - generic [ref=e15]: 🧠
+      - generic [ref=e16]:
+        - generic [ref=e17]: Agentic Memory
+        - generic [ref=e18]: Local Agent Memory System
+    - paragraph [ref=e23]:
+      - code [ref=e24]: memory
+      - text: · 391 MB
+    - heading "System Overview" [level=3] [ref=e29]
+    - generic [ref=e31]:
+      - generic [ref=e33]:
+        - generic [ref=e36]:
+          - paragraph [ref=e39]: Memories
+          - paragraph [ref=e42]: "7044"
+        - generic [ref=e45]:
+          - paragraph [ref=e48]: Edges
+          - paragraph [ref=e51]: "800"
+      - generic [ref=e53]:
+        - generic [ref=e56]:
+          - paragraph [ref=e59]: Entities
+          - paragraph [ref=e62]: "417"
+        - generic [ref=e65]:
+          - paragraph [ref=e68]: Pinned
+          - paragraph [ref=e71]: "4"
+      - generic [ref=e73]:
+        - generic [ref=e76]:
+          - paragraph [ref=e79]: Facts
+          - paragraph [ref=e82]: "234"
+        - generic [ref=e85]:
+          - paragraph [ref=e88]: DB
+          - paragraph [ref=e91]: 391 MB
+    - separator [ref=e93]
+    - paragraph [ref=e98]: Quick Actions
+    - button "↻ Refresh Now" [ref=e101] [cursor=pointer]:
+      - generic:
+        - generic:
+          - generic:
+            - paragraph: ↻ Refresh Now
+    - generic [ref=e106]: live · 17:59:30 UTC
+  - generic [ref=e3]:
+    - banner [ref=e113]:
+      - generic [ref=e115]:
+        - button "keyboard_double_arrow_right" [ref=e639] [cursor=pointer]
+        - generic [ref=e116]:
+          - button "Deploy" [ref=e118] [cursor=pointer]
+          - button "Main menu" [ref=e122] [cursor=pointer]
+    - generic [ref=e128]:
+      - tablist [ref=e130]:
+        - tab [ref=e131] [cursor=pointer]:
+          - paragraph [ref=e133]: Overview
+        - tab [ref=e134] [cursor=pointer]:
+          - paragraph [ref=e136]: Memories
+        - tab [ref=e137] [cursor=pointer]:
+          - paragraph [ref=e139]: Knowledge Graph
+        - tab [ref=e140] [cursor=pointer]:
+          - paragraph [ref=e142]: Embeddings
+        - tab [ref=e143] [cursor=pointer]:
+          - paragraph [ref=e145]: Facts
+        - tab [ref=e146] [cursor=pointer]:
+          - paragraph [ref=e148]: Concept Drift
+        - tab [ref=e149] [cursor=pointer]:
+          - paragraph [ref=e151]: CTR Feedback
+        - tab [ref=e152] [cursor=pointer]:
+          - paragraph [ref=e154]: Benchmarks
+        - tab [ref=e155] [cursor=pointer]:
+          - paragraph [ref=e157]: Cron
+        - tab [ref=e158] [cursor=pointer]:
+          - paragraph [ref=e160]: Multi-Agent
+        - tab [ref=e161] [cursor=pointer]:
+          - paragraph [ref=e163]: Health
+        - tab [active] [selected] [ref=e164] [cursor=pointer]:
+          - paragraph [ref=e166]: Backups
+        - tab [ref=e167] [cursor=pointer]:
+          - paragraph [ref=e169]: Audit Log
+        - tab [ref=e170] [cursor=pointer]:
+          - paragraph [ref=e172]: Explorer
+      - tabpanel "Backups" [ref=e4025]:
+        - generic [ref=e4026]:
+          - heading "Backup Management" [level=3] [ref=e4031]:
+            - text: Backup Management
+            - generic [ref=e4032]:
+              - link "Link to heading":
+                - /url: "#backup-management"
+          - generic [ref=e4034]:
+            - generic [ref=e4039]:
+              - paragraph [ref=e4042]: Total Backups
+              - paragraph [ref=e4045]: "5"
+            - generic [ref=e4050]:
+              - paragraph [ref=e4053]: Total Size
+              - paragraph [ref=e4056]: 562.9 MB
+            - generic [ref=e4061]:
+              - paragraph [ref=e4064]: Newest
+              - paragraph [ref=e4067]: 2026-07-18
+            - generic [ref=e4072]:
+              - paragraph [ref=e4075]: Oldest
+              - paragraph [ref=e4078]: 2026-07-16
+          - separator [ref=e4083]
+          - generic [ref=e4089]:
+            - img:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic: "212.9"
+                            - generic: "45.5"
+                            - generic: "45.6"
+                            - generic: "45.6"
+                            - generic: "213.3"
+                  - generic:
+                    - generic: 12:00Jul 16, 2026
+                    - generic: 00:00Jul 17, 2026
+                    - generic: 12:00
+                    - generic: 00:00Jul 18, 2026
+                    - generic: 12:00
+                  - generic:
+                    - generic: "0"
+                    - generic: "50"
+                    - generic: "100"
+                    - generic: "150"
+                    - generic: "200"
+            - img:
+              - generic:
+                - generic: undefined
+                - generic: Size (MB)
+            - toolbar [ref=e4103]:
+              - button "Download plot as a PNG" [ref=e4105] [cursor=pointer]
+              - generic [ref=e4108]:
+                - button "Zoom" [ref=e4109] [cursor=pointer]
+                - button "Pan" [ref=e4112] [cursor=pointer]
+              - generic [ref=e4115]:
+                - button "Zoom in" [ref=e4116] [cursor=pointer]
+                - button "Zoom out" [ref=e4119] [cursor=pointer]
+                - button "Autoscale" [ref=e4122] [cursor=pointer]
+                - button "Reset axes" [ref=e4125] [cursor=pointer]
+              - button "Fullscreen" [ref=e4129] [cursor=pointer]
+          - generic [ref=e4134]:
+            - generic [ref=e4135]: memory-2026-07-18-2318.db.gz
+            - generic [ref=e4136]: 212.9 MB
+            - generic [ref=e4137]: 2026-07-18 (0d)
+            - generic [ref=e4138]: ✅ OK
+          - button [ref=e4145] [cursor=pointer]:
+            - paragraph [ref=e4149]: 🔄 Restore
+          - generic [ref=e4154]:
+            - generic [ref=e4155]: pre-restore-2026-07-18.db.gz
+            - generic [ref=e4156]: 45.5 MB
+            - generic [ref=e4157]: 2026-07-18 (0d)
+            - generic [ref=e4158]: ✅ OK
+          - button [ref=e4165] [cursor=pointer]:
+            - paragraph [ref=e4169]: 🔄 Restore
+          - generic [ref=e4174]:
+            - generic [ref=e4175]: memory-latest.db.gz
+            - generic [ref=e4176]: 45.6 MB
+            - generic [ref=e4177]: 2026-07-17 (1d)
+            - generic [ref=e4178]: ✅ OK
+          - button [ref=e4185] [cursor=pointer]:
+            - paragraph [ref=e4189]: 🔄 Restore
+          - generic [ref=e4194]:
+            - generic [ref=e4195]: memory-2026-07-17.db.gz
+            - generic [ref=e4196]: 45.6 MB
+            - generic [ref=e4197]: 2026-07-17 (1d)
+            - generic [ref=e4198]: ✅ OK
+          - button [ref=e4205] [cursor=pointer]:
+            - paragraph [ref=e4209]: 🔄 Restore
+          - generic [ref=e4214]:
+            - generic [ref=e4215]: memory-2026-07-16.db.gz
+            - generic [ref=e4216]: 213.3 MB
+            - generic [ref=e4217]: 2026-07-16 (2d)
+            - generic [ref=e4218]: ✅ OK
+          - button [ref=e4225] [cursor=pointer]:
+            - paragraph [ref=e4229]: 🔄 Restore
+          - separator [ref=e4236]
+          - heading "Create Backup" [level=4] [ref=e4242]:
+            - text: Create Backup
+            - generic [ref=e4243]:
+              - link "Link to heading":
+                - /url: "#create-backup"
+          - generic [ref=e4245]:
+            - button [ref=e4250] [cursor=pointer]:
+              - paragraph [ref=e4254]: 📤 Create Backup Now
+            - generic [ref=e4256]:
+              - generic [ref=e4258]:
+                - paragraph [ref=e4262]: Select backup to restore
+                - generic [ref=e4264]:
+                  - generic [ref=e4265]:
+                    - generic [ref=e4266]: memory-2026-07-18-2318.db.gz
+                    - combobox "Selected memory-2026-07-18-2318.db.gz. Select backup to restore" [ref=e4268]
+                  - img "open" [ref=e4270]
+              - button [ref=e4274] [cursor=pointer]:
+                - paragraph [ref=e4278]: Restore this backup

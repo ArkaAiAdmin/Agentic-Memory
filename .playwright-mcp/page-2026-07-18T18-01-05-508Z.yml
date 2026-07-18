@@ -1,0 +1,206 @@
+- generic [ref=e2]:
+  - generic [ref=e11]:
+    - generic [ref=e14]:
+      - generic [ref=e15]: 🧠
+      - generic [ref=e16]:
+        - generic [ref=e17]: Agentic Memory
+        - generic [ref=e18]: Local Agent Memory System
+    - paragraph [ref=e23]:
+      - code [ref=e24]: memory
+      - text: · 391 MB
+    - heading "System Overview" [level=3] [ref=e29]
+    - generic [ref=e31]:
+      - generic [ref=e33]:
+        - generic [ref=e36]:
+          - paragraph [ref=e39]: Memories
+          - paragraph [ref=e42]: "7044"
+        - generic [ref=e45]:
+          - paragraph [ref=e48]: Edges
+          - paragraph [ref=e51]: "800"
+      - generic [ref=e53]:
+        - generic [ref=e56]:
+          - paragraph [ref=e59]: Entities
+          - paragraph [ref=e62]: "417"
+        - generic [ref=e65]:
+          - paragraph [ref=e68]: Pinned
+          - paragraph [ref=e71]: "4"
+      - generic [ref=e73]:
+        - generic [ref=e76]:
+          - paragraph [ref=e79]: Facts
+          - paragraph [ref=e82]: "234"
+        - generic [ref=e85]:
+          - paragraph [ref=e88]: DB
+          - paragraph [ref=e91]: 391 MB
+    - separator [ref=e93]
+    - paragraph [ref=e98]: Quick Actions
+    - button "↻ Refresh Now" [ref=e101] [cursor=pointer]:
+      - generic:
+        - generic:
+          - generic:
+            - paragraph: ↻ Refresh Now
+    - generic [ref=e106]: live · 17:59:30 UTC
+  - generic [ref=e3]:
+    - banner [ref=e113]:
+      - generic [ref=e115]:
+        - button "keyboard_double_arrow_right" [ref=e639] [cursor=pointer]
+        - generic [ref=e116]:
+          - button "Deploy" [ref=e118] [cursor=pointer]
+          - button "Main menu" [ref=e122] [cursor=pointer]
+    - generic [ref=e128]:
+      - tablist [ref=e130]:
+        - tab [ref=e131] [cursor=pointer]:
+          - paragraph [ref=e133]: Overview
+        - tab [ref=e134] [cursor=pointer]:
+          - paragraph [ref=e136]: Memories
+        - tab [ref=e137] [cursor=pointer]:
+          - paragraph [ref=e139]: Knowledge Graph
+        - tab [ref=e140] [cursor=pointer]:
+          - paragraph [ref=e142]: Embeddings
+        - tab [ref=e143] [cursor=pointer]:
+          - paragraph [ref=e145]: Facts
+        - tab [ref=e146] [cursor=pointer]:
+          - paragraph [ref=e148]: Concept Drift
+        - tab [ref=e149] [cursor=pointer]:
+          - paragraph [ref=e151]: CTR Feedback
+        - tab [ref=e152] [cursor=pointer]:
+          - paragraph [ref=e154]: Benchmarks
+        - tab [ref=e155] [cursor=pointer]:
+          - paragraph [ref=e157]: Cron
+        - tab [ref=e158] [cursor=pointer]:
+          - paragraph [ref=e160]: Multi-Agent
+        - tab [ref=e161] [cursor=pointer]:
+          - paragraph [ref=e163]: Health
+        - tab [ref=e164] [cursor=pointer]:
+          - paragraph [ref=e166]: Backups
+        - tab [ref=e167] [cursor=pointer]:
+          - paragraph [ref=e169]: Audit Log
+        - tab [active] [selected] [ref=e170] [cursor=pointer]:
+          - paragraph [ref=e172]: Explorer
+      - tabpanel "Explorer" [ref=e4580]:
+        - generic [ref=e4581]:
+          - heading "Memory Explorer" [level=3] [ref=e4586]:
+            - text: Memory Explorer
+            - generic [ref=e4587]:
+              - link "Link to heading":
+                - /url: "#memory-explorer"
+          - paragraph [ref=e4592]:
+            - text: Full 14-phase pipeline — hybrid search via
+            - code [ref=e4593]: search_memories
+            - text: .
+          - generic [ref=e4595]:
+            - generic [ref=e4599]:
+              - paragraph [ref=e4603]: 🔍 Search memories
+              - textbox "🔍 Search memories" [ref=e4606]:
+                - /placeholder: e.g. 'database migration', 'search quality', 'CTR feedback'
+            - generic [ref=e4610]:
+              - paragraph [ref=e4614]: Category
+              - generic [ref=e4616]:
+                - generic [ref=e4617]:
+                  - generic [ref=e4618]: all
+                  - combobox "Selected all. Category" [ref=e4620]
+                - img "open" [ref=e4622]
+          - heading "Recent Memories" [level=4] [ref=e4629]:
+            - text: Recent Memories
+            - generic [ref=e4630]:
+              - link "Link to heading":
+                - /url: "#recent-memories"
+          - generic [ref=e4633]:
+            - generic [ref=e4634]:
+              - generic [ref=e4635]: lessons
+              - generic [ref=e4636]: 2026-07-16
+            - generic [ref=e4637]: "## Dashboard self-rating: 8/10 Re-reading the dashboard code yielded a self-rating of 8/10. **Strengths:** - Informati"
+          - generic [ref=e4640]:
+            - generic [ref=e4641]:
+              - generic [ref=e4642]: projects
+              - generic [ref=e4643]: 2026-07-15
+            - generic [ref=e4644]: "## Plans 4a, 5b + CTR Automation (2026-07-15) ### Plan 4a: Content-based entity extraction (search/phases/kg_traversal."
+          - generic [ref=e4647]:
+            - generic [ref=e4648]:
+              - generic [ref=e4649]: projects
+              - generic [ref=e4650]: 2026-07-15
+            - generic [ref=e4651]: "## LTR Implementation Progress (2026-07-15) ### Implemented (Plans 1-3) **Plan 1: LTR Feature Extraction** (search/ltr"
+          - generic [ref=e4654]:
+            - generic [ref=e4655]:
+              - generic [ref=e4656]: projects
+              - generic [ref=e4657]: 2026-07-15
+            - generic [ref=e4658]: "## Dashboard + CTR Feedback Fixes (2026-07-15) ### What was done 1. **Fixed CTR tab indentation bug** (dashboard.py:157"
+          - generic [ref=e4661]:
+            - generic [ref=e4662]:
+              - generic [ref=e4663]: lessons
+              - generic [ref=e4664]: 2026-07-14
+            - generic [ref=e4665]: "# Lesson: Fixed: writes per-action rows into `memory_search_interaction` via ... **Session Finding:** `record_ctr_feedb"
+          - generic [ref=e4668]:
+            - generic [ref=e4669]:
+              - generic [ref=e4670]: lessons
+              - generic [ref=e4671]: 2026-07-14
+            - generic [ref=e4672]: "# Lesson: Root cause: chunk CE reranking and hybrid search promote semantically-si... **Session Finding:** Root cause:"
+          - generic [ref=e4675]:
+            - generic [ref=e4676]:
+              - generic [ref=e4677]: lessons
+              - generic [ref=e4678]: 2026-07-14
+            - generic [ref=e4679]: "# Lesson: Fixed: cron interval default `*/5` → `*/15` in config table (matche... **Session Finding:** Fixed: cron inter"
+          - generic [ref=e4682]:
+            - generic [ref=e4683]:
+              - generic [ref=e4684]: lessons
+              - generic [ref=e4685]: 2026-07-14
+            - generic [ref=e4686]: "# Lesson: Fixed: redundant \"hot, warm, and cold\" → \"hot, warm, cold, and arch... **Session Finding:** Fixed: redundant"
+          - generic [ref=e4689]:
+            - generic [ref=e4690]:
+              - generic [ref=e4691]: lessons
+              - generic [ref=e4692]: 2026-07-14
+            - generic [ref=e4693]: "# Lesson: Error: \\\" | tail -15\", **Session Finding:** \"command\": \"cd /Users/arka/.config/agentic-memory && ./venv/bin/m"
+          - generic [ref=e4696]:
+            - generic [ref=e4697]:
+              - generic [ref=e4698]: lessons
+              - generic [ref=e4699]: 2026-07-14
+            - generic [ref=e4700]: "# Lesson: Issue: ModuleNotFou **Session Finding:** todos: Investigate CI pytest segfault (exit 139, Fix generic_type: c"
+          - generic [ref=e4703]:
+            - generic [ref=e4704]:
+              - generic [ref=e4705]: lessons
+              - generic [ref=e4706]: 2026-07-14
+            - generic [ref=e4707]: "# Lesson: Error: {e}')\\n # Check if a unique constraint issue is happening... **Session Finding:** {\"command\":\"cd /U"
+          - generic [ref=e4710]:
+            - generic [ref=e4711]:
+              - generic [ref=e4712]: lessons
+              - generic [ref=e4713]: 2026-07-14
+            - generic [ref=e4714]: "# Lesson: Error: ', type(e).__name__, e)\\n\\nconn.close()\\nPath(p).unlink(miss... **Session Finding:** \"command\": \"cd /U"
+          - generic [ref=e4717]:
+            - generic [ref=e4718]:
+              - generic [ref=e4719]: lessons
+              - generic [ref=e4720]: 2026-07-14
+            - generic [ref=e4721]: "# Lesson: Error: \\|\"error:\\|startswith.*Error' /Users/arka/.config/agentic-me... **Session Finding:** `bash` at 14:25:"
+          - generic [ref=e4724]:
+            - generic [ref=e4725]:
+              - generic [ref=e4726]: lessons
+              - generic [ref=e4727]: 2026-07-14
+            - generic [ref=e4728]: "# Lesson: Error: \\|\"error:\\|startswith.*Error' /Users/arka/.config/agentic-me... **Session Finding:** Running command:"
+          - generic [ref=e4731]:
+            - generic [ref=e4732]:
+              - generic [ref=e4733]: lessons
+              - generic [ref=e4734]: 2026-07-14
+            - generic [ref=e4735]: "# Lesson: Root cause: ** Prior tests in the suite order set `MEMORY_SAGA_FALLBACK=... **Session Finding:** **Root cause"
+          - generic [ref=e4738]:
+            - generic [ref=e4739]:
+              - generic [ref=e4740]: lessons
+              - generic [ref=e4741]: 2026-07-14
+            - generic [ref=e4742]: "# Lesson: Error: \\\" | grep -v \\\"^fact/fact_clean\\\\|^kg/graph_analytics\\\\|^sea... **Session Finding:** \"command\": \"cd /U"
+          - generic [ref=e4745]:
+            - generic [ref=e4746]:
+              - generic [ref=e4747]: lessons
+              - generic [ref=e4748]: 2026-07-14
+            - generic [ref=e4749]: "# Lesson: Error: \\\" || true)\\n if [ -n \\\"$errs\\\" ]; then\\n echo \\\"=== $f ... **Session Finding:** \"command\": \"cd /U"
+          - generic [ref=e4752]:
+            - generic [ref=e4753]:
+              - generic [ref=e4754]: lessons
+              - generic [ref=e4755]: 2026-07-14
+            - generic [ref=e4756]: "# Lesson: Error: {e}')\\n break\\n\\nelapsed = time.time() - start\\nprint... **Session Finding:** \"command\": \"cd /U"
+          - generic [ref=e4759]:
+            - generic [ref=e4760]:
+              - generic [ref=e4761]: lessons
+              - generic [ref=e4762]: 2026-07-14
+            - generic [ref=e4763]: "# Lesson: Error: mandarin character in cron_health_check.py\", **Session Finding:** \"content\": \"Fix LSP error: mandarin"
+          - generic [ref=e4766]:
+            - generic [ref=e4767]:
+              - generic [ref=e4768]: lessons
+              - generic [ref=e4769]: 2026-07-14
+            - generic [ref=e4770]: "# Lesson: Error: \\\" | grep -v \\\"fact/fact_clean.py\\\\|kg/graph_analytics.py\\\\|... **Session Finding:** \"command\": \"cd /U"

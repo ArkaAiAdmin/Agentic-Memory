@@ -509,133 +509,62 @@ class TestGetSchemaVersion(unittest.TestCase):
 class TestLiveHealth(unittest.TestCase):
     """``_live_health()`` returns a dict with system health checks."""
 
-    @patch.object(dashboard, "_table_status")
-    @patch.object(dashboard, "get_conn")
-    @patch.object(Path, "stat")
+    @patch.object(dashboard, "_run_health_checks")
     def test_returns_dict_with_expected_keys(
         self,
-        mock_stat: MagicMock,
-        mock_get_conn: MagicMock,
-        mock_table_status: MagicMock,
+        mock_checks: MagicMock,
     ) -> None:
         """Returns a dict containing 'ts' and 'checks' keys."""
-        # All tables return ok
-        mock_table_status.return_value = ("ok", "5 rows")
-        mock_stat.return_value.st_size = 2048
-        mock_get_conn.return_value = _mock_conn((3,))  # pinned count
-
+        mock_checks.return_value = [
+            {"name": "Database", "status": "ok", "detail": "Accessible", "fixable": False},
+        ]
         result = dashboard._live_health()
         self.assertIn("ts", result)
         self.assertIn("checks", result)
         self.assertIsInstance(result["checks"], list)
 
-    @patch.object(dashboard, "_table_status")
-    @patch.object(dashboard, "get_conn")
-    @patch.object(Path, "stat")
-    def test_includes_ltr_model_check_when_model_exists(
+    @patch.object(dashboard, "_run_health_checks")
+    def test_includes_subsystem_checks(
         self,
-        mock_stat: MagicMock,
-        mock_get_conn: MagicMock,
-        mock_table_status: MagicMock,
+        mock_checks: MagicMock,
     ) -> None:
-        """When LTR model exists, the ltr_model check has status 'ok'."""
-        mock_table_status.return_value = ("ok", "5 rows")
-        mock_stat.return_value.st_size = 2048
-        mock_get_conn.return_value = _mock_conn((3,))
-
-        with patch.object(Path, "exists", return_value=True):
-            result = dashboard._live_health()
-
-        ltr_checks = [c for c in result["checks"] if c[0] == "ltr_model"]
-        self.assertEqual(len(ltr_checks), 1)
-        self.assertEqual(ltr_checks[0][1], "ok")
-        self.assertIn("KB", ltr_checks[0][2])
-
-    @patch.object(dashboard, "_table_status")
-    @patch.object(dashboard, "get_conn")
-    @patch.object(Path, "stat")
-    def test_ltr_model_warning_when_not_trained(
-        self,
-        mock_stat: MagicMock,
-        mock_get_conn: MagicMock,
-        mock_table_status: MagicMock,
-    ) -> None:
-        """When LTR model is missing, the ltr_model check shows 'warning'."""
-        mock_table_status.return_value = ("ok", "5 rows")
-        mock_stat.return_value.st_size = 2048
-        mock_get_conn.return_value = _mock_conn((3,))
-
-        with patch.object(Path, "exists", return_value=False):
-            result = dashboard._live_health()
-
-        ltr_checks = [c for c in result["checks"] if c[0] == "ltr_model"]
-        self.assertEqual(len(ltr_checks), 1)
-        self.assertEqual(ltr_checks[0][1], "warning")
-        self.assertEqual(ltr_checks[0][2], "not trained yet")
-
-    @patch.object(dashboard, "_table_status")
-    @patch.object(dashboard, "get_conn")
-    @patch.object(Path, "stat")
-    def test_includes_pinned_check(
-        self,
-        mock_stat: MagicMock,
-        mock_get_conn: MagicMock,
-        mock_table_status: MagicMock,
-    ) -> None:
-        """A pinned check is present with the count of pinned notes."""
-        mock_table_status.return_value = ("ok", "5 rows")
-        mock_stat.return_value.st_size = 2048
-        mock_get_conn.return_value = _mock_conn((7,))
-
+        """New health system checks subsystems, not individual tables."""
+        mock_checks.return_value = [
+            {"name": "Database", "status": "ok", "detail": "Accessible", "fixable": False},
+            {"name": "Knowledge Graph", "status": "ok", "detail": "5 entities", "fixable": True, "fix_label": "Run backfill"},
+        ]
         result = dashboard._live_health()
-        pinned_checks = [c for c in result["checks"] if c[0] == "pinned"]
-        self.assertEqual(len(pinned_checks), 1)
-        self.assertEqual(pinned_checks[0][1], "ok")
-        self.assertEqual(pinned_checks[0][2], "7 notes")
+        check_names = [c[0] for c in result["checks"]]
+        self.assertIn("Database", check_names)
+        self.assertIn("Knowledge Graph", check_names)
 
-    @patch.object(dashboard, "_table_status")
-    @patch.object(dashboard, "get_conn")
-    @patch.object(Path, "stat")
-    def test_handles_pinned_query_failure_gracefully(
+    @patch.object(dashboard, "_run_health_checks")
+    def test_includes_kg_check(
         self,
-        mock_stat: MagicMock,
-        mock_get_conn: MagicMock,
-        mock_table_status: MagicMock,
+        mock_checks: MagicMock,
     ) -> None:
-        """When the pinned query fails, the function still returns (no crash)."""
-        mock_table_status.return_value = ("ok", "5 rows")
-        mock_stat.return_value.st_size = 2048
-        err_conn = MagicMock(spec=sqlite3.Connection)
-        err_conn.execute.side_effect = sqlite3.OperationalError("locked")
-        mock_get_conn.return_value = err_conn
-
+        """Knowledge Graph check is present."""
+        mock_checks.return_value = [
+            {"name": "Knowledge Graph", "status": "ok", "detail": "5 entities", "fixable": True, "fix_label": "Run backfill"},
+        ]
         result = dashboard._live_health()
-        self.assertIn("checks", result)
-        # No pinned check if the query failed
-        pinned_checks = [c for c in result["checks"] if c[0] == "pinned"]
-        self.assertEqual(len(pinned_checks), 0)
+        kg_checks = [c for c in result["checks"] if c[0] == "Knowledge Graph"]
+        self.assertEqual(len(kg_checks), 1)
+        self.assertEqual(kg_checks[0][1], "ok")
 
-    @patch.object(dashboard, "_table_status")
-    @patch.object(dashboard, "get_conn")
-    @patch.object(Path, "stat")
-    def test_core_table_warning_maps_to_severity(
+    @patch.object(dashboard, "_run_health_checks")
+    def test_includes_drift_alarms_check(
         self,
-        mock_stat: MagicMock,
-        mock_get_conn: MagicMock,
-        mock_table_status: MagicMock,
+        mock_checks: MagicMock,
     ) -> None:
-        """Core table warnings get mapped to their default_if_empty severity."""
-        # memories is core with default_if_empty="error"
-        mock_table_status.side_effect = lambda name: (
-            ("warning", "0 rows (unexpected)") if name == "memories"
-            else ("ok", "5 rows")
-        )
-        mock_stat.return_value.st_size = 2048
-        mock_get_conn.return_value = _mock_conn((0,))
-
+        """Drift Alarms check is present."""
+        mock_checks.return_value = [
+            {"name": "Drift Alarms", "status": "ok", "detail": "All clear", "fixable": True, "fix_label": "View alarms"},
+        ]
         result = dashboard._live_health()
-        mem_checks = [c for c in result["checks"] if c[0] == "memories"]
-        self.assertEqual(mem_checks[0][1], "error")
+        drift_checks = [c for c in result["checks"] if c[0] == "Drift Alarms"]
+        self.assertEqual(len(drift_checks), 1)
+        self.assertEqual(drift_checks[0][1], "ok")
 
 
 # =========================================================================
@@ -885,20 +814,12 @@ class TestDashboardModule(unittest.TestCase):
         """The TABS list contains expected tab names."""
         self.assertIsInstance(dashboard.TABS, list)
         expected_tabs = [
-            "Overview",
+            "Dashboard",
             "Memories",
-            "Knowledge Graph",
-            "Embeddings",
-            "Facts",
-            "Concept Drift",
-            "CTR Feedback",
-            "Benchmarks",
-            "Cron",
-            "Multi-Agent",
-            "Health",
-            "Backups",
-            "Audit Log",
-            "Explorer",
+            "Knowledge",
+            "Operations",
+            "Audit",
+            "Settings",
         ]
         self.assertEqual(dashboard.TABS, expected_tabs)
 
@@ -1022,13 +943,11 @@ class TestDashboardIntegration(unittest.TestCase):
             self.assertEqual(len(check), 3)
 
     def test_live_health_includes_core_tables(self) -> None:
-        """``_live_health()`` includes core table checks like memories."""
+        """``_live_health()`` includes subsystem checks."""
         result = dashboard._live_health()
         check_names = [c[0] for c in result["checks"]]
-        self.assertIn("memories", check_names)
-        self.assertIn("kg_entities", check_names)
-        self.assertIn("ltr_model", check_names)
-        self.assertIn("pinned", check_names)
+        self.assertIn("Database", check_names)
+        self.assertIn("Knowledge Graph", check_names)
 
 
 # =========================================================================
