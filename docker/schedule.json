@@ -1,194 +1,47 @@
 [
-  {
-    "name": "background_worker.py",
-    "interval_minutes": 15,
-    "args": ["--drain", "--max-tasks=50"],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 120
-  },
-  {
-    "name": "cron_integrity_check.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
-    "enabled": true,
-    "timeout_seconds": 300
-  },
-  {
-    "name": "cron_backup.py",
-    "interval_minutes": 1440,
-    "args": [],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 600
-  },
-  {
-    "name": "cron_compact.py",
-    "interval_minutes": 43200,
-    "args": [],
-    "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
-    "enabled": true,
-    "timeout_seconds": 1800
-  },
-  {
-    "name": "cron_rebuild_fts.py",
-    "interval_minutes": 1440,
-    "args": [],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 600
-  },
-  {
-    "name": "cron_heartbeat.py",
-    "interval_minutes": 1440,
-    "args": [],
-    "env": {"MEMORY_SELF_DIRECTED": "1", "MEMORY_KNOWLEDGE_GRAPH": "1"},
-    "enabled": true,
-    "timeout_seconds": 600
-  },
-  {
-    "name": "cron_tier_migration.py",
-    "interval_minutes": 10080,
-    "args": ["--once"],
-    "env": {"MEMORY_TEMPORAL_TIERS": "1"},
-    "enabled": true,
-    "timeout_seconds": 1800
-  },
-  {
-    "name": "cron_kg_backfill.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 1800
-  },
-  {
-    "name": "cron_skill_extraction.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 1800
-  },
-  {
-    "name": "cron_cross_session_learn.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 1800
-  },
-  {
-    "name": "cron_kg_backfill_monitor.py",
-    "interval_minutes": 1440,
-    "args": [],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 300
-  },
-  {
-    "name": "cron_embedding_recompute.py",
-    "interval_minutes": 1440,
-    "args": ["--once"],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 1800
-  },
-  {
-    "name": "cron_consolidate.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
-    "enabled": true,
-    "timeout_seconds": 3600
-  },
-  {
-    "name": "cron_detect_vec_drift.py",
-    "interval_minutes": 1440,
-    "args": [],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 300
-  },
-  {
-    "name": "cron_rewrite_links.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
-    "enabled": true,
-    "timeout_seconds": 600
-  },
-  {
-    "name": "cron_pinned_decay.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
-    "enabled": true,
-    "timeout_seconds": 600
-  },
-  {
-    "name": "cron_concept_drift.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 1800
-  },
-  {
-    "name": "cron_purge_expired.py",
-    "interval_minutes": 43200,
-    "args": [],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 600
-  },
-  {
-    "name": "cron_quality_filter.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {"MEMORY_QUALITY_GATES": "1"},
-    "enabled": true,
-    "timeout_seconds": 1800
-  },
-  {
-    "name": "cron_auto_summarize.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {"MEMORY_SUMMARIZATION": "1"},
-    "enabled": true,
-    "timeout_seconds": 1800
-  },
-  {
-    "name": "cron_retention_stats.py",
-    "interval_minutes": 10080,
-    "args": [],
-    "env": {"MEMORY_ADAPTIVE_RETENTION": "1"},
-    "enabled": true,
-    "timeout_seconds": 300
-  },
-  {
-    "name": "cron_auto_share.py",
-    "interval_minutes": 1440,
-    "args": [],
-    "env": {"MEMORY_MULTI_AGENT": "1"},
-    "enabled": true,
-    "timeout_seconds": 600
-  },
-  {
-    "name": "cron_sync.py",
-    "interval_minutes": 60,
-    "args": [],
-    "env": {},
-    "enabled": true,
-    "timeout_seconds": 600
-  },
-  {
-    "name": "cron_crdt_sync.py",
-    "interval_minutes": 60,
-    "args": [],
-    "env": {"MEMORY_MULTI_AGENT": "1", "MEMORY_CRDT_ENABLED": "1"},
-    "enabled": true,
-    "timeout_seconds": 600
-  }
+  {"cmd": "venv/bin/python -m cron.background_worker", "schedule": "*/5 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_pipeline_health", "schedule": "*/15 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_health_check", "schedule": "*/15 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_daemon_watchdog", "schedule": "*/15 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_watchdog", "schedule": "*/30 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_sync", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_crdt_sync", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_auto_retry_dead_tasks", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_policy_hash_status", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_daily_digest", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_promote_drafts", "schedule": "0 */6 * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_purge_auto_saves", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_cleanup_auto_logs", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_backfill_all", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_backup", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_backup_validate", "schedule": "0 */6 * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_heartbeat", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_kg_backfill_monitor", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_embedding_recompute", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_detect_vec_drift", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_check_config_drift", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_resolve_contradictions", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_auto_share", "schedule": "0 */2 * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_integrity_check", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_log_retention", "schedule": "0 0 * * 6"},
+  {"cmd": "venv/bin/python -m cron.cron_tier_migration", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_kg_backfill", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_consolidate", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_rewrite_links", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_pinned_decay", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_concept_drift", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_train_forget_model", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_train_temporal_ssm", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_semantic_clusters", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_skill_decay", "schedule": "0 0 * * 0"},
+  {"cmd": "venv/bin/python -m cron.cron_skill_extraction", "schedule": "0 0 * * 1"},
+  {"cmd": "venv/bin/python -m cron.cron_cross_session_learn", "schedule": "0 0 * * 1"},
+  {"cmd": "venv/bin/python -m cron.cron_quality_filter", "schedule": "0 0 * * 1"},
+  {"cmd": "venv/bin/python -m cron.cron_auto_summarize", "schedule": "0 0 * * 1"},
+  {"cmd": "venv/bin/python -m cron.cron_retention_stats", "schedule": "0 0 * * 1"},
+  {"cmd": "venv/bin/python -m cron.cron_train_ltr", "schedule": "0 0 * * 1"},
+  {"cmd": "venv/bin/python -m cron.cron_compact", "schedule": "0 0 1 * *"},
+  {"cmd": "venv/bin/python -m cron.cron_purge_expired", "schedule": "0 0 1 * *"},
+  {"cmd": "venv/bin/python -m cron.cron_rebuild_fts", "schedule": "0 * * * *"},
+  {"cmd": "venv/bin/python -m cron.cron_revalidate_entailments", "schedule": "0 * * * *"}
 ]

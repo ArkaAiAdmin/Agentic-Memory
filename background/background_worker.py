@@ -44,19 +44,66 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from infra.metrics import _RuntimeCounters
+
 _BG_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _BG_DIR)
 _REPO_ROOT = os.path.dirname(_BG_DIR)
 sys.path.insert(0, _REPO_ROOT)
 from background.background_queue import init_task_queue, dequeue_task, complete_task, fail_task, reset_stuck_processing_tasks
 from infra.infrastructure import resolve_active_memory_dir
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from infra.db import AnyConnection
 
 
 logger = logging.getLogger(__name__)
+
+_worker_counters = _RuntimeCounters()
+
+# Structured logging helper for observability
+def _log_structured(level: str | int, event: str, **fields: Any) -> None:
+    import json as _json
+    if isinstance(level, int):
+        level = logging.getLevelName(level).lower()
+    log_entry = {"event": event, **fields}
+    getattr(logger, level)(_json.dumps(log_entry))
+
+
+def get_worker_prometheus_text() -> str:
+    snap = _worker_counters.snapshot()
+    lines = []
+    counters = snap.get("counters", {})
+    ok_by_handler: dict[str, int] = {}
+    error_by_handler: dict[str, int] = {}
+    for key, val in counters.items():
+        if key.startswith("worker_ok_"):
+            ok_by_handler[key[len("worker_ok_"):]] = val
+        elif key.startswith("worker_error_"):
+            error_by_handler[key[len("worker_error_"):]] = val
+    if ok_by_handler or error_by_handler:
+        lines.append("# HELP agentic_memory_worker_tasks_total Total tasks processed per handler")
+        lines.append("# TYPE agentic_memory_worker_tasks_total counter")
+        all_handlers = sorted(set(list(ok_by_handler.keys()) + list(error_by_handler.keys())))
+        for handler in all_handlers:
+            ok_val = ok_by_handler.get(handler, 0)
+            error_val = error_by_handler.get(handler, 0)
+            lines.append(f'agentic_memory_worker_tasks_total{{handler="{handler}",status="ok"}} {ok_val}')
+            lines.append(f'agentic_memory_worker_tasks_total{{handler="{handler}",status="error"}} {error_val}')
+    histograms = snap.get("histograms", {})
+    worker_lats = {k: v for k, v in histograms.items() if k.startswith("worker_")}
+    if worker_lats:
+        lines.append("")
+        lines.append("# HELP agentic_memory_worker_latency_ms Handler latency percentiles")
+        lines.append("# TYPE agentic_memory_worker_latency_ms gauge")
+        for handler_key, h in sorted(worker_lats.items()):
+            label = handler_key[len("worker_"):]
+            lines.append(f'agentic_memory_worker_latency_ms{{handler="{label}",percentile="avg"}} {h["avg_ms"]}')
+            lines.append(f'agentic_memory_worker_latency_ms{{handler="{label}",percentile="p50"}} {h["p50_ms"]}')
+            lines.append(f'agentic_memory_worker_latency_ms{{handler="{label}",percentile="p95"}} {h["p95_ms"]}')
+    return "\n".join(lines)
+
 
 # Graceful shutdown flag
 _shutdown = False
@@ -105,11 +152,7 @@ def _handle_signal(signum, frame):
         return
     _shutdown = True
     _RECONCILER_SHUTDOWN.set()
-    logger.info(
-        "worker: received signal %d — shutting down after current task "
-        "(%ds grace before force-exit)",
-        signum, _SHUTDOWN_GRACE_S,
-    )
+    _log_structured(logging.INFO, "signal_received", signum=signum, grace_s=_SHUTDOWN_GRACE_S)
     # Give in-flight tasks time to finish their DB writes
     threading.Thread(
         target=_shutdown_force_exit,
@@ -123,10 +166,7 @@ def _shutdown_force_exit() -> None:
     import time
     time.sleep(_SHUTDOWN_GRACE_S)
     if _shutdown:
-        logger.warning(
-            "worker: grace period of %ds expired — force-exiting",
-            _SHUTDOWN_GRACE_S,
-        )
+        _log_structured(logging.WARNING, "force_exit", grace_s=_SHUTDOWN_GRACE_S)
         os._exit(0)
 
 
@@ -940,7 +980,7 @@ def _reconciliation_loop(journal_path: Path, target_base: Path) -> None:
             logger.error("reconciliation loop error: %s", loop_exc)
             _RECONCILER_SHUTDOWN.wait(1.0)
 
-    logger.info("reconciliation loop: stopped")
+    _log_structured(logging.INFO, "reconciler_stopped")
 
 
 def _start_reconciler(journal_path: Path, target_base: Path) -> threading.Thread:
@@ -953,7 +993,7 @@ def _start_reconciler(journal_path: Path, target_base: Path) -> threading.Thread
         name="journal-reconciler",
     )
     thread.start()
-    logger.info("reconciliation loop: started (journal=%s, target=%s)", journal_path, target_base)
+    _log_structured(logging.INFO, "reconciler_started", journal=str(journal_path), target=str(target_base))
     return thread
 
 
@@ -1067,7 +1107,7 @@ def _reconciliation_loop_sharded(
             logger.error("reconciler-%d loop error: %s", worker_id, loop_exc)
             _shutdown_local.wait(1.0)
 
-    logger.info("reconciler-%d: loop stopped", worker_id)
+    _log_structured(logging.INFO, "reconciler_stopped", worker_id=worker_id)
 
 
 def multiwriter_reconciliation_pool(
@@ -1375,38 +1415,31 @@ def process_one_task(
         old_handler = _sig.signal(_sig.SIGALRM, _timeout_handler)
         _sig.alarm(_PER_TASK_TIMEOUT_S)
     t_start = time.time()
+    _log_structured(logging.INFO, "task_start", task_id=task_id, task_type=ttype, task_tenant_id=task_tenant_id)
     try:
         result = handler(payload, conn, db_path)
         complete_task(conn, task_id)
         elapsed = time.time() - t_start
-        logger.info(
-            "worker: completed task %d (%s) in %.2fs: %s",
-            task_id,
-            ttype,
-            elapsed,
-            result,
-        )
+        elapsed_ms = elapsed * 1000.0
+        _worker_counters.inc(f"worker_ok_{ttype}")
+        _worker_counters.record(f"worker_{ttype}_latency", elapsed_ms)
+        _log_structured(logging.INFO, "task_complete", task_id=task_id, task_type=ttype, elapsed_ms=round(elapsed_ms, 2), result=str(result)[:200])
     except _TaskTimeout:
         elapsed = time.time() - t_start
+        elapsed_ms = elapsed * 1000.0
         fail_task(conn, task_id, f"timeout after {elapsed:.1f}s")
-        logger.error(
-            "worker: task %d (%s) TIMED OUT after %.1fs — likely runaway regex or loop",
-            task_id,
-            ttype,
-            elapsed,
-        )
+        _worker_counters.inc(f"worker_error_{ttype}")
+        _worker_counters.record(f"worker_{ttype}_latency", elapsed_ms)
+        _log_structured(logging.ERROR, "task_timeout", task_id=task_id, task_type=ttype, elapsed_ms=round(elapsed_ms, 2))
         _cleanup_task_artifacts(ttype, payload)
     except Exception as e:
         elapsed = time.time() - t_start
+        elapsed_ms = elapsed * 1000.0
         error_msg = str(e)[:500]
         fail_task(conn, task_id, error_msg)
-        logger.warning(
-            "worker: task %d (%s) failed after %.2fs: %s",
-            task_id,
-            ttype,
-            elapsed,
-            error_msg,
-        )
+        _worker_counters.inc(f"worker_error_{ttype}")
+        _worker_counters.record(f"worker_{ttype}_latency", elapsed_ms)
+        _log_structured(logging.ERROR, "task_failed", task_id=task_id, task_type=ttype, elapsed_ms=round(elapsed_ms, 2), error=error_msg)
     finally:
         if _use_signal_timeout:
             _sig.alarm(0)
@@ -1435,10 +1468,7 @@ class WorkerPool:
         self._task_type = task_type
 
     def run(self, drain: bool = False, max_tasks: int = 10000) -> None:
-        logger.info(
-            "worker pool: starting %d workers (db=%s, drain=%s, max_tasks=%d)",
-            self._n_workers, self._db_path, drain, max_tasks,
-        )
+        _log_structured(logging.INFO, "worker_pool_start", n_workers=self._n_workers, db=str(self._db_path), drain=drain, max_tasks=max_tasks)
         with ThreadPoolExecutor(max_workers=self._n_workers) as executor:
             futures = [
                 executor.submit(self._worker_loop, i, drain, max_tasks)
@@ -1517,18 +1547,12 @@ class WorkerPool:
                 if drain and processed >= max_tasks:
                     break
                 if drain and time.time() - t_drain > _DRAIN_MAX_WALL_S:
-                    logger.warning(
-                        "worker pool: worker %d hit wall-clock cap of %ds after %d tasks",
-                        worker_id, _DRAIN_MAX_WALL_S, processed,
-                    )
+                    _log_structured(logging.WARNING, "drain_wall_clock_cap", worker_id=worker_id, wall_s=_DRAIN_MAX_WALL_S, processed=processed)
                     break
         except Exception:
             logger.exception("worker pool: worker %d crashed", worker_id)
         finally:
-            logger.info(
-                "worker pool: worker %d stopped (processed %d tasks)",
-                worker_id, processed,
-            )
+            _log_structured(logging.INFO, "worker_pool_stopped", worker_id=worker_id, processed=processed)
 
 
 def _check_high_priority_pending(conn: AnyConnection) -> bool:
@@ -1784,19 +1808,10 @@ def run_worker(
                 if processed % 50 == 0:
                     elapsed = time.time() - t_drain
                     rate = processed / elapsed if elapsed > 0 else 0
-                    logger.info(
-                        "worker: drain progress %d/%d (%.1f tasks/sec)",
-                        processed,
-                        max_tasks,
-                        rate,
-                    )
+                    _log_structured(logging.INFO, "drain_progress", processed=processed, max_tasks=max_tasks, rate=round(rate, 1), elapsed_ms=round(elapsed * 1000.0, 2))
             elapsed = time.time() - t_drain
-            logger.info(
-                "worker: drain complete — processed %d tasks in %.1fs (%.1f tasks/sec)",
-                processed,
-                elapsed,
-                processed / elapsed if elapsed > 0 else 0,
-            )
+            elapsed_ms = elapsed * 1000.0
+            _log_structured(logging.INFO, "reconciler_drained", n_entries=processed, elapsed_ms=round(elapsed_ms, 2))
             _proc_sig.alarm(0)
             return
         else:
@@ -1847,7 +1862,7 @@ def run_worker(
         except Exception as _wp_exc:
             logger.warning("run_worker: broad except swallowed: %s", _wp_exc)
             pass
-        logger.info("worker: stopped")
+        _log_structured(logging.INFO, "worker_stopped")
 
 
 # ---------------------------------------------------------------------------

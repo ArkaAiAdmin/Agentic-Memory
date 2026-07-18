@@ -13,10 +13,14 @@ Inspired by cron_integrity_check.py pattern.
 """
 
 import json
+import logging
 import os
+import shutil
+import signal
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -25,6 +29,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from infra.log import setup_logging
 
 logger = setup_logging("cron_health_check")
+
+# Structured logging helper for observability
+def _log_structured(level: str | int, event: str, **fields: Any) -> None:
+    import json as _json
+    if isinstance(level, int):
+        level = logging.getLevelName(level).lower()
+    log_entry = {"event": event, **fields}
+    getattr(logger, level)(_json.dumps(log_entry))
 
 from infra.memory_common import GLOBAL_MEM_DIR
 from infra.infrastructure import resolve_active_memory_dir
@@ -77,27 +89,75 @@ def _check_auto_save_health() -> dict:
 
 
 def _check_semantic_search() -> dict:
-    """Quick check that semantic search (usearch) is functional."""
+    """Quick check that semantic search (usearch) is functional.
+
+    Wrapped in a 10s SIGALRM timeout so a hung embedding/vector probe
+    degrades to a 'critical' status instead of blocking the whole check.
+    """
+    class _Timeout(Exception):
+        pass
+
+    def _handler(signum, frame):
+        raise _Timeout("Semantic search probe timed out")
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    signal.signal(signal.SIGALRM, _handler)
+    signal.alarm(10)
     try:
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        from search.orchestrator import search_memories
+        try:
+            from search.orchestrator import search_memories
 
-        db_path = GLOBAL_MEM_DIR / "memory.db"
-        if not db_path.exists():
-            return {"status": "skipped", "reason": "no_db"}
+            db_path = GLOBAL_MEM_DIR / "memory.db"
+            if not db_path.exists():
+                return {"status": "skipped", "reason": "no_db"}
 
-        result = search_memories(
-            db_path=db_path,
-            query="health check probe",
-            limit=1,
-            include_global=False,
-        )
+            result = search_memories(
+                db_path=db_path,
+                query="health check probe",
+                limit=1,
+                include_global=False,
+            )
+            return {
+                "status": "ok",
+                "results_count": len(result.get("results", [])),
+            }
+        except _Timeout:
+            return {"status": "critical", "error": "Timed out after 10s"}
+        except Exception as e:
+            logger.warning("_check_semantic_search failed: %s", e)
+            return {"status": "error", "message": str(e)}
+    finally:
+        signal.alarm(0)
+
+
+def _check_disk_space(mem_dir: Path) -> dict:
+    """Check free disk space on the volume holding the memory directory.
+
+    - free < 1GB  -> critical
+    - free < 5GB  -> warning
+    - otherwise   -> pass
+    """
+    try:
+        usage = shutil.disk_usage(str(mem_dir))
+        free_gb = usage.free / (1024 ** 3)
+        total_gb = usage.total / (1024 ** 3)
+        used_pct = (usage.used / usage.total) * 100.0 if usage.total else 0.0
+
+        if free_gb < 1.0:
+            status = "critical"
+        elif free_gb < 5.0:
+            status = "warning"
+        else:
+            status = "pass"
+
         return {
-            "status": "ok",
-            "results_count": len(result.get("results", [])),
+            "status": status,
+            "free_gb": round(free_gb, 2),
+            "total_gb": round(total_gb, 2),
+            "used_pct": round(used_pct, 2),
         }
     except Exception as e:
-        logger.warning("_check_semantic_search failed: %s", e)
+        logger.warning("_check_disk_space failed: %s", e)
         return {"status": "error", "message": str(e)}
 
 
@@ -122,7 +182,7 @@ def main() -> int:
 
     cleaned = cleanup_stale_locks()
     if cleaned:
-        logger.info("cron_health_check: cleaned stale cron_model_locks: %s", cleaned)
+        _log_structured(logging.INFO, "stale_locks_cleaned", count=cleaned)
 
     # Self-check: warn if any cron is holding a lock for too long (budget: 10 min)
 
@@ -139,25 +199,30 @@ def main() -> int:
         idx = check_index_integrity(db_path, deep=False)
         critical = [f for f in idx["findings"] if f["severity"] == "critical"]
         warnings = [f for f in idx["findings"] if f["severity"] == "warning"]
+        status = "ok" if not critical else "critical"
         report["checks"]["index_integrity"] = {
-            "status": "ok" if not critical else "critical",
+            "status": status,
             "summary": idx["summary"],
             "critical_count": len(critical),
             "warning_count": len(warnings),
         }
+        _log_structured(logging.INFO if status == "ok" else logging.WARNING, "check_index_integrity", status=status, critical=len(critical), warnings=len(warnings))
         if critical:
             report["overall_healthy"] = False
             for c in critical[:5]:
                 report["alerts"].append(
                     f"[CRITICAL index] {c.get('check', c.get('code', '?'))}: {c['message']}"
                 )
+                from infra.alert import alert
+
+                alert("critical", "Health check: index integrity", c['message'])
         if warnings:
             for w in warnings[:3]:
                 report["alerts"].append(
                     f"[WARNING index] {w.get('check', w.get('code', '?'))}: {w['message']}"
                 )
     except Exception as e:
-        logger.warning("main failed: %s", e)
+        _log_structured(logging.WARNING, "check_failed", check="index_integrity", error=str(e))
         report["checks"]["index_integrity"] = {"status": "error", "message": str(e)}
         report["alerts"].append(f"[ERROR index_integrity] {e}")
         report["overall_healthy"] = False
@@ -170,11 +235,13 @@ def main() -> int:
             orphans = find_kg_orphans(conn)
         orphan_counts = {k: len(v) for k, v in orphans.items()}
         total_orphans = sum(orphan_counts.values())
+        status = "ok" if total_orphans == 0 else "warning"
         report["checks"]["kg_orphans"] = {
-            "status": "ok" if total_orphans == 0 else "warning",
+            "status": status,
             "counts": orphan_counts,
             "total": total_orphans,
         }
+        _log_structured(logging.INFO if status == "ok" else logging.WARNING, "check_kg_orphans", status=status, total=total_orphans, counts=orphan_counts)
         if total_orphans > 0:
             report["alerts"].append(
                 f"[WARNING kg_orphans] {total_orphans} orphan KG entries "
@@ -183,23 +250,34 @@ def main() -> int:
                 f"backlinks={orphan_counts.get('backlinks', 0)})"
             )
     except Exception as e:
-        logger.warning("main failed: %s", e)
+        _log_structured(logging.WARNING, "check_failed", check="kg_orphans", error=str(e))
         report["checks"]["kg_orphans"] = {"status": "error", "message": str(e)}
         report["alerts"].append(f"[ERROR kg_orphans] {e}")
 
     # 3. Circuit breaker
     cb = _check_circuit_breaker()
     report["checks"]["circuit_breaker"] = cb
-    if cb.get("circuit_breaker_open"):
+    cb_open = cb.get("circuit_breaker_open", False)
+    _log_structured(logging.INFO if not cb_open else logging.WARNING, "check_circuit_breaker", circuit_breaker_open=cb_open, open_since=cb.get("open_since"))
+    if cb_open:
         report["overall_healthy"] = False
         report["alerts"].append(
             f"[CRITICAL circuit_breaker] Open since {cb.get('open_since', 'unknown')}"
+        )
+        from infra.alert import alert
+
+        alert(
+            "critical",
+            "Health check: circuit breaker open",
+            f"Open since {cb.get('open_since', 'unknown')}",
         )
 
     # 4. Auto-save health
     ash = _check_auto_save_health()
     report["checks"]["auto_save"] = ash
-    if not ash.get("healthy", True):
+    ash_healthy = ash.get("healthy", True)
+    _log_structured(logging.INFO if ash_healthy else logging.WARNING, "check_auto_save", healthy=ash_healthy, recent_autos=ash.get("auto_save_recent"))
+    if not ash_healthy:
         report["alerts"].append(
             f"[WARNING auto_save] healthy=False, recent_autos={ash.get('auto_save_recent', '?')}, "
             f"db_error={ash.get('db_error', 'none')}"
@@ -213,25 +291,57 @@ def main() -> int:
         with _sqlite3_q.connect(str(db_path)) as _qconn:
             _qconn.row_factory = _sqlite3_q.Row
             _stuck = reset_stuck_processing_tasks(_qconn, max_age_minutes=10)
+        status = "ok" if _stuck == 0 else "warning"
+        _log_structured(logging.INFO if status == "ok" else logging.WARNING, "check_task_queue", status=status, stuck_reset=_stuck)
         if _stuck:
             report["alerts"].append(
                 f"[WARNING task_queue] reset {_stuck} stuck processing tasks"
             )
         report["checks"]["task_queue"] = {
-            "status": "ok" if _stuck == 0 else "warning",
+            "status": status,
             "stuck_reset": _stuck,
         }
     except Exception as _tq_err:
-        logger.warning("main failed: %s", _tq_err)
+        _log_structured(logging.WARNING, "check_failed", check="task_queue", error=str(_tq_err))
         report["checks"]["task_queue"] = {"status": "error", "message": str(_tq_err)}
         report["alerts"].append(f"[ERROR task_queue] {_tq_err}")
 
     # 5. Semantic search probe
     ss = _check_semantic_search()
     report["checks"]["semantic_search"] = ss
-    if ss.get("status") == "error":
+    ss_status = ss.get("status", "error")
+    _log_structured(logging.INFO if ss_status == "ok" else logging.WARNING, "check_semantic_search", status=ss_status, results_count=ss.get("results_count"))
+    if ss_status == "error":
         report["alerts"].append(
             f"[WARNING semantic_search] {ss.get('message', 'unknown')}"
+        )
+
+    # 6. Disk space
+    ds = _check_disk_space(db_path.parent)
+    report["checks"]["disk_space"] = ds
+    ds_status = ds.get("status", "error")
+    _log_structured(
+        logging.INFO if ds_status == "pass" else logging.WARNING,
+        "check_disk_space",
+        status=ds_status,
+        free_gb=ds.get("free_gb"),
+        used_pct=ds.get("used_pct"),
+    )
+    if ds_status == "critical":
+        report["overall_healthy"] = False
+        report["alerts"].append(
+            f"[CRITICAL disk_space] only {ds.get('free_gb')}GB free on {db_path.parent}"
+        )
+        from infra.alert import alert
+
+        alert(
+            "critical",
+            "Health check: disk space critical",
+            f"only {ds.get('free_gb')}GB free on {db_path.parent}",
+        )
+    elif ds_status == "warning":
+        report["alerts"].append(
+            f"[WARNING disk_space] only {ds.get('free_gb')}GB free on {db_path.parent}"
         )
 
     # Write status file
@@ -253,6 +363,11 @@ def main() -> int:
             print(f"    - {a}")
     else:
         print("  No alerts.")
+
+    if not report["overall_healthy"]:
+        from infra.alert import alert
+
+        alert("error", "System health degraded", "; ".join(report["alerts"][:5]))
 
     return 0 if report["overall_healthy"] else 1
 

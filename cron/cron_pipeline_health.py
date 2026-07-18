@@ -10,12 +10,23 @@ it up and complete it (short poll, ~30s max).  Reports:
 Returns 0 if healthy, 1 if not.
 """
 
+import logging
 import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from _flock import acquire_lock_or_exit
+
+logger = logging.getLogger(__name__)
+
+def _log_structured(level: str | int, event: str, **fields: Any) -> None:
+    import json as _json
+    if isinstance(level, int):
+        level = logging.getLevelName(level).lower()
+    log_entry = {"event": event, **fields}
+    getattr(logger, level)(_json.dumps(log_entry))
 
 SENTINEL_TYPE = "cron_pipeline_sentinel"
 
@@ -248,13 +259,13 @@ def _try_start_worker() -> bool:
                 timeout=15,
             )
             if r.returncode == 0:
-                print("recover: launchctl load succeeded", file=sys.stderr)
+                _log_structured(logging.INFO, "worker_recovered", method="launchctl")
                 return True
             # Already loaded → treat as started.
             if "already loaded" in (r.stderr + r.stdout).lower():
                 return True
         except Exception as e:  # pragma: no cover
-            print(f"recover: launchctl load failed: {e}", file=sys.stderr)
+            _log_structured(logging.WARNING, "worker_recovery_failed", method="launchctl", error=str(e))
 
     # Fallback: spawn the worker directly (--once to drain, then exit).
     # This unblocks the current backlog even without launchd.
@@ -269,10 +280,10 @@ def _try_start_worker() -> bool:
                 stderr=subprocess.DEVNULL,
                 cwd=str(repo_root),
             )
-            print("recover: spawned background_worker --once", file=sys.stderr)
+            _log_structured(logging.INFO, "worker_recovered", method="spawn")
             return True
     except Exception as e:  # pragma: no cover
-        print(f"recover: spawn failed: {e}", file=sys.stderr)
+        _log_structured(logging.WARNING, "worker_recovery_failed", method="spawn", error=str(e))
     return False
 
 
@@ -288,7 +299,7 @@ def main() -> int:
         t0 = time.time()
 
         task_id = _enqueue_sentinel(conn)
-        print(f"sentinel enqueued: task_id={task_id}")
+        _log_structured(logging.INFO, "sentinel_enqueued", task_id=task_id)
 
         failures = _count_failures(conn, hours=24)
         pending = _pending_depth(conn)
@@ -298,50 +309,61 @@ def main() -> int:
         # emitted even when the worker is down (poll would raise/timeout).
         # The journal_pending line is the CQRS-backlog signal: a growing
         # count means the background_worker daemon isn't draining journal.db.
-        print(f"failed_last_24h: {failures}")
-        print(f"pending_queue_depth: {pending}")
-        if journal_pending is not None:
-            print(f"journal_pending: {journal_pending}")
-        else:
-            print("journal_pending: n/a (journal off or absent)")
+        # Keep the human-readable stdout line (consumed by tests/operators)
+        # alongside the structured event.
+        print(f"journal_pending: {journal_pending}", flush=True)
+        _log_structured(logging.INFO, "pipeline_status", failed_last_24h=failures, pending_queue_depth=pending, journal_pending=journal_pending)
 
         if journal_pending is not None and journal_pending > JOURNAL_PENDING_WARN:
-            print(
-                f"WARNING: journal.db has {journal_pending} pending writes "
-                f"(> {JOURNAL_PENDING_WARN}); background_worker daemon may not "
-                f"be draining the CQRS journal",
-                file=sys.stderr,
-            )
+            _log_structured(logging.WARNING, "journal_backlog", journal_pending=journal_pending, threshold=JOURNAL_PENDING_WARN)
 
         # Self-heal: if the queue already shows a backlog, try to start the
         # worker before the (likely-failing) sentinel poll, so recovery runs
         # even if the poll times out below.
         if pending > 0:
-            _try_start_worker()
+            if _try_start_worker():
+                from infra.alert import alert
+
+                alert(
+                    "warning",
+                    "Background worker restarted",
+                    "Pipeline health check initiated worker restart",
+                )
 
         try:
             _poll_sentinel(conn, task_id, timeout_s=30.0)
         except Exception:
             # Sentinel didn't complete — worker likely down. Make one
             # final recovery attempt, then report the failure (don't mask it).
-            _try_start_worker()
+            if _try_start_worker():
+                from infra.alert import alert
+
+                alert(
+                    "warning",
+                    "Background worker restarted",
+                    "Pipeline health check initiated worker restart",
+                )
             raise
 
         elapsed = time.time() - t0
-        print(f"sentinel_completed: elapsed={elapsed:.2f}s")
+        _log_structured(logging.INFO, "sentinel_completed", elapsed_s=round(elapsed, 2), elapsed_ms=round(elapsed * 1000.0, 2))
 
         # A slow-but-successful sentinel (worker was draining a heavy
         # backlog) is HEALTHY, not a failure — don't fail on latency.
         # Only warn so pipeline-coverage can surface the backlog signal.
         if elapsed > 60.0:
-            print(
-                f"WARNING: sentinel took {elapsed:.1f}s (>60s: heavy backlog)",
-                file=sys.stderr,
-            )
+            _log_structured(logging.WARNING, "sentinel_slow", elapsed_s=round(elapsed, 1))
 
         return 0
     except Exception as exc:
-        print(f"CRITICAL: pipeline health check failed: {exc}", file=sys.stderr)
+        _log_structured(logging.ERROR, "pipeline_health_failed", error=str(exc), failed_tasks=failures, pending=pending)
+        from infra.alert import alert
+
+        alert(
+            "critical",
+            "Pipeline health check failed",
+            f"error={exc}, failed_tasks={failures}, pending={pending}",
+        )
         return 1
     finally:
         try:

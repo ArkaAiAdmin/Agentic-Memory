@@ -152,6 +152,13 @@ class MetricsHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/metrics":
             payload = collect_gauges(DB)
+            try:
+                from background.background_worker import get_worker_prometheus_text
+                worker_text = get_worker_prometheus_text()
+                if worker_text:
+                    payload += "\n" + worker_text + "\n"
+            except Exception:
+                pass
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
             self.end_headers()

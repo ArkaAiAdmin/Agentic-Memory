@@ -36,6 +36,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 # H9 fix (2026-06-22): serialize against concurrent backup / integrity runs.
@@ -217,6 +218,37 @@ def validate_backup(backup_path: Path, dry_run: bool = False) -> dict:
     return result
 
 
+RPO_HOURS = 24
+
+
+def check_rpo(latest: Path | None) -> dict:
+    """Check the Recovery Point Objective: the newest backup must be recent.
+
+    Returns a dict with 'rpo_met' (bool) and, when the backup is too old,
+    an 'rpo_breach' entry describing the breach.
+    """
+    if latest is None:
+        return {"rpo_met": False, "rpo_breach": {"breached": True, "latest_backup_age_hours": None, "rpo_hours": RPO_HOURS}}
+
+    age_seconds = time.time() - os.path.getmtime(latest)
+    age_hours = age_seconds / 3600.0
+    rpo_met = age_hours <= RPO_HOURS
+    if not rpo_met:
+        logger.warning(
+            "RPO breach: newest backup %s is %.1fh old (max %dh)",
+            latest, age_hours, RPO_HOURS,
+        )
+        return {
+            "rpo_met": False,
+            "rpo_breach": {
+                "breached": True,
+                "latest_backup_age_hours": round(age_hours, 2),
+                "rpo_hours": RPO_HOURS,
+            },
+        }
+    return {"rpo_met": True, "latest_backup_age_hours": round(age_hours, 2)}
+
+
 def find_and_validate_latest(dry_run: bool = False) -> dict:
     backup_dir = _MEM_DIR / BACKUP_DIR_NAME
     if not backup_dir.exists():
@@ -224,10 +256,13 @@ def find_and_validate_latest(dry_run: bool = False) -> dict:
 
     latest = find_latest_backup(backup_dir)
     if latest is None:
-        return {"error": f"no .db.gz backups found in {backup_dir}"}
+        rpo = check_rpo(None)
+        return {"error": f"no .db.gz backups found in {backup_dir}", **rpo}
 
     logger.info("Validating latest backup: %s", latest)
-    return validate_backup(latest, dry_run=dry_run)
+    result = validate_backup(latest, dry_run=dry_run)
+    result.update(check_rpo(latest))
+    return result
 
 
 def _get_python_path() -> str:
@@ -321,12 +356,39 @@ def main() -> int:
         status = "PASS" if check["pass"] else "FAIL"
         print(f"  [{status}] {check['check']}: {check['detail']}")
 
-    if res.get("valid"):
+    # RPO check section
+    rpo_met = res.get("rpo_met", True)
+    rpo_age = res.get("latest_backup_age_hours")
+    rpo_status = "OK" if rpo_met else "BREACHED"
+    print(f"  RPO check: {{'status': '{rpo_status}', 'latest_backup_age_hours': {rpo_age}, 'max_rpo_hours': {RPO_HOURS}}}")
+    if not rpo_met:
+        breach = res.get("rpo_breach", {})
+        print(f"  RPO BREACH: newest backup is {breach.get('latest_backup_age_hours')}h old (max {RPO_HOURS}h)")
+
+    if res.get("valid") and rpo_met:
         print(f"OK: backup is valid — {res['backup_path']}")
         return 0
-    else:
-        print(f"FAIL: backup validation failed — {res['backup_path']}")
+
+    if not rpo_met:
+        print(f"FAIL: RPO breach — newest backup is too old")
+        from infra.alert import alert
+
+        alert(
+            "error",
+            "Backup validation RPO breach",
+            f"path={res.get('backup_path')}, latest_backup_age_hours={res.get('latest_backup_age_hours')}, max_rpo_hours={RPO_HOURS}",
+        )
         return 1
+
+    print(f"FAIL: backup validation failed — {res['backup_path']}")
+    from infra.alert import alert
+
+    alert(
+        "error",
+        "Backup validation failed",
+        f"path={res['backup_path']}, error={res.get('error', 'unknown')}",
+    )
+    return 1
 
 
 if __name__ == "__main__":

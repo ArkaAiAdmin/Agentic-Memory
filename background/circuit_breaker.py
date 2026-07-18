@@ -291,6 +291,14 @@ def _auto_save_record_failure_and_maybe_trip(error: Exception | None = None) -> 
             window,
             cb_seconds,
         )
+        from infra.alert import alert
+
+        alert(
+            "error",
+            "Auto-save circuit breaker",
+            f"Circuit opened ({n_failures} failures in {window:.0f}s window, "
+            f"skipping saves for {cb_seconds:.0f}s)",
+        )
     if transitioned_to_open:
         _write_circuit_sentinel()
         _persist_circuit_state(
@@ -333,6 +341,9 @@ def _auto_save_record_success() -> None:
                 "recovered_at": _t.time(),
             },
         )
+        from infra.alert import alert
+
+        alert("info", "Auto-save circuit breaker", "Circuit closed (auto-save recovered)")
 
 
 def _record_circuit_skip(entry: dict) -> None:

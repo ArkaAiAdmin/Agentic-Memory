@@ -227,7 +227,7 @@ _schema_conn.close()
 # all function definitions intact.
 import importlib.util as _importlib_util
 
-_dashboard_path = Path(__file__).resolve().parent.parent / "dashboard.py"
+_dashboard_path = Path(__file__).resolve().parent.parent / "dashboard" / "__init__.py"
 _dashboard_spec = _importlib_util.spec_from_file_location("dashboard", str(_dashboard_path))
 dashboard = _importlib_util.module_from_spec(_dashboard_spec)
 sys.modules["dashboard"] = dashboard  # register before exec
