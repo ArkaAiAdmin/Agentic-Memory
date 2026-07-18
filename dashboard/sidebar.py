@@ -17,6 +17,35 @@ def render_sidebar():
             </div>
         </div>""",
     )
+
+    # ── Agent selector ──────────────────────────────────────────────────
+    # The install runs two agent processes (OpenCode + MIMOCODE), each with
+    # its own physical DB. Surface a switcher so the dashboard can show
+    # EITHER agent's full store instead of being hard-wired to one.
+    _base = dashboard.resolve_db().parent
+    _agents = {
+        "OpenCode": _base / "memory.db",
+        "MIMOCODE": _base / "memory-agent-b.db",
+    }
+    _valid = {k: v for k, v in _agents.items() if v.exists()}
+    if _valid:
+        if "agent_view" not in st.session_state:
+            st.session_state["agent_view"] = "OpenCode" if "OpenCode" in _valid else next(iter(_valid))
+        _choice = st.sidebar.selectbox(
+            "Agent store",
+            options=list(_valid.keys()),
+            index=list(_valid.keys()).index(st.session_state["agent_view"]),
+            key="agent_view_select",
+        )
+        # Switching the active agent store must invalidate the data caches
+        # (try_count/table/query are keyed only on their SQL args, not on DB).
+        if st.session_state.get("agent_view_db") != str(_valid[_choice]):
+            st.cache_data.clear()
+        st.session_state["agent_view"] = _choice
+        st.session_state["agent_view_db"] = str(_valid[_choice])
+        dashboard.DB = _valid[_choice]
+        dashboard.MEM_DIR = dashboard.DB.parent
+
     st.sidebar.caption(
         f"`{dashboard.DB.parent.name}`  \u00b7 "
         f"{dashboard.DB.stat().st_size / 1024 / 1024:.0f} MB"

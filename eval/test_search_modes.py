@@ -61,13 +61,22 @@ def test_splade_vocab_size_mapping():
         assert any(vid > 767 for vid in vocab_ids), f"Only found low vocab IDs: {vocab_ids}"
         assert all(0 <= vid < 30522 for vid in vocab_ids)
 
-def test_search_mode_fts(temp_db_path):
-    """Test that fts mode runs FTS-only search."""
-    save_memory(content="Python is a coding language.", category="lessons", title_slug="python-lang", db_path=str(temp_db_path), safety_wiring=False)
-    save_memory(content="JavaScript is also widely used.", category="lessons", title_slug="js-lang", db_path=str(temp_db_path), safety_wiring=False)
+def test_search_mode_fts(tmp_path):
+    """Test that fts mode runs FTS-only search.
+
+    Uses a clean DB (no pre-existing prod notes) so the FTS query can only
+    match the two notes saved here — the dirty ``temp_db_path`` fixture copies
+    the entire live DB, which pollutes FTS ranking with unrelated sessions.
+    """
+    from eval._fixtures import bootstrap_temp_db_clean
+
+    db_path = tmp_path / "memory.db"
+    bootstrap_temp_db_clean(db_path)
+    save_memory(content="Python is a coding language.", category="lessons", title_slug="python-lang", db_path=str(db_path), safety_wiring=False)
+    save_memory(content="JavaScript is also widely used.", category="lessons", title_slug="js-lang", db_path=str(db_path), safety_wiring=False)
 
     # FTS search for Python
-    res = search_memories(temp_db_path, "Python", mode="fts")
+    res = search_memories(db_path, "Python", mode="fts")
     assert res["count"] > 0, f"Expected results but got 0. Output: {res.get('output')}"
     contents = [r["content"] for r in res["results"]]
     assert any("Python" in c for c in contents), (
@@ -75,7 +84,7 @@ def test_search_mode_fts(temp_db_path):
     )
 
     # FTS search for JavaScript
-    res = search_memories(temp_db_path, "JavaScript", mode="fts")
+    res = search_memories(db_path, "JavaScript", mode="fts")
     assert res["count"] > 0, f"Expected results but got 0. Output: {res.get('output')}"
     contents = [r["content"] for r in res["results"]]
     assert any("JavaScript" in c for c in contents), (

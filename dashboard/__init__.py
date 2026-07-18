@@ -321,26 +321,27 @@ def _blob_weight(v):
         return 1.0
 
 
-def get_conn():
-    c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=30, check_same_thread=False)
+def get_conn(db_path: "Path | str | None" = None):
+    path = Path(db_path) if db_path else DB
+    c = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=30, check_same_thread=False)
     c.execute("PRAGMA foreign_keys=ON")
     c.row_factory = sqlite3.Row
     return c
 
 
-def query(sql: str, params=()) -> pd.DataFrame | None:
+def query(sql: str, params=(), db_path: Path | None = None) -> pd.DataFrame | None:
     try:
-        return pd.read_sql_query(sql, get_conn(), params=params)
+        return pd.read_sql_query(sql, get_conn(db_path), params=params)
     except Exception as e:
         logger.warning("query failed: %s", e)
         return None
 
 
 @st.cache_data(ttl=30)
-def table(name: str) -> bool:
+def table(name: str, db_path: str | None = None) -> bool:
     try:
         r = (
-            get_conn()
+            get_conn(db_path)
             .execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)
             )
@@ -353,12 +354,12 @@ def table(name: str) -> bool:
 
 
 @st.cache_data(ttl=30)
-def try_count(table_name: str, where: str | None = None) -> int:
+def try_count(table_name: str, where: str | None = None, db_path: str | None = None) -> int:
     try:
         sql = f"SELECT COUNT(*) FROM {table_name}"
         if where:
             sql += f" WHERE {where}"
-        r = get_conn().execute(sql).fetchone()
+        r = get_conn(db_path).execute(sql).fetchone()
         return r[0] if r else 0
     except Exception as e:
         logger.warning("try_count failed: %s", e)

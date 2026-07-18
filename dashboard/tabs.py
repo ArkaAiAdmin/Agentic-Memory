@@ -1999,23 +1999,72 @@ def render_multi_agent():
 
     shared_total = try_count("shared_memories")
     _peers = list(_cfg().sync_peers) if _cfg().sync_enable_server else []
+
+    # Aggregate the partner agent's shared pool so the dashboard shows the
+    # full cross-agent picture, not just this agent's local shares.
+    partner_shared = 0
+    partner_rows = []
+    try:
+        from pathlib import Path as _Path
+
+        _partner_db = dashboard.DB.parent / dashboard.DB.name.replace("memory.db", "memory-agent-b.db")
+        if _partner_db.exists():
+            import sqlite3 as _sql
+
+            _pc = _sql.connect(f"file:{_partner_db}?mode=ro", uri=True)
+            if _pc.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='shared_memories'"
+            ).fetchone():
+                partner_shared = _pc.execute(
+                    "SELECT COUNT(*) FROM shared_memories"
+                ).fetchone()[0]
+                partner_rows = _pc.execute(
+                    "SELECT source_note_id, agent_id, category, shared_with, "
+                    "datetime(shared_at, 'unixepoch') as shared "
+                    "FROM shared_memories ORDER BY shared_at DESC"
+                ).fetchall()
+            _pc.close()
+    except Exception as _e:
+        logger.warning("partner shared pool read failed: %s", _e)
+
     cols = st.columns(3)
-    cols[0].metric("Shared memories", shared_total)
+    cols[0].metric("Shared memories", shared_total + partner_shared)
     cols[1].metric("Sync peers (config)", len(_peers))
     cols[2].metric("CRDT enabled", "Yes" if _cfg().crdt_enabled else "No")
-    if len(_peers) == 0 and shared_total == 0:
+    if len(_peers) == 0 and shared_total == 0 and partner_shared == 0:
         st.caption("Single-agent install \u2014 no sync peers configured. Add peers under `[sync]` in `memory.toml` to enable cross-agent sharing.")
 
     st.divider()
 
-    if table("sync_log"):
-        df = query(
-            "SELECT id, peer_name, peer_agent_id, direction, started_at, "
-            "completed_at, success, changes_pushed, changes_pulled, "
-            "error_message, duration_ms "
-            "FROM sync_log ORDER BY started_at DESC LIMIT 200"
-        )
-        if df is not None and not df.empty:
+    # Read sync_log from BOTH agent stores so the peer picture is complete
+    # regardless of which agent DB is currently selected. The active agent's
+    # sync_log is the primary source; the partner agent's is merged in when
+    # present (the same partner DB we already read for the shared pool).
+    _sync_sql = (
+        "SELECT id, peer_name, peer_agent_id, direction, started_at, "
+        "completed_at, success, changes_pushed, changes_pulled, "
+        "error_message, duration_ms FROM sync_log"
+    )
+    df = query(_sync_sql + " ORDER BY started_at DESC LIMIT 200")
+    _partner_sync = None
+    try:
+        if _partner_db.exists():
+            import sqlite3 as _sql
+
+            _psc = _sql.connect(f"file:{_partner_db}?mode=ro", uri=True)
+            if _psc.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='sync_log'"
+            ).fetchone():
+                _partner_sync = pd.read_sql_query(
+                    _sync_sql + " ORDER BY started_at DESC LIMIT 200", _psc
+                )
+            _psc.close()
+    except Exception as _e:
+        logger.warning("partner sync_log read failed: %s", _e)
+    if _partner_sync is not None and not _partner_sync.empty:
+        df = pd.concat([df, _partner_sync], ignore_index=True) if df is not None and not df.empty else _partner_sync
+
+    if df is not None and not df.empty:
             st.markdown("#### Recent sync cycles")
             df["started_at"] = pd.to_datetime(df["started_at"], unit="s")
             df["completed_at"] = pd.to_datetime(df["completed_at"], unit="s", errors="coerce")
@@ -2064,21 +2113,37 @@ def render_multi_agent():
             )
             fig2.update_layout(**DARK, margin=dict(t=30, b=10, l=10, r=10), height=max(200, len(peer_status) * 40))
             st.plotly_chart(fig2, width="stretch")
-        else:
-            st.info("No sync cycles recorded. Configure `[[sync.peers]]` in `memory.toml` to get started.")
     else:
-        st.info("Table `sync_log` not yet created. Run `memory_check_integrity()` to bootstrap.")
+        st.info("No sync cycles recorded. Configure `[[sync.peers]]` in `memory.toml` to get started.")
 
     st.divider()
     st.markdown("#### Shared memory pool")
-    if table("shared_memories"):
-        df_shared = query(
-            "SELECT source_note_id, agent_id, category, shared_with, "
-            "datetime(shared_at, 'unixepoch') as shared "
-            "FROM shared_memories ORDER BY shared_at DESC LIMIT 50"
-        )
-        if df_shared is not None and not df_shared.empty:
-            st.caption(f"Showing {len(df_shared)} most recent shared entries")
+    if table("shared_memories") or partner_rows:
+        local_rows = []
+        if table("shared_memories"):
+            _lr = query(
+                "SELECT source_note_id, agent_id, category, shared_with, "
+                "datetime(shared_at, 'unixepoch') as shared "
+                "FROM shared_memories ORDER BY shared_at DESC"
+            )
+            if _lr is not None and not _lr.empty:
+                local_rows = _lr.to_dict("records")
+        combined = list(local_rows) + [
+            dict(zip(
+                ["source_note_id", "agent_id", "category", "shared_with", "shared"],
+                r,
+            ))
+            for r in partner_rows
+        ]
+        if combined:
+            import pandas as _pd
+
+            df_shared = _pd.DataFrame(combined)
+            df_shared = df_shared.head(50)
+            st.caption(
+                f"Showing {len(df_shared)} of {len(combined)} shared entries "
+                f"({len(local_rows)} local + {len(partner_rows)} from partner agent)"
+            )
             st.dataframe(df_shared, width="stretch", hide_index=True)
         else:
             st.info("Shared pool is empty. Call `memory_maintenance(operation='share', share_note_id=...)` to publish.")
@@ -2280,9 +2345,9 @@ def render_backups():
                     pre_name = f"pre-restore-{datetime.today().date().isoformat()}.db.gz"
                     pre_path = backup_dir / pre_name
                     with open(dashboard.DB, "rb") as fin, gzip.open(pre_path, "wb") as fout:
-                        shutil.copyfileobj(fin, fout)
+                        shutil.copyfileobj(fin, fout)  # type: ignore[arg-type]
                     with gzip.open(bp, "rb") as fin, open(dashboard.DB, "wb") as fout:
-                        shutil.copyfileobj(fin, fout)
+                        shutil.copyfileobj(fin, fout)  # type: ignore[arg-type]
                     st.success(f"Restored from {bp.name}. Pre-restore backup saved.")
                     st.rerun()
     else:
@@ -2299,7 +2364,7 @@ def render_backups():
             backup_name = f"memory-{date.today().isoformat()}-{datetime.now().strftime('%H%M')}.db.gz"
             backup_path = backup_dir / backup_name
             with open(dashboard.DB, "rb") as fin, gzip.open(backup_path, "wb") as fout:
-                shutil.copyfileobj(fin, fout)
+                shutil.copyfileobj(fin, fout)  # type: ignore[arg-type]
             st.success(f"Created {backup_name} ({backup_path.stat().st_size / 1024:.0f} KB)")
             st.rerun()
 
@@ -2325,8 +2390,8 @@ def render_backups():
                             pre_restore_path = backup_dir / pre_restore_name
                             with open(dashboard.DB, "rb") as fin, gzip.open(pre_restore_path, "wb") as fout:
                                 shutil.copyfileobj(fin, fout)
-                            with gzip.open(restore_path, "rb") as fin, open(dashboard.DB, "wb") as fout:
-                                shutil.copyfileobj(fin, fout)
+                            with gzip.open(restore_path, "rb") as _fin, open(dashboard.DB, "wb") as fout:
+                                shutil.copyfileobj(_fin, fout)  # type: ignore[arg-type]
                             st.success(f"Restored from {restore_name}. Pre-restore backup saved as {pre_restore_name}")
                             st.rerun()
 

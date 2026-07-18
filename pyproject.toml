@@ -74,6 +74,10 @@ dashboard = [
     "pandas>=2.0.0",
     "plotly>=5.0.0",
     "streamlit>=1.30.0",
+    # Headless browser (chrome-headless-shell) for agent-side dashboard
+    # verification. The browser binary is fetched separately:
+    #   python -m playwright install chromium
+    "playwright>=1.40.0",
 ]
 crewai = [
     "crewai>=0.80,<1.0",
