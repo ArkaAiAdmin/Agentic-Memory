@@ -147,7 +147,7 @@ def vv_sum(v: dict[str, int]) -> int:
 
 def _serialise_vv(v: dict[str, int]) -> str:
     """Deterministic serialisation for stable sorting (paper canonical form)."""
-    return ",".join(f"{k}:{v[k]}" for k in sorted(v))
+    return json.dumps(v, sort_keys=True, separators=(",", ":"))
 
 
 def _parse_vv(s: str) -> dict[str, int]:
@@ -772,7 +772,11 @@ def record_edge_add(
 
 
 def _compute_fingerprint(name: str, entity_type: str, description: str = "") -> str:
+    import unicodedata
+
     def canonical(s: str) -> str:
+        s = unicodedata.normalize("NFKC", s)
+        s = "".join(c for c in s if unicodedata.category(c) not in ("Cf", "Cc", "Co"))
         return " ".join(s.lower().strip().split())
 
     payload = f"{canonical(name)}|{canonical(entity_type)}|{canonical(description)}"
