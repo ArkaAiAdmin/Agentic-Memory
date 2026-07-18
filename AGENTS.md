@@ -85,7 +85,7 @@ agentic-memory/
 ├── mcp_*.py (31 modules) ← MCP tool surface
 ├── memory/           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md
-└── eval/             ← 331 test files, 4962+ test functions
+└── eval/             ← 331 test files, 4969+ test functions
 <!--AUTO-GEN:END key="critical_path"-->
 
 **Message contract:** CORE tools return user-facing JSON. All writes go through `save_memory` (direct) or `save_memory_journal` (CQRS journal, gated by `MEMORY_WRITE_JOURNAL_ENABLED`); the saga ensures crash-consistent rollback. `defer_expensive=True` by default — returns <200ms.
@@ -170,7 +170,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 - **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).
 - **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.
-- **Testing**: 331 test files, 4962+ test functions, ~104k+ test LOC. Subprocess-per-file runner.
+- **Testing**: 331 test files, 4969+ test functions, ~104k+ test LOC. Subprocess-per-file runner.
 - **Canonical refs**: `docs/architecture.md` · `docs/MCP_SURFACE.md` · `skills/memory-architecture/SKILL.md`.
 <!--AUTO-GEN:END key="current_state"-->
 
