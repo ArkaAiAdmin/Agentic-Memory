@@ -33,7 +33,12 @@ def _get_db_path() -> Path:
 
 def _get_agent_id() -> str:
     """Get the current agent's ID."""
-    return os.environ.get("MEMORY_AGENT_ID", "default")
+    agent_id = os.environ.get("MEMORY_AGENT_ID", "default")
+    # Validate: max 128 chars, alphanumeric + hyphens + underscores only
+    import re
+    if not agent_id or len(agent_id) > 128 or not re.match(r'^[a-zA-Z0-9_\-]+$', agent_id):
+        return "default"
+    return agent_id
 
 
 def _get_conn():
@@ -166,18 +171,7 @@ def _on_session_end(agent_id: str, project_id: str = "default") -> str:
             output.append(f"\n\nReleased {released} file lock(s).")
             record_coordination_event(conn, "locks_released", agent_id, detail=f"{released} locks")
 
-        # 3. Complete any active tasks assigned to this agent
-        completed = conn.execute(
-            "UPDATE shared_tasks SET status='completed', updated_at=? "
-            "WHERE assigned_to=? AND status='active'",
-            (now, agent_id),
-        ).rowcount
-        if completed:
-            conn.commit()
-            output.append(f"\n\nCompleted {completed} active task(s).")
-            record_coordination_event(conn, "tasks_completed", agent_id, detail=f"{completed} tasks")
-
-        # 4. Notify other agents of session end
+        # 3. Notify other agents of session end
         conn.execute(
             "INSERT INTO agent_messages (from_agent, to_agent, message_type, payload, status, created_at) "
             "VALUES (?, '*', 'session_end', ?, 'pending', ?)",
@@ -221,7 +215,7 @@ def _check_file_lock(file_path: str, agent_id: str) -> bool:
 
     except Exception as e:
         log_error(f"coordination lock check failed: {e}")
-        return True  # Fail open
+        return False  # Fail closed — don't allow writes if coordination is broken
 
 
 def _acquire_file_lock(file_path: str, agent_id: str, ttl: int = 300) -> bool:
@@ -261,7 +255,7 @@ def _acquire_file_lock(file_path: str, agent_id: str, ttl: int = 300) -> bool:
 
     except Exception as e:
         log_error(f"coordination lock acquire failed: {e}")
-        return True  # Fail open
+        return False  # Fail closed — don't allow lock acquisition if coordination is broken
 
 
 # ── Main entry point ─────────────────────────────────────────────────────

@@ -15,9 +15,17 @@ DEFAULT_LOCK_TTL = 300  # 5 minutes
 
 
 def acquire_lock(conn: sqlite3.Connection, file_path: str, agent_id: str, ttl: int = DEFAULT_LOCK_TTL) -> bool:
-    """Acquire exclusive lock on a file. Returns True if acquired."""
+    """Acquire exclusive lock on a file. Returns True if acquired.
+
+    Uses a transaction to prevent race conditions between check and insert.
+    """
     now = time.time()
     expires_at = now + ttl
+
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+    except Exception:
+        pass  # Already in a transaction (e.g. called from save pipeline)
 
     # Check existing lock
     existing = conn.execute(
@@ -39,6 +47,7 @@ def acquire_lock(conn: sqlite3.Connection, file_path: str, agent_id: str, ttl: i
         if existing[1] and existing[1] < now:
             conn.execute("DELETE FROM file_locks WHERE file_path=?", (file_path,))
         else:
+            conn.commit()
             logger.warning("File %s locked by %s, cannot acquire for %s", file_path, existing[0], agent_id)
             return False
 
@@ -76,10 +85,8 @@ def check_lock(conn: sqlite3.Connection, file_path: str) -> dict | None:
     if not row:
         return None
 
-    # Check if expired
+    # Check if expired — return None but do NOT delete (read should be side-effect free)
     if row[2] and row[2] < time.time():
-        conn.execute("DELETE FROM file_locks WHERE file_path=?", (file_path,))
-        conn.commit()
         return None
 
     return {

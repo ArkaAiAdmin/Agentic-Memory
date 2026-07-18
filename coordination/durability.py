@@ -43,6 +43,10 @@ def ensure_durability_tables(conn: sqlite3.Connection):
         CREATE INDEX IF NOT EXISTS idx_coordination_audit_action
         ON coordination_audit(action, timestamp)
     """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_coordination_audit_agent
+        ON coordination_audit(agent_id, timestamp)
+    """)
     conn.commit()
 
 
@@ -159,6 +163,17 @@ def cleanup_old_messages(conn: sqlite3.Connection, max_age_days: int = 30) -> in
     return cursor.rowcount
 
 
+def cleanup_old_audit_entries(conn: sqlite3.Connection, max_age_days: int = 90) -> int:
+    """Remove old audit log entries."""
+    cutoff = time.time() - (max_age_days * 86400)
+    cursor = conn.execute(
+        "DELETE FROM coordination_audit WHERE timestamp < ?",
+        (cutoff,),
+    )
+    conn.commit()
+    return cursor.rowcount
+
+
 def run_durability_maintenance(conn: sqlite3.Connection) -> dict:
     """Run all durability maintenance tasks. Returns summary."""
     ensure_durability_tables(conn)
@@ -168,6 +183,7 @@ def run_durability_maintenance(conn: sqlite3.Connection) -> dict:
         "stale_tasks_abandoned": abandon_stale_tasks(conn),
         "old_messages_cleaned": cleanup_old_messages(conn),
         "stale_agents_cleaned": cleanup_stale_agents(conn),
+        "old_audit_entries_cleaned": cleanup_old_audit_entries(conn),
     }
 
     # Record maintenance event

@@ -468,8 +468,13 @@ class TestCoordinationHook(unittest.TestCase):
             output = mod._on_session_end("agent-a", "proj-1")
             self.assertIn("Released", output)
 
-    def test_session_end_completes_tasks(self):
-        """Session end completes active tasks."""
+    def test_session_end_does_not_auto_complete_tasks(self):
+        """Session end releases locks but does NOT auto-complete tasks (by design).
+
+        Auto-completing tasks on session end is dangerous — tasks should only
+        be completed explicitly by the agent working on them. Session end
+        releases locks (crash recovery) but leaves tasks for manual management.
+        """
         self.conn.execute(
             "INSERT INTO shared_tasks (project_id, task_type, assigned_to, status, created_by, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -482,7 +487,14 @@ class TestCoordinationHook(unittest.TestCase):
         mod = importlib.import_module("hooks.memory-coordination")
         with patch.object(mod, "_get_conn", return_value=self.conn):
             output = mod._on_session_end("agent-a", "proj-1")
-            self.assertIn("Completed", output)
+            # Should NOT contain "Completed" — tasks are left as-is
+            self.assertNotIn("Completed", output)
+
+        # Verify task is still active (reopen conn since hook may have closed it)
+        conn2 = sqlite3.connect(self.db_path)
+        row = conn2.execute("SELECT status FROM shared_tasks WHERE assigned_to='agent-a'").fetchone()
+        conn2.close()
+        self.assertEqual(row[0], "active")
 
 
 if __name__ == "__main__":

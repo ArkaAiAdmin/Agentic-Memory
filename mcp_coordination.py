@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from typing import Any
 
@@ -104,9 +105,15 @@ def _get_agent_id() -> str:
     try:
         from agent_context import get_agent
         ctx = get_agent()
-        return ctx.agent_id or "default"
+        agent_id = ctx.agent_id or "default"
     except (ImportError, Exception):
+        agent_id = os.environ.get("MEMORY_AGENT_ID", "default")
+
+    # Validate: max 128 chars, alphanumeric + hyphens + underscores only
+    import re
+    if not agent_id or len(agent_id) > 128 or not re.match(r'^[a-zA-Z0-9_\-]+$', agent_id):
         return "default"
+    return agent_id
 
 
 def _create_task(conn, project_id, task_type, description, assigned_to, agent_id) -> str:
@@ -207,10 +214,21 @@ def _list_tasks(conn, project_id, status) -> str:
     return json.dumps({"ok": True, "tasks": tasks, "count": len(tasks)})
 
 
+def _validate_file_path(file_path: str) -> str | None:
+    """Validate file path. Returns normalized path or None if invalid."""
+    if not file_path or len(file_path) > 4096:
+        return None
+    # Block path traversal
+    if ".." in file_path:
+        return None
+    return file_path
+
+
 def _lock_file(conn, file_path, agent_id) -> str:
     """Acquire exclusive lock on a file."""
+    file_path = _validate_file_path(file_path)
     if not file_path:
-        return _err(ErrorCode.INVALID_ARGUMENT, "file_path is required")
+        return _err(ErrorCode.INVALID_ARGUMENT, "file_path is required and must not contain '..'")
 
     # Check if already locked
     existing = conn.execute(
@@ -234,6 +252,11 @@ def _lock_file(conn, file_path, agent_id) -> str:
         else:
             return _err(ErrorCode.CONFLICT, f"File locked by {existing[0]}")
 
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+    except Exception:
+        pass
+
     conn.execute(
         "INSERT OR REPLACE INTO file_locks (file_path, locked_by, locked_at, expires_at) VALUES (?, ?, ?, ?)",
         (file_path, agent_id, time.time(), time.time() + 300),
@@ -245,8 +268,9 @@ def _lock_file(conn, file_path, agent_id) -> str:
 
 def _unlock_file(conn, file_path, agent_id) -> str:
     """Release file lock."""
+    file_path = _validate_file_path(file_path)
     if not file_path:
-        return _err(ErrorCode.INVALID_ARGUMENT, "file_path is required")
+        return _err(ErrorCode.INVALID_ARGUMENT, "file_path is required and must not contain '..'")
 
     existing = conn.execute(
         "SELECT locked_by FROM file_locks WHERE file_path=?",
@@ -264,8 +288,9 @@ def _unlock_file(conn, file_path, agent_id) -> str:
 
 def _check_lock(conn, file_path) -> str:
     """Check if a file is locked."""
+    file_path = _validate_file_path(file_path)
     if not file_path:
-        return _err(ErrorCode.INVALID_ARGUMENT, "file_path is required")
+        return _err(ErrorCode.INVALID_ARGUMENT, "file_path is required and must not contain '..'")
 
     row = conn.execute(
         "SELECT locked_by, locked_at, expires_at FROM file_locks WHERE file_path=?",
@@ -295,6 +320,19 @@ def _send_message(conn, from_agent, to_agent, message_type, payload) -> str:
     """Send message to another agent."""
     if not to_agent or not message_type:
         return _err(ErrorCode.INVALID_ARGUMENT, "to_agent and message_type are required")
+
+    # Validate message_type
+    import re
+    if not re.match(r'^[a-zA-Z0-9_\-]+$', message_type) or len(message_type) > 64:
+        return _err(ErrorCode.INVALID_ARGUMENT, "message_type must be alphanumeric, max 64 chars")
+
+    # Validate payload size (max 1MB)
+    if payload and len(payload) > 1_048_576:
+        return _err(ErrorCode.INVALID_ARGUMENT, "payload too large (max 1MB)")
+
+    # Validate to_agent
+    if to_agent != "*" and (len(to_agent) > 128 or not re.match(r'^[a-zA-Z0-9_\-]+$', to_agent)):
+        return _err(ErrorCode.INVALID_ARGUMENT, "to_agent must be alphanumeric, max 128 chars")
 
     now = time.time()
     conn.execute(

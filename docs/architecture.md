@@ -122,8 +122,8 @@ agentic-memory/                    # Repo root
 ├── embedding_search.py             # Semantic search via model2vec
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
-├── migration_runner.py             # Schema migrations (current v68)
-└── ... (124 modules total)
+├── migration_runner.py             # Schema migrations (current v70)
+└── ... (125 modules total)
 ```
 
 | Module | Layer | Purpose |
@@ -140,7 +140,7 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v68, 69 migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v70, 71 migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
@@ -149,7 +149,7 @@ agentic-memory/                    # Repo root
 - **47 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.
-- **6 lifecycle hooks** in `hooks/` — session start/end,
+- **7 lifecycle hooks** in `hooks/` — session start/end,
   precompact snapshot, proactive context, recall,
   search-on-demand. See `~/.claude/settings.json` and `opencode.jsonc` for wiring.
   `_log_error.py` is a log helper, not a lifecycle hook.
