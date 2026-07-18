@@ -1048,7 +1048,16 @@ def _build_save_memory_steps(
 
     def _undo_file() -> None:
         if params.wrote_file:
-            _unlink_file(file_path)
+            if params.initial_file_content is not None:
+                try:
+                    file_path.write_text(params.initial_file_content, encoding="utf-8")
+                except Exception as exc:
+                    logger.warning(
+                        "saga undo: restore .md for %s failed: %r",
+                        params.note_id, exc,
+                    )
+            else:
+                _unlink_file(file_path)
 
     steps = [
         SagaStep(name="upsert_db", do=_do_upsert, undo=_undo_upsert),

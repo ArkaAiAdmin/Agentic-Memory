@@ -304,12 +304,16 @@ class SQLiteWriteQueue:
         )
         self._thread.start()
 
-    def start_session(self, db_path: Union[str, Path]) -> ProxyConnection:
+    def start_session(
+        self,
+        db_path: Union[str, Path],
+        tenant_id: str = "default",
+    ) -> ProxyConnection:
         """Start a write session proxy that executes transactions on the write queue thread."""
         cmd_queue: queue.Queue = queue.Queue()
         resp_queue: queue.Queue = queue.Queue()
         future: concurrent.futures.Future = concurrent.futures.Future()
-        self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue), future))
+        self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue), future, tenant_id))
         future.result(timeout=30.0)
         return ProxyConnection(cmd_queue, resp_queue)
 
@@ -318,6 +322,7 @@ class SQLiteWriteQueue:
         db_path: Union[str, Path],
         query: str,
         params: tuple = (),
+        tenant_id: str = "default",
     ) -> concurrent.futures.Future:
         """Enqueue a single mutating SQL statement.
 
@@ -325,13 +330,14 @@ class SQLiteWriteQueue:
             Future resolving to (last_rowid, rowcount) tuple.
         """
         future: concurrent.futures.Future = concurrent.futures.Future()
-        self._queue.put((Path(db_path), "statement", (query, params), future))
+        self._queue.put((Path(db_path), "statement", (query, params), future, tenant_id))
         return future
 
     def enqueue_transaction(
         self,
         db_path: Union[str, Path],
         callback: Callable[[sqlite3.Connection], Any],
+        tenant_id: str = "default",
     ) -> concurrent.futures.Future:
         """Enqueue an entire transactional callback to run serially on the writer thread.
 
@@ -343,7 +349,7 @@ class SQLiteWriteQueue:
             Future resolving to the callback's return value.
         """
         future: concurrent.futures.Future = concurrent.futures.Future()
-        self._queue.put((Path(db_path), "callback", callback, future))
+        self._queue.put((Path(db_path), "callback", callback, future, tenant_id))
         return future
 
     def _run_loop(self) -> None:
@@ -356,7 +362,8 @@ class SQLiteWriteQueue:
             if task is None:
                 break
 
-            db_path, task_type, payload, future = task
+            db_path, task_type, payload, future = task[:4]
+            task_tenant_id = task[4] if len(task) >= 5 else "default"
             try:
                 from infra.db_path_flock import db_path_flock
 
@@ -382,7 +389,7 @@ class SQLiteWriteQueue:
                         # Create tenant isolation primitives (function + view)
                         # matching what connection_pool.get() does.
                         try:
-                            conn.create_function("tenant_id", 0, lambda: "default")
+                            conn.create_function("tenant_id", 0, lambda: task_tenant_id)
                             conn.execute(
                                 "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                                 "SELECT * FROM memories WHERE tenant_id = tenant_id()"

@@ -44,7 +44,7 @@ sys.path.insert(0, _parent)
 
 from infra.memory_common import GLOBAL_MEM_DIR
 
-DEFAULT_DB_PATH = str(GLOBAL_MEM_DIR / "memory.db")
+DEFAULT_DB_PATH = os.environ.get("MEMORY_DB_PATH") or str(GLOBAL_MEM_DIR / "memory.db")
 DEFAULT_THRESHOLD = 0.15
 
 # Module logger — cron captures the stderr/stdout of the script,

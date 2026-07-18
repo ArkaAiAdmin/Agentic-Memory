@@ -10,6 +10,7 @@ import logging
 import sqlite3
 import time
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,7 @@ def _get_db(db_path: str | Path | None = None) -> sqlite3.Connection:
     if db_path is None:
         from infra.memory_common import GLOBAL_MEM_DIR
 
-        db_path = GLOBAL_MEM_DIR / "memory.db"
+        db_path = Path(os.environ.get("MEMORY_DB_PATH", GLOBAL_MEM_DIR / "memory.db"))
     conn = sqlite3.connect(str(db_path), timeout=10.0)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")

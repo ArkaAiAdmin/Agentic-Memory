@@ -20,7 +20,7 @@ import sys
 import time
 
 
-_DEFAULT_DB = "memory/memory.db"
+_DEFAULT_DB = os.environ.get("MEMORY_DB_PATH", "memory/memory.db")
 _DEFAULT_LIMIT = 50
 
 

@@ -37,7 +37,7 @@ setup_logging(__name__)
 
 
 def _run_check_and_rebuild(args: argparse.Namespace) -> int:
-    db_path = GLOBAL_MEM_DIR / "memory.db"
+    db_path = Path(os.environ.get("MEMORY_DB_PATH", GLOBAL_MEM_DIR / "memory.db"))
     if not db_path.exists():
         print(f"ERROR: no memory.db at {db_path}")
         return 1

@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: "A Framework for Content-Keyed CRDT Convergence"
+authors:
+  - family-names: "Sadhu"
+    given-names: "Subrata"
+preferred-citation:
+  type: article
+  title: "A Framework for Content-Keyed CRDT Convergence"
+  authors:
+    - family-names: "Sadhu"
+      given-names: "Subrata"
+  repository-code: "https://github.com/ArkaAiAdmin/agentic-memory-paper-2"
+  date-released: "2026-07-18"
+  version: "1"
+  license: "CC-BY-4.0"
+date-released: "2026-07-18"
+version: "1"
+repository-code: "https://github.com/ArkaAiAdmin/agentic-memory-paper-2"
+license: "Apache-2.0"
+license-url: "https://github.com/ArkaAiAdmin/agentic-memory-paper-2/blob/main/LICENSE"
+type: article
+keywords:
+  - "CRDT"
+  - "content-keyed"
+  - "convergence"
+  - "deduplication"
+  - "knowledge graph"
+  - "distributed systems"

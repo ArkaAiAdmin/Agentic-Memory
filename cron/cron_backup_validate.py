@@ -47,6 +47,9 @@ if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)
 sys.path.insert(0, _parent)
 from infra.memory_common import GLOBAL_MEM_DIR, safe_close_db
+
+_mem_dir_env = os.environ.get("MEMORY_DB_PATH")
+_MEM_DIR = Path(_mem_dir_env).parent if _mem_dir_env else GLOBAL_MEM_DIR
 from infra.log import setup_logging
 from infra.migration_runner import SCHEMA_VERSION as CURRENT_SCHEMA_VERSION
 
@@ -215,7 +218,7 @@ def validate_backup(backup_path: Path, dry_run: bool = False) -> dict:
 
 
 def find_and_validate_latest(dry_run: bool = False) -> dict:
-    backup_dir = GLOBAL_MEM_DIR / BACKUP_DIR_NAME
+    backup_dir = _MEM_DIR / BACKUP_DIR_NAME
     if not backup_dir.exists():
         return {"error": f"backup dir not found: {backup_dir}"}
 
@@ -237,7 +240,7 @@ def _get_python_path() -> str:
 def _get_cron_line() -> str:
     python = _get_python_path()
     script = str(Path(__file__).resolve())
-    log = str(GLOBAL_MEM_DIR / "backups" / "validate.log")
+    log = str(_MEM_DIR / "backups" / "validate.log")
     return f"{CRON_SCHEDULE} {python} {script} >> {log} 2>&1 {CRON_MARKER}"
 
 
