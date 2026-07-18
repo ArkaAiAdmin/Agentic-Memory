@@ -50,18 +50,45 @@ def _jaccard_similarity(s1: str, s2: str) -> float:
 
 
 def _upsert_entity(
-    conn: AnyConnection, name: str, entity_type: str, now: float
+    conn: AnyConnection, name: str, entity_type: str, now: float,
+    description: str = "",
 ) -> int:
     """Insert or update an entity. Returns the entity ID.
     
-    Resolves entities using exact match, exact alias match, or fuzzy Jaccard similarity.
+    Resolves entities using fingerprint, exact match, exact alias match,
+    or fuzzy Jaccard similarity (in that order).
+    Stores a content-keyed fingerprint to bridge the UNIQUE(fingerprint)
+    constraint that migration 041 established on ``kg_entities``.
     """
     normalized = name.lower().strip()
+    entity_type_norm = entity_type.lower().strip()
     
-    # 1. Exact match on name
+    # Fingerprint key: (name, entity_type, description) — same canonicalisation
+    # as kg.kg_crdt._compute_fingerprint.
+    from kg.kg_crdt import _compute_fingerprint as _cfp
+    _fp = _cfp(name, entity_type, description)
+    
+    # 0. Fast path: fingerprint already matches an existing row.
     row = conn.execute(
-        "SELECT id FROM kg_entities WHERE name = ? AND entity_type = ?",
-        (normalized, entity_type),
+        "SELECT id FROM kg_entities WHERE fingerprint = ?",
+        (_fp,),
+    ).fetchone()
+    if row:
+        entity_id = row[0]
+        if entity_id is None:
+            raise RuntimeError(f"NULL entity id for {normalized!r}")
+        conn.execute(
+            "UPDATE kg_entities SET mentions = mentions + 1, updated_at = datetime('now') "
+            "WHERE id = ?",
+            (entity_id,),
+        )
+        return int(entity_id)
+    
+    # 1. Exact match on name (case-insensitive on entity_type for backward
+    #    compatibility with pre-normalization rows).
+    row = conn.execute(
+        "SELECT id FROM kg_entities WHERE LOWER(name) = ? AND LOWER(entity_type) = ?",
+        (normalized, entity_type_norm),
     ).fetchone()
     
     # 2. Exact match on alias
@@ -69,8 +96,8 @@ def _upsert_entity(
         row = conn.execute(
             "SELECT entity_id FROM kg_entity_aliases a "
             "JOIN kg_entities e ON a.entity_id = e.id "
-            "WHERE a.alias = ? AND e.entity_type = ?",
-            (normalized, entity_type),
+            "WHERE a.alias = ? AND LOWER(e.entity_type) = ?",
+            (normalized, entity_type_norm),
         ).fetchone()
         
     # 3. Fuzzy match on existing entities or aliases
@@ -80,8 +107,8 @@ def _upsert_entity(
         
         # Check existing entity names
         candidates = conn.execute(
-            "SELECT id, name FROM kg_entities WHERE entity_type = ? ORDER BY mentions DESC LIMIT 500",
-            (entity_type,)
+            "SELECT id, name FROM kg_entities WHERE LOWER(entity_type) = ? ORDER BY mentions DESC LIMIT 500",
+            (entity_type_norm,)
         ).fetchall()
         for cid, cname in candidates:
             sim = _jaccard_similarity(normalized, cname.lower())
@@ -94,9 +121,9 @@ def _upsert_entity(
             alias_candidates = conn.execute(
                 "SELECT a.entity_id, a.alias "
                 "FROM kg_entity_aliases a JOIN kg_entities e ON a.entity_id = e.id "
-                "WHERE e.entity_type = ? "
+                "WHERE LOWER(e.entity_type) = ? "
                 "ORDER BY e.mentions DESC LIMIT 500",
-                (entity_type,)
+                (entity_type_norm,)
             ).fetchall()
             for cid, calias in alias_candidates:
                 sim = _jaccard_similarity(normalized, calias.lower())
@@ -119,18 +146,19 @@ def _upsert_entity(
         entity_id = row[0]
         if entity_id is None:
             raise RuntimeError(f"NULL entity id for {normalized!r}")
+        # Backfill fingerprint if the existing row lacks one (pre-migration-041 rows)
         conn.execute(
-            "UPDATE kg_entities SET mentions = mentions + 1, updated_at = datetime('now') "
-            "WHERE id = ?",
-            (entity_id,),
+            "UPDATE kg_entities SET mentions = mentions + 1, updated_at = datetime('now'), "
+            "fingerprint = COALESCE(fingerprint, ?) WHERE id = ?",
+            (_fp, entity_id),
         )
         return int(entity_id)
     else:
         try:
             cur = conn.execute(
-                "INSERT INTO kg_entities (name, entity_type, created_at, updated_at) "
-                "VALUES (?, ?, datetime('now'), datetime('now'))",
-                (normalized, entity_type),
+                "INSERT INTO kg_entities (name, entity_type, fingerprint, created_at, updated_at) "
+                "VALUES (?, ?, ?, datetime('now'), datetime('now'))",
+                (normalized, entity_type, _fp),
             )
             if cur.lastrowid is None or cur.lastrowid == 0:
                 raise RuntimeError(f"Failed to upsert entity: {name}")
@@ -138,17 +166,17 @@ def _upsert_entity(
         except sqlite3.IntegrityError:
             # Race condition: another thread inserted between our SELECT and INSERT
             row = conn.execute(
-                "SELECT id FROM kg_entities WHERE name = ? AND entity_type = ?",
-                (normalized, entity_type),
+                "SELECT id FROM kg_entities WHERE LOWER(name) = ? AND LOWER(entity_type) = ?",
+                (normalized, entity_type_norm),
             ).fetchone()
             if row:
                 raw_id = row[0]
                 if raw_id is None:
                     raise RuntimeError(f"NULL entity id for {normalized!r}")
                 conn.execute(
-                    "UPDATE kg_entities SET mentions = mentions + 1, updated_at = datetime('now') "
-                    "WHERE id = ?",
-                    (raw_id,),
+                    "UPDATE kg_entities SET mentions = mentions + 1, updated_at = datetime('now'), "
+                    "fingerprint = COALESCE(fingerprint, ?) WHERE id = ?",
+                    (_fp, raw_id),
                 )
                 return int(raw_id)
             raise

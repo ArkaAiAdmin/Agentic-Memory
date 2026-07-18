@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS kg_entities (
     centrality REAL DEFAULT 0.0,
     created_at TEXT,
     updated_at TEXT,
+    fingerprint TEXT,
     UNIQUE(name, entity_type)
 );
 
@@ -101,6 +102,11 @@ def ensure_kg_schema(conn: AnyConnection) -> None:
         if "betweenness" not in cols_entities:
             try:
                 conn.execute("ALTER TABLE kg_entities ADD COLUMN betweenness REAL DEFAULT 0.0")
+            except Exception as e:
+                logger.warning("ensure_kg_schema failed: %s", e)
+        if "fingerprint" not in cols_entities:
+            try:
+                conn.execute("ALTER TABLE kg_entities ADD COLUMN fingerprint TEXT")
             except Exception as e:
                 logger.warning("ensure_kg_schema failed: %s", e)
     except Exception as exc:

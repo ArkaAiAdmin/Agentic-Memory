@@ -21,6 +21,7 @@ from knowledge_graph import (
     _upsert_entity,
     _upsert_edge,
 )
+from kg.kg_crdt import ensure_kg_crdt_schema
 from fact import (
     ensure_facts_schema,
     extract_facts,
@@ -38,6 +39,7 @@ class KGTestBase(unittest.TestCase):
         self.conn = sqlite3.connect(str(self.db_path))
         self.conn.execute("PRAGMA journal_mode=WAL")
         ensure_kg_schema(self.conn)
+        ensure_kg_crdt_schema(self.conn)
         ensure_facts_schema(self.conn)
         self.conn.commit()
 
@@ -635,6 +637,93 @@ class TestKGFTSSync(KGTestBase):
         ec = self.conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()[0]
         fc = self.conn.execute("SELECT COUNT(*) FROM kg_entities_fts").fetchone()[0]
         self.assertEqual(ec, fc)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 9. Fingerprint-based dedup in _upsert_entity
+# ─────────────────────────────────────────────────────────────────────
+class TestFingerprintDedup(KGTestBase):
+    """Verify _upsert_entity prevents duplicates via content-keyed fingerprint."""
+
+    def _count(self, name: str, entity_type: str = "") -> int:
+        if entity_type:
+            return self.conn.execute(
+                "SELECT COUNT(*) FROM kg_entities WHERE LOWER(name)=? AND LOWER(entity_type)=?",
+                (name.lower(), entity_type.lower()),
+            ).fetchone()[0]
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM kg_entities WHERE LOWER(name)=?", (name.lower(),)
+        ).fetchone()[0]
+
+    def test_same_entity_twice_returns_same_id(self):
+        """Two upserts of the same (name, type) return the same entity_id."""
+        now = time.time()
+        e1 = _upsert_entity(self.conn, "alice", "person", now)
+        e2 = _upsert_entity(self.conn, "alice", "person", now)
+        self.assertEqual(e1, e2)
+        self.assertEqual(self._count("alice", "person"), 1)
+
+    def test_different_type_casing_matched(self):
+        """Entity_type with different casing (Concept vs concept) resolves to same entity
+        via fingerprint, not creating a duplicate."""
+        now = time.time()
+        e1 = _upsert_entity(self.conn, "machine learning", "Concept", now)
+        e2 = _upsert_entity(self.conn, "machine learning", "concept", now)
+        self.assertEqual(e1, e2)
+        self.assertEqual(self._count("machine learning", "concept"), 1)
+
+    def test_different_types_not_merged(self):
+        """Different normalized entity_types produce different fingerprints
+        and remain distinct."""
+        now = time.time()
+        e1 = _upsert_entity(self.conn, "python", "language", now)
+        e2 = _upsert_entity(self.conn, "python", "snake", now)
+        self.assertNotEqual(e1, e2)
+        self.assertEqual(self._count("python"), 2)
+
+    def test_fingerprint_backfilled_on_existing_row(self):
+        """An entity created without fingerprint (simulating pre-041 state)
+        gets one backfilled on the next upsert."""
+        now = time.time()
+        fp_col = [r[1] for r in self.conn.execute("PRAGMA table_info(kg_entities)").fetchall()]
+        has_fp = "fingerprint" in fp_col
+
+        e1 = _upsert_entity(self.conn, "backfill_test", "person", now)
+        if has_fp:
+            # Simulate pre-041 state by nulling the fingerprint
+            self.conn.execute("UPDATE kg_entities SET fingerprint = NULL WHERE id = ?", (e1,))
+            self.conn.commit()
+
+        _upsert_entity(self.conn, "backfill_test", "person", now)
+        if has_fp:
+            fp = self.conn.execute(
+                "SELECT fingerprint FROM kg_entities WHERE id = ?", (e1,)
+            ).fetchone()[0]
+            self.assertIsNotNone(fp, "Fingerprint should have been backfilled")
+
+    def test_fingerprint_via_description_differentiates(self):
+        """Entities with the same (name, type) but different descriptions
+        get different fingerprints and remain distinct."""
+        from kg.kg_crdt import _compute_fingerprint
+        fp_no_desc = _compute_fingerprint("same_name", "same_type", "")
+        fp_with_desc = _compute_fingerprint("same_name", "same_type", "different")
+        self.assertNotEqual(fp_no_desc, fp_with_desc)
+
+    def test_fingerprint_unique_constraint_honored(self):
+        """New INSERT with a fingerprint respects UNIQUE(fingerprint)."""
+        now = time.time()
+        e1 = _upsert_entity(self.conn, "unique_fp", "test", now)
+        e2 = _upsert_entity(self.conn, "unique_fp", "test", now)
+        self.assertEqual(e1, e2)
+        self.assertEqual(self._count("unique_fp", "test"), 1)
+
+    def test_name_whitespace_normalized(self):
+        """Leading/trailing whitespace in name is normalized via fingerprint."""
+        now = time.time()
+        e1 = _upsert_entity(self.conn, "  spaced  ", "t", now)
+        e2 = _upsert_entity(self.conn, "spaced", "t", now)
+        self.assertEqual(e1, e2)
+        self.assertEqual(self._count("spaced", "t"), 1)
 
 
 if __name__ == "__main__":
