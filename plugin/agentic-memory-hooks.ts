@@ -51,6 +51,7 @@ const MEMORY_RECALL = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-recall-sess
 const PROACTIVE_CONTEXT = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-proactive-context.py")
 const MEMORY_SESSION_END = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-session-end.py")
 const MEMORY_PRECOMPACT_SNAPSHOT = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-precompact-snapshot.py")
+const MEMORY_COORDINATION = path.join(AGENTIC_MEMORY_DIR, "hooks", "memory-coordination.py")
 const AGENT_CONTRACT_FILE = path.join(AGENTIC_MEMORY_DIR, "AGENT_CONTRACT.md")
 const STATE_FILE = path.join(AGENTIC_MEMORY_DIR, "memory", "sessions", ".context_monitor_state.json")
 const ERROR_LOG = path.join(AGENTIC_MEMORY_DIR, "memory", "hook-errors.jsonl")
@@ -395,6 +396,12 @@ async function runSessionStart(ctx: HookContext): Promise<void> {
     contexts.push(captureOutput([MEMORY_SESSION_START], undefined, "memory-session-start", ctx.adapter))
   }
 
+  // Coordination: check pending messages, load project state
+  if (hookEnabled("session:start:coordination", ["standard", "strict"])) {
+    const coordData = JSON.stringify({ action: "session_start", agent_id: sessionId })
+    contexts.push(captureOutput([MEMORY_COORDINATION], coordData, "coordination-start", ctx.adapter))
+  }
+
   if (contexts.length > 0) {
     s.sessionContext = (await Promise.all(contexts)).filter(Boolean).join("\n\n")
   }
@@ -528,6 +535,11 @@ export function endSession(ctx: HookContext): Promise<void> {
         reject(err)
       })
     }).catch((e2) => ctx.adapter.log(`[agentic-memory] Session end save failed: ${e2}`))
+  ).finally(() =>
+    // Coordination: update project state, release locks, notify other agents
+    hookEnabled("session:end:coordination", ["standard", "strict"])
+      ? captureOutput([MEMORY_COORDINATION], JSON.stringify({ action: "session_end", agent_id: sessionId }), "coordination-end", ctx.adapter).catch(() => {})
+      : Promise.resolve()
   )
 }
 

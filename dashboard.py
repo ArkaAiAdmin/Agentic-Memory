@@ -17,6 +17,7 @@ from dashboard.tab_knowledge import render_knowledge
 from dashboard.tab_quality import render_quality
 from dashboard.tab_operations import render_operations
 from dashboard.tab_compliance import render_compliance
+from dashboard.tab_coordination import render_coordination
 from dashboard.tab_audit import render_audit
 from dashboard.tab_settings import render_settings
 
@@ -46,7 +47,7 @@ _dk.MEM_DIR = _dk.DB.parent
 # ── Sidebar ──────────────────────────────────────────────────────────────
 render_sidebar()
 
-# ── Tabs (8 purpose-driven) ─────────────────────────────────────────────
+# ── Tabs (9 purpose-driven) ─────────────────────────────────────────────
 (
     dashboard_tab,
     memories_tab,
@@ -54,6 +55,7 @@ render_sidebar()
     quality_tab,
     operations_tab,
     compliance_tab,
+    coordination_tab,
     audit_tab,
     settings_tab,
 ) = st.tabs(TABS)
@@ -93,6 +95,12 @@ with operations_tab:
 # ═══════════════════════════════════════════════════════════════════════════
 with compliance_tab:
     render_compliance()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COORDINATION (Tasks + File Locks + Messaging + Project State)
+# ═══════════════════════════════════════════════════════════════════════════
+with coordination_tab:
+    render_coordination()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # AUDIT (Full audit log + Performance)

@@ -364,6 +364,7 @@ TABS = [
     "Quality",
     "Operations",
     "Compliance",
+    "Coordination",
     "Audit",
     "Settings",
 ]

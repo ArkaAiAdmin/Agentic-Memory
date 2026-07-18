@@ -217,12 +217,13 @@ class TestPackageImports(_ut.TestCase):
             "Quality",
             "Operations",
             "Compliance",
+            "Coordination",
             "Audit",
             "Settings",
         ]
         self.assertEqual(TABS, expected)
-        # 8 purpose-driven tabs
-        self.assertEqual(len(TABS), 8)
+        # 9 purpose-driven tabs
+        self.assertEqual(len(TABS), 9)
 
     def test_dark_config_has_expected_keys(self) -> None:
         self.assertIn("paper_bgcolor", DARK)
