@@ -2277,10 +2277,7 @@ def render_backups():
             col_r1, col_r2 = st.columns([1, 8])
             with col_r1:
                 if st.button("\U0001f504 Restore", key=restore_key):
-                    import gzip
-                    import shutil
-                    from datetime import date as _d
-                    pre_name = f"pre-restore-{_d.today().isoformat()}.db.gz"
+                    pre_name = f"pre-restore-{datetime.today().date().isoformat()}.db.gz"
                     pre_path = backup_dir / pre_name
                     with open(dashboard.DB, "rb") as fin, gzip.open(pre_path, "wb") as fout:
                         shutil.copyfileobj(fin, fout)

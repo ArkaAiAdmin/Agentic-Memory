@@ -110,6 +110,12 @@ _mock_st.sidebar.caption = MagicMock()
 _mock_st.sidebar.markdown = MagicMock()
 _mock_st.sidebar.button = MagicMock(return_value=False)
 _mock_st.sidebar.metric = MagicMock()
+# Save the real modules so we can restore them after the dashboard import.
+# Leaving the mocks in sys.modules permanently leaks into other test
+# modules that import streamlit (e.g. mcp_audit -> with_audit), breaking
+# unrelated test files run after this one in the same process.
+_real_streamlit = sys.modules.get("streamlit")
+_real_infra_infra = sys.modules.get("infra.infrastructure")
 sys.modules["streamlit"] = _mock_st
 
 # Mock infra.infrastructure so resolve_db() returns a controllable path.
@@ -247,6 +253,20 @@ with (
 # so tests never accidentally touch a real database.
 dashboard.DB = Path("/tmp/test_memory_dir/memory.db")
 dashboard.MEM_DIR = Path("/tmp/test_memory_dir")
+
+# Restore the real streamlit / infra.infrastructure modules now that the
+# dashboard module has finished importing. The dashboard's own st reference
+# was captured at import time, so removing the mock from sys.modules does not
+# affect this test's behaviour but prevents the mock from leaking into other
+# test modules (e.g. mcp_audit's @with_audit decorator) in the same process.
+if _real_streamlit is not None:
+    sys.modules["streamlit"] = _real_streamlit
+else:
+    sys.modules.pop("streamlit", None)
+if _real_infra_infra is not None:
+    sys.modules["infra.infrastructure"] = _real_infra_infra
+else:
+    sys.modules.pop("infra.infrastructure", None)
 
 # ── Module-level streamlit mock for plotly (no side effects, just config) ──
 # plotly.express.defaults is set at module level — that's fine.
