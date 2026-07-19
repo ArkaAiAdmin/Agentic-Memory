@@ -2036,16 +2036,14 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._error(f"Checkout failed: {e}", 500)
 
     def _handle_cloud_signup(self) -> None:
-        """Create a new customer + deployment + provision memory.db.
+        """Create a new customer + deployment + optionally provision memory.db.
 
         POST /api/v1/cloud/signup
-        Body: {"email": "...", "name": "...", "plan_id": "free"}
+        Body: {"email": "...", "name": "...", "plan_id": "free", "mode": "cloud_hosted"}
 
-        Creates:
-          1. Customer row in cloud_state.db
-          2. Deployment row (maps deployment_id → tenant_id)
-          3. Memory DB directory + empty memory.db at the deployment path
-          4. Default subscription on the requested plan
+        Modes:
+          - "cloud_hosted": provisions memory.db with schema (default)
+          - "self_hosted":  skips DB provisioning (user manages their own DB)
         """
         import uuid
         import os
@@ -2054,8 +2052,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             email = body.get("email", "").strip()
             name = body.get("name", "").strip() or email
             plan_id = body.get("plan_id", "free")
+            mode = body.get("mode", "cloud_hosted")
             if not email:
                 self._error("email is required", 400)
+                return
+            if mode not in ("cloud_hosted", "self_hosted"):
+                self._error("mode must be 'cloud_hosted' or 'self_hosted'", 400)
                 return
 
             plan = self.cloud_store.get_plan(plan_id)
@@ -2070,11 +2072,22 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
             deployment_id = f"dep_{uuid.uuid4().hex[:12]}"
             tenant_id = f"tenant_{uuid.uuid4().hex[:8]}"
+            mem_db_path = None
 
-            # Provision the memory DB directory
-            base_dir = Path(self.server.db_path).parent / "deployments" / deployment_id
-            base_dir.mkdir(parents=True, exist_ok=True)
-            mem_db_path = str(base_dir / "memory.db")
+            if mode == "cloud_hosted":
+                # Provision the memory DB directory
+                base_dir = Path(self.server.db_path).parent / "deployments" / deployment_id
+                base_dir.mkdir(parents=True, exist_ok=True)
+                mem_db_path = str(base_dir / "memory.db")
+
+                # Initialize the memory DB with the schema via the migration runner
+                try:
+                    from infra.migration_runner import run_migrations
+                    run_migrations(mem_db_path)
+                except Exception as mig_exc:
+                    logger.error("signup memory DB init FAILED: %s", mig_exc)
+                    self._error(f"Deployment created but DB init failed: {mig_exc}", 500)
+                    return
 
             # Create the deployment row
             self.cloud_store.create_deployment(
@@ -2085,15 +2098,6 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 db_path=mem_db_path,
                 api_base=f"http://127.0.0.1:{self.server.port}",
             )
-
-            # Initialize the memory DB with the schema via the migration runner
-            try:
-                from infra.migration_runner import run_migrations
-                run_migrations(mem_db_path)
-            except Exception as mig_exc:
-                logger.error("signup memory DB init FAILED: %s", mig_exc)
-                self._error(f"Deployment created but DB init failed: {mig_exc}", 500)
-                return
 
             # Create default subscription
             sub_id = f"sub_{uuid.uuid4().hex[:8]}"
@@ -2110,6 +2114,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 "deployment_id": deployment_id,
                 "tenant_id": tenant_id,
                 "plan_id": plan_id,
+                "mode": mode,
                 "db_path": mem_db_path,
                 "status": "active",
             }, 201)

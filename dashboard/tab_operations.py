@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import shutil
-import sqlite3
 import subprocess
 import sys
 from collections import Counter
@@ -149,50 +148,46 @@ def _render_scheduled_jobs() -> None:
 
     all_jobs = _KNOWN_JOBS + extra_jobs
 
-    def _get_task_status(conn: sqlite3.Connection, task_type: str) -> dict:
+    def _get_task_status(_client, task_type: str) -> dict:
         try:
-            r = conn.execute(
+            r = _client.query(
                 "SELECT status, completed_at, error, attempts "
                 "FROM task_queue WHERE task_type = ? ORDER BY id DESC LIMIT 1",
-                (task_type,),
-            ).fetchone()
-            if not r:
+                [task_type],
+            )
+            rows = r.get("results", [])
+            if not rows:
                 return {"status": "unknown", "last_run": None, "error": None, "attempts": 0}
+            row = rows[0]
             return {
-                "status": r[0] or "unknown",
-                "last_run": r[1],
-                "error": r[2],
-                "attempts": r[3] or 0,
+                "status": row.get("status") or "unknown",
+                "last_run": row.get("completed_at"),
+                "error": row.get("error"),
+                "attempts": row.get("attempts") or 0,
             }
         except Exception:
             return {"status": "unknown", "last_run": None, "error": None, "attempts": 0}
 
-    def _get_pending_count(conn: sqlite3.Connection, task_type: str) -> int:
+    def _get_pending_count(_client, task_type: str) -> int:
         try:
-            r = conn.execute(
-                "SELECT COUNT(*) FROM task_queue WHERE task_type = ? AND status = 'pending'",
-                (task_type,),
-            ).fetchone()
-            return r[0] if r else 0
+            r = _client.query(
+                "SELECT COUNT(*) as cnt FROM task_queue WHERE task_type = ? AND status = 'pending'",
+                [task_type],
+            )
+            rows = r.get("results", [])
+            return rows[0].get("cnt", 0) if rows else 0
         except Exception:
             return 0
 
-    try:
-        cron_conn = sqlite3.connect(
-            f"file:{dashboard.MEM_DIR / 'memory.db'}?mode=ro", uri=True, timeout=5
-        )
-        cron_conn.execute("PRAGMA busy_timeout=5000")
-    except Exception:
-        cron_conn = None
-
+    _client = _api()
     status_counts: Counter[str] = Counter()
     job_data: list[dict] = []
     now = datetime.now(timezone.utc).timestamp()
 
     for name, task_type, desc, trigger, emoji in all_jobs:
-        if cron_conn:
-            info = _get_task_status(cron_conn, task_type)
-            pending = _get_pending_count(cron_conn, task_type)
+        if _client:
+            info = _get_task_status(_client, task_type)
+            pending = _get_pending_count(_client, task_type)
         else:
             info = {"status": "unknown", "last_run": None, "error": None, "attempts": 0}
             pending = 0
@@ -722,13 +717,16 @@ def _render_runbook() -> None:
         if not _db_ok:
             if st.button("Run integrity check", key="rb_integrity"):
                 try:
-                    conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                    result = conn.execute("PRAGMA integrity_check").fetchone()
-                    conn.close()
-                    if result and result[0] == "ok":
-                        st.toast("Integrity check passed", icon="\u2705")
+                    _c = _api()
+                    if _c:
+                        report = _c.integrity_check()
+                        if report.get("success"):
+                            st.toast("Integrity check passed", icon="\u2705")
+                        else:
+                            errors = report.get("errors", [])
+                            st.error(f"Integrity check: {errors}")
                     else:
-                        st.error(f"Integrity check: {result}")
+                        st.error("API client not available")
                 except Exception as e:
                     st.error(f"Failed: {e}")
 

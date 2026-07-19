@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import platform
-import sqlite3
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path

@@ -6,7 +6,6 @@ import difflib
 import json
 import logging
 import os
-import sqlite3
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone

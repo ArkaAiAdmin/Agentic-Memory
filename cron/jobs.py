@@ -110,6 +110,12 @@ JOBS: dict[str, dict] = {
         "args": ["--task-type", "cron_policy_hash_status", "--payload", '{"args": ["--alert-stdout"]}'],
         "timeout": 60,
     },
+    "sync_usage": {
+        "freq": "15m",
+        "offset_min": 7,
+        "script": "cron/cron_sync_usage.py",
+        "timeout": 60,
+    },
 
     # ── Daily tier ───────────────────────────────────────────────────
     "daily_digest": {
