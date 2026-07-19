@@ -6,9 +6,9 @@ If you are an agent **using** the system (not maintaining it): read `AGENT_CONTR
 
 ---
 <!--AUTO-GEN:START key="what_this_system_is"-->
-- **Surface**: 22 CORE verbs + `memory_maintenance` router (92 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 46+ cron jobs
+- **Surface**: 22 CORE verbs + `memory_maintenance` router (92 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 47+ cron jobs
 - **Schema**: v70, ~87 tables
-- **Code**: ~138k LOC production, ~107k+ test LOC; see `docs/architecture.md`
+- **Code**: ~139k LOC production, ~107k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 
@@ -81,7 +81,7 @@ agentic-memory/
 ├── background/
 │   ├── auto_save.py   ← async inbox+daemon
 │   └── background_worker.py ← CQRS write-journal daemon
-├── cron/             ← 46+ scheduled jobs
+├── cron/             ← 47+ scheduled jobs
 ├── mcp_*.py (32 modules) ← MCP tool surface
 ├── memory/           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md

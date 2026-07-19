@@ -29,7 +29,7 @@ graph TD
     C --> F[Temporal Knowledge Graph]
     D --> G[CQRS + CRDT Multi-Agent Sync]
     A --> H[23 MCP tools]
-    A --> I[46 cron scripts -> 1 scheduler]
+    A --> I[47 cron scripts -> 1 scheduler]
     A --> J[9 hooks]
     A --> K[Python SDK + TypeScript SDK + REST API]
 ```
