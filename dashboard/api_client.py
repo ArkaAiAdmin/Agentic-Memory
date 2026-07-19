@@ -5,14 +5,12 @@ Replaces direct conn.execute() calls with HTTP calls.
 """
 from __future__ import annotations
 
-import json
 import logging
-from pathlib import Path
 from typing import Any
 
 import requests
 
-from dashboard import DB, get_conn, query, try_count
+from dashboard import DB, query, try_count
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +52,34 @@ class ApiClient:
         r = self._session.delete(self._url(path), timeout=30)
         r.raise_for_status()
         return r.json()
+
+    # ── Auth (Phase 2: dashboard identity layer) ───────────────────────────
+
+    def login(self, token: str) -> dict:
+        """Exchange an API token for a JWT session cookie.
+
+        On success the cookie is stored on the underlying ``requests.Session``,
+        so all subsequent calls are authenticated via the cookie — no need to
+        keep the raw token in memory or resend it as a Bearer header.
+        """
+        r = self._session.post(
+            self._url("/api/v1/auth/login"),
+            json={"token": token},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def logout(self) -> dict:
+        """Clear the session cookie."""
+        r = self._session.post(self._url("/api/v1/auth/logout"), json={}, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+    @property
+    def authenticated(self) -> bool:
+        """True if a session cookie is currently held."""
+        return bool(self._session.cookies.get("am_token"))
 
     # ── Health ────────────────────────────────────────────────────────────
 
@@ -327,7 +353,6 @@ def _query_api(sql: str, params: list | None = None) -> "Any":
         except Exception:
             pass
     # Fallback
-    import dashboard
     return query(sql, params or [])
 
 
@@ -344,7 +369,6 @@ def _try_count_api(table_name: str, where: str = "") -> int:
                 return resp["results"][0].get("c", 0)
         except Exception:
             pass
-    import dashboard
     return try_count(table_name, where)
 
 
@@ -358,7 +382,6 @@ def _table_exists_api(table_name: str) -> bool:
                 return len(resp["results"]) > 0
         except Exception:
             pass
-    import dashboard
     try:
         conn = _get_db()
         r = conn.execute(
@@ -381,7 +404,6 @@ def _list_column_api(table_name: str, column: str) -> list:
                 return [r.get(column) for r in resp["results"]]
         except Exception:
             pass
-    import dashboard
     return _list_column(table_name, column)
 
 
@@ -390,5 +412,4 @@ def _get_conn_api():
     client = _api()
     if client:
         return client
-    import dashboard
     return _get_db()
