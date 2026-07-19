@@ -24,8 +24,7 @@ if _project_root not in sys.path:
 from coordination.locking import acquire_lock, release_lock, check_lock, list_locks
 from coordination.messaging import (
     send_message, read_messages, broadcast_message,
-    get_pending_count, cleanup_old_messages, acknowledge_message,
-    check_message_delivered,
+    get_pending_count, cleanup_old_messages,
 )
 from coordination.project_state import set_state, get_state, delete_state
 from coordination.durability import (
@@ -339,11 +338,16 @@ class TestDeadLetter(unittest.TestCase):
         result = check_lock(self.conn, "/not-locked.py")
         self.assertIsNone(result)
 
-    def test_acknowledge_nonexistent_message(self):
-        """Acknowledging a non-existent message should fail gracefully."""
-        result = acknowledge_message(self.conn, 99999, "agent-a")
-        # Should return False or True depending on implementation
-        self.assertIsInstance(result, bool)
+    def test_read_messages_records_delivery_audit(self):
+        """Reading messages should auto-record delivery in audit log."""
+        ensure_durability_tables(self.conn)
+        send_message(self.conn, "a", "b", "test", "hello")
+        read_messages(self.conn, "b")
+        # Audit log should have a delivery entry
+        rows = self.conn.execute(
+            "SELECT action FROM coordination_audit WHERE action='message_delivered'"
+        ).fetchall()
+        self.assertGreaterEqual(len(rows), 1)
 
     def test_delete_nonexistent_state(self):
         """Deleting non-existent state returns False."""
@@ -642,15 +646,40 @@ class TestDoubleOperations(unittest.TestCase):
         lock = check_lock(self.conn, "/test.py")
         self.assertEqual(lock["locked_by"], "b")
 
-    def test_acknowledge_and_check(self):
-        """Acknowledge then check delivery status."""
-        msg_id = send_message(self.conn, "a", "b", "test", "hello")
-        read_messages(self.conn, "b")
-        acknowledge_message(self.conn, msg_id, "b")
-        status = check_message_delivered(self.conn, msg_id)
-        self.assertTrue(status["exists"])
-        self.assertTrue(status["delivered"])
-        self.assertTrue(status["acknowledged"])
+    def test_task_status_transition_is_the_ack(self):
+        """Task status transitions are the coordination primitive (not acks).
+
+        Flow: Agent A sends message → Agent B reads it → Agent B updates task status
+        The task status change IS the acknowledgement.
+        """
+        ensure_durability_tables(self.conn)
+
+        # Agent A creates a task
+        cursor = self.conn.execute(
+            "INSERT INTO shared_tasks (project_id, task_type, description, assigned_to, status, created_by, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("proj", "fix", "Fix bug", "agent-b", "active", "agent-a", time.time(), time.time()),
+        )
+        self.conn.commit()
+        task_id = cursor.lastrowid
+
+        # Agent A sends message to Agent B
+        msg_id = send_message(self.conn, "agent-a", "agent-b", "task_assign", json.dumps({"task_id": task_id}))
+
+        # Agent B reads the message
+        msgs = read_messages(self.conn, "agent-b")
+        self.assertEqual(len(msgs), 1)
+
+        # Agent B completes the task — this IS the ack
+        self.conn.execute(
+            "UPDATE shared_tasks SET status='completed', updated_at=? WHERE id=?",
+            (time.time(), task_id),
+        )
+        self.conn.commit()
+
+        # Agent A checks task status — sees it's completed
+        row = self.conn.execute("SELECT status FROM shared_tasks WHERE id=?", (task_id,)).fetchone()
+        self.assertEqual(row[0], "completed")
 
 
 # ── 13. Concurrency Safety ──────────────────────────────────────────────

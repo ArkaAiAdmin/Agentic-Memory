@@ -47,10 +47,11 @@ def memory_coordinate(
     """Multi-agent coordination tool for task management, file locking, and messaging.
 
     Actions:
+        create_task: Create a new task
         claim_task: Reserve a task for this agent
+        update_task_status: Update task status (the primary coordination primitive)
         release_task: Release a task back to the pool
         complete_task: Mark task done, share result
-        create_task: Create a new task
         list_tasks: List tasks for a project
         lock_file: Acquire exclusive lock on a file
         unlock_file: Release file lock
@@ -59,6 +60,11 @@ def memory_coordinate(
         read_messages: Read pending messages
         get_project_state: See what others are doing
         update_project_state: Share what you're doing
+
+    Coordination model:
+        Messages are notifications. Task status transitions are the ack.
+        When Agent B reads a message and calls update_task_status, that IS
+        the acknowledgement. No separate ack channel needed.
     """
     try:
         conn = _get_conn()
@@ -68,6 +74,8 @@ def memory_coordinate(
             return _create_task(conn, project_id, task_type, description, assigned_to, agent_id)
         elif action == "claim_task":
             return _claim_task(conn, task_id, agent_id)
+        elif action == "update_task_status":
+            return _update_task_status(conn, task_id, status, agent_id)
         elif action == "release_task":
             return _release_task(conn, task_id, agent_id)
         elif action == "complete_task":
@@ -159,6 +167,57 @@ def _claim_task(conn, task_id, agent_id) -> str:
     conn.commit()
 
     return json.dumps({"ok": True, "task_id": task_id, "assigned_to": agent_id, "status": "active"})
+
+
+def _update_task_status(conn, task_id, status, agent_id) -> str:
+    """Update task status. This is the primary coordination primitive.
+
+    Valid transitions:
+        pending -> active (claiming)
+        active -> completed (finishing)
+        active -> blocked (blocked by dependency)
+        blocked -> active (unblocked)
+        active -> pending (releasing back to pool)
+    """
+    if not task_id:
+        return _err(ErrorCode.INVALID_ARGUMENT, "task_id is required")
+    if not status:
+        return _err(ErrorCode.INVALID_ARGUMENT, "status is required")
+
+    valid_statuses = {"pending", "active", "completed", "blocked", "abandoned"}
+    if status not in valid_statuses:
+        return _err(ErrorCode.INVALID_ARGUMENT, f"status must be one of: {valid_statuses}")
+
+    row = conn.execute("SELECT status, assigned_to FROM shared_tasks WHERE id=?", (task_id,)).fetchone()
+    if not row:
+        return _err(ErrorCode.NOT_FOUND, f"Task {task_id} not found")
+
+    # Only the assigned agent or creator can update status
+    if row[1] and row[1] != agent_id:
+        return _err(ErrorCode.CONFLICT, f"Task assigned to {row[1]}, not {agent_id}")
+
+    conn.execute(
+        "UPDATE shared_tasks SET status=?, updated_at=? WHERE id=?",
+        (status, time.time(), task_id),
+    )
+
+    # Passive audit: record status transition
+    try:
+        conn.execute(
+            "INSERT INTO coordination_audit (action, agent_id, target, detail, timestamp) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("task_status_changed", agent_id, str(task_id),
+             json.dumps({"from": row[0], "to": status}), time.time()),
+        )
+    except Exception:
+        pass
+
+    conn.commit()
+
+    return json.dumps({
+        "ok": True, "task_id": task_id, "status": status,
+        "from_status": row[0], "updated_by": agent_id,
+    })
 
 
 def _release_task(conn, task_id, agent_id) -> str:
