@@ -48,7 +48,23 @@ _dk.MEM_DIR = _dk.DB.parent
 # ── API Client ────────────────────────────────────────────────────────────
 from dashboard.api_client import ApiClient
 
-base_url = os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9878")
+# Default the dashboard to the configured REST API endpoint. MEMORY_API_BASE
+# (or MEMORY_API_LISTEN_HOST/PORT) override the [api] section in memory.toml,
+# so the dashboard and API server stay in sync without manual env wiring.
+def _resolve_api_base() -> str:
+    env_base = os.environ.get("MEMORY_API_BASE")
+    if env_base:
+        return env_base.rstrip("/")
+    try:
+        from infra.config import get_config
+        cfg = get_config()
+        host = os.environ.get("MEMORY_API_LISTEN_HOST", cfg.api_listen_host)
+        port = os.environ.get("MEMORY_API_LISTEN_PORT", str(cfg.api_listen_port))
+        return f"http://{host}:{port}"
+    except Exception:
+        return "http://127.0.0.1:9879"
+
+base_url = _resolve_api_base()
 token = os.environ.get("MEMORY_API_TOKEN", "")
 
 if "api_client" not in st.session_state:
@@ -56,9 +72,18 @@ if "api_client" not in st.session_state:
 
 # ── Phase 2: login gate ────────────────────────────────────────────────────
 # When no static API token is configured, the operator must sign in to obtain
-# a JWT session cookie. Operators who set MEMORY_API_TOKEN keep the legacy
-# bearer behaviour and skip this page.
+# a JWT session cookie. Operators who set MEMORY_API_TOKEN (or have a persisted
+# .api_token) get auto-signed-in on startup; otherwise the login page is shown.
 from dashboard.login import render_login, requires_login
+from dashboard.api_client import resolve_api_token
+
+_resolved_token = resolve_api_token(str(_dk.DB.parent))
+if not st.session_state.get("authenticated") and _resolved_token:
+    try:
+        st.session_state.api_client.login(_resolved_token)
+        st.session_state.authenticated = True
+    except Exception as exc:  # server not up yet / bad token
+        logger.warning("Dashboard auto-login failed: %s", exc)
 
 if not st.session_state.get("authenticated") and requires_login():
     render_login(base_url)
