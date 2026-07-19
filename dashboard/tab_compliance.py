@@ -108,7 +108,7 @@ def render_compliance():
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 def _get_db():
-    return sqlite3.connect(str(dashboard.DB), timeout=10)
+    return sqlite3.connect(f"file:{dashboard.DB}?mode=ro", uri=True, timeout=10)
 
 
 def _table_exists(name: str) -> bool:
@@ -1264,7 +1264,7 @@ def _run_all_compliance_checks() -> list[dict]:
             ok = res.get("results", [{}])[0].get("integrity_check", "ok") == "ok" if res.get("results") else False
             checks.append({"category": "Database Integrity", "name": "PRAGMA integrity_check", "status": "pass" if ok else "fail", "detail": "OK" if ok else "Failed"})
         else:
-            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+            conn = sqlite3.connect(f"file:{dashboard.DB}?mode=ro", uri=True, timeout=10)
             result = conn.execute("PRAGMA integrity_check").fetchone()
             conn.close()
             checks.append({"category": "Database Integrity", "name": "PRAGMA integrity_check", "status": "pass" if result and result[0] == "ok" else "fail", "detail": "OK" if result and result[0] == "ok" else "Failed"})
