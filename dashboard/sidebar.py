@@ -115,6 +115,32 @@ def render_sidebar():
             f"{dashboard.DB.stat().st_size / 1024 / 1024:.0f} MB"
         )
 
+    # ── New deployment signup (available in both modes) ───────────────────
+    if not deps:
+        with st.sidebar.expander("\u2795 New Deployment", expanded=False):
+            with st.form("signup_form", clear_on_submit=True):
+                su_email = st.text_input("Email", placeholder="admin@example.com")
+                su_name = st.text_input("Name", placeholder="My App")
+                su_plan = st.selectbox("Plan", ["free", "pro", "enterprise"], index=0)
+                if st.form_submit_button("Create Deployment", type="primary"):
+                    if not su_email:
+                        st.error("Email required")
+                    else:
+                        client = st.session_state.get("api_client")
+                        if client:
+                            try:
+                                res = client.cloud_signup(
+                                    email=su_email, name=su_name or su_email,
+                                    plan_id=su_plan,
+                                )
+                                st.success(f"Created: {res.get('deployment_id')}")
+                                st.cache_data.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Signup failed: {e}")
+                        else:
+                            st.error("API client not available")
+
     with st.sidebar:
         st.markdown("### System Overview")
 
