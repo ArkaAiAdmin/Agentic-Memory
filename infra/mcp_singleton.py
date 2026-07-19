@@ -1,6 +1,10 @@
-"""Singleton guard for the MCP server process.
+"""Per-agent singleton guard for the MCP server process.
 
-Ensures only one memory_mcp instance runs per memory directory.
+Ensures only one memory_mcp instance runs per agent per memory directory.
+The lock file is scoped by MEMORY_AGENT_ID so multiple agents (e.g.,
+OPENCODE and MIMOCODE) can each run their own MCP server against the
+same memory directory without conflict.
+
 Uses flock-based mutual exclusion (same pattern as the auto-save daemon
 in inbox.py).
 
@@ -27,7 +31,8 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_MCP_LOCK_FILENAME = ".mcp_server.lock"
+_agent_id = os.environ.get("MEMORY_AGENT_ID", "").strip().lower()
+_MCP_LOCK_FILENAME = f".mcp_server.lock.{_agent_id}" if _agent_id else ".mcp_server.lock"
 
 _lock_fd: Optional[io.TextIOWrapper] = None
 _lock_path: Optional[Path] = None

@@ -273,6 +273,15 @@ for _admin_name in tool_registry.ADMIN_TOOLS:
 
 
 if __name__ == "__main__":
+    # Parse --agent-id before singleton guard so the lock file is scoped
+    # correctly even if the MCP client does not pass env vars.
+    import argparse
+    _parser = argparse.ArgumentParser()
+    _parser.add_argument("--agent-id", default="", help="Set MEMORY_AGENT_ID")
+    _args, _ = _parser.parse_known_args()
+    if _args.agent_id:
+        os.environ["MEMORY_AGENT_ID"] = _args.agent_id
+
     # Singleton guard: prevent duplicate MCP server instances on the same DB.
     try:
         from infra.mcp_singleton import acquire_mcp_singleton
