@@ -1,9 +1,12 @@
 """Coordination integration hooks for the agentic-memory system.
 
 Provides lightweight functions that other modules call to:
-- Acquire/release file locks during saves
-- Auto-create tasks from cron events
+- Acquire/release file locks during saves (with project state updates)
+- Queue messages when locks conflict (agent-to-agent notification)
+- Auto-create tasks from cron events (with agent dispatch)
 - Claim pending tasks on session start
+- Enrich search results with coordination context
+- Detect supersessions and create follow-up tasks
 
 All functions are fail-safe: exceptions are caught and logged, never raised.
 
@@ -199,7 +202,7 @@ def create_coordination_task(
 
 
 def create_contradiction_tasks(contradictions: list[dict], conn: sqlite3.Connection | None = None) -> int:
-    """Create tasks for unresolved contradictions. Returns count of tasks created."""
+    """Create tasks for unresolved contradictions and dispatch to drift-investigator."""
     count = 0
     for c in contradictions:
         src = c.get("source", "")
@@ -208,9 +211,10 @@ def create_contradiction_tasks(contradictions: list[dict], conn: sqlite3.Connect
             continue
         confidence = c.get("confidence", "unknown")
         desc = f"Resolve contradiction between '{src}' and '{tgt}' (confidence: {confidence})"
-        task_id = create_coordination_task(
+        task_id = create_and_dispatch_task(
             task_type="resolve_contradiction",
             description=desc,
+            target_agent="drift-investigator",
             project_id="knowledge_graph",
             created_by="cron_contradictions",
             conn=conn,
@@ -221,7 +225,7 @@ def create_contradiction_tasks(contradictions: list[dict], conn: sqlite3.Connect
 
 
 def create_integrity_tasks(findings: list[dict], conn: sqlite3.Connection | None = None) -> int:
-    """Create tasks for integrity check findings. Returns count of tasks created."""
+    """Create tasks for integrity check findings and dispatch to kg-engineer."""
     count = 0
     for f in findings:
         severity = f.get("severity", "info")
@@ -230,9 +234,10 @@ def create_integrity_tasks(findings: list[dict], conn: sqlite3.Connection | None
         message = f.get("message", "unknown issue")
         check_name = f.get("check", f.get("code", "integrity"))
         desc = f"[{severity.upper()}] {check_name}: {message}"
-        task_id = create_coordination_task(
+        task_id = create_and_dispatch_task(
             task_type="fix_integrity",
             description=desc,
+            target_agent="kg-engineer",
             project_id="system",
             created_by="cron_integrity",
             conn=conn,
@@ -302,6 +307,324 @@ def claim_pending_tasks(agent_id: str | None = None, project_id: str = "default"
     except Exception as e:
         logger.debug("claim_pending_tasks failed: %s", e)
         return []
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# ── Project State Updates ───────────────────────────────────────────────
+
+def update_project_activity(
+    file_path: str,
+    agent_id: str | None = None,
+    activity: str = "writing",
+    project_id: str = "default",
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Update project state to reflect agent activity during save.
+
+    Called by memory_save to let other agents know what this agent is doing.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = _make_conn()
+    if not conn:
+        return
+
+    try:
+        if not agent_id:
+            agent_id = _get_agent_id()
+
+        now = time.time()
+        conn.execute(
+            "INSERT OR REPLACE INTO project_state (project_id, key, value, updated_by, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (project_id, f"file:{file_path}", json.dumps({"activity": activity, "agent": agent_id}),
+             agent_id, now),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO project_state (project_id, key, value, updated_by, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (project_id, f"agent:{agent_id}:status", json.dumps({"activity": activity, "file": file_path}),
+             agent_id, now),
+        )
+        if own_conn:
+            conn.commit()
+    except Exception as e:
+        logger.debug("update_project_activity failed: %s", e)
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def clear_project_activity(
+    file_path: str,
+    agent_id: str | None = None,
+    project_id: str = "default",
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Clear project state activity after save completes."""
+    own_conn = conn is None
+    if own_conn:
+        conn = _make_conn()
+    if not conn:
+        return
+
+    try:
+        if not agent_id:
+            agent_id = _get_agent_id()
+
+        conn.execute(
+            "DELETE FROM project_state WHERE project_id=? AND key=?",
+            (project_id, f"file:{file_path}"),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO project_state (project_id, key, value, updated_by, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (project_id, f"agent:{agent_id}:status", json.dumps({"activity": "idle"}),
+             agent_id, time.time()),
+        )
+        if own_conn:
+            conn.commit()
+    except Exception as e:
+        logger.debug("clear_project_activity failed: %s", e)
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# ── Lock Conflict Messaging ─────────────────────────────────────────────
+
+def queue_lock_conflict_message(
+    file_path: str,
+    held_by: str,
+    requested_by: str,
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Send a message to the lock holder when a lock conflict occurs."""
+    own_conn = conn is None
+    if own_conn:
+        conn = _make_conn()
+    if not conn:
+        return
+
+    try:
+        now = time.time()
+        payload = json.dumps({
+            "type": "lock_conflict",
+            "file_path": file_path,
+            "waiting_agent": requested_by,
+        })
+        conn.execute(
+            "INSERT INTO agent_messages (from_agent, to_agent, message_type, payload, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'pending', ?)",
+            (requested_by, held_by, "lock_conflict", payload, now),
+        )
+        if own_conn:
+            conn.commit()
+    except Exception as e:
+        logger.debug("queue_lock_conflict_message failed: %s", e)
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# ── Agent Dispatch ──────────────────────────────────────────────────────
+
+def send_task_notification(
+    task_id: int,
+    task_type: str,
+    description: str,
+    target_agent: str,
+    created_by: str = "system",
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Notify a target agent that a task has been created for them."""
+    own_conn = conn is None
+    if own_conn:
+        conn = _make_conn()
+    if not conn:
+        return
+
+    try:
+        now = time.time()
+        payload = json.dumps({
+            "type": "task_assigned",
+            "task_id": task_id,
+            "task_type": task_type,
+            "description": description,
+        })
+        conn.execute(
+            "INSERT INTO agent_messages (from_agent, to_agent, message_type, payload, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'pending', ?)",
+            (created_by, target_agent, "task_assigned", payload, now),
+        )
+        if own_conn:
+            conn.commit()
+    except Exception as e:
+        logger.debug("send_task_notification failed: %s", e)
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def create_and_dispatch_task(
+    task_type: str,
+    description: str,
+    target_agent: str,
+    project_id: str = "default",
+    created_by: str = "system",
+    conn: sqlite3.Connection | None = None,
+) -> int | None:
+    """Create a task AND notify the target agent. Returns task ID or None."""
+    task_id = create_coordination_task(
+        task_type=task_type,
+        description=description,
+        project_id=project_id,
+        assigned_to=target_agent,
+        created_by=created_by,
+        conn=conn,
+    )
+    if task_id:
+        send_task_notification(
+            task_id=task_id,
+            task_type=task_type,
+            description=description,
+            target_agent=target_agent,
+            created_by=created_by,
+            conn=conn,
+        )
+    return task_id
+
+
+# ── Search Context Enrichment ───────────────────────────────────────────
+
+def get_coordination_context(
+    project_id: str = "default",
+    conn: sqlite3.Connection | None = None,
+) -> dict:
+    """Get coordination context to enrich search results."""
+    own_conn = conn is None
+    if own_conn:
+        conn = _make_conn()
+    if not conn:
+        return {}
+
+    try:
+        now = time.time()
+        ctx = {}
+
+        try:
+            locks = conn.execute(
+                "SELECT file_path, locked_by, expires_at FROM file_locks WHERE expires_at > ?",
+                (now,),
+            ).fetchall()
+            ctx["active_locks"] = [
+                {"file": r[0], "agent": r[1], "expires_in": max(0, r[2] - now)}
+                for r in locks
+            ]
+        except Exception:
+            ctx["active_locks"] = []
+
+        try:
+            activity = conn.execute(
+                "SELECT key, value, updated_by FROM project_state "
+                "WHERE project_id=? AND key LIKE 'agent:%:status'",
+                (project_id,),
+            ).fetchall()
+            ctx["agent_activity"] = []
+            for r in activity:
+                try:
+                    val = json.loads(r[1]) if r[1] else {}
+                except Exception:
+                    val = {}
+                ctx["agent_activity"].append({
+                    "agent": r[2],
+                    "activity": val.get("activity", "unknown"),
+                    "file": val.get("file"),
+                })
+        except Exception:
+            ctx["agent_activity"] = []
+
+        try:
+            tasks = conn.execute(
+                "SELECT id, task_type, description, assigned_to FROM shared_tasks "
+                "WHERE status IN ('pending', 'active') ORDER BY created_at DESC LIMIT 10",
+            ).fetchall()
+            ctx["active_tasks"] = [
+                {"id": r[0], "type": r[1], "description": r[2][:80], "assigned_to": r[3]}
+                for r in tasks
+            ]
+        except Exception:
+            ctx["active_tasks"] = []
+
+        return ctx
+    except Exception as e:
+        logger.debug("get_coordination_context failed: %s", e)
+        return {}
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# ── Supersession Task Creation ──────────────────────────────────────────
+
+def detect_supersession_tasks(
+    note_id: str,
+    category: str,
+    created_by: str = "save_pipeline",
+    conn: sqlite3.Connection | None = None,
+) -> int | None:
+    """Check if a newly saved memory supersedes existing notes and create tasks."""
+    own_conn = conn is None
+    if own_conn:
+        conn = _make_conn()
+    if not conn:
+        return None
+
+    try:
+        row = conn.execute(
+            "SELECT supersedes FROM memories WHERE note_id=?",
+            (note_id,),
+        ).fetchone()
+
+        if not row or not row[0]:
+            return None
+
+        supersedes = row[0]
+        desc = (
+            f"Note '{note_id}' supersedes '{supersedes}'. "
+            f"Review and update any references to the old note."
+        )
+        task_id = create_coordination_task(
+            task_type="update_references",
+            description=desc,
+            project_id="knowledge_graph",
+            created_by=created_by,
+            conn=conn,
+        )
+        return task_id
+    except Exception as e:
+        logger.debug("detect_supersession_tasks failed: %s", e)
+        return None
     finally:
         if own_conn:
             try:

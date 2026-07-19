@@ -119,13 +119,30 @@ def memory_save(
     except ImportError:
         pass
 
-    # Coordination: acquire file lock before save
+    # Coordination: acquire file lock + update project state before save
     _coord_lock_path = None
     try:
-        from coordination.hooks import acquire_save_lock
+        from coordination.hooks import (
+            acquire_save_lock, update_project_activity,
+            queue_lock_conflict_message,
+        )
         from infra.infrastructure import resolve_active_memory_dir
         _coord_lock_path = str((resolve_active_memory_dir() / "memory" / category / f"{title_slug}.md").resolve())
-        acquire_save_lock(_coord_lock_path)
+        locked = acquire_save_lock(_coord_lock_path)
+        if not locked:
+            # Lock held by another agent — send conflict message, proceed anyway
+            try:
+                from coordination.locking import check_lock
+                import coordination.hooks as _ch
+                lock_info = check_lock(_ch._make_conn(), _coord_lock_path)
+                if lock_info:
+                    queue_lock_conflict_message(
+                        _coord_lock_path, lock_info["locked_by"],
+                        _ch._get_agent_id(),
+                    )
+            except Exception:
+                pass
+        update_project_activity(_coord_lock_path, activity="writing")
     except Exception:
         _coord_lock_path = None
 
@@ -174,11 +191,12 @@ def memory_save(
     except SaveValidationError as e:
         return str(e)
     finally:
-        # Coordination: release file lock after save
+        # Coordination: release file lock + clear project activity
         if _coord_lock_path:
             try:
-                from coordination.hooks import release_save_lock
+                from coordination.hooks import release_save_lock, clear_project_activity
                 release_save_lock(_coord_lock_path)
+                clear_project_activity(_coord_lock_path)
             except Exception:
                 pass
     # B2 fix (2026-06-22): KG indexing is now invoked by

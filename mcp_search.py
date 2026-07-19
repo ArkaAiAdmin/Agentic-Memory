@@ -509,10 +509,32 @@ def memory_search(
             local_results.get("results", []),
             query,
         )
+        # Coordination: append context about what other agents are doing
+        coord_ctx = ""
+        try:
+            from coordination.hooks import get_coordination_context
+            ctx = get_coordination_context()
+            parts = []
+            if ctx.get("active_locks"):
+                locks = ", ".join(f"{l['file']} ({l['agent']})" for l in ctx["active_locks"][:3])
+                parts.append(f"Active locks: {locks}")
+            if ctx.get("agent_activity"):
+                agents = ", ".join(f"{a['agent']}:{a['activity']}" for a in ctx["agent_activity"][:3])
+                parts.append(f"Active agents: {agents}")
+            if ctx.get("active_tasks"):
+                tasks = len(ctx["active_tasks"])
+                parts.append(f"{tasks} task(s) in progress")
+            if parts:
+                coord_ctx = f"\n\n**Coordination**: {' | '.join(parts)}\n"
+        except Exception:
+            pass
+        output = str(local_results["output"])
+        if coord_ctx:
+            output += coord_ctx
         return (
-            (resolution_note + str(local_results["output"]))
+            (resolution_note + output)
             if resolution_note
-            else str(local_results["output"])
+            else output
         )
     _record_spaced_repetition(
         local_db if local_db.exists() else global_db,
