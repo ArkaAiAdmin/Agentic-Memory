@@ -268,6 +268,26 @@ def _tools() -> dict:
     return {**_get_local_tools(), **_get_domain_tools()}
 
 
+def _sync_usage_metering(audit_db_path: str | None = None) -> str:
+    """Sync MCP call counts from memory_audit_log to cloud_state.db usage_records.
+
+    Reads the audit log (which tracks every MCP tool call), groups by day,
+    and increments mcp_calls for each active deployment.  Callable via
+    ``memory_maintenance(operation="sync_usage_metering")``.
+    """
+    from pathlib import Path
+    from infra_cloud.store import CloudStateStore
+
+    if not audit_db_path:
+        from infra.infrastructure import resolve_active_memory_dir
+        audit_db_path = str(resolve_active_memory_dir() / "memory.db")
+
+    cloud_db = Path(audit_db_path).parent / "cloud_state.db"
+    store = CloudStateStore(cloud_db)
+    result = store.sync_usage_from_audit_log(audit_db_path)
+    return json.dumps(result)
+
+
 # The MAINTENANCE_HANDLERS dict is built lazily on first access to
 # avoid the import cycle. The dict keys are MaintenanceOp enum values
 # (also resolved lazily).
@@ -686,6 +706,9 @@ def _get_handlers() -> dict:
                     tenant_id=tenant_id,
                     db_path=db_path,
                 )
+            ),
+            MaintenanceOp.SYNC_USAGE_METERING: lambda *, audit_db_path=None, **_: (
+                _sync_usage_metering(audit_db_path=audit_db_path)
             ),
         }
     return _MAINTENANCE_HANDLERS

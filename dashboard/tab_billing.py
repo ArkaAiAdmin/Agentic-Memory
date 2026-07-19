@@ -1,8 +1,5 @@
 import logging
 import streamlit as st
-import urllib.request
-import urllib.parse
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -83,40 +80,19 @@ def render_billing():
     selected_plan = st.radio("Choose a plan tier to upgrade/downgrade:", plans, index=plans.index(plan.get("id", "free")), horizontal=True)
 
     if selected_plan != plan.get("id", "free"):
-        if st.button(f"Upgrade to {selected_plan.capitalize()}"):
+        if st.button(f"Upgrade to {selected_plan.capitalize()}", type="primary"):
             try:
                 res = client.create_cloud_checkout(active_dep_id, selected_plan)
                 checkout_url = res.get("checkout_url")
-                session_id = res.get("session_id")
-                st.success(f"Checkout Session Created! Redirect URL: {checkout_url}")
-                
-                # Render a simulation trigger button
-                st.info("Simulating Payment webhook invocation:")
-                if st.button("Trigger Mock Stripe Webhook"):
-                    # Invoke webhook via API client's base URL
-                    webhook_url = f"{client.base_url.rstrip('/')}/api/v1/cloud/webhooks/stripe"
-                    payload = {
-                        "type": "checkout.session.completed",
-                        "data": {
-                            "object": {
-                                "client_reference_id": active_dep_id,
-                                "metadata": {
-                                    "plan_id": selected_plan
-                                },
-                                "subscription": f"sub_stripe_{session_id}"
-                            }
-                        }
-                    }
-                    req = urllib.request.Request(
-                        webhook_url,
-                        data=json.dumps(payload).encode(),
-                        headers={"Content-Type": "application/json"},
-                        method="POST"
+                if checkout_url:
+                    st.success("Checkout session created!")
+                    st.markdown(
+                        f"[Complete payment on Stripe]({checkout_url})",
+                        help="You will be redirected to Stripe's secure checkout page.",
                     )
-                    with urllib.request.urlopen(req) as resp:
-                        webhook_res = json.loads(resp.read().decode())
-                    st.success(f"Webhook response: {webhook_res}")
-                    st.rerun()
+                    st.caption("After payment, your subscription activates automatically via webhook.")
+                else:
+                    st.error("No checkout URL returned. Check Stripe configuration.")
             except Exception as e:
                 st.error(f"Checkout creation failed: {e}")
 

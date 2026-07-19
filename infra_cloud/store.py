@@ -22,7 +22,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
-_CLOUD_SCHEMA_VERSION = 2
+_CLOUD_SCHEMA_VERSION = 3
 
 
 def _discover_migrations() -> list[tuple[int, Path]]:
@@ -258,6 +258,13 @@ class CloudStateStore:
             row = conn.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone()
         return self._row_to_dict(row) if row else None
 
+    def get_stripe_price_id(self, plan_id: str) -> Optional[str]:
+        """Return the Stripe Price ID for a plan, or None if not configured."""
+        plan = self.get_plan(plan_id)
+        if plan:
+            return plan.get("stripe_price_id")
+        return None
+
     def increment_usage(
         self,
         deployment_id: str,
@@ -321,3 +328,54 @@ class CloudStateStore:
                     (deployment_id,),
                 ).fetchall()
                 return [self._row_to_dict(r) for r in rows]
+
+    def sync_usage_from_audit_log(self, audit_db_path: str | Path) -> dict:
+        """Read memory_audit_log and sync MCP call counts to usage_records.
+
+        Reads the audit log (which tracks every MCP tool call with timestamps),
+        groups by day, and increments ``mcp_calls`` in usage_records for each
+        deployment that has an active subscription.
+
+        Returns a summary of what was synced.
+        """
+        import sqlite3 as _sqlite3
+        audit_db = _sqlite3.connect(f"file:{audit_db_path}?mode=ro", uri=True, timeout=10)
+        try:
+            # Get calls per day (audit log stores ts as unix timestamp)
+            rows = audit_db.execute(
+                "SELECT DATE(ts, 'unixepoch') as day, COUNT(*) as cnt "
+                "FROM memory_audit_log "
+                "WHERE ts >= strftime('%s', 'now', '-2 days') "
+                "GROUP BY day"
+            ).fetchall()
+        except _sqlite3.OperationalError:
+            # audit_log table doesn't exist yet — nothing to sync
+            return {"synced_days": 0, "total_calls": 0}
+        finally:
+            audit_db.close()
+
+        if not rows:
+            return {"synced_days": 0, "total_calls": 0}
+
+        # Map days to call counts
+        day_counts = {r[0]: r[1] for r in rows if r[0]}
+
+        # For each deployment with an active subscription, update usage
+        total_synced = 0
+        with self._connect() as conn:
+            active_deps = conn.execute(
+                "SELECT DISTINCT deployment_id FROM subscriptions WHERE status = 'active'"
+            ).fetchall()
+            for (dep_id,) in active_deps:
+                for day, cnt in day_counts.items():
+                    conn.execute(
+                        "INSERT INTO usage_records (deployment_id, day, mcp_calls) "
+                        "VALUES (?, ?, ?) "
+                        "ON CONFLICT(deployment_id, day) DO UPDATE SET "
+                        "mcp_calls = mcp_calls + excluded.mcp_calls",
+                        (dep_id, day, cnt),
+                    )
+                    total_synced += cnt
+                conn.commit()
+
+        return {"synced_days": len(day_counts), "total_calls": total_synced}

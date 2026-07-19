@@ -31,6 +31,7 @@ TARGETS = [
     "dashboard/tab_operations.py",
     "dashboard/tab_settings.py",
     "dashboard/tab_dashboard.py",
+    "dashboard/tab_audit.py",
     "dashboard/sidebar.py",
 ]
 

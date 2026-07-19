@@ -15,14 +15,34 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import dashboard
-from dashboard import DARK, get_conn, query, try_count
+from dashboard import DARK
+from dashboard.api_client import _api, _query_api
 
 logger = logging.getLogger(__name__)
 
 
 @st.cache_data(ttl=300)
 def _cached_audit_query(where_sql, params_tuple):
-    """Cache the audit log query."""
+    """Cache the audit log query — routes through the REST API when available."""
+    client = _api()
+    if client:
+        try:
+            # Extract hours from the WHERE clause for the REST API
+            import re
+            hours_match = re.search(r"ts >= strftime\('%s','now'\)-(\d+)", where_sql)
+            hours = int(hours_match.group(1)) // 3600 if hours_match else 24
+            tool_filter = ""
+            tool_match = re.search(r"tool LIKE '\%(.+?)\%'", where_sql)
+            if tool_match:
+                tool_filter = tool_match.group(1)
+            errors_only = "error IS NOT NULL" in where_sql
+            logs = client.get_audit_logs(hours=hours, tool=tool_filter, errors_only=errors_only)
+            if logs:
+                return pd.DataFrame(logs)
+        except Exception:
+            pass
+    # Fallback: direct DB read (read-only, for standalone/test runs)
+    from dashboard import query
     return query(
         f"SELECT ts, tool, latency_ms, results_count, error, args "
         f"FROM memory_audit_log WHERE {where_sql} ORDER BY ts DESC LIMIT 2000",

@@ -990,6 +990,7 @@ class MaintenanceOp(str, Enum):
     REMOVE_ACL_OVERRIDE = "remove_acl_override"
     PIPELINE_COVERAGE = "pipeline_coverage"
     POLICY_HASH_STATUS = "policy_hash_status"
+    SYNC_USAGE_METERING = "sync_usage_metering"
 
     @classmethod
     def all_values(cls) -> list[str]:

@@ -401,6 +401,22 @@ class ApiClient:
     def create_cloud_checkout(self, deployment_id: str, plan_id: str) -> dict:
         return self._post("/api/v1/cloud/checkout", {"deployment_id": deployment_id, "plan_id": plan_id})
 
+    def cloud_signup(self, email: str, name: str = "", plan_id: str = "free") -> dict:
+        return self._post("/api/v1/cloud/signup", {"email": email, "name": name, "plan_id": plan_id})
+
+    # ── Audit (Phase 1 verification) ──────────────────────────────────────
+
+    def get_audit_logs(
+        self, hours: int = 24, tool: str = "", errors_only: bool = False, limit: int = 200,
+    ) -> list[dict]:
+        params: dict[str, Any] = {"hours": hours, "limit": limit}
+        if tool:
+            params["tool"] = tool
+        if errors_only:
+            params["errors_only"] = "true"
+        result = self._get("/api/v1/audit/logs", params=params)
+        return result.get("logs", [])
+
 
 
 # ── Module-level helpers ──────────────────────────────────────────────────

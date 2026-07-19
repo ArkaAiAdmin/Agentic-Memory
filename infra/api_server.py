@@ -346,6 +346,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         # Regular REST API Routes
         if path == "/health" or path == "":
             self._handle_health()
+        elif path.startswith("/gateway/"):
+            if not self._require_auth():
+                return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
+            self._handle_gateway_proxy(path[len("/gateway/"):], "GET", parsed.query)
         elif path == "/api/v1/memories":
             if not self._require_auth():
                 return
@@ -410,6 +417,13 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error("Rate limit exceeded", 429)
                 return
             self._handle_cloud_get_usage(parse_qs(parsed.query))
+        elif path == "/api/v1/audit/logs":
+            if not self._require_auth():
+                return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
+            self._handle_audit_logs(parse_qs(parsed.query))
         else:
             self._error("Not found", 404)
 
@@ -429,6 +443,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error("Rate limit exceeded", 429)
                 return
             self._handle_logout()
+            return
+        if path.startswith("/gateway/"):
+            if not self._require_auth():
+                return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self._handle_gateway_proxy(path[len("/gateway/"):], "POST", parsed.query, body)
             return
         if path == "/api/v1/cloud/webhooks/stripe":
             self._handle_cloud_stripe_webhook()
@@ -488,6 +511,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._handle_update_project_state()
         elif path == "/api/v1/cloud/checkout":
             self._handle_cloud_checkout()
+        elif path == "/api/v1/cloud/signup":
+            self._handle_cloud_signup()
         else:
             self._error("Not found", 404)
 
@@ -500,6 +525,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
         if self._rate_limited(key=getattr(self, "_principal_id", None)):
             self._error("Rate limit exceeded", 429)
+            return
+
+        if path.startswith("/gateway/"):
+            body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self._handle_gateway_proxy(path[len("/gateway/"):], "PUT", parsed.query, body)
             return
 
         if path.startswith("/api/v1/memories/"):
@@ -523,6 +553,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
         if self._rate_limited(key=getattr(self, "_principal_id", None)):
             self._error("Rate limit exceeded", 429)
+            return
+
+        if path.startswith("/gateway/"):
+            self._handle_gateway_proxy(path[len("/gateway/"):], "DELETE", parsed.query)
             return
 
         if path.startswith("/api/v1/memories/"):
@@ -818,6 +852,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 importance=importance,
                 title_slug=title_slug,
             )
+            # Audit: tag as dashboard REST call
+            try:
+                from infra.audit import enqueue_audit
+                enqueue_audit(
+                    db_path=str(self.server.db_path),
+                    tool="dashboard_save",
+                    args={"note_id": note_id, "category": category, "tags": tags},
+                    results_count=1,
+                    principal_id=getattr(self, "_principal_id", None),
+                )
+            except Exception:
+                pass
             self._write_json({"id": note_id, "status": "success"}, 201)
         except Exception as e:
             logger.warning("_handle_add_memory: broad except swallowed: %s", e)
@@ -853,6 +899,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 if "tags" not in other:
                     other["tags"] = []
                 save_memory(db_path=str(self.server.db_path), **other)
+            # Audit: tag as dashboard REST call
+            try:
+                from infra.audit import enqueue_audit
+                enqueue_audit(
+                    db_path=str(self.server.db_path),
+                    tool="dashboard_update",
+                    args={"note_id": note_id, "fields": list(req.keys())},
+                    results_count=1,
+                    principal_id=getattr(self, "_principal_id", None),
+                )
+            except Exception:
+                pass
             self._write_json({"id": note_id, "status": "updated"})
         except Exception as e:
             logger.warning("_handle_update_memory: %s", e)
@@ -863,6 +921,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             client = MemoryClient(db_path=self.server.db_path)
             success = client.delete(note_id)
             if success:
+                # Audit: tag as dashboard REST call
+                try:
+                    from infra.audit import enqueue_audit
+                    enqueue_audit(
+                        db_path=str(self.server.db_path),
+                        tool="dashboard_delete",
+                        args={"note_id": note_id},
+                        results_count=1,
+                        principal_id=getattr(self, "_principal_id", None),
+                    )
+                except Exception:
+                    pass
                 self._write_json({"success": True})
             else:
                 self._error(f"Memory not found or delete failed: {note_id}", 404)
@@ -1796,6 +1866,52 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self.server._cloud_store = CloudStateStore(db_path)
         return self.server._cloud_store
 
+    def _handle_gateway_proxy(
+        self, deployment_subpath: str, method: str, query_string: str = "",
+        body: bytes | None = None,
+    ) -> None:
+        """Proxy /gateway/<deployment_id>/<path> to the deployment's own REST API.
+
+        Uses GatewayRouter for lookup, usage metering, and limit enforcement.
+        """
+        from infra_cloud.gateway import GatewayRouter
+
+        parts = deployment_subpath.split("/", 1)
+        deployment_id = parts[0]
+        sub_path = parts[1] if len(parts) > 1 else ""
+
+        router = GatewayRouter(self.cloud_store)
+
+        # Forward the original request headers (minus hop-by-hop).
+        fwd_headers = {}
+        for key in ("Authorization", "Content-Type", "Accept"):
+            val = self.headers.get(key)
+            if val:
+                fwd_headers[key] = val
+
+        result = router.route(
+            deployment_id=deployment_id,
+            sub_path=sub_path,
+            method=method,
+            headers=fwd_headers,
+            body=body,
+        )
+
+        status = result.get("status", 502)
+        resp_headers = result.get("headers", {})
+        resp_body = result.get("body", b"")
+
+        self.send_response(status)
+        for k, v in resp_headers.items():
+            if k.lower() not in ("transfer-encoding", "connection"):
+                self.send_header(k, v)
+        self.end_headers()
+        if isinstance(resp_body, dict):
+            resp_body = json.dumps(resp_body).encode("utf-8")
+        elif isinstance(resp_body, str):
+            resp_body = resp_body.encode("utf-8")
+        self.wfile.write(resp_body)
+
     def _handle_cloud_list_deployments(self, query_params: dict) -> None:
         try:
             cust_ids = query_params.get("customer_id")
@@ -1850,6 +1966,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._error(f"Failed to get usage stats: {e}", 500)
 
     def _handle_cloud_checkout(self) -> None:
+        """Create a real Stripe Checkout Session for plan upgrade/downgrade.
+
+        Requires env vars:
+          STRIPE_SECRET_KEY   — Stripe API secret key
+          STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret (for verification)
+
+        The checkout session uses ``client_reference_id`` = deployment_id and
+        ``metadata.plan_id`` so the webhook handler can activate the subscription.
+        """
         try:
             body = self._read_json_body() or {}
             dep_id = body.get("deployment_id")
@@ -1857,60 +1982,288 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if not dep_id or not plan_id:
                 self._error("deployment_id and plan_id required", 400)
                 return
-            
+
             plan = self.cloud_store.get_plan(plan_id)
             if not plan:
                 self._error(f"unknown plan: {plan_id}", 400)
                 return
-            
-            session_id = f"cs_mock_{int(time.time())}"
+
+            # Resolve Stripe Price ID: env var override > DB column
+            import os
+            price_id = os.environ.get(f"STRIPE_PRICE_{plan_id.upper()}")
+            if not price_id:
+                price_id = self.cloud_store.get_stripe_price_id(plan_id)
+            if not price_id or "placeholder" in (price_id or ""):
+                self._error(
+                    f"Stripe Price ID not configured for plan '{plan_id}'. "
+                    f"Set STRIPE_PRICE_{plan_id.upper()} env var or update the plans table.",
+                    503,
+                )
+                return
+
+            stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
+            if not stripe_key:
+                self._error("Stripe not configured: set STRIPE_SECRET_KEY", 503)
+                return
+
+            import stripe
+            stripe.api_key = stripe_key
+
+            dep = self.cloud_store.get_deployment(dep_id)
+            customer_email = ""
+            if dep:
+                cust = self.cloud_store.get_customer(dep.get("customer_id", ""))
+                if cust:
+                    customer_email = cust.get("email", "")
+
+            session = stripe.checkout.Session.create(
+                mode="subscription",
+                line_items=[{"price": price_id, "quantity": 1}],
+                client_reference_id=dep_id,
+                metadata={"plan_id": plan_id, "deployment_id": dep_id},
+                **({"customer_email": customer_email} if customer_email else {}),
+                success_url=body.get("success_url", "https://app.agentic-memory.dev/billing?success=1"),
+                cancel_url=body.get("cancel_url", "https://app.agentic-memory.dev/billing?canceled=1"),
+            )
+
             self._write_json({
-                "checkout_url": f"https://checkout.stripe.com/pay/{session_id}",
-                "session_id": session_id,
-                "status": "ok"
+                "checkout_url": session.url,
+                "session_id": session.id,
+                "status": "ok",
             })
         except Exception as e:
             logger.warning("_handle_cloud_checkout: %s", e)
             self._error(f"Checkout failed: {e}", 500)
 
-    def _handle_cloud_stripe_webhook(self) -> None:
+    def _handle_cloud_signup(self) -> None:
+        """Create a new customer + deployment + provision memory.db.
+
+        POST /api/v1/cloud/signup
+        Body: {"email": "...", "name": "...", "plan_id": "free"}
+
+        Creates:
+          1. Customer row in cloud_state.db
+          2. Deployment row (maps deployment_id → tenant_id)
+          3. Memory DB directory + empty memory.db at the deployment path
+          4. Default subscription on the requested plan
+        """
+        import uuid
+        import os
         try:
             body = self._read_json_body() or {}
-            event_type = body.get("type")
-            if event_type == "checkout.session.completed":
-                obj = body.get("data", {}).get("object", {})
-                deployment_id = obj.get("client_reference_id")
-                plan_id = obj.get("metadata", {}).get("plan_id")
-                stripe_sub_id = obj.get("subscription") or f"sub_stripe_{int(time.time())}"
-                if deployment_id and plan_id:
-                    import uuid
-                    sub_id = f"sub_{uuid.uuid4().hex[:8]}"
-                    self.cloud_store.create_subscription(
-                        subscription_id=sub_id,
-                        deployment_id=deployment_id,
-                        plan_id=plan_id,
-                        stripe_sub_id=stripe_sub_id,
-                        status="active",
-                        current_period_end=time.time() + 30 * 86400
-                    )
-                    
-                    inv_id = f"inv_{uuid.uuid4().hex[:8]}"
-                    dep = self.cloud_store.get_deployment(deployment_id)
-                    customer_id = dep["customer_id"] if dep else "cust_1"
-                    amount = 4900 if plan_id == "pro" else 29900 if plan_id == "enterprise" else 0
-                    self.cloud_store.create_invoice(
-                        invoice_id=inv_id,
-                        customer_id=customer_id,
-                        amount_cents=amount,
-                        subscription_id=sub_id,
-                        status="paid"
-                    )
-                    self._write_json({"status": "ok", "message": "subscription activated"})
-                    return
-            self._write_json({"status": "ignored"})
+            email = body.get("email", "").strip()
+            name = body.get("name", "").strip() or email
+            plan_id = body.get("plan_id", "free")
+            if not email:
+                self._error("email is required", 400)
+                return
+
+            plan = self.cloud_store.get_plan(plan_id)
+            if not plan:
+                self._error(f"unknown plan: {plan_id}", 400)
+                return
+
+            customer_id = f"cust_{uuid.uuid4().hex[:12]}"
+            self.cloud_store.create_customer(
+                customer_id=customer_id, email=email, name=name,
+            )
+
+            deployment_id = f"dep_{uuid.uuid4().hex[:12]}"
+            tenant_id = f"tenant_{uuid.uuid4().hex[:8]}"
+
+            # Provision the memory DB directory
+            base_dir = Path(self.server.db_path).parent / "deployments" / deployment_id
+            base_dir.mkdir(parents=True, exist_ok=True)
+            mem_db_path = str(base_dir / "memory.db")
+
+            # Create the deployment row
+            self.cloud_store.create_deployment(
+                deployment_id=deployment_id,
+                customer_id=customer_id,
+                tenant_id=tenant_id,
+                label=name,
+                db_path=mem_db_path,
+                api_base=f"http://127.0.0.1:{self.server.port}",
+            )
+
+            # Initialize the memory DB with the schema
+            try:
+                import sqlite3 as _sqlite3
+                conn = _sqlite3.connect(mem_db_path, timeout=30)
+                # Run core migrations to create tables
+                from infra.infrastructure import resolve_active_memory_dir
+                migrations_dir = Path(__file__).resolve().parent.parent / "migrations"
+                for migration_file in sorted(migrations_dir.glob("*.sql")):
+                    if migration_file.name.endswith(".down.sql"):
+                        continue
+                    try:
+                        conn.executescript(migration_file.read_text())
+                    except Exception:
+                        pass  # table already exists
+                conn.close()
+            except Exception as mig_exc:
+                logger.warning("signup memory DB init skipped: %s", mig_exc)
+
+            # Create default subscription
+            sub_id = f"sub_{uuid.uuid4().hex[:8]}"
+            self.cloud_store.create_subscription(
+                subscription_id=sub_id,
+                deployment_id=deployment_id,
+                plan_id=plan_id,
+                status="active",
+                current_period_end=time.time() + 30 * 86400,
+            )
+
+            self._write_json({
+                "customer_id": customer_id,
+                "deployment_id": deployment_id,
+                "tenant_id": tenant_id,
+                "plan_id": plan_id,
+                "db_path": mem_db_path,
+                "status": "active",
+            }, 201)
         except Exception as e:
-            logger.warning("_handle_cloud_stripe_webhook error: %s", e)
-            self._error(f"Webhook failed: {e}", 500)
+            logger.warning("_handle_cloud_signup: %s", e)
+            self._error(f"Signup failed: {e}", 500)
+
+    def _handle_cloud_stripe_webhook(self) -> None:
+        """Handle real Stripe webhooks with signature verification.
+
+        Verifies the webhook signature using ``STRIPE_WEBHOOK_SECRET`` before
+        processing.  Handles ``checkout.session.completed`` to activate
+        subscriptions and ``customer.subscription.updated`` / ``deleted`` for
+        plan changes and cancellations.
+        """
+        import os
+        import stripe
+
+        webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+        raw_body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+
+        # Signature verification (required in production)
+        sig_header = self.headers.get("Stripe-Signature", "")
+        if webhook_secret and sig_header:
+            try:
+                event = stripe.Webhook.construct_event(
+                    raw_body, sig_header, webhook_secret,
+                )
+            except (stripe.error.SignatureVerificationError, ValueError) as e:
+                logger.warning("Stripe webhook signature verification failed: %s", e)
+                self._error("Invalid webhook signature", 400)
+                return
+        else:
+            # No webhook secret configured — parse raw JSON (dev/test only)
+            try:
+                event = json.loads(raw_body.decode("utf-8"))
+            except Exception:
+                self._error("Invalid JSON payload", 400)
+                return
+
+        event_type = event.get("type", "")
+
+        if event_type == "checkout.session.completed":
+            obj = event.get("data", {}).get("object", {})
+            deployment_id = obj.get("client_reference_id")
+            plan_id = obj.get("metadata", {}).get("plan_id")
+            stripe_sub_id = obj.get("subscription")
+            if deployment_id and plan_id and stripe_sub_id:
+                import uuid
+                sub_id = f"sub_{uuid.uuid4().hex[:8]}"
+                self.cloud_store.create_subscription(
+                    subscription_id=sub_id,
+                    deployment_id=deployment_id,
+                    plan_id=plan_id,
+                    stripe_sub_id=stripe_sub_id,
+                    status="active",
+                    current_period_end=obj.get("current_period_end", time.time() + 30 * 86400),
+                )
+
+                inv_id = f"inv_{uuid.uuid4().hex[:8]}"
+                dep = self.cloud_store.get_deployment(deployment_id)
+                customer_id = dep["customer_id"] if dep else "cust_1"
+                amount = obj.get("amount_total", 0)
+                self.cloud_store.create_invoice(
+                    invoice_id=inv_id,
+                    customer_id=customer_id,
+                    amount_cents=amount,
+                    subscription_id=sub_id,
+                    status="paid",
+                )
+                self._write_json({"status": "ok", "message": "subscription activated"})
+                return
+
+        elif event_type == "customer.subscription.updated":
+            obj = event.get("data", {}).get("object", {})
+            stripe_sub_id = obj.get("id")
+            status = obj.get("status")
+            if stripe_sub_id and status:
+                # Update subscription status in cloud_state.db
+                with self.cloud_store._connect() as conn:
+                    conn.execute(
+                        "UPDATE subscriptions SET status=? WHERE stripe_sub_id=?",
+                        (status, stripe_sub_id),
+                    )
+                self._write_json({"status": "ok", "message": f"subscription {status}"})
+                return
+
+        elif event_type == "customer.subscription.deleted":
+            obj = event.get("data", {}).get("object", {})
+            stripe_sub_id = obj.get("id")
+            if stripe_sub_id:
+                with self.cloud_store._connect() as conn:
+                    conn.execute(
+                        "UPDATE subscriptions SET status='canceled' WHERE stripe_sub_id=?",
+                        (stripe_sub_id,),
+                    )
+                self._write_json({"status": "ok", "message": "subscription canceled"})
+                return
+
+        self._write_json({"status": "ignored"})
+
+    def _handle_audit_logs(self, query_params: dict) -> None:
+        """GET /api/v1/audit/logs — query memory_audit_log via REST.
+
+        Params: hours (default 24), tool (filter), errors_only, limit (default 200)
+        """
+        try:
+            from infra._lazy_imports import connection_pool, safe_close_db
+
+            hours = int(query_params.get("hours", ["24"])[0])
+            tool_filter = query_params.get("tool", [None])[0]
+            errors_only = query_params.get("errors_only", ["false"])[0].lower() == "true"
+            limit = int(query_params.get("limit", ["200"])[0])
+
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                where = [f"ts >= strftime('%s','now')-{hours * 3600}"]
+                params: list = []
+                if tool_filter:
+                    where.append("tool LIKE ?")
+                    params.append(f"%{tool_filter}%")
+                if errors_only:
+                    where.append("error IS NOT NULL")
+                where_sql = " AND ".join(where)
+
+                rows = conn.execute(
+                    f"SELECT ts, tool, latency_ms, results_count, error, args "
+                    f"FROM memory_audit_log WHERE {where_sql} "
+                    f"ORDER BY ts DESC LIMIT ?",
+                    (*params, limit),
+                ).fetchall()
+
+                logs = [
+                    {
+                        "ts": r[0], "tool": r[1], "latency_ms": r[2],
+                        "results_count": r[3], "error": r[4], "args": r[5],
+                    }
+                    for r in rows
+                ]
+                self._write_json({"logs": logs, "count": len(logs)})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_audit_logs: %s", e)
+            self._error(f"Audit query failed: {e}", 500)
 
 
 class APIServer(ThreadingHTTPServer):
