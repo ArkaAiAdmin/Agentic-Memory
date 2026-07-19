@@ -129,12 +129,13 @@ def memory_save(
         from infra.infrastructure import resolve_active_memory_dir
         _coord_lock_path = str((resolve_active_memory_dir() / "memory" / category / f"{title_slug}.md").resolve())
         locked = acquire_save_lock(_coord_lock_path)
-        if not locked:
+        if not locked.get("acquired", locked if isinstance(locked, bool) else False):
             # Lock held by another agent — send conflict message, proceed anyway
             try:
                 from coordination.locking import check_lock
                 import coordination.hooks as _ch
-                lock_info = check_lock(_ch._make_conn(), _coord_lock_path)
+                _cl_conn = _ch._make_conn()
+                lock_info = check_lock(_cl_conn, _coord_lock_path) if _cl_conn else None
                 if lock_info:
                     queue_lock_conflict_message(
                         _coord_lock_path, lock_info["locked_by"],

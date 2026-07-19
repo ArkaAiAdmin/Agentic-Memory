@@ -86,7 +86,7 @@ class TestSaveLocking(unittest.TestCase):
     def test_acquire_save_lock(self):
         """Can acquire a save lock on a file."""
         result = acquire_save_lock("/memory/lessons/test.md", "agent-a", conn=self.conn)
-        self.assertTrue(result)
+        self.assertTrue(result["acquired"])
         row = self.conn.execute("SELECT locked_by FROM file_locks WHERE file_path=?", ("/memory/lessons/test.md",)).fetchone()
         self.assertEqual(row[0], "agent-a")
 
@@ -101,13 +101,13 @@ class TestSaveLocking(unittest.TestCase):
         """Cannot acquire a lock held by another agent."""
         acquire_save_lock("/memory/lessons/test.md", "agent-a", conn=self.conn)
         result = acquire_save_lock("/memory/lessons/test.md", "agent-b", conn=self.conn)
-        self.assertFalse(result)
+        self.assertFalse(result["acquired"])
 
     def test_acquire_lock_same_agent_refreshes(self):
         """Same agent can refresh its own lock."""
         acquire_save_lock("/memory/lessons/test.md", "agent-a", conn=self.conn)
         result = acquire_save_lock("/memory/lessons/test.md", "agent-a", conn=self.conn)
-        self.assertTrue(result)
+        self.assertTrue(result["acquired"])
 
     def test_release_only_releases_own_lock(self):
         """Releasing only removes lock if owned by the same agent."""

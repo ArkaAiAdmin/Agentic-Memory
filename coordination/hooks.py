@@ -13,6 +13,14 @@ All functions are fail-safe: exceptions are caught and logged, never raised.
 All functions accept an optional `conn` parameter. When provided (tests),
 the caller owns the connection lifecycle. When None (production), the
 function creates and closes its own connection.
+
+Locking hardening (2026-07-19):
+- Fencing tokens: every acquire returns a FencingLock named tuple with
+  monotonically increasing version. Call `verify_save_lock` before writing
+  to ensure another agent hasn't stolen the lock.
+- Blocking mode: `acquire_save_lock(block=True, timeout=30)` polls with
+  exponential backoff instead of returning False immediately.
+- Renewal: `renew_save_lock` extends lock TTL without incrementing version.
 """
 from __future__ import annotations
 
@@ -50,66 +58,153 @@ def _get_agent_id() -> str:
     return agent_id
 
 
+# ── Locking Imports (late to avoid circular deps) ───────────────────────
+
+def _fenced(conn, file_path, agent_id):
+    """Thin wrapper: import and call acquire_lock_fenced."""
+    from coordination.locking import acquire_lock_fenced
+    return acquire_lock_fenced(conn, file_path, agent_id)
+
+
+def _verify(conn, file_path, version):
+    """Thin wrapper: import and call verify_lock_fenced."""
+    from coordination.locking import verify_lock_fenced
+    return verify_lock_fenced(conn, file_path, version)
+
+
+def _renew(conn, file_path, agent_id, ttl=300):
+    """Thin wrapper: import and call renew_lock."""
+    from coordination.locking import renew_lock
+    return renew_lock(conn, file_path, agent_id, ttl)
+
+
 # ── Save Pipeline Integration ───────────────────────────────────────────
 
-def acquire_save_lock(file_path: str, agent_id: str | None = None, conn: sqlite3.Connection | None = None) -> bool:
-    """Acquire a file lock before writing a memory. Returns True if acquired.
+def acquire_save_lock(
+    file_path: str,
+    agent_id: str | None = None,
+    conn: sqlite3.Connection | None = None,
+    block: bool = False,
+    timeout: float = 30.0,
+) -> dict:
+    """Acquire a file lock before writing a memory. Returns dict with acquired/version.
 
-    Called by memory_save before the saga writes to disk. Prevents two
-    agents from writing to the same .md file concurrently.
+    Args:
+        file_path: Path to the file to lock.
+        agent_id: Who's acquiring (default: env MEMORY_AGENT_ID).
+        conn: DB connection (None = create own).
+        block: If True, poll with exponential backoff instead of returning False.
+        timeout: Max seconds to wait when block=True (default 30).
+
+    Returns:
+        dict with keys:
+            ``acquired`` (bool) — True if lock was granted.
+            ``version`` (int) — fencing version; pass to verify_save_lock.
+            ``holder`` (str) — current lock holder.
+            ``expires_at`` (float) — lock expiry timestamp.
+
+    The dict is truthy when acquired is True:
+        lock = acquire_save_lock("/path")
+        if lock:  # checks lock["acquired"]
+            ...
     """
     own_conn = conn is None
     if own_conn:
         conn = _make_conn()
     if not conn:
         logger.warning("acquire_save_lock: DB unavailable, failing open")
-        return True
+        return {"acquired": True, "version": 0, "holder": agent_id or "default", "expires_at": 0.0}
 
     try:
         if not agent_id:
             agent_id = _get_agent_id()
 
-        now = time.time()
-        expires_at = now + 300
+        deadline = time.time() + timeout if block else 0
+        delay = 0.1
+        attempt = 0
 
-        try:
-            conn.execute("BEGIN IMMEDIATE")
-        except sqlite3.OperationalError:
-            pass
+        while True:
+            attempt += 1
+            lock = _fenced(conn, file_path, agent_id)
 
-        existing = conn.execute(
-            "SELECT locked_by, expires_at FROM file_locks WHERE file_path=?",
-            (file_path,),
-        ).fetchone()
+            if lock.acquired:
+                return {
+                    "acquired": True,
+                    "version": lock.version,
+                    "holder": agent_id,
+                    "expires_at": lock.expires_at,
+                }
 
-        if existing:
-            if existing[0] == agent_id:
-                conn.execute(
-                    "UPDATE file_locks SET locked_at=?, expires_at=? WHERE file_path=?",
-                    (now, expires_at, file_path),
-                )
-                conn.commit()
-                logger.debug("acquire_save_lock: refreshed lock for %s on %s", agent_id, file_path)
-                return True
-            if existing[1] and existing[1] < now:
-                conn.execute("DELETE FROM file_locks WHERE file_path=?", (file_path,))
-            else:
-                logger.warning("Save lock conflict: %s held by %s", file_path, existing[0])
-                conn.commit()
-                return False
+            if not block or time.time() >= deadline:
+                return {
+                    "acquired": False,
+                    "version": lock.version,
+                    "holder": lock.holder,
+                    "expires_at": lock.expires_at,
+                }
 
-        conn.execute(
-            "INSERT INTO file_locks (file_path, locked_by, locked_at, expires_at) VALUES (?, ?, ?, ?)",
-            (file_path, agent_id, now, expires_at),
-        )
-        conn.commit()
-        logger.debug("acquire_save_lock: acquired lock for %s on %s", agent_id, file_path)
-        return True
+            logger.debug(
+                "acquire_save_lock: retry %d for %s (held by %s), waiting %.1fs",
+                attempt, file_path, lock.holder, delay,
+            )
+            time.sleep(delay)
+            delay = min(delay * 1.5, 2.0)
+
     except sqlite3.OperationalError as e:
         logger.warning("acquire_save_lock: DB error for %s: %s — failing open", file_path, e)
-        return True
+        return {"acquired": True, "version": 0, "holder": agent_id or "default", "expires_at": 0.0}
     except Exception as e:
         logger.error("acquire_save_lock: unexpected error for %s: %s", file_path, e)
+        return {"acquired": False, "version": 0, "holder": "", "expires_at": 0.0}
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def verify_save_lock(file_path: str, expected_version: int, agent_id: str | None = None, conn: sqlite3.Connection | None = None) -> bool:
+    """Verify lock fencing version hasn't changed. Returns False if lock was stolen.
+
+    Call before the actual save write to ensure no other agent took over.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = _make_conn()
+    if not conn:
+        return True
+
+    try:
+        return _verify(conn, file_path, expected_version)
+    except Exception as e:
+        logger.warning("verify_save_lock failed for %s: %s", file_path, e)
+        return True
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def renew_save_lock(file_path: str, agent_id: str | None = None, conn: sqlite3.Connection | None = None, ttl: int = 300) -> bool:
+    """Renew a save lock's TTL. Returns True if renewed.
+
+    Does NOT increment fencing version — this is a refresh, not a takeover.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = _make_conn()
+    if not conn:
+        return False
+
+    try:
+        if not agent_id:
+            agent_id = _get_agent_id()
+        return _renew(conn, file_path, agent_id, ttl)
+    except Exception as e:
+        logger.warning("renew_save_lock failed for %s: %s", file_path, e)
         return False
     finally:
         if own_conn:

@@ -1943,27 +1943,56 @@ def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn: Optional[AnyConn
 # ── Coordination integration helpers ───────────────────────────────────
 
 
+_coord_lock_context: dict | None = None
+"""Thread-local tracking: holds the active FencingLock dict during a save."""
+
 def _coordination_acquire_lock(file_path: str, db_path_obj: Path | None = None) -> None:
     """Acquire coordination lock for a file save. Best-effort, never raises."""
+    global _coord_lock_context
     if not file_path:
         return
     try:
         from coordination.hooks import acquire_save_lock
-        if not acquire_save_lock(file_path):
-            logger.warning("coordination: could not acquire save lock for %s", file_path)
+        lock = acquire_save_lock(file_path, block=True, timeout=30.0)
+        if not lock["acquired"]:
+            logger.warning("coordination: could not acquire save lock for %s (held by %s)", file_path, lock.get("holder", "?"))
+            return
+        _coord_lock_context = lock
+        logger.debug("coordination: acquired lock for %s (version %d)", file_path, lock["version"])
     except Exception as exc:
         logger.debug("coordination: acquire_save_lock skipped: %s", exc)
 
 
-def _coordination_release_lock(file_path: str, db_path_obj: Path | None = None) -> None:
-    """Release coordination lock after a file save. Best-effort, never raises."""
-    if not file_path:
-        return
+def _coordination_verify_fence(file_path: str) -> bool:
+    """Verify fencing token hasn't changed. Logs and returns False if stolen."""
+    global _coord_lock_context
+    if not _coord_lock_context:
+        return True
+    version = _coord_lock_context.get("version", 0)
+    if version == 0:
+        return True
     try:
+        from coordination.hooks import verify_save_lock
+        ok = verify_save_lock(file_path, version)
+        if not ok:
+            logger.critical("coordination: LOCK STOLEN on %s (version %d)", file_path, version)
+        return ok
+    except Exception as exc:
+        logger.debug("coordination: verify_save_lock skipped: %s", exc)
+        return True
+
+
+def _coordination_release_lock(file_path: str, db_path_obj: Path | None = None) -> None:
+    global _coord_lock_context
+    try:
+        if not file_path:
+            return
         from coordination.hooks import release_save_lock
         release_save_lock(file_path)
     except Exception as exc:
         logger.debug("coordination: release_save_lock skipped: %s", exc)
+    finally:
+        _coord_lock_context = None
 
 
 def _coordination_update_activity(
@@ -2176,6 +2205,9 @@ def _save_memory_core(
             # catches the raise, logs it, and returns False so the Claude Code
             # tool-complete event continues normally — the two surfaces are
             # intentionally decoupled.
+            # Fencing check: ensure no one stole our lock before writing
+            _coordination_verify_fence(_file_path_str)
+
             note_id, conn = _persist_via_saga(
                 conn=conn,
                 db_path_obj=db_path_obj,

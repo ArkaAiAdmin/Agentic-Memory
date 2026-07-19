@@ -178,12 +178,24 @@ def run_durability_maintenance(conn: sqlite3.Connection) -> dict:
     """Run all durability maintenance tasks. Returns summary."""
     ensure_durability_tables(conn)
 
+    # Dead-letter expired pending messages
+    try:
+        from coordination.messaging import process_dead_letters, cleanup_dead_letters
+        dead_lettered = process_dead_letters(conn, max_age_days=7)
+        dead_letters_cleaned = cleanup_dead_letters(conn, max_age_days=90)
+    except Exception as e:
+        logger.warning("dead-letter processing failed: %s", e)
+        dead_lettered = -1
+        dead_letters_cleaned = -1
+
     results = {
         "stale_locks_released": release_stale_locks(conn),
         "stale_tasks_abandoned": abandon_stale_tasks(conn),
         "old_messages_cleaned": cleanup_old_messages(conn),
         "stale_agents_cleaned": cleanup_stale_agents(conn),
         "old_audit_entries_cleaned": cleanup_old_audit_entries(conn),
+        "messages_dead_lettered": dead_lettered,
+        "dead_letters_cleaned": dead_letters_cleaned,
     }
 
     # Record maintenance event
