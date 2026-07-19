@@ -62,7 +62,8 @@ def render_sidebar():
         if st.session_state.get("selected_deployment") != _choice:
             d = dep_map[_choice]
             api_base = d.get("api_base") or "http://127.0.0.1:9879"
-            _token = os.environ.get("MEMORY_API_TOKEN", "")
+            from dashboard.api_client import resolve_api_token
+            _token = resolve_api_token(str(dashboard.DB.parent))
             st.session_state.api_client = ApiClient(base_url=api_base, token=_token)
             st.cache_data.clear()
 
@@ -100,7 +101,8 @@ def render_sidebar():
             )
             if st.session_state.get("agent_view") != _choice:
                 # Agent changed — rewire the API client to the right port.
-                _token = os.environ.get("MEMORY_API_TOKEN", "")
+                from dashboard.api_client import resolve_api_token
+                _token = resolve_api_token(str(dashboard.DB.parent))
                 _base_url = _AGENT_API_BASE.get(_choice, os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9879"))
                 st.session_state.api_client = ApiClient(base_url=_base_url, token=_token)
                 st.cache_data.clear()

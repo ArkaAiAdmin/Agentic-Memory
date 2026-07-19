@@ -579,6 +579,8 @@ def _render_gap_detector():
                 st.info("No entities")
                 return
 
+            st.session_state["gap_entities"] = entities
+
             existing_edges = set()
             edges = _query_api("SELECT source_id, target_id FROM kg_edges")
             if edges is not None and not edges.empty:
@@ -606,6 +608,7 @@ def _render_gap_detector():
             gaps.sort(key=lambda x: -x[2])
             st.session_state["gaps"] = gaps[:30]
 
+    entities = st.session_state.get("gap_entities")
     gaps = st.session_state.get("gaps", [])
     if gaps:
         total_edges = _try_count_api("kg_edges")
@@ -633,11 +636,13 @@ def _render_gap_detector():
             if st.button(f"\U0001f517 Create Edge", key=f"gap_edge_{i}", use_container_width=False):
                 try:
                     _c = _api()
-                    a_id = entities[entities["name"] == a]["id"].iloc[0]
-                    b_id = entities[entities["name"] == b]["id"].iloc[0]
-                    if not _c:
+                    if entities is None:
+                        st.error("Session expired. Scan for gaps again.")
+                    elif not _c:
                         st.error("Creating a KG edge requires the REST API (agent memory service) to be running.")
                     else:
+                        a_id = entities[entities["name"] == a]["id"].iloc[0]
+                        b_id = entities[entities["name"] == b]["id"].iloc[0]
                         _c.add_kg_edge(int(a_id), int(b_id), "co-occurs", count * 0.1)
                         st.toast(f"Created edge: {a} \u2194 {b}", icon="\u2705")
                         st.rerun()
