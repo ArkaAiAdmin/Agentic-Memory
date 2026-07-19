@@ -70,6 +70,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        # Flush any queued auth cookies (set after send_response so the status
+        # line is emitted first and the response stays well-formed).
+        for _ck in getattr(self, "_pending_cookies", []) or []:
+            self.send_header("Set-Cookie", _ck)
+        self._pending_cookies = []
         # CORS
         origin = self.headers.get("Origin", "")
         if origin and (not API_CORS_ORIGINS or origin in API_CORS_ORIGINS):
@@ -80,6 +85,62 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.end_headers()
         self.wfile.write(body)
+
+    # ── Auth cookie + rate-limit helpers (Phase 2) ──────────────────────────
+
+    _AUTH_COOKIE = "am_token"
+
+    def _set_auth_cookie(self, token: str) -> None:
+        """Queue the HttpOnly JWT session cookie used by the dashboard.
+
+        Stored on the handler and emitted by ``_write_json`` (which calls
+        ``send_response`` first). Calling ``send_header`` directly here would
+        prepend the cookie before the status line and corrupt the response.
+        """
+        self._pending_cookies = [
+            f"{self._AUTH_COOKIE}={token}; HttpOnly; SameSite=Lax; "
+            f"Path=/; Max-Age=3600",
+        ]
+
+    def _clear_auth_cookie(self) -> None:
+        self._pending_cookies = [
+            f"{self._AUTH_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0",
+        ]
+
+    def _cookie_token(self) -> str:
+        """Return the JWT from the session cookie, if present."""
+        raw = self.headers.get("Cookie", "")
+        if not raw:
+            return ""
+        for part in raw.split(";"):
+            part = part.strip()
+            if part.startswith(f"{self._AUTH_COOKIE}="):
+                return part[len(self._AUTH_COOKIE) + 1 :]
+        return ""
+
+    def _rate_limited(self) -> bool:
+        """Sliding-window per-IP rate limit. Returns True if caller is limited.
+
+        Limits are best-effort and never raise. Disabled when the limit is <= 0.
+        State lives on the server (shared across handler threads) under a lock.
+        """
+        limit = getattr(self.server, "rate_limit", 0)
+        if limit <= 0:
+            return False
+        window = getattr(self.server, "rate_window", 60)
+        now = time.time()
+        peer = self.client_address[0]
+        store = self.server._rate_buckets  # type: ignore[attr-defined]
+        lock = self.server._rate_lock  # type: ignore[attr-defined]
+        with lock:
+            times = store.get(peer, [])
+            times = [t for t in times if now - t < window]
+            if len(times) >= limit:
+                store[peer] = times
+                return True
+            times.append(now)
+            store[peer] = times
+        return False
 
     def _require_auth(self) -> bool:
         """Enforce authentication.
@@ -101,10 +162,19 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         if getattr(self.server, "insecure_loopback", False) and _is_loopback(peer):
             return True
         auth = self.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
-            self._error("Authorization required: Bearer <token>", 401)
+        bearer = ""
+        if auth.startswith("Bearer "):
+            bearer = auth[7:]
+        else:
+            # Phase 2: accept the dashboard session cookie as an alternative
+            # to the Authorization header. Both carry a JWT; the cookie path
+            # is what the Streamlit login flow uses.
+            cookie_tok = self._cookie_token()
+            if cookie_tok:
+                bearer = cookie_tok
+        if not bearer:
+            self._error("Authorization required: Bearer <token> or session cookie", 401)
             return False
-        bearer = auth[7:]
 
         # Phase 2: try JWT validation first (SSO-issued tokens via Authlib).
         try:
@@ -259,6 +329,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
+        if self._rate_limited():
+            self._error("Rate limit exceeded", 429)
+            return
+
         # WebSocket Upgrade Check
         is_ws = (self.headers.get("Upgrade", "").lower() == "websocket" and 
                  "upgrade" in self.headers.get("Connection", "").lower())
@@ -278,6 +352,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if not self._require_auth():
                 return
             self._handle_stats()
+        elif path == "/api/v1/memories/search":
+            if not self._require_auth():
+                return
+            self._handle_search_memories(parse_qs(parsed.query))
         elif path.startswith("/api/v1/memories/"):
             if not self._require_auth():
                 return
@@ -301,6 +379,20 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
+
+        # Per-IP rate limit applies to every POST (including auth endpoints,
+        # to throttle login brute-force attempts). Returns 429 when limited.
+        if self._rate_limited():
+            self._error("Rate limit exceeded", 429)
+            return
+
+        # Auth endpoints are public (they establish the session).
+        if path == "/api/v1/auth/login":
+            self._handle_login()
+            return
+        if path == "/api/v1/auth/logout":
+            self._handle_logout()
+            return
 
         if not self._require_auth():
             return
@@ -350,6 +442,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
+        if self._rate_limited():
+            self._error("Rate limit exceeded", 429)
+            return
+
         if not self._require_auth():
             return
 
@@ -365,6 +461,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
+
+        if self._rate_limited():
+            self._error("Rate limit exceeded", 429)
+            return
 
         if not self._require_auth():
             return
@@ -545,6 +645,88 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             return json.loads(body.decode("utf-8"))
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid JSON: {exc}") from exc
+
+    # ── Phase 2: auth endpoints ─────────────────────────────────────────────
+
+    def _handle_login(self) -> None:
+        """Exchange a valid API token for a JWT session cookie.
+
+        Accepts either the static ``MEMORY_API_TOKEN``/``server.token`` or a
+        ``[api.principals]``-mapped token. On success issues a short-lived JWT
+        (signed by ``idem_token_key``) as an HttpOnly cookie. The dashboard's
+        identity layer: it reuses the existing token trust anchor and the JWT
+        signing/verification primitives — no new credential store.
+        """
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        token = (req.get("token") or "").strip()
+        if not token:
+            self._error("Missing token field", 400)
+            return
+
+        # Validate the presented token against the same anchors _require_auth
+        # trusts. Resolves a principal so the JWT can carry the identity.
+        principal_id = None
+        legacy = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
+        if legacy and token == legacy:
+            # Legacy token grants full access; mint a cookie without a bound
+            # principal (downstream RBAC is not enforced for it, matching the
+            # pre-RBAC behaviour).
+            principal_id = None
+        else:
+            from infra.authorizer import resolve_principal
+
+            principal = resolve_principal(
+                db_path=str(self.server.db_path), token=token,
+            )
+            if principal is not None:
+                principal_id = principal.id
+            else:
+                # Unknown token: fall back to static [api.principals] mapping so
+                # a configured token still logs in even if no DB principal row
+                # exists yet.
+                from infra.authorizer import _load_principal_config
+
+                entry = _load_principal_config().get(token)
+                if entry:
+                    principal_id = entry.partition(":")[-1]
+
+        if principal_id is None and not (legacy and token == legacy):
+            self._error("Invalid token", 403)
+            return
+
+        # Mint the JWT cookie.
+        try:
+            import sqlite3 as _sqlite3
+            from infra.authlib_sso import sign_token
+
+            _conn = _sqlite3.connect(str(self.server.db_path))
+            try:
+                jwt_token, _kid = sign_token(
+                    _conn,
+                    {"sub": principal_id or "legacy", "provider": "dashboard"},
+                    expires_in=3600,
+                )
+            finally:
+                try:
+                    _conn.close()
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.warning("_handle_login: token issuance failed: %s", exc)
+            self._error("Login unavailable: token signing not configured", 503)
+            return
+
+        self._set_auth_cookie(jwt_token)
+        self._write_json({"status": "ok", "principal_id": principal_id})
+
+    def _handle_logout(self) -> None:
+        """Clear the session cookie."""
+        self._clear_auth_cookie()
+        self._write_json({"status": "ok"})
 
     def _handle_add_memory(self) -> None:
         try:
@@ -1325,7 +1507,15 @@ class APIServer(ThreadingHTTPServer):
         self.port = port
         self.token = token
         self.insecure_loopback = insecure_loopback
-        
+
+        # Phase 2: per-IP sliding-window rate limit. Disabled when <= 0.
+        # Configured via MEMORY_API_RATE_LIMIT (requests) and
+        # MEMORY_API_RATE_WINDOW (seconds, default 60).
+        self.rate_limit = int(os.environ.get("MEMORY_API_RATE_LIMIT", "0") or "0")
+        self.rate_window = int(os.environ.get("MEMORY_API_RATE_WINDOW", "60") or "60")
+        self._rate_buckets: Dict[str, list[float]] = {}
+        self._rate_lock = threading.Lock()
+
         self._ws_clients: Dict[str, socket.socket] = {}
         self._ws_lock = threading.Lock()
         self._ws_send_lock = threading.Lock()

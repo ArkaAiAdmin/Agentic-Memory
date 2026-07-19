@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import time
+import os
 from datetime import datetime, timezone
 
 import streamlit as st
 
 import dashboard
-from dashboard import _run_health_checks, _compute_health_score, try_count
-from dashboard.api_client import _try_count_api
+from dashboard import _run_health_checks, _compute_health_score
+from dashboard.api_client import ApiClient, _try_count_api
 
 
 def render_sidebar():
@@ -96,6 +96,21 @@ def render_sidebar():
         st.markdown("### Quick Actions")
 
         if st.button("\u21bb Refresh Now", key="sidebar_refresh", width="stretch"):
+            st.rerun()
+
+        # Phase 2: logout clears the JWT session cookie.
+        if st.button("\U0001f511 Sign out", key="sidebar_logout", width="stretch"):
+            client = st.session_state.get("api_client")
+            if client is not None:
+                try:
+                    client.logout()
+                except Exception:
+                    pass
+            st.session_state.pop("authenticated", None)
+            st.session_state.api_client = ApiClient(
+                base_url=os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9878"),
+                token=os.environ.get("MEMORY_API_TOKEN", ""),
+            )
             st.rerun()
 
         # Live indicator
