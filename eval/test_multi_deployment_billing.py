@@ -34,7 +34,7 @@ def test_migration_002_plans_applied(test_dirs):
     db_path, cloud_db = test_dirs
     # Run migrations
     version = run_cloud_migrations(cloud_db)
-    assert version == 2
+    assert version == 3
     
     store = CloudStateStore(cloud_db)
     plans = store.list_plans()
@@ -71,7 +71,23 @@ def test_usage_metering_and_gateway_blocking(test_dirs):
 def test_api_endpoints_checkout_and_webhook(test_dirs):
     db_path, cloud_db = test_dirs
     run_cloud_migrations(cloud_db)
-    
+
+    # Set Stripe env vars before server starts so the server thread sees them
+    import os
+    os.environ["STRIPE_SECRET_KEY"] = "sk_test_fake"
+    os.environ["STRIPE_PRICE_PRO"] = "price_pro_test"
+    os.environ["STRIPE_PRICE_ENTERPRISE"] = "price_ent_test"
+
+    # Monkey-patch stripe.checkout.Session.create at module level (visible to server thread)
+    import stripe
+    import unittest.mock
+    _mock_session = unittest.mock.MagicMock()
+    _mock_session.id = "cs_test_123"
+    _mock_session.url = "https://checkout.stripe.com/pay/cs_test_123"
+    if hasattr(stripe, 'checkout') and hasattr(stripe.checkout, 'Session'):
+        _orig_create = stripe.checkout.Session.create
+        stripe.checkout.Session.create = unittest.mock.MagicMock(return_value=_mock_session)
+
     # Start APIServer
     port = get_free_port()
     token = "test-token-secret"
@@ -98,11 +114,17 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
     store = CloudStateStore(cloud_db)
     store.create_customer("cust_b", "b@example.com")
     store.create_deployment("dep_b", "cust_b", "tenant_b", api_base=f"http://127.0.0.1:{port}")
+
+    # Set Stripe env vars and fix placeholder price IDs so checkout can proceed
+    import os
+    os.environ["STRIPE_SECRET_KEY"] = "sk_test_fake"
+    os.environ["STRIPE_PRICE_PRO"] = "price_pro_test"
+    os.environ["STRIPE_PRICE_ENTERPRISE"] = "price_ent_test"
     
     base_url = f"http://127.0.0.1:{port}"
     
     try:
-        # 1. Trigger Mock Checkout Session
+        # 1. Trigger Checkout Session (mock Stripe SDK)
         checkout_payload = {
             "deployment_id": "dep_b",
             "plan_id": "pro"
@@ -116,7 +138,7 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
             },
             method="POST"
         )
-        
+
         with urllib.request.urlopen(req) as resp:
             checkout_res = json.loads(resp.read().decode())
             
@@ -133,7 +155,9 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
                     "metadata": {
                         "plan_id": "pro"
                     },
-                    "subscription": f"sub_stripe_{session_id}"
+                    "subscription": f"sub_stripe_{session_id}",
+                    "amount_total": 4900,
+                    "current_period_end": int(time.time()) + 30 * 86400,
                 }
             }
         }
@@ -172,3 +196,8 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
         
     finally:
         server.stop()
+        # Restore monkey-patch and env vars
+        if hasattr(stripe, 'checkout') and hasattr(stripe.checkout, 'Session') and _orig_create:
+            stripe.checkout.Session.create = _orig_create
+        for k in ("STRIPE_SECRET_KEY", "STRIPE_PRICE_PRO", "STRIPE_PRICE_ENTERPRISE"):
+            os.environ.pop(k, None)
