@@ -22,7 +22,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
-_CLOUD_SCHEMA_VERSION = 3
+_CLOUD_SCHEMA_VERSION = 4
 
 
 def _discover_migrations() -> list[tuple[int, Path]]:

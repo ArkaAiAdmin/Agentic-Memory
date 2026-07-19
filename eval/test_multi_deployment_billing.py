@@ -34,7 +34,7 @@ def test_migration_002_plans_applied(test_dirs):
     db_path, cloud_db = test_dirs
     # Run migrations
     version = run_cloud_migrations(cloud_db)
-    assert version == 3
+    assert version == 4
     
     store = CloudStateStore(cloud_db)
     plans = store.list_plans()
