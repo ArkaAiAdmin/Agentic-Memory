@@ -201,3 +201,95 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
             stripe.checkout.Session.create = _orig_create
         for k in ("STRIPE_SECRET_KEY", "STRIPE_PRICE_PRO", "STRIPE_PRICE_ENTERPRISE"):
             os.environ.pop(k, None)
+
+
+# ── Phase 5: Dedicated plan enforcement tests ────────────────────────────
+
+def test_plan_enforcement_call_limit(test_dirs):
+    """Gateway returns 402 when daily call limit is exceeded."""
+    db_path, cloud_db = test_dirs
+    run_cloud_migrations(cloud_db)
+    store = CloudStateStore(cloud_db)
+
+    store.create_customer("cust_limit", "limit@example.com")
+    store.create_deployment("dep_limit", "cust_limit", "tenant_limit")
+    store.create_subscription("sub_limit", "dep_limit", "free", status="active")
+
+    # Under the limit should pass
+    assert store.check_limit_exceeded("dep_limit") is False
+
+    # Exhaust the free plan's 1000 daily calls
+    store.increment_usage("dep_limit", rest_calls=1000)
+    assert store.check_limit_exceeded("dep_limit") is True
+
+
+def test_plan_enforcement_storage_limit(test_dirs):
+    """Gateway returns 402 when storage exceeds plan limit."""
+    db_path, cloud_db = test_dirs
+    run_cloud_migrations(cloud_db)
+    store = CloudStateStore(cloud_db)
+
+    store.create_customer("cust_storage", "storage@example.com")
+    store.create_deployment("dep_storage", "cust_storage", "tenant_storage")
+    store.create_subscription("sub_storage", "dep_storage", "free", status="active")
+
+    # Under limit initially
+    assert store.check_limit_exceeded("dep_storage") is False
+
+    # Free plan: 50 MB storage limit — exceed it
+    store.increment_usage("dep_storage", storage_bytes=60 * 1024 * 1024)
+    assert store.check_limit_exceeded("dep_storage") is True
+
+
+def test_plan_enforcement_seat_limit(test_dirs):
+    """Pro plan allows more seats than free."""
+    db_path, cloud_db = test_dirs
+    run_cloud_migrations(cloud_db)
+    store = CloudStateStore(cloud_db)
+
+    free = store.get_plan("free")
+    pro = store.get_plan("pro")
+    enterprise = store.get_plan("enterprise")
+
+    # Seat limits: free < pro < enterprise
+    assert free["max_seats"] < pro["max_seats"]
+    assert pro["max_seats"] < enterprise["max_seats"]
+
+
+def test_plan_limits_pro_tier(test_dirs):
+    """Pro plan has higher limits than free."""
+    db_path, cloud_db = test_dirs
+    run_cloud_migrations(cloud_db)
+    store = CloudStateStore(cloud_db)
+
+    pro = store.get_plan("pro")
+    free = store.get_plan("free")
+    assert pro["max_mcp_calls_per_day"] > free["max_mcp_calls_per_day"]
+    assert pro["max_storage_mb"] > free["max_storage_mb"]
+    assert pro["max_seats"] > free["max_seats"]
+
+
+def test_signup_provisions_memory_db(test_dirs):
+    """Signup creates customer, deployment, and provisions memory.db."""
+    db_path, cloud_db = test_dirs
+    run_cloud_migrations(cloud_db)
+    store = CloudStateStore(cloud_db)
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        mem_db = Path(td) / "memory.db"
+        store.create_customer("cust_signup", "signup@example.com", "Test User")
+        store.create_deployment(
+            "dep_signup", "cust_signup", "tenant_signup",
+            db_path=str(mem_db), api_base="http://127.0.0.1:9878",
+        )
+
+        dep = store.get_deployment("dep_signup")
+        assert dep is not None
+        assert dep["customer_id"] == "cust_signup"
+        assert dep["tenant_id"] == "tenant_signup"
+
+        # Verify deployment is listed
+        deps = store.list_deployments("cust_signup")
+        assert len(deps) == 1
+        assert deps[0]["deployment_id"] == "dep_signup"

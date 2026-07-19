@@ -286,23 +286,26 @@ class CloudStateStore:
             conn.commit()
 
     def check_limit_exceeded(self, deployment_id: str) -> bool:
-        """Check if the deployment's daily calls exceed its plan limits."""
+        """Check if the deployment exceeds plan limits (calls + storage).
+
+        Seat count is enforced at the application layer (role_bindings lives
+        in the per-deployment memory.db, not cloud_state.db).
+        """
         day = time.strftime("%Y-%m-%d", time.gmtime())
         with self._connect() as conn:
-            # Join subscription + plan
             row = conn.execute(
-                "SELECT p.max_mcp_calls_per_day "
+                "SELECT p.max_mcp_calls_per_day, p.max_storage_mb "
                 "FROM subscriptions s "
                 "JOIN plans p ON s.plan_id = p.id "
                 "WHERE s.deployment_id = ? AND s.status = 'active' "
                 "LIMIT 1",
                 (deployment_id,),
             ).fetchone()
-            
-            # Default to free plan if no active subscription
+
             max_calls = row[0] if row else 1000
-            
-            # Fetch daily usage
+            max_storage_mb = row[1] if row else 50
+
+            # Check daily call limit
             usage = conn.execute(
                 "SELECT COALESCE(mcp_calls, 0) + COALESCE(rest_calls, 0) "
                 "FROM usage_records "
@@ -310,8 +313,21 @@ class CloudStateStore:
                 (deployment_id, day),
             ).fetchone()
             current_calls = usage[0] if usage else 0
-            
-            return current_calls >= max_calls
+            if current_calls >= max_calls:
+                return True
+
+            # Check storage limit
+            usage_row = conn.execute(
+                "SELECT COALESCE(storage_bytes, 0) "
+                "FROM usage_records "
+                "WHERE deployment_id = ? AND day = ?",
+                (deployment_id, day),
+            ).fetchone()
+            current_storage_mb = (usage_row[0] if usage_row else 0) / (1024 * 1024)
+            if current_storage_mb > max_storage_mb:
+                return True
+
+            return False
 
     def get_usage(self, deployment_id: str, day: Optional[str] = None) -> list[dict] | Optional[dict]:
         day_str = day or time.strftime("%Y-%m-%d", time.gmtime())

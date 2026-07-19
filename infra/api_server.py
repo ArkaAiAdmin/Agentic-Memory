@@ -2086,23 +2086,14 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 api_base=f"http://127.0.0.1:{self.server.port}",
             )
 
-            # Initialize the memory DB with the schema
+            # Initialize the memory DB with the schema via the migration runner
             try:
-                import sqlite3 as _sqlite3
-                conn = _sqlite3.connect(mem_db_path, timeout=30)
-                # Run core migrations to create tables
-                from infra.infrastructure import resolve_active_memory_dir
-                migrations_dir = Path(__file__).resolve().parent.parent / "migrations"
-                for migration_file in sorted(migrations_dir.glob("*.sql")):
-                    if migration_file.name.endswith(".down.sql"):
-                        continue
-                    try:
-                        conn.executescript(migration_file.read_text())
-                    except Exception:
-                        pass  # table already exists
-                conn.close()
+                from infra.migration_runner import run_migrations
+                run_migrations(mem_db_path)
             except Exception as mig_exc:
-                logger.warning("signup memory DB init skipped: %s", mig_exc)
+                logger.error("signup memory DB init FAILED: %s", mig_exc)
+                self._error(f"Deployment created but DB init failed: {mig_exc}", 500)
+                return
 
             # Create default subscription
             sub_id = f"sub_{uuid.uuid4().hex[:8]}"
