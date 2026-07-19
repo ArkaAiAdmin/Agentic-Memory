@@ -10,6 +10,16 @@ from dashboard import _run_health_checks, _compute_health_score
 from dashboard.api_client import ApiClient, _try_count_api
 
 
+# Agent identity → API base URL. OPENCODE happens to coincide with the rest-api
+# port (9879) when the launchd managed rest-api is running; MIMOCODE routes via
+# its sync daemon (9877) which proxies read-only query requests against its DB.
+# Direct sqlite access is restricted to OPENCODE = dashboard.DB.
+_AGENT_API_BASE = {
+    "OpenCode": os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9879"),
+    "MIMOCODE": os.environ.get("MEMORY_API_BASE_MIMO", "http://127.0.0.1:9877"),
+}
+
+
 def render_sidebar():
     st.sidebar.html(
         """<div style='display:flex;align-items:center;gap:10px;margin-bottom:4px;'>
@@ -28,21 +38,34 @@ def render_sidebar():
         "MIMOCODE": _base / "memory-agent-b.db",
     }
     _valid = {k: v for k, v in _agents.items() if v.exists()}
-    if _valid:
+    if _Valid := _valid:
         if "agent_view" not in st.session_state:
-            st.session_state["agent_view"] = "OpenCode" if "OpenCode" in _valid else next(iter(_valid))
+            st.session_state["agent_view"] = "OpenCode" if "OpenCode" in _Valid else next(iter(_Valid))
         _choice = st.sidebar.selectbox(
             "Agent store",
-            options=list(_valid.keys()),
-            index=list(_valid.keys()).index(st.session_state["agent_view"]),
+            options=list(_Valid.keys()),
+            index=list(_Valid.keys()).index(st.session_state["agent_view"]),
             key="agent_view_select",
+            help=(
+                "Switch API client only. Direct sqlite file access is restricted "
+                "to OPENCODE — viewing MIMOCODE is read-only via the sync daemon "
+                "(port 9877). Writes to MIMOCODE go through its own MCP."
+            ),
         )
-        if st.session_state.get("agent_view_db") != str(_valid[_choice]):
+        if st.session_state.get("agent_view") != _choice:
+            # Agent changed — rewire the API client to the right port.
+            _token = os.environ.get("MEMORY_API_TOKEN", "")
+            _base_url = _AGENT_API_BASE.get(_choice, os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9879"))
+            st.session_state.api_client = ApiClient(base_url=_base_url, token=_token)
             st.cache_data.clear()
         st.session_state["agent_view"] = _choice
-        st.session_state["agent_view_db"] = str(_valid[_choice])
-        dashboard.DB = _valid[_choice]
+        st.session_state["agent_view_db"] = str(_Valid[_choice])
+        # dashboard.DB stays bound to OPENCODE for the read-only fallback
+        # path that resolution of OPENCODE local files requires. MIMOCODE
+        # reads flow exclusively through the API client.
+        dashboard.DB = _agents["OpenCode"]
         dashboard.MEM_DIR = dashboard.DB.parent
+        st.session_state["agent_view_remote"] = _choice != "OpenCode"
 
     st.sidebar.caption(
         f"`{dashboard.DB.parent.name}`  \u00b7 "

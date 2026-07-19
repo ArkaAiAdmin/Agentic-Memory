@@ -143,6 +143,34 @@ class ApiClient:
     def delete_memory(self, note_id: str) -> dict:
         return self._delete(f"/api/v1/memories/{note_id}")
 
+    def update_memory(
+        self,
+        note_id: str,
+        content: str | None = None,
+        category: str | None = None,
+        tags: list[str] | None = None,
+        pinned: bool | None = None,
+        is_global: bool | None = None,
+        importance: int | None = None,
+        tier: str | None = None,
+        title_slug: str | None = None,
+    ) -> dict:
+        """Update an existing memory via PUT /api/v1/memories/{id}."""
+        data: dict[str, Any] = {}
+        for key, val in (
+            ("content", content),
+            ("category", category),
+            ("tags", tags),
+            ("pinned", pinned),
+            ("is_global", is_global),
+            ("importance", importance),
+            ("tier", tier),
+            ("title_slug", title_slug),
+        ):
+            if val is not None:
+                data[key] = val
+        return self._put(f"/api/v1/memories/{note_id}", data=data)
+
     def search_memories(
         self,
         query: str,
@@ -275,6 +303,40 @@ class ApiClient:
     def kg_dedup(self) -> dict:
         return self._post("/api/v1/kg/dedup")
 
+    def kg_prune(self, entity_ids: list) -> dict:
+        return self._post("/api/v1/kg/prune", data={"entity_ids": entity_ids})
+
+    def kg_merge(self, keep_id: int, remove_id: int) -> dict:
+        return self._post(
+            "/api/v1/kg/merge",
+            data={"keep_id": keep_id, "remove_id": remove_id},
+        )
+
+    def delete_kg_entity(self, entity_id: str | int) -> dict:
+        return self._delete(f"/api/v1/kg/entities/{entity_id}")
+
+    def delete_kg_edge(self, edge_id: str | int) -> dict:
+        return self._delete(f"/api/v1/kg/edges/{edge_id}")
+
+    def add_kg_edge(self, source_id: int, target_id: int, relation: str,
+                    weight: float = 1.0, properties: dict | None = None) -> dict:
+        return self._post(
+            "/api/v1/kg/edges",
+            data={
+                "source_id": source_id,
+                "target_id": target_id,
+                "relation": relation,
+                "weight": weight,
+                "properties": properties or {},
+            },
+        )
+
+    def update_kg_entity(self, entity_id: int, entity_type: str) -> dict:
+        return self._put(
+            f"/api/v1/kg/entities/{entity_id}",
+            data={"entity_type": entity_type},
+        )
+
     def archive_stale(self, min_fitness: float = 0.3, min_age_days: int = 90) -> dict:
         return self._post(
             "/api/v1/memories/archive-stale",
@@ -338,27 +400,51 @@ class ApiClient:
 # unavailable (e.g. in tests or standalone runs).
 
 def _get_db():
-    """Open a SQLite connection to the dashboard DB (fallback path)."""
+    """Open a SQLite connection to the dashboard DB (fallback path).
+
+    SECURITY: the fallback connection is strictly READ-ONLY (``mode=ro``).
+    The dashboard must never write to the memory DB directly — all writes go
+    through the REST API (which enforces auth, RBAC, audit, and the saga). A
+    writable fallback would bypass Hard Rule 1 (all writes via save_memory)
+    and risk the shared-journal single-writer invariant (Hard Rule 13).
+    """
     import sqlite3
     from dashboard import DB
-    return sqlite3.connect(str(DB), timeout=10)
+    if not _local_fallback_allowed():
+        raise RuntimeError(
+            "Local DB fallback is disabled. The dashboard requires the REST API "
+            "(auth + RBAC + audit). Set DASHBOARD_ALLOW_LOCAL_FALLBACK=1 to opt in "
+            "for standalone/test runs."
+        )
+    return sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=10)
 
 
-def _list_column(table_name: str, column: str) -> list:
-    """List distinct non-null values in a column (fallback path)."""
-    try:
-        conn = _get_db()
-        rows = conn.execute(
-            f"SELECT DISTINCT {column} FROM {table_name} WHERE {column} IS NOT NULL ORDER BY {column}"
-        ).fetchall()
-        conn.close()
-        return [r[0] for r in rows if r[0]]
-    except Exception:
-        return []
+def _local_fallback_allowed() -> bool:
+    """Local direct-DB fallback is opt-in only.
+
+    Default OFF. Enabled by DASHBOARD_ALLOW_LOCAL_FALLBACK=1 (tests / offline
+    runs). When off, every dashboard read must go through the authenticated
+    REST API — there is no unauthenticated direct-file path.
+    """
+    return os.environ.get("DASHBOARD_ALLOW_LOCAL_FALLBACK", "0") == "1"
+
+
+class _AuthError(Exception):
+    """Raised when the API rejects the request (401/403). Never downgrade."""
+
+
+def _classify(exc: Exception) -> Exception:
+    """Convert an requests HTTP 401/403 into _AuthError; pass others through."""
+    from requests import HTTPError
+    if isinstance(exc, HTTPError):
+        code = getattr(getattr(exc, "response", None), "status_code", None)
+        if code in (401, 403):
+            return _AuthError(f"API auth failed ({code})")
+    return exc
 
 
 def _api() -> "ApiClient | None":
-    """Get the API client from session state, or None if unavailable."""
+    """Get the active agent's API client from session state, or None."""
     try:
         import streamlit as st
         return getattr(st.session_state, "api_client", None)
@@ -367,77 +453,161 @@ def _api() -> "ApiClient | None":
 
 
 def _query_api(sql: str, params: list | None = None) -> "Any":
-    """Run a read-only query via API; fall back to local DB on failure."""
+    """Run a read-only query via the active agent's API.
+
+    Falls back to a READ-ONLY local DB connection ONLY on transport failure
+    (API down) and only when DASHBOARD_ALLOW_LOCAL_FALLBACK=1. Auth failures
+    (401/403) are surfaced, never silently downgraded to direct file access.
+    """
     client = _api()
-    if client:
+    if client is not None:
         try:
             resp = client.query(sql, params or [])
             if isinstance(resp, dict) and "results" in resp:
                 import pandas as pd
                 return pd.DataFrame(resp["results"])
             return resp
-        except Exception:
-            pass
-    # Fallback
-    from dashboard import query
-    return query(sql, params or [])
+        except _AuthError:
+            raise
+        except Exception as _e:
+            _classified = _classify(_e)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            # Transport failure — fall back only if explicitly allowed.
+            if _local_fallback_allowed():
+                from dashboard import query
+                return query(sql, params or [])
+            raise RuntimeError(
+                "Memory API unavailable and local fallback is disabled."
+            ) from _e
+    if _local_fallback_allowed():
+        from dashboard import query
+        return query(sql, params or [])
+    raise RuntimeError("No API client available and local fallback is disabled.")
 
 
 def _try_count_api(table_name: str, where: str = "") -> int:
-    """Count rows via API; fall back to local DB on failure."""
+    """Count rows via API; read-only local fallback on transport failure."""
     client = _api()
-    if client:
+    if client is not None:
         try:
             sql = f"SELECT COUNT(*) as c FROM {table_name}"
             if where:
                 sql += f" WHERE {where}"
             resp = client.query(sql)
             if isinstance(resp, dict) and "results" in resp and resp["results"]:
-                return resp["results"][0].get("c", 0)
-        except Exception:
-            pass
-    from dashboard import try_count
-    return try_count(table_name, where)
+                return int(resp["results"][0].get("c", 0))
+        except _AuthError:
+            raise
+        except Exception as _e:
+            _classified = _classify(_e)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                from dashboard import try_count
+                return try_count(table_name, where)
+            raise RuntimeError(
+                "Memory API unavailable and local fallback is disabled."
+            ) from _e
+    if _local_fallback_allowed():
+        from dashboard import try_count
+        return try_count(table_name, where)
+    raise RuntimeError("No API client available and local fallback is disabled.")
 
 
 def _table_exists_api(table_name: str) -> bool:
-    """Check if a table exists via API; fall back to local DB."""
+    """Check table existence via API; read-only local fallback on transport failure."""
     client = _api()
-    if client:
+    if client is not None:
         try:
-            resp = client.query(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+            resp = client.query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                [table_name],
+            )
             if isinstance(resp, dict) and "results" in resp:
                 return len(resp["results"]) > 0
-        except Exception:
-            pass
-    try:
+        except _AuthError:
+            raise
+        except Exception as _e:
+            _classified = _classify(_e)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                conn = _get_db()
+                try:
+                    r = conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                        (table_name,),
+                    ).fetchone()
+                    return r is not None
+                finally:
+                    conn.close()
+            raise RuntimeError(
+                "Memory API unavailable and local fallback is disabled."
+            ) from _e
+    if _local_fallback_allowed():
         conn = _get_db()
-        r = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table_name,),
-        ).fetchone()
-        conn.close()
-        return r is not None
-    except Exception:
-        return False
+        try:
+            r = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            ).fetchone()
+            return r is not None
+        finally:
+            conn.close()
+    raise RuntimeError("No API client available and local fallback is disabled.")
 
 
 def _list_column_api(table_name: str, column: str) -> list:
-    """List distinct values in a column via API; fall back to local DB."""
+    """List distinct column values via API; read-only local fallback on transport failure."""
     client = _api()
-    if client:
+    if client is not None:
         try:
-            resp = client.query(f"SELECT DISTINCT {column} FROM {table_name} WHERE {column} IS NOT NULL")
+            resp = client.query(
+                f"SELECT DISTINCT {column} FROM {table_name} WHERE {column} IS NOT NULL"
+            )
             if isinstance(resp, dict) and "results" in resp:
-                return [r.get(column) for r in resp["results"]]
-        except Exception:
-            pass
-    return _list_column(table_name, column)
+                return [r.get(column) for r in resp["results"] if r.get(column)]
+        except _AuthError:
+            raise
+        except Exception as _e:
+            _classified = _classify(_e)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                return _list_column(table_name, column)
+            raise RuntimeError(
+                "Memory API unavailable and local fallback is disabled."
+            ) from _e
+    if _local_fallback_allowed():
+        return _list_column(table_name, column)
+    raise RuntimeError("No API client available and local fallback is disabled.")
 
 
 def _get_conn_api():
-    """Get a DB connection; prefer API-backed where possible, else local."""
+    """Return the active agent's API client (preferred).
+
+    The dashboard never hands out a raw writable connection. When the API is
+    unavailable and local fallback is explicitly enabled, a READ-ONLY
+    connection is returned; otherwise an error is raised.
+    """
     client = _api()
-    if client:
+    if client is not None:
         return client
-    return _get_db()
+    if _local_fallback_allowed():
+        return _get_db()
+    raise RuntimeError("No API client available and local fallback is disabled.")
+
+
+def _list_column(table_name: str, column: str) -> list:
+    """List distinct non-null values in a column (read-only fallback path)."""
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            f"SELECT DISTINCT {column} FROM {table_name} WHERE {column} IS NOT NULL ORDER BY {column}"
+        ).fetchall()
+        return [r[0] for r in rows if r[0]]
+    except Exception:
+        return []
+    finally:
+        conn.close()

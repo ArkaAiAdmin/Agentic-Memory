@@ -150,14 +150,11 @@ def _render_quality_center():
             new_pinned = 1 if row["Pinned"] else 0
             if orig_pinned != new_pinned:
                 try:
-                    _c = _api()
-                    if _c:
-                        _c.query(f"UPDATE memories SET pinned={new_pinned} WHERE id='{mem_id}'")
-                    else:
-                        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                        conn.execute("UPDATE memories SET pinned=? WHERE id=?", (new_pinned, mem_id))
-                        conn.commit()
-                        conn.close()
+                    client = _api()
+                    if not client:
+                        st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                        continue
+                    client.update_memory(mem_id, pinned=bool(new_pinned))
                 except Exception:
                     pass
 
@@ -182,23 +179,13 @@ def _render_quality_center():
 
 
 def _bulk_archive(ids):
+    client = _api()
+    if not client:
+        st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+        return
     try:
         for mid in ids:
-            _c = _api()
-            if _c:
-                _c.delete_memory(mid)
-            else:
-                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                row = conn.execute("SELECT * FROM memories WHERE id=?", (mid,)).fetchone()
-                if row:
-                    cols = [d[1] for d in conn.execute("PRAGMA table_info(memories)").fetchall()]
-                    conn.execute(
-                        f"INSERT OR IGNORE INTO memory_archive ({','.join(cols)}) SELECT * FROM memories WHERE id=?",
-                        (mid,),
-                    )
-                    conn.execute("DELETE FROM memories WHERE id=?", (mid,))
-                conn.commit()
-                conn.close()
+            client.delete_memory(mid)
         st.toast(f"Archived {len(ids)} memories", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -206,16 +193,13 @@ def _bulk_archive(ids):
 
 
 def _bulk_delete(ids):
+    client = _api()
+    if not client:
+        st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+        return
     try:
         for mid in ids:
-            _c = _api()
-            if _c:
-                _c.delete_memory(mid)
-            else:
-                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                conn.execute("DELETE FROM memories WHERE id=?", (mid,))
-                conn.commit()
-                conn.close()
+            client.delete_memory(mid)
         st.toast(f"Deleted {len(ids)} memories", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -223,16 +207,13 @@ def _bulk_delete(ids):
 
 
 def _bulk_set_tier(ids, tier):
+    client = _api()
+    if not client:
+        st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+        return
     try:
         for mid in ids:
-            _c = _api()
-            if _c:
-                _c.query(f"UPDATE memories SET tier='{tier}' WHERE id='{mid}'")
-            else:
-                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                conn.execute("UPDATE memories SET tier=? WHERE id=?", (tier, mid))
-                conn.commit()
-                conn.close()
+            client.update_memory(mid, tier=tier)
         st.toast(f"Set {len(ids)} memories to {tier}", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -240,16 +221,13 @@ def _bulk_set_tier(ids, tier):
 
 
 def _bulk_set_category(ids, cat):
+    client = _api()
+    if not client:
+        st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+        return
     try:
         for mid in ids:
-            _c = _api()
-            if _c:
-                _c.query(f"UPDATE memories SET category='{cat}' WHERE id='{mid}'")
-            else:
-                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                conn.execute("UPDATE memories SET category=? WHERE id=?", (cat, mid))
-                conn.commit()
-                conn.close()
+            client.update_memory(mid, category=cat)
         st.toast(f"Set {len(ids)} memories to {cat}", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -492,30 +470,21 @@ def _render_merge_suggestions():
 def _merge_memories(keep_id, remove_id):
     try:
         _c = _api()
-        if _c:
-            keep_res = _c.query(f"SELECT content, fitness_score FROM memories WHERE id='{keep_id}'")
-            remove_res = _c.query(f"SELECT content FROM memories WHERE id='{remove_id}'")
-            keep_data = keep_res.get("results", [{}])[0] if keep_res.get("results") else {}
-            remove_data = remove_res.get("results", [{}])[0] if remove_res.get("results") else {}
-            keep_content = keep_data.get("content", "")
-            keep_fitness = keep_data.get("fitness_score", 0.5)
-            remove_content = remove_data.get("content", "")
-            if keep_content and remove_content:
-                new_content = keep_content + "\n\n---\n\n" + remove_content
-                new_fitness = max(keep_fitness or 0.5, 0.5)
-                _c.query(f"UPDATE memories SET content='{new_content.replace(chr(39), chr(39)*2)}', fitness_score={new_fitness} WHERE id='{keep_id}'")
-                _c.query(f"DELETE FROM memories WHERE id='{remove_id}'")
-        else:
-            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-            keep = conn.execute("SELECT content, fitness_score FROM memories WHERE id=?", (keep_id,)).fetchone()
-            remove = conn.execute("SELECT content FROM memories WHERE id=?", (remove_id,)).fetchone()
-            if keep and remove:
-                new_content = keep[0] + "\n\n---\n\n" + remove[0]
-                new_fitness = max(keep[1] or 0.5, 0.5)
-                conn.execute("UPDATE memories SET content=?, fitness_score=? WHERE id=?", (new_content, new_fitness, keep_id))
-                conn.execute("DELETE FROM memories WHERE id=?", (remove_id,))
-                conn.commit()
-            conn.close()
+        if not _c:
+            st.error("Merge requires the REST API (agent memory service) to be running.")
+            return
+        keep_res = _c.query("SELECT content, fitness_score FROM memories WHERE id=?", [keep_id])
+        remove_res = _c.query("SELECT content FROM memories WHERE id=?", [remove_id])
+        keep_data = keep_res.get("results", [{}])[0] if keep_res.get("results") else {}
+        remove_data = remove_res.get("results", [{}])[0] if remove_res.get("results") else {}
+        keep_content = keep_data.get("content", "")
+        keep_fitness = keep_data.get("fitness_score", 0.5)
+        remove_content = remove_data.get("content", "")
+        if keep_content and remove_content:
+            new_content = keep_content + "\n\n---\n\n" + remove_content
+            new_fitness = max(keep_fitness or 0.5, 0.5)
+            _c.update_memory(keep_id, content=new_content)
+            _c.delete_memory(remove_id)
         st.toast("Merged memories", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -667,21 +636,12 @@ def _render_gap_detector():
                     _c = _api()
                     a_id = entities[entities["name"] == a]["id"].iloc[0]
                     b_id = entities[entities["name"] == b]["id"].iloc[0]
-                    if _c:
-                        _c.query(
-                            f"INSERT INTO kg_edges (source_id, target_id, relation, weight) "
-                            f"VALUES ({int(a_id)}, {int(b_id)}, 'co-occurs', {count * 0.1})"
-                        )
+                    if not _c:
+                        st.error("Creating a KG edge requires the REST API (agent memory service) to be running.")
                     else:
-                        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                        conn.execute(
-                            "INSERT INTO kg_edges (source_id, target_id, relation, weight) VALUES (?, ?, 'co-occurs', ?)",
-                            (int(a_id), int(b_id), count * 0.1),
-                        )
-                        conn.commit()
-                        conn.close()
-                    st.toast(f"Created edge: {a} \u2194 {b}", icon="\u2705")
-                    st.rerun()
+                        _c.add_kg_edge(int(a_id), int(b_id), "co-occurs", count * 0.1)
+                        st.toast(f"Created edge: {a} \u2194 {b}", icon="\u2705")
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Failed: {e}")
     else:
@@ -768,12 +728,10 @@ def _opt_compact():
     with st.spinner("Compacting database..."):
         try:
             _c = _api()
-            if _c:
-                _c.compact()
-            else:
-                conn = sqlite3.connect(str(dashboard.DB), timeout=30)
-                conn.execute("VACUUM")
-                conn.close()
+            if not _c:
+                st.error("Compact requires the REST API (agent memory service) to be running.")
+                return
+            _c.compact()
             st.toast("Database compacted", icon="\u2705")
         except Exception as e:
             st.error(f"Compact failed: {e}")
@@ -817,32 +775,11 @@ def _opt_dedup_kg():
     with st.spinner("Deduplicating KG entities..."):
         try:
             _c = _api()
-            if _c:
-                res = _c.kg_dedup()
-                merged = res.get("merged", 0) if isinstance(res, dict) else 0
-            else:
-                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                # Find duplicate entities by name
-                dupes = conn.execute(
-                    "SELECT name, COUNT(*) cnt, GROUP_CONCAT(id) ids "
-                    "FROM kg_entities GROUP BY LOWER(name) HAVING cnt > 1"
-                ).fetchall()
-                merged = 0
-                for name, cnt, ids_str in dupes:
-                    ids = [int(x) for x in ids_str.split(",")]
-                    keep = ids[0]
-                    for remove_id in ids[1:]:
-                        conn.execute("UPDATE kg_edges SET source_id=? WHERE source_id=?", (keep, remove_id))
-                        conn.execute("UPDATE kg_edges SET target_id=? WHERE target_id=?", (keep, remove_id))
-                        conn.execute("DELETE FROM kg_entities WHERE id=?", (remove_id,))
-                        merged += 1
-                # Dedup edges
-                conn.execute(
-                    "DELETE FROM kg_edges WHERE id NOT IN ("
-                    "SELECT MAX(id) FROM kg_edges GROUP BY source_id, target_id, relation)"
-                )
-                conn.commit()
-                conn.close()
+            if not _c:
+                st.error("KG dedup requires the REST API (agent memory service) to be running.")
+                return
+            res = _c.kg_dedup()
+            merged = res.get("merged", 0) if isinstance(res, dict) else 0
             st.toast(f"Merged {merged} duplicate entities", icon="\u2705")
         except Exception as e:
             st.error(f"Dedup failed: {e}")
@@ -852,32 +789,11 @@ def _opt_archive_stale():
     with st.spinner("Archiving stale memories..."):
         try:
             _c = _api()
-            if _c:
-                res = _c.archive_stale()
-                archived = res.get("archived", 0) if isinstance(res, dict) else 0
-            else:
-                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                # Create archive table if not exists
-                cols = conn.execute("PRAGMA table_info(memories)").fetchall()
-                col_defs = ", ".join(f"{c[1]} {c[2]}" for c in cols)
-                conn.execute(f"CREATE TABLE IF NOT EXISTS memory_archive ({col_defs})")
-                # Find stale memories
-                stale = conn.execute(
-                    "SELECT id FROM memories "
-                    "WHERE COALESCE(fitness_score, 0.5) < 0.3 "
-                    "AND created_at < datetime('now', '-90 days')"
-                ).fetchall()
-                archived = 0
-                for (mid,) in stale:
-                    row = conn.execute("SELECT * FROM memories WHERE id=?", (mid,)).fetchone()
-                    if row:
-                        col_names = [c[1] for c in cols]
-                        placeholders = ",".join("?" for _ in col_names)
-                        conn.execute(f"INSERT OR IGNORE INTO memory_archive ({','.join(col_names)}) VALUES ({placeholders})", row)
-                        conn.execute("DELETE FROM memories WHERE id=?", (mid,))
-                        archived += 1
-                conn.commit()
-                conn.close()
+            if not _c:
+                st.error("Archive stale requires the REST API (agent memory service) to be running.")
+                return
+            res = _c.archive_stale()
+            archived = res.get("archived", 0) if isinstance(res, dict) else 0
             st.toast(f"Archived {archived} stale memories", icon="\u2705")
         except Exception as e:
             st.error(f"Archive failed: {e}")

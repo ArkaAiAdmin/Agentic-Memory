@@ -142,23 +142,18 @@ def _render_memory_editor():
     with s1:
         if st.button("\U0001f4be Save Changes", type="primary", use_container_width=True):
             try:
-                if client:
+                if not client:
+                    st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                else:
                     client.update_memory(
                         sel_id,
                         content=new_content,
                         category=new_category,
                         importance=new_importance,
                         pinned=new_pinned,
+                        tier=new_tier,
                     )
-                else:
-                    conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                    conn.execute(
-                        "UPDATE memories SET content=?, category=?, importance=?, tier=?, pinned=? WHERE id=?",
-                        (new_content, new_category, new_importance, new_tier, 1 if new_pinned else 0, sel_id),
-                    )
-                    conn.commit()
-                    conn.close()
-                st.toast(f"Memory {sel_id} updated", icon="\u2705")
+                    st.toast(f"Memory {sel_id} updated", icon="\u2705")
                 st.rerun()
             except Exception as e:
                 st.error(f"Failed to save: {e}")
@@ -173,13 +168,10 @@ def _render_memory_editor():
         d1, d2, _ = st.columns([1, 1, 4])
         if d1.button("Yes, delete", type="primary", key="confirm_del_yes"):
             try:
-                if client:
-                    client.delete_memory(sel_id)
+                if not client:
+                    st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
                 else:
-                    conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                    conn.execute("DELETE FROM memories WHERE id=?", (sel_id,))
-                    conn.commit()
-                    conn.close()
+                    client.delete_memory(sel_id)
                 st.session_state.pop("confirm_delete", None)
                 st.toast(f"Memory {sel_id} deleted", icon="\u2705")
                 st.rerun()
@@ -236,15 +228,11 @@ def _render_bulk_actions(selected_ids: list[str] | None = None):
         if c1.button("Yes, delete all", type="primary", key="bulk_del_confirm"):
             try:
                 ids = st.session_state["bulk_delete_ids"]
-                if client:
+                if not client:
+                    st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                else:
                     for mid in ids:
                         client.delete_memory(mid)
-                else:
-                    conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                    for mid in ids:
-                        conn.execute("DELETE FROM memories WHERE id=?", (mid,))
-                    conn.commit()
-                    conn.close()
                 st.toast(f"Deleted {len(ids)} memories", icon="\u2705")
                 st.session_state.pop("bulk_delete_ids", None)
                 st.rerun()
@@ -259,21 +247,11 @@ def _bulk_update(ids: list[str], **kwargs):
     """Bulk update memory fields using api_client."""
     client = st.session_state.get("api_client")
     try:
-        if client:
+        if not client:
+            st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+        else:
             for mid in ids:
                 client.update_memory(mid, **kwargs)
-        else:
-            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-            for mid in ids:
-                sets = []
-                vals = []
-                for k, v in kwargs.items():
-                    sets.append(f"{k}=?")
-                    vals.append(v)
-                vals.append(mid)
-                conn.execute(f"UPDATE memories SET {', '.join(sets)} WHERE id=?", vals)
-            conn.commit()
-            conn.close()
         st.toast(f"Updated {len(ids)} memories", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -301,27 +279,18 @@ def _render_create_memory():
                 try:
                     tags_list = [t.strip() for t in new_tags.split(",") if t.strip()] if new_tags else []
                     client = st.session_state.get("api_client")
-                    if client:
+                    if not client:
+                        st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                    else:
                         result = client.create_memory(
                             content=new_content,
                             category=new_cat,
+                            importance=new_imp,
+                            tier=new_tier,
                             tags=tags_list,
                             pinned=new_pinned,
                         )
                         mem_id = result.get("id", "?")
-                    else:
-                        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                        now = datetime.now(timezone.utc).timestamp()
-                        import hashlib
-                        mem_id = hashlib.sha256(f"{new_content}{now}".encode()).hexdigest()[:16]
-                        conn.execute(
-                            "INSERT INTO memories (id, content, category, importance, tier, pinned, tags, created_at, updated_at) "
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                            (mem_id, new_content, new_cat, new_imp, new_tier, 1 if new_pinned else 0,
-                             json.dumps(tags_list), now, now),
-                        )
-                        conn.commit()
-                        conn.close()
                     st.toast(f"Memory created: {mem_id}", icon="\u2705")
                     st.rerun()
                 except Exception as e:

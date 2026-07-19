@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 import time
 from datetime import datetime, timezone
 
@@ -23,10 +22,6 @@ from dashboard.api_client import (
 
 logger = logging.getLogger(__name__)
 ROOT = dashboard._REPO_ROOT
-
-
-def _get_conn():
-    return sqlite3.connect(str(dashboard.DB), timeout=10)
 
 
 def render_coordination():
@@ -87,16 +82,8 @@ def _render_tasks():
                     if _c:
                         _c.create_task(project_id, task_type, description, assign_to or None)
                     else:
-                        conn = _get_conn()
-                        now = time.time()
-                        cursor = conn.execute(
-                            "INSERT INTO shared_tasks (project_id, task_type, description, assigned_to, status, created_by, created_at, updated_at) "
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                            (project_id, task_type, description, assign_to,
-                             "active" if assign_to else "pending", "dashboard", now, now),
-                        )
-                        conn.commit()
-                        conn.close()
+                        st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                        return
                     st.toast(f"Task created: {task_type}", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -139,11 +126,8 @@ def _render_tasks():
                             if _c:
                                 _c.update_task(task["id"], "active", "dashboard")
                             else:
-                                conn = _get_conn()
-                                conn.execute("UPDATE shared_tasks SET assigned_to='dashboard', status='active', updated_at=? WHERE id=?",
-                                             (time.time(), task["id"]))
-                                conn.commit()
-                                conn.close()
+                                st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                                return
                             st.toast("Task claimed", icon="\u2705")
                             st.rerun()
                         except Exception as e:
@@ -156,11 +140,8 @@ def _render_tasks():
                             if _c:
                                 _c.update_task(task["id"], "completed")
                             else:
-                                conn = _get_conn()
-                                conn.execute("UPDATE shared_tasks SET status='completed', updated_at=? WHERE id=?",
-                                             (time.time(), task["id"]))
-                                conn.commit()
-                                conn.close()
+                                st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                                return
                             st.toast("Task completed", icon="\u2705")
                             st.rerun()
                         except Exception as e:
@@ -173,11 +154,8 @@ def _render_tasks():
                             if _c:
                                 _c.update_task(task["id"], "pending", None)
                             else:
-                                conn = _get_conn()
-                                conn.execute("UPDATE shared_tasks SET assigned_to=NULL, status='pending', updated_at=? WHERE id=?",
-                                             (time.time(), task["id"]))
-                                conn.commit()
-                                conn.close()
+                                st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                                return
                             st.toast("Task released", icon="\u2705")
                             st.rerun()
                         except Exception as e:
@@ -227,10 +205,8 @@ def _render_file_locks():
                         if _c:
                             _c.release_lock(lock.get("file_path"))
                         else:
-                            conn = _get_conn()
-                            conn.execute("DELETE FROM file_locks WHERE file_path=?", (lock.get("file_path"),))
-                            conn.commit()
-                            conn.close()
+                            st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                            return
                         st.toast("Lock released", icon="\u2705")
                         st.rerun()
                     except Exception as e:
@@ -261,14 +237,8 @@ def _render_file_locks():
                     if _c:
                         _c.acquire_lock(lock_file, lock_agent, lock_ttl)
                     else:
-                        conn = _get_conn()
-                        now = time.time()
-                        conn.execute(
-                            "INSERT OR REPLACE INTO file_locks (file_path, locked_by, locked_at, expires_at) VALUES (?, ?, ?, ?)",
-                            (lock_file, lock_agent, now, now + lock_ttl),
-                        )
-                        conn.commit()
-                        conn.close()
+                        st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                        return
                     st.toast(f"Locked: {lock_file}", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -315,16 +285,8 @@ def _render_messaging():
                     if _c:
                         _c.send_message(msg_from, msg_to, msg_type, msg_payload or None)
                     else:
-                        conn = _get_conn()
-                        now = time.time()
-                        payload = msg_payload if msg_payload else None
-                        conn.execute(
-                            "INSERT INTO agent_messages (from_agent, to_agent, message_type, payload, status, created_at) "
-                            "VALUES (?, ?, ?, ?, 'pending', ?)",
-                            (msg_from, msg_to, msg_type, payload, now),
-                        )
-                        conn.commit()
-                        conn.close()
+                        st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                        return
                     st.toast(f"Message sent to {msg_to}", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -423,20 +385,8 @@ def _render_project_state():
                         value_str = json.dumps(value) if isinstance(value, (dict, list)) else str(value) if value is not None else ""
                         _c.update_project_state(selected_project, state_key, value_str, state_agent)
                     else:
-                        conn = _get_conn()
-                        now = time.time()
-                        try:
-                            value = json.loads(state_value) if state_value else None
-                        except json.JSONDecodeError:
-                            value = state_value
-                        value_str = json.dumps(value) if isinstance(value, (dict, list)) else str(value) if value is not None else None
-
-                        conn.execute(
-                            "INSERT OR REPLACE INTO project_state (project_id, key, value, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)",
-                            (selected_project, state_key, value_str, state_agent, now),
-                        )
-                        conn.commit()
-                        conn.close()
+                        st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+                        return
                     st.toast(f"State updated: {state_key}", icon="\u2705")
                     st.rerun()
                 except Exception as e:

@@ -85,7 +85,6 @@ class SaveRequest:
     evidence_chain: list | None = None
     fact_type: str = "observation"
 
-
 def _write_vec_key(db: AnyConnection, note_id: str) -> int:
     """Write the memory_vec_keys mapping for a note.
 

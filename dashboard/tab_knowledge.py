@@ -5,7 +5,6 @@ from __future__ import annotations
 import difflib
 import html
 import logging
-import sqlite3
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -406,28 +405,13 @@ def _render_entity_management(ent: pd.DataFrame, name_map: dict, type_map: dict,
                 )
                 if st.button("\U0001f4be Update Type", type="primary", key="kg_update_type_btn"):
                     try:
-                        _c = _api()
-                        if _c:
-                            try:
-                                _c._post("/api/v1/kg/entity/update", {"entity_id": eid, "entity_type": new_type})
-                            except Exception:
-                                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                                conn.execute(
-                                    "UPDATE kg_entities SET entity_type=? WHERE id=?",
-                                    (new_type, eid),
-                                )
-                                conn.commit()
-                                conn.close()
+                        client = _api()
+                        if not client:
+                            st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
                         else:
-                            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                            conn.execute(
-                                "UPDATE kg_entities SET entity_type=? WHERE id=?",
-                                (new_type, eid),
-                            )
-                            conn.commit()
-                            conn.close()
-                        st.toast(f"Updated {name_map.get(eid, str(eid))}: {current_type} \u2192 {new_type}", icon="\u2705")
-                        st.rerun()
+                            client.update_kg_entity(eid, entity_type=new_type)
+                            st.toast(f"Updated {name_map.get(eid, str(eid))}: {current_type} \u2192 {new_type}", icon="\u2705")
+                            st.rerun()
                     except Exception as e:
                         st.error(f"Failed to update: {e}")
 
@@ -448,26 +432,14 @@ def _render_entity_management(ent: pd.DataFrame, name_map: dict, type_map: dict,
             if st.button("\U0001f5d1\ufe0f Prune All (mentions < 2)", type="primary", key="kg_prune_btn"):
                 prunable_ids = [int(x) for x in low_mention["id"].values]
                 if prunable_ids:
-                    ph = ",".join("?" for _ in prunable_ids)
                     try:
-                        _c = _api()
-                        if _c:
-                            try:
-                                _c._post("/api/v1/kg/entity/prune", {"entity_ids": prunable_ids})
-                            except Exception:
-                                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                                conn.execute(f"DELETE FROM kg_entities WHERE id IN ({ph})", prunable_ids)
-                                conn.execute(f"DELETE FROM kg_edges WHERE source_id IN ({ph}) OR target_id IN ({ph})", prunable_ids + prunable_ids)
-                                conn.commit()
-                                conn.close()
+                        client = _api()
+                        if not client:
+                            st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
                         else:
-                            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                            conn.execute(f"DELETE FROM kg_entities WHERE id IN ({ph})", prunable_ids)
-                            conn.execute(f"DELETE FROM kg_edges WHERE source_id IN ({ph}) OR target_id IN ({ph})", prunable_ids + prunable_ids)
-                            conn.commit()
-                            conn.close()
-                        st.toast(f"Pruned {len(prunable_ids)} low-mention entities", icon="\u2705")
-                        st.rerun()
+                            client.kg_prune(prunable_ids)
+                            st.toast(f"Pruned {len(prunable_ids)} low-mention entities", icon="\u2705")
+                            st.rerun()
                     except Exception as e:
                         st.error(f"Prune failed: {e}")
 
@@ -516,81 +488,11 @@ def _render_entity_management(ent: pd.DataFrame, name_map: dict, type_map: dict,
 def _merge_entities(keep_id: int, remove_id: int, keep_name: str, remove_name: str):
     """Merge remove_id into keep_id: reassign edges, delete the removed entity."""
     try:
-        _c = _api()
-        if _c:
-            try:
-                _c._post("/api/v1/kg/entity/merge", {"keep_id": keep_id, "remove_id": remove_id})
-                st.toast(f"Merged '{remove_name}' \u2192 '{keep_name}'", icon="\u2705")
-                st.rerun()
-                return
-            except Exception:
-                pass
-        # Fallback: direct DB
-        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-        conn.execute("PRAGMA journal_mode=WAL")
-
-        # Step 1: Find edges from remove_id that would conflict with existing keep_id edges
-        # A conflict is when reassigning would create a duplicate (source, target, relation)
-        conflicts = conn.execute("""
-            SELECT r.id, r.source_id, r.target_id, r.relation, r.weight,
-                   k.weight as keep_weight
-            FROM kg_edges r
-            JOIN kg_edges k ON (
-                (CASE WHEN r.source_id = ? THEN ? ELSE r.source_id END) = k.source_id
-                AND (CASE WHEN r.target_id = ? THEN ? ELSE r.target_id END) = k.target_id
-                AND r.relation = k.relation
-                AND k.id != r.id
-            )
-            WHERE r.source_id = ? OR r.target_id = ?
-        """, (remove_id, keep_id, remove_id, keep_id, remove_id, remove_id)).fetchall()
-
-        # Delete conflicting edges (keep the existing keep_id edge, sum weights)
-        for row in conflicts:
-            remove_edge_id, _, _, _, remove_w, keep_w = row
-            new_weight = (keep_w or 0) + (remove_w or 0)
-            # Update the keep edge with summed weight
-            conn.execute(
-                "UPDATE kg_edges SET weight=? WHERE id=?",
-                (new_weight, conn.execute(
-                    "SELECT id FROM kg_edges WHERE source_id=? AND target_id=? AND relation=? AND id!=?",
-                    (keep_id if row[1] == remove_id else row[1],
-                     keep_id if row[2] == remove_id else row[2],
-                     row[3], remove_edge_id)
-                ).fetchone()[0])
-            )
-            # Delete the remove edge
-            conn.execute("DELETE FROM kg_edges WHERE id=?", (remove_edge_id,))
-
-        # Step 2: Reassign remaining edges (no conflicts now)
-        conn.execute(
-            "UPDATE kg_edges SET source_id=? WHERE source_id=?",
-            (keep_id, remove_id),
-        )
-        conn.execute(
-            "UPDATE kg_edges SET target_id=? WHERE target_id=?",
-            (keep_id, remove_id),
-        )
-
-        # Step 3: Sum mentions
-        conn.execute(
-            "UPDATE kg_entities SET mentions = mentions + "
-            "(SELECT COALESCE(mentions, 0) FROM kg_entities WHERE id=?) WHERE id=?",
-            (remove_id, keep_id),
-        )
-
-        # Step 4: Delete removed entity
-        conn.execute("DELETE FROM kg_entities WHERE id=?", (remove_id,))
-
-        # Step 5: Final dedup (keep heavier edge)
-        conn.execute(
-            "DELETE FROM kg_edges WHERE id NOT IN ("
-            "  SELECT MAX(id) FROM kg_edges "
-            "  GROUP BY source_id, target_id, relation"
-            ")"
-        )
-
-        conn.commit()
-        conn.close()
+        client = _api()
+        if not client:
+            st.error("Write requires the REST API (agent memory service) to be running. Local direct-write is disabled for security.")
+            return
+        client.kg_merge(keep_id, remove_id)
         st.toast(f"Merged '{remove_name}' \u2192 '{keep_name}'", icon="\u2705")
         st.rerun()
     except Exception as e:

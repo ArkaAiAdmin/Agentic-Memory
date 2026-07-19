@@ -331,4 +331,5 @@ def test_combined_rank_lock(monkeypatch):
 def search_orchestrator_path():
     from pathlib import Path
 
-    return Path("search/orchestrator.py")
+    return Path(__file__).resolve().parent.parent / "search" / "orchestrator.py"
+

@@ -34,7 +34,7 @@ API_CORS_ORIGINS = frozenset(
 # ── Known MCP memory fields (used for update validation) ─────────────────
 _MEMORY_UPDATE_FIELDS = frozenset({
     "content", "category", "tags", "pinned", "is_global",
-    "importance", "title_slug",
+    "importance", "title_slug", "tier",
 })
 
 def _is_loopback(host: str) -> bool:
@@ -425,6 +425,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._handle_acl_add_rule()
         elif path == "/api/v1/kg/dedup":
             self._handle_kg_dedup()
+        elif path == "/api/v1/kg/edges":
+            self._handle_kg_create_edge()
+        elif path == "/api/v1/kg/prune":
+            self._handle_kg_prune()
+        elif path == "/api/v1/kg/merge":
+            self._handle_kg_merge()
         elif path == "/api/v1/memories/archive-stale":
             self._handle_archive_stale()
         elif path == "/api/v1/coordination/tasks":
@@ -452,6 +458,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/v1/memories/"):
             note_id = path[len("/api/v1/memories/"):]
             self._handle_update_memory(note_id)
+        elif path.startswith("/api/v1/kg/entities/"):
+            entity_id = path[len("/api/v1/kg/entities/"):]
+            self._handle_update_kg_entity(entity_id)
         elif path.startswith("/api/v1/coordination/tasks/"):
             task_id = int(path[len("/api/v1/coordination/tasks/"):])
             self._handle_update_task(task_id)
@@ -472,6 +481,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/v1/memories/"):
             note_id = path[len("/api/v1/memories/"):]
             self._handle_delete_memory(note_id)
+        elif path.startswith("/api/v1/kg/entities/"):
+            entity_id = path[len("/api/v1/kg/entities/"):]
+            self._handle_delete_kg_entity(entity_id)
+        elif path.startswith("/api/v1/kg/edges/"):
+            edge_id = path[len("/api/v1/kg/edges/"):]
+            self._handle_delete_kg_edge(edge_id)
         elif path == "/api/v1/rbac/bindings":
             self._handle_rbac_revoke()
         elif path == "/api/v1/acl/rules":
@@ -768,13 +783,33 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._error(str(e), 400)
             return
         try:
-            from save.pipeline import save_memory
-            kwargs = {k: v for k, v in req.items() if k in _MEMORY_UPDATE_FIELDS}
-            kwargs["note_id"] = note_id
-            if "tags" not in kwargs:
-                kwargs["tags"] = []
-            result = save_memory(db_path=str(self.server.db_path), **kwargs)
-            self._write_json({"id": result, "status": "updated"})
+            # `tier` is a simple metadata column, not part of the save saga.
+            # Apply it via a locked direct update so the dashboard can re-tier
+            # a note without re-running embeddings/KG extraction. All other
+            # fields go through the saga-backed save_memory path.
+            tier = req.get("tier")
+            if tier is not None:
+                if tier not in ("hot", "warm", "cold", "untrusted", "archive"):
+                    self._error("invalid tier value", 400)
+                    return
+                from infra.db import open_db
+                with open_db(Path(str(self.server.db_path)), write=True) as conn:
+                    cur = conn.execute(
+                        "UPDATE memories SET tier=? WHERE id=?", (tier, note_id)
+                    )
+                    conn.commit()
+                    if cur.rowcount == 0:
+                        self._error(f"Memory not found: {note_id}", 404)
+                        return
+            other = {k: v for k, v in req.items()
+                     if k in _MEMORY_UPDATE_FIELDS and k != "tier"}
+            if other:
+                from save.pipeline import save_memory
+                other["note_id"] = note_id
+                if "tags" not in other:
+                    other["tags"] = []
+                save_memory(db_path=str(self.server.db_path), **other)
+            self._write_json({"id": note_id, "status": "updated"})
         except Exception as e:
             logger.warning("_handle_update_memory: %s", e)
             self._error(f"Failed to update memory: {e}", 500)
@@ -1164,7 +1199,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
                 rows = conn.execute(
-                    "SELECT source_id, target_id, relation_type, weight, properties FROM kg_edges LIMIT ?",
+                    "SELECT source_id, target_id, relation, weight FROM kg_edges LIMIT ?",
                     (limit,),
                 ).fetchall()
                 edges = [
@@ -1173,7 +1208,6 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                         "target": r[1],
                         "relation": r[2],
                         "weight": r[3],
-                        "properties": json.loads(r[4]) if r[4] else {}
                     }
                     for r in rows
                 ]
@@ -1181,8 +1215,104 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             finally:
                 safe_close_db(conn)
         except Exception as e:
-            logger.warning("_handle_kg_edges: broad except swallowed: %s", e)
-            self._error(f"Failed to list KG edges: {e}", 500)
+                logger.warning("_handle_kg_edges: broad except swallowed: %s", e)
+                self._error(f"Failed to list KG edges: {e}", 500)
+
+    def _handle_kg_create_edge(self) -> None:
+        """Create a KG edge via the authenticated API (dashboard gap-detector)."""
+        try:
+            body = self._read_json_body() or {}
+            source_id = body.get("source_id")
+            target_id = body.get("target_id")
+            relation = body.get("relation") or "related"
+            weight = float(body.get("weight", 1.0))
+            properties = body.get("properties") or {}
+            if not isinstance(source_id, int) or not isinstance(target_id, int):
+                self._error("source_id and target_id (int) required", 400)
+                return
+            from infra.db import open_db
+            with open_db(Path(str(self.server.db_path)), write=True) as conn:
+                cur = conn.execute(
+                    "INSERT INTO kg_edges (source_id, target_id, relation, weight) "
+                    "VALUES (?, ?, ?, ?)",
+                    (source_id, target_id, relation, weight),
+                )
+                conn.commit()
+                edge_id = cur.lastrowid
+                self._write_json({"id": edge_id, "status": "ok"})
+        except Exception as e:
+            logger.warning("_handle_kg_create_edge: %s", e)
+            self._error(f"Failed to create KG edge: {e}", 500)
+
+    def _handle_update_kg_entity(self, entity_id: str) -> None:
+        """Update a KG entity's entity_type via the authenticated API."""
+        try:
+            eid = int(entity_id)
+            body = self._read_json_body() or {}
+            entity_type = body.get("entity_type")
+            if entity_type is None:
+                self._error("entity_type required", 400)
+                return
+            from infra.db import open_db
+            with open_db(Path(str(self.server.db_path)), write=True) as conn:
+                existing = conn.execute(
+                    "SELECT id FROM kg_entities WHERE id=?", (eid,)
+                ).fetchone()
+                if not existing:
+                    self._error(f"KG entity not found: {eid}", 404)
+                    return
+                conn.execute(
+                    "UPDATE kg_entities SET entity_type=? WHERE id=?",
+                    (entity_type, eid),
+                )
+                conn.commit()
+                self._write_json({"id": eid, "status": "ok"})
+        except ValueError:
+            self._error("entity_id must be an int", 400)
+        except Exception as e:
+            logger.warning("_handle_update_kg_entity: %s", e)
+            self._error(f"Failed to update KG entity: {e}", 500)
+
+    def _handle_delete_kg_entity(self, entity_id: str) -> None:
+        """Delete a KG entity by id. Orphaned edges are cleaned up via cascade.
+
+        KG mutations are coordinated writes: the connection is acquired from the
+        per-DB pool (file lock first, then conn — Hard Rule 9) and committed
+        through the same path the saga uses, so the single-writer invariant holds.
+        """
+        if not entity_id:
+            self._error("entity id required", 400)
+            return
+        try:
+            from infra.db import open_db
+            with open_db(Path(str(self.server.db_path)), write=True) as conn:
+                conn.execute("DELETE FROM kg_edges WHERE source_id=? OR target_id=?", (entity_id, entity_id))
+                cur = conn.execute("DELETE FROM kg_entities WHERE id=?", (entity_id,))
+                conn.commit()
+                if cur.rowcount == 0:
+                    self._error(f"KG entity not found: {entity_id}", 404)
+                    return
+                self._write_json({"status": "deleted", "id": entity_id})
+        except Exception as e:
+            logger.warning("_handle_delete_kg_entity: %s", e)
+            self._error(f"Failed to delete KG entity: {e}", 500)
+
+    def _handle_delete_kg_edge(self, edge_id: str) -> None:
+        if not edge_id:
+            self._error("edge id required", 400)
+            return
+        try:
+            from infra.db import open_db
+            with open_db(Path(str(self.server.db_path)), write=True) as conn:
+                cur = conn.execute("DELETE FROM kg_edges WHERE id=?", (edge_id,))
+                conn.commit()
+                if cur.rowcount == 0:
+                    self._error(f"KG edge not found: {edge_id}", 404)
+                    return
+                self._write_json({"status": "deleted", "id": edge_id})
+        except Exception as e:
+            logger.warning("_handle_delete_kg_edge: %s", e)
+            self._error(f"Failed to delete KG edge: {e}", 500)
 
     def _handle_kg_dedup(self) -> None:
         try:
@@ -1204,7 +1334,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                         merged += 1
                 conn.execute(
                     "DELETE FROM kg_edges WHERE id NOT IN ("
-                    "SELECT MAX(id) FROM kg_edges GROUP BY source_id, target_id, relation_type)"
+                    "SELECT MAX(id) FROM kg_edges GROUP BY source_id, target_id, relation)"
                 )
                 conn.commit()
                 self._write_json({"merged": merged, "status": "ok"})
@@ -1213,6 +1343,131 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         except Exception as e:
             logger.warning("_handle_kg_dedup: broad except swallowed: %s", e)
             self._error(f"Failed to dedup KG: {e}", 500)
+
+    def _handle_kg_prune(self) -> None:
+        """Prune (delete) a set of KG entities and their incident edges in one txn."""
+        try:
+            body = self._read_json_body() or {}
+            entity_ids = body.get("entity_ids")
+            if not isinstance(entity_ids, list):
+                self._error("entity_ids (list[int]) required", 400)
+                return
+            entity_ids = [int(x) for x in entity_ids]
+            if not entity_ids:
+                self._write_json({"pruned": 0})
+                return
+            from infra.db import open_db
+            with open_db(Path(str(self.server.db_path)), write=True) as conn:
+                ph = ",".join("?" for _ in entity_ids)
+                conn.execute(f"DELETE FROM kg_entities WHERE id IN ({ph})", entity_ids)
+                conn.execute(
+                    f"DELETE FROM kg_edges WHERE source_id IN ({ph}) OR target_id IN ({ph})",
+                    entity_ids + entity_ids,
+                )
+                conn.commit()
+                self._write_json({"pruned": len(entity_ids)})
+        except Exception as e:
+            logger.warning("_handle_kg_prune: %s", e)
+            self._error(f"Failed to prune KG entities: {e}", 500)
+
+    def _handle_kg_merge(self) -> None:
+        """Merge remove_id into keep_id: reassign edges, sum mentions, delete remove_id.
+
+        Ports the exact SQL semantics from dashboard/tab_knowledge.py _merge_entities.
+        KG mutations use the per-DB pool connection (file lock first, then conn —
+        Hard Rule 9) committed through the saga path so the single-writer invariant holds.
+        """
+        try:
+            body = self._read_json_body() or {}
+            keep_id = body.get("keep_id")
+            remove_id = body.get("remove_id")
+            if keep_id is None or remove_id is None:
+                self._error("keep_id and remove_id (int) required", 400)
+                return
+            keep_id = int(keep_id)
+            remove_id = int(remove_id)
+            from infra.db import open_db
+            with open_db(Path(str(self.server.db_path)), write=True) as conn:
+                keep = conn.execute(
+                    "SELECT id FROM kg_entities WHERE id=?", (keep_id,)
+                ).fetchone()
+                rem = conn.execute(
+                    "SELECT id FROM kg_entities WHERE id=?", (remove_id,)
+                ).fetchone()
+                if keep is None or rem is None:
+                    self._error(
+                        f"KG entity not found: keep_id={keep_id} remove_id={remove_id}", 404
+                    )
+                    return
+
+                # Step 1: conflicts — reassigning remove edges duplicates a keep edge
+                conflicts = conn.execute(
+                    """
+                    SELECT r.id, r.source_id, r.target_id, r.relation, r.weight,
+                           k.weight as keep_weight
+                    FROM kg_edges r
+                    JOIN kg_edges k ON (
+                        (CASE WHEN r.source_id = ? THEN ? ELSE r.source_id END) = k.source_id
+                        AND (CASE WHEN r.target_id = ? THEN ? ELSE r.target_id END) = k.target_id
+                        AND r.relation = k.relation
+                        AND k.id != r.id
+                    )
+                    WHERE r.source_id = ? OR r.target_id = ?
+                    """,
+                    (remove_id, keep_id, remove_id, keep_id, remove_id, remove_id),
+                ).fetchall()
+
+                # Delete conflicting remove-edges, summing weights onto the keep edge
+                for row in conflicts:
+                    remove_edge_id, _, _, _, remove_w, keep_w = row
+                    new_weight = (keep_w or 0) + (remove_w or 0)
+                    keep_edge_id = conn.execute(
+                        "SELECT id FROM kg_edges WHERE source_id=? AND target_id=? AND relation=? AND id!=?",
+                        (
+                            keep_id if row[1] == remove_id else row[1],
+                            keep_id if row[2] == remove_id else row[2],
+                            row[3],
+                            remove_edge_id,
+                        ),
+                    ).fetchone()[0]
+                    conn.execute(
+                        "UPDATE kg_edges SET weight=? WHERE id=?", (new_weight, keep_edge_id)
+                    )
+                    conn.execute("DELETE FROM kg_edges WHERE id=?", (remove_edge_id,))
+
+                # Step 2: reassign remaining edges
+                conn.execute(
+                    "UPDATE kg_edges SET source_id=? WHERE source_id=?", (keep_id, remove_id)
+                )
+                conn.execute(
+                    "UPDATE kg_edges SET target_id=? WHERE target_id=?", (keep_id, remove_id)
+                )
+
+                # Step 3: sum mentions
+                conn.execute(
+                    "UPDATE kg_entities SET mentions = mentions + "
+                    "(SELECT COALESCE(mentions, 0) FROM kg_entities WHERE id=?) WHERE id=?",
+                    (remove_id, keep_id),
+                )
+
+                # Step 4: delete removed entity
+                conn.execute("DELETE FROM kg_entities WHERE id=?", (remove_id,))
+
+                # Step 5: final dedup (keep heavier edge)
+                conn.execute(
+                    "DELETE FROM kg_edges WHERE id NOT IN ("
+                    "  SELECT MAX(id) FROM kg_edges "
+                    "  GROUP BY source_id, target_id, relation"
+                    ")"
+                )
+
+                conn.commit()
+                self._write_json(
+                    {"merged": True, "keep_id": keep_id, "remove_id": remove_id}
+                )
+        except Exception as e:
+            logger.warning("_handle_kg_merge: %s", e)
+            self._error(f"Failed to merge KG entities: {e}", 500)
 
     def _handle_archive_stale(self) -> None:
         try:

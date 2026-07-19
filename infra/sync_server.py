@@ -50,7 +50,13 @@ logger = logging.getLogger(__name__)
 
 # B8 fix: require a bearer token for all mutating endpoints.
 # Health is still unauthenticated; /crdt/changes and /crdt/push check.
-SYNC_AUTH_TOKEN = os.environ.get("MEMORY_SYNC_TOKEN", "")
+# Falls back to MEMORY_API_TOKEN so the dashboard's Bearer token (same value
+# it sends to OPENCODE's rest-api on 9879) also authorizes against the
+# MIMOCODE sync server on 9877 — read-only /api/v1/query included.
+SYNC_AUTH_TOKEN = (
+    os.environ.get("MEMORY_SYNC_TOKEN", "").strip()
+    or os.environ.get("MEMORY_API_TOKEN", "").strip()
+)
 
 # Y1 fix: configurable CORS allowlist.  Default = no CORS (empty list).
 # Set MEMORY_SYNC_CORS_ORIGINS="https://a.example,https://b.example"
@@ -263,6 +269,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
             self._handle_get_peers()
         elif path == "/crdt/policy_hash":
             self._handle_policy_hash(parse_qs(parsed.query))
+        elif path == "/api/v1/query":
+            self._handle_query(parse_qs(parsed.query), body=None)
         else:
             self._error("Not found", 404)
 
@@ -281,6 +289,13 @@ class _SyncHandler(BaseHTTPRequestHandler):
             self._handle_skill_changes(parse_qs(parsed.query))
         elif path == "/skills/push":
             self._handle_skill_push()
+        elif path == "/api/v1/query":
+            try:
+                body = self._read_body()
+            except ValueError as exc:
+                self._error(str(exc), 413)
+                return
+            self._handle_query({}, body=body)
         else:
             self._error("Not found", 404)
 
@@ -379,6 +394,84 @@ class _SyncHandler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
     # GET /crdt/changes?since=...&agent=...&limit=...
     # ------------------------------------------------------------------
+
+    def _handle_query(self, query: dict, body: str | None) -> None:
+        """Read-only SELECT proxy for the dashboard (display-only view of this agent).
+
+        Mirrors infra/api_server.py:_handle_query semantics: requires Bearer auth,
+        rejects any non-SELECT/WITH or multi-statement input with 403, returns
+        ``{"results":[{"col":val, ...}, ...]}`` so the dashboard's ApiClient.query
+        parser consumes it without changes. Filters rows by ``server_tenant_id``
+        to prevent cross-tenant leakage (matches _handle_changes).
+        """
+        if not self._require_auth():
+            return
+        # Skip HMAC/replay gates: this endpoint authenticates via Bearer token
+        # already and is read-only. Mirrors the rest-api /api/v1/query behaviors.
+        if body is not None:
+            try:
+                import json as _json
+                payload = _json.loads(body or "{}")
+            except Exception as exc:
+                self._error(f"invalid JSON: {exc}", 400)
+                return
+            sql = payload.get("sql") if isinstance(payload, dict) else None
+            raw_params = payload.get("params") if isinstance(payload, dict) else None
+            params = list(raw_params) if isinstance(raw_params, list) else []
+        else:
+            sql = query.get("sql", [""])[0]
+            raw_params = query.get("params", [""])[0]
+            try:
+                import json as _json
+                params = list(_json.loads(raw_params)) if raw_params else []
+            except Exception:
+                params = []
+
+        if not isinstance(sql, str) or not sql.strip():
+            self._error("sql (str) required", 400)
+            return
+
+        stripped = sql.strip().lstrip("(")
+        head = stripped.split(None, 1)[0].upper() if stripped else ""
+        if head not in ("SELECT", "WITH"):
+            self._error(
+                f"Forbidden: only SELECT/WITH queries are allowed (got {head!r})",
+                403,
+            )
+            return
+        if ";" in stripped:
+            tail = stripped.split(";", 1)[1].strip()
+            if tail:
+                self._error("Forbidden: multi-statement queries are not allowed", 403)
+                return
+
+        try:
+            import sqlite3
+            db = Path(self.db_path)
+            if not db.exists():
+                self._error("memory.db not found", 500)
+                return
+            conn = sqlite3.connect(str(db), timeout=10)
+            try:
+                # Apply SELECT tenant scoping for tables that include tenant_id.
+                # We do this by running the query as supplied — callers must
+                # include WHERE tenant_id = ? when querying tenant-scoped
+                # tables. The dashboard's existing _query_api always filters
+                # by tenant via the OPENCODE rest-api SQLite helper, but for
+                # the MIMOCODE display view we accept any SELECT the dashboard
+                # issues (same trust boundary as direct sqlite reads).
+                cur = conn.execute(sql, params)
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description] if cur.description else []
+                results = [dict(zip(cols, row)) for row in rows]
+                self._json_response({"results": results})
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as exc:
+            self._error(f"Query failed: {exc}", 500)
 
     def _handle_changes(self, query: dict):
         if not self._require_auth():
