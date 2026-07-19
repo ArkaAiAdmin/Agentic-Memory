@@ -63,6 +63,12 @@ JOBS: dict[str, dict] = {
         "script": "cron/cron_daemon_watchdog.py",
         "timeout": 30,
     },
+    "reap_stale_tasks": {
+        "freq": "15m",
+        "offset_min": 5,
+        "script": "cron/cron_reap_stale_tasks.py",
+        "timeout": 30,
+    },
     "task_queue_monitor": {
         "freq": "15m",
         "offset_min": 10,

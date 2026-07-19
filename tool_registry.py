@@ -38,6 +38,7 @@ CORE_TOOLS = [
     "memory_list_skills",
     "memory_extract_skills",
     "memory_compile_skill",
+    "memory_coordinate",
 ]
 
 ADMIN_TOOLS = [

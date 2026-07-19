@@ -49,6 +49,37 @@ def _get_conn():
     return conn
 
 
+# Agent capability registry — maps agent_id to task types they handle.
+# Sub-agents declare capabilities; the dispatch system uses this to match
+# tasks to capable agents instead of blindly assigning by name.
+AGENT_CAPABILITIES = {
+    "drift-investigator": ["resolve_contradiction", "fix_integrity", "config_drift", "fix"],
+    "kg-engineer": ["fix_integrity", "kg_backfill", "implement", "fix"],
+    "migration-builder": ["schema_migration", "implement", "fix"],
+    "search-optimizer": ["search_quality", "implement", "fix"],
+    "security-auditor": ["security_audit", "review", "fix"],
+    "test-writer": ["test", "review", "fix"],
+    "mimocode": ["implement", "fix", "test", "review", "document"],
+    "opencode": ["implement", "fix", "test", "review", "document"],
+}
+
+
+def _register_agent_capabilities(conn, agent_id: str, project_id: str) -> None:
+    """Register agent capabilities in project_state so dispatch can match tasks."""
+    caps = AGENT_CAPABILITIES.get(agent_id)
+    if not caps:
+        # Unknown agent — register with generic capabilities
+        caps = ["implement", "fix"]
+
+    now = __import__("time").time()
+    conn.execute(
+        "INSERT OR REPLACE INTO project_state (project_id, key, value, updated_by, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (project_id, f"agent:{agent_id}:capabilities", json.dumps(caps), agent_id, now),
+    )
+    conn.commit()
+
+
 def _on_session_start(agent_id: str, project_id: str = "default") -> str:
     """Enforce coordination on session start with durability."""
     output = []
@@ -69,7 +100,13 @@ def _on_session_start(agent_id: str, project_id: str = "default") -> str:
         update_heartbeat(conn, agent_id, project_id=project_id)
         record_coordination_event(conn, "session_start", agent_id, project_id)
 
-        # 0. Claim pending tasks (the core coordination integration)
+        # 0. Register agent capabilities (what task types this agent handles)
+        try:
+            _register_agent_capabilities(conn, agent_id, project_id)
+        except Exception:
+            pass
+
+        # 1. Claim pending tasks (the core coordination integration)
         try:
             from coordination.hooks import claim_pending_tasks
             claimed = claim_pending_tasks(agent_id, project_id, limit=3)

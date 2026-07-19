@@ -307,7 +307,10 @@ def create_coordination_task(
 
 
 def create_contradiction_tasks(contradictions: list[dict], conn: sqlite3.Connection | None = None) -> int:
-    """Create tasks for unresolved contradictions and dispatch to drift-investigator."""
+    """Create tasks for unresolved contradictions and dispatch to drift-investigator.
+
+    Only dispatches if the target agent has a recent heartbeat (is alive).
+    """
     count = 0
     for c in contradictions:
         src = c.get("source", "")
@@ -316,14 +319,41 @@ def create_contradiction_tasks(contradictions: list[dict], conn: sqlite3.Connect
             continue
         confidence = c.get("confidence", "unknown")
         desc = f"Resolve contradiction between '{src}' and '{tgt}' (confidence: {confidence})"
-        task_id = create_and_dispatch_task(
-            task_type="resolve_contradiction",
-            description=desc,
-            target_agent="drift-investigator",
-            project_id="knowledge_graph",
-            created_by="cron_contradictions",
-            conn=conn,
-        )
+
+        # Guard: check if target agent is alive before dispatching
+        target_agent = "drift-investigator"
+        own_conn = conn is None
+        if own_conn:
+            conn = _make_conn()
+        if not conn:
+            return count
+        try:
+            from coordination.durability import check_agent_alive
+            if not check_agent_alive(conn, target_agent):
+                # Create as pending (unassigned) instead of dispatching to dead agent
+                task_id = create_coordination_task(
+                    task_type="resolve_contradiction",
+                    description=desc,
+                    project_id="knowledge_graph",
+                    assigned_to=None,
+                    created_by="cron_contradictions",
+                    conn=conn,
+                )
+            else:
+                task_id = create_and_dispatch_task(
+                    task_type="resolve_contradiction",
+                    description=desc,
+                    target_agent=target_agent,
+                    project_id="knowledge_graph",
+                    created_by="cron_contradictions",
+                    conn=conn,
+                )
+        finally:
+            if own_conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         if task_id:
             count += 1
     return count

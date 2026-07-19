@@ -261,6 +261,7 @@ import mcp_sdk  # noqa: E402,F401
 import mcp_session  # noqa: E402,F401
 import mcp_sharing  # noqa: E402,F401
 import mcp_health  # noqa: E402,F401
+import mcp_coordination  # noqa: E402,F401 — task management, file locking, messaging
 
 # Keep memory_maintenance (the router) visible; hide individual admin tools.
 for _admin_name in tool_registry.ADMIN_TOOLS:
