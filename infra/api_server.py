@@ -2300,6 +2300,17 @@ class APIServer(ThreadingHTTPServer):
             CloudStateStore(_cloud_db)
         except Exception as _cloud_exc:
             logger.debug("cloud_state.db init skipped: %s", _cloud_exc)
+
+        # Persist the API token to .api_token so sync_client can resolve it
+        # even when MEMORY_API_TOKEN is not in the process environment.
+        if self.token:
+            try:
+                _token_file = Path(db_path).parent / ".api_token"
+                _token_file.write_text(self.token)
+                _token_file.chmod(0o600)
+            except Exception:
+                pass
+
         self._ws_lock = threading.Lock()
         self._ws_send_lock = threading.Lock()
         

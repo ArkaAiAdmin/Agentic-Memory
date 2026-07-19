@@ -34,12 +34,39 @@ import urllib.error
 from pathlib import Path
 from typing import Any, Optional, cast
 
-from infra.sync_server import SYNC_AUTH_TOKEN
+from infra.sync_server import SYNC_AUTH_TOKEN as _SERVER_SYNC_TOKEN
 
 logger = logging.getLogger(__name__)
 
 # Default timeout for HTTP requests (seconds).
 _HTTP_TIMEOUT = 30
+
+
+def _get_sync_token() -> str:
+    """Resolve the sync auth token at runtime.
+
+    Resolution order:
+      1. ``MEMORY_SYNC_TOKEN`` env var (explicit sync token).
+      2. ``MEMORY_API_TOKEN`` env var (legacy, also used by sync server).
+      3. ``.api_token`` file in the memory directory (persisted at server start).
+      4. Empty string (no token — loopback-only mode).
+    """
+    import os
+    token = os.environ.get("MEMORY_SYNC_TOKEN", "").strip()
+    if token:
+        return token
+    token = os.environ.get("MEMORY_API_TOKEN", "").strip()
+    if token:
+        return token
+    # Fallback: read from .api_token file (written by api_server at startup)
+    try:
+        from infra.infrastructure import resolve_active_memory_dir
+        token_file = resolve_active_memory_dir() / ".api_token"
+        if token_file.exists():
+            return token_file.read_text().strip()
+    except Exception:
+        pass
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -200,8 +227,9 @@ def _json_get(url: str, timeout: int = _HTTP_TIMEOUT) -> Optional[dict]:
     try:
         req = urllib.request.Request(url, method="GET")
         req.add_header("X-Sync-Timestamp", str(int(time.time())))
-        if SYNC_AUTH_TOKEN:
-            req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
+        _token = _get_sync_token()
+        if _token:
+            req.add_header("Authorization", f"Bearer {_token}")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8")
             return cast(Optional[dict], json.loads(body))
@@ -229,8 +257,9 @@ def _json_post(url: str, data: dict, timeout: int = _HTTP_TIMEOUT) -> Optional[d
                 "X-Sync-Timestamp": str(int(time.time())),
             },
             )
-        if SYNC_AUTH_TOKEN:
-            req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
+        _token = _get_sync_token()
+        if _token:
+            req.add_header("Authorization", f"Bearer {_token}")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             resp_body = resp.read().decode("utf-8")
             return cast(Optional[dict], json.loads(resp_body))
