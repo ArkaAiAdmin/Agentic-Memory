@@ -237,9 +237,6 @@ def _render_scheduled_jobs() -> None:
             "pending": pending,
         })
 
-    if cron_conn:
-        cron_conn.close()
-
     n_ok = status_counts.get("ok", 0)
     n_warn = status_counts.get("warning", 0)
     n_err = status_counts.get("error", 0)
@@ -730,23 +727,41 @@ def _render_runbook() -> None:
                 except Exception as e:
                     st.error(f"Failed: {e}")
 
-        # 2. Check worker
+        # 2. Check worker — use last completed task instead of heartbeat.log mtime
         _worker_ok = False
         _worker_detail = ""
-        heartbeat_log = dashboard.MEM_DIR / "heartbeat.log" if dashboard.MEM_DIR else None
-        if heartbeat_log and heartbeat_log.exists():
-            import time
-
-            age_s = time.time() - heartbeat_log.stat().st_mtime
-            if age_s < 120:
-                _worker_ok = True
-                _worker_detail = f"Heartbeat {age_s:.0f}s ago"
-            elif age_s < 600:
-                _worker_detail = f"Heartbeat {age_s:.0f}s ago (stale)"
+        try:
+            _c = _api()
+            if _c:
+                res = _c.query(
+                    "SELECT completed_at FROM task_queue "
+                    "WHERE status='completed' AND completed_at IS NOT NULL "
+                    "ORDER BY completed_at DESC LIMIT 1"
+                )
+                rows = res.get("results", [])
+                last_completed = rows[0].get("completed_at") if rows else None
             else:
-                _worker_detail = f"Heartbeat {age_s:.0f}s ago (down?)"
-        else:
-            _worker_detail = "No heartbeat log found"
+                r = get_conn().execute(
+                    "SELECT completed_at FROM task_queue "
+                    "WHERE status='completed' AND completed_at IS NOT NULL "
+                    "ORDER BY completed_at DESC LIMIT 1"
+                ).fetchone()
+                last_completed = r[0] if r else None
+
+            if last_completed:
+                comp_dt = datetime.strptime(last_completed, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                age_s = (datetime.now(timezone.utc) - comp_dt).total_seconds()
+                if age_s < 600:
+                    _worker_ok = True
+                    _worker_detail = f"Last task {age_s / 60:.0f}min ago"
+                elif age_s < 3600:
+                    _worker_detail = f"Last task {age_s / 60:.0f}min ago (idle)"
+                else:
+                    _worker_detail = f"Last task {age_s / 3600:.1f}h ago (down?)"
+            else:
+                _worker_detail = "No completed tasks"
+        except Exception:
+            _worker_detail = "Cannot check worker"
 
         _icon_worker = "\u2705" if _worker_ok else ("\u26a0\ufe0f" if _worker_detail != "No heartbeat log found" else "\u2753")
         _color_worker = "#10b981" if _worker_ok else "#f59e0b"
@@ -758,18 +773,24 @@ def _render_runbook() -> None:
             f"</div>"
         )
 
-        # 3. Check cron
+        # 3. Check cron — ignore expected single-agent failures (cron_sync without peers)
         _cron_err = 0
         _cron_detail = ""
         try:
-            _cron_err = _try_count_api("task_queue", "status='failed'")
+            _cron_err = _try_count_api(
+                "task_queue",
+                "status='failed' AND task_type NOT IN ('cron_sync', 'cron_crdt_sync')"
+            )
             _cron_pending = _try_count_api("task_queue", "status='pending'")
+            _cron_stuck = _try_count_api("task_queue", "status='processing'")
             if _cron_err > 0:
-                _cron_detail = f"{_cron_err} failed, {_cron_pending} pending"
+                _cron_detail = f"{_cron_err} failed, {_cron_pending} pending, {_cron_stuck} stuck"
+            elif _cron_stuck > 0:
+                _cron_detail = f"{_cron_stuck} stuck in processing, {_cron_pending} pending"
             else:
                 _cron_detail = f"{_cron_pending} pending, 0 failed"
         except Exception:
-            _cron_detail = "No task_queue table"
+            _cron_detail = "Cannot check task queue"
 
         _icon_cron = "\u2705" if _cron_err == 0 else "\u26a0\ufe0f"
         _color_cron = "#10b981" if _cron_err == 0 else "#f59e0b"
