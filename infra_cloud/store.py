@@ -271,17 +271,19 @@ class CloudStateStore:
         mcp_calls: int = 0,
         rest_calls: int = 0,
         storage_bytes: int = 0,
+        audit_log_bytes: int = 0,
     ) -> None:
         day = time.strftime("%Y-%m-%d", time.gmtime())
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO usage_records (deployment_id, day, mcp_calls, rest_calls, storage_bytes) "
-                "VALUES (?, ?, ?, ?, ?) "
+                "INSERT INTO usage_records (deployment_id, day, mcp_calls, rest_calls, storage_bytes, audit_log_bytes) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(deployment_id, day) DO UPDATE SET "
                 "mcp_calls = mcp_calls + excluded.mcp_calls, "
                 "rest_calls = rest_calls + excluded.rest_calls, "
-                "storage_bytes = MAX(storage_bytes, excluded.storage_bytes)",
-                (deployment_id, day, mcp_calls, rest_calls, storage_bytes),
+                "storage_bytes = MAX(storage_bytes, excluded.storage_bytes), "
+                "audit_log_bytes = MAX(audit_log_bytes, excluded.audit_log_bytes)",
+                (deployment_id, day, mcp_calls, rest_calls, storage_bytes, audit_log_bytes),
             )
             conn.commit()
 

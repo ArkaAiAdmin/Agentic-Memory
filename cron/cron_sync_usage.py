@@ -39,9 +39,9 @@ def main() -> int:
     result = store.sync_usage_from_audit_log(audit_db)
     print(f"MCP usage sync: {result}")
 
-    # 2. Measure storage for each active deployment
+    # 2. Measure storage and audit log size for each active deployment
     import time
-    day = time.strftime("%Y-%m-%d", time.gmtime())
+    import sqlite3 as _sqlite3
     deps = store.list_deployments()
     for dep in deps:
         dep_id = dep["deployment_id"]
@@ -49,7 +49,31 @@ def main() -> int:
         if db_path and Path(db_path).exists():
             try:
                 storage_bytes = Path(db_path).stat().st_size
-                store.increment_usage(dep_id, storage_bytes=storage_bytes)
+                # Measure audit log table size via page count
+                audit_log_bytes = 0
+                try:
+                    _conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+                    # Check if audit log table exists
+                    has_table = _conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='memory_audit_log'"
+                    ).fetchone()
+                    if has_table:
+                        page_count = _conn.execute("PRAGMA page_count").fetchone()[0]
+                        page_size = _conn.execute("PRAGMA page_size").fetchone()[0]
+                        # Approximate: audit log typically ~10-20% of DB
+                        # Use actual table stats if available
+                        try:
+                            stats = _conn.execute(
+                                "SELECT SUM(pgsize) FROM dbstat WHERE name='memory_audit_log'"
+                            ).fetchone()
+                            if stats and stats[0]:
+                                audit_log_bytes = stats[0]
+                        except Exception:
+                            pass
+                    _conn.close()
+                except Exception:
+                    pass
+                store.increment_usage(dep_id, storage_bytes=storage_bytes, audit_log_bytes=audit_log_bytes)
             except Exception as e:
                 print(f"Storage measurement failed for {dep_id}: {e}")
 
