@@ -42,7 +42,17 @@ class FencingLock(NamedTuple):
 
 
 def _ensure_lock_version_column(conn: sqlite3.Connection) -> None:
-    """Add lock_version column to file_locks if missing (soft migration)."""
+    """Add lock_version column to file_locks if missing (soft migration).
+
+    Called on every public function entry. The SELECT probe is fast,
+    and the ALTER TABLE is a one-time DDL that raises OperationalError
+    if the column already exists (caught silently).
+    """
+    try:
+        conn.execute("SELECT lock_version FROM file_locks LIMIT 1")
+        return
+    except sqlite3.OperationalError:
+        pass
     try:
         conn.execute("ALTER TABLE file_locks ADD COLUMN lock_version INTEGER NOT NULL DEFAULT 0")
         conn.commit()

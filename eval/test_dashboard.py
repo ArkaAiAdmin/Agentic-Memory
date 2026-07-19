@@ -817,7 +817,10 @@ class TestDashboardModule(unittest.TestCase):
             "Dashboard",
             "Memories",
             "Knowledge",
+            "Quality",
             "Operations",
+            "Compliance",
+            "Coordination",
             "Audit",
             "Settings",
         ]
