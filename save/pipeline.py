@@ -1620,6 +1620,10 @@ def save_memory_journal(
         req.category, req.title_slug, req.is_global, req.db_path
     )
 
+    _jcoord_file_path = str(file_path)
+    _jcoord_tenant = req.tenant_id or "default"
+    _coordination_update_activity(_jcoord_file_path, "writing", _jcoord_tenant, None)
+
     if req.db_path is not None:
         db_path_obj = Path(req.db_path)
     else:
@@ -1936,6 +1940,61 @@ def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn: Optional[AnyConn
         logger.warning("save_memory: CRDT SQL projection skipped: %s", _e)
 
 
+# ── Coordination integration helpers ───────────────────────────────────
+
+
+def _coordination_acquire_lock(file_path: str, db_path_obj: Path | None = None) -> None:
+    """Acquire coordination lock for a file save. Best-effort, never raises."""
+    if not file_path:
+        return
+    try:
+        from coordination.hooks import acquire_save_lock
+        if not acquire_save_lock(file_path):
+            logger.warning("coordination: could not acquire save lock for %s", file_path)
+    except Exception as exc:
+        logger.debug("coordination: acquire_save_lock skipped: %s", exc)
+
+
+def _coordination_release_lock(file_path: str, db_path_obj: Path | None = None) -> None:
+    """Release coordination lock after a file save. Best-effort, never raises."""
+    if not file_path:
+        return
+    try:
+        from coordination.hooks import release_save_lock
+        release_save_lock(file_path)
+    except Exception as exc:
+        logger.debug("coordination: release_save_lock skipped: %s", exc)
+
+
+def _coordination_update_activity(
+    file_path: str, activity: str, tenant_id: str | None = None, db_path_obj: Path | None = None
+) -> None:
+    """Update project activity state. Best-effort, never raises."""
+    if not file_path:
+        return
+    try:
+        from coordination.hooks import update_project_activity
+        update_project_activity(file_path, activity=activity, project_id=tenant_id or "default")
+    except Exception as exc:
+        logger.debug("coordination: update_project_activity skipped: %s", exc)
+
+
+def _coordination_clear_activity(
+    file_path: str, tenant_id: str | None = None, db_path_obj: Path | None = None
+) -> None:
+    """Clear project activity state after save. Best-effort, never raises."""
+    if not file_path:
+        return
+    try:
+        from coordination.hooks import clear_project_activity
+        clear_project_activity(file_path, project_id=tenant_id or "default")
+    except Exception as exc:
+        logger.debug("coordination: clear_project_activity skipped: %s", exc)
+
+
+# ── Save pipeline help function end ────────────────────────────────────
+
+
 def _save_memory_core(
         req: SaveRequest,
         _now_iso: Optional[str] = None,
@@ -2082,7 +2141,10 @@ def _save_memory_core(
             release_db_path_flock,
         )
 
+        _file_path_str = str(file_path)
         acquire_db_path_flock(db_path_obj)
+        _coordination_acquire_lock(_file_path_str, db_path_obj)
+        _coordination_update_activity(_file_path_str, "writing", tenant_id, db_path_obj)
         try:
             if _conn is not None:
                 conn = _conn
@@ -2091,6 +2153,8 @@ def _save_memory_core(
                     db_path_obj, category, title_slug, _start_time
                 )
         except Exception:
+            _coordination_release_lock(_file_path_str, db_path_obj)
+            _coordination_clear_activity(_file_path_str, tenant_id, db_path_obj)
             release_db_path_flock(db_path_obj)
             raise
         # P0-1 fix (2026-06-22): the previous version of this function never
@@ -2165,6 +2229,10 @@ def _save_memory_core(
             _save_errored = True
             raise
         finally:
+            # Coordination: release lock and clear activity
+            _coord_file = _file_path_str if isinstance(_file_path_str, str) else ""
+            _coordination_release_lock(_coord_file, db_path_obj)
+            _coordination_clear_activity(_coord_file, tenant_id, db_path_obj)
             # C3: release the per-DB-path flock acquired above.
             release_db_path_flock(db_path_obj)
             if conn is not None and _conn is None:

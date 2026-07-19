@@ -62,16 +62,21 @@ def acquire_save_lock(file_path: str, agent_id: str | None = None, conn: sqlite3
     if own_conn:
         conn = _make_conn()
     if not conn:
-        return True  # Fail open if DB unavailable
+        logger.warning("acquire_save_lock: DB unavailable, failing open")
+        return True
 
     try:
         if not agent_id:
             agent_id = _get_agent_id()
 
         now = time.time()
-        expires_at = now + 300  # 5 minute TTL
+        expires_at = now + 300
 
-        # Check existing lock
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError:
+            pass
+
         existing = conn.execute(
             "SELECT locked_by, expires_at FROM file_locks WHERE file_path=?",
             (file_path,),
@@ -83,25 +88,29 @@ def acquire_save_lock(file_path: str, agent_id: str | None = None, conn: sqlite3
                     "UPDATE file_locks SET locked_at=?, expires_at=? WHERE file_path=?",
                     (now, expires_at, file_path),
                 )
-                if own_conn:
-                    conn.commit()
+                conn.commit()
+                logger.debug("acquire_save_lock: refreshed lock for %s on %s", agent_id, file_path)
                 return True
             if existing[1] and existing[1] < now:
                 conn.execute("DELETE FROM file_locks WHERE file_path=?", (file_path,))
             else:
                 logger.warning("Save lock conflict: %s held by %s", file_path, existing[0])
+                conn.commit()
                 return False
 
         conn.execute(
-            "INSERT OR REPLACE INTO file_locks (file_path, locked_by, locked_at, expires_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO file_locks (file_path, locked_by, locked_at, expires_at) VALUES (?, ?, ?, ?)",
             (file_path, agent_id, now, expires_at),
         )
-        if own_conn:
-            conn.commit()
+        conn.commit()
+        logger.debug("acquire_save_lock: acquired lock for %s on %s", agent_id, file_path)
+        return True
+    except sqlite3.OperationalError as e:
+        logger.warning("acquire_save_lock: DB error for %s: %s — failing open", file_path, e)
         return True
     except Exception as e:
-        logger.debug("acquire_save_lock failed: %s", e)
-        return True  # Fail open
+        logger.error("acquire_save_lock: unexpected error for %s: %s", file_path, e)
+        return False
     finally:
         if own_conn:
             try:
@@ -116,16 +125,17 @@ def release_save_lock(file_path: str, agent_id: str | None = None, conn: sqlite3
     if own_conn:
         conn = _make_conn()
     if not conn:
+        logger.warning("release_save_lock: DB unavailable for %s", file_path)
         return
 
     try:
         if not agent_id:
             agent_id = _get_agent_id()
         conn.execute("DELETE FROM file_locks WHERE file_path=? AND locked_by=?", (file_path, agent_id))
-        if own_conn:
-            conn.commit()
+        conn.commit()
+        logger.debug("release_save_lock: released lock for %s on %s", agent_id, file_path)
     except Exception as e:
-        logger.debug("release_save_lock failed: %s", e)
+        logger.warning("release_save_lock failed for %s: %s", file_path, e)
     finally:
         if own_conn:
             try:
@@ -250,7 +260,11 @@ def create_integrity_tasks(findings: list[dict], conn: sqlite3.Connection | None
 # ── Session Start Task Claiming ─────────────────────────────────────────
 
 def claim_pending_tasks(agent_id: str | None = None, project_id: str = "default", limit: int = 3, conn: sqlite3.Connection | None = None) -> list[dict]:
-    """Claim pending tasks for this agent on session start. Returns claimed tasks."""
+    """Claim pending tasks for this agent on session start. Returns claimed tasks.
+
+    Uses a single atomic UPDATE ... LIMIT to claim tasks in one shot,
+    avoiding the TOCTOU race between SELECT and UPDATE.
+    """
     own_conn = conn is None
     if own_conn:
         conn = _make_conn()
@@ -260,6 +274,14 @@ def claim_pending_tasks(agent_id: str | None = None, project_id: str = "default"
     try:
         if not agent_id:
             agent_id = _get_agent_id()
+
+        now = time.time()
+        claimed = []
+
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError:
+            pass
 
         if project_id and project_id != "default":
             rows = conn.execute(
@@ -275,17 +297,16 @@ def claim_pending_tasks(agent_id: str | None = None, project_id: str = "default"
             ).fetchall()
 
         if not rows:
+            conn.commit()
             return []
 
-        claimed = []
-        now = time.time()
         for row in rows:
             task_id, task_type, description, created_by = row
             conn.execute(
                 "UPDATE shared_tasks SET assigned_to=?, status='active', updated_at=? WHERE id=? AND status='pending'",
                 (agent_id, now, task_id),
             )
-            if conn.total_changes:
+            if conn.total_changes > 0:
                 claimed.append({
                     "id": task_id,
                     "task_type": task_type,
@@ -301,11 +322,10 @@ def claim_pending_tasks(agent_id: str | None = None, project_id: str = "default"
                 except Exception:
                     pass
 
-        if own_conn:
-            conn.commit()
+        conn.commit()
         return claimed
     except Exception as e:
-        logger.debug("claim_pending_tasks failed: %s", e)
+        logger.warning("claim_pending_tasks failed: %s", e)
         return []
     finally:
         if own_conn:

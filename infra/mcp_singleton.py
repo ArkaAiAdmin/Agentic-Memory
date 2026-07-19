@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 _MCP_LOCK_FILENAME = ".mcp_server.lock"
 
-# Module-level state for cleanup.
 _lock_fd: Optional[io.TextIOWrapper] = None
 _lock_path: Optional[Path] = None
 
@@ -46,6 +45,65 @@ def _get_memory_dir() -> Path:
         return Path.home() / ".config" / "agentic-memory" / "memory"
 
 
+def _check_pid_alive(pid: int) -> bool:
+    """Check if a PID is alive using os.kill(pid, 0)."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+    except Exception:
+        return False
+
+
+def _try_override_stale_lock() -> bool:
+    """Try to acquire the lock when the previous owner's PID is dead.
+
+    Uses a blocking acquire (up to 3 attempts) to avoid racing another
+    startup that also detected the stale PID at the same time.
+    """
+    global _lock_fd, _lock_path
+
+    if _lock_path is None:
+        return False
+
+    try:
+        from infra.file_lock import acquire_flock_with_retry
+
+        _lock_fd = open(_lock_path, "w")
+        got = acquire_flock_with_retry(
+            _lock_fd,
+            max_attempts=3,
+            nonblocking=False,
+            strict=True,
+        )
+        if got:
+            try:
+                _lock_fd.write(str(os.getpid()))
+                _lock_fd.flush()
+            except OSError:
+                pass
+            atexit.register(release_mcp_singleton)
+            logger.info("mcp_singleton: acquired (stale override, pid=%d)", os.getpid())
+            return True
+        else:
+            try:
+                _lock_fd.close()
+            except OSError:
+                pass
+            _lock_fd = None
+            return False
+    except Exception as exc:
+        logger.warning("mcp_singleton: stale override failed: %s", exc)
+        if _lock_fd is not None:
+            try:
+                _lock_fd.close()
+            except OSError:
+                pass
+        _lock_fd = None
+        return False
+
+
 def acquire_mcp_singleton() -> bool:
     """Try to acquire the MCP server singleton lock.
 
@@ -57,14 +115,12 @@ def acquire_mcp_singleton() -> bool:
     memory_dir = _get_memory_dir()
     _lock_path = memory_dir / _MCP_LOCK_FILENAME
 
-    # Ensure the directory exists.
     _lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         _lock_fd = open(_lock_path, "w")
     except OSError as exc:
         logger.warning("mcp_singleton: cannot open lock file %s: %s", _lock_path, exc)
-        # Fail open — don't block startup if the lock file is inaccessible.
         return True
 
     try:
@@ -77,7 +133,6 @@ def acquire_mcp_singleton() -> bool:
             strict=True,
         )
         if got:
-            # Write PID for diagnostics.
             try:
                 _lock_fd.write(str(os.getpid()))
                 _lock_fd.flush()
@@ -90,24 +145,31 @@ def acquire_mcp_singleton() -> bool:
                 _lock_path,
             )
             return True
-        else:
-            # Lock held by another process.
-            try:
-                _lock_fd.close()
-            except OSError:
-                pass
-            _lock_fd = None
-            return False
     except Exception as exc:
         logger.warning("mcp_singleton: flock failed: %s", exc)
-        if _lock_fd is not None:
-            try:
-                _lock_fd.close()
-            except OSError:
-                pass
-        _lock_fd = None
-        # Fail open on unexpected errors.
-        return True
+
+    if _lock_fd is not None:
+        try:
+            _lock_fd.close()
+        except OSError:
+            pass
+    _lock_fd = None
+
+    if _lock_path is not None and _lock_path.exists():
+        try:
+            existing_pid_str = _lock_path.read_text().strip()
+            if existing_pid_str:
+                existing_pid = int(existing_pid_str)
+                if not _check_pid_alive(existing_pid):
+                    logger.info(
+                        "mcp_singleton: PID %s is dead — overriding stale lock",
+                        existing_pid,
+                    )
+                    return _try_override_stale_lock()
+        except (ValueError, OSError, Exception) as pid_exc:
+            logger.debug("mcp_singleton: PID check failed: %s", pid_exc)
+
+    return False
 
 
 def release_mcp_singleton() -> None:
@@ -133,7 +195,6 @@ def release_mcp_singleton() -> None:
 
     _lock_fd = None
 
-    # Remove the lock file so stale locks don't confuse future startups.
     if _lock_path is not None:
         try:
             _lock_path.unlink(missing_ok=True)
