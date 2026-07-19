@@ -422,13 +422,63 @@ def _render_gdpr():
 
     st.divider()
 
+    # ── Data Overview (always visible) ───────────────────────────────────
+    st.markdown("#### Data Overview")
+
+    try:
+        # Total memories and data subjects
+        total_memories = _try_count_api("memories")
+        total_subjects = 0
+        subject_df = _query_api(
+            "SELECT data_subject_sub, COUNT(*) as cnt FROM memories "
+            "WHERE data_subject_sub IS NOT NULL AND data_subject_sub != '' "
+            "GROUP BY data_subject_sub ORDER BY cnt DESC LIMIT 20"
+        )
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Memories", total_memories)
+
+        if subject_df is not None and not subject_df.empty:
+            total_subjects = len(subject_df)
+            c2.metric("Data Subjects", total_subjects)
+            c3.metric("Top Subject", f"{subject_df.iloc[0]['data_subject_sub']} ({subject_df.iloc[0]['cnt']})")
+        else:
+            c2.metric("Data Subjects", 0)
+            c3.metric("Top Subject", "—")
+
+        # Show top data subjects
+        if subject_df is not None and not subject_df.empty:
+            with st.expander(f"Top {len(subject_df)} data subjects by memory count", expanded=True):
+                for _, row in subject_df.iterrows():
+                    subj = row["data_subject_sub"]
+                    count = row["cnt"]
+                    # Get entity count for this subject
+                    ent_count = _try_count_api("kg_entities", f"name LIKE '%{subj}%'")
+                    st.html(
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;"
+                        f"padding:6px 10px;margin:2px 0;background:#1a1d23;border:1px solid #2d3139;"
+                        f"border-radius:6px;'>"
+                        f"<div>"
+                        f"<span style='color:#d1d5db;font-size:0.8rem;font-weight:600;'>{subj}</span>"
+                        f"</div>"
+                        f"<div style='display:flex;gap:12px;'>"
+                        f"<span style='color:#8b5cf6;font-size:0.7rem;'>{count} memories</span>"
+                        f"<span style='color:#06b6d4;font-size:0.7rem;'>{ent_count} entities</span>"
+                        f"</div>"
+                        f"</div>"
+                    )
+    except Exception as e:
+        st.info(f"Could not load overview: {e}")
+
+    st.divider()
+
     # ── Search for data subject ──────────────────────────────────────────
-    st.markdown("#### 1. Find Data Subject")
+    st.markdown("#### Erase Data Subject")
 
     search_col1, search_col2 = st.columns([3, 1])
     with search_col1:
         search_term = st.text_input(
-            "Search by name or ID",
+            "Search by name or ID to begin erasure",
             key="gdpr_search",
             placeholder="e.g. agent-openai, user@example.com",
         )
