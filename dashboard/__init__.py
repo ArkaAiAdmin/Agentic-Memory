@@ -582,10 +582,12 @@ def _run_health_checks() -> list[dict]:
         checks.append({"name": "Worker", "status": "warning", "detail": "Cannot check worker status", "fixable": False})
 
     # 6. Cron jobs — only flag recent failures (last 24h) and pending
+    #    Ignore expected single-agent failures (cron_sync, cron_crdt_sync)
     try:
         n_recent_failed = get_conn().execute(
             "SELECT COUNT(*) FROM task_queue WHERE status='failed' "
-            "AND completed_at IS NOT NULL AND completed_at >= datetime('now', '-1 day')"
+            "AND completed_at IS NOT NULL AND completed_at >= datetime('now', '-1 day') "
+            "AND task_type NOT IN ('cron_sync', 'cron_crdt_sync')"
         ).fetchone()[0]
         n_pending = get_conn().execute(
             "SELECT COUNT(*) FROM task_queue WHERE status='pending'"
