@@ -118,28 +118,31 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 return part[len(self._AUTH_COOKIE) + 1 :]
         return ""
 
-    def _rate_limited(self) -> bool:
-        """Sliding-window per-IP rate limit. Returns True if caller is limited.
+    def _rate_limited(self, key: str | None = None) -> bool:
+        """Sliding-window per-key rate limit. Returns True if caller is limited.
 
-        Limits are best-effort and never raise. Disabled when the limit is <= 0.
-        State lives on the server (shared across handler threads) under a lock.
+        ``key`` defaults to the client IP when ``None``.  After authentication
+        the caller should pass the principal ID so limits are per-user, not
+        per-IP.  Limits are best-effort and never raise.  Disabled when the
+        limit is <= 0.
         """
         limit = getattr(self.server, "rate_limit", 0)
         if limit <= 0:
             return False
+        if key is None:
+            key = self.client_address[0]
         window = getattr(self.server, "rate_window", 60)
         now = time.time()
-        peer = self.client_address[0]
         store = self.server._rate_buckets  # type: ignore[attr-defined]
         lock = self.server._rate_lock  # type: ignore[attr-defined]
         with lock:
-            times = store.get(peer, [])
+            times = store.get(key, [])
             times = [t for t in times if now - t < window]
             if len(times) >= limit:
-                store[peer] = times
+                store[key] = times
                 return True
             times.append(now)
-            store[peer] = times
+            store[key] = times
         return False
 
     def _require_auth(self) -> bool:
@@ -329,15 +332,14 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
-        if self._rate_limited():
-            self._error("Rate limit exceeded", 429)
-            return
-
         # WebSocket Upgrade Check
         is_ws = (self.headers.get("Upgrade", "").lower() == "websocket" and 
                  "upgrade" in self.headers.get("Connection", "").lower())
         
         if is_ws and (path == "/ws" or path == "/api/v1/streaming"):
+            if self._rate_limited():
+                self._error("Rate limit exceeded", 429)
+                return
             self._handle_ws_handshake()
             return
 
@@ -347,38 +349,65 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         elif path == "/api/v1/memories":
             if not self._require_auth():
                 return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
             self._handle_list_memories(parse_qs(parsed.query))
         elif path == "/api/v1/memories/stats":
             if not self._require_auth():
+                return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
                 return
             self._handle_stats()
         elif path == "/api/v1/memories/search":
             if not self._require_auth():
                 return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
             self._handle_search_memories(parse_qs(parsed.query))
         elif path.startswith("/api/v1/memories/"):
             if not self._require_auth():
+                return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
                 return
             note_id = path[len("/api/v1/memories/"):]
             self._handle_get_memory(note_id)
         elif path == "/api/v1/memories/categories":
             if not self._require_auth():
                 return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
             self._handle_categories()
         elif path == "/api/v1/kg/nodes":
             if not self._require_auth():
+                return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
                 return
             self._handle_kg_nodes(parse_qs(parsed.query))
         elif path == "/api/v1/kg/edges":
             if not self._require_auth():
                 return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
             self._handle_kg_edges(parse_qs(parsed.query))
         elif path == "/api/v1/cloud/deployments":
             if not self._require_auth():
                 return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
+                return
             self._handle_cloud_list_deployments(parse_qs(parsed.query))
         elif path == "/api/v1/cloud/usage":
             if not self._require_auth():
+                return
+            if self._rate_limited(key=getattr(self, "_principal_id", None)):
+                self._error("Rate limit exceeded", 429)
                 return
             self._handle_cloud_get_usage(parse_qs(parsed.query))
         else:
@@ -388,17 +417,17 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
-        # Per-IP rate limit applies to every POST (including auth endpoints,
-        # to throttle login brute-force attempts). Returns 429 when limited.
-        if self._rate_limited():
-            self._error("Rate limit exceeded", 429)
-            return
-
-        # Auth endpoints are public (they establish the session).
+        # Auth endpoints are public — rate limit by IP before auth.
         if path == "/api/v1/auth/login":
+            if self._rate_limited():
+                self._error("Rate limit exceeded", 429)
+                return
             self._handle_login()
             return
         if path == "/api/v1/auth/logout":
+            if self._rate_limited():
+                self._error("Rate limit exceeded", 429)
+                return
             self._handle_logout()
             return
         if path == "/api/v1/cloud/webhooks/stripe":
@@ -406,6 +435,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             return
 
         if not self._require_auth():
+            return
+
+        # Authenticated routes — rate limit by principal ID (per-user).
+        if self._rate_limited(key=getattr(self, "_principal_id", None)):
+            self._error("Rate limit exceeded", 429)
             return
 
         if path == "/api/v1/memories":
@@ -461,11 +495,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
-        if self._rate_limited():
-            self._error("Rate limit exceeded", 429)
+        if not self._require_auth():
             return
 
-        if not self._require_auth():
+        if self._rate_limited(key=getattr(self, "_principal_id", None)):
+            self._error("Rate limit exceeded", 429)
             return
 
         if path.startswith("/api/v1/memories/"):
@@ -484,11 +518,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
-        if self._rate_limited():
-            self._error("Rate limit exceeded", 429)
+        if not self._require_auth():
             return
 
-        if not self._require_auth():
+        if self._rate_limited(key=getattr(self, "_principal_id", None)):
+            self._error("Rate limit exceeded", 429)
             return
 
         if path.startswith("/api/v1/memories/"):
@@ -1907,6 +1941,16 @@ class APIServer(ThreadingHTTPServer):
         self._rate_lock = threading.Lock()
 
         self._ws_clients: Dict[str, socket.socket] = {}
+
+        # Phase 3: eagerly create cloud_state.db so the dashboard sidebar
+        # and billing tab are available from first boot (not lazily on first
+        # cloud API hit).
+        try:
+            from infra_cloud.store import CloudStateStore
+            _cloud_db = Path(db_path).parent / "cloud_state.db"
+            CloudStateStore(_cloud_db)
+        except Exception as _cloud_exc:
+            logger.debug("cloud_state.db init skipped: %s", _cloud_exc)
         self._ws_lock = threading.Lock()
         self._ws_send_lock = threading.Lock()
         

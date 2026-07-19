@@ -33,15 +33,13 @@ def render_sidebar():
 
     # ── Agent selector / Cloud deployment switcher ──────────────────────
     cloud_state_path = dashboard.resolve_db().parent / "cloud_state.db"
-    has_cloud = cloud_state_path.exists()
     deps = []
-    if has_cloud:
-        try:
-            from infra_cloud.store import CloudStateStore
-            store = CloudStateStore(cloud_state_path)
-            deps = store.list_deployments()
-        except Exception:
-            pass
+    try:
+        from infra_cloud.store import CloudStateStore
+        store = CloudStateStore(cloud_state_path)
+        deps = store.list_deployments()
+    except Exception:
+        pass
 
     if deps:
         options = []

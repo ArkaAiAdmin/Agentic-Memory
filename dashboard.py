@@ -93,9 +93,16 @@ if not st.session_state.get("authenticated") and requires_login():
 # ── Sidebar ──────────────────────────────────────────────────────────────
 render_sidebar()
 
-# Check if cloud_state.db exists to dynamically show Billing tab
+# Check if cloud_state.db has deployments to dynamically show Billing tab
 cloud_state_path = _dk.DB.parent / "cloud_state.db"
-has_cloud = cloud_state_path.exists()
+has_cloud = False
+if cloud_state_path.exists():
+    try:
+        from infra_cloud.store import CloudStateStore
+        _cs = CloudStateStore(cloud_state_path)
+        has_cloud = len(_cs.list_deployments()) > 0
+    except Exception:
+        pass
 
 if has_cloud:
     # Insert Billing before Settings
