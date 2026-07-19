@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -152,10 +151,8 @@ def _render_rbac():
                     if client:
                         client.rbac_init()
                     else:
-                        from infra.rbac import seed_default_roles
-                        conn = _get_db()
-                        n = seed_default_roles(conn)
-                        conn.close()
+                        st.error("API client not available — start the REST server.")
+                        return
                     st.toast("RBAC initialized", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -206,14 +203,8 @@ def _render_rbac():
                         if client:
                             client.rbac_create_principal(pid=p_id, kind=p_kind, display_name=display, tenant_id=p_tenant)
                         else:
-                            conn = _get_db()
-                            conn.execute(
-                                "INSERT OR REPLACE INTO principals (id, kind, display_name, tenant_id, created_at, updated_at) "
-                                "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
-                                (p_id, p_kind, display, p_tenant),
-                            )
-                            conn.commit()
-                            conn.close()
+                            st.error("API client not available — start the REST server.")
+                            return
                         st.toast(f"Created principal: {p_id}", icon="\u2705")
                         st.rerun()
                     except Exception as e:
@@ -246,13 +237,8 @@ def _render_rbac():
                         if client:
                             client.rbac_create_role(rid=r_id, description=r_desc or "", tenant_id=r_tenant)
                         else:
-                            conn = _get_db()
-                            conn.execute(
-                                "INSERT OR REPLACE INTO roles (id, description, tenant_id) VALUES (?, ?, ?)",
-                                (r_id, r_desc or None, r_tenant),
-                            )
-                            conn.commit()
-                            conn.close()
+                            st.error("API client not available — start the REST server.")
+                            return
                         st.toast(f"Created role: {r_id}", icon="\u2705")
                         st.rerun()
                     except Exception as e:
@@ -284,14 +270,8 @@ def _render_rbac():
                     if client:
                         client.rbac_grant(principal_id=grant_principal, role_id=grant_role)
                     else:
-                        conn = _get_db()
-                        conn.execute(
-                            "INSERT OR IGNORE INTO role_bindings (principal_id, role_id, granted_at, granted_by) "
-                            "VALUES (?, ?, datetime('now'), 'dashboard')",
-                            (grant_principal, grant_role),
-                        )
-                        conn.commit()
-                        conn.close()
+                        st.error("API client not available — start the REST server.")
+                        return
                     st.toast(f"Granted '{grant_role}' to '{grant_principal}'", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -327,13 +307,8 @@ def _render_rbac():
                     if client:
                         client.rbac_revoke(principal_id=row["principal_id"], role_id=row["role_id"])
                     else:
-                        conn = _get_db()
-                        conn.execute(
-                            "DELETE FROM role_bindings WHERE principal_id=? AND role_id=?",
-                            (row["principal_id"], row["role_id"]),
-                        )
-                        conn.commit()
-                        conn.close()
+                        st.error("API client not available — start the REST server.")
+                        return
                     st.toast(f"Revoked '{row['role_id']}' from '{row['principal_id']}'", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -386,15 +361,8 @@ def _render_acl():
                         effect=acl_effect,
                     )
                 else:
-                    conn = _get_db()
-                    conn.execute(
-                        "INSERT OR REPLACE INTO acl_overrides "
-                        "(principal_id, resource_id, action, effect, granted_at, granted_by) "
-                        "VALUES (?, ?, ?, ?, datetime('now'), 'dashboard')",
-                        (acl_principal, acl_resource, acl_action, acl_effect),
-                    )
-                    conn.commit()
-                    conn.close()
+                    st.error("API client not available — start the REST server.")
+                    return
                 st.toast(f"Rule added: {acl_effect} {acl_action} on {acl_resource} for {acl_principal}", icon="\u2705")
                 st.rerun()
             except Exception as e:
@@ -432,14 +400,8 @@ def _render_acl():
                                 action=row["action"],
                             )
                     else:
-                        conn = _get_db()
-                        for _, row in selected.iterrows():
-                            conn.execute(
-                                "DELETE FROM acl_overrides WHERE principal_id=? AND resource_id=? AND action=?",
-                                (row["principal_id"], row["resource_id"], row["action"]),
-                            )
-                        conn.commit()
-                        conn.close()
+                        st.error("API client not available — start the REST server.")
+                        return
                     st.toast(f"Deleted {len(selected)} rules", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -512,18 +474,11 @@ def _render_gdpr():
                 ):
                     with st.spinner("Erasing data..."):
                         try:
-                            from infra.gdpr import gdpr_erase
-                            import sqlite3 as _sqlite3
-                            _conn = _sqlite3.connect(str(dashboard.DB), timeout=30)
-                            try:
-                                result = gdpr_erase(
-                                    conn=_conn,
-                                    principal_id=selected_subject,
-                                    data_subject_sub=selected_subject,
-                                    tenant_id="default",
-                                )
-                            finally:
-                                _conn.close()
+                            if client:
+                                result = client.gdpr_erase(data_subject_sub=selected_subject)
+                            else:
+                                st.error("API client not available — start the REST server.")
+                                return
                             if result.get("success"):
                                 st.success(
                                     f"Erasure complete: {result.get('memories_deleted', 0)} memories, "

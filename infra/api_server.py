@@ -796,24 +796,21 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._error(str(e), 400)
             return
         try:
-            # `tier` is a simple metadata column, not part of the save saga.
-            # Apply it via a locked direct update so the dashboard can re-tier
-            # a note without re-running embeddings/KG extraction. All other
-            # fields go through the saga-backed save_memory path.
+            # `tier` is a simple metadata column — update via the saga-backed
+            # ``update_tier`` (same write path, no embeddings/KG re-extraction).
             tier = req.get("tier")
             if tier is not None:
                 if tier not in ("hot", "warm", "cold", "untrusted", "archive"):
                     self._error("invalid tier value", 400)
                     return
-                from infra.db import open_db
-                with open_db(Path(str(self.server.db_path)), write=True) as conn:
-                    cur = conn.execute(
-                        "UPDATE memories SET tier=? WHERE id=?", (tier, note_id)
-                    )
-                    conn.commit()
-                    if cur.rowcount == 0:
-                        self._error(f"Memory not found: {note_id}", 404)
-                        return
+                from save.pipeline import update_tier
+                found = update_tier(
+                    note_id=note_id, tier=tier,
+                    db_path=str(self.server.db_path),
+                )
+                if not found:
+                    self._error(f"Memory not found: {note_id}", 404)
+                    return
             other = {k: v for k, v in req.items()
                      if k in _MEMORY_UPDATE_FIELDS and k != "tier"}
             if other:

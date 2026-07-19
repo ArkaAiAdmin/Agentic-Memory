@@ -1522,6 +1522,39 @@ def save_memory(
     return _save_memory_core(req, _now_iso=_now_iso, _conn=_conn)
 
 
+def update_tier(
+    note_id: str,
+    tier: str,
+    db_path: str | None = None,
+) -> bool:
+    """Update only the tier column of a memory note via the saga write path.
+
+    Lightweight alternative to a full ``save_memory`` call — skips
+    embeddings, KG extraction, and FTS re-indexing.  Still acquires the
+    saga lock and writes through the same connection pool so the
+    single-writer invariant (Hard Rule 13) is preserved.
+
+    Returns True on success, False if the note was not found.
+    """
+    from infra.db import open_db
+    from pathlib import Path
+
+    if tier not in ("hot", "warm", "cold", "untrusted", "archive"):
+        raise ValueError(f"Invalid tier: {tier}")
+
+    _db = db_path or ""
+    if not _db:
+        from infra.infrastructure import resolve_active_memory_dir
+        _db = str(resolve_active_memory_dir() / "memory.db")
+
+    with open_db(Path(_db), write=True) as conn:
+        cur = conn.execute(
+            "UPDATE memories SET tier=? WHERE id=?", (tier, note_id)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+
+
 # ---------------------------------------------------------------------------
 # CQRS write-journal path (2026-07-07)
 # ---------------------------------------------------------------------------

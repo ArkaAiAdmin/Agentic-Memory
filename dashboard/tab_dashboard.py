@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +18,7 @@ from dashboard import (
     DARK, _auto_refresh, _compute_health_score, _fmt_date, _get_schema_version,
     _run_health_checks, get_conn, query, try_count,
 )
+from dashboard.api_client import _api, _query_api
 
 logger = logging.getLogger(__name__)
 ROOT = dashboard._REPO_ROOT
@@ -55,14 +55,16 @@ def _execute_quick_action(action: str):
     if action == "check_integrity":
         with st.spinner("Running integrity check..."):
             try:
-                from eval.test_safety_wiring import _ProdDBGuarded
-                conn = sqlite3.connect(db_path, timeout=10)
-                result = conn.execute("PRAGMA integrity_check").fetchone()
-                conn.close()
-                if result and result[0] == "ok":
-                    st.toast("Integrity check passed", icon="\u2705")
+                client = _api()
+                if client:
+                    report = client.integrity_check()
+                    if report.get("success"):
+                        st.toast("Integrity check passed", icon="\u2705")
+                    else:
+                        errors = report.get("errors", [])
+                        st.error(f"Integrity check failed: {errors}")
                 else:
-                    st.error(f"Integrity check failed: {result}")
+                    st.error("API client unavailable — start the REST server first.")
             except Exception as e:
                 st.error(f"Failed: {e}")
 
@@ -101,10 +103,12 @@ def _execute_quick_action(action: str):
     elif action == "compact":
         with st.spinner("Compacting database..."):
             try:
-                conn = sqlite3.connect(db_path, timeout=10)
-                conn.execute("VACUUM")
-                conn.close()
-                st.toast("Database compacted", icon="\u2705")
+                client = _api()
+                if client:
+                    result = client.compact()
+                    st.toast("Database compacted", icon="\u2705")
+                else:
+                    st.error("API client unavailable — start the REST server first.")
             except Exception as e:
                 st.error(f"Failed: {e}")
 
@@ -240,16 +244,17 @@ def _execute_fix(check_name: str):
     elif check_name == "Cron Jobs":
         st.markdown("**Cron Job Status**")
         try:
-            import sqlite3 as _sql
-            conn = _sql.connect(db_path, timeout=5)
-            rows = conn.execute(
+            rows = _query_api(
                 "SELECT task_type, status, COUNT(*) cnt, "
                 "MAX(completed_at) last_run "
                 "FROM task_queue GROUP BY task_type, status ORDER BY cnt DESC"
-            ).fetchall()
-            conn.close()
-            if rows:
-                for task_type, status, cnt, last_run in rows:
+            )
+            if rows is not None and not rows.empty:
+                for _, row in rows.iterrows():
+                    task_type = row["task_type"]
+                    status = row["status"]
+                    cnt = row["cnt"]
+                    last_run = row["last_run"]
                     icon = {"completed": "\u2705", "failed": "\u274c", "pending": "\u23f3"}.get(status, "\u2753")
                     st.html(
                         f"<div style='display:flex;align-items:center;gap:8px;padding:3px 0;'>"
@@ -267,14 +272,16 @@ def _execute_fix(check_name: str):
     elif check_name == "Database":
         with st.spinner("Running integrity check..."):
             try:
-                import sqlite3
-                conn = sqlite3.connect(db_path, timeout=10)
-                result = conn.execute("PRAGMA integrity_check").fetchone()
-                conn.close()
-                if result and result[0] == "ok":
-                    st.toast("Integrity check passed", icon="\u2705")
+                client = _api()
+                if client:
+                    report = client.integrity_check()
+                    if report.get("success"):
+                        st.toast("Integrity check passed", icon="\u2705")
+                    else:
+                        errors = report.get("errors", [])
+                        st.error(f"Integrity check failed: {errors}")
                 else:
-                    st.error(f"Integrity check failed: {result}")
+                    st.error("API client unavailable — start the REST server first.")
             except Exception as e:
                 st.error(f"Failed: {e}")
 

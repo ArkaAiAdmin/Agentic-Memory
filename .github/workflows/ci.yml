@@ -25,6 +25,20 @@ jobs:
       - name: Lint
         run: ruff check .
 
+  lint-dashboard:
+    name: Dashboard DB-Access Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install deps
+        run: pip install pandas streamlit plotly requests --quiet
+      - name: Dashboard DB-access lint
+        run: python eval/lint_dashboard_db_access.py
+
   typecheck:
     name: Mypy Typecheck
     runs-on: ubuntu-latest

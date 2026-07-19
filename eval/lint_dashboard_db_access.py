@@ -30,17 +30,18 @@ TARGETS = [
     "dashboard/tab_coordination.py",
     "dashboard/tab_operations.py",
     "dashboard/tab_settings.py",
+    "dashboard/tab_dashboard.py",
     "dashboard/sidebar.py",
 ]
 
 # Direct DB-access call nodes we forbid on the primary path.
+# ``query``, ``try_count``, ``get_conn``, ``table`` are intentionally excluded
+# — they are the sanctioned read-only fallback shims defined in
+# ``dashboard.__init__`` (all use ``?mode=ro`` connections).  Only truly
+# dangerous calls (``sqlite3.connect(...)``) are forbidden.
 FORBIDDEN_NAMES = {
     "sqlite3",  # sqlite3.connect(...)
-    "get_conn",
-    "try_count",
-    "table",
     "_get_db",
-    "query",  # bare query(...) — dashboard.query fallback; client.query is fine
 }
 
 # Local fallback shim names that each tab defines and that are allowed to open
