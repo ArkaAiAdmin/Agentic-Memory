@@ -417,26 +417,40 @@ def _render_gdpr():
 
     st.markdown(
         "Article 17 Right-to-Be-Forgotten: permanently delete all data "
-        "associated with a data subject and generate a deletion certificate."
+        "associated with a data subject and generate a signed deletion certificate."
     )
 
     st.divider()
 
     # ── Search for data subject ──────────────────────────────────────────
-    st.markdown("#### Find Data Subject")
+    st.markdown("#### 1. Find Data Subject")
 
-    search_term = st.text_input(
-        "Search by name or ID",
-        key="gdpr_search",
-        placeholder="e.g. agent-openai",
-    )
+    search_col1, search_col2 = st.columns([3, 1])
+    with search_col1:
+        search_term = st.text_input(
+            "Search by name or ID",
+            key="gdpr_search",
+            placeholder="e.g. agent-openai, user@example.com",
+        )
+    with search_col2:
+        search_scope = st.selectbox("Scope", ["Principals", "All text"], key="gdpr_scope")
 
     if search_term:
-        matches = _query_api(
-            "SELECT id, kind, display_name, tenant_id FROM principals "
-            "WHERE id LIKE ? OR display_name LIKE ? LIMIT 10",
-            [f"%{search_term}%", f"%{search_term}%"],
-        )
+        if search_scope == "Principals":
+            matches = _query_api(
+                "SELECT id, kind, display_name, tenant_id FROM principals "
+                "WHERE id LIKE ? OR display_name LIKE ? LIMIT 10",
+                [f"%{search_term}%", f"%{search_term}%"],
+            )
+        else:
+            # Search across all data
+            matches = _query_api(
+                "SELECT DISTINCT data_subject_sub as id, 'data_subject' as kind, "
+                "data_subject_sub as display_name, tenant_id "
+                "FROM memories WHERE data_subject_sub LIKE ? LIMIT 10",
+                [f"%{search_term}%"],
+            )
+
         if matches is not None and not matches.empty:
             st.dataframe(matches, use_container_width=True, hide_index=True)
 
@@ -447,55 +461,234 @@ def _render_gdpr():
             )
 
             if selected_subject:
-                # Show what will be deleted
-                st.markdown(f"#### Data to be erased for `{selected_subject}`")
-
-                mem_count = _try_count_api("memories", f"id LIKE '%{selected_subject}%' OR content LIKE '%{selected_subject}%'")
-                ent_count = _try_count_api("kg_entities", f"name LIKE '%{selected_subject}%'")
-                edge_count = _try_count_api("kg_edges", f"source_id IN (SELECT id FROM kg_entities WHERE name LIKE '%{selected_subject}%')")
-
-                d_col1, d_col2, d_col3 = st.columns(3)
-                d_col1.metric("Memories", mem_count)
-                d_col2.metric("KG Entities", ent_count)
-                d_col3.metric("KG Edges", edge_count)
-
-                st.divider()
-
-                confirm = st.checkbox(
-                    f"I understand this will permanently delete all data for '{selected_subject}'",
-                    key="gdpr_confirm_erase",
-                )
-
-                if st.button(
-                    "\U0001f5d1\ufe0f Execute Erasure",
-                    type="primary",
-                    disabled=not confirm,
-                    key="gdpr_erase_btn",
-                ):
-                    with st.spinner("Erasing data..."):
-                        try:
-                            if client:
-                                result = client.gdpr_erase(data_subject_sub=selected_subject)
-                            else:
-                                st.error("API client not available — start the REST server.")
-                                return
-                            if result.get("success"):
-                                st.success(
-                                    f"Erasure complete: {result.get('memories_deleted', 0)} memories, "
-                                    f"{result.get('entities_deleted', 0)} entities deleted"
-                                )
-                                if result.get("certificate_path"):
-                                    st.info(f"Certificate: {result['certificate_path']}")
-                            else:
-                                st.error(f"Erasure failed: {result.get('error', 'unknown')}")
-                        except Exception as e:
-                            st.error(f"Failed: {e}")
+                _render_erasure_workflow(selected_subject)
         else:
             st.info("No matching data subjects found")
 
     st.divider()
 
     # ── Recent erasure requests ──────────────────────────────────────────
+    _render_erasure_history()
+
+
+def _render_erasure_workflow(subject: str):
+    """Full erasure workflow: scan → preview → confirm → execute → certificate."""
+    st.markdown(f"#### 2. Data Audit for `{subject}`")
+
+    # Scan button
+    if st.button("Scan for data", key="gdpr_scan_btn", type="secondary"):
+        with st.spinner("Scanning..."):
+            _scan_subject_data(subject)
+
+    # Show scan results if available
+    scan_key = f"gdpr_scan_{subject}"
+    scan_data = st.session_state.get(scan_key)
+
+    if scan_data:
+        # Summary metrics
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Memories", scan_data.get("memories", 0))
+        c2.metric("KG Entities", scan_data.get("entities", 0))
+        c3.metric("KG Edges", scan_data.get("edges", 0))
+        c4.metric("Audit Entries", scan_data.get("audit", 0))
+
+        # Detailed breakdown
+        with st.expander("Detailed breakdown by table", expanded=False):
+            for table, count in scan_data.get("tables", {}).items():
+                if count > 0:
+                    st.html(
+                        f"<div style='display:flex;justify-content:space-between;"
+                        f"padding:4px 0;border-bottom:1px solid #1f2937;'>"
+                        f"<span style='color:#d1d5db;font-size:0.78rem;'>{table}</span>"
+                        f"<span style='color:#f59e0b;font-weight:600;font-size:0.78rem;'>{count} rows</span>"
+                        f"</div>"
+                    )
+
+        # Sample memories
+        if scan_data.get("sample_memories"):
+            with st.expander(f"Sample memories ({len(scan_data['sample_memories'])})", expanded=False):
+                for m in scan_data["sample_memories"]:
+                    preview = (m.get("content", "") or "")[:120]
+                    st.html(
+                        f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:6px;"
+                        f"padding:6px 10px;margin:3px 0;font-size:0.72rem;'>"
+                        f"<span style='color:#8b5cf6;font-weight:600;'>{m.get('id', '?')}</span> "
+                        f"<span style='color:#6b7280;'>{m.get('category', '?')}</span> "
+                        f"<span style='color:#9ca3af;'>{preview}</span>"
+                        f"</div>"
+                    )
+
+        # Sample KG entities
+        if scan_data.get("sample_entities"):
+            with st.expander(f"Sample KG entities ({len(scan_data['sample_entities'])})", expanded=False):
+                for e in scan_data["sample_entities"]:
+                    st.html(
+                        f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:6px;"
+                        f"padding:6px 10px;margin:3px 0;font-size:0.72rem;'>"
+                        f"<span style='color:#8b5cf6;font-weight:600;'>{e.get('name', '?')}</span> "
+                        f"<span style='color:#6b7280;'>{e.get('entity_type', '?')}</span> "
+                        f"<span style='color:#9ca3af;'>mentions: {e.get('mentions', 0)}</span>"
+                        f"</div>"
+                    )
+
+        # ── Erasure section ──────────────────────────────────────────────
+        st.divider()
+        st.markdown("#### 3. Execute Erasure")
+
+        total_rows = sum(scan_data.get("tables", {}).values())
+        if total_rows == 0:
+            st.info("No data found for this subject. Nothing to erase.")
+            return
+
+        st.warning(
+            f"This will permanently delete **{total_rows} rows** across "
+            f"{len([v for v in scan_data.get('tables', {}).values() if v > 0])} tables "
+            f"and generate a signed deletion certificate."
+        )
+
+        # Two-step confirmation
+        confirm1 = st.checkbox(
+            f"I understand this will permanently delete all data for '{subject}'",
+            key="gdpr_confirm_erase",
+        )
+
+        confirm2 = ""
+        if confirm1:
+            confirm2 = st.text_input(
+                f'Type "DELETE" to confirm erasure of {subject}',
+                key="gdpr_confirm_text",
+                placeholder="DELETE",
+            )
+
+        both_confirmed = confirm1 and confirm2.strip().upper() == "DELETE"
+
+        if st.button(
+            "Execute Erasure",
+            type="primary",
+            disabled=not both_confirmed,
+            key="gdpr_erase_btn",
+        ):
+            with st.spinner("Erasing data... this may take a moment."):
+                try:
+                    _c = _api()
+                    if not _c:
+                        st.error("Write requires the REST API to be running.")
+                        return
+                    result = _c.gdpr_erase(data_subject_sub=subject)
+                    _show_erasure_result(result, subject)
+                except Exception as e:
+                    st.error(f"Erasure failed: {e}")
+
+
+def _scan_subject_data(subject: str):
+    """Scan all data for a subject and store in session state."""
+    tables = {
+        "memories": f"data_subject_sub = '{subject}'",
+        "kg_entities": f"name LIKE '%{subject}%'",
+        "kg_edges": f"source_id IN (SELECT id FROM kg_entities WHERE name LIKE '%{subject}%')",
+        "kg_facts": f"subject LIKE '%{subject}%' OR object LIKE '%{subject}%'",
+        "memory_audit_log": f"detail LIKE '%{subject}%'",
+        "memory_embeddings": "1=0",  # cascaded with memories
+        "memory_vec_keys": "1=0",    # cascaded with memories
+        "memory_chunks": "1=0",      # cascaded with memories
+    }
+
+    table_counts = {}
+    for table, where in tables.items():
+        if _table_exists_api(table):
+            table_counts[table] = _try_count_api(table, where)
+        else:
+            table_counts[table] = 0
+
+    # Sample memories
+    sample_memories = []
+    mem_df = _query_api(
+        "SELECT id, content, category, data_subject_sub FROM memories "
+        f"WHERE data_subject_sub = ? LIMIT 5",
+        [subject],
+    )
+    if mem_df is not None and not mem_df.empty:
+        sample_memories = mem_df.to_dict("records")
+
+    # Sample KG entities
+    sample_entities = []
+    ent_df = _query_api(
+        "SELECT name, entity_type, mentions FROM kg_entities "
+        f"WHERE name LIKE ? LIMIT 5",
+        [f"%{subject}%"],
+    )
+    if ent_df is not None and not ent_df.empty:
+        sample_entities = ent_df.to_dict("records")
+
+    scan_data = {
+        "memories": table_counts.get("memories", 0),
+        "entities": table_counts.get("kg_entities", 0),
+        "edges": table_counts.get("kg_edges", 0),
+        "audit": table_counts.get("memory_audit_log", 0),
+        "tables": table_counts,
+        "sample_memories": sample_memories,
+        "sample_entities": sample_entities,
+    }
+
+    st.session_state[f"gdpr_scan_{subject}"] = scan_data
+
+
+def _show_erasure_result(result: dict, subject: str):
+    """Display the erasure result with certificate details."""
+    if result.get("success"):
+        st.success("Erasure complete")
+
+        # Show deletion summary
+        rows_deleted = result.get("rows_deleted", {})
+        if rows_deleted:
+            st.markdown("##### Rows Deleted")
+            for table, count in rows_deleted.items():
+                if count > 0:
+                    st.html(
+                        f"<div style='display:flex;justify-content:space-between;"
+                        f"padding:4px 0;border-bottom:1px solid #1f2937;'>"
+                        f"<span style='color:#d1d5db;font-size:0.78rem;'>{table}</span>"
+                        f"<span style='color:#ef4444;font-weight:600;font-size:0.78rem;'>-{count}</span>"
+                        f"</div>"
+                    )
+
+        md_deleted = result.get("md_files_deleted", 0)
+        if md_deleted:
+            st.caption(f"Deleted {md_deleted} .md files from disk")
+
+        # Show certificate
+        cert = result.get("certificate", {})
+        if cert:
+            st.markdown("##### Deletion Certificate")
+            cert_items = [
+                ("Request ID", cert.get("request_id", "?")),
+                ("Data Subject", subject),
+                ("Tenant", cert.get("tenant_id", "?")),
+                ("Requested", cert.get("requested_at", "?")),
+                ("Completed", cert.get("completed_at", "?")),
+                ("Status", cert.get("status", "?")),
+                ("Certificate Hash", cert.get("certificate_hash", "?")[:16] + "..."),
+            ]
+            for label, value in cert_items:
+                st.html(
+                    f"<div style='display:flex;justify-content:space-between;"
+                    f"padding:4px 0;border-bottom:1px solid #1f2937;'>"
+                    f"<span style='color:#6b7280;font-size:0.72rem;'>{label}</span>"
+                    f"<span style='color:#d1d5db;font-size:0.72rem;font-weight:600;'>{value}</span>"
+                    f"</div>"
+                )
+
+            if cert.get("certificate_path"):
+                st.info(f"Certificate saved: `{cert['certificate_path']}`")
+
+        # Clear scan data
+        st.session_state.pop(f"gdpr_scan_{subject}", None)
+    else:
+        st.error(f"Erasure failed: {result.get('error', 'unknown')}")
+
+
+def _render_erasure_history():
+    """Show erasure request history with certificate details."""
     st.markdown("#### Erasure Request History")
 
     if _table_exists_api("gdpr_requests"):
@@ -503,9 +696,32 @@ def _render_gdpr():
             "SELECT * FROM gdpr_requests ORDER BY requested_at DESC LIMIT 20"
         )
         if requests_df is not None and not requests_df.empty:
-            st.dataframe(requests_df, use_container_width=True, hide_index=True)
+            for _, req in requests_df.iterrows():
+                status = req.get("status", "?")
+                status_color = "#10b981" if status == "completed" else "#f59e0b" if status == "pending" else "#ef4444"
+                ts = req.get("requested_at", "?")
+                if isinstance(ts, (int, float)):
+                    ts = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M") if ts else "?"
+
+                st.html(
+                    f"<div style='background:#1a1d23;border:1px solid #2d3139;border-radius:8px;"
+                    f"padding:10px 12px;margin:4px 0;'>"
+                    f"<div style='display:flex;align-items:center;gap:8px;'>"
+                    f"<span style='color:{status_color};font-size:0.7rem;font-weight:600;'>{status.upper()}</span>"
+                    f"<span style='color:#d1d5db;font-size:0.78rem;'>{req.get('data_subject_sub', '?')}</span>"
+                    f"<span style='color:#6b7280;font-size:0.65rem;margin-left:auto;'>{ts}</span>"
+                    f"</div>"
+                    f"</div>"
+                )
+
+                # Show certificate details if available
+                cert_hash = req.get("certificate_hash")
+                if cert_hash:
+                    st.caption(f"Certificate: `{cert_hash[:16]}...`")
         else:
             st.info("No erasure requests recorded")
+    else:
+        st.info("GDPR requests table not yet created. Erasure requests will appear here after first use.")
 
 
 # ── 4. Tenants ───────────────────────────────────────────────────────────
