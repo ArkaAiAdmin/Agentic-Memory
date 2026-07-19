@@ -425,50 +425,57 @@ def _render_gdpr():
     # ── Data Overview (always visible) ───────────────────────────────────
     st.markdown("#### Data Overview")
 
+    total_memories = 0
     try:
-        # Total memories and data subjects
         total_memories = _try_count_api("memories")
-        total_subjects = 0
+    except Exception:
+        pass
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Memories", total_memories)
+
+    try:
         subject_df = _query_api(
             "SELECT data_subject_sub, COUNT(*) as cnt FROM memories "
             "WHERE data_subject_sub IS NOT NULL AND data_subject_sub != '' "
             "GROUP BY data_subject_sub ORDER BY cnt DESC LIMIT 20"
         )
+    except Exception:
+        subject_df = None
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Memories", total_memories)
+    if subject_df is not None and not subject_df.empty:
+        total_subjects = len(subject_df)
+        c2.metric("Data Subjects", total_subjects)
+        c3.metric("Top Subject", f"{subject_df.iloc[0]['data_subject_sub']} ({subject_df.iloc[0]['cnt']})")
+    else:
+        c2.metric("Data Subjects", 0)
+        c3.metric("Top Subject", "—")
 
-        if subject_df is not None and not subject_df.empty:
-            total_subjects = len(subject_df)
-            c2.metric("Data Subjects", total_subjects)
-            c3.metric("Top Subject", f"{subject_df.iloc[0]['data_subject_sub']} ({subject_df.iloc[0]['cnt']})")
-        else:
-            c2.metric("Data Subjects", 0)
-            c3.metric("Top Subject", "—")
-
-        # Show top data subjects
-        if subject_df is not None and not subject_df.empty:
-            with st.expander(f"Top {len(subject_df)} data subjects by memory count", expanded=True):
-                for _, row in subject_df.iterrows():
-                    subj = row["data_subject_sub"]
-                    count = row["cnt"]
-                    # Get entity count for this subject
-                    ent_count = _try_count_api("kg_entities", f"name LIKE '%{subj}%'")
-                    st.html(
-                        f"<div style='display:flex;justify-content:space-between;align-items:center;"
-                        f"padding:6px 10px;margin:2px 0;background:#1a1d23;border:1px solid #2d3139;"
-                        f"border-radius:6px;'>"
-                        f"<div>"
-                        f"<span style='color:#d1d5db;font-size:0.8rem;font-weight:600;'>{subj}</span>"
-                        f"</div>"
-                        f"<div style='display:flex;gap:12px;'>"
-                        f"<span style='color:#8b5cf6;font-size:0.7rem;'>{count} memories</span>"
-                        f"<span style='color:#06b6d4;font-size:0.7rem;'>{ent_count} entities</span>"
-                        f"</div>"
-                        f"</div>"
-                    )
-    except Exception as e:
-        st.info(f"Could not load overview: {e}")
+    # Show top data subjects if available
+    if subject_df is not None and not subject_df.empty:
+        with st.expander(f"Top {len(subject_df)} data subjects by memory count", expanded=True):
+            for _, row in subject_df.iterrows():
+                subj = row["data_subject_sub"]
+                count = row["cnt"]
+                ent_count = _try_count_api("kg_entities", f"name LIKE '%{subj}%'")
+                st.html(
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;"
+                    f"padding:6px 10px;margin:2px 0;background:#1a1d23;border:1px solid #2d3139;"
+                    f"border-radius:6px;'>"
+                    f"<div>"
+                    f"<span style='color:#d1d5db;font-size:0.8rem;font-weight:600;'>{subj}</span>"
+                    f"</div>"
+                    f"<div style='display:flex;gap:12px;'>"
+                    f"<span style='color:#8b5cf6;font-size:0.7rem;'>{count} memories</span>"
+                    f"<span style='color:#06b6d4;font-size:0.7rem;'>{ent_count} entities</span>"
+                    f"</div>"
+                    f"</div>"
+                )
+    else:
+        st.caption(
+            "No data subjects found in memories. "
+            "All memories use `data_subject_sub = NULL` (no per-user data separation)."
+        )
 
     st.divider()
 
