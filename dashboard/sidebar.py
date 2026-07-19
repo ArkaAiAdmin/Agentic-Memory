@@ -31,6 +31,13 @@ def render_sidebar():
         </div>""",
     )
 
+    # ── Always ensure API client exists (even before deployment selector) ─
+    if "api_client" not in st.session_state or st.session_state.api_client is None:
+        from dashboard.api_client import resolve_api_token
+        _token = resolve_api_token(str(dashboard.DB.parent))
+        _base_url = os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9879")
+        st.session_state.api_client = ApiClient(base_url=_base_url, token=_token)
+
     # ── Agent selector / Cloud deployment switcher ──────────────────────
     cloud_state_path = dashboard.resolve_db().parent / "cloud_state.db"
     deps = []
