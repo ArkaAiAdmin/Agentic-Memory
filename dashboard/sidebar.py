@@ -51,6 +51,12 @@ def render_sidebar():
 
         if "selected_deployment" not in st.session_state:
             st.session_state["selected_deployment"] = options[0]
+            # Initialize API client on first load
+            _first_dep = dep_map[options[0]]
+            from dashboard.api_client import resolve_api_token
+            _token = resolve_api_token(str(dashboard.DB.parent))
+            _api_base = _first_dep.get("api_base") or "http://127.0.0.1:9879"
+            st.session_state.api_client = ApiClient(base_url=_api_base, token=_token)
 
         _choice = st.sidebar.selectbox(
             "Deployment switcher",
@@ -88,6 +94,11 @@ def render_sidebar():
         if _Valid := _valid:
             if "agent_view" not in st.session_state:
                 st.session_state["agent_view"] = "OpenCode" if "OpenCode" in _Valid else next(iter(_Valid))
+                # Initialize API client on first load
+                from dashboard.api_client import resolve_api_token
+                _token = resolve_api_token(str(dashboard.DB.parent))
+                _base_url = _AGENT_API_BASE.get(st.session_state["agent_view"], "http://127.0.0.1:9879")
+                st.session_state.api_client = ApiClient(base_url=_base_url, token=_token)
             _choice = st.sidebar.selectbox(
                 "Agent store",
                 options=list(_Valid.keys()),
