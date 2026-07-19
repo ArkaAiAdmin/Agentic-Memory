@@ -16,6 +16,7 @@ import tomllib
 
 import dashboard
 from dashboard import DARK, _get_schema_version, get_conn, query, try_count
+from dashboard.api_client import _query_api, _try_count_api, _table_exists_api
 
 logger = logging.getLogger(__name__)
 ROOT = dashboard._REPO_ROOT
@@ -23,7 +24,7 @@ ROOT = dashboard._REPO_ROOT
 
 def _render_onboarding():
     """Render onboarding guidance for new users."""
-    n_mem = try_count("memories")
+    n_mem = _try_count_api("memories")
     if n_mem > 10:
         return  # Not a new user
 
@@ -168,7 +169,7 @@ def _render_export_section():
     with cols[0]:
         if st.button("\U0001f4e5 Export Memories (JSON)", use_container_width=True):
             try:
-                df = query("SELECT * FROM memories ORDER BY created_at DESC")
+                df = _query_api("SELECT * FROM memories ORDER BY created_at DESC")
                 if df is not None and not df.empty:
                     json_data = df.to_json(orient="records", date_format="iso", indent=2)
                     st.download_button(
@@ -186,7 +187,7 @@ def _render_export_section():
     with cols[1]:
         if st.button("\U0001f4e5 Export Memories (CSV)", use_container_width=True):
             try:
-                df = query("SELECT id, content, category, importance, tier, pinned, fitness_score, created_at FROM memories ORDER BY created_at DESC")
+                df = _query_api("SELECT id, content, category, importance, tier, pinned, fitness_score, created_at FROM memories ORDER BY created_at DESC")
                 if df is not None and not df.empty:
                     csv_data = df.to_csv(index=False)
                     st.download_button(
@@ -204,7 +205,7 @@ def _render_export_section():
     with cols[2]:
         if st.button("\U0001f4e5 Export Audit Log (CSV)", use_container_width=True):
             try:
-                df = query("SELECT * FROM memory_audit_log ORDER BY ts DESC LIMIT 5000")
+                df = _query_api("SELECT * FROM memory_audit_log ORDER BY ts DESC LIMIT 5000")
                 if df is not None and not df.empty:
                     csv_data = df.to_csv(index=False)
                     st.download_button(
@@ -228,9 +229,9 @@ def _render_export_section():
     with kg_cols[0]:
         if st.button("\U0001f4e5 Export KG as JSON", use_container_width=True):
             try:
-                entities = query("SELECT * FROM kg_entities")
-                edges = query("SELECT * FROM kg_edges") if dashboard.table("kg_edges") else None
-                facts = query("SELECT * FROM kg_facts") if dashboard.table("kg_facts") else None
+                entities = _query_api("SELECT * FROM kg_entities")
+                edges = _query_api("SELECT * FROM kg_edges") if _table_exists_api("kg_edges") else None
+                facts = _query_api("SELECT * FROM kg_facts") if _table_exists_api("kg_facts") else None
 
                 kg_data = {
                     "entities": entities.to_dict("records") if entities is not None else [],
@@ -253,8 +254,8 @@ def _render_export_section():
         if st.button("\U0001f4e5 Export as GraphML", use_container_width=True):
             try:
                 import networkx as nx
-                entities = query("SELECT id, name, entity_type, mentions FROM kg_entities")
-                edges = query("SELECT source_id, target_id, relation, weight FROM kg_edges") if dashboard.table("kg_edges") else None
+                entities = _query_api("SELECT id, name, entity_type, mentions FROM kg_entities")
+                edges = _query_api("SELECT source_id, target_id, relation, weight FROM kg_edges") if _table_exists_api("kg_edges") else None
 
                 if entities is not None and not entities.empty:
                     G = nx.Graph()
@@ -268,7 +269,7 @@ def _render_export_section():
                             if src and tgt:
                                 G.add_edge(src, tgt, relation=r.get("relation", ""), weight=r.get("weight", 1))
 
-                    graphml_data = nx.graphml.generate_graphml(G)
+                    graphml_data = nx.generate_graphml(G)
                     st.download_button(
                         "Download GraphML",
                         graphml_data,

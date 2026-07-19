@@ -7,6 +7,7 @@ import streamlit as st
 
 import dashboard
 from dashboard import _run_health_checks, _compute_health_score, try_count
+from dashboard.api_client import _try_count_api
 
 
 def render_sidebar():
@@ -51,11 +52,11 @@ def render_sidebar():
     with st.sidebar:
         st.markdown("### System Overview")
 
-        n_mem = try_count("memories")
-        n_ent = try_count("kg_entities")
-        n_edg = try_count("kg_edges")
-        n_facts = try_count("kg_facts")
-        n_pin = try_count("memories", "pinned=1")
+        n_mem = _try_count_api("memories")
+        n_ent = _try_count_api("kg_entities")
+        n_edg = _try_count_api("kg_edges")
+        n_facts = _try_count_api("kg_facts")
+        n_pin = _try_count_api("memories", "pinned=1")
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Memories", n_mem)

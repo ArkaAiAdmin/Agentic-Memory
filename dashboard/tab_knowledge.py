@@ -19,6 +19,12 @@ import streamlit as st
 
 import dashboard
 from dashboard import DARK, _blob_weight, _fmt_date, get_conn, query, try_count, table
+from dashboard.api_client import (
+    _api,
+    _query_api,
+    _try_count_api,
+    _table_exists_api,
+)
 
 logger = logging.getLogger(__name__)
 ROOT = dashboard._REPO_ROOT
@@ -44,9 +50,9 @@ def render_knowledge():
 
 
 def _render_knowledge_graph():
-    n_entities = try_count("kg_entities")
-    n_edges_total = try_count("kg_edges")
-    n_facts = try_count("kg_facts") if table("kg_facts") else 0
+    n_entities = _try_count_api("kg_entities")
+    n_edges_total = _try_count_api("kg_edges")
+    n_facts = _try_count_api("kg_facts") if _table_exists_api("kg_facts") else 0
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Entities", n_entities)
@@ -65,10 +71,10 @@ def _render_knowledge_graph():
     with col_ctrl2:
         st.caption("Use search above \u2192 or select from menu below after graph loads")
 
-    ent = query(
+    ent = _query_api(
         "SELECT id, name, entity_type, mentions FROM kg_entities "
         "ORDER BY mentions DESC LIMIT ?",
-        (max_n,),
+        [max_n],
     )
     if ent is None or ent.empty:
         st.info("No entities yet. Run KG backfill to populate.")
@@ -104,7 +110,7 @@ def _render_knowledge_graph():
 
     # ── Edges ─────────────────────────────────────────────────────────────
     placeholders = ",".join("?" for _ in eid_list)
-    edges_df = query(
+    edges_df = _query_api(
         f"SELECT source_id, target_id, relation, weight FROM kg_edges "
         f"WHERE source_id IN ({placeholders}) "
         f"AND target_id IN ({placeholders}) "
@@ -337,12 +343,12 @@ def _render_knowledge_graph():
 
         with col_d2:
             st.markdown("**Related Memories**")
-            mems = query(
+            mems = _query_api(
                 "SELECT id, substr(content,1,150) preview, category, "
                 "COALESCE(fitness_score, 0.5) as fitness "
                 "FROM memories WHERE content LIKE ? "
                 "ORDER BY fitness DESC, created_at DESC LIMIT 8",
-                (f"%{focus_name}%",),
+                [f"%{focus_name}%"],
             )
             if mems is not None and not mems.empty:
                 for _, r in mems.iterrows():
@@ -400,13 +406,26 @@ def _render_entity_management(ent: pd.DataFrame, name_map: dict, type_map: dict,
                 )
                 if st.button("\U0001f4be Update Type", type="primary", key="kg_update_type_btn"):
                     try:
-                        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                        conn.execute(
-                            "UPDATE kg_entities SET entity_type=? WHERE id=?",
-                            (new_type, eid),
-                        )
-                        conn.commit()
-                        conn.close()
+                        _c = _api()
+                        if _c:
+                            try:
+                                _c._post("/api/v1/kg/entity/update", {"entity_id": eid, "entity_type": new_type})
+                            except Exception:
+                                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                                conn.execute(
+                                    "UPDATE kg_entities SET entity_type=? WHERE id=?",
+                                    (new_type, eid),
+                                )
+                                conn.commit()
+                                conn.close()
+                        else:
+                            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                            conn.execute(
+                                "UPDATE kg_entities SET entity_type=? WHERE id=?",
+                                (new_type, eid),
+                            )
+                            conn.commit()
+                            conn.close()
                         st.toast(f"Updated {name_map.get(eid, str(eid))}: {current_type} \u2192 {new_type}", icon="\u2705")
                         st.rerun()
                     except Exception as e:
@@ -431,11 +450,22 @@ def _render_entity_management(ent: pd.DataFrame, name_map: dict, type_map: dict,
                 if prunable_ids:
                     ph = ",".join("?" for _ in prunable_ids)
                     try:
-                        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                        conn.execute(f"DELETE FROM kg_entities WHERE id IN ({ph})", prunable_ids)
-                        conn.execute(f"DELETE FROM kg_edges WHERE source_id IN ({ph}) OR target_id IN ({ph})", prunable_ids + prunable_ids)
-                        conn.commit()
-                        conn.close()
+                        _c = _api()
+                        if _c:
+                            try:
+                                _c._post("/api/v1/kg/entity/prune", {"entity_ids": prunable_ids})
+                            except Exception:
+                                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                                conn.execute(f"DELETE FROM kg_entities WHERE id IN ({ph})", prunable_ids)
+                                conn.execute(f"DELETE FROM kg_edges WHERE source_id IN ({ph}) OR target_id IN ({ph})", prunable_ids + prunable_ids)
+                                conn.commit()
+                                conn.close()
+                        else:
+                            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                            conn.execute(f"DELETE FROM kg_entities WHERE id IN ({ph})", prunable_ids)
+                            conn.execute(f"DELETE FROM kg_edges WHERE source_id IN ({ph}) OR target_id IN ({ph})", prunable_ids + prunable_ids)
+                            conn.commit()
+                            conn.close()
                         st.toast(f"Pruned {len(prunable_ids)} low-mention entities", icon="\u2705")
                         st.rerun()
                     except Exception as e:
@@ -486,6 +516,16 @@ def _render_entity_management(ent: pd.DataFrame, name_map: dict, type_map: dict,
 def _merge_entities(keep_id: int, remove_id: int, keep_name: str, remove_name: str):
     """Merge remove_id into keep_id: reassign edges, delete the removed entity."""
     try:
+        _c = _api()
+        if _c:
+            try:
+                _c._post("/api/v1/kg/entity/merge", {"keep_id": keep_id, "remove_id": remove_id})
+                st.toast(f"Merged '{remove_name}' \u2192 '{keep_name}'", icon="\u2705")
+                st.rerun()
+                return
+            except Exception:
+                pass
+        # Fallback: direct DB
         conn = sqlite3.connect(str(dashboard.DB), timeout=10)
         conn.execute("PRAGMA journal_mode=WAL")
 
@@ -561,14 +601,22 @@ def _merge_entities(keep_id: int, remove_id: int, keep_name: str, remove_name: s
 
 
 def _render_facts():
-    if not table("kg_facts"):
+    if not _table_exists_api("kg_facts"):
         st.info("Table `kg_facts` not available \u2014 enable MEMORY_KNOWLEDGE_GRAPH=1")
         return
 
-    n_facts = try_count("kg_facts")
-    n_locked = try_count("kg_facts", "locked=1")
-    avg_conf = get_conn().execute("SELECT AVG(confidence) FROM kg_facts").fetchone()[0]
-    n_high_conf = try_count("kg_facts", "confidence >= 0.7")
+    n_facts = _try_count_api("kg_facts")
+    n_locked = _try_count_api("kg_facts", "locked=1")
+    try:
+        _c = _api()
+        if _c:
+            res = _c.query("SELECT AVG(confidence) as avg_conf FROM kg_facts")
+            avg_conf = res.get("results", [{}])[0].get("avg_conf") if res.get("results") else None
+        else:
+            avg_conf = get_conn().execute("SELECT AVG(confidence) FROM kg_facts").fetchone()[0]
+    except Exception:
+        avg_conf = None
+    n_high_conf = _try_count_api("kg_facts", "confidence >= 0.7")
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Total Facts", n_facts)
@@ -583,7 +631,7 @@ def _render_facts():
     col_conf, col_pred = st.columns([1, 1])
 
     with col_conf:
-        conf_dist = query(
+        conf_dist = _query_api(
             "SELECT "
             "CASE WHEN confidence >= 0.7 THEN 'high (>=0.7)' "
             "WHEN confidence >= 0.4 THEN 'medium (0.4-0.7)' "
@@ -600,7 +648,7 @@ def _render_facts():
             st.plotly_chart(fig_conf, width="stretch")
 
     with col_pred:
-        pred_dist = query(
+        pred_dist = _query_api(
             "SELECT predicate, COUNT(*) cnt FROM kg_facts "
             "GROUP BY predicate ORDER BY cnt DESC LIMIT 10"
         )
@@ -638,7 +686,7 @@ def _render_facts():
         where_clauses.append("locked = 0")
     where_sql = " AND ".join(where_clauses)
 
-    f_df = query(
+    f_df = _query_api(
         f"SELECT id, subject, predicate, object, confidence, mention_count, "
         f"first_seen, last_seen, locked "
         f"FROM kg_facts WHERE {where_sql} ORDER BY confidence DESC, mention_count DESC LIMIT 200",
@@ -699,10 +747,10 @@ def _render_facts():
             if pd.notna(sel_row.get("first_seen")):
                 m4.metric("First Seen", datetime.fromtimestamp(sel_row['first_seen'], tz=timezone.utc).strftime('%Y-%m-%d'))
 
-            mems = query(
+            mems = _query_api(
                 "SELECT id, substr(content,1,150) preview, category FROM memories "
                 "WHERE content LIKE ? ORDER BY created_at DESC LIMIT 5",
-                (f"%{sel_row['subject']}%",),
+                [f"%{sel_row['subject']}%"],
             )
             if mems is not None and not mems.empty:
                 st.markdown("**Related Memories**")
@@ -731,18 +779,30 @@ def _compute_pca(embeddings_matrix, n_components):
 
 
 def _render_embeddings():
-    n_emb = get_conn().execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()[0]
+    try:
+        _c = _api()
+        if _c:
+            res = _c.query("SELECT COUNT(*) as c FROM memory_embeddings")
+            n_emb = res.get("results", [{}])[0].get("c", 0) if res.get("results") else 0
+        else:
+            n_emb = get_conn().execute("SELECT COUNT(*) FROM memory_embeddings").fetchone()[0]
+    except Exception:
+        n_emb = 0
     if n_emb == 0:
         st.info("No embeddings")
         return
 
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        cat_choices = sorted(
-            r[0] for r in get_conn().execute(
-                "SELECT DISTINCT m.category FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id WHERE m.category IS NOT NULL"
-            ).fetchall()
-        )
+        if _c:
+            res2 = _c.query("SELECT DISTINCT m.category FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id WHERE m.category IS NOT NULL")
+            cat_choices = sorted(r["category"] for r in res2.get("results", []) if r.get("category")) if res2.get("results") else []
+        else:
+            cat_choices = sorted(
+                r[0] for r in get_conn().execute(
+                    "SELECT DISTINCT m.category FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id WHERE m.category IS NOT NULL"
+                ).fetchall()
+            )
         cat_filter = st.multiselect("Filter category", cat_choices, default=None, key="emb_cat")
     with col2:
         lim = st.slider("Sample", 50, min(2000, n_emb), min(600, n_emb), key="emb_n")
@@ -756,7 +816,7 @@ def _render_embeddings():
         cat_where = f"AND m.category IN ({placeholders})"
         cat_params = cat_filter
 
-    df = query(
+    df = _query_api(
         "SELECT e.memory_id, e.embedding, e.dim, m.category, m.tier, m.fitness_score, SUBSTR(m.content, 1, 120) as preview "
         "FROM memory_embeddings e JOIN memories m ON m.id=e.memory_id "
         f"WHERE 1=1 {cat_where} LIMIT ?",
@@ -929,7 +989,7 @@ def _render_embeddings():
         with col_info:
             st.markdown(f"**{mid}**")
             st.caption(f"Category: {cats[sel_for_lines]} | Fitness: {fits[sel_for_lines]:.3f}")
-            preview_text = query("SELECT content FROM memories WHERE id=?", (mid,))
+            preview_text = _query_api("SELECT content FROM memories WHERE id=?", [mid])
             if preview_text is not None and not preview_text.empty:
                 st.text(preview_text.iloc[0]["content"][:500])
         with col_nn:

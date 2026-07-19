@@ -31,6 +31,12 @@ API_CORS_ORIGINS = frozenset(
     if o.strip()
 )
 
+# ── Known MCP memory fields (used for update validation) ─────────────────
+_MEMORY_UPDATE_FIELDS = frozenset({
+    "content", "category", "tags", "pinned", "is_global",
+    "importance", "title_slug",
+})
+
 def _is_loopback(host: str) -> bool:
     """Check if host resolves to loopback."""
     if host in ("localhost", "127.0.0.1", "::1"):
@@ -71,7 +77,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         elif not API_CORS_ORIGINS:
             self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.end_headers()
         self.wfile.write(body)
 
@@ -246,7 +252,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         elif not API_CORS_ORIGINS:
             self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -268,10 +274,6 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if not self._require_auth():
                 return
             self._handle_list_memories(parse_qs(parsed.query))
-        elif path == "/api/v1/memories/search":
-            if not self._require_auth():
-                return
-            self._handle_search_memories(parse_qs(parsed.query))
         elif path == "/api/v1/memories/stats":
             if not self._require_auth():
                 return
@@ -281,6 +283,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 return
             note_id = path[len("/api/v1/memories/"):]
             self._handle_get_memory(note_id)
+        elif path == "/api/v1/memories/categories":
+            if not self._require_auth():
+                return
+            self._handle_categories()
         elif path == "/api/v1/kg/nodes":
             if not self._require_auth():
                 return
@@ -305,6 +311,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._handle_search_memories_post()
         elif path == "/api/v1/memories/clear":
             self._handle_clear_memories()
+        elif path == "/api/v1/query":
+            self._handle_query()
         elif path == "/api/v1/maintenance/rebuild":
             self._handle_rebuild()
         elif path == "/api/v1/maintenance/compact":
@@ -313,6 +321,44 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._handle_integrity()
         elif path == "/api/v1/compliance/gdpr/erase":
             self._handle_gdpr_erase()
+        elif path == "/api/v1/rbac/init":
+            self._handle_rbac_init()
+        elif path == "/api/v1/rbac/principals":
+            self._handle_rbac_create_principal()
+        elif path == "/api/v1/rbac/roles":
+            self._handle_rbac_create_role()
+        elif path == "/api/v1/rbac/bindings":
+            self._handle_rbac_grant()
+        elif path == "/api/v1/acl/rules":
+            self._handle_acl_add_rule()
+        elif path == "/api/v1/kg/dedup":
+            self._handle_kg_dedup()
+        elif path == "/api/v1/memories/archive-stale":
+            self._handle_archive_stale()
+        elif path == "/api/v1/coordination/tasks":
+            self._handle_create_task()
+        elif path == "/api/v1/coordination/locks":
+            self._handle_acquire_lock()
+        elif path == "/api/v1/coordination/messages":
+            self._handle_send_message()
+        elif path == "/api/v1/coordination/state":
+            self._handle_update_project_state()
+        else:
+            self._error("Not found", 404)
+
+    def do_PUT(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+
+        if not self._require_auth():
+            return
+
+        if path.startswith("/api/v1/memories/"):
+            note_id = path[len("/api/v1/memories/"):]
+            self._handle_update_memory(note_id)
+        elif path.startswith("/api/v1/coordination/tasks/"):
+            task_id = int(path[len("/api/v1/coordination/tasks/"):])
+            self._handle_update_task(task_id)
         else:
             self._error("Not found", 404)
 
@@ -326,6 +372,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/v1/memories/"):
             note_id = path[len("/api/v1/memories/"):]
             self._handle_delete_memory(note_id)
+        elif path == "/api/v1/rbac/bindings":
+            self._handle_rbac_revoke()
+        elif path == "/api/v1/acl/rules":
+            self._handle_acl_delete_rule()
+        elif path.startswith("/api/v1/coordination/locks"):
+            self._handle_release_lock(parse_qs(parsed.query))
         else:
             self._error("Not found", 404)
 
@@ -507,9 +559,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 return
             tags = req.get("tags", [])
             category = req.get("category", "sdk")
-            # TODO: Replace with principal extraction hook for multi-tenant auth.
             is_global = req.get("is_global", False)
             pinned = req.get("pinned", False)
+            importance = req.get("importance", 3)
+            title_slug = req.get("title_slug", "")
 
             client = MemoryClient(db_path=self.server.db_path)
             note_id = client.save(
@@ -518,11 +571,31 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 category=category,
                 is_global=is_global,
                 pinned=pinned,
+                importance=importance,
+                title_slug=title_slug,
             )
             self._write_json({"id": note_id, "status": "success"}, 201)
         except Exception as e:
             logger.warning("_handle_add_memory: broad except swallowed: %s", e)
             self._error(f"Failed to add memory: {e}", 500)
+
+    def _handle_update_memory(self, note_id: str) -> None:
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
+            from save.pipeline import save_memory
+            kwargs = {k: v for k, v in req.items() if k in _MEMORY_UPDATE_FIELDS}
+            kwargs["note_id"] = note_id
+            if "tags" not in kwargs:
+                kwargs["tags"] = []
+            result = save_memory(db_path=str(self.server.db_path), **kwargs)
+            self._write_json({"id": result, "status": "updated"})
+        except Exception as e:
+            logger.warning("_handle_update_memory: %s", e)
+            self._error(f"Failed to update memory: {e}", 500)
 
     def _handle_delete_memory(self, note_id: str) -> None:
         try:
@@ -629,6 +702,253 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             logger.warning("_handle_gdpr_erase: %s", e)
             self._error(f"GDPR erase failed: {e}", 500)
 
+    # ── Generic read-only query ────────────────────────────────────────────
+
+    def _handle_query(self) -> None:
+        """POST /api/v1/query — run a read-only SQL query.
+
+        Security: only SELECT statements are allowed.
+        """
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
+            sql = req.get("sql", "").strip()
+            if not sql:
+                self._error("Missing sql field", 400)
+                return
+            sql_upper = sql.upper().strip()
+            if not sql_upper.startswith("SELECT") or "INTO" in sql_upper:
+                self._error("Only SELECT queries allowed", 403)
+                return
+            params = req.get("params", [])
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                cursor = conn.execute(sql, params)
+                columns = [desc[0] for desc in cursor.description] if cursor.description else []
+                rows = cursor.fetchall()
+                results = [dict(zip(columns, row)) for row in rows]
+                self._write_json({"results": results, "count": len(results)})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_query: %s", e)
+            self._error(f"Query failed: {e}", 500)
+
+    # ── Categories ──────────────────────────────────────────────────────────
+
+    def _handle_categories(self) -> None:
+        """GET /api/v1/memories/categories — list distinct memory categories."""
+        try:
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                rows = conn.execute(
+                    "SELECT DISTINCT category FROM memories WHERE category IS NOT NULL ORDER BY category"
+                ).fetchall()
+                cats = [r[0] for r in rows if r[0]]
+                self._write_json({"categories": cats})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_categories: %s", e)
+            self._error(f"Failed: {e}", 500)
+
+    # ── RBAC ────────────────────────────────────────────────────────────────
+
+    def _handle_rbac_init(self) -> None:
+        """POST /api/v1/rbac/init — seed default RBAC roles."""
+        try:
+            from infra._lazy_imports import connection_pool, safe_close_db
+            from infra.rbac import seed_default_roles
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                n = seed_default_roles(conn)
+                conn.commit()
+                self._write_json({"created": n})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_rbac_init: %s", e)
+            self._error(f"RBAC init failed: {e}", 500)
+
+    def _handle_rbac_create_principal(self) -> None:
+        """POST /api/v1/rbac/principals — create a principal."""
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
+            pid = req.get("id", "")
+            if not pid:
+                self._error("Missing id field", 400)
+                return
+            kind = req.get("kind", "agent")
+            display_name = req.get("display_name", pid)
+            tenant_id = req.get("tenant_id", "default")
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                conn.execute(
+                    "INSERT OR REPLACE INTO principals (id, kind, display_name, tenant_id, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
+                    (pid, kind, display_name, tenant_id),
+                )
+                conn.commit()
+                self._write_json({"id": pid, "status": "created"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_rbac_create_principal: %s", e)
+            self._error(f"Failed: {e}", 500)
+
+    def _handle_rbac_create_role(self) -> None:
+        """POST /api/v1/rbac/roles — create a role."""
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
+            rid = req.get("id", "")
+            if not rid:
+                self._error("Missing id field", 400)
+                return
+            description = req.get("description", "")
+            tenant_id = req.get("tenant_id", "default")
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                conn.execute(
+                    "INSERT OR REPLACE INTO roles (id, description, tenant_id) VALUES (?, ?, ?)",
+                    (rid, description or None, tenant_id),
+                )
+                conn.commit()
+                self._write_json({"id": rid, "status": "created"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_rbac_create_role: %s", e)
+            self._error(f"Failed: {e}", 500)
+
+    def _handle_rbac_grant(self) -> None:
+        """POST /api/v1/rbac/bindings — grant a role to a principal."""
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
+            principal_id = req.get("principal_id", "")
+            role_id = req.get("role_id", "")
+            if not principal_id or not role_id:
+                self._error("principal_id and role_id required", 400)
+                return
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO role_bindings (principal_id, role_id, granted_at, granted_by) "
+                    "VALUES (?, ?, datetime('now'), 'api')",
+                    (principal_id, role_id),
+                )
+                conn.commit()
+                self._write_json({"status": "granted"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_rbac_grant: %s", e)
+            self._error(f"Failed: {e}", 500)
+
+    def _handle_rbac_revoke(self) -> None:
+        """DELETE /api/v1/rbac/bindings — revoke a role from a principal."""
+        try:
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            principal_id = params.get("principal_id", [None])[0]
+            role_id = params.get("role_id", [None])[0]
+            if not principal_id or not role_id:
+                self._error("Query params principal_id and role_id required", 400)
+                return
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                conn.execute(
+                    "DELETE FROM role_bindings WHERE principal_id=? AND role_id=?",
+                    (principal_id, role_id),
+                )
+                conn.commit()
+                self._write_json({"status": "revoked"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_rbac_revoke: %s", e)
+            self._error(f"Failed: {e}", 500)
+
+    # ── ACL ─────────────────────────────────────────────────────────────────
+
+    def _handle_acl_add_rule(self) -> None:
+        """POST /api/v1/acl/rules — add an ACL override rule."""
+        try:
+            req = self._read_json_body()
+        except ValueError as e:
+            self._error(str(e), 400)
+            return
+        try:
+            principal_id = req.get("principal_id", "")
+            resource_id = req.get("resource_id", "")
+            action = req.get("action", "")
+            effect = req.get("effect", "allow")
+            if not principal_id or not resource_id or not action:
+                self._error("principal_id, resource_id, action required", 400)
+                return
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                conn.execute(
+                    "INSERT OR REPLACE INTO acl_overrides "
+                    "(principal_id, resource_id, action, effect, granted_at, granted_by) "
+                    "VALUES (?, ?, ?, ?, datetime('now'), 'api')",
+                    (principal_id, resource_id, action, effect),
+                )
+                conn.commit()
+                self._write_json({"status": "added"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_acl_add_rule: %s", e)
+            self._error(f"Failed: {e}", 500)
+
+    def _handle_acl_delete_rule(self) -> None:
+        """DELETE /api/v1/acl/rules — delete an ACL override rule."""
+        try:
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            principal_id = params.get("principal_id", [None])[0]
+            resource_id = params.get("resource_id", [None])[0]
+            action = params.get("action", [None])[0]
+            if not principal_id or not resource_id or not action:
+                self._error("Query params principal_id, resource_id, action required", 400)
+                return
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                conn.execute(
+                    "DELETE FROM acl_overrides WHERE principal_id=? AND resource_id=? AND action=?",
+                    (principal_id, resource_id, action),
+                )
+                conn.commit()
+                self._write_json({"status": "deleted"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_acl_delete_rule: %s", e)
+            self._error(f"Failed: {e}", 500)
+
     def _handle_kg_nodes(self, query_params: dict) -> None:
         try:
             limit = int(query_params.get("limit", ["100"])[0])
@@ -681,6 +1001,188 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         except Exception as e:
             logger.warning("_handle_kg_edges: broad except swallowed: %s", e)
             self._error(f"Failed to list KG edges: {e}", 500)
+
+    def _handle_kg_dedup(self) -> None:
+        try:
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                merged = 0
+                dupes = conn.execute(
+                    "SELECT name, COUNT(*) cnt, GROUP_CONCAT(id) ids "
+                    "FROM kg_entities GROUP BY LOWER(name) HAVING cnt > 1"
+                ).fetchall()
+                for name, cnt, ids_str in dupes:
+                    ids = [int(x) for x in ids_str.split(",")]
+                    keep = ids[0]
+                    for remove_id in ids[1:]:
+                        conn.execute("UPDATE kg_edges SET source_id=? WHERE source_id=?", (keep, remove_id))
+                        conn.execute("UPDATE kg_edges SET target_id=? WHERE target_id=?", (keep, remove_id))
+                        conn.execute("DELETE FROM kg_entities WHERE id=?", (remove_id,))
+                        merged += 1
+                conn.execute(
+                    "DELETE FROM kg_edges WHERE id NOT IN ("
+                    "SELECT MAX(id) FROM kg_edges GROUP BY source_id, target_id, relation_type)"
+                )
+                conn.commit()
+                self._write_json({"merged": merged, "status": "ok"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_kg_dedup: broad except swallowed: %s", e)
+            self._error(f"Failed to dedup KG: {e}", 500)
+
+    def _handle_archive_stale(self) -> None:
+        try:
+            body = self._read_json_body() or {}
+            min_fitness = float(body.get("min_fitness", 0.3))
+            min_age_days = int(body.get("min_age_days", 90))
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=30.0)
+            try:
+                cols = conn.execute("PRAGMA table_info(memories)").fetchall()
+                col_defs = ", ".join(f"{c[1]} {c[2]}" for c in cols)
+                conn.execute(f"CREATE TABLE IF NOT EXISTS memory_archive ({col_defs})")
+                stale = conn.execute(
+                    "SELECT id FROM memories "
+                    "WHERE COALESCE(fitness_score, 0.5) < ? "
+                    "AND created_at < datetime('now', ?)",
+                    (min_fitness, f"-{min_age_days} days"),
+                ).fetchall()
+                archived = 0
+                for (mid,) in stale:
+                    row = conn.execute("SELECT * FROM memories WHERE id=?", (mid,)).fetchone()
+                    if row:
+                        col_names = [c[1] for c in cols]
+                        placeholders = ",".join("?" for _ in col_names)
+                        conn.execute(
+                            f"INSERT OR IGNORE INTO memory_archive ({','.join(col_names)}) VALUES ({placeholders})",
+                            row,
+                        )
+                        conn.execute("DELETE FROM memories WHERE id=?", (mid,))
+                        archived += 1
+                conn.commit()
+                self._write_json({"archived": archived, "status": "ok"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_archive_stale: broad except swallowed: %s", e)
+            self._error(f"Failed to archive stale memories: {e}", 500)
+
+    # ── Coordination handlers ──────────────────────────────────────────────
+    def _handle_create_task(self) -> None:
+        try:
+            body = self._read_json_body() or {}
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=10.0)
+            try:
+                now = time.time()
+                status = "active" if body.get("assigned_to") else "pending"
+                conn.execute(
+                    "INSERT INTO shared_tasks (project_id, task_type, description, assigned_to, status, created_by, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, 'dashboard', ?, ?)",
+                    (body.get("project_id", "default"), body.get("task_type"), body.get("description"),
+                     body.get("assigned_to"), status, now, now),
+                )
+                conn.commit()
+                self._write_json({"status": "ok"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_create_task: broad except swallowed: %s", e)
+            self._error(f"Failed to create task: {e}", 500)
+
+    def _handle_update_task(self, task_id: int) -> None:
+        try:
+            body = self._read_json_body() or {}
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=10.0)
+            try:
+                conn.execute(
+                    "UPDATE shared_tasks SET status=?, assigned_to=?, updated_at=? WHERE id=?",
+                    (body.get("status"), body.get("assigned_to"), time.time(), task_id),
+                )
+                conn.commit()
+                self._write_json({"status": "ok"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_update_task: broad except swallowed: %s", e)
+            self._error(f"Failed to update task: {e}", 500)
+
+    def _handle_acquire_lock(self) -> None:
+        try:
+            body = self._read_json_body() or {}
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=10.0)
+            try:
+                now = time.time()
+                conn.execute(
+                    "INSERT OR REPLACE INTO file_locks (file_path, locked_by, locked_at, expires_at) VALUES (?, ?, ?, ?)",
+                    (body.get("file_path"), body.get("locked_by", "dashboard"), now, now + int(body.get("ttl", 300))),
+                )
+                conn.commit()
+                self._write_json({"status": "ok"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_acquire_lock: broad except swallowed: %s", e)
+            self._error(f"Failed to acquire lock: {e}", 500)
+
+    def _handle_release_lock(self, query_params: dict) -> None:
+        try:
+            file_path = query_params.get("file_path", [""])[0]
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=10.0)
+            try:
+                conn.execute("DELETE FROM file_locks WHERE file_path=?", (file_path,))
+                conn.commit()
+                self._write_json({"status": "ok"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_release_lock: broad except swallowed: %s", e)
+            self._error(f"Failed to release lock: {e}", 500)
+
+    def _handle_send_message(self) -> None:
+        try:
+            body = self._read_json_body() or {}
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=10.0)
+            try:
+                now = time.time()
+                conn.execute(
+                    "INSERT INTO agent_messages (from_agent, to_agent, message_type, payload, status, created_at) "
+                    "VALUES (?, ?, ?, ?, 'pending', ?)",
+                    (body.get("from_agent", "dashboard"), body.get("to_agent"), body.get("message_type"),
+                     body.get("payload"), now),
+                )
+                conn.commit()
+                self._write_json({"status": "ok"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_send_message: broad except swallowed: %s", e)
+            self._error(f"Failed to send message: {e}", 500)
+
+    def _handle_update_project_state(self) -> None:
+        try:
+            body = self._read_json_body() or {}
+            from infra._lazy_imports import connection_pool, safe_close_db
+            conn = connection_pool.get(str(self.server.db_path), timeout=10.0)
+            try:
+                now = time.time()
+                conn.execute(
+                    "INSERT OR REPLACE INTO project_state (project_id, key, value, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)",
+                    (body.get("project_id"), body.get("key"), body.get("value"), body.get("updated_by", "dashboard"), now),
+                )
+                conn.commit()
+                self._write_json({"status": "ok"})
+            finally:
+                safe_close_db(conn)
+        except Exception as e:
+            logger.warning("_handle_update_project_state: broad except swallowed: %s", e)
+            self._error(f"Failed to update project state: {e}", 500)
 
     def _handle_ws_handshake(self) -> None:
         """RFC 6455 WebSocket Handshake and protocol upgrade."""

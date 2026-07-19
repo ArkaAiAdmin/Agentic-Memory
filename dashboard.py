@@ -5,6 +5,7 @@
 #     cd ~/.config/agentic-memory
 #     venv/bin/streamlit run dashboard.py
 import logging
+import os
 
 import streamlit as st
 
@@ -43,6 +44,13 @@ if not _dk.DB.exists():
     st.stop()
 
 _dk.MEM_DIR = _dk.DB.parent
+
+# ── API Client ────────────────────────────────────────────────────────────
+if "api_client" not in st.session_state:
+    from dashboard.api_client import ApiClient
+    base_url = os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9878")
+    token = os.environ.get("MEMORY_API_TOKEN", "")
+    st.session_state.api_client = ApiClient(base_url=base_url, token=token)
 
 # ── Sidebar ──────────────────────────────────────────────────────────────
 render_sidebar()

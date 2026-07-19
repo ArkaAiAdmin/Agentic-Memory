@@ -1872,6 +1872,7 @@ def _materialize_journal_once(
 
         conn = None
         _save_errored = False
+        _saga_session_closed = False
         try:
             conn = _acquire_db_connection(
                 db_path_obj, req.category, req.title_slug, time.time()
@@ -1889,16 +1890,34 @@ def _materialize_journal_once(
                 epistemic_source=req.epistemic_source, belief_status=req.belief_status,
                 asserting_agent_id=req.asserting_agent_id, fact_type=req.fact_type,
             )
+            # W8 (2026-07-19): close the saga's write-queue session BEFORE
+            # running post-save hooks.  The saga runs inside a
+            # ``sqlite_write_queue`` session that holds ``BEGIN IMMEDIATE``
+            # (the SQLite write lock) on the worker thread for its whole
+            # lifetime.  Post-save hooks (contradiction check, auto-backlink,
+            # CRDT projection, background-task enqueue) open their OWN
+            # connections.  If those hooks ran while the saga session was
+            # still open, the hooks' connections would block on the write
+            # lock the worker still holds -> deadlock, and the journal entry
+            # would never materialize.  Closing the session first releases
+            # the lock; the hooks then open fresh connections with no
+            # contention.  Each hook already falls back to opening its own
+            # connection when ``conn is None``.
+            try:
+                conn.close()
+                _saga_session_closed = True
+            except Exception as _close_exc:
+                logger.warning("conn.close() failed before post-save hooks: %s", _close_exc)
             _run_post_save_hooks(
                 target_mem, _db_path_parsed, note_id_out,
                 req.category, req.title_slug, req.content, req.tags or [],
                 req.pinned, req.is_global,
                 (req.safety_wiring and not req.defer_expensive),
-                time.time(), conn=conn,
+                time.time(), conn=None,
             )
-            _enqueue_background_tasks(_db_path_parsed, note_id_out, conn=conn)
+            _enqueue_background_tasks(_db_path_parsed, note_id_out, conn=None)
             if _is_crdt_enabled():
-                _project_sql_to_crdt(_db_path_parsed, note_id, conn=conn)
+                _project_sql_to_crdt(_db_path_parsed, note_id, conn=None)
             logger.info("materialize_journal_entry: materialized %s", note_id_out)
             try:
                 from infra.write_journal import mark_applied_and_hooks_completed as _mark_both
@@ -1911,7 +1930,7 @@ def _materialize_journal_once(
             _save_errored = True
             raise
         finally:
-            if conn is not None:
+            if conn is not None and not _saga_session_closed:
                 try:
                     if _save_errored:
                         try:

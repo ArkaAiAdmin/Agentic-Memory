@@ -929,6 +929,20 @@ class TestDashboardIntegration(unittest.TestCase):
 
     def test_table_status_shows_warning_for_empty(self) -> None:
         """``_table_status()`` returns ('warning', ...) for empty non-expected tables."""
+        # Ensure the table exists (and is empty) in whichever DB fixture is
+        # currently bound to dashboard.DB — guards against cross-file fixture
+        # differences (the refactored-suite fixture omits backfill_progress).
+        import sqlite3 as _sql
+        conn = _sql.connect(str(dashboard.DB))
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS backfill_progress "
+                "(id TEXT PRIMARY KEY, phase TEXT, tenant_id TEXT DEFAULT 'default')"
+            )
+            conn.execute("DELETE FROM backfill_progress")
+            conn.commit()
+        finally:
+            conn.close()
         sev, detail = dashboard._table_status("backfill_progress")
         self.assertEqual(sev, "warning")
         self.assertIn("unexpected", detail)

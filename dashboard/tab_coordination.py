@@ -14,9 +14,19 @@ import streamlit as st
 
 import dashboard
 from dashboard import DARK, get_conn, query, table, try_count
+from dashboard.api_client import (
+    _api,
+    _query_api,
+    _try_count_api,
+    _table_exists_api,
+)
 
 logger = logging.getLogger(__name__)
 ROOT = dashboard._REPO_ROOT
+
+
+def _get_conn():
+    return sqlite3.connect(str(dashboard.DB), timeout=10)
 
 
 def render_coordination():
@@ -34,24 +44,20 @@ def render_coordination():
         _render_project_state()
 
 
-def _get_conn():
-    return sqlite3.connect(str(dashboard.DB), timeout=10)
-
-
 # ── 1. Tasks ─────────────────────────────────────────────────────────────
 
 def _render_tasks():
     st.subheader("Shared Task Board")
 
-    if not table("shared_tasks"):
+    if not _table_exists_api("shared_tasks"):
         st.info("Coordination tables not yet created. Run migration 069.")
         return
 
     # Stats
-    n_total = try_count("shared_tasks")
-    n_pending = try_count("shared_tasks", "status='pending'")
-    n_active = try_count("shared_tasks", "status='active'")
-    n_completed = try_count("shared_tasks", "status='completed'")
+    n_total = _try_count_api("shared_tasks")
+    n_pending = _try_count_api("shared_tasks", "status='pending'")
+    n_active = _try_count_api("shared_tasks", "status='active'")
+    n_completed = _try_count_api("shared_tasks", "status='completed'")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total", n_total)
@@ -77,16 +83,20 @@ def _render_tasks():
         if st.form_submit_button("\u2705 Create Task", type="primary"):
             if task_type:
                 try:
-                    conn = _get_conn()
-                    now = time.time()
-                    cursor = conn.execute(
-                        "INSERT INTO shared_tasks (project_id, task_type, description, assigned_to, status, created_by, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (project_id, task_type, description, assign_to,
-                         "active" if assign_to else "pending", "dashboard", now, now),
-                    )
-                    conn.commit()
-                    conn.close()
+                    _c = _api()
+                    if _c:
+                        _c.create_task(project_id, task_type, description, assign_to or None)
+                    else:
+                        conn = _get_conn()
+                        now = time.time()
+                        cursor = conn.execute(
+                            "INSERT INTO shared_tasks (project_id, task_type, description, assigned_to, status, created_by, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            (project_id, task_type, description, assign_to,
+                             "active" if assign_to else "pending", "dashboard", now, now),
+                        )
+                        conn.commit()
+                        conn.close()
                     st.toast(f"Task created: {task_type}", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -99,7 +109,7 @@ def _render_tasks():
 
     status_filter = st.selectbox("Filter", ["all", "pending", "active", "completed"], key="task_filter")
     where = "" if status_filter == "all" else f"WHERE status='{status_filter}'"
-    tasks = query(f"SELECT * FROM shared_tasks {where} ORDER BY created_at DESC LIMIT 50")
+    tasks = _query_api(f"SELECT * FROM shared_tasks {where} ORDER BY created_at DESC LIMIT 50")
 
     if tasks is not None and not tasks.empty:
         for _, task in tasks.iterrows():
@@ -125,11 +135,15 @@ def _render_tasks():
                 if task.get("status") == "pending":
                     if st.button("Claim", key=f"claim_{task['id']}"):
                         try:
-                            conn = _get_conn()
-                            conn.execute("UPDATE shared_tasks SET assigned_to='dashboard', status='active', updated_at=? WHERE id=?",
-                                         (time.time(), task["id"]))
-                            conn.commit()
-                            conn.close()
+                            _c = _api()
+                            if _c:
+                                _c.update_task(task["id"], "active", "dashboard")
+                            else:
+                                conn = _get_conn()
+                                conn.execute("UPDATE shared_tasks SET assigned_to='dashboard', status='active', updated_at=? WHERE id=?",
+                                             (time.time(), task["id"]))
+                                conn.commit()
+                                conn.close()
                             st.toast("Task claimed", icon="\u2705")
                             st.rerun()
                         except Exception as e:
@@ -138,11 +152,15 @@ def _render_tasks():
                 if task.get("status") == "active":
                     if st.button("Complete", key=f"complete_{task['id']}"):
                         try:
-                            conn = _get_conn()
-                            conn.execute("UPDATE shared_tasks SET status='completed', updated_at=? WHERE id=?",
-                                         (time.time(), task["id"]))
-                            conn.commit()
-                            conn.close()
+                            _c = _api()
+                            if _c:
+                                _c.update_task(task["id"], "completed")
+                            else:
+                                conn = _get_conn()
+                                conn.execute("UPDATE shared_tasks SET status='completed', updated_at=? WHERE id=?",
+                                             (time.time(), task["id"]))
+                                conn.commit()
+                                conn.close()
                             st.toast("Task completed", icon="\u2705")
                             st.rerun()
                         except Exception as e:
@@ -151,11 +169,15 @@ def _render_tasks():
                 if task.get("status") in ("pending", "active"):
                     if st.button("Release", key=f"release_{task['id']}"):
                         try:
-                            conn = _get_conn()
-                            conn.execute("UPDATE shared_tasks SET assigned_to=NULL, status='pending', updated_at=? WHERE id=?",
-                                         (time.time(), task["id"]))
-                            conn.commit()
-                            conn.close()
+                            _c = _api()
+                            if _c:
+                                _c.update_task(task["id"], "pending", None)
+                            else:
+                                conn = _get_conn()
+                                conn.execute("UPDATE shared_tasks SET assigned_to=NULL, status='pending', updated_at=? WHERE id=?",
+                                             (time.time(), task["id"]))
+                                conn.commit()
+                                conn.close()
                             st.toast("Task released", icon="\u2705")
                             st.rerun()
                         except Exception as e:
@@ -169,13 +191,13 @@ def _render_tasks():
 def _render_file_locks():
     st.subheader("File Locks")
 
-    if not table("file_locks"):
+    if not _table_exists_api("file_locks"):
         st.info("File locks table not yet created")
         return
 
     # List active locks
     st.markdown("#### Active Locks")
-    locks = query("SELECT * FROM file_locks ORDER BY locked_at DESC")
+    locks = _query_api("SELECT * FROM file_locks ORDER BY locked_at DESC")
 
     if locks is not None and not locks.empty:
         now = time.time()
@@ -201,10 +223,14 @@ def _render_file_locks():
                 )
                 if st.button("Release", key=f"unlock_{lock.get('file_path', '')}"):
                     try:
-                        conn = _get_conn()
-                        conn.execute("DELETE FROM file_locks WHERE file_path=?", (lock.get("file_path"),))
-                        conn.commit()
-                        conn.close()
+                        _c = _api()
+                        if _c:
+                            _c.release_lock(lock.get("file_path"))
+                        else:
+                            conn = _get_conn()
+                            conn.execute("DELETE FROM file_locks WHERE file_path=?", (lock.get("file_path"),))
+                            conn.commit()
+                            conn.close()
                         st.toast("Lock released", icon="\u2705")
                         st.rerun()
                     except Exception as e:
@@ -231,14 +257,18 @@ def _render_file_locks():
         if st.form_submit_button("\U0001f512 Acquire Lock", type="primary"):
             if lock_file:
                 try:
-                    conn = _get_conn()
-                    now = time.time()
-                    conn.execute(
-                        "INSERT OR REPLACE INTO file_locks (file_path, locked_by, locked_at, expires_at) VALUES (?, ?, ?, ?)",
-                        (lock_file, lock_agent, now, now + lock_ttl),
-                    )
-                    conn.commit()
-                    conn.close()
+                    _c = _api()
+                    if _c:
+                        _c.acquire_lock(lock_file, lock_agent, lock_ttl)
+                    else:
+                        conn = _get_conn()
+                        now = time.time()
+                        conn.execute(
+                            "INSERT OR REPLACE INTO file_locks (file_path, locked_by, locked_at, expires_at) VALUES (?, ?, ?, ?)",
+                            (lock_file, lock_agent, now, now + lock_ttl),
+                        )
+                        conn.commit()
+                        conn.close()
                     st.toast(f"Locked: {lock_file}", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -250,14 +280,14 @@ def _render_file_locks():
 def _render_messaging():
     st.subheader("Agent Messaging")
 
-    if not table("agent_messages"):
+    if not _table_exists_api("agent_messages"):
         st.info("Agent messaging table not yet created")
         return
 
     # Stats
-    n_total = try_count("agent_messages")
-    n_pending = try_count("agent_messages", "status='pending'")
-    n_delivered = try_count("agent_messages", "status='delivered'")
+    n_total = _try_count_api("agent_messages")
+    n_pending = _try_count_api("agent_messages", "status='pending'")
+    n_delivered = _try_count_api("agent_messages", "status='delivered'")
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Total", n_total)
@@ -281,16 +311,20 @@ def _render_messaging():
         if st.form_submit_button("\U0001f4e8 Send Message", type="primary"):
             if msg_to and msg_type:
                 try:
-                    conn = _get_conn()
-                    now = time.time()
-                    payload = msg_payload if msg_payload else None
-                    conn.execute(
-                        "INSERT INTO agent_messages (from_agent, to_agent, message_type, payload, status, created_at) "
-                        "VALUES (?, ?, ?, ?, 'pending', ?)",
-                        (msg_from, msg_to, msg_type, payload, now),
-                    )
-                    conn.commit()
-                    conn.close()
+                    _c = _api()
+                    if _c:
+                        _c.send_message(msg_from, msg_to, msg_type, msg_payload or None)
+                    else:
+                        conn = _get_conn()
+                        now = time.time()
+                        payload = msg_payload if msg_payload else None
+                        conn.execute(
+                            "INSERT INTO agent_messages (from_agent, to_agent, message_type, payload, status, created_at) "
+                            "VALUES (?, ?, ?, ?, 'pending', ?)",
+                            (msg_from, msg_to, msg_type, payload, now),
+                        )
+                        conn.commit()
+                        conn.close()
                     st.toast(f"Message sent to {msg_to}", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -300,7 +334,7 @@ def _render_messaging():
 
     # Message history
     st.markdown("#### Recent Messages")
-    messages = query("SELECT * FROM agent_messages ORDER BY created_at DESC LIMIT 20")
+    messages = _query_api("SELECT * FROM agent_messages ORDER BY created_at DESC LIMIT 20")
 
     if messages is not None and not messages.empty:
         for _, msg in messages.iterrows():
@@ -325,12 +359,12 @@ def _render_messaging():
 def _render_project_state():
     st.subheader("Project State")
 
-    if not table("project_state"):
+    if not _table_exists_api("project_state"):
         st.info("Project state table not yet created")
         return
 
     # Project selector
-    projects = query("SELECT DISTINCT project_id FROM project_state ORDER BY project_id")
+    projects = _query_api("SELECT DISTINCT project_id FROM project_state ORDER BY project_id")
     project_list = ["default"]
     if projects is not None and not projects.empty:
         project_list = projects["project_id"].tolist()
@@ -341,7 +375,7 @@ def _render_project_state():
 
     # Current state
     st.markdown(f"#### State for `{selected_project}`")
-    state = query("SELECT * FROM project_state WHERE project_id=? ORDER BY key", (selected_project,))
+    state = _query_api("SELECT * FROM project_state WHERE project_id=? ORDER BY key", [selected_project])
 
     if state is not None and not state.empty:
         for _, s in state.iterrows():
@@ -380,20 +414,29 @@ def _render_project_state():
         if st.form_submit_button("\U0001f4be Update", type="primary"):
             if state_key:
                 try:
-                    conn = _get_conn()
-                    now = time.time()
-                    try:
-                        value = json.loads(state_value) if state_value else None
-                    except json.JSONDecodeError:
-                        value = state_value
-                    value_str = json.dumps(value) if isinstance(value, (dict, list)) else str(value) if value is not None else None
+                    _c = _api()
+                    if _c:
+                        try:
+                            value = json.loads(state_value) if state_value else None
+                        except json.JSONDecodeError:
+                            value = state_value
+                        value_str = json.dumps(value) if isinstance(value, (dict, list)) else str(value) if value is not None else ""
+                        _c.update_project_state(selected_project, state_key, value_str, state_agent)
+                    else:
+                        conn = _get_conn()
+                        now = time.time()
+                        try:
+                            value = json.loads(state_value) if state_value else None
+                        except json.JSONDecodeError:
+                            value = state_value
+                        value_str = json.dumps(value) if isinstance(value, (dict, list)) else str(value) if value is not None else None
 
-                    conn.execute(
-                        "INSERT OR REPLACE INTO project_state (project_id, key, value, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)",
-                        (selected_project, state_key, value_str, state_agent, now),
-                    )
-                    conn.commit()
-                    conn.close()
+                        conn.execute(
+                            "INSERT OR REPLACE INTO project_state (project_id, key, value, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)",
+                            (selected_project, state_key, value_str, state_agent, now),
+                        )
+                        conn.commit()
+                        conn.close()
                     st.toast(f"State updated: {state_key}", icon="\u2705")
                     st.rerun()
                 except Exception as e:

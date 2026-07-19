@@ -19,6 +19,45 @@ logger = logging.getLogger(__name__)
 ROOT = dashboard._REPO_ROOT
 
 
+def _try_count_api(table: str, where: str = "") -> int:
+    """Count rows via api_client.query() with fallback to dashboard.try_count."""
+    client = st.session_state.get("api_client")
+    if client:
+        sql = f"SELECT COUNT(*) as count FROM {table}"
+        if where:
+            sql += f" WHERE {where}"
+        try:
+            result = client.query(sql)
+            rows = result.get("results", [])
+            return rows[0]["count"] if rows else 0
+        except Exception:
+            pass
+    return try_count(table, where) if where else try_count(table)
+
+
+def _query_api(sql: str, params: list | None = None) -> pd.DataFrame | None:
+    """Run a SELECT query via api_client with fallback to dashboard.query."""
+    client = st.session_state.get("api_client")
+    if client:
+        try:
+            result = client.query(sql, params=params or [])
+            rows = result.get("results", [])
+            if not rows:
+                return None
+            return pd.DataFrame(rows)
+        except Exception:
+            pass
+    return query(sql, params=params or ())
+
+
+def _get_conn_api():
+    """Get a DB connection via fallback to dashboard.get_conn."""
+    client = st.session_state.get("api_client")
+    if client:
+        return None  # signal: use API instead
+    return get_conn()
+
+
 def _render_memory_editor():
     """Render the inline memory editor for the selected memory."""
     sel_rows = st.session_state.get("mem_table", {}).get("selection", {}).get("rows", [])
@@ -35,13 +74,26 @@ def _render_memory_editor():
     st.divider()
     st.markdown(f"### Edit: `{sel_id}`")
 
-    # Load full content
-    full = query("SELECT * FROM memories WHERE id=?", (sel_id,))
-    if full is None or full.empty:
-        st.error("Could not load memory")
-        return
+    client = st.session_state.get("api_client")
 
-    row = full.iloc[0]
+    # Load full content
+    try:
+        if client:
+            mem = client.get_memory(sel_id)
+            if not mem or "error" in mem:
+                raise ValueError(mem.get("error", "not found"))
+            row = mem
+        else:
+            full = query("SELECT * FROM memories WHERE id=?", (sel_id,))
+            if full is None or full.empty:
+                raise ValueError("Memory not found")
+            row = full.iloc[0].to_dict()
+    except Exception:
+        full = query("SELECT * FROM memories WHERE id=?", (sel_id,))
+        if full is None or full.empty:
+            st.error("Could not load memory")
+            return
+        row = full.iloc[0]
 
     col1, col2 = st.columns([2, 1])
 
@@ -90,13 +142,22 @@ def _render_memory_editor():
     with s1:
         if st.button("\U0001f4be Save Changes", type="primary", use_container_width=True):
             try:
-                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                conn.execute(
-                    "UPDATE memories SET content=?, category=?, importance=?, tier=?, pinned=? WHERE id=?",
-                    (new_content, new_category, new_importance, new_tier, 1 if new_pinned else 0, sel_id),
-                )
-                conn.commit()
-                conn.close()
+                if client:
+                    client.update_memory(
+                        sel_id,
+                        content=new_content,
+                        category=new_category,
+                        importance=new_importance,
+                        pinned=new_pinned,
+                    )
+                else:
+                    conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                    conn.execute(
+                        "UPDATE memories SET content=?, category=?, importance=?, tier=?, pinned=? WHERE id=?",
+                        (new_content, new_category, new_importance, new_tier, 1 if new_pinned else 0, sel_id),
+                    )
+                    conn.commit()
+                    conn.close()
                 st.toast(f"Memory {sel_id} updated", icon="\u2705")
                 st.rerun()
             except Exception as e:
@@ -112,10 +173,13 @@ def _render_memory_editor():
         d1, d2, _ = st.columns([1, 1, 4])
         if d1.button("Yes, delete", type="primary", key="confirm_del_yes"):
             try:
-                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                conn.execute("DELETE FROM memories WHERE id=?", (sel_id,))
-                conn.commit()
-                conn.close()
+                if client:
+                    client.delete_memory(sel_id)
+                else:
+                    conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                    conn.execute("DELETE FROM memories WHERE id=?", (sel_id,))
+                    conn.commit()
+                    conn.close()
                 st.session_state.pop("confirm_delete", None)
                 st.toast(f"Memory {sel_id} deleted", icon="\u2705")
                 st.rerun()
@@ -126,10 +190,12 @@ def _render_memory_editor():
             st.rerun()
 
 
-def _render_bulk_actions(selected_ids: list[str] = None):
+def _render_bulk_actions(selected_ids: list[str] | None = None):
     """Render bulk action controls for selected memories."""
     if not selected_ids:
         return
+
+    client = st.session_state.get("api_client")
 
     st.html(
         f"<div style='background:#1a1d23;border:1px solid #6366f1;border-radius:8px;"
@@ -143,11 +209,11 @@ def _render_bulk_actions(selected_ids: list[str] = None):
 
     with b1:
         if st.button("\U0001f4cc Pin All", use_container_width=True):
-            _bulk_update(selected_ids, pinned=1)
+            _bulk_update(selected_ids, pinned=True)
 
     with b2:
         if st.button("\U0001f4ce Unpin All", use_container_width=True):
-            _bulk_update(selected_ids, pinned=0)
+            _bulk_update(selected_ids, pinned=False)
 
     with b3:
         new_tier = st.selectbox("Tier", ["hot", "warm", "cold"], key="bulk_tier", label_visibility="collapsed")
@@ -169,12 +235,17 @@ def _render_bulk_actions(selected_ids: list[str] = None):
         c1, c2, _ = st.columns([1, 1, 4])
         if c1.button("Yes, delete all", type="primary", key="bulk_del_confirm"):
             try:
-                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                for mid in st.session_state["bulk_delete_ids"]:
-                    conn.execute("DELETE FROM memories WHERE id=?", (mid,))
-                conn.commit()
-                conn.close()
-                st.toast(f"Deleted {len(st.session_state['bulk_delete_ids'])} memories", icon="\u2705")
+                ids = st.session_state["bulk_delete_ids"]
+                if client:
+                    for mid in ids:
+                        client.delete_memory(mid)
+                else:
+                    conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                    for mid in ids:
+                        conn.execute("DELETE FROM memories WHERE id=?", (mid,))
+                    conn.commit()
+                    conn.close()
+                st.toast(f"Deleted {len(ids)} memories", icon="\u2705")
                 st.session_state.pop("bulk_delete_ids", None)
                 st.rerun()
             except Exception as e:
@@ -185,19 +256,24 @@ def _render_bulk_actions(selected_ids: list[str] = None):
 
 
 def _bulk_update(ids: list[str], **kwargs):
-    """Bulk update memory fields."""
+    """Bulk update memory fields using api_client."""
+    client = st.session_state.get("api_client")
     try:
-        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-        for mid in ids:
-            sets = []
-            vals = []
-            for k, v in kwargs.items():
-                sets.append(f"{k}=?")
-                vals.append(v)
-            vals.append(mid)
-            conn.execute(f"UPDATE memories SET {', '.join(sets)} WHERE id=?", vals)
-        conn.commit()
-        conn.close()
+        if client:
+            for mid in ids:
+                client.update_memory(mid, **kwargs)
+        else:
+            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+            for mid in ids:
+                sets = []
+                vals = []
+                for k, v in kwargs.items():
+                    sets.append(f"{k}=?")
+                    vals.append(v)
+                vals.append(mid)
+                conn.execute(f"UPDATE memories SET {', '.join(sets)} WHERE id=?", vals)
+            conn.commit()
+            conn.close()
         st.toast(f"Updated {len(ids)} memories", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -224,19 +300,28 @@ def _render_create_memory():
             if submitted and new_content.strip():
                 try:
                     tags_list = [t.strip() for t in new_tags.split(",") if t.strip()] if new_tags else []
-                    conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                    now = datetime.now(timezone.utc).timestamp()
-                    # Generate a simple ID
-                    import hashlib
-                    mem_id = hashlib.sha256(f"{new_content}{now}".encode()).hexdigest()[:16]
-                    conn.execute(
-                        "INSERT INTO memories (id, content, category, importance, tier, pinned, tags, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (mem_id, new_content, new_cat, new_imp, new_tier, 1 if new_pinned else 0,
-                         json.dumps(tags_list), now, now),
-                    )
-                    conn.commit()
-                    conn.close()
+                    client = st.session_state.get("api_client")
+                    if client:
+                        result = client.create_memory(
+                            content=new_content,
+                            category=new_cat,
+                            tags=tags_list,
+                            pinned=new_pinned,
+                        )
+                        mem_id = result.get("id", "?")
+                    else:
+                        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                        now = datetime.now(timezone.utc).timestamp()
+                        import hashlib
+                        mem_id = hashlib.sha256(f"{new_content}{now}".encode()).hexdigest()[:16]
+                        conn.execute(
+                            "INSERT INTO memories (id, content, category, importance, tier, pinned, tags, created_at, updated_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (mem_id, new_content, new_cat, new_imp, new_tier, 1 if new_pinned else 0,
+                             json.dumps(tags_list), now, now),
+                        )
+                        conn.commit()
+                        conn.close()
                     st.toast(f"Memory created: {mem_id}", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -255,11 +340,19 @@ def _render_search():
             key="mem_search_q",
         )
     with s_col2:
+        _client = st.session_state.get("api_client")
+        try:
+            if _client:
+                _cats = _client.categories()
+            else:
+                _cats = [r[0] for r in get_conn().execute(
+                    "SELECT DISTINCT category FROM memories WHERE category IS NOT NULL"
+                ).fetchall() if r[0]]
+        except Exception:
+            _cats = []
         search_cat = st.selectbox(
             "Category",
-            ["all"] + sorted([r[0] for r in get_conn().execute(
-                "SELECT DISTINCT category FROM memories WHERE category IS NOT NULL"
-            ).fetchall() if r[0]]),
+            ["all"] + sorted(_cats),
             key="mem_search_cat",
         )
     with s_col3:
@@ -354,24 +447,35 @@ def render_memories():
     # ── Browse & Filter ──────────────────────────────────────────────────
     st.markdown("#### Browse All Memories")
 
+    client = st.session_state.get("api_client")
+
     # Stats row
-    n_total = try_count("memories")
-    n_pinned = try_count("memories", "pinned=1")
+    n_total = _try_count_api("memories")
+    n_pinned = _try_count_api("memories", "pinned=1")
     try:
-        n_cats = len([r[0] for r in get_conn().execute(
-            "SELECT DISTINCT category FROM memories WHERE category IS NOT NULL"
-        ).fetchall() if r[0]])
+        if client:
+            cats = client.categories()
+            n_cats = len(cats)
+        else:
+            n_cats = len([r[0] for r in get_conn().execute(
+                "SELECT DISTINCT category FROM memories WHERE category IS NOT NULL"
+            ).fetchall() if r[0]])
     except Exception:
         n_cats = 0
     try:
-        avg_fit = get_conn().execute(
-            "SELECT AVG(fitness_score) FROM memories WHERE fitness_score IS NOT NULL"
-        ).fetchone()[0]
+        if client:
+            r = client.query("SELECT AVG(fitness_score) as avg_fit FROM memories WHERE fitness_score IS NOT NULL")
+            rows = r.get("results", [])
+            avg_fit = rows[0]["avg_fit"] if rows else None
+        else:
+            avg_fit = get_conn().execute(
+                "SELECT AVG(fitness_score) FROM memories WHERE fitness_score IS NOT NULL"
+            ).fetchone()[0]
     except Exception:
         avg_fit = None
-    n_hot = try_count("memories", "tier='hot'")
-    n_warm = try_count("memories", "tier='warm'")
-    n_cold = try_count("memories", "tier='cold'")
+    n_hot = _try_count_api("memories", "tier='hot'")
+    n_warm = _try_count_api("memories", "tier='warm'")
+    n_cold = _try_count_api("memories", "tier='cold'")
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Total", n_total)
@@ -383,8 +487,8 @@ def render_memories():
     # Charts
     col_cat, col_tier = st.columns([2, 1])
     with col_cat:
-        cat_df = query(
-            "SELECT COALESCE(category, 'uncategorized') cat, COUNT(*) cnt "
+        cat_df = _query_api(
+            "SELECT COALESCE(category, 'uncategorized') as cat, COUNT(*) as cnt "
             "FROM memories GROUP BY cat ORDER BY cnt DESC"
         )
         if cat_df is not None and not cat_df.empty:
@@ -393,8 +497,8 @@ def render_memories():
             st.plotly_chart(fig_cat, width="stretch")
 
     with col_tier:
-        tier_df = query(
-            "SELECT COALESCE(tier, 'unassigned') tier, COUNT(*) cnt "
+        tier_df = _query_api(
+            "SELECT COALESCE(tier, 'unassigned') as tier, COUNT(*) as cnt "
             "FROM memories GROUP BY tier ORDER BY cnt DESC"
         )
         if tier_df is not None and not tier_df.empty:
@@ -404,7 +508,7 @@ def render_memories():
             st.plotly_chart(fig_tier, width="stretch")
 
     # Fitness distribution
-    fit_df = query("SELECT fitness_score FROM memories WHERE fitness_score IS NOT NULL")
+    fit_df = _query_api("SELECT fitness_score FROM memories WHERE fitness_score IS NOT NULL")
     if fit_df is not None and not fit_df.empty:
         fig_fit = px.histogram(fit_df, x="fitness_score", nbins=30, color_discrete_sequence=["#6366f1"])
         fig_fit.update_layout(**DARK, height=200, margin=dict(t=30, b=10, l=10, r=10), bargap=0.1, xaxis_title="Fitness Score", yaxis_title="Count")
@@ -420,9 +524,12 @@ def render_memories():
         m_min_fit = st.slider("Min fitness", 0.0, 1.0, 0.0, 0.05, key="mem_browse_fit")
     with f_col3:
         try:
-            cat_options = ["all"] + sorted([r[0] for r in get_conn().execute(
-                "SELECT DISTINCT category FROM memories WHERE category IS NOT NULL"
-            ).fetchall() if r[0]])
+            if client:
+                cat_options = ["all"] + sorted(client.categories())
+            else:
+                cat_options = ["all"] + sorted([r[0] for r in get_conn().execute(
+                    "SELECT DISTINCT category FROM memories WHERE category IS NOT NULL"
+                ).fetchall() if r[0]])
         except Exception:
             cat_options = ["all"]
         m_cat_filter = st.selectbox("Category", cat_options, key="mem_browse_cat")
@@ -440,8 +547,8 @@ def render_memories():
         params.append(m_cat_filter)
 
     where_sql = " AND ".join(where_clauses) if where_clauses else "1"
-    m_df = query(
-        f"SELECT id, substr(content,1,250) preview, category, created_at, pinned, "
+    m_df = _query_api(
+        f"SELECT id, substr(content,1,250) as preview, category, created_at, pinned, "
         f"COALESCE(fitness_score, 0.5) as fitness, COALESCE(tier, 'unassigned') as tier, "
         f"COALESCE(importance, 3) as importance "
         f"FROM memories WHERE {where_sql} ORDER BY created_at DESC LIMIT 200",

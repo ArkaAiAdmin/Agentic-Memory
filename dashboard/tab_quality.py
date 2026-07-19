@@ -19,6 +19,14 @@ import streamlit as st
 
 import dashboard
 from dashboard import DARK, get_conn, query, table, try_count
+from dashboard.api_client import (
+    _api,
+    _query_api,
+    _try_count_api,
+    _table_exists_api,
+    _list_column_api,
+    _get_conn_api,
+)
 
 logger = logging.getLogger(__name__)
 ROOT = dashboard._REPO_ROOT
@@ -53,13 +61,18 @@ def render_quality():
 def _render_quality_center():
     st.subheader("Memory Quality Center")
 
-    n_total = try_count("memories")
+    n_total = _try_count_api("memories")
     try:
-        avg_fit = get_conn().execute("SELECT AVG(fitness_score) FROM memories WHERE fitness_score IS NOT NULL").fetchone()[0]
+        _c = _api()
+        if _c:
+            res = _c.query("SELECT AVG(fitness_score) as avg_fit FROM memories WHERE fitness_score IS NOT NULL")
+            avg_fit = res.get("results", [{}])[0].get("avg_fit") if res.get("results") else None
+        else:
+            avg_fit = get_conn().execute("SELECT AVG(fitness_score) FROM memories WHERE fitness_score IS NOT NULL").fetchone()[0]
     except Exception:
         avg_fit = None
-    n_low = try_count("memories", "COALESCE(fitness_score, 0.5) < 0.3")
-    n_high = try_count("memories", "COALESCE(fitness_score, 0.5) >= 0.7")
+    n_low = _try_count_api("memories", "COALESCE(fitness_score, 0.5) < 0.3")
+    n_high = _try_count_api("memories", "COALESCE(fitness_score, 0.5) >= 0.7")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total", n_total)
@@ -71,11 +84,15 @@ def _render_quality_center():
 
     f1, f2, f3 = st.columns(3)
     with f1:
-        cat_filter = st.selectbox("Category", ["all"] + sorted(
-            [r[0] for r in get_conn().execute(
+        _c = _api()
+        if _c:
+            res = _c.query("SELECT DISTINCT category FROM memories WHERE category IS NOT NULL")
+            cats = [r["category"] for r in res.get("results", []) if r.get("category")] if res.get("results") else []
+        else:
+            cats = [r[0] for r in get_conn().execute(
                 "SELECT DISTINCT category FROM memories WHERE category IS NOT NULL"
             ).fetchall() if r[0]]
-        ), key="qc_cat")
+        cat_filter = st.selectbox("Category", ["all"] + sorted(cats), key="qc_cat")
     with f2:
         tier_filter = st.selectbox("Tier", ["all", "hot", "warm", "cold"], key="qc_tier")
     with f3:
@@ -94,7 +111,7 @@ def _render_quality_center():
     where.append("COALESCE(fitness_score, 0.5) <= ?")
     params.append(fit_range[1])
 
-    df = query(
+    df = _query_api(
         f"SELECT id, category, COALESCE(fitness_score, 0.5) as fitness, "
         f"COALESCE(importance, 3) as importance, COALESCE(tier, 'warm') as tier, "
         f"pinned, SUBSTR(content, 1, 120) as preview, created_at "
@@ -133,10 +150,14 @@ def _render_quality_center():
             new_pinned = 1 if row["Pinned"] else 0
             if orig_pinned != new_pinned:
                 try:
-                    conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-                    conn.execute("UPDATE memories SET pinned=? WHERE id=?", (new_pinned, mem_id))
-                    conn.commit()
-                    conn.close()
+                    _c = _api()
+                    if _c:
+                        _c.query(f"UPDATE memories SET pinned={new_pinned} WHERE id='{mem_id}'")
+                    else:
+                        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                        conn.execute("UPDATE memories SET pinned=? WHERE id=?", (new_pinned, mem_id))
+                        conn.commit()
+                        conn.close()
                 except Exception:
                     pass
 
@@ -162,18 +183,22 @@ def _render_quality_center():
 
 def _bulk_archive(ids):
     try:
-        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
         for mid in ids:
-            row = conn.execute("SELECT * FROM memories WHERE id=?", (mid,)).fetchone()
-            if row:
-                cols = [d[1] for d in conn.execute("PRAGMA table_info(memories)").fetchall()]
-                conn.execute(
-                    f"INSERT OR IGNORE INTO memory_archive ({','.join(cols)}) SELECT * FROM memories WHERE id=?",
-                    (mid,),
-                )
-                conn.execute("DELETE FROM memories WHERE id=?", (mid,))
-        conn.commit()
-        conn.close()
+            _c = _api()
+            if _c:
+                _c.delete_memory(mid)
+            else:
+                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                row = conn.execute("SELECT * FROM memories WHERE id=?", (mid,)).fetchone()
+                if row:
+                    cols = [d[1] for d in conn.execute("PRAGMA table_info(memories)").fetchall()]
+                    conn.execute(
+                        f"INSERT OR IGNORE INTO memory_archive ({','.join(cols)}) SELECT * FROM memories WHERE id=?",
+                        (mid,),
+                    )
+                    conn.execute("DELETE FROM memories WHERE id=?", (mid,))
+                conn.commit()
+                conn.close()
         st.toast(f"Archived {len(ids)} memories", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -182,11 +207,15 @@ def _bulk_archive(ids):
 
 def _bulk_delete(ids):
     try:
-        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
         for mid in ids:
-            conn.execute("DELETE FROM memories WHERE id=?", (mid,))
-        conn.commit()
-        conn.close()
+            _c = _api()
+            if _c:
+                _c.delete_memory(mid)
+            else:
+                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                conn.execute("DELETE FROM memories WHERE id=?", (mid,))
+                conn.commit()
+                conn.close()
         st.toast(f"Deleted {len(ids)} memories", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -195,11 +224,15 @@ def _bulk_delete(ids):
 
 def _bulk_set_tier(ids, tier):
     try:
-        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
         for mid in ids:
-            conn.execute("UPDATE memories SET tier=? WHERE id=?", (tier, mid))
-        conn.commit()
-        conn.close()
+            _c = _api()
+            if _c:
+                _c.query(f"UPDATE memories SET tier='{tier}' WHERE id='{mid}'")
+            else:
+                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                conn.execute("UPDATE memories SET tier=? WHERE id=?", (tier, mid))
+                conn.commit()
+                conn.close()
         st.toast(f"Set {len(ids)} memories to {tier}", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -208,11 +241,15 @@ def _bulk_set_tier(ids, tier):
 
 def _bulk_set_category(ids, cat):
     try:
-        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
         for mid in ids:
-            conn.execute("UPDATE memories SET category=? WHERE id=?", (cat, mid))
-        conn.commit()
-        conn.close()
+            _c = _api()
+            if _c:
+                _c.query(f"UPDATE memories SET category='{cat}' WHERE id='{mid}'")
+            else:
+                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                conn.execute("UPDATE memories SET category=? WHERE id=?", (cat, mid))
+                conn.commit()
+                conn.close()
         st.toast(f"Set {len(ids)} memories to {cat}", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -224,7 +261,7 @@ def _bulk_set_category(ids, cat):
 def _render_staleness():
     st.subheader("Staleness Report")
 
-    df = query(
+    df = _query_api(
         "SELECT id, category, COALESCE(fitness_score, 0.5) as fitness, "
         "created_at, SUBSTR(content, 1, 100) as preview "
         "FROM memories ORDER BY created_at ASC"
@@ -282,7 +319,7 @@ def _render_staleness():
 def _render_impact_score():
     st.subheader("Memory Impact Score")
 
-    df = query(
+    df = _query_api(
         "SELECT id, category, COALESCE(fitness_score, 0.5) as fitness, "
         "COALESCE(pinned, 0) as pinned, created_at, "
         "SUBSTR(content, 1, 200) as preview "
@@ -353,7 +390,7 @@ def _render_impact_score():
 def _render_timeline():
     st.subheader("Memory Story Timeline")
 
-    df = query(
+    df = _query_api(
         "SELECT DATE(created_at) as day, category, COUNT(*) as cnt "
         "FROM memories WHERE created_at IS NOT NULL "
         "GROUP BY day, category ORDER BY day"
@@ -401,7 +438,7 @@ def _render_timeline():
 def _render_merge_suggestions():
     st.subheader("Memory Merge Suggestions")
 
-    df = query(
+    df = _query_api(
         "SELECT id, category, SUBSTR(content, 1, 200) as preview, "
         "COALESCE(fitness_score, 0.5) as fitness "
         "FROM memories LIMIT 300"
@@ -454,16 +491,31 @@ def _render_merge_suggestions():
 
 def _merge_memories(keep_id, remove_id):
     try:
-        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-        keep = conn.execute("SELECT content, fitness_score FROM memories WHERE id=?", (keep_id,)).fetchone()
-        remove = conn.execute("SELECT content FROM memories WHERE id=?", (remove_id,)).fetchone()
-        if keep and remove:
-            new_content = keep[0] + "\n\n---\n\n" + remove[0]
-            new_fitness = max(keep[1] or 0.5, 0.5)
-            conn.execute("UPDATE memories SET content=?, fitness_score=? WHERE id=?", (new_content, new_fitness, keep_id))
-            conn.execute("DELETE FROM memories WHERE id=?", (remove_id,))
-            conn.commit()
-        conn.close()
+        _c = _api()
+        if _c:
+            keep_res = _c.query(f"SELECT content, fitness_score FROM memories WHERE id='{keep_id}'")
+            remove_res = _c.query(f"SELECT content FROM memories WHERE id='{remove_id}'")
+            keep_data = keep_res.get("results", [{}])[0] if keep_res.get("results") else {}
+            remove_data = remove_res.get("results", [{}])[0] if remove_res.get("results") else {}
+            keep_content = keep_data.get("content", "")
+            keep_fitness = keep_data.get("fitness_score", 0.5)
+            remove_content = remove_data.get("content", "")
+            if keep_content and remove_content:
+                new_content = keep_content + "\n\n---\n\n" + remove_content
+                new_fitness = max(keep_fitness or 0.5, 0.5)
+                _c.query(f"UPDATE memories SET content='{new_content.replace(chr(39), chr(39)*2)}', fitness_score={new_fitness} WHERE id='{keep_id}'")
+                _c.query(f"DELETE FROM memories WHERE id='{remove_id}'")
+        else:
+            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+            keep = conn.execute("SELECT content, fitness_score FROM memories WHERE id=?", (keep_id,)).fetchone()
+            remove = conn.execute("SELECT content FROM memories WHERE id=?", (remove_id,)).fetchone()
+            if keep and remove:
+                new_content = keep[0] + "\n\n---\n\n" + remove[0]
+                new_fitness = max(keep[1] or 0.5, 0.5)
+                conn.execute("UPDATE memories SET content=?, fitness_score=? WHERE id=?", (new_content, new_fitness, keep_id))
+                conn.execute("DELETE FROM memories WHERE id=?", (remove_id,))
+                conn.commit()
+            conn.close()
         st.toast("Merged memories", icon="\u2705")
         st.rerun()
     except Exception as e:
@@ -548,19 +600,19 @@ def _render_search_sandbox():
 def _render_gap_detector():
     st.subheader("Memory Gap Detector")
 
-    if not table("kg_entities"):
+    if not _table_exists_api("kg_entities"):
         st.info("No KG entities. Run KG backfill first.")
         return
 
     if st.button("\U0001f50d Scan for Gaps", type="primary"):
         with st.spinner("Scanning for knowledge gaps..."):
-            entities = query("SELECT id, name, entity_type FROM kg_entities ORDER BY mentions DESC LIMIT 100")
+            entities = _query_api("SELECT id, name, entity_type FROM kg_entities ORDER BY mentions DESC LIMIT 100")
             if entities is None or entities.empty:
                 st.info("No entities")
                 return
 
             existing_edges = set()
-            edges = query("SELECT source_id, target_id FROM kg_edges")
+            edges = _query_api("SELECT source_id, target_id FROM kg_edges")
             if edges is not None and not edges.empty:
                 for _, r in edges.iterrows():
                     existing_edges.add((r["source_id"], r["target_id"]))
@@ -579,7 +631,7 @@ def _render_gap_detector():
                     name_b = ent_names[j]
                     if not name_a or not name_b or name_a == name_b:
                         continue
-                    co_occur = try_count("memories", f"content LIKE '%{name_a}%' AND content LIKE '%{name_b}%'")
+                    co_occur = _try_count_api("memories", f"content LIKE '%{name_a}%' AND content LIKE '%{name_b}%'")
                     if co_occur >= 2:
                         gaps.append((name_a, name_b, co_occur, entities.iloc[i]["entity_type"], entities.iloc[j]["entity_type"]))
 
@@ -588,8 +640,8 @@ def _render_gap_detector():
 
     gaps = st.session_state.get("gaps", [])
     if gaps:
-        total_edges = try_count("kg_edges")
-        total_entities = try_count("kg_entities")
+        total_edges = _try_count_api("kg_edges")
+        total_entities = _try_count_api("kg_entities")
         coverage = (total_edges / (total_entities * (total_entities - 1) / 2) * 100) if total_entities > 1 else 0
 
         c1, c2, c3 = st.columns(3)
@@ -612,15 +664,22 @@ def _render_gap_detector():
             )
             if st.button(f"\U0001f517 Create Edge", key=f"gap_edge_{i}", use_container_width=False):
                 try:
-                    conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                    _c = _api()
                     a_id = entities[entities["name"] == a]["id"].iloc[0]
                     b_id = entities[entities["name"] == b]["id"].iloc[0]
-                    conn.execute(
-                        "INSERT INTO kg_edges (source_id, target_id, relation, weight) VALUES (?, ?, 'co-occurs', ?)",
-                        (int(a_id), int(b_id), count * 0.1),
-                    )
-                    conn.commit()
-                    conn.close()
+                    if _c:
+                        _c.query(
+                            f"INSERT INTO kg_edges (source_id, target_id, relation, weight) "
+                            f"VALUES ({int(a_id)}, {int(b_id)}, 'co-occurs', {count * 0.1})"
+                        )
+                    else:
+                        conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                        conn.execute(
+                            "INSERT INTO kg_edges (source_id, target_id, relation, weight) VALUES (?, ?, 'co-occurs', ?)",
+                            (int(a_id), int(b_id), count * 0.1),
+                        )
+                        conn.commit()
+                        conn.close()
                     st.toast(f"Created edge: {a} \u2194 {b}", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -638,12 +697,12 @@ def _render_optimize():
 
     # Before stats
     st.markdown("#### Current State")
-    n_mem = try_count("memories")
+    n_mem = _try_count_api("memories")
     db_size = dashboard.DB.stat().st_size / (1024 * 1024) if dashboard.DB and dashboard.DB.exists() else 0
-    n_emb = try_count("memory_embeddings")
-    n_chunks = try_count("memory_chunks")
-    n_entities = try_count("kg_entities")
-    n_edges = try_count("kg_edges")
+    n_emb = _try_count_api("memory_embeddings")
+    n_chunks = _try_count_api("memory_chunks")
+    n_entities = _try_count_api("kg_entities")
+    n_edges = _try_count_api("kg_edges")
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Memories", n_mem)
@@ -691,11 +750,11 @@ def _render_optimize():
     if st.session_state.get("opt_done"):
         st.divider()
         st.markdown("#### After Optimization")
-        n_mem2 = try_count("memories")
+        n_mem2 = _try_count_api("memories")
         db_size2 = dashboard.DB.stat().st_size / (1024 * 1024) if dashboard.DB and dashboard.DB.exists() else 0
-        n_emb2 = try_count("memory_embeddings")
-        n_entities2 = try_count("kg_entities")
-        n_edges2 = try_count("kg_edges")
+        n_emb2 = _try_count_api("memory_embeddings")
+        n_entities2 = _try_count_api("kg_entities")
+        n_edges2 = _try_count_api("kg_edges")
 
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Memories", n_mem2, delta=n_mem2 - n_mem)
@@ -708,9 +767,13 @@ def _render_optimize():
 def _opt_compact():
     with st.spinner("Compacting database..."):
         try:
-            conn = sqlite3.connect(str(dashboard.DB), timeout=30)
-            conn.execute("VACUUM")
-            conn.close()
+            _c = _api()
+            if _c:
+                _c.compact()
+            else:
+                conn = sqlite3.connect(str(dashboard.DB), timeout=30)
+                conn.execute("VACUUM")
+                conn.close()
             st.toast("Database compacted", icon="\u2705")
         except Exception as e:
             st.error(f"Compact failed: {e}")
@@ -753,28 +816,33 @@ def _opt_rebuild_embeddings():
 def _opt_dedup_kg():
     with st.spinner("Deduplicating KG entities..."):
         try:
-            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-            # Find duplicate entities by name
-            dupes = conn.execute(
-                "SELECT name, COUNT(*) cnt, GROUP_CONCAT(id) ids "
-                "FROM kg_entities GROUP BY LOWER(name) HAVING cnt > 1"
-            ).fetchall()
-            merged = 0
-            for name, cnt, ids_str in dupes:
-                ids = [int(x) for x in ids_str.split(",")]
-                keep = ids[0]
-                for remove_id in ids[1:]:
-                    conn.execute("UPDATE kg_edges SET source_id=? WHERE source_id=?", (keep, remove_id))
-                    conn.execute("UPDATE kg_edges SET target_id=? WHERE target_id=?", (keep, remove_id))
-                    conn.execute("DELETE FROM kg_entities WHERE id=?", (remove_id,))
-                    merged += 1
-            # Dedup edges
-            conn.execute(
-                "DELETE FROM kg_edges WHERE id NOT IN ("
-                "SELECT MAX(id) FROM kg_edges GROUP BY source_id, target_id, relation)"
-            )
-            conn.commit()
-            conn.close()
+            _c = _api()
+            if _c:
+                res = _c.kg_dedup()
+                merged = res.get("merged", 0) if isinstance(res, dict) else 0
+            else:
+                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                # Find duplicate entities by name
+                dupes = conn.execute(
+                    "SELECT name, COUNT(*) cnt, GROUP_CONCAT(id) ids "
+                    "FROM kg_entities GROUP BY LOWER(name) HAVING cnt > 1"
+                ).fetchall()
+                merged = 0
+                for name, cnt, ids_str in dupes:
+                    ids = [int(x) for x in ids_str.split(",")]
+                    keep = ids[0]
+                    for remove_id in ids[1:]:
+                        conn.execute("UPDATE kg_edges SET source_id=? WHERE source_id=?", (keep, remove_id))
+                        conn.execute("UPDATE kg_edges SET target_id=? WHERE target_id=?", (keep, remove_id))
+                        conn.execute("DELETE FROM kg_entities WHERE id=?", (remove_id,))
+                        merged += 1
+                # Dedup edges
+                conn.execute(
+                    "DELETE FROM kg_edges WHERE id NOT IN ("
+                    "SELECT MAX(id) FROM kg_edges GROUP BY source_id, target_id, relation)"
+                )
+                conn.commit()
+                conn.close()
             st.toast(f"Merged {merged} duplicate entities", icon="\u2705")
         except Exception as e:
             st.error(f"Dedup failed: {e}")
@@ -783,28 +851,33 @@ def _opt_dedup_kg():
 def _opt_archive_stale():
     with st.spinner("Archiving stale memories..."):
         try:
-            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
-            # Create archive table if not exists
-            cols = conn.execute("PRAGMA table_info(memories)").fetchall()
-            col_defs = ", ".join(f"{c[1]} {c[2]}" for c in cols)
-            conn.execute(f"CREATE TABLE IF NOT EXISTS memory_archive ({col_defs})")
-            # Find stale memories
-            stale = conn.execute(
-                "SELECT id FROM memories "
-                "WHERE COALESCE(fitness_score, 0.5) < 0.3 "
-                "AND created_at < datetime('now', '-90 days')"
-            ).fetchall()
-            archived = 0
-            for (mid,) in stale:
-                row = conn.execute("SELECT * FROM memories WHERE id=?", (mid,)).fetchone()
-                if row:
-                    col_names = [c[1] for c in cols]
-                    placeholders = ",".join("?" for _ in col_names)
-                    conn.execute(f"INSERT OR IGNORE INTO memory_archive ({','.join(col_names)}) VALUES ({placeholders})", row)
-                    conn.execute("DELETE FROM memories WHERE id=?", (mid,))
-                    archived += 1
-            conn.commit()
-            conn.close()
+            _c = _api()
+            if _c:
+                res = _c.archive_stale()
+                archived = res.get("archived", 0) if isinstance(res, dict) else 0
+            else:
+                conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+                # Create archive table if not exists
+                cols = conn.execute("PRAGMA table_info(memories)").fetchall()
+                col_defs = ", ".join(f"{c[1]} {c[2]}" for c in cols)
+                conn.execute(f"CREATE TABLE IF NOT EXISTS memory_archive ({col_defs})")
+                # Find stale memories
+                stale = conn.execute(
+                    "SELECT id FROM memories "
+                    "WHERE COALESCE(fitness_score, 0.5) < 0.3 "
+                    "AND created_at < datetime('now', '-90 days')"
+                ).fetchall()
+                archived = 0
+                for (mid,) in stale:
+                    row = conn.execute("SELECT * FROM memories WHERE id=?", (mid,)).fetchone()
+                    if row:
+                        col_names = [c[1] for c in cols]
+                        placeholders = ",".join("?" for _ in col_names)
+                        conn.execute(f"INSERT OR IGNORE INTO memory_archive ({','.join(col_names)}) VALUES ({placeholders})", row)
+                        conn.execute("DELETE FROM memories WHERE id=?", (mid,))
+                        archived += 1
+                conn.commit()
+                conn.close()
             st.toast(f"Archived {archived} stale memories", icon="\u2705")
         except Exception as e:
             st.error(f"Archive failed: {e}")

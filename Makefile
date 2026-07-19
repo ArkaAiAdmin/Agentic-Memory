@@ -41,6 +41,9 @@ CONFIG_DRIFT_TYPECHECK_SURFACE := \
 lint: ## Ruff over the config-drift surface (scoped, not repo-wide)
 	$(PYTHON) -m ruff check $(CONFIG_DRIFT_SURFACE)
 
+lint-dashboard: ## Phase 1.6 gate: dashboard tabs must route DB via API
+	$(PYTHON) eval/lint_dashboard_db_access.py
+
 typecheck: ## Mypy over the config-drift surface (scoped, not repo-wide)
 	$(PYTHON) -m mypy --follow-imports=silent $(CONFIG_DRIFT_TYPECHECK_SURFACE)
 

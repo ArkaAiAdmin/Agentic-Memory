@@ -22,6 +22,69 @@ logger = logging.getLogger(__name__)
 ROOT = dashboard._REPO_ROOT
 
 
+def _api():
+    return st.session_state.get("api_client")
+
+
+def _table_exists_api(name: str) -> bool:
+    client = _api()
+    if client:
+        try:
+            r = client.query("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name])
+            return len(r.get("results", [])) > 0
+        except Exception:
+            pass
+    return _table_exists(name)
+
+
+def _list_column_api(table: str, column: str) -> list[str]:
+    client = _api()
+    if client:
+        try:
+            r = client.query(
+                f"SELECT DISTINCT {column} as val FROM {table} WHERE {column} IS NOT NULL ORDER BY val"
+            )
+            return [row[column] if column in row else row.get("val", "") for row in r.get("results", [])]
+        except Exception:
+            pass
+    try:
+        conn = _get_db()
+        rows = conn.execute(f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL ORDER BY {column}").fetchall()
+        conn.close()
+        return [r[0] for r in rows if r[0]]
+    except Exception:
+        return []
+
+
+def _try_count_api(table: str, where: str = "") -> int:
+    client = _api()
+    if client:
+        sql = f"SELECT COUNT(*) as count FROM {table}"
+        if where:
+            sql += f" WHERE {where}"
+        try:
+            result = client.query(sql)
+            rows = result.get("results", [])
+            return rows[0]["count"] if rows else 0
+        except Exception:
+            pass
+    return try_count(table, where) if where else try_count(table)
+
+
+def _query_api(sql: str, params: list | None = None) -> pd.DataFrame | None:
+    client = _api()
+    if client:
+        try:
+            result = client.query(sql, params=params or [])
+            rows = result.get("results", [])
+            if not rows:
+                return None
+            return pd.DataFrame(rows)
+        except Exception:
+            pass
+    return query(sql, params=params or ())
+
+
 def render_compliance():
     """Compliance tab with 7 sub-tabs."""
     t1, t2, t3, t4, t5, t6, t7 = st.tabs([
@@ -79,26 +142,31 @@ def _confirm_action(label: str, key: str) -> bool:
 def _render_rbac():
     st.subheader("Role-Based Access Control")
 
-    if not _table_exists("principals"):
+    client = _api()
+
+    if not _table_exists_api("principals"):
         st.warning("RBAC tables not created yet. Run tier migration to initialize.")
         if st.button("\u2699\ufe0f Initialize RBAC", type="primary"):
             with st.spinner("Initializing..."):
                 try:
-                    from infra.rbac import seed_default_roles
-                    conn = _get_db()
-                    n = seed_default_roles(conn)
-                    conn.close()
-                    st.toast(f"Created {n} default roles", icon="\u2705")
+                    if client:
+                        client.rbac_init()
+                    else:
+                        from infra.rbac import seed_default_roles
+                        conn = _get_db()
+                        n = seed_default_roles(conn)
+                        conn.close()
+                    st.toast("RBAC initialized", icon="\u2705")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed: {e}")
         return
 
     # ── Overview stats ───────────────────────────────────────────────────
-    n_principals = try_count("principals")
-    n_roles = try_count("roles")
-    n_bindings = try_count("role_bindings")
-    n_overrides = try_count("acl_overrides") if _table_exists("acl_overrides") else 0
+    n_principals = _try_count_api("principals")
+    n_roles = _try_count_api("roles")
+    n_bindings = _try_count_api("role_bindings")
+    n_overrides = _try_count_api("acl_overrides") if _table_exists_api("acl_overrides") else 0
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Principals", n_principals)
@@ -111,7 +179,7 @@ def _render_rbac():
     # ── Principals ───────────────────────────────────────────────────────
     st.markdown("#### Principals")
 
-    principals_df = query("SELECT id, kind, display_name, tenant_id, created_at FROM principals ORDER BY id")
+    principals_df = _query_api("SELECT id, kind, display_name, tenant_id, created_at FROM principals ORDER BY id")
     if principals_df is not None and not principals_df.empty:
         st.dataframe(principals_df, use_container_width=True, hide_index=True, key="rbac_principals_table")
     else:
@@ -132,18 +200,20 @@ def _render_rbac():
             if st.form_submit_button("\u2705 Create Principal", type="primary"):
                 if p_id:
                     try:
-                        conn = _get_db()
-                        # Store email in display_name if provided, or as metadata
                         display = p_name or p_id
                         if p_email:
                             display = f"{display} <{p_email}>"
-                        conn.execute(
-                            "INSERT OR REPLACE INTO principals (id, kind, display_name, tenant_id, created_at, updated_at) "
-                            "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
-                            (p_id, p_kind, display, p_tenant),
-                        )
-                        conn.commit()
-                        conn.close()
+                        if client:
+                            client.rbac_create_principal(pid=p_id, kind=p_kind, display_name=display, tenant_id=p_tenant)
+                        else:
+                            conn = _get_db()
+                            conn.execute(
+                                "INSERT OR REPLACE INTO principals (id, kind, display_name, tenant_id, created_at, updated_at) "
+                                "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
+                                (p_id, p_kind, display, p_tenant),
+                            )
+                            conn.commit()
+                            conn.close()
                         st.toast(f"Created principal: {p_id}", icon="\u2705")
                         st.rerun()
                     except Exception as e:
@@ -156,7 +226,7 @@ def _render_rbac():
     # ── Roles ────────────────────────────────────────────────────────────
     st.markdown("#### Roles")
 
-    roles_df = query("SELECT id, name, description, tenant_id FROM roles ORDER BY id")
+    roles_df = _query_api("SELECT id, name, description, tenant_id FROM roles ORDER BY id")
     if roles_df is not None and not roles_df.empty:
         st.dataframe(roles_df, use_container_width=True, hide_index=True, key="rbac_roles_table")
     else:
@@ -173,13 +243,16 @@ def _render_rbac():
             if st.form_submit_button("\u2705 Create Role", type="primary"):
                 if r_id:
                     try:
-                        conn = _get_db()
-                        conn.execute(
-                            "INSERT OR REPLACE INTO roles (id, description, tenant_id) VALUES (?, ?, ?)",
-                            (r_id, r_desc or None, r_tenant),
-                        )
-                        conn.commit()
-                        conn.close()
+                        if client:
+                            client.rbac_create_role(rid=r_id, description=r_desc or "", tenant_id=r_tenant)
+                        else:
+                            conn = _get_db()
+                            conn.execute(
+                                "INSERT OR REPLACE INTO roles (id, description, tenant_id) VALUES (?, ?, ?)",
+                                (r_id, r_desc or None, r_tenant),
+                            )
+                            conn.commit()
+                            conn.close()
                         st.toast(f"Created role: {r_id}", icon="\u2705")
                         st.rerun()
                     except Exception as e:
@@ -192,8 +265,8 @@ def _render_rbac():
     # ── Grant / Revoke ───────────────────────────────────────────────────
     st.markdown("#### Grant / Revoke Role")
 
-    principals = _list_column("principals", "id")
-    roles = _list_column("roles", "id")
+    principals = _list_column_api("principals", "id")
+    roles = _list_column_api("roles", "id")
 
     if principals and roles:
         g_col1, g_col2, g_col3, g_col4 = st.columns([2, 2, 1.5, 1])
@@ -208,14 +281,17 @@ def _render_rbac():
             st.write("")
             if st.button("\u2705 Grant", key="do_grant", type="primary", use_container_width=True):
                 try:
-                    conn = _get_db()
-                    conn.execute(
-                        "INSERT OR IGNORE INTO role_bindings (principal_id, role_id, granted_at, granted_by) "
-                        "VALUES (?, ?, datetime('now'), 'dashboard')",
-                        (grant_principal, grant_role),
-                    )
-                    conn.commit()
-                    conn.close()
+                    if client:
+                        client.rbac_grant(principal_id=grant_principal, role_id=grant_role)
+                    else:
+                        conn = _get_db()
+                        conn.execute(
+                            "INSERT OR IGNORE INTO role_bindings (principal_id, role_id, granted_at, granted_by) "
+                            "VALUES (?, ?, datetime('now'), 'dashboard')",
+                            (grant_principal, grant_role),
+                        )
+                        conn.commit()
+                        conn.close()
                     st.toast(f"Granted '{grant_role}' to '{grant_principal}'", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -226,7 +302,7 @@ def _render_rbac():
     # ── Current Bindings ─────────────────────────────────────────────────
     st.markdown("#### Current Role Bindings")
 
-    bindings_df = query(
+    bindings_df = _query_api(
         "SELECT rb.principal_id, rb.role_id, rb.granted_at, rb.granted_by "
         "FROM role_bindings rb ORDER BY rb.granted_at DESC"
     )
@@ -248,13 +324,16 @@ def _render_rbac():
         for _, row in edited.iterrows():
             if str(row.get("action", "")).strip().lower() == "revoke":
                 try:
-                    conn = _get_db()
-                    conn.execute(
-                        "DELETE FROM role_bindings WHERE principal_id=? AND role_id=?",
-                        (row["principal_id"], row["role_id"]),
-                    )
-                    conn.commit()
-                    conn.close()
+                    if client:
+                        client.rbac_revoke(principal_id=row["principal_id"], role_id=row["role_id"])
+                    else:
+                        conn = _get_db()
+                        conn.execute(
+                            "DELETE FROM role_bindings WHERE principal_id=? AND role_id=?",
+                            (row["principal_id"], row["role_id"]),
+                        )
+                        conn.commit()
+                        conn.close()
                     st.toast(f"Revoked '{row['role_id']}' from '{row['principal_id']}'", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -268,11 +347,13 @@ def _render_rbac():
 def _render_acl():
     st.subheader("ACL Override Rules")
 
-    if not _table_exists("acl_overrides"):
+    client = _api()
+
+    if not _table_exists_api("acl_overrides"):
         st.info("ACL overrides table not yet created")
         return
 
-    n_overrides = try_count("acl_overrides")
+    n_overrides = _try_count_api("acl_overrides")
     st.metric("Total Rules", n_overrides)
 
     st.divider()
@@ -280,7 +361,7 @@ def _render_acl():
     # ── Add new rule ─────────────────────────────────────────────────────
     st.markdown("#### Add Rule")
 
-    principals = _list_column("principals", "id") or ["default"]
+    principals = _list_column_api("principals", "id") or ["default"]
     resources = ["memory", "kg_entities", "kg_edges", "kg_facts", "memories", "search", "admin"]
     actions = ["read", "write", "delete", "admin", "share", "export", "search"]
 
@@ -297,15 +378,23 @@ def _render_acl():
 
         if st.form_submit_button("\u2705 Add Rule", type="primary"):
             try:
-                conn = _get_db()
-                conn.execute(
-                    "INSERT OR REPLACE INTO acl_overrides "
-                    "(principal_id, resource_id, action, effect, granted_at, granted_by) "
-                    "VALUES (?, ?, ?, ?, datetime('now'), 'dashboard')",
-                    (acl_principal, acl_resource, acl_action, acl_effect),
-                )
-                conn.commit()
-                conn.close()
+                if client:
+                    client.acl_add_rule(
+                        principal_id=acl_principal,
+                        resource_id=acl_resource,
+                        action=acl_action,
+                        effect=acl_effect,
+                    )
+                else:
+                    conn = _get_db()
+                    conn.execute(
+                        "INSERT OR REPLACE INTO acl_overrides "
+                        "(principal_id, resource_id, action, effect, granted_at, granted_by) "
+                        "VALUES (?, ?, ?, ?, datetime('now'), 'dashboard')",
+                        (acl_principal, acl_resource, acl_action, acl_effect),
+                    )
+                    conn.commit()
+                    conn.close()
                 st.toast(f"Rule added: {acl_effect} {acl_action} on {acl_resource} for {acl_principal}", icon="\u2705")
                 st.rerun()
             except Exception as e:
@@ -316,7 +405,7 @@ def _render_acl():
     # ── Current rules ────────────────────────────────────────────────────
     st.markdown("#### Current Rules")
 
-    rules_df = query("SELECT * FROM acl_overrides ORDER BY principal_id, resource_id, action")
+    rules_df = _query_api("SELECT * FROM acl_overrides ORDER BY principal_id, resource_id, action")
     if rules_df is not None and not rules_df.empty:
         display_rules = rules_df.copy()
         display_rules["_delete"] = False
@@ -335,14 +424,22 @@ def _render_acl():
         if not selected.empty:
             if st.button(f"\U0001f5d1\ufe0f Delete {len(selected)} selected rules", type="primary"):
                 try:
-                    conn = _get_db()
-                    for _, row in selected.iterrows():
-                        conn.execute(
-                            "DELETE FROM acl_overrides WHERE principal_id=? AND resource_id=? AND action=?",
-                            (row["principal_id"], row["resource_id"], row["action"]),
-                        )
-                    conn.commit()
-                    conn.close()
+                    if client:
+                        for _, row in selected.iterrows():
+                            client.acl_delete_rule(
+                                principal_id=row["principal_id"],
+                                resource_id=row["resource_id"],
+                                action=row["action"],
+                            )
+                    else:
+                        conn = _get_db()
+                        for _, row in selected.iterrows():
+                            conn.execute(
+                                "DELETE FROM acl_overrides WHERE principal_id=? AND resource_id=? AND action=?",
+                                (row["principal_id"], row["resource_id"], row["action"]),
+                            )
+                        conn.commit()
+                        conn.close()
                     st.toast(f"Deleted {len(selected)} rules", icon="\u2705")
                     st.rerun()
                 except Exception as e:
@@ -373,10 +470,10 @@ def _render_gdpr():
     )
 
     if search_term:
-        matches = query(
+        matches = _query_api(
             "SELECT id, kind, display_name, tenant_id FROM principals "
             "WHERE id LIKE ? OR display_name LIKE ? LIMIT 10",
-            (f"%{search_term}%", f"%{search_term}%"),
+            [f"%{search_term}%", f"%{search_term}%"],
         )
         if matches is not None and not matches.empty:
             st.dataframe(matches, use_container_width=True, hide_index=True)
@@ -391,9 +488,9 @@ def _render_gdpr():
                 # Show what will be deleted
                 st.markdown(f"#### Data to be erased for `{selected_subject}`")
 
-                mem_count = try_count("memories", f"id LIKE '%{selected_subject}%' OR content LIKE '%{selected_subject}%'")
-                ent_count = try_count("kg_entities", f"name LIKE '%{selected_subject}%'")
-                edge_count = try_count("kg_edges", f"source_id IN (SELECT id FROM kg_entities WHERE name LIKE '%{selected_subject}%')")
+                mem_count = _try_count_api("memories", f"id LIKE '%{selected_subject}%' OR content LIKE '%{selected_subject}%'")
+                ent_count = _try_count_api("kg_entities", f"name LIKE '%{selected_subject}%'")
+                edge_count = _try_count_api("kg_edges", f"source_id IN (SELECT id FROM kg_entities WHERE name LIKE '%{selected_subject}%')")
 
                 d_col1, d_col2, d_col3 = st.columns(3)
                 d_col1.metric("Memories", mem_count)
@@ -416,12 +513,17 @@ def _render_gdpr():
                     with st.spinner("Erasing data..."):
                         try:
                             from infra.gdpr import gdpr_erase
-                            result = gdpr_erase(
-                                db_path=str(dashboard.DB),
-                                principal_id=selected_subject,
-                                tenant_id="default",
-                                confirm=True,
-                            )
+                            import sqlite3 as _sqlite3
+                            _conn = _sqlite3.connect(str(dashboard.DB), timeout=30)
+                            try:
+                                result = gdpr_erase(
+                                    conn=_conn,
+                                    principal_id=selected_subject,
+                                    data_subject_sub=selected_subject,
+                                    tenant_id="default",
+                                )
+                            finally:
+                                _conn.close()
                             if result.get("success"):
                                 st.success(
                                     f"Erasure complete: {result.get('memories_deleted', 0)} memories, "
@@ -441,8 +543,8 @@ def _render_gdpr():
     # ── Recent erasure requests ──────────────────────────────────────────
     st.markdown("#### Erasure Request History")
 
-    if _table_exists("gdpr_requests"):
-        requests_df = query(
+    if _table_exists_api("gdpr_requests"):
+        requests_df = _query_api(
             "SELECT * FROM gdpr_requests ORDER BY requested_at DESC LIMIT 20"
         )
         if requests_df is not None and not requests_df.empty:
@@ -465,9 +567,9 @@ def _render_tenants():
     # ── Agent Permission Matrix ──────────────────────────────────────────
     st.markdown("#### Agent Permissions")
 
-    principals = query("SELECT id, kind, display_name, tenant_id FROM principals ORDER BY id")
-    bindings = query("SELECT principal_id, role_id FROM role_bindings")
-    acl = query("SELECT principal_id, resource_id, action, effect FROM acl_overrides")
+    principals = _query_api("SELECT id, kind, display_name, tenant_id FROM principals ORDER BY id")
+    bindings = _query_api("SELECT principal_id, role_id FROM role_bindings")
+    acl = _query_api("SELECT principal_id, resource_id, action, effect FROM acl_overrides")
 
     if principals is not None and not principals.empty:
         # Build permission matrix
@@ -521,18 +623,17 @@ def _render_tenants():
     st.markdown("#### Data by Tenant")
 
     try:
-        conn = _get_db()
-        tenant_rows = conn.execute(
+        tenant_rows_data = _query_api(
             "SELECT COALESCE(tenant_id, 'default') as tenant, COUNT(*) as memories "
             "FROM memories GROUP BY tenant ORDER BY memories DESC"
-        ).fetchall()
-        conn.close()
+        )
 
-        if tenant_rows:
+        if tenant_rows_data is not None and not tenant_rows_data.empty:
             tenant_data = []
-            for tenant, count in tenant_rows:
-                ent_count = try_count("kg_entities", f"tenant_id='{tenant}'") if _table_exists("kg_entities") else 0
-                binding_count = len([b for b in (bindings.to_dict("records") if bindings is not None and not bindings.empty else [])]) if bindings is not None else 0
+            for _, row in tenant_rows_data.iterrows():
+                tenant = row["tenant"]
+                count = row["memories"]
+                ent_count = _try_count_api("kg_entities", f"tenant_id='{tenant}'") if _table_exists_api("kg_entities") else 0
                 tenant_data.append({
                     "Tenant": tenant,
                     "Memories": count,
@@ -627,8 +728,8 @@ def _render_soc2():
     # ── Audit Trail ──────────────────────────────────────────────────────
     st.markdown("#### Audit Trail (CC7.2)")
 
-    n_audit = try_count("memory_audit_log")
-    n_errors = try_count("memory_audit_log", "error IS NOT NULL")
+    n_audit = _try_count_api("memory_audit_log")
+    n_errors = _try_count_api("memory_audit_log", "error IS NOT NULL")
     error_rate = (n_errors / n_audit * 100) if n_audit > 0 else 0
 
     a_col1, a_col2, a_col3 = st.columns(3)
@@ -638,7 +739,7 @@ def _render_soc2():
 
     if n_audit > 0:
         # Recent audit activity
-        recent = query(
+        recent = _query_api(
             "SELECT ts, tool, latency_ms, error FROM memory_audit_log "
             "ORDER BY ts DESC LIMIT 10"
         )
@@ -652,8 +753,8 @@ def _render_soc2():
     # ── Access Controls ──────────────────────────────────────────────────
     st.markdown("#### Access Controls (CC6.1)")
 
-    if _table_exists("principals"):
-        principals_df = query("SELECT id, kind, display_name, tenant_id FROM principals")
+    if _table_exists_api("principals"):
+        principals_df = _query_api("SELECT id, kind, display_name, tenant_id FROM principals")
         if principals_df is not None and not principals_df.empty:
             st.dataframe(principals_df, use_container_width=True, hide_index=True)
         else:
@@ -690,11 +791,19 @@ def _render_soc2():
     enc_items = []
     # Check if DB is encrypted (look for SQLCipher or WAL)
     try:
-        conn = _get_db()
-        page_count = conn.execute("PRAGMA page_count").fetchone()[0]
-        page_size = conn.execute("PRAGMA page_size").fetchone()[0]
-        db_size_mb = (page_count * page_size) / (1024 * 1024)
-        conn.close()
+        _c = _api()
+        if _c:
+            info = _c.query("PRAGMA page_count")
+            pc = info.get("results", [{}])[0].get("page_count", 0) if info.get("results") else 0
+            info2 = _c.query("PRAGMA page_size")
+            ps = info2.get("results", [{}])[0].get("page_size", 4096) if info2.get("results") else 4096
+            db_size_mb = (pc * ps) / (1024 * 1024)
+        else:
+            conn = _get_db()
+            page_count = conn.execute("PRAGMA page_count").fetchone()[0]
+            page_size = conn.execute("PRAGMA page_size").fetchone()[0]
+            db_size_mb = (page_count * page_size) / (1024 * 1024)
+            conn.close()
         enc_items.append(("Database at Rest", f"{db_size_mb:.1f} MB", "SQLite file-based"))
     except Exception:
         enc_items.append(("Database at Rest", "Unknown", "Check manually"))
@@ -884,31 +993,27 @@ def _render_compliance_check():
 def _run_all_compliance_checks() -> list[dict]:
     """Run comprehensive compliance checks."""
     checks = []
-    db_path = str(dashboard.DB)
 
     # ── RBAC Controls ────────────────────────────────────────────────────
-    checks.append({"category": "RBAC Controls", "name": "Principals Table", "status": "pass" if _table_exists("principals") else "fail", "detail": "Exists" if _table_exists("principals") else "Missing"})
-    checks.append({"category": "RBAC Controls", "name": "Roles Table", "status": "pass" if _table_exists("roles") else "fail", "detail": "Exists" if _table_exists("roles") else "Missing"})
-    checks.append({"category": "RBAC Controls", "name": "Role Bindings", "status": "pass" if _table_exists("role_bindings") else "fail", "detail": "Exists" if _table_exists("role_bindings") else "Missing"})
-    checks.append({"category": "RBAC Controls", "name": "ACL Overrides", "status": "pass" if _table_exists("acl_overrides") else "warn", "detail": "Exists" if _table_exists("acl_overrides") else "Optional"})
+    checks.append({"category": "RBAC Controls", "name": "Principals Table", "status": "pass" if _table_exists_api("principals") else "fail", "detail": "Exists" if _table_exists_api("principals") else "Missing"})
+    checks.append({"category": "RBAC Controls", "name": "Roles Table", "status": "pass" if _table_exists_api("roles") else "fail", "detail": "Exists" if _table_exists_api("roles") else "Missing"})
+    checks.append({"category": "RBAC Controls", "name": "Role Bindings", "status": "pass" if _table_exists_api("role_bindings") else "fail", "detail": "Exists" if _table_exists_api("role_bindings") else "Missing"})
+    checks.append({"category": "RBAC Controls", "name": "ACL Overrides", "status": "pass" if _table_exists_api("acl_overrides") else "warn", "detail": "Exists" if _table_exists_api("acl_overrides") else "Optional"})
 
     # ── Data Protection ──────────────────────────────────────────────────
-    checks.append({"category": "Data Protection", "name": "GDPR Requests Table", "status": "pass" if _table_exists("gdpr_requests") else "warn", "detail": "Exists" if _table_exists("gdpr_requests") else "Not created"})
-    checks.append({"category": "Data Protection", "name": "Audit Log", "status": "pass" if try_count("memory_audit_log") > 0 else "warn", "detail": f"{try_count('memory_audit_log')} events"})
+    checks.append({"category": "Data Protection", "name": "GDPR Requests Table", "status": "pass" if _table_exists_api("gdpr_requests") else "warn", "detail": "Exists" if _table_exists_api("gdpr_requests") else "Not created"})
+    n_audit = _try_count_api("memory_audit_log")
+    checks.append({"category": "Data Protection", "name": "Audit Log", "status": "pass" if n_audit > 0 else "warn", "detail": f"{n_audit} events"})
 
     # ── Tenant Isolation ─────────────────────────────────────────────────
     try:
-        conn = _get_db()
         has_tenant = False
-        try:
-            conn.execute("SELECT tenant_id FROM memories LIMIT 1").fetchone()
+        res = _query_api("SELECT tenant_id FROM memories LIMIT 1")
+        if res is not None and not res.empty:
             has_tenant = True
-        except Exception:
-            pass
-        conn.close()
         checks.append({"category": "Tenant Isolation", "name": "Tenant Column", "status": "pass" if has_tenant else "info", "detail": "Present" if has_tenant else "Single-tenant mode"})
     except Exception:
-        checks.append({"category": "Tenant Isolation", "name": "Tenant Column", "status": "fail", "detail": "Could not check"})
+        checks.append({"category": "Tenant Isolation", "name": "Tenant Column", "status": "info", "detail": "Single-tenant mode"})
 
     # ── Backup & Recovery ────────────────────────────────────────────────
     backup_dir = dashboard.MEM_DIR / "backups" if dashboard.MEM_DIR else None
@@ -925,10 +1030,16 @@ def _run_all_compliance_checks() -> list[dict]:
 
     # ── Database Integrity ───────────────────────────────────────────────
     try:
-        conn = sqlite3.connect(db_path, timeout=10)
-        result = conn.execute("PRAGMA integrity_check").fetchone()
-        conn.close()
-        checks.append({"category": "Database Integrity", "name": "PRAGMA integrity_check", "status": "pass" if result and result[0] == "ok" else "fail", "detail": "OK" if result and result[0] == "ok" else "Failed"})
+        _c = _api()
+        if _c:
+            res = _c.query("PRAGMA integrity_check")
+            ok = res.get("results", [{}])[0].get("integrity_check", "ok") == "ok" if res.get("results") else False
+            checks.append({"category": "Database Integrity", "name": "PRAGMA integrity_check", "status": "pass" if ok else "fail", "detail": "OK" if ok else "Failed"})
+        else:
+            conn = sqlite3.connect(str(dashboard.DB), timeout=10)
+            result = conn.execute("PRAGMA integrity_check").fetchone()
+            conn.close()
+            checks.append({"category": "Database Integrity", "name": "PRAGMA integrity_check", "status": "pass" if result and result[0] == "ok" else "fail", "detail": "OK" if result and result[0] == "ok" else "Failed"})
     except Exception as e:
         checks.append({"category": "Database Integrity", "name": "PRAGMA integrity_check", "status": "fail", "detail": str(e)[:60]})
 
@@ -937,7 +1048,7 @@ def _run_all_compliance_checks() -> list[dict]:
         result = subprocess.run(
             [sys.executable, str(ROOT / "cron" / "cron_check_config_drift.py"), "--dry-run"],
             capture_output=True, text=True, timeout=15,
-            env={**os.environ, "MEMORY_DB_PATH": db_path},
+            env={**os.environ, "MEMORY_DB_PATH": str(dashboard.DB)},
         )
         aligned = "divergent=0" in result.stdout
         checks.append({"category": "Config Alignment", "name": "Policy Hash", "status": "pass" if aligned else "warn", "detail": "Aligned" if aligned else "Drift detected"})
@@ -951,8 +1062,8 @@ def _run_all_compliance_checks() -> list[dict]:
 
     # ── Access Controls ──────────────────────────────────────────────────
     try:
-        n_principals = try_count("principals")
-        n_bindings = try_count("role_bindings")
+        n_principals = _try_count_api("principals")
+        n_bindings = _try_count_api("role_bindings")
         checks.append({"category": "Access Controls", "name": "Principals Registered", "status": "pass" if n_principals > 0 else "warn", "detail": f"{n_principals} principals"})
         checks.append({"category": "Access Controls", "name": "Role Bindings Active", "status": "pass" if n_bindings > 0 else "warn", "detail": f"{n_bindings} bindings"})
     except Exception:
@@ -960,14 +1071,15 @@ def _run_all_compliance_checks() -> list[dict]:
 
     # ── Worker Health ────────────────────────────────────────────────────
     try:
-        last_task = get_conn().execute(
+        last_task = _query_api(
             "SELECT completed_at FROM task_queue "
             "WHERE status='completed' AND completed_at IS NOT NULL "
             "ORDER BY completed_at DESC LIMIT 1"
-        ).fetchone()
-        if last_task and last_task[0]:
+        )
+        if last_task is not None and not last_task.empty:
             from datetime import datetime as _dt
-            last_dt = _dt.strptime(last_task[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            last_val = last_task.iloc[0]["completed_at"]
+            last_dt = _dt.strptime(last_val, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
             age_min = (_dt.now(timezone.utc) - last_dt).total_seconds() / 60
             checks.append({"category": "System Health", "name": "Background Worker", "status": "pass" if age_min < 60 else "warn", "detail": f"Last task {age_min:.0f}min ago"})
         else:

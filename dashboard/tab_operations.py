@@ -28,6 +28,12 @@ from dashboard import (
     try_count,
     table,
 )
+from dashboard.api_client import (
+    _api,
+    _query_api,
+    _try_count_api,
+    _table_exists_api,
+)
 
 logger = logging.getLogger(__name__)
 ROOT = dashboard._REPO_ROOT
@@ -66,9 +72,9 @@ def _cached_extra_jobs(known_task_types_tuple):
     """Cache the extra job discovery query."""
     known_set = set(known_task_types_tuple)
     placeholders = ",".join("?" for _ in known_set)
-    return query(
+    return _query_api(
         f"SELECT DISTINCT task_type FROM task_queue WHERE task_type NOT IN ({placeholders})",
-        tuple(known_set),
+        list(known_set),
     )
 
 
@@ -438,8 +444,8 @@ def _render_backups() -> None:
                     pre_path = backup_dir / pre_name
                     with open(dashboard.DB, "rb") as fin, gzip.open(pre_path, "wb") as fout:
                         shutil.copyfileobj(fin, fout)
-                    with gzip.open(bp, "rb") as fin, open(dashboard.DB, "wb") as fout:
-                        shutil.copyfileobj(fin, fout)
+                    with gzip.open(bp, "rb") as gfin, open(dashboard.DB, "wb") as gfout:
+                        shutil.copyfileobj(gfin, gfout)
                     st.success(f"Restored from {bp.name}. Pre-restore backup saved.")
                     st.rerun()
     else:
@@ -483,8 +489,8 @@ def _render_backups() -> None:
                             pre_restore_path = backup_dir / pre_restore_name
                             with open(dashboard.DB, "rb") as fin, gzip.open(pre_restore_path, "wb") as fout:
                                 shutil.copyfileobj(fin, fout)
-                            with gzip.open(restore_path, "rb") as _fin, open(dashboard.DB, "wb") as fout:
-                                shutil.copyfileobj(_fin, fout)
+                            with gzip.open(restore_path, "rb") as _fin, open(dashboard.DB, "wb") as fout2:
+                                shutil.copyfileobj(_fin, fout2)  # type: ignore[arg-type]
                             st.success(
                                 f"Restored from {restore_name}. "
                                 f"Pre-restore backup saved as {pre_restore_name}"
@@ -514,7 +520,7 @@ def _render_multi_agent() -> None:
 
     st.subheader("Multi-Agent Sync")
 
-    shared_total = try_count("shared_memories") if table("shared_memories") else 0
+    shared_total = _try_count_api("shared_memories") if _table_exists_api("shared_memories") else 0
     _peers = []
     _crdt_enabled = False
     if _cfg is not None:
@@ -562,7 +568,7 @@ def _render_multi_agent() -> None:
         "completed_at, success, changes_pushed, changes_pulled, "
         "error_message, duration_ms FROM sync_log"
     )
-    df = query(_sync_sql + " ORDER BY started_at DESC LIMIT 200")
+    df = _query_api(_sync_sql + " ORDER BY started_at DESC LIMIT 200")
 
     _partner_sync = None
     try:
@@ -647,10 +653,10 @@ def _render_multi_agent() -> None:
 
     st.divider()
     st.markdown("#### Shared memory pool")
-    if table("shared_memories") or partner_rows:
+    if _table_exists_api("shared_memories") or partner_rows:
         local_rows = []
-        if table("shared_memories"):
-            _lr = query(
+        if _table_exists_api("shared_memories"):
+            _lr = _query_api(
                 "SELECT source_note_id, agent_id, category, shared_with, "
                 "datetime(shared_at, 'unixepoch') as shared "
                 "FROM shared_memories ORDER BY shared_at DESC"
@@ -692,9 +698,15 @@ def _render_runbook() -> None:
         _db_ok = False
         _db_detail = ""
         try:
-            get_conn().execute("SELECT 1")
-            _db_ok = True
-            _db_detail = "DB accessible"
+            _c = _api()
+            if _c:
+                _c.health()
+                _db_ok = True
+                _db_detail = "DB accessible"
+            else:
+                get_conn().execute("SELECT 1")
+                _db_ok = True
+                _db_detail = "DB accessible"
         except Exception as e:
             _db_detail = f"DB error: {str(e)[:80]}"
 
@@ -752,8 +764,8 @@ def _render_runbook() -> None:
         _cron_err = 0
         _cron_detail = ""
         try:
-            _cron_err = try_count("task_queue", "status='failed'")
-            _cron_pending = try_count("task_queue", "status='pending'")
+            _cron_err = _try_count_api("task_queue", "status='failed'")
+            _cron_pending = _try_count_api("task_queue", "status='pending'")
             if _cron_err > 0:
                 _cron_detail = f"{_cron_err} failed, {_cron_pending} pending"
             else:
@@ -801,11 +813,21 @@ def _render_runbook() -> None:
     # ── Section 2: Background worker down? ─────────────────────────────────
     with st.expander("\u2699\ufe0f Background worker down?", expanded=False):
         try:
-            last_task = get_conn().execute(
-                "SELECT completed_at FROM task_queue "
-                "WHERE status='completed' AND completed_at IS NOT NULL "
-                "ORDER BY completed_at DESC LIMIT 1"
-            ).fetchone()
+            _c = _api()
+            if _c:
+                res = _c.query(
+                    "SELECT completed_at FROM task_queue "
+                    "WHERE status='completed' AND completed_at IS NOT NULL "
+                    "ORDER BY completed_at DESC LIMIT 1"
+                )
+                last_task = res.get("results", [{}])[0] if res.get("results") else None
+                last_task = (last_task.get("completed_at"),) if last_task else None
+            else:
+                last_task = get_conn().execute(
+                    "SELECT completed_at FROM task_queue "
+                    "WHERE status='completed' AND completed_at IS NOT NULL "
+                    "ORDER BY completed_at DESC LIMIT 1"
+                ).fetchone()
             if last_task and last_task[0]:
                 comp_dt = datetime.strptime(last_task[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                 age_s = (datetime.now(timezone.utc) - comp_dt).total_seconds()
@@ -849,7 +871,7 @@ def _render_runbook() -> None:
 
     # ── Section 3: Cron job failing? ───────────────────────────────────────
     with st.expander("\u274c Cron job failing?", expanded=False):
-        failed_df = query(
+        failed_df = _query_api(
             "SELECT task_type, id, error, attempts, created_at, completed_at "
             "FROM task_queue WHERE status = 'failed' "
             "ORDER BY completed_at DESC LIMIT 20"
@@ -900,9 +922,15 @@ def _render_runbook() -> None:
     with st.expander("\U0001f504 Need to migrate?", expanded=False):
         current_ver = 0
         try:
-            r = get_conn().execute("SELECT version FROM schema_version WHERE id=1").fetchone()
-            if r:
-                current_ver = r[0]
+            _c = _api()
+            if _c:
+                res = _c.query("SELECT version FROM schema_version WHERE id=1")
+                if res.get("results"):
+                    current_ver = res["results"][0].get("version", 0)
+            else:
+                r = get_conn().execute("SELECT version FROM schema_version WHERE id=1").fetchone()
+                if r:
+                    current_ver = r[0]
         except Exception:
             pass
 
