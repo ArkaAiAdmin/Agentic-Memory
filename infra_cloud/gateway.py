@@ -53,6 +53,17 @@ class GatewayRouter:
         if dep.get("status") != "active":
             return _json(403, {"error": "deployment inactive", "deployment_id": deployment_id})
 
+        if self.store.check_limit_exceeded(deployment_id):
+            return _json(
+                402,
+                {
+                    "error": "Payment Required: daily call limit exceeded",
+                    "deployment_id": deployment_id,
+                },
+            )
+
+        self.store.increment_usage(deployment_id, rest_calls=1)
+
         api_base = dep.get("api_base")
         if not api_base:
             return _json(502, {"error": "deployment has no api_base configured",

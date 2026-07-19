@@ -22,7 +22,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
-_CLOUD_SCHEMA_VERSION = 1
+_CLOUD_SCHEMA_VERSION = 2
 
 
 def _discover_migrations() -> list[tuple[int, Path]]:
@@ -245,3 +245,79 @@ class CloudStateStore:
                     "SELECT * FROM invoices ORDER BY created_at DESC"
                 ).fetchall()
         return [self._row_to_dict(r) for r in rows]
+
+    # ── plans & usage (Phase 5) ────────────────────────────────────────────
+
+    def list_plans(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM plans ORDER BY max_storage_mb ASC").fetchall()
+        return [self._row_to_dict(r) for r in rows]
+
+    def get_plan(self, plan_id: str) -> Optional[dict]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone()
+        return self._row_to_dict(row) if row else None
+
+    def increment_usage(
+        self,
+        deployment_id: str,
+        mcp_calls: int = 0,
+        rest_calls: int = 0,
+        storage_bytes: int = 0,
+    ) -> None:
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO usage_records (deployment_id, day, mcp_calls, rest_calls, storage_bytes) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(deployment_id, day) DO UPDATE SET "
+                "mcp_calls = mcp_calls + excluded.mcp_calls, "
+                "rest_calls = rest_calls + excluded.rest_calls, "
+                "storage_bytes = MAX(storage_bytes, excluded.storage_bytes)",
+                (deployment_id, day, mcp_calls, rest_calls, storage_bytes),
+            )
+            conn.commit()
+
+    def check_limit_exceeded(self, deployment_id: str) -> bool:
+        """Check if the deployment's daily calls exceed its plan limits."""
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        with self._connect() as conn:
+            # Join subscription + plan
+            row = conn.execute(
+                "SELECT p.max_mcp_calls_per_day "
+                "FROM subscriptions s "
+                "JOIN plans p ON s.plan_id = p.id "
+                "WHERE s.deployment_id = ? AND s.status = 'active' "
+                "LIMIT 1",
+                (deployment_id,),
+            ).fetchone()
+            
+            # Default to free plan if no active subscription
+            max_calls = row[0] if row else 1000
+            
+            # Fetch daily usage
+            usage = conn.execute(
+                "SELECT COALESCE(mcp_calls, 0) + COALESCE(rest_calls, 0) "
+                "FROM usage_records "
+                "WHERE deployment_id = ? AND day = ?",
+                (deployment_id, day),
+            ).fetchone()
+            current_calls = usage[0] if usage else 0
+            
+            return current_calls >= max_calls
+
+    def get_usage(self, deployment_id: str, day: Optional[str] = None) -> list[dict] | Optional[dict]:
+        day_str = day or time.strftime("%Y-%m-%d", time.gmtime())
+        with self._connect() as conn:
+            if day:
+                row = conn.execute(
+                    "SELECT * FROM usage_records WHERE deployment_id = ? AND day = ?",
+                    (deployment_id, day_str),
+                ).fetchone()
+                return self._row_to_dict(row) if row else None
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM usage_records WHERE deployment_id = ? ORDER BY day DESC",
+                    (deployment_id,),
+                ).fetchall()
+                return [self._row_to_dict(r) for r in rows]

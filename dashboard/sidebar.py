@@ -31,46 +31,91 @@ def render_sidebar():
         </div>""",
     )
 
-    # ── Agent selector ──────────────────────────────────────────────────
-    _base = dashboard.resolve_db().parent
-    _agents = {
-        "OpenCode": _base / "memory.db",
-        "MIMOCODE": _base / "memory-agent-b.db",
-    }
-    _valid = {k: v for k, v in _agents.items() if v.exists()}
-    if _Valid := _valid:
-        if "agent_view" not in st.session_state:
-            st.session_state["agent_view"] = "OpenCode" if "OpenCode" in _Valid else next(iter(_Valid))
-        _choice = st.sidebar.selectbox(
-            "Agent store",
-            options=list(_Valid.keys()),
-            index=list(_Valid.keys()).index(st.session_state["agent_view"]),
-            key="agent_view_select",
-            help=(
-                "Switch API client only. Direct sqlite file access is restricted "
-                "to OPENCODE — viewing MIMOCODE is read-only via the sync daemon "
-                "(port 9877). Writes to MIMOCODE go through its own MCP."
-            ),
-        )
-        if st.session_state.get("agent_view") != _choice:
-            # Agent changed — rewire the API client to the right port.
-            _token = os.environ.get("MEMORY_API_TOKEN", "")
-            _base_url = _AGENT_API_BASE.get(_choice, os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9879"))
-            st.session_state.api_client = ApiClient(base_url=_base_url, token=_token)
-            st.cache_data.clear()
-        st.session_state["agent_view"] = _choice
-        st.session_state["agent_view_db"] = str(_Valid[_choice])
-        # dashboard.DB stays bound to OPENCODE for the read-only fallback
-        # path that resolution of OPENCODE local files requires. MIMOCODE
-        # reads flow exclusively through the API client.
-        dashboard.DB = _agents["OpenCode"]
-        dashboard.MEM_DIR = dashboard.DB.parent
-        st.session_state["agent_view_remote"] = _choice != "OpenCode"
+    # ── Agent selector / Cloud deployment switcher ──────────────────────
+    cloud_state_path = dashboard.resolve_db().parent / "cloud_state.db"
+    has_cloud = cloud_state_path.exists()
+    deps = []
+    if has_cloud:
+        try:
+            from infra_cloud.store import CloudStateStore
+            store = CloudStateStore(cloud_state_path)
+            deps = store.list_deployments()
+        except Exception:
+            pass
 
-    st.sidebar.caption(
-        f"`{dashboard.DB.parent.name}`  \u00b7 "
-        f"{dashboard.DB.stat().st_size / 1024 / 1024:.0f} MB"
-    )
+    if deps:
+        options = []
+        dep_map = {}
+        for d in deps:
+            lbl = f"{d.get('label') or d['deployment_id']} ({d['status']})"
+            options.append(lbl)
+            dep_map[lbl] = d
+
+        if "selected_deployment" not in st.session_state:
+            st.session_state["selected_deployment"] = options[0]
+
+        _choice = st.sidebar.selectbox(
+            "Deployment switcher",
+            options=options,
+            index=options.index(st.session_state["selected_deployment"]),
+            key="dep_view_select",
+            help="Switch current SaaS deployment view."
+        )
+        if st.session_state.get("selected_deployment") != _choice:
+            d = dep_map[_choice]
+            api_base = d.get("api_base") or "http://127.0.0.1:9879"
+            _token = os.environ.get("MEMORY_API_TOKEN", "")
+            st.session_state.api_client = ApiClient(base_url=api_base, token=_token)
+            st.cache_data.clear()
+
+        st.session_state["selected_deployment"] = _choice
+        active_dep = dep_map[_choice]
+        st.session_state["active_deployment_id"] = active_dep["deployment_id"]
+        st.session_state["agent_view_remote"] = True
+        st.session_state["agent_view"] = active_dep["deployment_id"]
+
+        st.sidebar.caption(
+            f"Tenant: `{active_dep.get('tenant_id')}` \u00b7 "
+            f"ID: `{active_dep['deployment_id']}`"
+        )
+    else:
+        # ── Agent selector (legacy local mode) ──────────────────────────────
+        _base = dashboard.resolve_db().parent
+        _agents = {
+            "OpenCode": _base / "memory.db",
+            "MIMOCODE": _base / "memory-agent-b.db",
+        }
+        _valid = {k: v for k, v in _agents.items() if v.exists()}
+        if _Valid := _valid:
+            if "agent_view" not in st.session_state:
+                st.session_state["agent_view"] = "OpenCode" if "OpenCode" in _Valid else next(iter(_Valid))
+            _choice = st.sidebar.selectbox(
+                "Agent store",
+                options=list(_Valid.keys()),
+                index=list(_Valid.keys()).index(st.session_state["agent_view"]),
+                key="agent_view_select",
+                help=(
+                    "Switch API client only. Direct sqlite file access is restricted "
+                    "to OPENCODE — viewing MIMOCODE is read-only via the sync daemon "
+                    "(port 9877). Writes to MIMOCODE go through its own MCP."
+                ),
+            )
+            if st.session_state.get("agent_view") != _choice:
+                # Agent changed — rewire the API client to the right port.
+                _token = os.environ.get("MEMORY_API_TOKEN", "")
+                _base_url = _AGENT_API_BASE.get(_choice, os.environ.get("MEMORY_API_BASE", "http://127.0.0.1:9879"))
+                st.session_state.api_client = ApiClient(base_url=_base_url, token=_token)
+                st.cache_data.clear()
+            st.session_state["agent_view"] = _choice
+            st.session_state["agent_view_db"] = str(_Valid[_choice])
+            dashboard.DB = _agents["OpenCode"]
+            dashboard.MEM_DIR = dashboard.DB.parent
+            st.session_state["agent_view_remote"] = _choice != "OpenCode"
+
+        st.sidebar.caption(
+            f"`{dashboard.DB.parent.name}`  \u00b7 "
+            f"{dashboard.DB.stat().st_size / 1024 / 1024:.0f} MB"
+        )
 
     with st.sidebar:
         st.markdown("### System Overview")

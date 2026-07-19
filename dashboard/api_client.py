@@ -393,6 +393,15 @@ class ApiClient:
             },
         )
 
+    # ── Cloud & Billing (Phase 5) ──────────────────────────────────────────
+
+    def get_cloud_usage(self, deployment_id: str) -> dict:
+        return self._get("/api/v1/cloud/usage", {"deployment_id": deployment_id})
+
+    def create_cloud_checkout(self, deployment_id: str, plan_id: str) -> dict:
+        return self._post("/api/v1/cloud/checkout", {"deployment_id": deployment_id, "plan_id": plan_id})
+
+
 
 # ── Module-level helpers ──────────────────────────────────────────────────
 # These provide a uniform interface for dashboard tabs to access the API

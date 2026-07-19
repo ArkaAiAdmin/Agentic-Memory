@@ -373,6 +373,14 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             if not self._require_auth():
                 return
             self._handle_kg_edges(parse_qs(parsed.query))
+        elif path == "/api/v1/cloud/deployments":
+            if not self._require_auth():
+                return
+            self._handle_cloud_list_deployments(parse_qs(parsed.query))
+        elif path == "/api/v1/cloud/usage":
+            if not self._require_auth():
+                return
+            self._handle_cloud_get_usage(parse_qs(parsed.query))
         else:
             self._error("Not found", 404)
 
@@ -392,6 +400,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/v1/auth/logout":
             self._handle_logout()
+            return
+        if path == "/api/v1/cloud/webhooks/stripe":
+            self._handle_cloud_stripe_webhook()
             return
 
         if not self._require_auth():
@@ -441,6 +452,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._handle_send_message()
         elif path == "/api/v1/coordination/state":
             self._handle_update_project_state()
+        elif path == "/api/v1/cloud/checkout":
+            self._handle_cloud_checkout()
         else:
             self._error("Not found", 404)
 
@@ -1742,6 +1755,131 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         finally:
             self.server.unregister_ws_client(client_id)
             logger.info(f"WebSocket disconnected: {client_id}")
+
+    @property
+    def cloud_store(self):
+        from pathlib import Path
+        if not hasattr(self.server, "_cloud_store"):
+            from infra_cloud.store import CloudStateStore
+            db_path = Path(self.server.db_path).parent / "cloud_state.db"
+            self.server._cloud_store = CloudStateStore(db_path)
+        return self.server._cloud_store
+
+    def _handle_cloud_list_deployments(self, query_params: dict) -> None:
+        try:
+            cust_ids = query_params.get("customer_id")
+            cust_id = cust_ids[0] if cust_ids else "cust_1"
+            deps = self.cloud_store.list_deployments(cust_id)
+            self._write_json({"deployments": deps})
+        except Exception as e:
+            logger.warning("_handle_cloud_list_deployments: %s", e)
+            self._error(f"Failed to list deployments: {e}", 500)
+
+    def _handle_cloud_get_usage(self, query_params: dict) -> None:
+        try:
+            dep_ids = query_params.get("deployment_id")
+            if not dep_ids:
+                self._error("deployment_id required", 400)
+                return
+            dep_id = dep_ids[0]
+            dep = self.cloud_store.get_deployment(dep_id)
+            if not dep:
+                self._error("deployment not found", 404)
+                return
+            
+            # Fetch sub & plan
+            subs = self.cloud_store.list_subscriptions(dep_id)
+            active_sub = None
+            plan = None
+            if subs:
+                for s in subs:
+                    if s["status"] == "active":
+                        active_sub = s
+                        break
+                if not active_sub:
+                    active_sub = subs[0]
+            
+            if active_sub:
+                plan = self.cloud_store.get_plan(active_sub["plan_id"])
+            if not plan:
+                plan = self.cloud_store.get_plan("free")
+            
+            usage = self.cloud_store.get_usage(dep_id)
+            invoices = self.cloud_store.list_invoices(dep["customer_id"])
+            
+            self._write_json({
+                "deployment": dep,
+                "subscription": active_sub,
+                "plan": plan,
+                "usage": usage,
+                "invoices": invoices
+            })
+        except Exception as e:
+            logger.warning("_handle_cloud_get_usage: %s", e)
+            self._error(f"Failed to get usage stats: {e}", 500)
+
+    def _handle_cloud_checkout(self) -> None:
+        try:
+            body = self._read_json_body() or {}
+            dep_id = body.get("deployment_id")
+            plan_id = body.get("plan_id")
+            if not dep_id or not plan_id:
+                self._error("deployment_id and plan_id required", 400)
+                return
+            
+            plan = self.cloud_store.get_plan(plan_id)
+            if not plan:
+                self._error(f"unknown plan: {plan_id}", 400)
+                return
+            
+            session_id = f"cs_mock_{int(time.time())}"
+            self._write_json({
+                "checkout_url": f"https://checkout.stripe.com/pay/{session_id}",
+                "session_id": session_id,
+                "status": "ok"
+            })
+        except Exception as e:
+            logger.warning("_handle_cloud_checkout: %s", e)
+            self._error(f"Checkout failed: {e}", 500)
+
+    def _handle_cloud_stripe_webhook(self) -> None:
+        try:
+            body = self._read_json_body() or {}
+            event_type = body.get("type")
+            if event_type == "checkout.session.completed":
+                obj = body.get("data", {}).get("object", {})
+                deployment_id = obj.get("client_reference_id")
+                plan_id = obj.get("metadata", {}).get("plan_id")
+                stripe_sub_id = obj.get("subscription") or f"sub_stripe_{int(time.time())}"
+                if deployment_id and plan_id:
+                    import uuid
+                    sub_id = f"sub_{uuid.uuid4().hex[:8]}"
+                    self.cloud_store.create_subscription(
+                        subscription_id=sub_id,
+                        deployment_id=deployment_id,
+                        plan_id=plan_id,
+                        stripe_sub_id=stripe_sub_id,
+                        status="active",
+                        current_period_end=time.time() + 30 * 86400
+                    )
+                    
+                    inv_id = f"inv_{uuid.uuid4().hex[:8]}"
+                    dep = self.cloud_store.get_deployment(deployment_id)
+                    customer_id = dep["customer_id"] if dep else "cust_1"
+                    amount = 4900 if plan_id == "pro" else 29900 if plan_id == "enterprise" else 0
+                    self.cloud_store.create_invoice(
+                        invoice_id=inv_id,
+                        customer_id=customer_id,
+                        amount_cents=amount,
+                        subscription_id=sub_id,
+                        status="paid"
+                    )
+                    self._write_json({"status": "ok", "message": "subscription activated"})
+                    return
+            self._write_json({"status": "ignored"})
+        except Exception as e:
+            logger.warning("_handle_cloud_stripe_webhook error: %s", e)
+            self._error(f"Webhook failed: {e}", 500)
 
 
 class APIServer(ThreadingHTTPServer):

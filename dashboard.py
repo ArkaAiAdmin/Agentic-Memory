@@ -20,6 +20,7 @@ from dashboard.tab_operations import render_operations
 from dashboard.tab_compliance import render_compliance
 from dashboard.tab_coordination import render_coordination
 from dashboard.tab_audit import render_audit
+from dashboard.tab_billing import render_billing
 from dashboard.tab_settings import render_settings
 
 logger = logging.getLogger(__name__)
@@ -92,18 +93,38 @@ if not st.session_state.get("authenticated") and requires_login():
 # ── Sidebar ──────────────────────────────────────────────────────────────
 render_sidebar()
 
-# ── Tabs (9 purpose-driven) ─────────────────────────────────────────────
-(
-    dashboard_tab,
-    memories_tab,
-    knowledge_tab,
-    quality_tab,
-    operations_tab,
-    compliance_tab,
-    coordination_tab,
-    audit_tab,
-    settings_tab,
-) = st.tabs(TABS)
+# Check if cloud_state.db exists to dynamically show Billing tab
+cloud_state_path = _dk.DB.parent / "cloud_state.db"
+has_cloud = cloud_state_path.exists()
+
+if has_cloud:
+    # Insert Billing before Settings
+    actual_tabs = _dk.TABS[:-1] + ["Billing"] + [_dk.TABS[-1]]
+    (
+        dashboard_tab,
+        memories_tab,
+        knowledge_tab,
+        quality_tab,
+        operations_tab,
+        compliance_tab,
+        coordination_tab,
+        audit_tab,
+        billing_tab,
+        settings_tab,
+    ) = st.tabs(actual_tabs)
+else:
+    (
+        dashboard_tab,
+        memories_tab,
+        knowledge_tab,
+        quality_tab,
+        operations_tab,
+        compliance_tab,
+        coordination_tab,
+        audit_tab,
+        settings_tab,
+    ) = st.tabs(_dk.TABS)
+    billing_tab = None
 
 # ═══════════════════════════════════════════════════════════════════════════
 # DASHBOARD (Overview + Health + Activity + Command Palette)
@@ -152,6 +173,13 @@ with coordination_tab:
 # ═══════════════════════════════════════════════════════════════════════════
 with audit_tab:
     render_audit()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BILLING (SaaS Subscription Tiers + Usage Metering)
+# ═══════════════════════════════════════════════════════════════════════════
+if billing_tab is not None:
+    with billing_tab:
+        render_billing()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # SETTINGS (Feature Flags + System Info + Onboarding + Export)
