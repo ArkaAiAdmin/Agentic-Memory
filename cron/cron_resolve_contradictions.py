@@ -60,6 +60,13 @@ def main() -> int:
         print(json.dumps({"scanned": 0, "resolved": 0, "message": "no contradictions detected"}))
         return 0
 
+    # Coordination: auto-create tasks for contradictions that need agent attention
+    try:
+        from coordination.hooks import create_contradiction_tasks
+        tasks_created = create_contradiction_tasks(contradictions)
+    except Exception:
+        tasks_created = 0
+
     limit = args.limit
     pairs = contradictions[:limit]
     resolved = failed = 0
@@ -91,6 +98,7 @@ def main() -> int:
         "resolved": resolved,
         "failed": failed,
         "dry_run": args.dry_run,
+        "tasks_created": tasks_created,
         "results": results[:10],
     }
     print(json.dumps(output, indent=2))

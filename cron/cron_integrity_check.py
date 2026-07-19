@@ -44,6 +44,15 @@ def main() -> int:
         print(f"  ... and {len(report['findings']) - 10} more")
     if not report["findings"]:
         print("  No issues found.")
+    else:
+        # Coordination: auto-create tasks for critical/warning findings
+        try:
+            from coordination.hooks import create_integrity_tasks
+            tasks_created = create_integrity_tasks(report["findings"])
+            if tasks_created:
+                print(f"  Coordination: {tasks_created} task(s) created for actionable findings")
+        except Exception:
+            pass
     # Self-healing: repair orphan KG edges, entities, and backlinks.
     # Use dry_run first to avoid write-lock contention with the worker.
     try:

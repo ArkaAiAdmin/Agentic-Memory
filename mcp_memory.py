@@ -119,6 +119,16 @@ def memory_save(
     except ImportError:
         pass
 
+    # Coordination: acquire file lock before save
+    _coord_lock_path = None
+    try:
+        from coordination.hooks import acquire_save_lock
+        from infra.infrastructure import resolve_active_memory_dir
+        _coord_lock_path = str((resolve_active_memory_dir() / "memory" / category / f"{title_slug}.md").resolve())
+        acquire_save_lock(_coord_lock_path)
+    except Exception:
+        _coord_lock_path = None
+
     try:
         # C1: route through the durable CQRS write-journal when the
         # feature flag is enabled.  The journal path performs a lock-free
@@ -163,6 +173,14 @@ def memory_save(
         )
     except SaveValidationError as e:
         return str(e)
+    finally:
+        # Coordination: release file lock after save
+        if _coord_lock_path:
+            try:
+                from coordination.hooks import release_save_lock
+                release_save_lock(_coord_lock_path)
+            except Exception:
+                pass
     # B2 fix (2026-06-22): KG indexing is now invoked by
     # ``save_pipeline._update_memory_index_incremental`` via
     # ``_index_kg`` (see save/indexers.py). The previous inline call

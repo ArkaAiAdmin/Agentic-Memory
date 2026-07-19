@@ -69,6 +69,17 @@ def _on_session_start(agent_id: str, project_id: str = "default") -> str:
         update_heartbeat(conn, agent_id, project_id=project_id)
         record_coordination_event(conn, "session_start", agent_id, project_id)
 
+        # 0. Claim pending tasks (the core coordination integration)
+        try:
+            from coordination.hooks import claim_pending_tasks
+            claimed = claim_pending_tasks(agent_id, project_id, limit=3)
+            if claimed:
+                output.append(f"\n\n**Claimed {len(claimed)} task(s):**")
+                for t in claimed:
+                    output.append(f"- [{t['task_type']}] {t['description'][:80]}")
+        except Exception:
+            pass
+
         # 1. Check pending messages
         messages = conn.execute(
             "SELECT id, from_agent, message_type, payload "
