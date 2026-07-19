@@ -194,12 +194,13 @@ def main() -> int:
         return 0
 
     README.write_text(content)
-    print(f"Updated README.md:")
+    print("Updated README.md:")
     print(f"  Schema: {schema}")
     print(f"  CORE tools: {core_tools}")
     print(f"  Tests: {test_count:,}+")
     print(f"  Cron scripts: {cron_count}")
     print(f"  Hooks: {hook_count}")
+    print(f"  Tables: {table_count}")
     print(f"  Search phases: {phase_count}")
     return 0
 

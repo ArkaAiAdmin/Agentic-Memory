@@ -6,15 +6,40 @@ Replaces direct conn.execute() calls with HTTP calls.
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
 import requests
 
-from dashboard import DB, query, try_count
-
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BASE = "http://127.0.0.1:9878"
+
+
+def resolve_api_token(memory_dir: str | None = None) -> str:
+    """Resolve the configured REST API token for dashboard auto-login.
+
+    Resolution order:
+      1. ``MEMORY_API_TOKEN`` env var (explicit, wins).
+      2. ``<memory_dir>/.api_token`` file (persisted at server start, mode 0600).
+      3. Empty string (no token configured).
+
+    The file path defaults to the resolved dashboard DB's parent directory,
+    falling back to ``~/.config/agentic-memory/memory``.
+    """
+    env_token = os.environ.get("MEMORY_API_TOKEN", "").strip()
+    if env_token:
+        return env_token
+    if memory_dir is None:
+        memory_dir = os.environ.get(
+            "MEMORY_DIR", str(Path.home() / ".config" / "agentic-memory" / "memory")
+        )
+    token_file = Path(memory_dir) / ".api_token"
+    try:
+        return token_file.read_text().strip()
+    except OSError:
+        return ""
 
 
 class ApiClient:
@@ -315,6 +340,7 @@ class ApiClient:
 def _get_db():
     """Open a SQLite connection to the dashboard DB (fallback path)."""
     import sqlite3
+    from dashboard import DB
     return sqlite3.connect(str(DB), timeout=10)
 
 
@@ -353,6 +379,7 @@ def _query_api(sql: str, params: list | None = None) -> "Any":
         except Exception:
             pass
     # Fallback
+    from dashboard import query
     return query(sql, params or [])
 
 
@@ -369,6 +396,7 @@ def _try_count_api(table_name: str, where: str = "") -> int:
                 return resp["results"][0].get("c", 0)
         except Exception:
             pass
+    from dashboard import try_count
     return try_count(table_name, where)
 
 
