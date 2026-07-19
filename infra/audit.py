@@ -241,6 +241,46 @@ def _flush_audit_rows(rows: list) -> None:
                 e,
             )
 
+    # Phase 5: real-time MCP call metering — increment cloud usage
+    # counters after each successful batch so the SaaS billing plane
+    # has up-to-date call counts without waiting for cron_sync_usage.
+    # Count only rows that represent MCP tool calls (not REST audit rows).
+    mcp_call_count = sum(1 for r in rows if r.get("tool", "").startswith("memory_"))
+    # Resolve deployment_id from the db_path of the first row
+    source_db = rows[0]["db_path"] if rows else None
+    _try_increment_cloud_usage(mcp_call_count, source_db)
+
+
+def _try_increment_cloud_usage(mcp_calls: int, source_db: str | None = None) -> None:
+    """Best-effort increment of cloud usage. Fire-and-forget, never raises."""
+    if mcp_calls <= 0:
+        return
+    try:
+        from pathlib import Path as _P
+        mem_dir = _P(__file__).resolve().parent.parent / "memory"
+        cloud_db = mem_dir / "cloud_state.db"
+        if not cloud_db.exists():
+            return
+        from infra_cloud.store import CloudStateStore
+        store = CloudStateStore(cloud_db)
+        # Resolve deployment_id by matching source_db against deployments
+        deps = store.list_deployments()
+        matched = False
+        for dep in deps:
+            dep_db = dep.get("db_path", "")
+            if dep_db and source_db and _P(dep_db).resolve() == _P(source_db).resolve():
+                store.increment_usage(dep["deployment_id"], mcp_calls=mcp_calls)
+                matched = True
+                break
+        # Fallback: if no deployment matched, increment for all active deployments
+        if not matched:
+            for dep in deps:
+                dep_db = dep.get("db_path", "")
+                if dep_db and _P(dep_db).exists():
+                    store.increment_usage(dep["deployment_id"], mcp_calls=mcp_calls)
+    except Exception:
+        pass  # metering must never break the audit pipeline
+
 
 def _shutdown_audit_thread() -> None:
     """Set the shutdown flag and wait for the thread to drain + exit.

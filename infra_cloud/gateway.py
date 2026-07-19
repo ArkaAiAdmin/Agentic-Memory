@@ -54,11 +54,13 @@ class GatewayRouter:
             return _json(403, {"error": "deployment inactive", "deployment_id": deployment_id})
 
         if self.store.check_limit_exceeded(deployment_id):
+            seat_count = self.store.get_seat_count(deployment_id)
             return _json(
                 402,
                 {
-                    "error": "Payment Required: daily call limit exceeded",
+                    "error": "Payment Required: plan limit exceeded",
                     "deployment_id": deployment_id,
+                    "seat_count": seat_count,
                 },
             )
 

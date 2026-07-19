@@ -66,7 +66,8 @@ def test_usage_metering_and_gateway_blocking(test_dirs):
     router = GatewayRouter(store)
     res = router.route("dep_a", "/api/v1/memories")
     assert res["status"] == 402
-    assert b"daily call limit exceeded" in json.dumps(res["body"]).encode()
+    assert b"plan limit exceeded" in json.dumps(res["body"]).encode()
+    assert b"seat_count" in json.dumps(res["body"]).encode()
 
 def test_api_endpoints_checkout_and_webhook(test_dirs):
     db_path, cloud_db = test_dirs

@@ -286,15 +286,11 @@ class CloudStateStore:
             conn.commit()
 
     def check_limit_exceeded(self, deployment_id: str) -> bool:
-        """Check if the deployment exceeds plan limits (calls + storage).
-
-        Seat count is enforced at the application layer (role_bindings lives
-        in the per-deployment memory.db, not cloud_state.db).
-        """
+        """Check if the deployment exceeds plan limits (calls + storage + seats)."""
         day = time.strftime("%Y-%m-%d", time.gmtime())
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT p.max_mcp_calls_per_day, p.max_storage_mb "
+                "SELECT p.max_mcp_calls_per_day, p.max_storage_mb, p.max_seats "
                 "FROM subscriptions s "
                 "JOIN plans p ON s.plan_id = p.id "
                 "WHERE s.deployment_id = ? AND s.status = 'active' "
@@ -304,6 +300,7 @@ class CloudStateStore:
 
             max_calls = row[0] if row else 1000
             max_storage_mb = row[1] if row else 50
+            max_seats = row[2] if row else 5
 
             # Check daily call limit
             usage = conn.execute(
@@ -327,6 +324,26 @@ class CloudStateStore:
             if current_storage_mb > max_storage_mb:
                 return True
 
+            # Check seat limit (count role_bindings in per-deployment DB)
+            dep = self.get_deployment(deployment_id)
+            if dep and dep.get("db_path"):
+                db_path = dep["db_path"]
+                if Path(db_path).exists():
+                    import sqlite3 as _sqlite3
+                    try:
+                        with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as dep_conn:
+                            has_table = dep_conn.execute(
+                                "SELECT name FROM sqlite_master WHERE type='table' AND name='role_bindings'"
+                            ).fetchone()
+                            if has_table:
+                                seat_count = dep_conn.execute(
+                                    "SELECT COUNT(DISTINCT principal_id) FROM role_bindings"
+                                ).fetchone()[0]
+                                if seat_count > max_seats:
+                                    return True
+                    except Exception:
+                        pass  # seat check is best-effort
+
             return False
 
     def get_usage(self, deployment_id: str, day: Optional[str] = None) -> list[dict] | Optional[dict]:
@@ -344,6 +361,28 @@ class CloudStateStore:
                     (deployment_id,),
                 ).fetchall()
                 return [self._row_to_dict(r) for r in rows]
+
+    def get_seat_count(self, deployment_id: str) -> int:
+        """Count distinct principals in role_bindings for a deployment."""
+        dep = self.get_deployment(deployment_id)
+        if not dep or not dep.get("db_path"):
+            return 0
+        db_path = dep["db_path"]
+        if not Path(db_path).exists():
+            return 0
+        import sqlite3 as _sqlite3
+        try:
+            with _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
+                has_table = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='role_bindings'"
+                ).fetchone()
+                if not has_table:
+                    return 0
+                return conn.execute(
+                    "SELECT COUNT(DISTINCT principal_id) FROM role_bindings"
+                ).fetchone()[0]
+        except Exception:
+            return 0
 
     def sync_usage_from_audit_log(self, audit_db_path: str | Path) -> dict:
         """Read memory_audit_log and sync MCP call counts to usage_records.
