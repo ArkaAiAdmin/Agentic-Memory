@@ -117,7 +117,10 @@ def cleanup_auto_logs(
         }
 
     archive_dir.mkdir(parents=True, exist_ok=True)
-    db = sqlite_write_queue.start_session(db_path)
+    import sqlite3
+    db = sqlite3.connect(str(db_path), timeout=30)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA busy_timeout=30000")
     moved = 0
     errors = []
     try:

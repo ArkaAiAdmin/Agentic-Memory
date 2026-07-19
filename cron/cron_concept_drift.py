@@ -152,8 +152,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         t0 = time.time()
-        from infra.db_write_queue import sqlite_write_queue
-        conn = sqlite_write_queue.start_session(Path(args.db_path))
+        import sqlite3
+        conn = sqlite3.connect(str(args.db_path), timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("PRAGMA foreign_keys=ON")
         try:
             centroid = _compute_centroid(conn)

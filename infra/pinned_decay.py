@@ -88,11 +88,12 @@ def check(dry_run: bool = True, db_path: Optional[Path] = None) -> dict:
     db_path = db_path or resolve_db()
     if not db_path.exists():
         return {"error": f"no DB at {db_path}"}
-    from infra.db_write_queue import sqlite_write_queue
+    import sqlite3
 
-    conn = sqlite_write_queue.start_session(db_path)
+    conn = sqlite3.connect(str(db_path), timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     try:
-        conn.execute("PRAGMA busy_timeout = 30000;")
         cols = {row[1] for row in conn.execute("PRAGMA table_info(memories)").fetchall()}
         if "last_accessed" not in cols:
             return {
