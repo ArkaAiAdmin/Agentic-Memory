@@ -661,6 +661,20 @@ def search_memories(
             "output": _err(ErrorCode.DB_ERROR, f"Search failed to obtain DB connection: {exc}"),
         }
 
+    # Auto-detect fact-lookup queries: "What is the current X?", "What is X now?",
+    # "current value of X", etc. These are keyword-specific where FTS5
+    # AND-matching is the right signal — embedding/CE/KG add noise, not signal.
+    # Requires "current" or "now" to distinguish from complex queries like
+    # "What was discussed in the meeting?"
+    if mode == "hybrid":
+        _FACT_LOOKUP_RE = re.compile(
+            r"^\s*(what|which)\s+(is|are|was|were)\s+(the\s+)?(current\s+).*(now\s*\?|\?)?\s*$"
+            r"|^\s*(what|which)\s+(is|are|was|were)\s+.*\bnow\b",
+            re.IGNORECASE,
+        )
+        if _FACT_LOOKUP_RE.search(query):
+            mode = "fact_lookup"
+
     # Phase 1: Parse query
     _t0 = time.time()
     from search.budget_aware import get_search_budget
