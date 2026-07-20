@@ -673,13 +673,24 @@ def record_entity_add(
     fingerprint: str | None = None,
     tenant_id: str = "default",
 ) -> None:
-    """Record an "add" op for an entity. Append-only (Sprint 2.1)."""
+    """Record an "add" op for an entity. Append-only (Sprint 2.1).
+
+    2026-07-20 (write-contention + CRDT fix): the legacy ``kg_entity_crdt``
+    table (migration 021) declares ``entity_id INTEGER PRIMARY KEY`` which
+    means a plain INSERT here raises ``UNIQUE constraint failed:
+    kg_entity_crdt.entity_id`` whenever the same entity is re-projected
+    (each materialization currently re-selects all entities with
+    ``mentions > 0``). Sprint 2.1 (migration 065) already created the
+    append-only ``kg_entity_crdt_append`` table as the intended target.
+    Write there so re-projections are safe; ``kg_entity_crdt`` is kept
+    only for legacy readers during the deprecation window.
+    """
     conn.execute(
         """
-        INSERT INTO kg_entity_crdt
+        INSERT INTO kg_entity_crdt_append
             (entity_id, agent_id, op, version_vector, name,
-             entity_type, description, fingerprint, timestamp, tenant_id)
-        VALUES (?, ?, 'add', ?, ?, ?, ?, ?, ?, ?)
+             entity_type, description, fingerprint, timestamp, applied, tenant_id)
+        VALUES (?, ?, 'add', ?, ?, ?, ?, ?, ?, 0, ?)
         """,
         (
             entity_id,
@@ -702,13 +713,17 @@ def record_entity_remove(
     version_vector: dict[str, int],
     tenant_id: str = "default",
 ) -> None:
-    """Record a "remove" op for an entity. Append-only (Sprint 2.1)."""
+    """Record a "remove" op for an entity. Append-only (Sprint 2.1).
+
+    2026-07-20: redirected to ``kg_entity_crdt_append`` to avoid the
+    UNIQUE(entity_id) violation on the legacy table (see record_entity_add).
+    """
     conn.execute(
         """
-        INSERT INTO kg_entity_crdt
+        INSERT INTO kg_entity_crdt_append
             (entity_id, agent_id, op, version_vector, name,
-             entity_type, description, timestamp, tenant_id)
-        VALUES (?, ?, 'remove', ?, '', '', '', ?, ?)
+             entity_type, description, timestamp, applied, tenant_id)
+        VALUES (?, ?, 'remove', ?, '', '', '', ?, 0, ?)
         """,
         (
             entity_id,
@@ -731,14 +746,19 @@ def record_edge_add(
     valid_at: Optional[str] = None,
     tenant_id: str = "default",
 ) -> None:
-    """Record an "add" op for an edge. Append-only (Sprint 2.1)."""
+    """Record an "add" op for an edge. Append-only (Sprint 2.1).
+
+    2026-07-20: redirected to ``kg_edge_crdt_append`` to avoid the
+    UNIQUE(edge_id) violation on the legacy table (same reason as
+    record_entity_add).
+    """
     edge_id = _edge_key(source_id, target_id, relation)
     conn.execute(
         """
-        INSERT INTO kg_edge_crdt
+        INSERT INTO kg_edge_crdt_append
             (edge_id, source_id, target_id, relation, weight,
-             valid_at, agent_id, version_vector, timestamp, tenant_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             valid_at, agent_id, version_vector, timestamp, applied, tenant_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
         """,
         (
             edge_id,
