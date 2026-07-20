@@ -770,8 +770,20 @@ def sync_with_peer(
             limit=max(limit, 500),
         )
     except Exception as e:
-        logger.warning("sync_with_peer failed: %s", e)
+        logger.warning("sync_with_peer: skills sync failed: %s", e)
         skill_sync_result = {"error": str(e), "success": False}
+
+    try:
+        agent_sync_result = sync_agents_with_peer(
+            db_path,
+            peer_url,
+            peer_name,
+            local_agent_id,
+            limit=limit,
+        )
+    except Exception as e:
+        logger.warning("sync_with_peer: agent sync failed: %s", e)
+        agent_sync_result = {"error": str(e), "pulled": 0, "pushed": 0}
 
     duration = int((time.time() - start) * 1000)
     success = ("error" not in push_result or not push_result.get("error")) and (
@@ -797,6 +809,7 @@ def sync_with_peer(
         "push": push_result,
         "pull": pull_result,
         "skills": skill_sync_result,
+        "agents": agent_sync_result,
         "duration_ms": duration,
         "success": success,
     }
@@ -894,6 +907,275 @@ def sync_skills_with_peer(
         "duration_ms": duration,
         "success": True,
     }
+
+
+# ---------------------------------------------------------------------------
+# Agent registry sync (sync-based agent discovery)
+# ---------------------------------------------------------------------------
+
+
+def pull_agent_changes(
+    peer_url: str,
+    since_ts: float,
+    limit: int = 200,
+) -> list[dict]:
+    """Pull agent registry entries from a peer.
+
+    Calls ``GET /agents/changes``. Returns list of agent entry dicts.
+    """
+    url = f"{peer_url.rstrip('/')}/agents/changes?since={int(since_ts)}&limit={limit}"
+    resp = _json_get(url)
+    if resp is None:
+        return []
+    return resp.get("agents", []) or []
+
+
+def push_agent_changes(
+    peer_url: str,
+    local_agent_id: str,
+    entries: list[dict],
+) -> dict:
+    """Push agent registry entries to a peer.
+
+    Calls ``POST /agents/push``. Expects a list of agent entry dicts.
+    """
+    url = f"{peer_url.rstrip('/')}/agents/push"
+    resp = _json_post(url, {
+        "agent_id": local_agent_id,
+        "agents": entries,
+    })
+    if resp is None:
+        return {"error": f"Failed to push to {url}"}
+    return resp
+
+
+def _get_last_agent_pull_timestamp(db_path: str | Path, peer_name: str) -> float:
+    """Return the unix epoch of the last successful agent registry pull.
+
+    Uses direction='agent_pull' in sync_log to avoid collision with
+    note sync timestamps.
+    """
+    import sqlite3
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return 0.0
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        try:
+            row = conn.execute(
+                """SELECT MAX(completed_at) FROM sync_log
+                   WHERE peer_name=? AND direction='agent_pull' AND success=1""",
+                (peer_name,),
+            ).fetchone()
+            return float(row[0]) if row and row[0] else 0.0
+        finally:
+            conn.close()
+    except Exception:
+        return 0.0
+
+
+def _get_last_agent_push_timestamp(db_path: str | Path, peer_name: str) -> float:
+    """Return the unix epoch of the last successful agent registry push.
+
+    Uses direction='agent_push' in sync_log to avoid collision with
+    note sync timestamps.
+    """
+    import sqlite3
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return 0.0
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        try:
+            row = conn.execute(
+                """SELECT MAX(completed_at) FROM sync_log
+                   WHERE peer_name=? AND direction='agent_push' AND success=1""",
+                (peer_name,),
+            ).fetchone()
+            return float(row[0]) if row and row[0] else 0.0
+        finally:
+            conn.close()
+    except Exception:
+        return 0.0
+
+
+def _log_agent_sync_result(
+    db_path: str | Path,
+    peer_name: str,
+    peer_url: str,
+    agent_id: str,
+    direction: str,
+    success: bool,
+    changes_pulled: int = 0,
+    changes_pushed: int = 0,
+    error_message: str = "",
+    error_count: int = 0,
+    duration_ms: int = 0,
+) -> None:
+    """Log an agent registry sync result to sync_log."""
+    _log_sync_result(
+        db_path, peer_name, peer_url, agent_id,
+        direction, success,
+        changes_pushed=changes_pushed, changes_pulled=changes_pulled,
+        error_message=error_message, error_count=error_count,
+        duration_ms=duration_ms,
+    )
+
+
+def sync_agents_with_peer(
+    db_path: str | Path,
+    peer_url: str,
+    peer_name: str,
+    local_agent_id: str,
+    limit: int = 200,
+) -> dict:
+    """Two-way agent registry sync with a peer.
+
+    Pulls remote agent entries, then pushes local entries.
+    Uses dedicated timestamp tracking (agent_pull/agent_push)
+    so it doesn't collide with note sync timestamps.
+    """
+    start = time.time()
+    results = {"pulled": 0, "pushed": 0, "errors": []}
+
+    since_pull = _get_last_agent_pull_timestamp(db_path, peer_name)
+    since_push = _get_last_agent_push_timestamp(db_path, peer_name)
+
+    # Pull remote agent entries
+    try:
+        remote_entries = pull_agent_changes(peer_url, since_pull, limit)
+        if remote_entries:
+            conn = _open_conn(db_path)
+            try:
+                from crdt.crdt_merge import parse_version_vector, dominates, merge_vectors
+
+                for entry in remote_entries:
+                    agent_id = entry.get("agent_id", "")
+                    if not agent_id:
+                        continue
+                    remote_vv = parse_version_vector(entry.get("version_vector", "{}"))
+                    remote_clock = int(entry.get("logical_clock", 0))
+                    remote_agent = entry.get("display_name", agent_id)
+
+                    existing = conn.execute(
+                        "SELECT version_vector, logical_clock FROM agent_registry_crdt WHERE agent_id = ? AND tenant_id = 'default'",
+                        (agent_id,),
+                    ).fetchone()
+
+                    if existing:
+                        existing_vv = parse_version_vector(existing[0])
+                        existing_clock = existing[1]
+                        if dominates(remote_vv, existing_vv):
+                            pass  # remote wins
+                        elif dominates(existing_vv, remote_vv):
+                            continue  # local is newer
+                        else:
+                            remote_wins = (remote_clock, remote_agent) > (existing_clock, agent_id)
+                            if not remote_wins:
+                                continue
+                    else:
+                        pass  # new entry
+
+                    merged_vv = merge_vectors(local_agent_id, existing_vv if existing else {}, remote_vv)
+                    new_clock = max(remote_clock, existing[1] if existing else 0) + 1
+
+                    conn.execute(
+                        """INSERT OR REPLACE INTO agent_registry_crdt
+                           (agent_id, display_name, parent_agent, namespace,
+                            logical_clock, version_vector, last_seen, is_deleted, tenant_id)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'default')""",
+                        (
+                            agent_id,
+                            entry.get("display_name", agent_id),
+                            entry.get("parent_agent", ""),
+                            entry.get("namespace", agent_id),
+                            new_clock,
+                            json.dumps(merged_vv),
+                            entry.get("last_seen", time.time()),
+                            entry.get("is_deleted", 0),
+                        ),
+                    )
+                    results["pulled"] += 1
+                conn.commit()
+            except Exception as e:
+                results["errors"].append(f"pull merge failed: {e}")
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        _log_agent_sync_result(
+            db_path, peer_name, peer_url, local_agent_id,
+            "agent_pull", True,
+            changes_pulled=results["pulled"],
+            duration_ms=int((time.time() - start) * 1000),
+        )
+    except Exception as exc:
+        results["errors"].append(f"pull failed: {exc}")
+        _log_agent_sync_result(
+            db_path, peer_name, peer_url, local_agent_id,
+            "agent_pull", False,
+            error_message=str(exc),
+        )
+
+    # Push local agent entries
+    try:
+        conn = _open_conn(db_path)
+        try:
+            rows = conn.execute(
+                """SELECT agent_id, display_name, parent_agent, namespace,
+                          logical_clock, version_vector, last_seen, is_deleted
+                   FROM agent_registry_crdt
+                   WHERE tenant_id = 'default'
+                   ORDER BY last_seen ASC""",
+            ).fetchall()
+            local_entries = []
+            for row in rows:
+                local_entries.append({
+                    "agent_id": row[0],
+                    "display_name": row[1],
+                    "parent_agent": row[2],
+                    "namespace": row[3],
+                    "logical_clock": row[4],
+                    "version_vector": row[5],
+                    "last_seen": row[6],
+                    "is_deleted": row[7],
+                })
+            if local_entries:
+                push_resp = push_agent_changes(peer_url, local_agent_id, local_entries)
+                results["pushed"] = push_resp.get("applied", 0)
+                if push_resp.get("error"):
+                    results["errors"].append(push_resp["error"])
+        except Exception as e:
+            results["errors"].append(f"local query failed: {e}")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        _log_agent_sync_result(
+            db_path, peer_name, peer_url, local_agent_id,
+            "agent_push", True,
+            changes_pushed=results["pushed"],
+            duration_ms=int((time.time() - start) * 1000),
+        )
+    except Exception as exc:
+        results["errors"].append(f"push failed: {exc}")
+        _log_agent_sync_result(
+            db_path, peer_name, peer_url, local_agent_id,
+            "agent_push", False,
+            error_message=str(exc),
+        )
+
+    duration = int((time.time() - start) * 1000)
+    _log_agent_sync_result(
+        db_path, peer_name, peer_url, local_agent_id,
+        "agent_sync", not results["errors"],
+        changes_pushed=results["pushed"],
+        changes_pulled=results["pulled"],
+        duration_ms=duration,
+    )
+    return results
 
 
 # ---------------------------------------------------------------------------

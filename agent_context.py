@@ -56,6 +56,11 @@ def init_agent(
     All subsequent save/search operations will be scoped to this agent
     until ``clear_agent()`` is called or the thread exits.
 
+    Also writes a row to the persistent ``agent_registry_crdt`` table
+    for cross-agent discovery via sync.  The DB write is best-effort
+    (silently skipped if the table does not yet exist, e.g. during
+    early bootstrap before migrations run).
+
     Args:
         agent_id: Globally unique agent identifier.
         display_name: Human-readable name (optional).
@@ -76,8 +81,55 @@ def init_agent(
             "created_at": __import__("time").time(),
         }
     _AGENT_CONTEXT.current = ctx
+
+    # Best-effort persistent write for cross-agent discovery via sync.
+    _persist_agent_registration(agent_id, ctx.display_name, parent_agent, ctx.namespace)
+
     logger.info("agent_context: activated %s (namespace=%s)", agent_id, ctx.namespace)
     return ctx
+
+
+def _persist_agent_registration(
+    agent_id: str,
+    display_name: str,
+    parent_agent: Optional[str],
+    namespace: str,
+) -> None:
+    """Write an agent identity row to ``agent_registry_crdt``.
+
+    Best-effort: silently skips if the table doesn't exist yet
+    (pre-migration bootstrap) or the DB path isn't available.
+    """
+    _now = __import__("time").time()
+    try:
+        from pathlib import Path as _Path
+        import sqlite3
+
+        from infra._lazy_imports import get_config as _get_config
+
+        cfg = _get_config()
+        db = _Path(str(cfg.db_path))
+        if not db.exists():
+            return
+        conn = sqlite3.connect(str(db), timeout=5)
+        try:
+            conn.execute(
+                """INSERT OR REPLACE INTO agent_registry_crdt
+                   (agent_id, display_name, parent_agent, namespace,
+                    logical_clock, version_vector, last_seen, is_deleted, tenant_id)
+                   VALUES (?, ?, ?, ?, 1, '{}', ?, 0, 'default')""",
+                (agent_id, display_name, parent_agent or "", namespace, _now),
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # table doesn't exist yet (pre-migration)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def get_agent() -> AgentContext:
@@ -127,9 +179,52 @@ def clear_agent() -> None:
 
 
 def list_agents() -> dict[str, dict]:
-    """Return all registered agent contexts."""
+    """Return all registered agent contexts.
+
+    Merges in-memory (current process) agents with persisted agent
+    registry entries from the DB for cross-agent discovery.
+    """
+    result = {}
     with _AGENT_LOCK:
-        return dict(_AGENT_REGISTRY)
+        result.update(dict(_AGENT_REGISTRY))
+
+    # Supplement with persisted entries from agent_registry_crdt
+    try:
+        from pathlib import Path as _Path
+        import sqlite3
+
+        from infra._lazy_imports import get_config as _get_config
+
+        cfg = _get_config()
+        db = _Path(str(cfg.db_path))
+        if db.exists():
+            conn = sqlite3.connect(str(db), timeout=5)
+            try:
+                rows = conn.execute(
+                    """SELECT agent_id, display_name, parent_agent, namespace, last_seen
+                       FROM agent_registry_crdt
+                       WHERE is_deleted = 0 AND tenant_id = 'default'""",
+                ).fetchall()
+                for row in rows:
+                    aid = row[0]
+                    if aid not in result:
+                        result[aid] = {
+                            "display_name": row[1],
+                            "parent_agent": row[2] or None,
+                            "namespace": row[3],
+                            "last_seen": row[4],
+                        }
+            except sqlite3.OperationalError:
+                pass  # table doesn't exist yet
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    return result
 
 
 # ---------------------------------------------------------------------------

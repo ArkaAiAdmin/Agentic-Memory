@@ -125,7 +125,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 #   version was left at 64, so run_migrations refused to apply them under
 #   SCHEMA_STABLE=True and every freshly-bootstrapped test DB lacked those
 #   tables.  Bumping to 67 makes the three additive migrations apply.
-SCHEMA_VERSION = 70
+SCHEMA_VERSION = 71
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the

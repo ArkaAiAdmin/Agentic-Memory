@@ -189,6 +189,25 @@ def main() -> int:
                         print(f"  KG errors: {kg_result['errors']}")
                 except Exception as kg_exc:
                     logger.debug("cron_crdt_sync: KG sync with %s failed: %s", peer_name, kg_exc)
+
+                # Agent registry sync (cross-agent discovery)
+                try:
+                    from infra.sync_client import sync_agents_with_peer
+                    agent_result = sync_agents_with_peer(
+                        db_path=str(db_path),
+                        peer_url=peer_url,
+                        peer_name=peer_name,
+                        local_agent_id=local_agent_id,
+                    )
+                    if agent_result.get("pulled", 0) > 0 or agent_result.get("pushed", 0) > 0:
+                        print(
+                            f"  Agents: pulled {agent_result.get('pulled', 0)}, "
+                            f"pushed {agent_result.get('pushed', 0)}"
+                        )
+                    if agent_result.get("errors"):
+                        print(f"  Agent errors: {agent_result['errors']}")
+                except Exception as agent_exc:
+                    logger.debug("cron_crdt_sync: agent sync with %s failed: %s", peer_name, agent_exc)
             except Exception as e:
                 logger.error("cron_crdt_sync: sync with %s failed: %s", peer_name, e)
                 print(f"  ERROR: {e}")

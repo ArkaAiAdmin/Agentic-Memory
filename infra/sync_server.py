@@ -265,6 +265,8 @@ class _SyncHandler(BaseHTTPRequestHandler):
         elif path == "/skills/changes":
             # Next-frontier: sync skills CRDT state to peers.
             self._handle_skill_changes(parse_qs(parsed.query))
+        elif path == "/agents/changes":
+            self._handle_agent_changes(parse_qs(parsed.query))
         elif path == "/sync/peers":
             self._handle_get_peers()
         elif path == "/crdt/policy_hash":
@@ -289,6 +291,10 @@ class _SyncHandler(BaseHTTPRequestHandler):
             self._handle_skill_changes(parse_qs(parsed.query))
         elif path == "/skills/push":
             self._handle_skill_push()
+        elif path == "/agents/changes":
+            self._handle_agent_changes(parse_qs(parsed.query))
+        elif path == "/agents/push":
+            self._handle_agent_push()
         elif path == "/api/v1/query":
             try:
                 body = self._read_body()
@@ -1112,6 +1118,165 @@ class _SyncHandler(BaseHTTPRequestHandler):
                     pass
         except Exception as e:
             logger.error("sync_server: skill push failed: %s", e)
+            self._error(str(e), 500)
+
+
+    def _handle_agent_changes(self, query: dict) -> None:
+        """GET /agents/changes — return agent registry entries updated since a timestamp.
+
+        Query params:
+          ``since``  — Unix epoch. Only return entries with last_seen > since.
+          ``agent``  — Agent id for context (unused in filter).
+          ``limit``  — Max entries to return (default 200, capped at 1000).
+
+        Tenant-scoped for isolation.
+        """
+        if not self._require_auth():
+            return
+        if not self._check_replay():
+            return
+
+        since = self._parse_since(query.get("since", [None])[0] or "")
+        limit = 200
+        raw_limit = query.get("limit", [None])[0]
+        if raw_limit:
+            try:
+                limit = max(1, min(int(raw_limit), 1000))
+            except (TypeError, ValueError):
+                pass
+
+        try:
+            conn = _open_server_db(self.db_path)
+            try:
+                params: tuple = (since,) if since is not None else (0.0,)
+                where = "WHERE last_seen > ?" if since is not None else ""
+                rows = conn.execute(
+                    f"""SELECT agent_id, display_name, parent_agent, namespace,
+                               logical_clock, version_vector, last_seen, is_deleted
+                        FROM agent_registry_crdt
+                        {where}
+                          AND tenant_id = ?
+                        ORDER BY last_seen ASC
+                        LIMIT ?""",
+                    params + (self.server_tenant_id, limit),
+                ).fetchall()
+                agents = []
+                for row in rows:
+                    agents.append({
+                        "agent_id": row[0],
+                        "display_name": row[1],
+                        "parent_agent": row[2],
+                        "namespace": row[3],
+                        "logical_clock": row[4],
+                        "version_vector": row[5],
+                        "last_seen": row[6],
+                        "is_deleted": row[7],
+                    })
+                self._json_response({"agents": agents, "ts": time.time()})
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error("sync_server: agent changes failed: %s", e)
+            self._error(str(e), 500)
+
+    def _handle_agent_push(self) -> None:
+        """POST /agents/push — receive agent registry entries from a peer.
+
+        Body: ``{"agents": [{...agent entry...}, ...]}``
+
+        Each entry is upserted into the local ``agent_registry_crdt``
+        table with LWW conflict resolution via version_vector comparison.
+        Returns ``{"applied": N, "skipped": M}``.
+        """
+        if not self._require_auth():
+            return
+        if not self._check_replay():
+            return
+        body = self._read_body()
+        if not body:
+            self._error("Empty request body")
+            return
+        if not self._check_hmac(body):
+            return
+
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as e:
+            self._error(f"Invalid JSON: {e}")
+            return
+
+        try:
+            from crdt.crdt_merge import parse_version_vector, dominates, merge_vectors
+
+            conn = _open_server_db(self.db_path)
+            try:
+                applied = 0
+                skipped = 0
+                for entry in data.get("agents", []):
+                    agent_id = entry.get("agent_id", "")
+                    if not agent_id:
+                        skipped += 1
+                        continue
+
+                    remote_vv = parse_version_vector(entry.get("version_vector", "{}"))
+                    remote_clock = int(entry.get("logical_clock", 0))
+                    remote_agent = entry.get("display_name", agent_id)
+
+                    existing = conn.execute(
+                        "SELECT version_vector, logical_clock FROM agent_registry_crdt WHERE agent_id = ? AND tenant_id = ?",
+                        (agent_id, self.server_tenant_id),
+                    ).fetchone()
+
+                    if existing:
+                        existing_vv = parse_version_vector(existing[0])
+                        existing_clock = existing[1]
+                        if dominates(remote_vv, existing_vv):
+                            pass  # remote wins
+                        elif dominates(existing_vv, remote_vv):
+                            skipped += 1
+                            continue  # local is newer
+                        else:
+                            # Concurrent: LWW tiebreaker (clock desc, agent_id asc)
+                            remote_wins = (remote_clock, remote_agent) > (existing_clock, agent_id)
+                            if not remote_wins:
+                                skipped += 1
+                                continue
+                    else:
+                        pass  # new entry
+
+                    merged_vv = merge_vectors(self.server_agent_id, existing_vv if existing else {}, remote_vv)
+                    new_clock = max(remote_clock, existing[1] if existing else 0) + 1
+
+                    conn.execute(
+                        """INSERT OR REPLACE INTO agent_registry_crdt
+                           (agent_id, display_name, parent_agent, namespace,
+                            logical_clock, version_vector, last_seen, is_deleted, tenant_id)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            agent_id,
+                            entry.get("display_name", agent_id),
+                            entry.get("parent_agent", ""),
+                            entry.get("namespace", agent_id),
+                            new_clock,
+                            json.dumps(merged_vv),
+                            entry.get("last_seen", time.time()),
+                            entry.get("is_deleted", 0),
+                            self.server_tenant_id,
+                        ),
+                    )
+                    applied += 1
+                conn.commit()
+                self._json_response({"applied": applied, "skipped": skipped})
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error("sync_server: agent push failed: %s", e)
             self._error(str(e), 500)
 
 

@@ -34,9 +34,17 @@ def main() -> int:
 
     logger = setup_logging("sync_server_daemon")
 
+    # Register this agent in the persistent registry for cross-agent discovery
+    agent_id = os.environ.get("MEMORY_AGENT_ID", "local")
+    try:
+        from agent_context import init_agent
+        init_agent(agent_id=agent_id)
+    except Exception as exc:
+        logger.warning("sync_server_daemon: agent init failed (non-fatal): %s", exc)
+
     server = SyncServer(
         db_path=args.db_path,
-        agent_id=os.environ.get("MEMORY_AGENT_ID", "local"),
+        agent_id=agent_id,
         host=args.host,
         port=args.port,
     )
