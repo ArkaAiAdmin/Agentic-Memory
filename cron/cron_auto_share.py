@@ -93,6 +93,10 @@ def main() -> int:
         logger.warning("main failed: %s", e)
         agent_id = "auto-share"
 
+    # Tenant ID matches the agent ID so the query finds memories stored
+    # under the agent's tenant (OPENCODE → tenant='OPENCODE').
+    tenant_id = agent_id
+
     print(
         f"auto_share: scanning importance>={min_importance} "
         f"fitness>={min_fitness:.2f} cap={max_per_cycle} agent={agent_id}"
@@ -101,6 +105,7 @@ def main() -> int:
     try:
         result = ma.auto_share_high_value(
             agent_id=agent_id,
+            tenant_id=tenant_id,
             min_importance=min_importance,
             min_fitness=min_fitness,
             limit=max_per_cycle,

@@ -942,9 +942,6 @@ def auto_share_high_value(
             logger.warning("auto_share_high_value failed: %s", e)
             agent_id = "auto-share"
 
-    if tenant_id == "default" and agent_id and agent_id != "default":
-        tenant_id = agent_id
-
     candidates = list_share_candidates(
         min_importance=min_importance,
         min_fitness=min_fitness,
