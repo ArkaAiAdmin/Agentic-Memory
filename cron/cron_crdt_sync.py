@@ -142,6 +142,11 @@ def main() -> int:
                 logger.warning("cron_crdt_sync: skipping incomplete peer config: %s", peer)
                 continue
 
+            # Skip self — don't sync with ourselves
+            if peer_agent_id == local_agent_id:
+                logger.debug("cron_crdt_sync: skipping self (%s)", peer_agent_id)
+                continue
+
             print(f"Syncing with {peer_name} ({peer_url})...")
             try:
                 result = sync_with_peer(
