@@ -426,7 +426,12 @@ def _rerank_results(
     if budget.should_run("answer_rerank", 50):
         try:
             from search.answer_rerank import answer_rerank
-            out = answer_rerank(db, query, out, db_path=db_path)
+            from search.enrichment import compute_display_scores
+
+            _display_scores = compute_display_scores(out, query, db_path, as_of=as_of)
+            out = answer_rerank(
+                db, query, out, db_path=db_path, display_scores=_display_scores
+            )
         except Exception as _ar_exc:
             logger.debug("answer_rerank skipped: %s", _ar_exc)
     # LTR reranking: LambdaMART takes over ordering after all CE /

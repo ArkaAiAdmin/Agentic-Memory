@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,10 @@ def _bb1_split_sentences(text: str) -> list:
 
 
 def _bb1_synthesize(
-    query: str, results: list, max_sentences: int = _BB1_DEFAULT_MAX_SENTENCES
+    query: str,
+    results: list,
+    max_sentences: int = _BB1_DEFAULT_MAX_SENTENCES,
+    display_scores: Optional[dict] = None,
 ) -> dict:
     """BB1: build a synthesized answer from the top search results.
 
@@ -143,6 +147,13 @@ def _bb1_synthesize(
         results: list of (note_id, content, source_file, final_score, ...) tuples
                  (must contain at least the first 6 fields)
         max_sentences: cap on the number of sentences in the synthesis
+        display_scores: Optional mapping ``{note_id: display_score}`` from the
+            post-rank enrichment envelope. When provided, the per-result
+            baseline used to weight sentences is the *enriched* score (concept
+            / centrality / neural-forget surprise folded in) instead of the
+            raw final_score, so synthesis reflects the same enriched signal
+            as answer-rerank. Recency is already inside final_score and is
+            excluded from display_score (no double-count).
 
     Returns:
         dict with:
@@ -170,7 +181,13 @@ def _bb1_synthesize(
         note_id = r[0]
         content = r[1] if len(r) > 1 else ""
         source_file = r[2] if len(r) > 2 else ""
-        content_score = r[6] if len(r) > 6 else 1.0
+        if display_scores and note_id in display_scores:
+            try:
+                content_score = float(display_scores[note_id])
+            except (TypeError, ValueError):
+                content_score = r[6] if len(r) > 6 else 1.0
+        else:
+            content_score = r[6] if len(r) > 6 else 1.0
         sentences = _bb1_split_sentences(content or "")
         if not sentences:
             continue

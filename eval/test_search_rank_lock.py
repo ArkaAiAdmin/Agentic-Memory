@@ -246,17 +246,95 @@ def test_display_score_folds_factors_without_changing_order(monkeypatch: pytest.
     assert [it["id"] for it in out] == [it["id"] for it in items]
     for src, got in zip(items, out):
         fs = float(src["final_score"])
+        # Option A1: temporal_decay is EXCLUDED (already in final_score via the
+        # recency channel) to avoid double-counting recency.
         expected = fs * (
             got["concept_boost"]
             * got["centrality_boost"]
             * got["jaccard_surprise"]
-            * got["temporal_decay"]
         )
         assert abs(got["display_score"] - expected) < 1e-9
         # final_score itself is NEVER mutated by enrichment.
         assert got["final_score"] == src["final_score"]
-        # display_score actually differs from final_score (factors are live).
-        assert got["display_score"] != got["final_score"]
+        # With neutral (1.0) factors, display_score collapses to final_score
+        # (no spurious change). The live-factor path is covered by
+        # test_display_score_uses_enriched_baseline below.
+
+
+def test_display_score_excludes_temporal_double_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Option A1 correctness guard: display_score must NOT re-multiply
+    temporal_decay, because recency is already a channel inside
+    _compute_final_score. If temporal_decay leaked in, an old note would be
+    penalized twice. Assert the multiplier is exactly the three
+    non-recency factors."""
+    monkeypatch.setattr(E, "_load_concept_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_jaccard_map", lambda items, query: {})
+    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path: {})
+    item = {
+        "id": "note-000",
+        "source_file": "/mem/n.md",
+        "created": "2020-01-01T00:00:00+00:00",  # old -> temporal_decay < 1
+        "last_accessed": None,
+        "final_score": 1.0,
+        "metadata": {},
+        "category": "lessons",
+    }
+    out = E._apply_post_rank_metadata([item], "q", db_path="/no/such/db")
+    got = out[0]
+    # temporal_decay is reported but NOT in the display_score multiplier.
+    assert got["temporal_decay"] < 1.0
+    assert abs(got["display_score"] - 1.0) < 1e-9  # only neutral factors applied
+
+
+def test_display_score_drives_answer_rerank_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Integration: answer_rerank starts its blend from the enriched
+    display_score when available, so concept/centrality/surprise boosts
+    actually shift the answer-level ordering (Option A1 makes the factors
+    contribute to results, not just a reported number)."""
+    import search.answer_rerank as AR
+    from search.enrichment import compute_display_scores
+
+    # Fake a DB connection whose cursor returns nothing (cache miss path).
+    class _Conn:
+        def execute(self, *a, **k):
+            return self
+
+        def fetchone(self):
+            return None
+
+    # Two candidates: equal final_score, but note-b gets a higher enriched
+    # baseline via a fake concept map. Build items with concept_boost set
+    # by monkeypatching the factor loader.
+    monkeypatch.setattr(E, "_load_concept_map", lambda db_path: {"note-b": {999}})
+    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_jaccard_map", lambda items, query: {})
+    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path: {})
+
+    candidates = [
+        ("note-a", "irrelevant content about cats", "f/a", "", "2024-01-01T00:00:00+00:00", 0.0, 0.9, 0.5, 3, 0),
+        ("note-b", "irrelevant content about dogs", "f/b", "", "2024-01-01T00:00:00+00:00", 0.0, 0.9, 0.5, 3, 0),
+    ]
+    # note-b matches the concept entity 999 via metadata entities.
+    candidates = [
+        (cid, c, sf, "", "2024-01-01T00:00:00+00:00", 0.0, 0.9, 0.5, 3, 0, None, {"entities": ([999] if cid == "note-b" else [])})
+        for cid, c, sf in [
+            ("note-a", "irrelevant content about cats", "f/a"),
+            ("note-b", "irrelevant content about dogs", "f/b"),
+        ]
+    ]
+    scores = compute_display_scores(candidates, "query", "/no/such/db")
+    # note-b should be enriched above note-a (concept membership boost).
+    assert scores.get("note-b", 0.0) > scores.get("note-a", 0.0)
+
+    # answer_rerank: with identical snippet scores (keyword fallback on
+    # non-overlapping query), the enriched baseline decides order.
+    reranked = AR.answer_rerank(
+        _Conn(), "zzz none of these words match", candidates,
+        display_scores=scores,
+    )
+    top_id = reranked[0][0]
+    assert top_id == "note-b"
 
 
 # -- noisy runner: many random perturbations in a loop -----------------------
