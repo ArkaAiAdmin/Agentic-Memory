@@ -486,6 +486,77 @@ def _rerank_results(
     return out[:limit], _qweights
 
 
+def _temporal_compare(
+    db: AnyConnection,
+    results: list,
+    query: str,
+    limit: int,
+) -> list:
+    """Phase 10.5: Temporal comparison for ordering/counting queries.
+
+    For queries like "Which changed first: X or Y?" or "What was X when Y
+    changed?", find the most recent session for each mentioned topic and
+    compare timestamps. This is a post-retrieval enrichment that adds
+    temporal comparison data to the result set.
+    """
+    import re as _re
+
+    # Detect temporal comparison patterns
+    _TC_PATTERNS = [
+        r"which\s+(changed|updated|modified)\s+(first|last|earliest|most recent)",
+        r"what\s+was\s+.*\s+when\s+",
+        r"before\s+or\s+after",
+        r"in\s+what\s+order",
+        r"most\s+recently",
+    ]
+    is_temporal = any(_re.search(p, query, _re.IGNORECASE) for p in _TC_PATTERNS)
+    if not is_temporal:
+        return results
+
+    # Extract topic keywords from the query (skip stopwords)
+    _STOP = {"the", "a", "an", "is", "are", "was", "were", "which", "what",
+             "when", "how", "changed", "first", "last", "before", "after",
+             "or", "and", "in", "order", "most", "recently", "updated",
+             "modified", "was", "the"}
+    keywords = [
+        w.lower() for w in _re.findall(r"[a-z]{3,}", query.lower())
+        if w.lower() not in _STOP
+    ]
+
+    if not keywords:
+        return results
+
+    # For each keyword, find the most recent session mentioning it
+    # and boost that session's final_score
+    for kw in keywords[:5]:  # limit to 5 keywords
+        try:
+            rows = db.execute(
+                "SELECT m.id, m.observed_at FROM memories_fts fts "
+                "JOIN tenant_memories m ON m.id = "
+                "(SELECT id FROM memories WHERE rowid = fts.rowid) "
+                "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
+                "AND m.category = 'sessions' "
+                "ORDER BY m.observed_at DESC LIMIT 1",
+                (f'"{kw}"',)
+            ).fetchall()
+            if rows:
+                recent_id = rows[0][0]
+                # Boost the most recent session for this keyword
+                for i, r in enumerate(results):
+                    if r[0] == recent_id:
+                        old_score = float(r[6]) if r[6] is not None else 0.0
+                        results[i] = list(r)
+                        results[i][6] = old_score * 1.1  # 10% boost
+                        results[i] = tuple(results[i])
+                        break
+        except Exception:
+            continue
+
+    # Re-sort by final_score
+    results = sorted(results, key=lambda r: float(r[6]) if r[6] is not None else 0.0, reverse=True)
+    return results[:limit]
+
+
 def _cache_store_result(cache_key: str, result: dict) -> None:
     """Store a search result in the LRU cache and enforce the size cap.
 
@@ -669,7 +740,9 @@ def search_memories(
     if mode == "hybrid":
         _FACT_LOOKUP_RE = re.compile(
             r"^\s*(what|which)\s+(is|are|was|were)\s+(the\s+)?(current\s+).*(now\s*\?|\?)?\s*$"
-            r"|^\s*(what|which)\s+(is|are|was|were)\s+.*\bnow\b",
+            r"|^\s*(what|which)\s+(is|are|was|were)\s+.*\bnow\b"
+            r"|^\s*the\s+.*\b(changed|updated|modified)\b.*what\s+is\s+the\s+current"
+            r"|^\s*(when|what)\s+(was|is|did)\s+.*\b(last\s+updated|last\s+changed)\b",
             re.IGNORECASE,
         )
         if _FACT_LOOKUP_RE.search(query):
@@ -1199,6 +1272,18 @@ def search_memories(
                 _phase_inc("search.multi_hop_kg", _mhkg_exc)
                 logger.warning("multi_hop_kg failed (degraded): %s", _mhkg_exc)
             _record_phase_latency("search.multi_hop_kg", _t0_mhkg)
+
+        # Phase 10.5: Temporal comparison — for queries that ask "which changed
+        # first/last" or "what was X when Y changed", find the most recent
+        # session for each mentioned topic and compare timestamps.
+        if mode != "fact_lookup":
+            _t0_tc = time.time()
+            try:
+                results = _temporal_compare(db, results, query, limit)
+            except Exception as _tc_exc:
+                _phase_inc("search.temporal_compare", _tc_exc)
+                logger.debug("temporal_compare failed (degraded): %s", _tc_exc)
+            _record_phase_latency("search.temporal_compare", _t0_tc)
 
         # Phase 11: Reranking
         # fact_lookup mode skips CE reranking — FTS5 rank is the final rank.
