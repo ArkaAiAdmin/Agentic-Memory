@@ -216,9 +216,9 @@ class TestRetrievalDemotion(unittest.TestCase):
 class TestUntrustedMarkerInMetadata(unittest.TestCase):
     def test_metadata_includes_provenance(self):
         import inspect
-        from memory_sharing import import_shared_memory, _build_untrusted_meta
+        from memory_sharing import _do_import, _build_untrusted_meta
 
-        src = inspect.getsource(import_shared_memory)
+        src = inspect.getsource(_do_import)
         self.assertIn('"untrusted"', src)
         self.assertIn('tier = "untrusted"', src)
 

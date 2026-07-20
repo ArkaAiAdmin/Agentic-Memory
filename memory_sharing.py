@@ -434,6 +434,10 @@ def list_shared_memories(
 def _resolve_import_db_path(db_path: str | None) -> str | dict:
     """Resolve the db_path argument to a usable path or an error dict.
 
+    Respects ``MEMORY_DB_PATH`` env var first, falls back to
+    ``get_memory_paths() / memory.db``. This ensures peer agents running
+    their own hooks can import from the correct DB.
+
     Returns the path string on success, or a dict like
     ``{"enabled": True, "error": "..."}`` if the path can't be
     resolved. The caller should check ``isinstance(result, dict)`` to
@@ -443,6 +447,10 @@ def _resolve_import_db_path(db_path: str | None) -> str | dict:
     """
     if db_path is not None:
         return db_path
+    import os
+    env_path = os.environ.get("MEMORY_DB_PATH", "").strip()
+    if env_path:
+        return env_path
     try:
         from infra._lazy_imports import get_memory_paths
 
@@ -615,8 +623,81 @@ def _run_import_indexers(
     _index_adaptive_retention(conn, new_id)
 
 
+def _do_import(
+    conn: AnyConnection, shared_id: str, target_agent_id: str, tenant_id: str
+) -> dict:
+    """Run the import logic on an existing connection.
+
+    Looks up the shared_memories row (with tenant-ID fallback), scans
+    content for injection, creates the new note, runs indexers, and
+    writes the CRDT field. The caller owns commit/rollback.
+    """
+    _ensure_shared_table(conn)
+
+    row = conn.execute(
+        f"SELECT agent_id, content, category, tags, source_note_id, metadata, tenant_id "
+        f"FROM {_SHARED_TABLE} WHERE id = ? AND tenant_id = ?",
+        (shared_id, tenant_id),
+    ).fetchone()
+    if not row and tenant_id:
+        row = conn.execute(
+            f"SELECT agent_id, content, category, tags, source_note_id, metadata, tenant_id "
+            f"FROM {_SHARED_TABLE} WHERE id = ?",
+            (shared_id,),
+        ).fetchone()
+    if not row:
+        return {
+            "enabled": True,
+            "error": f"shared memory {shared_id} not found",
+        }
+
+    source_agent, content, category, tags_json, source_id, meta_json, _sm_tenant_id = row
+    new_id = f"imported:{target_agent_id}:{source_id or shared_id}"
+    from datetime import datetime, timezone
+
+    datetime.now(timezone.utc).isoformat()
+    source_file = f"imported/{new_id.replace(':', '_')}.md"
+
+    scan_result = _scan_shared_content(content, source_agent, shared_id)
+    if scan_result.get("_rejected"):
+        return {k: v for k, v in scan_result.items() if not k.startswith("_")}
+
+    is_suspicious = scan_result["is_suspicious"]
+    tier = "untrusted" if is_suspicious else "warm"
+    meta = _build_untrusted_meta(meta_json, source_agent, shared_id, scan_result)
+    tags_list = _add_provenance_tags(tags_json, is_suspicious)
+
+    from save_pipeline import upsert_row
+
+    upsert_row(
+        conn,
+        new_id,
+        content,
+        source_file=source_file,
+        tags=tags_list,
+        category=category or "imported",
+        pinned=False,
+        tier=tier,
+        metadata=meta,
+    )
+
+    _run_import_indexers(
+        conn, new_id, content, category, tags_list, source_file, is_suspicious,
+    )
+    _write_imported_note_crdt(
+        conn, new_id, content, source_agent, target_agent_id, source_file, category, tags_list,
+    )
+
+    return {
+        "enabled": True,
+        "new_note_id": new_id,
+        "source_agent": source_agent,
+    }
+
+
 def import_shared_memory(
-    shared_id: str, target_agent_id: str, db_path: str | None = None, tenant_id: str = "default"
+    shared_id: str, target_agent_id: str, db_path: str | None = None, tenant_id: str = "default",
+    existing_conn: AnyConnection | None = None,
 ) -> dict:
     """Import a shared memory into the target agent's workspace.
 
@@ -640,6 +721,12 @@ def import_shared_memory(
     if not sys.modules[__name__].MULTI_AGENT_ENABLED:
         return {"enabled": False}
 
+    if existing_conn is not None:
+        try:
+            return _do_import(existing_conn, shared_id, target_agent_id, tenant_id)
+        except Exception as e:
+            return {"enabled": True, "error": str(e)}
+
     db_or_error = _resolve_import_db_path(db_path)
     if isinstance(db_or_error, dict):
         return db_or_error
@@ -655,82 +742,9 @@ def import_shared_memory(
             conn = sqlite3.connect(str(db), timeout=30.0)
             try:
                 _ensure_shared_table(conn)
-
-                row = conn.execute(
-                    f"SELECT agent_id, content, category, tags, source_note_id, metadata, tenant_id "
-                    f"FROM {_SHARED_TABLE} WHERE id = ? AND tenant_id = ?",
-                    (shared_id, tenant_id),
-                ).fetchone()
-                if not row:
-                    return {
-                        "enabled": True,
-                        "error": f"shared memory {shared_id} not found",
-                    }
-
-                source_agent, content, category, tags_json, source_id, meta_json, _sm_tenant_id = row
-
-                new_id = f"imported:{target_agent_id}:{source_id or shared_id}"
-                from datetime import datetime, timezone
-
-                datetime.now(timezone.utc).isoformat()
-                source_file = f"imported/{new_id.replace(':', '_')}.md"
-
-                scan_result = _scan_shared_content(content, source_agent, shared_id)
-                if scan_result.get("_rejected"):
-                    # Strip the internal sentinel before returning.
-                    return {k: v for k, v in scan_result.items() if not k.startswith("_")}
-
-                is_suspicious = scan_result["is_suspicious"]
-                tier = "untrusted" if is_suspicious else "warm"
-                meta = _build_untrusted_meta(
-                    meta_json, source_agent, shared_id, scan_result
-                )
-                tags_list = _add_provenance_tags(tags_json, is_suspicious)
-
-                from save_pipeline import upsert_row
-
-                upsert_row(
-                    conn,
-                    new_id,
-                    content,
-                    source_file=source_file,
-                    tags=tags_list,
-                    category=category or "imported",
-                    pinned=False,
-                    tier=tier,
-                    metadata=meta,
-                )
-
-                # Run indexers before the CRDT write. crdt_field_save commits
-                # the session connection internally (project_crdt_to_sql),
-                # so writing CRDT first would prematurely commit the uncommitted
-                # memories row and break rollback on indexer failure.
-                _run_import_indexers(
-                    conn,
-                    new_id,
-                    content,
-                    category,
-                    tags_list,
-                    source_file,
-                    is_suspicious,
-                )
-                _write_imported_note_crdt(
-                    conn,
-                    new_id,
-                    content,
-                    source_agent,
-                    target_agent_id,
-                    source_file,
-                    category,
-                    tags_list,
-                )
-
+                result = _do_import(conn, shared_id, target_agent_id, tenant_id)
                 conn.commit()
-                return {
-                    "enabled": True,
-                    "new_note_id": new_id,
-                    "source_agent": source_agent,
-                }
+                return result
             except Exception as e:
                 logger.warning("import_shared_memory failed: %s", e)
                 try:
@@ -1000,6 +1014,10 @@ def _create_notification_tasks_for_peers(
     memory so that ``claim_pending_tasks`` on their next session start
     picks it up and tells them to import it.
 
+    Also copies each ``shared_memories`` row into the peer's DB so the
+    peer's ``import_shared_memory`` call (which queries its own DB's
+    ``shared_memories`` table) can find the entry.
+
     All DBs are local files; peer DB paths are derived from agent IDs
     (``memory.db`` vs ``memory-{agent_id.lower()}.db``). Silently skips
     peers whose DB doesn't exist or can't be opened.
@@ -1019,6 +1037,38 @@ def _create_notification_tasks_for_peers(
     local_key = source_agent_id.upper()
     count = 0
     now = time.time()
+
+    # Read source shared_memories rows to copy to peers
+    source_db = db_path or str(mem_dir / "memory.db")
+    sm_rows: list[dict] = []
+    try:
+        sconn = sqlite3.connect(str(source_db), timeout=5)
+        try:
+            placeholders = ",".join("?" for _ in shared_ids)
+            rows = sconn.execute(
+                f"SELECT id, agent_id, content, category, tags, shared_at, "
+                f"source_note_id, metadata, target_agent_id, shared_with, tenant_id "
+                f"FROM {_SHARED_TABLE} WHERE id IN ({placeholders})",
+                shared_ids,
+            ).fetchall()
+            for r in rows:
+                sm_rows.append({
+                    "id": r[0],
+                    "agent_id": r[1],
+                    "content": r[2],
+                    "category": r[3],
+                    "tags": r[4],
+                    "shared_at": r[5],
+                    "source_note_id": r[6],
+                    "metadata": r[7],
+                    "target_agent_id": r[8],
+                    "shared_with": r[9],
+                    "tenant_id": r[10],
+                })
+        finally:
+            sconn.close()
+    except Exception:
+        logger.debug("Could not read source shared_memories rows", exc_info=True)
 
     for peer_id in agents:
         if peer_id.upper() == local_key:
@@ -1046,6 +1096,9 @@ def _create_notification_tasks_for_peers(
                         depends_on INTEGER REFERENCES shared_tasks(id)
                     )
                 """)
+                # Ensure shared_memories table exists in peer DB
+                _ensure_shared_table(pconn)
+
                 for sid in shared_ids:
                     desc = (
                         f"New shared memory: {sid} — "
@@ -1066,6 +1119,30 @@ def _create_notification_tasks_for_peers(
                             now,
                         ),
                     )
+
+                # Copy shared_memories rows into peer DB so import_shared_memory
+                # (which queries the peer's own shared_memories table) can find them
+                for sm in sm_rows:
+                    pconn.execute(
+                        f"INSERT OR IGNORE INTO {_SHARED_TABLE} "
+                        f"(id, agent_id, content, category, tags, shared_at, source_note_id, metadata, "
+                        f"target_agent_id, shared_with, tenant_id) "
+                        f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            sm["id"],
+                            sm["agent_id"],
+                            sm["content"],
+                            sm["category"],
+                            sm["tags"],
+                            sm["shared_at"],
+                            sm["source_note_id"],
+                            sm["metadata"],
+                            sm["target_agent_id"],
+                            sm["shared_with"],
+                            sm["tenant_id"],
+                        ),
+                    )
+
                 pconn.commit()
                 count += len(shared_ids)
             finally:

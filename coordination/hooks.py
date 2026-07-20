@@ -36,10 +36,20 @@ logger = logging.getLogger(__name__)
 
 
 def _make_conn() -> sqlite3.Connection | None:
-    """Create a new database connection. Returns None if DB not available."""
+    """Create a new database connection. Returns None if DB not available.
+    
+    Respects ``MEMORY_DB_PATH`` env var first, falls back to
+    ``resolve_active_memory_dir() / memory.db``. This ensures the
+    coordination hook connects to the correct DB regardless of which
+    agent's hooks are running.
+    """
     try:
-        from infra.infrastructure import resolve_active_memory_dir
-        db_path = resolve_active_memory_dir() / "memory.db"
+        env_path = os.environ.get("MEMORY_DB_PATH", "").strip()
+        if env_path:
+            db_path = Path(env_path)
+        else:
+            from infra.infrastructure import resolve_active_memory_dir
+            db_path = resolve_active_memory_dir() / "memory.db"
         if not db_path.exists():
             return None
         conn = sqlite3.connect(str(db_path), timeout=5)
@@ -497,6 +507,7 @@ def _auto_import_shared_memory(
             shared_id=f"shared:{source_agent_id}:{shared_note_id}",
             target_agent_id=agent_id,
             tenant_id=agent_id,
+            existing_conn=conn,
         )
     except Exception as exc:
         logger.warning("auto-import failed for task %d: %s", task_id, exc)
