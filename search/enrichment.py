@@ -106,6 +106,16 @@ def _apply_post_rank_metadata(
             * new_item["jaccard_surprise"]
         )
         new_item["display_score"] = _fs * _factors
+        # Apply concept/centrality boosts to final_score for ranking.
+        # The old pipeline applied these directly to final_score, which
+        # significantly improved ranking on concept/entity-heavy queries.
+        new_item["final_score"] = _fs * _factors
+        # Apply temporal_decay to final_score — the old pipeline did this
+        # and it helped with temporal queries even though recency is also
+        # a channel in _compute_final_score.
+        _td = new_item.get("temporal_decay", 1.0)
+        if _td and _td != 1.0:
+            new_item["final_score"] = new_item["final_score"] * _td
         out.append(new_item)
     return out
 
