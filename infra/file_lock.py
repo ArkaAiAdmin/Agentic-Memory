@@ -34,21 +34,21 @@ class FileLockError(RuntimeError):
 
 
 def _try_flock(lock_file, nonblocking: bool) -> bool:
-    """Single flock attempt. Returns True on success, False on failure.
+    """Single flock attempt using the pluggable LockManager.
 
-    On platforms without fcntl (Windows without pywin32), returns False
-    to signal "could not lock" — callers should treat this as best-effort.
+    Uses os.path.abspath(lock_file.name) as the lock key.
     """
-    try:
-        import fcntl as _fcntl
-    except ImportError:
+    if lock_file is None or not hasattr(lock_file, "name"):
         return False
-    flag = _fcntl.LOCK_EX | (_fcntl.LOCK_NB if nonblocking else 0)
-    try:
-        _fcntl.flock(lock_file.fileno(), flag)
+    import os
+    from infra.lock_manager import get_lock_manager
+    lm = get_lock_manager()
+    key = os.path.abspath(lock_file.name)
+    success, token = lm.acquire_lock(key, "file-lock", ttl_seconds=300)
+    if success:
+        setattr(lock_file, "_lease_token", token)
         return True
-    except (BlockingIOError, OSError):
-        return False
+    return False
 
 
 def _is_stale_lock(lock_path) -> bool:
@@ -140,29 +140,25 @@ def acquire_flock_with_retry(
 
 
 def release_flock(lock_file) -> bool:
-    """Best-effort flock release + file close.
+    """Best-effort lock release + file close using pluggable LockManager.
 
     Safe to call on a lock that was never acquired (it just no-ops).
-    Swallows exceptions on the assumption that lock release must not
-    raise out of a finally block.
-
-    Returns:
-        True if the lock was released, False if fcntl is not available
-        on this platform (matching the return convention of
-        ``acquire_flock_with_retry``).
     """
     if lock_file is None:
         return False
-    try:
-        import fcntl as _fcntl
-    except ImportError:
-        return False
-    try:
-        _fcntl.flock(lock_file.fileno(), _fcntl.LOCK_UN)
-    except Exception as e:
-        logger.warning("release_flock failed: %s", e)
+    token = getattr(lock_file, "_lease_token", None)
+    if token:
+        import os
+        from infra.lock_manager import get_lock_manager
+        lm = get_lock_manager()
+        key = os.path.abspath(lock_file.name)
+        try:
+            lm.release_lock(key, token)
+        except Exception as e:
+            logger.warning("release_flock lock manager release failed: %s", e)
+        setattr(lock_file, "_lease_token", None)
     try:
         lock_file.close()
     except Exception as e:
-        logger.warning("release_flock failed: %s", e)
+        logger.warning("release_flock file close failed: %s", e)
     return True

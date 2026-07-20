@@ -120,49 +120,38 @@ def rebuild_index(source_dir, db_path):
     source = Path(source_dir).resolve()
 
     lock_file = None
-    if fcntl:
-        try:
-            lock_path = source / ".rebuild.lock"
-            lock_file = open(lock_path, "w")
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            logger.info(
-                "Another index rebuild is already running. Waiting for it to finish..."
+    try:
+        lock_path = source / ".rebuild.lock"
+        lock_file = open(lock_path, "w")
+        from infra.file_lock import acquire_flock_with_retry, release_flock
+        acquired = acquire_flock_with_retry(
+            lock_file,
+            max_attempts=1200,
+            initial_backoff=0.5,
+            backoff_multiplier=1.0,
+            max_backoff=0.5,
+            nonblocking=True,
+            strict=False
+        )
+        if not acquired:
+            raise TimeoutError(
+                "Index rebuild lock held for >10 minutes; aborting. "
+                "If you believe this is stale, remove .rebuild.lock and retry."
             )
-            if lock_file is not None:
-                deadline = time.monotonic() + 600  # 10-minute safety cap
-                while True:
-                    try:
-                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-                        break
-                    except BlockingIOError:
-                        if time.monotonic() > deadline:
-                            raise TimeoutError(
-                                "Index rebuild lock held for >10 minutes; aborting. "
-                                "If you believe this is stale, remove "
-                                ".rebuild.lock and retry."
-                            )
-                        time.sleep(0.5)
-        except Exception as e:
-            logger.warning("Could not acquire process lock: %s", e)
-            if lock_file:
-                lock_file.close()
-            lock_file = None
+    except Exception as e:
+        logger.warning("Could not acquire process lock: %s", e)
+        if lock_file:
+            lock_file.close()
+        lock_file = None
 
     # C3 fix: wrap the entire body in try/finally so the lock is always released,
     # even if an exception fires mid-rebuild.
     try:
         _rebuild_index_body(source_dir, db_path, source, lock_file)
     finally:
-        if lock_file and fcntl:
-            try:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            except Exception as e:
-                logger.warning("rebuild_index failed: %s", e)
-            try:
-                lock_file.close()
-            except Exception as e:
-                logger.warning("rebuild_index failed: %s", e)
+        if lock_file:
+            from infra.file_lock import release_flock
+            release_flock(lock_file)
 
 
 def _rebuild_index_body(source_dir, db_path, source, lock_file):

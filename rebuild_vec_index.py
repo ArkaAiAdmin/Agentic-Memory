@@ -148,39 +148,31 @@ def _open_db_for_rebuild(db_path: Path) -> sqlite3.Connection:
 
 
 def _try_acquire_lock(lock_path, *, force: bool = False):
-    """Acquire .vec_rebuild.lock. Returns the open lock file or None.
+    """Acquire .vec_rebuild.lock using pluggable LockManager via file_lock wrapper.
 
-    With force=True, removes a stale lock file and retries once before
-    giving up. A live holder (BlockingIOError on both attempts) still
-    raises — force never bypasses a live rebuild.
+    Returns the open lock file or None.
     """
-    if not fcntl:
-        return None
+    from infra.file_lock import acquire_flock_with_retry
     lock_file = None
     try:
         lock_file = open(lock_path, "w")
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return lock_file
-    except BlockingIOError:
-        if force and lock_file is not None:
-            lock_file.close()
-            lock_file = None
-            try:
-                lock_file = open(lock_path, "w")
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return lock_file
-            except BlockingIOError:
-                logger.error(
-                    "Live rebuild in progress (lock held by another process). "
-                    "Cannot --force: refusing to interrupt an active rebuild."
-                )
-                if lock_file is not None:
-                    lock_file.close()
-                    lock_file = None
-                raise
+        acquired = acquire_flock_with_retry(
+            lock_file,
+            max_attempts=2 if force else 1,
+            initial_backoff=0.1,
+            backoff_multiplier=1.0,
+            nonblocking=True,
+            strict=False
+        )
+        if acquired:
+            return lock_file
         if lock_file is not None:
             lock_file.close()
             lock_file = None
+        raise BlockingIOError("Could not acquire vector rebuild lock")
+    except Exception:
+        if lock_file is not None:
+            lock_file.close()
         raise
 
 
@@ -384,7 +376,8 @@ def rebuild_vec_index(db_path, *, force: bool = False) -> dict:
         }
     finally:
         if lock_file is not None:
-            lock_file.close()
+            from infra.file_lock import release_flock
+            release_flock(lock_file)
             try:
                 lock_path.unlink()
             except OSError as exc:

@@ -121,106 +121,53 @@ _PATH_LOCKS_LOCK = threading.Lock()
 
 
 class PathLockFd:
-    """Holds a single open file descriptor for the per-DB-path lock file.
+    """Holds a lock lease for the per-DB-path database lock.
 
-    The fd is opened lazily on the first acquire and held open
-    for the process's lifetime.  The ``acquire`` method
-    short-circuits if the process already holds the flock (Linux
-    flock is per-fd, so re-acquiring the same fd is a no-op).
+    The lock is acquired dynamically using get_lock_manager().
+    Supports re-entrant nesting within the same process.
     """
 
     def __init__(self, path: Path) -> None:
         self.path = path
         self._lock = threading.Lock()
-        self._fd: Optional[IO[str]] = None
         self._ref_count = 0
-
-    def _ensure_fd(self) -> IO[str]:
-        """Open the lock file if not already open.
-
-        The file is created next to the DB (``<dbname>.db.flock``).
-        We create the parent dir if missing so brand-new memory
-        dirs work.
-        """
-        if self._fd is not None:
-            return self._fd
-        lock_path = self.path.parent / f"{self.path.name}.flock"
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        return open(lock_path, "w")
+        self._lease_token: str | None = None
 
     def acquire(self) -> None:
-        """Acquire the flock.  Per-process re-entrant.
+        """Acquire the lock. Per-process re-entrant.
 
-        Uses blocking ``LOCK_EX`` so the kernel suspends the thread until
-        the lock is available — no polling, no missed windows.  Safe
-        because the lock is held for <100ms per operation and lock order
-        is consistent (always acquire DB flock first).
+        Blocks by polling get_lock_manager() until the lock is acquired.
         """
         with self._lock:
             if self._ref_count == 0:
-                self._fd = self._ensure_fd()
-                import fcntl
-
-                try:
-                    fcntl.flock(self._fd.fileno(), fcntl.LOCK_EX)
-                except Exception as e:
-                    lock_path = self.path.parent / f"{self.path.name}.flock"
-                    if self._is_stale(lock_path):
-                        logger.info(
-                            "db_path_flock: stale lock detected on %s — recovering",
-                            lock_path,
-                        )
-                        try:
-                            self._fd.close()
-                        except Exception:
-                            pass
-                        self._fd = self._ensure_fd()
-                        try:
-                            fcntl.flock(self._fd.fileno(), fcntl.LOCK_EX)
-                        except Exception as e2:
-                            logger.warning(
-                                "acquire failed after stale recovery: %s", e2
-                            )
-                            try:
-                                self._fd.close()
-                            except Exception:
-                                pass
-                            self._fd = None
-                            raise
-                    else:
-                        logger.warning("acquire failed: %s", e)
-                        try:
-                            self._fd.close()
-                        except Exception:
-                            pass
-                        self._fd = None
-                        raise
+                import os
+                import time
+                from infra.lock_manager import get_lock_manager
+                lm = get_lock_manager()
+                key = os.path.abspath(str(self.path))
+                while True:
+                    success, token = lm.acquire_lock(key, "db-path-flock", ttl_seconds=300)
+                    if success:
+                        self._lease_token = token
+                        break
+                    time.sleep(0.05)
             self._ref_count += 1
 
-    @staticmethod
-    def _is_stale(lock_path: Path) -> bool:
-        """Check if a lock file is held by a dead process."""
-        try:
-            from infra.file_lock import _is_stale_lock
-            return _is_stale_lock(lock_path)
-        except Exception:
-            return False
-
     def release(self) -> None:
-        """Release the flock.  Per-call — called once per
-        ``db_path_flock`` exit.
-
-        Releases the OS flock only when the reference count drops to 0.
-        """
+        """Release the lock lease when reference count reaches 0."""
         with self._lock:
             if self._ref_count > 0:
                 self._ref_count -= 1
-                if self._ref_count == 0 and self._fd is not None:
+                if self._ref_count == 0 and self._lease_token is not None:
+                    import os
+                    from infra.lock_manager import get_lock_manager
+                    lm = get_lock_manager()
+                    key = os.path.abspath(str(self.path))
                     try:
-                        import fcntl as _fcntl
-                        _fcntl.flock(self._fd.fileno(), _fcntl.LOCK_UN)
+                        lm.release_lock(key, self._lease_token)
                     except Exception as e:
-                        logger.warning("release failed: %s", e)
+                        logger.warning("db_path_flock release failed: %s", e)
+                    self._lease_token = None
 
 
 def is_db_path_flock_enabled() -> bool:

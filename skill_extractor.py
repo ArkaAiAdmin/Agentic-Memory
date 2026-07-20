@@ -179,22 +179,99 @@ PROCEDURAL_PATTERNS = _STRONG_PROCEDURAL_PATTERNS + _WEAK_PROCEDURAL_PATTERNS
 _CODE_BLOCK_RE = _STRONG_PROCEDURAL_PATTERNS[0]
 
 
+def _is_skill_worthy_ast(content: str) -> Optional[bool]:
+    """AST-based check using tree-sitter-markdown.
+
+    Returns True if strong structural match found, False if non-skill structure,
+    or None if tree-sitter is unavailable or match is ambiguous.
+    """
+    try:
+        import tree_sitter
+        import tree_sitter_markdown
+    except ImportError:
+        return None
+
+    try:
+        lang = tree_sitter.Language(tree_sitter_markdown.language())
+        parser = tree_sitter.Parser(lang)
+        tree = parser.parse(content.encode("utf-8"))
+
+        def traverse(node) -> tuple[int, int]:
+            cb_count = 1 if node.type == "fenced_code_block" else 0
+            li_count = 1 if node.type == "list_item" else 0
+            for child in node.children:
+                c_cb, c_li = traverse(child)
+                cb_count += c_cb
+                li_count += c_li
+            return cb_count, li_count
+
+        code_blocks, list_items = traverse(tree.root_node)
+        if code_blocks >= 1 or list_items >= 2:
+            return True
+    except Exception:
+        pass
+    return None
+
+
+def _is_skill_worthy_onnx(content: str) -> Optional[bool]:
+    """1-Layer ONNX Classifier fallback check.
+
+    Returns True if score > 0.85, False if score <= 0.85, or None if unavailable.
+    """
+    try:
+        import onnxruntime
+        import numpy
+    except ImportError:
+        return None
+
+    onnx_path = Path(__file__).resolve().parent / "models" / "skill_classifier_v1.onnx"
+    if not onnx_path.exists():
+        onnx_path = Path(__file__).resolve().parent.parent / "models" / "skill_classifier_v1.onnx"
+    if not onnx_path.exists():
+        return None
+
+    try:
+        words = re.findall(r"\b\w+\b", content.lower())
+        mapping = {
+            "run": 2,
+            "install": 3,
+            "setup": 4,
+            "configure": 5,
+            "git": 6,
+            "make": 7,
+            "docker": 8,
+            "build": 9,
+            "deploy": 10,
+        }
+        input_ids = []
+        for w in words:
+            if w in mapping:
+                input_ids.append(mapping[w])
+            else:
+                input_ids.append(1)
+        max_len = 128
+        if len(input_ids) < max_len:
+            input_ids += [0] * (max_len - len(input_ids))
+        else:
+            input_ids = input_ids[:max_len]
+
+        opts = onnxruntime.SessionOptions()
+        opts.log_severity_level = 3
+        sess = onnxruntime.InferenceSession(str(onnx_path), sess_options=opts)
+        inputs = numpy.array([input_ids], dtype=numpy.int64)
+        output = sess.run(None, {"input_ids": inputs})[0]
+        score = float(output[0][0])
+        return score > 0.85
+    except Exception as exc:
+        logger.debug("ONNX classification failed: %s", exc)
+        return None
+
+
 def is_skill_worthy(content: str, category: str = "") -> bool:
     """Heuristic: should this memory be turned into a skill?
 
-    P0 fix #5: the threshold was lowered from 2 procedural signals to
-    a single STRONG signal (code block, numbered step, or shell
-    command). Two WEAK signals (action-verb header, imperative verb
-    in body, etc.) also qualify. A non-skill veto (decision /
-    rationale / observation headers) suppresses the result, and
-    auto-save session dumps are filtered out before the heuristic
-    even runs.
-
-    Args:
-        content: the memory's raw content (markdown or plain text).
-        category: optional category tag from the memories table
-            (lessons, projects, decisions, etc.). Used to give a
-            small bias toward procedural categories.
+    Tries AST-based extraction first, then ONNX classification fallback,
+    and falls back to regular expression heuristics if dependencies are missing.
     """
     if not content or len(content) < 25:
         return False
@@ -203,6 +280,18 @@ def is_skill_worthy(content: str, category: str = "") -> bool:
     # entries would flood memory_skills with duplicates.
     if _AUTO_SAVE_MARKER_RE.search(content) or _AUTO_SAVE_HEADER_RE.search(content):
         return False
+
+    # 1. AST check (Tree-sitter)
+    ast_res = _is_skill_worthy_ast(content)
+    if ast_res is True:
+        return True
+
+    # 2. ONNX Classifier fallback
+    onnx_res = _is_skill_worthy_onnx(content)
+    if onnx_res is True:
+        return True
+
+    # 3. Regex Heuristics fallback
     strong = sum(1 for p in _STRONG_PROCEDURAL_PATTERNS if p.search(content))
     weak = sum(1 for p in _WEAK_PROCEDURAL_PATTERNS if p.search(content))
     # Category-based bias: lessons/ and projects/ are procedurally

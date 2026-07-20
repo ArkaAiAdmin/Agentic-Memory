@@ -1,5 +1,8 @@
 # Core dependencies (required)
 mcp>=1.0.0
+tree-sitter>=0.21.0
+tree-sitter-markdown>=0.1.0
+onnxruntime>=1.15.0
 
 # Optional: embedding & semantic search (install for full feature set)
 model2vec>=0.8.0
