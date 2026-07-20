@@ -59,8 +59,8 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 11. **CRDT merges write to `.md` files.** Markdown is the source of truth; stale `.md` after a merge is silent drift.
 12. **Signal handlers installed BEFORE flock check** in `auto_save.py`. Otherwise daemon returns without handlers and ignores SIGTERM.
 13. **Cross-process writes: single-writer on main DB.** The reconciliation daemon (`background_worker.py`) drains `journal.db` sequentially via `save_memory_journal`. Multiple agents enqueue concurrently lock-free. Add `flock` only to new long-lived writers touching the journal, not to individual agent save calls.
-14. **Saga rollback cleans up dependent rows.** `save.saga.undo_upsert` → `save.cleanup.cleanup_memory_relations()` (kg_facts, orphan kg_edges, backlinks).
-15. **Update docs in the same commit as code changes.** Run `make update-agents-md` when any auto-gen section may have drifted.
+14. **Saga rollback cleans up dependent rows.** The saga in `infra.saga` delegates to `save.cleanup.cleanup_memory_relations()` on rollback (kg_facts, orphan kg_edges, backlinks).
+15. **Update docs in the same commit as code changes.** Run `make update-docs` (see Rule 24) when any auto-gen section may have drifted.
 16. **One persistent worktree for active development.** Reuse; verify security + tests before merging to main; remove when done.
 17. **Fix pre-existing bugs on contact.** If you spot a broken test, wrong default, dead code, or incorrect behavior while working on any task — fix it in the same batch. Sub-agents: fix obvious one-liners before returning; escalate >10 lines / 2 files beyond scope in return report. Leaving known-broken code is not acceptable.
 18. **Security by default.** Treat all external input (file content, MCP arguments, HTTP payloads) as hostile. Never log, return, or embed credentials, tokens, internal paths, or schema details in user-facing responses; strip or mask first.
@@ -69,7 +69,7 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 21. **Don't run maintenance as a post-task ritual.** Cron and the background worker handle indexing, compaction, dedup, contradiction detection. Call `memory_maintenance` / `memory_organize` only when cron is down or immediate results are required.
 22. **Ask with named options, not open questions.** Never ask "what should I do?" — give 2–4 concrete alternatives with tradeoffs. If the answer is already in an existing decision or doc, act.
 23. **Do not overanalyze — act.** When the task is clear, execute it directly and verify normally (run the checks you normally would), but do not overthink: do not enumerate every possible failure mode, re-derive state that git already reports, or run redundant confirmation passes after the user has said the work is verified. A stash/branch/working-tree question is answered by one `git` command, not a 10-minute investigation. If the user says "you are overthinking," stop immediately and just perform the requested action.
-24. **Run autogen docs before every commit.** Execute `make update-agents-md` before committing any code change. This regenerates AGENTS.md, docs/_meta.json, and docs/architecture.md from live code. Every commit must include the updated docs — never commit code without first running autogen.
+24. **Run autogen docs before every commit.** Execute `make update-docs` (full pipeline: `update-agents-md` → `update-architecture` → `update-mcp-tools` → `update-readme` → `update-mcp-surface`) before committing any code change. This regenerates AGENTS.md, docs/_meta.json, docs/architecture.md, docs/reference/mcp-tools.md, README badges, and docs/MCP_SURFACE.md from live code. Never commit code without first running autogen — every commit must include the updated docs.
 
 ---
 <!--AUTO-GEN:START key="critical_path"-->
@@ -105,7 +105,7 @@ at dispatch time — if you haven't branched yet, they edit on `main`.
 2. `git checkout -b feat/<name>` off `main` **before reading or modifying any files**.
 3. Dispatch 2+ independent streams to sub-agents (don't hold >10 file contexts inline). Sub-agents fix bugs they find; escalate >10 lines / 2 files beyond scope in return report.
 4. Implement + validate affected tests during development
-5. `make test` (4200+ tests) — backgrounded, polled every 30s, confirm `0 failures` before merging
+5. `make test` (5112+ tests) — backgrounded, polled every 30s, confirm `0 failures` before merging
 6. `git checkout main && git merge feat/<name> && git push origin main`
 7. `git branch -d feat/<name>`
 
@@ -148,9 +148,9 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 **Source of truth:** `docs/MCP_SURFACE.md` + `tool_registry.py`. The MCP server exposes **23 CORE tools** directly plus **1 `memory_maintenance` router**; 92 ADMIN + 3 DEPRECATED are hidden behind it `memory_maintenance(operation="...")`.
 <!--AUTO-GEN:END key="mcp_surface_contract"-->
 
-- **Tool registry:** `tool_registry.ADMIN_TOOLS` (in `memory_mcp.py` ~line 231) is the single source of truth. Any name there must be reachable only via `memory_maintenance`.
+- **Tool registry:** `tool_registry.ADMIN_TOOLS` (in `memory_mcp.py` ~line 237) is the single source of truth. Any name there must be reachable only via `memory_maintenance`.
 - **Hook wiring:** `opencode.jsonc` registers the TS plugin → Python subprocess pipeline. Don't call `hooks/*.py` directly. Full event→script map: `docs/MCP_SURFACE.md`. (`plugin/index.ts` + `plugin/agentic-memory-hooks.ts`)
-- **Feature flags:** See `memory.toml` for all 17 flags. Key ones: `MEMORY_WRITE_JOURNAL_ENABLED` (ON — CQRS write journal; requires `background_worker` daemon to drain `journal.db`), `MEMORY_TEMPORAL_KG` (ON), `MEMORY_TOML_HOT_RELOAD` (OFF).
+- **Feature flags:** See `memory.toml` for all feature flags (52+ boolean toggles). Key ones: `MEMORY_WRITE_JOURNAL_ENABLED` (ON — CQRS write journal; requires `background_worker` daemon to drain `journal.db`), `MEMORY_TEMPORAL_KG` (ON), `MEMORY_TOML_HOT_RELOAD` (OFF).
 - **Entry point:** Always start via `memory_mcp.py` or `cli.py`. `mcp_tools.py` auto-discovery is not the server entry point.
 
 ---
