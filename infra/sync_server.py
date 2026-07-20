@@ -109,9 +109,38 @@ def _open_server_db(db_path: str) -> _AnyConnection:
         conn.execute("PRAGMA busy_timeout = 30000;")
     except Exception as _wp_exc:
         logger.warning("_open_server_db: broad except swallowed: %s", _wp_exc)
-        conn.close()
-        fallback = sqlite3.connect(str(db_path), timeout=30.0)
+        try:
+            conn.close()
+        except Exception:
+            pass
+        # 2026-07-20 (write-contention hardening): the write-queue session is
+        # the single serialization point for memory.db writes. When it is
+        # unavailable, DO NOT open a bare raw connection that contends with
+        # the reconciler — instead take the same per-DB-path flock the write
+        # path uses so the two never hold the SQLite write lock concurrently
+        # (which produced the "database is locked" retry storm + CPU spin).
+        from infra.db_path_flock import acquire_db_path_flock, release_db_path_flock
+
+        acquire_db_path_flock(Path(db_path))
+        fallback = sqlite3.connect(str(db_path), timeout=5.0)
+        fallback.execute("PRAGMA journal_mode=WAL")
+        fallback.execute("PRAGMA busy_timeout=5000")
         fallback.execute("PRAGMA foreign_keys = ON")
+
+        # Release the flock when the connection is closed so we don't hold
+        # it for the connection's whole lifetime.
+        _orig_close = fallback.close
+
+        def _flock_aware_close() -> None:
+            try:
+                _orig_close()
+            finally:
+                try:
+                    release_db_path_flock(Path(db_path))
+                except Exception:
+                    pass
+
+        fallback.close = _flock_aware_close  # type: ignore[method-assign]
         return fallback
     return conn
 

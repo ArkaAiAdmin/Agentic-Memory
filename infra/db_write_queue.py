@@ -371,9 +371,21 @@ class SQLiteWriteQueue:
                 with lock_ctx:
                     conn = None
                     try:
-                        conn = sqlite3.connect(str(db_path), timeout=30.0)
+                        # 2026-07-20 (write-contention hardening): bound the
+                        # raw connection's lock wait. Under CQRS the reconciler
+                        # (this thread) is the ONLY writer to memory.db, but the
+                        # sync daemons / api server / cron also open connections.
+                        # A long busy_timeout here let a single session hold the
+                        # RESERVED write lock for up to the 300s MAX_S session
+                        # window whenever another process grabbed the lock first
+                        # -> every other writer spun on "database is locked" and
+                        # the reconciler's retry loop burned CPU. 30s was the
+                        # old value; we keep WAL but use a short busy_timeout so
+                        # a contended BEGIN IMMEDIATE surfaces a clean error
+                        # fast instead of pinning the lock.
+                        conn = sqlite3.connect(str(db_path), timeout=5.0)
                         conn.execute("PRAGMA journal_mode=WAL")
-                        conn.execute("PRAGMA busy_timeout=30000")
+                        conn.execute("PRAGMA busy_timeout=5000")
                         conn.execute("PRAGMA foreign_keys=ON")
 
                         # Ensure schema (FTS, triggers, etc.) is up to date

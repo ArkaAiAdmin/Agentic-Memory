@@ -207,9 +207,10 @@ Fixes:
        user sees; final_score (and result order) is left untouched. Verified
        end-to-end in a live search_memories call and via
        eval/test_search_rank_lock.py::test_display_score_folds_factors_without_changing_order.
-- [ ] CHANGE 9 — Papers 1 & 2 formalism fixes (Theorem 2, orphan-guard,
-       age reconciliation, partial-replication convergence)
-
-All completed changes live on branch `feat/hardening-critical` (modified
-sources + new test files + this plan). Not yet committed.
+ - [x] CHANGE 9 — Papers 1 & 2 formalism fixes (Theorem 2, orphan-guard,
+        age reconciliation, partial-replication convergence)
+ 
+ All changes (CHANGE 1-9) are completed, merged into `main`, and pushed
+ (root repo `agentic-memory-local` + paper repo `agentic-memory-paper`).
+ Branch `feat/hardening-critical` deleted.
 
