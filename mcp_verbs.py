@@ -125,9 +125,19 @@ def _check_authorization(action: str, resource: str = "memory") -> str | None:
 
 
 def _resolve_db_path(is_global: bool = False, db_path: str | None = None):
-    """Resolve the active memory DB path."""
+    """Resolve the active memory DB path.
+
+    Resolution order:
+    1. Explicit db_path argument
+    2. MEMORY_DB_PATH env var (for multi-agent isolation)
+    3. Global path (if is_global)
+    4. Default memory/memory.db
+    """
     if db_path:
         return Path(db_path)
+    env_path = os.environ.get("MEMORY_DB_PATH")
+    if env_path:
+        return Path(env_path)
     if is_global:
         return GLOBAL_MEM_DIR / "memory.db"
     _, local_mem, _ = get_memory_paths()
