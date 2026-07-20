@@ -1,0 +1,26 @@
+-- Migration 073: redirect kg_entity_crdt/kg_edge_crdt writes to *_append tables
+-- 2026-07-20 (write-contention + CRDT PK fix)
+--
+-- Pre-existing bug: migrations/021_kg_crdt.sql created kg_entity_crdt /
+-- kg_edge_crdt with INTEGER PRIMARY KEY on entity_id / edge_id, which makes
+-- them a one-row-per-entity table rather than an append-only op log. The
+-- KG re-indexing path (save/indexers._record_kg_crdt_ops → record_entity_add /
+-- record_edge_add) does plain INSERT, so re-projecting an entity a second
+-- time (which happens every materialization because _record_kg_crdt_ops
+-- selects all entities with mentions>0) raised
+--   "UNIQUE constraint failed: kg_entity_crdt.entity_id"
+-- and rolled back the whole materialization transaction.
+--
+-- Sprint 2.1 already created kg_entity_crdt_append / kg_edge_crdt_append
+-- (migration 065) as the intended append-only target. Code redirects in
+-- kg/kg_crdt.py (record_entity_add / record_entity_remove / record_edge_add),
+-- but we need a SCHEMA_VERSION bump so the integrity gate re-checksums and
+-- applied_migrations stays correct.
+--
+-- This migration is intentionally idempotent (does not touch tables).
+-- The legacy kg_entity_crdt / kg_edge_crdt tables are kept for backward
+-- compatibility (legacy readers may still query them); reads are
+-- unaffected because the active code paths now write to *_append.
+
+-- (no schema change required)
+SELECT 1;

@@ -125,11 +125,20 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 #   version was left at 64, so run_migrations refused to apply them under
 #   SCHEMA_STABLE=True and every freshly-bootstrapped test DB lacked those
 #   tables.  Bumping to 67 makes the three additive migrations apply.
-SCHEMA_VERSION = 72
+# 2026-07-20: bumped to 73 — migration 073 re-checksums apply under
+#   SCHEMA_STABLE=True; migration 073 is the no-data-loss
+#   bookkeeping entry that pairs with the kg/kg_crdt.py write-target
+#   redirect (kg_entity_crdt / kg_edge_crdt → kg_*_crdt_append) so the
+#   pre-existing UNIQUE(entity_id) collision on re-projection stops
+#   rolling back materializations.
+SCHEMA_VERSION = 73
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the
 # new migration is committed.
+# 2026-07-20: migration 073 added (kg_crdt write-target redirect);
+# keeping SCHEMA_STABLE=True because the migration is a # bookkeeping
+# entry, not a schema change, so there is no risk of a half-applied DB.
 SCHEMA_STABLE = True
 
 

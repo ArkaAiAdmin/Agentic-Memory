@@ -944,6 +944,19 @@ def _reconciliation_loop(journal_path: Path, target_base: Path) -> None:
     current batch and returns.
     """
     from save.pipeline import materialize_journal_entry
+    from sqlite3 import OperationalError as _SQLiteOperationalError
+
+    # 2026-07-20 (write-contention hardening): when memory.db is contended
+    # (sync daemon / api server / cron holding a write lock), materialization
+    # raises "database is locked". The entry is then reset to 'pending' and
+    # re-dequeued on the very next 100ms poll, but the inner retry loop
+    # (save.pipeline.materialize_journal_entry) already applies its own
+    # backoff+dead-letter. To avoid the OUTER loop also busy-spinning on a
+    # locked DB, we throttle the whole loop after a lock error with an
+    # escalating cooldown (capped) so the process does not burn CPU while
+    # contended. The cooldown resets after a successful drain.
+    _lock_cooldown_s = 0.0
+    _MAX_LOCK_COOLDOWN_S = 5.0
 
     while not _RECONCILER_SHUTDOWN.is_set():
         try:
@@ -962,6 +975,13 @@ def _reconciliation_loop(journal_path: Path, target_base: Path) -> None:
             except Exception as _rs_err:
                 logger.warning("reconciliation: reset_stuck_processing failed: %s", _rs_err)
 
+            if _lock_cooldown_s > 0:
+                _RECONCILER_SHUTDOWN.wait(_lock_cooldown_s)
+                # Re-check shutdown after sleeping.
+                if _RECONCILER_SHUTDOWN.is_set():
+                    break
+                _lock_cooldown_s = min(_lock_cooldown_s * 1.5, _MAX_LOCK_COOLDOWN_S)
+
             try:
                 entries = dequeue_pending(journal_path, batch_size=10)
             except Exception as _dq_err:
@@ -969,15 +989,28 @@ def _reconciliation_loop(journal_path: Path, target_base: Path) -> None:
                 _RECONCILER_SHUTDOWN.wait(0.1)
                 continue
             if not entries:
-                # No work → sleep 100ms before next poll
+                # No work → sleep 100ms before next poll; a clean drain
+                # resets any lock cooldown so we return to tight polling.
+                _lock_cooldown_s = 0.0
                 _RECONCILER_SHUTDOWN.wait(0.1)
                 continue
 
+            _lock_contended = False
             for entry in entries:
                 if _RECONCILER_SHUTDOWN.is_set():
                     break
                 try:
                     materialize_journal_entry(entry, target_base, journal_path)
+                except _SQLiteOperationalError as exc:
+                    # "database is locked" / SQLITE_BUSY: the DB is contended.
+                    # Do not busy-spin; let the outer cooldown throttle us.
+                    _lock_contended = True
+                    logger.warning(
+                        "reconciliation: entry %d (%s) locked: %s",
+                        entry.get("id"),
+                        entry.get("note_id", "?"),
+                        exc,
+                    )
                 except Exception as exc:
                     logger.exception(
                         "reconciliation: entry %d (%s) failed: %s",
@@ -988,6 +1021,8 @@ def _reconciliation_loop(journal_path: Path, target_base: Path) -> None:
                 # Yield to the scheduler between entries so the shutdown
                 # signal is observed promptly during large batch drains.
                 _RECONCILER_SHUTDOWN.wait(0.001)
+            if _lock_contended:
+                _lock_cooldown_s = max(_lock_cooldown_s, 0.5)
         except Exception as loop_exc:
             logger.error("reconciliation loop error: %s", loop_exc)
             _RECONCILER_SHUTDOWN.wait(1.0)
