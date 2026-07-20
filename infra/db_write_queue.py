@@ -314,7 +314,7 @@ class SQLiteWriteQueue:
         resp_queue: queue.Queue = queue.Queue()
         future: concurrent.futures.Future = concurrent.futures.Future()
         self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue), future, tenant_id))
-        future.result(timeout=30.0)
+        future.result(timeout=60.0)
         return ProxyConnection(cmd_queue, resp_queue)
 
     def enqueue_write(

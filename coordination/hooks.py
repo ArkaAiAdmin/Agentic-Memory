@@ -432,12 +432,12 @@ def claim_pending_tasks(agent_id: str | None = None, project_id: str = "default"
                 (agent_id, now, task_id),
             )
             if conn.total_changes > 0:
-                claimed.append({
+                claimed_entry = {
                     "id": task_id,
                     "task_type": task_type,
                     "description": description,
                     "created_by": created_by,
-                })
+                }
                 try:
                     conn.execute(
                         "INSERT INTO coordination_audit (action, agent_id, target, detail, timestamp) VALUES (?, ?, ?, ?, ?)",
@@ -446,6 +446,11 @@ def claim_pending_tasks(agent_id: str | None = None, project_id: str = "default"
                     )
                 except Exception:
                     pass
+
+                if task_type == "review_shared_memory":
+                    _auto_import_shared_memory(task_id, description, agent_id, conn, now)
+
+                claimed.append(claimed_entry)
 
         conn.commit()
         return claimed
@@ -458,6 +463,118 @@ def claim_pending_tasks(agent_id: str | None = None, project_id: str = "default"
                 conn.close()
             except Exception:
                 pass
+
+
+def _auto_import_shared_memory(
+    task_id: int, description: str, agent_id: str, conn: sqlite3.Connection, now: float
+) -> None:
+    """Auto-import shared memory when a review_shared_memory task is claimed.
+
+    Parses the shared_id and source agent from the task description, then
+    calls import_shared_memory. On success, notifies the source agent and
+    bumps the fitness score of the original memory.
+    """
+    import re
+
+    # Parse: "New shared memory: shared:AGENT:note_id — review and import via ..."
+    m = re.match(
+        r"New shared memory: shared:([A-Z0-9_\-]+):(.+) \u2014 review",
+        description,
+    )
+    if not m:
+        conn.execute(
+            "UPDATE shared_tasks SET status='failed', updated_at=? WHERE id=?",
+            (now, task_id),
+        )
+        return
+
+    source_agent_id, shared_note_id = m.group(1), m.group(2)
+
+    try:
+        from memory_sharing import import_shared_memory
+
+        result = import_shared_memory(
+            shared_id=f"shared:{source_agent_id}:{shared_note_id}",
+            target_agent_id=agent_id,
+            tenant_id=agent_id,
+        )
+    except Exception as exc:
+        logger.warning("auto-import failed for task %d: %s", task_id, exc)
+        conn.execute(
+            "UPDATE shared_tasks SET status='failed', updated_at=? WHERE id=?",
+            (now, task_id),
+        )
+        return
+
+    if "error" in result:
+        logger.warning("auto-import returned error for task %d: %s", task_id, result["error"])
+        conn.execute(
+            "UPDATE shared_tasks SET status='failed', updated_at=? WHERE id=?",
+            (now, task_id),
+        )
+        return
+
+    new_id = result.get("note_id", result.get("new_note_id", "?"))
+    conn.execute(
+        "UPDATE shared_tasks SET status='completed', updated_at=? WHERE id=?",
+        (now, task_id),
+    )
+    try:
+        conn.execute(
+            "INSERT INTO coordination_audit (action, agent_id, target, detail, timestamp) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("auto_imported", agent_id, str(task_id),
+             f'{{"shared_id":"shared:{source_agent_id}:{shared_note_id}","new_id":"{new_id}"}}',
+             now),
+        )
+    except Exception:
+        pass
+
+    _send_import_feedback(source_agent_id, agent_id, shared_note_id, new_id, now)
+
+
+def _send_import_feedback(
+    source_agent_id: str, importer_id: str, shared_note_id: str, new_note_id: str, now: float
+) -> None:
+    """Notify the source agent that their shared memory was imported.
+
+    Writes directly to the source agent's DB: adds a coordination_audit
+    entry and bumps the fitness_score of the original memory.
+    """
+    try:
+        from infra.infrastructure import resolve_active_memory_dir
+        mem_dir = resolve_active_memory_dir()
+        from memory_sharing import _resolve_peer_db_path
+
+        peer_db = _resolve_peer_db_path(mem_dir, source_agent_id)
+        if not peer_db or not peer_db.exists():
+            return
+
+        pconn = sqlite3.connect(str(peer_db), timeout=5)
+        try:
+            pconn.execute("PRAGMA journal_mode=WAL")
+            pconn.execute(
+                "INSERT INTO coordination_audit (action, agent_id, target, detail, timestamp) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    "memory_imported",
+                    importer_id,
+                    shared_note_id,
+                    f'{{"imported_by":"{importer_id}","new_id":"{new_note_id}"}}',
+                    now,
+                ),
+            )
+
+            pconn.execute(
+                "UPDATE memories SET fitness_score = MIN(COALESCE(fitness_score, 0.5) + 0.05, 1.0) "
+                "WHERE id = ?",
+                (shared_note_id,),
+            )
+            pconn.commit()
+        finally:
+            pconn.close()
+    except Exception:
+        logger.debug("import feedback failed for %s", source_agent_id, exc_info=True)
 
 
 # ── Project State Updates ───────────────────────────────────────────────

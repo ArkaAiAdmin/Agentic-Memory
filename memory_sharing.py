@@ -52,8 +52,8 @@ __all__ = [  # pyright: ignore[reportUnsupportedDunderAll]
 # pass their own thresholds to ``auto_share_high_value``. Constants are
 # module-level so the cron wrapper and the MCP tool agree on the
 # definition of "share-worthy".
-_AUTO_SHARE_MIN_IMPORTANCE = 4
-_AUTO_SHARE_MIN_FITNESS = 0.6
+_AUTO_SHARE_MIN_IMPORTANCE = 3
+_AUTO_SHARE_MIN_FITNESS = 0.5
 _AUTO_SHARE_MAX_PER_CYCLE = 25
 
 # MULTI_AGENT_ENABLED is dynamically resolved via __getattr__
