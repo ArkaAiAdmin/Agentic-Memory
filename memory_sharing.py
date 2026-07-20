@@ -970,6 +970,14 @@ def auto_share_high_value(
         else:
             skipped += 1
 
+    if shared_ids:
+        try:
+            _create_notification_tasks_for_peers(
+                shared_ids, agent_id or "auto-share", db_path=db_path
+            )
+        except Exception:
+            logger.debug("Failed to create peer notification tasks", exc_info=True)
+
     return {
         "enabled": True,
         "scanned": scanned,
@@ -979,6 +987,107 @@ def auto_share_high_value(
         "shared_ids": shared_ids,
         "agent_id": agent_id,
     }
+
+
+def _create_notification_tasks_for_peers(
+    shared_ids: list[str],
+    source_agent_id: str,
+    db_path: str | None = None,
+) -> int:
+    """After auto-share, write coordination tasks into peer agents' DBs.
+
+    Each peer's ``shared_tasks`` table gets one pending task per shared
+    memory so that ``claim_pending_tasks`` on their next session start
+    picks it up and tells them to import it.
+
+    All DBs are local files; peer DB paths are derived from agent IDs
+    (``memory.db`` vs ``memory-{agent_id.lower()}.db``). Silently skips
+    peers whose DB doesn't exist or can't be opened.
+
+    Returns the number of tasks created.
+    """
+    import sqlite3
+
+    from agent_context import list_agents as _list_agents
+    from infra.infrastructure import resolve_active_memory_dir
+
+    agents = _list_agents()
+    if len(agents) <= 1:
+        return 0
+
+    mem_dir = Path(db_path).parent if db_path else resolve_active_memory_dir()
+    local_key = source_agent_id.upper()
+    count = 0
+    now = time.time()
+
+    for peer_id in agents:
+        if peer_id.upper() == local_key:
+            continue
+
+        peer_db = _resolve_peer_db_path(mem_dir, peer_id)
+        if not peer_db or not peer_db.exists():
+            continue
+
+        try:
+            pconn = sqlite3.connect(str(peer_db), timeout=5)
+            try:
+                pconn.execute("PRAGMA journal_mode=WAL")
+                pconn.execute("""
+                    CREATE TABLE IF NOT EXISTS shared_tasks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        project_id TEXT NOT NULL,
+                        task_type TEXT NOT NULL,
+                        description TEXT,
+                        assigned_to TEXT,
+                        status TEXT DEFAULT 'pending',
+                        created_by TEXT NOT NULL,
+                        created_at REAL,
+                        updated_at REAL,
+                        depends_on INTEGER REFERENCES shared_tasks(id)
+                    )
+                """)
+                for sid in shared_ids:
+                    desc = (
+                        f"New shared memory: {sid} — "
+                        f"review and import via memory_share(action='import', share_with='{source_agent_id}')"
+                    )
+                    pconn.execute(
+                        "INSERT INTO shared_tasks "
+                        "(project_id, task_type, description, assigned_to, status, created_by, created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            "shared",
+                            "review_shared_memory",
+                            desc,
+                            peer_id,
+                            "pending",
+                            source_agent_id,
+                            now,
+                            now,
+                        ),
+                    )
+                pconn.commit()
+                count += len(shared_ids)
+            finally:
+                pconn.close()
+        except Exception:
+            logger.debug("Could not create notification tasks for peer %s at %s", peer_id, peer_db)
+            continue
+
+    if count:
+        logger.info("Created %d coordination tasks across %d peers for %d shared memories", count, len(agents) - 1, len(shared_ids))
+    return count
+
+
+def _resolve_peer_db_path(mem_dir: Path, agent_id: str) -> Path | None:
+    """Resolve a peer agent's DB file path from its agent ID."""
+    aid = agent_id.upper().strip()
+    if aid == "OPENCODE" or aid == "DEFAULT":
+        return mem_dir / "memory.db"
+    if aid == "MIMOCODE":
+        return mem_dir / "memory-mimocode.db"
+    candidate = mem_dir / f"memory-{agent_id.lower().replace(' ', '-')}.db"
+    return candidate
 
 
 from infra.memory_common import make_lazy_getattr
