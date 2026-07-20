@@ -84,6 +84,7 @@ def _hybrid_fusion(
     repo_filter: str,
     category: str | None = None,
     chunk_hits_out: list | None = None,
+    embedding_weight_override: float | None = None,
 ) -> list:
     """Merge FTS, semantic, chunk FTS, and SPLADE results using RRF.
 
@@ -112,6 +113,8 @@ def _hybrid_fusion(
         _rank_scale = float(getattr(get_config(), "hybrid_rank_proxy_scale", 30.0))
         _fts_w = float(getattr(get_config(), "hybrid_fts_weight", 1.0))
         _sem_w = float(getattr(get_config(), "hybrid_semantic_weight", 1.0))
+        if embedding_weight_override is not None:
+            _sem_w = embedding_weight_override
         _chunk_fts_w = float(getattr(get_config(), "hybrid_chunk_fts_weight", 0.8))
         _splade_w = float(getattr(get_config(), "hybrid_splade_weight", 0.6))
         _es_results = _es.search(normalized_query, db_path, limit=limit * _overfetch)

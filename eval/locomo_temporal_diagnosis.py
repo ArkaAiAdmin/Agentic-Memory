@@ -78,9 +78,10 @@ def run_diagnosis():
         result = search_memories(
             db_path,
             q["question"],
-            limit=k,
+            limit=20,  # Match full eval's default
             include_global=True,
             rerank=True,
+            hybrid=True,  # Match full eval
             include_facts=False,
             safety_wiring=False,
             tenant_id="locomo",
