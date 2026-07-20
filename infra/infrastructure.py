@@ -267,6 +267,17 @@ def with_memory_connection(func):
         finally:
             safe_close_db(conn)
 
+    # Hide 'conn' from MCP tool schema — it's injected by the decorator,
+    # not something clients should pass.
+    import inspect
+    original_sig = inspect.signature(func)
+    wrapper.__signature__ = original_sig.replace(
+        parameters=[
+            p for name, p in original_sig.parameters.items()
+            if name != "conn"
+        ]
+    )
+
     return wrapper
 
 

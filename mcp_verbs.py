@@ -196,7 +196,7 @@ def memory_search(
         try:
             from agent_context import get_agent
             _ctx = get_agent()
-            include_global = _ctx.namespace == "default"
+            include_global = True
         except (ImportError, Exception):
             include_global = True
     try:

@@ -370,7 +370,7 @@ def memory_search(
     if include_global is None:
         try:
             from agent_context import get_agent as _get_agent
-            include_global = _get_agent().namespace == "default"
+            include_global = True
         except (ImportError, Exception):
             include_global = True
 
