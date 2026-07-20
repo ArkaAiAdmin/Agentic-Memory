@@ -867,7 +867,7 @@ def list_share_candidates(
                 LEFT JOIN shared_memories s ON s.source_note_id = m.id
                     AND s.tenant_id = ?
                 WHERE m.deleted_at IS NULL
-                  AND m.tenant_id = ?
+                  AND m.tenant_id IN (?, 'default')
                   AND (m.category IS NULL OR m.category NOT IN ('sessions', 'tests'))
                   AND COALESCE(m.importance, 3) >= ?
                   AND COALESCE(m.fitness_score, 1.0) >= ?
