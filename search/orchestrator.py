@@ -742,7 +742,9 @@ def search_memories(
             r"^\s*(what|which)\s+(is|are|was|were)\s+(the\s+)?(current\s+).*(now\s*\?|\?)?\s*$"
             r"|^\s*(what|which)\s+(is|are|was|were)\s+.*\bnow\b"
             r"|^\s*the\s+.*\b(changed|updated|modified)\b.*what\s+is\s+the\s+current"
-            r"|^\s*(when|what)\s+(was|is|did)\s+.*\b(last\s+updated|last\s+changed)\b",
+            r"|^\s*(when|what)\s+(was|is|did)\s+.*\b(last\s+updated|last\s+changed)\b"
+            r"|^\s*(has|have)\s+.*\bchanged\b.*\b(since|beginning|start)\b"
+            r"|^\s*(what|where|which)\s+.*\b(prefer|stand|latest|figure|getting)\b.*\b(now|moment|current|currently)\b",
             re.IGNORECASE,
         )
         if _FACT_LOOKUP_RE.search(query):
