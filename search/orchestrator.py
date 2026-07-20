@@ -681,14 +681,21 @@ def search_memories(
     _search_budget = get_search_budget()
     if mode == "fact_lookup":
         # Lightweight parse: skip semantic expansion (7s) and graph RAG (1s).
-        # FTS5 AND-matching is the right signal for keyword fact lookups.
-        from search.query_parser import _normalize_unicode, _expand_query, _STOP_WORDS
+        # FTS5 AND-matching on content words is the right signal for keyword
+        # fact lookups. Falls back to OR if AND returns no results.
+        from search.query_parser import _normalize_unicode, _STOP_WORDS
         import re as _re
         normalized_query = _normalize_unicode(query)
+        _FACT_MODIFIERS = {"current", "now", "latest", "recent"}
         _bare_tokens = [w for w in _re.findall("[\\w@\\#\\.\\+\\-]+", normalized_query, flags=_re.UNICODE)
-                        if w.lower() not in _STOP_WORDS and len(w) > 1]
-        _expanded = _expand_query(normalized_query)
-        fts_query = _expanded if _expanded else " ".join(f'"{t}"' for t in _bare_tokens)
+                        if w.lower() not in _STOP_WORDS and w.lower() not in _FACT_MODIFIERS and len(w) > 1]
+        # AND-matching on content words, OR fallback for modifiers
+        if _bare_tokens:
+            _and_part = " AND ".join(f'"{t}"' for t in _bare_tokens)
+            _or_part = " OR ".join(f'"{t}"' for t in _bare_tokens)
+            fts_query = f"({_and_part}) OR ({_or_part})"
+        else:
+            fts_query = ""
         bare_text = " ".join(_bare_tokens)
         graph_rag_terms = []
     else:
@@ -913,10 +920,11 @@ def search_memories(
 
         elif mode == "fact_lookup":
             # Lightweight path for simple fact-tracking queries ("current value of X").
-            # Runs FTS AND-matching through the pipeline's connection pool and
-            # filter infrastructure, then applies temporal filtering. Skips
-            # embedding, hybrid fusion, KG boost, and CE reranking — these add
-            # noise on synthetic/uniform data and cost ~1.7s per query.
+            # Runs FTS AND-matching with recency ordering through the pipeline's
+            # connection pool and filter infrastructure. Skips embedding, hybrid
+            # fusion, KG boost, and CE reranking.
+            # Recency ordering is essential: "current X" means the most recent
+            # session mentioning the topic, not the BM25-best match.
             _fts_limit = limit * 5
             results = _fts_search(
                 db, fts_query, _fts_limit, has_fitness,
@@ -924,10 +932,9 @@ def search_memories(
                 tag_filter_sql=_tag_filter_sql,
                 tag_filter_params=tuple(_tag_filter_params),
                 category=category or None,
+                recency_order=True,
             )
             _record_phase_latency("search.fts", _t0)
-            # Skip to temporal filtering (Phase 8) — the only post-FTS phase
-            # that matters for "current value" questions.
             hybrid = False
             if include_facts:
                 _t0_kg = time.time()

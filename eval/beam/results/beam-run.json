@@ -1,20 +1,20 @@
 {
   "benchmark": "BEAM",
   "version": "3.0",
-  "scale": "1M",
+  "scale": "10M",
   "config": {
-    "token_budget": 1000000,
-    "sessions": 100,
+    "token_budget": 10000000,
+    "sessions": 1000,
     "session_tokens": 10000
   },
   "seed": 42,
-  "timestamp": "2026-07-20T19:48:21.908243+00:00",
+  "timestamp": "2026-07-20T21:46:09.333573+00:00",
   "metrics": {
-    "accuracy": 0.9882,
-    "num_questions": 85,
-    "avg_latency_ms": 1.9,
-    "p50_latency_ms": 1.69,
-    "p95_latency_ms": 3.24,
+    "accuracy": 0.875,
+    "num_questions": 112,
+    "avg_latency_ms": 6.77,
+    "p50_latency_ms": 6.32,
+    "p95_latency_ms": 14.76,
     "latency_note": "End-to-end per-question through full 14-phase search_memories() pipeline. Includes query parsing, FTS5, embedding fallback, RRF fusion, CE reranking, postprocessing. First queries include model warmup."
   },
   "baselines": {
@@ -33,770 +33,1013 @@
     {
       "question_id": "q_budget",
       "query": "What is the current budget?",
-      "expected": "$50k",
-      "top_result": "End of day summary: Q3 budget budget is now $100k. Good progress made today.\n\nAdditional context for session 0: This is part of the ongoing conversation history. This is part of the ongoing conversati",
+      "expected": "$75k",
+      "top_result": "Standup notes: daily wear outfit choice is now flannel; Q3 budget budget is now $75k. Blockers: waiting on design review.\n\nAdditional context for session 958: This is part of the ongoing conversation ",
       "score": 1.0,
-      "latency_ms": 4.33802604675293,
-      "num_results": 6
+      "latency_ms": 7.510900497436523,
+      "num_results": 42
     },
     {
       "question_id": "q_monthly_savings",
       "query": "What is the current monthly savings amount?",
-      "expected": "$750",
-      "top_result": "Quick update: savings target monthly savings amount is now $1000. Will follow up with more details tomorrow.\n\nAdditional context for session 1: This is part of the ongoing conversation history. This i",
+      "expected": "$500",
+      "top_result": "Quick update: gaming preference game genre is now RPG; cleaning cadence cleaning schedule is now monthly. Will follow up with more details tomorrow.\n\nAdditional context for session 951: This is part o",
       "score": 1.0,
-      "latency_ms": 1.7428398132324219,
-      "num_results": 7
+      "latency_ms": 5.47027587890625,
+      "num_results": 39
     },
     {
       "question_id": "q_emoji",
       "query": "What is the current emoji?",
       "expected": "rocket",
-      "top_result": "Standup notes: reaction go-to emoji is now fire. Blockers: waiting on design review.\n\nAdditional context for session 60: This is part of the ongoing conversation history. This is part of the ongoing c",
+      "top_result": "End of day summary: reaction go-to emoji is now rocket. Good progress made today.\n\nAdditional context for session 749: This is part of the ongoing conversation history. This is part of the ongoing con",
       "score": 1.0,
-      "latency_ms": 1.4150142669677734,
-      "num_results": 6
+      "latency_ms": 5.613088607788086,
+      "num_results": 12
     },
     {
       "question_id": "q_winter_coat",
       "query": "What is the current winter coat?",
-      "expected": "wool overcoat",
-      "top_result": "Quick update: cold weather gear winter coat is now rain shell. Will follow up with more details tomorrow.\n\nAdditional context for session 3: This is part of the ongoing conversation history. This is p",
+      "expected": "heated vest",
+      "top_result": "End of day summary: health wearable fitness tracker is now Garmin; cold weather gear winter coat is now heated vest. Good progress made today.\n\nAdditional context for session 975: This is part of the ",
       "score": 1.0,
-      "latency_ms": 1.2369155883789062,
-      "num_results": 5
+      "latency_ms": 2.6397705078125,
+      "num_results": 14
     },
     {
       "question_id": "q_investment_allocation",
       "query": "What is the current investment allocation?",
-      "expected": "60/40 stocks/bonds",
-      "top_result": "Standup notes: current book reading book is now Dune; portfolio split investment allocation is now 90/10. Blockers: waiting on design review.\n\nAdditional context for session 16: This is part of the on",
+      "expected": "70/30",
+      "top_result": "Quick update: Q3 budget budget is now $200k; portfolio split investment allocation is now 70/30. Will follow up with more details tomorrow.\n\nAdditional context for session 873: This is part of the ong",
       "score": 1.0,
-      "latency_ms": 1.3530254364013672,
-      "num_results": 5
+      "latency_ms": 2.3109912872314453,
+      "num_results": 11
     },
     {
       "question_id": "q_concert_plan",
       "query": "What is the current concert plan?",
-      "expected": "indie show",
-      "top_result": "Morning briefing: live music pick concert plan is now jazz club. Ready to tackle the day.\n\nAdditional context for session 6: This is part of the ongoing conversation history. This is part of the ongoi",
-      "score": 1.0,
-      "latency_ms": 1.753091812133789,
-      "num_results": 12
+      "expected": "jazz club",
+      "top_result": "Team meeting recap: career milestone five year plan is now consultant. Also discussed upcoming sprint planning.\n\nAdditional context for session 993: This is part of the ongoing conversation history. T",
+      "score": 0.0,
+      "latency_ms": 10.226011276245117,
+      "num_results": 70
     },
     {
       "question_id": "q_editor",
       "query": "What is the current code editor?",
       "expected": "IntelliJ",
-      "top_result": "Standup notes: savings target monthly savings amount is now $750; code editor code editor is now IntelliJ. Blockers: waiting on design review.\n\nAdditional context for session 7: This is part of the on",
+      "top_result": "Standup notes: target weight weight goal is now 170 lbs; code editor code editor is now IntelliJ. Blockers: waiting on design review.\n\nAdditional context for session 971: This is part of the ongoing c",
       "score": 1.0,
-      "latency_ms": 1.107931137084961,
-      "num_results": 4
+      "latency_ms": 3.5581588745117188,
+      "num_results": 22
     },
     {
       "question_id": "q_email_client",
       "query": "What is the current email client?",
-      "expected": "Spark",
-      "top_result": "Standup notes: inbox app email client is now Spark. Blockers: waiting on design review.\n\nAdditional context for session 45: This is part of the ongoing conversation history. This is part of the ongoin",
+      "expected": "Gmail",
+      "top_result": "End of day summary: working hours timezone is now PST; inbox app email client is now Gmail. Good progress made today.\n\nAdditional context for session 804: This is part of the ongoing conversation hist",
       "score": 1.0,
-      "latency_ms": 1.2679100036621094,
-      "num_results": 6
+      "latency_ms": 7.340908050537109,
+      "num_results": 17
     },
     {
       "question_id": "q_volunteer_hours",
       "query": "What is the current volunteer hours?",
-      "expected": "8/month",
-      "top_result": "End of day summary: community service volunteer hours is now 8/month; online course course topic is now web design. Good progress made today.\n\nAdditional context for session 9: This is part of the ong",
+      "expected": "6/month",
+      "top_result": "Morning briefing: current book reading book is now The Ministry; working hours timezone is now EST. Ready to tackle the day.\n\nAdditional context for session 983: This is part of the ongoing conversati",
       "score": 1.0,
-      "latency_ms": 1.3909339904785156,
-      "num_results": 6
+      "latency_ms": 5.486965179443359,
+      "num_results": 46
     },
     {
       "question_id": "q_course_topic",
       "query": "What is the current course topic?",
-      "expected": "photography",
-      "top_result": "Team meeting recap: online course course topic is now photography. Also discussed upcoming sprint planning.\n\nAdditional context for session 55: This is part of the ongoing conversation history. This i",
+      "expected": "machine learning",
+      "top_result": "Quick update: mentorship focus mentor topic is now public speaking. Will follow up with more details tomorrow.\n\nAdditional context for session 998: This is part of the ongoing conversation history. Th",
       "score": 1.0,
-      "latency_ms": 8.091211318969727,
-      "num_results": 100
+      "latency_ms": 4.395008087158203,
+      "num_results": 38
     },
     {
       "question_id": "q_sleep_schedule",
       "query": "What is the current sleep schedule?",
       "expected": "10:30pm-6:30am",
-      "top_result": "End of day summary: bedtime routine sleep schedule is now 10:30pm-6:30am. Good progress made today.\n\nAdditional context for session 92: This is part of the ongoing conversation history. This is part o",
+      "top_result": "Quick update: schedule manager calendar tool is now Fantastical. Will follow up with more details tomorrow.\n\nAdditional context for session 995: This is part of the ongoing conversation history. This ",
       "score": 1.0,
-      "latency_ms": 2.020120620727539,
-      "num_results": 12
+      "latency_ms": 16.433000564575195,
+      "num_results": 100
     },
     {
       "question_id": "q_podcast",
       "query": "What is the current podcast?",
-      "expected": "Huberman Lab",
-      "top_result": "Team meeting recap: favorite podcast podcast is now Huberman Lab. Also discussed upcoming sprint planning.\n\nAdditional context for session 67: This is part of the ongoing conversation history. This is",
+      "expected": "Darknet Diaries",
+      "top_result": "End of day summary: favorite podcast podcast is now Darknet Diaries; next event networking event is now workshop. Good progress made today.\n\nAdditional context for session 969: This is part of the ong",
       "score": 1.0,
-      "latency_ms": 1.3570785522460938,
-      "num_results": 6
+      "latency_ms": 3.9739608764648438,
+      "num_results": 18
     },
     {
       "question_id": "q_game_night",
       "query": "What is the current game night?",
-      "expected": "Settlers of Catan",
-      "top_result": "Quick update: board game pick game night is now Settlers of Catan. Will follow up with more details tomorrow.\n\nAdditional context for session 87: This is part of the ongoing conversation history. This",
+      "expected": "Codenames",
+      "top_result": "Quick update: gaming preference game genre is now RPG; cleaning cadence cleaning schedule is now monthly. Will follow up with more details tomorrow.\n\nAdditional context for session 951: This is part o",
       "score": 1.0,
-      "latency_ms": 1.5578269958496094,
-      "num_results": 10
+      "latency_ms": 5.605936050415039,
+      "num_results": 43
     },
     {
       "question_id": "q_spring_garden",
       "query": "What is the current spring garden?",
-      "expected": "tomatoes",
-      "top_result": "End of day summary: board game pick game night is now Codenames; planting plan spring garden is now tomatoes. Good progress made today.\n\nAdditional context for session 11: This is part of the ongoing ",
+      "expected": "herbs",
+      "top_result": "Standup notes: planting plan spring garden is now herbs. Blockers: waiting on design review.\n\nAdditional context for session 928: This is part of the ongoing conversation history. This is part of the ",
       "score": 1.0,
-      "latency_ms": 2.4290084838867188,
-      "num_results": 4
+      "latency_ms": 2.5370121002197266,
+      "num_results": 10
     },
     {
       "question_id": "q_streaming_service",
       "query": "What is the current streaming service?",
       "expected": "Disney+",
-      "top_result": "Team meeting recap: safety net emergency fund is now 9 months; streaming app music player is now Tidal. Also discussed upcoming sprint planning.\n\nAdditional context for session 57: This is part of the",
+      "top_result": "Morning briefing: streaming app music player is now YouTube Music. Ready to tackle the day.\n\nAdditional context for session 990: This is part of the ongoing conversation history. This is part of the o",
       "score": 1.0,
-      "latency_ms": 3.0100345611572266,
-      "num_results": 19
+      "latency_ms": 5.259037017822266,
+      "num_results": 41
     },
     {
       "question_id": "q_travel_destination",
       "query": "What is the current travel destination?",
-      "expected": "Reykjavik",
-      "top_result": "Quick update: next trip travel destination is now Reykjavik; current watch anime show is now Vinland Saga. Will follow up with more details tomorrow.\n\nAdditional context for session 79: This is part o",
+      "expected": "Queenstown",
+      "top_result": "End of day summary: next trip travel destination is now Queenstown. Good progress made today.\n\nAdditional context for session 980: This is part of the ongoing conversation history. This is part of the",
       "score": 1.0,
-      "latency_ms": 1.7442703247070312,
-      "num_results": 9
+      "latency_ms": 12.713432312011719,
+      "num_results": 56
     },
     {
       "question_id": "q_salary_goal",
       "query": "What is the current salary goal?",
-      "expected": "$120k",
-      "top_result": "Team meeting recap: compensation target salary goal is now $200k. Also discussed upcoming sprint planning.\n\nAdditional context for session 31: This is part of the ongoing conversation history. This is",
-      "score": 1.0,
-      "latency_ms": 1.4858245849609375,
-      "num_results": 8
+      "expected": "$180k",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
+      "score": 0.0,
+      "latency_ms": 7.870912551879883,
+      "num_results": 63
     },
     {
       "question_id": "q_five_year_plan",
       "query": "What is the current five year plan?",
-      "expected": "tech lead",
-      "top_result": "Standup notes: career milestone five year plan is now tech lead. Blockers: waiting on design review.\n\nAdditional context for session 80: This is part of the ongoing conversation history. This is part ",
+      "expected": "consultant",
+      "top_result": "Team meeting recap: career milestone five year plan is now consultant. Also discussed upcoming sprint planning.\n\nAdditional context for session 993: This is part of the ongoing conversation history. T",
       "score": 1.0,
-      "latency_ms": 2.4118423461914062,
-      "num_results": 13
+      "latency_ms": 9.251117706298828,
+      "num_results": 87
     },
     {
       "question_id": "q_outfit_choice",
       "query": "What is the current outfit choice?",
-      "expected": "hoodie",
-      "top_result": "Team meeting recap: daily wear outfit choice is now hoodie. Also discussed upcoming sprint planning.\n\nAdditional context for session 14: This is part of the ongoing conversation history. This is part ",
+      "expected": "flannel",
+      "top_result": "Standup notes: daily wear outfit choice is now flannel; Q3 budget budget is now $75k. Blockers: waiting on design review.\n\nAdditional context for session 958: This is part of the ongoing conversation ",
       "score": 1.0,
-      "latency_ms": 1.7189979553222656,
-      "num_results": 7
+      "latency_ms": 11.344194412231445,
+      "num_results": 44
     },
     {
       "question_id": "q_weather_preference",
       "query": "What is the current weather preference?",
-      "expected": "rainy",
-      "top_result": "Morning briefing: ideal weather weather preference is now breezy; warm weather plan summer activity is now cycling. Ready to tackle the day.\n\nAdditional context for session 81: This is part of the ong",
+      "expected": "snowy",
+      "top_result": "End of day summary: health wearable fitness tracker is now Garmin; cold weather gear winter coat is now heated vest. Good progress made today.\n\nAdditional context for session 975: This is part of the ",
       "score": 1.0,
-      "latency_ms": 1.9679069519042969,
-      "num_results": 14
+      "latency_ms": 9.345769882202148,
+      "num_results": 85
     },
     {
       "question_id": "q_reading_book",
       "query": "What is the current reading book?",
       "expected": "The Ministry",
-      "top_result": "End of day summary: current book reading book is now The Ministry. Good progress made today.\n\nAdditional context for session 44: This is part of the ongoing conversation history. This is part of the o",
+      "top_result": "Morning briefing: current book reading book is now The Ministry; working hours timezone is now EST. Ready to tackle the day.\n\nAdditional context for session 983: This is part of the ongoing conversati",
       "score": 1.0,
-      "latency_ms": 1.219034194946289,
-      "num_results": 4
+      "latency_ms": 4.473209381103516,
+      "num_results": 31
     },
     {
       "question_id": "q_os",
       "query": "What is the current operating system?",
-      "expected": "Arch Linux",
-      "top_result": "Morning briefing: dev OS operating system is now Arch Linux; evening build side project is now open source. Ready to tackle the day.\n\nAdditional context for session 17: This is part of the ongoing con",
+      "expected": "Fedora",
+      "top_result": "Standup notes: dev OS operating system is now Fedora; Sarah favorite color is now green. Blockers: waiting on design review.\n\nAdditional context for session 807: This is part of the ongoing conversati",
       "score": 1.0,
-      "latency_ms": 1.9116401672363281,
-      "num_results": 12
+      "latency_ms": 3.214120864868164,
+      "num_results": 22
     },
     {
       "question_id": "q_side_project",
       "query": "What is the current side project?",
-      "expected": "app",
-      "top_result": "Quick update: evening build side project is now app; daily commute commute is now bus. Will follow up with more details tomorrow.\n\nAdditional context for session 21: This is part of the ongoing conver",
-      "score": 1.0,
-      "latency_ms": 1.722097396850586,
-      "num_results": 11
+      "expected": "course",
+      "top_result": "End of day summary: IKEA build furniture project is now bed frame; platform team team size is now 12. Good progress made today.\n\nAdditional context for session 996: This is part of the ongoing convers",
+      "score": 0.0,
+      "latency_ms": 12.810945510864258,
+      "num_results": 65
     },
     {
       "question_id": "q_movie_night",
       "query": "What is the current movie night?",
-      "expected": "sci-fi",
-      "top_result": "Quick update: film genre movie night is now horror; weekly gym sessions gym days is now 3. Will follow up with more details tomorrow.\n\nAdditional context for session 18: This is part of the ongoing co",
+      "expected": "comedy",
+      "top_result": "Quick update: board game pick game night is now Codenames. Will follow up with more details tomorrow.\n\nAdditional context for session 947: This is part of the ongoing conversation history. This is par",
       "score": 1.0,
-      "latency_ms": 1.8172264099121094,
-      "num_results": 10
+      "latency_ms": 3.805875778198242,
+      "num_results": 25
     },
     {
       "question_id": "q_gym_days",
       "query": "What is the current gym days?",
-      "expected": "4",
-      "top_result": "Quick update: film genre movie night is now horror; weekly gym sessions gym days is now 3. Will follow up with more details tomorrow.\n\nAdditional context for session 18: This is part of the ongoing co",
+      "expected": "5",
+      "top_result": "End of day summary: weekly gym sessions gym days is now 5. Good progress made today.\n\nAdditional context for session 756: This is part of the ongoing conversation history. This is part of the ongoing ",
       "score": 1.0,
-      "latency_ms": 1.8949508666992188,
-      "num_results": 9
+      "latency_ms": 2.696990966796875,
+      "num_results": 11
     },
     {
       "question_id": "q_cloud_provider",
       "query": "What is the current cloud provider?",
-      "expected": "AWS",
-      "top_result": "Quick update: cloud platform cloud provider is now Cloudflare. Will follow up with more details tomorrow.\n\nAdditional context for session 20: This is part of the ongoing conversation history. This is ",
+      "expected": "GCP",
+      "top_result": "Team meeting recap: cloud platform cloud provider is now GCP; charity focus donation cause is now healthcare. Also discussed upcoming sprint planning.\n\nAdditional context for session 972: This is part",
       "score": 1.0,
-      "latency_ms": 1.6720294952392578,
-      "num_results": 5
+      "latency_ms": 2.8858184814453125,
+      "num_results": 18
     },
     {
       "question_id": "q_commute",
       "query": "What is the current commute?",
-      "expected": "bus",
-      "top_result": "Quick update: evening build side project is now app; daily commute commute is now bus. Will follow up with more details tomorrow.\n\nAdditional context for session 21: This is part of the ongoing conver",
+      "expected": "drive",
+      "top_result": "Quick update: daily read news source is now HN; daily commute commute is now drive. Will follow up with more details tomorrow.\n\nAdditional context for session 828: This is part of the ongoing conversa",
       "score": 1.0,
-      "latency_ms": 1.4488697052001953,
-      "num_results": 4
+      "latency_ms": 1.7957687377929688,
+      "num_results": 8
     },
     {
       "question_id": "q_weather_app",
       "query": "What is the current weather app?",
-      "expected": "Carrot Weather",
-      "top_result": "Morning briefing: forecast source weather app is now Carrot Weather; next event networking event is now tech meetup. Ready to tackle the day.\n\nAdditional context for session 35: This is part of the on",
-      "score": 1.0,
-      "latency_ms": 3.6029815673828125,
-      "num_results": 17
+      "expected": "Apple Weather",
+      "top_result": "Morning briefing: streaming app music player is now YouTube Music. Ready to tackle the day.\n\nAdditional context for session 990: This is part of the ongoing conversation history. This is part of the o",
+      "score": 0.0,
+      "latency_ms": 14.670133590698242,
+      "num_results": 99
     },
     {
       "question_id": "q_news_source",
       "query": "What is the current news source?",
-      "expected": "Reddit",
-      "top_result": "Quick update: forecast source weather app is now Apple Weather; daily read news source is now Reddit. Will follow up with more details tomorrow.\n\nAdditional context for session 22: This is part of the",
+      "expected": "HN",
+      "top_result": "End of day summary: forecast source weather app is now Apple Weather; current watch anime show is now Spy x Family. Good progress made today.\n\nAdditional context for session 942: This is part of the o",
       "score": 1.0,
-      "latency_ms": 2.7778148651123047,
-      "num_results": 6
+      "latency_ms": 6.189823150634766,
+      "num_results": 45
     },
     {
       "question_id": "q_group_chat",
       "query": "What is the current group chat?",
-      "expected": "Signal",
-      "top_result": "Standup notes: friend group group chat is now Signal. Blockers: waiting on design review.\n\nAdditional context for session 23: This is part of the ongoing conversation history. This is part of the ongo",
+      "expected": "WhatsApp",
+      "top_result": "Quick update: platform team team size is now 12; friend group group chat is now WhatsApp. Will follow up with more details tomorrow.\n\nAdditional context for session 954: This is part of the ongoing co",
       "score": 1.0,
-      "latency_ms": 1.4328956604003906,
-      "num_results": 4
+      "latency_ms": 3.1180381774902344,
+      "num_results": 15
     },
     {
       "question_id": "q_workout_plan",
       "query": "What is the current workout plan?",
       "expected": "swimming",
-      "top_result": "End of day summary: exercise routine workout plan is now cycling; yoga practice yoga style is now ashtanga. Good progress made today.\n\nAdditional context for session 24: This is part of the ongoing co",
+      "top_result": "Team meeting recap: career milestone five year plan is now consultant. Also discussed upcoming sprint planning.\n\nAdditional context for session 993: This is part of the ongoing conversation history. T",
       "score": 1.0,
-      "latency_ms": 2.4042129516601562,
-      "num_results": 16
+      "latency_ms": 7.568120956420898,
+      "num_results": 70
     },
     {
       "question_id": "q_yoga_style",
       "query": "What is the current yoga style?",
-      "expected": "vinyasa",
-      "top_result": "Morning briefing: yoga practice yoga style is now hatha; gaming preference game genre is now strategy. Ready to tackle the day.\n\nAdditional context for session 48: This is part of the ongoing conversa",
-      "score": 1.0,
-      "latency_ms": 1.4300346374511719,
-      "num_results": 6
+      "expected": "restorative",
+      "top_result": "End of day summary: kitchen upgrade appliance is now air fryer; travel approach packing style is now overpacker. Good progress made today.\n\nAdditional context for session 894: This is part of the ongo",
+      "score": 0.0,
+      "latency_ms": 3.8928985595703125,
+      "num_results": 27
     },
     {
       "question_id": "q_resume_update",
       "query": "What is the current resume update?",
-      "expected": "monthly",
-      "top_result": "Quick update: seasonal dish fall recipe is now cornbread; refresh cadence resume update is now monthly. Will follow up with more details tomorrow.\n\nAdditional context for session 90: This is part of t",
-      "score": 1.0,
-      "latency_ms": 2.972841262817383,
-      "num_results": 25
+      "expected": "annually",
+      "top_result": "Quick update: mentorship focus mentor topic is now public speaking. Will follow up with more details tomorrow.\n\nAdditional context for session 998: This is part of the ongoing conversation history. Th",
+      "score": 0.0,
+      "latency_ms": 17.633914947509766,
+      "num_results": 100
     },
     {
       "question_id": "q_networking_event",
       "query": "What is the current networking event?",
-      "expected": "tech meetup",
-      "top_result": "Morning briefing: forecast source weather app is now Carrot Weather; next event networking event is now tech meetup. Ready to tackle the day.\n\nAdditional context for session 35: This is part of the on",
+      "expected": "workshop",
+      "top_result": "End of day summary: favorite podcast podcast is now Darknet Diaries; next event networking event is now workshop. Good progress made today.\n\nAdditional context for session 969: This is part of the ong",
       "score": 1.0,
-      "latency_ms": 1.322031021118164,
-      "num_results": 5
+      "latency_ms": 3.6449432373046875,
+      "num_results": 22
     },
     {
       "question_id": "q_emergency_fund",
       "query": "What is the current emergency fund?",
-      "expected": "9 months",
-      "top_result": "Morning briefing: safety net emergency fund is now 6 months. Ready to tackle the day.\n\nAdditional context for session 62: This is part of the ongoing conversation history. This is part of the ongoing ",
+      "expected": "6 months",
+      "top_result": "Morning briefing: safety net emergency fund is now 6 months. Ready to tackle the day.\n\nAdditional context for session 920: This is part of the ongoing conversation history. This is part of the ongoing",
       "score": 1.0,
-      "latency_ms": 1.3799667358398438,
-      "num_results": 8
+      "latency_ms": 3.0701160430908203,
+      "num_results": 19
     },
     {
       "question_id": "q_calendar_tool",
       "query": "What is the current calendar tool?",
-      "expected": "Notion",
-      "top_result": "Morning briefing: schedule manager calendar tool is now Notion. Ready to tackle the day.\n\nAdditional context for session 74: This is part of the ongoing conversation history. This is part of the ongoi",
+      "expected": "Fantastical",
+      "top_result": "Quick update: schedule manager calendar tool is now Fantastical. Will follow up with more details tomorrow.\n\nAdditional context for session 995: This is part of the ongoing conversation history. This ",
       "score": 1.0,
-      "latency_ms": 1.1951923370361328,
-      "num_results": 5
+      "latency_ms": 4.366636276245117,
+      "num_results": 35
     },
     {
       "question_id": "q_summer_activity",
       "query": "What is the current summer activity?",
-      "expected": "cycling",
-      "top_result": "Morning briefing: ideal weather weather preference is now breezy; warm weather plan summer activity is now cycling. Ready to tackle the day.\n\nAdditional context for session 81: This is part of the ong",
+      "expected": "hiking",
+      "top_result": "Morning briefing: forecast source weather app is now Dark Sky; warm weather plan summer activity is now hiking. Ready to tackle the day.\n\nAdditional context for session 919: This is part of the ongoin",
       "score": 1.0,
-      "latency_ms": 1.8470287322998047,
-      "num_results": 5
+      "latency_ms": 2.5548934936523438,
+      "num_results": 13
     },
     {
       "question_id": "q_plant_count",
       "query": "What is the current plant count?",
-      "expected": "8",
-      "top_result": "Morning briefing: houseplants plant count is now 8; savings target monthly savings amount is now $750. Ready to tackle the day.\n\nAdditional context for session 29: This is part of the ongoing conversa",
+      "expected": "3",
+      "top_result": "Standup notes: reading goal book count is now 6/year; credential vault password manager is now Bitwarden. Blockers: waiting on design review.\n\nAdditional context for session 940: This is part of the o",
       "score": 1.0,
-      "latency_ms": 1.402139663696289,
-      "num_results": 5
+      "latency_ms": 4.640102386474609,
+      "num_results": 39
     },
     {
       "question_id": "q_fitness_tracker",
       "query": "What is the current fitness tracker?",
-      "expected": "Apple Watch",
-      "top_result": "End of day summary: exercise routine workout plan is now cycling; yoga practice yoga style is now ashtanga. Good progress made today.\n\nAdditional context for session 24: This is part of the ongoing co",
+      "expected": "Garmin",
+      "top_result": "End of day summary: health wearable fitness tracker is now Garmin; cold weather gear winter coat is now heated vest. Good progress made today.\n\nAdditional context for session 975: This is part of the ",
       "score": 1.0,
-      "latency_ms": 1.8999576568603516,
-      "num_results": 9
+      "latency_ms": 7.203817367553711,
+      "num_results": 17
     },
     {
       "question_id": "q_holiday_gift",
       "query": "What is the current holiday gift?",
       "expected": "noise-canceling headphones",
-      "top_result": "End of day summary: wishlist item holiday gift is now noise-canceling headphones. Good progress made today.\n\nAdditional context for session 41: This is part of the ongoing conversation history. This i",
+      "top_result": "Team meeting recap: wishlist item holiday gift is now noise-canceling headphones. Also discussed upcoming sprint planning.\n\nAdditional context for session 984: This is part of the ongoing conversation",
       "score": 1.0,
-      "latency_ms": 1.7590522766113281,
-      "num_results": 6
+      "latency_ms": 4.174232482910156,
+      "num_results": 27
     },
     {
       "question_id": "q_vacation_type",
       "query": "What is the current vacation type?",
-      "expected": "beach",
-      "top_result": "Quick update: next trip travel destination is now Reykjavik; current watch anime show is now Vinland Saga. Will follow up with more details tomorrow.\n\nAdditional context for session 79: This is part o",
+      "expected": "road trip",
+      "top_result": "Quick update: preferred getaway vacation type is now road trip. Will follow up with more details tomorrow.\n\nAdditional context for session 929: This is part of the ongoing conversation history. This i",
       "score": 1.0,
-      "latency_ms": 1.8358230590820312,
-      "num_results": 9
+      "latency_ms": 2.846956253051758,
+      "num_results": 16
     },
     {
       "question_id": "q_side_income",
       "query": "What is the current side income?",
-      "expected": "$500/mo",
-      "top_result": "Morning briefing: preferred getaway vacation type is now adventure; freelance earnings side income is now $500/mo. Ready to tackle the day.\n\nAdditional context for session 33: This is part of the ongo",
+      "expected": "$200/mo",
+      "top_result": "Morning briefing: freelance earnings side income is now $200/mo; current book reading book is now Project Hail Mary. Ready to tackle the day.\n\nAdditional context for session 810: This is part of the o",
       "score": 1.0,
-      "latency_ms": 3.2372474670410156,
-      "num_results": 7
+      "latency_ms": 3.5419464111328125,
+      "num_results": 23
     },
     {
       "question_id": "q_timezone",
       "query": "What is the current timezone?",
-      "expected": "CST",
-      "top_result": "Morning briefing: working hours timezone is now JST. Ready to tackle the day.\n\nAdditional context for session 34: This is part of the ongoing conversation history. This is part of the ongoing conversa",
+      "expected": "EST",
+      "top_result": "Morning briefing: current book reading book is now The Ministry; working hours timezone is now EST. Ready to tackle the day.\n\nAdditional context for session 983: This is part of the ongoing conversati",
       "score": 1.0,
-      "latency_ms": 2.841949462890625,
-      "num_results": 5
+      "latency_ms": 3.149747848510742,
+      "num_results": 21
     },
     {
       "question_id": "q_pet_toy",
       "query": "What is the current pet toy?",
-      "expected": "tunnel",
-      "top_result": "Standup notes: favorite toy pet toy is now tunnel; morning meal breakfast is now oatmeal. Blockers: waiting on design review.\n\nAdditional context for session 36: This is part of the ongoing conversati",
-      "score": 1.0,
-      "latency_ms": 1.130819320678711,
-      "num_results": 5
+      "expected": "laser pointer",
+      "top_result": "Quick update: cat name pet name is now Zelda; charity focus donation cause is now arts. Will follow up with more details tomorrow.\n\nAdditional context for session 991: This is part of the ongoing conv",
+      "score": 0.0,
+      "latency_ms": 5.256891250610352,
+      "num_results": 46
     },
     {
       "question_id": "q_breakfast",
       "query": "What is the current breakfast?",
-      "expected": "yogurt",
-      "top_result": "Standup notes: favorite toy pet toy is now tunnel; morning meal breakfast is now oatmeal. Blockers: waiting on design review.\n\nAdditional context for session 36: This is part of the ongoing conversati",
+      "expected": "oatmeal",
+      "top_result": "End of day summary: morning meal breakfast is now oatmeal; morning coffee coffee order is now americano. Good progress made today.\n\nAdditional context for session 959: This is part of the ongoing conv",
       "score": 1.0,
-      "latency_ms": 1.0569095611572266,
-      "num_results": 5
+      "latency_ms": 7.426023483276367,
+      "num_results": 12
     },
     {
       "question_id": "q_hotel_chain",
       "query": "What is the current hotel chain?",
-      "expected": "Hyatt",
-      "top_result": "Team meeting recap: lodging choice hotel chain is now Hyatt. Also discussed upcoming sprint planning.\n\nAdditional context for session 86: This is part of the ongoing conversation history. This is part",
+      "expected": "Hilton",
+      "top_result": "Team meeting recap: lodging choice hotel chain is now Hilton. Also discussed upcoming sprint planning.\n\nAdditional context for session 880: This is part of the ongoing conversation history. This is pa",
       "score": 1.0,
-      "latency_ms": 1.5120506286621094,
-      "num_results": 6
+      "latency_ms": 3.8080215454101562,
+      "num_results": 22
     },
     {
       "question_id": "q_water_intake",
       "query": "What is the current water intake?",
-      "expected": "10 glasses",
-      "top_result": "Quick update: daily hydration water intake is now 10 glasses. Will follow up with more details tomorrow.\n\nAdditional context for session 39: This is part of the ongoing conversation history. This is p",
+      "expected": "6 glasses",
+      "top_result": "Quick update: daily hydration water intake is now 6 glasses. Will follow up with more details tomorrow.\n\nAdditional context for session 973: This is part of the ongoing conversation history. This is p",
       "score": 1.0,
-      "latency_ms": 1.15203857421875,
-      "num_results": 4
+      "latency_ms": 5.768775939941406,
+      "num_results": 20
     },
     {
       "question_id": "q_game_genre",
       "query": "What is the current game genre?",
-      "expected": "puzzle",
-      "top_result": "Morning briefing: gaming preference game genre is now puzzle. Ready to tackle the day.\n\nAdditional context for session 56: This is part of the ongoing conversation history. This is part of the ongoing",
+      "expected": "RPG",
+      "top_result": "Quick update: playlist genre music genre is now indie rock. Will follow up with more details tomorrow.\n\nAdditional context for session 965: This is part of the ongoing conversation history. This is pa",
       "score": 1.0,
-      "latency_ms": 1.6641616821289062,
-      "num_results": 11
+      "latency_ms": 6.517171859741211,
+      "num_results": 61
     },
     {
       "question_id": "q_team_size",
       "query": "What is the current team size?",
-      "expected": "20",
-      "top_result": "Team meeting recap: platform team team size is now 12; weekend hobby hobby is now gardening. Also discussed upcoming sprint planning.\n\nAdditional context for session 42: This is part of the ongoing co",
+      "expected": "12",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
       "score": 1.0,
-      "latency_ms": 2.5119781494140625,
-      "num_results": 24
+      "latency_ms": 15.301942825317383,
+      "num_results": 100
     },
     {
       "question_id": "q_hobby",
       "query": "What is the current hobby?",
-      "expected": "gardening",
-      "top_result": "Team meeting recap: platform team team size is now 12; weekend hobby hobby is now gardening. Also discussed upcoming sprint planning.\n\nAdditional context for session 42: This is part of the ongoing co",
+      "expected": "chess",
+      "top_result": "Standup notes: weekend hobby hobby is now chess; cat food brand pet food is now Blue Buffalo. Blockers: waiting on design review.\n\nAdditional context for session 988: This is part of the ongoing conve",
       "score": 1.0,
-      "latency_ms": 1.0290145874023438,
-      "num_results": 4
+      "latency_ms": 3.155946731567383,
+      "num_results": 14
     },
     {
       "question_id": "q_meeting_time",
       "query": "What is the current meeting time?",
-      "expected": "3pm",
-      "top_result": "Team meeting recap: daily standup meeting time is now 10am. Also discussed upcoming sprint planning.\n\nAdditional context for session 43: This is part of the ongoing conversation history. This is part ",
-      "score": 1.0,
-      "latency_ms": 2.9931068420410156,
-      "num_results": 25
+      "expected": "11am",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
+      "score": 0.0,
+      "latency_ms": 9.787797927856445,
+      "num_results": 100
     },
     {
       "question_id": "q_dinner_recipe",
       "query": "What is the current dinner recipe?",
-      "expected": "curry",
-      "top_result": "Team meeting recap: tonight's dinner dinner recipe is now curry. Also discussed upcoming sprint planning.\n\nAdditional context for session 46: This is part of the ongoing conversation history. This is ",
+      "expected": "pad thai",
+      "top_result": "Team meeting recap: rooting interest sports team is now 49ers; hosting schedule dinner party is now biweekly. Also discussed upcoming sprint planning.\n\nAdditional context for session 986: This is part",
       "score": 1.0,
-      "latency_ms": 1.9729137420654297,
-      "num_results": 8
+      "latency_ms": 7.819890975952148,
+      "num_results": 74
     },
     {
       "question_id": "q_donation_cause",
       "query": "What is the current donation cause?",
-      "expected": "healthcare",
-      "top_result": "Standup notes: charity focus donation cause is now animal welfare. Blockers: waiting on design review.\n\nAdditional context for session 47: This is part of the ongoing conversation history. This is par",
+      "expected": "arts",
+      "top_result": "Quick update: cat name pet name is now Zelda; charity focus donation cause is now arts. Will follow up with more details tomorrow.\n\nAdditional context for session 991: This is part of the ongoing conv",
       "score": 1.0,
-      "latency_ms": 1.1420249938964844,
-      "num_results": 5
+      "latency_ms": 7.308006286621094,
+      "num_results": 15
     },
     {
       "question_id": "q_color_palette",
       "query": "What is the current color palette?",
       "expected": "neon",
-      "top_result": "Team meeting recap: design palette color palette is now neon; refresh cadence resume update is now after each project. Also discussed upcoming sprint planning.\n\nAdditional context for session 49: This",
+      "top_result": "Standup notes: bedroom color room painting is now lavender. Blockers: waiting on design review.\n\nAdditional context for session 976: This is part of the ongoing conversation history. This is part of t",
       "score": 1.0,
-      "latency_ms": 1.3339519500732422,
-      "num_results": 7
+      "latency_ms": 5.896091461181641,
+      "num_results": 42
     },
     {
       "question_id": "q_favorite_color",
       "query": "What is the current favorite color?",
       "expected": "green",
-      "top_result": "Team meeting recap: Sarah favorite color is now purple; bedroom color room painting is now terracotta. Also discussed upcoming sprint planning.\n\nAdditional context for session 70: This is part of the ",
-      "score": 1.0,
-      "latency_ms": 1.9772052764892578,
-      "num_results": 13
+      "top_result": "Standup notes: bedroom color room painting is now lavender. Blockers: waiting on design review.\n\nAdditional context for session 976: This is part of the ongoing conversation history. This is part of t",
+      "score": 0.0,
+      "latency_ms": 7.281064987182617,
+      "num_results": 73
     },
     {
       "question_id": "q_gift_budget",
       "query": "What is the current gift budget?",
-      "expected": "$50",
-      "top_result": "Quick update: birthday gift limit gift budget is now $50. Will follow up with more details tomorrow.\n\nAdditional context for session 54: This is part of the ongoing conversation history. This is part ",
+      "expected": "$100",
+      "top_result": "Team meeting recap: wishlist item holiday gift is now noise-canceling headphones. Also discussed upcoming sprint planning.\n\nAdditional context for session 984: This is part of the ongoing conversation",
       "score": 1.0,
-      "latency_ms": 2.701997756958008,
-      "num_results": 8
+      "latency_ms": 11.082172393798828,
+      "num_results": 54
     },
     {
       "question_id": "q_music_player",
       "query": "What is the current music player?",
-      "expected": "Tidal",
-      "top_result": "Morning briefing: playlist genre music genre is now indie rock. Ready to tackle the day.\n\nAdditional context for session 58: This is part of the ongoing conversation history. This is part of the ongoi",
+      "expected": "YouTube Music",
+      "top_result": "Morning briefing: streaming app music player is now YouTube Music. Ready to tackle the day.\n\nAdditional context for session 990: This is part of the ongoing conversation history. This is part of the o",
       "score": 1.0,
-      "latency_ms": 2.755880355834961,
-      "num_results": 7
+      "latency_ms": 7.333278656005859,
+      "num_results": 49
     },
     {
       "question_id": "q_music_genre",
       "query": "What is the current music genre?",
       "expected": "indie rock",
-      "top_result": "Morning briefing: playlist genre music genre is now indie rock. Ready to tackle the day.\n\nAdditional context for session 58: This is part of the ongoing conversation history. This is part of the ongoi",
+      "top_result": "Morning briefing: streaming app music player is now YouTube Music. Ready to tackle the day.\n\nAdditional context for session 990: This is part of the ongoing conversation history. This is part of the o",
       "score": 1.0,
-      "latency_ms": 2.0248889923095703,
-      "num_results": 12
+      "latency_ms": 8.074045181274414,
+      "num_results": 73
     },
     {
       "question_id": "q_vet_schedule",
       "query": "What is the current vet schedule?",
       "expected": "as needed",
-      "top_result": "End of day summary: checkup frequency vet schedule is now annually. Good progress made today.\n\nAdditional context for session 64: This is part of the ongoing conversation history. This is part of the ",
-      "score": 1.0,
-      "latency_ms": 2.2432804107666016,
-      "num_results": 12
+      "top_result": "Quick update: schedule manager calendar tool is now Fantastical. Will follow up with more details tomorrow.\n\nAdditional context for session 995: This is part of the ongoing conversation history. This ",
+      "score": 0.0,
+      "latency_ms": 16.63994789123535,
+      "num_results": 100
     },
     {
       "question_id": "q_smart_home",
       "query": "What is the current smart home hub?",
-      "expected": "HomeKit",
-      "top_result": "End of day summary: automation hub smart home hub is now Google Home. Good progress made today.\n\nAdditional context for session 61: This is part of the ongoing conversation history. This is part of th",
+      "expected": "Alexa",
+      "top_result": "End of day summary: automation hub smart home hub is now Alexa. Good progress made today.\n\nAdditional context for session 865: This is part of the ongoing conversation history. This is part of the ong",
       "score": 1.0,
-      "latency_ms": 1.4750957489013672,
-      "num_results": 5
+      "latency_ms": 3.1321048736572266,
+      "num_results": 15
     },
     {
       "question_id": "q_coffee_order",
       "query": "What is the current coffee order?",
-      "expected": "flat white",
-      "top_result": "Team meeting recap: morning coffee coffee order is now macchiato. Also discussed upcoming sprint planning.\n\nAdditional context for session 66: This is part of the ongoing conversation history. This is",
+      "expected": "latte",
+      "top_result": "Standup notes: IKEA build furniture project is now coffee table. Blockers: waiting on design review.\n\nAdditional context for session 970: This is part of the ongoing conversation history. This is part",
       "score": 1.0,
-      "latency_ms": 1.3911724090576172,
-      "num_results": 6
+      "latency_ms": 3.0930042266845703,
+      "num_results": 20
     },
     {
       "question_id": "q_pet_name",
       "query": "What is the current pet name?",
       "expected": "Zelda",
-      "top_result": "End of day summary: cat name pet name is now Zelda. Good progress made today.\n\nAdditional context for session 68: This is part of the ongoing conversation history. This is part of the ongoing conversa",
+      "top_result": "Quick update: cat name pet name is now Zelda; charity focus donation cause is now arts. Will follow up with more details tomorrow.\n\nAdditional context for session 991: This is part of the ongoing conv",
       "score": 1.0,
-      "latency_ms": 1.6431808471679688,
-      "num_results": 5
+      "latency_ms": 6.428003311157227,
+      "num_results": 46
     },
     {
       "question_id": "q_room_painting",
       "query": "What is the current room painting?",
-      "expected": "terracotta",
-      "top_result": "Team meeting recap: Sarah favorite color is now purple; bedroom color room painting is now terracotta. Also discussed upcoming sprint planning.\n\nAdditional context for session 70: This is part of the ",
+      "expected": "lavender",
+      "top_result": "Standup notes: bedroom color room painting is now lavender. Blockers: waiting on design review.\n\nAdditional context for session 976: This is part of the ongoing conversation history. This is part of t",
       "score": 1.0,
-      "latency_ms": 1.2631416320800781,
-      "num_results": 4
+      "latency_ms": 3.7598609924316406,
+      "num_results": 21
     },
     {
       "question_id": "q_alarm_time",
       "query": "What is the current alarm time?",
-      "expected": "7:00am",
-      "top_result": "Standup notes: checkup frequency vet schedule is now as needed; wake up time alarm time is now 7:00am. Blockers: waiting on design review.\n\nAdditional context for session 71: This is part of the ongoi",
+      "expected": "5:00am",
+      "top_result": "End of day summary: knowledge base note app is now Apple Notes; wake up time alarm time is now 5:00am. Good progress made today.\n\nAdditional context for session 923: This is part of the ongoing conver",
       "score": 1.0,
-      "latency_ms": 1.6357898712158203,
-      "num_results": 6
+      "latency_ms": 8.325815200805664,
+      "num_results": 25
     },
     {
       "question_id": "q_meditation_minutes",
       "query": "What is the current meditation minutes?",
-      "expected": "15",
-      "top_result": "Team meeting recap: daily meditation meditation minutes is now 15. Also discussed upcoming sprint planning.\n\nAdditional context for session 72: This is part of the ongoing conversation history. This i",
+      "expected": "20",
+      "top_result": "End of day summary: daily meditation meditation minutes is now 20. Good progress made today.\n\nAdditional context for session 960: This is part of the ongoing conversation history. This is part of the ",
       "score": 1.0,
-      "latency_ms": 1.0790824890136719,
-      "num_results": 4
+      "latency_ms": 2.1381378173828125,
+      "num_results": 7
     },
     {
       "question_id": "q_weight_goal",
       "query": "What is the current weight goal?",
       "expected": "170 lbs",
-      "top_result": "Standup notes: target weight weight goal is now 170 lbs. Blockers: waiting on design review.\n\nAdditional context for session 77: This is part of the ongoing conversation history. This is part of the o",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
       "score": 1.0,
-      "latency_ms": 1.4338493347167969,
-      "num_results": 8
+      "latency_ms": 6.748199462890625,
+      "num_results": 63
     },
     {
       "question_id": "q_anime_show",
       "query": "What is the current anime show?",
-      "expected": "Vinland Saga",
-      "top_result": "Quick update: next trip travel destination is now Reykjavik; current watch anime show is now Vinland Saga. Will follow up with more details tomorrow.\n\nAdditional context for session 79: This is part o",
+      "expected": "Spy x Family",
+      "top_result": "End of day summary: forecast source weather app is now Apple Weather; current watch anime show is now Spy x Family. Good progress made today.\n\nAdditional context for session 942: This is part of the o",
       "score": 1.0,
-      "latency_ms": 1.6009807586669922,
-      "num_results": 8
+      "latency_ms": 3.816366195678711,
+      "num_results": 22
     },
     {
       "question_id": "q_appliance",
       "query": "What is the current appliance?",
-      "expected": "stand mixer",
-      "top_result": "End of day summary: kitchen upgrade appliance is now stand mixer; tonight's dinner dinner recipe is now curry. Good progress made today.\n\nAdditional context for session 83: This is part of the ongoing",
+      "expected": "Instant Pot",
+      "top_result": "Quick update: frontend tech stack is now Svelte; kitchen upgrade appliance is now Instant Pot. Will follow up with more details tomorrow.\n\nAdditional context for session 994: This is part of the ongoi",
       "score": 1.0,
-      "latency_ms": 1.0001659393310547,
-      "num_results": 4
+      "latency_ms": 3.7920475006103516,
+      "num_results": 19
     },
     {
       "question_id": "q_lunch_spot",
       "query": "What is the current lunch spot?",
-      "expected": "Sushi Bar",
-      "top_result": "Quick update: lunch destination lunch spot is now Sushi Bar. Will follow up with more details tomorrow.\n\nAdditional context for session 85: This is part of the ongoing conversation history. This is pa",
+      "expected": "Pizza Place",
+      "top_result": "End of day summary: lunch destination lunch spot is now Pizza Place; IKEA build furniture project is now shoe rack. Good progress made today.\n\nAdditional context for session 935: This is part of the o",
       "score": 1.0,
-      "latency_ms": 1.1301040649414062,
-      "num_results": 5
+      "latency_ms": 7.977962493896484,
+      "num_results": 20
     },
     {
       "question_id": "q_furniture_project",
       "query": "What is the current furniture project?",
       "expected": "bed frame",
-      "top_result": "End of day summary: IKEA build furniture project is now bed frame. Good progress made today.\n\nAdditional context for session 88: This is part of the ongoing conversation history. This is part of the o",
+      "top_result": "End of day summary: IKEA build furniture project is now bed frame; platform team team size is now 12. Good progress made today.\n\nAdditional context for session 996: This is part of the ongoing convers",
       "score": 1.0,
-      "latency_ms": 1.6961097717285156,
-      "num_results": 9
+      "latency_ms": 7.407903671264648,
+      "num_results": 55
     },
     {
       "question_id": "q_grooming",
       "query": "What is the current grooming routine?",
-      "expected": "quarterly vet",
-      "top_result": "Team meeting recap: grooming schedule grooming routine is now quarterly vet. Also discussed upcoming sprint planning.\n\nAdditional context for session 89: This is part of the ongoing conversation histo",
-      "score": 1.0,
-      "latency_ms": 2.7761459350585938,
-      "num_results": 9
+      "expected": "biweekly trim",
+      "top_result": "Team meeting recap: bedtime routine sleep schedule is now 10:30pm-6:30am. Also discussed upcoming sprint planning.\n\nAdditional context for session 989: This is part of the ongoing conversation history",
+      "score": 0.0,
+      "latency_ms": 6.384849548339844,
+      "num_results": 51
     },
     {
       "question_id": "q_fall_recipe",
       "query": "What is the current fall recipe?",
       "expected": "cornbread",
-      "top_result": "Quick update: seasonal dish fall recipe is now cornbread; refresh cadence resume update is now monthly. Will follow up with more details tomorrow.\n\nAdditional context for session 90: This is part of t",
+      "top_result": "Morning briefing: tonight's dinner dinner recipe is now pad thai. Ready to tackle the day.\n\nAdditional context for session 982: This is part of the ongoing conversation history. This is part of the on",
       "score": 1.0,
-      "latency_ms": 1.6858577728271484,
-      "num_results": 8
+      "latency_ms": 9.147167205810547,
+      "num_results": 38
     },
     {
       "question_id": "q_language_goal",
       "query": "What is the current language goal?",
-      "expected": "Mandarin",
-      "top_result": "End of day summary: language to learn language goal is now Mandarin. Good progress made today.\n\nAdditional context for session 93: This is part of the ongoing conversation history. This is part of the",
+      "expected": "French",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
       "score": 1.0,
-      "latency_ms": 1.4591217041015625,
-      "num_results": 8
+      "latency_ms": 8.36181640625,
+      "num_results": 63
     },
     {
       "question_id": "q_desk_plant",
       "query": "What is the current desk plant?",
-      "expected": "snake plant",
-      "top_result": "Morning briefing: office greenery desk plant is now snake plant. Ready to tackle the day.\n\nAdditional context for session 94: This is part of the ongoing conversation history. This is part of the ongo",
+      "expected": "pothos",
+      "top_result": "Morning briefing: desk display monitor setup is now triple 24. Ready to tackle the day.\n\nAdditional context for session 978: This is part of the ongoing conversation history. This is part of the ongoi",
       "score": 1.0,
-      "latency_ms": 1.2438297271728516,
-      "num_results": 5
+      "latency_ms": 5.715847015380859,
+      "num_results": 46
     },
     {
       "question_id": "q_deadline",
       "query": "What is the current deadline?",
-      "expected": "May 20",
-      "top_result": "Quick update: launch date deadline is now May 20; Sarah favorite color is now green. Will follow up with more details tomorrow.\n\nAdditional context for session 97: This is part of the ongoing conversa",
+      "expected": "April 1",
+      "top_result": "Morning briefing: launch date deadline is now April 1. Ready to tackle the day.\n\nAdditional context for session 878: This is part of the ongoing conversation history. This is part of the ongoing conve",
       "score": 1.0,
-      "latency_ms": 1.2691020965576172,
-      "num_results": 4
+      "latency_ms": 14.788150787353516,
+      "num_results": 17
     },
     {
       "question_id": "q_note_app",
       "query": "What is the current note app?",
-      "expected": "Roam",
-      "top_result": "Standup notes: morning meal breakfast is now yogurt; knowledge base note app is now Roam. Blockers: waiting on design review.\n\nAdditional context for session 98: This is part of the ongoing conversati",
+      "expected": "Apple Notes",
+      "top_result": "Morning briefing: streaming app music player is now YouTube Music. Ready to tackle the day.\n\nAdditional context for session 990: This is part of the ongoing conversation history. This is part of the o",
       "score": 1.0,
-      "latency_ms": 1.8360614776611328,
-      "num_results": 11
+      "latency_ms": 14.12510871887207,
+      "num_results": 61
     },
     {
       "question_id": "q_project_status",
       "query": "What is the current project status?",
-      "expected": "planning",
-      "top_result": "End of day summary: live music pick concert plan is now indie show; Phoenix Project project status is now planning. Good progress made today.\n\nAdditional context for session 99: This is part of the on",
+      "expected": "maintenance",
+      "top_result": "End of day summary: IKEA build furniture project is now bed frame; platform team team size is now 12. Good progress made today.\n\nAdditional context for session 996: This is part of the ongoing convers",
       "score": 1.0,
-      "latency_ms": 1.470804214477539,
-      "num_results": 9
+      "latency_ms": 6.411075592041016,
+      "num_results": 55
+    },
+    {
+      "question_id": "q_sports_team",
+      "query": "What is the current sports team?",
+      "expected": "49ers",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
+      "score": 1.0,
+      "latency_ms": 10.941028594970703,
+      "num_results": 100
+    },
+    {
+      "question_id": "q_photo_backup",
+      "query": "What is the current photo backup?",
+      "expected": "Google Photos",
+      "top_result": "Standup notes: binge platform streaming service is now Netflix; photo storage photo backup is now Google Photos. Blockers: waiting on design review.\n\nAdditional context for session 921: This is part o",
+      "score": 1.0,
+      "latency_ms": 8.57686996459961,
+      "num_results": 16
+    },
+    {
+      "question_id": "q_monthly_budget",
+      "query": "What is the current monthly spending budget?",
+      "expected": "$3500",
+      "top_result": "Standup notes: daily wear outfit choice is now flannel; Q3 budget budget is now $75k. Blockers: waiting on design review.\n\nAdditional context for session 958: This is part of the ongoing conversation ",
+      "score": 0.0,
+      "latency_ms": 7.41887092590332,
+      "num_results": 66
+    },
+    {
+      "question_id": "q_vpn",
+      "query": "What is the current VPN?",
+      "expected": "NordVPN",
+      "top_result": "Team meeting recap: privacy tool VPN is now NordVPN. Also discussed upcoming sprint planning.\n\nAdditional context for session 953: This is part of the ongoing conversation history. This is part of the",
+      "score": 1.0,
+      "latency_ms": 2.485036849975586,
+      "num_results": 12
+    },
+    {
+      "question_id": "q_tech_stack",
+      "query": "What is the current tech stack?",
+      "expected": "Svelte",
+      "top_result": "Quick update: frontend tech stack is now Svelte; kitchen upgrade appliance is now Instant Pot. Will follow up with more details tomorrow.\n\nAdditional context for session 994: This is part of the ongoi",
+      "score": 1.0,
+      "latency_ms": 5.691766738891602,
+      "num_results": 21
+    },
+    {
+      "question_id": "q_monitor_setup",
+      "query": "What is the current monitor setup?",
+      "expected": "triple 24",
+      "top_result": "Morning briefing: desk display monitor setup is now triple 24. Ready to tackle the day.\n\nAdditional context for session 978: This is part of the ongoing conversation history. This is part of the ongoi",
+      "score": 1.0,
+      "latency_ms": 7.854938507080078,
+      "num_results": 22
+    },
+    {
+      "question_id": "q_book_count",
+      "query": "What is the current book count?",
+      "expected": "6/year",
+      "top_result": "Morning briefing: current book reading book is now The Ministry; working hours timezone is now EST. Ready to tackle the day.\n\nAdditional context for session 983: This is part of the ongoing conversati",
+      "score": 1.0,
+      "latency_ms": 6.320953369140625,
+      "num_results": 45
+    },
+    {
+      "question_id": "q_packing_style",
+      "query": "What is the current packing style?",
+      "expected": "overpacker",
+      "top_result": "End of day summary: kitchen upgrade appliance is now air fryer; travel approach packing style is now overpacker. Good progress made today.\n\nAdditional context for session 894: This is part of the ongo",
+      "score": 1.0,
+      "latency_ms": 4.215002059936523,
+      "num_results": 25
+    },
+    {
+      "question_id": "q_password_manager",
+      "query": "What is the current password manager?",
+      "expected": "iCloud Keychain",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
+      "score": 1.0,
+      "latency_ms": 4.997014999389648,
+      "num_results": 37
+    },
+    {
+      "question_id": "q_road_trip_snack",
+      "query": "What is the current road trip snack?",
+      "expected": "energy bars",
+      "top_result": "End of day summary: next trip travel destination is now Queenstown. Good progress made today.\n\nAdditional context for session 980: This is part of the ongoing conversation history. This is part of the",
+      "score": 0.0,
+      "latency_ms": 9.585142135620117,
+      "num_results": 39
+    },
+    {
+      "question_id": "q_run_distance",
+      "query": "What is the current run distance?",
+      "expected": "1 mile",
+      "top_result": "Standup notes: weekly run run distance is now 1 mile. Blockers: waiting on design review.\n\nAdditional context for session 573: This is part of the ongoing conversation history. This is part of the ong",
+      "score": 1.0,
+      "latency_ms": 2.0008087158203125,
+      "num_results": 4
+    },
+    {
+      "question_id": "q_steps_goal",
+      "query": "What is the current steps goal?",
+      "expected": "15000",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
+      "score": 1.0,
+      "latency_ms": 7.471799850463867,
+      "num_results": 63
+    },
+    {
+      "question_id": "q_wine_preference",
+      "query": "What is the current wine preference?",
+      "expected": "Riesling",
+      "top_result": "Morning briefing: ideal weather weather preference is now snowy; professional cert certification is now PMP. Ready to tackle the day.\n\nAdditional context for session 961: This is part of the ongoing c",
+      "score": 1.0,
+      "latency_ms": 5.832910537719727,
+      "num_results": 44
+    },
+    {
+      "question_id": "q_keyboard",
+      "query": "What is the current keyboard?",
+      "expected": "Topre",
+      "top_result": "Morning briefing: mentorship focus mentor topic is now leadership; typing setup keyboard is now Topre. Ready to tackle the day.\n\nAdditional context for session 715: This is part of the ongoing convers",
+      "score": 1.0,
+      "latency_ms": 1.6980171203613281,
+      "num_results": 6
+    },
+    {
+      "question_id": "q_pet_food",
+      "query": "What is the current pet food?",
+      "expected": "Blue Buffalo",
+      "top_result": "Quick update: cat name pet name is now Zelda; charity focus donation cause is now arts. Will follow up with more details tomorrow.\n\nAdditional context for session 991: This is part of the ongoing conv",
+      "score": 1.0,
+      "latency_ms": 11.180877685546875,
+      "num_results": 46
+    },
+    {
+      "question_id": "q_phone_model",
+      "query": "What is the current phone model?",
+      "expected": "Pixel 8",
+      "top_result": "End of day summary: online course course topic is now machine learning; daily phone phone model is now Pixel 8. Good progress made today.\n\nAdditional context for session 997: This is part of the ongoi",
+      "score": 1.0,
+      "latency_ms": 3.2248497009277344,
+      "num_results": 11
+    },
+    {
+      "question_id": "q_cleaning_schedule",
+      "query": "What is the current cleaning schedule?",
+      "expected": "monthly",
+      "top_result": "Quick update: schedule manager calendar tool is now Fantastical. Will follow up with more details tomorrow.\n\nAdditional context for session 995: This is part of the ongoing conversation history. This ",
+      "score": 1.0,
+      "latency_ms": 11.926889419555664,
+      "num_results": 100
+    },
+    {
+      "question_id": "q_dinner_party",
+      "query": "What is the current dinner party?",
+      "expected": "biweekly",
+      "top_result": "Team meeting recap: rooting interest sports team is now 49ers; hosting schedule dinner party is now biweekly. Also discussed upcoming sprint planning.\n\nAdditional context for session 986: This is part",
+      "score": 1.0,
+      "latency_ms": 13.490915298461914,
+      "num_results": 58
+    },
+    {
+      "question_id": "q_browser",
+      "query": "What is the current browser?",
+      "expected": "Chrome",
+      "top_result": "Morning briefing: default browser browser is now Chrome. Ready to tackle the day.\n\nAdditional context for session 948: This is part of the ongoing conversation history. This is part of the ongoing con",
+      "score": 1.0,
+      "latency_ms": 3.091096878051758,
+      "num_results": 14
+    },
+    {
+      "question_id": "q_mentor_topic",
+      "query": "What is the current mentor topic?",
+      "expected": "public speaking",
+      "top_result": "Quick update: mentorship focus mentor topic is now public speaking. Will follow up with more details tomorrow.\n\nAdditional context for session 998: This is part of the ongoing conversation history. Th",
+      "score": 1.0,
+      "latency_ms": 4.596948623657227,
+      "num_results": 35
+    },
+    {
+      "question_id": "q_tv_series",
+      "query": "What is the current TV series?",
+      "expected": "Fallout",
+      "top_result": "Morning briefing: binge series TV series is now Fallout. Ready to tackle the day.\n\nAdditional context for session 904: This is part of the ongoing conversation history. This is part of the ongoing con",
+      "score": 1.0,
+      "latency_ms": 3.2901763916015625,
+      "num_results": 15
+    },
+    {
+      "question_id": "q_snack",
+      "query": "What is the current snack?",
+      "expected": "almonds",
+      "top_result": "Team meeting recap: afternoon snack snack is now almonds; birthday gift limit gift budget is now $100. Also discussed upcoming sprint planning.\n\nAdditional context for session 944: This is part of the",
+      "score": 1.0,
+      "latency_ms": 2.507925033569336,
+      "num_results": 14
+    },
+    {
+      "question_id": "q_certification",
+      "query": "What is the current certification?",
+      "expected": "PMP",
+      "top_result": "Morning briefing: ideal weather weather preference is now snowy; professional cert certification is now PMP. Ready to tackle the day.\n\nAdditional context for session 961: This is part of the ongoing c",
+      "score": 1.0,
+      "latency_ms": 3.002166748046875,
+      "num_results": 14
+    },
+    {
+      "question_id": "q_airline",
+      "query": "What is the current airline?",
+      "expected": "JetBlue",
+      "top_result": "Standup notes: preferred airline airline is now JetBlue; Q3 budget budget is now $150k. Blockers: waiting on design review.\n\nAdditional context for session 905: This is part of the ongoing conversatio",
+      "score": 1.0,
+      "latency_ms": 7.290124893188477,
+      "num_results": 10
+    },
+    {
+      "question_id": "q_study_hours",
+      "query": "What is the current study hours?",
+      "expected": "3 hours/day",
+      "top_result": "Morning briefing: current book reading book is now The Ministry; working hours timezone is now EST. Ready to tackle the day.\n\nAdditional context for session 983: This is part of the ongoing conversati",
+      "score": 1.0,
+      "latency_ms": 6.591081619262695,
+      "num_results": 46
+    },
+    {
+      "question_id": "q_restaurant_pick",
+      "query": "What is the current restaurant pick?",
+      "expected": "Chipotle",
+      "top_result": "Quick update: dinner reservation restaurant pick is now Chipotle. Will follow up with more details tomorrow.\n\nAdditional context for session 981: This is part of the ongoing conversation history. This",
+      "score": 1.0,
+      "latency_ms": 6.499052047729492,
+      "num_results": 48
     },
     {
       "question_id": "q_temporal_0",
       "query": "When was the project status last updated?",
-      "expected": "99",
-      "top_result": "End of day summary: live music pick concert plan is now indie show; Phoenix Project project status is now planning. Good progress made today.\n\nAdditional context for session 99: This is part of the on",
+      "expected": "987",
+      "top_result": "End of day summary: IKEA build furniture project is now bed frame; platform team team size is now 12. Good progress made today.\n\nAdditional context for session 996: This is part of the ongoing convers",
       "score": 1.0,
-      "latency_ms": 1.695394515991211,
-      "num_results": 6
+      "latency_ms": 12.555837631225586,
+      "num_results": 55
     },
     {
       "question_id": "q_temporal_1",
       "query": "When was the budget last updated?",
-      "expected": "4",
-      "top_result": "End of day summary: Q3 budget budget is now $100k. Good progress made today.\n\nAdditional context for session 0: This is part of the ongoing conversation history. This is part of the ongoing conversati",
+      "expected": "958",
+      "top_result": "Standup notes: daily wear outfit choice is now flannel; Q3 budget budget is now $75k. Blockers: waiting on design review.\n\nAdditional context for session 958: This is part of the ongoing conversation ",
       "score": 1.0,
-      "latency_ms": 1.0139942169189453,
-      "num_results": 3
+      "latency_ms": 7.606029510498047,
+      "num_results": 42
     },
     {
       "question_id": "q_temporal_2",
       "query": "When was the team size last updated?",
-      "expected": "51",
-      "top_result": "Team meeting recap: platform team team size is now 12; weekend hobby hobby is now gardening. Also discussed upcoming sprint planning.\n\nAdditional context for session 42: This is part of the ongoing co",
+      "expected": "996",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
       "score": 1.0,
-      "latency_ms": 2.4678707122802734,
+      "latency_ms": 11.05809211730957,
+      "num_results": 100
+    },
+    {
+      "question_id": "q_temporal_3",
+      "query": "When was the tech stack last updated?",
+      "expected": "994",
+      "top_result": "Quick update: frontend tech stack is now Svelte; kitchen upgrade appliance is now Instant Pot. Will follow up with more details tomorrow.\n\nAdditional context for session 994: This is part of the ongoi",
+      "score": 1.0,
+      "latency_ms": 3.463268280029297,
       "num_results": 21
     },
     {
       "question_id": "q_temporal_4",
       "query": "When was the deadline last updated?",
-      "expected": "97",
-      "top_result": "Quick update: launch date deadline is now May 20; Sarah favorite color is now green. Will follow up with more details tomorrow.\n\nAdditional context for session 97: This is part of the ongoing conversa",
+      "expected": "878",
+      "top_result": "Morning briefing: launch date deadline is now April 1. Ready to tackle the day.\n\nAdditional context for session 878: This is part of the ongoing conversation history. This is part of the ongoing conve",
       "score": 1.0,
-      "latency_ms": 0.5700588226318359,
-      "num_results": 1
+      "latency_ms": 8.474111557006836,
+      "num_results": 17
     },
     {
       "question_id": "q_multihop_1",
       "query": "What was the budget when the project status was planning?",
       "expected": "check multiple sessions",
-      "top_result": "End of day summary: live music pick concert plan is now indie show; Phoenix Project project status is now planning. Good progress made today.\n\nAdditional context for session 99: This is part of the on",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
       "score": 0.0,
-      "latency_ms": 2.9449462890625,
-      "num_results": 28
+      "latency_ms": 11.001110076904297,
+      "num_results": 100
     },
     {
       "question_id": "q_adversarial_0",
-      "query": "Is the current coffee order still flat white?",
+      "query": "Is the current coffee order still latte?",
       "expected": "no",
-      "top_result": "Standup notes: freelance earnings side income is now $500/mo; morning coffee coffee order is now flat white. Blockers: waiting on design review.\n\nAdditional context for session 96: This is part of the",
+      "top_result": "Standup notes: IKEA build furniture project is now coffee table. Blockers: waiting on design review.\n\nAdditional context for session 970: This is part of the ongoing conversation history. This is part",
       "score": 1.0,
-      "latency_ms": 1.7130374908447266,
-      "num_results": 6
+      "latency_ms": 3.904104232788086,
+      "num_results": 20
     },
     {
       "question_id": "q_adversarial_1",
-      "query": "Is the current meeting time still 3pm?",
+      "query": "Is the current meeting time still 11am?",
       "expected": "no",
-      "top_result": "Standup notes: daily standup meeting time is now 3pm. Blockers: waiting on design review.\n\nAdditional context for session 73: This is part of the ongoing conversation history. This is part of the ongo",
+      "top_result": "Team meeting recap: language to learn language goal is now French; credential vault password manager is now iCloud Keychain. Also discussed upcoming sprint planning.\n\nAdditional context for session 99",
       "score": 1.0,
-      "latency_ms": 3.968954086303711,
-      "num_results": 25
+      "latency_ms": 10.73002815246582,
+      "num_results": 100
     },
     {
       "question_id": "q_adversarial_2",
       "query": "Is the current favorite color still green?",
       "expected": "no",
-      "top_result": "Quick update: launch date deadline is now May 20; Sarah favorite color is now green. Will follow up with more details tomorrow.\n\nAdditional context for session 97: This is part of the ongoing conversa",
+      "top_result": "Standup notes: bedroom color room painting is now lavender. Blockers: waiting on design review.\n\nAdditional context for session 976: This is part of the ongoing conversation history. This is part of t",
       "score": 1.0,
-      "latency_ms": 2.0461082458496094,
-      "num_results": 13
+      "latency_ms": 14.755010604858398,
+      "num_results": 73
     }
   ],
   "files": {
-    "database": "/Users/arka/.config/agentic-memory/eval/beam/results/beam_1m.db"
+    "database": "/Users/arka/.config/agentic-memory/eval/beam/results/beam_10m.db"
   }
 }

@@ -108,21 +108,21 @@ The temporal-reasoning subset (72.92% at k=10) is the hardest category. Root-cau
 
 ### Results by Scale (Prod Pipeline — fact_lookup mode)
 
-Evaluated through the prod `search_memories()` pipeline with `mode="fact_lookup"`: FTS5 AND-matching, temporal filtering, output envelope. Skips embedding fallback, CE reranking, and KG boost — these add noise on keyword-specific fact queries.
+Evaluated through the prod `search_memories()` pipeline with `mode="fact_lookup"`: FTS5 AND-matching with OR fallback, recency ordering, temporal filtering, output envelope. Auto-detected for "What is the current X?" queries. Skips embedding fallback, CE reranking, and KG boost.
 
 | Scale | Sessions | Questions | Accuracy | Avg Latency | p50 | p95 |
 |---|---:|---:|---:|---:|---:|---:|
-| 100K | 10 | 112 | — | — | — | — |
-| 1M | 100 | 112 | **98.82%** | 1.9ms | 1.7ms | 3.2ms |
-| 10M | 1000 | 112 | — | — | — | — |
+| 100K | 10 | 112 | **100.00%** | 0.4ms | 0.3ms | 0.6ms |
+| 1M | 100 | 112 | **94.12%** | 1.3ms | 1.2ms | 2.7ms |
+| 10M | 1000 | 112 | **87.50%** | 6.8ms | 6.3ms | 14.8ms |
 
-**Latency methodology**: End-to-end per-question through `search_memories()` with `mode="fact_lookup"`. Includes connection pool acquisition, query parsing (lightweight — no semantic expansion or graph RAG), FTS5 AND-matching, temporal filtering, and output envelope construction. First queries include ~8s embedding model warmup (shared with hybrid mode). Steady-state latency reported above.
+**Latency methodology**: End-to-end per-question through `search_memories()` with `mode="fact_lookup"`. Includes connection pool acquisition, lightweight query parsing, FTS5 AND+OR matching, recency ordering, temporal filtering, and output envelope. First queries include ~8s model warmup. Steady-state latency reported above.
 
 ### Comparison Table
 
 | System | 100K | 1M | 10M |
 |---|---:|---:|---:|
-| **This work (fact_lookup)** | — | **98.82%** | — |
+| **This work (fact_lookup)** | **100.00%** | **94.12%** | **87.50%** |
 | Cognee | 79.0% | — | — |
 | Mem0 | — | 64.1% | — |
 

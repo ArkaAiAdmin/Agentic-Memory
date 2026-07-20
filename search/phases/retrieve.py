@@ -67,6 +67,7 @@ def _fts_search(
     tag_filter_params: tuple = (),
     category: str | None = None,
     prefilter_ids: set[str] | None = None,
+    recency_order: bool = False,
 ) -> list:
     _base_filter = repo_filter + tag_filter_sql
     if prefilter_ids:
@@ -75,6 +76,7 @@ def _fts_search(
         _params = tuple(prefilter_ids)
     else:
         _params = ()
+    _order = "m.observed_at DESC" if recency_order else "fts.rank"
     if has_fitness:
         params: tuple = (fts_query,)
         if category:
@@ -87,7 +89,7 @@ def _fts_search(
             "          FROM memories_fts fts\n"
             "          JOIN tenant_memories m ON m.id = fts.id\n"
             f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
-            "          ORDER BY fts.rank\n"
+            f"          ORDER BY {_order}\n"
             "          LIMIT ?",
             (*params, limit * 2),
         ).fetchall()
@@ -102,7 +104,7 @@ def _fts_search(
         "      FROM memories_fts fts\n"
         "      JOIN tenant_memories m ON m.id = fts.id\n"
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
-        "      ORDER BY fts.rank\n"
+        f"      ORDER BY {_order}\n"
         "      LIMIT ?",
         (*params, limit),
     ).fetchall()
