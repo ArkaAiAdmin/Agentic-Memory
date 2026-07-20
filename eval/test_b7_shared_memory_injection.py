@@ -40,6 +40,8 @@ def _ensure_schema(db: Path) -> None:
                 pinned INTEGER DEFAULT 0,
                 repo_id TEXT,
                 valid_from TEXT,
+                valid_to TEXT,
+                superseded_by TEXT,
                 hash TEXT
             );
             CREATE TABLE IF NOT EXISTS shared_memories (
