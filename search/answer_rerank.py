@@ -122,6 +122,7 @@ def answer_rerank(
     db_path: Any = None,
     blend: float = _ANSWER_RERANK_BLEND,
     model: Any = None,
+    display_scores: Optional[dict] = None,
 ) -> list:
     """Rerank candidates by answer-level relevance.
 
@@ -137,6 +138,15 @@ def answer_rerank(
         db_path: Not used, kept for API compat.
         blend: Weight for answer score in final blend.
         model: Optional cross-encoder model instance.
+        display_scores: Optional mapping ``{note_id: display_score}`` from
+            the post-rank enrichment envelope (search.enrichment). When
+            provided, the answer-level blend starts from the *enriched*
+            score (concept / centrality / neural-forget surprise already
+            folded in) instead of the raw final_score. This lets KG
+            centrality and concept boosts influence the answer-level
+            ordering without relaxing the RANK-FIRST LOCK (final_score
+            itself is untouched). Recency is intentionally already inside
+            final_score, so display_score excludes it (no double-count).
 
     Returns:
         Re-ranked list with blended scores.
@@ -156,7 +166,14 @@ def answer_rerank(
 
         memory_id = item[0]
         content = item[1] or ""
-        original_score = item[6]
+        # Honor the enriched baseline when available; fall back to raw r[6].
+        if display_scores and memory_id in display_scores:
+            try:
+                original_score = float(display_scores[memory_id])
+            except (TypeError, ValueError):
+                original_score = item[6]
+        else:
+            original_score = item[6]
 
         # Check cache
         cached = conn.execute(

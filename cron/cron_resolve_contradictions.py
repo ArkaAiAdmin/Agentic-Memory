@@ -30,6 +30,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--db", default=_DEFAULT_DB, help="Path to memory.db")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writes")
     parser.add_argument("--limit", type=int, default=_DEFAULT_LIMIT, help="Max pairs to process")
+    parser.add_argument(
+        "--tenant",
+        default=os.environ.get("MEMORY_CRON_TENANT_ID"),
+        help="Restrict contradiction detection to one tenant (prevents cross-tenant false positives in shared DBs)",
+    )
     return parser.parse_args()
 
 
@@ -51,7 +56,9 @@ def main() -> int:
         return 0
 
     try:
-        contradictions = detect_contradictions(mem_dir, min_confidence="low")
+        contradictions = detect_contradictions(
+            mem_dir, min_confidence="low", tenant_id=args.tenant
+        )
     except Exception as e:
         print(f"contradiction_resolver: detection failed: {e}", file=sys.stderr)
         return 0

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import time
 import unicodedata
@@ -338,12 +339,29 @@ def project_crdt_to_entities(
     if redirects:
         merged_edges = redirect_edge_ids(merged_edges, redirects)
 
-    # Orphan guard
+    # Orphan guard (defense-in-depth, mirrors production resolve_edge_endpoints).
+    # Phase 3 has already rewritten merged-away endpoints through `redirects`
+    # (loser -> winner). Any endpoint that still fails to resolve to a canonical
+    # entity after redirection references a tombstoned or never-created entity,
+    # which has no winner: drop that edge rather than persisting an orphan.
+    # This matches the production path, where merged-away endpoints are
+    # rewritten to their winner via the durable kg_entity_redirect table and
+    # edges to tombstoned entities are rejected by verify_crdt_consistency.
     canonical_ids = set(canonical.keys())
-    merged_edges = {
-        eid: info for eid, info in merged_edges.items()
-        if info["source_id"] in canonical_ids and info["target_id"] in canonical_ids
-    }
+    reconciled = {}
+    for eid, info in merged_edges.items():
+        src = info["source_id"]
+        tgt = info["target_id"]
+        if src in redirects:
+            src = redirects[src]
+        if tgt in redirects:
+            tgt = redirects[tgt]
+        if src in canonical_ids and tgt in canonical_ids:
+            new_info = dict(info)
+            new_info["source_id"] = src
+            new_info["target_id"] = tgt
+            reconciled[eid] = new_info
+    merged_edges = reconciled
 
     # Write edges
     conn.execute("DELETE FROM kg_edges")
@@ -559,49 +577,56 @@ def run_all_tests():
         ))
     results.append(measure_convergence(conn, f"100k ops ({K5} keys, cross-eid dedup)", big_eops5, big_eops5_edge))
 
-    # Scenario 6: 1M ops, 10 keys — adversarial scale (99.9999% loss ratio)
-    N6 = 1_000_000
-    K6 = 10
-    big_eops6 = []
-    big_eops6_edge = []
-    for i in range(N6):
-        group = i % K6
-        peer = i // K6
-        eid = group * (N6 // K6) + peer
-        big_eops6.append(EntityOp(
-            eid, f"agent_{peer % 10}", "add",
-            {f"agent_{peer % 10}": peer // 10 + 1},
-            f"entity_{group}", "type", "adversarial", "",
-            float(i),
-        ))
-    for i in range(N6 // 100):
-        big_eops6_edge.append(EdgeOp(
-            i, (i % K6) * (N6 // K6), ((i + 1) % K6) * (N6 // K6),
-            "related_to", 1.0, None, f"agent_{i % 10}",
-            {f"agent_{i % 10}": i // K6 + 1}, float(i),
-        ))
-    results.append(measure_convergence(conn, f"1M ops ({K6} keys, adversarial scale)", big_eops6, big_eops6_edge))
+    # Scenario 6 & 7 (1M / 10M ops) are full-scale throughput demonstrations.
+    # They insert every op into SQLite and run the full projection, which takes
+    # minutes and gigabytes of RAM in-process. They are skipped by default so
+    # that `python3 ck_crdt.py` returns quickly; set CK_CRDT_BENCH_FULL=1 to run
+    # them. Scenarios 1-5 and 8 already demonstrate convergence, loss ratios,
+    # and 100k-scale behavior without the runtime cost.
+    if os.environ.get("CK_CRDT_BENCH_FULL") == "1":
+        # Scenario 6: 1M ops, 10 keys — adversarial scale (99.9999% loss ratio)
+        N6 = 1_000_000
+        K6 = 10
+        big_eops6 = []
+        big_eops6_edge = []
+        for i in range(N6):
+            group = i % K6
+            peer = i // K6
+            eid = group * (N6 // K6) + peer
+            big_eops6.append(EntityOp(
+                eid, f"agent_{peer % 10}", "add",
+                {f"agent_{peer % 10}": peer // 10 + 1},
+                f"entity_{group}", "type", "adversarial", "",
+                float(i),
+            ))
+        for i in range(N6 // 100):
+            big_eops6_edge.append(EdgeOp(
+                i, (i % K6) * (N6 // K6), ((i + 1) % K6) * (N6 // K6),
+                "related_to", 1.0, None, f"agent_{i % 10}",
+                {f"agent_{i % 10}": i // K6 + 1}, float(i),
+            ))
+        results.append(measure_convergence(conn, f"1M ops ({K6} keys, adversarial scale)", big_eops6, big_eops6_edge))
 
-    # Scenario 7: 10M entity ops — linear scaling demonstration
-    # This proves O(N) throughput: ~0.4M ops/s constant from 100K to 10M.
-    # At 575 bytes/op, 10M requires ~5.5GB RAM — within commodity limits.
-    # 1B would require ~536GB (memory-bound, not compute-bound); a disk-backed
-    # streaming implementation would handle 1B in ~2 hours at the same throughput.
-    # Edges omitted at this scale — they're O(N/100) and trivial.
-    N7 = 10_000_000
-    K7 = 100  # 100 distinct entities → 99.999% loss ratio
-    big_eops7 = []
-    for i in range(N7):
-        group = i % K7
-        peer = i // K7
-        eid = group * (N7 // K7) + peer
-        big_eops7.append(EntityOp(
-            eid, f"agent_{peer % 10}", "add",
-            {f"agent_{peer % 10}": peer // 10 + 1},
-            f"entity_{group}", "type", "scale", "",
-            float(i),
-        ))
-    results.append(measure_convergence(conn, f"10M ops ({K7} keys, linear scaling)", big_eops7, []))
+        # Scenario 7: 10M entity ops — linear scaling demonstration
+        # This proves O(N) throughput: ~0.4M ops/s constant from 100K to 10M.
+        # At 575 bytes/op, 10M requires ~5.5GB RAM — within commodity limits.
+        # 1B would require ~536GB (memory-bound, not compute-bound); a disk-backed
+        # streaming implementation would handle 1B in ~2 hours at the same throughput.
+        # Edges omitted at this scale — they're O(N/100) and trivial.
+        N7 = 10_000_000
+        K7 = 100  # 100 distinct entities → 99.999% loss ratio
+        big_eops7 = []
+        for i in range(N7):
+            group = i % K7
+            peer = i // K7
+            eid = group * (N7 // K7) + peer
+            big_eops7.append(EntityOp(
+                eid, f"agent_{peer % 10}", "add",
+                {f"agent_{peer % 10}": peer // 10 + 1},
+                f"entity_{group}", "type", "scale", "",
+                float(i),
+            ))
+        results.append(measure_convergence(conn, f"10M ops ({K7} keys, linear scaling)", big_eops7, []))
 
     # Scenario 8: Combined entity + edge pipeline (100k each, realistic workload)
     N8 = 100_000
@@ -641,6 +666,8 @@ def run_all_tests():
     print()
     print("All scenarios: convergence verified (idempotent), no-orphan invariant holds.")
     print("Loss ratio = (total_ops - winners) / total_ops — measures information discarded by CK-CRDT merge.")
+    if os.environ.get("CK_CRDT_BENCH_FULL") != "1":
+        print("NOTE: 1M/10M-scale scenarios skipped (set CK_CRDT_BENCH_FULL=1 to enable).")
 
     conn.close()
 
@@ -806,6 +833,128 @@ def test_convergence_cross_peer():
     print("Convergence (cross-peer overlap): PASS")
 
 
+def test_partial_replication_convergence():
+    """CRDT hard case: peers project on *partial* bags, then reconcile.
+
+    Under eventual consistency, each peer first projects only the operations
+    it has received so far (a strict subset of the global bag). Later, peers
+    exchange the missing operations and re-project. The pipeline must converge
+    to the same canonical state as if every peer had always held the full bag.
+
+    This strengthens the full-bag convergence claim (Theorem 3, Paper 2 §6;
+    Theorem 3 of [14]) by exercising the partial-replication regime that both
+    papers explicitly scope as future work.
+    """
+    # Global operation set: three peers each create the same entity "project:x"
+    # under different IDs, plus an edge from each to a shared target.
+    all_entity_ops = [
+        EntityOp(10, "a", "add", {"a": 1}, "project:x", "project", "", "", 100.0),
+        EntityOp(20, "b", "add", {"b": 1}, "project:x", "project", "", "", 200.0),
+        EntityOp(30, "c", "add", {"c": 1}, "project:x", "project", "", "", 300.0),
+        EntityOp(15, "a", "add", {"a": 2}, "target", "proj", "", "", 50.0),
+    ]
+    all_edge_ops = [
+        EdgeOp(1, 10, 15, "depends_on", 1.0, None, "a", {"a": 2}, 110.0),
+        EdgeOp(2, 20, 15, "depends_on", 1.0, None, "b", {"b": 2}, 210.0),
+        EdgeOp(3, 30, 15, "depends_on", 1.0, None, "c", {"c": 2}, 310.0),
+    ]
+    full_ops = all_entity_ops + all_edge_ops
+
+    # Ground truth: project the full bag on a fresh DB.
+    conn_full = sqlite3.connect(":memory:")
+    conn_full.executescript(SCHEMA)
+    for op in all_entity_ops:
+        conn_full.execute(
+            "INSERT INTO kg_entity_crdt "
+            "(entity_id, agent_id, op, version_vector, name, entity_type, "
+            "description, fingerprint, timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
+            (op.entity_id, op.agent_id, op.op, _serialise_vv(op.version_vector),
+             op.name, op.entity_type, op.description, op.fingerprint, op.timestamp),
+        )
+    for op in all_edge_ops:
+        conn_full.execute(
+            "INSERT INTO kg_edge_crdt "
+            "(edge_id, source_id, target_id, relation, weight, valid_at, "
+            "agent_id, version_vector, timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
+            (op.edge_id, op.source_id, op.target_id, op.relation, op.weight,
+             op.valid_at, op.agent_id, _serialise_vv(op.version_vector), op.timestamp),
+        )
+    conn_full.commit()
+    project_crdt_to_entities(conn_full)
+    verify_no_orphan(conn_full)
+    full_entities = tuple(conn_full.execute(
+        "SELECT entity_id, name FROM kg_entities ORDER BY entity_id").fetchall())
+    full_edges = tuple(conn_full.execute(
+        "SELECT source_id, target_id, relation FROM kg_edges ORDER BY source_id, target_id").fetchall())
+    conn_full.close()
+
+    # Peer A starts with only ops from peers a and b; Peer B with b and c.
+    peer_a_ops = [all_entity_ops[0], all_entity_ops[1], all_entity_ops[3],
+                  all_edge_ops[0], all_edge_ops[1]]
+    peer_b_ops = [all_entity_ops[1], all_entity_ops[2], all_entity_ops[3],
+                  all_edge_ops[1], all_edge_ops[2]]
+
+    def seed_and_project(ops):
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(SCHEMA)
+        ent = [o for o in ops if isinstance(o, EntityOp)]
+        edg = [o for o in ops if isinstance(o, EdgeOp)]
+        for op in ent:
+            conn.execute(
+                "INSERT INTO kg_entity_crdt "
+                "(entity_id, agent_id, op, version_vector, name, entity_type, "
+                "description, fingerprint, timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
+                (op.entity_id, op.agent_id, op.op, _serialise_vv(op.version_vector),
+                 op.name, op.entity_type, op.description, op.fingerprint, op.timestamp),
+            )
+        for op in edg:
+            conn.execute(
+                "INSERT INTO kg_edge_crdt "
+                "(edge_id, source_id, target_id, relation, weight, valid_at, "
+                "agent_id, version_vector, timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
+                (op.edge_id, op.source_id, op.target_id, op.relation, op.weight,
+                 op.valid_at, op.agent_id, _serialise_vv(op.version_vector), op.timestamp),
+            )
+        conn.commit()
+        project_crdt_to_entities(conn)  # project on PARTIAL bag
+        # ... then exchange: receive the missing ops and re-project.
+        for op in full_ops:
+            if isinstance(op, EntityOp):
+                conn.execute(
+                    "INSERT OR IGNORE INTO kg_entity_crdt "
+                    "(entity_id, agent_id, op, version_vector, name, entity_type, "
+                    "description, fingerprint, timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (op.entity_id, op.agent_id, op.op, _serialise_vv(op.version_vector),
+                     op.name, op.entity_type, op.description, op.fingerprint, op.timestamp))
+            else:
+                conn.execute(
+                    "INSERT OR IGNORE INTO kg_edge_crdt "
+                    "(edge_id, source_id, target_id, relation, weight, valid_at, "
+                    "agent_id, version_vector, timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (op.edge_id, op.source_id, op.target_id, op.relation, op.weight,
+                     op.valid_at, op.agent_id, _serialise_vv(op.version_vector), op.timestamp))
+        conn.commit()
+        project_crdt_to_entities(conn)  # re-project on FULL bag
+        verify_no_orphan(conn)
+        ent_rows = tuple(conn.execute(
+            "SELECT entity_id, name FROM kg_entities ORDER BY entity_id").fetchall())
+        edg_rows = tuple(conn.execute(
+            "SELECT source_id, target_id, relation FROM kg_edges ORDER BY source_id, target_id").fetchall())
+        conn.close()
+        return ent_rows, edg_rows
+
+    a_ent, a_edg = seed_and_project(peer_a_ops)
+    b_ent, b_edg = seed_and_project(peer_b_ops)
+
+    # Both peers, after reconciliation, must match each other AND the full-bag
+    # ground truth.
+    assert a_ent == b_ent == full_entities, \
+        f"Partial-replication divergence: {a_ent} vs {b_ent} vs {full_entities}"
+    assert a_edg == b_edg == full_edges, \
+        f"Partial-replication edge divergence: {a_edg} vs {b_edg} vs {full_edges}"
+    print("Partial-replication convergence: PASS")
+
+
 def test_no_orphan_after_pipeline():
     """Every edge endpoint must be a canonical entity ID after projection."""
     conn = sqlite3.connect(":memory:")
@@ -858,6 +1007,7 @@ if __name__ == "__main__":
     test_k3_non_key_invariance()
     test_convergence_2peer()
     test_convergence_cross_peer()
+    test_partial_replication_convergence()
     test_no_orphan_after_pipeline()
     print()
     print("=" * 60)

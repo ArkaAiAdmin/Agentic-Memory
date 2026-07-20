@@ -29,6 +29,7 @@ __all__ = [
 
 import sys
 import re
+import os
 import logging
 from collections import OrderedDict
 from pathlib import Path
@@ -451,7 +452,7 @@ def _find_sentence_containing(text: str, phrase: str) -> str | None:
     return None
 
 
-def detect_contradictions(memory_dir, min_confidence="low"):
+def detect_contradictions(memory_dir, min_confidence="low", tenant_id=None):
     """Scan memory for contradictions using phrase-based detection.
 
     This is the high-precision detector that looks for explicit negation
@@ -460,6 +461,12 @@ def detect_contradictions(memory_dir, min_confidence="low"):
     Args:
         memory_dir: path to memory directory
         min_confidence: 'low' | 'medium' | 'high'
+        tenant_id: when set, restrict detection to a single tenant. In a
+            multi-agent DB where several agents share one physical
+            ``memory.db`` (scoped via the ``tenant_memories`` view), omitting
+            this would compare notes across tenants and produce cross-tenant
+            false positives. The resolver reads ``tenant_memories``, so the
+            detector must be scoped identically.
 
     Returns:
         list of contradiction dicts with keys:
@@ -472,6 +479,8 @@ def detect_contradictions(memory_dir, min_confidence="low"):
         logger.error("Database not found at %s", db_path)
         return []
 
+    _tenant_clause = "AND tenant_id = ?" if tenant_id else ""
+    _tenant_params = (tenant_id,) if tenant_id else ()
     db = connection_pool.get(str(db_path))
     try:
         db.execute("PRAGMA busy_timeout = 30000;")
@@ -479,7 +488,9 @@ def detect_contradictions(memory_dir, min_confidence="low"):
             "SELECT id, content, source_file FROM memories "
             "WHERE (valid_to IS NULL OR valid_to = '') "
             "AND (deleted_at IS NULL OR deleted_at = '') "
-            "AND content IS NOT NULL"
+            "AND content IS NOT NULL "
+            f"{_tenant_clause}",
+            _tenant_params,
         ).fetchall()
     finally:
         safe_close_db(db)
@@ -978,7 +989,7 @@ def _cosine_sim(a, b) -> float:
     return float(np.dot(a, b) / (na * nb))
 
 
-def detect_contradictions_semantic(memory_dir, threshold=SEMANTIC_THRESHOLD):
+def detect_contradictions_semantic(memory_dir, threshold=SEMANTIC_THRESHOLD, tenant_id=None):
     """Scan memory for paraphrased contradictions using model2vec.
 
     Extracts atomic claims, embeds each with model2vec, and reports
@@ -1026,11 +1037,15 @@ def detect_contradictions_semantic(memory_dir, threshold=SEMANTIC_THRESHOLD):
     db = connection_pool.get(str(db_path))
     try:
         db.execute("PRAGMA busy_timeout = 30000;")
+        _tenant_clause = "AND tenant_id = ?" if tenant_id else ""
+        _tenant_params = (tenant_id,) if tenant_id else ()
         rows = db.execute(
             "SELECT id, content FROM memories "
             "WHERE (valid_to IS NULL OR valid_to = '') "
             "AND (deleted_at IS NULL OR deleted_at = '') "
-            "AND content IS NOT NULL"
+            "AND content IS NOT NULL "
+            f"{_tenant_clause}",
+            _tenant_params,
         ).fetchall()
     finally:
         safe_close_db(db)
@@ -1234,6 +1249,7 @@ def detect_contradictions_all(
     min_confidence="low",
     mode="both",
     semantic_threshold=SEMANTIC_THRESHOLD,
+    tenant_id=None,
 ):
     """Run contradiction detection across one or both detectors.
 
@@ -1250,12 +1266,12 @@ def detect_contradictions_all(
     """
     results = []
     if mode in ("phrase", "both"):
-        for c in detect_contradictions(memory_dir, min_confidence):
+        for c in detect_contradictions(memory_dir, min_confidence, tenant_id=tenant_id):
             c = dict(c)
             c["detector"] = "phrase"
             results.append(c)
     if mode in ("semantic", "both"):
-        for c in detect_contradictions_semantic(memory_dir, semantic_threshold):
+        for c in detect_contradictions_semantic(memory_dir, semantic_threshold, tenant_id=tenant_id):
             c = dict(c)
             rank = {"low": 0, "medium": 1, "high": 2}
             if rank[c.get("confidence", "low")] >= rank[min_confidence]:
@@ -1276,6 +1292,7 @@ if __name__ == "__main__":
     min_confidence = "low"
     mode = "both"
     semantic_threshold = SEMANTIC_THRESHOLD
+    tenant_id = os.environ.get("MEMORY_CRON_TENANT_ID")
     positional = []
     for arg in sys.argv[1:]:
         if arg.startswith("--min-confidence="):
@@ -1284,6 +1301,8 @@ if __name__ == "__main__":
             mode = arg.split("=", 1)[1]
         elif arg.startswith("--threshold="):
             semantic_threshold = float(arg.split("=", 1)[1])
+        elif arg.startswith("--tenant="):
+            tenant_id = arg.split("=", 1)[1]
         else:
             positional.append(arg)
 
@@ -1314,6 +1333,7 @@ if __name__ == "__main__":
             min_confidence=min_confidence,
             mode=mode,
             semantic_threshold=semantic_threshold,
+            tenant_id=tenant_id,
         )
         if contradictions:
             print(f"Found {len(contradictions)} contradictions:")

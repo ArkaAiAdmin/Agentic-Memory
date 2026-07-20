@@ -146,7 +146,7 @@ agentic-memory/                    # Repo root
 
 - **115 MCP tools** (23 CORE + 92 ADMIN).
   Single source of truth: `tool_registry.py`.
-- **49 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
+- **50 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.
 - **7 lifecycle hooks** in `hooks/` — session start/end,

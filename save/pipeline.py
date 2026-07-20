@@ -47,6 +47,27 @@ from self_directed import _assign_tier as assign_tier
 from backfill.orchestrator import auto_backfill
 
 
+def _default_data_subject_sub(tenant_id: str, principal_id: str | None) -> str:
+    """CHANGE 6: derive a stable, PII-free default GDPR subject tag.
+
+    When a caller does not supply ``data_subject_sub``, we default it to a
+    hash of the authenticated principal identity (falling back to the tenant
+    id when no principal is known).  The stored value is a one-way hash, so
+    no raw identity is written to disk, but the same principal can later
+    erase *only their own* memories via ``gdpr_erase`` without relying on a
+    tenant-wide wipe.
+
+    GDPR erasure compares this column to the plaintext subject string the
+    caller passes, so the default MUST be the plaintext hash (not a
+    double-hash) — ``gdpr_erase`` re-hashes the caller's input for storage
+    but matches the column on the plaintext value.
+    """
+    import hashlib
+
+    seed = principal_id or tenant_id or "anonymous"
+    return "sub_" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
+
+
 class SaveValidationError(ValueError):
     """Raised when save_memory parameters fail validation or paths cannot be resolved."""
 
@@ -84,6 +105,10 @@ class SaveRequest:
     asserting_agent_id: str = ""
     evidence_chain: list | None = None
     fact_type: str = "observation"
+    # CHANGE 6: GDPR subject tag.  When None/empty, the save path defaults it
+    # to a hashed principal sub (see _default_data_subject_sub) so per-subject
+    # erasure is always possible later.  Stored as a plaintext hash (no PII).
+    data_subject_sub: str | None = None
 
 def _write_vec_key(db: AnyConnection, note_id: str) -> int:
     """Write the memory_vec_keys mapping for a note.
@@ -173,6 +198,12 @@ _MANAGED_COLS = frozenset(
         "importance_score",
         "metadata",
         "deleted_at",
+        # CHANGE 6: data_subject_sub is written on every save so per-subject
+        # GDPR erasure is possible.  Previously it was absent from the managed
+        # column set, which (a) triggered a spurious "schema drift" warning on
+        # every save and (b) silently dropped the column from the upsert, so
+        # writes could never tag a subject and per-subject erase was impossible.
+        "data_subject_sub",
     }
 )
 # Columns that exist in the schema for historical/legacy reasons
@@ -414,6 +445,7 @@ def _upsert_memory_row(
     importance: int = 3,
     tier: str = "warm",
     tenant_id: str = "default",
+    data_subject_sub: str | None = None,
     cols: set | None = None,
 ):
     """Insert or update the memory row (and file_mtimes).
@@ -437,6 +469,10 @@ def _upsert_memory_row(
             logger.debug("PRAGMA table_info(memories) failed: %s", _pragma_exc)
             cols = set()
     has_tenant = "tenant_id" in cols
+    # CHANGE 6: data_subject_sub is only written when the column exists
+    # (migration 062).  On legacy DBs without the column we skip it so saves
+    # still succeed; the GDPR fallback is unavailable there (by design).
+    has_subject = "data_subject_sub" in cols
     importance = max(1, min(5, int(importance)))
     repo_id = None if is_global else db_path.parent.parent.name
     try:
@@ -461,6 +497,8 @@ def _upsert_memory_row(
         base_cols += ["category", "tier", "metadata"]
         if has_tenant:
             base_cols.append("tenant_id")
+        if has_subject:
+            base_cols.append("data_subject_sub")
         col_sql = ", ".join(base_cols)
         ph = ", ".join(["?"] * len(base_cols))
         update_cols = [
@@ -483,6 +521,8 @@ def _upsert_memory_row(
             )
         if has_tenant:
             update_cols.append("tenant_id = excluded.tenant_id")
+        if has_subject:
+            update_cols.append("data_subject_sub = excluded.data_subject_sub")
         update_sql = ", ".join(update_cols)
         vals: tuple[Any, ...]
         if temporal:
@@ -504,6 +544,8 @@ def _upsert_memory_row(
             )
         if has_tenant:
             vals = vals + (tenant_id,)
+        if has_subject:
+            vals = vals + (data_subject_sub,)
         sql = (
             f"INSERT INTO memories ({col_sql}) VALUES ({ph}) "
             f"ON CONFLICT(id) DO UPDATE SET {update_sql}"
@@ -549,6 +591,7 @@ def upsert_row(
     is_global: bool = False,
     importance: int = 3,
     tenant_id: str = "default",
+    data_subject_sub: str | None = None,
 ) -> None:
     """Public upsert: insert or update a single memory row.
 
@@ -677,6 +720,7 @@ def upsert_row(
         importance,
         tier,
         tenant_id,
+        data_subject_sub,
     )
 
 
@@ -749,6 +793,7 @@ def _update_memory_index_incremental(
     asserting_agent_id: str = "",
     evidence_chain: list | None = None,
     fact_type: str = "observation",
+    data_subject_sub: str | None = None,
 ):
     """Update memory index incrementally.
 
@@ -827,6 +872,7 @@ def _update_memory_index_incremental(
             importance,
             tier,
             tenant_id,
+            data_subject_sub,
             cols=cols,
         )
         if _is_crdt_enabled():
@@ -1334,6 +1380,7 @@ def _try_saga_persist(
     asserting_agent_id: str = "",
     evidence_chain: list | None = None,
     fact_type: str = "observation",
+    data_subject_sub: str | None = None,
 ):
     """Wrap the upsert + write + vec-key triple-store steps in a saga.
 
@@ -1364,6 +1411,7 @@ def _try_saga_persist(
             asserting_agent_id=asserting_agent_id,
             evidence_chain=evidence_chain,
             fact_type=fact_type,
+            data_subject_sub=data_subject_sub,
         )
 
     def _do_write_vec_key():
@@ -1407,6 +1455,7 @@ def _persist_via_saga(
     asserting_agent_id: str = "",
     evidence_chain: list | None = None,
     fact_type: str = "observation",
+    data_subject_sub: str | None = None,
 ):
     """Persist a memory via the saga-wrapped write path.
 
@@ -1440,10 +1489,11 @@ def _persist_via_saga(
         tenant_id=tenant_id,
         epistemic_source=epistemic_source,
         belief_status=belief_status,
-        asserting_agent_id=asserting_agent_id,
-        evidence_chain=evidence_chain,
-        fact_type=fact_type,
-    )
+            asserting_agent_id=asserting_agent_id,
+            evidence_chain=evidence_chain,
+            fact_type=fact_type,
+            data_subject_sub=data_subject_sub,
+        )
     return note_id, conn
 
 
@@ -1468,6 +1518,7 @@ def save_memory(
     asserting_agent_id: str = "",
     evidence_chain: list | None = None,
     fact_type: str = "observation",
+    data_subject_sub: str | None = None,
 ):
     """Write a memory note to disk and update the FTS5 index incrementally.
 
@@ -1518,6 +1569,7 @@ def save_memory(
         asserting_agent_id=asserting_agent_id,
         evidence_chain=evidence_chain,
         fact_type=fact_type,
+        data_subject_sub=data_subject_sub,
     )
     return _save_memory_core(req, _now_iso=_now_iso, _conn=_conn)
 
@@ -1552,7 +1604,7 @@ def update_tier(
             "UPDATE memories SET tier=? WHERE id=?", (tier, note_id)
         )
         conn.commit()
-        return cur.rowcount > 0
+        return (cur.rowcount or 0) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -2132,6 +2184,14 @@ def _save_memory_core(
             logger.error("RBAC auth failed (fail-closed mode): %r", auth_exc)
             return _err(ErrorCode.AUTHORIZATION_DENIED, f"Authorization system error: {auth_exc}")
 
+    # CHANGE 6: resolve the GDPR data-subject tag.  If the caller supplied one
+    # use it verbatim; otherwise fall back to a stable per-principal default so
+    # per-subject erasure is always possible (the column would otherwise be
+    # NULL and only a tenant-wide erase could reach the row).
+    _resolved_data_subject_sub: str | None = req.data_subject_sub
+    if not _resolved_data_subject_sub:
+        _resolved_data_subject_sub = _default_data_subject_sub(tenant_id, principal_id)
+
     from infra.db import _local_state
 
     _local_state.in_save_pipeline = True
@@ -2280,6 +2340,7 @@ def _save_memory_core(
                 asserting_agent_id=asserting_agent_id,
                 evidence_chain=evidence_chain,
                 fact_type=fact_type,
+                data_subject_sub=_resolved_data_subject_sub,
             )
 
             deferred_writes = _run_post_save_hooks(

@@ -12,10 +12,14 @@ rank-first lock.
 This module is the ONLY place post-CE enrichment runs.
 ``_apply_post_rank_metadata`` consumes an ordered list of result items
 (dicts) and returns a NEW list with the SAME relative order, attaching
-purely informational envelope fields (``concept_boost``,
-``centrality_boost``, ``jaccard_surprise``, ``temporal_decay``). It
-never re-sorts, never drops items, and never mutates the ranking
-``final_score``.
+envelope fields (``concept_boost``, ``centrality_boost``,
+``jaccard_surprise``, ``temporal_decay``) and a derived ``display_score``
+(``final_score`` × concept_boost × centrality_boost × jaccard_surprise;
+``temporal_decay`` is excluded to avoid double-counting recency, which is
+already a channel inside ``_compute_final_score``). The ``display_score``
+is the user-visible enriched score; it never re-sorts, never drops items,
+and never mutates the ranking ``final_score`` (which stays owned by the CE
+reranker under the RANK-FIRST LOCK).
 
 The numeric value stored for each envelope key is exactly the multiplicative
 factor the corresponding legacy mutator would have applied to
@@ -80,8 +84,73 @@ def _apply_post_rank_metadata(
         new_item["centrality_boost"] = _centrality_factor(new_item, centrality_map)
         new_item["jaccard_surprise"] = _jaccard_factor(item, query, jaccard_map)
         new_item["temporal_decay"] = _temporal_factor(item, as_of, temporal_priors)
+        # CHANGE 8 / Option A1: surface the enrichment factors as a real,
+        # user-visible ``display_score`` WITHOUT touching ``final_score`` (the
+        # ranking key owned by the CE reranker under the RANK-FIRST LOCK).
+        #
+        # IMPORTANT (no double-count): ``temporal_decay`` is intentionally
+        # EXCLUDED from the multiplier. Recency is already a first-class
+        # channel (``recency``) inside ``_compute_final_score``
+        # (search/scoring.py), so multiplying it in again would penalize old
+        # notes twice. ``temporal_decay`` remains a reported envelope field
+        # for transparency; the additional signals folded here are the ones
+        # NOT already present in final_score: concept boost, KG centrality
+        # boost, and the neural-forget Jaccard surprise term.
+        try:
+            _fs = float(new_item.get("final_score") or 0.0)
+        except (TypeError, ValueError):
+            _fs = 0.0
+        _factors = (
+            new_item["concept_boost"]
+            * new_item["centrality_boost"]
+            * new_item["jaccard_surprise"]
+        )
+        new_item["display_score"] = _fs * _factors
         out.append(new_item)
     return out
+
+
+def compute_display_scores(
+    candidates: list,
+    query: str,
+    db_path: Any,
+    as_of: Optional[float] = None,
+) -> dict:
+    """Map ``{note_id: display_score}`` for raw candidate tuples.
+
+    Reuses the same factor machinery as ``_apply_post_rank_metadata`` so the
+    answer-rerank stage (which consumes 12-tuples, not result-item dicts) can
+    start its blend from the enriched baseline without re-deriving factors.
+
+    ``candidates`` are ``(id, content, source_file, tags, created, rank,
+    final_score, ...)`` tuples. Returns an empty dict on any failure (the
+    caller then falls back to the raw ``final_score``).
+    """
+    items = []
+    for r in candidates:
+        if not isinstance(r, (list, tuple)) or len(r) < 7:
+            continue
+        items.append(
+            {
+                "id": r[0],
+                "source_file": r[2] if len(r) > 2 else None,
+                "created": r[4] if len(r) > 4 else None,
+                "last_accessed": r[10] if len(r) > 10 else None,
+                "final_score": r[6],
+                "metadata": (
+                    json.loads(r[11]) if len(r) > 11 and r[11] and isinstance(r[11], str) else (r[11] if len(r) > 11 else None)
+                ),
+                "category": None,
+            }
+        )
+    if not items:
+        return {}
+    try:
+        enriched = _apply_post_rank_metadata(items, query, db_path, as_of=as_of)
+    except Exception as exc:  # pragma: no cover - best-effort
+        logger.debug("compute_display_scores degraded: %s", exc)
+        return {}
+    return {it["id"]: it.get("display_score", 0.0) for it in enriched}
 
 
 # -- Table loaders (monkeypatchable in tests) -----------------------------

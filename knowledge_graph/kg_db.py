@@ -487,12 +487,13 @@ def index_kg_for_memory(conn: AnyConnection, memory_id: str, content: str) -> di
     except Exception as stat_exc:
         logger.debug("kg_extraction_stats write failed for %s: %s", memory_id, stat_exc)
 
-    # Update PageRank centrality scores for all entities
-    try:
-        from kg.graph_analytics import update_graph_analytics
-        update_graph_analytics(conn)
-    except Exception as ga_exc:
-        logger.debug("Graph analytics update failed: %s", ga_exc)
+    # CHANGE 3: PageRank / betweenness / community analytics are NO LONGER
+    # recomputed on the save path.  Recomputing global graph centrality on
+    # every write is O(V*(V+E)) and was a consistent tail-latency source.
+    # They are now maintained by the scheduled ``kg_analytics`` cron job
+    # (cron/cron_kg_analytics.py, registered in cron/jobs.py), which runs
+    # PageRank + betweenness + community detection + snapshot capture off
+    # the write path.  The save path stays cheap and transactional.
 
     return stats
 

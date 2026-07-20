@@ -56,6 +56,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from infra.db import AnyConnection
+    from infra.db_write_queue import ProxyConnection
 
 
 logger = logging.getLogger(__name__)
@@ -523,9 +524,11 @@ def handle_run_script(
     env["MEMORY_CRON_TENANT_ID"] = str(task_tenant_id)
     # Release SQLite RESERVED lock + per-DB-path flock before the
     # subprocess so the child can write to the DB without blocking.
-    if hasattr(conn, "commit_release"):
+    # These methods exist only on ProxyConnection (the write-queue session
+    # proxy); a direct sqlite3.Connection has no such methods, so narrow by
+    # type rather than hasattr to keep the type checker honest.
+    if isinstance(conn, ProxyConnection):
         conn.commit_release()
-    if hasattr(conn, "release_flock"):
         conn.release_flock()
     try:
         result = subprocess.run(
@@ -536,9 +539,8 @@ def handle_run_script(
             env=env,
         )
     finally:
-        if hasattr(conn, "acquire_flock"):
+        if isinstance(conn, ProxyConnection):
             conn.acquire_flock()
-        if hasattr(conn, "acquire_lock"):
             conn.acquire_lock()
     stdout = (result.stdout or "").strip()
     stderr = (result.stderr or "").strip()
@@ -705,6 +707,12 @@ def _lazy_review_beliefs(payload: dict, conn: AnyConnection, db_path: Path) -> s
     return "review_beliefs: completed"
 
 
+def _lazy_kg_analytics(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    from cron.cron_kg_analytics import main
+    main()
+    return "kg_analytics: completed"
+
+
 HANDLERS.update(
     {
         "entailment_chains": _lazy_entailment_chains,
@@ -716,6 +724,7 @@ HANDLERS.update(
         "cron_revalidate_entailments": _lazy_revalidate_entailments,
         "cron_resolve_contradictions": _lazy_resolve_contradictions,
         "cron_review_beliefs": _lazy_review_beliefs,
+        "cron_kg_analytics": _lazy_kg_analytics,
     }
 )
 
@@ -757,6 +766,8 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_heartbeat": "cron/cron_heartbeat.py",
     "cron_tier_migration": "cron/cron_tier_migration.py",
     "cron_kg_backfill": "cron/cron_kg_backfill.py",
+    # CHANGE 3: KG analytics moved off the save path to a scheduled job.
+    "cron_kg_analytics": "cron/cron_kg_analytics.py",
     "cron_skill_extraction": "cron/cron_skill_extraction.py",
     "cron_cross_session_learn": "cron/cron_cross_session_learn.py",
     "cron_pinned_decay": "cron/cron_pinned_decay.py",
@@ -1339,7 +1350,8 @@ def process_one_task(
     # Sprint 1.2: Apply task-specific tenant_id if provided in payload
     task_tenant_id = payload.get("tenant_id", "default")
     try:
-        conn.create_function("tenant_id", 0, lambda: task_tenant_id)
+        if isinstance(conn, sqlite3.Connection):
+            conn.create_function("tenant_id", 0, lambda: task_tenant_id)
         conn.execute("DROP VIEW IF EXISTS tenant_memories")
         conn.execute(
             "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "

@@ -16,8 +16,11 @@ The model is loaded lazily on first use and cached at module level.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
 import os
+import re
 import threading
 from typing import Any, Optional
 
@@ -27,25 +30,71 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "naver/splade-cocondenser-ensembledistil"
 
+# Deterministic fallback vocabulary size.  Matches the SPLADE model vocab so
+# hashed terms occupy the same sparse space and can be merged/upgraded later.
+_FALLBACK_VOCAB_SIZE = 30522
+
 _splade_model = None
 _splade_tokenizer = None
 _splade_lock = threading.Lock()
-_splade_load_attempted = False  # Prevents repeated failed load attempts
+# CHANGE 1: the load-failure cache is now *retryable*, not permanent.  We keep
+# a failure count and a "load attempted" flag, but a transient/offline failure
+# no longer permanently disables SPLADE for the whole process.  When
+# MEMORY_SPLADE_RETRY=1 (the default in non-test runs), the attempted flag is
+# reset so the next encode attempt retries the load — this recovers
+# automatically once the model becomes reachable (e.g. HF hub back online, or
+# the local cache populated by another process).
+_splade_load_attempted = False
+_splade_failure_count = 0
+_splade_max_failures = int(os.environ.get("MEMORY_SPLADE_MAX_FAILURES", "3"))
+
+
+def _splade_retry_enabled() -> bool:
+    """Return True if load failures should be retried on the next call.
+
+    Default on (recover automatically from transient/offline failures).
+    Set MEMORY_SPLADE_RETRY=0 to restore the old permanent-cache behaviour.
+    """
+    val = os.environ.get("MEMORY_SPLADE_RETRY", "1")
+    return val not in ("0", "false", "False", "no", "")
+
+
+def _splade_fallback_enabled() -> bool:
+    """Return True if the deterministic offline encoder may be used as a
+    fallback when the model cannot be loaded.  Default on.  In tests/airgapped
+    envs this keeps the sparse stage alive instead of returning None.
+    """
+    val = os.environ.get("MEMORY_SPLADE_FALLBACK", "1")
+    return val not in ("0", "false", "False", "no", "")
 
 
 def _get_splade_model():
     """Lazy-load the SPLADE model.  Returns (model, tokenizer) or (None, None).
 
-    Failure is cached: if loading fails once, subsequent calls return
-    (None, None) without retrying.
+    CHANGE 1: a load *failure* is no longer permanently cached.  We retry up to
+    ``_splade_max_failures`` attempts (bounded), and when
+    ``MEMORY_SPLADE_RETRY`` is enabled the "attempted" flag is cleared so the
+    next encode call re-attempts the load — recovering automatically once the
+    model becomes reachable.  Only after exhausting the bounded retry budget do
+    we stop trying, and even then callers fall back to the deterministic
+    offline encoder (see ``_fallback_encode``) so the sparse stage is never
+    dead.
     """
-    global _splade_model, _splade_tokenizer, _splade_load_attempted
-    if _splade_load_attempted:
-        return _splade_model, _splade_tokenizer
+    global _splade_model, _splade_tokenizer, _splade_load_attempted, _splade_failure_count
     with _splade_lock:
-        if _splade_load_attempted:
+        if _splade_load_attempted and _splade_model is not None:
             return _splade_model, _splade_tokenizer
-        _splade_load_attempted = True  # Mark as attempted before trying
+        # If we've already exhausted the bounded retry budget, stop trying.
+        if _splade_load_attempted and not _splade_retry_enabled():
+            return _splade_model, _splade_tokenizer
+        if _splade_load_attempted and _splade_failure_count >= _splade_max_failures:
+            if _splade_retry_enabled():
+                # Reset budget so a later call can retry (transient recovery).
+                _splade_failure_count = 0
+                _splade_load_attempted = False
+            return _splade_model, _splade_tokenizer
+
+        _splade_load_attempted = True
         model_name = os.environ.get("MEMORY_SPLADE_MODEL", _DEFAULT_MODEL)
         try:
             from transformers import AutoModelForMaskedLM, AutoTokenizer
@@ -57,11 +106,52 @@ def _get_splade_model():
             mdl.eval()
             _splade_model = mdl
             _splade_tokenizer = tok
+            _splade_failure_count = 0
             logger.info("SPLADE model loaded (vocab=%d, device=%s)", tok.vocab_size, device)
             return _splade_model, _splade_tokenizer
         except Exception as e:
-            logger.warning("Failed to load SPLADE model %s: %s", model_name, e)
+            _splade_failure_count += 1
+            logger.warning(
+                "Failed to load SPLADE model %s (attempt %d/%d): %s",
+                model_name, _splade_failure_count, _splade_max_failures, e,
+            )
+            if _splade_retry_enabled() and _splade_failure_count >= _splade_max_failures:
+                # Allow a future call to retry from scratch once the budget
+                # resets (transient/offline recovery).
+                _splade_load_attempted = False
             return None, None
+
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _fallback_tokenize(text: str) -> list[str]:
+    return _TOKEN_RE.findall(text.lower())
+
+
+def _fallback_encode(text: str) -> list[tuple[int, float]]:
+    """Deterministic, model-free sparse encoder.
+
+    Hashes each term into the SPLADE vocabulary space and weights by
+    term frequency (sublinear).  Produces a *non-empty* sparse vector whenever
+    the input has any token, so the sparse/FTS-hybrid stage stays alive in
+    offline, airgapped, or test environments where the learned model cannot
+    be loaded.  Deterministic: same input → same tokens.
+    """
+    terms = _fallback_tokenize(text)
+    if not terms:
+        return []
+    counts: dict[int, int] = {}
+    for term in terms:
+        h = hashlib.md5(term.encode("utf-8")).digest()
+        vid = int.from_bytes(h[:4], "big") % _FALLBACK_VOCAB_SIZE
+        counts[vid] = counts.get(vid, 0) + 1
+    result = [
+        (vid, round(1.0 + math.log1p(tf), 6))
+        for vid, tf in counts.items()
+    ]
+    result.sort(key=lambda x: x[1], reverse=True)
+    return result
 
 
 def _splade_activation(x: torch.Tensor) -> torch.Tensor:
@@ -83,6 +173,10 @@ def encode_sparse(
     """
     model, tokenizer = _get_splade_model()
     if model is None or tokenizer is None:
+        # CHANGE 1: degrade to the deterministic offline encoder instead of
+        # permanently killing the sparse stage.  Falls back only when enabled.
+        if _splade_fallback_enabled():
+            return _fallback_encode(text)
         return None
     try:
         # Get device from model parameters
@@ -129,6 +223,10 @@ def encode_sparse_batch(
     """
     model, tokenizer = _get_splade_model()
     if model is None or tokenizer is None:
+        # CHANGE 1: degrade to the deterministic offline encoder instead of
+        # permanently killing the sparse stage.  Falls back only when enabled.
+        if _splade_fallback_enabled():
+            return [_fallback_encode(t) for t in texts]
         return None
     try:
         # Get device from model parameters

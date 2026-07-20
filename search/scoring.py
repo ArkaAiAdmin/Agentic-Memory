@@ -5,8 +5,12 @@ decomposition. Contains:
 
 - _reciprocal_rank_fusion: RRF fusion of multiple ranked lists (BB3)
 - _temporal_decay_factor: Ebbinghaus-style temporal decay
-- _apply_temporal_decay: post-retrieval decay modifier
-- _apply_jaccard_surprise_penalty: surprise-based re-ranking (B19)
+- _apply_temporal_decay: LEGACY post-retrieval decay math utility (unit-tested
+  only; the live post-rank behavior is the order-invariant ``temporal_decay``
+  envelope field computed in search.enrichment under the RANK-FIRST LOCK)
+- _apply_jaccard_surprise_penalty: LEGACY surprise penalty math utility
+  (unit-tested only; the live post-rank behavior is the order-invariant
+  ``jaccard_surprise`` envelope field in search.enrichment)
 - _strong_match_float: float unambiguous FTS5 hits to the top (QB6)
 - _compute_final_score: six-channel weighted scoring
 - compute_channel_weights: CTR-feedback-driven weight tuning
@@ -301,7 +305,13 @@ def _temporal_decay_factor(
 
 
 def _apply_jaccard_surprise_penalty(scored_results: list, query: str) -> list:
-    """Apply neural-forget-curve surprise-based re-ranking.
+    """LEGACY math utility — do not call from the live search pipeline.
+
+    The live post-rank behavior lives in ``search.enrichment._jaccard_factor``,
+    which attaches a ``jaccard_surprise`` envelope field to each result item
+    under the RANK-FIRST LOCK (PR1.1) without mutating the ranking
+    ``final_score``. This function still multiplies ``r[6]`` directly and is
+    retained only so the surprise math stays unit-testable in isolation.
 
     B19 fix: the original temporal decay is purely time-based. The
     neural-forget curve adds a *surprise* term — how unexpected this
@@ -400,7 +410,14 @@ def _apply_temporal_decay(
     decay_weight: float = _UNSET,  # type: ignore[assignment]
     as_of: Optional[float] = None,
 ) -> list:
-    """Apply temporal decay to scored results as a post-retrieval modifier.
+    """LEGACY math utility — do not call from the live search pipeline.
+
+    The live post-rank behavior lives in ``search.enrichment._temporal_factor``,
+    which attaches a ``temporal_decay`` envelope field to each result item
+    under the RANK-FIRST LOCK (PR1.1) without mutating the ranking ``final_score``.
+    This function still multiplies ``r[6]`` directly and is retained only so the
+    decay math stays unit-testable in isolation; the pipeline path must NOT call
+    it. See eval/test_search_rank_lock.py which asserts the pipeline does not.
 
     Sprint 5: ``as_of`` is forwarded to ``_temporal_decay_factor`` so
     recency is calculated relative to the time-travel anchor instead of

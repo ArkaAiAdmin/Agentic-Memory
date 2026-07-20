@@ -474,17 +474,23 @@ def memory_detect_contradictions(
             ErrorCode.NOT_FOUND, f"contradiction_detector.py not found at {script}"
         )
     active = _resolve_memory_dir()
-    out, _ = _run_subprocess_output(
-        [
-            sys.executable,
-            str(script),
-            str(active),
-            f"--min-confidence={min_confidence}",
-            f"--mode={mode}",
-            f"--semantic-threshold={semantic_threshold}",
-        ],
-        timeout=60,
+    # Scope detection to the active agent's tenant so that in a multi-agent
+    # shared DB we don't flag cross-tenant pairs as contradictions (the
+    # resolver already reads the tenant_memories view).
+    tenant = os.environ.get("MEMORY_CRON_TENANT_ID") or os.environ.get(
+        "MEMORY_AGENT_ID"
     )
+    cmd = [
+        sys.executable,
+        str(script),
+        str(active),
+        f"--min-confidence={min_confidence}",
+        f"--mode={mode}",
+        f"--semantic-threshold={semantic_threshold}",
+    ]
+    if tenant:
+        cmd.append(f"--tenant={tenant}")
+    out, _ = _run_subprocess_output(cmd, timeout=60)
     return out
 
 

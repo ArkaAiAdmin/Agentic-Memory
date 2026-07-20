@@ -316,8 +316,16 @@ def _build_search_result_envelope(
         result["related_facts"] = related_facts
     if synthesize and result_items:
         try:
+            _display_scores = {
+                it.get("id"): it.get("display_score")
+                for it in result_items
+                if it.get("id") is not None and it.get("display_score") is not None
+            }
             synth = _bb1_synthesize(
-                query, results_to_display, max_sentences=max_synthesis_sentences
+                query,
+                results_to_display,
+                max_sentences=max_synthesis_sentences,
+                display_scores=_display_scores or None,
             )
             result["synthesis"] = synth
         except Exception as e:

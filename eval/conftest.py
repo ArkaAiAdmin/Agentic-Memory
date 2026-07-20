@@ -318,6 +318,156 @@ def temp_db_path(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# CHANGE 7 — RBAC-in-CI fixtures.
+#
+# The main test suite opts into the legacy "open" auth mode (see the
+# MEMORY_AUTH_MODE setdefault near the top of this file) so functional tests
+# stay green.  Security / auth-enforcement tests must exercise the SECURE
+# default ("closed", fail-closed authorizer) against a REAL principal + RBAC
+# store — not a mocked authorizer.  These fixtures provide exactly that:
+#
+#   * closed_auth_env   — switches the process into MEMORY_AUTH_MODE=closed
+#                         for the duration of the test and restores it after.
+#   * mock_admin_principal — a fully-migrated temp DB with default roles
+#                         seeded and a mock admin principal (memory:admin +
+#                         ops:admin) granted, scoped to its own tenant.
+#   * ClosedClient      — an AgenticMemoryClient bound to that DB with the
+#                         admin principal activated in agent_context, so its
+#                         save/search/delete calls flow through the real
+#                         mcp_authorize path under closed mode.
+#
+# A dedicated CI job (see .github/workflows/ci.yml "security-closed-auth")
+# runs the auth/security test subset with these fixtures; the global
+# MEMORY_AUTH_MODE default is left as "open" so the rest of the suite is
+# unaffected.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def closed_auth_env(monkeypatch):
+    """Force the fail-closed auth mode for the duration of a test.
+
+    Yields the mode string ("closed") so callers can assert against it.
+    Restores the previous mode afterwards (the suite default is "open").
+    """
+    monkeypatch.setenv("MEMORY_AUTH_MODE", "closed")
+    yield "closed"
+    # monkeypatch reverts the env var automatically on teardown.
+
+
+@pytest.fixture
+def mock_admin_principal(tmp_path):
+    """A migrated temp DB with a mock admin principal granted full admin.
+
+    Yields ``(db_path, principal_id, tenant_id)``.  The principal holds both
+    ``memory:admin`` and ``ops:admin`` roles, so it passes the real
+    ``mcp_authorize`` check under closed mode for any memory/ops action.
+
+    Setup uses a raw ``sqlite3.Connection`` (not the proxy-backed
+    ``open_db``) so the RBAC helper signatures, which require a concrete
+    ``sqlite3.Connection``, type-check cleanly.
+    """
+    import sqlite3
+
+    from infra.db_migrations import run_schema_setup
+    from infra.rbac import seed_default_roles, grant_role
+
+    db_path = tmp_path / "closed_auth.db"
+    conn = sqlite3.connect(str(db_path), timeout=10)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        run_schema_setup(conn)
+        seed_default_roles(conn)
+        conn.commit()
+    finally:
+        conn.close()
+
+    principal_id = "mock-admin-principal"
+    tenant_id = "closed-auth-tenant"
+    conn = sqlite3.connect(str(db_path), timeout=10)
+    try:
+        conn.execute(
+            "INSERT INTO principals (id, kind, tenant_id) VALUES (?, 'service', ?)",
+            (principal_id, tenant_id),
+        )
+        grant_role(conn, principal_id, "role:memory:admin:default")
+        grant_role(conn, principal_id, "role:ops:admin:default")
+        conn.commit()
+    finally:
+        conn.close()
+
+    yield str(db_path), principal_id, tenant_id
+
+
+@pytest.fixture
+def closed_auth_principal(closed_auth_env, mock_admin_principal):
+    """Activate the mock admin principal in agent_context, contamination-safe.
+
+    Saves and restores the surrounding agent_context state (current agent +
+    attached principal_id) so security tests that flip the process into closed
+    auth mode never leak principal state into later (open-mode) tests.  Yields
+    ``(db_path, principal_id, tenant_id)``.
+    """
+    import agent_context as _agent_context
+
+    db_path, principal_id, tenant_id = mock_admin_principal
+
+    # Save prior state for restoration.
+    _saved_current = getattr(_agent_context._AGENT_CONTEXT, "current", None)
+    _saved_principal = getattr(_agent_context._AGENT_CONTEXT, "principal_id", None)
+
+    # AgentContext is frozen, so the principal id is attached to the
+    # threading.local itself (which is what the pipeline reads) rather than to
+    # the context object.  The agent_id is set to the principal's tenant so the
+    # save-path tenant fallback resolves to the SAME tenant the principal is
+    # bound to — otherwise tenant-scoped delete would refuse the row written by
+    # this principal.
+    _agent_context.init_agent(agent_id=tenant_id, namespace=tenant_id)
+    _agent_context._AGENT_CONTEXT.principal_id = principal_id
+
+    yield db_path, principal_id, tenant_id
+
+    # Restore prior state exactly (contamination-safe teardown).
+    if _saved_current is None:
+        try:
+            del _agent_context._AGENT_CONTEXT.current
+        except AttributeError:
+            pass
+    else:
+        _agent_context._AGENT_CONTEXT.current = _saved_current
+    if _saved_principal is None:
+        try:
+            del _agent_context._AGENT_CONTEXT.principal_id
+        except AttributeError:
+            pass
+    else:
+        _agent_context._AGENT_CONTEXT.principal_id = _saved_principal
+
+
+@pytest.fixture
+def ClosedClient(closed_auth_principal):
+    """An authorized client operating under closed auth mode.
+
+    Returns an ``AgenticMemoryClient`` bound to the admin principal's DB.
+    Operations genuinely pass through ``mcp_authorize`` (closed mode); there
+    is no mocked authorizer.  Use it in security tests that must verify the
+    enforcement path end-to-end:
+
+        def test_something(ClosedClient):
+            note_id = ClosedClient.save("secret")
+            assert ClosedClient.search("secret")
+    """
+    from agentic_memory.client import MemoryClient
+
+    db_path, principal_id, tenant_id = closed_auth_principal
+
+    client = MemoryClient(db_path=db_path, user_id=principal_id)
+    yield client
+    # agent_context + principal_id are restored by closed_auth_principal.
+
+
+# ---------------------------------------------------------------------------
 # 2026-06-29: Path resolution fixtures for tests that previously hardcoded
 # ~/.config/agentic-memory or wrote driver scripts to REPO/memory/. On CI
 # the project lives at a non-standard path (e.g. /home/runner/work/...) and
