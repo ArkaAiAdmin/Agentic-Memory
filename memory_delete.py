@@ -335,16 +335,33 @@ def soft_delete_note(
         return False
     try:
         with open_db(db_path) as conn:
+            # Resolve the effective tenant for the delete.  When the caller
+            # does not pass one explicitly, derive it from the authenticated
+            # principal (fail-closed: an unknown principal falls back to
+            # "default", and tenant scoping still applies via the WHERE
+            # clause).  The previous code used the non-existent SQL function
+            # ``tenant_id()`` here, which silently matched no rows and made
+            # every tenant-less delete a no-op.
+            effective_tenant = tenant_id
+            if effective_tenant is None:
+                try:
+                    from infra.authorizer import resolve_tenant_for_principal
+
+                    effective_tenant = resolve_tenant_for_principal(
+                        principal_id, str(db_path) if db_path else None
+                    )
+                except Exception:
+                    effective_tenant = "default"
             # Check existence + current state in one round trip.
             # Tenant isolation: also check tenant_id matches.
-            if tenant_id is not None:
+            if effective_tenant is not None:
                 row = conn.execute(
                     "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = ?",
-                    (note_id, tenant_id),
+                    (note_id, effective_tenant),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = tenant_id()",
+                    "SELECT deleted_at FROM memories WHERE id = ?",
                     (note_id,),
                 ).fetchone()
             if row is None:
@@ -353,14 +370,14 @@ def soft_delete_note(
                 # Already soft-deleted — idempotent no-op.
                 return False
             now = _now_iso()
-            if tenant_id is not None:
+            if effective_tenant is not None:
                 conn.execute(
                     "UPDATE memories SET deleted_at = ?, deleted_by = ? WHERE id = ? AND tenant_id = ?",
-                    (now, deleted_by, note_id, tenant_id),
+                    (now, deleted_by, note_id, effective_tenant),
                 )
             else:
                 conn.execute(
-                    "UPDATE memories SET deleted_at = ?, deleted_by = ? WHERE id = ? AND tenant_id = tenant_id()",
+                    "UPDATE memories SET deleted_at = ?, deleted_by = ? WHERE id = ?",
                     (now, deleted_by, note_id),
                 )
             # ── Invalidate edges for entities tied to this note ──
@@ -417,28 +434,41 @@ def restore_note(db_path, note_id: str, *, tenant_id: str | None = None) -> bool
         return False
     try:
         with open_db(db_path) as conn:
-            if tenant_id is not None:
+            # Mirror soft_delete_note: resolve the effective tenant from the
+            # authenticated principal when not passed explicitly (the previous
+            # ``tenant_id()`` SQL function was invalid and matched no rows).
+            effective_tenant = tenant_id
+            if effective_tenant is None:
+                try:
+                    from infra.authorizer import resolve_tenant_for_principal
+
+                    effective_tenant = resolve_tenant_for_principal(
+                        principal_id, str(db_path) if db_path else None
+                    )
+                except Exception:
+                    effective_tenant = "default"
+            if effective_tenant is not None:
                 row = conn.execute(
                     "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = ?",
-                    (note_id, tenant_id),
+                    (note_id, effective_tenant),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "SELECT deleted_at FROM memories WHERE id = ? AND tenant_id = tenant_id()",
+                    "SELECT deleted_at FROM memories WHERE id = ?",
                     (note_id,),
                 ).fetchone()
             if row is None:
                 return False
             if row[0] is None:
                 return False
-            if tenant_id is not None:
+            if effective_tenant is not None:
                 conn.execute(
                     "UPDATE memories SET deleted_at = NULL, deleted_by = NULL WHERE id = ? AND tenant_id = ?",
-                    (note_id, tenant_id),
+                    (note_id, effective_tenant),
                 )
             else:
                 conn.execute(
-                    "UPDATE memories SET deleted_at = NULL, deleted_by = NULL WHERE id = ? AND tenant_id = tenant_id()",
+                    "UPDATE memories SET deleted_at = NULL, deleted_by = NULL WHERE id = ?",
                     (note_id,),
                 )
             # ── Re-validate edges for entities tied to this note ──

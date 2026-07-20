@@ -63,6 +63,7 @@ class MemoryClient:
         is_global: bool = False,
         importance: int = 3,
         title_slug: str = "",
+        tenant_id: str | None = None,
     ) -> str:
         """Save a memory and return its note ID.
 
@@ -75,6 +76,11 @@ class MemoryClient:
             is_global: If True, stores at the global config level.
             importance: 1-5 ranking weight (default 3).
             title_slug: Optional explicit slug; auto-generated if empty.
+            tenant_id: Optional explicit tenant scope. When provided it is
+                authoritative and forwarded to the save pipeline so the row is
+                scoped to the caller's tenant (CHANGE 5: tenant write-path
+                validation). When omitted, the pipeline falls back to the
+                agent context / "default".
         """
         if not content or not content.strip():
             raise ValidationError("Content must be non-empty")
@@ -93,6 +99,7 @@ class MemoryClient:
             is_global=is_global,
             importance=importance,
             db_path=str(self._db_path),
+            tenant_id=tenant_id,
         )
 
         return str(note_id)

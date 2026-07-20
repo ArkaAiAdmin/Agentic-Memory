@@ -12,10 +12,12 @@ rank-first lock.
 This module is the ONLY place post-CE enrichment runs.
 ``_apply_post_rank_metadata`` consumes an ordered list of result items
 (dicts) and returns a NEW list with the SAME relative order, attaching
-purely informational envelope fields (``concept_boost``,
-``centrality_boost``, ``jaccard_surprise``, ``temporal_decay``). It
-never re-sorts, never drops items, and never mutates the ranking
-``final_score``.
+envelope fields (``concept_boost``, ``centrality_boost``,
+``jaccard_surprise``, ``temporal_decay``) and a derived ``display_score``
+(``final_score`` × product of the four factors). The ``display_score`` is
+the user-visible enriched score; it never re-sorts, never drops items,
+and never mutates the ranking ``final_score`` (which stays owned by the CE
+reranker under the RANK-FIRST LOCK).
 
 The numeric value stored for each envelope key is exactly the multiplicative
 factor the corresponding legacy mutator would have applied to
@@ -80,6 +82,24 @@ def _apply_post_rank_metadata(
         new_item["centrality_boost"] = _centrality_factor(new_item, centrality_map)
         new_item["jaccard_surprise"] = _jaccard_factor(item, query, jaccard_map)
         new_item["temporal_decay"] = _temporal_factor(item, as_of, temporal_priors)
+        # CHANGE 8/Option A: surface the enrichment factors as a real,
+        # user-visible score WITHOUT touching ``final_score`` (the ranking
+        # key owned by the CE reranker under the RANK-FIRST LOCK). The
+        # display_score folds every post-rank factor in multiplicatively so
+        # the four features actively contribute to the score the user sees,
+        # while the relative order of results stays provably owned by
+        # final_score. See eval/test_search_rank_lock.py.
+        try:
+            _fs = float(new_item.get("final_score") or 0.0)
+        except (TypeError, ValueError):
+            _fs = 0.0
+        _factors = (
+            new_item["concept_boost"]
+            * new_item["centrality_boost"]
+            * new_item["jaccard_surprise"]
+            * new_item["temporal_decay"]
+        )
+        new_item["display_score"] = _fs * _factors
         out.append(new_item)
     return out
 

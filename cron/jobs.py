@@ -197,6 +197,20 @@ JOBS: dict[str, dict] = {
         "args": ["--task-type", "cron_kg_backfill_monitor"],
         "timeout": 120,
     },
+    # CHANGE 3: graph analytics (PageRank + betweenness + communities + snapshot)
+    # moved OFF the save path and onto a scheduled job.  Before this, every
+    # memory save triggered a full update_graph_analytics() recompute
+    # (kg_db.py), a consistent O(V*(V+E)) tail-latency source.  This daily job
+    # maintains centrality off the write path.
+    "kg_analytics": {
+        "freq": "1d",
+        "offset_min": 255,
+        # timeout applies to enqueue insert only — see cron_task_timeouts for execution timeout
+        "script": "cron/enqueue_task.py",
+        "args": ["--task-type", "cron_kg_analytics"],
+        "env": {"MEMORY_KNOWLEDGE_GRAPH": "1"},
+        "timeout": 300,
+    },
     "embedding_recompute": {
         "freq": "1d",
         "offset_min": 240,

@@ -843,6 +843,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             title_slug = req.get("title_slug", "")
 
             client = MemoryClient(db_path=self.server.db_path)
+            # CHANGE 5: tenant write-path validation. The authenticated
+            # principal's tenant is authoritative; it is threaded through to
+            # the save pipeline so the row is scoped to the principal's tenant
+            # (the pipeline refuses to re-derive a different tenant).
+            _principal_tenant = "default"
+            try:
+                if getattr(self, "_principal", None) is not None:
+                    _principal_tenant = getattr(
+                        self._principal, "tenant_id", "default"
+                    ) or "default"
+            except Exception:
+                pass
             note_id = client.save(
                 content=content,
                 tags=tags,
@@ -851,6 +863,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 pinned=pinned,
                 importance=importance,
                 title_slug=title_slug,
+                tenant_id=_principal_tenant,
             )
             # Audit: tag as dashboard REST call
             try:
@@ -1090,10 +1103,65 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     # ── RBAC ────────────────────────────────────────────────────────────────
 
+    def _require_rbac_admin(self) -> bool:
+        """CHANGE 4: gate mutating RBAC/ACL endpoints behind an admin authz
+        check. Returns True when the caller is authorized to mutate RBAC/ACL
+        state, False otherwise (and writes a 403 response)."""
+        principal_id = getattr(self, "_principal_id", None)
+        tenant_id = "default"
+        try:
+            if getattr(self, "_principal", None) is not None:
+                tenant_id = getattr(self._principal, "tenant_id", "default") or "default"
+        except Exception:
+            pass
+        try:
+            from infra.authorizer import mcp_authorize
+
+            # Authorize against the server's own DB (where RBAC tables live),
+            # not the local memory dir — in tests and multi-DB deployments the
+            # two can differ.
+            auth_db = str(self.server.db_path)
+            # RBAC/ACL administration is the control plane. A principal with
+            # either the memory or operational super-admin role is permitted
+            # (the default seed provides ``memory:admin`` and ``ops:admin``,
+            # both of which carry the ``admin`` action on their resource).
+            _allowed = mcp_authorize(
+                principal_id, "admin", "memory", auth_db, tenant_id=tenant_id
+            ) or mcp_authorize(
+                principal_id, "admin", "ops", auth_db, tenant_id=tenant_id
+            )
+            if not _allowed:
+                self._error(
+                    "Forbidden: RBAC/ACL administration requires an admin role",
+                    403,
+                )
+                return False
+        except ImportError:
+            # Authorizer unavailable: fail closed on admin endpoints.
+            self._error("Forbidden: authorization subsystem unavailable", 403)
+            return False
+        return True
+
     def _handle_rbac_init(self) -> None:
-        """POST /api/v1/rbac/init — seed default RBAC roles."""
+        """POST /api/v1/rbac/init — seed default RBAC roles.
+
+        CHANGE 4: bootstrap is allowed without an admin role ONLY when no
+        principals exist yet (first-run setup). Once any principal exists,
+        init requires admin authz like every other RBAC mutation.
+        """
         try:
             from infra._lazy_imports import connection_pool, safe_close_db
+
+            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
+            try:
+                existing = conn.execute(
+                    "SELECT COUNT(*) FROM principals"
+                ).fetchone()
+                has_principals = existing and existing[0] > 0
+            finally:
+                safe_close_db(conn)
+            if has_principals and not self._require_rbac_admin():
+                return
             from infra.rbac import seed_default_roles
             conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
             try:
@@ -1109,6 +1177,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _handle_rbac_create_principal(self) -> None:
         """POST /api/v1/rbac/principals — create a principal."""
         try:
+            if not self._require_rbac_admin():
+                return
             req = self._read_json_body()
         except ValueError as e:
             self._error(str(e), 400)
@@ -1140,6 +1210,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _handle_rbac_create_role(self) -> None:
         """POST /api/v1/rbac/roles — create a role."""
         try:
+            if not self._require_rbac_admin():
+                return
             req = self._read_json_body()
         except ValueError as e:
             self._error(str(e), 400)
@@ -1169,6 +1241,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _handle_rbac_grant(self) -> None:
         """POST /api/v1/rbac/bindings — grant a role to a principal."""
         try:
+            if not self._require_rbac_admin():
+                return
             req = self._read_json_body()
         except ValueError as e:
             self._error(str(e), 400)
@@ -1198,6 +1272,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _handle_rbac_revoke(self) -> None:
         """DELETE /api/v1/rbac/bindings — revoke a role from a principal."""
         try:
+            if not self._require_rbac_admin():
+                return
             parsed = urlparse(self.path)
             params = parse_qs(parsed.query)
             principal_id = params.get("principal_id", [None])[0]
@@ -1225,6 +1301,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _handle_acl_add_rule(self) -> None:
         """POST /api/v1/acl/rules — add an ACL override rule."""
         try:
+            if not self._require_rbac_admin():
+                return
             req = self._read_json_body()
         except ValueError as e:
             self._error(str(e), 400)
@@ -1257,6 +1335,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _handle_acl_delete_rule(self) -> None:
         """DELETE /api/v1/acl/rules — delete an ACL override rule."""
         try:
+            if not self._require_rbac_admin():
+                return
             parsed = urlparse(self.path)
             params = parse_qs(parsed.query)
             principal_id = params.get("principal_id", [None])[0]

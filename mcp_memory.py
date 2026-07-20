@@ -171,6 +171,7 @@ def memory_save(
                 importance=importance,
                 context="mcp",
                 note_id="",
+                tenant_id=tenant_id,
                 defer_expensive=True,
             )
             # save_memory_journal returns the note_id (or an _err
@@ -187,6 +188,7 @@ def memory_save(
             importance=importance,
             context="mcp",
             note_id="",
+            tenant_id=tenant_id,
             defer_expensive=True,
         )
     except SaveValidationError as e:
@@ -614,13 +616,13 @@ def memory_delete(note_id: str, hard: bool = False) -> str:
         from infra.db_path_flock import db_path_flock
         with db_path_flock(db_path):
             if hard:
-                ok = hard_delete_note(db_path, note_id)
+                ok = hard_delete_note(db_path, note_id, tenant_id=tenant_id)
                 return (
                     f"Hard-deleted {note_id}"
                     if ok
                     else _err(ErrorCode.NOT_FOUND, f"{note_id} not found or still active")
                 )
-            ok = soft_delete_note(db_path, note_id, deleted_by="user")
+            ok = soft_delete_note(db_path, note_id, deleted_by="user", tenant_id=tenant_id)
             return (
                 f"Soft-deleted {note_id} (30-day restore window)"
                 if ok

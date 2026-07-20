@@ -169,6 +169,96 @@ def test_varying_factors_never_reorder(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [it["id"] for it in out] == [it["id"] for it in base]
 
 
+# -- envelope factors are the canonical path: equal to legacy scoring math --
+
+
+def test_envelope_factors_equal_legacy_scoring_math(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CHANGE 8: the post-rank envelope fields MUST be numerically equal to the
+    legacy ``search.scoring`` mutator math, proving the envelope (not the dead
+    mutators) is the single source of truth for decay / surprise.
+
+    The legacy functions still exist for isolated unit testing, but the live
+    pipeline must derive the same factors from ``search.enrichment``. If this
+    drifts, the "docs are true" guarantee from HARDENING_PLAN CHANGE 8 breaks.
+    """
+    from search.scoring import _temporal_decay_factor
+
+    # Neutralize DB-backed loaders so only DB-independent factors vary.
+    monkeypatch.setattr(E, "_load_concept_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_jaccard_map", lambda items, query: {})
+    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path: {})
+
+    # Single old note: created far in the past, never accessed.
+    created = "2020-01-01T00:00:00+00:00"
+    item = {
+        "id": "note-000",
+        "source_file": "/mem/note-0.md",
+        "created": created,
+        "last_accessed": None,
+        "final_score": 0.9,
+        "metadata": {},
+        "category": "lessons",
+    }
+    out = E._apply_post_rank_metadata([item], "anything", db_path="/no/such/db")
+    factor = out[0]["temporal_decay"]
+
+    # Recompute the legacy factor directly from the same primitive.
+    decay = _temporal_decay_factor(created, __import__("time").time(), None, None)
+    legacy_factor = 1.0 - 0.15 + 0.15 * decay
+    assert abs(factor - legacy_factor) < 1e-9
+
+    # The envelope field must not equal the neutral 1.0 (real decay applied).
+    assert abs(factor - 1.0) > 1e-6
+
+
+def test_display_score_folds_factors_without_changing_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Option A (CHANGE 8): the four enrichment factors must actively
+    contribute to a user-visible ``display_score`` (= final_score * product of
+    factors) while ``final_score`` (the ranking key) is left untouched and the
+    relative order is preserved.
+
+    This is the lock-respecting way to make the dead/cosmetic factors real:
+    ranking stays owned by the CE reranker (final_score), but the enriched
+    score the user sees reflects concept/centrality/surprise/temporal decay.
+    """
+    # Neutralize DB-backed loaders so only DB-independent factors vary.
+    monkeypatch.setattr(E, "_load_concept_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_jaccard_map", lambda items, query: {})
+    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path: {})
+
+    items = [
+        {
+            "id": f"note-{i:03d}",
+            "source_file": f"/mem/n{i}.md",
+            "created": "2020-01-01T00:00:00+00:00",
+            "last_accessed": None,
+            "final_score": round(0.5 + i * 0.1, 3),
+            "metadata": {},
+            "category": "lessons",
+        }
+        for i in range(5)
+    ]
+    out = E._apply_post_rank_metadata(items, "q", db_path="/no/such/db")
+
+    # Order is byte-for-byte the input order (lock preserved).
+    assert [it["id"] for it in out] == [it["id"] for it in items]
+    for src, got in zip(items, out):
+        fs = float(src["final_score"])
+        expected = fs * (
+            got["concept_boost"]
+            * got["centrality_boost"]
+            * got["jaccard_surprise"]
+            * got["temporal_decay"]
+        )
+        assert abs(got["display_score"] - expected) < 1e-9
+        # final_score itself is NEVER mutated by enrichment.
+        assert got["final_score"] == src["final_score"]
+        # display_score actually differs from final_score (factors are live).
+        assert got["display_score"] != got["final_score"]
+
+
 # -- noisy runner: many random perturbations in a loop -----------------------
 
 

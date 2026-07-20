@@ -131,3 +131,38 @@ jobs:
           name: dist
           path: dist/
           retention-days: 7
+
+  # CHANGE 7 — RBAC enforcement under the SECURE default (closed auth mode).
+  # The main `test` job keeps MEMORY_AUTH_MODE=open so functional tests stay
+  # green; this dedicated job flips the process into fail-closed mode and runs
+  # only the auth/security subset (which uses the closed_auth_env /
+  # mock_admin_principal / ClosedClient fixtures from eval/conftest.py) so the
+  # real mcp_authorize path is exercised in CI without disturbing the rest.
+  security-closed-auth:
+    name: Security — closed auth mode
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install -e ".[dev,embeddings]" --quiet 2>/dev/null || pip install numpy pytest pytest-xdist mcp
+      - name: Run auth/security tests under closed auth mode
+        env:
+          MEMORY_AUTH_MODE: "closed"
+          MEMORY_RERANKER_DISABLED: "1"
+          MEMORY_CTR_TUNING: "0"
+          MEMORY_KNOWLEDGE_GRAPH: "1"
+          MEMORY_EMBEDDINGS: "0"
+        run: |
+          . venv/bin/activate
+          python -m pytest eval/test_closed_auth_client.py eval/test_authz_fail_closed.py \
+            eval/test_rbac_admin_authz.py eval/test_contradiction_tenant_scope.py \
+            --tb=short -q -p no:cacheprovider
+        timeout-minutes: 30
