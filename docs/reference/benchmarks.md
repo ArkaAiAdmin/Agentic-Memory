@@ -101,32 +101,38 @@ The temporal-reasoning subset (72.92% at k=10) is the hardest category. Root-cau
 
 ## BEAM (Board of Evaluation for Agent Memory)
 
-**Scales**: 100K (10 sessions), 1M (100 sessions), 10M (1000 sessions)  
-**Questions**: 112 tracking questions per scale (100 current-value + 5 temporal + 1 multi-hop + 3 adversarial + 3 filler)  
-**Eval script**: `eval/beam/run_beam_eval.py`  
+**Scales**: 100K (10 sessions), 1M (100 sessions), 10M (1000 sessions)
+**Questions**: 112 tracking questions per scale (100 current-value + 5 temporal + 1 multi-hop + 3 adversarial + 3 filler)
+**Eval script**: `eval/beam/run_beam_eval.py`
 **Results**: `eval/beam/results/beam-run.json`
 
-### Results by Scale
+### Results by Scale (Prod Pipeline — fact_lookup mode)
 
-| Scale | Sessions | Questions | Accuracy | Avg Latency |
-|---|---:|---:|---:|---:|
-| 100K | 10 | 112 | **100.00%** | 0.05ms |
-| 1M | 100 | 112 | **98.82%** | 0.06ms |
-| 10M | 1000 | 112 | **99.11%** | 0.08ms |
+Evaluated through the prod `search_memories()` pipeline with `mode="fact_lookup"`: FTS5 AND-matching, temporal filtering, output envelope. Skips embedding fallback, CE reranking, and KG boost — these add noise on keyword-specific fact queries.
+
+| Scale | Sessions | Questions | Accuracy | Avg Latency | p50 | p95 |
+|---|---:|---:|---:|---:|---:|---:|
+| 100K | 10 | 112 | — | — | — | — |
+| 1M | 100 | 112 | **98.82%** | 1.9ms | 1.7ms | 3.2ms |
+| 10M | 1000 | 112 | — | — | — | — |
+
+**Latency methodology**: End-to-end per-question through `search_memories()` with `mode="fact_lookup"`. Includes connection pool acquisition, query parsing (lightweight — no semantic expansion or graph RAG), FTS5 AND-matching, temporal filtering, and output envelope construction. First queries include ~8s embedding model warmup (shared with hybrid mode). Steady-state latency reported above.
 
 ### Comparison Table
 
 | System | 100K | 1M | 10M |
 |---|---:|---:|---:|
-| **This work** | **100.00%** | **98.82%** | **99.11%** |
+| **This work (fact_lookup)** | — | **98.82%** | — |
 | Cognee | 79.0% | — | — |
 | Mem0 | — | 64.1% | — |
 
-Cognee and Mem0 cells at untested scales are from published baselines (Cognee 79% at 100K, Mem0 64.1% at 1M). Cross-scale comparison requires running those systems at additional scales.
+Cognee and Mem0 cells are from published baselines (Cognee 79% at 100K, Mem0 64.1% at 1M). Our result uses `fact_lookup` mode through the prod pipeline. Cognee/Mem0 numbers may use different retrieval strategies.
 
-### Methodology
+### Known Limitations
 
-BEAM uses targeted FTS5 AND-search with recency ordering. For "current value" questions, the most recent matching session is the correct answer. The search extracts entity/topic keywords from the query, uses progressive AND-matching (broadening until results are found), and orders by `observed_at DESC`. This is the right retrieval strategy for fact-tracking tasks where temporal recency determines correctness.
+1. **Synthetic data**: BEAM sessions use a uniform "X is now Y" format with 100 distinct topics. FTS5 AND-matching on topic keywords is highly specific, making retrieval correct at any scale. A harder benchmark would use overlapping topics and paraphrased queries.
+2. **Current-value only**: Questions ask "what is the current X?" — the correct answer is always the most recent session mentioning topic X. The benchmark does not test historical recall ("what was X before Y changed?").
+3. **fact_lookup mode**: The eval uses `mode="fact_lookup"` which skips embedding, CE reranking, and KG boost. The full hybrid pipeline (`mode="hybrid"`) adds ~1.7s per query and may have different accuracy characteristics.
 
 ---
 

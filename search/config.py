@@ -54,6 +54,8 @@ class SearchConfig(BaseModel):
     embedding_prefilter_enabled: bool = True
     embedding_prefilter_k: int = 200
     temporal_decay_weight: float = 0.15
+    entity_boost_factor: float = 1.15
+    inference_embedding_downweight: float = 0.3
 
 
 def _coerce_float(value: Any, default: float) -> float:
@@ -122,6 +124,12 @@ def _build_search_config() -> SearchConfig:
         embedding_prefilter_k=int(getattr(cfg, "embedding_prefilter_k", 200)),
         temporal_decay_weight=_coerce_float(
             getattr(cfg, "temporal_decay_weight", 0.15), 0.15
+        ),
+        entity_boost_factor=_coerce_float(
+            getattr(cfg, "entity_boost_factor", 1.15), 1.15
+        ),
+        inference_embedding_downweight=_coerce_float(
+            getattr(cfg, "inference_embedding_downweight", 0.3), 0.3
         ),
     )
 

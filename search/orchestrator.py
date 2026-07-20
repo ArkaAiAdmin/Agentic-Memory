@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 """14-phase hybrid search orchestrator for agentic-memory.
 
 Pipeline phases (executed in order):
@@ -60,6 +62,7 @@ from search.query_parser import (
     _parse_search_query,
     _build_zero_result_suggestions,
     _detect_query_type,
+    _extract_inference_entity,
 )
 from search.rerankers import (
     _apply_cross_encoder_rerank,
@@ -662,27 +665,45 @@ def search_memories(
     _t0 = time.time()
     from search.budget_aware import get_search_budget
     _search_budget = get_search_budget()
-    normalized_query, fts_query, bare_text, graph_rag_terms = _parse_search_query(
-        query, db_path, conn=db
-    )
+    if mode == "fact_lookup":
+        # Lightweight parse: skip semantic expansion (7s) and graph RAG (1s).
+        # FTS5 AND-matching is the right signal for keyword fact lookups.
+        from search.query_parser import _normalize_unicode, _expand_query, _STOP_WORDS
+        import re as _re
+        normalized_query = _normalize_unicode(query)
+        _bare_tokens = [w for w in _re.findall("[\\w@\\#\\.\\+\\-]+", normalized_query, flags=_re.UNICODE)
+                        if w.lower() not in _STOP_WORDS and len(w) > 1]
+        _expanded = _expand_query(normalized_query)
+        fts_query = _expanded if _expanded else " ".join(f'"{t}"' for t in _bare_tokens)
+        bare_text = " ".join(_bare_tokens)
+        graph_rag_terms = []
+    else:
+        normalized_query, fts_query, bare_text, graph_rag_terms = _parse_search_query(
+            query, db_path, conn=db
+        )
     _record_phase_latency("parse_query", _t0)
     # A3.2: Reasoning expansion — append entailment-chain objects as OR terms
     # before the cache key is computed so the expanded query is cached.
-    _reasoning_t0 = time.time()
-    expansion_terms = _reasoning_expand(db_path, query, conn=db)
-    if expansion_terms:
-        fts_query = f"{fts_query} OR {' OR '.join(expansion_terms[:5])}"
-    _record_phase_latency("reasoning_expand", _reasoning_t0)
-    # Drift enforcement for search operations
-    try:
-        from infra.config_drift import build_drift_report
-        from infra.config_drift_policy import enforce, DriftEnforcementError
-        _drift_report = build_drift_report()
-        enforce(_drift_report, verb="search")
-    except DriftEnforcementError:
-        raise
-    except Exception:
-        logger.debug("drift enforcement skipped in search_memories: non-critical error")
+    # fact_lookup mode skips reasoning expansion — it's 1s of KG traversal
+    # that adds noise to keyword-specific queries.
+    if mode != "fact_lookup":
+        _reasoning_t0 = time.time()
+        expansion_terms = _reasoning_expand(db_path, query, conn=db)
+        if expansion_terms:
+            fts_query = f"{fts_query} OR {' OR '.join(expansion_terms[:5])}"
+        _record_phase_latency("reasoning_expand", _reasoning_t0)
+    # Drift enforcement for search operations (skipped for fact_lookup —
+    # it's non-critical and adds latency to keyword fact queries)
+    if mode != "fact_lookup":
+        try:
+            from infra.config_drift import build_drift_report
+            from infra.config_drift_policy import enforce, DriftEnforcementError
+            _drift_report = build_drift_report()
+            enforce(_drift_report, verb="search")
+        except DriftEnforcementError:
+            raise
+        except Exception:
+            logger.debug("drift enforcement skipped in search_memories: non-critical error")
     terms = re.findall("[\\w@\\#\\.\\+\\-]+", fts_query, flags=re.UNICODE)
     if not terms:
         return {
@@ -728,10 +749,22 @@ def search_memories(
     from infra.cache import cache_touch
 
     now = time.time()
+    # Validate cache entries against DB inode to prevent stale hits on temp DBs.
+    # Temp DBs get new inodes on each creation, so a cached result from a
+    # previous temp DB would return empty/wrong results.
+    try:
+        _current_inode = os.stat(str(db_path)).st_ino
+    except OSError:
+        _current_inode = None
     with _search_cache_lock:
         if cache_key in _search_cache:
             ts, cached_result = _search_cache[cache_key]
-            if not SEARCH_CACHE_TTL_ENABLED or now - ts <= SEARCH_CACHE_TTL:
+            # Check inode if stored (cache entries from before this fix have
+            # only 2 elements — treat as valid to avoid mass invalidation)
+            _cached_inode = cached_result.get("_inode") if isinstance(cached_result, dict) else None
+            if _cached_inode is not None and _current_inode is not None and _cached_inode != _current_inode:
+                _search_cache.pop(cache_key)
+            elif not SEARCH_CACHE_TTL_ENABLED or now - ts <= SEARCH_CACHE_TTL:
                 cache_touch(cache_key)
                 cached_result = dict(cached_result)
                 cached_result["query_id"] = uuid.uuid4().hex
@@ -741,7 +774,8 @@ def search_memories(
                     except Exception:
                         pass
                 return cached_result
-            _search_cache.pop(cache_key)
+            else:
+                _search_cache.pop(cache_key)
 
     try:
         _effective_rerank = rerank and not light
@@ -862,6 +896,25 @@ def search_memories(
                 category=category or None,
             )
             _record_phase_latency("search.fts", _t0)
+
+        elif mode == "fact_lookup":
+            # Lightweight path for simple fact-tracking queries ("current value of X").
+            # Runs FTS AND-matching through the pipeline's connection pool and
+            # filter infrastructure, then applies temporal filtering. Skips
+            # embedding, hybrid fusion, KG boost, and CE reranking — these add
+            # noise on synthetic/uniform data and cost ~1.7s per query.
+            _fts_limit = limit * 5
+            results = _fts_search(
+                db, fts_query, _fts_limit, has_fitness,
+                repo_filter,
+                tag_filter_sql=_tag_filter_sql,
+                tag_filter_params=tuple(_tag_filter_params),
+                category=category or None,
+            )
+            _record_phase_latency("search.fts", _t0)
+            # Skip to temporal filtering (Phase 8) — the only post-FTS phase
+            # that matters for "current value" questions.
+            hybrid = False
             if include_facts:
                 _t0_kg = time.time()
                 related_facts = _search_kg_facts(
@@ -1022,9 +1075,18 @@ def search_memories(
         _fusion_chunk_hits: list = []
         if results and hybrid:
             _t0 = time.time()
+            # For inference queries about a specific entity, reduce embedding
+            # noise — embeddings match structurally similar sessions that may
+            # not contain the entity, drowning out FTS results that do.
+            _fusion_emb_override = None
+            _inf_entity, _ = _extract_inference_entity(query)
+            if _inf_entity:
+                from search.config import get_search_config
+                _fusion_emb_override = get_search_config().inference_embedding_downweight
             results = _hybrid_fusion(
                 db, results, normalized_query, fts_query, db_path, limit, repo_filter, category=category or None,
                 chunk_hits_out=_fusion_chunk_hits,
+                embedding_weight_override=_fusion_emb_override,
             )
             _record_phase_latency("search.hybrid_fusion", _t0)
             if _fusion_chunk_hits:
@@ -1074,85 +1136,129 @@ def search_memories(
                     )
 
         # Phase 9: Chunk enhancement + session clustering
-        results = _enhance_with_chunks(
-            db, results, fts_query, limit, include_invalid, repo_filter, category=category or None,
-            merged_chunks=_merged_chunks,
-        )
-
-        # Session-aware clustering
-        _t0_sc = time.time()
-        session_boost_ids: set = set()
-        try:
-            results = _phase_nine_session_cluster(
-                results, query, limit, boost_ids=session_boost_ids, db=db
+        # fact_lookup mode skips Phases 9-11 (chunk enhancement, KG boost,
+        # CE reranking) — these add noise on keyword-specific fact queries
+        # and cost ~1.7s per query. FTS5 AND-matching is the right signal.
+        if mode != "fact_lookup":
+            results = _enhance_with_chunks(
+                db, results, fts_query, limit, include_invalid, repo_filter, category=category or None,
+                merged_chunks=_merged_chunks,
             )
-        except Exception as _sc_exc:
-            _phase_inc("search.session_cluster", _sc_exc)
-            logger.warning("session_cluster failed (degraded): %s", _sc_exc)
-        _record_phase_latency("search.session_cluster", _t0_sc)
 
-        # Phase 10: KG boost + multi-hop traversal
-        _t0_kgb = time.time()
-        try:
-            results = _phase_ten_kg_boost(
-                db, results, normalized_query, limit, repo_filter, category=category or None,
-            )
-        except Exception as _kgb_exc:
-            _phase_inc("search.kg_boost", _kgb_exc)
-            logger.warning("kg_boost failed (degraded): %s", _kgb_exc)
-        _record_phase_latency("search.kg_boost", _t0_kgb)
+            # Session-aware clustering
+            _t0_sc = time.time()
+            session_boost_ids: set = set()
+            try:
+                results = _phase_nine_session_cluster(
+                    results, query, limit, boost_ids=session_boost_ids, db=db
+                )
+            except Exception as _sc_exc:
+                _phase_inc("search.session_cluster", _sc_exc)
+                logger.warning("session_cluster failed (degraded): %s", _sc_exc)
+            _record_phase_latency("search.session_cluster", _t0_sc)
 
-        # Multi-hop KG traversal
-        _t0_mhkg = time.time()
-        try:
-            results = _phase_ten_multi_hop_kg(
-                db, results, normalized_query, limit, repo_filter, category=category or None,
-            )
-        except Exception as _mhkg_exc:
-            _phase_inc("search.multi_hop_kg", _mhkg_exc)
-            logger.warning("multi_hop_kg failed (degraded): %s", _mhkg_exc)
-        _record_phase_latency("search.multi_hop_kg", _t0_mhkg)
+            # Phase 10: KG boost + multi-hop traversal
+            _t0_kgb = time.time()
+            try:
+                results = _phase_ten_kg_boost(
+                    db, results, normalized_query, limit, repo_filter, category=category or None,
+                )
+            except Exception as _kgb_exc:
+                _phase_inc("search.kg_boost", _kgb_exc)
+                logger.warning("kg_boost failed (degraded): %s", _kgb_exc)
+            _record_phase_latency("search.kg_boost", _t0_kgb)
+
+            # Multi-hop KG traversal
+            _t0_mhkg = time.time()
+            try:
+                results = _phase_ten_multi_hop_kg(
+                    db, results, normalized_query, limit, repo_filter, category=category or None,
+                )
+            except Exception as _mhkg_exc:
+                _phase_inc("search.multi_hop_kg", _mhkg_exc)
+                logger.warning("multi_hop_kg failed (degraded): %s", _mhkg_exc)
+            _record_phase_latency("search.multi_hop_kg", _t0_mhkg)
 
         # Phase 11: Reranking
-        _t0 = time.time()
-        try:
-            results_to_display, _search_ctr_weights = _rerank_results(
-                db=db,
-                results=results,
-                query=query,
-                db_path=db_path,
-                has_fitness=has_fitness,
-                rerank=_effective_rerank,
-                boost_pinned=boost_pinned if not light else False,
-                recency_weight=recency_weight,
-                limit=limit,
-                deep_rerank=deep_rerank,
-                session_boost_ids=session_boost_ids,
-                as_of=as_of,
-                budget=_search_budget,
-                use_history=use_history,
-            )
-        except Exception as _rerank_exc:
-            _phase_inc("search.rerank", _rerank_exc)
-            logger.warning(
-                "rerank degraded (falling back to FTS-ranked results): %s", _rerank_exc
-            )
+        # fact_lookup mode skips CE reranking — FTS5 rank is the final rank.
+        if mode == "fact_lookup":
+            results_to_display = [
+                (
+                    r[0], r[1], r[2], r[3], r[4], r[5],
+                    -r[5], None, None, None,
+                    r[9] if len(r) > 9 else None,
+                    r[10] if len(r) > 10 else None,
+                    r[11] if len(r) > 11 else 1,
+                    None,
+                )
+                for r in results
+            ]
             _search_ctr_weights = None
-            if has_fitness and _effective_rerank:
-                results_to_display = [
-                    (
-                        r[0], r[1], r[2], r[3], r[4], r[5],
-                        -r[5], None, None, None,
-                        r[9] if len(r) > 9 else None,
-                        r[10] if len(r) > 10 else None,
-                        r[11] if len(r) > 11 else 1,
-                        None,
-                    )
-                    for r in results
-                ]
-            else:
-                results_to_display = list(results)
-        _record_phase_latency("rerank", _t0)
+            session_boost_ids = set()
+        else:
+            _t0 = time.time()
+            try:
+                results_to_display, _search_ctr_weights = _rerank_results(
+                    db=db,
+                    results=results,
+                    query=query,
+                    db_path=db_path,
+                    has_fitness=has_fitness,
+                    rerank=_effective_rerank,
+                    boost_pinned=boost_pinned if not light else False,
+                    recency_weight=recency_weight,
+                    limit=limit,
+                    deep_rerank=deep_rerank,
+                    session_boost_ids=session_boost_ids,
+                    as_of=as_of,
+                    budget=_search_budget,
+                    use_history=use_history,
+                )
+            except Exception as _rerank_exc:
+                _phase_inc("search.rerank", _rerank_exc)
+                logger.warning(
+                    "rerank degraded (falling back to FTS-ranked results): %s", _rerank_exc
+                )
+                _search_ctr_weights = None
+                if has_fitness and _effective_rerank:
+                    results_to_display = [
+                        (
+                            r[0], r[1], r[2], r[3], r[4], r[5],
+                            -r[5], None, None, None,
+                            r[9] if len(r) > 9 else None,
+                            r[10] if len(r) > 10 else None,
+                            r[11] if len(r) > 11 else 1,
+                            None,
+                        )
+                        for r in results
+                    ]
+                else:
+                    results_to_display = list(results)
+            _record_phase_latency("rerank", _t0)
+
+        # Phase 11.5: Entity-presence boost for inference queries.
+        # When the query asks about a specific entity ("Would Caroline have X?"),
+        # sessions containing that entity name should be promoted — the CE
+        # reranker may demote them if the entity's vocabulary differs from
+        # the query's concept keywords.
+        # fact_lookup mode skips this — FTS5 rank is already correct.
+        if mode != "fact_lookup":
+            _entity, _ = _extract_inference_entity(query)
+            if _entity and results_to_display:
+                _entity_lower = _entity.lower()
+                for _rd in results_to_display:
+                    _content = (_rd[1] or "").lower() if len(_rd) > 1 else ""
+                    if _entity_lower in _content:
+                        # Boost final_score (index 6) by entity_boost_factor
+                        _old_score = _rd[6] if len(_rd) > 6 else 0
+                        if _old_score is not None:
+                            from search.config import get_search_config
+                            _boost = get_search_config().entity_boost_factor
+                            _new_list = list(_rd)
+                            _new_list[6] = _old_score * _boost
+                            results_to_display[results_to_display.index(_rd)] = tuple(_new_list)
+                # Re-sort by final_score descending after boost
+                results_to_display.sort(key=lambda x: x[6] if x[6] is not None else 0, reverse=True)
 
         # Phase 12: Build output items
         result_items, output, backlinks_map = _build_result_items(
@@ -1170,7 +1276,8 @@ def search_memories(
         # boost, and finally the save-hint floater. Every pass is advisory and
         # mutates state.result_items / state.output / state.results_to_display
         # in place; do NOT reorder these without updating the documented order contract.
-        if not light:
+        # fact_lookup mode skips postprocessing — FTS5 results are already final.
+        if not light and mode != "fact_lookup":
             from search.state import PipelineState
             _state = PipelineState(
                 db_path=db_path,
@@ -1335,6 +1442,11 @@ def search_memories(
         )
         # Add budget status to envelope
         result["compute_budget"] = _search_budget.to_dict()
+        # Stamp inode for cache validation (prevents stale hits on temp DBs)
+        try:
+            result["_inode"] = os.stat(str(db_path)).st_ino
+        except OSError:
+            pass
         _cache_store_result(cache_key, result)
         _phase_errs = _phase_counts()
         if _phase_errs.get("total_count"):
