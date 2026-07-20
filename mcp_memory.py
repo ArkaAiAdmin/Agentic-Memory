@@ -38,7 +38,7 @@ def _resolve_principal_for_rbac() -> tuple[str | None, str | None]:
         ctx = get_agent()
         principal_id = getattr(ctx, "principal_id", None) or getattr(ctx, "agent_id", None)
         if principal_id:
-            principal_id = str(principal_id)
+            principal_id = str(principal_id).lower()
     except (ImportError, Exception):
         pass
     tenant_id: str | None = None

@@ -66,7 +66,7 @@ def _get_principal_from_context() -> str | None:
         ctx = get_agent()
         agent_id = getattr(ctx, "agent_id", None)
         if agent_id:
-            return str(agent_id)
+            return str(agent_id).lower()
     except (ImportError, Exception):
         pass
     return None

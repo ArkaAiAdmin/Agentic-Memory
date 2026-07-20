@@ -119,7 +119,7 @@ def resolve_principal(
         local_id = os.environ.get("MEMORY_AGENT_ID", "")
         if local_id:
             return Principal(
-                id=local_id,
+                id=local_id.lower(),
                 kind="local",
                 tenant_id="default",
                 display_name=local_id,

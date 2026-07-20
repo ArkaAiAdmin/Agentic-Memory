@@ -262,6 +262,7 @@ def with_memory_connection(func):
         conn = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
         try:
             conn.execute("PRAGMA busy_timeout = 30000;")
+            kwargs.pop("conn", None)
             return func(conn, *args, **kwargs)
         finally:
             safe_close_db(conn)
