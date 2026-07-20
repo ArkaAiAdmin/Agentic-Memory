@@ -265,6 +265,7 @@ def _render_scheduled_jobs() -> None:
             margin=dict(t=30, b=60, l=10, r=10),
             showlegend=True,
             legend=dict(orientation="h", yanchor="top", y=-0.2, font=dict(size=8)),
+            title="Subsystem Health",
         )
         st.plotly_chart(fig, width="stretch")
 
@@ -395,8 +396,9 @@ def _render_backups() -> None:
             **DARK,
             height=200,
             margin=dict(t=30, b=10, l=10, r=10),
-            xaxis_title=None,
+            xaxis_title="Date",
             yaxis_title="Size (MB)",
+            title="Database Backups",
         )
         st.plotly_chart(fig_bp, width="stretch")
 
@@ -614,7 +616,7 @@ def _render_multi_agent() -> None:
             color="Direction",
             color_discrete_sequence=["#3b82f6", "#10b981", "#f59e0b"],
         )
-        fig.update_layout(**DARK, margin=dict(t=30, b=10, l=10, r=10), showlegend=False, height=300)
+        fig.update_layout(**DARK, margin=dict(t=30, b=10, l=10, r=10), showlegend=False, height=300, title="Sync Direction Breakdown")
         st.plotly_chart(fig, width="stretch")
 
         st.divider()
@@ -636,6 +638,7 @@ def _render_multi_agent() -> None:
             **DARK,
             margin=dict(t=30, b=10, l=10, r=10),
             height=max(200, len(peer_status) * 40),
+            title="Peer Sync Success Rate",
         )
         st.plotly_chart(fig2, width="stretch")
     else:

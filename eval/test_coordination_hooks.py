@@ -68,6 +68,12 @@ def _make_db():
             message_type TEXT NOT NULL, payload TEXT,
             status TEXT DEFAULT 'pending', created_at REAL, delivered_at REAL
         );
+        CREATE TABLE IF NOT EXISTS agent_heartbeats (
+            agent_id TEXT PRIMARY KEY,
+            last_heartbeat REAL NOT NULL,
+            session_id TEXT,
+            project_id TEXT
+        );
     """)
     conn.commit()
     return conn, path

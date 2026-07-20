@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -872,7 +873,7 @@ def _render_tenants():
             st.dataframe(tenant_df, use_container_width=True, hide_index=True)
 
             fig = px.bar(tenant_df, x="Tenant", y="Memories", color="Tenant", text_auto=True)
-            fig.update_layout(**DARK, height=250, margin=dict(t=30, b=10, l=10, r=10), showlegend=False)
+            fig.update_layout(**DARK, height=250, margin=dict(t=30, b=10, l=10, r=10), showlegend=False, title="Memories by Tenant")
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("All memories use 'default' tenant (single-tenant mode)")

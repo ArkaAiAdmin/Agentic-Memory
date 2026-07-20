@@ -717,7 +717,7 @@ def memory_session_start(query: str = "") -> str:
             script = GLOBAL_SCRIPTS_DIR / "spaced_repetition.py"
             if script.exists():
                 out, _ = _run_subprocess_output(
-                    [sys.executable, str(script)], timeout=10, cwd=str(target_base)
+                    [sys.executable, str(script)], timeout=5, cwd=str(target_base)
                 )
                 if out and not out.startswith("[stderr]"):
                     review_section = f"\n**Review Schedule**:\n{out}\n"

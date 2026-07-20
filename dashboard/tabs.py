@@ -2312,7 +2312,7 @@ def render_backups():
             hover_data=["name"],
             text_auto=".1f",
         )
-        fig_bp.update_layout(**DARK, height=200, margin=dict(t=30, b=10, l=10, r=10), xaxis_title=None, yaxis_title="Size (MB)")
+        fig_bp.update_layout(**DARK, height=200, margin=dict(t=30, b=10, l=10, r=10), xaxis_title="Date", yaxis_title="Size (MB)", title="Database Backups")
         st.plotly_chart(fig_bp, width="stretch")
 
         def _validate_backup(path: Path) -> bool:

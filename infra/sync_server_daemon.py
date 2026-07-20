@@ -32,6 +32,13 @@ def main() -> int:
     from infra.sync_server import SyncServer
     from infra.log import setup_logging
 
+    try:
+        import setproctitle
+        agent_label = os.environ.get("MEMORY_AGENT_ID", "local")
+        setproctitle.setproctitle(f"sync-{agent_label.lower()}:{args.port}")
+    except ImportError:
+        pass
+
     logger = setup_logging("sync_server_daemon")
 
     # Register this agent in the persistent registry for cross-agent discovery
