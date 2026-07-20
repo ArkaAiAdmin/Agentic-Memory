@@ -567,6 +567,14 @@ _QUERY_TYPE_FACTUAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Inference queries: "Would X likely Y?", "Does X have Y?", "Is X considered Y?"
+# These require finding sessions about a specific entity AND related concepts.
+# The entity name must appear in matching sessions (AND anchor).
+_QUERY_TYPE_INFERENCE_RE = re.compile(
+    "\\b(would|might|could|does|do|is|are|was|were)\\b.*\\b(likely|probably|considered|interested|have|has|be|been|enjoy|like|prefer|choose|pursue|collect|play|read|watch|listen|cook|eat|drink|visit|go|travel|live|work|study|practice|play|run|swim|hike|camp|paint|draw|write|sing|dance|play|drive|ride|fly|sail|climb|build|make|create|design|plan|organize|manage|lead|teach|learn|study|research|explore|discover|invent|innovate)\\b",
+    re.IGNORECASE,
+)
+
 _QUERY_TYPE_WEIGHTS: dict[str, dict[str, float]] = {
     "temporal": {
         "bm25": 0.30,
@@ -1268,6 +1276,60 @@ def _graph_rag_expand(query: str, db_path: Path, conn=None) -> list[str]:
             connection_pool.put(_pooled_conn)
 
 
+def _extract_inference_entity(query: str) -> tuple[str | None, list[str]]:
+    """Extract entity name and concept keywords from an inference query.
+
+    Queries like "Would Caroline likely have Dr. Seuss books?" are about a
+    specific entity (Caroline) and related concepts (Dr. Seuss, books).
+    Returns (entity_name, concept_keywords) or (None, []) if not an inference query.
+    """
+    if not _QUERY_TYPE_INFERENCE_RE.search(query):
+        return None, []
+
+    # Extract capitalized words that are likely entity names
+    # (skip question words and common verbs)
+    _SKIP = {
+        "what", "when", "where", "which", "how", "would", "could", "should",
+        "does", "do", "is", "are", "was", "were", "has", "have", "had",
+        "likely", "probably", "considered", "interested", "during",
+        "the", "a", "an", "in", "on", "at", "to", "for", "of", "with",
+        "yes", "no", "not", "but", "and", "or",
+    }
+    words = re.findall(r"[A-Za-z]+", query)
+    entities = []
+    for w in words:
+        if w[0].isupper() and w.lower() not in _SKIP and len(w) > 1:
+            entities.append(w)
+
+    if not entities:
+        return None, []
+
+    # The first capitalized word after the question word is typically the entity
+    entity = entities[0]
+
+    # Concept keywords: remaining content words (lowercase, deduped, no stopwords)
+    concept_words = []
+    seen = {entity.lower()}
+    for w in words:
+        wl = w.lower()
+        if (wl not in _STOP_WORDS and wl not in seen and len(wl) > 2
+                and wl not in ("likely", "probably", "considered", "interested",
+                               "pursue", "enjoy", "collect", "play", "read",
+                               "watch", "listen", "cook", "eat", "drink",
+                               "visit", "travel", "live", "work", "study",
+                               "practice", "run", "swim", "hike", "camp",
+                               "paint", "draw", "write", "sing", "dance",
+                               "drive", "ride", "fly", "sail", "climb",
+                               "build", "make", "create", "design", "plan",
+                               "organize", "manage", "lead", "teach", "learn",
+                               "research", "explore", "discover", "invent",
+                               "innovate", "have", "has", "be", "been")):
+            concept_words.append(wl)
+            seen.add(wl)
+
+    return entity, concept_words
+
+
 def _parse_search_query(query: str, db_path: Path, conn=None) -> tuple[str, str, str, list[str]]:
     """Parse a search query into components.
 
@@ -1329,6 +1391,22 @@ def _parse_search_query(query: str, db_path: Path, conn=None) -> tuple[str, str,
         # Fallback for stopword-only queries: use original bare words as FTS terms
         terms = [_escape_phrase(_escape_fts_query(w)) for w in bare_words if w]
         fts_query = " AND ".join(terms)
+
+    # Entity-anchored AND matching for inference queries.
+    # "Would Caroline likely have Dr. Seuss books?" →
+    # ("caroline") AND ("dr" OR "seuss" OR "books" OR "bookshelf")
+    # This ensures sessions about the entity are ranked above sessions
+    # that merely mention concept keywords without the entity.
+    entity, concept_kw = _extract_inference_entity(normalized_query)
+    if entity and concept_kw:
+        entity_clause = _escape_phrase(entity)
+        concept_parts = [_escape_phrase(w) for w in concept_kw if w]
+        if concept_parts:
+            concept_clause = " OR ".join(concept_parts)
+            entity_anchored = f"({entity_clause}) AND ({concept_clause})"
+            # Combine: entity-anchored AND as a boost, plus the original query
+            fts_query = f"({entity_anchored}) OR ({fts_query})"
+
     graph_rag_terms = _graph_rag_expand(normalized_query, db_path, conn=conn)
     if graph_rag_terms:
         # 2026-06-29 fix: route KG expansion terms through _escape_phrase so

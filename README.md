@@ -9,6 +9,7 @@
 [![Temporal KG](https://img.shields.io/badge/Temporal-KG-brightgreen)](docs/concepts/temporal-kg.md)
 [![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
 [![Paper](https://img.shields.io/badge/paper-KG_Projection-blue)](paper_pipeline/)
+[![Benchmarks](https://img.shields.io/badge/benchmarks-LongMemEval%2095.3%25%20%7C%20LoCoMo%2092.2%25%20%7C%20BEAM%2099.1%25%20%4010M-brightgreen)](docs/reference/benchmarks.md)
 
 [Quick Start](#quick-start) · [Features](#features) · [Architecture](#architecture) · [MCP Server](#mcp-server) · [SDKs](#sdks) · [Comparison](#comparison) · [Docs](docs/index.md) · [Contributing](CONTRIBUTING.md)
 
