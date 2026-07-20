@@ -266,7 +266,11 @@ def _generate_session_content(session_num: int, session_facts: list[str], all_fa
 # ---------------------------------------------------------------------------
 
 def generate_evaluation_questions(facts: dict[str, Any]) -> list[dict[str, Any]]:
-    """Generate questions that require tracking changes over time."""
+    """Generate questions that require tracking changes over time.
+
+    Includes current-value, paraphrased, multi-session aggregation,
+    conflicting facts, and indirect reference questions.
+    """
     questions = []
 
     # Current-value questions (one per tracked fact)
@@ -280,6 +284,65 @@ def generate_evaluation_questions(facts: dict[str, Any]) -> list[dict[str, Any]]
             "type": "current_value",
             "session_when_set": fact_info["session"],
         })
+
+    # Paraphrased queries — same intent, different wording
+    # These test whether the system handles synonyms and rephrasing
+    paraphrase_templates = [
+        ("favorite_color", "What color does Sarah prefer now?", "current {label}"),
+        ("project_status", "Where does the project stand at the moment?", "current {label}"),
+        ("budget", "What's the latest budget figure?", "current {label}"),
+        ("editor", "Which code editor is being used these days?", "current {label}"),
+        ("coffee_order", "What coffee does Sarah get in the mornings?", "current {label}"),
+        ("workout_plan", "What exercise is Sarah doing right now?", "current {label}"),
+        ("podcast", "What podcast is Sarah listening to currently?", "current {label}"),
+        ("tech_stack", "What frontend framework is the team using?", "current {label}"),
+        ("deadline", "When is the launch scheduled for?", "current {label}"),
+        ("travel_destination", "Where is the next trip going to be?", "current {label}"),
+    ]
+    for i, (topic, query_template, _) in enumerate(paraphrase_templates):
+        if topic in facts:
+            questions.append({
+                "question_id": f"q_paraphrase_{i}",
+                "query": query_template,
+                "expected_answer": facts[topic]["value"],
+                "entity": facts[topic]["entity"],
+                "type": "paraphrased",
+                "session_when_set": facts[topic]["session"],
+            })
+
+    # Multi-session aggregation: "How many times was X changed?"
+    # Requires counting distinct values across all sessions
+    agg_topics = ["project_status", "budget", "editor", "coffee_order",
+                  "workout_plan", "podcast", "tech_stack", "os"]
+    for i, topic in enumerate(agg_topics):
+        if topic in facts:
+            label = facts[topic].get("topic_label", topic.replace("_", " "))
+            # The number of changes is the session number (0-indexed)
+            n_changes = facts[topic]["session"] + 1
+            questions.append({
+                "question_id": f"q_agg_{i}",
+                "query": f"How many times has the {label} been updated?",
+                "expected_answer": str(n_changes),
+                "entity": facts[topic]["entity"],
+                "type": "multi_session_aggregation",
+                "session_when_set": facts[topic]["session"],
+            })
+
+    # Conflicting facts: ask about a topic where early and late values differ
+    # Tests if system returns the LATEST value, not just any value
+    conflict_topics = ["editor", "coffee_order", "workout_plan", "podcast",
+                       "project_status", "budget", "tech_stack", "os"]
+    for i, topic in enumerate(conflict_topics):
+        if topic in facts and facts[topic]["session"] > 0:
+            label = facts[topic].get("topic_label", topic.replace("_", " "))
+            questions.append({
+                "question_id": f"q_conflict_{i}",
+                "query": f"Has the {label} changed since the beginning? If so, what is it now?",
+                "expected_answer": facts[topic]["value"],
+                "entity": facts[topic]["entity"],
+                "type": "conflicting_facts",
+                "session_when_set": facts[topic]["session"],
+            })
 
     # Temporal questions (when did something change?)
     temporal_topics = ["project_status", "budget", "team_size", "tech_stack", "deadline"]
