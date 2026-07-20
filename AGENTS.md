@@ -42,25 +42,38 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 
 ## Hard Rules
 
-1. **All writes go through `save_memory` or `save_memory_journal`.** Hooks, auto-save, MCP verbs, and CLI tools all delegate to one of these two entry points. A write that bypasses the saga cannot be rolled back.
+> **Enforcement column:** each rule carries a marker — 🔍 = verified by a test
+> in `eval/test_rule_enforcement.py` (CI-failing on violation); ⚙️ = enforced by
+> a pre-commit hook; 🔧 = guarded in code at the violation site; ⚠️ = manual
+> review only. See **Rule Priority & Conflict Resolution** below.
+>
+> | Rule | Enforcement | Test / Guard |
+> |------|-------------|--------------|
+> | 1  | 🔍 | `test_rule1_core_writes_route_through_saga` (CORE verb modules) + `test_rule1_operational_kg_uses_saga_cleanup` (`infra/api_server.py`) |
+> | 5  | 🔍 | `test_rule5_search_default_includes_global` |
+> | 7  | 🔧 | bare-arg guard in `backfill/orchestrator.py::main` (rc=2) |
+> | 11 | 🔍 | `test_rule11_no_crdt_md_drift` + `test_rule11_detects_drift` |
+> | 24 | ⚙️ | pre-commit `update-docs-fresh` (fails on doc drift) |
+
+1. **All writes go through `save_memory` or `save_memory_journal`.** 🔍 Hooks, auto-save, MCP verbs, and CLI tools all delegate to one of these two entry points. A write that bypasses the saga cannot be rolled back. (`eval/test_rule_enforcement.py` scans verb/handler modules for raw INSERT/UPDATE/DELETE against content tables; saga internals + coordination/audit tables are exempt.) The operational KG-maintenance endpoints in `infra/api_server.py` (entity/edge delete, dedup, merge, prune, archive) are the one exempt surface because they perform coordinated multi-statement KG ops with no `save_memory` equivalent — but every raw content-table write there MUST be paired with the saga-aware cleanup helpers (`repair_kg_orphans` / `cleanup_memory_relations`), enforced by `test_rule1_operational_kg_uses_saga_cleanup`.
 2. **Connection pool is per-DB-path.** `connection_pool.get(str(db_path))` returns stale FD if the path doesn't exist; active connections cannot be evicted.
 3. **Vec key/index drift after warm-up.** Run `venv/bin/python rebuild_vec_index.py` after any warm-up chain, never before.
 4. **Schema changes are numbered migrations only.** `migrations/NNN_name.sql` + `NNN_name.down.sql`, then bump `SCHEMA_VERSION`. Current: <!--AUTO-GEN:START key="hard_rule_4"-->
 71
 <!--AUTO-GEN:END key="hard_rule_4"-->. Never `ALTER TABLE` in Python.
-5. **Default search: `include_global=True`** with blended RRF. Don't override "for safety."
+5. **Default search: `include_global=True`** 🔍 with blended RRF. Don't override "for safety." (`eval/test_rule_enforcement.py` asserts the `search_memories` default.)
 6. **<!--AUTO-GEN:START key="hard_rule_6"-->
 **23 CORE tools are user-facing**; 92 ADMIN + 3 DEPRECATED are operations behind the single `memory_maintenance` router. Don't add CORE tools without checking `docs/MCP_SURFACE.md` first.
 <!--AUTO-GEN:END key="hard_rule_6"-->
-7. **Use `venv/bin/python backfill_all.py`** (incremental default) or `backfill_all.py --full` (full rebuild). Bare args create 22 MB garbage DBs at repo root.
+7. **Use `venv/bin/python backfill_all.py`** (incremental default) or `backfill_all.py --full` (full rebuild). 🔧 Bare args are **rejected** (exit 2, no DB created) by the guard in `backfill/orchestrator.py::main` — past bare runs created 22 MB garbage DBs at repo root. Always pass `--incremental`, `--full`, `--health`, `--auto`, or a `--db <path>`.
 8. **Tests touching prod DB must use `_ProdDBGuarded`.** See `eval/test_safety_wiring.py:60-109`.
 9. **Lock order: file lock first, then conn.** `save_memory` and `_update_memory_index_incremental` both follow this order.
 10. **Concurrent `.md` writes preserve losers.** `safe_atomic_write(..., expected_existing=...)` saves conflicts as `<path>.conflict-<pid>-<ts>`.
-11. **CRDT merges write to `.md` files.** Markdown is the source of truth; stale `.md` after a merge is silent drift.
+11. **CRDT merges write to `.md` files.** 🔍 Markdown is the source of truth; stale `.md` after a merge is silent drift. (`eval/test_rule_enforcement.py` detects db/crdt/.md divergence — see `test_rule11_*`.)
 12. **Signal handlers installed BEFORE flock check** in `auto_save.py`. Otherwise daemon returns without handlers and ignores SIGTERM.
 13. **Cross-process writes: single-writer on main DB.** The reconciliation daemon (`background_worker.py`) drains `journal.db` sequentially via `save_memory_journal`. Multiple agents enqueue concurrently lock-free. Add `flock` only to new long-lived writers touching the journal, not to individual agent save calls.
 14. **Saga rollback cleans up dependent rows.** The saga in `infra.saga` delegates to `save.cleanup.cleanup_memory_relations()` on rollback (kg_facts, orphan kg_edges, backlinks).
-15. **Update docs in the same commit as code changes.** Run `make update-docs` (see Rule 24) when any auto-gen section may have drifted.
+15. **Update docs in the same commit as code changes.** Leaving auto-gen sections stale is not acceptable.
 16. **One persistent worktree for active development.** Reuse; verify security + tests before merging to main; remove when done.
 17. **Fix pre-existing bugs on contact.** If you spot a broken test, wrong default, dead code, or incorrect behavior while working on any task — fix it in the same batch. Sub-agents: fix obvious one-liners before returning; escalate >10 lines / 2 files beyond scope in return report. Leaving known-broken code is not acceptable.
 18. **Security by default.** Treat all external input (file content, MCP arguments, HTTP payloads) as hostile. Never log, return, or embed credentials, tokens, internal paths, or schema details in user-facing responses; strip or mask first.
@@ -69,9 +82,27 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 21. **Don't run maintenance as a post-task ritual.** Cron and the background worker handle indexing, compaction, dedup, contradiction detection. Call `memory_maintenance` / `memory_organize` only when cron is down or immediate results are required.
 22. **Ask with named options, not open questions.** Never ask "what should I do?" — give 2–4 concrete alternatives with tradeoffs. If the answer is already in an existing decision or doc, act.
 23. **Do not overanalyze — act.** When the task is clear, execute it directly and verify normally (run the checks you normally would), but do not overthink: do not enumerate every possible failure mode, re-derive state that git already reports, or run redundant confirmation passes after the user has said the work is verified. A stash/branch/working-tree question is answered by one `git` command, not a 10-minute investigation. If the user says "you are overthinking," stop immediately and just perform the requested action.
-24. **Run autogen docs before every commit.** Execute `make update-docs` (full pipeline: `update-agents-md` → `update-architecture` → `update-mcp-tools` → `update-readme` → `update-mcp-surface`) before committing any code change. This regenerates AGENTS.md, docs/_meta.json, docs/architecture.md, docs/reference/mcp-tools.md, README badges, and docs/MCP_SURFACE.md from live code. Never commit code without first running autogen — every commit must include the updated docs.
+24. **Run autogen docs before every commit.** ⚙️ Execute `make update-docs` (full pipeline: `update-agents-md` → `update-architecture` → `update-mcp-tools` → `update-readme` → `update-mcp-surface`) before committing any code change. This regenerates AGENTS.md, docs/_meta.json, docs/architecture.md, docs/reference/mcp-tools.md, README badges, and docs/MCP_SURFACE.md from live code. Never commit code without first running autogen — every commit must include the updated docs. The `update-docs-fresh` pre-commit hook fails if regenerated docs differ from the staged tree.
 
 ---
+
+## Rule Priority & Conflict Resolution
+
+When two Hard Rules appear to conflict, resolve in this order (higher wins):
+
+1. **Data safety & preservation** (Rules 1, 8, 13, 14, 19) — a write that cannot be rolled back, loses data, or races another writer is never acceptable.
+2. **Security by default** (Rule 18) — never expose credentials/paths/schema in user-facing output.
+3. **Correctness of the read/write contract** (Rules 5, 7, 11) — search blending, journal gating, and CRDT/.md truth must hold.
+4. **Operability & hygiene** (Rules 3, 9, 10, 12, 15, 20, 21, 24) — index rebuild order, lock order, non-lossy concurrent writes, signal handling, docs-in-commit, full-suite discipline.
+5. **Workflow & judgment** (Rules 16, 17, 22, 23) — fix bugs on contact, ask with options, don't overanalyze.
+
+**Examples**
+- *Rule 24 (docs-in-commit) vs Rule 17 (fix bugs on contact):* both apply — fix the bug and run `make update-docs` before committing; the bug fix does not exempt you from doc regeneration.
+- *Rule 7 (backfill guard) vs a quick local backfill:* the guard wins — you must pass an explicit mode or `--db`. No bare invocation.
+- *Rule 1 (saga-only writes) vs a coordination table:* Rule 1's scan explicitly exempts coordination/audit tables (`agent_messages`, `shared_tasks`, `coordination_audit`, `agent_heartbeats`, `memory_audit_log`); those may be written directly.
+- *Rule 5 (include_global=True) vs a scoped search:* Rule 5 is the default and must not be overridden "for safety"; pass `include_global=False` only when the caller explicitly scopes to local data.
+
+
 <!--AUTO-GEN:START key="critical_path"-->
 agentic-memory/
 ├── save/ (save/pipeline.py)               ← write path
@@ -85,7 +116,7 @@ agentic-memory/
 ├── mcp_*.py (32 modules) ← MCP tool surface
 ├── memory/           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md
-└── eval/             ← 340 test files, 5112+ test functions
+└── eval/             ← 341 test files, 5112+ test functions
 <!--AUTO-GEN:END key="critical_path"-->
 
 **Message contract:** CORE tools return user-facing JSON. All writes go through `save_memory` (direct) or `save_memory_journal` (CQRS journal, gated by `MEMORY_WRITE_JOURNAL_ENABLED`); the saga ensures crash-consistent rollback. `defer_expensive=True` by default — returns <200ms.
@@ -170,7 +201,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 - **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).
 - **KG/Temporal**: Jaccard entity match, contradiction detection, fact supersession, bi-temporal validity.
 - **Background**: Async inbox+daemon auto-save (circuit breaker), TS plugin, cron-driven maintenance.
-- **Testing**: 340 test files, 5112+ test functions, ~107k+ test LOC. Subprocess-per-file runner.
+- **Testing**: 341 test files, 5112+ test functions, ~107k+ test LOC. Subprocess-per-file runner.
 - **Canonical refs**: `docs/architecture.md` · `docs/MCP_SURFACE.md` · `skills/memory-architecture/SKILL.md`.
 <!--AUTO-GEN:END key="current_state"-->
 

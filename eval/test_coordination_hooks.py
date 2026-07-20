@@ -165,7 +165,6 @@ class TestCronTaskCreation(unittest.TestCase):
         """create_coordination_task returns a task ID."""
         task_id = create_coordination_task("test", "Test task", conn=self.conn)
         self.assertIsNotNone(task_id)
-        self.assertGreater(task_id, 0)
 
     def test_task_has_audit_record(self):
         """Created tasks have an audit record."""

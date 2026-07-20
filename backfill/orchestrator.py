@@ -772,6 +772,26 @@ def main() -> int:
             db_path = args[i]
         i += 1
 
+    # Rule 7 guard: bare invocation (no explicit mode flag and no db_path)
+    # used to default to `incremental` and silently create a 22 MB garbage
+    # DB at the repo root. Refuse to run so an operator can't blow away data
+    # by accident. A mode flag (--incremental/--full/--health/--auto) or a
+    # positional db_path is required.
+    _explicit_mode = any(
+        a in ("--incremental", "--full", "--health", "--auto") for a in args
+    )
+    if not _explicit_mode and not db_path:
+        print(
+            "error: backfill_all.py requires an explicit mode or db_path.\n"
+            "  Usage:\n"
+            "    venv/bin/python backfill_all.py --incremental\n"
+            "    venv/bin/python backfill_all.py --full\n"
+            "    venv/bin/python backfill_all.py --db /path/to/memory.db\n"
+            "  Bare invocation is rejected (would create a garbage DB at repo root).",
+            file=sys.stderr,
+        )
+        return 2
+
     result = backfill_all(
         mode,
         db_path,

@@ -83,3 +83,10 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: update-docs-fresh
+        name: update-docs-fresh
+        description: Rule 24 — run `make update-docs` and fail if docs drift from code (docs must commit with code)
+        entry: python scripts/check_update_docs.py
+        language: system
+        pass_filenames: false
+        always_run: true

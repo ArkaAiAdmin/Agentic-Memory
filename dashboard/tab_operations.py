@@ -6,6 +6,7 @@ import gzip
 import json
 import logging
 import os
+import sqlite3
 import shutil
 import subprocess
 import sys

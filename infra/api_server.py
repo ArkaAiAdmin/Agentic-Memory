@@ -1388,25 +1388,37 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             self._error(f"Failed to update KG entity: {e}", 500)
 
     def _handle_delete_kg_entity(self, entity_id: str) -> None:
-        """Delete a KG entity by id. Orphaned edges are cleaned up via cascade.
+        """Delete a KG entity by id.
 
-        KG mutations are coordinated writes: the connection is acquired from the
-        per-DB pool (file lock first, then conn — Hard Rule 9) and committed
-        through the same path the saga uses, so the single-writer invariant holds.
+        Coordinated write through ``open_db`` (file lock first, then conn —
+        Hard Rule 9). After the raw delete we run ``repair_kg_orphans`` so the
+        dependent ``kg_edges`` / ``kg_entities`` / ``backlinks`` rows left
+        behind are removed — the same cleanup the saga rollback path performs
+        (memory_integrity.repair_kg_orphans). repair runs after the write
+        connection is released to avoid a nested open.
         """
         if not entity_id:
             self._error("entity id required", 400)
             return
         try:
             from infra.db import open_db
-            with open_db(Path(str(self.server.db_path)), write=True) as conn:
-                conn.execute("DELETE FROM kg_edges WHERE source_id=? OR target_id=?", (entity_id, entity_id))
-                cur = conn.execute("DELETE FROM kg_entities WHERE id=?", (entity_id,))
+            from memory_integrity import repair_kg_orphans
+            db_path = Path(str(self.server.db_path))
+            with open_db(db_path, write=True) as conn:
+                conn.execute(
+                    "DELETE FROM kg_edges WHERE source_id=? OR target_id=?",
+                    (entity_id, entity_id),
+                )
+                cur = conn.execute(
+                    "DELETE FROM kg_entities WHERE id=?", (entity_id,)
+                )
                 conn.commit()
                 if cur.rowcount == 0:
                     self._error(f"KG entity not found: {entity_id}", 404)
                     return
-                self._write_json({"status": "deleted", "id": entity_id})
+            # Drop orphaned dependent rows so the KG stays consistent.
+            repair_kg_orphans(db_path)
+            self._write_json({"status": "deleted", "id": entity_id})
         except Exception as e:
             logger.warning("_handle_delete_kg_entity: %s", e)
             self._error(f"Failed to delete KG entity: {e}", 500)
@@ -1417,22 +1429,26 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             from infra.db import open_db
-            with open_db(Path(str(self.server.db_path)), write=True) as conn:
+            from memory_integrity import repair_kg_orphans
+            db_path = Path(str(self.server.db_path))
+            with open_db(db_path, write=True) as conn:
                 cur = conn.execute("DELETE FROM kg_edges WHERE id=?", (edge_id,))
                 conn.commit()
                 if cur.rowcount == 0:
                     self._error(f"KG edge not found: {edge_id}", 404)
                     return
-                self._write_json({"status": "deleted", "id": edge_id})
+            repair_kg_orphans(db_path)
+            self._write_json({"status": "deleted", "id": edge_id})
         except Exception as e:
             logger.warning("_handle_delete_kg_edge: %s", e)
             self._error(f"Failed to delete KG edge: {e}", 500)
 
     def _handle_kg_dedup(self) -> None:
         try:
-            from infra._lazy_imports import connection_pool, safe_close_db
-            conn = connection_pool.get(str(self.server.db_path), timeout=5.0)
-            try:
+            from infra.db import open_db
+            from memory_integrity import repair_kg_orphans
+            db_path = Path(str(self.server.db_path))
+            with open_db(db_path, write=True) as conn:
                 merged = 0
                 dupes = conn.execute(
                     "SELECT name, COUNT(*) cnt, GROUP_CONCAT(id) ids "
@@ -1451,9 +1467,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     "SELECT MAX(id) FROM kg_edges GROUP BY source_id, target_id, relation)"
                 )
                 conn.commit()
-                self._write_json({"merged": merged, "status": "ok"})
-            finally:
-                safe_close_db(conn)
+            # Drop any rows orphaned by the dedup (Rule 1: saga-equivalent cleanup).
+            repair_kg_orphans(db_path)
+            self._write_json({"merged": merged, "status": "ok"})
         except Exception as e:
             logger.warning("_handle_kg_dedup: broad except swallowed: %s", e)
             self._error(f"Failed to dedup KG: {e}", 500)
@@ -1471,7 +1487,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._write_json({"pruned": 0})
                 return
             from infra.db import open_db
-            with open_db(Path(str(self.server.db_path)), write=True) as conn:
+            from memory_integrity import repair_kg_orphans
+            db_path = Path(str(self.server.db_path))
+            with open_db(db_path, write=True) as conn:
                 ph = ",".join("?" for _ in entity_ids)
                 conn.execute(f"DELETE FROM kg_entities WHERE id IN ({ph})", entity_ids)
                 conn.execute(
@@ -1479,7 +1497,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                     entity_ids + entity_ids,
                 )
                 conn.commit()
-                self._write_json({"pruned": len(entity_ids)})
+            # Drop any dependent rows left orphaned by the prune.
+            repair_kg_orphans(db_path)
+            self._write_json({"pruned": len(entity_ids)})
         except Exception as e:
             logger.warning("_handle_kg_prune: %s", e)
             self._error(f"Failed to prune KG entities: {e}", 500)
@@ -1488,8 +1508,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         """Merge remove_id into keep_id: reassign edges, sum mentions, delete remove_id.
 
         Ports the exact SQL semantics from dashboard/tab_knowledge.py _merge_entities.
-        KG mutations use the per-DB pool connection (file lock first, then conn —
-        Hard Rule 9) committed through the saga path so the single-writer invariant holds.
+        KG mutations use ``open_db`` (file lock first, then conn — Hard Rule 9) and
+        run ``repair_kg_orphans`` afterward so the single-writer invariant and
+        orphan cleanup hold (the same cleanup the saga rollback path performs).
         """
         try:
             body = self._read_json_body() or {}
@@ -1501,7 +1522,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             keep_id = int(keep_id)
             remove_id = int(remove_id)
             from infra.db import open_db
-            with open_db(Path(str(self.server.db_path)), write=True) as conn:
+            from memory_integrity import repair_kg_orphans
+            db_path = Path(str(self.server.db_path))
+            with open_db(db_path, write=True) as conn:
                 keep = conn.execute(
                     "SELECT id FROM kg_entities WHERE id=?", (keep_id,)
                 ).fetchone()
@@ -1535,7 +1558,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 for row in conflicts:
                     remove_edge_id, _, _, _, remove_w, keep_w = row
                     new_weight = (keep_w or 0) + (remove_w or 0)
-                    keep_edge_id = conn.execute(
+                    keep_row = conn.execute(
                         "SELECT id FROM kg_edges WHERE source_id=? AND target_id=? AND relation=? AND id!=?",
                         (
                             keep_id if row[1] == remove_id else row[1],
@@ -1543,7 +1566,12 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                             row[3],
                             remove_edge_id,
                         ),
-                    ).fetchone()[0]
+                    ).fetchone()
+                    if keep_row is None:
+                        # Keep edge vanished concurrently; skip the weight merge.
+                        conn.execute("DELETE FROM kg_edges WHERE id=?", (remove_edge_id,))
+                        continue
+                    keep_edge_id = keep_row[0]
                     conn.execute(
                         "UPDATE kg_edges SET weight=? WHERE id=?", (new_weight, keep_edge_id)
                     )
@@ -1579,6 +1607,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._write_json(
                     {"merged": True, "keep_id": keep_id, "remove_id": remove_id}
                 )
+            # Drop orphaned rows left by the merge (Rule 1: saga-equivalent cleanup).
+            repair_kg_orphans(db_path)
         except Exception as e:
             logger.warning("_handle_kg_merge: %s", e)
             self._error(f"Failed to merge KG entities: {e}", 500)
@@ -1588,9 +1618,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
             body = self._read_json_body() or {}
             min_fitness = float(body.get("min_fitness", 0.3))
             min_age_days = int(body.get("min_age_days", 90))
-            from infra._lazy_imports import connection_pool, safe_close_db
-            conn = connection_pool.get(str(self.server.db_path), timeout=30.0)
-            try:
+            from infra.db import open_db
+            from memory_integrity import repair_kg_orphans
+            from save.cleanup import cleanup_memory_relations
+            db_path = Path(str(self.server.db_path))
+            with open_db(db_path, write=True) as conn:
                 cols = conn.execute("PRAGMA table_info(memories)").fetchall()
                 col_defs = ", ".join(f"{c[1]} {c[2]}" for c in cols)
                 conn.execute(f"CREATE TABLE IF NOT EXISTS memory_archive ({col_defs})")
@@ -1604,6 +1636,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 for (mid,) in stale:
                     row = conn.execute("SELECT * FROM memories WHERE id=?", (mid,)).fetchone()
                     if row:
+                        # Clean dependent rows (kg_facts/backlinks) the saga way
+                        # before removing the memory, so the KG stays consistent.
+                        cleanup_memory_relations(conn, mid)
                         col_names = [c[1] for c in cols]
                         placeholders = ",".join("?" for _ in col_names)
                         conn.execute(
@@ -1613,9 +1648,9 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                         conn.execute("DELETE FROM memories WHERE id=?", (mid,))
                         archived += 1
                 conn.commit()
-                self._write_json({"archived": archived, "status": "ok"})
-            finally:
-                safe_close_db(conn)
+            # Drop any KG rows orphaned by the archived memories.
+            repair_kg_orphans(db_path)
+            self._write_json({"archived": archived, "status": "ok"})
         except Exception as e:
             logger.warning("_handle_archive_stale: broad except swallowed: %s", e)
             self._error(f"Failed to archive stale memories: {e}", 500)
@@ -2082,8 +2117,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
                 # Initialize the memory DB with the schema via the migration runner
                 try:
+                    from infra.db import open_db
                     from infra.migration_runner import run_migrations
-                    run_migrations(mem_db_path)
+                    with open_db(Path(mem_db_path), write=True) as conn:
+                        run_migrations(conn)
                 except Exception as mig_exc:
                     logger.error("signup memory DB init FAILED: %s", mig_exc)
                     self._error(f"Deployment created but DB init failed: {mig_exc}", 500)
@@ -2290,6 +2327,10 @@ class APIServer(ThreadingHTTPServer):
         self._rate_lock = threading.Lock()
 
         self._ws_clients: Dict[str, socket.socket] = {}
+
+        # Lazily-initialized cloud state store (see the cloud_store property
+        # on the request handler). Declared here for type-checking.
+        self._cloud_store: Any = None
 
         # Phase 3: eagerly create cloud_state.db so the dashboard sidebar
         # and billing tab are available from first boot (not lazily on first
