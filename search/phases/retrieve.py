@@ -78,10 +78,7 @@ def _fts_search(
         _params = ()
     _order = "m.observed_at DESC" if recency_order else "fts.rank"
     if has_fitness:
-        params: tuple = (fts_query,)
-        if category:
-            params = (fts_query, category)
-        params = params + tag_filter_params + _params
+        params: tuple = (fts_query,) + tag_filter_params + _params
         return db.execute(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count,\n"
@@ -93,10 +90,7 @@ def _fts_search(
             "          LIMIT ?",
             (*params, limit * 2),
         ).fetchall()
-    params = (fts_query,)
-    if category:
-        params = (fts_query, category)
-    params = params + tag_filter_params + _params
+    params = (fts_query,) + tag_filter_params + _params
     return db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count,\n"
@@ -106,7 +100,7 @@ def _fts_search(
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
         f"      ORDER BY {_order}\n"
         "      LIMIT ?",
-        (*params, limit * 2),  # Overfetch for reranking consistency
+        (*params, limit * 2),
     ).fetchall()
 
 

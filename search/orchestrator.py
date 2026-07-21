@@ -1036,23 +1036,9 @@ def search_memories(
         # memory_source='auto_save'. The constraint is appended to
         # repo_filter so both FTS and embedding fallback paths inherit it
         # through _fetch_rows_by_ids.
-        if category:
-            if not re.match(r'^[A-Za-z0-9_-]+$', category):
-                category = "lessons"
-            repo_filter = f"{repo_filter} AND m.category = ?"
-        else:
-            # Detect session-related queries and include sessions
-            _session_keywords = {"session", "sprint", "incident", "retrospective",
-                                 "retro", "debug", "review", "pair", "planning",
-                                 "today", "yesterday", "last week", "this week"}
-            _q_lower = normalized_query.lower()
-            _is_session_query = any(kw in _q_lower for kw in _session_keywords)
-            if _is_session_query:
-                # Include sessions for session-related queries
-                pass  # No filter — sessions are included
-            else:
-                repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
-
+        # Sprint 3: tags filter — JSON array exact match via LIKE.
+        # Parameterised to prevent SQL injection (was: f-string interpolation
+        # of user-supplied tag strings directly into the SQL clause).
         # Sprint 3: tags filter — JSON array exact match via LIKE.
         # Parameterised to prevent SQL injection (was: f-string interpolation
         # of user-supplied tag strings directly into the SQL clause).
@@ -1067,6 +1053,26 @@ def search_memories(
         _tag_filter_sql = ""
         if _tag_filter_clauses:
             _tag_filter_sql = " AND (" + " AND ".join(_tag_filter_clauses) + ")"
+
+        # category filter — appended to repo_filter so FTS and embedding
+        # paths both inherit it. The value must go into _tag_filter_params
+        # to match the ? placeholder in repo_filter.
+        if category:
+            if not re.match(r'^[A-Za-z0-9_-]+$', category):
+                category = "lessons"
+            repo_filter = f"{repo_filter} AND m.category = ?"
+            _tag_filter_params.append(category)
+        else:
+            # Detect session-related queries and include sessions
+            _session_keywords = {"session", "sprint", "incident", "retrospective",
+                                 "retro", "debug", "review", "pair", "planning",
+                                 "today", "yesterday", "last week", "this week"}
+            _q_lower = normalized_query.lower()
+            _is_session_query = any(kw in _q_lower for kw in _session_keywords)
+            if _is_session_query:
+                pass  # No filter — sessions are included
+            else:
+                repo_filter = f"{repo_filter} AND (m.category IS NULL OR m.category != 'sessions')"
 
         # Phase 5: Retrieval — FTS5 BM25 + KG facts
         # When search_parallel_enabled is on (default), run FTS and KG fact
@@ -1241,6 +1247,8 @@ def search_memories(
                 related_facts = kg_future.result()
                 _record_phase_latency("search.kg_facts", _t0)
             else:
+                import sys
+                print(f"DEBUG hybrid else: fts_query={fts_query!r} tag_filter_params={tuple(_tag_filter_params)!r} category={category!r}", file=sys.stderr)
                 results = _fts_search(
                     db, fts_query, limit * 5 if _effective_rerank else limit, has_fitness,
                     repo_filter,
