@@ -40,6 +40,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
 
+# Module-level regex for fact-lookup auto-detection (compiled once, not per-call)
+_FACT_LOOKUP_RE = re.compile(
+    r"^\s*(what|which)\s+(is|are|was|were)\s+(the\s+)?(current\s+).*(now\s*\?|\?)?\s*$"
+    r"|^\s*(what|which)\s+(is|are|was|were)\s+.*\bnow\b"
+    r"|^\s*the\s+.*\b(changed|updated|modified)\b.*what\s+is\s+the\s+current"
+    r"|^\s*(when|what)\s+(was|is|did)\s+.*\b(last\s+updated|last\s+changed)\b"
+    r"|^\s*(has|have)\s+.*\bchanged\b.*\b(since|beginning|start)\b"
+    r"|^\s*(what|where|which)\s+.*\b(prefer|stand|latest|figure|getting)\b.*\b(now|moment|current|currently)\b",
+    re.IGNORECASE,
+)
+
 from infra.cache import (
     _search_cache,
     _search_cache_lock,
@@ -641,7 +652,9 @@ def _temporal_compare(
                     if r[0] == recent_id:
                         old_score = float(r[6]) if r[6] is not None else 0.0
                         results[i] = list(r)
-                        results[i][6] = old_score * 1.1  # 10% boost
+                        from search.config import get_search_config
+                        _tc_boost = get_search_config().temporal_compare_boost
+                        results[i][6] = old_score * _tc_boost
                         results[i] = tuple(results[i])
                         break
         except Exception:
@@ -827,28 +840,17 @@ def search_memories(
             "output": _err(ErrorCode.DB_ERROR, f"Search failed to obtain DB connection: {exc}"),
         }
 
-    # Auto-detect fact-lookup queries: "What is the current X?", "What is X now?",
-    # "current value of X", etc. These are keyword-specific where FTS5
-    # AND-matching is the right signal — embedding/CE/KG add noise, not signal.
-    # Requires "current" or "now" to distinguish from complex queries like
-    # "What was discussed in the meeting?"
-    if mode == "hybrid":
-        _FACT_LOOKUP_RE = re.compile(
-            r"^\s*(what|which)\s+(is|are|was|were)\s+(the\s+)?(current\s+).*(now\s*\?|\?)?\s*$"
-            r"|^\s*(what|which)\s+(is|are|was|were)\s+.*\bnow\b"
-            r"|^\s*the\s+.*\b(changed|updated|modified)\b.*what\s+is\s+the\s+current"
-            r"|^\s*(when|what)\s+(was|is|did)\s+.*\b(last\s+updated|last\s+changed)\b"
-            r"|^\s*(has|have)\s+.*\bchanged\b.*\b(since|beginning|start)\b"
-            r"|^\s*(what|where|which)\s+.*\b(prefer|stand|latest|figure|getting)\b.*\b(now|moment|current|currently)\b",
-            re.IGNORECASE,
-        )
-        if _FACT_LOOKUP_RE.search(query):
-            mode = "fact_lookup"
+    # Auto-detect fact-lookup queries (module-level regex, compiled once)
+    if mode == "hybrid" and _FACT_LOOKUP_RE.search(query):
+        mode = "fact_lookup"
 
     # Phase 1: Parse query
     _t0 = time.time()
     from search.budget_aware import get_search_budget
-    _search_budget = get_search_budget()
+    # Defer budget creation to after parse — parse_query (semantic expansion)
+    # takes ~8s and would exhaust the budget before rerankers run.
+    _search_budget = None  # initialized after Phase 1
+
     if mode == "fact_lookup":
         # Lightweight parse: skip semantic expansion (7s) and graph RAG (1s).
         # FTS5 AND-matching on content words is the right signal for keyword
@@ -905,6 +907,11 @@ def search_memories(
             "agent_scope": _get_agent_scope(),
             "query_id": uuid.uuid4().hex,
         }
+
+    # Initialize budget AFTER parse_query — parse takes ~8s for semantic
+    # expansion, and the budget timer starts at creation. Starting it here
+    # gives rerankers their full budget allocation.
+    _search_budget = get_search_budget()
 
     # Phase 2: Skill-first lookup (conditional early return)
     if skill_first:

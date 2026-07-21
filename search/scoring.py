@@ -547,17 +547,20 @@ def _compute_final_score(ctx) -> float:
     # six-channel weights stay authoritative.  The only legitimate override
     # is an explicit ScoreContext.recency_weight of exactly 0.0, which
     # suppresses recency entirely; any other value is ignored.
-    _recency_weight = float(weights.get("recency", _get_rerank_weights()["recency"]))
+    # Use local defaults instead of re-fetching from config per key.
+    # weights already contains the merged dict; avoid 5x _get_rerank_weights() calls.
+    _defaults = {"bm25": 0.40, "fitness": 0.20, "importance": 0.15, "pinned": 0.10, "recency": 0.10, "tag_match": 0.05}
+    _recency_weight = float(weights.get("recency", _defaults["recency"]))
     _ctx_rw = getattr(ctx, "recency_weight", None)
     if _ctx_rw is not None and float(_ctx_rw) == 0.0:
         _recency_weight = 0.0
     raw = (
-        float(weights.get("bm25", _get_rerank_weights()["bm25"])) * bm25_score
-        + float(weights.get("fitness", _get_rerank_weights()["fitness"])) * fitness_score
-        + float(weights.get("importance", _get_rerank_weights()["importance"]))
+        float(weights.get("bm25", _defaults["bm25"])) * bm25_score
+        + float(weights.get("fitness", _defaults["fitness"])) * fitness_score
+        + float(weights.get("importance", _defaults["importance"]))
         * importance_normalized
-        + float(weights.get("pinned", _get_rerank_weights()["pinned"])) * pinned_bonus
-        + float(weights.get("tag_match", _get_rerank_weights()["tag_match"])) * tag_match
+        + float(weights.get("pinned", _defaults["pinned"])) * pinned_bonus
+        + float(weights.get("tag_match", _defaults["tag_match"])) * tag_match
         + _recency_weight * recency_score
     )
     # Neural retention blend: memories.score (from neural_forget) is a

@@ -56,6 +56,7 @@ class SearchConfig(BaseModel):
     temporal_decay_weight: float = 0.15
     entity_boost_factor: float = 1.15
     inference_embedding_downweight: float = 0.3
+    temporal_compare_boost: float = 1.1
 
 
 def _coerce_float(value: Any, default: float) -> float:

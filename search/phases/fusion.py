@@ -14,6 +14,11 @@ from search.phases._db_utils import _fetch_rows_by_ids, _get_memories_columns
 if TYPE_CHECKING:
     from infra.db import AnyConnection
 
+# Cached corpus size to avoid COUNT(*) on every hybrid search.
+# Invalidated when db_path changes or after 60 seconds.
+_corpus_size_cache: dict[str, tuple[float, int]] = {}
+_CORPUS_CACHE_TTL = 60.0
+
 logger = logging.getLogger(__name__)
 
 
@@ -98,13 +103,25 @@ def _hybrid_fusion(
         from search.budget_aware import compute_adaptive_overfetch
 
         _es = get_embedding_search()
-        # Adaptive overfetch based on corpus size
+        # Adaptive overfetch based on corpus size (cached to avoid COUNT(*) per query)
+        import time as _time
+        _cache_key = str(db_path) if db_path else "__none__"
+        _now = _time.time()
+        _corpus_size = 1000  # default
         try:
             if db is not None:
-                _row = db.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
-                _corpus_size = _row[0] if _row else 1000
-            else:
-                _corpus_size = 1000
+                if _cache_key in _corpus_size_cache:
+                    _cached_ts, _cached_size = _corpus_size_cache[_cache_key]
+                    if _now - _cached_ts < _CORPUS_CACHE_TTL:
+                        _corpus_size = _cached_size
+                    else:
+                        _row = db.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
+                        _corpus_size = _row[0] if _row else 1000
+                        _corpus_size_cache[_cache_key] = (_now, _corpus_size)
+                else:
+                    _row = db.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
+                    _corpus_size = _row[0] if _row else 1000
+                    _corpus_size_cache[_cache_key] = (_now, _corpus_size)
         except Exception:
             _corpus_size = 1000
         _base_overfetch = int(getattr(get_config(), "hybrid_semantic_overfetch", 3))
