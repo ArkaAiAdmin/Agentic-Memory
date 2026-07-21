@@ -16,6 +16,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
@@ -109,7 +110,6 @@ class TestRaceConditions(unittest.TestCase):
         """Two agents reading the same broadcast — both get it."""
         broadcast_message(self.conn, "agent-x", "alert", "system update")
         self.conn.commit()
-        time.sleep(0.01)  # Ensure WAL visibility
 
         # Both agents should see the broadcast (read without marking delivered)
         msgs_a = read_messages(self.conn, "agent-a", mark_delivered=False)
@@ -302,8 +302,10 @@ class TestLockExpiryEdgeCases(unittest.TestCase):
     def test_lock_refresh_extends_expiry(self):
         """Refreshing a lock should extend its expiry."""
         acquire_lock(self.conn, "/test.py", "a", ttl=10)
-        time.sleep(0.01)
-        acquire_lock(self.conn, "/test.py", "a", ttl=60)
+        # Advance the clock so the second acquire creates a measurably later expiry
+        t = time.time()
+        with mock.patch("coordination.locking.time.time", return_value=t + 1):
+            acquire_lock(self.conn, "/test.py", "a", ttl=60)
         lock = check_lock(self.conn, "/test.py")
         self.assertIsNotNone(lock)
         # Remaining should be close to 60, not 10
@@ -590,9 +592,14 @@ class TestOrdering(unittest.TestCase):
 
     def test_message_fifo_order(self):
         """Messages are returned in insertion order."""
-        for i in range(10):
-            send_message(self.conn, "a", "b", "test", f"msg-{i}")
-            time.sleep(0.001)  # Ensure distinct timestamps
+        base_t = time.time()
+        counter = [0]
+        def _tick():
+            counter[0] += 1
+            return base_t + 0.001 * counter[0]
+        with mock.patch("coordination.messaging.time.time", side_effect=_tick):
+            for i in range(10):
+                send_message(self.conn, "a", "b", "test", f"msg-{i}")
 
         messages = read_messages(self.conn, "b", mark_delivered=False)
         self.assertEqual(len(messages), 10)
@@ -638,8 +645,14 @@ class TestDoubleOperations(unittest.TestCase):
 
     def test_stale_lock_takeover(self):
         """After lock expires, another agent should be able to acquire it."""
-        acquire_lock(self.conn, "/test.py", "a", ttl=0)
-        time.sleep(0.01)
+        # Acquire a lock, then backdate its expiry so it's already expired
+        acquire_lock(self.conn, "/test.py", "a", ttl=60)
+        now = time.time()
+        self.conn.execute(
+            "UPDATE file_locks SET expires_at=? WHERE file_path=?",
+            (now - 5, "/test.py"),
+        )
+        self.conn.commit()
         # Expired — agent-b should be able to acquire
         result = acquire_lock(self.conn, "/test.py", "b")
         self.assertTrue(result)

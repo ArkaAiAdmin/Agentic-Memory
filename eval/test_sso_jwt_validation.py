@@ -105,11 +105,14 @@ class TestKeyManager(unittest.TestCase):
 
     def test_get_active_returns_latest_non_revoked(self):
         from infra.authlib_sso import KeyManager
+        from unittest import mock
         conn = self._conn()
         try:
-            k1 = KeyManager.generate(conn)
-            time.sleep(1.1)
-            k2 = KeyManager.generate(conn)
+            with mock.patch("infra.authlib_sso._now", side_effect=[
+                "2026-01-01T00:00:00Z", "2026-01-01T00:00:02Z"
+            ]):
+                k1 = KeyManager.generate(conn)
+                k2 = KeyManager.generate(conn)
             active = KeyManager.get_active(conn)
             self.assertEqual(active["kid"], k2, "should return most recent")
         finally:
@@ -147,11 +150,14 @@ class TestKeyManager(unittest.TestCase):
 
     def test_list_keys_returns_all(self):
         from infra.authlib_sso import KeyManager
+        from unittest import mock
         conn = self._conn()
         try:
-            k1 = KeyManager.generate(conn)
-            time.sleep(0.01)
-            k2 = KeyManager.generate(conn)
+            with mock.patch("infra.authlib_sso._now", side_effect=[
+                "2026-01-01T00:00:00Z", "2026-01-01T00:00:01Z"
+            ]):
+                k1 = KeyManager.generate(conn)
+                k2 = KeyManager.generate(conn)
             keys = KeyManager.list_keys(conn)
             kids = [k["kid"] for k in keys]
             self.assertIn(k1, kids)

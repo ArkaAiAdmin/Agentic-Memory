@@ -12,16 +12,17 @@ maybe_checkpoint_on_startup, configure_logging.
 """
 
 
+import datetime
+import itertools
 import os
 import shutil
 import sqlite3
 import sys
 import tempfile
 import threading
-import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -671,13 +672,14 @@ class TestLogBackupMutationKillers(unittest.TestCase):
             tmp = Path(f.name)
             f.write(b"data")
         try:
-            for _ in range(5):
-                log_backup(tmp)
-                # 1.1s gap so each backup has a strictly different mtime
-                # (the rotation key is per-second resolution). Not a wait
-                # for an async event — a deterministic time-bump — so the
-                # fixed sleep is correct here.
-                time.sleep(1.1)  # Ensure different timestamps
+            ts_counter = itertools.count(1700000000)
+            mock_now = MagicMock(
+                side_effect=lambda: datetime.datetime.fromtimestamp(next(ts_counter))
+            )
+            with patch("infra.memory_config.datetime") as mock_dt:
+                mock_dt.datetime.now = mock_now
+                for _ in range(5):
+                    log_backup(tmp)
             backups = list(tmp.parent.glob(tmp.name + ".bak.*"))
             self.assertLessEqual(len(backups), 3)
         finally:
@@ -694,12 +696,14 @@ class TestLogBackupMutationKillers(unittest.TestCase):
             tmp = Path(f.name)
             f.write(b"data")
         try:
-            for _ in range(4):
-                log_backup(tmp, keep=2)
-                # 1.1s gap so each backup has a strictly different mtime
-                # (the rotation key is per-second resolution). See
-                # test_rotation_limits_backups for the rationale.
-                time.sleep(1.1)
+            ts_counter = itertools.count(1700000000)
+            mock_now = MagicMock(
+                side_effect=lambda: datetime.datetime.fromtimestamp(next(ts_counter))
+            )
+            with patch("infra.memory_config.datetime") as mock_dt:
+                mock_dt.datetime.now = mock_now
+                for _ in range(4):
+                    log_backup(tmp, keep=2)
             backups = list(tmp.parent.glob(tmp.name + ".bak.*"))
             self.assertLessEqual(len(backups), 2)
         finally:

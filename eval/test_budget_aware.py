@@ -9,7 +9,7 @@ Covers:
 from __future__ import annotations
 
 import math
-import time
+from unittest import mock
 
 import pytest
 
@@ -130,15 +130,14 @@ class TestBudgetCascade:
     def test_tight_budget_skips_when_real_time_accumulates(self):
         from search.budget_aware import SearchBudget
         # Simulate a budget that expires partway through the pipeline
-        budget = SearchBudget(budget_ms=30)
-        # FTS runs (real time still near zero)
+        budget = SearchBudget(budget_ms=30, start_time=1000.0)
+        # FTS runs (elapsed = 0)
         assert budget.should_run("fts", 5) is True
-        # Sleep to consume most of the budget
-        time.sleep(0.04)  # 40ms > 30ms budget
-        # These should all be skipped
-        assert budget.should_run("semantic", 50) is False
-        assert budget.should_run("chunk_ce", 100) is False
-        assert budget.should_run("colbert", 100) is False
+        # Advance time by 40ms — exceeds 30ms budget
+        with mock.patch("time.time", return_value=1000.04):
+            assert budget.should_run("semantic", 50) is False
+            assert budget.should_run("chunk_ce", 100) is False
+            assert budget.should_run("colbert", 100) is False
 
     def test_no_budget_runs_all(self):
         from search.budget_aware import SearchBudget
@@ -152,7 +151,7 @@ class TestBudgetCascade:
 
     def test_budget_tracks_elapsed(self):
         from search.budget_aware import SearchBudget
-        budget = SearchBudget(budget_ms=100)
-        time.sleep(0.01)
-        assert budget.elapsed_ms > 0
-        assert budget.remaining_ms < 100
+        budget = SearchBudget(budget_ms=100, start_time=1000.0)
+        with mock.patch("time.time", return_value=1000.01):
+            assert budget.elapsed_ms > 0
+            assert budget.remaining_ms < 100

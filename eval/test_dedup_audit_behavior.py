@@ -206,26 +206,30 @@ class TestDedupCacheBehavior(TestCase):
         )
 
     def test_different_params_produce_two_files(self) -> None:
-        import time
+        from unittest.mock import patch
 
         params1 = json.dumps({"content": "dedup-f-1", "category": "lessons"})
         params2 = json.dumps({"content": "dedup-f-2", "category": "lessons"})
         _call_tool_complete("memory_save", params1, "p1", self.env)
-        time.sleep(1.1)
-        _call_tool_complete("memory_save", params2, "p2", self.env)
+        with patch("background.auto_save.time") as mock_time:
+            mock_time.time.side_effect = [1000.0, 1001.0]
+            mock_time.sleep = lambda s: None
+            _call_tool_complete("memory_save", params2, "p2", self.env)
         files = list(self._sessions_dir().glob("auto-*-memory_save.md"))
         assert len(files) == 2, (
-            f"Expected 2 files for different params (spaced 1s apart), got {len(files)}: {files}"
+            f"Expected 2 files for different params, got {len(files)}: {files}"
         )
 
     def test_different_params_produce_two_db_rows(self) -> None:
-        import time
+        from unittest.mock import patch
 
         params1 = json.dumps({"content": "dedup-g-1", "category": "lessons"})
         params2 = json.dumps({"content": "dedup-g-2", "category": "lessons"})
         _call_tool_complete("memory_save", params1, "p1", self.env)
-        time.sleep(1.1)
-        _call_tool_complete("memory_save", params2, "p2", self.env)
+        with patch("background.auto_save.time") as mock_time:
+            mock_time.time.side_effect = [1000.0, 1001.0]
+            mock_time.sleep = lambda s: None
+            _call_tool_complete("memory_save", params2, "p2", self.env)
         c1 = _count_db_rows(self.db_path, "dedup-g-1")
         c2 = _count_db_rows(self.db_path, "dedup-g-2")
         assert c1 == 1 and c2 == 1, (

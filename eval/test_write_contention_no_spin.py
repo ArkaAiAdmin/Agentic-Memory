@@ -99,7 +99,7 @@ def _contending_writer(db_path: Path, stop: threading.Event, errors: list[str]) 
             fut.result(timeout=10.0)
         except Exception as exc:
             errors.append(f"{type(exc).__name__}: {exc!r}")
-        time.sleep(0.02)
+        stop.wait(0.02)
 
 
 def test_concurrent_writers_no_database_locked(
@@ -141,6 +141,7 @@ def test_concurrent_writers_no_database_locked(
         reconciler = _start_reconciler(journal_path, _mem_dir)
         errors: list[str] = []
         stop = threading.Event()
+        all_materialized = threading.Event()
         writers = [
             threading.Thread(
                 target=_contending_writer,
@@ -166,7 +167,7 @@ def test_concurrent_writers_no_database_locked(
                 finally:
                     conn.close()
                 if materialized < len(note_ids):
-                    time.sleep(0.25)
+                    all_materialized.wait(0.25)
 
             assert materialized == len(note_ids), (
                 f"only {materialized}/{len(note_ids)} journal entries materialised "

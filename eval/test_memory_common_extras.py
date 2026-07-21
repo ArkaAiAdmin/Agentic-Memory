@@ -10,6 +10,7 @@ import threading
 import time
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
@@ -93,13 +94,14 @@ class TestRateLimiter(unittest.TestCase):
         rl = RateLimiter(max_calls=1, window_seconds=0.1)
         rl.check("a")
         self.assertFalse(rl.check("a"))
-        # Wait for the 0.1s rate-limit window to elapse before re-checking.
-        # We can't use wait_until(lambda: rl.check("a"), ...) here because
-        # rl.check() is *consuming* — every poll would itself open a new
-        # window. A short fixed sleep is the right tool. +0.05s gives a
-        # small margin on slow CI without slowing fast machines noticeably.
-        time.sleep(0.15)
-        self.assertTrue(rl.check("a"), "after window expiry, call allowed again")
+        # Advance time past the 0.1s window by mocking time.monotonic
+        # inside the TokenBucket module. TokenBucket._refill() calls
+        # time.monotonic() to compute elapsed time for token replenishment.
+        import infra.rate_limiter as rl_mod
+        real_monotonic = time.monotonic
+        target = real_monotonic() + 0.15
+        with mock.patch.object(rl_mod.time, "monotonic", return_value=target):
+            self.assertTrue(rl.check("a"), "after window expiry, call allowed again")
 
     def test_reset_clears_one_or_all(self):
         rl = RateLimiter(max_calls=1, window_seconds=10.0)
@@ -138,7 +140,8 @@ class TestFlockThreadSafety(unittest.TestCase):
         tmpdir = tempfile.mkdtemp(prefix="flock_thread_test_")
         lock_path = Path(tmpdir) / "shared.lock"
         order = []
-        threading.Event()
+        a_acquired = threading.Event()
+        b_proceed = threading.Event()
 
         def worker(name):
             f = open(lock_path, "w")
@@ -153,22 +156,18 @@ class TestFlockThreadSafety(unittest.TestCase):
                 order.append(f"{name}:FAIL")
                 return
             order.append(f"{name}:ACQ")
-            # Anti-thundering-herd: hold the lock briefly so the other
-            # thread's acquire_flock_with_retry gets to exercise its
-            # backoff loop instead of returning immediately.
-            time.sleep(0.05)
+            if name == "A":
+                a_acquired.set()
+                b_proceed.wait(timeout=2)  # hold lock until B has started
             order.append(f"{name}:REL")
             release_flock(f)
 
         t1 = threading.Thread(target=worker, args=("A",))
         t2 = threading.Thread(target=worker, args=("B",))
         t1.start()
-        # Anti-thundering-herd: ensure A is past `start()` (and inside
-        # acquire_flock_with_retry) before B begins; otherwise on a fast
-        # machine both threads race into the lock-contention path at once
-        # and the test can't tell which one acquired first.
-        time.sleep(0.01)  # ensure A starts first
+        a_acquired.wait(timeout=2)  # wait until A has the lock
         t2.start()
+        b_proceed.set()  # let A release so B can contend
         t1.join(timeout=5)
         t2.join(timeout=5)
         # Each thread's ACQ must precede its own REL; either A can fully

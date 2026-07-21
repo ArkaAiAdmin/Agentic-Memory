@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+from unittest import mock
 
 import pytest
 
@@ -30,8 +30,9 @@ class TestTokenBucket:
         for _ in range(5):
             bucket.allow()
         assert bucket.allow() is False
-        time.sleep(0.15)
-        assert bucket.allow() is True
+        t_refill = bucket.last_refill + 0.15
+        with mock.patch("time.monotonic", return_value=t_refill):
+            assert bucket.allow() is True
 
     def test_wait_time_zero_when_available(self):
         bucket = TokenBucket(rate=10.0, burst=5)
@@ -47,7 +48,9 @@ class TestTokenBucket:
         bucket = TokenBucket(rate=100.0, burst=3)
         for _ in range(10):
             bucket.allow()
-        time.sleep(0.05)
+        t_refill = bucket.last_refill + 0.05
+        with mock.patch("time.monotonic", return_value=t_refill):
+            bucket.allow()
         assert bucket.tokens <= 3.0
 
 

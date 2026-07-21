@@ -28,6 +28,7 @@ import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -244,17 +245,18 @@ class TestSoftDeleteIdempotency(unittest.TestCase):
         must remain unchanged.
         """
         _insert_note(self.db_path, "lessons/sd-idem-2")
-        soft_delete_note(self.db_path, "lessons/sd-idem-2")
-        with open_db(self.db_path) as conn:
-            first = conn.execute(
-                "SELECT deleted_at FROM memories WHERE id=?",
-                ("lessons/sd-idem-2",),
-            ).fetchone()[0]
-        # Anti-thundering-herd: tiny gap between two soft-delete calls so
-        # the second one has a measurably later timestamp (idempotency
-        # invariant: deleted_at must NOT advance on the second call).
-        time.sleep(0.05)
-        soft_delete_note(self.db_path, "lessons/sd-idem-2")
+        # Anti-thundering-herd: use distinct timestamps so the idempotency
+        # invariant (deleted_at must NOT advance on the second call) is
+        # actually testable — without distinct timestamps a broken
+        # idempotency guard would pass silently.
+        with mock.patch("memory_delete._now_iso", side_effect=["2026-01-01T00:00:00+00:00", "2026-06-15T12:00:00+00:00"]):
+            soft_delete_note(self.db_path, "lessons/sd-idem-2")
+            with open_db(self.db_path) as conn:
+                first = conn.execute(
+                    "SELECT deleted_at FROM memories WHERE id=?",
+                    ("lessons/sd-idem-2",),
+                ).fetchone()[0]
+            soft_delete_note(self.db_path, "lessons/sd-idem-2")
         with open_db(self.db_path) as conn:
             second = conn.execute(
                 "SELECT deleted_at FROM memories WHERE id=?",
@@ -398,15 +400,17 @@ class TestListTrash(unittest.TestCase):
     def test_trash_orders_oldest_first(self):
         """Bug-hunting: oldest first matches the function docstring."""
         _insert_note(self.db_path, "lessons/a")
-        # Anti-thundering-herd: ensure note A's deleted_at is measurably
-        # before note B's deleted_at, so the ORDER BY test is deterministic.
-        time.sleep(0.05)
         soft_delete_note(self.db_path, "lessons/a")
         _insert_note(self.db_path, "lessons/b")
-        time.sleep(0.05)
         soft_delete_note(self.db_path, "lessons/b")
         _insert_note(self.db_path, "lessons/c")
         soft_delete_note(self.db_path, "lessons/c")
+        # Set distinct deleted_at timestamps directly to ensure deterministic ORDER BY
+        with open_db(self.db_path) as conn:
+            conn.execute("UPDATE memories SET deleted_at='2026-01-01T00:00:00+00:00' WHERE id='lessons/a'")
+            conn.execute("UPDATE memories SET deleted_at='2026-06-01T00:00:00+00:00' WHERE id='lessons/b'")
+            conn.execute("UPDATE memories SET deleted_at='2026-12-01T00:00:00+00:00' WHERE id='lessons/c'")
+            conn.commit()
         trash = list_trash(self.db_path, include_expired=True)
         self.assertEqual(
             [t["id"] for t in trash], ["lessons/a", "lessons/b", "lessons/c"]

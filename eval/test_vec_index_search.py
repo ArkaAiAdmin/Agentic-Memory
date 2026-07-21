@@ -28,6 +28,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -311,13 +312,13 @@ class TestIndexCacheInvalidation(_TestBase):
                 ("lessons/y", "y memory"),
             ],
         )
-        # Bump time by 1.1s so built_at advances past the previous one.
-        # This is a deterministic time-bump (not a wait for an async event),
-        # so time.sleep is correct here: the rebuild indexes by built_at and
-        # we need strictly newer timestamp. Using wait_until would just
-        # poll monotonic() and add noise.
-        time.sleep(1.1)
-        rebuild_vec_index.rebuild_vec_index(self.db_path)
+        # Advance time.time() by 2s so built_at (stored as time.time())
+        # strictly exceeds the first rebuild's timestamp. This avoids a
+        # real sleep while keeping the timestamp bump deterministic.
+        import rebuild_vec_index as rvi_mod
+        real_time = time.time
+        with mock.patch.object(rvi_mod.time, "time", return_value=real_time() + 2.0):
+            rebuild_vec_index.rebuild_vec_index(self.db_path)
         # Verify the on-disk row changed.
         with memory_common.open_db(self.db_path, timeout=5.0) as conn:
             new_blob_len = conn.execute(

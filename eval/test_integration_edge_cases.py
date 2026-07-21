@@ -23,7 +23,6 @@ import sqlite3
 import stat
 import sys
 import threading
-import time
 import uuid
 from pathlib import Path
 
@@ -450,6 +449,8 @@ class TestConcurrentSearchWhileSaving:
         lock = threading.Lock()
         searches_completed = [0]
         slug_base = _unique_slug("search_during")
+        # Barrier forces saver and searcher to alternate turns without wall-clock jitter.
+        interleaver = threading.Barrier(2, timeout=10)
 
         def saver():
             try:
@@ -463,24 +464,20 @@ class TestConcurrentSearchWhileSaving:
                         db_path=fresh_db,
                         safety_wiring=False,
                     )
-                    # Anti-thundering-herd: tiny jitter between rapid saves
-                    # so concurrent saver/searcher threads interleave realistically.
-                    time.sleep(0.001)
+                    interleaver.wait()
             except Exception as e:
                 with lock:
                     errors.append(f"Saver: {e}")
 
         def searcher():
             try:
-                for _ in range(30):
+                for _ in range(20):
                     search_memories(
                         fresh_db, query="fox dog quick", limit=5, include_global=False
                     )
                     with lock:
                         searches_completed[0] += 1
-                    # Anti-thundering-herd: tiny jitter between rapid searches
-                    # so concurrent saver/searcher threads interleave realistically.
-                    time.sleep(0.002)
+                    interleaver.wait()
             except Exception as e:
                 with lock:
                     errors.append(f"Searcher: {e}")
@@ -583,6 +580,7 @@ class TestLockContention:
         lock = threading.Lock()
         rebuild_ok = [False]
         slug_base = _unique_slug("lock_cont")
+        first_save_done = threading.Event()
 
         def do_saves():
             try:
@@ -596,9 +594,8 @@ class TestLockContention:
                         db_path=fresh_db,
                         safety_wiring=False,
                     )
-                    # Anti-thundering-herd: tiny jitter so the rebuild thread
-                    # gets a chance to acquire its write lock between saves.
-                    time.sleep(0.005)
+                    if i == 0:
+                        first_save_done.set()
             except Exception as e:
                 with lock:
                     errors.append(f"Save error: {e}")
@@ -632,9 +629,9 @@ class TestLockContention:
         t_save = threading.Thread(target=do_saves)
         t_rebuild = threading.Thread(target=do_rebuild)
         t_save.start()
-        # Anti-thundering-herd: ensure the saver has acquired its first
-        # write lock before the rebuild thread tries to take its own lock.
-        time.sleep(0.02)
+        # Wait until the saver has completed its first write before starting
+        # the rebuild, so the rebuild thread can contend for the write lock.
+        first_save_done.wait(timeout=30)
         t_rebuild.start()
         t_save.join(timeout=30)
         t_rebuild.join(timeout=30)

@@ -865,11 +865,6 @@ class TestAdversarialPhase5(unittest.TestCase):
             safety_wiring=False,
         )
         _delete_note_direct(self.db_path, nid)
-        # Anti-thundering-herd: tiny pause so the FTS5 / vec / KG
-        # backfill hooks finish writing before we read deleted_at.
-        # Not a wait for a real async event — keeps the read after
-        # all side-effects settle deterministically.
-        time.sleep(0.1)
         with open_db(self.db_path) as db:
             row = db.execute(
                 "SELECT deleted_at FROM memories WHERE id=?", (nid,)
@@ -889,17 +884,11 @@ class TestAdversarialPhase5(unittest.TestCase):
             safety_wiring=False,
         )
         _delete_note_direct(self.db_path, nid)
-        # Anti-thundering-herd: tiny pause so the FTS5 / vec / KG
-        # backfill hooks finish writing before we read deleted_at.
-        time.sleep(0.1)
         with open_db(self.db_path) as db:
             db.execute(
                 "UPDATE memories SET deleted_at=NULL, valid_to=NULL WHERE id=?", (nid,)
             )
             db.commit()
-        # Anti-thundering-herd: tiny pause after the restore write so
-        # the post-restore backfill settles before we re-read the row.
-        time.sleep(0.1)
         with open_db(self.db_path) as db:
             row = db.execute(
                 "SELECT deleted_at FROM memories WHERE id=?", (nid,)
