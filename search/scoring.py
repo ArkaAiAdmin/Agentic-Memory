@@ -53,7 +53,7 @@ else:
 
 logger = logging.getLogger(__name__)
 
-_RRF_K = 60
+_RRF_K_DEFAULT = 60  # Fallback; fusion.py reads hybrid_rrf_k from SearchConfig
 _CONCEPT_BOOST = 1.35
 _CONCEPT_MEMBERSHIP_BOOST = 1.20
 _MAX_BOOST = 1.50
@@ -137,7 +137,7 @@ def _get_strong_bm25_threshold() -> float:
     return get_search_config().strong_bm25_threshold
 
 
-_STRONG_BM25_THRESHOLD = _get_strong_bm25_threshold()  # default 0.95
+_STRONG_BM25_THRESHOLD = None  # lazy: computed on first access
 
 
 def _normalize_bm25_ranks(results: list) -> list:
@@ -200,11 +200,11 @@ def _get_rerank_half_life_days() -> float:
     return get_search_config().rerank_half_life_days
 
 
-_RERANK_HALF_LIFE_DAYS = _get_rerank_half_life_days()
+_RERANK_HALF_LIFE_DAYS = None  # lazy: computed on first access
 
 
 def _reciprocal_rank_fusion(
-    ranked_lists, k: int = _RRF_K, weights: Optional[list[float]] = None
+    ranked_lists, k: int = _RRF_K_DEFAULT, weights: Optional[list[float]] = None
 ) -> dict:
     """BB3: combine multiple ranked result lists via reciprocal rank fusion.
 
@@ -475,6 +475,8 @@ def _strong_match_float(rows):
             _r = 0.0
         _r = max(-60.0, min(60.0, _r))
         _bm = 1.0 / (1.0 + math.exp(_r))
+        if _STRONG_BM25_THRESHOLD is None:
+            _STRONG_BM25_THRESHOLD = _get_strong_bm25_threshold()
         (strong if _bm >= _STRONG_BM25_THRESHOLD else rest).append(r)
     if not strong:
         return rows
@@ -585,19 +587,27 @@ def _compute_final_score(ctx) -> float:
     return raw * _entailment_factor
 
 
+# Cached exploration mode (resolved once, not per-search)
+_EXPLORATION_MODE = None
+_EXPLORATION_MODE_RESOLVED = False
+
 def _apply_exploration(cached_stats) -> Optional[dict]:
+    global _EXPLORATION_MODE, _EXPLORATION_MODE_RESOLVED
     if not HAS_NUMPY:
         return cast(dict, cached_stats[2]) if cached_stats else None
     if cached_stats is None:
         return None
     alphas, betas, expected = cached_stats
-    from config import get_config
-    try:
-        cfg = get_config()
-        mode = os.environ.get("MEMORY_EXPLORATION_MODE", getattr(cfg, "exploration_mode", "off")).lower()
-    except Exception as e:
-        logger.warning("Unhandled exception in _apply_exploration: %s", e)
-        mode = os.environ.get("MEMORY_EXPLORATION_MODE", "off").lower()
+    if not _EXPLORATION_MODE_RESOLVED:
+        try:
+            from config import get_config
+            cfg = get_config()
+            _EXPLORATION_MODE = os.environ.get("MEMORY_EXPLORATION_MODE", getattr(cfg, "exploration_mode", "off")).lower()
+        except Exception as e:
+            logger.warning("Unhandled exception in _apply_exploration: %s", e)
+            _EXPLORATION_MODE = os.environ.get("MEMORY_EXPLORATION_MODE", "off").lower()
+        _EXPLORATION_MODE_RESOLVED = True
+    mode = _EXPLORATION_MODE
 
     if mode == "thompson":
         sampled = {}

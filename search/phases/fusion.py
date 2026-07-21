@@ -164,7 +164,8 @@ def _hybrid_fusion(
         # Adaptive weighting: boost semantic for abstract/synonym queries
         # Check if FTS has few results (indicates vocabulary mismatch)
         fts_count = len(fts_ranked)
-        if fts_count < limit // 2:
+        _sem_boost_threshold = int(getattr(_sc, "hybrid_sem_boost_threshold", 0))
+        if _sem_boost_threshold > 0 and fts_count < _sem_boost_threshold:
             # FTS found few results — this is likely an abstract query
             # Boost semantic weight to find semantically similar content
             _sem_w = _sem_w * 2.0
@@ -244,9 +245,13 @@ def _hybrid_fusion(
             hit_id = r[0]
             rrf_score = rrf.get(hit_id, 0.0)
             # Replace index 5 (FTS rank) with RRF-based rank_proxy
-            merged.append(r[:5] + (-rrf_score * _rank_scale,) + r[6:])
+            # Safe conversion: tuple → list → modify → tuple
+            r_list = list(r)
+            if len(r_list) > 5:
+                r_list[5] = -rrf_score * _rank_scale
+            merged.append(tuple(r_list))
         merged.extend(semantic_only)
-        merged.sort(key=lambda x: x[5])  # sort by rank_proxy (index 5)
+        merged.sort(key=lambda x: x[5] if len(x) > 5 else 0)  # sort by rank_proxy
         return merged
     except Exception as e:
         _phase_inc("search.hybrid_fusion", e)

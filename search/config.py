@@ -62,6 +62,7 @@ class SearchConfig(BaseModel):
     entity_boost_factor: float = 1.15
     inference_embedding_downweight: float = 0.3
     temporal_compare_boost: float = 1.1
+    hybrid_sem_boost_threshold: int = 0  # 0 = disabled; set >0 to boost semantic when FTS < threshold
 
 
 def _coerce_float(value: Any, default: float) -> float:

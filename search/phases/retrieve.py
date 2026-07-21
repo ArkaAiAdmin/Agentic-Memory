@@ -106,7 +106,7 @@ def _fts_search(
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
         f"      ORDER BY {_order}\n"
         "      LIMIT ?",
-        (*params, limit),
+        (*params, limit * 2),  # Overfetch for reranking consistency
     ).fetchall()
 
 

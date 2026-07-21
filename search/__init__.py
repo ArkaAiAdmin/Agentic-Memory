@@ -44,7 +44,7 @@ from search.scoring import (  # noqa: F401
     _strong_match_float,
     _compute_final_score,
     compute_channel_weights,
-    _RRF_K,
+    _RRF_K_DEFAULT as _RRF_K,
     _RERANK_WEIGHTS,
     _RERANK_HALF_LIFE_DAYS,
     _RERANK_TOKEN_RE,

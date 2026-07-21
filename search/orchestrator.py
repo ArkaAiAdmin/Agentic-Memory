@@ -40,6 +40,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
 
+# Shared ThreadPoolExecutor for FTS+KG parallel search (avoids per-query thread creation)
+_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="search-fts-kg")
+
 # Module-level regex for fact-lookup auto-detection (compiled once, not per-call)
 _FACT_LOOKUP_RE = re.compile(
     r"^\s*(what|which)\s+(is|are|was|were)\s+(the\s+)?(current\s+).*(now\s*\?|\?)?\s*$"
@@ -1126,8 +1129,8 @@ def search_memories(
             hybrid = False
 
         elif mode == "semantic":
-            import search_pipeline
-            results = search_pipeline._fallback_embedding_search(
+            from search import search_pipeline as _sp_mod
+            results = _sp_mod._fallback_embedding_search(
                 db, normalized_query, db_path, limit * 5 if _effective_rerank else limit, repo_filter, category,
                 tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
             )
@@ -1204,7 +1207,7 @@ def search_memories(
                     finally:
                         connection_pool.put(conn)
 
-                with ThreadPoolExecutor(max_workers=2) as executor:
+                with _EXECUTOR as executor:
                     fts_future = executor.submit(_fts_worker)
                     kg_future = executor.submit(_kg_worker)
                     results = fts_future.result()
@@ -1236,9 +1239,9 @@ def search_memories(
         if not results:
             _is_opaque = bool(re.fullmatch(r"[A-Za-z0-9_\-]{6,}", query or ""))
             if not _is_opaque and mode == "hybrid":
-                import search_pipeline
+                from search import search_pipeline as _sp_mod2
                 _t0 = time.time()
-                results = search_pipeline._fallback_embedding_search(
+                results = _sp_mod2._fallback_embedding_search(
                     db, normalized_query, db_path, limit, repo_filter, category,
                     tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
                 )
