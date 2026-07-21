@@ -465,9 +465,12 @@ def _strong_match_float(rows):
     first relative to the rest of the list. Within each bucket, the
     original relative order is preserved.
     """
+    global _STRONG_BM25_THRESHOLD
     if not rows:
         return rows
     strong, rest = [], []
+    if _STRONG_BM25_THRESHOLD is None:
+        _STRONG_BM25_THRESHOLD = _get_strong_bm25_threshold()
     for r in rows:
         try:
             _r = float(r[5]) if len(r) > 5 else 0.0  # raw fts5 rank
@@ -475,8 +478,6 @@ def _strong_match_float(rows):
             _r = 0.0
         _r = max(-60.0, min(60.0, _r))
         _bm = 1.0 / (1.0 + math.exp(_r))
-        if _STRONG_BM25_THRESHOLD is None:
-            _STRONG_BM25_THRESHOLD = _get_strong_bm25_threshold()
         (strong if _bm >= _STRONG_BM25_THRESHOLD else rest).append(r)
     if not strong:
         return rows

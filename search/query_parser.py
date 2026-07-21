@@ -1351,7 +1351,7 @@ def _extract_inference_entity(query: str) -> tuple[str | None, list[str]]:
     return entity, concept_words
 
 
-def _parse_search_query(query: str, db_path: Path, conn=None) -> tuple[str, str, str, list[str]]:
+def _parse_search_query(query: str, db_path: Path, conn=None, mode: str = "hybrid") -> tuple[str, str, str, list[str]]:
     """Parse a search query into components.
 
     Returns (normalized_query, fts_query, bare_query_text, graph_rag_terms).
@@ -1381,18 +1381,22 @@ def _parse_search_query(query: str, db_path: Path, conn=None) -> tuple[str, str,
 
     # Semantic expansion: find similar memories and extract terms
     # This helps with synonym/paraphrase queries
-    try:
-        semantic_terms = _semantic_expand(normalized_query, db_path)
-        if semantic_terms:
-            semantic_clause = " OR ".join(
-                _escape_phrase(t) for t in semantic_terms
-            )
-            if expanded:
-                expanded = f"({expanded}) OR ({semantic_clause})"
-            else:
-                expanded = semantic_clause
-    except Exception:
-        pass  # Best-effort — semantic expansion is optional
+    # P0 fix #7b: skip semantic expansion for FTS and fact_lookup modes
+    # to avoid loading SentenceTransformer model (loky deadlock on macOS)
+    semantic_terms = []
+    if mode not in ("fts", "fact_lookup"):
+        try:
+            semantic_terms = _semantic_expand(normalized_query, db_path)
+        except Exception:
+            pass  # Best-effort — semantic expansion is optional
+    if semantic_terms:
+        semantic_clause = " OR ".join(
+            _escape_phrase(t) for t in semantic_terms
+        )
+        if expanded:
+            expanded = f"({expanded}) OR ({semantic_clause})"
+        else:
+            expanded = semantic_clause
 
     if bigram_terms:
         bigram_clause = " OR ".join(bigram_terms)

@@ -40,6 +40,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple, Optional
 
+from infra.db import AnyConnection
+
 # Shared ThreadPoolExecutor for FTS+KG parallel search (avoids per-query thread creation)
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="search-fts-kg")
 
@@ -854,43 +856,29 @@ def search_memories(
     # takes ~8s and would exhaust the budget before rerankers run.
     _search_budget = None  # initialized after Phase 1
 
-    if mode == "fact_lookup":
-        # Lightweight parse: skip semantic expansion (7s) and graph RAG (1s).
-        # FTS5 AND-matching on content words is the right signal for keyword
-        # fact lookups. Falls back to OR if AND returns no results.
+    if mode in ("fact_lookup", "fts"):
+        # Lightweight parse: skip semantic expansion (~10s), graph RAG (~1s),
+        # reasoning expansion (~1s), and drift enforcement.
         from search.query_parser import _normalize_unicode, _STOP_WORDS
         import re as _re
         normalized_query = _normalize_unicode(query)
-        _FACT_MODIFIERS = {"current", "now", "latest", "recent"}
         _bare_tokens = [w for w in _re.findall("[\\w@\\#\\.\\+\\-]+", normalized_query, flags=_re.UNICODE)
-                        if w.lower() not in _STOP_WORDS and w.lower() not in _FACT_MODIFIERS and len(w) > 1]
-        # AND-matching on content words, OR fallback for modifiers
+                        if w.lower() not in _STOP_WORDS and len(w) > 1]
         if _bare_tokens:
-            _and_part = " AND ".join(f'"{t}"' for t in _bare_tokens)
-            _or_part = " OR ".join(f'"{t}"' for t in _bare_tokens)
-            fts_query = f"({_and_part}) OR ({_or_part})"
+            fts_query = " AND ".join(f'"{t}"' for t in _bare_tokens)
         else:
             fts_query = ""
         bare_text = " ".join(_bare_tokens)
         graph_rag_terms = []
     else:
         normalized_query, fts_query, bare_text, graph_rag_terms = _parse_search_query(
-            query, db_path, conn=db
+            query, db_path, conn=db, mode=mode
         )
-    _record_phase_latency("parse_query", _t0)
-    # A3.2: Reasoning expansion — append entailment-chain objects as OR terms
-    # before the cache key is computed so the expanded query is cached.
-    # fact_lookup mode skips reasoning expansion — it's 1s of KG traversal
-    # that adds noise to keyword-specific queries.
-    if mode != "fact_lookup":
         _reasoning_t0 = time.time()
         expansion_terms = _reasoning_expand(db_path, query, conn=db)
         if expansion_terms:
             fts_query = f"{fts_query} OR {' OR '.join(expansion_terms[:5])}"
         _record_phase_latency("reasoning_expand", _reasoning_t0)
-    # Drift enforcement for search operations (skipped for fact_lookup —
-    # it's non-critical and adds latency to keyword fact queries)
-    if mode != "fact_lookup":
         try:
             from infra.config_drift import build_drift_report
             from infra.config_drift_policy import enforce, DriftEnforcementError
@@ -900,6 +888,7 @@ def search_memories(
             raise
         except Exception:
             logger.debug("drift enforcement skipped in search_memories: non-critical error")
+    _record_phase_latency("parse_query", _t0)
     terms = re.findall("[\\w@\\#\\.\\+\\-]+", fts_query, flags=re.UNICODE)
     if not terms:
         return {
@@ -1097,6 +1086,7 @@ def search_memories(
                 category=category or None,
             )
             _record_phase_latency("search.fts", _t0)
+            hybrid = False
 
         elif mode == "fact_lookup":
             # Lightweight path for simple fact-tracking queries ("current value of X").
@@ -1131,7 +1121,7 @@ def search_memories(
         elif mode == "semantic":
             try:
                 from search import search_pipeline as _sp_mod
-                results = _sp_mod._fallback_embedding_search(
+                results = _sp_mod._fallback_embedding_search(  # type: ignore[attr-defined]
                     db, normalized_query, db_path, limit * 5 if _effective_rerank else limit, repo_filter, category,
                     tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
                 )
@@ -1165,13 +1155,14 @@ def search_memories(
             hybrid = False
 
         else:  # mode == "hybrid" (or fallback)
-            _prefilter_id_set: set[str] = set()
-            try:
-                from search.phases.retrieve import _prefilter_ids as _pf  # noqa
-
-                _prefilter_id_set = _pf(db, normalized_query, db_path, limit * 10)
-            except Exception as _pf_exc:
-                logger.debug("embedding prefilter skipped: %s", _pf_exc)
+            hybrid = True
+            # P0 fix #7: prefilter is disabled — ANN-shortlisted IDs are
+            # almost all auto-save sessions that don't match the keyword
+            # FTS query, causing empty results every time. The prefilter
+            # also loads the embedding model twice (once in _semantic_expand,
+            # once here) triggering loky semaphore leaks on macOS. FTS
+            # without prefilter works correctly; hybrid fusion blends
+            # FTS + embedding results in Phase 7.
 
             if _search_parallel and include_facts:
                 def _fts_worker() -> list:
@@ -1184,7 +1175,7 @@ def search_memories(
                             tag_filter_sql=_tag_filter_sql,
                             tag_filter_params=tuple(_tag_filter_params),
                             category=category or None,
-                            prefilter_ids=_prefilter_id_set or None,
+                            prefilter_ids=None,
                         )
                     except Exception as _fts_exc:
                         _phase_inc("search.fts", _fts_exc)
@@ -1210,13 +1201,12 @@ def search_memories(
                     finally:
                         connection_pool.put(conn)
 
-                with _EXECUTOR as executor:
-                    fts_future = executor.submit(_fts_worker)
-                    kg_future = executor.submit(_kg_worker)
-                    results = fts_future.result()
-                    _record_phase_latency("search.fts", _t0)
-                    related_facts = kg_future.result()
-                    _record_phase_latency("search.kg_facts", _t0)
+                fts_future = _EXECUTOR.submit(_fts_worker)
+                kg_future = _EXECUTOR.submit(_kg_worker)
+                results = fts_future.result()
+                _record_phase_latency("search.fts", _t0)
+                related_facts = kg_future.result()
+                _record_phase_latency("search.kg_facts", _t0)
             else:
                 results = _fts_search(
                     db, fts_query, limit * 5 if _effective_rerank else limit, has_fitness,
@@ -1224,7 +1214,7 @@ def search_memories(
                     tag_filter_sql=_tag_filter_sql,
                     tag_filter_params=tuple(_tag_filter_params),
                     category=category or None,
-                    prefilter_ids=_prefilter_id_set or None,
+                    prefilter_ids=None,
                 )
                 _record_phase_latency("search.fts", _t0)
                 if include_facts:
@@ -1245,7 +1235,7 @@ def search_memories(
                 try:
                     from search import search_pipeline as _sp_mod2
                     _t0 = time.time()
-                    results = _sp_mod2._fallback_embedding_search(
+                    results = _sp_mod2._fallback_embedding_search(  # type: ignore[attr-defined]
                         db, normalized_query, db_path, limit, repo_filter, category,
                         tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
                     )
@@ -1343,10 +1333,10 @@ def search_memories(
                     )
 
         # Phase 9: Chunk enhancement + session clustering
-        # fact_lookup mode skips Phases 9-11 (chunk enhancement, KG boost,
-        # CE reranking) — these add noise on keyword-specific fact queries
-        # and cost ~1.7s per query. FTS5 AND-matching is the right signal.
-        if mode != "fact_lookup":
+        # fact_lookup and fts modes skip Phases 9-11 (chunk enhancement,
+        # KG boost, CE reranking) — these add noise on keyword-specific
+        # queries and cost seconds per search. FTS5 rank is the final rank.
+        if mode not in ("fact_lookup", "fts"):
             results = _enhance_with_chunks(
                 db, results, fts_query, limit, include_invalid, repo_filter, category=category or None,
                 merged_chunks=_merged_chunks,
@@ -1389,7 +1379,7 @@ def search_memories(
         # Phase 10.5: Temporal comparison — for queries that ask "which changed
         # first/last" or "what was X when Y changed", find the most recent
         # session for each mentioned topic and compare timestamps.
-        if mode != "fact_lookup":
+        if mode not in ("fact_lookup", "fts"):
             _t0_tc = time.time()
             try:
                 results = _temporal_compare(db, results, query, limit)
@@ -1400,7 +1390,7 @@ def search_memories(
 
         # Phase 10.6: Counting — for "how many times" queries, count
         # distinct values across all matching sessions.
-        if mode != "fact_lookup":
+        if mode not in ("fact_lookup", "fts"):
             _t0_cnt = time.time()
             try:
                 results = _counting_phase(db, results, query, limit)
@@ -1410,8 +1400,8 @@ def search_memories(
             _record_phase_latency("search.counting", _t0_cnt)
 
         # Phase 11: Reranking
-        # fact_lookup mode skips CE reranking — FTS5 rank is the final rank.
-        if mode == "fact_lookup":
+        # fact_lookup and fts modes skip CE reranking — FTS5 rank is final.
+        if mode in ("fact_lookup", "fts"):
             results_to_display = [
                 (
                     r[0], r[1], r[2], r[3], r[4], r[5],
@@ -1471,8 +1461,8 @@ def search_memories(
         # sessions containing that entity name should be promoted — the CE
         # reranker may demote them if the entity's vocabulary differs from
         # the query's concept keywords.
-        # fact_lookup mode skips this — FTS5 rank is already correct.
-        if mode != "fact_lookup":
+        # fact_lookup and fts modes skip this — FTS5 rank is already correct.
+        if mode not in ("fact_lookup", "fts"):
             _entity, _ = _extract_inference_entity(query)
             if _entity and results_to_display:
                 _entity_lower = _entity.lower()
@@ -1486,7 +1476,7 @@ def search_memories(
                             _boost = get_search_config().entity_boost_factor
                             _new_list = list(_rd)
                             _new_list[6] = _old_score * _boost
-                            results_to_display[results_to_display.index(_rd)] = tuple(_new_list)
+                            results_to_display[results_to_display.index(_rd)] = tuple(_new_list)  # type: ignore[index]
                 # Re-sort by final_score descending after boost
                 results_to_display.sort(key=lambda x: x[6] if x[6] is not None else 0, reverse=True)
 
@@ -1506,8 +1496,8 @@ def search_memories(
         # boost, and finally the save-hint floater. Every pass is advisory and
         # mutates state.result_items / state.output / state.results_to_display
         # in place; do NOT reorder these without updating the documented order contract.
-        # fact_lookup mode skips postprocessing — FTS5 results are already final.
-        if not light and mode != "fact_lookup":
+        # fact_lookup and fts modes skip postprocessing — FTS5 results already final.
+        if not light and mode not in ("fact_lookup", "fts"):
             from search.state import PipelineState
             _state = PipelineState(
                 db_path=db_path,

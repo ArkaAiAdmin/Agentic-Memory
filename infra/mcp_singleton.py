@@ -181,6 +181,9 @@ def release_mcp_singleton() -> None:
     """Release the MCP server singleton lock.
 
     Safe to call multiple times; no-op if already released.
+    Uses ``release_flock`` to properly clean up both the OS-level flock
+    AND the DB-level lock entry in ``system_locks`` (prevents stale 300s
+    TTL entries that block restarts).
     """
     global _lock_fd, _lock_path
 
@@ -188,14 +191,9 @@ def release_mcp_singleton() -> None:
         return
 
     try:
-        import fcntl as _fcntl
-        _fcntl.flock(_lock_fd.fileno(), _fcntl.LOCK_UN)
+        from infra.file_lock import release_flock
+        release_flock(_lock_fd)
     except Exception:
-        pass
-
-    try:
-        _lock_fd.close()
-    except OSError:
         pass
 
     _lock_fd = None
