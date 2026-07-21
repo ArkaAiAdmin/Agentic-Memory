@@ -297,7 +297,10 @@ def _merge_two(
     assert a.field_name == b.field_name
 
     # If the values are identical, return either (they're equal).
-    # This is a CRDT-correct "additive" merge.
+    # This is a CRDT-correct "additive" merge. We still run the full
+    # VV/clock/agent comparison to produce a deterministic winner —
+    # skipping it would be faster but non-deterministic under
+    # concurrent identical writes.
     if a.value == b.value:
         # Pick the higher VV; if equal, higher clock; if equal,
         # lexicographically smaller agent. This keeps the merged
@@ -452,14 +455,16 @@ def apply_field_updates_to_db(
         ) = row
         existing_vv = json.loads(existing_vv_json) if existing_vv_json else {}
 
+        # Un-tombstone path: when a live write arrives concurrently with
+        # a stale tombstone, the live write should win (prevents permanent
+        # tombstoning). The VV-dominance check handles the causal case;
+        # the LWW tiebreak handles the concurrent case.
         if existing_deleted and not upd.value == "__TOMBSTONE__":
             if _vv_dominates(upd.version_vector, existing_vv):
-                pass
+                pass  # causal dominance — allow un-tombstone
             else:
-                # LWW tiebreak: if incoming update is newer than the
-                # tombstone, allow the merge to proceed (un-tombstone).
-                # This prevents permanent tombstoning when a newer live
-                # write arrives concurrently with a stale tombstone.
+                # Concurrent: allow un-tombstone if incoming write is
+                # newer by LWW (clock + agent tiebreak).
                 if (
                     upd.logical_clock > existing_clock
                     or (
@@ -467,9 +472,9 @@ def apply_field_updates_to_db(
                         and upd.last_writer_agent <= existing_agent
                     )
                 ):
-                    pass
+                    pass  # LWW wins — allow un-tombstone
                 else:
-                    continue
+                    continue  # tombstone is newer — reject the live write
 
         existing = FieldUpdate(
             memory_id=upd.memory_id,

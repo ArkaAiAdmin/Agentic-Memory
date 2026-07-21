@@ -239,19 +239,26 @@ def _hybrid_fusion(
                 )
             )
         # P1-8 fix: merge FTS + semantic results and sort by RRF score.
-        # Update FTS results' rank (index 5) with RRF score, then merge and sort.
+        # Append RRF-based rank_proxy at a dedicated field (index 14) so
+        # the original FTS rank at index 5 is preserved for downstream
+        # consumers that rely on it.
+        _RRF_FIELD_IDX = 14
         merged = []
         for r in results:
             hit_id = r[0]
             rrf_score = rrf.get(hit_id, 0.0)
-            # Replace index 5 (FTS rank) with RRF-based rank_proxy
-            # Safe conversion: tuple → list → modify → tuple
             r_list = list(r)
-            if len(r_list) > 5:
-                r_list[5] = -rrf_score * _rank_scale
+            # Pad to _RRF_FIELD_IDX + 1 if needed
+            while len(r_list) <= _RRF_FIELD_IDX:
+                r_list.append(None)
+            r_list[_RRF_FIELD_IDX] = -rrf_score * _rank_scale
             merged.append(tuple(r_list))
-        merged.extend(semantic_only)
-        merged.sort(key=lambda x: x[5] if len(x) > 5 else 0)  # sort by rank_proxy
+        for r in semantic_only:
+            r_list = list(r)
+            while len(r_list) <= _RRF_FIELD_IDX:
+                r_list.append(None)
+            merged.append(tuple(r_list))
+        merged.sort(key=lambda x: x[_RRF_FIELD_IDX] if len(x) > _RRF_FIELD_IDX else x[5] if len(x) > 5 else 0)
         return merged
     except Exception as e:
         _phase_inc("search.hybrid_fusion", e)

@@ -16,7 +16,7 @@ Design:
     the next run. DBs that were upgraded before checksums were added
     get backfilled on first post-upgrade access.
 
-Current schema version: 36.
+Current schema version: see SCHEMA_VERSION in migration_runner.py.
 
 Usage:
     from infra.migration_runner import run_migrations
@@ -492,18 +492,13 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                     try:
                         conn.execute(stmt)
                     except sqlite3.OperationalError as e:
-                        # Ignore errors that are expected for idempotent
-                        # migrations:
-                        #  * "already exists" / "duplicate X" — the object
-                        #    was created by a previous run
-                        #  * "no such table" / "no such column" — the
-                        #    referenced object will be created by a later
-                        #    migration (migrations have some forward
-                        #    references that are resolved later in the
-                        #    migration sequence)
-                        # All other errors (syntax errors, constraint
-                        # violations, type mismatches) are re-raised to
-                        # avoid silent corruption.
+                        # INTENTIONAL: suppress expected errors for
+                        # idempotent migrations.  Migrations run in order
+                        # but some statements reference tables/columns
+                        # created by a LATER migration in the same
+                        # sequence (forward references).  These resolve
+                        # on a subsequent full pass.  Only non-idempotent
+                        # errors (syntax, constraint, type) are re-raised.
                         msg = str(e).lower()
                         if any(
                             re.search(rf"\b{re.escape(kw)}\b", msg)

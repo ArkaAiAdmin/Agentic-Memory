@@ -406,6 +406,12 @@ class _ConnectionPool:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
             conn.execute("PRAGMA foreign_keys=ON")
+            # synchronous=NORMAL trades a small durability window for ~2x
+            # write throughput.  With WAL mode, data is fsynced to the WAL
+            # on each transaction commit; NORMAL skips the second sync on
+            # checkpoint.  Risk: a power loss between checkpoint and the
+            # second sync may lose up to one checkpoint worth of writes.
+            # FULL would eliminate that window but halve write throughput.
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA wal_autocheckpoint=500")
             # S4.1 (2026-06-23): apply mmap_size from config. The
@@ -545,12 +551,6 @@ class _ConnectionPool:
                 "idle": idle,
                 "max_size": self._max_size,
             }
-            self._pool.clear()
-            self._pooled_ids.clear()
-            self._lru.clear()
-            self._migrated.clear()
-            self._depth.clear()
-            self._inodes.clear()
 
     def get_depth(self, conn: AnyConnection) -> int:
         """Return current checkout depth for a connection."""

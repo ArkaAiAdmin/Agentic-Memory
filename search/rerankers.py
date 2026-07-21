@@ -154,11 +154,12 @@ def _tokenize_for_ce(text: str | None) -> list:
 def _cross_encoder_score(query: str, content: str) -> float:
     """QW4: weak cross-encoder via IDF-weighted query coverage + phrase bonus.
 
-    Returns a score in roughly [0, 1.2]. A score of 0 means the doc
+    Returns a score clamped to [0, 1]. A score of 0 means the doc
     shares no meaningful tokens with the query. A score of 1.0 means
-    the doc covers (almost) all of the query's weighted mass. Scores
-    above 1.0 only happen when a query bigram is also found in the doc
-    (phrase match bonus).
+    the doc covers (almost) all of the query's weighted mass. The raw
+    internal score can exceed 1.0 due to the phrase-match bonus, but
+    the returned value is always clamped to [0, 1] so it behaves
+    correctly in multiplicative blend formulas.
     """
     if not query or not content:
         return 0.0
@@ -189,7 +190,7 @@ def _cross_encoder_score(query: str, content: str) -> float:
         matched = sum((1 for bg in q_bigrams if bg in c_bigrams))
         if q_bigrams:
             bonus = min(0.2, 0.2 * matched / len(q_bigrams))
-    return min(1.2, coverage + bonus)
+    return min(1.0, coverage + bonus)
 
 
 def _apply_cross_encoder_rerank(

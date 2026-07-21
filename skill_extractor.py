@@ -208,8 +208,8 @@ def _is_skill_worthy_ast(content: str) -> Optional[bool]:
         code_blocks, list_items = traverse(tree.root_node)
         if code_blocks >= 1 or list_items >= 2:
             return True
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("skill_extractor: AST classification failed: %s", exc)
     return None
 
 

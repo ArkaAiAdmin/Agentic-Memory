@@ -442,7 +442,7 @@ def reconcile_fact_supersession(
         "FROM kg_facts "
         "WHERE subject = ? AND predicate = ? AND object != ? "
         "AND superseded_by IS NULL AND id != ?",
-        (new_subj.lower(), new_pred, new_obj.lower(), new_fact_id),
+        (new_subj.lower(), new_pred.lower(), new_obj.lower(), new_fact_id),
     ).fetchall()
 
     superseded: list[int] = []
@@ -481,7 +481,11 @@ def reconcile_fact_supersession(
 
         new_wins = True
         if new_time_val is not None and cand_time_val is not None:
-            new_wins = new_time_val >= cand_time_val
+            if new_time_val != cand_time_val:
+                new_wins = new_time_val > cand_time_val
+            else:
+                # Deterministic tiebreaker: higher fact_id wins (later insert).
+                new_wins = new_fact_id > cand_id
         elif cand_time_val is not None and new_time_val is None:
             new_wins = False  # candidate has a time, new doesn't
 
@@ -996,23 +1000,25 @@ def query_facts_at_time(
 
 
 def query_fact_supersession_chain(conn: AnyConnection, fact_id: int) -> list[dict]:
-    """T4.3: walk the ``superseded_by`` chain starting from ``fact_id``.
+    """T4.3: walk the ``superseded_by`` chain forward from ``fact_id``.
 
-    Returns facts in chronological order (oldest first), so the result
-    tells the full history: ``[original, ...replacements..., latest]``.
-    The starting ``fact_id`` is included even if it's the head of the
-    chain (no superseded_by).
+    Follows ``superseded_by`` pointers from ``fact_id`` toward newer
+    replacements.  Returns ``[starting_fact, ..., latest_replacement]``
+    in chronological order.  Does **not** walk backward via
+    ``supersedes``, so predecessors of ``fact_id`` are excluded — this
+    is a forward-only chain, not the full bidirectional history.
 
     Bounded by ``max_chain_depth`` to prevent infinite loops on
     pathological data (e.g., a fact that points to itself).
 
     Args:
       conn: SQLite connection.
-      fact_id: starting fact id (the head, or any link in the chain).
+      fact_id: starting fact id (any link in the chain; walk proceeds
+        forward via ``superseded_by``).
 
     Returns:
-      list of dicts (the full chain), oldest first.  Empty if fact_id
-      doesn't exist.
+      list of dicts (forward chain from ``fact_id``), oldest first.
+      Empty if fact_id doesn't exist.
     """
     max_chain_depth = 100
     chain: list[dict] = []

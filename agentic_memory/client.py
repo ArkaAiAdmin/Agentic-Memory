@@ -345,7 +345,7 @@ class MemoryClient:
                     (now, now, tenant_id),
                 ).rowcount
             conn.commit()
-            return int(n) if n else 0
+            return int(n) if n is not None else 0
         finally:
             safe_close_db(conn)
 

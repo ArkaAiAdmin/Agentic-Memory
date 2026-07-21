@@ -8,6 +8,13 @@ TODO (M54): 2 of 30 tests in this file lack assertions:
   - test_J2_graph_rag_related_entities (line ~542): only prints, never asserts
   - test_L1_empty_content (line ~623): catches exceptions but has no positive assert
 These should be tightened to verify outcomes rather than just exercising code paths.
+
+Deferred (L81): Parametrized test coverage is low (~8 sites in eval/).
+Adding @pytest.mark.parametrize across the full suite is too broad for a
+single fix — tracked as a future improvement.
+Deferred (L82): Migration test coverage is low (~5 tests). The migration
+system is well-exercised via backfill/integrity checks, but dedicated
+migration tests should be added — tracked as a future improvement.
 """
 
 

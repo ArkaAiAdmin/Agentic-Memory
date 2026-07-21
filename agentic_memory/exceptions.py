@@ -7,7 +7,7 @@ class AgenticMemoryError(Exception):
     """Base exception for all agentic-memory SDK errors."""
 
 
-class ConnectionError(AgenticMemoryError):
+class AgenticConnectionError(AgenticMemoryError):
     """Database connection failed or pool exhausted."""
 
 
@@ -19,7 +19,7 @@ class ValidationError(AgenticMemoryError):
     """Input validation failed (bad category, missing content, etc.)."""
 
 
-class IntegrityError(AgenticMemoryError):
+class AgenticIntegrityError(AgenticMemoryError):
     """Database integrity check failed."""
 
 
@@ -31,7 +31,7 @@ class SyncError(AgenticMemoryError):
     """Multi-agent sync or CRDT operation failed."""
 
 
-class PermissionError(AgenticMemoryError):
+class AgenticPermissionError(AgenticMemoryError):
     """Operation not allowed in current context."""
 
 
@@ -41,3 +41,9 @@ class CircuitBreakerOpen(AgenticMemoryError):
 
 class ConfigError(AgenticMemoryError):
     """Configuration resolution failed."""
+
+
+# Backward-compat aliases (shadow builtins — prefer new names above)
+ConnectionError = AgenticConnectionError  # shadows builtins.ConnectionError
+IntegrityError = AgenticIntegrityError    # shadows builtins.IntegrityError
+PermissionError = AgenticPermissionError  # shadows builtins.PermissionError

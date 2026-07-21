@@ -9,9 +9,12 @@ Opt-in via MEMORY_CONSOLIDATION=1.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 from typing import cast
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "CONSOLIDATION_ENABLED",  # noqa: F822 — dynamically resolved via __getattr__
@@ -161,6 +164,7 @@ def cluster_related(
             else:
                 tag_sets[mid] = set()
         except (json.JSONDecodeError, TypeError):
+            logger.warning("consolidation: failed to parse tags for %s, defaulting to empty set", mid)
             tag_sets[mid] = set()
 
     # Build clusters: group notes that share tags
@@ -296,7 +300,7 @@ def consolidation_stats(conn: AnyConnection) -> dict:
                 if isinstance(tags, list):
                     all_tags.update(tags)
             except (json.JSONDecodeError, TypeError):
-                pass
+                logger.warning("consolidation: failed to parse tags for stats, skipping entry")
 
         return {
             "enabled": True,

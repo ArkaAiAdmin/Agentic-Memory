@@ -163,8 +163,8 @@ def _persist_agent_registration(
                 conn.close()
             except Exception:
                 pass
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("agent_context: failed to persist agent registration for %s: %s", agent_id, exc)
 
 
 def get_agent() -> AgentContext:
@@ -176,10 +176,26 @@ def get_agent() -> AgentContext:
     cache the result for that thread.  This ensures every tool call
     resolves the correct agent identity without requiring an explicit
     ``init_agent()`` call in every thread.
+
+    If the env var changes after initial cache, the stale entry is
+    re-resolved so that a process-level update (e.g. re-spawning with
+    a different identity) takes effect without restarting the thread.
     """
     try:
         val = getattr(_AGENT_CONTEXT, "current", None)
         if isinstance(val, AgentContext):
+            # Staleness check: re-read env to detect identity changes
+            env_agent = os.environ.get("MEMORY_AGENT_ID", "").strip()
+            if env_agent and val.agent_id != env_agent:
+                ctx = AgentContext(agent_id=env_agent, namespace=env_agent)
+                _AGENT_CONTEXT.current = ctx
+                _AGENT_REGISTRY[ctx.agent_id] = {
+                    "display_name": ctx.agent_id,
+                    "parent_agent": None,
+                    "namespace": ctx.namespace,
+                    "created_at": __import__("time").time(),
+                }
+                return ctx
             return val
         raise AttributeError
     except AttributeError:
@@ -341,7 +357,7 @@ def agent_save(content: str, category: str, title_slug: str, **kwargs):
     )
 
 
-def agent_search(query: str, limit: int = 5, rerank: bool = True, include_global: bool = True) -> dict:
+def agent_search(query: str, limit: int = 5, rerank: bool = True, include_global: bool = False) -> dict:
     """Search memories scoped to the current agent.
 
     Wraps ``search_pipeline.search_memories`` with automatic agent
@@ -352,7 +368,10 @@ def agent_search(query: str, limit: int = 5, rerank: bool = True, include_global
         limit: Max results to return.
         rerank: Whether to apply cross-encoder reranking.
         include_global: If True, include global (cross-agent) memories in
-            results alongside agent-scoped ones. Defaults to True.
+            results alongside agent-scoped ones. Defaults to False to
+            prevent cross-agent globals from leaking into agent-scoped
+            searches. Callers that explicitly need cross-agent context
+            should pass include_global=True.
     """
     from infra._lazy_imports import search_memories, get_config
     from pathlib import Path
@@ -380,4 +399,5 @@ def agent_search(query: str, limit: int = 5, rerank: bool = True, include_global
             ]
             result["results"] = filtered[:limit]
             result["total"] = len(filtered)
+            result["count"] = len(result["results"])
     return cast(dict, result)

@@ -195,6 +195,12 @@ def _upsert_edge(
     Sprint 2.11 (prevent, not detect): endpoints are canonicalised
     through ``kg_entity_redirect`` before any write, so an edge can
     never reference a merged-away (loser) entity id.
+
+    Orphan policy (L71): This is the PREVENT side of the orphan
+    strategy, matching kg/kg_crdt.py. Compare with:
+      - backfill/backfill_orphans.py: post-hoc cleanup of orphaned rows.
+      - kg/kg_crdt.py (resolve_edge_endpoints): same prevention via
+        kg_entity_redirect table.
     """
     from kg.kg_crdt import resolve_entity_id
 

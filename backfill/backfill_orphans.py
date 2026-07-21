@@ -11,6 +11,21 @@ Runs the same cascade logic as hard_delete_note() across the entire DB:
   6. Delete vec_keys whose memory_id points to deleted notes
 
 Safe to run multiple times (idempotent).
+
+Orphan policy (L71): This module uses POST-HOC cleanup — it scans the
+entire DB and deletes orphaned rows after the fact. This is a different
+strategy from the other orphan-handling sites:
+
+  - kg/kg_crdt.py (Sprint 2.11): PREVENTS orphans at write time by
+    canonicalising edge endpoints through kg_entity_redirect before
+    every INSERT. No orphan can be created in the first place.
+  - knowledge_graph/kg_db.py (_upsert_edge): Also PREVENTS via
+    resolve_entity_id() before edge writes, matching kg_crdt.py.
+
+This backfill module exists as a safety net for orphaned rows created
+before Sprint 2.11 or by code paths that bypass the canonical insert.
+The three sites are intentionally different: prevention in the hot path,
+cleanup in the maintenance path.
 """
 
 import sqlite3

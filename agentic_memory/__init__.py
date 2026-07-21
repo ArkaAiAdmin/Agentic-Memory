@@ -69,15 +69,18 @@ from agentic_memory.models import (  # noqa: E402,F401
 )
 from agentic_memory.exceptions import (  # noqa: E402,F401
     AgenticMemoryError,
-    ConnectionError,
+    AgenticConnectionError,
+    AgenticIntegrityError,
+    AgenticPermissionError,
     NotFoundError,
     ValidationError,
-    IntegrityError,
     MaintenanceError,
     SyncError,
-    PermissionError,
     CircuitBreakerOpen,
     ConfigError,
+    ConnectionError,
+    IntegrityError,
+    PermissionError,
 )
 from agentic_memory.kg import KnowledgeGraph  # noqa: E402,F401
 from agentic_memory.temporal import TemporalKG  # noqa: E402,F401
@@ -103,15 +106,19 @@ __all__ = [
     "MaintenanceResult",
     # Exceptions
     "AgenticMemoryError",
-    "ConnectionError",
+    "AgenticConnectionError",
+    "AgenticIntegrityError",
+    "AgenticPermissionError",
     "NotFoundError",
     "ValidationError",
-    "IntegrityError",
     "MaintenanceError",
     "SyncError",
-    "PermissionError",
     "CircuitBreakerOpen",
     "ConfigError",
+    # Backward-compat aliases (shadow builtins — prefer new names)
+    "ConnectionError",
+    "IntegrityError",
+    "PermissionError",
     # P2 — Knowledge Graph
     "KnowledgeGraph",
     # P3 — Temporal KG

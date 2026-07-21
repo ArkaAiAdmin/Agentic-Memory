@@ -869,6 +869,12 @@ def resolve_edge_endpoints(
     This structurally guarantees the no-orphan invariant at write
     time — a stale loser_id can never be persisted as an edge
     endpoint, regardless of which code path performs the insert.
+
+    Orphan policy (L71): This is the PREVENT side of the orphan
+    strategy. Compare with:
+      - backfill/backfill_orphans.py: post-hoc cleanup of orphaned rows.
+      - knowledge_graph/kg_db.py (_upsert_edge): also prevents via
+        resolve_entity_id() before edge writes.
     """
     return (
         resolve_entity_id(conn, source_id),

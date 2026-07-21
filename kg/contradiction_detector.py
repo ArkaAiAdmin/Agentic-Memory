@@ -498,6 +498,11 @@ def detect_contradictions(memory_dir, min_confidence="low", tenant_id=None):
     if not rows:
         return []
 
+    # NOTE: This is O(N^2) in the number of notes.  For large corpora
+    # (thousands of notes), consider bucketing by subject first: build a
+    # subject-keyed index using significant_words(), then only compare
+    # notes that share at least one significant word, reducing effective
+    # comparisons from N^2 to roughly N * avg_bucket_size.
     contradictions = []
     seen_pairs = set()
 

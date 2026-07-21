@@ -26,23 +26,23 @@ class TestExceptions(unittest.TestCase):
     def test_can_import_all(self):
         from agentic_memory.exceptions import (
             AgenticMemoryError,
-            ConnectionError,
+            AgenticConnectionError,
             NotFoundError,
         )
 
         self.assertIsNotNone(AgenticMemoryError)
-        self.assertIsNotNone(ConnectionError)
+        self.assertIsNotNone(AgenticConnectionError)
         self.assertIsNotNone(NotFoundError)
 
     def test_hierarchy(self):
         from agentic_memory.exceptions import (
             AgenticMemoryError,
-            ConnectionError,
+            AgenticConnectionError,
             ValidationError,
             NotFoundError,
         )
 
-        self.assertTrue(issubclass(ConnectionError, AgenticMemoryError))
+        self.assertTrue(issubclass(AgenticConnectionError, AgenticMemoryError))
         self.assertTrue(issubclass(ValidationError, AgenticMemoryError))
         self.assertTrue(issubclass(NotFoundError, AgenticMemoryError))
 
@@ -58,13 +58,13 @@ class TestExceptions(unittest.TestCase):
 
     def test_all_exceptions_distinct(self):
         from agentic_memory.exceptions import (
-            ConnectionError,
+            AgenticConnectionError,
             NotFoundError,
             ValidationError,
-            IntegrityError,
+            AgenticIntegrityError,
             MaintenanceError,
             SyncError,
-            PermissionError,
+            AgenticPermissionError,
             CircuitBreakerOpen,
             ConfigError,
         )
@@ -72,13 +72,13 @@ class TestExceptions(unittest.TestCase):
         names = {
             e.__name__
             for e in (
-                ConnectionError,
+                AgenticConnectionError,
                 NotFoundError,
                 ValidationError,
-                IntegrityError,
+                AgenticIntegrityError,
                 MaintenanceError,
                 SyncError,
-                PermissionError,
+                AgenticPermissionError,
                 CircuitBreakerOpen,
                 ConfigError,
             )

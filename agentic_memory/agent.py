@@ -85,7 +85,7 @@ class AgentMemory:
         """
         from agent_context import agent_save, temporary_agent_context
 
-        slug = f"auto-{time.strftime('%Y%m%d_%H%M%S')}"
+        slug = f"auto-{time.strftime('%Y%m%d_%H%M%S')}_{int(time.time_ns() % 1_000_000):06d}"
         with temporary_agent_context(self._agent_id):
             return str(
                 agent_save(

@@ -45,21 +45,29 @@ def is_llm_summarization_available() -> bool:
     return False
 
 
+_LLM_MAX_INPUT_CHARS = 8000  # max chars fed to LLM summarizer
+
+
 def summarize_text_via_llm(text: str) -> Optional[str]:
     """Summarize text using the configured LLM provider (abstractive summarization)."""
     if not is_llm_summarization_available():
         return None
-        
+
     try:
         from fact.llm_providers import get_provider
         provider = get_provider()
         if not provider:
             return None
-            
+
+        # Cap input length to avoid unbounded token usage on large notes
+        trimmed = text.strip()
+        if len(trimmed) > _LLM_MAX_INPUT_CHARS:
+            trimmed = trimmed[:_LLM_MAX_INPUT_CHARS] + "\n\n[Truncated for summarization]"
+
         prompt = (
             "You are a helpful assistant. Write a concise, 1-3 sentence abstractive summary "
             "of the following text, focusing on the key takeaways, decisions, or preferences:\n\n"
-            f"{text.strip()}\n\n"
+            f"{trimmed}\n\n"
             "Summary:"
         )
         
@@ -293,7 +301,7 @@ def summarize_note(
                     "SELECT metadata FROM memories WHERE id = ?", (note_id,)
                 ).fetchone()
                 meta = json.loads(
-                    meta_row[0] if meta_row is not None else None
+                    (meta_row[0] if meta_row is not None else None)
                     or "{}"
                 )
             except (json.JSONDecodeError, TypeError):
@@ -372,7 +380,7 @@ def auto_summarize_long(
                             "SELECT metadata FROM memories WHERE id = ?", (note_id,)
                         ).fetchone()
                         meta = json.loads(
-                            meta_row[0] if meta_row is not None else None
+                            (meta_row[0] if meta_row is not None else None)
                             or "{}"
                         )
                     except (json.JSONDecodeError, TypeError):

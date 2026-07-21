@@ -365,7 +365,8 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None) -> l
     entity_term = max(entity_candidates, key=len) if entity_candidates else query
     # Collapse multi-word entity into a single LIKE token set.
     tokens = re.findall(r"[A-Za-z][A-Za-z\-_/]+", entity_term)
-    like_pattern = "%" + "%".join(t for t in tokens if len(t) > 2) + "%" if tokens else "%" + entity_term + "%"
+    filtered_tokens = [t for t in tokens if len(t) > 2]
+    like_pattern = "%" + "%".join(filtered_tokens) + "%" if filtered_tokens else "%" + entity_term + "%"
     _pooled_conn = None
     if conn is None:
         try:

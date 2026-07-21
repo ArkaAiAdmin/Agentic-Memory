@@ -51,6 +51,9 @@ def run(cmd, cwd=None, timeout=60, check_returncode=True, env=None, test_root=No
     if env:
         full_env.update(env)
     t0 = time.time()
+    # L85: shell=True is benign here — this is test scaffolding that runs
+    # controlled command strings in a sandboxed test environment. The cmd
+    # argument is always constructed internally (never from user input).
     try:
         r = subprocess.run(
             cmd,
