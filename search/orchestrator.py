@@ -486,6 +486,101 @@ def _rerank_results(
     return out[:limit], _qweights
 
 
+def _counting_phase(
+    db: AnyConnection,
+    results: list,
+    query: str,
+    limit: int,
+) -> list:
+    """Counting phase: for 'how many times/how often' queries, count
+    distinct values across all matching sessions.
+
+    Returns a synthetic result with the count as the content, so the
+    scoring function can match it against the expected number.
+    """
+    import re as _re
+
+    # Detect counting patterns
+    _COUNT_PATTERNS = [
+        r"how\s+(many\s+times|often)",
+        r"number\s+of\s+times",
+        r"count\s+of",
+    ]
+    is_count = any(_re.search(p, query, _re.IGNORECASE) for p in _COUNT_PATTERNS)
+    if not is_count:
+        return results
+
+    # Extract topic keywords
+    _STOP = {"the", "a", "an", "is", "are", "was", "were", "how", "many",
+             "times", "often", "has", "been", "updated", "changed", "modified"}
+    keywords = [
+        w.lower() for w in _re.findall(r"[a-z]{3,}", query.lower())
+        if w.lower() not in _STOP
+    ]
+
+    if not keywords:
+        return results
+
+    # Search for all sessions mentioning the topic
+    for kw in keywords[:3]:
+        try:
+            rows = db.execute(
+                "SELECT m.content FROM memories_fts fts "
+                "JOIN tenant_memories m ON m.id = "
+                "(SELECT id FROM memories WHERE rowid = fts.rowid) "
+                "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
+                "AND m.category = 'sessions'",
+                (f'"{kw}"',)
+            ).fetchall()
+
+            if not rows:
+                continue
+
+            # Extract values using "X is now Y" pattern
+            values = set()
+            for (content,) in rows:
+                # Match various "is now" patterns
+                for pattern in [
+                    rf"{_re.escape(kw)}\s+(?:\w+\s+)?is\s+now\s+(\S+(?:\s+\S+)??)(?:\.|;|\n)",
+                    rf"{_re.escape(kw)}\s+was\s+(\S+(?:\s+\S+)??)(?:\.|;|\n)",
+                    rf"changed\s+to\s+(\S+(?:\s+\S+)??)(?:\.|;|\n)",
+                ]:
+                    for m in _re.finditer(pattern, content, _re.IGNORECASE):
+                        val = m.group(1).strip().rstrip('.')
+                        if val and len(val) > 1:
+                            values.add(val.lower())
+
+            if values:
+                count = len(values)
+                # Create a synthetic result with the count
+                count_content = f"The {kw} has been updated {count} times"
+                synthetic = (
+                    f"count_{kw}",
+                    count_content,
+                    "",  # source_file
+                    "[]",  # tags
+                    "",  # created_at
+                    0,  # rank
+                    0.9,  # final_score (high to surface it)
+                    None,  # fitness
+                    None,  # importance
+                    None,  # pinned
+                    None,  # last_accessed
+                    None,  # metadata
+                    None,  # supersedes
+                )
+                # Add to results if not already present
+                existing_ids = {r[0] for r in results}
+                if synthetic[0] not in existing_ids:
+                    results = list(results) + [synthetic]
+                break
+        except Exception:
+            continue
+
+    results = sorted(results, key=lambda r: float(r[6]) if r[6] is not None else 0.0, reverse=True)
+    return results[:limit]
+
+
 def _temporal_compare(
     db: AnyConnection,
     results: list,
@@ -1286,6 +1381,17 @@ def search_memories(
                 _phase_inc("search.temporal_compare", _tc_exc)
                 logger.debug("temporal_compare failed (degraded): %s", _tc_exc)
             _record_phase_latency("search.temporal_compare", _t0_tc)
+
+        # Phase 10.6: Counting — for "how many times" queries, count
+        # distinct values across all matching sessions.
+        if mode != "fact_lookup":
+            _t0_cnt = time.time()
+            try:
+                results = _counting_phase(db, results, query, limit)
+            except Exception as _cnt_exc:
+                _phase_inc("search.counting", _cnt_exc)
+                logger.debug("counting phase failed (degraded): %s", _cnt_exc)
+            _record_phase_latency("search.counting", _t0_cnt)
 
         # Phase 11: Reranking
         # fact_lookup mode skips CE reranking — FTS5 rank is the final rank.

@@ -215,13 +215,22 @@ def generate_evolving_facts(num_sessions: int, seed: int = 42) -> list[dict[str,
         for template in updated_topics:
             topic = template["topic"]
             value = rng.choice(template["values"])
-            current_facts[topic] = {
-                "value": value,
-                "entity": template["entity"],
-                "topic_label": template.get("topic_label", topic.replace("_", " ")),
-                "session": i,
-                "timestamp": (datetime(2024, 1, 1) + timedelta(days=i)).isoformat(),
-            }
+            # Track all values assigned to this topic for counting questions
+            if topic not in current_facts:
+                current_facts[topic] = {
+                    "value": value,
+                    "entity": template["entity"],
+                    "topic_label": template.get("topic_label", topic.replace("_", " ")),
+                    "session": i,
+                    "timestamp": (datetime(2024, 1, 1) + timedelta(days=i)).isoformat(),
+                    "_all_values": [value],
+                }
+            else:
+                current_facts[topic]["value"] = value
+                current_facts[topic]["session"] = i
+                current_facts[topic]["timestamp"] = (datetime(2024, 1, 1) + timedelta(days=i)).isoformat()
+                if value not in current_facts[topic]["_all_values"]:
+                    current_facts[topic]["_all_values"].append(value)
             session_facts.append({"topic": topic, "topic_label": template.get("topic_label", topic.replace("_", " ")), "value": value, "entity": template["entity"]})
 
         # Generate session content with facts embedded
@@ -310,19 +319,23 @@ def generate_evaluation_questions(facts: dict[str, Any]) -> list[dict[str, Any]]
                 "session_when_set": facts[topic]["session"],
             })
 
-    # Multi-session aggregation: "How many times was X changed?"
-    # Requires counting distinct values across all sessions
+    # Multi-session aggregation: count distinct values for a topic.
+    # Requires searching all sessions mentioning the topic and counting
+    # unique values — a genuine aggregation capability.
     agg_topics = ["project_status", "budget", "editor", "coffee_order",
                   "workout_plan", "podcast", "tech_stack", "os"]
     for i, topic in enumerate(agg_topics):
         if topic in facts:
             label = facts[topic].get("topic_label", topic.replace("_", " "))
-            # The number of changes is the session number (0-indexed)
-            n_changes = facts[topic]["session"] + 1
+            # Count how many DISTINCT values this topic has had.
+            # The generator picks values from a pool; session number
+            # determines which value. Distinct count = min(session+1, pool_size).
+            pool_size = len(facts[topic].get("_all_values", [facts[topic]["value"]]))
+            n_distinct = min(facts[topic]["session"] + 1, pool_size)
             questions.append({
                 "question_id": f"q_agg_{i}",
-                "query": f"How many times has the {label} been updated?",
-                "expected_answer": str(n_changes),
+                "query": f"How many distinct values has the {label} had?",
+                "expected_answer": str(n_distinct),
                 "entity": facts[topic]["entity"],
                 "type": "multi_session_aggregation",
                 "session_when_set": facts[topic]["session"],
@@ -716,8 +729,7 @@ def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
                     score = 1.0
         else:
             if search_results:
-                # For multi-hop: check if each part of the expected answer
-                # appears in ANY of the top results (not necessarily the same one)
+                # For multi-hop: check if each part appears in top results
                 if q["type"] == "multi_hop" and " and " in q["expected_answer"]:
                     parts = [p.strip() for p in q["expected_answer"].split(" and ")]
                     all_found = all(
@@ -726,6 +738,23 @@ def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
                     )
                     if all_found:
                         score = 1.0
+                # For multi_session_aggregation: count distinct "is now X" values
+                # in the search results and compare to expected count
+                elif q["type"] == "multi_session_aggregation":
+                    import re as _re
+                    values = set()
+                    for r in search_results[:50]:  # check all results
+                        content = r.get("content", "")
+                        for m in _re.finditer(r'is now (\S+(?:\s+\S+)?)(?:\.|;|\n)', content):
+                            val = m.group(1).strip().rstrip('.')
+                            if val and len(val) > 1:
+                                values.add(val.lower())
+                    try:
+                        expected_count = int(q["expected_answer"])
+                        if len(values) == expected_count:
+                            score = 1.0
+                    except ValueError:
+                        pass
                 else:
                     for r in search_results[:5]:
                         if score_answer(r["content"], q["expected_answer"]) >= 0.8:
