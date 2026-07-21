@@ -38,10 +38,10 @@ If you refer to or build on this work, cite the paper using the
 - `crdt_projection.py`  — standalone reference implementation
   (no agent-specific imports; stdlib only: sqlite3, dataclasses, typing).
 - `test_pipeline.py`    — pytest unit test suite (51 tests).
-- `test_adversarial.py` — pytest adversarial and edge convergence test suite (36 tests).
+- `test_adversarial.py` — pytest adversarial and edge convergence test suite (37 tests).
 
 Reproduces all evaluation scenarios from §7 of the paper. Run
-`pytest test_pipeline.py test_adversarial.py -v`. Expected: **87 passed in <1 s**.
+`pytest test_pipeline.py test_adversarial.py -v`. Expected: **88 passed in <1 s**.
 
 ## Production alignment
 
@@ -72,7 +72,7 @@ Last verified run: 2026-07-21.
 
 ```text
 $ pytest test_pipeline.py test_adversarial.py -q
-============================== 87 passed in 0.34s ==============================
+============================== 88 passed in 0.15s ==============================
 ```
 
 If a count changes, the paper's reproducibility statement needs an update.
