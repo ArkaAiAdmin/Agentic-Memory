@@ -409,30 +409,31 @@ def log_authorization_decision(
     if not db_path:
         return
     try:
+        import json
         import time
         from pathlib import Path
-        from infra.db import open_db
+        from infra.db_write_queue import sqlite_write_queue
 
-        with open_db(Path(db_path), timeout=5.0, write=True) as conn:
-            conn.execute(
-                "INSERT INTO memory_audit_log "
-                "(tool_name, args_json, status, duration_ms, created_at) "
-                "VALUES (?, ?, ?, 0, ?)",
-                (
-                    "rbac_authorize",
-                    __import__("json").dumps({
-                        "principal_id": principal_id or "anonymous",
-                        "tenant_id": tenant_id or "default",
-                        "action": action,
-                        "resource": resource,
-                        "allowed": allowed,
-                        "note_id": note_id,
-                    }),
-                    "ok" if allowed else "denied",
-                    time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                ),
-            )
-            conn.commit()
+        future = sqlite_write_queue.enqueue_write(
+            Path(db_path),
+            "INSERT INTO memory_audit_log "
+            "(tool_name, args_json, status, duration_ms, created_at) "
+            "VALUES (?, ?, ?, 0, ?)",
+            (
+                "rbac_authorize",
+                json.dumps({
+                    "principal_id": principal_id or "anonymous",
+                    "tenant_id": tenant_id or "default",
+                    "action": action,
+                    "resource": resource,
+                    "allowed": allowed,
+                    "note_id": note_id,
+                }),
+                "ok" if allowed else "denied",
+                time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            ),
+        )
+        future.result(timeout=5.0)
     except Exception as exc:
         logger.debug("log_authorization_decision failed: %s", exc)
 

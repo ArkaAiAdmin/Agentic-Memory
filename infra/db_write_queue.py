@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import os
 import queue
 import sqlite3
 import threading
@@ -143,7 +144,11 @@ class ProxyConnection:
             # The write queue session is already in a transaction (started with BEGIN IMMEDIATE)
             return ProxyCursor(None, [], None, None)
         self._cmd_queue.put(("execute", (sql, params)))
-        status, res = self._resp_queue.get()
+        timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
+        try:
+            status, res = self._resp_queue.get(timeout=timeout)
+        except queue.Empty:
+            raise sqlite3.OperationalError("Write queue response timeout")
         if status == "error":
             raise res
         lastrowid, rowcount, fetchall_data, description = res
@@ -163,7 +168,11 @@ class ProxyConnection:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
         self._cmd_queue.put(("executemany", (sql, list(params_seq))))
-        status, res = self._resp_queue.get()
+        timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
+        try:
+            status, res = self._resp_queue.get(timeout=timeout)
+        except queue.Empty:
+            raise sqlite3.OperationalError("Write queue response timeout")
         if status == "error":
             raise res
         lastrowid, rowcount, _, description = res
@@ -173,7 +182,11 @@ class ProxyConnection:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
         self._cmd_queue.put(("executescript", sql_script))
-        status, res = self._resp_queue.get()
+        timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
+        try:
+            status, res = self._resp_queue.get(timeout=timeout)
+        except queue.Empty:
+            raise sqlite3.OperationalError("Write queue response timeout")
         if status == "error":
             raise res
         return self
@@ -182,7 +195,11 @@ class ProxyConnection:
         if self._closed:
             return
         self._cmd_queue.put(("commit", None))
-        status, res = self._resp_queue.get()
+        timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
+        try:
+            status, res = self._resp_queue.get(timeout=timeout)
+        except queue.Empty:
+            raise sqlite3.OperationalError("Write queue response timeout")
         if status == "error":
             raise res
 
@@ -190,7 +207,11 @@ class ProxyConnection:
         if self._closed:
             return
         self._cmd_queue.put(("rollback", None))
-        status, res = self._resp_queue.get()
+        timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
+        try:
+            status, res = self._resp_queue.get(timeout=timeout)
+        except queue.Empty:
+            raise sqlite3.OperationalError("Write queue response timeout")
         if status == "error":
             raise res
 
@@ -200,7 +221,7 @@ class ProxyConnection:
         self._closed = True
         self._cmd_queue.put(("close", None))
         try:
-            self._resp_queue.get()
+            self._resp_queue.get(timeout=5.0)
         except Exception:
             pass
 
@@ -236,6 +257,36 @@ class SQLiteWriteQueue:
             name="SQLiteWriteQueueThread",
         )
         self._thread.start()
+        self._sessions: dict[int, dict] = {}
+        self._sessions_lock = threading.Lock()
+
+    def _get_or_create_session_conn(self, session_id: int, db_path: Path) -> sqlite3.Connection:
+        with self._sessions_lock:
+            if session_id not in self._sessions:
+                conn = sqlite3.connect(str(db_path), timeout=30.0)
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA busy_timeout=30000")
+                conn.execute("PRAGMA foreign_keys=ON")
+                conn.execute("PRAGMA wal_autocheckpoint=500")
+                self._sessions[session_id] = {"conn": conn, "db_path": db_path}
+            return self._sessions[session_id]["conn"]
+
+    def _close_session(self, session_id: int) -> None:
+        with self._sessions_lock:
+            session = self._sessions.pop(session_id, None)
+            if session is not None:
+                try:
+                    conn = session["conn"]
+                    try:
+                        conn.commit()
+                    except Exception:
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                    conn.close()
+                except Exception:
+                    pass
 
     def start_session(self, db_path: Union[str, Path]) -> ProxyConnection:
         """Start a write session proxy that executes transactions on the write queue thread."""
@@ -293,125 +344,151 @@ class SQLiteWriteQueue:
             try:
                 from infra.db_path_flock import db_path_flock
 
-                lock_ctx = db_path_flock(db_path)
-                with lock_ctx:
-                    conn = None
+                if task_type == "session":
+                    cmd_queue, resp_queue = payload
+                    session_id = id(cmd_queue)
+                    with db_path_flock(db_path):
+                        conn = self._get_or_create_session_conn(session_id, db_path)
                     try:
-                        conn = sqlite3.connect(str(db_path), timeout=30.0)
-                        conn.execute("PRAGMA journal_mode=WAL")
-                        conn.execute("PRAGMA busy_timeout=30000")
-                        conn.execute("PRAGMA foreign_keys=ON")
-                        conn.execute("PRAGMA wal_autocheckpoint=500")
-
-                        if task_type == "statement":
-                            query, params = payload
-                            conn.execute("BEGIN IMMEDIATE")
-                            cursor = conn.execute(query, params)
-                            last_rowid = cursor.lastrowid
-                            rowcount = cursor.rowcount
-                            conn.commit()
-                            future.set_result((last_rowid, rowcount))
-
-                        elif task_type == "callback":
-                            callback = payload
-                            conn.execute("BEGIN IMMEDIATE")
-                            try:
-                                result = callback(conn)
-                                conn.commit()
-                                future.set_result(result)
-                            except Exception as cb_exc:
-                                try:
-                                    conn.rollback()
-                                except Exception:
-                                    pass
-                                raise cb_exc
-
-                        elif task_type == "session":
-                            cmd_queue, resp_queue = payload
-                            conn.execute("BEGIN IMMEDIATE")
-                            try:
-                                future.set_result(True)
-                                while True:
-                                    try:
-                                        cmd = cmd_queue.get(timeout=3600.0)
-                                    except queue.Empty:
-                                        try:
-                                            conn.rollback()
-                                        except Exception:
-                                            pass
-                                        break
-                                    if cmd is None:
-                                        conn.commit()
-                                        break
-                                    action, act_payload = cmd
-                                    try:
-                                        if action == "execute":
-                                            sql, params = act_payload
-                                            cursor = conn.execute(sql, params)
-                                            res_rows = cursor.fetchall()
-                                            resp_queue.put(
-                                                (
-                                                    "success",
-                                                    (
-                                                        cursor.lastrowid,
-                                                        cursor.rowcount,
-                                                        res_rows,
-                                                        cursor.description,
-                                                    ),
-                                                )
-                                            )
-                                        elif action == "executemany":
-                                            sql, params_seq = act_payload
-                                            cursor = conn.executemany(sql, params_seq)
-                                            resp_queue.put(
-                                                (
-                                                    "success",
-                                                    (
-                                                        cursor.lastrowid,
-                                                        cursor.rowcount,
-                                                        [],
-                                                        cursor.description,
-                                                    ),
-                                                )
-                                            )
-                                        elif action == "executescript":
-                                            sql_script = act_payload
-                                            conn.executescript(sql_script)
-                                            resp_queue.put(
-                                                ("success", (None, None, [], None))
-                                            )
-                                        elif action == "commit":
-                                            conn.commit()
-                                            conn.execute("BEGIN IMMEDIATE")
-                                            resp_queue.put(("success", None))
-                                        elif action == "rollback":
-                                            conn.rollback()
-                                            conn.execute("BEGIN IMMEDIATE")
-                                            resp_queue.put(("success", None))
-                                        elif action == "close":
-                                            conn.commit()
-                                            resp_queue.put(("success", None))
-                                            break
-                                    except Exception as q_exc:
-                                        resp_queue.put(("error", q_exc))
-                            except Exception as sess_exc:
-                                try:
-                                    conn.rollback()
-                                except Exception:
-                                    pass
-                                if not future.done():
-                                    future.set_exception(sess_exc)
-
+                        future.set_result(True)
                     except Exception as e:
-                        logger.debug("SQLiteWriteQueue error in task: %s", e)
-                        if not future.done():
-                            future.set_exception(e)
-                    finally:
-                        if conn:
+                        future.set_exception(e)
+                        continue
+
+                    idle_timeout_env = float(os.environ.get("MEMORY_WRITE_QUEUE_IDLE_S", "30.0"))
+                    while True:
+                        timeout = idle_timeout_env if conn.in_transaction else 3600.0
+                        try:
+                            cmd = cmd_queue.get(timeout=timeout)
+                        except queue.Empty:
+                            with db_path_flock(db_path):
+                                if conn.in_transaction:
+                                    try:
+                                        conn.rollback()
+                                    except Exception:
+                                        pass
+                                self._close_session(session_id)
+                            break
+
+                        if cmd is None:
+                            with db_path_flock(db_path):
+                                try:
+                                    conn.commit()
+                                except Exception:
+                                    try:
+                                        conn.rollback()
+                                    except Exception:
+                                        pass
+                                self._close_session(session_id)
+                                resp_queue.put(("success", None))
+                            break
+
+                        action, act_payload = cmd
+                        with db_path_flock(db_path):
                             try:
-                                conn.close()
-                            except Exception:
-                                pass
+                                if action == "execute":
+                                    sql, params = act_payload
+                                    if not conn.in_transaction and not sql.strip().upper().startswith("BEGIN"):
+                                        conn.execute("BEGIN IMMEDIATE")
+                                    cursor = conn.execute(sql, params)
+                                    res_rows = cursor.fetchall()
+                                    resp_queue.put(
+                                        (
+                                            "success",
+                                            (
+                                                cursor.lastrowid,
+                                                cursor.rowcount,
+                                                res_rows,
+                                                cursor.description,
+                                            ),
+                                        )
+                                    )
+                                elif action == "executemany":
+                                    sql, params_seq = act_payload
+                                    if not conn.in_transaction and not sql.strip().upper().startswith("BEGIN"):
+                                        conn.execute("BEGIN IMMEDIATE")
+                                    cursor = conn.executemany(sql, params_seq)
+                                    resp_queue.put(
+                                        (
+                                            "success",
+                                            (
+                                                cursor.lastrowid,
+                                                cursor.rowcount,
+                                                [],
+                                                cursor.description,
+                                            ),
+                                        )
+                                    )
+                                elif action == "executescript":
+                                    sql_script = act_payload
+                                    conn.executescript(sql_script)
+                                    resp_queue.put(("success", (None, None, [], None)))
+                                elif action == "commit":
+                                    if conn.in_transaction:
+                                        conn.commit()
+                                    resp_queue.put(("success", None))
+                                elif action == "rollback":
+                                    if conn.in_transaction:
+                                        conn.rollback()
+                                    resp_queue.put(("success", None))
+                                elif action == "close":
+                                    if conn.in_transaction:
+                                        try:
+                                            conn.commit()
+                                        except Exception:
+                                            try:
+                                                conn.rollback()
+                                            except Exception:
+                                                pass
+                                    self._close_session(session_id)
+                                    resp_queue.put(("success", None))
+                                    break
+                            except Exception as q_exc:
+                                resp_queue.put(("error", q_exc))
+
+                else:
+                    lock_ctx = db_path_flock(db_path)
+                    with lock_ctx:
+                        conn = None
+                        try:
+                            conn = sqlite3.connect(str(db_path), timeout=30.0)
+                            conn.execute("PRAGMA journal_mode=WAL")
+                            conn.execute("PRAGMA busy_timeout=30000")
+                            conn.execute("PRAGMA foreign_keys=ON")
+                            conn.execute("PRAGMA wal_autocheckpoint=500")
+
+                            if task_type == "statement":
+                                query, params = payload
+                                conn.execute("BEGIN IMMEDIATE")
+                                cursor = conn.execute(query, params)
+                                last_rowid = cursor.lastrowid
+                                rowcount = cursor.rowcount
+                                conn.commit()
+                                future.set_result((last_rowid, rowcount))
+
+                            elif task_type == "callback":
+                                callback = payload
+                                conn.execute("BEGIN IMMEDIATE")
+                                try:
+                                    result = callback(conn)
+                                    conn.commit()
+                                    future.set_result(result)
+                                except Exception as cb_exc:
+                                    try:
+                                        conn.rollback()
+                                    except Exception:
+                                        pass
+                                    raise cb_exc
+                        except Exception as e:
+                            logger.debug("SQLiteWriteQueue error in task: %s", e)
+                            if not future.done():
+                                future.set_exception(e)
+                        finally:
+                            if conn:
+                                try:
+                                    conn.close()
+                                except Exception:
+                                    pass
 
             except Exception as e:
                 logger.error("Fatal error in SQLiteWriteQueue run loop: %s", e)

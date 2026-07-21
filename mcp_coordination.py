@@ -18,13 +18,11 @@ logger = logging.getLogger(__name__)
 
 
 def _get_conn():
-    """Get a database connection."""
+    """Get a pooled database connection."""
     from infra.infrastructure import resolve_active_memory_dir
-    import sqlite3
-    db_path = resolve_active_memory_dir() / "memory.db"
-    conn = sqlite3.connect(str(db_path), timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    from infra.db import connection_pool
+    db_path = str(resolve_active_memory_dir() / "memory.db")
+    return connection_pool.get(db_path, timeout=10.0)
 
 
 @mcp.tool()
@@ -103,7 +101,8 @@ def memory_coordinate(
         return _err(ErrorCode.DB_ERROR, f"coordination failed: {e}")
     finally:
         try:
-            conn.close()
+            from infra.db import safe_close_db
+            safe_close_db(conn)
         except Exception:
             pass
 

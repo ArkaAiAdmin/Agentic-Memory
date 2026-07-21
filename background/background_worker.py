@@ -1037,28 +1037,29 @@ def run_worker(
         pool.run(drain=drain, max_tasks=max_tasks)
         return
 
-    # Single-threaded path
-    from infra.db_write_queue import sqlite_write_queue
-    conn = sqlite_write_queue.start_session(db_path)
-    try:
-        # Process-level safety timeout: kill the entire process if any
-        # mode (drain, once, interval) runs longer than this cap.
-        # Prevents zombie workers from holding the flock lock forever.
-        _PROCESS_TIMEOUT_S = int(
-            os.environ.get("MEMORY_WORKER_PROCESS_TIMEOUT_S", "3600")
+    # Single-threaded path — use direct pooled connections so the
+    # per-task flock is released between tasks, unblocking concurrent
+    # callers (e.g. mcp_authorize's audit INSERT).  The write-queue
+    # session mode held the flock for the entire drain/interval loop,
+    # causing 30s timeouts in any other process that needed to write.
+    from infra.db import open_db, safe_close_db
+    import signal as _proc_sig
+
+    _PROCESS_TIMEOUT_S = int(
+        os.environ.get("MEMORY_WORKER_PROCESS_TIMEOUT_S", "3600")
+    )
+
+    def _process_killer(signum, frame):
+        logger.error(
+            "worker: process exceeded %ds timeout — force-exiting",
+            _PROCESS_TIMEOUT_S,
         )
-        import signal as _proc_sig
+        os._exit(1)
 
-        def _process_killer(signum, frame):
-            logger.error(
-                "worker: process exceeded %ds timeout — force-exiting",
-                _PROCESS_TIMEOUT_S,
-            )
-            os._exit(1)
+    _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
+    _proc_sig.alarm(_PROCESS_TIMEOUT_S)
 
-        _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
-        _proc_sig.alarm(_PROCESS_TIMEOUT_S)
-
+    try:
         if drain:
             _DRAIN_MAX_WALL_S = int(
                 os.environ.get("MEMORY_WORKER_DRAIN_MAX_WALL_S", "600")
@@ -1073,19 +1074,20 @@ def run_worker(
                         processed,
                     )
                     break
-                ok = process_one_task(conn, db_path, task_type=task_type)
-                if not ok:
-                    break
-                processed += 1
-                if processed % 50 == 0:
-                    elapsed = time.time() - t_drain
-                    rate = processed / elapsed if elapsed > 0 else 0
-                    logger.info(
-                        "worker: drain progress %d/%d (%.1f tasks/sec)",
-                        processed,
-                        max_tasks,
-                        rate,
-                    )
+                with open_db(db_path, timeout=30.0, write=True, pooled=True) as conn:
+                    ok = process_one_task(conn, db_path, task_type=task_type)
+                    if not ok:
+                        break
+                    processed += 1
+                    if processed % 50 == 0:
+                        elapsed = time.time() - t_drain
+                        rate = processed / elapsed if elapsed > 0 else 0
+                        logger.info(
+                            "worker: drain progress %d/%d (%.1f tasks/sec)",
+                            processed,
+                            max_tasks,
+                            rate,
+                        )
             elapsed = time.time() - t_drain
             logger.info(
                 "worker: drain complete — processed %d tasks in %.1fs (%.1f tasks/sec)",
@@ -1093,37 +1095,29 @@ def run_worker(
                 elapsed,
                 processed / elapsed if elapsed > 0 else 0,
             )
-            # Return cleanly so callers (e.g. tests) are not killed.
-            # The write-queue thread is a daemon and does not need a
-            # force-exit; pytest/cron will close the connection pool on
-            # teardown.  Cancel the process-watchdog alarm so it does
-            # not fire after we return.
-            _proc_sig.alarm(0)
             return
         else:
             batch_size = _get_effective_batch_size()
             while not _shutdown:
                 batch_processed = 0
                 while batch_processed < batch_size:
-                    ok = process_one_task(conn, db_path, task_type=task_type)
-                    if not ok:
-                        break
-                    batch_processed += 1
+                    with open_db(db_path, timeout=30.0, write=True, pooled=True) as conn:
+                        ok = process_one_task(conn, db_path, task_type=task_type)
+                        if not ok:
+                            break
+                        batch_processed += 1
                 if once:
                     break
                 if batch_processed == 0:
                     for _ in range(interval):
                         if _shutdown:
                             break
-                        if _check_high_priority_pending(conn):
-                            break
+                        with open_db(db_path, timeout=5.0, pooled=True) as read_conn:
+                            if _check_high_priority_pending(read_conn):
+                                break
                         time.sleep(1)
     finally:
         _proc_sig.alarm(0)
-        try:
-            conn.close()
-        except Exception:
-            pass
         logger.info("worker: stopped")
 
 

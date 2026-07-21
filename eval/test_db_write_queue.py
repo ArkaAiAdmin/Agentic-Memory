@@ -16,7 +16,7 @@ from infra.db import open_db
 # 2026-07-08: bound the idle timeout so a forgotten/abandoned session
 # cannot hold the RESERVED write lock on the DB for the legacy 3600s window.
 os.environ["MEMORY_WRITE_QUEUE_IDLE_S"] = "2"
-os.environ["MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S"] = "3"
+os.environ["MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S"] = "10"
 
 from infra.db_write_queue import sqlite_write_queue  # noqa: E402
 

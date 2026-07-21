@@ -271,30 +271,29 @@ def _supplement_with_pending(db_path: Path, query: str, limit: int) -> list[dict
     if not getattr(get_config(), "write_journal", False):
         return []
     try:
-        import sqlite3 as _sqlite3
-        _conn = _sqlite3.connect(str(journal_path), timeout=30.0)
-        _conn.execute("PRAGMA busy_timeout = 30000;")
-        _conn.row_factory = _sqlite3.Row
-        _rows = _conn.execute(
-            "SELECT note_id, content, category, title_slug, tags, importance, created_at "
-            "FROM write_journal WHERE status='pending' AND content LIKE ? "
-            "ORDER BY created_at DESC LIMIT ?",
-            (f"%{query}%", limit),
-        ).fetchall()
-        _conn.close()
-        return [
-            {
-                "note_id": r["note_id"],
-                "content": r["content"],
-                "category": r["category"],
-                "title_slug": r["title_slug"],
-                "tags": json.loads(r["tags"]) if r["tags"] else [],
-                "importance": r["importance"],
-                "created_at": r["created_at"],
-                "_pending": True,
-            }
-            for r in _rows
-        ]
+        from infra.db import open_db
+        import sqlite3
+        with open_db(journal_path, timeout=30.0, pooled=True, write=False) as _conn:
+            _conn.row_factory = sqlite3.Row
+            _rows = _conn.execute(
+                "SELECT note_id, content, category, title_slug, tags, importance, created_at "
+                "FROM write_journal WHERE status='pending' AND content LIKE ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (f"%{query}%", limit),
+            ).fetchall()
+            return [
+                {
+                    "note_id": r["note_id"],
+                    "content": r["content"],
+                    "category": r["category"],
+                    "title_slug": r["title_slug"],
+                    "tags": json.loads(r["tags"]) if r["tags"] else [],
+                    "importance": r["importance"],
+                    "created_at": r["created_at"],
+                    "_pending": True,
+                }
+                for r in _rows
+            ]
     except Exception as e:
         logger.warning("Unhandled exception in _supplement_with_pending: %s", e)
         return []

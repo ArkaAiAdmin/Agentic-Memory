@@ -1,12 +1,13 @@
 """Pluggable Lock Manager for Agentic Memory.
 
-Supports local-first (SQLite system_locks) and distributed (Redis, PostgreSQL) locks.
+Supports local-first (fcntl.flock file locking), and distributed (Redis, PostgreSQL) locks.
 """
 
 from __future__ import annotations
 
 import contextlib
 import datetime
+import fcntl
 import hashlib
 import logging
 import os
@@ -14,7 +15,7 @@ import sqlite3
 import time
 import uuid
 from pathlib import Path
-from typing import Generator, Tuple
+from typing import Any, Generator, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,13 @@ class LockManager:
 
 
 class SQLiteLockManager(LockManager):
-    """Local SQLite-backed lock manager utilizing the system_locks table."""
+    """Deprecated SQLite-backed lock manager.
+
+    .. deprecated::
+        Use :class:`FlockLockManager` instead. SQLiteLockManager opens a
+        new connection to the DB it is trying to coordinate, which creates
+        a circular dependency under contention and can deadlock.
+    """
 
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
@@ -186,6 +193,78 @@ class SQLiteLockManager(LockManager):
             return False
 
 
+class FlockLockManager(LockManager):
+    """Local file-descriptor lock manager using fcntl.flock.
+
+    Replaces SQLiteLockManager to eliminate the circular dependency where
+    the lock manager opened SQLite connections to the very DB it was
+    coordinating.  flock(2) is an OS-level advisory lock held on an open
+    file descriptor; it is automatically released when the fd is closed
+    (including on process crash), so there is no risk of stale locks.
+    """
+
+    def __init__(self, base_path: str | Path):
+        self.base_path = str(base_path)
+        self._lock_fds: dict[str, int] = {}
+        self._lock_tokens: dict[str, str] = {}
+
+    def _lock_file(self, lock_name: str) -> str:
+        if "/" in lock_name or os.path.isabs(lock_name):
+            return lock_name + ".flock"
+        h = hashlib.sha256(lock_name.encode()).hexdigest()[:16]
+        return self.base_path + f".flock.{h}"
+
+    def acquire_lock(self, lock_name: str, holder_id: str, ttl_seconds: int = 60) -> Tuple[bool, str]:
+        path = self._lock_file(lock_name)
+        fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            token = str(uuid.uuid4())
+            self._lock_fds[lock_name] = fd
+            self._lock_tokens[lock_name] = token
+            return True, token
+        except (IOError, OSError):
+            os.close(fd)
+            return False, ""
+
+    def release_lock(self, lock_name: str, lease_token: str) -> bool:
+        fd = self._lock_fds.pop(lock_name, None)
+        stored_token = self._lock_tokens.pop(lock_name, None)
+        if fd is not None and stored_token == lease_token:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+            return True
+        if fd is not None:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+        return False
+
+    def renew_lock(self, lock_name: str, lease_token: str, ttl_seconds: int = 60) -> bool:
+        return lock_name in self._lock_fds and self._lock_tokens.get(lock_name) == lease_token
+
+    def is_locked(self, lock_name: str) -> bool:
+        path = self._lock_file(lock_name)
+        if not os.path.exists(path):
+            return False
+        fd = os.open(path, os.O_RDWR, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return False
+        except (IOError, OSError):
+            return True
+        finally:
+            os.close(fd)
+
+
 class RedisLockManager(LockManager):
     """Distributed Redis-backed lock manager (using Redlock patterns)."""
 
@@ -239,7 +318,7 @@ class PostgresLockManager(LockManager):
 
     def __init__(self, dsn: str):
         self.dsn = dsn
-        self._connections: dict[str, any] = {}  # lease_token -> active conn
+        self._connections: dict[str, Any] = {}  # lease_token -> active conn
 
     def _lock_key_to_int(self, lock_key: str) -> int:
         h = hashlib.sha256(lock_key.encode("utf-8")).digest()
@@ -253,7 +332,8 @@ class PostgresLockManager(LockManager):
             lock_id = self._lock_key_to_int(lock_name)
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,))
-                acquired = cur.fetchone()[0]
+                row = cur.fetchone()
+                acquired = row[0] if row is not None else False
                 if acquired:
                     token = str(uuid.uuid4())
                     self._connections[token] = conn
@@ -321,10 +401,12 @@ def get_lock_manager() -> LockManager:
         dsn = os.environ.get("MEMORY_POSTGRES_URL", "host=localhost dbname=postgres")
         _GLOBAL_LOCK_MANAGER = PostgresLockManager(dsn)
     else:
-        # Fallback to local SQLite lock
+        # Default: local file-descriptor lock (fcntl.flock).
+        # SQLiteLockManager is deprecated because it opens SQLite connections
+        # to the very DB it coordinates, creating a circular dependency.
         from infra.infrastructure import resolve_active_memory_dir
         db_path = resolve_active_memory_dir() / "memory.db"
-        _GLOBAL_LOCK_MANAGER = SQLiteLockManager(db_path)
+        _GLOBAL_LOCK_MANAGER = FlockLockManager(db_path)
 
     return _GLOBAL_LOCK_MANAGER
 
