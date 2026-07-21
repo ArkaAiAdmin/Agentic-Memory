@@ -1187,7 +1187,10 @@ def _graph_rag_expand(query: str, db_path: Path, conn=None) -> list[str]:
     community_id in kg_entities, prefer expansion terms from the same
     community to reduce cross-topic false positives.
     """
-    import search_pipeline
+    try:
+        import search_pipeline
+    except ImportError:
+        return []
 
     if not getattr(search_pipeline, "_GRAPH_RAG_ENABLED", False):
         return []

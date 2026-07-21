@@ -1129,11 +1129,14 @@ def search_memories(
             hybrid = False
 
         elif mode == "semantic":
-            from search import search_pipeline as _sp_mod
-            results = _sp_mod._fallback_embedding_search(
-                db, normalized_query, db_path, limit * 5 if _effective_rerank else limit, repo_filter, category,
-                tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
-            )
+            try:
+                from search import search_pipeline as _sp_mod
+                results = _sp_mod._fallback_embedding_search(
+                    db, normalized_query, db_path, limit * 5 if _effective_rerank else limit, repo_filter, category,
+                    tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
+                )
+            except ImportError:
+                results = []
             _record_phase_latency("search.embedding_fallback", _t0)
             if include_facts:
                 _t0_kg = time.time()
@@ -1239,12 +1242,15 @@ def search_memories(
         if not results:
             _is_opaque = bool(re.fullmatch(r"[A-Za-z0-9_\-]{6,}", query or ""))
             if not _is_opaque and mode == "hybrid":
-                from search import search_pipeline as _sp_mod2
-                _t0 = time.time()
-                results = _sp_mod2._fallback_embedding_search(
-                    db, normalized_query, db_path, limit, repo_filter, category,
-                    tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
-                )
+                try:
+                    from search import search_pipeline as _sp_mod2
+                    _t0 = time.time()
+                    results = _sp_mod2._fallback_embedding_search(
+                        db, normalized_query, db_path, limit, repo_filter, category,
+                        tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
+                    )
+                except ImportError:
+                    results = []
                 _record_phase_latency("search.embedding_fallback", _t0)
             if not results:
                 try:

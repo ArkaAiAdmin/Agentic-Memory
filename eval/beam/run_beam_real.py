@@ -205,38 +205,97 @@ def run_search(db_path: Path, query: str, limit: int = 20) -> list[str]:
     return [r["id"] for r in result.get("results", [])]
 
 
-def score_answer(answer_text: str, expected: str, rubric: list[str] = None) -> float:
-    """Score an answer using token overlap and rubric matching."""
-    if not expected:
+def _check_indicator(answer_lower: str, indicator: str) -> bool:
+    """Check if a compliance indicator is present in the answer.
+
+    Extracts key phrases from the indicator and checks if they appear.
+    Handles indicators like "uses or references AWS EC2 cost of $0.11/hour"
+    by checking for the key content phrases.
+    """
+    ind_lower = indicator.lower().strip()
+
+    # Direct substring check first
+    if ind_lower in answer_lower:
+        return True
+
+    # Extract key numeric values and check they appear
+    import re
+    nums = re.findall(r'[\d,]+\.?\d*', ind_lower)
+    if nums:
+        nums_found = all(n.replace(',', '') in answer_lower.replace(',', '') for n in nums)
+        # Also need at least some content words
+        words = [w for w in ind_lower.split() if len(w) > 3 and w not in ('should', 'contains', 'include', 'refer', 'using', 'their', 'that', 'with', 'from', 'have', 'this')]
+        words_found = sum(1 for w in words if w in answer_lower)
+        return nums_found and words_found >= max(1, len(words) // 2)
+
+    # For non-numeric indicators, check content words
+    words = [w for w in ind_lower.split() if len(w) > 3 and w not in ('should', 'contains', 'include', 'refer', 'using', 'their', 'that', 'with', 'from', 'have', 'this')]
+    if not words:
+        return False
+    words_found = sum(1 for w in words if w in answer_lower)
+    return words_found >= max(1, len(words) * 2 // 3)
+
+
+def score_answer(
+    answer_text: str,
+    expected: str,
+    rubric: list[str] = None,
+    compliance_indicators: list[str] = None,
+    non_compliance_signs: list[str] = None,
+    ability_type: str = None,
+) -> float:
+    """Score an answer using token overlap, rubric matching, and compliance indicators."""
+    if not expected and not compliance_indicators and not rubric:
         return 0.0
 
     answer_lower = answer_text.lower().strip()
-    expected_lower = expected.lower().strip()
+    expected_lower = (expected or "").lower().strip()
 
     # Exact match
-    if answer_lower == expected_lower:
+    if expected_lower and answer_lower == expected_lower:
         return 1.0
 
     # Substring match
-    if expected_lower in answer_lower:
+    if expected_lower and expected_lower in answer_lower:
         return 1.0
+
+    # Compliance indicators scoring (preference_following)
+    if compliance_indicators and len(compliance_indicators) > 0:
+        hits = sum(1 for ind in compliance_indicators if _check_indicator(answer_lower, ind))
+        ratio = hits / len(compliance_indicators)
+        # Need at least 50% of indicators present
+        if ratio >= 0.5:
+            return 1.0
+        if ratio >= 0.25:
+            return 0.5 + 0.5 * (ratio - 0.25) / 0.25
+        return ratio * 2  # 0-0.5 based on how many indicators hit
+
+    # Rubric-based scoring — extract content after "LLM response should contain: " prefix
+    if rubric and len(rubric) > 0:
+        cleaned = []
+        for r in rubric:
+            # Strip "LLM response should contain: " prefix
+            if "should contain:" in r.lower():
+                r = r.split(":", 1)[1].strip() if ":" in r else r
+            cleaned.append(r)
+        hits = sum(1 for r in cleaned if _check_indicator(answer_lower, r))
+        ratio = hits / len(cleaned)
+        if ratio >= 0.5:
+            return 1.0
+        if ratio >= 0.25:
+            return 0.5 + 0.5 * (ratio - 0.25) / 0.25
+        return ratio * 2
 
     # Token overlap
-    answer_tokens = set(answer_lower.split())
-    expected_tokens = set(expected_lower.split())
-    overlap = answer_tokens & expected_tokens
-    if expected_tokens and len(overlap) / len(expected_tokens) >= 0.6:
-        return 1.0
-
-    # Rubric-based scoring (if available)
-    if rubric:
-        rubric_hits = sum(1 for r in rubric if r.lower() in answer_lower)
-        if rubric_hits >= len(rubric) * 0.5:
+    if expected_lower:
+        answer_tokens = set(answer_lower.split())
+        expected_tokens = set(expected_lower.split())
+        overlap = answer_tokens & expected_tokens
+        if expected_tokens and len(overlap) / len(expected_tokens) >= 0.6:
             return 1.0
+        if expected_tokens:
+            return len(overlap) / len(expected_tokens)
 
-    # Partial match
-    if expected_tokens:
-        return len(overlap) / len(expected_tokens)
     return 0.0
 
 
@@ -299,11 +358,14 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
                 expected = (
                     q.get("ideal_response")
                     or q.get("ideal_answer")
+                    or q.get("ideal_summary")
                     or q.get("answer")
                     or q.get("expected_compliance")
                     or ""
                 )
                 rubric = q.get("rubric", [])
+                compliance_indicators = q.get("compliance_indicators", [])
+                non_compliance_signs = q.get("non_compliance_signs", [])
                 difficulty = q.get("difficulty", "unknown")
 
                 # Search
@@ -325,7 +387,14 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
 
                 # Score against expected answer
                 combined_content = " ".join(retrieved_content)
-                score = score_answer(combined_content, expected, rubric)
+                score = score_answer(
+                    combined_content,
+                    expected,
+                    rubric=rubric,
+                    compliance_indicators=compliance_indicators,
+                    non_compliance_signs=non_compliance_signs,
+                    ability_type=ability_type,
+                )
 
                 results.append({
                     "conversation_id": cid,
