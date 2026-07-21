@@ -1257,6 +1257,8 @@ def search_memories(
                     category=category or None,
                     prefilter_ids=None,
                 )
+                import sys
+                print(f"DEBUG after _fts_search: len={len(results)} results={results}", file=sys.stderr)
                 _record_phase_latency("search.fts", _t0)
                 if include_facts:
                     _t0_kg = time.time()

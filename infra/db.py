@@ -349,15 +349,21 @@ class _ConnectionPool:
                         self._depth.pop(key, None)
                         self._inodes.pop(key, None)
                     else:
-                        t_id = tenant_id or "default"
-                        try:
-                            conn.create_function("tenant_id", 0, lambda: t_id)
-                            conn.execute(
-                                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
-                                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-                            )
-                        except Exception:
-                            pass
+                        # Only update tenant_id when explicitly provided.
+                        # Many callers don't pass tenant_id — they should
+                        # not reset the VIEW to 'default' and break queries
+                        # that relied on a previous tenant setting.
+                        if tenant_id is not None:
+                            t_id = tenant_id
+                            try:
+                                conn.create_function("tenant_id", 0, lambda: t_id)
+                                conn.execute("DROP VIEW IF EXISTS tenant_memories")
+                                conn.execute(
+                                    "CREATE TEMP VIEW tenant_memories AS "
+                                    "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+                                )
+                            except Exception:
+                                pass
                         return conn
             # Reuse an idle connection from another thread holding the same path
             for other_key in list(self._pool):
@@ -394,8 +400,9 @@ class _ConnectionPool:
                     t_id = tenant_id or "default"
                     try:
                         candidate.create_function("tenant_id", 0, lambda: t_id)
+                        candidate.execute("DROP VIEW IF EXISTS tenant_memories")
                         candidate.execute(
-                            "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                            "CREATE TEMP VIEW tenant_memories AS "
                             "SELECT * FROM memories WHERE tenant_id = tenant_id()"
                         )
                     except Exception:
@@ -451,8 +458,9 @@ class _ConnectionPool:
         t_id = tenant_id or "default"
         try:
             conn.create_function("tenant_id", 0, lambda: t_id)
+            conn.execute("DROP VIEW IF EXISTS tenant_memories")
             conn.execute(
-                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                "CREATE TEMP VIEW tenant_memories AS "
                 "SELECT * FROM memories WHERE tenant_id = tenant_id()"
             )
         except Exception:
@@ -804,8 +812,9 @@ def open_db(
             try:
                 if isinstance(conn, sqlite3.Connection):
                     conn.create_function("tenant_id", 0, lambda: t_id)
+                conn.execute("DROP VIEW IF EXISTS tenant_memories")
                 conn.execute(
-                    "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                    "CREATE TEMP VIEW tenant_memories AS "
                     "SELECT * FROM memories WHERE tenant_id = tenant_id()"
                 )
             except Exception:
@@ -876,8 +885,9 @@ def open_db(
             t_id = tenant_id or "default"
             try:
                 conn.create_function("tenant_id", 0, lambda: t_id)
+                conn.execute("DROP VIEW IF EXISTS tenant_memories")
                 conn.execute(
-                    "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                    "CREATE TEMP VIEW tenant_memories AS "
                     "SELECT * FROM memories WHERE tenant_id = tenant_id()"
                 )
             except Exception:
