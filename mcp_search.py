@@ -329,24 +329,22 @@ def memory_session_start(query: str = "") -> str:
         return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
     try:
         embedding_status = ""
-        try:
-            from infra.embedding_search import get_embedding_search
-
-            es = get_embedding_search()
-            if es._model_load_failed:
-                embedding_status = (
-                    "\n**⚠️  Embedding model failed to load.** "
-                    "Semantic search is degraded to FTS5-only mode. "
-                    "Install model2vec: `pip install model2vec` "
-                    "and ensure network access to HuggingFace."
-                )
-            elif not es._model_loaded and not es.wait_for_model(timeout_s=2.0):
-                embedding_status = (
-                    "\n**⚠️  Embedding model loading…** "
-                    "Semantic search not yet available; using FTS5."
-                )
-        except Exception:
-            pass
+        if query:
+            try:
+                from infra.embedding_search import get_embedding_search
+                es = get_embedding_search()
+                if es._model_load_failed:
+                    embedding_status = (
+                        "\n**⚠️  Embedding model failed to load.** "
+                        "Semantic search is degraded to FTS5-only mode."
+                    )
+                elif not es._model_loaded:
+                    embedding_status = (
+                        "\n**⚠️  Embedding model loading…** "
+                        "Semantic search not yet available; using FTS5."
+                    )
+            except Exception:
+                pass
         recall = recall_context(
             db_path=str(db_path),
             query=query,
