@@ -115,6 +115,17 @@ def extract_conversation_content(chat_data: list) -> list[dict]:
 # Memory ingestion
 # ---------------------------------------------------------------------------
 
+def _get_db_connection(db_path: Path, tenant_id: str = "beam") -> sqlite3.Connection:
+    """Get a SQLite connection with tenant_id function and views registered."""
+    conn = sqlite3.connect(str(db_path))
+    conn.create_function("tenant_id", 0, lambda: tenant_id)
+    conn.execute(
+        "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+        "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+    )
+    return conn
+
+
 def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
     """Ingest a BEAM conversation as memory notes.
 
@@ -148,7 +159,7 @@ def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
         chunks.append("\n".join(current_chunk))
 
     # Ingest chunks as memory notes
-    conn = sqlite3.connect(str(db_path))
+    conn = _get_db_connection(db_path)
     session_map = {}
     try:
         for idx, chunk in enumerate(chunks):
@@ -164,17 +175,13 @@ def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
                  timestamp, timestamp, timestamp),
             )
             # FTS index
-            rowid = conn.execute(
-                "SELECT rowid FROM memories WHERE id = ?", (memory_id,)
-            ).fetchone()
-            if rowid:
-                try:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO memories_fts (rowid, content) VALUES (?, ?)",
-                        (rowid[0], chunk),
-                    )
-                except Exception:
-                    pass
+            try:
+                conn.execute(
+                    "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
+                    (memory_id, chunk),
+                )
+            except Exception:
+                pass
             session_map[f"chunk_{idx:04d}"] = memory_id
         conn.commit()
     finally:
@@ -259,7 +266,7 @@ def score_answer(
     if expected_lower and expected_lower in answer_lower:
         return 1.0
 
-    # Compliance indicators scoring (preference_following)
+    # Compliance indicators scoring (preference_following, instruction_following)
     if compliance_indicators and len(compliance_indicators) > 0:
         hits = sum(1 for ind in compliance_indicators if _check_indicator(answer_lower, ind))
         ratio = hits / len(compliance_indicators)
@@ -270,23 +277,40 @@ def score_answer(
             return 0.5 + 0.5 * (ratio - 0.25) / 0.25
         return ratio * 2  # 0-0.5 based on how many indicators hit
 
-    # Rubric-based scoring — extract content after "LLM response should contain: " prefix
+    # Rubric-based scoring — use _check_indicator for "should contain" items
+    # but fall back to token overlap for full-sentence rubrics (abstention, etc.)
     if rubric and len(rubric) > 0:
-        cleaned = []
-        for r in rubric:
-            # Strip "LLM response should contain: " prefix
-            if "should contain:" in r.lower():
-                r = r.split(":", 1)[1].strip() if ":" in r else r
-            cleaned.append(r)
-        hits = sum(1 for r in cleaned if _check_indicator(answer_lower, r))
-        ratio = hits / len(cleaned)
-        if ratio >= 0.5:
-            return 1.0
-        if ratio >= 0.25:
-            return 0.5 + 0.5 * (ratio - 0.25) / 0.25
-        return ratio * 2
+        # Determine if rubrics are short factual claims or full sentences
+        avg_len = sum(len(r) for r in rubric) / len(rubric)
+        if avg_len < 80:
+            # Short rubrics — use indicator matching
+            cleaned = []
+            for r in rubric:
+                if "should contain:" in r.lower() or "should state:" in r.lower():
+                    r = r.split(":", 1)[1].strip() if ":" in r else r
+                cleaned.append(r)
+            hits = sum(1 for r in cleaned if _check_indicator(answer_lower, r))
+            ratio = hits / len(cleaned)
+            if ratio >= 0.5:
+                return 1.0
+            if ratio >= 0.25:
+                return 0.5 + 0.5 * (ratio - 0.25) / 0.25
+            return ratio * 2
+        else:
+            # Long rubrics (full sentences) — use token overlap
+            all_tokens = set()
+            for r in rubric:
+                all_tokens.update(r.lower().split())
+            answer_tokens = set(answer_lower.split())
+            overlap = answer_tokens & all_tokens
+            if all_tokens:
+                ratio = len(overlap) / len(all_tokens)
+                if ratio >= 0.6:
+                    return 1.0
+                return ratio
+            return 0.0
 
-    # Token overlap
+    # Token overlap against expected answer
     if expected_lower:
         answer_tokens = set(answer_lower.split())
         expected_tokens = set(expected_lower.split())
@@ -377,7 +401,7 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
                 retrieved_content = []
                 if retrieved:
                     conn = sqlite3.connect(str(db_path))
-                    for mid in retrieved[:5]:
+                    for mid in retrieved[:10]:
                         row = conn.execute(
                             "SELECT content FROM memories WHERE id = ?", (mid,)
                         ).fetchone()
