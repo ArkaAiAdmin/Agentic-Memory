@@ -65,7 +65,7 @@ BASELINES = {
 # Synthetic conversation generator
 # ---------------------------------------------------------------------------
 
-def generate_evolving_facts(num_sessions: int, seed: int = 42) -> list[dict[str, Any]]:
+def generate_evolving_facts(num_sessions: int, seed: int = 42) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Generate a synthetic conversation with evolving facts over time.
 
     Each session contains facts that may change over time, testing whether
@@ -586,7 +586,7 @@ def create_test_db(db_path: Path) -> sqlite3.Connection:
 
 
 def save_memory_to_db(conn: sqlite3.Connection, content: str, category: str = "sessions",
-                     title_slug: str = "", tags: list[str] = None,
+                     title_slug: str = "", tags: list[str] | None = None,
                      observed_at: str | None = None) -> str:
     """Save a memory to the test database using the full schema."""
     memory_id = f"beam/{title_slug}" if title_slug else str(uuid.uuid4())
@@ -840,11 +840,14 @@ def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
         print(f"  Our Accuracy: {accuracy:.2%}")
         print(f"  Difference: {accuracy - BASELINES['Cognee'][scale]:+.2%}")
 
-    print(f"\nResults saved to: {RESULTS_PATH}")
-
-    # Save results
+    # Save results to scale-specific file (preserves all scales with --all-scales)
+    scale_results_path = RESULTS_DIR / f"beam-run-{scale}.json"
+    with open(scale_results_path, "w") as f:
+        json.dump(report, f, indent=2)
+    # Also save to shared path (last scale written wins — backward compat)
     with open(RESULTS_PATH, "w") as f:
         json.dump(report, f, indent=2)
+    print(f"\nResults saved to: {scale_results_path}")
 
     conn.close()
     return report
@@ -890,7 +893,19 @@ def main():
         print("BEAM Evaluation Summary (All Scales)")
         print(f"{'='*60}")
         for r in reports:
-            print(f"{r['scale']}: {r['metrics']['accuracy']:.2%} accuracy")
+            print(f"{r['scale']}: {r['metrics']['accuracy']:.2%} accuracy ({r['metrics']['num_questions']} questions, avg {r['metrics']['avg_latency_ms']:.0f}ms)")
+
+        # Write combined summary
+        combined = {
+            "benchmark": "BEAM",
+            "version": "3.0",
+            "timestamp": reports[0]["timestamp"] if reports else "",
+            "scales": {r["scale"]: r["metrics"] for r in reports},
+            "type_accuracy": {r["scale"]: r.get("type_accuracy", {}) for r in reports},
+        }
+        with open(RESULTS_DIR / "beam-run-summary.json", "w") as f:
+            json.dump(combined, f, indent=2)
+        print(f"\nCombined summary saved to: {RESULTS_DIR / 'beam-run-summary.json'}")
     else:
         run_beam_evaluation(args.scale, args.seed)
 
