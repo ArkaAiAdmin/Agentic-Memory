@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+title: "Conflict-Free Knowledge Graph Projection: A Three-Phase CRDT Pipeline for Multi-Agent Memory Systems"
+authors:
+  - family-names: "Sadhu"
+    given-names: "Subrata"
+preferred-citation:
+  type: article
+  title: "Conflict-Free Knowledge Graph Projection"
+  authors:
+    - family-names: "Sadhu"
+      given-names: "Subrata"
+  repository-code: "https://github.com/ArkaAiAdmin/agentic-memory-paper"
+  date-released: "2026-07-16"
+  version: "4"
+  license: "CC-BY-4.0"
+date-released: "2026-07-16"
+version: "4"
+repository-code: "https://github.com/ArkaAiAdmin/agentic-memory-paper"
+license: "Apache-2.0"
+license-url: "https://github.com/ArkaAiAdmin/agentic-memory-paper/blob/main/LICENSE"
+type: article
+keywords:
+  - "knowledge graph"
+  - "CRDT"
+  - "multi-agent"
+  - "local-first"
+  - "conflict resolution"
+  - "2P-Set"
+  - "LWW-Register"
+  - "version vector"
