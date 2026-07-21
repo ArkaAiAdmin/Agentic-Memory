@@ -254,7 +254,12 @@ def _temporal_decay_factor(
     temporal decay).  Returns a value in [0, 1] where 1 = brand new,
     0 = very old.
     """
-    if _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential") == "off":
+    # Resolve config values once (not per-call via _sp_lazy sys.modules lookup)
+    _td_mode = _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential")
+    _fc_enabled = _sp_lazy("_FORGETTING_CURVE_ENABLED", False)
+    _fc_half_life = _sp_lazy("_FORGETTING_CURVE_HALF_LIFE", 30)
+
+    if _td_mode == "off":
         return 1.0
     if as_of is not None:
         now_ts = as_of
@@ -262,23 +267,22 @@ def _temporal_decay_factor(
         now_ts = time.time()
 
     # Forgetting curve: decay based on last_accessed
-    if _sp_lazy("_FORGETTING_CURVE_ENABLED", False) and last_accessed:
+    if _fc_enabled and last_accessed:
         try:
             la_dt = datetime.fromisoformat(last_accessed)
             if la_dt.tzinfo is None:
                 la_dt = la_dt.replace(tzinfo=timezone.utc)
             la_ts = la_dt.timestamp()
             age_days = max(0.0, (now_ts - la_ts) / 86400.0)
-            fc_half_life = _sp_lazy("_FORGETTING_CURVE_HALF_LIFE", 30)
         except (ValueError, TypeError):
             # Fall through to created-based decay
             pass
         else:
-            if _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential") == "linear":
+            if _td_mode == "linear":
                 return max(
-                    0.0, 1.0 - float(age_days) / (3.0 * float(cast(float, fc_half_life)))
+                    0.0, 1.0 - float(age_days) / (3.0 * float(cast(float, _fc_half_life)))
                 )
-            return float(0.5 ** (float(age_days) / float(cast(float, fc_half_life))))
+            return float(0.5 ** (float(age_days) / float(cast(float, _fc_half_life))))
 
     # Standard decay based on created timestamp
     if not created:
@@ -291,8 +295,9 @@ def _temporal_decay_factor(
         age_days = max(0.0, (now_ts - c_ts) / 86400.0)
     except (ValueError, TypeError):
         return 1.0
-    hl = half_life if half_life is not None else float(cast(float, _sp_lazy("_TEMPORAL_DECAY_HALF_LIFE", 180)))
-    if _sp_lazy("_TEMPORAL_DECAY_MODE", "exponential") == "linear":
+    _td_half_life = _sp_lazy("_TEMPORAL_DECAY_HALF_LIFE", 180)
+    hl = half_life if half_life is not None else float(cast(float, _td_half_life))
+    if _td_mode == "linear":
         return max(
             0.0,
             1.0

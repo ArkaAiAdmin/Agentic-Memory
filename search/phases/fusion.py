@@ -124,16 +124,18 @@ def _hybrid_fusion(
                     _corpus_size_cache[_cache_key] = (_now, _corpus_size)
         except Exception:
             _corpus_size = 1000
+        from search.config import get_search_config
+        _sc = get_search_config()
         _base_overfetch = int(getattr(get_config(), "hybrid_semantic_overfetch", 3))
         _overfetch = compute_adaptive_overfetch(_corpus_size, _base_overfetch)
-        _rrf_k = int(getattr(get_config(), "hybrid_rrf_k", 60))
-        _rank_scale = float(getattr(get_config(), "hybrid_rank_proxy_scale", 30.0))
-        _fts_w = float(getattr(get_config(), "hybrid_fts_weight", 1.0))
-        _sem_w = float(getattr(get_config(), "hybrid_semantic_weight", 1.0))
+        _rrf_k = int(getattr(_sc, "hybrid_rrf_k", 60))
+        _rank_scale = float(getattr(_sc, "hybrid_rank_proxy_scale", 30.0))
+        _fts_w = float(getattr(_sc, "hybrid_fts_weight", 1.0))
+        _sem_w = float(getattr(_sc, "hybrid_semantic_weight", 1.0))
         if embedding_weight_override is not None:
             _sem_w = embedding_weight_override
-        _chunk_fts_w = float(getattr(get_config(), "hybrid_chunk_fts_weight", 0.8))
-        _splade_w = float(getattr(get_config(), "hybrid_splade_weight", 0.6))
+        _chunk_fts_w = float(getattr(_sc, "hybrid_chunk_fts_weight", 0.8))
+        _splade_w = float(getattr(_sc, "hybrid_splade_weight", 0.6))
         _es_results = _es.search(normalized_query, db_path, limit=limit * _overfetch)
         if not isinstance(_es_results, list):
             _es_results = []

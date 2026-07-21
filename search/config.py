@@ -53,6 +53,11 @@ class SearchConfig(BaseModel):
     embedding_score_threshold: float = 0.25
     embedding_prefilter_enabled: bool = True
     embedding_prefilter_k: int = 200
+    # Adaptive: these scale with corpus size for better precision/recall tradeoff
+    embedding_prefilter_k_small: int = 50     # for corpora < 1000 notes
+    embedding_prefilter_k_large: int = 500    # for corpora > 10000 notes
+    embedding_threshold_small: float = 0.35   # higher threshold for small corpora (less noise)
+    embedding_threshold_large: float = 0.20   # lower threshold for large corpora (more recall)
     temporal_decay_weight: float = 0.15
     entity_boost_factor: float = 1.15
     inference_embedding_downweight: float = 0.3
@@ -131,6 +136,14 @@ def _build_search_config() -> SearchConfig:
         ),
         inference_embedding_downweight=_coerce_float(
             getattr(cfg, "inference_embedding_downweight", 0.3), 0.3
+        ),
+        embedding_prefilter_k_small=int(getattr(cfg, "embedding_prefilter_k_small", 50)),
+        embedding_prefilter_k_large=int(getattr(cfg, "embedding_prefilter_k_large", 500)),
+        embedding_threshold_small=_coerce_float(
+            getattr(cfg, "embedding_threshold_small", 0.35), 0.35
+        ),
+        embedding_threshold_large=_coerce_float(
+            getattr(cfg, "embedding_threshold_large", 0.20), 0.20
         ),
     )
 
