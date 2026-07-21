@@ -877,7 +877,7 @@ def search_memories(
         _bare_tokens = [w for w in _re.findall("[\\w@\\#\\.\\+\\-]+", normalized_query, flags=_re.UNICODE)
                         if w.lower() not in _STOP_WORDS and len(w) > 1]
         if _bare_tokens:
-            fts_query = " AND ".join(f'"{t}"' for t in _bare_tokens)
+            fts_query = " OR ".join(f'"{t}"' for t in _bare_tokens)
         else:
             fts_query = ""
         bare_text = " ".join(_bare_tokens)
