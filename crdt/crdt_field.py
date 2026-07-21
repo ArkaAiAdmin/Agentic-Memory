@@ -79,6 +79,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+try:
+    from save_pipeline import SaveValidationError
+except ImportError:
+    class SaveValidationError(Exception):  # type: ignore[no-redef]
+        """Fallback exception class when save_pipeline is unimportable."""
+        pass
+
 # The set of fields we replicate as CRDTs. Keep this list small and
 # stable — adding a field is a schema change, removing one is
 # allowed (reads just skip missing fields).
@@ -780,28 +787,28 @@ def crdt_field_save(
     # remote peer content enters via pull_from_peer → crdt_field_save
     # without passing through the injection-defense layer.
     try:
-        from save_pipeline import _scan_for_injection_or_skip, SaveValidationError  # type: ignore
+        from save_pipeline import _scan_for_injection_or_skip  # type: ignore
 
         if _scan_for_injection_or_skip is not None:
             _scan_for_injection_or_skip(content, category or "", note_id)
-    except Exception as e:
-        if e.__class__.__name__ == "SaveValidationError":
-            logger.warning(
-                "crdt_field_save: rejected injection-suspicious content from %s for %s: %s",
-                remote_agent_id,
-                note_id,
-                e,
-            )
-            return {
-                "applied": False,
-                "rejected": True,
-                "conflict": False,
-                "policy_used": None,
-                "fields_applied": [],
-                "archived_id": None,
-                "conflict_id": None,
-            }
-        logger.debug("crdt_field_save: injection scan failed (benign): %s", e)
+    except SaveValidationError as e:
+        logger.warning(
+            "crdt_field_save: rejected injection-suspicious content from %s for %s: %s",
+            remote_agent_id,
+            note_id,
+            e,
+        )
+        return {
+            "applied": False,
+            "rejected": True,
+            "conflict": False,
+            "policy_used": None,
+            "fields_applied": [],
+            "archived_id": None,
+            "conflict_id": None,
+        }
+    except Exception as _inject_exc:
+        logger.debug("crdt_field_save: injection scan failed (benign): %s", _inject_exc)
 
     now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
     tags = tags or "[]"
