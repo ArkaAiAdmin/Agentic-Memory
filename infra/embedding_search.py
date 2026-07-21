@@ -1681,15 +1681,15 @@ if __name__ == "__main__":
     results = searcher.search(query, db_path, limit)
 
     if isinstance(results, str):
-        print(results)
+        logger.info(results)
     else:
-        print(f"\nSemantic search results for: '{query}' (Top {len(results)})")
-        print("=" * 80)
+        logger.info("Semantic search results for: '%s' (Top %d)", query, len(results))
+        logger.info("=" * 80)
         for i, r in enumerate(results, 1):
-            print(f"[{i}] {r['id']}  (Score: {r['score']:.4f})")
-            print(f"    Source: memory/{r['source']}")
-            print(f"    Tags: {', '.join(r['tags'])}")
-            print("-" * 80)
+            logger.info("[%d] %s  (Score: %.4f)", i, r['id'], r['score'])
+            logger.info("    Source: memory/%s", r['source'])
+            logger.info("    Tags: %s", ', '.join(r['tags']))
+            logger.info("-" * 80)
 
 
 from infra.memory_common import make_lazy_getattr

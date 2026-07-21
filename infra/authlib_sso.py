@@ -391,8 +391,8 @@ def _local(tag: str) -> str:
 def _safe_parse(xml_bytes: bytes) -> ET.Element:
     """Parse XML with entity expansion disabled (XXE-safe)."""
     try:
-        from defusedxml.ElementTree import fromstring as _fromstring  # type: ignore
-        from defusedxml.common import DefusedXmlException  # type: ignore
+        from defusedxml.ElementTree import fromstring as _fromstring  # type: ignore[import-untyped]
+        from defusedxml.common import DefusedXmlException  # type: ignore[import-untyped]
     except ImportError:
         text = xml_bytes.decode("utf-8", "replace")
         # Strip DOCTYPE / entity declarations — the main XXE attack surface.
@@ -496,7 +496,7 @@ def verify_saml_signature(saml_response_b64: str, cert_pem: Optional[str] = None
     closed: unsigned/!unverifiable assertions are never accepted.
     """
     try:
-        import xmlsec  # type: ignore
+        import xmlsec  # type: ignore[import-untyped]
     except ImportError as exc:  # pragma: no cover - optional dep
         raise SsoSignatureUnverified(
             "SAML signature verification requires 'pyxmlsec' (xmlsec1). "
@@ -505,7 +505,7 @@ def verify_saml_signature(saml_response_b64: str, cert_pem: Optional[str] = None
         ) from exc
     # pyxmlsec path (kept optional so import stays dependency-light).
     try:
-        from lxml import etree  # type: ignore
+        from lxml import etree  # type: ignore[import-untyped]
     except ImportError as exc:  # pragma: no cover
         raise SsoSignatureUnverified(
             "SAML signature verification requires 'lxml' for canonicalization."

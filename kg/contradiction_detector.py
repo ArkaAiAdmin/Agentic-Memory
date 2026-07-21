@@ -1317,9 +1317,8 @@ if __name__ == "__main__":
         new_content = Path(positional[1]).read_text()
         root = find_project_root(Path.cwd())
         if root is None:
-            print(
+            logger.error(
                 "No project root found (no memory/, .git/, or CLAUDE.md marker).",
-                file=sys.stderr,
             )
             sys.exit(1)
         db_path = root / "memory" / "memory.db"
@@ -1330,8 +1329,8 @@ if __name__ == "__main__":
         finally:
             safe_close_db(db)
         operation, reason = classify_operation(new_content, existing_content)
-        print(f"Operation: {operation}")
-        print(f"Reason: {reason}")
+        logger.info("Operation: %s", operation)
+        logger.info("Reason: %s", reason)
     else:
         contradictions = detect_contradictions_all(
             memory_dir,
@@ -1341,13 +1340,13 @@ if __name__ == "__main__":
             tenant_id=tenant_id,
         )
         if contradictions:
-            print(f"Found {len(contradictions)} contradictions:")
+            logger.info("Found %d contradictions:", len(contradictions))
             for c in contradictions:
                 detector = c.get("detector", "unknown")
-                print(f"  [{detector}] {c['source']} -> {c['target']} ({c['type']})")
+                logger.info("  [%s] %s -> %s (%s)", detector, c['source'], c['target'], c['type'])
                 if "evidence_a" in c:
-                    print(f"    A: {c['evidence_a'][:100]}")
+                    logger.info("    A: %s", c['evidence_a'][:100])
                 if "evidence_b" in c:
-                    print(f"    B: {c['evidence_b'][:100]}")
+                    logger.info("    B: %s", c['evidence_b'][:100])
         else:
-            print("No contradictions found.")
+            logger.info("No contradictions found.")

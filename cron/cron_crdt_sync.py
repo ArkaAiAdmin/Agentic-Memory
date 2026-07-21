@@ -110,12 +110,12 @@ def main() -> int:
         db_path = Path(cfg.db_path)
 
     if not db_path.exists():
-        print(f"ERROR: memory.db not found at {db_path}")
+        logger.error("ERROR: memory.db not found at %s", db_path)
         return 1
 
     peers = cfg.sync_peers
     if not peers:
-        print("No sync peers configured. Add [[sync.peers]] to memory.toml.")
+        logger.info("No sync peers configured. Add [[sync.peers]] to memory.toml.")
         return 0
 
     from infra.sync_client import sync_with_peer
@@ -147,7 +147,7 @@ def main() -> int:
                 logger.debug("cron_crdt_sync: skipping self (%s)", peer_agent_id)
                 continue
 
-            print(f"Syncing with {peer_name} ({peer_url})...")
+            logger.info("Syncing with %s (%s)...", peer_name, peer_url)
             try:
                 result = sync_with_peer(
                     db_path=str(db_path),
@@ -160,16 +160,17 @@ def main() -> int:
                 if result.get("success"):
                     push = result.get("push", {})
                     pull = result.get("pull", {})
-                    print(
-                        f"  OK: pushed {push.get('total', 0)}, "
-                        f"pulled {pull.get('total', 0)} "
-                        f"({result.get('duration_ms', 0)}ms)"
+                    logger.info(
+                        "  OK: pushed %d, pulled %d (%dms)",
+                        push.get('total', 0),
+                        pull.get('total', 0),
+                        result.get('duration_ms', 0),
                     )
                 else:
                     err = result.get("push", {}).get("error", "") or result.get(
                         "pull", {}
                     ).get("error", "")
-                    print(f"  FAILED: {err}")
+                    logger.warning("  FAILED: %s", err)
 
                 # Sprint 2.4: Also sync KG with this peer
                 try:
@@ -181,12 +182,13 @@ def main() -> int:
                         local_agent_id=local_agent_id,
                     )
                     if kg_result.get("pulled", 0) > 0 or kg_result.get("pushed", 0) > 0:
-                        print(
-                            f"  KG: pulled {kg_result.get('pulled', 0)}, "
-                            f"pushed {kg_result.get('pushed', 0)}"
+                        logger.info(
+                            "  KG: pulled %d, pushed %d",
+                            kg_result.get('pulled', 0),
+                            kg_result.get('pushed', 0),
                         )
                     if kg_result.get("errors"):
-                        print(f"  KG errors: {kg_result['errors']}")
+                        logger.warning("  KG errors: %s", kg_result['errors'])
                 except Exception as kg_exc:
                     logger.debug("cron_crdt_sync: KG sync with %s failed: %s", peer_name, kg_exc)
 
@@ -200,17 +202,18 @@ def main() -> int:
                         local_agent_id=local_agent_id,
                     )
                     if agent_result.get("pulled", 0) > 0 or agent_result.get("pushed", 0) > 0:
-                        print(
-                            f"  Agents: pulled {agent_result.get('pulled', 0)}, "
-                            f"pushed {agent_result.get('pushed', 0)}"
+                        logger.info(
+                            "  Agents: pulled %d, pushed %d",
+                            agent_result.get('pulled', 0),
+                            agent_result.get('pushed', 0),
                         )
                     if agent_result.get("errors"):
-                        print(f"  Agent errors: {agent_result['errors']}")
+                        logger.warning("  Agent errors: %s", agent_result['errors'])
                 except Exception as agent_exc:
                     logger.debug("cron_crdt_sync: agent sync with %s failed: %s", peer_name, agent_exc)
             except Exception as e:
                 logger.error("cron_crdt_sync: sync with %s failed: %s", peer_name, e)
-                print(f"  ERROR: {e}")
+                logger.error("  ERROR: %s", e)
     finally:
         # Stop the local sync server we started for this cycle (if any).
         if server_proc is not None:
@@ -220,7 +223,7 @@ def main() -> int:
             except Exception as sp_exc:
                 logger.warning("cron_crdt_sync: stop local sync server: %s", sp_exc)
 
-    print(f"Sync cycle complete: {len(results)}/{len(peers)} peers synced.")
+    logger.info("Sync cycle complete: %d/%d peers synced.", len(results), len(peers))
     return 0
 
 

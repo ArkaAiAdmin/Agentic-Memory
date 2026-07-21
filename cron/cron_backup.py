@@ -293,28 +293,28 @@ def main() -> int:
     if "--install-cron" in args:
         result = install_cron()
         if "error" in result:
-            print(f"ERROR: {result['error']}", file=sys.stderr)
+            logger.error("ERROR: %s", result['error'])
             sys.exit(1)
-        print(f"Cron: {result['status']}")
+        logger.info("Cron: %s", result['status'])
         if "cron_line" in result:
-            print(f"  {result['cron_line']}")
+            logger.info("  %s", result['cron_line'])
         return 0
 
     if "--uninstall-cron" in args:
         result = uninstall_cron()
         if "error" in result:
-            print(f"ERROR: {result['error']}", file=sys.stderr)
+            logger.error("ERROR: %s", result['error'])
             sys.exit(1)
-        print(f"Cron: {result['status']}")
+        logger.info("Cron: %s", result['status'])
         return 0
 
     if "--cron-status" in args:
         result = cron_status()
-        print(f"Cron installed: {result['installed']}")
+        logger.info("Cron installed: %s", result['installed'])
         if "schedule" in result:
-            print(f"  Schedule: {result['schedule']}")
+            logger.info("  Schedule: %s", result['schedule'])
         if "reason" in result:
-            print(f"  Reason: {result['reason']}")
+            logger.info("  Reason: %s", result['reason'])
         return 0
 
     backup_dir = None
@@ -323,13 +323,13 @@ def main() -> int:
 
     stats = do_backup(backup_dir)
     if "error" in stats:
-        print(f"ERROR: {stats['error']}", file=sys.stderr)
+        logger.error("ERROR: %s", stats['error'])
         sys.exit(1)
 
-    print(f"Backup complete: {stats['backup_path']}")
-    print(f"  Size: {stats['backup_size']:,} bytes")
-    print(f"  Removed: {stats['removed']} old backups")
-    print(f"  Total backups: {stats['total_backups']}")
+    logger.info("Backup complete: %s", stats['backup_path'])
+    logger.info("  Size: %s bytes", f"{stats['backup_size']:,}")
+    logger.info("  Removed: %d old backups", stats['removed'])
+    logger.info("  Total backups: %d", stats['total_backups'])
     return 0
 
 

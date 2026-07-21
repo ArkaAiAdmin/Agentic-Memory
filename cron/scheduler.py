@@ -18,12 +18,15 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Ensure repo root is on sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -257,13 +260,13 @@ def main() -> int:
     now = datetime.now(timezone.utc)
 
     if list_mode:
-        print(f"{'Job':<30} {'Freq':<8} {'Next offset':<12} {'Due now':<8}")
-        print("-" * 60)
+        logger.info(f"{'Job':<30} {'Freq':<8} {'Next offset':<12} {'Due now':<8}")
+        logger.info("-" * 60)
         for name, job in sorted(JOBS.items()):
             freq = job.get("freq", "?")
             offset = job.get("offset_min", 0)
             due = _is_due(job, now)
-            print(f"{name:<30} {freq:<8} +{offset:<10}m {'YES' if due else '':<8}")
+            logger.info(f"{name:<30} {freq:<8} +{offset:<10}m {'YES' if due else '':<8}")
         return 0
 
     if status_mode:
@@ -271,14 +274,14 @@ def main() -> int:
             from cron.cron_runs import query_recent
 
             recent = query_recent(hours=24)
-            print(f"Last 24h: {recent['total_runs']} runs, {recent['successful']} ok, {recent['failed']} failed")
+            logger.info("Last 24h: %d runs, %d ok, %d failed", recent['total_runs'], recent['successful'], recent['failed'])
             if recent.get("last_failure"):
                 lf = recent["last_failure"]
-                print(f"Last failure: {lf.get('job')} at {lf.get('at')}")
+                logger.info("Last failure: %s at %s", lf.get('job'), lf.get('at'))
             for name, info in recent.get("jobs", {}).items():
-                print(f"  {name}: {info['runs']} runs, {info['failed']} failed, last={info.get('last_run', '?')}")
+                logger.info("  %s: %d runs, %d failed, last=%s", name, info['runs'], info['failed'], info.get('last_run', '?'))
         except Exception as e:
-            print(f"Error reading cron_runs: {e}")
+            logger.error("Error reading cron_runs: %s", e)
         return 0
 
     due_jobs = get_due_jobs(now)
@@ -286,25 +289,25 @@ def main() -> int:
     if not due_jobs:
         if not dry_run:
             return 0
-        print("No jobs due at", now.isoformat())
+        logger.info("No jobs due at %s", now.isoformat())
         return 0
 
     if dry_run:
-        print(f"Jobs due at {now.isoformat()}:")
+        logger.info("Jobs due at %s:", now.isoformat())
         for name in due_jobs:
             job = JOBS[name]
-            print(f"  {name}: {job.get('script', '?')} {' '.join(job.get('args', []))}")
+            logger.info("  %s: %s %s", name, job.get('script', '?'), ' '.join(job.get('args', [])))
         return 0
 
     results: dict[str, dict] = {}
     for name in due_jobs:
         job = JOBS[name]
-        print(f"[scheduler] running {name}...", flush=True)
+        logger.info("[scheduler] running %s...", name)
         result = _run_job(name, job)
         results[name] = result
         status = result.get("status", "unknown")
         dur = result.get("duration_ms", 0)
-        print(f"[scheduler] {name}: {status} ({dur}ms)", flush=True)
+        logger.info("[scheduler] %s: %s (%dms)", name, status, dur)
 
     _write_status(due_jobs, results)
     return 0
