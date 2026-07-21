@@ -58,6 +58,8 @@ class SearchConfig(BaseModel):
     embedding_prefilter_k_large: int = 500    # for corpora > 10000 notes
     embedding_threshold_small: float = 0.35   # higher threshold for small corpora (less noise)
     embedding_threshold_large: float = 0.20   # lower threshold for large corpora (more recall)
+    # RRF: lower k = stronger rank differentiation (paper default=60, tuned=45)
+    hybrid_rrf_k: int = 45
     temporal_decay_weight: float = 0.15
     entity_boost_factor: float = 1.15
     inference_embedding_downweight: float = 0.3

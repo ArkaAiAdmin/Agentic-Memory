@@ -464,7 +464,7 @@ def _apply_late_interaction_rerank(
 
 
 # ---------------------------------------------------------------------------
-# Chunk-level cross-encoder reranking (ms-marco-MiniLM-L-6-v2)
+# Chunk-level cross-encoder reranking (ms-marco-MiniLM-L-12-v2)
 # ---------------------------------------------------------------------------
 
 _CE_CHUNK_MODEL = None
@@ -503,7 +503,7 @@ def _get_best_device() -> str:
 def _get_ce_chunk_model():
     """Lazily load the cross-encoder model for chunk-level reranking.
 
-    Uses ms-marco-MiniLM-L-6-v2 — fast (1.2ms/doc) and accurate for
+    Uses ms-marco-MiniLM-L-12-v2 — 33M params, accurate for
     the current pipeline. bge-reranker-v2-m3 was tested but is 11x slower
     with no ranking improvement on the golden eval.
 
@@ -526,7 +526,7 @@ def _get_ce_chunk_model():
             from sentence_transformers import CrossEncoder
             device = _get_best_device()
             logger.debug("_get_ce_chunk_model: loading CrossEncoder on device=%r", device)
-            _CE_CHUNK_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512, device=device)
+            _CE_CHUNK_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-12-v2", max_length=512, device=device)
             _CE_CHUNK_MODEL_ERROR = None  # Clear error on success
             return _CE_CHUNK_MODEL
         except Exception as e:
