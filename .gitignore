@@ -45,7 +45,6 @@ cron/MagicMock/
 scratch/
 ts-sdk/node_modules/
 cron/.drift_cron_*.json
-paper_pipeline/
 
 # Eval results and temp files (not source)
 eval/longmemeval_s/results/
