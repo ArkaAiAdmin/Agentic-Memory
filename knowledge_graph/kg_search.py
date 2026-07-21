@@ -139,8 +139,10 @@ def _temporal_edge_clause(as_of: str | None) -> tuple[str, list]:
     inlined three times.
     """
     if as_of is not None:
+        # Half-open interval [valid_at, invalid_at): use > not >=
+        # to avoid double-validity at handoff instants.
         return (
-            " AND e.valid_at <= ? AND (e.invalid_at IS NULL OR e.invalid_at >= ?)",
+            " AND e.valid_at <= ? AND (e.invalid_at IS NULL OR e.invalid_at > ?)",
             [as_of, as_of],
         )
     return " AND e.invalid_at IS NULL", []

@@ -474,7 +474,12 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
 
     # Step 6: Apply pending migrations in a single transaction
     try:
-        # Disable foreign keys before DDL transaction
+        # NOTE (M49): PRAGMA foreign_keys = OFF inside a transaction is a
+        # no-op in SQLite.  This pragma only takes effect outside a
+        # transaction and persists for the connection's lifetime.  If the
+        # caller's connection is already inside a transaction, this is
+        # harmless but ineffective.  To truly disable FK enforcement, the
+        # pragma must be set on the connection before any BEGIN.
         try:
             conn.execute("PRAGMA foreign_keys = OFF")
         except Exception:
@@ -644,7 +649,8 @@ def migrate_down(conn: AnyConnection, target_version: int, dry_run: bool = False
         return
 
     try:
-        # Disable foreign keys before DDL transaction
+        # NOTE (M49): PRAGMA foreign_keys = OFF inside a transaction is a
+        # no-op in SQLite.  See run_migrations() for details.
         try:
             conn.execute("PRAGMA foreign_keys = OFF")
         except Exception:

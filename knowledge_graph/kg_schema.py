@@ -40,10 +40,24 @@ CREATE TABLE IF NOT EXISTS kg_edges (
     relation TEXT NOT NULL DEFAULT 'related_to',
     weight REAL DEFAULT 1.0,
     created_at TEXT,
+    -- M34: valid_at/invalid_at here are TEXT ISO timestamps (SQLite datetime),
+    -- while kg_facts uses REAL epoch seconds.  Inconsistency preserved for
+    -- backward compat; new columns should use TEXT ISO timestamps.
     valid_at TEXT,
     invalid_at TEXT,
-    UNIQUE(source_id, target_id, relation)
+    -- M38: Replaced blanket UNIQUE(source_id, target_id, relation) with a
+    -- partial index on current (non-invalidated) edges only. This allows
+    -- temporal versioning: after invalidating an edge (setting invalid_at),
+    -- a new version of the same (source, target, relation) can be inserted.
+    -- The partial index prevents duplicate current edges while allowing
+    -- historical versions to coexist.
+    valid_at TEXT,
+    invalid_at TEXT
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_edges_current
+    ON kg_edges(source_id, target_id, relation)
+    WHERE invalid_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_kg_edges_source ON kg_edges(source_id);
 CREATE INDEX IF NOT EXISTS idx_kg_edges_target ON kg_edges(target_id);

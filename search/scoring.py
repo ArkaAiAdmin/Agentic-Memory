@@ -278,11 +278,14 @@ def _temporal_decay_factor(
             # Fall through to created-based decay
             pass
         else:
+            _fc_hl = float(cast(float, _fc_half_life))
+            if _fc_hl <= 0:
+                return 1.0  # skip decay to avoid division by zero
             if _td_mode == "linear":
                 return max(
-                    0.0, 1.0 - float(age_days) / (3.0 * float(cast(float, _fc_half_life)))
+                    0.0, 1.0 - float(age_days) / (3.0 * _fc_hl)
                 )
-            return float(0.5 ** (float(age_days) / float(cast(float, _fc_half_life))))
+            return float(0.5 ** (float(age_days) / _fc_hl))
 
     # Standard decay based on created timestamp
     if not created:
@@ -297,6 +300,8 @@ def _temporal_decay_factor(
         return 1.0
     _td_half_life = _sp_lazy("_TEMPORAL_DECAY_HALF_LIFE", 180)
     hl = half_life if half_life is not None else float(cast(float, _td_half_life))
+    if hl <= 0:
+        return 1.0  # skip decay to avoid division by zero
     if _td_mode == "linear":
         return max(
             0.0,
@@ -461,9 +466,16 @@ def _apply_temporal_decay(
 
 
 def _strong_match_float(rows):
-    """Bucket ``rows`` so unambiguous FTS5 hits (bm25_score >= 0.95) come
-    first relative to the rest of the list. Within each bucket, the
-    original relative order is preserved.
+    """Bucket ``rows`` so unambiguous FTS5 hits come first relative to the
+    rest of the list. Within each bucket, the original relative order is
+    preserved.
+
+    The threshold is configurable via ``strong_bm25_threshold`` in the
+    search config (default 0.95). This is a deliberate design choice:
+    the sigmoid 1/(1+exp(rank)) maps FTS5 rank to a probability-like
+    [0,1] scale, and 0.95 selects documents where the raw FTS5 rank is
+    decisively strong relative to the corpus. The threshold is corpus-
+    independent because the sigmoid normalizes across index sizes.
     """
     global _STRONG_BM25_THRESHOLD
     if not rows:

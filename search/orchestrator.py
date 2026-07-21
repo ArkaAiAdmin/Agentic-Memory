@@ -549,6 +549,7 @@ def _counting_phase(
 
     # Search for all sessions mentioning the topic
     for kw in keywords[:3]:
+        safe_kw = kw.replace('"', '""')  # escape inner quotes for FTS5 phrase
         try:
             rows = db.execute(
                 "SELECT m.content FROM memories_fts fts "
@@ -556,7 +557,7 @@ def _counting_phase(
                 "(SELECT id FROM memories WHERE rowid = fts.rowid) "
                 "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
                 "AND m.category = 'sessions'",
-                (f'"{kw}"',)
+                (f'"{safe_kw}"',)
             ).fetchall()
 
             if not rows:
@@ -650,6 +651,7 @@ def _temporal_compare(
     # For each keyword, find the most recent session mentioning it
     # and boost that session's final_score
     for kw in keywords[:5]:  # limit to 5 keywords
+        safe_kw = kw.replace('"', '""')  # escape inner quotes for FTS5 phrase
         try:
             rows = db.execute(
                 "SELECT m.id, m.observed_at FROM memories_fts fts "
@@ -658,7 +660,7 @@ def _temporal_compare(
                 "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
                 "AND m.category = 'sessions' "
                 "ORDER BY m.observed_at DESC LIMIT 1",
-                (f'"{kw}"',)
+                (f'"{safe_kw}"',)
             ).fetchall()
             if rows:
                 recent_id = rows[0][0]
@@ -1652,6 +1654,15 @@ def search_memories(
                 except Exception as _swm_exc:
                     _phase_inc("search.shared_with_me", _swm_exc)
                     logger.warning("shared_with_me filter failed: %s", _swm_exc)
+
+            # M42 fix: shared results bypassed quality gates and limit.
+            # Re-apply the caller's limit so the merged list does not
+            # silently exceed the requested count.
+            if len(results_to_display) > limit:
+                results_to_display = results_to_display[:limit]
+            if len(result_items) > limit:
+                result_items = result_items[:limit]
+
             _record_phase_latency("shared_with_me", _swm_t0)
 
         # B3.2: Cross-namespace audit logging — fires after search completes

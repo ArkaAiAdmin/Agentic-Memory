@@ -105,6 +105,7 @@ def infer_entailment_chains(
          WHERE f.belief_status = 'active'
            AND f.locked = 0
            AND f.invalid_at IS NULL
+           AND f.is_entailed = 0
             AND f.predicate IN ({})
           LIMIT ?
         """.format(",".join("?" for _ in _ENTAILMENT_PREDICATES_LIST)),
@@ -144,6 +145,7 @@ def infer_entailment_chains(
 
         # ---- transitive inference: f1(X->Y) + f2(Y->Z) -> f3(X->Z) ----
         key = (subject.lower().strip() if subject else "", subj_eid)
+        transitive_count = 0
         for r2 in by_object.get(key, []):
             f2_id = r2[0]
             _f2_subject = r2[1]
@@ -178,11 +180,15 @@ def infer_entailment_chains(
                 "confidence": round(raw_conf, 4),
             })
             derived_count += 1
+            transitive_count += 1
+            if transitive_count >= 100:
+                break
 
 
         # ---- conjunctive inference: f1(X->A) + f1(X->B) -> f2(X related_to B) ----
         subj_key = (subject.strip().lower() if subject else "", subj_eid)
         same_subject_facts = by_subject.get(subj_key, [])
+        conjunctive_count = 0
         for (r_other, obj_other_norm) in same_subject_facts:
             other_fid = r_other[0]
             other_obj = r_other[3]
@@ -213,6 +219,9 @@ def infer_entailment_chains(
                 "confidence": round(raw_conf, 4),
             })
             derived_count += 1
+            conjunctive_count += 1
+            if conjunctive_count >= 100:
+                break
 
     if not to_insert:
         return {"derived": derived_count, "skipped": skipped_count, "errors": error_count}

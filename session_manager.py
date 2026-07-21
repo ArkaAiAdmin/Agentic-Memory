@@ -494,9 +494,79 @@ class SessionManager:
                 session=existing, active_threads=threads, recent_events=recent
             )
 
-        # --- Create new session ---
+        # --- Create new session (atomic check+insert via BEGIN IMMEDIATE) ---
+        # F3 fix: the previous TOCTOU-safe re-check still raced because the
+        # SELECT and INSERT ran on separate connections/transactions.  Wrap
+        # both in BEGIN IMMEDIATE so no concurrent caller can slip in between.
+        #
+        # FUTURE MIGRATION: add a conditional unique index to enforce at the
+        # schema level:
+        #   CREATE UNIQUE INDEX uq_active_session_per_project
+        #     ON sessions(project_root) WHERE status = 'active';
         sess_id = f"sess_{uuid.uuid4().hex[:12]}"
         now = self._now()
+        conn = None
+        try:
+            from infra.db import connection_pool
+
+            path = (
+                str(self._db_path)
+                if self._db_path
+                else str(Path.cwd() / "memory" / "memory.db")
+            )
+            conn = connection_pool.get(path, timeout=30.0)
+            conn.execute("BEGIN IMMEDIATE")
+            # Check for an existing active session within the same transaction
+            row = conn.execute(
+                "SELECT id, started_at, ended_at, project_root, agent_id, "
+                "parent_session_id, summary_note_id, status, version_vector, metadata "
+                "FROM sessions WHERE status='active' AND project_root=? "
+                "ORDER BY started_at DESC LIMIT 1",
+                (project_root,),
+            ).fetchone()
+            if row:
+                conn.execute("ROLLBACK")
+                existing = Session(
+                    id=row[0],
+                    started_at=row[1],
+                    ended_at=row[2],
+                    project_root=row[3],
+                    agent_id=row[4],
+                    parent_session_id=row[5],
+                    summary_note_id=row[6],
+                    status=row[7],
+                    version_vector=row[8] or "{}",
+                    metadata=json.loads(row[9]) if row[9] else {},
+                )
+                logger.info(
+                    "start_session: concurrent active session %s found, resuming",
+                    existing.id,
+                )
+                threads = self._load_open_threads(existing.id)
+                recent = self._load_recent_events(existing.id)
+                return SessionContext(
+                    session=existing, active_threads=threads, recent_events=recent
+                )
+            conn.execute(
+                "INSERT INTO sessions "
+                "(id, started_at, project_root, agent_id, parent_session_id, "
+                " status, version_vector, metadata) "
+                "VALUES (?, ?, ?, ?, ?, 'active', '{}', '{}')",
+                (sess_id, now, project_root, agent_id, parent_session_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            logger.warning("start_session: atomic check+insert failed: %s", exc)
+            if conn:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+        finally:
+            if conn:
+                from infra.db import safe_close_db
+                safe_close_db(conn)
+
         new_session = Session(
             id=sess_id,
             started_at=now,
@@ -506,20 +576,25 @@ class SessionManager:
             status="active",
             version_vector="{}",
         )
-        _save_system_record(
-            "sessions",
-            {
-                "id": sess_id,
-                "started_at": now,
-                "project_root": project_root,
-                "agent_id": agent_id,
-                "parent_session_id": parent_session_id,
-                "status": "active",
-                "version_vector": "{}",
-                "metadata": _scrub_metadata({}),
-            },
-            db_path=Path(self._db_path) if self._db_path else None,
-        )
+        # Best-effort markdown sidecar via _save_system_record (opens its
+        # own connection; failure is non-fatal — the DB row is authoritative).
+        try:
+            _save_system_record(
+                "sessions",
+                {
+                    "id": sess_id,
+                    "started_at": now,
+                    "project_root": project_root,
+                    "agent_id": agent_id,
+                    "parent_session_id": parent_session_id,
+                    "status": "active",
+                    "version_vector": "{}",
+                    "metadata": _scrub_metadata({}),
+                },
+                db_path=Path(self._db_path) if self._db_path else None,
+            )
+        except Exception as exc:
+            logger.warning("start_session: markdown sidecar save failed (non-fatal): %s", exc)
         logger.info("start_session: created session %s for %s", sess_id, project_root)
         return SessionContext(session=new_session)
 
@@ -575,39 +650,42 @@ class SessionManager:
             except Exception as exc:
                 logger.warning("record_event: seq lookup failed: %s", exc)
 
-        event_id = f"evt_{uuid.uuid4().hex[:12]}"
-        now = self._now()
-        event = ThreadEvent(
-            id=event_id,
-            thread_id=thread_id,
-            session_id=session_id,
-            seq=seq,
-            event_type=event_type,
-            content=content,
-            content_summary=summary,
-            memory_id=memory_id,
-            confidence=confidence,
-            created_at=now,
-            version_vector="{}",
-        )
-        _save_system_record(
-            "thread_events",
-            {
-                "id": event_id,
-                "thread_id": thread_id,
-                "session_id": session_id,
-                "seq": seq,
-                "event_type": event_type,
-                "content": content,
-                "content_summary": summary,
-                "memory_id": memory_id,
-                "confidence": confidence,
-                "created_at": now,
-                "version_vector": "{}",
-            },
-            db_path=Path(self._db_path) if self._db_path else None,
-        )
-        return event
+            # M27 fix: insert inside the same lock that computes seq to
+            # prevent TOCTOU race where two concurrent callers compute
+            # the same seq and then both insert, duplicating the row.
+            event_id = f"evt_{uuid.uuid4().hex[:12]}"
+            now = self._now()
+            event = ThreadEvent(
+                id=event_id,
+                thread_id=thread_id,
+                session_id=session_id,
+                seq=seq,
+                event_type=event_type,
+                content=content,
+                content_summary=summary,
+                memory_id=memory_id,
+                confidence=confidence,
+                created_at=now,
+                version_vector="{}",
+            )
+            _save_system_record(
+                "thread_events",
+                {
+                    "id": event_id,
+                    "thread_id": thread_id,
+                    "session_id": session_id,
+                    "seq": seq,
+                    "event_type": event_type,
+                    "content": content,
+                    "content_summary": summary,
+                    "memory_id": memory_id,
+                    "confidence": confidence,
+                    "created_at": now,
+                    "version_vector": "{}",
+                },
+                db_path=Path(self._db_path) if self._db_path else None,
+            )
+            return event
 
     # ------------------------------------------------------------------
     # resolve_thread (Sprint 2, Task 2.5)

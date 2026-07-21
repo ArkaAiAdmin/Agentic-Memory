@@ -185,25 +185,34 @@ def atomic_write(path: Path, content: str | bytes, encoding: str = "utf-8") -> N
 
     Behavior:
       1. Creates `path`'s parent directory if missing (idempotent).
-      2. Writes to a sibling temp file: `path` with an extra `.tmp`
-         suffix appended (so e.g. `foo.md` -> `foo.md.tmp`).
-      3. Calls `os.replace(tmp, path)`, which is atomic on POSIX and
+      2. Writes to a sibling temp file: `path` with `.tmp.<pid>` suffix
+         (so e.g. `foo.md` -> `foo.md.tmp.12345`). The PID avoids
+         collisions when multiple writers target the same path.
+      3. Fsyncs the file data, then fsyncs the parent directory to
+         ensure the rename entry persists across power loss.
+      4. Calls `os.replace(tmp, path)`, which is atomic on POSIX and
          on Windows when both paths are on the same volume.
-      4. On any exception, the temp file is cleaned up best-effort.
+      5. On any exception, the temp file is cleaned up best-effort.
     """
     path = Path(path)
     parent = path.parent
     if parent and (not parent.exists()):
         parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
     try:
         if isinstance(content, bytes):
             tmp_path.write_bytes(content)
         else:
             tmp_path.write_text(content, encoding=encoding)
-        # fsync to ensure data reaches disk before rename
+        # fsync file data to disk before rename
         with open(tmp_path, "rb" if isinstance(content, bytes) else "r") as f:
             os.fsync(f.fileno())
+        # fsync parent directory to ensure the rename entry persists
+        dir_fd = os.open(str(parent), os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
         os.replace(str(tmp_path), str(path))
     except Exception:
         try:

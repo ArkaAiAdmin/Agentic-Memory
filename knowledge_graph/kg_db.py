@@ -201,7 +201,7 @@ def _upsert_edge(
     source_id = resolve_entity_id(conn, source_id)
     target_id = resolve_entity_id(conn, target_id)
     row = conn.execute(
-        "SELECT id FROM kg_edges WHERE source_id = ? AND target_id = ? AND relation = ?",
+        "SELECT id FROM kg_edges WHERE source_id = ? AND target_id = ? AND relation = ? AND invalid_at IS NULL",
         (source_id, target_id, relation),
     ).fetchone()
     if row:
@@ -223,7 +223,7 @@ def _upsert_edge(
         except sqlite3.IntegrityError:
             # Re-SELECT and update the existing row's weight.
             row = conn.execute(
-                "SELECT id FROM kg_edges WHERE source_id = ? AND target_id = ? AND relation = ?",
+                "SELECT id FROM kg_edges WHERE source_id = ? AND target_id = ? AND relation = ? AND invalid_at IS NULL",
                 (source_id, target_id, relation),
             ).fetchone()
             if row is not None:
@@ -235,7 +235,12 @@ def _upsert_edge(
 
 
 def invalidate_edge(conn: AnyConnection, edge_id: int) -> bool:
-    """Mark an edge as invalid (soft delete). Returns True if an edge was invalidated."""
+    """Mark an edge as invalid (soft delete). Returns True if an edge was invalidated.
+
+    After invalidation, a new version of the same (source, target, relation)
+    can be inserted because the partial index only covers current edges
+    (WHERE invalid_at IS NULL).
+    """
     try:
         cur = conn.execute(
             "UPDATE kg_edges SET invalid_at = datetime('now') WHERE id = ? AND invalid_at IS NULL",

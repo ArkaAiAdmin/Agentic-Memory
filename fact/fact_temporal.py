@@ -234,56 +234,72 @@ def supersede_fact(
     """
     if old_id == new_id:
         return False
-    old = conn.execute(
-        "SELECT id, event_time, locked, superseded_by FROM kg_facts WHERE id = ?",
-        (old_id,),
-    ).fetchone()
-    if not old:
-        return False
-    if old[2]:  # locked
-        logger.debug("supersede_fact: fact %d is locked, skipping", old_id)
-        return False
-    if old[3] is not None:  # already superseded
-        logger.debug(
-            "supersede_fact: fact %d is already superseded, skipping",
-            old_id,
-        )
-        return False
-    new = conn.execute(
-        "SELECT id, event_time, valid_at FROM kg_facts WHERE id = ?",
-        (new_id,),
-    ).fetchone()
-    if not new:
-        return False
-    # Sprint 2: set valid_at on the winner when resolving a contradiction,
-    # so subsequent supersessions have a stable "took effect" anchor.
-    if new[2] is None:
-        conn.execute(
-            "UPDATE kg_facts SET valid_at = COALESCE(?, transaction_time) WHERE id = ?",
-            (winner_valid_at, new_id),
-        )
-    # invalid_at = the new fact's event_time if known, else now
-    invalid_at = new[1] if new[1] is not None else time.time()
-    conn.execute(
-        "UPDATE kg_facts SET invalid_at = ?, superseded_by = ?, "
-        "invalidation_reason = ?, contradiction_score = ? WHERE id = ?",
-        (invalid_at, new_id, reason, score, old_id),
-    )
+
+    # M36: BEGIN IMMEDIATE to make the read-check-update atomic and
+    # prevent 2-cycles under concurrent supersession (A→B, B→A).
+    conn.execute("BEGIN IMMEDIATE")
     try:
-        _ = conn.execute("SELECT 1 FROM belief_assertions LIMIT 1")
-        conn.execute(
-            "UPDATE belief_assertions SET belief_status = 'deprecated' "
-            "WHERE fact_id = ? AND belief_status = 'active'",
+        old = conn.execute(
+            "SELECT id, event_time, locked, superseded_by FROM kg_facts WHERE id = ?",
             (old_id,),
+        ).fetchone()
+        if not old:
+            conn.execute("ROLLBACK")
+            return False
+        if old[2]:  # locked
+            logger.debug("supersede_fact: fact %d is locked, skipping", old_id)
+            conn.execute("ROLLBACK")
+            return False
+        if old[3] is not None:  # already superseded
+            logger.debug(
+                "supersede_fact: fact %d is already superseded, skipping",
+                old_id,
+            )
+            conn.execute("ROLLBACK")
+            return False
+        new = conn.execute(
+            "SELECT id, event_time, valid_at FROM kg_facts WHERE id = ?",
+            (new_id,),
+        ).fetchone()
+        if not new:
+            conn.execute("ROLLBACK")
+            return False
+        # Sprint 2: set valid_at on the winner when resolving a contradiction,
+        # so subsequent supersessions have a stable "took effect" anchor.
+        if new[2] is None:
+            conn.execute(
+                "UPDATE kg_facts SET valid_at = COALESCE(?, transaction_time) WHERE id = ?",
+                (winner_valid_at, new_id),
+            )
+        # invalid_at = the new fact's event_time if known, else now
+        invalid_at = new[1] if new[1] is not None else time.time()
+        conn.execute(
+            "UPDATE kg_facts SET invalid_at = ?, superseded_by = ?, "
+            "invalidation_reason = ?, contradiction_score = ? WHERE id = ?",
+            (invalid_at, new_id, reason, score, old_id),
         )
+        try:
+            _ = conn.execute("SELECT 1 FROM belief_assertions LIMIT 1")
+            conn.execute(
+                "UPDATE belief_assertions SET belief_status = 'deprecated' "
+                "WHERE fact_id = ? AND belief_status = 'active'",
+                (old_id,),
+            )
+        except Exception:
+            pass
+        conn.execute(
+            "UPDATE kg_facts SET supersedes = ? WHERE id = ?",
+            (old_id, new_id),
+        )
+        _propagate_entailment_invalidation(conn, old_id)
+        conn.execute("COMMIT")
+        return True
     except Exception:
-        pass
-    conn.execute(
-        "UPDATE kg_facts SET supersedes = ? WHERE id = ?",
-        (old_id, new_id),
-    )
-    _propagate_entailment_invalidation(conn, old_id)
-    return True
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
 
 
 def _mark_fact_superseded(
@@ -304,56 +320,73 @@ def _mark_fact_superseded(
     """
     if fact_id == winner_id:
         return False
-    winner = conn.execute(
-        "SELECT id, event_time, locked FROM kg_facts WHERE id = ?",
-        (winner_id,),
-    ).fetchone()
-    if not winner:
-        return False
-    if winner[2]:  # locked
-        logger.debug(
-            "_mark_fact_superseded: winner %d is locked, skipping", winner_id
-        )
-        return False
-    fact = conn.execute(
-        "SELECT id, locked, superseded_by FROM kg_facts WHERE id = ?",
-        (fact_id,),
-    ).fetchone()
-    if not fact:
-        return False
-    if fact[1]:  # locked
-        logger.debug(
-            "_mark_fact_superseded: fact %d is locked, skipping", fact_id
-        )
-        return False
-    if fact[2] is not None:  # already superseded
-        logger.debug(
-            "_mark_fact_superseded: fact %d is already superseded, skipping",
-            fact_id,
-        )
-        return False
-    # invalid_at = the winner's event_time if known, else now
-    invalid_at = winner[1] if winner[1] is not None else time.time()
-    conn.execute(
-        "UPDATE kg_facts SET invalid_at = ?, superseded_by = ?, "
-        "invalidation_reason = ?, contradiction_score = ? WHERE id = ?",
-        (invalid_at, winner_id, reason, score, fact_id),
-    )
-    conn.execute(
-        "UPDATE kg_facts SET valid_at = COALESCE(valid_at, ?, transaction_time) WHERE id = ?",
-        (winner[1] or time.time(), winner_id),
-    )
+
+    # M36: BEGIN IMMEDIATE to make the read-check-update atomic and
+    # prevent 2-cycles under concurrent supersession.
+    conn.execute("BEGIN IMMEDIATE")
     try:
-        _ = conn.execute("SELECT 1 FROM belief_assertions LIMIT 1")
-        conn.execute(
-            "UPDATE belief_assertions SET belief_status = 'deprecated' "
-            "WHERE fact_id = ? AND belief_status = 'active'",
+        winner = conn.execute(
+            "SELECT id, event_time, locked FROM kg_facts WHERE id = ?",
+            (winner_id,),
+        ).fetchone()
+        if not winner:
+            conn.execute("ROLLBACK")
+            return False
+        if winner[2]:  # locked
+            logger.debug(
+                "_mark_fact_superseded: winner %d is locked, skipping", winner_id
+            )
+            conn.execute("ROLLBACK")
+            return False
+        fact = conn.execute(
+            "SELECT id, locked, superseded_by FROM kg_facts WHERE id = ?",
             (fact_id,),
+        ).fetchone()
+        if not fact:
+            conn.execute("ROLLBACK")
+            return False
+        if fact[1]:  # locked
+            logger.debug(
+                "_mark_fact_superseded: fact %d is locked, skipping", fact_id
+            )
+            conn.execute("ROLLBACK")
+            return False
+        if fact[2] is not None:  # already superseded
+            logger.debug(
+                "_mark_fact_superseded: fact %d is already superseded, skipping",
+                fact_id,
+            )
+            conn.execute("ROLLBACK")
+            return False
+        # invalid_at = the winner's event_time if known, else now
+        invalid_at = winner[1] if winner[1] is not None else time.time()
+        conn.execute(
+            "UPDATE kg_facts SET invalid_at = ?, superseded_by = ?, "
+            "invalidation_reason = ?, contradiction_score = ? WHERE id = ?",
+            (invalid_at, winner_id, reason, score, fact_id),
         )
+        conn.execute(
+            "UPDATE kg_facts SET valid_at = COALESCE(valid_at, ?, transaction_time) WHERE id = ?",
+            (winner[1] or time.time(), winner_id),
+        )
+        try:
+            _ = conn.execute("SELECT 1 FROM belief_assertions LIMIT 1")
+            conn.execute(
+                "UPDATE belief_assertions SET belief_status = 'deprecated' "
+                "WHERE fact_id = ? AND belief_status = 'active'",
+                (fact_id,),
+            )
+        except Exception:
+            pass
+        _propagate_entailment_invalidation(conn, fact_id)
+        conn.execute("COMMIT")
+        return True
     except Exception:
-        pass
-    _propagate_entailment_invalidation(conn, fact_id)
-    return True
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
 
 
 def reconcile_fact_supersession(
@@ -888,17 +921,19 @@ def _temporal_fact_clause(as_of: "float | None") -> "tuple[str, list]":
     The as_of parameter is an epoch (float).  ``None`` means "current
     state" — only facts that are still valid (invalid_at IS NULL).
 
-    SQL semantics:
-      * ``valid_at IS NULL`` is treated as "always valid" (the fact
-        has no known start time, so it was always true).
-      * ``invalid_at IS NULL`` is treated as "still valid".
-      * Otherwise, the fact is valid iff
-        ``valid_at <= as_of AND invalid_at >= as_of``.
+    M34 NOTE — Mixed temporal representations:
+      ``kg_facts`` stores valid_at/invalid_at as REAL epoch seconds,
+      while ``kg_edges`` stores them as TEXT ISO datetimes.  This is
+      a known schema inconsistency.  New columns added to the KG
+      should use TEXT ISO timestamps for consistency with kg_edges.
     """
     if as_of is not None:
+        # Half-open interval [valid_at, invalid_at): use > not >=
+        # to avoid double-validity at handoff instants where
+        # valid_at == invalid_at of the preceding fact.
         return (
             " AND (f.valid_at IS NULL OR f.valid_at <= ?) "
-            "AND (f.invalid_at IS NULL OR f.invalid_at = '' OR f.invalid_at >= ?) ",
+            "AND (f.invalid_at IS NULL OR f.invalid_at > ?) ",
             [as_of, as_of],
         )
     return " AND f.invalid_at IS NULL AND f.superseded_by IS NULL", []

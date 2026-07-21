@@ -462,6 +462,12 @@ class Saga:
                         original_error=sp_err,
                     ) from sp_err
         self.committed = True
+        # NOTE (M44): The file write (step 3) runs during __enter__ before
+        # this commit, creating a crash window where the .md is on disk but
+        # the DB transaction hasn't committed.  A process crash here leaves
+        # a file with no matching DB row (correctable by backfill_all).
+        # Reordering would require splitting the file step into a post-commit
+        # hook, which the current Saga abstraction does not support.
         logger.info("saga[%s] committed (%d steps)", self.name, len(self._steps))
         return False
 
@@ -1019,7 +1025,7 @@ def _build_save_memory_steps(
                     f"{file_path.suffix}.conflict-{os.getpid()}-{ts}"
                 )
                 try:
-                    conflict_path.write_text(current_on_disk, encoding="utf-8")
+                    atomic_write(conflict_path, current_on_disk)
                     logger.warning(
                         "saga _do_file: concurrent edit on %s detected; "
                         "conflict content saved to %s",
@@ -1050,7 +1056,7 @@ def _build_save_memory_steps(
         if params.wrote_file:
             if params.initial_file_content is not None:
                 try:
-                    file_path.write_text(params.initial_file_content, encoding="utf-8")
+                    atomic_write(file_path, params.initial_file_content)
                 except Exception as exc:
                     logger.warning(
                         "saga undo: restore .md for %s failed: %r",
@@ -1165,7 +1171,7 @@ def saga(name: str, steps: List[SagaStep]) -> Generator[Saga, None, None]:
         yield s
 
 
-from infra.memory_common import make_lazy_getattr
+from infra.memory_common import atomic_write, make_lazy_getattr
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

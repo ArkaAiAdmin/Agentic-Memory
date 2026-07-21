@@ -31,6 +31,7 @@ class MemoryClient:
         is_global: bool = False,
         importance: int = 3,
         title_slug: str = "",
+        tenant_id: str | None = None,
     ) -> str: ...
     def search(
         self,
@@ -183,8 +184,6 @@ class AgentMemory:
         content: str,
         category: str = "agents",
         tags: Optional[list[str]] = None,
-        pinned: bool = False,
-        importance: int = 3,
     ) -> str: ...
     def search(self, query: str, limit: int = 10) -> SearchResults: ...
     def list(self, limit: int = 50) -> list[MemoryResult]: ...
@@ -195,8 +194,7 @@ class AgentMemory:
     def client(self) -> MemoryClient: ...
     @staticmethod
     def list_agents() -> builtins.list[AgentInfo]: ...
-    @staticmethod
-    def reset(agent_id: str) -> bool: ...
+    def reset(self) -> None: ...
 
 class SyncManager:
     """CRDT sync and sharing operations."""

@@ -17,9 +17,11 @@ _db_columns_cache: dict = {}
 _db_columns_cache_lock = threading.Lock()
 
 # Only allow safe SQL fragments in extra_filter to prevent injection.
-# Safe characters: spaces, alphanumeric, SQL punctuation (AND/OR/NOT/=, etc.)
-# Ban semicolons to prevent multi-statement injection.
-_SQL_SAFE_FILTER_RE = re.compile(r"^[ A-Za-z0-9_.,=<>!()'\"%\-/?]+$")
+# M52: Ban double quotes and semicolons to prevent multi-statement
+# injection and string delimiter abuse.  Single quotes and parentheses
+# are kept for legitimate LIKE clauses and AND-grouping; the content
+# inside quotes must be validated upstream (e.g. _safe_ns regex).
+_SQL_SAFE_FILTER_RE = re.compile(r"^[ A-Za-z0-9_.,=<>!'()/\\%\-?]+$")
 _SQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 

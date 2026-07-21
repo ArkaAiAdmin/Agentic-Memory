@@ -75,6 +75,10 @@ SYNC_HMAC_SECRET = os.environ.get("MEMORY_SYNC_HMAC_SECRET", "")
 # Y3 fix: replay protection.  When set, mutating requests must include
 # X-Sync-Timestamp (unix epoch seconds); requests older than this many
 # seconds are rejected.  Set to 0 to disable.
+# NOTE (M22): The replay timestamp (X-Sync-Timestamp) is supplied by the
+# client.  A malicious peer can fabricate a fresh timestamp to bypass the
+# age check.  For stronger protection, use HMAC (SYNC_HMAC_SECRET) which
+# binds the timestamp into the signed payload.
 SYNC_MAX_REQUEST_AGE = int(os.environ.get("MEMORY_SYNC_MAX_AGE", "300"))
 
 # Y4 fix: maximum request body size.  Reject anything larger to avoid
@@ -190,6 +194,11 @@ class _SyncHandler(BaseHTTPRequestHandler):
         non-loopback interfaces (prevents accidental exposure).  Loopback
         (the default ``127.0.0.1:9877``) is allowed without a token so
         local development workflows keep working out of the box.
+
+        .. SECURITY NOTE: The loopback auth-free default is intentional
+        for local dev convenience but MUST be overridden in production
+        by setting MEMORY_SYNC_TOKEN.  Any non-loopback peer without a
+        token is always rejected.
         """
         peer = getattr(self, "host", None) or getattr(self, "client_address", ("127.0.0.1",))[0]
         if not SYNC_AUTH_TOKEN:
@@ -477,6 +486,14 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 403,
             )
             return
+        # M52: Ban writable CTEs — SQLite 3.35+ allows INSERT/UPDATE/DELETE
+        # inside CTEs, which would bypass the SELECT-only guard.
+        if head == "WITH":
+            _cte_body = stripped.split(None, 1)[1].upper() if len(stripped.split(None, 1)) > 1 else ""
+            _writable_kw = ("INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER")
+            if any(_kw in _cte_body for _kw in _writable_kw):
+                self._error("Forbidden: writable CTEs (INSERT/UPDATE/DELETE in WITH) are not allowed", 403)
+                return
         if ";" in stripped:
             tail = stripped.split(";", 1)[1].strip()
             if tail:
@@ -663,6 +680,10 @@ class _SyncHandler(BaseHTTPRequestHandler):
             self._error(f"Invalid JSON: {e}")
             return
 
+        # SECURITY (M22): agent_id is self-asserted by the client.  A
+        # malicious peer can claim any identity.  This is acceptable when
+        # the sync channel is authenticated (SYNC_AUTH_TOKEN) or loopback-
+        # only; otherwise treat all remote claims as untrusted.
         remote_agent = data.get("agent_id", "")
         remote_notes = data.get("notes", {})
         if not remote_agent:

@@ -331,14 +331,26 @@ class EmbeddingSearch:
             self._load_model()
         return self.model is not None and getattr(self, "np", None) is not None
 
+    @staticmethod
+    def _cache_key(query: str, category: str, tags: Optional[list], source_file: str) -> tuple:
+        """Build a cache key that includes context-dependent parameters.
+
+        The embedding of a query depends on category, tags, and source_file
+        because ``_embed_text_with_context`` prepends context strings.
+        Keying on query alone would return stale embeddings when the same
+        query text is used with different filters.
+        """
+        return (query, category, tuple(tags) if tags else (), source_file)
+
     def _embed_query(self, query: str, category: str = "", tags: Optional[list] = None, source_file: str = "") -> Any:
         """Get query embedding with optional LRU cache."""
         if not self._ensure_model():
             return None
+        key = self._cache_key(query, category, tags, source_file)
         if self._QUERY_CACHE_ENABLED:
-            if query in self._query_cache:
-                self._query_cache.move_to_end(query)
-                return self._query_cache[query]
+            if key in self._query_cache:
+                self._query_cache.move_to_end(key)
+                return self._query_cache[key]
         # Cache miss or disabled — encode and optionally cache.
         text = _embed_text_with_context(query, category=category, tags=tags, source_file=source_file)
         query_vec = self.model.encode([text])
@@ -346,8 +358,8 @@ class EmbeddingSearch:
             query_vec = query_vec.reshape(1, -1)
         query_vec = query_vec[0]  # shape (dim,)
         if self._QUERY_CACHE_ENABLED:
-            self._query_cache[query] = query_vec
-            self._query_cache.move_to_end(query)
+            self._query_cache[key] = query_vec
+            self._query_cache.move_to_end(key)
             if len(self._query_cache) > self._QUERY_CACHE_MAX:
                 self._query_cache.popitem(last=False)
         return query_vec

@@ -137,64 +137,93 @@ def _get_last_pull_timestamp(db_path: str | Path, peer_name: str) -> float:
 
 
 # ---------------------------------------------------------------------------
-# HTTP helpers
+# HTTP helpers (M23: retry with exponential backoff)
 # ---------------------------------------------------------------------------
+
+_MAX_RETRIES = 3
+_BACKOFF_BASE = 0.5  # seconds; doubles each retry
+
+
+def _do_request(req: urllib.request.Request, timeout: int) -> Optional[dict]:
+    """Execute a urllib Request with up to _MAX_RETRIES exponential backoff.
+
+    Returns parsed JSON dict on success, None after all retries exhausted.
+    Retries on transient errors (network, timeout, server 5xx); does NOT
+    retry client errors (4xx) since those indicate a permanent problem.
+    """
+    import urllib.error as _ue
+
+    last_err: Optional[Exception] = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read().decode("utf-8")
+                return cast(Optional[dict], json.loads(body))
+        except _ue.HTTPError as exc:
+            # Only retry on 5xx server errors; 4xx are not transient.
+            if 500 <= exc.code < 600 and attempt < _MAX_RETRIES - 1:
+                import time as _time
+                _time.sleep(_BACKOFF_BASE * (2 ** attempt))
+                last_err = exc
+                continue
+            logger.debug(
+                "sync_client: %s %s failed (HTTP %d, attempt %d/%d): %s",
+                req.get_method(), req.full_url, exc.code,
+                attempt + 1, _MAX_RETRIES, exc,
+            )
+            return None
+        except (
+            _ue.URLError,
+            OSError,
+            json.JSONDecodeError,
+            TimeoutError,
+        ) as exc:
+            if attempt < _MAX_RETRIES - 1:
+                import time as _time
+                _time.sleep(_BACKOFF_BASE * (2 ** attempt))
+                last_err = exc
+                continue
+            logger.debug(
+                "sync_client: %s %s failed (attempt %d/%d): %s",
+                req.get_method(), req.full_url,
+                attempt + 1, _MAX_RETRIES, exc,
+            )
+            return None
+    logger.debug("sync_client: %s %s exhausted %d retries, last error: %s",
+                 req.get_method(), req.full_url, _MAX_RETRIES, last_err)
+    return None
 
 
 def _json_get(url: str, timeout: int = _HTTP_TIMEOUT) -> Optional[dict]:
     """HTTP GET, return parsed JSON dict or None on failure."""
-    try:
-        req = urllib.request.Request(url, method="GET")
-        # sync_server._check_replay requires X-Sync-Timestamp when
-        # SYNC_MAX_REQUEST_AGE > 0. Send it on every request.
-        req.add_header("X-Sync-Timestamp", str(int(time.time())))
-        # Add Authorization header if SYNC_AUTH_TOKEN is set
-        from infra.sync_server import SYNC_AUTH_TOKEN
-        if SYNC_AUTH_TOKEN:
-            req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8")
-            return cast(Optional[dict], json.loads(body))
-    except (
-        urllib.error.URLError,
-        urllib.error.HTTPError,
-        OSError,
-        json.JSONDecodeError,
-        TimeoutError,
-    ) as e:
-        logger.debug("sync_client: GET %s failed: %s", url, e)
-        return None
+    req = urllib.request.Request(url, method="GET")
+    # sync_server._check_replay requires X-Sync-Timestamp when
+    # SYNC_MAX_REQUEST_AGE > 0. Send it on every request.
+    req.add_header("X-Sync-Timestamp", str(int(time.time())))
+    # Add Authorization header if SYNC_AUTH_TOKEN is set
+    from infra.sync_server import SYNC_AUTH_TOKEN
+    if SYNC_AUTH_TOKEN:
+        req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
+    return _do_request(req, timeout)
 
 
 def _json_post(url: str, data: dict, timeout: int = _HTTP_TIMEOUT) -> Optional[dict]:
     """HTTP POST with JSON body, return parsed JSON dict or None."""
-    try:
-        body_bytes = json.dumps(data).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=body_bytes,
-            method="POST",
-            headers={
-                "Content-Type": "application/json",
-                "X-Sync-Timestamp": str(int(time.time())),
-            },
-        )
-        # Add Authorization header if SYNC_AUTH_TOKEN is set
-        from infra.sync_server import SYNC_AUTH_TOKEN
-        if SYNC_AUTH_TOKEN:
-            req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            resp_body = resp.read().decode("utf-8")
-            return cast(Optional[dict], json.loads(resp_body))
-    except (
-        urllib.error.URLError,
-        urllib.error.HTTPError,
-        OSError,
-        json.JSONDecodeError,
-        TimeoutError,
-    ) as e:
-        logger.debug("sync_client: POST %s failed: %s", url, e)
-        return None
+    body_bytes = json.dumps(data).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body_bytes,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-Sync-Timestamp": str(int(time.time())),
+        },
+    )
+    # Add Authorization header if SYNC_AUTH_TOKEN is set
+    from infra.sync_server import SYNC_AUTH_TOKEN
+    if SYNC_AUTH_TOKEN:
+        req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
+    return _do_request(req, timeout)
 
 
 # ---------------------------------------------------------------------------

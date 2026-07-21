@@ -18,6 +18,7 @@ before (default = "default" agent namespace).
 from __future__ import annotations
 
 import os
+import re
 import threading
 from dataclasses import dataclass
 from typing import Optional, cast
@@ -298,11 +299,17 @@ def agent_filter_clause(column: str = "m.source_file") -> str:
 
     When the default agent is active, returns ``"1=1"`` (no filter).
     For scoped agents, returns a LIKE condition against the note ID prefix.
+
+    Namespace is validated against ``[A-Za-z0-9._-]+`` to prevent SQL injection
+    via f-string interpolation into the LIKE clause.
     """
     ctx = get_agent()
     if ctx.namespace == "default":
         return "1=1"
-    prefix = f"agents/{ctx.namespace}/"
+    ns = ctx.namespace
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", ns):
+        raise ValueError(f"Invalid namespace: {ns!r} (expected [A-Za-z0-9._-]+)")
+    prefix = f"agents/{ns}/"
     return f"{column} LIKE '{prefix}%'"
 
 
@@ -350,22 +357,27 @@ def agent_search(query: str, limit: int = 5, rerank: bool = True, include_global
     from infra._lazy_imports import search_memories, get_config
     from pathlib import Path
 
+    ctx = get_agent()
+    # Over-fetch when post-filtering by namespace to avoid starving results.
+    # The post-filter may remove non-matching entries, leaving fewer than
+    # the requested limit.
+    fetch_limit = limit * 4 if ctx.namespace != "default" else limit
+
     db_path = Path(get_config().db_path)
     result = search_memories(
         db_path=db_path,
         query=query,
-        limit=limit,
+        limit=fetch_limit,
         include_global=include_global,
         rerank=rerank,
     )
     # Post-filter by agent namespace if not in default
-    ctx = get_agent()
     if ctx.namespace != "default":
         prefix = f"agents/{ctx.namespace}/"
         if isinstance(result, dict) and "results" in result:
             filtered = [
                 r for r in result["results"] if r.get("id", "").startswith(prefix)
             ]
-            result["results"] = filtered
+            result["results"] = filtered[:limit]
             result["total"] = len(filtered)
     return cast(dict, result)

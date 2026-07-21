@@ -1,20 +1,20 @@
 # Core dependencies (required)
-mcp>=1.0.0
+mcp>=1.0.0,<2
 tree-sitter>=0.21.0
 tree-sitter-markdown>=0.1.0
-onnxruntime>=1.15.0
+onnxruntime>=1.15.0,<2
 
 # Optional: embedding & semantic search (install for full feature set)
-model2vec>=0.8.0
-numpy>=2.0.0
-usearch>=2.0.0
+model2vec>=0.8.0,<1
+numpy>=2.0.0,<3
+usearch>=2.0.0,<3
 
 # Optional: cross-encoder reranker & advanced embeddings
-torch>=2.0.0
-transformers>=4.0.0
+torch>=2.0.0,<3
+transformers>=4.0.0,<5
 
 # Optional: LTR (LambdaMART) reranking
-lightgbm>=4.0.0
+lightgbm>=4.0.0,<5
 
 # Dev: type checking & linting
 mypy>=1.0

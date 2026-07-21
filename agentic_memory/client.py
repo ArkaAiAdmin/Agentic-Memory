@@ -225,29 +225,37 @@ class MemoryClient:
             query=query,
         )
 
-    def delete(self, note_id: str, hard: bool = False) -> bool:
-        """Soft-delete (or hard-purge) a memory by note ID."""
+    def delete(self, note_id: str, hard: bool = False, *, tenant_id: str | None = None) -> bool:
+        """Soft-delete (or hard-purge) a memory by note ID, scoped to a tenant.
+
+        When tenant_id is not provided, resolves from the current agent
+        context (falling back to "default").
+        """
         from memory_delete import soft_delete_note, hard_delete_note
 
         if hard:
-            return hard_delete_note(str(self._db_path), note_id)
-        return soft_delete_note(str(self._db_path), note_id)
+            return hard_delete_note(str(self._db_path), note_id, tenant_id=tenant_id)
+        return soft_delete_note(str(self._db_path), note_id, tenant_id=tenant_id)
 
-    def restore(self, note_id: str) -> bool:
-        """Restore a soft-deleted memory."""
+    def restore(self, note_id: str, *, tenant_id: str | None = None) -> bool:
+        """Restore a soft-deleted memory, scoped to a tenant.
+
+        When tenant_id is not provided, resolves from the current agent
+        context (falling back to "default").
+        """
         from memory_delete import restore_note
 
-        return restore_note(str(self._db_path), note_id)
+        return restore_note(str(self._db_path), note_id, tenant_id=tenant_id)
 
-    def get(self, note_id: str) -> MemoryResult | None:
-        """Retrieve a single memory by note ID."""
+    def get(self, note_id: str, *, tenant_id: str = "default") -> MemoryResult | None:
+        """Retrieve a single memory by note ID, scoped to a tenant."""
         conn = get_db_connection(self._db_path)
         try:
             row = conn.execute(
                 "SELECT id, content, tags, category, created_at, "
                 "       pinned, importance "
-                "FROM memories WHERE id = ? AND deleted_at IS NULL",
-                (note_id,),
+                "FROM memories WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL",
+                (note_id, tenant_id),
             ).fetchone()
             if not row:
                 return None
@@ -268,28 +276,35 @@ class MemoryClient:
         limit: int = 50,
         offset: int = 0,
         category: str = "",
+        *,
+        tenant_id: str | None = None,
     ) -> list[MemoryResult]:
         """List recent memories (newest first), optionally filtered by category.
 
-        Uses the tenant_memories TEMP VIEW to respect tenant isolation.
+        Uses explicit tenant scoping. When tenant_id is not provided,
+        resolves from the current agent context (falling back to "default").
         """
+        if tenant_id is None:
+            tenant_id = _resolve_tenant()
         conn = get_db_connection(self._db_path)
         try:
             if category:
                 rows = conn.execute(
                     "SELECT id, content, tags, category, created_at, "
                     "       pinned, importance "
-                    "FROM tenant_memories WHERE deleted_at IS NULL AND category = ? "
+                    "FROM memories WHERE deleted_at IS NULL AND category = ? "
+                    "AND tenant_id = ? "
                     "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                    (category, limit, offset),
+                    (category, tenant_id, limit, offset),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     "SELECT id, content, tags, category, created_at, "
                     "       pinned, importance "
-                    "FROM tenant_memories WHERE deleted_at IS NULL "
+                    "FROM memories WHERE deleted_at IS NULL "
+                    "AND tenant_id = ? "
                     "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                    (limit, offset),
+                    (tenant_id, limit, offset),
                 ).fetchall()
             return [
                 MemoryResult(
@@ -334,12 +349,19 @@ class MemoryClient:
         finally:
             safe_close_db(conn)
 
-    def stats(self) -> Stats:
-        """Return memory system statistics."""
+    def stats(self, *, tenant_id: str | None = None) -> Stats:
+        """Return memory system statistics, scoped to a tenant.
+
+        When tenant_id is not provided, resolves from the current agent
+        context (falling back to "default").
+        """
+        if tenant_id is None:
+            tenant_id = _resolve_tenant()
         conn = get_db_connection(self._db_path)
         try:
             memories = conn.execute(
-                "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
+                "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL AND tenant_id = ?",
+                (tenant_id,),
             ).fetchone()[0]
             vec_keys = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()[
                 0
@@ -678,6 +700,18 @@ class MemoryClient:
 
     def __exit__(self, *args: Any) -> None:
         pass
+
+
+def _resolve_tenant() -> str:
+    """Resolve tenant_id from agent context, falling back to 'default'."""
+    try:
+        from agent_context import get_agent
+        ctx = get_agent()
+        if ctx and ctx.agent_id:
+            return ctx.agent_id
+    except Exception:
+        pass
+    return "default"
 
 
 def _auto_slug(content: str) -> str:

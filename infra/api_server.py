@@ -1064,8 +1064,15 @@ class APIRequestHandler(BaseHTTPRequestHandler):
                 self._error("Missing sql field", 400)
                 return
             sql_upper = sql.upper().strip()
+            # M52: Strict SELECT-only guard.  Rejects WITH (CTEs),
+            # UNION, subqueries, and DML keywords.
             if not sql_upper.startswith("SELECT") or "INTO" in sql_upper:
-                self._error("Only SELECT queries allowed", 403)
+                self._error("Only simple SELECT queries allowed", 403)
+                return
+            _dangerous = ("UNION", "INTERSECT", "EXCEPT", "ATTACH", "DETACH",
+                          "PRAGMA", "VACUUM", "REINDEX", "ANALYZE")
+            if any(_kw in sql_upper for _kw in _dangerous):
+                self._error("Only simple SELECT queries allowed", 403)
                 return
             params = req.get("params", [])
             from infra._lazy_imports import connection_pool, safe_close_db

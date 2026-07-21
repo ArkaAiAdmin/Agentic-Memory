@@ -261,7 +261,8 @@ def _apply_cross_encoder_rerank(
     reranked = []
     for r, ce in zip(head, ce_scores):
         final_score = r[6]
-        adjusted = final_score * (1.0 - blend + blend * ce)
+        ce_clamped = max(0.0, min(1.0, float(ce)))
+        adjusted = final_score * (1.0 - blend) + ce_clamped * blend
         new_r = list(r)
         new_r[6] = adjusted
         reranked.append(tuple(new_r))
@@ -860,7 +861,8 @@ def _apply_weak_ce_rerank(
     reranked = []
     for r, ce in zip(head, ce_norm):
         final_score = float(r[6]) if r[6] is not None else 0.0
-        adjusted = final_score * (1.0 - blend + blend * ce)
+        ce_clamped = max(0.0, min(1.0, float(ce)))
+        adjusted = final_score * (1.0 - blend) + ce_clamped * blend
         new_r = list(r)
         new_r[6] = adjusted
         reranked.append(tuple(new_r))
@@ -907,7 +909,8 @@ def _try_deep_rerank(query: str, scored_results: list, top_k: int = 30) -> list 
     reranked = []
     for r, ce in zip(head, ce_scores):
         final_score = float(r[6]) if r[6] is not None else 0.0
-        adjusted = final_score * (1.0 - blend + blend * ce)
+        ce_clamped = max(0.0, min(1.0, float(ce)))
+        adjusted = final_score * (1.0 - blend) + ce_clamped * blend
         new_r = list(r)
         new_r[6] = adjusted
         reranked.append(tuple(new_r))
