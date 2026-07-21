@@ -912,6 +912,21 @@ def search_memories(
             return skill_result
 
     # Phase 3: Cache check
+    # Resolve agent context BEFORE the cache key so namespace scoping is
+    # included — without this, two agents with different namespaces but
+    # the same tenant would share cached results (P0-6 cache poisoning).
+    _ns = ""
+    _agent_id = ""
+    try:
+        from agent_context import get_agent as _get_agent_for_cache
+
+        _ctx_cache = _get_agent_for_cache()
+        if _ctx_cache.namespace and _ctx_cache.namespace != "default":
+            _ns = _ctx_cache.namespace
+        if _ctx_cache.agent_id:
+            _agent_id = _ctx_cache.agent_id
+    except (ImportError, AttributeError):
+        pass
     cache_key = (
         make_cache_key(
             db_path,
@@ -935,6 +950,7 @@ def search_memories(
         + f":swm={int(shared_with_me)}"
         + f":uh={int(use_history)}"
         + f":tid={tenant_id}"
+        + f":ns={_ns}:aid={_agent_id}"
     )
     from infra.cache import cache_touch
 

@@ -441,8 +441,11 @@ class _SyncHandler(BaseHTTPRequestHandler):
         """
         if not self._require_auth():
             return
-        # Skip HMAC/replay gates: this endpoint authenticates via Bearer token
-        # already and is read-only. Mirrors the rest-api /api/v1/query behaviors.
+        # Y2/Y3: enforce HMAC and replay protection (same as other endpoints).
+        if not self._check_replay():
+            return
+        if body is not None and not self._check_hmac(body):
+            return
         if body is not None:
             try:
                 import json as _json
@@ -480,6 +483,12 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 self._error("Forbidden: multi-statement queries are not allowed", 403)
                 return
 
+        # P0-3 fix: enforce server-side tenant scoping by wrapping user SQL.
+        # This prevents cross-tenant data leaks even if the caller forgets
+        # to include a WHERE tenant_id filter.
+        safe_sql = f"SELECT * FROM ({sql}) WHERE tenant_id = ?"
+        params = list(params) + [self.server_tenant_id]
+
         try:
             import sqlite3
             db = Path(self.db_path)
@@ -488,14 +497,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 return
             conn = sqlite3.connect(str(db), timeout=10)
             try:
-                # Apply SELECT tenant scoping for tables that include tenant_id.
-                # We do this by running the query as supplied — callers must
-                # include WHERE tenant_id = ? when querying tenant-scoped
-                # tables. The dashboard's existing _query_api always filters
-                # by tenant via the OPENCODE rest-api SQLite helper, but for
-                # the MIMOCODE display view we accept any SELECT the dashboard
-                # issues (same trust boundary as direct sqlite reads).
-                cur = conn.execute(sql, params)
+                cur = conn.execute(safe_sql, params)
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description] if cur.description else []
                 results = [dict(zip(cols, row)) for row in rows]
@@ -574,10 +576,9 @@ class _SyncHandler(BaseHTTPRequestHandler):
                     field_rows = conn.execute(
                         f"""SELECT memory_id, field_name, value,
                                    version_vector, logical_clock,
-                                   last_writer_agent
+                                   last_writer_agent, is_deleted
                             FROM memory_field_crdt
                             WHERE memory_id IN ({placeholders})
-                              AND is_deleted = 0
                               AND tenant_id = ?
                               AND CAST(strftime('%s', updated_at) AS INTEGER) > ?""",
                         (*note_ids, self.server_tenant_id, since_epoch),
@@ -590,6 +591,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                                 "version_vector": fr[3] or "{}",
                                 "logical_clock": int(fr[4] or 0),
                                 "last_writer_agent": fr[5] or "",
+                                "is_deleted": bool(fr[6]),
                             }
                         )
             finally:

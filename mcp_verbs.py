@@ -76,7 +76,9 @@ def _get_principal_from_context() -> str | None:
 def _check_authorization(action: str, resource: str = "memory") -> str | None:
     """Check RBAC authorization. Returns error string if denied, None if allowed.
 
-    Fail-open: returns None (allow) on any error or when no RBAC is configured.
+    Fail-closed: returns an error (deny) on any exception, including when
+    the authorizer module is not installed. Only allows access when the
+    authorizer explicitly grants it.
     """
     try:
         from infra.authorizer import mcp_authorize, log_authorization_decision

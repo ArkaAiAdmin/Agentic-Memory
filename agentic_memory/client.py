@@ -308,16 +308,31 @@ class MemoryClient:
         finally:
             safe_close_db(conn)
 
-    def clear(self) -> int:
-        """Clear all SDK-created memories. Returns count cleared."""
+    def clear(self, *, tenant_id: str = "default", confirm: bool = False, hard: bool = False) -> int:
+        """Clear memories for a specific tenant. Returns count cleared.
+
+        By default performs a soft-delete (sets deleted_at). Pass hard=True
+        AND confirm=True to permanently delete rows.
+        """
+        if hard and not confirm:
+            raise ValueError("hard clear requires confirm=True")
         conn = get_db_connection(self._db_path)
         try:
             conn.execute("PRAGMA foreign_keys=ON")
-            n = conn.execute(
-                "DELETE FROM memories WHERE source_file LIKE 'sdk-%'"
-            ).rowcount
+            if hard:
+                n = conn.execute(
+                    "DELETE FROM memories WHERE source_file LIKE 'sdk-%' AND tenant_id=?",
+                    (tenant_id,),
+                ).rowcount
+            else:
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc).isoformat()
+                n = conn.execute(
+                    "UPDATE memories SET deleted_at=?, updated_at=? WHERE source_file LIKE 'sdk-%' AND tenant_id=? AND deleted_at IS NULL",
+                    (now, now, tenant_id),
+                ).rowcount
             conn.commit()
-            return int(n)
+            return int(n) if n else 0
         finally:
             safe_close_db(conn)
 

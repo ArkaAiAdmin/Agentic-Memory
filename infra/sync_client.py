@@ -264,16 +264,49 @@ def pull_from_peer(
         # (where the field_crdt list is absent or empty).
         field_crdt = note.get("field_crdt") or []
         if field_crdt:
-            r = crdt_field_save(
-                db_path,
-                note_id,
-                note.get("content", ""),
-                peer_agent_id,
-                local_agent_id,
-                source_file=note.get("source_file", ""),
-                remote_vv_str=note.get("version_vector", "{}"),
-                remote_logical_clock=int(note.get("logical_clock", 0)),
+            # P0-2 FIX: Apply field-level updates directly from the
+            # change feed data (including tombstones), rather than
+            # re-deriving fields from the note-level content string.
+            # This ensures tombstones propagate across replicas.
+            from crdt.crdt_field import (
+                FieldUpdate,
+                apply_field_updates_to_db,
+                ensure_field_crdt_schema,
+                TOMBSTONE,
             )
+            from infra.db import get_db_connection, safe_close_db
+
+            field_updates: list[FieldUpdate] = []
+            for fc in field_crdt:
+                fname = fc.get("field", "")
+                fvalue = fc.get("value", "")
+                is_del = fc.get("is_deleted", False)
+                if is_del and fvalue != TOMBSTONE:
+                    fvalue = TOMBSTONE
+                vv = json.loads(fc.get("version_vector", "{}") or "{}")
+                field_updates.append(FieldUpdate(
+                    memory_id=note_id,
+                    field_name=fname,
+                    value=fvalue,
+                    version_vector=vv,
+                    logical_clock=int(fc.get("logical_clock", 0)),
+                    last_writer_agent=fc.get("last_writer_agent", peer_agent_id),
+                ))
+
+            conn = get_db_connection(db_path)
+            try:
+                ensure_field_crdt_schema(conn)
+                applied_fields = apply_field_updates_to_db(conn, field_updates)
+                conn.commit()
+                if applied_fields:
+                    applied += 1
+                else:
+                    rejected += 1
+            except Exception as e:
+                logger.warning("sync_client: field_crdt apply failed for %s: %s", note_id, e)
+                rejected += 1
+            finally:
+                safe_close_db(conn)
         else:
             r = crdt_save(
                 db_path,
