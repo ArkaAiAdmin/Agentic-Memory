@@ -99,20 +99,14 @@ class Memory:
 
         ts = time.strftime("%Y%m%d_%H%M%S")
         title_slug = f"sdk-auto-{ts}-{hash(content) & 0xFFFF:04x}"
-        from save_pipeline import SaveValidationError
-
-        try:
-            note_id = save_memory_auto(
-                content=content,
-                category="sdk",
-                title_slug=title_slug,
-                tags=tags or [],
-                pinned=False,
-                is_global=is_global,
-            )
-            return str(note_id)
-        except SaveValidationError as e:
-            return str(e)
+        return str(save_memory_auto(
+            content=content,
+            category="sdk",
+            title_slug=title_slug,
+            tags=tags or [],
+            pinned=False,
+            is_global=is_global,
+        ))
 
     def search(self, query: str, limit: int = 10, rerank: bool = True) -> list[dict]:
         """Search memories by semantic relevance.

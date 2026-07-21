@@ -83,17 +83,18 @@ class AgentMemory:
         Returns:
             The scoped note ID.
         """
-        from agent_context import agent_save
+        from agent_context import agent_save, temporary_agent_context
 
         slug = f"auto-{time.strftime('%Y%m%d_%H%M%S')}"
-        return str(
-            agent_save(
-                content=content,
-                category=category,
-                title_slug=slug,
-                tags=tags or [],
+        with temporary_agent_context(self._agent_id):
+            return str(
+                agent_save(
+                    content=content,
+                    category=category,
+                    title_slug=slug,
+                    tags=tags or [],
+                )
             )
-        )
 
     def search(self, query: str, limit: int = 10) -> SearchResults:
         """Search only this agent's memories.
@@ -105,9 +106,10 @@ class AgentMemory:
         Returns:
             A ``SearchResults`` container scoped to this agent.
         """
-        from agent_context import agent_search
+        from agent_context import agent_search, temporary_agent_context
 
-        raw = agent_search(query=query, limit=limit, rerank=True)
+        with temporary_agent_context(self._agent_id):
+            raw = agent_search(query=query, limit=limit, rerank=True)
         results_list = raw.get("results", [])
         results = [
             MemoryResult(
@@ -135,65 +137,67 @@ class AgentMemory:
 
         Direct DB query filtered by the agent's namespace prefix.
         """
-        from agent_context import get_agent
+        from agent_context import get_agent, temporary_agent_context
 
-        ctx = get_agent()
-        conn = get_db_connection(self._db_path)
-        try:
-            if ctx.namespace == "default" or ctx.namespace is None:
-                rows = conn.execute(
-                    "SELECT m.id, m.content, m.tags, m.category, "
-                    "       m.created_at, m.pinned, m.importance "
-                    "FROM memories m "
-                    "WHERE m.deleted_at IS NULL "
-                    "ORDER BY m.created_at DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
-            else:
-                prefix = f"agents/{ctx.namespace}/"
-                rows = conn.execute(
-                    "SELECT m.id, m.content, m.tags, m.category, "
-                    "       m.created_at, m.pinned, m.importance "
-                    "FROM memories m "
-                    "WHERE m.deleted_at IS NULL AND m.source_file LIKE ? "
-                    "ORDER BY m.created_at DESC LIMIT ?",
-                    (f"{prefix}%", limit),
-                ).fetchall()
-            return [
-                MemoryResult(
-                    id=r[0],
-                    content=r[1],
-                    tags=r[2] or [],
-                    category=r[3] or "",
-                    created_at=r[4] or "",
-                    pinned=bool(r[5]),
-                    importance=int(r[6] or 3),
-                )
-                for r in rows
-            ]
-        finally:
-            safe_close_db(conn)
+        with temporary_agent_context(self._agent_id):
+            ctx = get_agent()
+            conn = get_db_connection(self._db_path)
+            try:
+                if ctx.namespace == "default" or ctx.namespace is None:
+                    rows = conn.execute(
+                        "SELECT m.id, m.content, m.tags, m.category, "
+                        "       m.created_at, m.pinned, m.importance "
+                        "FROM memories m "
+                        "WHERE m.deleted_at IS NULL "
+                        "ORDER BY m.created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+                else:
+                    prefix = f"agents/{ctx.namespace}/"
+                    rows = conn.execute(
+                        "SELECT m.id, m.content, m.tags, m.category, "
+                        "       m.created_at, m.pinned, m.importance "
+                        "FROM memories m "
+                        "WHERE m.deleted_at IS NULL AND m.source_file LIKE ? "
+                        "ORDER BY m.created_at DESC LIMIT ?",
+                        (f"{prefix}%", limit),
+                    ).fetchall()
+                return [
+                    MemoryResult(
+                        id=r[0],
+                        content=r[1],
+                        tags=r[2] or [],
+                        category=r[3] or "",
+                        created_at=r[4] or "",
+                        pinned=bool(r[5]),
+                        importance=int(r[6] or 3),
+                    )
+                    for r in rows
+                ]
+            finally:
+                safe_close_db(conn)
 
     def clear(self) -> int:
         """Clear all memories scoped to this agent. Returns count deleted."""
-        from agent_context import get_agent
+        from agent_context import get_agent, temporary_agent_context
 
-        ctx = get_agent()
-        if ctx.namespace == "default" or ctx.namespace is None:
-            return 0
+        with temporary_agent_context(self._agent_id):
+            ctx = get_agent()
+            if ctx.namespace == "default" or ctx.namespace is None:
+                return 0
 
-        prefix = f"agents/{ctx.namespace}/"
-        conn = sqlite_write_queue.start_session(Path(self._db_path))
-        try:
-            conn.execute("PRAGMA foreign_keys=ON")
-            n = conn.execute(
-                "DELETE FROM memories WHERE source_file LIKE ?",
-                (f"{prefix}%",),
-            ).rowcount
-            conn.commit()
-            return int(n) if n is not None else 0
-        finally:
-            conn.close()
+            prefix = f"agents/{ctx.namespace}/"
+            conn = sqlite_write_queue.start_session(Path(self._db_path))
+            try:
+                conn.execute("PRAGMA foreign_keys=ON")
+                n = conn.execute(
+                    "DELETE FROM memories WHERE source_file LIKE ?",
+                    (f"{prefix}%",),
+                ).rowcount
+                conn.commit()
+                return int(n) if n is not None else 0
+            finally:
+                conn.close()
 
     # ── Static helpers ─────────────────────────────────────────────────
 

@@ -607,7 +607,7 @@ def propagate_entity_supersession(
             "WHERE (subject_entity_id = ? OR object_entity_id = ?) "
             "AND id != ? AND id != ? "
             "AND superseded_by IS NULL AND invalid_at IS NULL "
-            "AND predicate != ?",
+            "AND predicate = ?",
             (ent_id, ent_id, superseded_fact_id, new_fact_id, _pred),
         ).fetchall()
         for (
@@ -898,8 +898,7 @@ def _temporal_fact_clause(as_of: "float | None") -> "tuple[str, list]":
     if as_of is not None:
         return (
             " AND (f.valid_at IS NULL OR f.valid_at <= ?) "
-            "AND (f.invalid_at IS NULL OR f.invalid_at = '' OR f.invalid_at >= ?) "
-            "AND f.superseded_by IS NULL ",
+            "AND (f.invalid_at IS NULL OR f.invalid_at = '' OR f.invalid_at >= ?) ",
             [as_of, as_of],
         )
     return " AND f.invalid_at IS NULL AND f.superseded_by IS NULL", []

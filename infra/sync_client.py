@@ -296,7 +296,19 @@ def pull_from_peer(
             conn = get_db_connection(db_path)
             try:
                 ensure_field_crdt_schema(conn)
-                applied_fields = apply_field_updates_to_db(conn, field_updates)
+                # H7 fix: resolve tenant_id before applying field updates.
+                # Use the peer's tenant_id if present, else look up the
+                # existing note's tenant, else fall back to "default".
+                _sync_tid = note.get("tenant_id") or os.environ.get("MEMORY_CRON_TENANT_ID") or os.environ.get("MEMORY_TENANT_ID") or "default"
+                try:
+                    _tid_row = conn.execute(
+                        "SELECT tenant_id FROM memories WHERE id = ?", (note_id,)
+                    ).fetchone()
+                    if _tid_row:
+                        _sync_tid = _tid_row[0]
+                except Exception:
+                    pass
+                applied_fields = apply_field_updates_to_db(conn, field_updates, tenant_id=_sync_tid)
                 conn.commit()
                 if applied_fields:
                     applied += 1

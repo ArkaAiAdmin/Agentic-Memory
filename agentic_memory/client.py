@@ -44,10 +44,8 @@ class MemoryClient:
     def __init__(
         self,
         db_path: str | Path | None = None,
-        user_id: str = "default",
     ) -> None:
         self._db_path = resolve_db_path(db_path)
-        self._user_id = user_id
         self._kg: object = None
         self._temporal: object = None
         self._admin: object = None

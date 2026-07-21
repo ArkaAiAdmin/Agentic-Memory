@@ -116,8 +116,8 @@ class TestTemporalQueryAxes:
         finally:
             conn.close()
 
-    def test_superseded_fact_excluded(self, tmp_path):
-        """Facts with superseded_by set should be excluded from results."""
+    def test_superseded_fact_included_in_historical(self, tmp_path):
+        """H11: Superseded facts appear in as_of queries if validity window covers the time."""
         db_path = tmp_path / "test.db"
         bootstrap_temp_db_clean(db_path)
         conn = sqlite3.connect(str(db_path))
@@ -142,9 +142,9 @@ class TestTemporalQueryAxes:
             rows = query_facts_at_time(conn, 150.0, time_axis="valid")
             subjects = [r["subject"] for r in rows]
             assert "alice" in subjects
-            # The superseded fact should NOT appear
+            # H11: The superseded fact SHOULD appear in historical queries
             objects = [r["object"] for r in rows]
-            assert "lawyer" not in objects, "Superseded fact should be excluded"
+            assert "lawyer" in objects, "Superseded fact should be included in historical as_of query"
         finally:
             conn.close()
 

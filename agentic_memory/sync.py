@@ -141,11 +141,12 @@ class SyncManager:
 
                     last_sync = entry.get("last_sync_at")
                     if last_sync is not None:
+                        last_sync_ts = last_sync if isinstance(last_sync, (int, float)) else int(last_sync)
                         pending = conn.execute(
                             "SELECT COUNT(*) FROM memories "
                             "WHERE deleted_at IS NULL "
-                            "AND strftime('%%s', updated_at) > ?",
-                            (int(last_sync),),
+                            "AND strftime('%s', updated_at) > ?",
+                            (last_sync_ts,),
                         ).fetchone()
                         entry["pending_changes"] = pending[0] if pending else 0
                 finally:

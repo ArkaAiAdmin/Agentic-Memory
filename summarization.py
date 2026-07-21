@@ -8,6 +8,7 @@ Opt-in via MEMORY_SUMMARIZATION=1.
 
 from __future__ import annotations
 
+import json
 import logging
 
 import math
@@ -287,10 +288,6 @@ def summarize_note(
 
             content = row[0]
             summary = summarize_text(content, max_sentences)
-            if summary != content:
-                # Store summary in metadata
-                import json
-
             try:
                 meta_row = conn.execute(
                     "SELECT metadata FROM memories WHERE id = ?", (note_id,)
@@ -370,8 +367,6 @@ def auto_summarize_long(
                     skipped += 1
                     continue
                 if not dry_run:
-                    import json
-
                     try:
                         meta_row = conn.execute(
                             "SELECT metadata FROM memories WHERE id = ?", (note_id,)

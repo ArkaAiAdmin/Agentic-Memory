@@ -249,6 +249,16 @@ class MemoryResultRow(NamedTuple):
     metadata: Optional[str] = None
 
 
+def _sanitize_fts_term(term: str) -> str:
+    """Wrap an FTS5 term in double-quotes so it is treated as a literal.
+
+    KG expansion terms may contain FTS5 operators (AND, OR, NOT, NEAR),
+    wildcards, or other special characters. Wrapping in quotes neutralises
+    all of them. Internal double-quotes are escaped by doubling per FTS5.
+    """
+    return '"' + term.replace('"', '""') + '"'
+
+
 def _resolve_late_interaction_enabled() -> bool:
     """Eagerly resolve the late-interaction flag from config."""
     try:
@@ -877,7 +887,7 @@ def search_memories(
         _reasoning_t0 = time.time()
         expansion_terms = _reasoning_expand(db_path, query, conn=db)
         if expansion_terms:
-            fts_query = f"{fts_query} OR {' OR '.join(expansion_terms[:5])}"
+            fts_query = f"{fts_query} OR {' OR '.join(_sanitize_fts_term(t) for t in expansion_terms[:5])}"
         _record_phase_latency("reasoning_expand", _reasoning_t0)
         try:
             from infra.config_drift import build_drift_report
@@ -996,10 +1006,15 @@ def search_memories(
 
             ctx = get_agent()
             if ctx.namespace != "default" and ctx.namespace is not None:
+                # H15: validate namespace and escape LIKE metacharacters
+                _ns = ctx.namespace
+                if not re.fullmatch(r"[A-Za-z0-9._-]+", _ns):
+                    raise ValueError(f"Invalid agent namespace: {_ns!r}")
+                _safe_ns = _ns.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
                 if include_global:
-                    repo_filter = f" AND (m.source_file LIKE 'agents/{ctx.namespace}/%' OR m.source_file NOT LIKE 'agents/%')"
+                    repo_filter = f" AND (m.source_file LIKE 'agents/{_safe_ns}/%' ESCAPE '\\' OR m.source_file NOT LIKE 'agents/%')"
                 else:
-                    repo_filter = f" AND m.source_file LIKE 'agents/{ctx.namespace}/%'"
+                    repo_filter = f" AND m.source_file LIKE 'agents/{_safe_ns}/%' ESCAPE '\\'"
         except (ImportError, AttributeError):
             pass
         # Sprint 2: memory_source filter (agent / auto_save / import)

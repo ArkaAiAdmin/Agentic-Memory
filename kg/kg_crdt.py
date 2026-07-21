@@ -627,14 +627,25 @@ def resolve_entity_id(conn: AnyConnection, entity_id: int) -> int:
     """Resolve a possibly-stale entity_id to its current winner.
 
     If ``entity_id`` was merged away during a collision resolution,
-    returns the live winner.  Returns ``entity_id`` unchanged when no
-    redirect exists.
+    follows the merge chain iteratively until reaching a canonical root
+    (no further redirect).  Returns ``entity_id`` unchanged when no
+    redirect exists.  A cycle guard prevents infinite loops on corrupted
+    redirect chains.
     """
-    row = conn.execute(
-        "SELECT winner_id FROM kg_entity_redirect WHERE loser_id=? ORDER BY rowid DESC LIMIT 1",
-        (entity_id,),
-    ).fetchone()
-    return int(row[0]) if row else entity_id
+    seen: set[int] = set()
+    current = entity_id
+    while True:
+        if current in seen:
+            break  # cycle detected, stop
+        seen.add(current)
+        row = conn.execute(
+            "SELECT winner_id FROM kg_entity_redirect WHERE loser_id=? ORDER BY rowid DESC LIMIT 1",
+            (current,),
+        ).fetchone()
+        if not row:
+            break
+        current = int(row[0])
+    return current
 
 
 def persist_entity_redirects(

@@ -1918,7 +1918,25 @@ def _materialize_journal_once(
     from infra.memory_common import get_memory_paths
     _, _, global_mem = get_memory_paths()
     target_mem = global_mem if req.is_global else target_base
-    file_path = (target_mem / req.category / f"{req.title_slug}.md").resolve()
+    target_mem_resolved = target_mem.resolve()
+    category_dir = (target_mem_resolved / req.category).resolve()
+    if not category_dir.is_relative_to(target_mem_resolved):
+        raise SaveValidationError(
+            ErrorCode.TRAVERSAL,
+            f"Category path '{req.category}' escapes the target base directory.",
+        )
+    if category_dir == target_mem_resolved:
+        raise SaveValidationError(
+            ErrorCode.TRAVERSAL,
+            "Category resolves to the target base itself; an empty or "
+            "identity category is not allowed.",
+        )
+    file_path = (category_dir / f"{req.title_slug}.md").resolve()
+    if not file_path.is_relative_to(category_dir):
+        raise SaveValidationError(
+            ErrorCode.TRAVERSAL,
+            f"Title slug '{req.title_slug}' escapes the category directory.",
+        )
     db_path_obj = str(target_mem / "memory.db")
     journal_path = target_mem / "journal.db"
 

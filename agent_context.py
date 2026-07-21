@@ -35,6 +35,9 @@ _AGENT_REGISTRY: dict[str, dict] = {}  # agent_id -> metadata
 _default_fallback_emitted = False
 
 
+from contextlib import contextmanager
+
+
 @dataclass(frozen=True)
 class AgentContext:
     """Immutable agent identity for memory scoping."""
@@ -43,6 +46,37 @@ class AgentContext:
     display_name: str = ""
     parent_agent: Optional[str] = None
     namespace: str = ""
+
+
+@contextmanager
+def temporary_agent_context(agent_id: str):
+    """Temporarily bind the thread-local agent context to *agent_id*.
+
+    Restores the previous context on exit.  Use this when an
+    ``AgentMemory`` instance needs to run operations scoped to its own
+    agent identity without permanently overwriting the thread-local
+    state (which would break other instances sharing the same thread).
+    """
+    prev = getattr(_AGENT_CONTEXT, "current", None)
+    try:
+        if prev and prev.agent_id == agent_id:
+            yield prev
+            return
+        ctx = AgentContext(
+            agent_id=agent_id,
+            display_name=agent_id,
+            namespace=agent_id,
+        )
+        _AGENT_CONTEXT.current = ctx
+        yield ctx
+    finally:
+        if prev is not None:
+            _AGENT_CONTEXT.current = prev
+        else:
+            try:
+                del _AGENT_CONTEXT.current
+            except AttributeError:
+                pass
 
 
 def init_agent(
@@ -288,21 +322,16 @@ def agent_save(content: str, category: str, title_slug: str, **kwargs):
     _now_iso = kwargs.pop("_now_iso", None)
     _conn = kwargs.pop("_conn", None)
     kwargs.pop("metadata_json", None)
-    from save_pipeline import SaveValidationError
-
-    try:
-        return save_memory_auto(
-            SaveRequest(
-                content=content,
-                category=category,
-                title_slug=scoped_slug,
-                **kwargs,
-            ),
-            _now_iso=_now_iso,
-            _conn=_conn,
-        )
-    except SaveValidationError as e:
-        return str(e)
+    return save_memory_auto(
+        SaveRequest(
+            content=content,
+            category=category,
+            title_slug=scoped_slug,
+            **kwargs,
+        ),
+        _now_iso=_now_iso,
+        _conn=_conn,
+    )
 
 
 def agent_search(query: str, limit: int = 5, rerank: bool = True, include_global: bool = True) -> dict:

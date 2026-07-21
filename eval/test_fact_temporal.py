@@ -1433,11 +1433,11 @@ class TestPropagateEntitySupersession:
         )
         return at_paris, shared_ts
 
-    def test_propagate_same_entity_different_predicate(self):
-        """Sibling facts on the same entity+different predicate get propagated."""
+    def test_propagate_same_entity_same_predicate(self):
+        """Sibling facts on the same entity+same predicate get propagated."""
         conn = _fresh_db()
         shared_ts = _epoch(2024)
-        # Base fact: Alice was_at Paris (subject_entity_id=1)
+        # Base fact: Alice was_at Paris (subject_entity_id=1, predicate="was_at")
         at_paris = _upsert(
             conn,
             "Alice",
@@ -1455,7 +1455,73 @@ class TestPropagateEntitySupersession:
             "WHERE id = ?",
             (at_paris,),
         )
-        # Sibling fact: Alice is_in Paris (same subject_entity_id=1)
+        # Sibling fact: Alice was_at Rome (same subject_entity_id=1, same predicate)
+        at_rome = _upsert(
+            conn,
+            "Alice",
+            "was_at",
+            "Rome",
+            0.9,
+            time.time(),
+            "m_at_rome",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
+            (at_rome,),
+        )
+        # New fact supersedes at_paris: Alice was_at London (same year 2024)
+        new_id = _upsert(
+            conn,
+            "Alice",
+            "was_at",
+            "London",
+            0.9,
+            time.time(),
+            "m_at_london",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
+            (new_id,),
+        )
+        # Reconcile on new_id: should supersede at_paris AND supersede at_rome
+        superseded = ft.reconcile_fact_supersession(conn, new_id)
+        assert at_paris in superseded
+        # Check that at_rome is also superseded (same predicate → contradiction path)
+        at_rome_row = conn.execute(
+            "SELECT superseded_by, invalidation_reason FROM kg_facts WHERE id = ?",
+            (at_rome,),
+        ).fetchone()
+        assert at_rome_row[0] is not None, "at_rome should be superseded (same predicate)"
+
+    def test_propagate_same_entity_different_predicate_not_propagated(self):
+        """Facts with different predicates on same entity are NOT propagated."""
+        conn = _fresh_db()
+        shared_ts = _epoch(2024)
+        # Base fact: Alice was_at Paris (subject_entity_id=1, predicate="was_at")
+        at_paris = _upsert(
+            conn,
+            "Alice",
+            "was_at",
+            "Paris",
+            0.9,
+            time.time(),
+            "m_at_paris",
+            "ctx",
+            event_time=shared_ts,
+            event_time_granularity="year",
+        )
+        conn.execute(
+            "UPDATE kg_facts SET subject_entity_id = 1, object_entity_id = 2 "
+            "WHERE id = ?",
+            (at_paris,),
+        )
+        # Sibling fact: Alice is_in Paris (same subject_entity_id=1, different predicate)
         is_in_paris = _upsert(
             conn,
             "Alice",
@@ -1489,16 +1555,15 @@ class TestPropagateEntitySupersession:
             "UPDATE kg_facts SET subject_entity_id = 1 WHERE id = ?",
             (new_id,),
         )
-        # Reconcile on new_id: should supersede at_paris AND propagate to is_in_paris
+        # Reconcile on new_id: should supersede at_paris but NOT propagate to is_in_paris
         superseded = ft.reconcile_fact_supersession(conn, new_id)
         assert at_paris in superseded
-        # Check that is_in_paris is also superseded (propagation)
+        # Check that is_in_paris is NOT superseded (different predicate, no propagation)
         is_in_row = conn.execute(
             "SELECT superseded_by, invalidation_reason FROM kg_facts WHERE id = ?",
             (is_in_paris,),
         ).fetchone()
-        assert is_in_row[0] is not None, "is_in_paris should be propagated superseded"
-        assert is_in_row[1] == "propagated"
+        assert is_in_row[0] is None, "is_in_paris should NOT be propagated superseded (different predicate)"
 
     def test_propagate_no_entity_ids_returns_empty(self):
         """Fact with no entity_ids has no propagation targets."""
@@ -1567,7 +1632,7 @@ class TestPropagateEntitySupersession:
         assert result == []
 
     def test_propagate_invalidates_sibling_fact(self):
-        """Full round-trip: supersede a fact, verify sibling is also invalidated."""
+        """Full round-trip: supersede a fact, verify same-predicate sibling is also invalidated."""
         conn = _fresh_db()
         shared_ts = _epoch(2024)
         # Bob lives_in NYC (subject_entity_id=30)
@@ -1587,22 +1652,22 @@ class TestPropagateEntitySupersession:
             "UPDATE kg_facts SET subject_entity_id = 30, object_entity_id = 31 WHERE id = ?",
             (lives_nyc,),
         )
-        # Bob works_at NYC
-        works_nyc = _upsert(
+        # Bob lives_in Chicago (same predicate, same entity)
+        lives_chi = _upsert(
             conn,
             "Bob",
-            "works_at",
-            "NYC",
+            "lives_in",
+            "Chicago",
             0.9,
             time.time(),
-            "m_works_nyc",
+            "m_lives_chi",
             "ctx",
             event_time=shared_ts,
             event_time_granularity="year",
         )
         conn.execute(
-            "UPDATE kg_facts SET subject_entity_id = 30, object_entity_id = 31 WHERE id = ?",
-            (works_nyc,),
+            "UPDATE kg_facts SET subject_entity_id = 30, object_entity_id = 32 WHERE id = ?",
+            (lives_chi,),
         )
         # New fact: Bob lives_in LA
         new_id = _upsert(
@@ -1623,13 +1688,12 @@ class TestPropagateEntitySupersession:
         )
         superseded = ft.reconcile_fact_supersession(conn, new_id)
         assert lives_nyc in superseded
-        # works_nyc should be propagated (same entity 30, different predicate)
-        works_row = conn.execute(
-            "SELECT superseded_by, invalidation_reason FROM kg_facts WHERE id = ?",
-            (works_nyc,),
+        # lives_chi should be superseded via contradiction (same predicate)
+        chi_row = conn.execute(
+            "SELECT superseded_by FROM kg_facts WHERE id = ?",
+            (lives_chi,),
         ).fetchone()
-        assert works_row[0] is not None, "works_at NYC should be propagated superseded"
-        assert works_row[1] == "propagated"
+        assert chi_row[0] is not None, "lives_in Chicago should be superseded (same predicate)"
 
 
 
@@ -1696,7 +1760,7 @@ class TestPropagateEntitySupersessionNoneTime:
             (new_id,),
         )
         sibling_id = _upsert(
-            conn, "X", "knows", "Y", 0.9,
+            conn, "X", "likes", "sushi", 0.9,
             time.time(), "mem_c", "ctx",
             event_time=_epoch(2024), event_time_granularity="year",
         )
@@ -1706,5 +1770,5 @@ class TestPropagateEntitySupersessionNoneTime:
         )
         propagated = ft.propagate_entity_supersession(conn, old_id, new_id)
         assert sibling_id in propagated, (
-            "Sibling fact SHOULD be superseded when new fact has concrete event_time"
+            "Sibling fact with same predicate SHOULD be superseded when new fact has concrete event_time"
         )
