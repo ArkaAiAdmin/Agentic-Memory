@@ -148,6 +148,10 @@ def _json_get(url: str, timeout: int = _HTTP_TIMEOUT) -> Optional[dict]:
         # sync_server._check_replay requires X-Sync-Timestamp when
         # SYNC_MAX_REQUEST_AGE > 0. Send it on every request.
         req.add_header("X-Sync-Timestamp", str(int(time.time())))
+        # Add Authorization header if SYNC_AUTH_TOKEN is set
+        from infra.sync_server import SYNC_AUTH_TOKEN
+        if SYNC_AUTH_TOKEN:
+            req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8")
             return cast(Optional[dict], json.loads(body))
@@ -175,6 +179,10 @@ def _json_post(url: str, data: dict, timeout: int = _HTTP_TIMEOUT) -> Optional[d
                 "X-Sync-Timestamp": str(int(time.time())),
             },
         )
+        # Add Authorization header if SYNC_AUTH_TOKEN is set
+        from infra.sync_server import SYNC_AUTH_TOKEN
+        if SYNC_AUTH_TOKEN:
+            req.add_header("Authorization", f"Bearer {SYNC_AUTH_TOKEN}")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             resp_body = resp.read().decode("utf-8")
             return cast(Optional[dict], json.loads(resp_body))

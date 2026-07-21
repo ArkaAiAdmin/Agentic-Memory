@@ -268,6 +268,18 @@ class SQLiteWriteQueue:
                 conn.execute("PRAGMA busy_timeout=30000")
                 conn.execute("PRAGMA foreign_keys=ON")
                 conn.execute("PRAGMA wal_autocheckpoint=500")
+                # Run schema setup and create tenant_id function for CRDT support
+                from infra.db_migrations import run_schema_setup
+                run_schema_setup(conn)
+                t_id = os.environ.get("MEMORY_CRON_TENANT_ID") or os.environ.get("MEMORY_TENANT_ID") or "default"
+                try:
+                    conn.create_function("tenant_id", 0, lambda: t_id)
+                    conn.execute(
+                        "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                        "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+                    )
+                except Exception:
+                    pass
                 self._sessions[session_id] = {"conn": conn, "db_path": db_path}
             return self._sessions[session_id]["conn"]
 
@@ -294,7 +306,9 @@ class SQLiteWriteQueue:
         resp_queue: queue.Queue = queue.Queue()
         future: concurrent.futures.Future = concurrent.futures.Future()
         self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue), future))
-        future.result(timeout=30.0)
+        # Configurable timeout via environment variable (default 60s)
+        session_timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_SESSION_TIMEOUT", "60.0"))
+        future.result(timeout=session_timeout)
         return ProxyConnection(cmd_queue, resp_queue)
 
     def enqueue_write(
