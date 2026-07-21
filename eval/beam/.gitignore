@@ -1,0 +1,3 @@
+eval/beam/results/
+eval/beam/run_beam_real.py
+*.db
