@@ -820,3 +820,63 @@ class TestPartialReplicationConvergence:
             f"Partial-replication divergence: {a_ent} vs {b_ent} vs {full_ent}"
         assert a_edg == b_edg == full_edg, \
             f"Partial-replication edge divergence: {a_edg} vs {b_edg} vs {full_edg}"
+
+
+# ===================================================================
+# Category 12: Non-transitive cycle permutation invariance
+# ===================================================================
+
+
+class TestEdgeMergeNontransitiveCyclePermutationInvariance:
+    """Verifies that merge_edge_ops yields identical output across all arrival order permutations
+    even when concurrent ops form a non-transitive A > B > C > A cycle under the comparator.
+    """
+
+    def test_edge_merge_nontransitive_cycle_permutation_invariance(self):
+        import itertools
+        from crdt_projection import EdgeOp, merge_edge_ops
+
+        op_a = EdgeOp(
+            edge_id=1,
+            agent_id="agentA",
+            version_vector={"p1": 2},
+            source_id=10,
+            target_id=20,
+            relation="rel_A",
+            weight=1.0,
+            valid_at=None,
+            timestamp=3.0,
+        )
+        op_b = EdgeOp(
+            edge_id=1,
+            agent_id="agentB",
+            version_vector={"p2": 2},
+            source_id=10,
+            target_id=20,
+            relation="rel_B",
+            weight=2.0,
+            valid_at=None,
+            timestamp=2.0,
+        )
+        op_c = EdgeOp(
+            edge_id=1,
+            agent_id="agentC",
+            version_vector={"p1": 2, "p3": 1},
+            source_id=10,
+            target_id=20,
+            relation="rel_C",
+            weight=3.0,
+            valid_at=None,
+            timestamp=1.0,
+        )
+
+        ops = [op_a, op_b, op_c]
+        reference_winner = merge_edge_ops(ops)[1]
+
+        for perm in itertools.permutations(ops):
+            res = merge_edge_ops(perm)[1]
+            assert res == reference_winner, (
+                f"Divergence detected across arrival orders! "
+                f"Permutation {[o.relation for o in perm]} produced {res['relation']} "
+                f"instead of {reference_winner['relation']}"
+            )

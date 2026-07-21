@@ -162,6 +162,38 @@ def _vv_concurrent(a: dict[str, int], b: dict[str, int]) -> bool:
     return not _vv_dominates(a, b) and not _vv_dominates(b, a)
 
 
+def _vv_join(*vvs: dict[str, int]) -> dict[str, int]:
+    """Compute the join (element-wise max) of multiple version vectors.
+
+    The join represents the causal history of all inputs — any replica
+    that has seen any of the inputs will have at least this state.
+    """
+    result: dict[str, int] = {}
+    for vv in vvs:
+        for k, v in vv.items():
+            if v > result.get(k, 0):
+                result[k] = v
+    return result
+
+
+# Tombstone sentinel value for deleted CRDT fields.
+TOMBSTONE = "__TOMBSTONE__"
+
+
+def _total_order_key(u: "FieldUpdate") -> tuple[int, str]:
+    """Return a total-order key for deterministic CRDT merge.
+
+    The key is (logical_clock DESC, agent_id ASC) — higher clocks win,
+    ties broken by lexicographically smaller agent_id. This is
+    consistent with causality because the logical_clock is bumped on
+    every write and the VV dominates all causal predecessors.
+
+    The fold result must be independent of message arrival order.
+    Sorting by this key before folding guarantees that.
+    """
+    return (-u.logical_clock, u.last_writer_agent)
+
+
 def _lww_tiebreak(
     clock_a: int,
     agent_a: str,
@@ -214,11 +246,35 @@ def merge_field_updates(
             winners.append(group[0])
             continue
 
-        # Fold left: pick the winner pairwise.
-        current = group[0]
-        for nxt in group[1:]:
+        # Sort group canonically by (logical_clock, serialised_vv, last_writer_agent)
+        # to eliminate arrival-order non-transitivity during the pairwise fold.
+        sorted_group = sorted(
+            group,
+            key=lambda u: (
+                u.logical_clock,
+                json.dumps(sorted((u.version_vector or {}).items())),
+                u.last_writer_agent,
+            ),
+        )
+
+        # Fold left over sorted_group and compute element-wise max VV join
+        current = sorted_group[0]
+        vv_join: dict[str, int] = dict(current.version_vector or {})
+        for nxt in sorted_group[1:]:
+            for peer, counter in (nxt.version_vector or {}).items():
+                vv_join[peer] = max(vv_join.get(peer, 0), counter)
             current = _merge_two(current, nxt)
-        winners.append(current)
+
+        # Construct winning FieldUpdate with joined version vector
+        winner = FieldUpdate(
+            memory_id=current.memory_id,
+            field_name=current.field_name,
+            value=current.value,
+            version_vector=vv_join,
+            logical_clock=current.logical_clock,
+            last_writer_agent=current.last_writer_agent,
+        )
+        winners.append(winner)
     return winners
 
 
@@ -358,11 +414,12 @@ def apply_field_updates_to_db(
             continue
         if row is None:
             try:
+                is_del = 1 if upd.value == "__TOMBSTONE__" else 0
                 conn.execute(
                     "INSERT OR IGNORE INTO memory_field_crdt "
                     "(memory_id, field_name, value, version_vector, logical_clock, "
                     " last_writer_agent, is_deleted, tenant_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         upd.memory_id,
                         upd.field_name,
@@ -370,6 +427,7 @@ def apply_field_updates_to_db(
                         json.dumps(upd.version_vector),
                         upd.logical_clock,
                         upd.last_writer_agent,
+                        is_del,
                         resolved_tid,
                     ),
                 )
@@ -417,9 +475,10 @@ def apply_field_updates_to_db(
         winner = _merge_two(existing, upd)
         if winner is upd:
             try:
+                is_del = 1 if upd.value == "__TOMBSTONE__" else 0
                 conn.execute(
                     "UPDATE memory_field_crdt SET value = ?, version_vector = ?, "
-                    "logical_clock = ?, last_writer_agent = ?, is_deleted = 0, "
+                    "logical_clock = ?, last_writer_agent = ?, is_deleted = ?, "
                     "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), "
                     "tenant_id = ? "
                     "WHERE memory_id = ? AND field_name = ? AND tenant_id = ?",
@@ -428,6 +487,7 @@ def apply_field_updates_to_db(
                         json.dumps(upd.version_vector),
                         upd.logical_clock,
                         upd.last_writer_agent,
+                        is_del,
                         resolved_tid,
                         upd.memory_id,
                         upd.field_name,
@@ -914,17 +974,46 @@ def crdt_field_save(
 
 
 def crdt_field_delete_note(conn: AnyConnection, note_id: str, tenant_id: str = "default") -> None:
-    """Delete all CRDT field state for a superseded memory.
+    """Delete all CRDT field state for a superseded memory by propagating tombstones.
 
     Step 4d: when a memory is superseded, its CRDT field state in
-    memory_field_crdt should be cleaned up to prevent stale field
-    data from appearing in sync projections.
+    memory_field_crdt is updated with tombstones so that deletion
+    propagates across replicas in accordance with 2P-Set semantics.
     """
     try:
-        conn.execute(
-            "DELETE FROM memory_field_crdt WHERE memory_id=? AND tenant_id=?",
+        rows = conn.execute(
+            "SELECT field_name, version_vector, logical_clock, last_writer_agent FROM memory_field_crdt WHERE memory_id=? AND tenant_id=?",
             (note_id, tenant_id),
-        )
+        ).fetchall()
+        tombstones: list[FieldUpdate] = []
+        if rows:
+            for field_name, vv_json, clock, agent in rows:
+                vv = json.loads(vv_json) if vv_json else {}
+                agent_id = agent or "deleter"
+                vv[agent_id] = vv.get(agent_id, 0) + 1
+                tombstones.append(
+                    FieldUpdate(
+                        memory_id=note_id,
+                        field_name=field_name,
+                        value="__TOMBSTONE__",
+                        version_vector=vv,
+                        logical_clock=clock + 1,
+                        last_writer_agent=agent_id,
+                    )
+                )
+        else:
+            for field_name in REPLICATED_FIELDS:
+                tombstones.append(
+                    FieldUpdate(
+                        memory_id=note_id,
+                        field_name=field_name,
+                        value="__TOMBSTONE__",
+                        version_vector={"deleter": 1},
+                        logical_clock=1,
+                        last_writer_agent="deleter",
+                    )
+                )
+        apply_field_updates_to_db(conn, tombstones, tenant_id=tenant_id)
     except Exception as exc:
         logger.warning("crdt_field_delete_note: failed for %s: %r", note_id, exc)
 

@@ -114,9 +114,9 @@ def vv_merge(a: Dict[str, int], b: Dict[str, int]) -> Dict[str, int]:
     return result
 
 
-def vv_sum(v: Dict[str, int]) -> int:
-    """Total counter value across all peers. Retained for diagnostics; the merge uses `vv_dominates` for causal ordering (see corrigendum in the paper, §4.4)."""
-    return sum(v.values())
+def _serialise_vv(v: Dict[str, int]) -> str:
+    """Deterministic string representation of a version vector for tiebreaking."""
+    return json.dumps(sorted((v or {}).items()))
 
 
 # ---------------------------------------------------------------------------
@@ -302,11 +302,8 @@ def redirect_edge_ids(
 def merge_edge_ops(ops: Iterable[EdgeOp]) -> Dict[int, Dict[str, Any]]:
     """Merge edge ops using causal dominance (vv_dominates) with timestamp/agent tiebreak.
 
-    The correct CRDT merge: if one op's version vector causally dominates
-    another's, it wins. Only truly concurrent ops (neither dominates) fall
-    back to (timestamp desc, agent_id asc) tiebreak. This preserves causal
-    ordering guarantees and matches the production implementation in
-    ``kg/kg_crdt.py``.
+    Pre-sorts edge operations canonically by (timestamp, _serialise_vv, agent_id)
+    to eliminate arrival-order non-transitivity during the fold.
     """
     by_edge: Dict[int, List[EdgeOp]] = {}
     for op in ops:
@@ -314,8 +311,16 @@ def merge_edge_ops(ops: Iterable[EdgeOp]) -> Dict[int, Dict[str, Any]]:
 
     result: Dict[int, Dict[str, Any]] = {}
     for edge_id, ops_for_edge in by_edge.items():
-        winner = ops_for_edge[0]
-        for candidate in ops_for_edge[1:]:
+        sorted_ops = sorted(
+            ops_for_edge,
+            key=lambda o: (
+                o.timestamp,
+                _serialise_vv(o.version_vector),
+                o.agent_id,
+            ),
+        )
+        winner = sorted_ops[0]
+        for candidate in sorted_ops[1:]:
             if vv_dominates(candidate.version_vector, winner.version_vector):
                 winner = candidate
             elif not vv_dominates(winner.version_vector, candidate.version_vector):

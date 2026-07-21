@@ -325,24 +325,42 @@ The CK-CRDT framework has three structural failure modes. **First, content-key c
 1. **CK-CRDTs with partial-order $\rho$.** Theorem 1 requires a total order for the argmax. Can content-stability or monotonicity be defined and proven for $\rho$ operating over partial orders (e.g., vector clocks)?
 
 2. **Adversarial key collisions.** A malicious peer could craft operations to deliberately collide with or avoid existing keys. What security properties must $\kappa$ satisfy beyond determinism and locality?
+We classify existing systems into CK-CRDT instances, ID-at-creation systems, and non-CRDT content-addressed systems.
 
-3. **Nested CK-CRDTs.** If the key function $\kappa$ itself evolves (beyond adaptive keys), and the migration function depends on content-keyed state, does convergence still hold? This is the self-referential case.
+### 7.1 Classification Criteria
 
-4. **Loser garbage collection.** In practice, losers accumulate indefinitely. Can they be safely garbage-collected without affecting convergence, or do they influence future merges (e.g., via observed-remove semantics)?
+1. **Identity mechanism:** Content-keyed (CK), ID-at-creation (ID), or Consensus-addressed (CS).
+2. **Merge function:** CRDT merge (partition + select / LWW), state union, or manual resolution.
+3. **No-orphan invariant:** Native to merge or application-managed.
 
-5. **Integration with observed-remove.** Standard CRDTs support deletion via observed-remove semantics. Can CK-CRDT merge be composed with observed-remove without breaking the K1–K3 properties?
+### 7.2 Classification Table
 
-6. **Empirical comparison.** A systematic empirical evaluation of content-keying vs. ID-at-creation across real workloads (dedup ratio, convergence time, storage overhead) would help practitioners choose.
+| System | Class | Key Function $\kappa$ | Representative Selection $\rho$ | Merge Type | No-Orphan Support |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Our KG Pipeline** | CK-CRDT | SHA-256(name, type, desc) | max(entity_id) | 2P-Set + LWW | Yes (Phase 3 rewrite) |
+| **IPFS** | Content-Addressed | Multihash (SHA-256, etc.) | N/A (immutable) | Union | N/A |
+| **Git** | Content-Addressed | SHA-1 / SHA-256 | N/A (immutable commits) | 3-way merge | Manual |
+| **Syncthing** | CK-CRDT | File path + block hashes | Latest modification time | LWW | N/A |
+| **Yjs** | ID-at-creation | Client ID + clock | N/A (positional) | Y-Array / Y-Map | No |
+| **Automerge** | ID-at-creation | Actor ID + counter | N/A (positional) | B-tree / Op-log | No |
+| **Loro** | ID-at-creation | Peer ID + counter | N/A (positional) | Movable Tree | No |
 
 ---
 
-## 9. Extensions
+## 8. Discussion & Scoping
 
-We address the four questions from §1.2. Theorems 5 and 6 follow directly from Theorem 4. Theorems 6 and 7 are sufficient conditions under their stated assumptions.
+### 8.1 Practitioner Guidelines
 
-### 9.1 Theorem 4: Multi-key CK-CRDTs
+- **Use CK-CRDT when:** Concurrent independent creation of semantically identical entities is expected across peers, and automatic deduplication is required without central coordination.
+- **Use ID-at-creation when:** Sequence or tree position is part of operation identity (rich text, collaborative editing), or when identity cannot be derived deterministically from content fields.
 
-**Theorem 4 (Multi-key CK-CRDTs).** Let $\kappa' = (\kappa_1, \kappa_2)$ be a composite content key where $\kappa_1 : \mathcal{O} \to K_1$ and $\kappa_2 : \mathcal{O} \to K_2$ are component keys. If each $\kappa_i$ satisfies (K1)–(K3) individually, then $\kappa'$ satisfies (K1)–(K3) and the CK-CRDT $(\kappa', \rho)$ converges.
+### 8.2 Summary of Extensions
+
+We address the four questions from §1.2. Theorems 5 and 6 follow directly from Theorem 4. Theorems 7 and 8 are sufficient conditions under their stated assumptions.
+
+### 9.1 Theorem 5: Multi-key CK-CRDTs
+
+**Theorem 5 (Multi-key CK-CRDTs).** Let $\kappa' = (\kappa_1, \kappa_2)$ be a composite content key where $\kappa_1 : \mathcal{O} \to K_1$ and $\kappa_2 : \mathcal{O} \to K_2$ are component keys. If each $\kappa_i$ satisfies (K1)–(K3) individually, then $\kappa'$ satisfies (K1)–(K3) and the CK-CRDT $(\kappa', \rho)$ converges.
 
 *Proof:*
 
@@ -354,41 +372,37 @@ Let $\kappa'(o) = (\kappa_1(o), \kappa_2(o))$ where $\kappa_i : \mathcal{O} \to 
 
 (K3) for $\kappa'$: If $o'$ extends $o$ by updating only non-key fields (under $\kappa'$'s key-relevant field set, which is the union of $\kappa_1$'s and $\kappa_2$'s key-relevant fields), then $\kappa_i(o') = \kappa_i(o)$ for each $i$ (by (K3) for each component), so $\kappa'(o') = \kappa'(o)$. $\square$
 
-**Corollary 3.** Our pipeline's fingerprint key $\kappa(o) = \text{SHA-256}(\text{name}, \text{type}, \text{description})$ is a composite key with three components. By Theorem 4, if each component satisfies (K1)–(K3), the composite key converges. Since SHA-256 is deterministic (K1), the components depend only on creation-time fields (K2), and key-relevant fields are immutable at inception (K3), convergence holds.
+**Corollary 3.** Our pipeline's fingerprint key $\kappa(o) = \text{SHA-256}(\text{name}, \text{type}, \text{description})$ is a composite key with three components. By Theorem 5, if each component satisfies (K1)–(K3), the composite key converges. Since SHA-256 is deterministic (K1), the components depend only on creation-time fields (K2), and key-relevant fields are immutable at inception (K3), convergence holds.
 
-### 9.2 Theorem 5: Deterministic Approximate Keys
+### 9.2 Theorem 6: Deterministic Approximate Keys
 
-**Theorem 5 (Deterministic approximate keys).** Let $\kappa : \mathcal{O} \to K$ be an approximate content key (e.g., based on Levenshtein distance or Jaccard similarity). If $\kappa$ is deterministic — same inputs produce the same key — then the CK-CRDT $(\kappa, \rho)$ converges. If $\kappa$ is non-deterministic (same inputs produce different keys on different peers), convergence fails by (K1) violation.
+**Theorem 6 (Deterministic approximate keys).** Let $\kappa : \mathcal{O} \to K$ be an approximate content key (e.g., based on Levenshtein distance or Jaccard similarity). If $\kappa$ is deterministic — same inputs produce the same key — then the CK-CRDT $(\kappa, \rho)$ converges. If $\kappa$ is non-deterministic (same inputs produce different keys on different peers), convergence fails by (K1) violation.
 
-*Proof:* If $\kappa$ is deterministic, (K1) holds by definition. For (K2): the similarity metric operates on the operation's content fields as its sole input — peer-local reference sets are not used in $\kappa$ computation. For (K3): a metadata update that does not change content fields leaves the similarity between any two operations unchanged. Convergence follows from Theorem 3. If $\kappa$ is non-deterministic, (K1) is violated, and convergence may fail (per the K1 violation construction in §6). $\square$
+*Proof:* If $\kappa$ is deterministic, (K1) holds by definition. For (K2): the similarity metric operates on the operation's content fields as its sole input — peer-local reference sets are not used in $\kappa$ computation. For (K3): a metadata update that does not change content fields leaves the similarity between any two operations unchanged. Convergence follows from Theorem 4. If $\kappa$ is non-deterministic, (K1) is violated, and convergence may fail (per the K1 violation construction in §6). $\square$
 
 **Corollary 4.** Fuzzy record linkage systems (e.g., those using Levenshtein distance with a threshold) satisfy the CK-CRDT convergence conditions iff the similarity computation is deterministic and peer-independent. Most standard implementations are deterministic (same strings → same distance), so convergence holds. Systems using randomized algorithms or peer-local reference sets violate (K1) or (K2) and may diverge.
 
-### 9.3 Theorem 6: Adaptive Keys
+### 9.3 Theorem 7: Adaptive Keys
 
 **Definition 6 (Key Migration Graph).** A *key migration graph* $G = (V, E)$ is a directed graph (possibly cyclic) where vertices $V$ are keys in the key space $K$ and edges $(k_1, k_2) \in E$ represent permitted migrations: an operation with key $k_1$ may be re-keyed to $k_2$. The graph is *deterministic* if each vertex has at most one outgoing edge (each key maps to at most one successor). Migration triggers on every merge application.
 
-**Theorem 6 (Adaptive Keys — Sufficiency).** Let $(\kappa, \{\rho_k\}, M)$ be a CK-CRDT whose key function $\kappa$ evolves according to a deterministic key migration graph $G$. If $G$ is acyclic, then the CK-CRDT converges. If $G$ contains a cycle, convergence may break — different peers may compute different final keys for the same operation, violating (K1).
+**Theorem 7 (Adaptive Keys — Sufficiency).** Let $(\kappa, \{\rho_k\}, M)$ be a CK-CRDT whose key function $\kappa$ evolves according to a deterministic key migration graph $G$. If $G$ is acyclic, then the CK-CRDT converges. If $G$ contains a cycle, convergence may break — different peers may compute different final keys for the same operation, violating (K1).
 
 *Proof:*
 
-($\Rightarrow$) Suppose $G$ is acyclic. An operation $o$ with initial key $\kappa_0(o) = k_0$ migrates along the unique path $k_0 \to k_1 \to \cdots \to k_n$ in $G$. Since $G$ is acyclic and deterministic (at most one outgoing edge per vertex), the path is finite, has length at most $|V|-1$, and terminates at a unique sink vertex $k_n$ (no outgoing edges). The final key $\kappa_n(o) = k_n$ is well-defined and independent of migration order — it is the unique sink reachable from $k_0$ in $G$. Therefore all peers compute the same final key for each operation, satisfying (K1). The migration is deterministic and depends only on the operation's content (not delivery order), satisfying (K2). The migration terminates at a sink after at most $|V|-1$ steps, so no further updates change the key, satisfying (K3). Convergence follows from Theorem 3.
+($\Rightarrow$) Suppose $G$ is acyclic. An operation $o$ with initial key $\kappa_0(o) = k_0$ migrates along the unique path $k_0 \to k_1 \to \cdots \to k_n$ in $G$. Since $G$ is acyclic and deterministic (at most one outgoing edge per vertex), the path is finite, has length at most $|V|-1$, and terminates at a unique sink vertex $k_n$ (no outgoing edges). The final key $\kappa_n(o) = k_n$ is well-defined and independent of migration order — it is the unique sink reachable from $k_0$ in $G$. Therefore all peers compute the same final key for each operation, satisfying (K1). The migration is deterministic and depends only on the operation's content (not delivery order), satisfying (K2). The migration terminates at a sink after at most $|V|-1$ steps, so no further updates change the key, satisfying (K3). Convergence follows from Theorem 4.
 
 ($\Leftarrow$) Suppose $G$ contains a cycle $k_0 \to k_1 \to \cdots \to k_0$. An operation $o$ with initial key $k_0$ would migrate on every merge application, cycling indefinitely and never reaching a stable key. Two peers that have applied merge different numbers of times to the same initial operation (due to different delivery histories) will have different $\kappa$ values for that operation, violating (K1). Note: if the migration function is bounded (e.g., time-to-live counters or history-dependent stopping conditions), cycles may converge — the framework's acyclicity condition applies to unbounded, deterministic migration. $\square$
 
 **Corollary 5.** In our pipeline, the fingerprint is immutable at inception — there are no outgoing edges in the migration graph (every vertex is a sink). This is the trivially acyclic case. A system that allows fingerprint re-computation (e.g., after an enrichment cycle) must ensure the re-computation follows an acyclic migration graph to preserve convergence.
 
-### 9.4 Theorem 7: Delta-CRDT Composition
+### 9.4 Theorem 8: Delta-CRDT Composition
 
-**Theorem 7 (Delta-CRDT Composition — Sufficiency).** Let $(\kappa, \{\rho_k\}, M)$ be a CK-CRDT and let $\delta : S \to \Delta$ be a delta-computation function that computes a compact representation of the state transition, where $S$ is the set of canonical states (subsets of $\mathcal{O}$). We say $\delta$ is *stratified* if it depends only on $M(B)$ (the merge output), not on $B$ directly. If $\delta$ is stratified, then the composition $\delta \circ M$ preserves convergence.
+**Theorem 8 (Delta-CRDT Composition — Sufficiency).** Let $(\kappa, \{\rho_k\}, M)$ be a CK-CRDT and let $\delta : S \to \Delta$ be a delta-computation function that computes a compact representation of the state transition, where $S$ is the set of canonical states (subsets of $\mathcal{O}$). We say $\delta$ is *stratified* if it depends only on $M(B)$ (the merge output), not on $B$ directly. If $\delta$ is stratified, then the composition $\delta \circ M$ preserves convergence.
 
 *Proof:*
 
 If $\delta$ depends only on $M(B)$, then for any two bags $B_1, B_2$ with $M(B_1) = M(B_2)$, we have $\delta(M(B_1)) = \delta(M(B_2))$. Since $M$ converges (by Theorem 4, assuming $\kappa$ satisfies (K1)–(K3)), the composition $\delta \circ M$ also converges: all peers with the same bag produce the same delta.
-
-Conversely, if $\delta$ depends on $B$ directly (not just $M(B)$), then two peers with the same merge output but different raw bags could compute different deltas. For example, if $\delta$ counts the number of operations in $B$ (a common delta-CRDT technique), two peers with different operation counts but the same canonical state would produce different deltas, violating the convergence requirement. $\square$
-
-**Corollary 6.** Delta-CRDTs (Loro, Automerge) compose correctly with CK-CRDTs iff the delta computation is stratified — it reads the merge output, not the raw operation log. This is the same stratification property identified in the layered-projection framework [14], applied to the delta-computation layer.
 
 ---
 
@@ -399,9 +413,9 @@ We defined content-keyed CRDTs (CK-CRDTs) as a class of CRDTs whose merge partit
 1. **Content-Key Monotonicity** (Theorem 1): for argmax representative-selection, monotonicity and content-stability are equivalent — the structural foundation for CK-CRDT merge.
 2. **Layered No-Orphan Invariant** (Theorem 2): canonicalization at write time ensures no-orphan guarantees under downstream CRDTs with foreign-key dependencies.
 3. **Information-Loss Characterization** (Lemmas 1–2): the information discarded is exactly the within-class loser set, and this is a tight lower bound — no K1-K3-compliant merge can discard fewer operations.
-4. **Content Key Properties** (Theorem 3): determinism, content-locality, and non-key invariance are necessary and sufficient for convergence under argmax selection; violating any one can cause convergence failure or correctness degradation.
+4. **Content Key Properties** (Theorem 4): determinism, content-locality, and non-key invariance are sufficient for convergence under argmax selection; violating any one can cause convergence failure or correctness degradation.
 
-We additionally established (§9) that composite keys inherit convergence (Theorem 4), adaptive keys converge under acyclic migration (Theorem 5), and CK-CRDTs compose with delta-CRDTs under stratified computation (Theorem 6). The framework classifies Docker, IPFS, Git, Yjs, Automerge, and Loro, explaining why ID-at-creation systems avoid content-keying (position-tracking requires ID-at-creation) and when content-keying is necessary (multiple peers creating semantically identical entities independently).
+We additionally established (§9) that composite keys inherit convergence (Theorem 5), approximate keys converge when deterministic (Theorem 6), adaptive keys converge under acyclic migration (Theorem 7), and CK-CRDTs compose with delta-CRDTs under stratified computation (Theorem 8). The framework classifies Docker, IPFS, Git, Yjs, Automerge, and Loro, explaining why ID-at-creation systems avoid content-keying (position-tracking requires ID-at-creation) and when content-keying is necessary (multiple peers creating semantically identical entities independently).
 
 The framework classifies content-addressed systems, version control, deduplicating sync, collaborative editors, and our knowledge-graph pipeline. It explains why ID-at-creation systems (Yjs, Automerge) avoid content-keying (position-tracking requires ID-at-creation; the dedup capability would break sequence semantics) and when content-keying is necessary (when multiple peers create semantically identical entities independently).
 

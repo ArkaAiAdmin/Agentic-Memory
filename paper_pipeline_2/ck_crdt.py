@@ -245,15 +245,27 @@ def redirect_edge_ids(
 
 
 def merge_edge_ops(ops: Iterable[EdgeOp]) -> Dict[int, Dict[str, Any]]:
-    """Merge edge ops using vv_dominates with timestamp/agent tiebreak."""
+    """Merge edge ops using vv_dominates with timestamp/agent tiebreak.
+
+    Pre-sorts edge operations canonically by (timestamp, _serialise_vv, agent_id)
+    to eliminate arrival-order non-transitivity during the fold.
+    """
     by_edge: Dict[int, List[EdgeOp]] = {}
     for op in ops:
         by_edge.setdefault(op.edge_id, []).append(op)
 
     result: Dict[int, Dict[str, Any]] = {}
     for edge_id, ops_for_edge in by_edge.items():
-        winner = ops_for_edge[0]
-        for candidate in ops_for_edge[1:]:
+        sorted_ops = sorted(
+            ops_for_edge,
+            key=lambda o: (
+                o.timestamp,
+                _serialise_vv(o.version_vector),
+                o.agent_id,
+            ),
+        )
+        winner = sorted_ops[0]
+        for candidate in sorted_ops[1:]:
             if vv_dominates(candidate.version_vector, winner.version_vector):
                 winner = candidate
             elif not vv_dominates(winner.version_vector, candidate.version_vector):

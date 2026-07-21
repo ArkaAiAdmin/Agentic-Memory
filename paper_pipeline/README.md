@@ -37,10 +37,11 @@ If you refer to or build on this work, cite the paper using the
 - `Conflict-Free Knowledge Graph Projection.md`             — markdown source.
 - `crdt_projection.py`  — standalone reference implementation
   (no agent-specific imports; stdlib only: sqlite3, dataclasses, typing).
-- `test_pipeline.py`    — pytest test suite.
+- `test_pipeline.py`    — pytest unit test suite (51 tests).
+- `test_adversarial.py` — pytest adversarial and edge convergence test suite (36 tests).
 
 Reproduces all evaluation scenarios from §7 of the paper. Run
-`pytest test_pipeline.py -v`. Expected: **48 passed in <1 s**.
+`pytest test_pipeline.py test_adversarial.py -v`. Expected: **87 passed in <1 s**.
 
 ## Production alignment
 
@@ -53,10 +54,8 @@ is kept in sync with production. Known alignment points:
   Sort key uses `_serialise_vv` (JSON format) for
   deterministic tiebreaks — matches production.
 - **Edge merge** (`merge_edge_ops`): uses `vv_dominates`, NOT `vv_sum`.
-  `vv_sum` (summing all component clocks) was an earlier simplification
-  in the paper that conflates concurrent ops with different component-wise
-  clocks (e.g. `{A:3,B:0}` vs `{A:0,B:3}` both sum to 3). The paper has
-  been corrected to match the production implementation.
+  Sort key pre-sorts edge operations canonically by `(timestamp, _serialise_vv, agent_id)`
+  to guarantee arrival-order permutation invariance — matches production.
 - **Fingerprint** (`compute_fingerprint`): canonicalises name, entity_type,
   and description via `lower().strip().split()` then SHA-256 — matches
   production `kg/kg_crdt.py` and `DESIGN_inception_fingerprint.md`.
@@ -69,11 +68,11 @@ is kept in sync with production. Known alignment points:
 
 ## Validation
 
-Last verified run: 2026-07-16.
+Last verified run: 2026-07-21.
 
 ```text
-$ pytest test_pipeline.py -v
-============================== 48 passed in 0.09s ==============================
+$ pytest test_pipeline.py test_adversarial.py -q
+============================== 87 passed in 0.34s ==============================
 ```
 
 If a count changes, the paper's reproducibility statement needs an update.
