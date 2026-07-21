@@ -7,11 +7,8 @@ lock contention and database locks in concurrent multithreaded workflows.
 
 from __future__ import annotations
 
-import logging
-import os
-import time
-
 import concurrent.futures
+import logging
 import queue
 import sqlite3
 import threading
@@ -131,15 +128,6 @@ class ProxyConnection:
         self._resp_queue = resp_queue
         self.row_factory: Optional[Any] = None
         self._closed = False
-        # 2026-07-08: bounded response wait. If the write-queue session is
-        # force-closed (idle/max-session timeout) or the worker thread is
-        # stuck, a caller must not block forever waiting for a response
-        # that will never arrive. A timeout surfaces a clean error so the
-        # caller's finally-block close() can run and the next save can
-        # proceed.
-        self._resp_timeout = float(
-            os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "60.0")
-        )
 
     def cursor(self) -> ProxyCursorObject:
         return ProxyCursorObject(self)
@@ -148,20 +136,6 @@ class ProxyConnection:
     def in_transaction(self) -> bool:
         return True
 
-    def _wait_response(self):
-        """Wait for a response from the write-queue session, bounded.
-
-        Raises ``sqlite3.OperationalError`` on timeout so the caller's
-        finally-block ``close()`` runs instead of hanging indefinitely.
-        """
-        try:
-            return self._resp_queue.get(timeout=self._resp_timeout)
-        except queue.Empty:
-            raise sqlite3.OperationalError(
-                f"write queue session response timeout after "
-                f"{self._resp_timeout:.0f}s (session likely force-closed)"
-            )
-
     def execute(self, sql: str, params: Any = ()) -> ProxyCursor:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
@@ -169,7 +143,7 @@ class ProxyConnection:
             # The write queue session is already in a transaction (started with BEGIN IMMEDIATE)
             return ProxyCursor(None, [], None, None)
         self._cmd_queue.put(("execute", (sql, params)))
-        status, res = self._wait_response()
+        status, res = self._resp_queue.get()
         if status == "error":
             raise res
         lastrowid, rowcount, fetchall_data, description = res
@@ -189,7 +163,7 @@ class ProxyConnection:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
         self._cmd_queue.put(("executemany", (sql, list(params_seq))))
-        status, res = self._wait_response()
+        status, res = self._resp_queue.get()
         if status == "error":
             raise res
         lastrowid, rowcount, _, description = res
@@ -199,7 +173,7 @@ class ProxyConnection:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
         self._cmd_queue.put(("executescript", sql_script))
-        status, res = self._wait_response()
+        status, res = self._resp_queue.get()
         if status == "error":
             raise res
         return self
@@ -208,48 +182,7 @@ class ProxyConnection:
         if self._closed:
             return
         self._cmd_queue.put(("commit", None))
-        status, res = self._wait_response()
-        if status == "error":
-            raise res
-
-    def commit_release(self) -> None:
-        """Commit the session transaction WITHOUT re-acquiring BEGIN IMMEDIATE.
-
-        Releases the RESERVED lock so other processes (e.g. cron subprocesses)
-        can write to the database. Caller must call ``acquire_lock()`` before
-        the next write operation.
-        """
-        if self._closed:
-            return
-        self._cmd_queue.put(("commit_release", None))
-        status, res = self._wait_response()
-        if status == "error":
-            raise res
-
-    def acquire_lock(self) -> None:
-        """Re-acquire BEGIN IMMEDIATE after ``commit_release()``."""
-        if self._closed:
-            return
-        self._cmd_queue.put(("acquire_lock", None))
-        status, res = self._wait_response()
-        if status == "error":
-            raise res
-
-    def release_flock(self) -> None:
-        """Release the per-DB-path flock so subprocesses can write."""
-        if self._closed:
-            return
-        self._cmd_queue.put(("release_flock", None))
-        status, res = self._wait_response()
-        if status == "error":
-            raise res
-
-    def acquire_flock(self) -> None:
-        """Re-acquire the per-DB-path flock after ``release_flock()``."""
-        if self._closed:
-            return
-        self._cmd_queue.put(("acquire_flock", None))
-        status, res = self._wait_response()
+        status, res = self._resp_queue.get()
         if status == "error":
             raise res
 
@@ -257,7 +190,7 @@ class ProxyConnection:
         if self._closed:
             return
         self._cmd_queue.put(("rollback", None))
-        status, res = self._wait_response()
+        status, res = self._resp_queue.get()
         if status == "error":
             raise res
 
@@ -267,9 +200,9 @@ class ProxyConnection:
         self._closed = True
         self._cmd_queue.put(("close", None))
         try:
-            self._resp_queue.get(timeout=30.0)
-        except Exception as e:
-            logger.warning("close failed: %s", e)
+            self._resp_queue.get()
+        except Exception:
+            pass
 
     def __enter__(self) -> ProxyConnection:
         return self
@@ -283,8 +216,8 @@ class ProxyConnection:
     def __del__(self) -> None:
         try:
             self.close()
-        except Exception as e:
-            logger.warning("__del__ failed: %s", e)
+        except Exception:
+            pass
 
 
 class SQLiteWriteQueue:
@@ -304,17 +237,13 @@ class SQLiteWriteQueue:
         )
         self._thread.start()
 
-    def start_session(
-        self,
-        db_path: Union[str, Path],
-        tenant_id: str = "default",
-    ) -> ProxyConnection:
+    def start_session(self, db_path: Union[str, Path]) -> ProxyConnection:
         """Start a write session proxy that executes transactions on the write queue thread."""
         cmd_queue: queue.Queue = queue.Queue()
         resp_queue: queue.Queue = queue.Queue()
         future: concurrent.futures.Future = concurrent.futures.Future()
-        self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue), future, tenant_id))
-        future.result(timeout=60.0)
+        self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue), future))
+        future.result(timeout=30.0)
         return ProxyConnection(cmd_queue, resp_queue)
 
     def enqueue_write(
@@ -322,7 +251,6 @@ class SQLiteWriteQueue:
         db_path: Union[str, Path],
         query: str,
         params: tuple = (),
-        tenant_id: str = "default",
     ) -> concurrent.futures.Future:
         """Enqueue a single mutating SQL statement.
 
@@ -330,14 +258,13 @@ class SQLiteWriteQueue:
             Future resolving to (last_rowid, rowcount) tuple.
         """
         future: concurrent.futures.Future = concurrent.futures.Future()
-        self._queue.put((Path(db_path), "statement", (query, params), future, tenant_id))
+        self._queue.put((Path(db_path), "statement", (query, params), future))
         return future
 
     def enqueue_transaction(
         self,
         db_path: Union[str, Path],
         callback: Callable[[sqlite3.Connection], Any],
-        tenant_id: str = "default",
     ) -> concurrent.futures.Future:
         """Enqueue an entire transactional callback to run serially on the writer thread.
 
@@ -349,7 +276,7 @@ class SQLiteWriteQueue:
             Future resolving to the callback's return value.
         """
         future: concurrent.futures.Future = concurrent.futures.Future()
-        self._queue.put((Path(db_path), "callback", callback, future, tenant_id))
+        self._queue.put((Path(db_path), "callback", callback, future))
         return future
 
     def _run_loop(self) -> None:
@@ -362,8 +289,7 @@ class SQLiteWriteQueue:
             if task is None:
                 break
 
-            db_path, task_type, payload, future = task[:4]
-            task_tenant_id = task[4] if len(task) >= 5 else "default"
+            db_path, task_type, payload, future = task
             try:
                 from infra.db_path_flock import db_path_flock
 
@@ -371,46 +297,11 @@ class SQLiteWriteQueue:
                 with lock_ctx:
                     conn = None
                     try:
-                        # 2026-07-20 (write-contention hardening): bound the
-                        # raw connection's lock wait. Under CQRS the reconciler
-                        # (this thread) is the ONLY writer to memory.db, but the
-                        # sync daemons / api server / cron also open connections.
-                        # A long busy_timeout here let a single session hold the
-                        # RESERVED write lock for up to the 300s MAX_S session
-                        # window whenever another process grabbed the lock first
-                        # -> every other writer spun on "database is locked" and
-                        # the reconciler's retry loop burned CPU. 30s was the
-                        # old value; we keep WAL but use a short busy_timeout so
-                        # a contended BEGIN IMMEDIATE surfaces a clean error
-                        # fast instead of pinning the lock.
-                        conn = sqlite3.connect(str(db_path), timeout=5.0)
+                        conn = sqlite3.connect(str(db_path), timeout=30.0)
                         conn.execute("PRAGMA journal_mode=WAL")
-                        conn.execute("PRAGMA busy_timeout=5000")
+                        conn.execute("PRAGMA busy_timeout=30000")
                         conn.execute("PRAGMA foreign_keys=ON")
-
-                        # Ensure schema (FTS, triggers, etc.) is up to date
-                        # on this raw connection — same as open_db / pool.get.
-                        try:
-                            from infra.db_migrations import run_schema_setup
-                            run_schema_setup(conn)
-                        except Exception as schema_exc:
-                            logger.warning(
-                                "db_write_queue schema setup failed: %s",
-                                schema_exc,
-                            )
-                        # Create tenant isolation primitives (function + view)
-                        # matching what connection_pool.get() does.
-                        try:
-                            conn.create_function("tenant_id", 0, lambda: task_tenant_id)
-                            conn.execute(
-                                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
-                                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-                            )
-                        except Exception as tenant_exc:
-                            logger.warning(
-                                "db_write_queue tenant view failed: %s",
-                                tenant_exc,
-                            )
+                        conn.execute("PRAGMA wal_autocheckpoint=500")
 
                         if task_type == "statement":
                             query, params = payload
@@ -429,50 +320,25 @@ class SQLiteWriteQueue:
                                 conn.commit()
                                 future.set_result(result)
                             except Exception as cb_exc:
-                                logger.warning("_run_loop failed: %s", cb_exc)
                                 try:
                                     conn.rollback()
-                                except Exception as e:
-                                    logger.warning("_run_loop failed: %s", e)
+                                except Exception:
+                                    pass
                                 raise cb_exc
 
                         elif task_type == "session":
                             cmd_queue, resp_queue = payload
                             conn.execute("BEGIN IMMEDIATE")
-                            # 2026-07-08: bound the session lifetime so a
-                            # caller that forgets to send ``close`` (or dies
-                            # mid-session) cannot hold the RESERVED write
-                            # lock on memory.db for the previous 3600s idle
-                            # window. On idle/max-session timeout we rollback
-                            # (releasing the lock) and break the loop.
-                            _idle_s = float(os.environ.get("MEMORY_WRITE_QUEUE_IDLE_S", "30.0"))
-                            _max_s = float(os.environ.get("MEMORY_WRITE_QUEUE_MAX_S", "300.0"))
-                            _session_start = time.monotonic()
                             try:
                                 future.set_result(True)
                                 while True:
-                                    _elapsed = time.monotonic() - _session_start
-                                    if _elapsed > _max_s:
-                                        logger.warning(
-                                            "_run_loop: session exceeded max duration %.0fs; force-rolling-back",
-                                            _max_s,
-                                        )
-                                        try:
-                                            conn.rollback()
-                                        except Exception as _rb_e:
-                                            logger.warning("_run_loop rollback failed: %s", _rb_e)
-                                        break
                                     try:
-                                        cmd = cmd_queue.get(timeout=_idle_s)
+                                        cmd = cmd_queue.get(timeout=3600.0)
                                     except queue.Empty:
-                                        logger.warning(
-                                            "_run_loop: session idle >%.0fs; force-rolling-back to release lock",
-                                            _idle_s,
-                                        )
                                         try:
                                             conn.rollback()
-                                        except Exception as _rb_e:
-                                            logger.warning("_run_loop rollback failed: %s", _rb_e)
+                                        except Exception:
+                                            pass
                                         break
                                     if cmd is None:
                                         conn.commit()
@@ -518,20 +384,6 @@ class SQLiteWriteQueue:
                                             conn.commit()
                                             conn.execute("BEGIN IMMEDIATE")
                                             resp_queue.put(("success", None))
-                                        elif action == "commit_release":
-                                            conn.commit()
-                                            resp_queue.put(("success", None))
-                                        elif action == "acquire_lock":
-                                            conn.execute("BEGIN IMMEDIATE")
-                                            resp_queue.put(("success", None))
-                                        elif action == "release_flock":
-                                            from infra.db_path_flock import release_db_path_flock
-                                            release_db_path_flock(db_path)
-                                            resp_queue.put(("success", None))
-                                        elif action == "acquire_flock":
-                                            from infra.db_path_flock import acquire_db_path_flock
-                                            acquire_db_path_flock(db_path)
-                                            resp_queue.put(("success", None))
                                         elif action == "rollback":
                                             conn.rollback()
                                             conn.execute("BEGIN IMMEDIATE")
@@ -541,14 +393,12 @@ class SQLiteWriteQueue:
                                             resp_queue.put(("success", None))
                                             break
                                     except Exception as q_exc:
-                                        logger.warning("_run_loop failed: %s", q_exc)
                                         resp_queue.put(("error", q_exc))
                             except Exception as sess_exc:
-                                logger.warning("_run_loop failed: %s", sess_exc)
                                 try:
                                     conn.rollback()
-                                except Exception as e:
-                                    logger.warning("_run_loop failed: %s", e)
+                                except Exception:
+                                    pass
                                 if not future.done():
                                     future.set_exception(sess_exc)
 
@@ -560,8 +410,8 @@ class SQLiteWriteQueue:
                         if conn:
                             try:
                                 conn.close()
-                            except Exception as e:
-                                logger.warning("_run_loop failed: %s", e)
+                            except Exception:
+                                pass
 
             except Exception as e:
                 logger.error("Fatal error in SQLiteWriteQueue run loop: %s", e)
@@ -589,8 +439,8 @@ class SQLiteWriteQueue:
                 break
         try:
             self._queue.put(None)
-        except Exception as e:
-            logger.warning("stop failed: %s", e)
+        except Exception:
+            pass
         self._thread.join(timeout=timeout)
 
 

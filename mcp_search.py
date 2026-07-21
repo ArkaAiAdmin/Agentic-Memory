@@ -24,191 +24,15 @@ from mcp_common import (
 )
 from mcp_instance import mcp
 from search_pipeline import search_memories as _search_memories_impl
-from search_pipeline import (
-    _bb2_resolve,
-    _bb2_record_turn,
-    _reciprocal_rank_fusion,
-)
-import json as _json
-
-
-def _search_row_to_item(r) -> dict:
-    """Convert a raw result tuple (results_to_display) to a result-items dict."""
-    tags_json = r[3]
-    try:
-        tags = _json.loads(tags_json) if tags_json else []
-    except Exception as e:
-        logger.warning("Unhandled exception in _search_row_to_item: %s", e)
-        tags = []
-    metadata_json = r[11] if len(r) > 11 else None
-    auto_summary = None
-    if metadata_json:
-        try:
-            meta = (
-                _json.loads(metadata_json)
-                if isinstance(metadata_json, str)
-                else metadata_json
-            )
-            if meta and meta.get("auto_summary"):
-                auto_summary = meta["auto_summary"]
-        except Exception as e:
-            logger.warning("Unhandled exception in _search_row_to_item: %s", e)
-    return {
-        "id": r[0],
-        "content": r[1],
-        "source_file": r[2],
-        "tags": tags,
-        "created": r[4],
-        "rank": r[5],
-        "final_score": r[6],
-        "fitness_score": r[7],
-        "importance": r[8],
-        "pinned": r[9],
-        "backlinks": [],
-        "last_accessed": r[10] if len(r) > 10 else None,
-        "summary": auto_summary,
-    }
-
-
-def _format_merged_results(merged_rtd, query: str, rerank: bool) -> tuple[str, list[dict]]:
-    """Format raw merged result tuples into (output_string, result_items).
-
-    Inline version of the formatting steps from _build_result_items +
-    _format_search_results.  Avoids importing _build_result_items (which
-    would trigger a circular module-init path).
-    """
-    result_items = [_search_row_to_item(r) for r in merged_rtd]
-    output_lines = [
-        f"Search results for: '{query}' (Re-ranked)"
-        if rerank
-        else f"Search results for: '{query}'"
-    ]
-    for i, r in enumerate(merged_rtd, 1):
-        (
-            note_id,
-            content,
-            source_file,
-            tags_json,
-            created,
-            rank,
-            final_score,
-            fitness_score,
-            importance_val,
-            pinned,
-        ) = r[:10]
-        try:
-            tags = _json.loads(tags_json) if tags_json else []
-        except Exception as e:
-            logger.warning("Unhandled exception in _format_merged_results: %s", e)
-            tags = []
-        tags_str = ", ".join(tags) if tags else "none"
-        score_info = (
-            f"(Relevance: {final_score:.2f})" if rerank else f"(Rank: {-rank:.2f})"
-        )
-        if fitness_score is not None:
-            score_info += f" | Fitness: {fitness_score:.2f} | Importance: {importance_val} | Pinned: {('yes' if pinned else 'no')}"
-        output_lines.append(
-            f"[{i}] {note_id} {score_info}\n"
-            f"    Source: memory/{source_file}\n"
-            f"    Tags: {tags_str}\n"
-            f"    Backlinks: none\n"
-            f"    Created: {created}\n"
-            f"    Content:\n    {content.strip()}"
-        )
-    return "\n".join(output_lines), result_items
-
-
-def _rrf_fuse_local_global(
-    local_raw: list,
-    global_raw: list,
-    k: int | None = None,
-) -> tuple[list[str], dict]:
-    """RRF-fuse local and global raw_results into a single merged ranking.
-
-    Returns (merged_ids, rrf_scores) where merged_ids is ordered by
-    descending RRF score.  Falls back to local-only if global is empty.
-    """
-    if k is None:
-        try:
-            from infra._lazy_imports import get_config
-            k = int(get_config().rrf_k)
-        except Exception:
-            k = 60
-    def _ordered_ids(raw):
-        seen: set = set()
-        ordered: list = []
-        for r_item in raw:
-            doc_id = r_item[0] if r_item else None
-            if doc_id is None or doc_id in seen:
-                continue
-            seen.add(doc_id)
-            ordered.append(doc_id)
-        return ordered
-
-    local_ids = _ordered_ids(local_raw)
-    global_ids = _ordered_ids(global_raw)
-    if not local_ids and not global_ids:
-        return [], {}
-    if not global_ids:
-        return local_ids, {}
-    if not local_ids:
-        return global_ids, {}
-    rrf = _reciprocal_rank_fusion([local_ids, global_ids], k=k)
-    sorted_ids = sorted(rrf, key=lambda doc_id: rrf.get(doc_id, 0.0), reverse=True)
-    return sorted_ids, rrf
-
-
-def _rebuild_output_for_ids(
-    merged_ids: list[str],
-    local_results: dict,
-    global_results: dict,
-    local_db,
-    global_db,
-    query: str,
-    rerank: bool,
-    limit: int,
-) -> tuple[str, list[dict]] | None:
-    """Build merged output string + result_items for the given ordered IDs.
-
-    Maps merged_ids back to raw results from both searches, formats output
-    in RRF order.  Returns None on failure (caller falls back to
-    concatenation path).
-    """
-    if not merged_ids:
-        return None
-    id_to_raw: dict = {}
-    for r_item in local_results.get("raw_results", []):
-        if r_item and r_item[0]:
-            id_to_raw.setdefault(r_item[0], r_item)
-    for r_item in global_results.get("raw_results", []):
-        if r_item and r_item[0]:
-            id_to_raw.setdefault(r_item[0], r_item)
-
-    merged_rtd: list = []
-    seen_rtd: set = set()
-    for doc_id in merged_ids:
-        if doc_id in seen_rtd:
-            continue
-        raw = id_to_raw.get(doc_id)
-        if raw is None:
-            continue
-        merged_rtd.append(raw)
-        seen_rtd.add(doc_id)
-        if len(merged_rtd) >= limit:
-            break
-
-    if not merged_rtd:
-        return None
-    try:
-        return _format_merged_results(merged_rtd, query, rerank)
-    except Exception as e:
-        logger.warning("Unhandled exception in _rebuild_output_for_ids: %s", e)
-        return None
-
+from search_pipeline import _bb2_resolve, _bb2_record_turn
 
 # B1 fix (2026-06-22): alias the canonical implementation so
 # ``from mcp_search import search_memories`` resolves to the same
 # function object as ``from search_pipeline import search_memories``.
+# Earlier this module re-implemented the wrapper in-place (with the
+# same signature), which silently shadowed any monkey-patch applied to
+# the canonical function. The two definitions were identical but the
+# identity wasn't shared, breaking ``is`` checks in tests.
 search_memories = _search_memories_impl
 
 
@@ -249,18 +73,6 @@ def _record_spaced_repetition(db_path: Path, result_items: list, query: str) -> 
 # monkey-patches applied to the canonical function were bypassed.
 
 
-# R1: shared query-length cap for both memory_search and
-# memory_semantic_search (was previously only in memory_semantic_search).
-MAX_QUERY_LENGTH = 4096
-
-
-def _cap_query(query: str) -> str:
-    """Return query truncated to MAX_QUERY_LENGTH chars."""
-    if len(query) > MAX_QUERY_LENGTH:
-        return query[:MAX_QUERY_LENGTH]
-    return query
-
-
 @with_audit("memory_search")
 def memory_search(
     query: str,
@@ -268,7 +80,7 @@ def memory_search(
     rerank: bool = True,
     boost_pinned: bool = True,
     recency_weight: float = 0.2,
-    include_global: bool | None = None,
+    include_global: bool = True,
     include_invalid: bool = True,
     deep_rerank: bool = False,
     include_facts: bool = True,
@@ -279,8 +91,6 @@ def memory_search(
     epistemic_source: str | None = None,
     fact_type: str | None = None,
     memory_source: str | None = None,
-    shared_with_me: bool = False,
-    mode: str = "hybrid",
 ) -> str:
     """Perform FTS5 (full-text) and semantic hybrid search across local and global memories.
 
@@ -304,55 +114,10 @@ def memory_search(
     - epistemic_source: Optional filter — only return facts from this source (agent, auto_save, hook, import, cron).
     - fact_type: Optional filter — only return facts of this type (observation, agent_inference, external_stated, hypothesis, derived).
     - memory_source: Filter memories by source type ("agent", "auto_save", "import"). Only returns memories whose source file category matches the given type.
-    - mode: Search mode: "hybrid" (FTS5 + semantic), "semantic" (vector-only),
-        "fts" (BM25-only), "facts" (facts-only), "graph" (graph-only). Default is "hybrid".
 
     RETURNS:
     A human-readable formatted string listing the ranked memories, their content, category, tags, and related facts.
     """
-    # Rate-limit gate: check budget before any processing.
-    try:
-        from infra.memory_common import rate_limit_check
-        if not rate_limit_check("memory_search"):
-            return _err(
-                ErrorCode.RATE_LIMITED,
-                "Rate limited for memory_search. Wait and retry.",
-            )
-    except ImportError:
-        pass
-
-    # RBAC: check read authorization before searching
-    try:
-        from infra.authorizer import mcp_authorize, log_authorization_decision
-        from mcp_memory import _resolve_principal_for_rbac
-        principal_id, resolved_tenant = _resolve_principal_for_rbac()
-        _mem_dir = _resolve_memory_dir()
-        auth_db = str(_mem_dir / "memory.db") if _mem_dir else None
-        if not mcp_authorize(principal_id, "read", "memory", auth_db, tenant_id=resolved_tenant):
-            log_authorization_decision(
-                principal_id=principal_id,
-                action="read",
-                resource="memory",
-                allowed=False,
-                db_path=auth_db,
-                tenant_id=resolved_tenant,
-            )
-            return _err(
-                ErrorCode.AUTHORIZATION_DENIED,
-                f"Not authorized to search memories. "
-                f"Principal '{principal_id or 'anonymous'}' lacks the required role.",
-            )
-    except ImportError:
-        pass
-
-    # R1: gate query length before any processing
-    if len(query) > MAX_QUERY_LENGTH:
-        return _err(
-            ErrorCode.INVALID_PARAMS,
-            f"Query too long ({len(query)} chars; max {MAX_QUERY_LENGTH}). "
-            f"Truncate the query and retry.",
-        )
-
     resolution_note = ""
     expanded_query = query
     try:
@@ -363,17 +128,6 @@ def memory_search(
     except Exception as exc:
         logger.debug("BB2 resolve failed for %r: %s", query, exc)
         expanded_query = query
-
-    # R1: re-cap after BB2 expansion (expansion can grow the query)
-    expanded_query = _cap_query(expanded_query)
-
-    if include_global is None:
-        try:
-            from agent_context import get_agent as _get_agent
-            include_global = True
-        except (ImportError, Exception):
-            include_global = True
-
     active_dir = _resolve_memory_dir()
     if os.environ.get("MEMORY_DB_PATH"):
         local_mem = active_dir
@@ -404,8 +158,6 @@ def memory_search(
                 epistemic_source=epistemic_source,
                 fact_type=fact_type,
                 memory_source=memory_source,
-                shared_with_me=shared_with_me,
-                mode=mode,
             )
         except Exception as exc:
             logger.warning("Local search failed for query %r: %s", expanded_query, exc)
@@ -430,49 +182,11 @@ def memory_search(
                 epistemic_source=epistemic_source,
                 fact_type=fact_type,
                 memory_source=memory_source,
-                shared_with_me=shared_with_me,
-                mode=mode,
             )
         except Exception as exc:
             logger.warning("Global search failed for query %r: %s", expanded_query, exc)
-            global_results = {"results": [], "count": 0, "output": "", "raw_results": []}
-
-        if global_results.get("count", 0) > 0:
-            # R3: RRF-blend the two result sets instead of concatenating.
-            # This prevents a local document ranked #1 and a global document
-            # also ranked #1 from both appearing at the top; RRF merges the
-            # union into a single unified relevance ranking.
-            local_raw = local_results.get("raw_results", [])
-            global_raw = global_results.get("raw_results", [])
-            merged_ids, _rrf_scores = _rrf_fuse_local_global(local_raw, global_raw)
-            fused_output = None
-            if merged_ids:
-                fused_output = _rebuild_output_for_ids(
-                    merged_ids=merged_ids,
-                    local_results=local_results,
-                    global_results=global_results,
-                    local_db=local_db,
-                    global_db=global_db,
-                    query=query,
-                    rerank=rerank,
-                    limit=limit,
-                )
-            if fused_output is not None:
-                out, merged_items = fused_output
-                try:
-                    _bb2_record_turn(
-                        query,
-                        local_raw + global_raw,
-                    )
-                except Exception as exc:
-                    logger.debug("BB2 record_turn failed: %s", exc)
-                _record_spaced_repetition(
-                    local_db if local_db.exists() else global_db,
-                    merged_items or local_results.get("results", []) + global_results.get("results", []),
-                    query,
-                )
-                return (resolution_note + out) if resolution_note else out
-            # Fusion failed — fall back to the original concatenation path
+            global_results = {"results": [], "count": 0, "output": ""}
+        if global_results["count"] > 0:
             sep = (
                 "\n\n---\nGLOBAL MEMORY RESULTS:\n"
                 if local_results["output"]
@@ -509,32 +223,10 @@ def memory_search(
             local_results.get("results", []),
             query,
         )
-        # Coordination: append context about what other agents are doing
-        coord_ctx = ""
-        try:
-            from coordination.hooks import get_coordination_context
-            ctx = get_coordination_context()
-            parts = []
-            if ctx.get("active_locks"):
-                locks = ", ".join(f"{l['file']} ({l['agent']})" for l in ctx["active_locks"][:3])
-                parts.append(f"Active locks: {locks}")
-            if ctx.get("agent_activity"):
-                agents = ", ".join(f"{a['agent']}:{a['activity']}" for a in ctx["agent_activity"][:3])
-                parts.append(f"Active agents: {agents}")
-            if ctx.get("active_tasks"):
-                tasks = len(ctx["active_tasks"])
-                parts.append(f"{tasks} task(s) in progress")
-            if parts:
-                coord_ctx = f"\n\n**Coordination**: {' | '.join(parts)}\n"
-        except Exception:
-            pass
-        output = str(local_results["output"])
-        if coord_ctx:
-            output += coord_ctx
         return (
-            (resolution_note + output)
+            (resolution_note + str(local_results["output"]))
             if resolution_note
-            else output
+            else str(local_results["output"])
         )
     _record_spaced_repetition(
         local_db if local_db.exists() else global_db,
@@ -549,13 +241,6 @@ def memory_search(
 def memory_semantic_search(query: str, limit: int = 5) -> str:
     """Semantic search using embeddings alongside FTS5."""
 
-    if len(query) > MAX_QUERY_LENGTH:
-        return _err(
-            ErrorCode.INVALID_PARAMS,
-            f"Query too long ({len(query)} chars; max {MAX_QUERY_LENGTH}). "
-            f"Truncate the query and retry.",
-        )
-
     script = GLOBAL_SCRIPTS_DIR / "embedding_search.py"
     if not script.exists():
         return _err(ErrorCode.NOT_FOUND, f"embedding_search.py not found at {script}")
@@ -569,9 +254,8 @@ def memory_semantic_search(query: str, limit: int = 5) -> str:
 
 
 @mcp.tool()
-@with_audit("memory_recall_stats")
-def memory_recall_stats(
-    action: str = "context",
+@with_audit("memory_recall_context")
+def memory_recall_context(
     query: str = "",
     limit: int = 15,
     include_pinned: bool = True,
@@ -580,59 +264,42 @@ def memory_recall_stats(
     include_user_profile: bool = True,
     days_recent: int = 7,
     deep_rerank: bool = False,
-    event: str = "",
-    since_ts: str = "",
+    action: str | None = None,
 ) -> str:
-    """Retrieve recall context, trace log entries, or policy configuration/tier metadata.
+    """Assemble a structured memory recall briefing for agent cold-start or session continuity.
 
-    Args:
-        action: "context" (default, generates briefings), "status" (policy configuration), "trace" (trace log entries).
-        query: Search query for context retrieval.
-        limit: Max items to return (applies to context or trace).
-        include_pinned: Include pinned notes in context.
-        include_recent_digests: Include recent session digests in context.
-        include_high_importance: Include high importance notes in context.
-        include_user_profile: Include user profile notes in context.
-        days_recent: Range of days for recent activity fallback in context.
-        deep_rerank: Run deep cross-encoder reranker for best ranking.
-        event: Filter trace logs by event name.
-        since_ts: ISO datetime timestamp filter for trace logs.
+    deep_rerank: when True, runs the Qwen3-0.6B / BGE-m3 deep reranker on
+    the relevant-memories section (1-5s extra CPU, best ranking quality).
+    Default False so the briefing is bounded to <100ms. ON APPLE SILICON
+    (MPS) the deep reranker can hang indefinitely in a PyTorch MPS kernel
+    (2026-06-19 incident: PIDs 68335, 10086). If you don't need the
+    best-quality ranking, leave this False. If you do need it and the call
+    hangs, set the MEMORY_RERANKER_DISABLED env var or
+    `reranker_disabled = true` in memory.toml to fully disable the
+    reranker (falls back to the lightweight weak cross-encoder).
     """
-    if action == "context":
-        from recall.recall import recall_context
+    from recall.recall import recall_context
 
-        target_base = _resolve_memory_dir()
-        db_path = target_base / "memory.db"
-        if not db_path.exists():
-            return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
-        try:
-            result = recall_context(
-                db_path=str(db_path),
-                query=query,
-                limit=limit,
-                include_pinned=include_pinned,
-                include_recent_digests=include_recent_digests,
-                include_high_importance=include_high_importance,
-                include_user_profile=include_user_profile,
-                days_recent=days_recent,
-                deep_rerank=deep_rerank,
-            )
-            return cast(str, result.get("formatted", "No recall available."))
-        except Exception:
-            logger.exception("Recall failed")
-            return _err(ErrorCode.RECALL_ERROR, "Recall failed")
-    elif action == "status":
-        from mcp_maintenance_ops import MAINTENANCE_HANDLERS
-        from mcp_maintenance import MaintenanceOp
-        return MAINTENANCE_HANDLERS[MaintenanceOp.RECALL_STATS](action="status")
-    elif action == "trace":
-        from mcp_maintenance_ops import MAINTENANCE_HANDLERS
-        from mcp_maintenance import MaintenanceOp
-        return MAINTENANCE_HANDLERS[MaintenanceOp.RECALL_STATS](
-            action="trace", limit=limit, event=event, since_ts=since_ts
+    target_base = _resolve_memory_dir()
+    db_path = target_base / "memory.db"
+    if not db_path.exists():
+        return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
+    try:
+        result = recall_context(
+            db_path=str(db_path),
+            query=query,
+            limit=limit,
+            include_pinned=include_pinned,
+            include_recent_digests=include_recent_digests,
+            include_high_importance=include_high_importance,
+            include_user_profile=include_user_profile,
+            days_recent=days_recent,
+            deep_rerank=deep_rerank,
         )
-    else:
-        return _err(ErrorCode.INVALID_PARAMS, f"Unknown action '{action}'. Valid: context, status, trace")
+        return cast(str, result.get("formatted", "No recall available."))
+    except Exception:
+        logger.exception("Recall failed")
+        return _err(ErrorCode.RECALL_ERROR, "Recall failed")
 
 
 @with_audit("memory_session_start")
@@ -678,8 +345,8 @@ def memory_session_start(query: str = "") -> str:
                     "\n**⚠️  Embedding model loading…** "
                     "Semantic search not yet available; using FTS5."
                 )
-        except Exception as e:
-            logger.warning("Unhandled exception in memory_session_start: %s", e)
+        except Exception:
+            pass
         recall = recall_context(
             db_path=str(db_path),
             query=query,
@@ -705,8 +372,7 @@ def memory_session_start(query: str = "") -> str:
                 )
                 for tier, info in stats.get("tiers", {}).items():
                     stats_section += f"  {tier}: {info['count']} (avg importance={info['avg_importance']:.2f})\n"
-            except Exception as e:
-                logger.warning("Unhandled exception in memory_session_start: %s", e)
+            except Exception:
                 stats_section = ""
         else:
             total = recall.get("total_memories", 0)
@@ -714,31 +380,21 @@ def memory_session_start(query: str = "") -> str:
 
         review_section = ""
         try:
-            script = GLOBAL_SCRIPTS_DIR / "spaced_repetition.py"
-            if script.exists():
-                out, _ = _run_subprocess_output(
-                    [sys.executable, str(script)], timeout=5, cwd=str(target_base)
-                )
-                if out and not out.startswith("[stderr]"):
-                    review_section = f"\n**Review Schedule**:\n{out}\n"
-        except Exception as e:
-            logger.warning("Unhandled exception in memory_session_start: %s", e)
-
-        shared_section = ""
-        try:
-            from memory_sharing import list_shared_memories
-            shared = list_shared_memories(limit=5, db_path=str(db_path))
-            if shared and len(shared) > 0:
-                items = "\n".join(
-                    f"  · {s.get('title_slug','?')} [{s.get('category','?')}] "
-                    f"from {s.get('agent_id','?')} (importance={s.get('importance','?')})"
-                    for s in shared[:5]
-                )
-                shared_section = f"\n**Shared Memories** (latest {min(len(shared),5)}):\n{items}\n"
+            import datetime as _dt
+            from infra.db import open_db
+            with open_db(db_path, timeout=5.0, pooled=True, write=False) as rconn:
+                today = _dt.date.today().isoformat()
+                row_total = rconn.execute("SELECT COUNT(*) FROM review_schedule").fetchone()
+                row_due = rconn.execute("SELECT COUNT(*) FROM review_schedule WHERE next_review <= ?", (today,)).fetchone()
+                if row_total and row_due:
+                    review_section = f"\n**Review Schedule**:\n  Total scheduled: {row_total[0]}\n  Due for review: {row_due[0]}\n"
         except Exception:
             pass
 
-        return f"{briefing}{embedding_status}\n{stats_section}{shared_section}{review_section}"
+        return f"{briefing}{embedding_status}\n{stats_section}{review_section}"
     except Exception:
         logger.exception("Session start failed")
         return _err(ErrorCode.SESSION_START_ERROR, "Session start failed")
+
+# Legacy alias for backward compatibility with older test suites
+memory_recall_stats = memory_recall_context

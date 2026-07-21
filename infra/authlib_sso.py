@@ -38,13 +38,21 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
-import requests
+try:
+    import requests
+except ImportError:
+    requests = None
 
 logger = logging.getLogger(__name__)
 
-from joserfc.jwk import import_key
-from joserfc import jwt as jose_jwt
-from joserfc.jwt import JWTClaimsRegistry
+try:
+    from joserfc.jwk import import_key
+    from joserfc import jwt as jose_jwt
+    from joserfc.jwt import JWTClaimsRegistry
+except ImportError:
+    import_key = None
+    jose_jwt = None
+    JWTClaimsRegistry = None
 
 
 # ---------------------------------------------------------------------------

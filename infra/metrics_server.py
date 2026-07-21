@@ -17,12 +17,8 @@ Usage:
     memory_audit_operations_total
 """
 
-import logging
-logger = logging.getLogger(__name__)
-
 import argparse
 import json
-import os
 import sys
 import sqlite3
 from contextlib import closing
@@ -62,50 +58,27 @@ def collect_gauges(db_path: Path) -> str:
         "# TYPE memory_up gauge",
     ]
 
+    from infra.db import open_db
     up = 1
     try:
-        with closing(sqlite3.connect(str(db_path), timeout=5)) as conn:
-            conn.execute("PRAGMA foreign_keys=ON")
-            # Tenant scoping (GAP 10): when MEMORY_METRICS_TENANT is set,
-            # metrics report only that tenant instead of a cross-tenant
-            # aggregate. The value is operator-configured (env), not
-            # request-supplied, so parameterised queries are used for safety.
-            tenant = os.environ.get("MEMORY_METRICS_TENANT", "").strip()
-            if tenant:
-                params = (tenant, tenant, tenant, tenant, tenant, tenant, tenant)
-                row = conn.execute("""
-                    SELECT
-                      (SELECT COUNT(*) FROM memories WHERE tenant_id = ?),
-                      (SELECT COUNT(*) FROM memories WHERE pinned=1 AND tenant_id = ?),
-                      (SELECT COUNT(*) FROM memory_embeddings),
-                      (SELECT COUNT(*) FROM kg_entities),
-                      (SELECT COUNT(*) FROM kg_edges),
-                      (SELECT COUNT(*) FROM memory_chunks),
-                      (SELECT COUNT(*) FROM memory_ctr_feedback),
-                      (SELECT COUNT(*) FROM concept_drift),
-                      (SELECT COUNT(*) FROM memory_audit_log WHERE tenant_id = ?),
-                      (SELECT COUNT(*) FROM memory_audit_log WHERE error IS NOT NULL AND tenant_id = ?),
-                      (SELECT AVG(latency_ms) FROM memory_audit_log WHERE tenant_id = ?),
-                      (SELECT MIN(latency_ms) FROM memory_audit_log WHERE tenant_id = ?),
-                      (SELECT MAX(latency_ms) FROM memory_audit_log WHERE tenant_id = ?)
-                """, params).fetchone()
-            else:
-                row = conn.execute("""
-                    SELECT
-                      (SELECT COUNT(*) FROM memories),
-                      (SELECT COUNT(*) FROM memories WHERE pinned=1),
-                      (SELECT COUNT(*) FROM memory_embeddings),
-                      (SELECT COUNT(*) FROM kg_entities),
-                      (SELECT COUNT(*) FROM kg_edges),
-                      (SELECT COUNT(*) FROM memory_chunks),
-                      (SELECT COUNT(*) FROM memory_ctr_feedback),
-                      (SELECT COUNT(*) FROM concept_drift),
-                      (SELECT COUNT(*) FROM memory_audit_log),
-                      (SELECT COUNT(*) FROM memory_audit_log WHERE error IS NOT NULL),
-                      (SELECT AVG(latency_ms) FROM memory_audit_log),
-                      (SELECT MIN(latency_ms) FROM memory_audit_log),
-                      (SELECT MAX(latency_ms) FROM memory_audit_log)
-                """).fetchone()
+        with open_db(db_path, timeout=5.0, pooled=True, write=False) as conn:
+            # Single query with scalar subqueries replaces 11+ round-trips
+            row = conn.execute("""
+                SELECT
+                  (SELECT COUNT(*) FROM memories),
+                  (SELECT COUNT(*) FROM memories WHERE pinned=1),
+                  (SELECT COUNT(*) FROM memory_embeddings),
+                  (SELECT COUNT(*) FROM kg_entities),
+                  (SELECT COUNT(*) FROM kg_edges),
+                  (SELECT COUNT(*) FROM memory_chunks),
+                  (SELECT COUNT(*) FROM memory_ctr_feedback),
+                  (SELECT COUNT(*) FROM concept_drift),
+                  (SELECT COUNT(*) FROM memory_audit_log),
+                  (SELECT COUNT(*) FROM memory_audit_log WHERE error IS NOT NULL),
+                  (SELECT AVG(latency_ms) FROM memory_audit_log),
+                  (SELECT MIN(latency_ms) FROM memory_audit_log),
+                  (SELECT MAX(latency_ms) FROM memory_audit_log)
+            """).fetchone()
             if row:
                 cols = [
                     ("memory_notes_total", 0),
@@ -136,7 +109,6 @@ def collect_gauges(db_path: Path) -> str:
                 lines.append(f'memory_tier_count{{tier="{safe}"}} {c}')
 
     except Exception as exc:
-        logger.warning("collect_gauges failed: %s", exc)
         up = 0
         lines.append(f"# error: {exc}")
 
@@ -152,13 +124,6 @@ class MetricsHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/metrics":
             payload = collect_gauges(DB)
-            try:
-                from background.background_worker import get_worker_prometheus_text
-                worker_text = get_worker_prometheus_text()
-                if worker_text:
-                    payload += "\n" + worker_text + "\n"
-            except Exception:
-                pass
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
             self.end_headers()
@@ -187,12 +152,11 @@ class MetricsHandler(BaseHTTPRequestHandler):
 
 def db_up() -> bool:
     try:
-        with closing(sqlite3.connect(str(DB), timeout=5)) as conn:
-            conn.execute("PRAGMA foreign_keys=ON")
+        from infra.db import open_db
+        with open_db(DB, timeout=5.0, pooled=True, write=False) as conn:
             conn.execute("SELECT 1").fetchone()
             return True
-    except Exception as e:
-        logger.warning("db_up failed: %s", e)
+    except Exception:
         return False
 
 

@@ -44,80 +44,22 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from infra.metrics import _RuntimeCounters
-
 _BG_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _BG_DIR)
 _REPO_ROOT = os.path.dirname(_BG_DIR)
 sys.path.insert(0, _REPO_ROOT)
-from background.background_queue import init_task_queue, dequeue_task, complete_task, fail_task, reset_stuck_processing_tasks
+from background.background_queue import init_task_queue, dequeue_task, complete_task, fail_task
 from infra.infrastructure import resolve_active_memory_dir
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from infra.db import AnyConnection
-    from infra.db_write_queue import ProxyConnection
 
 
 logger = logging.getLogger(__name__)
 
-_worker_counters = _RuntimeCounters()
-
-# Structured logging helper for observability
-def _log_structured(level: str | int, event: str, **fields: Any) -> None:
-    import json as _json
-    if isinstance(level, int):
-        level = logging.getLevelName(level).lower()
-    log_entry = {"event": event, **fields}
-    getattr(logger, level)(_json.dumps(log_entry))
-
-
-def get_worker_prometheus_text() -> str:
-    snap = _worker_counters.snapshot()
-    lines = []
-    counters = snap.get("counters", {})
-    ok_by_handler: dict[str, int] = {}
-    error_by_handler: dict[str, int] = {}
-    for key, val in counters.items():
-        if key.startswith("worker_ok_"):
-            ok_by_handler[key[len("worker_ok_"):]] = val
-        elif key.startswith("worker_error_"):
-            error_by_handler[key[len("worker_error_"):]] = val
-    if ok_by_handler or error_by_handler:
-        lines.append("# HELP agentic_memory_worker_tasks_total Total tasks processed per handler")
-        lines.append("# TYPE agentic_memory_worker_tasks_total counter")
-        all_handlers = sorted(set(list(ok_by_handler.keys()) + list(error_by_handler.keys())))
-        for handler in all_handlers:
-            ok_val = ok_by_handler.get(handler, 0)
-            error_val = error_by_handler.get(handler, 0)
-            lines.append(f'agentic_memory_worker_tasks_total{{handler="{handler}",status="ok"}} {ok_val}')
-            lines.append(f'agentic_memory_worker_tasks_total{{handler="{handler}",status="error"}} {error_val}')
-    histograms = snap.get("histograms", {})
-    worker_lats = {k: v for k, v in histograms.items() if k.startswith("worker_")}
-    if worker_lats:
-        lines.append("")
-        lines.append("# HELP agentic_memory_worker_latency_ms Handler latency percentiles")
-        lines.append("# TYPE agentic_memory_worker_latency_ms gauge")
-        for handler_key, h in sorted(worker_lats.items()):
-            label = handler_key[len("worker_"):]
-            lines.append(f'agentic_memory_worker_latency_ms{{handler="{label}",percentile="avg"}} {h["avg_ms"]}')
-            lines.append(f'agentic_memory_worker_latency_ms{{handler="{label}",percentile="p50"}} {h["p50_ms"]}')
-            lines.append(f'agentic_memory_worker_latency_ms{{handler="{label}",percentile="p95"}} {h["p95_ms"]}')
-    return "\n".join(lines)
-
-
 # Graceful shutdown flag
 _shutdown = False
-
-# Grace period (seconds) for in-flight task to complete after SIGTERM/SIGINT
-_SHUTDOWN_GRACE_S = int(os.environ.get("MEMORY_WORKER_SHUTDOWN_GRACE_S", "10"))
-
-# LLM fact-extractor guard.  When True, the worker skips any task that
-# requires the LLM extractor (Qwen/Qwen2.5-3B-Instruct, ~2 GB mmap +
-# torch/tokenizers/rayon).  Set automatically for drain/once/short-lived
-# modes (the worker only needs to flush the write journal in those modes),
-# or explicitly via --no-extractor or MEMORY_LLM_EXTRACTION=0.
-_EXTRACTOR_DISABLED = False
 
 # Default batch size for the non-drain worker loop.  Each cron tick
 # processes up to this many tasks before sleeping for ``interval``
@@ -136,8 +78,7 @@ def _get_effective_batch_size() -> int:
         from infra._lazy_imports import get_config
         pool_size: int = int(get_config().db_pool_size)
         return int(min(_DEFAULT_BATCH_SIZE, max(1, pool_size - 4)))
-    except Exception as _wp_exc:
-        logger.warning("_get_effective_batch_size: broad except swallowed: %s", _wp_exc)
+    except Exception:
         return _DEFAULT_BATCH_SIZE
 
 # Module-level keep-alive for the inline flock fd (H-fix 2026-06-22).
@@ -149,26 +90,8 @@ _BACKGROUND_WORKER_LOCK_FD = None
 
 def _handle_signal(signum, frame):
     global _shutdown
-    if _shutdown:
-        return
     _shutdown = True
-    _RECONCILER_SHUTDOWN.set()
-    _log_structured(logging.INFO, "signal_received", signum=signum, grace_s=_SHUTDOWN_GRACE_S)
-    # Give in-flight tasks time to finish their DB writes
-    threading.Thread(
-        target=_shutdown_force_exit,
-        daemon=True,
-        name="shutdown-force-exit",
-    ).start()
-
-
-def _shutdown_force_exit() -> None:
-    """Force-exit the worker process if grace period expires."""
-    import time
-    time.sleep(_SHUTDOWN_GRACE_S)
-    if _shutdown:
-        _log_structured(logging.WARNING, "force_exit", grace_s=_SHUTDOWN_GRACE_S)
-        os._exit(0)
+    logger.info("worker: received signal %d, shutting down after current task", signum)
 
 
 # ---------------------------------------------------------------------------
@@ -199,17 +122,25 @@ def handle_fact_consolidation(
     payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Run fact consolidation (merge similar SPO triples)."""
-    if _EXTRACTOR_DISABLED:
-        return "skipped: extractor disabled"
     try:
         from pathlib import Path as _P
         from fact.consolidate_facts import consolidate_memory_facts
 
+        # Guard: skip if corpus is too large (>2000 notes) — consolidate_facts
+        # uses O(n²) contradiction detection and will return immediately with
+        # a warning, but the module-level imports (llm_extraction, sentence
+        # transformers) still happen at import time and can load a 3B LLM
+        # consuming 6-8GB. Check + short-circuit here to skip the expensive
+        # import entirely when the guard would immediately return.
         try:
-            consolidate_memory_facts(db_path=_P(db_path))
-        except Exception as _wp_exc:
-            logger.warning("handle_fact_consolidation: broad except swallowed: %s", _wp_exc)
+            row = conn.execute("SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL").fetchone()
+            n = int(row[0]) if row else 0
+            if n > 2000:
+                return f"fact consolidation skipped: corpus {n} notes exceeds guard (2000)"
+        except Exception:
             pass
+
+        consolidate_memory_facts(db_path=_P(db_path))
         return "fact consolidation completed"
     except Exception as e:
         raise RuntimeError(f"fact_consolidation failed: {e}") from e
@@ -219,8 +150,6 @@ def handle_semantic_backlinks(
     payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Create semantic KG edges between the saved memory and its nearest neighbors."""
-    if _EXTRACTOR_DISABLED:
-        return "skipped: extractor disabled"
     try:
         from save.backlinks import _auto_semantic_backlinks
 
@@ -279,48 +208,6 @@ def handle_chunk_embedding_index(
         raise RuntimeError(f"chunk_embedding_index failed: {e}") from e
 
 
-def handle_colbert_index(
-    payload: dict, conn: AnyConnection, db_path: Path
-) -> str:
-    """Index ColBERT token embeddings for a memory note (deferred from save)."""
-    try:
-        from save.indexers import _index_colbert
-
-        memory_id = payload.get("memory_id", "")
-        content = payload.get("content", "")
-        if not memory_id or not content:
-            return "skipped: no memory_id or content in payload"
-        category = payload.get("category", "") or (memory_id.split("/")[0] if "/" in memory_id else "general")
-        tags = payload.get("tags", [])
-        source_file = payload.get("source_file", "")
-        _index_colbert(conn, memory_id, content, category, tags, source_file)
-        conn.commit()
-        return f"colbert indexed for {memory_id}"
-    except Exception as e:
-        raise RuntimeError(f"colbert_index failed: {e}") from e
-
-
-def handle_splade_index(
-    payload: dict, conn: AnyConnection, db_path: Path
-) -> str:
-    """Index SPLADE sparse vectors for a memory note (deferred from save)."""
-    try:
-        from save.indexers import _index_splade
-
-        memory_id = payload.get("memory_id", "")
-        content = payload.get("content", "")
-        if not memory_id or not content:
-            return "skipped: no memory_id or content in payload"
-        category = payload.get("category", "") or (memory_id.split("/")[0] if "/" in memory_id else "general")
-        tags = payload.get("tags", [])
-        source_file = payload.get("source_file", "")
-        _index_splade(conn, memory_id, content, category, tags, source_file)
-        conn.commit()
-        return f"splade indexed for {memory_id}"
-    except Exception as e:
-        raise RuntimeError(f"splade_index failed: {e}") from e
-
-
 def handle_embedding_index(
     payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
@@ -333,9 +220,8 @@ def handle_embedding_index(
         source_file = payload.get("source_file", "")
         if not memory_id or not content:
             return "skipped: no memory_id or content in payload"
-        category = payload.get("category", "") or (memory_id.split("/")[0] if "/" in memory_id else "general")
-        tags = payload.get("tags", [])
-        _index_embedding(conn, memory_id, content, category, tags, source_file)
+        category = memory_id.split("/")[0] if "/" in memory_id else "general"
+        _index_embedding(conn, memory_id, content, category, [], source_file)
         conn.commit()
         return f"embedding indexed for {memory_id}"
     except Exception as e:
@@ -346,8 +232,6 @@ def handle_kg_and_fact_index(
     payload: dict, conn: AnyConnection, db_path: Path
 ) -> str:
     """Extract KG entities, facts, and enrich context for a memory (deferred)."""
-    if _EXTRACTOR_DISABLED:
-        return "skipped: extractor disabled"
     try:
         from save.indexers import _index_kg, _index_facts
         from save.post_save_hooks import _enrich_context
@@ -515,33 +399,13 @@ def handle_run_script(
     env = os.environ.copy()
     env.update(payload.get("env", {}))
     env["MEMORY_DB_PATH"] = str(db_path)
-    # Sprint 3: scope the subprocess cron to the task's tenant. The child
-    # process opens its own DB connection and would otherwise read ALL
-    # tenants' rows. The cron script installs the tenant_id() UDF + the
-    # tenant_memories TEMP VIEW from this env var at startup
-    # (see infra.tenant_query.install_tenant_context).
-    task_tenant_id = payload.get("tenant_id", os.environ.get("MEMORY_CRON_TENANT_ID", "default"))
-    env["MEMORY_CRON_TENANT_ID"] = str(task_tenant_id)
-    # Release SQLite RESERVED lock + per-DB-path flock before the
-    # subprocess so the child can write to the DB without blocking.
-    # These methods exist only on ProxyConnection (the write-queue session
-    # proxy); a direct sqlite3.Connection has no such methods, so narrow by
-    # type rather than hasattr to keep the type checker honest.
-    if isinstance(conn, ProxyConnection):
-        conn.commit_release()
-        conn.release_flock()
-    try:
-        result = subprocess.run(
-            [str(venv_py), str(script), *extra_args],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=env,
-        )
-    finally:
-        if isinstance(conn, ProxyConnection):
-            conn.acquire_flock()
-            conn.acquire_lock()
+    result = subprocess.run(
+        [str(venv_py), str(script), *extra_args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=env,
+    )
     stdout = (result.stdout or "").strip()
     stderr = (result.stderr or "").strip()
     if result.returncode != 0:
@@ -556,8 +420,6 @@ HANDLERS = {
     "entity_resolution": handle_entity_resolution,
     "fact_consolidation": handle_fact_consolidation,
     "compact": handle_fact_consolidation,
-    "colbert_index": handle_colbert_index,
-    "splade_index": handle_splade_index,
     "embedding_index": handle_embedding_index,
     "chunk_embedding_index": handle_chunk_embedding_index,
     "kg_and_fact_index": handle_kg_and_fact_index,
@@ -566,46 +428,25 @@ HANDLERS = {
     "wal_checkpoint": handle_wal_checkpoint,
     "run_script": handle_run_script,
     "evidence_chain_staleness": handle_evidence_chain_staleness,
-    "cron_pipeline_sentinel": lambda payload, conn, db_path: "pipeline_healthy",
 }
 
 
 def _lazy_entailment_chains(payload: dict, conn: AnyConnection, db_path: Path) -> str:
-    from config import get_config
-
-    _cfg = get_config()
-    if not getattr(_cfg, 'knowledge_compilation', True):
-        return "entailment_chains: disabled (MEMORY_KNOWLEDGE_COMPILATION=0)"
     from reasoning.compile import handle_entailment_chains
     return handle_entailment_chains(payload, conn, db_path)
 
 
 def _lazy_concept_compilation(payload: dict, conn: AnyConnection, db_path: Path) -> str:
-    from config import get_config
-
-    _cfg = get_config()
-    if not getattr(_cfg, 'knowledge_compilation', True):
-        return "concept_compilation: disabled (MEMORY_KNOWLEDGE_COMPILATION=0)"
     from reasoning.compile import handle_concept_compilation
     return handle_concept_compilation(payload, conn, db_path)
 
 
 def _lazy_skill_enrichment(payload: dict, conn: AnyConnection, db_path: Path) -> str:
-    from config import get_config
-
-    _cfg = get_config()
-    if not getattr(_cfg, 'knowledge_compilation', True):
-        return "skill_enrichment: disabled (MEMORY_KNOWLEDGE_COMPILATION=0)"
     from reasoning.compile import handle_skill_enrichment
     return handle_skill_enrichment(payload, conn, db_path)
 
 
 def _lazy_graph_communities(payload: dict, conn: AnyConnection, db_path: Path) -> str:
-    from config import get_config
-
-    _cfg = get_config()
-    if not getattr(_cfg, 'graph_communities', True):
-        return "graph_communities: disabled (MEMORY_GRAPH_COMMUNITIES=0)"
     from kg.graph_communities import compute_communities, write_community_ids
 
     algorithm = payload.get("algorithm", "louvain")
@@ -655,8 +496,7 @@ def _lazy_graph_snapshots(payload: dict, conn: AnyConnection, db_path: Path) -> 
         try:
             new_entities = _json.loads(last_snapshot[0]) if last_snapshot[0] else []
             removed_entities = _json.loads(last_snapshot[1]) if last_snapshot[1] else []
-        except Exception as _wp_exc:
-            logger.warning("_lazy_graph_snapshots: broad except swallowed: %s", _wp_exc)
+        except Exception:
             pass
 
     conn.execute(
@@ -679,40 +519,6 @@ def _lazy_graph_snapshots(payload: dict, conn: AnyConnection, db_path: Path) -> 
     return f"graph_snapshot: entities={entity_count}, edges={edge_count}, communities={community_count}"
 
 
-def _lazy_revalidate_entailments(
-    payload: dict, conn: AnyConnection, db_path: Path
-) -> str:
-    from reasoning.compile import revalidate_entailment_chains
-
-    dry_run = bool(payload.get("dry_run", False))
-    batch_size = int(payload.get("batch_size", 500))
-    result = revalidate_entailment_chains(
-        conn, db_path, dry_run=dry_run, batch_size=batch_size
-    )
-    return (
-        f"revalidate_entailments: checked={result['checked']} "
-        f"invalidated={result['invalidated']} errors={result['errors']}"
-    )
-
-
-def _lazy_resolve_contradictions(payload: dict, conn: AnyConnection, db_path: Path) -> str:
-    from cron.cron_resolve_contradictions import main
-    main()
-    return "resolve_contradictions: completed"
-
-
-def _lazy_review_beliefs(payload: dict, conn: AnyConnection, db_path: Path) -> str:
-    from cron.cron_review_beliefs import main
-    main()
-    return "review_beliefs: completed"
-
-
-def _lazy_kg_analytics(payload: dict, conn: AnyConnection, db_path: Path) -> str:
-    from cron.cron_kg_analytics import main
-    main()
-    return "kg_analytics: completed"
-
-
 HANDLERS.update(
     {
         "entailment_chains": _lazy_entailment_chains,
@@ -720,11 +526,6 @@ HANDLERS.update(
         "skill_enrichment": _lazy_skill_enrichment,
         "graph_communities": _lazy_graph_communities,
         "graph_snapshots": _lazy_graph_snapshots,
-        "revalidate_entailments": _lazy_revalidate_entailments,
-        "cron_revalidate_entailments": _lazy_revalidate_entailments,
-        "cron_resolve_contradictions": _lazy_resolve_contradictions,
-        "cron_review_beliefs": _lazy_review_beliefs,
-        "cron_kg_analytics": _lazy_kg_analytics,
     }
 )
 
@@ -743,19 +544,8 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_sync": "cron/cron_sync.py",
     "cron_crdt_sync": "cron/cron_crdt_sync.py",
     "cron_monitor_task_queue": "cron/monitor_task_queue.py",
-    # Phase B v2 — Step 4: converted from direct-script to enqueue_task
-    "cron_health_check": "cron/cron_health_check.py",
-    "cron_policy_hash_status": "cron/cron_policy_hash_status.py",
-    "cron_check_config_drift": "cron/cron_check_config_drift.py",
-    "cron_train_forget_model": "cron/cron_train_forget_model.py",
-    "cron_train_temporal_ssm": "cron/cron_train_temporal_ssm.py",
-    "cron_train_ltr": "cron/cron_train_ltr.py",
-    "cron_auto_retry_dead_tasks": "cron/cron_retry_dead_tasks.py",
     # Pre-Phase B — already mapped
-    # Z-7 fix: rename cron/cleanup_auto_logs.py → cron/cron_cleanup_auto_logs.py
-    # to match the cron_*.py naming convention. Old path kept as fallback
-    # for any lingering direct invocations that bypass the task queue.
-    "cron_cleanup_auto_logs": "cron/cron_cleanup_auto_logs.py",
+    "cron_cleanup_auto_logs": "cron/cleanup_auto_logs.py",
     "cron_kg_backfill_monitor": "cron/cron_kg_backfill_monitor.py",
     "cron_embedding_recompute": "cron/cron_embedding_recompute.py",
     "cron_detect_vec_drift": "cron/cron_detect_vec_drift.py",
@@ -766,8 +556,6 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_heartbeat": "cron/cron_heartbeat.py",
     "cron_tier_migration": "cron/cron_tier_migration.py",
     "cron_kg_backfill": "cron/cron_kg_backfill.py",
-    # CHANGE 3: KG analytics moved off the save path to a scheduled job.
-    "cron_kg_analytics": "cron/cron_kg_analytics.py",
     "cron_skill_extraction": "cron/cron_skill_extraction.py",
     "cron_cross_session_learn": "cron/cron_cross_session_learn.py",
     "cron_pinned_decay": "cron/cron_pinned_decay.py",
@@ -777,10 +565,6 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_auto_summarize": "cron/cron_auto_summarize.py",
     "cron_retention_stats": "cron/cron_retention_stats.py",
     "cron_auto_share": "cron/cron_auto_share.py",
-    "cron_promote_drafts": "cron/cron_promote_drafts.py",
-    "cron_semantic_clusters": "cron/cron_semantic_clusters.py",
-    "cron_skill_decay": "cron/cron_skill_decay.py",
-    "cron_review_beliefs": "cron/cron_review_beliefs.py",
 }
 
 
@@ -789,10 +573,8 @@ CRON_SCRIPT_MAP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _get_vec_rebuild_threshold() -> int:
-    """Return the max allowable drift before auto-rebuild.
-
-    Reads from config (memory.toml → search.vec_rebuild_threshold,
+def _get_vec_rebuild_threshold(conn: AnyConnection | None = None) -> int:
+    """Return the vector rebuild threshold (from config or
     env var MEMORY_VEC_REBUILD_THRESHOLD). Default: 15.
 
     When ``vec_rebuild_adaptive`` is true, computes a dynamic threshold
@@ -807,8 +589,7 @@ def _get_vec_rebuild_threshold() -> int:
         cfg = get_config()
         base = int(getattr(cfg, "vec_rebuild_threshold", 15) or 15)
         adaptive = bool(getattr(cfg, "vec_rebuild_adaptive", False))
-    except Exception as _wp_exc:
-        logger.warning("_get_vec_rebuild_threshold: broad except swallowed: %s", _wp_exc)
+    except Exception:
         base = int(os.environ.get("MEMORY_VEC_REBUILD_THRESHOLD", "15"))
         adaptive = False
 
@@ -816,34 +597,46 @@ def _get_vec_rebuild_threshold() -> int:
         return base
 
     try:
-        import sqlite3
         from infra._lazy_imports import get_memory_paths
 
         _, mem_dir, _ = get_memory_paths()
         db_path = mem_dir / "memory.db"
         if not db_path.exists():
             return base
-        conn = sqlite3.connect(str(db_path), timeout=30.0)
-        conn.execute("PRAGMA busy_timeout = 30000;")
-        conn.row_factory = sqlite3.Row
-        window_seconds = 600  # 10-minute window for rate estimation
-        recent_writes = conn.execute(
-            "SELECT COUNT(*) AS n FROM tenant_memories "
-            "WHERE updated_at >= datetime('now', ?)",
-            (f"-{window_seconds} seconds",),
-        ).fetchone()["n"]
-        recent_drift_rows = conn.execute(
-            "SELECT COUNT(*) AS n FROM memory_vec_keys "
-            "WHERE memory_id NOT IN (SELECT id FROM tenant_memories)"
-        ).fetchone()["n"]
-        conn.close()
+
+        close_after = False
+        if conn is None:
+            from infra.db import open_db
+            conn = open_db(db_path, timeout=5.0, pooled=True, write=False).__enter__()
+            close_after = True
+
+        try:
+            window_seconds = 600  # 10-minute window for rate estimation
+            row_writes = conn.execute(
+                "SELECT COUNT(*) AS n FROM memories "
+                "WHERE updated_at >= datetime('now', ?)",
+                (f"-{window_seconds} seconds",),
+            ).fetchone()
+            recent_writes = row_writes[0] if row_writes is not None else 0
+            row_drift = conn.execute(
+                "SELECT COUNT(*) AS n FROM memory_vec_keys "
+                "WHERE memory_id NOT IN (SELECT id FROM memories)"
+            ).fetchone()
+            recent_drift_rows = row_drift[0] if row_drift is not None else 0
+        finally:
+            if close_after and conn is not None:
+                try:
+                    from infra.db import safe_close_db
+                    safe_close_db(conn, should_commit=False)
+                except Exception:
+                    pass
+
         writes_per_minute = max(recent_writes / (window_seconds / 60.0), 0.01)
         drift_per_minute = recent_drift_rows  # count in window
         ratio = drift_per_minute / writes_per_minute
         multiplier = max(0.5, min(3.0, ratio))
         return max(1, int(base * multiplier))
-    except Exception as _wp_exc:
-        logger.warning("_get_vec_rebuild_threshold: broad except swallowed: %s", _wp_exc)
+    except Exception:
         return base
 
 
@@ -862,7 +655,7 @@ def _check_and_reconcile_vec_drift(conn: AnyConnection, db_path: Path) -> None:
     """
     try:
         row_m = conn.execute(
-            "SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL"
+            "SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL"
         ).fetchone()
         n_memories = row_m[0] if row_m is not None else 0
         row_vec = conn.execute("SELECT COUNT(*) FROM memory_vec_keys").fetchone()
@@ -880,11 +673,11 @@ def _check_and_reconcile_vec_drift(conn: AnyConnection, db_path: Path) -> None:
         # un-delete later is cheap.
         n_orphan_vec = conn.execute(
             "DELETE FROM memory_vec_keys WHERE memory_id NOT IN "
-            "(SELECT id FROM tenant_memories)"
+            "(SELECT id FROM memories)"
         ).rowcount
         n_orphan_emb = conn.execute(
             "DELETE FROM memory_embeddings WHERE memory_id NOT IN "
-            "(SELECT id FROM tenant_memories)"
+            "(SELECT id FROM memories)"
         ).rowcount
         if n_orphan_vec or n_orphan_emb:
             conn.commit()
@@ -900,7 +693,7 @@ def _check_and_reconcile_vec_drift(conn: AnyConnection, db_path: Path) -> None:
 
     vec_drift = n_memories - n_vec
     emb_drift = n_memories - n_emb
-    if max(vec_drift, emb_drift) <= _get_vec_rebuild_threshold():
+    if max(vec_drift, emb_drift) <= _get_vec_rebuild_threshold(conn):
         return
 
     logger.info(
@@ -923,368 +716,6 @@ def _check_and_reconcile_vec_drift(conn: AnyConnection, db_path: Path) -> None:
         )
     except Exception as e:
         logger.warning("vec_drift_check: rebuild failed: %s", e)
-
-
-# ---------------------------------------------------------------------------
-# CQRS write-journal reconciliation loop (2026-07-07)
-# ---------------------------------------------------------------------------
-
-
-_RECONCILER_SHUTDOWN = threading.Event()
-
-
-def _reconciliation_loop(journal_path: Path, target_base: Path) -> None:
-    """Continuous loop: poll the write journal and apply pending entries.
-
-    This is the ONLY writer to the main DB.  It serialises journal
-    entries through ``materialize_journal_entry`` which runs the
-    existing saga (DB upsert + vec key + file write + post-save hooks).
-
-    The loop polls every 100ms.  On shutdown signal it finishes the
-    current batch and returns.
-    """
-    from save.pipeline import materialize_journal_entry
-    from sqlite3 import OperationalError as _SQLiteOperationalError
-
-    # 2026-07-20 (write-contention hardening): when memory.db is contended
-    # (sync daemon / api server / cron holding a write lock), materialization
-    # raises "database is locked". The entry is then reset to 'pending' and
-    # re-dequeued on the very next 100ms poll, but the inner retry loop
-    # (save.pipeline.materialize_journal_entry) already applies its own
-    # backoff+dead-letter. To avoid the OUTER loop also busy-spinning on a
-    # locked DB, we throttle the whole loop after a lock error with an
-    # escalating cooldown (capped) so the process does not burn CPU while
-    # contended. The cooldown resets after a successful drain.
-    _lock_cooldown_s = 0.0
-    _MAX_LOCK_COOLDOWN_S = 5.0
-
-    while not _RECONCILER_SHUTDOWN.is_set():
-        try:
-            from infra.write_journal import (
-                dequeue_pending,
-                reset_stuck_processing,
-            )
-
-            # Reset stuck entries first (handles daemon crash mid-batch).
-            # 2026-07-08: reset_stuck_processing now unconditionally closes
-            # the thread-local journal transaction (see write_journal.py),
-            # so we don't need extra cleanup here — but we still wrap in
-            # try/finally for resilience against future code paths.
-            try:
-                reset_stuck_processing(journal_path)
-            except Exception as _rs_err:
-                logger.warning("reconciliation: reset_stuck_processing failed: %s", _rs_err)
-
-            if _lock_cooldown_s > 0:
-                _RECONCILER_SHUTDOWN.wait(_lock_cooldown_s)
-                # Re-check shutdown after sleeping.
-                if _RECONCILER_SHUTDOWN.is_set():
-                    break
-                _lock_cooldown_s = min(_lock_cooldown_s * 1.5, _MAX_LOCK_COOLDOWN_S)
-
-            try:
-                entries = dequeue_pending(journal_path, batch_size=10)
-            except Exception as _dq_err:
-                logger.warning("reconciliation: dequeue_pending failed: %s", _dq_err)
-                _RECONCILER_SHUTDOWN.wait(0.1)
-                continue
-            if not entries:
-                # No work → sleep 100ms before next poll; a clean drain
-                # resets any lock cooldown so we return to tight polling.
-                _lock_cooldown_s = 0.0
-                _RECONCILER_SHUTDOWN.wait(0.1)
-                continue
-
-            _lock_contended = False
-            for entry in entries:
-                if _RECONCILER_SHUTDOWN.is_set():
-                    break
-                try:
-                    materialize_journal_entry(entry, target_base, journal_path)
-                except _SQLiteOperationalError as exc:
-                    # "database is locked" / SQLITE_BUSY: the DB is contended.
-                    # Do not busy-spin; let the outer cooldown throttle us.
-                    _lock_contended = True
-                    logger.warning(
-                        "reconciliation: entry %d (%s) locked: %s",
-                        entry.get("id"),
-                        entry.get("note_id", "?"),
-                        exc,
-                    )
-                except Exception as exc:
-                    logger.exception(
-                        "reconciliation: entry %d (%s) failed: %s",
-                        entry.get("id"),
-                        entry.get("note_id", "?"),
-                        exc,
-                    )
-                # Yield to the scheduler between entries so the shutdown
-                # signal is observed promptly during large batch drains.
-                _RECONCILER_SHUTDOWN.wait(0.001)
-            if _lock_contended:
-                _lock_cooldown_s = max(_lock_cooldown_s, 0.5)
-        except Exception as loop_exc:
-            logger.error("reconciliation loop error: %s", loop_exc)
-            _RECONCILER_SHUTDOWN.wait(1.0)
-
-    _log_structured(logging.INFO, "reconciler_stopped")
-
-
-def _start_reconciler(journal_path: Path, target_base: Path) -> threading.Thread:
-    """Start the reconciliation daemon thread."""
-    _RECONCILER_SHUTDOWN.clear()
-    thread = threading.Thread(
-        target=_reconciliation_loop,
-        args=(journal_path, target_base),
-        daemon=True,
-        name="journal-reconciler",
-    )
-    thread.start()
-    _log_structured(logging.INFO, "reconciler_started", journal=str(journal_path), target=str(target_base))
-    return thread
-
-
-# ---------------------------------------------------------------------------
-# Multi-worker reconciler fleet (opt-in via MEMORY_RECONCILER_N_WORKERS > 1)
-# ---------------------------------------------------------------------------
-
-
-def _journal_is_globally_drained(journal_path: Path) -> bool:
-    """Return True if the journal has no pending or processing entries."""
-    try:
-        conn = sqlite3.connect(str(journal_path), timeout=2)
-        conn.execute("PRAGMA journal_mode=WAL")
-        row = conn.execute(
-            "SELECT "
-            "  SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS p, "
-            "  SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS pr "
-            "FROM write_journal"
-        ).fetchone()
-        conn.close()
-        if row is None:
-            return True
-        pending = int(row[0])
-        processing = int(row[1])
-        return pending == 0 and processing == 0
-    except Exception as _jd_err:
-        logger.debug("global drained check failed: %s", _jd_err)
-        return False
-
-
-def _reconciliation_loop_sharded(
-    journal_path: Path,
-    target_base: Path,
-    worker_id: int,
-    n_workers: int,
-) -> None:
-    """Per-worker reconciler loop with id-sharded journal claim.
-
-    Each worker claims rows whose ``id % n_workers == worker_id`` so
-    N workers operate on disjoint journal slices.  Shutdown is handled
-    via the module-level ``_RECONCILER_SHUTDOWN`` event (set by the
-    parent process supervisor before terminating children).
-    """
-    from save.pipeline import materialize_journal_entry
-    from infra.write_journal import (
-        dequeue_pending_for_worker,
-        reset_stuck_processing,
-    )
-
-    _shutdown_local = threading.Event()
-
-    def _on_term(signum, frame):
-        _shutdown_local.set()
-
-    try:
-        signal.signal(signal.SIGTERM, _on_term)
-        signal.signal(signal.SIGINT, _on_term)
-    except (ValueError, OSError):
-        pass
-
-    _IDLE_EXIT_EMPTIES = 5  # 5 consecutive empty dequeues (~0.5s)
-    _empty_dequeues = 0
-
-    while not _shutdown_local.is_set() and not _RECONCILER_SHUTDOWN.is_set():
-        try:
-            try:
-                reset_stuck_processing(journal_path)
-            except Exception as _rs_err:
-                logger.warning("reconciler-%d: reset_stuck_processing failed: %s", worker_id, _rs_err)
-
-            try:
-                entries = dequeue_pending_for_worker(
-                    journal_path, batch_size=10,
-                    worker_id=worker_id, n_workers=n_workers,
-                )
-            except Exception as _dq_err:
-                logger.warning("reconciler-%d: dequeue failed: %s", worker_id, _dq_err)
-                _shutdown_local.wait(0.1)
-                continue
-
-            if not entries:
-                _empty_dequeues += 1
-                _shutdown_local.wait(0.1)
-                if _empty_dequeues >= _IDLE_EXIT_EMPTIES and _journal_is_globally_drained(
-                    journal_path
-                ):
-                    logger.info(
-                        "reconciler-%d: journal drained after %d idle checks, exiting",
-                        worker_id, _empty_dequeues,
-                    )
-                    break
-                continue
-
-            _empty_dequeues = 0
-
-            for entry in entries:
-                if _shutdown_local.is_set() or _RECONCILER_SHUTDOWN.is_set():
-                    break
-                try:
-                    materialize_journal_entry(entry, target_base, journal_path)
-                except Exception as exc:
-                    logger.exception(
-                        "reconciler-%d: entry %d (%s) failed: %s",
-                        worker_id,
-                        entry.get("id"),
-                        entry.get("note_id", "?"),
-                        exc,
-                    )
-                _shutdown_local.wait(0.001)
-        except Exception as loop_exc:
-            logger.error("reconciler-%d loop error: %s", worker_id, loop_exc)
-            _shutdown_local.wait(1.0)
-
-    _log_structured(logging.INFO, "reconciler_stopped", worker_id=worker_id)
-
-
-def multiwriter_reconciliation_pool(
-    journal_path: Path,
-    target_base: Path,
-    n_workers: int = 4,
-    idle_quit_after_secs: float = 5.0,
-) -> None:
-    """Supervise N reconciler worker processes with id-sharded claim.
-
-    Each child runs as an independent subprocess via ``background.fleet_worker``.
-    The parent polls the journal to detect when it is quiet and terminates
-    workers gracefully.  Used only when ``MEMORY_RECONCILER_N_WORKERS > 1``.
-
-    This avoids the macOS fork-safety issue where daemon threads (connection
-    pool revalidator, write queue) are copied into child processes in an
-    undefined locked state, causing deadlock.
-    """
-    if not (n_workers >= 1):
-        raise ValueError(f"n_workers must be >= 1, got {n_workers}")
-
-    logger.info(
-        "multiwriter pool: spawning n=%d workers (journal=%s)",
-        n_workers, journal_path,
-    )
-
-    # Build command-line args for each worker
-    _worker_cmd_base = [
-        sys.executable, "-m", "background.fleet_worker",
-        str(journal_path), str(target_base),
-    ]
-
-    procs: list[subprocess.Popen] = []
-    for k in range(n_workers):
-        popen = subprocess.Popen(
-            _worker_cmd_base + [str(k), str(n_workers)],
-        )
-        procs.append(popen)
-
-    idle_start: float | None = None
-    _IDLE_SECS = idle_quit_after_secs
-    _POLL_INTERVAL = 1.0
-
-    def _journal_is_quiet() -> bool:
-        try:
-            conn = sqlite3.connect(str(journal_path), timeout=2)
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.row_factory = sqlite3.Row
-            pending = int(conn.execute(
-                "SELECT COUNT(*) AS c FROM write_journal WHERE status='pending'"
-            ).fetchone()["c"])
-            processing = int(conn.execute(
-                "SELECT COUNT(*) AS c FROM write_journal WHERE status='processing'"
-            ).fetchone()["c"])
-            conn.close()
-            return pending == 0 and processing == 0
-        except Exception as _jq_exc:
-            logger.debug("_journal_is_quiet: %s", _jq_exc)
-            return False
-
-    def _terminate_all(timeout: float = 10.0) -> None:
-        for p in procs:
-            if p.poll() is None:
-                try:
-                    p.terminate()
-                except Exception:
-                    pass
-        deadline = time.time() + timeout
-        for p in procs:
-            if p.poll() is None and time.time() < deadline:
-                try:
-                    p.wait(timeout=max(0, deadline - time.time()))
-                except Exception:
-                    pass
-            if p.poll() is None:
-                try:
-                    p.kill()
-                    p.wait(timeout=2)
-                except Exception:
-                    pass
-
-    try:
-        while True:
-            all_done = True
-            for p in procs:
-                if p.poll() is None:
-                    all_done = False
-                    try:
-                        p.wait(timeout=_POLL_INTERVAL)
-                    except Exception:
-                        pass
-            if all_done:
-                break
-            quiet = _journal_is_quiet()
-            if quiet:
-                if idle_start is None:
-                    idle_start = time.time()
-                    logger.info("multiwriter pool: journal drained, idle timer started")
-                elif time.time() - idle_start >= _IDLE_SECS:
-                    logger.info(
-                        "multiwriter pool: idle for %.1fs, exiting",
-                        time.time() - idle_start,
-                    )
-                    break
-            else:
-                if idle_start is not None:
-                    logger.debug("multiwriter pool: work detected, resetting idle")
-                idle_start = None
-    except KeyboardInterrupt:
-        logger.warning("multiwriter pool: SIGINT, terminating children")
-    except Exception as exc:
-        logger.error("multiwriter pool: supervisor error: %s", exc)
-    finally:
-        _RECONCILER_SHUTDOWN.set()
-        _terminate_all(timeout=5)
-        for p in procs:
-            if p.returncode not in (0, None):
-                logger.warning(
-                    "multiwriter pool: reconciler-%d exited with code %d",
-                    procs.index(p), p.returncode,
-                )
-    logger.info("multiwriter pool: all workers exited")
-
-
-def _get_reconciler_worker_count() -> int:
-    """Return the configured reconciler worker count (default 1)."""
-    try:
-        return int(os.environ.get("MEMORY_RECONCILER_N_WORKERS", "1"))
-    except (ValueError, TypeError):
-        return 1
 
 
 # ---------------------------------------------------------------------------
@@ -1340,36 +771,6 @@ def _maybe_run_wal_checkpoint(conn: AnyConnection, db_path: Path) -> None:
 _last_wal_checkpoint_at: float = 0.0
 
 
-def _resolve_task_timeout(conn: AnyConnection, task_type: str) -> int:
-    """Read the per-task-type timeout from cron_task_timeouts (v063+).
-
-    Falls back to MEMORY_WORKER_TASK_TIMEOUT_S env var (default 120s)
-    if the table or row doesn't exist.
-    """
-    try:
-        row = conn.execute(
-            "SELECT timeout_s FROM cron_task_timeouts WHERE task_type = ?",
-            (task_type,),
-        ).fetchone()
-        if row is not None:
-            return int(row[0])
-    except Exception:
-        pass
-    return int(os.environ.get("MEMORY_WORKER_TASK_TIMEOUT_S", "120"))
-
-
-def _cleanup_task_artifacts(ttype: str, payload: dict) -> None:
-    """Clean up subprocess or temp artifacts left by a failed/timed-out task."""
-    _temp_dir = payload.get("temp_dir") or payload.get("working_dir")
-    if _temp_dir and os.path.isdir(_temp_dir):
-        import shutil
-        try:
-            shutil.rmtree(_temp_dir, ignore_errors=True)
-            logger.debug("worker: cleaned up temp dir %s for timed-out task %s", _temp_dir, ttype)
-        except Exception as _cln_exc:
-            logger.warning("worker: cleanup of %s failed: %s", _temp_dir, _cln_exc)
-
-
 def process_one_task(
     conn: AnyConnection, db_path: Path, task_type: str | None = None
 ) -> bool:
@@ -1381,19 +782,6 @@ def process_one_task(
     task_id = task["id"]
     ttype = task["task_type"]
     payload = task["payload"]
-
-    # Sprint 1.2: Apply task-specific tenant_id if provided in payload
-    task_tenant_id = payload.get("tenant_id", "default")
-    try:
-        if isinstance(conn, sqlite3.Connection):
-            conn.create_function("tenant_id", 0, lambda: task_tenant_id)
-        conn.execute("DROP VIEW IF EXISTS tenant_memories")
-        conn.execute(
-            "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
-            "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-        )
-    except Exception:
-        pass
 
     # Resolve cron script paths from CRON_SCRIPT_MAP for cron-style task types.
     if not payload.get("script") and ttype in CRON_SCRIPT_MAP:
@@ -1413,7 +801,6 @@ def process_one_task(
             "entailment_chains": "reasoning.compile.handle_entailment_chains",
             "concept_compilation": "reasoning.compile.handle_concept_compilation",
             "skill_enrichment": "reasoning.compile.handle_skill_enrichment",
-            "revalidate_entailments": "reasoning.compile.revalidate_entailment_chains",
         }
         _mod_path = _lazy_map.get(ttype)
         if _mod_path:
@@ -1435,13 +822,9 @@ def process_one_task(
     # 28+ minutes. If a task runs >120s, log a warning and mark it
     # failed so the queue can progress. Threshold is conservative —
     # KG extraction on 3K memories legitimately takes 5-10s.
-    #
-    # v063: per-task-type timeout is read from cron_task_timeouts table.
-    # Fall back to the env var (default 120s) if the table or row is
-    # missing.
     import signal as _sig
 
-    _PER_TASK_TIMEOUT_S = _resolve_task_timeout(conn, ttype)
+    _PER_TASK_TIMEOUT_S = int(os.environ.get("MEMORY_WORKER_TASK_TIMEOUT_S", "120"))
 
     class _TaskTimeout(Exception):
         pass
@@ -1456,42 +839,50 @@ def process_one_task(
     # non-main threads without crashing; in that case we skip the
     # signal-based timeout (the run is bounded by the outer cron
     # timeout anyway).
-    old_handler = None
-    _use_signal_timeout = threading.current_thread() is threading.main_thread()
+    _use_signal_timeout = (
+        _sig.getsignal(_sig.SIGALRM) is not _sig.SIG_DFL
+        or threading.current_thread() is threading.main_thread()
+    )
 
     if _use_signal_timeout:
         old_handler = _sig.signal(_sig.SIGALRM, _timeout_handler)
         _sig.alarm(_PER_TASK_TIMEOUT_S)
     t_start = time.time()
-    _log_structured(logging.INFO, "task_start", task_id=task_id, task_type=ttype, task_tenant_id=task_tenant_id)
     try:
         result = handler(payload, conn, db_path)
         complete_task(conn, task_id)
         elapsed = time.time() - t_start
-        elapsed_ms = elapsed * 1000.0
-        _worker_counters.inc(f"worker_ok_{ttype}")
-        _worker_counters.record(f"worker_{ttype}_latency", elapsed_ms)
-        _log_structured(logging.INFO, "task_complete", task_id=task_id, task_type=ttype, elapsed_ms=round(elapsed_ms, 2), result=str(result)[:200])
+        logger.info(
+            "worker: completed task %d (%s) in %.2fs: %s",
+            task_id,
+            ttype,
+            elapsed,
+            result,
+        )
     except _TaskTimeout:
         elapsed = time.time() - t_start
-        elapsed_ms = elapsed * 1000.0
         fail_task(conn, task_id, f"timeout after {elapsed:.1f}s")
-        _worker_counters.inc(f"worker_error_{ttype}")
-        _worker_counters.record(f"worker_{ttype}_latency", elapsed_ms)
-        _log_structured(logging.ERROR, "task_timeout", task_id=task_id, task_type=ttype, elapsed_ms=round(elapsed_ms, 2))
-        _cleanup_task_artifacts(ttype, payload)
+        logger.error(
+            "worker: task %d (%s) TIMED OUT after %.1fs — likely runaway regex or loop",
+            task_id,
+            ttype,
+            elapsed,
+        )
     except Exception as e:
         elapsed = time.time() - t_start
-        elapsed_ms = elapsed * 1000.0
         error_msg = str(e)[:500]
         fail_task(conn, task_id, error_msg)
-        _worker_counters.inc(f"worker_error_{ttype}")
-        _worker_counters.record(f"worker_{ttype}_latency", elapsed_ms)
-        _log_structured(logging.ERROR, "task_failed", task_id=task_id, task_type=ttype, elapsed_ms=round(elapsed_ms, 2), error=error_msg)
+        logger.warning(
+            "worker: task %d (%s) failed after %.2fs: %s",
+            task_id,
+            ttype,
+            elapsed,
+            error_msg,
+        )
     finally:
         if _use_signal_timeout:
             _sig.alarm(0)
-            _sig.signal(_sig.SIGALRM, old_handler)
+        _sig.signal(_sig.SIGALRM, old_handler)
 
     return True
 
@@ -1516,7 +907,10 @@ class WorkerPool:
         self._task_type = task_type
 
     def run(self, drain: bool = False, max_tasks: int = 10000) -> None:
-        _log_structured(logging.INFO, "worker_pool_start", n_workers=self._n_workers, db=str(self._db_path), drain=drain, max_tasks=max_tasks)
+        logger.info(
+            "worker pool: starting %d workers (db=%s, drain=%s, max_tasks=%d)",
+            self._n_workers, self._db_path, drain, max_tasks,
+        )
         with ThreadPoolExecutor(max_workers=self._n_workers) as executor:
             futures = [
                 executor.submit(self._worker_loop, i, drain, max_tasks)
@@ -1529,63 +923,19 @@ class WorkerPool:
                     logger.exception("worker pool: worker thread crashed")
 
     def _worker_loop(self, worker_id: int, drain: bool, max_tasks: int) -> None:
-        import sqlite3
-        from infra.db_path_flock import db_path_flock
-
-        def _open(tenant_id: str = "default"):
-            fc = db_path_flock(self._db_path)
-            fc.__enter__()
-            c = sqlite3.connect(str(self._db_path), timeout=30.0)
-            c.execute("PRAGMA journal_mode=WAL")
-            c.execute("PRAGMA busy_timeout=30000")
-            c.execute("PRAGMA foreign_keys=ON")
-            try:
-                c.create_function("tenant_id", 0, lambda: tenant_id)
-                c.execute(
-                    "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
-                    "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-                )
-            except Exception:
-                pass
-            return c, fc
-
+        from infra.db_write_queue import sqlite_write_queue
+        conn = sqlite_write_queue.start_session(self._db_path)
         processed = 0
         t_drain = time.time()
-        last_reset_time = time.time()
         try:
             _DRAIN_MAX_WALL_S = int(
                 os.environ.get("MEMORY_WORKER_DRAIN_MAX_WALL_S", "600")
             )
             while not _shutdown:
-                # Direct per-task sqlite3 connection (same cross-process
-                # serialisation via db_path_flock that sqlite_write_queue
-                # provided), so a wedged singleton writer thread can never
-                # kill the pool. The lock + RESERVED write lock are
-                # released between tasks.
-                c, fc = _open()
-                try:
-                    if time.time() - last_reset_time >= 60.0:
-                        try:
-                            reset_stuck_processing_tasks(c)
-                        except Exception as _reset_exc:
-                            logger.debug("worker pool: stuck task reset failed: %s", _reset_exc)
-                        last_reset_time = time.time()
-                    ok = process_one_task(c, self._db_path, task_type=self._task_type)
-                finally:
-                    try:
-                        c.close()
-                    except Exception:
-                        pass
-                    try:
-                        fc.__exit__(None, None, None)
-                    except Exception:
-                        pass
+                ok = process_one_task(conn, self._db_path, task_type=self._task_type)
                 if not ok:
                     if drain:
                         break
-                    # Idle (no work): the per-task connection is closed, so
-                    # the flock/write-lock is released and other writers can
-                    # enqueue freely. Just sleep briefly.
                     for _ in range(15):
                         if _shutdown:
                             return
@@ -1595,20 +945,29 @@ class WorkerPool:
                 if drain and processed >= max_tasks:
                     break
                 if drain and time.time() - t_drain > _DRAIN_MAX_WALL_S:
-                    _log_structured(logging.WARNING, "drain_wall_clock_cap", worker_id=worker_id, wall_s=_DRAIN_MAX_WALL_S, processed=processed)
+                    logger.warning(
+                        "worker pool: worker %d hit wall-clock cap of %ds after %d tasks",
+                        worker_id, _DRAIN_MAX_WALL_S, processed,
+                    )
                     break
         except Exception:
             logger.exception("worker pool: worker %d crashed", worker_id)
         finally:
-            _log_structured(logging.INFO, "worker_pool_stopped", worker_id=worker_id, processed=processed)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            logger.info(
+                "worker pool: worker %d stopped (processed %d tasks)",
+                worker_id, processed,
+            )
 
 
 def _check_high_priority_pending(conn: AnyConnection) -> bool:
     try:
         row = conn.execute("SELECT id FROM task_queue WHERE status = 'pending' LIMIT 1").fetchone()
         return row is not None
-    except Exception as _wp_exc:
-        logger.warning("_check_high_priority_pending: broad except swallowed: %s", _wp_exc)
+    except Exception:
         return False
 
 
@@ -1635,24 +994,8 @@ def run_worker(
         n_workers: Number of concurrent worker threads (default 1).
             Pass >1 to enable the threaded WorkerPool.
     """
-    # ADD-A-2: signal.signal only works in the main thread.  Guard
-    # both handlers so run_worker is safe when called from a test
-    # harness or other non-main thread.
-    if threading.current_thread() is threading.main_thread():
-        signal.signal(signal.SIGTERM, _handle_signal)
-        signal.signal(signal.SIGINT, _handle_signal)
-
-    # Short-lived / drain callers don't need LLM extraction.
-    # Enforce the extractor-gate here too so tests and other programmatic
-    # callers get the same memory savings as the CLI path.
-    global _EXTRACTOR_DISABLED
-    if drain or once:
-        _EXTRACTOR_DISABLED = True
-    if _EXTRACTOR_DISABLED:
-        logger.info(
-            "worker: LLM extractor disabled (drain=%s, once=%s)",
-            drain, once,
-        )
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
 
     logger.info(
         "worker: starting (db=%s, interval=%ds, once=%s, drain=%s, "
@@ -1672,123 +1015,31 @@ def run_worker(
 
         _check_and_reconcile_vec_drift(init_conn, db_path)
 
-        # W1: self-heal partial save state at startup.  A crash between
-        # the saga's .md write and the DB commit can leave a forward
-        # orphan (.md with no DB row); a crash after commit but before
-        # the file write leaves a backward orphan (DB row, missing .md).
-        # Reconciling both directions means no partial memory survives a
-        # restart of the daemon (the single writer to memory.db).
-        # Skipped in drain/once modes: those are short-lived cron tasks
-        # that only flush the write journal; orphan reconciliation is
-        # a daemon-startup-only concern.
-        if not _EXTRACTOR_DISABLED:
-            try:
-                from memory_integrity import reconcile_orphan_files
+        try:
+            from background.corpus_budget_guard import run_corpus_budget_guard
 
-                reconcile = reconcile_orphan_files(db_path, db_path.parent)
-                n_back = len(reconcile.get("backward_recovered", []))
-                n_fwd = len(reconcile.get("forward_reaped", []))
-                if n_back or n_fwd:
-                    logger.info(
-                        "worker: orphan reconciliation healed %d backward / reaped %d forward",
-                        n_back,
-                        n_fwd,
-                    )
-            except Exception as _orph_exc:
-                logger.debug("worker: orphan reconciliation failed: %s", _orph_exc)
-
-        if not _EXTRACTOR_DISABLED:
-            try:
-                from background.corpus_budget_guard import run_corpus_budget_guard
-
-                guard_status = run_corpus_budget_guard(db_path, conn=init_conn)
-                if guard_status.get("compaction_enqueued"):
-                    logger.info(
-                        "worker: corpus budget exceeded (~%d tokens, budget %d) — "
-                        "compaction enqueued",
-                        guard_status.get("tokens", 0),
-                        guard_status.get("budget", 0),
-                    )
-            except Exception as _guard_exc:
-                logger.debug("worker: corpus budget guard failed: %s", _guard_exc)
+            guard_status = run_corpus_budget_guard(db_path, conn=init_conn)
+            if guard_status.get("compaction_enqueued"):
+                logger.info(
+                    "worker: corpus budget exceeded (~%d tokens, budget %d) — "
+                    "compaction enqueued",
+                    guard_status.get("tokens", 0),
+                    guard_status.get("budget", 0),
+                )
+        except Exception as _guard_exc:
+            logger.debug("worker: corpus budget guard failed: %s", _guard_exc)
 
         _maybe_run_wal_checkpoint(init_conn, db_path)
-
-    # Start the CQRS write-journal reconciliation daemon.
-    # TWO modes, selected by ``MEMORY_RECONCILER_N_WORKERS`` env var
-    # (default 1 = existing single-thread loop; >1 = multi-process
-    # fleet with id-sharded claim for higher throughput):
-    #
-    #   MEMORY_RECONCILER_N_WORKERS=1  →  _start_reconciler (daemon thread)
-    #   MEMORY_RECONCILER_N_WORKERS=4  →  multiwriter_reconciliation_pool (4 OS processes)
-    #
-    # The task worker pool (``n_workers`` arg) is orthogonal: it controls
-    # concurrency of task-queue workers, not journal reconcilers.
-    journal_path = db_path.parent / "journal.db"
-    reconciler_n_workers = _get_reconciler_worker_count()
-
-    if reconciler_n_workers > 1:
-        logger.info(
-            "run_worker: multi-process reconciler fleet (n=%d)", reconciler_n_workers
-        )
-        _RECONCILER_SHUTDOWN.clear()
-        multiwriter_reconciliation_pool(
-            journal_path, db_path.parent, n_workers=reconciler_n_workers
-        )
-        # Pool exits cleanly when journal drains or on signal — return.
-        return
-
-    # Default: single-reconciler thread (behaviour bitidentical to before).
-    reconciler_thread = _start_reconciler(journal_path, db_path.parent)
 
     # Delegate to WorkerPool when n_workers > 1
     if n_workers > 1:
         pool = WorkerPool(db_path, n_workers=n_workers, task_type=task_type)
         pool.run(drain=drain, max_tasks=max_tasks)
-        _RECONCILER_SHUTDOWN.set()
-        reconciler_thread.join(timeout=5)
         return
 
     # Single-threaded path
-    #
-    # Robustness note (2026-07-16): this path previously opened ONE
-    # ``sqlite_write_queue.start_session`` for the whole process. That
-    # session is bounded to MEMORY_WRITE_QUEUE_MAX_S (300s) and
-    # force-rolls-back past that, which silently killed persistent
-    # (launchd) workers after 5 minutes. Worse, the queue's singleton
-    # writer thread becomes wedged once a session force-closes, so every
-    # subsequent start_session timed out and raised — taking the whole
-    # worker down with it.
-    #
-    # The worker IS the single writer (Rule 13: single-writer on main
-    # DB). So instead of routing through the fragile proxy+writer-thread,
-    # we open a direct sqlite3 connection PER TASK, wrapped in the
-    # same per-DB-path ``db_path_flock`` cross-process serialisation the
-    # queue provided. No singleton thread to wedge, no 300s ceiling, and
-    # the RESERVED write lock + flock are released between tasks so other
-    # writers (health check, cron) can enqueue while this worker polls.
-    import sqlite3
-    from infra.db_path_flock import db_path_flock
-
-    def _open_task_conn(tenant_id: str = "default"):
-        flock_ctx = db_path_flock(db_path)
-        flock_ctx.__enter__()
-        c = sqlite3.connect(str(db_path), timeout=30.0)
-        c.execute("PRAGMA journal_mode=WAL")
-        c.execute("PRAGMA busy_timeout=30000")
-        c.execute("PRAGMA foreign_keys=ON")
-        # Match connection_pool.get() tenant isolation primitives.
-        try:
-            c.create_function("tenant_id", 0, lambda: tenant_id)
-            c.execute(
-                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
-                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-            )
-        except Exception:
-            pass
-        return c, flock_ctx
-
-    last_reset_time = time.time()
+    from infra.db_write_queue import sqlite_write_queue
+    conn = sqlite_write_queue.start_session(db_path)
     try:
         # Process-level safety timeout: kill the entire process if any
         # mode (drain, once, interval) runs longer than this cap.
@@ -1805,24 +1056,8 @@ def run_worker(
             )
             os._exit(1)
 
-        _use_proc_signal = threading.current_thread() is threading.main_thread()
-        if _use_proc_signal:
-            _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
+        _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
         _proc_sig.alarm(_PROCESS_TIMEOUT_S)
-
-        def _process_one():
-            c, flock_ctx = _open_task_conn()
-            try:
-                return process_one_task(c, db_path, task_type=task_type)
-            finally:
-                try:
-                    c.close()
-                except Exception:
-                    pass
-                try:
-                    flock_ctx.__exit__(None, None, None)
-                except Exception:
-                    pass
 
         if drain:
             _DRAIN_MAX_WALL_S = int(
@@ -1831,17 +1066,6 @@ def run_worker(
             processed = 0
             t_drain = time.time()
             while not _shutdown and processed < max_tasks:
-                if time.time() - last_reset_time >= 60.0:
-                    try:
-                        c, flock_ctx = _open_task_conn()
-                        try:
-                            reset_stuck_processing_tasks(c)
-                        finally:
-                            c.close()
-                            flock_ctx.__exit__(None, None, None)
-                    except Exception as _reset_exc:
-                        logger.debug("worker: stuck task reset failed: %s", _reset_exc)
-                    last_reset_time = time.time()
                 if time.time() - t_drain > _DRAIN_MAX_WALL_S:
                     logger.warning(
                         "worker: drain hit wall-clock cap of %ds after %d tasks — exiting",
@@ -1849,36 +1073,39 @@ def run_worker(
                         processed,
                     )
                     break
-                ok = _process_one()
+                ok = process_one_task(conn, db_path, task_type=task_type)
                 if not ok:
                     break
                 processed += 1
                 if processed % 50 == 0:
                     elapsed = time.time() - t_drain
                     rate = processed / elapsed if elapsed > 0 else 0
-                    _log_structured(logging.INFO, "drain_progress", processed=processed, max_tasks=max_tasks, rate=round(rate, 1), elapsed_ms=round(elapsed * 1000.0, 2))
+                    logger.info(
+                        "worker: drain progress %d/%d (%.1f tasks/sec)",
+                        processed,
+                        max_tasks,
+                        rate,
+                    )
             elapsed = time.time() - t_drain
-            elapsed_ms = elapsed * 1000.0
-            _log_structured(logging.INFO, "reconciler_drained", n_entries=processed, elapsed_ms=round(elapsed_ms, 2))
+            logger.info(
+                "worker: drain complete — processed %d tasks in %.1fs (%.1f tasks/sec)",
+                processed,
+                elapsed,
+                processed / elapsed if elapsed > 0 else 0,
+            )
+            # Return cleanly so callers (e.g. tests) are not killed.
+            # The write-queue thread is a daemon and does not need a
+            # force-exit; pytest/cron will close the connection pool on
+            # teardown.  Cancel the process-watchdog alarm so it does
+            # not fire after we return.
             _proc_sig.alarm(0)
             return
         else:
             batch_size = _get_effective_batch_size()
             while not _shutdown:
-                if time.time() - last_reset_time >= 60.0:
-                    try:
-                        c, flock_ctx = _open_task_conn()
-                        try:
-                            reset_stuck_processing_tasks(c)
-                        finally:
-                            c.close()
-                            flock_ctx.__exit__(None, None, None)
-                    except Exception as _reset_exc:
-                        logger.debug("worker: stuck task reset failed: %s", _reset_exc)
-                    last_reset_time = time.time()
                 batch_processed = 0
                 while batch_processed < batch_size:
-                    ok = _process_one()
+                    ok = process_one_task(conn, db_path, task_type=task_type)
                     if not ok:
                         break
                     batch_processed += 1
@@ -1888,29 +1115,16 @@ def run_worker(
                     for _ in range(interval):
                         if _shutdown:
                             break
-                        try:
-                            c, flock_ctx = _open_task_conn()
-                            try:
-                                if _check_high_priority_pending(c):
-                                    break
-                            finally:
-                                c.close()
-                                flock_ctx.__exit__(None, None, None)
-                        except Exception as _hp_exc:
-                            logger.debug("worker: hp probe failed: %s", _hp_exc)
+                        if _check_high_priority_pending(conn):
+                            break
                         time.sleep(1)
     finally:
-        if _use_proc_signal:
-            _proc_sig.alarm(0)
-        _RECONCILER_SHUTDOWN.set()
+        _proc_sig.alarm(0)
         try:
-            reconciler_thread.join(timeout=5)
-        except NameError:
+            conn.close()
+        except Exception:
             pass
-        except Exception as _wp_exc:
-            logger.warning("run_worker: broad except swallowed: %s", _wp_exc)
-            pass
-        _log_structured(logging.INFO, "worker_stopped")
+        logger.info("worker: stopped")
 
 
 # ---------------------------------------------------------------------------
@@ -1921,57 +1135,45 @@ def run_worker(
 def main():
     import argparse
 
-    # Step 8 (cron-pipeline-no-flock): when the process-singleton lock is
-    # skipped, overlapping workers are observable + recoverable via the
-    # pipeline-coverage health check (cron_pipeline_health.py) instead of
-    # being hard-gated by flock. Default behaviour keeps the lock.
-    _no_flock = os.environ.get("MEMORY_CRON_NO_FLOCK", "") == "1"
-
     # H-fix (2026-06-22): acquire flock BEFORE arg parsing so two
     # cron ticks that fire 5 minutes apart don't both run the worker
     # concurrently. Without this, --drain mode would accumulate one
     # worker per cron tick (32 workers seen in 90 minutes on a busy
     # system, all racing on the same SQLite WAL).
-    if _no_flock:
-        logger.info(
-            "background_worker: MEMORY_CRON_NO_FLOCK=1 — skipping process "
-            "singleton lock; overlaps observable via pipeline-coverage"
+    try:
+        from cron._flock import acquire_lock_or_exit
+
+        acquire_lock_or_exit("background_worker")
+    except ImportError:
+        # Best-effort: if flock module isn't on path, fall back to
+        # a lightweight inline lock using fcntl directly.
+        # NOTE: do NOT re-import `from pathlib import Path` here —
+        # the import at module scope (line 43) already makes Path
+        # available. A local import makes `Path` a function-local
+        # name in the entire main(), which would then raise
+        # UnboundLocalError on the try-success path (when the cron
+        # flock module IS importable) at `Path(args.db)` on line 612+.
+        import fcntl
+
+        _lock_path = (
+            Path.home()
+            / ".config"
+            / "agentic-memory"
+            / "memory"
+            / "locks"
+            / "background_worker.lock"
         )
-    else:
+        _lock_path.parent.mkdir(parents=True, exist_ok=True)
+        _lock_fd = open(_lock_path, "w")
         try:
-            from cron._flock import acquire_lock_or_exit
-
-            acquire_lock_or_exit("background_worker")
-        except ImportError:
-            # Best-effort: if flock module isn't on path, fall back to
-            # a lightweight inline lock using fcntl directly.
-            # NOTE: do NOT re-import `from pathlib import Path` here —
-            # the import at module scope (line 43) already makes Path
-            # available. A local import makes `Path` a function-local
-            # name in the entire main(), which would then raise
-            # UnboundLocalError on the try-success path (when the cron
-            # flock module IS importable) at `Path(args.db)` on line 612+.
-            import fcntl
-
-            _lock_path = (
-                Path.home()
-                / ".config"
-                / "agentic-memory"
-                / "memory"
-                / "locks"
-                / "background_worker.lock"
-            )
-            _lock_path.parent.mkdir(parents=True, exist_ok=True)
-            _lock_fd = open(_lock_path, "w")
-            try:
-                fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                logger.info("background_worker: another instance holds the lock, exiting")
-                _lock_fd.close()
-                return 0
-            # Hold the fd alive for the lifetime of the worker
-            global _BACKGROUND_WORKER_LOCK_FD
-            _BACKGROUND_WORKER_LOCK_FD = _lock_fd
+            fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            logger.info("background_worker: another instance holds the lock, exiting")
+            _lock_fd.close()
+            return 0
+        # Hold the fd alive for the lifetime of the worker
+        global _BACKGROUND_WORKER_LOCK_FD
+        _BACKGROUND_WORKER_LOCK_FD = _lock_fd
 
     parser = argparse.ArgumentParser(description="Agentic memory background worker")
     parser.add_argument("--once", action="store_true", help="Process one task and exit")
@@ -1997,38 +1199,11 @@ def main():
     parser.add_argument(
         "--workers", type=int, default=None, help="Number of worker threads (default 1)"
     )
-    parser.add_argument(
-        "--no-extractor",
-        action="store_true",
-        help="Disable LLM fact extractor (saves ~2 GB RAM on startup). "
-        "Automatically implied for --drain, --once, and --max-tasks modes. "
-        "Also set via MEMORY_LLM_EXTRACTION=0 env var.",
-    )
     args = parser.parse_args()
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
     )
-
-    # ------------------------------------------------------------------ #
-    # LLM extractor gate                                                    #
-    # Drain/once/short-lived workers only flush the write journal and do   #
-    # not need LLM fact extraction (saves ~2 GB mmap + torch/tokenizers).  #
-    # Also honour the explicit --no-extractor flag and the                  #
-    # MEMORY_LLM_EXTRACTION=0 env var (same flag used by the save path).   #
-    # ------------------------------------------------------------------ #
-    global _EXTRACTOR_DISABLED
-    if args.no_extractor:
-        _EXTRACTOR_DISABLED = True
-    elif args.drain or args.once or args.max_tasks is not None:
-        _EXTRACTOR_DISABLED = True
-    elif os.environ.get("MEMORY_LLM_EXTRACTION", "").strip().lower() in ("0", "false", "no", "off"):
-        _EXTRACTOR_DISABLED = True
-    if _EXTRACTOR_DISABLED:
-        logger.info(
-            "worker: LLM extractor disabled (drain=%s, once=%s, max_tasks=%s, no_extractor=%s)",
-            args.drain, args.once, args.max_tasks is not None, args.no_extractor,
-        )
 
     if args.db:
         db_path = Path(args.db)

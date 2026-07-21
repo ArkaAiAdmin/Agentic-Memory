@@ -85,7 +85,6 @@ class _ConnectionPool:
             time.sleep(30)
             with self._lock:
                 keys = list(self._pool.keys())
-                stale: list[tuple[tuple[str, int], sqlite3.Connection]] = []
                 for key in keys:
                     if key not in self._pool:
                         continue
@@ -101,15 +100,11 @@ class _ConnectionPool:
                         self._pooled_ids.discard(conn_id)
                         self._migrated.discard(key)
                         self._inodes.pop(key, None)
-                        stale.append((key, conn))
-            # C5: close OUTSIDE the lock so get()/put() callers aren't
-            # stalled behind a (potentially slow) socket/OS close.
-            for key, conn in stale:
-                try:
-                    conn.close()
-                    logger.info("db pool: evicted connection for %s in background due to inode drift", key[0])
-                except Exception as e:
-                    logger.warning("db: connection close_failed during background inode-drift eviction: %s", e)
+                        try:
+                            conn.close()
+                            logger.info("db pool: evicted connection for %s in background due to inode drift", key[0])
+                        except Exception:
+                            pass
 
     @staticmethod
     def _inode_of(path: str) -> int:
@@ -292,13 +287,7 @@ class _ConnectionPool:
             except Exception as exc:
                 logger.warning("db: schema ensure_failed: %s", exc)
 
-    def get(
-        self,
-        path: str,
-        timeout: float = 30.0,
-        tenant_id: str | None = None,
-        create: bool = True,
-    ) -> sqlite3.Connection:
+    def get(self, path: str, timeout: float = 30.0, tenant_id: str | None = None) -> sqlite3.Connection:
         """Return a live connection for *path*, creating one if needed.
 
         Connections are keyed by ``(path, thread_ident)`` so different
@@ -306,28 +295,9 @@ class _ConnectionPool:
         repeated calls return the same connection — callers must
         ``put()`` it back before calling ``get()`` again for the same
         path.
-
-        Args:
-            path: Path to the SQLite database file.
-            timeout: Busy timeout (seconds).
-            tenant_id: Tenant routing id (see ``tenant_memories`` view).
-            create: If True (default), an absent file is created via
-                ``sqlite3.connect`` (legacy behaviour, kept for backward
-                compatibility with the many call sites that open a DB for
-                the first time).  If False, an absent file raises
-                :class:`FileNotFoundError` instead of silently creating an
-                empty database — use this on read/critical paths where a
-                missing DB means misconfiguration, not first-run.  The
-                bootstrap/migration path always passes ``create=True``.
         """
         current_thread = threading.current_thread().ident or 0
         key = (path, current_thread)
-        if not create and not Path(path).exists():
-            raise FileNotFoundError(
-                f"Database file does not exist: {path!r}. Refusing to "
-                "create an empty database — pass create=True from the "
-                "bootstrap/migration path if this is a first-run."
-            )
         with self._lock:
             conn = self._pool.get(key)
             if conn is not None:
@@ -355,7 +325,6 @@ class _ConnectionPool:
                         )
                         pass
                     self._pooled_ids.discard(conn_id)
-                    self._migrated.discard((key[0], conn_id))
                     self._pool.pop(key, None)
                     self._depth.pop(key, None)
                     self._inodes.pop(key, None)
@@ -373,56 +342,72 @@ class _ConnectionPool:
                         )
                         try:
                             conn.close()
-                        except Exception as e:
-                            logger.warning("db: connection close_failed during inode-mismatch eviction: %s", e)
+                        except Exception:
+                            pass
                         self._pooled_ids.discard(conn_id)
-                        self._migrated.discard((key[0], conn_id))
                         self._pool.pop(key, None)
                         self._depth.pop(key, None)
                         self._inodes.pop(key, None)
                     else:
-                        if tenant_id is not None:
-                            try:
-                                conn.create_function("tenant_id", 0, lambda: tenant_id)
-                                conn.execute(
-                                    "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
-                                    "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-                                )
-                                conn.execute(
-                                    "CREATE TEMP VIEW IF NOT EXISTS tenant_field_crdt AS "
-                                    "SELECT * FROM memory_field_crdt "
-                                    "WHERE tenant_id = tenant_id()"
-                                )
-                            except Exception as e:
-                                logger.warning("db: failed to create tenant view in pool get: %s", e)
+                        t_id = tenant_id or "default"
+                        try:
+                            conn.create_function("tenant_id", 0, lambda: t_id)
+                            conn.execute(
+                                "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+                            )
+                        except Exception:
+                            pass
                         return conn
-            # C4: Close at most ONE idle same-path orphan (the evicted key)
-            # rather than scanning every other thread's connections while
-            # holding the lock.  _evict_lru() below handles global eviction
-            # when the pool is full; we only opportunistically reclaim a
-            # duplicate idle connection for this path to bound fd growth.
+            # Reuse an idle connection from another thread holding the same path
             for other_key in list(self._pool):
                 if other_key[0] == path and self._depth.get(other_key, 0) == 0:
-                    orphan = self._pool.pop(other_key)
-                    orphan_id = id(orphan)
-                    self._pooled_ids.discard(orphan_id)
-                    self._migrated.discard((other_key[0], orphan_id))
+                    candidate = self._pool.pop(other_key)
                     self._depth.pop(other_key, None)
                     self._inodes.pop(other_key, None)
                     try:
-                        orphan.close()
-                    except Exception:
-                        logger.warning(
-                            "Failed to close orphaned connection during pool get"
-                        )
+                        self._lru.remove(other_key)
+                    except ValueError:
                         pass
-                    break
+                    # Validate candidate connection
+                    stale = False
+                    try:
+                        candidate.execute("SELECT 1")
+                    except Exception:
+                        stale = True
+                    if not stale and self._inode_mismatch(other_key, candidate):
+                        stale = True
+
+                    if stale:
+                        try:
+                            candidate.close()
+                        except Exception:
+                            pass
+                        self._pooled_ids.discard(id(candidate))
+                        continue
+
+                    # Re-assign valid candidate connection to current key
+                    self._pool[key] = candidate
+                    self._depth[key] = 1
+                    self._inodes[key] = self._inode_of(path)
+                    self._lru.append(key)
+                    t_id = tenant_id or "default"
+                    try:
+                        candidate.create_function("tenant_id", 0, lambda: t_id)
+                        candidate.execute(
+                            "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
+                            "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+                        )
+                    except Exception:
+                        pass
+                    return candidate
             self._evict_lru()
             conn = sqlite3.connect(path, timeout=timeout)
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(f"PRAGMA busy_timeout={int(timeout * 1000)}")
             conn.execute("PRAGMA foreign_keys=ON")
             conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA wal_autocheckpoint=500")
             # S4.1 (2026-06-23): apply mmap_size from config. The
             # value 0 disables mmap (SQLite default).  The value
             # is bytes. If requested mmap exceeds available
@@ -464,8 +449,8 @@ class _ConnectionPool:
                 "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                 "SELECT * FROM memories WHERE tenant_id = tenant_id()"
             )
-        except Exception as e:
-            logger.warning("db: failed to create tenant view in pool put: %s", e)
+        except Exception:
+            pass
 
         return conn
 
@@ -560,6 +545,12 @@ class _ConnectionPool:
                 "idle": idle,
                 "max_size": self._max_size,
             }
+            self._pool.clear()
+            self._pooled_ids.clear()
+            self._lru.clear()
+            self._migrated.clear()
+            self._depth.clear()
+            self._inodes.clear()
 
     def get_depth(self, conn: AnyConnection) -> int:
         """Return current checkout depth for a connection."""
@@ -570,13 +561,7 @@ class _ConnectionPool:
             return 0
 
 
-# 2026-07-06: Use sys attribute to guarantee a single process-wide connection
-# pool even if the module is imported under different names (e.g. infra.db vs
-# agentic_memory.infra.db). Use setattr/getattr to satisfy type checkers.
-import sys
-if not hasattr(sys, "_agentic_memory_connection_pool"):
-    setattr(sys, "_agentic_memory_connection_pool", _ConnectionPool())
-connection_pool = cast(_ConnectionPool, getattr(sys, "_agentic_memory_connection_pool"))
+connection_pool = _ConnectionPool()
 
 
 def _resolve_mmap_size() -> int:
@@ -694,7 +679,6 @@ def wal_checkpoint_idle(db_path: Path, wal_size_threshold_mb: float = 10.0) -> d
             "threshold_mb": wal_size_threshold_mb,
         }
     except Exception as e:
-        logger.warning("wal_checkpoint_idle failed: %s", e)
         return {
             "status": "error",
             "ok": False,
@@ -775,50 +759,12 @@ def safe_close_db(conn: AnyConnection, *, should_commit: bool = True) -> None:
         pass
 
 
-_STARTUP_DB_CHECK_DONE = False
-
-
-def _startup_db_path_sanity_check() -> None:
-    """C2: validate the configured MEMORY_DB_PATH at first DB access.
-
-    Runs once per process.  If ``MEMORY_DB_PATH`` is set:
-      * a missing *parent directory* is a misconfiguration (not a first
-        run) — raise immediately so the operator sees a clear error
-        rather than an empty DB silently created under a wrong path;
-      * a missing *file* under an existing parent is a normal first run
-        and is allowed (``open_db`` creates it).
-
-    When ``MEMORY_DB_PATH`` is unset (the common per-project default),
-    this is a no-op.
-    """
-    global _STARTUP_DB_CHECK_DONE
-    if _STARTUP_DB_CHECK_DONE:
-        return
-    _STARTUP_DB_CHECK_DONE = True
-    env = os.environ.get("MEMORY_DB_PATH")
-    if not env:
-        return
-    p = Path(env)
-    if p.exists():
-        return
-    if not p.parent.exists():
-        raise RuntimeError(
-            f"MEMORY_DB_PATH is misconfigured: {env!r} does not exist and "
-            f"its parent directory {str(p.parent)!r} is missing. Refusing "
-            "to create an empty database under a wrong path."
-        )
-    logger.info(
-        "MEMORY_DB_PATH %s does not exist yet; will be created on first open (first run).",
-        env,
-    )
-
-
 @contextmanager
 def open_db(
     path: Path,
     timeout: float = 30.0,
     row_factory: Optional[Any] = None,
-    pooled: bool = False,
+    pooled: bool = True,
     write: bool = True,
     tenant_id: str | None = None,
 ) -> Iterator[AnyConnection]:
@@ -828,14 +774,6 @@ def open_db(
     """
     from infra.db_migrations import run_schema_setup
     from contextlib import nullcontext
-
-    # C2: one-shot startup sanity check that a configured MEMORY_DB_PATH
-    # resolves to a sane location.  A missing parent directory means the
-    # path is misconfigured (not a legitimate first run) — fail fast with
-    # a clear error instead of silently creating an empty DB under a wrong
-    # path.  A missing file under an existing parent is a normal first run
-    # and is allowed (open_db touches/creates it below).
-    _startup_db_path_sanity_check()
 
     # B-3 follow-up (2026-06-22): cross-process serialisation.  The
     # flock is acquired on entry and released on exit.  When the
@@ -870,31 +808,30 @@ def open_db(
                     "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                     "SELECT * FROM memories WHERE tenant_id = tenant_id()"
                 )
-            except Exception as e:
-                logger.warning("db: failed to create tenant view in write session: %s", e)
+            except Exception:
+                pass
             yield conn
         except BaseException as exc:
             exc_info = exc
             try:
                 conn.rollback()
-            except Exception as rb_exc:
-                logger.warning("db: rollback failed in open_db write session: %s", rb_exc)
-            try:
-                conn.close()
-            except Exception as close_exc:
-                logger.warning("db: connection close_failed in open_db write session after rollback: %s", close_exc)
+            except Exception:
+                pass
             raise
         else:
             try:
                 conn.commit()
-            except Exception as e:
-                logger.warning("db: commit failed in open_db write session: %s", e)
-            finally:
-                try:
-                    conn.close()
-                except Exception as e:
-                    logger.warning("db: connection close_failed in open_db write session finally: %s", e)
+            except Exception:
+                pass
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
         return
+
+    if not write and not pooled:
+        pooled = True
 
     lock_ctx = db_path_flock(path) if write else nullcontext()
     with lock_ctx:
@@ -918,6 +855,7 @@ def open_db(
         try:
             conn.execute(f"PRAGMA busy_timeout = {int(timeout * 1000)};")
             conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA wal_autocheckpoint=500")
             try:
                 conn.execute("PRAGMA journal_mode = WAL")
             except sqlite3.OperationalError as e:
@@ -942,8 +880,8 @@ def open_db(
                     "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                     "SELECT * FROM memories WHERE tenant_id = tenant_id()"
                 )
-            except Exception as e:
-                logger.warning("db: failed to create tenant view in non-pooled open_db: %s", e)
+            except Exception:
+                pass
             yield conn
         except BaseException as exc:
             exc_info = exc
@@ -971,7 +909,7 @@ def count_rows(db_dir: Path) -> int:
         return -1
     try:
         with open_db(db, timeout=5.0) as conn:
-            row = conn.execute("SELECT COUNT(*) FROM tenant_memories").fetchone()
+            row = conn.execute("SELECT COUNT(*) FROM memories").fetchone()
             n = row[0] if row is not None else 0
             return n
     except Exception:

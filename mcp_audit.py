@@ -9,7 +9,7 @@ from mcp_common import _bootstrap_path  # noqa: E402,F401
 import json
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from mcp_common import (
     _resolve_memory_dir,
@@ -38,7 +38,7 @@ def memory_audit() -> str:
         with open_db(db_path, timeout=30.0, pooled=True, row_factory=sqlite3.Row, write=True) as db:
             run_db_migrations(db)
             rows = db.execute(
-                "SELECT id, content, created_at, updated_at, access_count, pinned FROM tenant_memories"
+                "SELECT id, content, created_at, updated_at, access_count, pinned FROM memories"
             ).fetchall()
         if not rows:
             return "No memories found to audit."
@@ -127,12 +127,32 @@ def memory_audit() -> str:
         return _err(ErrorCode.DB_ERROR, "during audit")
 
 
+def _parse_ts(val: Any) -> Optional[float]:
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        val_str = val.strip()
+        try:
+            return float(val_str)
+        except ValueError:
+            pass
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(val_str.replace("Z", "+00:00"))
+            return dt.timestamp()
+        except Exception:
+            return None
+    return None
+
+
 @mcp.tool()
 @with_audit("memory_audit_query")
 def memory_audit_query(
     tool_name: Optional[str] = None,
-    since_ts: Optional[float] = None,
-    until_ts: Optional[float] = None,
+    since_ts: Optional[Union[float, str]] = None,
+    until_ts: Optional[Union[float, str]] = None,
     only_errors: bool = False,
     limit: int = 50,
     offset: int = 0,
@@ -146,19 +166,28 @@ def memory_audit_query(
         return _err(ErrorCode.INVALID_PARAMS, "limit must be 1..500")
     if offset < 0:
         return _err(ErrorCode.INVALID_PARAMS, "offset must be >= 0")
-    if since_ts is not None and until_ts is not None and since_ts > until_ts:
+
+    parsed_since = _parse_ts(since_ts)
+    parsed_until = _parse_ts(until_ts)
+    if parsed_since is not None and parsed_until is not None and parsed_since > parsed_until:
         return _err(ErrorCode.INVALID_PARAMS, "since_ts must be <= until_ts")
+
     where: list[str] = []
     params: list[Any] = []
     if tool_name is not None:
-        where.append("tool = ?")
-        params.append(tool_name)
-    if since_ts is not None:
+        tname = tool_name.strip()
+        if tname.startswith("memory_"):
+            alt_name = tname[7:]
+        else:
+            alt_name = "memory_" + tname
+        where.append("(tool = ? OR tool = ?)")
+        params.extend([tname, alt_name])
+    if parsed_since is not None:
         where.append("ts >= ?")
-        params.append(since_ts)
-    if until_ts is not None:
+        params.append(parsed_since)
+    if parsed_until is not None:
         where.append("ts <= ?")
-        params.append(until_ts)
+        params.append(parsed_until)
     if only_errors:
         where.append("error IS NOT NULL")
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
@@ -378,8 +407,7 @@ def memory_check_integrity(deep: bool = False) -> str:
 
         try:
             active_dir = _resolve_memory_dir()
-        except Exception as e:
-            logger.warning("memory_check_integrity failed: %s", e)
+        except Exception:
             active_dir = None
         if active_dir is None:
             return _err(ErrorCode.DB_ERROR, "No active memory directory found.")
@@ -570,7 +598,6 @@ def memory_temporal_query(
     since_ts: Optional[float] = None,
     query: Optional[str] = None,
     limit: int = 100,
-    time_axis: str = "valid",
 ) -> str:
     """T4.5: time-aware queries on the fact-level knowledge graph.
 
@@ -592,9 +619,6 @@ def memory_temporal_query(
       since_ts: epoch seconds (for changed_since).
       query: optional case-insensitive substring filter (at_time only).
       limit: max rows (at_time and changed_since; default 100).
-      time_axis: ``"valid"`` (default) filters on valid_at/invalid_at
-        (when the fact was true in the world).  ``"transaction"``
-        filters on transaction_time (when we learned the fact).
 
     Returns:
       JSON with ok, operation, and the rows.
@@ -625,11 +649,6 @@ def memory_temporal_query(
             ErrorCode.INVALID_PARAMS,
             "since_ts (epoch seconds) is required for operation='changed_since'",
         )
-    if time_axis not in ("valid", "transaction"):
-        return _err(
-            ErrorCode.INVALID_PARAMS,
-            f"time_axis must be 'valid' or 'transaction' (got {time_axis!r})",
-        )
     try:
         from fact.fact_temporal import (
             query_facts_at_time,
@@ -644,7 +663,7 @@ def memory_temporal_query(
             db.row_factory = sqlite3.Row
             if operation == "at_time":
                 assert as_of is not None  # validated above
-                rows = query_facts_at_time(db, as_of, query=query, limit=limit, time_axis=time_axis)
+                rows = query_facts_at_time(db, as_of, query=query, limit=limit)
             elif operation == "chain":
                 assert fact_id is not None  # validated above
                 rows = query_fact_supersession_chain(db, fact_id)

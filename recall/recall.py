@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import logging
 """Memory recall mechanism for agent cold-start and session continuity.
 
 Assembles a structured briefing from multiple memory sources so that
@@ -23,8 +21,8 @@ Design principles (from research, 2026-06-10):
 __all__ = ["recall_context", "format_briefing", "session_recap"]
 
 import json
+import logging
 import sqlite3
-import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -37,15 +35,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-# Module-level search_memories reference — tests patch this attribute on this
-# module (`recall.recall.search_memories`) to intercept calls without needing
-# to know the lazy-import plumbing. First real call boots the lazy import.
-search_memories = None
-
-
-
-
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -112,7 +101,6 @@ def recall_context(
         conn = connection_pool.get(str(db_path_resolved), timeout=10.0)
         conn.execute("PRAGMA busy_timeout = 10000;")
     except Exception as e:
-        logger.warning("recall_context failed: %s", e)
         return _empty_result(query, f"Connection failed: {e}")
 
     sections: dict = {}
@@ -168,8 +156,8 @@ def recall_context(
         if conn is not None:
             try:
                 safe_close_db(conn, should_commit=False)
-            except Exception as e:
-                logger.warning("recall_context failed: %s", e)
+            except Exception:
+                pass
 
 
 def format_briefing(data: dict) -> str:
@@ -248,95 +236,7 @@ def format_briefing(data: dict) -> str:
     return "\n".join(lines)
 
 
-_RECALL_DEFAULTS: dict[str, int | bool] = {
-    "max_tokens": 800,
-    "tier1_hot_days": 7,
-    "tier_fallback_threshold": 5,
-}
-
-
-def _get_recall_cfg() -> dict[str, int | bool]:
-    """Load recall tuning values from MemoryConfig, falling back to defaults."""
-    try:
-        from infra._lazy_imports import get_config
-
-        cfg = get_config()
-        return {
-            "max_tokens": int(getattr(cfg, "recall_max_tokens", _RECALL_DEFAULTS["max_tokens"])),
-            "tier1_hot_days": int(getattr(cfg, "recall_tier1_hot_days", _RECALL_DEFAULTS["tier1_hot_days"])),
-            "tier_fallback_threshold": int(getattr(cfg, "recall_tier_fallback_threshold", _RECALL_DEFAULTS["tier_fallback_threshold"])),
-        }
-    except Exception as e:
-        logger.warning("_get_recall_cfg failed: %s", e)
-        return dict(_RECALL_DEFAULTS)
-
-
-def _trace_event(
-    event: str,
-    *,
-    query: str = "",
-    tier_counts: dict[str, int] | None = None,
-    token_estimate: int = 0,
-    truncated: bool = False,
-    db_path: Path | None = None,
-) -> None:
-    """Append one trace event to ``memory/recall_trace.jsonl``.
-
-    Each line is a JSON object with the event name, timestamp, query
-    snippet, per-tier item counts, and the final token estimate.  The
-    file is append-only and self-pruning — capped at 50 000 lines to
-    prevent unbounded growth on a long-running system.
-
-    Failures are silently swallowed: tracing must never break recall.
-    """
-    try:
-        if db_path is None:
-            active_dir = resolve_active_memory_dir()
-            trace_path = active_dir / "recall_trace.jsonl"
-        else:
-            trace_path = db_path.parent / "recall_trace.jsonl"
-        line = json.dumps(
-            {
-                "ts": datetime.now(timezone.utc).isoformat(),
-                "event": event,
-                "query": (query or "")[:200],
-                "tier_counts": tier_counts or {},
-                "token_estimate": int(token_estimate),
-                "truncated": bool(truncated),
-            },
-            ensure_ascii=False,
-        )
-        with open(trace_path, "a", encoding="utf-8") as fh:
-            fh.write(line + "\n")
-            fh.flush()
-        _maybe_prune_trace(trace_path, max_lines=50_000)
-    except Exception as e:
-        logger.warning("_trace_event failed: %s", e)
-
-
-def _maybe_prune_trace(trace_path: Path, max_lines: int = 50_000) -> None:
-    """If trace file exceeds max_lines, keep only the most recent half."""
-    try:
-        if not trace_path.exists():
-            return
-        with open(trace_path, "rb") as fh:
-            total = sum(1 for _ in fh)
-        if total <= max_lines:
-            return
-        keep = max_lines // 2
-        lines: list[bytes] = []
-        with open(trace_path, "rb") as fh:
-            for i, line in enumerate(fh):
-                if i >= total - keep:
-                    lines.append(line)
-        tmp = trace_path.with_suffix(".jsonl.tmp")
-        with open(tmp, "wb") as fh:
-            fh.writelines(lines)
-        tmp.replace(trace_path)
-    except Exception as e:
-        logger.warning("_maybe_prune_trace failed: %s", e)
-
-
+from recall.search_memory import search_memories
 
 
 def session_recap(
@@ -344,39 +244,16 @@ def session_recap(
     session_id: str = "",
     query: str = "",
 ) -> str:
-    """4-tier recall policy for session-start context injection.
-
-    Tier 1 — Hot/curated (max 5):
-        Pinned or high-importance notes created in the last 7 days.
-        Section header: "## Key Context"
-
-    Tier 2 — Semantic search (max 5):
-        search_memories(query, light=True) for project-relevant content.
-        Only fires when a non-empty query is provided.
-        Section header: "## Relevant to this session"
-
-    Tier 3 — KG facts (max 3):
-        Known facts from the knowledge graph for the current namespace.
-        Section header: "## Known Facts"
-
-    Tier 4 — Recent sessions (max 3, fallback only):
-        Only if tiers 1-3 returned fewer than RECALL_FALLBACK_THRESHOLD items.
-        Excludes auto-saved tool logs.
-        Section header: "## Recent Activity"
-
-    Total token budget: SESSION_RECAP_MAX_TOKENS (~800 tokens).
-    Falls back gracefully at every tier.
+    """Lightweight session-only summary for quick continuity.
 
     Args:
-        db_path: Path to the memory database (string). If None, resolves
+        db_path: Path to the memory database. If None, resolves
                  from CWD via resolve_active_memory_dir().
-        session_id: Optional specific session identifier (reserved for
-                    future per-session scoping; currently unused).
-        query: Optional natural-language query for contextual recall.
-               Extracted from session-start hook data (prompt, task, cwd).
+        session_id: Optional specific session date (YYYY-MM-DD).
+        query: Optional query string for contextual recall.
 
     Returns:
-        Formatted markdown string suitable for agent context injection.
+        Summary string of recent session activity.
     """
     if db_path is None:
         active_dir = resolve_active_memory_dir()
@@ -386,311 +263,75 @@ def session_recap(
     if not db_path_resolved.exists():
         return "No database found."
 
-    try:
-        conn = sqlite3.connect(str(db_path_resolved), timeout=10)
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout = 10000;")
-    except Exception as e:
-        logger.warning("session_recap failed: %s", e)
-        return "Database connection failed."
+    from infra.db import open_db
 
     try:
-        from agent_context import get_agent
-        ctx = get_agent()
-        namespace = ctx.namespace
-        _rcfg = _get_recall_cfg()
-        _max_tokens = int(_rcfg.get("max_tokens", 800))
-        _tier1_days = int(_rcfg.get("tier1_hot_days", 7))
-        _fallback_threshold = int(_rcfg.get("tier_fallback_threshold", 5))
+        with open_db(db_path_resolved, timeout=5.0, pooled=True, write=False) as conn:
+            tier1_rows = conn.execute(
+                """SELECT id, content, source_file, created_at, pinned, importance
+                   FROM memories
+                   WHERE deleted_at IS NULL AND (pinned = 1 OR importance >= 4)
+                   ORDER BY created_at DESC
+                   LIMIT 5"""
+            ).fetchall()
 
-        _trace_event(
-            "recall_start",
-            query=query,
-            db_path=db_path_resolved,
-        )
+            tier2_rows = []
+            if query:
+                try:
+                    search_res = search_memories(query=query, db_path=str(db_path_resolved), light=True)
+                    if isinstance(search_res, dict) and "raw_results" in search_res:
+                        tier2_rows = search_res["raw_results"]
+                except Exception:
+                    pass
 
-        tier1 = _fetch_curated(conn, namespace, limit=5)
-        tier2 = _fetch_relevant_light(db_path_resolved, namespace, query, limit=5) if query else []
-        tier3 = _fetch_kg_facts(conn, namespace, limit=3)
-        tier4_total = len(tier1) + len(tier2) + len(tier3)
-        tier4 = _fetch_recent_sessions(conn, namespace, limit=3) if tier4_total < _fallback_threshold else []
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+            tier4_rows = conn.execute(
+                """SELECT id, content, source_file, created_at
+                   FROM memories
+                   WHERE deleted_at IS NULL AND created_at > ?
+                   ORDER BY created_at DESC
+                   LIMIT 10""",
+                (cutoff,),
+            ).fetchall()
 
-        sections = []
-        if tier1:
-            sections.append(("## Key Context", tier1))
-        if tier2:
-            sections.append(("## Relevant to this session", tier2))
-        if tier3:
-            sections.append(("## Known Facts", tier3))
-        if tier4:
-            sections.append(("## Recent Activity", tier4))
+            if not tier1_rows and not tier2_rows and not tier4_rows:
+                return "No relevant context found"
 
-        # Phase 0 CTR producer: the items collected above are injected into the
-        # agent's system prompt (see plugin/agentic-memory-hooks.ts
-        # injectSystemPrompt), i.e. they are actually *shown* to the agent —
-        # the "used_in_response" signal.  Record one interaction row per
-        # (query_id, memory_id) so the re-ranker can learn from surfaced
-        # memories.  Best-effort: a failure here must never break recall.
-        try:
-            _recall_query_id = uuid.uuid4().hex
-            _recall_ids: list[str] = []
-            for _header, _items in sections:
-                for _item in _items:
-                    _mid = _item.get("id")
-                    if _mid:
-                        _recall_ids.append(str(_mid))
-            if _recall_ids:
-                from search.orchestrator import record_memory_used_in_response
+            lines = []
+            if tier1_rows:
+                lines.append("**Key Context** (Tier 1)")
+                lines.append("")
+                for r in tier1_rows:
+                    lines.append(f"- {r[1]}")
+                lines.append("")
 
-                record_memory_used_in_response(
-                    db_path_resolved,
-                    _recall_query_id,
-                    _recall_ids,
-                    tenant_id=(namespace if namespace != "default" else "default"),
-                    ranks=list(range(1, len(_recall_ids) + 1)),
-                )
-        except Exception as _recap_ctr_err:
-            logger.warning(
-                "session_recap used_in_response recording failed: %s",
-                _recap_ctr_err,
-            )
+            if tier2_rows:
+                lines.append("**Relevant to this session** (Tier 2)")
+                lines.append("")
+                for r in tier2_rows:
+                    content = r[1] if len(r) > 1 else str(r)
+                    lines.append(f"- {content}")
+                lines.append("")
 
-        if not sections:
-            _trace_event(
-                "recall_complete",
-                query=query,
-                tier_counts={"tier1": 0, "tier2": 0, "tier3": 0, "tier4": 0},
-                token_estimate=0,
-                db_path=db_path_resolved,
-            )
-            return "No relevant context found for this session."
+            if tier4_rows:
+                if not tier1_rows and not tier2_rows:
+                    lines.append("**Recent Activity** (Tier 4)")
+                    lines.append("")
+                lines.append("**Session Recap**")
+                lines.append("")
+                for r in tier4_rows:
+                    content = r[1][:100] if r[1] else ""
+                    created = r[3][:10] if len(r) > 3 and r[3] else ""
+                    lines.append(f"- {created}: {content}")
 
-        lines = ["**Session Recap**", ""]
-        for header, items in sections:
-            lines.append(header)
-            lines.append("")
-            for item in items:
-                content = item.get("content", "")[:120]
-                created = item.get("created_at", "")[:10]
-                meta = _item_meta(item)
-                lines.append(f"- {created}: {content}{meta}")
-            lines.append("")
-
-        text = "\n".join(lines).rstrip()
-        token_est = _estimate_tokens(text)
-        truncated = False
-        if token_est > _max_tokens:
-            truncated = True
-            _trace_event(
-                "recall_truncated",
-                query=query,
-                tier_counts={
-                    "tier1": len(tier1),
-                    "tier2": len(tier2),
-                    "tier3": len(tier3),
-                    "tier4": len(tier4),
-                },
-                token_estimate=token_est,
-                db_path=db_path_resolved,
-            )
-            lines_out = ["**Session Recap**", ""]
-            budget_per_section = _max_tokens // max(len(sections), 1)
-            for header, items in sections:
-                lines_out.append(header)
-                lines_out.append("")
-                chars_left = budget_per_section * 4
-                used = 0
-                for item in items:
-                    entry = f"- {item.get('created_at', '')[:10]}: {item.get('content', '')[:80]}{_item_meta(item)}"
-                    if used + len(entry) > chars_left:
-                        break
-                    lines_out.append(entry)
-                    used += len(entry)
-                lines_out.append("")
-            text = "\n".join(lines_out).rstrip()
-
-        _trace_event(
-            "recall_complete",
-            query=query,
-            tier_counts={
-                "tier1": len(tier1),
-                "tier2": len(tier2),
-                "tier3": len(tier3),
-                "tier4": len(tier4),
-            },
-            token_estimate=token_est,
-            truncated=truncated,
-            db_path=db_path_resolved,
-        )
-        return text
-    finally:
-        conn.close()
+            return "\n".join(lines)
+    except Exception:
+        return "No relevant context found"
 
 
 # ---------------------------------------------------------------------------
 # Internal fetch helpers
 # ---------------------------------------------------------------------------
-
-
-def _fetch_curated(conn: AnyConnection, namespace: str, limit: int) -> list[dict]:
-    """Tier 1: Hot/curated notes — pinned or high-importance, last 7 days."""
-    tier1_days = _get_recall_cfg().get("tier1_hot_days", 7)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=int(tier1_days))).isoformat()
-    ns_filter = f"agents/{namespace}/%" if namespace != "default" else None
-    if namespace != "default":
-        rows = conn.execute(
-            """SELECT id, content, source_file, tags, created_at,
-                      fitness_score, importance, pinned
-               FROM memories
-               WHERE deleted_at IS NULL
-                 AND (pinned = 1 OR importance >= ?)
-                 AND created_at > ?
-                 AND source_file NOT LIKE ?
-                 AND id NOT LIKE 'agents/%'
-                 AND (id LIKE ? OR id NOT LIKE 'agents/%')
-               ORDER BY pinned DESC, importance DESC, fitness_score DESC
-               LIMIT ?""",
-            (HIGH_IMPORTANCE_THRESHOLD, cutoff, "sessions/auto-%", ns_filter, limit),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """SELECT id, content, source_file, tags, created_at,
-                      fitness_score, importance, pinned
-               FROM memories
-               WHERE deleted_at IS NULL
-                 AND (pinned = 1 OR importance >= ?)
-                 AND created_at > ?
-                 AND source_file NOT LIKE 'sessions/auto-%'
-                 AND id NOT LIKE 'agents/%'
-               ORDER BY pinned DESC, importance DESC, fitness_score DESC
-               LIMIT ?""",
-            (HIGH_IMPORTANCE_THRESHOLD, cutoff, limit),
-        ).fetchall()
-    return [_row_to_dict(r) for r in rows]
-
-
-def _fetch_relevant_light(
-    db_path: Path, namespace: str, query: str, limit: int
-) -> list[dict]:
-    """Tier 2: Lightweight semantic search for session context."""
-    try:
-        sm = search_memories
-        if sm is None:
-            from infra._lazy_imports import search_memories as _sm
-
-            globals()["search_memories"] = _sm
-            sm = _sm
-        tenant_id = namespace if namespace != "default" else "default"
-        result = sm(
-            db_path=db_path,
-            query=query,
-            limit=limit,
-            rerank=True,
-            boost_pinned=True,
-            recency_weight=0.1,
-            include_global=True,
-            safety_wiring=True,
-            deep_rerank=False,
-            light=True,
-            tenant_id=tenant_id,
-        )
-        raw_results = result.get("raw_results", result.get("results", []))
-        converted = []
-        for row in raw_results:
-            if isinstance(row, dict):
-                converted.append(row)
-            elif isinstance(row, tuple) and len(row) >= 8:
-                converted.append(
-                    {
-                        "id": row[0],
-                        "content": row[1] or "",
-                        "source_file": row[2] or "",
-                        "tags": _parse_tags(row[3]),
-                        "created_at": row[4] or "",
-                        "fitness_score": float(row[5] or 0.0),
-                        "importance": row[8] if len(row) > 8 else 0,
-                        "pinned": bool(row[9]) if len(row) > 9 else False,
-                    }
-                )
-        return [i for i in converted if not _is_auto_save(i)][:limit]
-    except Exception as e:
-        logger.debug("search_memories light failed for session_recap: %s", e)
-        return []
-
-
-def _fetch_kg_facts(conn: AnyConnection, namespace: str, limit: int) -> list[dict]:
-    """Tier 3: Known facts from the knowledge graph for the current namespace."""
-    ns_filter = f"agents/{namespace}/%" if namespace != "default" else None
-    try:
-        if namespace != "default":
-            rows = conn.execute(
-                """SELECT id, entity, predicate, obj, confidence, valid_at
-                   FROM kg_facts
-                   WHERE deleted_at IS NULL
-                     AND (memory_id LIKE ? OR memory_id NOT LIKE 'agents/%')
-                   ORDER BY confidence DESC, valid_at DESC
-                   LIMIT ?""",
-                (ns_filter, limit),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """SELECT id, entity, predicate, obj, confidence, valid_at
-                   FROM kg_facts
-                   WHERE deleted_at IS NULL
-                     AND memory_id NOT LIKE 'agents/%'
-                   ORDER BY confidence DESC, valid_at DESC
-                   LIMIT ?""",
-                (limit,),
-            ).fetchall()
-        return [
-            {
-                "id": r[0],
-                "content": f"{r[1]} {r[2]} {r[3]}" if r[3] else f"{r[1]} {r[2]}",
-                "source_file": "kg_facts",
-                "tags": [],
-                "created_at": (r[5] or "")[:10],
-                "fitness_score": float(r[4] or 0.0),
-                "importance": int(r[4] * 5) if r[4] else 0,
-                "pinned": False,
-            }
-            for r in rows
-        ]
-    except Exception as e:
-        logger.debug("kg_facts fetch failed for session_recap: %s", e)
-        return []
-
-
-def _fetch_recent_sessions(conn: AnyConnection, namespace: str, limit: int) -> list[dict]:
-    """Tier 4 (fallback): Recent non-auto session notes, last 3 days."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
-    if namespace != "default":
-        rows = conn.execute(
-            """SELECT id, content, source_file, tags, created_at,
-                      fitness_score, importance, pinned
-               FROM memories
-               WHERE deleted_at IS NULL
-                 AND source_file LIKE ?
-                 AND source_file NOT LIKE ?
-                 AND created_at > ?
-               ORDER BY created_at DESC
-               LIMIT ?""",
-            (f"agents/{namespace}/sessions/%", f"agents/{namespace}/sessions/auto-%", cutoff, limit),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """SELECT id, content, source_file, tags, created_at,
-                      fitness_score, importance, pinned
-               FROM memories
-               WHERE deleted_at IS NULL
-                 AND source_file LIKE 'sessions/%'
-                 AND source_file NOT LIKE 'sessions/auto-%'
-                 AND source_file NOT LIKE 'agents/%'
-                 AND created_at > ?
-               ORDER BY created_at DESC
-               LIMIT ?""",
-            (cutoff, limit),
-        ).fetchall()
-    return [_row_to_dict(r) for r in rows]
 
 
 def _fetch_pinned(conn: AnyConnection, limit: int) -> list[dict]:
@@ -858,8 +499,8 @@ def _fetch_relevant(
                             sr.record_success(str(nid))
             finally:
                 sr.close()
-        except Exception as e:
-            logger.warning("_fetch_relevant failed: %s", e)
+        except Exception:
+            pass
         return items
     except Exception as e:
         logger.debug("search_memories failed for recall: %s", e)
@@ -881,8 +522,7 @@ def _fetch_user_profile(db_path: str | None = None) -> Optional[dict]:
         if profile and profile.get("enabled", False):
             return profile
         return None
-    except Exception as e:
-        logger.warning("_fetch_user_profile failed: %s", e)
+    except Exception:
         return None
 
 

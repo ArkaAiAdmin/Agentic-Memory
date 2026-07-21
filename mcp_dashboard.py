@@ -1,6 +1,5 @@
-
-import logging
 import json
+import logging
 import os
 import sqlite3
 import subprocess
@@ -19,51 +18,6 @@ _DASHBOARD_PROCESS: subprocess.Popen | None = None
 _DASHBOARD_SCRIPT: Path | None = None
 
 
-def _dashboard_check_authorization(action: str) -> str | None:
-    """RBAC check for dashboard actions. Returns error string if denied, else None.
-
-    Fail-open: a missing principal or unavailable DB always allows (backward
-    compat). Only an explicit RBAC denial returns an error string.
-    """
-    try:
-        from infra.authorizer import mcp_authorize, log_authorization_decision
-
-        principal_id = None
-        try:
-            from agent_context import get_agent
-            ctx = get_agent()
-            principal_id = getattr(ctx, "principal_id", None)
-            if not principal_id:
-                principal_id = getattr(ctx, "agent_id", None)
-        except (ImportError, Exception):
-            pass
-
-        db_path = None
-        try:
-            p = _resolve_memory_dir() / "memory.db"
-            db_path = str(p) if p.exists() else None
-        except Exception:
-            db_path = None
-
-        allowed = mcp_authorize(principal_id, action, "memory", db_path)
-        log_authorization_decision(
-            principal_id=principal_id,
-            action=action,
-            resource="memory",
-            allowed=allowed,
-            db_path=db_path,
-        )
-        if not allowed:
-            return _err(
-                ErrorCode.AUTHORIZATION_DENIED,
-                f"Not authorized for '{action}' on dashboard. "
-                f"Principal '{principal_id or 'anonymous'}' lacks the required role.",
-            )
-        return None
-    except Exception:
-        return None
-
-
 @mcp.tool()
 @with_audit("memory_dashboard")
 def memory_dashboard(action: str = "status", port: int = 8501) -> str:
@@ -74,18 +28,14 @@ def memory_dashboard(action: str = "status", port: int = 8501) -> str:
                 "status" to check if running (default).
         port: HTTP port (default: 8501).
     """
-    auth_action = "admin" if action in ("start", "stop") else "read"
-    auth_err = _dashboard_check_authorization(auth_action)
-    if auth_err:
-        return auth_err
     global _DASHBOARD_PROCESS, _DASHBOARD_SCRIPT
     stats = {}
     mem_dir = _resolve_memory_dir()
     db_path = mem_dir / "memory.db"
     if db_path.exists():
+        from infra.db import open_db
         try:
-            with closing(sqlite3.connect(str(db_path), timeout=5)) as conn:
-                conn.execute("PRAGMA foreign_keys=ON")
+            with open_db(db_path, timeout=5.0, pooled=True, write=False) as conn:
                 row = conn.execute("""
                     SELECT
                       (SELECT COUNT(*) FROM memories),
@@ -175,7 +125,6 @@ def memory_dashboard(action: str = "status", port: int = 8501) -> str:
                 }
             )
         except Exception as e:
-            logger.warning("memory_dashboard failed: %s", e)
             return _err(ErrorCode.DB_ERROR, f"dashboard start failed: {e}")
 
     elif action == "stop":
@@ -194,7 +143,6 @@ def memory_dashboard(action: str = "status", port: int = 8501) -> str:
             _DASHBOARD_PROCESS = None
             return json.dumps({"ok": True, "status": "killed", "stats": stats})
         except Exception as e:
-            logger.warning("memory_dashboard failed: %s", e)
             return _err(ErrorCode.DB_ERROR, f"dashboard stop failed: {e}")
 
     else:

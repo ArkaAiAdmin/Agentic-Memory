@@ -5,15 +5,12 @@ Extracted from auto_save.py in Phase 3.
 """
 from __future__ import annotations
 
-import logging
-
 import hashlib
 import json
+import logging
 import os
-import traceback
 import re
 import time
-from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -43,70 +40,6 @@ def _content_hash(content: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
 
-def _should_route_to_lessons(content: str) -> tuple[bool, str]:
-    """Heuristic: does this tool-invocation content represent a high-signal lesson?
-
-    Returns (should_route, reason_tag).  Should_route is True when the
-    content contains keywords that indicate a design decision, architecture
-    change, root-cause finding, or reusable pattern — signals that the
-    content should be promoted to ``category="lessons"`` (auto-captured draft)
-    rather than left as a raw session transcript entry.
-
-    The heuristic is intentionally conservative: false positives only cost
-    a ``lessons`` draft note (the promotion cron only promotes ``importance <= 2``
-    notes, so over-classified drafts self-correct on the next promotion run).
-
-    Keywords checked (case-insensitive, word-boundary anchored):
-
-    Decisions / architecture
-        "decided", "decision:", "architecture", "we chose", "chose to",
-        "approaches tried", "tradeoff", "trade-off", "rationale:"
-
-    Fixes / root cause
-        "fixed by", "root cause", "caused by", "workaround:", "solution:",
-        "bug was caused", "regression from"
-
-    Patterns / lessons
-        "lesson:", "lessons learned", "lesson learned", "pattern:",
-        "best practice", "anti-pattern"
-
-    Explicit auto-capture signals
-        "auto-capture", "save as lesson", "note for next time",
-        "worth remembering", "keep in mind"
-    """
-    lower = content.lower()
-    _LESSON_KEYWORDS = [
-        r"\bdecided\b", r"\bdecision\b", r"\barchitecture\b",
-        r"\bwe chose\b", r"\bchose to\b", r"\bapproaches tried\b",
-        r"\btradeoff\b", r"\btrade-off\b", r"\brationale\b",
-        r"\bfixed by\b", r"\broot cause\b", r"\bcaused by\b",
-        r"\bworkaround\b", r"\bsolution\b", r"\bbug was caused\b",
-        r"\bregression from\b", r"\bles?son\b", r"\bpattern\b",
-        r"\bbest practice\b", r"\banti-pattern\b",
-        r"\bauto-capture\b", r"\bsave as lesson\b", r"\bnote for next time\b",
-        r"\bworth remembering\b", r"\bkeep in mind\b",
-    ]
-    for kw in _LESSON_KEYWORDS:
-        if re.search(kw, lower):
-            return True, kw
-    return False, ""
-
-
-def _get_auto_save_cfg() -> dict[str, bool]:
-    """Load auto_save tuning values from MemoryConfig, falling back to defaults."""
-    try:
-        from infra._lazy_imports import get_config
-
-        cfg = get_config()
-        return {
-            "keyword_routing": bool(getattr(cfg, "auto_save_keyword_routing", True)),
-            "always_sessions": bool(getattr(cfg, "auto_save_always_sessions", False)),
-        }
-    except Exception as e:
-        logger.warning("_get_auto_save_cfg failed: %s", e)
-        return {"keyword_routing": True, "always_sessions": False}
-
-
 def _should_skip_similar(content: str, ttl_hours: int = 24) -> bool:
     """Return True if a recent session note has the same normalized content.
 
@@ -124,33 +57,30 @@ def _should_skip_similar(content: str, ttl_hours: int = 24) -> bool:
         db_path = _get_db_path()
         if not db_path.exists():
             return False
-        import sqlite3
+        from infra.db import open_db
 
         cutoff_iso = time.strftime(
             "%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - ttl_hours * 3600)
         )
         normalized = _normalize_for_dedup(content)
         sample = normalized[:200]
-        conn = sqlite3.connect(str(db_path), timeout=30.0)
-        conn.execute("PRAGMA busy_timeout = 30000;")
-        try:
+        with open_db(db_path, timeout=5.0, pooled=True, write=False) as conn:
             row = conn.execute(
                 "SELECT id FROM memories "
                 "WHERE category = 'sessions' AND observed_at >= ? "
                 "AND lower(substr(content, 1, 200)) = ? LIMIT 1",
                 (cutoff_iso, sample),
             ).fetchone()
-        finally:
-            conn.close()
         return row is not None
-    except Exception as e:
-        logger.warning("_should_skip_similar failed: %s", e)
+    except Exception:
         return False
 
 
 def _async_enqueue_or_fallback(
     tool: str, params: str, result_preview: str, ts: Optional[str], entry_id: str = ""
 ) -> dict:
+
+    from background.auto_save import _now_iso, _slugify, _is_daemon_running, _start_daemon_if_needed, _enqueue_to_inbox, _get_sessions_dir, _tool_complete_inner, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale, _get_dedup_lock_dir  # noqa: E402,F401
     """Async path: enqueue to the inbox and start the daemon if needed.
 
     Returns a "queued" envelope on success, or invokes the inline
@@ -160,7 +90,6 @@ def _async_enqueue_or_fallback(
     The note_id is computed up-front so the caller can log/audit
     it before the actual save happens in the daemon.
     """
-    from background.auto_save import _now_iso, _slugify, _is_daemon_running, _start_daemon_if_needed, _enqueue_to_inbox, _get_sessions_dir, _tool_complete_inner, _acquire_dedup_lock, _release_dedup_lock, _is_dedup_lock_stale, _get_dedup_lock_dir  # noqa: E402,F401
     ts = ts or _now_iso()
     ts_compact = ts.replace(":", "-").replace("T", "_").split(".")[0]
     tool_slug = _slugify(tool, max_len=40)
@@ -193,7 +122,6 @@ def _async_enqueue_or_fallback(
     try:
         return _tool_complete_inner(tool, params, result_preview, ts)
     except Exception as e:
-        logger.warning("_async_enqueue_or_fallback failed: %s", e)
         return {
             "saved": False,
             "error": f"save failed: {e}",
@@ -210,6 +138,8 @@ def _upsert_memory(
     importance: int = 1,
     conn=None,
 ) -> bool:
+
+    from background.auto_save import get_db_path  # noqa: E402
     """Insert or update a memory note in the active DB via save_pipeline.save_memory.
 
     Delegates to the canonical save path so the hook path benefits from:
@@ -218,7 +148,6 @@ def _upsert_memory(
     - Write lock (flock)
     - Post-save hooks (contradiction check, audit, skill extraction, cache invalidation)
     """
-    from background.auto_save import get_db_path  # noqa: E402
     db = get_db_path()
     if not db.exists():
         return False
@@ -239,26 +168,6 @@ def _upsert_memory(
             tags_list = [str(t).strip() for t in tags_json if t]
         else:
             tags_list = []
-
-        from config import get_config
-        cfg = get_config()
-        if cfg.write_journal:
-            from infra._lazy_imports import save_memory_journal
-            from infra.write_journal import init_journal_db
-            journal_path = Path(db).parent / "journal.db"
-            init_journal_db(journal_path)
-            result = save_memory_journal(
-                content=content,
-                category=category,
-                title_slug=title_slug,
-                tags=tags_list,
-                pinned=bool(pinned),
-                is_global=False,
-                importance=importance,
-                note_id=note_id,
-                epistemic_source="auto_save",
-            )
-            return isinstance(result, str) and not result.startswith("Error")
 
         from infra._lazy_imports import save_memory as _save_memory
 
@@ -356,16 +265,7 @@ def _tool_complete_inner(
     extra_tags: Optional[list[str]] = None,
     conn=None,
 ) -> dict:
-    """Save a tool invocation as a memory note in a caller-chosen category.
 
-    ``category`` defaults to ``sessions`` (preserving Phase 0/1c behaviour).
-    Pass ``category="lessons"``, ``importance=1`` and
-    ``extra_tags=["auto-capture","draft"]`` to write a draft note that
-    the Phase 3 promotion engine can later promote to a curated tier.
-
-    Returns the save result dict, or raises on hard failure (handled by
-    the retry wrapper in ``tool_complete``).
-    """
     from background.auto_save import (
         _resolve_allowlist,
         _resolve_denylist,
@@ -389,6 +289,16 @@ def _tool_complete_inner(
         _get_memory_dir,
     )  # noqa: E402
     from background.config import _params_max, _preview_max  # noqa: E402
+    """Save a tool invocation as a memory note in a caller-chosen category.
+
+    ``category`` defaults to ``sessions`` (preserving Phase 0/1c behaviour).
+    Pass ``category="lessons"``, ``importance=1`` and
+    ``extra_tags=["auto-capture","draft"]`` to write a draft note that
+    the Phase 3 promotion engine can later promote to a curated tier.
+
+    Returns the save result dict, or raises on hard failure (handled by
+    the retry wrapper in ``tool_complete``).
+    """
     if not tool:
         raise ValueError("empty tool name")
     allowlist = _resolve_allowlist()
@@ -485,72 +395,6 @@ superseded_by: null
 {footer}
 """
 
-    # ------------------------------------------------------------------
-    # Tier B1: keyword-based category routing
-    # ------------------------------------------------------------------
-    # Runs after the markdown body is built (so the heuristic sees the
-    # full content) but before dedup (so dedup still works correctly
-    # regardless of which category the note is routed to).
-    if category == "sessions":
-        _as_cfg = _get_auto_save_cfg()
-        if _as_cfg.get("keyword_routing", True) and not _as_cfg.get("always_sessions", False):
-            heuristic_content = f"{tool}\n{params_str}\n{result_preview}"
-            should_route, kw = _should_route_to_lessons(heuristic_content)
-            if should_route:
-                category = "lessons"
-                importance = max(importance, 2)
-                if extra_tags is None:
-                    extra_tags = []
-                for et in ("auto-capture", "draft"):
-                    if et not in extra_tags:
-                        extra_tags.append(et)
-                merged_tags = _resolve_tags(
-                    category, None, context="auto-save", tool_slug=tool_slug, extra_tags=extra_tags
-                )
-                tag_list_str = ", ".join(merged_tags)
-                footer = (
-                    "*Auto-drafted by auto_save.py — staged in `lessons/`. "
-                    "Promote via promotion cron.*"
-                )
-                # Regenerate note_id and file_path for new category
-                target_dir = memory_dir / "lessons"
-                target_dir.mkdir(parents=True, exist_ok=True)
-                file_name = f"auto-{ts_compact}-{tool_slug}.md"
-                note_id = f"lessons/{file_name}"
-                file_path = target_dir / file_name
-                # Rebuild markdown with updated footer/tags
-                markdown = f"""---
-created: {ts}
-updated: {ts}
-observed_at: {ts}
-tags: [{tag_list_str}]
-pinned: false
-related: []
-valid_from: {ts}
-valid_to: null
-superseded_by: null
----
-
-# Auto-save: {tool} @ {ts_compact}
-
-**Tool**: `{tool}`
-**Timestamp**: {ts}
-
-## Params
-```json
-{params_str}
-```
-
-## Result (preview)
-{result_str}
-
----
-{footer}
-"""
-
-    # ------------------------------------------------------------------
-    # Phase 1c: dedup (unchanged)
-    # ------------------------------------------------------------------
     dkey = _dedup_key(tool, params, result_preview)
     if _should_skip_dedup(dkey):
         return {
@@ -673,11 +517,8 @@ def tool_complete(
             category=category, importance=importance, extra_tags=extra_tags,
         )
     except Exception as e:
-        cb = _auto_save_record_failure_and_maybe_trip(error=e)
-        if logging.getLogger(__name__).getEffectiveLevel() <= logging.DEBUG:
-            tb = traceback.format_exc()
-        else:
-            tb = str(e)
+        cb = _auto_save_record_failure_and_maybe_trip()
+        tb = logging.getLogger(__name__).getEffectiveLevel() <= logging.DEBUG and __import__("traceback").format_exc() or str(e)
         logger.warning(
             "auto-save %s failed: %s (failure %d/%d within window, backoff=%.1fs)",
             tool,
@@ -697,14 +538,14 @@ def tool_complete(
                 "ts": int(_dt.datetime.now().timestamp() * 1000),
                 "label": "auto-save",
                 "error": str(e),
-                "traceback": tb,
+                "traceback": tb if "traceback" in dir() else "",
                 "failureCount": cb["n_failures"],
                 "code": 1,
             }
             with open(_err_path, "a") as _ef:
                 _ef.write(_json.dumps(_entry) + "\n")
-        except Exception as write_err:
-            logger.warning("tool_complete failed to write error log: %s", write_err)
+        except Exception:
+            pass
         return {
             "saved": False,
             "error": f"save failed: {e}",
@@ -720,6 +561,8 @@ def tool_complete(
 def _fast_path_enqueue(
     tool: str, params: str, result_preview: str, ts: Optional[str], entry_id: str = ""
 ) -> Optional[dict]:
+
+    from background.auto_save import _resolve_allowlist, _tool_name_matches, _resolve_denylist, _scan_content_for_injection, _async_enqueue_or_fallback  # noqa: E402
     """Apply the gates (allowlist/denylist/injection) and enqueue if they pass.
 
     Returns the "queued" envelope on success, or ``None`` if any
@@ -727,7 +570,6 @@ def _fast_path_enqueue(
     checks are intentionally duplicated here so the daemon can be
     a pure writer — it never has to re-validate.
     """
-    from background.auto_save import _resolve_allowlist, _tool_name_matches, _resolve_denylist, _scan_content_for_injection, _async_enqueue_or_fallback  # noqa: E402
     try:
         if not tool:
             return None

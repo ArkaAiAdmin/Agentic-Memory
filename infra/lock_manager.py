@@ -82,8 +82,17 @@ class SQLiteLockManager(LockManager):
         self.db_path = str(db_path)
 
     def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=10.0)
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
         conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=5000")
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS system_locks ("
+                "lock_key TEXT PRIMARY KEY, holder_id TEXT, "
+                "acquired_at TEXT, expires_at TEXT, lease_token TEXT)"
+            )
+        except Exception:
+            pass
         return conn
 
     def acquire_lock(self, lock_name: str, holder_id: str, ttl_seconds: int = 60) -> Tuple[bool, str]:
