@@ -544,6 +544,7 @@ CRON_SCRIPT_MAP: dict[str, str] = {
     "cron_sync": "cron/cron_sync.py",
     "cron_crdt_sync": "cron/cron_crdt_sync.py",
     "cron_monitor_task_queue": "cron/monitor_task_queue.py",
+    "cron_health_check": "cron/cron_health_check.py",
     # Pre-Phase B — already mapped
     "cron_cleanup_auto_logs": "cron/cleanup_auto_logs.py",
     "cron_kg_backfill_monitor": "cron/cron_kg_backfill_monitor.py",
