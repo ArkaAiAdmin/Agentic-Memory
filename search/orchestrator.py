@@ -1740,7 +1740,7 @@ def search_memories(
                         _swm_extra = db.execute(
                             f"SELECT id, content, source_file, tags, created_at, "
                             f"importance, category, fitness_score, last_accessed, "
-                            f"metadata "
+                            f"metadata, 0.0, 0.0, 0, 1 "
                             f"FROM tenant_memories WHERE id IN ({','.join('?'*len(_new_ids))})",
                             tuple(_new_ids),
                         ).fetchall()
@@ -1756,6 +1756,7 @@ def search_memories(
                                     (
                                         _sid, _content, _sf, _tags, _created,
                                         _imp, _cat, _fit, _la, _meta,
+                                        _rank, _fs, _ac, _ad,
                                     ) = _r
                                 except ValueError:
                                     continue
@@ -1763,6 +1764,7 @@ def search_memories(
                                     (
                                         _sid, _content, _sf, _tags, _created,
                                         0.0, 0.0, _fit, _imp, 0, _la, _meta,
+                                        _ac, _ad,
                                     )
                                 )
                             if _swm_display_rows:

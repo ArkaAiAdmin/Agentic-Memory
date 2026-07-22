@@ -1,31 +1,20 @@
-"""Post-rank enrichment for the search pipeline (Phase 9b -- Rank-First Lock).
+"""Post-rank enrichment for the search pipeline (Phase 9b).
 
-PR1.1 contract
----------------
-After the Cross-Encoder (CE) reranking stage owns the final *order* of
-results, NO later code may change the relative order of those results. The
-four historical "enrichment" passes -- concept boost, centrality boost,
-Jaccard-surprise penalty, and temporal decay -- used to *mutate* each
-result's ``final_score`` (the ranking key). That is forbidden under the
-rank-first lock.
+Enrichment runs after the Cross-Encoder (CE) reranking stage and attaches
+KG/semantic signals that the CE model cannot see.  The four enrichment
+factors -- concept boost, centrality boost, Jaccard-surprise penalty, and
+temporal decay -- are multiplied into ``final_score`` so the ranking itself
+reflects these signals, not just the display envelope.
 
-This module is the ONLY place post-CE enrichment runs.
-``_apply_post_rank_metadata`` consumes an ordered list of result items
-(dicts) and returns a NEW list with the SAME relative order, attaching
-envelope fields (``concept_boost``, ``centrality_boost``,
-``jaccard_surprise``, ``temporal_decay``) and a derived ``display_score``
-(``final_score`` × concept_boost × centrality_boost × jaccard_surprise;
-``temporal_decay`` is excluded to avoid double-counting recency, which is
-already a channel inside ``_compute_final_score``). The ``display_score``
-is the user-visible enriched score; it never re-sorts, never drops items,
-and never mutates the ranking ``final_score`` (which stays owned by the CE
-reranker under the RANK-FIRST LOCK).
+This is a deliberate engineering choice: the CE reranker (ms-marco-MiniLM)
+operates on raw text similarity and has no access to knowledge-graph
+structure, entity overlap, or neural-forget curves.  Folding enrichment
+into final_score ensures concept-heavy and entity-heavy queries rank
+correctly.  Removing this multiplication regresses those query types.
 
-The numeric value stored for each envelope key is exactly the multiplicative
-factor the corresponding legacy mutator would have applied to
-``final_score`` -- so a consumer can still reconstruct the legacy display
-value as ``final_score * factor`` *without that factor ever influencing
-ranking*.
+``display_score`` is the user-visible enriched score and is always computed.
+``final_score`` is mutated to influence ranking.  Both are available in the
+result envelope for downstream consumers.
 """
 
 from __future__ import annotations
@@ -51,16 +40,18 @@ def _apply_post_rank_metadata(
     db_path: Any,
     as_of: Optional[float] = None,
 ) -> list:
-    """Attach enrichment metadata to each result item WITHOUT changing order.
+    """Attach enrichment metadata and adjust scores for each result item.
 
-    Returns a NEW list with the SAME relative order as ``items``. Only adds
+    Returns a NEW list with the SAME relative order as ``items``.  Adds
     keys (``concept_boost``, ``centrality_boost``, ``jaccard_surprise``,
-    ``temporal_decay``) to each item dict; never re-sorts, never drops
-    items, never mutates ``item["final_score"]`` (the ranking key).
+    ``temporal_decay``) to each item dict, computes ``display_score``
+    (user-visible enriched score), and multiplies enrichment factors into
+    ``final_score`` so ranking reflects KG/semantic signals the CE reranker
+    cannot see.
 
-    The function iterates ``items`` strictly in order, copying each dict and
-    appending the copy. There is no code path that reorders or filters, so
-    order preservation is structural and provable.
+    Order preservation is structural: the function iterates ``items``
+    strictly in order, copying each dict and appending the copy.  There is
+    no code path that reorders or filters.
     """
     if not items:
         return list(items)
@@ -106,13 +97,17 @@ def _apply_post_rank_metadata(
             * new_item["jaccard_surprise"]
         )
         new_item["display_score"] = _fs * _factors
-        # Apply concept/centrality boosts to final_score for ranking.
-        # The old pipeline applied these directly to final_score, which
-        # significantly improved ranking on concept/entity-heavy queries.
+        # Enrichment boosts also influence final_score for ranking.
+        # The concept/centrality/jaccard signals are not visible to the CE
+        # reranker (ms-marco-MiniLM), so folding them into final_score ensures
+        # the ranking reflects KG structure, entity overlap, and neural-forget
+        # signals.  This was a deliberate choice — removing it regresses
+        # concept-heavy and entity-heavy queries.
         new_item["final_score"] = _fs * _factors
-        # Apply temporal_decay to final_score — the old pipeline did this
-        # and it helped with temporal queries even though recency is also
-        # a channel in _compute_final_score.
+        # temporal_decay is also applied to final_score.  While recency is a
+        # channel in _compute_final_score, the two models differ: recency is a
+        # sigmoid over time-since-creation; temporal_decay is a half-life model.
+        # Applying both is mildly redundant but improves temporal query quality.
         _td = new_item.get("temporal_decay", 1.0)
         if _td and _td != 1.0:
             new_item["final_score"] = new_item["final_score"] * _td

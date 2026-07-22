@@ -142,7 +142,8 @@ def index_memory_colbert_batch(
             if not token_list:
                 continue
             mid, cidx = chunk_batch[j][0], chunk_batch[j][1]
-            conn.execute("DELETE FROM colbert_tokens WHERE memory_id = ? AND chunk_id = ?", (mid, cidx))
+            if j == 0 or mid != chunk_batch[j-1][0]:
+                conn.execute("DELETE FROM colbert_tokens WHERE memory_id = ?", (mid,))
             for pos, (tok_text, vec) in enumerate(token_list):
                 blob = _vec_to_blob(vec)
                 conn.execute(

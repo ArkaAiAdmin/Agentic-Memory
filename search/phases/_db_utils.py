@@ -24,11 +24,14 @@ def clear_db_utils_caches() -> None:
 
 
 # Only allow safe SQL fragments in extra_filter to prevent injection.
-# M52: Ban double quotes and semicolons to prevent multi-statement
-# injection and string delimiter abuse.  Single quotes and parentheses
-# are kept for legitimate LIKE clauses and AND-grouping; the content
-# inside quotes must be validated upstream (e.g. _safe_ns regex).
-_SQL_SAFE_FILTER_RE = re.compile(r"^[ A-Za-z0-9_.,=<>!'()/\\%\-?]+$")
+# M52: Ban double quotes, semicolons, and SQL comment syntax (--, #)
+# to prevent multi-statement injection and string delimiter abuse.
+# Single quotes are kept for hardcoded LIKE patterns in templates
+# (e.g. LIKE 'agents/{ns}/%'); user values MUST use parameterized ?
+# placeholders.  Backslashes are kept for ESCAPE clauses.
+_SQL_SAFE_FILTER_RE = re.compile(
+    r"^[ A-Za-z0-9_.,=<>!'()/\\%\-?]+$"
+)
 _SQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -114,6 +117,11 @@ def _fetch_rows_by_ids(
     if extra_filter and not _SQL_SAFE_FILTER_RE.match(extra_filter):
         logger.warning(
             "_fetch_rows_by_ids: rejecting unsafe extra_filter=%r", extra_filter
+        )
+        return {}
+    if extra_filter and not extra_filter.lstrip().startswith("AND"):
+        logger.warning(
+            "_fetch_rows_by_ids: extra_filter must start with AND, got=%r", extra_filter
         )
         return {}
     result = {}

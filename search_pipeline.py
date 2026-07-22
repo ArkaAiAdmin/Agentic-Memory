@@ -71,6 +71,13 @@ class _ProxyModule(_types.ModuleType):
             return
         super().__setattr__(name, value)
 
+    def __getattr__(self, name: str):
+        if not _proxy_targets:
+            _install_proxies()
+        if name in _proxy_targets:
+            return getattr(_proxy_targets[name], name)
+        raise AttributeError(name)
+
 
 _module = _sys.modules[__name__]
 _module.__class__ = _ProxyModule

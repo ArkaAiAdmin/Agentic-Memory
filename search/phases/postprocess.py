@@ -21,6 +21,7 @@ import sqlite3
 from typing import TYPE_CHECKING
 
 from infra.error_counter import increment as _phase_inc
+from search.query_parser import _escape_fts_query
 
 if TYPE_CHECKING:
     from search.state import PipelineState
@@ -275,7 +276,7 @@ def apply_save_hint_floater(state: PipelineState) -> None:
         return
     hint_id, _hint_ts = hint
     try:
-        escaped_match = f'"{hint_id}"'
+        escaped_match = f'"{_escape_fts_query(hint_id)}"'
         hint_in_fts = (
             state.db.execute(
                 "SELECT 1 FROM memories_fts fts "

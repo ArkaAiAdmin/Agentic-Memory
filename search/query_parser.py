@@ -1208,14 +1208,20 @@ def _escape_fts_query(query: str) -> str:
     literal search terms.  Parentheses and ``+`` are FTS5 grouping/prefix
     syntax — they must NOT be escaped.
     """
-    q = query
-    q = re.sub(r"\bNEAR\b", '"NEAR"', q, flags=re.IGNORECASE)
-    q = re.sub(r"\bNOT\b", '"NOT"', q, flags=re.IGNORECASE)
-    q = q.replace('"', '""')
-    q = q.replace("*", "\\*")
-    q = q.replace("^", "\\^")
-    q = q.replace(":", "\\:")
-    return q
+    FTS5_RESERVED = {"AND", "OR", "NOT", "NEAR"}
+    FTS5_SPECIAL = set('*^:(){}[]+-"')
+    tokens = query.split()
+    escaped = []
+    for tok in tokens:
+        if not tok:
+            continue
+        if tok.upper() in FTS5_RESERVED:
+            escaped.append(f'"{tok}"')
+        elif any(c in tok for c in FTS5_SPECIAL):
+            escaped.append(f'"{tok.replace(chr(34), chr(34)*2)}"')
+        else:
+            escaped.append(tok)
+    return " ".join(escaped)
 
 
 def _graph_rag_expand(query: str, db_path: Path, conn=None) -> list[str]:
@@ -1455,12 +1461,12 @@ def _parse_search_query(query: str, db_path: Path, conn=None, mode: str = "hybri
             fts_query = expanded
         else:
             terms = [_escape_phrase(p) for p in phrases if p.strip()]
-            terms += [_escape_phrase(_escape_fts_query(w)) for w in content_words if w]
+            terms += [_escape_fts_query(w) for w in content_words if w]
             fts_query = " AND ".join(terms) if terms else ""
 
     if not fts_query.strip() and bare_words:
         # Fallback for stopword-only queries: use original bare words as FTS terms
-        terms = [_escape_phrase(_escape_fts_query(w)) for w in bare_words if w]
+        terms = [_escape_fts_query(w) for w in bare_words if w]
         fts_query = " AND ".join(terms)
 
     # Entity-anchored AND matching for inference queries.

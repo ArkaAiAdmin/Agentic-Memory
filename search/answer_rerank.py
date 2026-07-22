@@ -13,6 +13,7 @@ looked up at query time.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import time
@@ -156,7 +157,7 @@ def answer_rerank(
 
     # Check pre-computed cache first
     _ensure_cache_schema(conn)
-    query_hash = str(hash(query))
+    query_hash = hashlib.sha256(query.encode()).hexdigest()[:16]
 
     results = []
     for item in candidates:
@@ -235,7 +236,7 @@ def precompute_for_memory(
     now = time.time()
 
     for query in queries:
-        query_hash = str(hash(query))
+        query_hash = hashlib.sha256(query.encode()).hexdigest()[:16]
         snippet = _extract_snippet(content, query)
         answer_score = _score_snippet(query, snippet, model=model)
 
