@@ -209,27 +209,42 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
                 count += 1
         return count
 
-    # Collect all unique sessions and seed them into the DB
-    all_session_ids = set()
-    all_sessions = {}
-    all_session_dates = {}
-    for q in evaluable:
-        for sid in q.get("haystack_session_ids", []):
-            all_session_ids.add(sid)
-        for sid, sess, d in zip(
-            q.get("haystack_session_ids", []),
-            q.get("haystack_sessions", []),
-            q.get("haystack_dates", []),
-        ):
-            all_sessions[sid] = sess
-            all_session_dates[sid] = d
-
-    sorted_ids = sorted(all_session_ids)
-    sorted_sessions = [all_sessions[sid] for sid in sorted_ids]
-    sorted_dates = [all_session_dates.get(sid, "") for sid in sorted_ids]
-    print(f"Seeding {len(sorted_ids)} unique sessions into DB...")
-    _seed_sessions(db_path, sorted_sessions, sorted_ids, session_dates=sorted_dates)
-    print(f"Done. DB size: {db_path.stat().st_size / 1024:.1f} KB")
+    # Collect and seed sessions grouped by question tenant_id
+    print(f"Seeding sessions for {len(evaluable)} questions into DB...")
+    conn = sqlite3.connect(str(db_path))
+    try:
+        for q in evaluable:
+            qid = q["question_id"]
+            t_id = f"longmem_{qid}"
+            s_ids = q.get("haystack_session_ids", [])
+            sessions = q.get("haystack_sessions", [])
+            dates = q.get("haystack_dates", [])
+            for i, (sid, sess) in enumerate(zip(s_ids, sessions)):
+                content = _join_turns(sess)
+                if not content.strip():
+                    continue
+                observed_at = (
+                    _parse_haystack_date(dates[i])
+                    if dates and i < len(dates)
+                    else "datetime('now')"
+                )
+                conn.execute(
+                    """INSERT OR REPLACE INTO memories
+                       (id, content, source_file, category, tags, created_at, updated_at,
+                        observed_at, pinned, importance, tenant_id)
+                       VALUES (?, ?, ?, 'sessions', '[]', datetime('now'), datetime('now'),
+                               ?, 0, 3, ?)""",
+                    (sid, content, f"longmemeval/{sid}", observed_at, t_id),
+                )
+        conn.commit()
+        try:
+            conn.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
+    print(f"Done seeding. DB size: {db_path.stat().st_size / 1024:.1f} KB")
 
     # Pre-compute embeddings AFTER seeding
     try:
@@ -281,12 +296,13 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
                 except Exception:
                     pass
 
+            tenant_id = f"longmem_{qid}"
             result = search_memories(
                 db_path,
                 question,
                 limit=50,
                 category="sessions",
-                tenant_id="longmemeval",
+                tenant_id=tenant_id,
                 hybrid=True,
                 deep_rerank=False,
                 rerank=True,
