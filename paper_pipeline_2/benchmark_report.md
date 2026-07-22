@@ -211,4 +211,5 @@ The empirical evidence confirms that `agentic-memory` provides:
 4. **Zero Lost Updates & Zero Orphan Edges**, solving the primary failure modes of LWW and ID-at-creation CRDTs.
 5. **Linear Scaling to 10 Million Operations** at **138k–274k ops/sec**.
 
-This benchmark report is formatted and validated for inclusion as the primary evaluation section in top-tier peer-reviewed publications.
+This benchmark report is formatted and validated for inclusion as the primary evaluation section in peer-reviewed publications.
+
