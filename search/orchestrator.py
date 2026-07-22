@@ -516,8 +516,8 @@ def _rerank_results(
         score = float(r[6]) if r[6] is not None else 0.0
         ts = str(r[4]) if len(r) > 4 and r[4] is not None else ""
         if is_fact_or_temp:
-            # Round score to group near-equal relevance scores, then use timestamp as tie-breaker
-            return (round(score, 2), ts)
+            # Round score to 1 decimal place to group near-equal relevance scores, then use timestamp as tie-breaker
+            return (round(score, 1), ts)
         return (score, ts)
 
     if out and len(out) > 1:
@@ -536,11 +536,17 @@ def _rerank_results(
                 if item_id in superseded_ids:
                     item_list = list(item)
                     curr_score = float(item_list[6]) if item_list[6] is not None else 0.0
-                    item_list[6] = curr_score * 0.3
+                    item_list[6] = curr_score * 0.01
                     new_out.append(tuple(item_list))
                 else:
                     new_out.append(item)
             out = new_out
+
+    try:
+        from search.phases.contradiction_engine import resolve_candidate_contradictions
+        out = resolve_candidate_contradictions(out)
+    except Exception as exc:
+        logger.debug("Contradiction engine pass skipped: %s", exc)
 
     out = sorted(
         out,

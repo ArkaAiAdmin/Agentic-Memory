@@ -235,38 +235,57 @@ def supersede_fact(
     if old_id == new_id:
         return False
 
-    # M36: BEGIN IMMEDIATE to make the read-check-update atomic and
-    # prevent 2-cycles under concurrent supersession (A→B, B→A).
-    conn.execute("BEGIN IMMEDIATE")
+    in_tx = getattr(conn, "in_transaction", False)
+    if not in_tx:
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+        except Exception:
+            pass
     try:
         old = conn.execute(
             "SELECT id, event_time, locked, superseded_by FROM kg_facts WHERE id = ?",
             (old_id,),
         ).fetchone()
         if not old:
-            conn.execute("ROLLBACK")
+            if not in_tx:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
             return False
         if old[2]:  # locked
             logger.debug("supersede_fact: fact %d is locked, skipping", old_id)
-            conn.execute("ROLLBACK")
+            if not in_tx:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
             return False
         if old[3] is not None:  # already superseded
             logger.debug(
                 "supersede_fact: fact %d is already superseded, skipping",
                 old_id,
             )
-            conn.execute("ROLLBACK")
+            if not in_tx:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
             return False
         new = conn.execute(
-            "SELECT id, event_time, valid_at FROM kg_facts WHERE id = ?",
+            "SELECT id, event_time FROM kg_facts WHERE id = ?",
             (new_id,),
         ).fetchone()
         if not new:
-            conn.execute("ROLLBACK")
+            if not in_tx:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
             return False
         # Sprint 2: set valid_at on the winner when resolving a contradiction,
         # so subsequent supersessions have a stable "took effect" anchor.
-        if new[2] is None:
+        if winner_valid_at is not None:
             conn.execute(
                 "UPDATE kg_facts SET valid_at = COALESCE(?, transaction_time) WHERE id = ?",
                 (winner_valid_at, new_id),
@@ -292,13 +311,18 @@ def supersede_fact(
             (old_id, new_id),
         )
         _propagate_entailment_invalidation(conn, old_id)
-        conn.execute("COMMIT")
+        if not in_tx:
+            try:
+                conn.execute("COMMIT")
+            except Exception:
+                pass
         return True
     except Exception:
-        try:
-            conn.execute("ROLLBACK")
-        except Exception:
-            pass
+        if not in_tx:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
         raise
 
 
@@ -321,42 +345,65 @@ def _mark_fact_superseded(
     if fact_id == winner_id:
         return False
 
-    # M36: BEGIN IMMEDIATE to make the read-check-update atomic and
-    # prevent 2-cycles under concurrent supersession.
-    conn.execute("BEGIN IMMEDIATE")
+    in_tx = getattr(conn, "in_transaction", False)
+    if not in_tx:
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+        except Exception:
+            pass
     try:
         winner = conn.execute(
             "SELECT id, event_time, locked FROM kg_facts WHERE id = ?",
             (winner_id,),
         ).fetchone()
         if not winner:
-            conn.execute("ROLLBACK")
+            if not in_tx:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
             return False
         if winner[2]:  # locked
             logger.debug(
                 "_mark_fact_superseded: winner %d is locked, skipping", winner_id
             )
-            conn.execute("ROLLBACK")
+            if not in_tx:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
             return False
         fact = conn.execute(
             "SELECT id, locked, superseded_by FROM kg_facts WHERE id = ?",
             (fact_id,),
         ).fetchone()
         if not fact:
-            conn.execute("ROLLBACK")
+            if not in_tx:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
             return False
         if fact[1]:  # locked
             logger.debug(
                 "_mark_fact_superseded: fact %d is locked, skipping", fact_id
             )
-            conn.execute("ROLLBACK")
+            if not in_tx:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
             return False
         if fact[2] is not None:  # already superseded
             logger.debug(
                 "_mark_fact_superseded: fact %d is already superseded, skipping",
                 fact_id,
             )
-            conn.execute("ROLLBACK")
+            if not in_tx:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
             return False
         # invalid_at = the winner's event_time if known, else now
         invalid_at = winner[1] if winner[1] is not None else time.time()
