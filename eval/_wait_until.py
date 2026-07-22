@@ -63,6 +63,7 @@ def wait_until_value(
         TimeoutError if the value never matches
     """
     deadline = time.monotonic() + timeout
+    current = None  # L7 fix: initialize to prevent UnboundLocalError
     while time.monotonic() < deadline:
         current = get_value()
         if current == expected:

@@ -44,6 +44,7 @@ DOWNLOAD_URL = "https://raw.githubusercontent.com/snap-research/locomo/main/data
 
 sys.path.insert(0, str(REPO_ROOT))
 
+import memory_mcp  # noqa: E402
 from infra.memory_common import open_db  # noqa: E402
 from _fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes, set_benchmark_env  # noqa: E402
 
@@ -230,11 +231,11 @@ def evaluate(
 
     # Ingest all conversations
     all_session_maps: dict[str, dict[str, str]] = {}
-    t0 = time.time()
+    wall_start = time.time()
     for sample in data:
         sid = sample["sample_id"]
         all_session_maps[sid] = ingest_conversation(db_path, sample)
-    ingest_time = time.time() - t0
+    ingest_time = time.time() - wall_start
     total_sessions = sum(len(m) for m in all_session_maps.values())
     print(f"Ingested {total_sessions} sessions from {len(data)} conversations "
           f"in {ingest_time:.1f}s")
@@ -283,11 +284,17 @@ def evaluate(
 
     for i, q in enumerate(questions):
         if (i + 1) % 100 == 0:
-            print(f"  [{i+1}/{len(questions)}]")
+            _elapsed = time.time() - wall_start
+            _rate = (i + 1) / _elapsed if _elapsed > 0 else 0
+            print(f"  [{i+1}/{len(questions)}] {_elapsed:.0f}s elapsed, {_rate:.1f} q/s")
 
-        t0 = time.time()
+        # H6 fix: clear search cache between questions
+        if hasattr(memory_mcp, "_search_cache"):
+            memory_mcp._search_cache.clear()
+
+        q_start = time.time()
         retrieved = run_search(db_path, q["question"], limit=max(k_vals))
-        latency_ms = (time.time() - t0) * 1000
+        latency_ms = (time.time() - q_start) * 1000
         latencies.append(latency_ms)
 
         # Map retrieved memory IDs back to session numbers
@@ -346,7 +353,7 @@ def evaluate(
         "max": round(latencies[-1], 2),
     }
 
-    wall_time = time.time() - t0 if 't0' in dir() else ingest_time
+    wall_time = time.time() - wall_start
 
     results = {
         "n_questions_total": len(questions),

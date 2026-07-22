@@ -131,7 +131,7 @@ def extract_conversation_content(chat_data: list) -> list[dict]:
 
 def _get_db_connection(db_path: Path, tenant_id: str = "beam") -> sqlite3.Connection:
     """Get a SQLite connection with tenant_id function and views registered."""
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.create_function("tenant_id", 0, lambda: tenant_id)
     conn.execute(
         "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
@@ -395,6 +395,7 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
     print("\nRunning evaluation...")
     results = []
     per_type = {}
+    _q_num = 0  # L8 fix: track question count for progress
 
     for conv in conversations:
         cid = conv["conversation_id"]
@@ -409,6 +410,14 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
                 question_text = q.get("question", "")
                 if not question_text:
                     continue
+
+                _q_num += 1
+                if _q_num % 25 == 0:
+                    print(f"  [{_q_num} questions processed]", flush=True)
+
+                # H6 fix: clear search cache between questions
+                if hasattr(memory_mcp, "_search_cache"):
+                    memory_mcp._search_cache.clear()
 
                 # Get expected answer (varies by type)
                 expected = (
@@ -432,7 +441,7 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
                 # Get content of retrieved sessions
                 retrieved_content = []
                 if retrieved:
-                    conn = sqlite3.connect(str(db_path))
+                    conn = sqlite3.connect(str(db_path), timeout=30.0)
                     for mid in retrieved[:10]:
                         row = conn.execute(
                             "SELECT content FROM memories WHERE id = ?", (mid,)

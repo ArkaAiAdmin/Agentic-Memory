@@ -34,7 +34,11 @@ def bootstrap_temp_db(db_path: Path) -> None:
     _, _, global_mem = get_memory_paths()
     prod_db = global_mem / "memory.db"
     if prod_db.exists():
-        shutil.copy2(prod_db, db_path)
+        # M8 fix: copy WAL sidecar files alongside the main DB
+        for suffix in ("", "-wal", "-shm"):
+            src = prod_db.parent / (prod_db.name + suffix)
+            if src.exists():
+                shutil.copy2(src, db_path.parent / (db_path.name + suffix))
     conn = sqlite3.connect(str(db_path))
     try:
         conn.execute("PRAGMA journal_mode = WAL")

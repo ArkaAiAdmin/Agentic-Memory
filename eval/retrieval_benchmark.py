@@ -376,13 +376,21 @@ class RetrievalBenchmark:
         accumulator: _PhaseRunResult,
     ) -> None:
         """Execute one test case against *run_fn* and record metrics."""
+        # L10 fix: wrap search in a timeout to prevent hung calls
+        import concurrent.futures
         t0 = time.time()
-        result = run_fn(
-            db_path=db_path,
-            query=case.query,
-            category=case.category,
-            tags=case.tags,
-        )
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(
+                    run_fn,
+                    db_path=db_path,
+                    query=case.query,
+                    category=case.category,
+                    tags=case.tags,
+                )
+                result = future.result(timeout=60.0)
+        except concurrent.futures.TimeoutError:
+            result = {"results": [], "count": 0, "error": "search timed out after 60s"}
         latency_ms = (time.time() - t0) * 1000.0
 
         retrieved = [r["id"] for r in result.get("results", [])]
