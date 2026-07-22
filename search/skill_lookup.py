@@ -14,17 +14,32 @@ logger = logging.getLogger(__name__)
 # Bounded LRU via OrderedDict; evicts oldest entries past MAX_SKILL_CACHE.
 # Thread-safe: all cache reads and writes are protected by _skill_cache_lock.
 _SKILL_CACHE_MAX = 512
-_skill_cache: dict[tuple[str, tuple[str, ...], int], dict] = {}
-_skill_cache_order: list[tuple[str, tuple[str, ...], int]] = []
+_skill_cache: dict[tuple, dict] = {}
+_skill_cache_order: list[tuple] = []
 _skill_cache_lock = threading.Lock()
+
+
+def clear_skill_caches() -> None:
+    """Clear skill lookup cache."""
+    with _skill_cache_lock:
+        _skill_cache.clear()
+        _skill_cache_order.clear()
 
 
 def _skill_first_lookup(db_path: Path, terms: list[str], limit: int, tenant_id: str = "default") -> dict | None:
     """Look up skills in memory_skills table matching the query terms."""
-    cache_key = (str(db_path), tuple(sorted(terms)), limit)
+    import os
+    st_ino = 0
+    if db_path and os.path.exists(str(db_path)):
+        try:
+            st_ino = os.stat(str(db_path)).st_ino
+        except OSError:
+            pass
+    cache_key = (str(db_path), st_ino, tenant_id, tuple(sorted(terms)), limit)
     with _skill_cache_lock:
         if cache_key in _skill_cache:
             return _skill_cache[cache_key]
+
 
     try:
         from infra._lazy_imports import connection_pool, safe_close_db

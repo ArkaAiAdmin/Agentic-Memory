@@ -128,6 +128,15 @@ _li_cache_lock = threading.Lock()
 _LI_CACHE_MAX = 1000
 
 
+def clear_reranker_caches() -> None:
+    """Clear all cross-encoder score and late-interaction content caches."""
+    with _ce_cache_lock:
+        _ce_score_cache.clear()
+    with _li_cache_lock:
+        _li_content_cache.clear()
+
+
+
 def _get_cross_encoder_blend() -> float:
     return get_search_config().cross_encoder_blend
 
@@ -536,39 +545,23 @@ def _apply_ce_chunk_rerank(
     scored_results: list,
     top_k: int = 300,
     blend: float = 0.7,
+    tenant_id: str = "default",
+    db_path: Any = None,
 ) -> list:
-    """Chunk-level cross-encoder reranking using ms-marco-MiniLM-L-6-v2.
-
-    For each result, splits the content into overlapping word chunks,
-    scores each chunk against the query using the CE model, and uses
-    the best chunk score as the session score. Results are re-ranked
-    by blending the CE score with the existing final_score.
-
-    This catches answers buried deep in long multi-topic conversations
-    where the weak IDF+bigram CE fails.
-
-    Args:
-        query: Natural-language search query.
-        scored_results: List of 12-tuple result rows from prior phases.
-        top_k: Max results to rerank (rest pass through untouched).
-        blend: Weight for CE score in the final blend (0.0-1.0).
-            Higher = more CE influence. Default 0.7 (CE-dominated).
-
-    Returns:
-        Re-ranked list with CE-adjusted final_scores.
-    """
+    """Chunk-level cross-encoder reranking using ms-marco-MiniLM-L-6-v2."""
     if not scored_results or not query:
-        return scored_results
+        return list(scored_results)
     try:
         from infra._lazy_imports import get_config
+
         if get_config().reranker_disabled:
             return list(scored_results)
-    except Exception:
+    except Exception:  # pragma: no cover - best-effort config read
         pass
 
-    # --- FAST PATH: skip CE chunk reranking for simple queries ---
-    # Single-word queries, very short queries, or queries with only stopwords
-    # don't benefit from chunk-level CE scoring — FTS already handles them well.
+    head = scored_results[:top_k]
+    tail = scored_results[top_k:]
+
     query_words = [w for w in query.split() if w.lower() not in _CE_STOPWORDS]
     if len(query_words) <= 1:
         logger.debug("_apply_ce_chunk_rerank: fast-path skip (simple query: %r)", query)
@@ -619,9 +612,17 @@ def _apply_ce_chunk_rerank(
 
     # --- CACHE: check CE score cache before scoring ---
     import hashlib
+    import os
+    st_ino = 0
+    if db_path is not None and os.path.exists(str(db_path)):
+        try:
+            st_ino = os.stat(str(db_path)).st_ino
+        except OSError:
+            pass
     _ce_cache = _get_ce_score_cache()
     candidate_ids = ",".join(str(r[0]) for r in ce_candidates)
-    cache_key = hashlib.sha256(f"{query}:{candidate_ids}".encode()).hexdigest()[:16]
+    cache_key = hashlib.sha256(f"{tenant_id}:{db_path}:{st_ino}:{query}:{candidate_ids}".encode()).hexdigest()[:16]
+
 
     with _ce_cache_lock:
         if cache_key in _ce_cache:

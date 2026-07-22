@@ -746,7 +746,13 @@ def _temporal_compare(
     return results[:limit]
 
 
-def _cache_store_result(cache_key: str, result: dict) -> None:
+def clear_orchestrator_caches() -> None:
+    """Clear orchestrator db columns cache."""
+    with _db_columns_cache_lock:
+        _db_columns_cache.clear()
+
+
+def _cache_store_result(cache_key: str, result: dict, db_path: Path | str | None = None) -> None:
     """Store a search result in the LRU cache and enforce the size cap.
 
     The 3-line "set + move_to_end + pop oldest" sequence appears in
@@ -756,6 +762,15 @@ def _cache_store_result(cache_key: str, result: dict) -> None:
     this is the only spot to touch.
     """
     from infra.cache import cache_put, register_cache_note_ids
+
+    if isinstance(result, dict) and "_inode" not in result:
+        p_str = str(db_path) if db_path is not None else cache_key.split(":")[0]
+        if p_str and p_str != ":memory:":
+            try:
+                if os.path.exists(p_str):
+                    result["_inode"] = os.stat(p_str).st_ino
+            except OSError:
+                pass
 
     note_ids = [
         item.get("id", "")
@@ -778,6 +793,7 @@ def _cache_store_result(cache_key: str, result: dict) -> None:
             register_cache_note_ids(cache_key, note_ids)
         except Exception as e:
             logger.warning("register_cache_note_ids failed: %s", e)
+
 
 
 def search_memories(

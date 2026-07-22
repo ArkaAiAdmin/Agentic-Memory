@@ -156,7 +156,8 @@ python eval/longmemeval_s/run_eval_main_pipeline.py \
   --output eval/longmemeval_s/results/eval_main_pipeline_full.json
 
 # LoCoMo (50-question subset)
-python eval/locomo/run_locomo_eval.py
+python eval/locomo_eval.py --max-questions 50
+
 
 # Unit & Integration Tests (88 + 36 tests)
 pytest paper_pipeline/test_pipeline.py paper_pipeline/test_adversarial.py -v

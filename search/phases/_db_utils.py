@@ -16,6 +16,13 @@ logger = logging.getLogger(__name__)
 _db_columns_cache: dict = {}
 _db_columns_cache_lock = threading.Lock()
 
+
+def clear_db_utils_caches() -> None:
+    """Clear db columns cache."""
+    with _db_columns_cache_lock:
+        _db_columns_cache.clear()
+
+
 # Only allow safe SQL fragments in extra_filter to prevent injection.
 # M52: Ban double quotes and semicolons to prevent multi-statement
 # injection and string delimiter abuse.  Single quotes and parentheses

@@ -22,6 +22,12 @@ _CORPUS_CACHE_TTL = 60.0
 logger = logging.getLogger(__name__)
 
 
+def clear_fusion_caches() -> None:
+    """Clear corpus size cache."""
+    _corpus_size_cache.clear()
+
+
+
 def _merge_chunk_hits(chunk_hits: list) -> list:
     """Merge consecutive chunk hits from the same parent into a single result.
 

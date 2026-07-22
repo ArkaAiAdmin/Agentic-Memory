@@ -157,10 +157,50 @@ def _seed_sessions(db_path: Path, sessions: list[list[dict]], session_ids: list[
         conn.close()
 
 
-def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = None) -> dict:
+def run(
+    corpus: list[dict],
+    limit: int | None = None,
+    db_path: Path | None = None,
+    output_file: str | None = None,
+    resume: bool = False,
+    force_reseed: bool = False,
+) -> dict:
+    import gc
+    from infra.cache import clear_all_caches
+
+    # Clear all in-memory search caches prior to evaluation
+    clear_all_caches()
+
     evaluable = [q for q in corpus if is_evaluable(q)]
     if limit is not None:
         evaluable = evaluable[:limit]
+
+    # Check for existing checkpoint/output when resume is enabled
+    completed_qids = set()
+    per_q = []
+    per_metric = defaultdict(list)
+
+    checkpoint_path = Path(output_file + ".checkpoint") if output_file else None
+    target_out_path = Path(output_file) if output_file else None
+
+    if resume and (target_out_path and target_out_path.exists() or checkpoint_path and checkpoint_path.exists()):
+        read_path = target_out_path if target_out_path and target_out_path.exists() else checkpoint_path
+        try:
+            with open(read_path, "r", encoding="utf-8") as f:
+                prev_report = json.load(f)
+                prev_per_q = prev_report.get("per_question", [])
+                for item in prev_per_q:
+                    qid = item["question_id"]
+                    completed_qids.add(qid)
+                    per_q.append(item)
+                    for k, v in item.get("scores", {}).items():
+                        per_metric[k].append(v)
+            print(f"Resuming run: loaded {len(completed_qids)} completed questions from {read_path}")
+        except Exception as exc:
+            print(f"WARNING: Failed to read checkpoint {read_path} ({exc}), starting from scratch")
+            completed_qids.clear()
+            per_q.clear()
+            per_metric.clear()
 
     # Create a temp DB for this evaluation run
     if db_path is None:
@@ -171,12 +211,23 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
     else:
         cleanup = False
 
+    # Check dependency health
+    try:
+        import sentence_transformers
+        print(f"Using sentence_transformers ({sentence_transformers.__file__})")
+    except ImportError:
+        print("\n" + "=" * 60)
+        print("WARNING: sentence-transformers is NOT installed in this Python environment.")
+        print(f"Executing binary: {sys.executable}")
+        print("Search will SILENTLY degrade to FTS-only BM25 search path.")
+        print("For full 14-phase hybrid/CE evaluation, run with venv/bin/python.")
+        print("=" * 60 + "\n")
+
     # Warm up embedding model synchronously so it's ready before queries start
     try:
         from sentence_transformers import SentenceTransformer
         _emb_model = SentenceTransformer("BAAI/bge-base-en-v1.5")
         print(f"Embedding model loaded: {type(_emb_model).__name__}")
-        # Inject into the lazy loader so search_memories finds it
         from infra._lazy_imports import get_embedding_search
         es = get_embedding_search()
         es.model = _emb_model
@@ -191,7 +242,6 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
             return 0
         model_name = getattr(model, 'name', 'bge-large')
         count = 0
-        # Batch encode for speed (100 at a time)
         batch_size = 100
         for i in range(0, len(sessions), batch_size):
             batch = sessions[i:i + batch_size]
@@ -239,6 +289,14 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
                                ?, 0, 3, ?)""",
                     (sid, content, f"longmemeval/{sid}", observed_at, t_id),
                 )
+                try:
+                    from search.chunk_index import _qw5_ensure_schema, _qw5_index_chunks_for
+                    _qw5_ensure_schema(conn)
+                    _qw5_index_chunks_for(conn, sid, content)
+                except Exception:
+                    pass
+
+
         conn.commit()
         try:
             conn.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
@@ -276,17 +334,39 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
         print(f"Embedding pre-compute failed: {e}")
 
     print(f"Starting evaluation of {len(evaluable)} questions...")
-
-    per_q = []
-    per_metric = defaultdict(list)
     total_t = time.perf_counter()
+
+    def _save_checkpoint():
+        if not output_file or not per_q:
+            return
+        wall_so_far = time.perf_counter() - total_t
+        m_agg = {f"recall_any@{k}": mean(per_metric[f"recall_any@{k}"]) for k in KS if per_metric[f"recall_any@{k}"]}
+        m_agg.update({f"recall_all@{k}": mean(per_metric[f"recall_all@{k}"]) for k in KS if per_metric[f"recall_all@{k}"]})
+        m_agg.update({f"ndcg_any@{k}": mean(per_metric[f"ndcg_any@{k}"]) for k in KS if per_metric[f"ndcg_any@{k}"]})
+        ckpt_report = {
+            "n_questions": len(per_q),
+            "total_questions": len(evaluable),
+            "wall_time_s": round(wall_so_far, 2),
+            "mean_latency_ms": round(wall_so_far / len(per_q) * 1000, 1) if per_q else 0,
+            "macro_metrics": m_agg,
+            "per_question": per_q,
+        }
+        tmp_ckpt = Path(output_file + ".tmp")
+        try:
+            with open(tmp_ckpt, "w", encoding="utf-8") as f:
+                json.dump(ckpt_report, f, indent=2)
+            os.replace(tmp_ckpt, checkpoint_path or Path(output_file))
+        except Exception as exc:
+            logger.debug("Checkpoint save failed (non-fatal): %s", exc)
 
     for idx, q in enumerate(evaluable):
         qid = q["question_id"]
+        if qid in completed_qids:
+            continue
+
         gold = set(q["answer_session_ids"])
         question = q["question"]
 
-        # Use the main search pipeline — FTS + weak CE reranking, no hybrid
         try:
             qdate = q.get("question_date")
             as_of_val = None
@@ -324,31 +404,33 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
             "n_sessions": len(q.get("haystack_session_ids", [])),
             "scores": scores,
         })
+        completed_qids.add(qid)
         for k, v in scores.items():
             per_metric[k].append(v)
-        # Progress reporting every 25 questions
-        if (idx + 1) % 25 == 0 or idx == 0:
+
+        # Periodically trigger garbage collection to control memory growth
+        if (idx + 1) % 25 == 0:
+            gc.collect()
+
+        # Incremental checkpointing every 5 questions or on first/last
+        if (len(per_q) % 5 == 0) or idx == 0 or idx == len(evaluable) - 1:
+            _save_checkpoint()
+
+        if (idx + 1) % 25 == 0 or idx == 0 or idx == len(evaluable) - 1:
             elapsed = time.perf_counter() - total_t
-            rate = (idx + 1) / elapsed if elapsed > 0 else 0
-            eta = (len(evaluable) - idx - 1) / rate if rate > 0 else 0
+            rate = len(per_q) / elapsed if elapsed > 0 else 0
+            eta = (len(evaluable) - len(per_q)) / rate if rate > 0 else 0
             print(
-                f"  [{idx + 1}/{len(evaluable)}] {qid} ({q['question_type']}) "
+                f"  [{len(per_q)}/{len(evaluable)}] {qid} ({q['question_type']}) "
                 f"recall@10={scores['recall_any@10']:.2f} "
                 f"rate={rate:.1f}/s ETA={eta:.0f}s",
                 flush=True
             )
 
-        if (idx + 1) % 25 == 0 or idx == 0 or idx == len(evaluable) - 1:
-            print(
-                f"  [{idx + 1}/{len(evaluable)}] {qid} ({q['question_type']}) "
-                f"recall@10={scores['recall_any@10']:.2f} "
-                f"latency={(time.perf_counter() - total_t) / (idx + 1):.3f}s"
-            )
-
     wall = time.perf_counter() - total_t
-    agg = {f"recall_any@{k}": mean(per_metric[f"recall_any@{k}"]) for k in KS}
-    agg.update({f"recall_all@{k}": mean(per_metric[f"recall_all@{k}"]) for k in KS})
-    agg.update({f"ndcg_any@{k}": mean(per_metric[f"ndcg_any@{k}"]) for k in KS})
+    agg = {f"recall_any@{k}": mean(per_metric[f"recall_any@{k}"]) for k in KS} if per_metric else {}
+    agg.update({f"recall_all@{k}": mean(per_metric[f"recall_all@{k}"]) for k in KS} if per_metric else {})
+    agg.update({f"ndcg_any@{k}": mean(per_metric[f"ndcg_any@{k}"]) for k in KS} if per_metric else {})
 
     report = {
         "n_questions": len(evaluable),
@@ -369,13 +451,29 @@ def main():
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--resume", action="store_true", help="Resume from existing output or checkpoint file")
+    parser.add_argument("--force-reseed", action="store_true", help="Force re-seeding DB")
     args = parser.parse_args()
 
     corpus = load_corpus(args.input, limit=args.limit)
-    report = run(corpus, limit=args.limit)
+    report = run(
+        corpus,
+        limit=args.limit,
+        output_file=args.output,
+        resume=args.resume,
+        force_reseed=args.force_reseed,
+    )
 
     with open(args.output, "w") as f:
         json.dump(report, f, indent=2)
+
+    # Clean up temporary checkpoint file on successful completion
+    ckpt_file = Path(args.output + ".checkpoint")
+    if ckpt_file.exists():
+        try:
+            ckpt_file.unlink()
+        except OSError:
+            pass
 
     print(f"\n{'=' * 60}")
     print("Macro-averaged metrics:")
@@ -386,3 +484,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

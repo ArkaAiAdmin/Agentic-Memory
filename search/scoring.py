@@ -650,18 +650,27 @@ def _apply_exploration(cached_stats) -> Optional[dict]:
 
 
 def compute_channel_weights(db_path: Path) -> Optional[dict]:
-    """Compute channel weights from CTR feedback data.
+    """Compute channel weights from CTR feedback data."""
+    return get_ctr_weights(db_path)
 
-    Queries ``memory_ctr_feedback`` for recent click/dismiss signals (last 30
-    days).  For each query group, parses the stored ``ranking_params`` JSON to
-    recover the per-channel weights that were used, then computes a weighted
-    average biased by query-level CTR (clicks / (clicks + dismissals)).
 
-    Returns adjusted weights dict if ≥10 data points exist, otherwise ``None``
-    (caller should fall back to ``_RERANK_WEIGHTS``).
+def clear_scoring_caches() -> None:
+    """Clear CTR weights cache."""
+    global _CTR_WEIGHTS_CACHE
+    with _CTR_WEIGHTS_CACHE_LOCK:
+        _CTR_WEIGHTS_CACHE = None
 
-    CTR tuning is ON by default.  Set ``MEMORY_CTR_TUNING=0`` to disable.
-    Results are cached for ``_CTR_WEIGHTS_TTL`` seconds so at most one DB
+
+
+def get_ctr_weights(db_path: Any) -> Optional[dict[str, float]]:
+    """Compute empirical channel weights from recent CTR feedback.
+
+    Queries ``memory_ctr_feedback`` to compute per-channel
+    performance multipliers, returning a dict of normalized weights.
+    Falls back to static defaults if feedback is sparse (<10 queries)
+    or the table is missing.
+
+    Cached for 1 hour to avoid running heavy feedback-aggregation
     query runs per search.
     """
     # CTR tuning is on by default.  Set MEMORY_CTR_TUNING=0 to opt out.
@@ -669,22 +678,33 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
     # the cache. Otherwise we'd return a stale result from before the
     # flag flipped. (Discovered during audit; testing tooling toggles
     # the env var between sessions.)
+    db_path_str = str(db_path)
+    st_ino = 0
+    if os.path.exists(db_path_str):
+        try:
+            st_ino = os.stat(db_path_str).st_ino
+        except OSError:
+            pass
+
     with _CTR_WEIGHTS_CACHE_LOCK:
         env_val = os.environ.get("MEMORY_CTR_TUNING", "1").strip()
         ctr_enabled = env_val != "0"
         global _CTR_WEIGHTS_CACHE
 
         if _CTR_WEIGHTS_CACHE is not None:
-            ts, cached, cached_env = _CTR_WEIGHTS_CACHE
-            if cached_env != ctr_enabled or time.time() - ts >= _CTR_WEIGHTS_TTL:
+            if len(_CTR_WEIGHTS_CACHE) == 5:
+                ts, cached, cached_env, cached_db, cached_ino = _CTR_WEIGHTS_CACHE
+                if cached_db != db_path_str or cached_ino != st_ino or cached_env != ctr_enabled or time.time() - ts >= _CTR_WEIGHTS_TTL:
+                    _CTR_WEIGHTS_CACHE = None
+            else:
                 _CTR_WEIGHTS_CACHE = None
 
         if _CTR_WEIGHTS_CACHE is not None:
-            ts, cached, _cached_env = _CTR_WEIGHTS_CACHE
+            ts, cached, _cached_env, _cached_db, _cached_ino = _CTR_WEIGHTS_CACHE
             return _apply_exploration(cached)
 
         if not ctr_enabled:
-            _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled)
+            _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled, db_path_str, st_ino)
             return None
 
     try:
@@ -700,7 +720,7 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
             }
             if "memory_ctr_feedback" not in tables:
                 with _CTR_WEIGHTS_CACHE_LOCK:
-                    _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled)
+                    _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled, db_path_str, st_ino)
                 return None
 
             from config import get_config
@@ -720,7 +740,7 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
 
             if len(rows) < 10:
                 with _CTR_WEIGHTS_CACHE_LOCK:
-                    _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled)
+                    _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled, db_path_str, st_ino)
                 return None
 
             alphas = {ch: 1.0 for ch in _RERANK_WEIGHTS}
@@ -747,7 +767,7 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
 
             if total_weight <= 0:
                 with _CTR_WEIGHTS_CACHE_LOCK:
-                    _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled)
+                    _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled, db_path_str, st_ino)
                 return None
 
             adjusted = {ch: channel_sums[ch] / total_weight for ch in _RERANK_WEIGHTS}
@@ -759,14 +779,14 @@ def compute_channel_weights(db_path: Path) -> Optional[dict]:
 
             stats = (alphas, betas, adjusted)
             with _CTR_WEIGHTS_CACHE_LOCK:
-                _CTR_WEIGHTS_CACHE = (time.time(), stats, ctr_enabled)
+                _CTR_WEIGHTS_CACHE = (time.time(), stats, ctr_enabled, db_path_str, st_ino)
             return _apply_exploration(stats)
         finally:
             connection_pool.put(db)
     except Exception:
         logger.warning("Failed to compute CTR weights from feedback")
         with _CTR_WEIGHTS_CACHE_LOCK:
-            _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled)
+            _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled, db_path_str, st_ino)
         return None
 
 
@@ -779,11 +799,12 @@ class TemporalAttentionModel:
     """Lightweight SSM-style temporal attention model for note recency scoring.
 
     Weights layout (58 elements total):
-        W_readout[0:8]    — linear readout head
-        b_readout[8]      — readout bias
-        W_input[8:56]     — 8×6 input-weight matrix (row-major)
-        b_input[56:57]    — input bias
+        W_readout[0:8]    -- linear readout head
+        b_readout[8]      -- readout bias
+        W_input[8:56]     -- 8 by 6 input-weight matrix (row-major)
+        b_input[56:57]    -- input bias
     """
+
 
     def __init__(self, weights=None):
         from config import get_config
@@ -929,8 +950,8 @@ def reset_ssm_model() -> None:
 def _ssm_input_vector(access_count, query_surprise, importance, fitness, recency_penalty):
     """6-dim input matching the training-time feature layout.
 
-    [access_signal, query_surprise, importance_norm, fitness,
-    recency_penalty, 0.0].  The 6th slot is padding the model learns to
+    (access_signal, query_surprise, importance_norm, fitness,
+    recency_penalty, zero_pad). The 6th slot is padding the model learns to
     ignore, keeping the layout identical between training and inference so
     trained weights transfer.
     """

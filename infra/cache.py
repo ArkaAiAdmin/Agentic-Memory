@@ -202,22 +202,56 @@ def invalidate_cache_for_note(note_id: str) -> int:
 
 
 def clear_all_caches() -> None:
-    """Clear both the FTS5 search cache and the embedding vec cache.
-
-    Call this after any write that could stale either cache (save,
-    delete, backfill, rebuild).  Uses a lazy import to break the
-    circular dependency between ``cache.py`` and ``embedding_search.py``.
-    """
+    """Clear all search, vector, CE, scoring, skill, and fusion caches across the pipeline."""
     global _fts5_cache_cleared
     with _search_cache_lock:
         _search_cache.clear()
         _fts5_cache_cleared = True
+    with _cache_note_index_lock:
+        _cache_note_index.clear()
     try:
         from infra.embedding_search import clear_vec_cache
 
         clear_vec_cache()
-    except ImportError:
+    except Exception:
         pass
+    try:
+        from search.rerankers import clear_reranker_caches
+
+        clear_reranker_caches()
+    except Exception:
+        pass
+    try:
+        from search.scoring import clear_scoring_caches
+
+        clear_scoring_caches()
+    except Exception:
+        pass
+    try:
+        from search.skill_lookup import clear_skill_caches
+
+        clear_skill_caches()
+    except Exception:
+        pass
+    try:
+        from search.phases.fusion import clear_fusion_caches
+
+        clear_fusion_caches()
+    except Exception:
+        pass
+    try:
+        from search.phases._db_utils import clear_db_utils_caches
+
+        clear_db_utils_caches()
+    except Exception:
+        pass
+    try:
+        from search.orchestrator import clear_orchestrator_caches
+
+        clear_orchestrator_caches()
+    except Exception:
+        pass
+
 
 
 def cache_put(key, value, max_size: int = SEARCH_CACHE_MAX) -> None:
