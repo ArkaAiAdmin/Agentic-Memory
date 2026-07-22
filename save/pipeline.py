@@ -1601,7 +1601,7 @@ def update_tier(
 
     with open_db(Path(_db), write=True) as conn:
         cur = conn.execute(
-            "UPDATE memories SET tier=? WHERE id=?", (tier, note_id)
+            "UPDATE tenant_memories SET tier=? WHERE id=?", (tier, note_id)
         )
         conn.commit()
         return (cur.rowcount or 0) > 0
@@ -2502,7 +2502,7 @@ def memory_supersede_db(
                 "SELECT content FROM tenant_memories WHERE id = ?", (old_id,)
             ).fetchone()
             db.execute(
-                """UPDATE memories
+                """UPDATE tenant_memories
                    SET valid_to = ?, superseded_by = ?, updated_at = ?
                    WHERE id = ?""",
                 (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
@@ -2530,7 +2530,7 @@ def memory_supersede_db(
                         meta = {}
                     meta["supersession_rationale"] = rationale
                     db.execute(
-                        "UPDATE memories SET metadata = ? WHERE id = ?",
+                        "UPDATE tenant_memories SET metadata = ? WHERE id = ?",
                         (json.dumps(meta), old_id),
                     )
                 except Exception as _supersede_meta_exc:
@@ -2562,7 +2562,7 @@ def memory_supersede_db(
                 db.execute("BEGIN IMMEDIATE")
                 try:
                     db.execute(
-                        """UPDATE memories
+                        """UPDATE tenant_memories
                            SET valid_to = ?, superseded_by = ?, updated_at = ?
                            WHERE id = ?""",
                         (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
@@ -2582,7 +2582,7 @@ def memory_supersede_db(
                             meta = {}
                         meta["supersession_rationale"] = rationale
                         db.execute(
-                            "UPDATE memories SET metadata = ? WHERE id = ?",
+                            "UPDATE tenant_memories SET metadata = ? WHERE id = ?",
                             (json.dumps(meta), old_id),
                         )
                     db.execute("COMMIT")
@@ -2630,7 +2630,7 @@ def reinforce_memories_db(db_path: Path, ids: list[str], delta: float) -> int:
                     old_score = row[0] or 0.0
                     new_score = max(-3.0, min(5.0, old_score + delta))
                     db.execute(
-                        "UPDATE memories SET success_score = ? WHERE id = ?",
+                        "UPDATE tenant_memories SET success_score = ? WHERE id = ?",
                         (new_score, mid),
                     )
                     hits += 1
@@ -2707,7 +2707,7 @@ def patch_memory(
             # Update the DB row with new content
             now_iso = datetime.now(timezone.utc).isoformat()
             db.execute(
-                "UPDATE memories SET content = ?, updated_at = ? WHERE id = ?",
+                "UPDATE tenant_memories SET content = ?, updated_at = ? WHERE id = ?",
                 (new_content, now_iso, note_id),
             )
 
@@ -2734,7 +2734,7 @@ def patch_memory(
             patch_history.append(patch_entry)
             meta["patch_history"] = patch_history
             db.execute(
-                "UPDATE memories SET metadata = ? WHERE id = ?",
+                "UPDATE tenant_memories SET metadata = ? WHERE id = ?",
                 (json.dumps(meta), note_id),
             )
 
@@ -2787,7 +2787,7 @@ def revert_supersede(
                 )
 
             db.execute(
-                "UPDATE memories SET valid_to = NULL, superseded_by = NULL, updated_at = ? WHERE id = ?",
+                "UPDATE tenant_memories SET valid_to = NULL, superseded_by = NULL, updated_at = ? WHERE id = ?",
                 (datetime.now(timezone.utc).isoformat(), note_id),
             )
 

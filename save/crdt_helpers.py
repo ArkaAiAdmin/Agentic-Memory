@@ -123,7 +123,7 @@ def _crdt_bump_version(db, note_id: str, cols: set) -> None:
         return
     try:
         row = db.execute(
-            "SELECT version_vector, logical_clock FROM memories WHERE id=?",
+            "SELECT version_vector, logical_clock FROM tenant_memories WHERE id=?",
             (note_id,),
         ).fetchone()
         if row is None:
@@ -135,7 +135,7 @@ def _crdt_bump_version(db, note_id: str, cols: set) -> None:
         new_vv_str = json.dumps(vv, sort_keys=True)
         new_clock = vv[agent]
         db.execute(
-            "UPDATE memories SET version_vector=?, logical_clock=? WHERE id=?",
+            "UPDATE tenant_memories SET version_vector=?, logical_clock=? WHERE id=?",
             (new_vv_str, new_clock, note_id),
         )
     except Exception:

@@ -129,7 +129,7 @@ def _enrich_context(db, note_id: str, content: str, category: str, tags: list):
         try:
             # Get current metadata
             row = db.execute(
-                "SELECT metadata FROM memories WHERE id = ?", (note_id,)
+                "SELECT metadata FROM tenant_memories WHERE id = ?", (note_id,)
             ).fetchone()
 
             if row:
@@ -141,7 +141,7 @@ def _enrich_context(db, note_id: str, content: str, category: str, tags: list):
 
                 # Update the metadata
                 db.execute(
-                    "UPDATE memories SET metadata = ? WHERE id = ?",
+                    "UPDATE tenant_memories SET metadata = ? WHERE id = ?",
                     (json.dumps(metadata), note_id),
                 )
 
@@ -200,7 +200,7 @@ def _recalculate_fitness_scores(
         w_r, w_f, w_s = (0.4, 0.3, 0.3)
         for mid in memory_ids:
             row = db.execute(
-                "SELECT access_count, success_score, updated_at, decay, pinned\n                   FROM memories WHERE id = ?",
+                "SELECT access_count, success_score, updated_at, decay, pinned\n                   FROM tenant_memories WHERE id = ?",
                 (mid,),
             ).fetchone()
             if not row:
@@ -231,7 +231,7 @@ def _recalculate_fitness_scores(
                 ),
             )
             db.execute(
-                "UPDATE memories SET fitness_score = ? WHERE id = ?",
+                "UPDATE tenant_memories SET fitness_score = ? WHERE id = ?",
                 (fitness_score, mid),
             )
         if owns_connection:

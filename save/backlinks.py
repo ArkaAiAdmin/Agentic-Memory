@@ -222,15 +222,15 @@ def _auto_backlink_multi_part(
 
     def _query(db):
         return db.execute(
-            "SELECT id FROM memories WHERE id LIKE ?", (like_pattern,)
+            "SELECT id FROM tenant_memories WHERE id LIKE ?", (like_pattern,)
         ).fetchall()
 
     def _read_content(db, pid):
-        row = db.execute("SELECT content FROM memories WHERE id = ?", (pid,)).fetchone()
+        row = db.execute("SELECT content FROM tenant_memories WHERE id = ?", (pid,)).fetchone()
         return row[0] if row else None
 
     def _write_content(db, pid, nc):
-        db.execute("UPDATE memories SET content = ? WHERE id = ?", (nc, pid))
+        db.execute("UPDATE tenant_memories SET content = ? WHERE id = ?", (nc, pid))
 
     if conn is not None:
         parts = _query(conn)

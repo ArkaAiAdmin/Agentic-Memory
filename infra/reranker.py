@@ -375,8 +375,9 @@ class Reranker:
             if self._backend == "bge":
                 return self._score_bge(query, docs)
             return None
-        # Hung-kernel insurance: run in a child process we can kill.
-        return _score_with_timeout(self, query, docs, timeout)
+        # Hung-kernel insurance: use persistent worker pool to avoid
+        # per-call model reload (~1-2s on cached models).
+        return _mps_pool.score(self, query, docs, timeout)
 
     def warmup(self) -> bool:
         """Run a dummy inference to ensure the model is hot. Returns success."""
@@ -564,6 +565,194 @@ def _score_with_timeout(
         "Reranker.score(%s) unknown child message: %r", reranker._backend, msg
     )
     return None
+
+
+# ---------------------------------------------------------------------------
+# Persistent MPS worker pool — avoids per-call model reload
+# ---------------------------------------------------------------------------
+
+class _MpsWorkerPool:
+    """Manages a persistent child process for MPS scoring.
+
+    Instead of spawning a fresh child (and reloading the model) on every
+    timed call, this pool keeps a single child alive and sends work through
+    queues.  If the child hangs, it is killed and respawned on the next call.
+
+    The child process runs ``_mps_worker_loop`` which loads the model once
+    and processes work items until told to shut down.
+    """
+
+    def __init__(self) -> None:
+        self._process: Optional[mp.Process] = None
+        self._work_q: Optional[mp.Queue] = None
+        self._result_q: Optional[mp.Queue] = None
+        self._lock = threading.Lock()
+        self._load_failures = 0
+        self._max_load_failures = 3
+
+    def _spawn_worker(self, reranker_dict: dict) -> bool:
+        """Spawn a fresh worker child. Returns True on success."""
+        ctx = mp.get_context("spawn")
+        self._work_q = ctx.Queue()
+        self._result_q = ctx.Queue()
+        self._process = ctx.Process(
+            target=_mps_worker_loop,
+            args=(reranker_dict, self._work_q, self._result_q),
+            daemon=True,
+        )
+        self._process.start()
+        # Wait for the child to signal it's ready (model loaded).
+        try:
+            msg = self._result_q.get(timeout=60)
+            if msg[0] == "ready":
+                self._load_failures = 0
+                return True
+            if msg[0] == "load_fail":
+                logger.warning("_MpsWorkerPool: child load failed: %s", msg[1])
+                self._load_failures += 1
+                self._kill_worker()
+                return False
+        except Exception:
+            logger.warning("_MpsWorkerPool: child startup timed out")
+            self._kill_worker()
+            self._load_failures += 1
+            return False
+        return False
+
+    def _kill_worker(self) -> None:
+        """Kill the current worker child if alive."""
+        if self._process and self._process.is_alive():
+            self._process.terminate()
+            self._process.join(timeout=3)
+            if self._process.is_alive():
+                self._process.kill()
+                self._process.join(timeout=2)
+        self._process = None
+        for q in (self._work_q, self._result_q):
+            if q is not None:
+                try:
+                    q.close()
+                    q.join_thread()
+                except Exception:
+                    pass
+        self._work_q = None
+        self._result_q = None
+
+    def score(
+        self,
+        reranker: "Reranker",
+        query: str,
+        docs: List[str],
+        timeout: float,
+    ) -> Optional[List[float]]:
+        """Score docs using the persistent worker. Spawns if needed."""
+        if self._load_failures >= self._max_load_failures:
+            return None
+        reranker_dict = {
+            "primary_id": reranker.primary_id,
+            "primary_revision": reranker.primary_revision,
+            "fallback_id": reranker.fallback_id,
+            "fallback_revision": reranker.fallback_revision,
+            "device": reranker._device or reranker._resolve_device(),
+        }
+        with self._lock:
+            # Spawn if no worker or worker died.
+            if self._process is None or not self._process.is_alive():
+                self._kill_worker()
+                if not self._spawn_worker(reranker_dict):
+                    return None
+            # Send work.
+            try:
+                self._work_q.put(("score", query, docs), timeout=5)
+            except Exception:
+                logger.warning("_MpsWorkerPool: work queue full, respawning")
+                self._kill_worker()
+                return None
+        # Wait for result with timeout.
+        try:
+            msg = self._result_q.get(timeout=timeout)
+        except Exception:
+            logger.warning(
+                "_MpsWorkerPool: score timed out after %.1fs, respawning", timeout
+            )
+            with self._lock:
+                self._kill_worker()
+            return None
+        kind = msg[0]
+        if kind == "ok":
+            return cast(list[float] | None, msg[1])
+        if kind == "error":
+            logger.warning("_MpsWorkerPool: child error: %s", msg[1])
+            with self._lock:
+                self._kill_worker()
+            return None
+        return None
+
+    def shutdown(self) -> None:
+        """Shut down the worker pool gracefully."""
+        with self._lock:
+            if self._work_q is not None:
+                try:
+                    self._work_q.put(("shutdown", None, None), timeout=2)
+                except Exception:
+                    pass
+            self._kill_worker()
+
+
+def _mps_worker_loop(
+    reranker_dict: dict,
+    work_q: mp.Queue,
+    result_q: mp.Queue,
+) -> None:
+    """Child process loop for persistent MPS scoring.
+
+    Loads the model once, then processes work items until shutdown.
+    """
+    try:
+        r = Reranker(
+            primary_id=reranker_dict["primary_id"],
+            primary_revision=reranker_dict["primary_revision"],
+            fallback_id=reranker_dict["fallback_id"],
+            fallback_revision=reranker_dict["fallback_revision"],
+        )
+        r._resolve_device = lambda: reranker_dict["device"]  # type: ignore[method-assign]
+        if not r.load():
+            result_q.put(("load_fail", r.load_error() or "load() returned False"))
+            return
+        result_q.put(("ready",))
+    except Exception as e:
+        result_q.put(("load_fail", f"{type(e).__name__}: {e}"))
+        return
+
+    # Process work items until shutdown.
+    while True:
+        try:
+            item = work_q.get(timeout=300)
+        except Exception:
+            # Idle timeout — exit cleanly.
+            break
+        kind, query, docs = item
+        if kind == "shutdown":
+            break
+        if kind != "score":
+            continue
+        try:
+            if r._backend == "qwen3":
+                scores = r._score_qwen3(query, docs)
+            elif r._backend == "bge":
+                scores = r._score_bge(query, docs)
+            else:
+                scores = None
+            if scores is None:
+                result_q.put(("error", "score() returned None"))
+            else:
+                result_q.put(("ok", scores))
+        except Exception as e:
+            result_q.put(("error", f"{type(e).__name__}: {e}"))
+
+
+# Module-level pool instance.
+_mps_pool = _MpsWorkerPool()
 
 
 def _sigmoid(x: float) -> float:
