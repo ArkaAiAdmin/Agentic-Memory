@@ -673,7 +673,7 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
     );
     """)
     db.execute("""
-    CREATE TABLE file_mtimes (
+    CREATE TABLE IF NOT EXISTS file_mtimes (
         path TEXT PRIMARY KEY,
         mtime REAL NOT NULL,
         content_hash TEXT NOT NULL

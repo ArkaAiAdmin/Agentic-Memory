@@ -2,6 +2,7 @@
 import os
 import signal
 import sys
+import threading
 from pathlib import Path
 
 import logging
@@ -312,8 +313,12 @@ if __name__ == "__main__":
         from config import get_config
         _cfg = get_config()
         if getattr(_cfg, "write_journal", False):
-            from background.background_worker import _start_reconciler
-            from infra.write_journal import reset_stuck_processing
+            from infra.write_journal import (
+                dequeue_pending,
+                reset_stuck_processing,
+            )
+            from save.pipeline import materialize_journal_entry
+
             _target_base = resolve_active_memory_dir()
             _journal_path = _target_base / "journal.db"
             # Stuck-entry self-heal: unstick entries from prior crashes.
@@ -321,10 +326,37 @@ if __name__ == "__main__":
                 _unstuck = reset_stuck_processing(_journal_path)
                 if _unstuck:
                     logger.info("write_journal: unstuck %d entries at startup", _unstuck)
-            _start_reconciler(_journal_path, _target_base)
-            logger.info(
-                "write_journal reconciler: auto-started (journal=%s)", _journal_path
+
+            _reconciler_shutdown = threading.Event()
+
+            def _reconcile_loop():
+                while not _reconciler_shutdown.is_set():
+                    try:
+                        reset_stuck_processing(_journal_path)
+                        entries = dequeue_pending(_journal_path, batch_size=10)
+                        if not entries:
+                            _reconciler_shutdown.wait(0.1)
+                            continue
+                        for entry in entries:
+                            if _reconciler_shutdown.is_set():
+                                break
+                            try:
+                                materialize_journal_entry(entry, _target_base, _journal_path)
+                            except Exception as exc:
+                                logger.exception(
+                                    "reconciler: entry %s failed: %s",
+                                    entry.get("note_id", "?"), exc,
+                                )
+                    except Exception as loop_exc:
+                        logger.error("reconciler loop error: %s", loop_exc)
+                        _reconciler_shutdown.wait(1.0)
+                logger.info("write_journal reconciler stopped")
+
+            _t = threading.Thread(
+                target=_reconcile_loop, daemon=True, name="journal-reconciler"
             )
+            _t.start()
+            logger.info("write_journal reconciler: auto-started (journal=%s)", _journal_path)
     except Exception as e:
         logger.warning("write_journal reconciler: auto-start skipped: %s", e)
 

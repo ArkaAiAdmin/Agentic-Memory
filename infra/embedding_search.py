@@ -824,10 +824,12 @@ class EmbeddingSearch:
         if n_vectors == 0:
             return []
 
-        # Adaptive k: cap at the smaller of {plan: 200, n_vectors}.
-        # On a 4-row DB we still want the 4 to come back; on a 1M-row
-        # DB the candidate set is bounded.
-        ann_k = min(200, n_vectors)
+        # Adaptive k: cap at n_vectors. 200 was too low when sessions
+        # dominate 97% of the index — non-session entries would get
+        # pruned before making the candidate pool. Increase to 2000
+        # (but no higher) so non-session content survives the ANN cut
+        # without triggering the re-encode-all fallback for large k.
+        ann_k = min(max(limit * 5, 500), n_vectors, 2000)
 
         query_vec = self._embed_query(query, category=category, tags=tags, source_file=source_file)
 

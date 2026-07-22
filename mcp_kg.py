@@ -45,7 +45,7 @@ def _get_principal_from_context() -> str | None:
         # principal_id is not separately set (typical for local single-user mode).
         agent_id = getattr(ctx, "agent_id", None)
         if agent_id:
-            return str(agent_id)
+            return str(agent_id).lower()
     except (ImportError, Exception):
         pass
     return None

@@ -262,7 +262,7 @@ All admin operations go through the `memory_maintenance` grouped tool, dispatche
 | `memory_quality_filter` | Search and apply quality gates (validation + deduplication) to results. |
 | `memory_quality_stats` | Return quality gate statistics (note counts, content length distribution). |
 | `memory_rebuild` | Rebuild the SQLite FTS5 (full-text search) index from the source markdown files. |
-| `memory_recall_stats` | Retrieve recall context, trace log entries, or policy configuration/tier metadata. |
+| `memory_recall_stats` | *(no description)* |
 | `memory_reinforce` | Reinforce memory success scores based on outcome. |
 | `memory_resolve_contradiction` | Explicitly resolve a detected contradiction between two notes. |
 | `memory_resolve_thread` | Resolve or close a decision thread. |

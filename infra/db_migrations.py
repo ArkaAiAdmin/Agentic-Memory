@@ -172,6 +172,7 @@ def _migrate_ensure_skill_columns(conn) -> None:
         ("hit_vector", "TEXT DEFAULT '{}'"),
         ("last_used_vector", "TEXT DEFAULT '{}'"),
         ("logical_clock", "INTEGER DEFAULT 0"),
+        ("fitness_score", "REAL DEFAULT 1.0"),
     )
     try:
         existing = {row[1] for row in conn.execute("PRAGMA table_info(memory_skills)").fetchall()}

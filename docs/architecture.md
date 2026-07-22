@@ -123,7 +123,7 @@ agentic-memory/                    # Repo root
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
 ├── migration_runner.py             # Schema migrations (current v73)
-└── ... (125 modules total)
+└── ... (126 modules total)
 ```
 
 | Module | Layer | Purpose |

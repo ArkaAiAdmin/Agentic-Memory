@@ -1069,7 +1069,7 @@ def memory_graph(
         from mcp_kg_traversal import memory_graph_shortest_path, memory_graph_traverse
 
         if action == "explore":
-            facts = memory_facts_list(facts_limit=20)
+            facts = memory_facts_list(limit=20)
             stats = memory_graph_stats()
             return f"## KG Facts\n{facts}\n\n## Stats\n{stats}"
         elif action == "traverse":

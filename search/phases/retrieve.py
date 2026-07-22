@@ -129,7 +129,7 @@ def _fallback_embedding_search(
         from infra._lazy_imports import get_embedding_search
 
         _es = get_embedding_search()
-        _es_results = _es.search(normalized_query, db_path, limit=limit * 2, category=category)
+        _es_results = _es.search(normalized_query, db_path, limit=limit * 10, category=category)
         if not isinstance(_es_results, list) or not _es_results:
             return []
 
