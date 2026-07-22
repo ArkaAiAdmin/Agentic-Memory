@@ -1,0 +1,1 @@
+Python stdlib `asyncio.to_thread` for async wrapping; SQLite-backed coordination tables (`shared_tasks`, `file_locks`, `agent_messages`, `project_state`, `drift_alarms`, `sync_log`) via `infra.db.connection_pool`; optional `infra.authorizer.mcp_authorize` for fail-closed RBAC; `@mcp.tool()` decorator from `mcp_instance` for MCP server registration.

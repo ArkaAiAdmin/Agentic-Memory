@@ -1,0 +1,4 @@
+- Lazy module-level attribute resolution via `make_lazy_getattr(__getattr__)` so config-backed constants (e.g. `SEARCH_CACHE_TTL`) are resolved at first access rather than import time.
+- Per-resource `threading.Lock` / `RLock` guards around every mutation of shared mutable state (`_search_cache`, `_cache_note_index`, `ARCCache.transaction`).
+- Best-effort DB writes wrapped in try/except with `logger.warning` so hot-path telemetry (ARC `record_recent`, policy-cache persist) never blocks callers.
+- Lease-token pattern for lock release: acquire returns `(success, token)` and release validates the token before unlocking, preventing accidental release by another holder.

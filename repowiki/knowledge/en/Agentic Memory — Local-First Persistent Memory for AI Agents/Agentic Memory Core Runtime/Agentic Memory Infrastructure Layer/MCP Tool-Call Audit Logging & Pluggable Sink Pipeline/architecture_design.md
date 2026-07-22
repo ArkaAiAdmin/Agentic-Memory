@@ -1,0 +1,7 @@
+Two-layer design inside the module:
+
+- Hot path (`infra/audit.py`): `enqueue_audit` / `audit()` context manager build an event dict (with OWASP A09 secret redaction and principal/tenant resolution from `agent_context`), put it on a bounded in-process `queue.Queue`, and let a single daemon writer thread (`_audit_writer_loop`) batch INSERTs into `memory_audit_log` grouped by `db_path`. A `_PENDING` counter + `Condition` lets `flush_audit` wait for true completion. After the DB write, the event is handed off to the sink pipeline.
+- Sink fan-out (`infra/audit_sink.py`): defines the `AuditSink` Protocol (`emit`, `flush`) plus a second bounded queue + dispatch thread that forwards each event to all configured sinks. Sinks are built lazily via `_build_sinks` — `FileAuditSink` and `PrometheusAuditSink` are always present; `HttpAuditSink` is added only when `[audit.sinks.http]` is set in `memory.toml`. Failed emits are recorded to a persistent dead-letter JSONL (`memory/audit_sink_dead_letter.jsonl`) so SOC2 CC7.2 evidence survives drops.
+- Concrete sinks: `FileAuditSink` (rolling JSONL with configurable rotation), `PrometheusAuditSink` (in-process counters rendered as Prometheus text and exposed via `PROM_AUDIT_SINK_TEXT`), `HttpAuditSink` (retrying POST with exponential backoff to Splunk HEC / ES / Datadog).
+
+Dependency direction: `audit.py` → `audit_sink.py` (Protocol + dispatcher) → concrete sink modules. Cross-cutting concerns (secret redaction, config loading, cloud usage metering) are imported lazily at call sites to avoid circular imports.

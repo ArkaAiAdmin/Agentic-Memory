@@ -1,0 +1,32 @@
+schema_version: 1
+module_path: background_workers/cron_maintenance_cleanup
+title: Cron Maintenance & Cleanup Jobs
+scope:
+- cron/cron_backup.py
+- cron/cron_backup_validate.py
+- cron/cron_purge_expired.py
+- cron/cron_purge_auto_saves.py
+- cron/cron_reap_stale_tasks.py
+- cron/cron_log_retention.py
+- cron/cron_compact.py
+- cron/cron_consolidate.py
+- cron/cron_rebuild_fts.py
+- cron/cron_rewrite_links.py
+- cron/cleanup_auto_logs.py
+- cron/cron_cleanup_auto_logs.py
+source_files:
+- cron/cron_backup.py
+- cron/cron_backup_validate.py
+- cron/cron_purge_expired.py
+- cron/cron_purge_auto_saves.py
+- cron/cron_reap_stale_tasks.py
+- cron/cron_log_retention.py
+- cron/cron_compact.py
+- cron/cron_consolidate.py
+- cron/cron_rebuild_fts.py
+- cron/cron_rewrite_links.py
+- cron/cleanup_auto_logs.py
+- cron/cron_cleanup_auto_logs.py
+depends_on: []
+related_to:
+- path: background_workers/cron_scheduler_runtime

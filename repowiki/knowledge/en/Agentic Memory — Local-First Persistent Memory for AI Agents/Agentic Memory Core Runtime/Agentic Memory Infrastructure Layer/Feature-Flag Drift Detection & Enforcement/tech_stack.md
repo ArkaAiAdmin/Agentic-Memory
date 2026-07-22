@@ -1,0 +1,1 @@
+Pure Python stdlib only (dataclasses, enum, hashlib, json, threading); relies on sibling infra packages `infra.config` (TOML resolution), `infra.toml_watch` (hot-reload subscription), `infra.scope` (environment scoping), and `infra.memory_common.atomic_write` for atomic snapshot writes.

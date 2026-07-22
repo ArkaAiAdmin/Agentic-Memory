@@ -1,0 +1,1 @@
+Ordered SQLite migration files that evolve the in-process knowledge-graph and memory schema, including CRDT append tables, RBAC, tenant isolation, search indexes, and coordination primitives.

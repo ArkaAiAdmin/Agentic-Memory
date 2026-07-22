@@ -1,0 +1,15 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/services_api
+title: Infrastructure Services API & Runtime Helpers
+scope:
+- infra/api_server.py
+- infra/mdns_discovery.py
+- infra/mcp_singleton.py
+- infra/toml_watch.py
+source_files:
+- infra/api_server.py
+- infra/mdns_discovery.py
+- infra/mcp_singleton.py
+- infra/toml_watch.py
+depends_on: []
+related_to: []

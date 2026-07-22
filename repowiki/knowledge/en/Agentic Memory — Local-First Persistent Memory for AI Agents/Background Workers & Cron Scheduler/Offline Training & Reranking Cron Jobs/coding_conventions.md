@@ -1,0 +1,6 @@
+- Each script bootstraps its import path by detecting whether it lives under a `cron/` subdirectory and inserting the repo root at `sys.path[0]`, so they can be executed from any working directory.
+- Long-running jobs wrap their critical section with `_flock.acquire_lock_or_exit("<job_name>")` (or a `.lock` file next to the DB) to prevent concurrent runs.
+- DB connections are opened read-only where possible (`file:{db}?mode=ro`) and always set `PRAGMA busy_timeout = 10000` / `PRAGMA foreign_keys=ON`; many queries scope rows via `install_tenant_context(conn, os.environ.get('MEMORY_CRON_TENANT_ID'))`.
+- Training jobs gate on minimum sample thresholds (e.g. ≥10 examples for SSM/forget, ≥500 impressions for LTR) and return early without writing state when data is insufficient.
+- Config writes are atomic: serialize to a `.toml.tmp` file then `Path.replace()` the original, preserving existing weights on failure.
+- Optional heavy dependencies (LightGBM, sklearn, sentence-transformers) are imported lazily inside try/except blocks with pure-Python fallbacks so the scripts remain runnable in minimal environments.

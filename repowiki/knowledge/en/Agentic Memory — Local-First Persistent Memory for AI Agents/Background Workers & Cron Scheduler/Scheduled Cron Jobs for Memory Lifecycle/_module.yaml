@@ -1,0 +1,18 @@
+schema_version: 1
+module_path: background_workers/cron_retention_policy
+title: Scheduled Cron Jobs for Memory Lifecycle
+scope:
+- cron/cron_retention_stats.py
+- cron/cron_promote_drafts.py
+- cron/cron_tier_migration.py
+- cron/cron_auto_summarize.py
+- cron/cron_auto_share.py
+source_files:
+- cron/cron_retention_stats.py
+- cron/cron_promote_drafts.py
+- cron/cron_tier_migration.py
+- cron/cron_auto_summarize.py
+- cron/cron_auto_share.py
+depends_on: []
+related_to:
+- path: background_workers/cron_scheduler_runtime

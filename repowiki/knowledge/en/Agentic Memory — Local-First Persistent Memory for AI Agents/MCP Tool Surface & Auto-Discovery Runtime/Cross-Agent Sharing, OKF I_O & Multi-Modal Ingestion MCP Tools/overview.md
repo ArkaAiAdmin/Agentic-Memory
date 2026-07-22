@@ -1,0 +1,1 @@
+MCP tool wrappers for cross-agent memory sharing (opt-in via MEMORY_MULTI_AGENT), Open Knowledge Format export/import, and multi-modal file/URL ingestion.

@@ -1,0 +1,1 @@
+Local-first persistent memory SDK for AI agents, exposing typed save/search/CRUD APIs over an embedded SQLite store with FTS5 + vector search and optional knowledge-graph and temporal layers.

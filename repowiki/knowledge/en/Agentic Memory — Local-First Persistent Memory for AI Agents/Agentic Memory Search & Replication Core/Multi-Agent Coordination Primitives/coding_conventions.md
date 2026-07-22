@@ -1,0 +1,5 @@
+- Every hook-level function accepts an optional `conn: sqlite3.Connection | None = None`; when None it owns the connection lifecycle via `_make_conn()`, otherwise the caller owns it (test injection).
+- All public functions are fail-safe: exceptions are caught, logged at debug/warning level, and a safe default is returned instead of propagating errors.
+- Database schema is bootstrapped lazily inside the function that first needs it via `CREATE TABLE IF NOT EXISTS` (or soft migration like `_ensure_lock_version_column`), never in a global init.
+- Cross-module imports that could cause cycles (e.g. `hooks` importing `locking`, `durability` importing `messaging`) are done inside the function body rather than at module top.
+- Agent identity is resolved from the `MEMORY_AGENT_ID` environment variable with a regex whitelist and a `default` fallback, never passed implicitly.

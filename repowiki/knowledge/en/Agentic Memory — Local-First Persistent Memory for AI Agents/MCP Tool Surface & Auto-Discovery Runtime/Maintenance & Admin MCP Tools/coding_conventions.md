@@ -1,0 +1,6 @@
+- Every public entry point is decorated with `@mcp.tool()` plus `@with_audit("memory_<op>")` so calls are audited before any logic runs.
+- Heavy imports (feature flags, background workers, external libraries) are deferred inside the function body rather than at module top, keeping the MCP server import graph lightweight.
+- Error paths return `mcp_common._err(ErrorCode.<CODE>, message)` instead of raising, giving callers a uniform JSON-encoded failure shape.
+- Long-running maintenance work is delegated to sibling scripts under `GLOBAL_SCRIPTS_DIR` via `subprocess.run`/`_run_subprocess_output` with explicit timeouts, rather than importing them directly.
+- Process-lifecycle tools (dashboard, metrics) track their child `subprocess.Popen` in module-level globals and support `start`/`stop`/`status` actions idempotently.
+- The maintenance router uses a `MaintenanceOp` enum paired with a lazy-built `_MAINTENANCE_HANDLERS` dispatch table of lambdas, so adding an operation is a three-line change (enum value, lambda, optional helper).

@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: mcp_tools/memory_and_session
+title: Memory, Session & Profile MCP Tools
+scope:
+- mcp_memory.py
+- mcp_session.py
+- mcp_profile.py
+source_files:
+- mcp_memory.py
+- mcp_session.py
+- mcp_profile.py
+depends_on: []
+related_to:
+- path: mcp_tools/core_runtime

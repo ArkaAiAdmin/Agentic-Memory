@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: mcp_tools/quality_safety
+title: Quality, Safety & Audit MCP Tools
+scope:
+- mcp_quality.py
+- mcp_safety.py
+- mcp_audit.py
+source_files:
+- mcp_quality.py
+- mcp_safety.py
+- mcp_audit.py
+depends_on: []
+related_to:
+- path: mcp_tools/core_runtime

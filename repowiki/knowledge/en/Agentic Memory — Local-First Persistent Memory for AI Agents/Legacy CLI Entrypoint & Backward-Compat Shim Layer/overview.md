@@ -1,0 +1,1 @@
+Top-level shim modules that re-export relocated infra, search, KG, persistence, and background-task implementations under legacy import paths so older CLI entrypoints keep working.

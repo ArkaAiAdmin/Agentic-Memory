@@ -1,0 +1,1 @@
+Standalone SaaS management plane that persists provisioning and billing metadata in a separate cloud_state.db and proxies customer traffic to their own deployments without touching memory data.

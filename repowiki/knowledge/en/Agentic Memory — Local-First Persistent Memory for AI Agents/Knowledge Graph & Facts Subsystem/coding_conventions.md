@@ -1,0 +1,4 @@
+- Every submodule's public API is re-exported through the package `__init__.py` so callers use flat imports like `from kg import X` rather than deep paths.
+- Database access goes through a shared connection passed explicitly to functions; schema initialization is done via `ensure_*_schema(conn)` helpers rather than implicit lazy creation.
+- Heavy or optional dependencies (LLMs, spaCy) are imported lazily inside functions to keep the package importable even when those extras are missing.
+- Temporal operations follow a supersession pattern: new facts/edges mark previous versions as stale/inactive instead of deleting them.

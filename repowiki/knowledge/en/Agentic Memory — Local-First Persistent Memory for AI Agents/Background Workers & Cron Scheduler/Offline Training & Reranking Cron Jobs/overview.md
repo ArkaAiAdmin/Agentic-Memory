@@ -1,0 +1,1 @@
+Standalone cron scripts that periodically train or update ML models (temporal SSM, neural forget, LTR LambdaMART), recompute embeddings/priors/answer rerank scores, and emit quality-gate stats from the SQLite memory store.

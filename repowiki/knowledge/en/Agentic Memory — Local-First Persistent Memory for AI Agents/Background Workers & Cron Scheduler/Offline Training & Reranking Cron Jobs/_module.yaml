@@ -1,0 +1,24 @@
+schema_version: 1
+module_path: background_workers/cron_training_learning
+title: Offline Training & Reranking Cron Jobs
+scope:
+- cron/cron_train_temporal_ssm.py
+- cron/cron_train_ltr.py
+- cron/cron_train_forget_model.py
+- cron/cron_embedding_recompute.py
+- cron/cron_tune_rewrites.py
+- cron/cron_recompute_temporal_priors.py
+- cron/cron_quality_filter.py
+- cron/cron_answer_rerank.py
+source_files:
+- cron/cron_train_temporal_ssm.py
+- cron/cron_train_ltr.py
+- cron/cron_train_forget_model.py
+- cron/cron_embedding_recompute.py
+- cron/cron_tune_rewrites.py
+- cron/cron_recompute_temporal_priors.py
+- cron/cron_quality_filter.py
+- cron/cron_answer_rerank.py
+depends_on: []
+related_to:
+- path: background_workers/cron_scheduler_runtime

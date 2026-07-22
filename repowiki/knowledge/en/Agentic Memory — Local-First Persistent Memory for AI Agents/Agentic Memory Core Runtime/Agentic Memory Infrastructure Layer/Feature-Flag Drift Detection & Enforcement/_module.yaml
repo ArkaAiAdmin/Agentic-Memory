@@ -1,0 +1,19 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/config_drift
+title: Feature-Flag Drift Detection & Enforcement
+scope:
+- infra/config_drift.py
+- infra/config_drift_audit.py
+- infra/config_drift_escape.py
+- infra/config_drift_policy.py
+- infra/config_drift_runtime.py
+- infra/config_drift_tier_patch.py
+source_files:
+- infra/config_drift.py
+- infra/config_drift_audit.py
+- infra/config_drift_escape.py
+- infra/config_drift_policy.py
+- infra/config_drift_runtime.py
+- infra/config_drift_tier_patch.py
+depends_on: []
+related_to: []

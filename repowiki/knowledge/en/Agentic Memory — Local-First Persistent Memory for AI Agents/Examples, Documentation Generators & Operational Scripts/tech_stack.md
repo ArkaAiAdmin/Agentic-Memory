@@ -1,0 +1,1 @@
+Pure Python stdlib — `ast` for config-class introspection, `tomllib`/`tomli` for TOML parsing, `sqlite3` for backfills, `hashlib.sha256` for fingerprints, and OS-native commands (`pgrep`, `ps -o rss=`, `vmmap`) for the memory guard.

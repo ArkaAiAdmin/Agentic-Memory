@@ -1,0 +1,2 @@
+- Each shim defines a `_ShimModule(types.ModuleType)` subclass that proxies `__getattr__`/`__setattr__`/`__delattr__`/`__dir__` to an internal `_real` attribute, then swaps the loaded module's `__class__` so runtime attribute mutation also forwards.
+- When executed as `__main__`, each shim uses `runpy.run_path` with `sys.argv[0]` rewritten to the real script path under the `backfill/` subdirectory rather than delegating to a function call.

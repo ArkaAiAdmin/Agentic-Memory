@@ -1,0 +1,1 @@
+Provides the embedding model backends (model2vec / sentence-transformers / transformers), ANN vector store abstraction with usearch/Numpy implementations, SPLADE sparse encoding, ColBERT late-interaction token encoders, a deep reranker, and FTS5 helpers for hybrid semantic search.

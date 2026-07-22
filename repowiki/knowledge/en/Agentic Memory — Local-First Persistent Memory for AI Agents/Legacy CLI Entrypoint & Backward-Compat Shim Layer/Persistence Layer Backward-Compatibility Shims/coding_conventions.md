@@ -1,0 +1,2 @@
+- Every shim file starts with a comment pointing at the canonical `infra/*` implementation and follows the same three-part shape: lazy `__getattr__`/`__dir__` forwarding, a `_ShimModule` class when mutation forwarding is needed, and a runtime `sys.modules[__name__]` patch in the `if __name__ in sys.modules` guard.
+- Attribute access is delegated through `getattr(self._real, name)` rather than explicit re-exports, keeping shims maintenance-free as the upstream API evolves.

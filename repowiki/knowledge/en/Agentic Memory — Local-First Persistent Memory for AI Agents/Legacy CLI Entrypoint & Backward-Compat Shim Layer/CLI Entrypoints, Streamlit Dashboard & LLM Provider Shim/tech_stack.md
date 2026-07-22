@@ -1,0 +1,1 @@
+Streamlit for the UI (launched headless with `--server.headless true`); MCP protocol via `mcp_instance.mcp.run()`; SQLite-backed memory store resolved through `infra.infrastructure.resolve_active_memory_dir`; health checks read/write JSONL/JSON artefacts under `~/.config/agentic-memory/memory/`.

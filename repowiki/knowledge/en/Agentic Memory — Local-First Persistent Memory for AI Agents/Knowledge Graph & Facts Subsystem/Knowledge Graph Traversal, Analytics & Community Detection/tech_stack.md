@@ -1,0 +1,1 @@
+SQLite recursive CTEs for shortest-path/neighbor traversal; pure-Python implementations of PageRank (power iteration), Brandes' betweenness centrality, and the two-phase Louvain algorithm — no external graph libraries are imported.

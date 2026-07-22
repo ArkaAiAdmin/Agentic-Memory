@@ -1,0 +1,2 @@
+- Every shim follows an identical template: import the real `infra.<name>` as `_real`, define `__getattr__` + `__dir__` forwarding, then swap the module's class to `_ShimModule` on import to forward writes too.
+- The forwarded module reference is stored in a protected `_real` attribute whose name is explicitly excluded from `__setattr__`/`__delattr__` interception to prevent accidental replacement.

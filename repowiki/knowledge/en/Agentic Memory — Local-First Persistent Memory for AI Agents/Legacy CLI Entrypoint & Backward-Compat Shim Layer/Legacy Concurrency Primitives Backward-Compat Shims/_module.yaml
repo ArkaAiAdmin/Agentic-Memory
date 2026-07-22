@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: cli_entrypoints/concurrency_primitives
+title: Legacy Concurrency Primitives Backward-Compat Shims
+scope:
+- cache.py
+- dist_lock.py
+- file_lock.py
+source_files:
+- cache.py
+- dist_lock.py
+- file_lock.py
+depends_on: []
+related_to: []

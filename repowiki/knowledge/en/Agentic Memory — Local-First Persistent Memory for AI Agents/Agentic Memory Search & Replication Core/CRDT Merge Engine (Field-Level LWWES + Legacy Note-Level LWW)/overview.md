@@ -1,0 +1,1 @@
+Conflict-free replication engine for memory notes, implementing field-level LWW-Element-Set CRDTs with a legacy note-level LWW fallback and whole-note conflict policies.

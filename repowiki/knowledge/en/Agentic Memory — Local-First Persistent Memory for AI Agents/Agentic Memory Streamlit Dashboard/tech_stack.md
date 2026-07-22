@@ -1,0 +1,1 @@
+Streamlit (UI framework) + Plotly Express / Graph Objects (charts & interactive graph) + pandas (data frames) + sqlite3 (read-only fallback) + requests (REST client against `infra/api_server.py` on port 9878/9879).

@@ -1,0 +1,6 @@
+- Every script starts by adjusting `sys.path` so its parent directory is importable, then `os.chdir`s to the repo root before importing `infra.*`.
+- Mutating jobs begin with `acquire_lock_or_exit('<job_name>')` using a unique per-script lock name to prevent concurrent invocations.
+- DB resolution follows the same pattern: prefer `MEMORY_DB_PATH` env var, otherwise call `resolve_active_memory_dir() / 'memory.db'`, then error out if the file does not exist.
+- Long-running jobs wrap their core work in `with cron_model_lock('<job>', timeout=...)` from `background.cron_model_lock` to serialize across processes.
+- Structured results are persisted as one JSON object per line appended to `<db_path>/<job>-cron.log`, with a `captured_at` ISO timestamp field.
+- SQLite connections are opened with `PRAGMA busy_timeout=30000` (and often `journal_mode=WAL`, `foreign_keys=ON`) and closed in a `finally` block.

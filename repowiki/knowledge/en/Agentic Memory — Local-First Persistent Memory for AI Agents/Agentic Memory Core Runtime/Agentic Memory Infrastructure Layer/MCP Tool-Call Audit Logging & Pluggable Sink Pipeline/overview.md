@@ -1,0 +1,1 @@
+Append-only audit of every MCP tool invocation, persisted to a per-DB SQLite table and fanned out to pluggable sinks (file, Prometheus, HTTP) via a fire-and-forget dispatcher.

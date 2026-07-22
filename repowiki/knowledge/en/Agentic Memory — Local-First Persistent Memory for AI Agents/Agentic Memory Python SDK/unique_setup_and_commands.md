@@ -1,0 +1,1 @@
+Package ships a CLI entry point `agentic-memory` (via `python -m agentic_memory`) with subcommands `add`, `search`, `list`, `stats`, `clear`, `demo`, `kg`, `temporal`, `maintenance`, `admin`, `agent`, `sync`; the in-package demo is invoked via `agentic-memory demo [--query Q]`.

@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: cli_entrypoints/background_tasks
+title: Legacy Background Task Entry-Point Shims
+scope:
+- background_queue.py
+- background_worker.py
+- db_write_queue.py
+source_files:
+- background_queue.py
+- background_worker.py
+- db_write_queue.py
+depends_on: []
+related_to: []

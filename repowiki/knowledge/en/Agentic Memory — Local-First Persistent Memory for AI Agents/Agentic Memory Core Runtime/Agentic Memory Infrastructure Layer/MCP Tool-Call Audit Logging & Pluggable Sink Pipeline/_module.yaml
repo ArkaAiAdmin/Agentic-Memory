@@ -1,0 +1,17 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/audit_logging
+title: MCP Tool-Call Audit Logging & Pluggable Sink Pipeline
+scope:
+- infra/audit.py
+- infra/audit_sink.py
+- infra/audit_sink_file.py
+- infra/audit_sink_http.py
+- infra/audit_sink_prom.py
+source_files:
+- infra/audit.py
+- infra/audit_sink.py
+- infra/audit_sink_file.py
+- infra/audit_sink_http.py
+- infra/audit_sink_prom.py
+depends_on: []
+related_to: []

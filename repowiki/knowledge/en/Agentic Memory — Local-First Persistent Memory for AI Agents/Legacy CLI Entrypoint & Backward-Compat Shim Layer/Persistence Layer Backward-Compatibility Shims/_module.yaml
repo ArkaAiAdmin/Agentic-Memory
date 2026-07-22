@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: cli_entrypoints/persistence_layer
+title: Persistence Layer Backward-Compatibility Shims
+scope:
+- db.py
+- db_migrations.py
+- db_path_flock.py
+source_files:
+- db.py
+- db_migrations.py
+- db_path_flock.py
+depends_on: []
+related_to: []

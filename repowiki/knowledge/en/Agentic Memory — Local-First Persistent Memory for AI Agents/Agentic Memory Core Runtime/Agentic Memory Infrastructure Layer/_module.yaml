@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer
+title: Agentic Memory Infrastructure Layer
+scope:
+- infra/
+source_files:
+- infra/
+depends_on: []
+related_to: []

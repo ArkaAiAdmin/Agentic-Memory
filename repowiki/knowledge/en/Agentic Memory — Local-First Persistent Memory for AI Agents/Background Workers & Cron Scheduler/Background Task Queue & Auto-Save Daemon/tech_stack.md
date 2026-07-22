@@ -1,0 +1,1 @@
+Pure Python with SQLite (WAL mode); cross-process coordination via POSIX flock and JSONL inbox files; optional inotify/kqueue polling for inbox tailing (`inotify_simple`); signal-based per-task timeouts via `SIGALRM`; optional shared-memory state via `infra.shared_memory_state`.

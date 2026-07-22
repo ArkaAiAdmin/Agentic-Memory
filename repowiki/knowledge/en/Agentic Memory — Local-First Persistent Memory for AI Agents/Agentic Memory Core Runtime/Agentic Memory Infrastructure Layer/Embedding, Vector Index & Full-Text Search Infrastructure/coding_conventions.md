@@ -1,0 +1,5 @@
+- Heavy third-party imports (`torch`, `transformers`, `usearch`, `model2vec`, `sentence_transformers`) are performed lazily inside methods rather than at module top, allowing the package to be imported without native deps installed.
+- Lazy-loaded singletons guard their load path with a `threading.Lock` plus a `_*_load_attempted` flag so concurrent first-callers don't double-load, and transient failures are retried up to a bounded count before giving up.
+- HuggingFace Hub downloads always try `local_files_only=True` first and fall back to network download, controlled by `HF_HUB_OFFLINE=1` or the `PYTEST_CURRENT_TEST` env var.
+- Optional neural components (ColBERT, SPLADE, reranker) provide a graceful degradation path — returning `None` or a deterministic offline fallback — instead of raising, so callers can continue with weaker but dependency-free paths.
+- Module-level configuration is resolved through `infra._lazy_imports.get_config()` wrapped in a try/except with sensible defaults, so runtime config changes are tolerated even if the config subsystem is unavailable at import time.

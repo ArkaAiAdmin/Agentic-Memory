@@ -1,0 +1,7 @@
+Four sibling packages are layered rather than peer-coupled:
+- `infra/` is the foundation — bootstrap, config drift enforcement, SQLite persistence, search/embedding/reranker backends, auth/RBAC, audit, metrics, sync, saga, and file locks. All other children import it directly.
+- `save/` is the write path: `save_memory` (re-exported lazily via `infra._lazy_imports`) orchestrates DB writes, CRDT versioning, KG/backlink/chunk/semantic indexing, and post-save hooks; it calls into `belief.ensure_belief_assertion` to keep `belief_assertions` in step with facts.
+- `recall/` is the read path: `recall.recall` composes multiple sources (pinned, recent, important, relevant) using infra's search/embedding/reranker services to produce a bounded briefing.
+- `belief/` owns the `belief_assertions` table schema and evidence-chain staleness/retraction logic; it is consumed by both save (assert from fact) and background tasks.
+
+Cross-child wiring is enforced through two mechanisms: (1) `infra/_lazy_imports.py` centralises every cross-package symbol (`save_memory`, `search_memories_impl`, `get_config`, etc.) behind function-body imports to break cycles, and (2) each child package exposes a thin `__init__.py` re-export surface (`save/__getattr__`, `recall.__getattr__`, `belief.__all__`) that callers reach instead of reaching deep submodules. The API server (`infra/api_server.py`) and write journal (`infra/write_journal.py`) are the only external entry points that touch all three pipelines.

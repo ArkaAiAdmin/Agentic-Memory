@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: cli_entrypoints/server_and_api
+title: CLI Entrypoints, Streamlit Dashboard & LLM Provider Shim
+scope:
+- cli.py
+- dashboard.py
+- llm_providers.py
+source_files:
+- cli.py
+- dashboard.py
+- llm_providers.py
+depends_on: []
+related_to:
+- path: mcp_tools/core_runtime

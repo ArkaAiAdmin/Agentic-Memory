@@ -1,0 +1,1 @@
+Standalone cron entry points that periodically run retention, promotion, summarization, sharing, and tier-migration jobs against the active memory database.

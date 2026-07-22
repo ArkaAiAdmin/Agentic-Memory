@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: mcp_tools/knowledge_graph
+title: Knowledge Graph & Search MCP Tools
+scope:
+- mcp_kg.py
+- mcp_kg_traversal.py
+- mcp_search.py
+source_files:
+- mcp_kg.py
+- mcp_kg_traversal.py
+- mcp_search.py
+depends_on: []
+related_to:
+- path: mcp_tools/core_runtime

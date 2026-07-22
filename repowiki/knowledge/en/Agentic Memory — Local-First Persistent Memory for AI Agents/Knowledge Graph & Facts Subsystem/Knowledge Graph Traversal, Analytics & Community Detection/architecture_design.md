@@ -1,0 +1,5 @@
+Three sibling modules form a thin algorithmic layer over the `kg_entities` / `kg_edges` tables via an `AnyConnection` DBI from `infra.db`:
+- `kg_traversal.py` exposes three read-only query functions (`find_shortest_path`, `find_neighbors`, `traverse_graph`) that use recursive CTEs for BFS and dynamic multi-join SQL to return alternating entity/relation lists.
+- `graph_analytics.py` implements in-memory power-iteration PageRank and Brandes' betweenness centrality; each has a paired `update_*` helper that writes scores back into `kg_entities.centrality` / `betweenness`.
+- `graph_communities.py` provides connected-component labeling and a two-phase pure-Python Louvain modularity maximizer, with a `compute_communities` dispatcher and a `write_community_ids` persistence helper.
+Dependency direction is one-way: these modules depend only on `infra.db.AnyConnection` and the fixed table names — they never import each other. All heavy computation stays in Python; the database is used purely as a data source and result sink.

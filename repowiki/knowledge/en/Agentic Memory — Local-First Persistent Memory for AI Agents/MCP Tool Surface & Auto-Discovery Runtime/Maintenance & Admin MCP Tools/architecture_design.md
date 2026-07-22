@@ -1,0 +1,10 @@
+Flat collection of `mcp_*.py` modules that each register one or more `@mcp.tool()` functions against the shared `FastMCP("AgenticMemory")` instance in `mcp_instance.py`. The central router lives in `mcp_maintenance.py`, which defines a large `MaintenanceOp` enum and delegates to per-operation lambdas in `mcp_maintenance_ops.py`; that ops module builds its handler table lazily via `_get_handlers()` / `_get_local_tools()` / `_get_domain_tools()` to break an import cycle between `mcp_maintenance` and the domain sub-modules (rebuild, audit, crdt, sharing, etc.).
+
+Sub-packages by responsibility:
+- `mcp_rebuild.py` — FTS5 rebuild, WAL checkpointing, consolidation, session archival, and the unified `memory_backfill_all` orchestrator over `backfill.orchestrator`.
+- `mcp_retention.py` — adaptive retention pipeline (`background.retention_coordinator.run_retention_pipeline`) and stats.
+- `mcp_dashboard.py` / `mcp_metrics.py` — process-lifecycle tools that `subprocess.Popen` a Streamlit dashboard or Prometheus exporter alongside the MCP server, tracking the child PID in module globals.
+- `mcp_health.py` — `memory_system_health` probe aggregating green/yellow/red status across database, search, worker, cron, auto-save, and disk subsystems.
+- `mcp_maintenance_policy_hash.py` — peer policy-hash fetcher + cache; exposes both a direct `memory_admin_policy_hash` tool and a `policy_hash_status` function invoked through the maintenance router.
+
+Dependency direction: these files depend on `mcp_common` (bootstrap, error helpers, `with_audit`, `with_memory_connection`, `GLOBAL_SCRIPTS_DIR`), on `mcp_instance.mcp`, and on feature-flagged runtime modules imported lazily inside each tool body to keep startup fast. Long-running background scripts under `GLOBAL_SCRIPTS_DIR` (e.g. `tier_migration.py`, `consolidate_facts.py`, `rebuild_index.py`, `contradiction_detector.py`) are executed as child processes via `_run_subprocess_output` / `subprocess.run` rather than imported.

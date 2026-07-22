@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: mcp_tools/sharing_collab
+title: Cross-Agent Sharing, OKF I/O & Multi-Modal Ingestion MCP Tools
+scope:
+- mcp_sharing.py
+- mcp_okf.py
+- mcp_multi_modal.py
+source_files:
+- mcp_sharing.py
+- mcp_okf.py
+- mcp_multi_modal.py
+depends_on: []
+related_to:
+- path: mcp_tools/core_runtime

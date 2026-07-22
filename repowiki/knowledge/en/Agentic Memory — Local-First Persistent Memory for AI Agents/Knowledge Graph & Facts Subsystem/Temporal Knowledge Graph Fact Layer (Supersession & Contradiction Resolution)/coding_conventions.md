@@ -1,0 +1,5 @@
+- DB mutation functions detect whether they own the transaction via `getattr(conn, 'in_transaction', False)` and only call `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` when they do, allowing callers to batch multiple operations safely.
+- Schema evolution uses `PRAGMA table_info(kg_facts)` to inspect existing columns and `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` per column, making `ensure_facts_schema` fully idempotent across migration gaps.
+- Optional LLM features are gated behind lazy imports of `config.get_config` and environment flags (`MEMORY_TEMPORAL_KG_LLM`, `temporal_kg_llm_tier`) so the default code path has zero LLM overhead.
+- Best-effort side effects (updating `belief_assertions`, walking `entailment_chains`, writing `memory_audit_log`) are wrapped in try/except that logs and continues rather than raising, keeping the hot save path resilient.
+- Public API surfaces a consistent `(conn, *args) -> bool | list[int]` return convention where False/[] signals idempotent no-op (already locked, already superseded, missing row).

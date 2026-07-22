@@ -1,0 +1,1 @@
+Shared in-process caches (search LRU, ARC ghost list, peer policy JSON) and pluggable locking primitives (POSIX flock, in-memory, Redis, Postgres) used across the memory pipeline.

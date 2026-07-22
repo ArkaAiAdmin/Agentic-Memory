@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: paper_experiments
+title: Paper Artifacts & Reference Implementations
+scope:
+- paper_pipeline/
+- paper_pipeline_2/
+- paper_pipeline_3/
+source_files:
+- paper_pipeline/
+- paper_pipeline_2/
+- paper_pipeline_3/
+depends_on: []
+related_to: []

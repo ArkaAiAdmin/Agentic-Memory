@@ -1,0 +1,4 @@
+- Optional heavy dependencies (`search_pipeline`, `spaced_repetition`, `user_profile`, `agent_context`) are imported lazily inside functions rather than at module top, wrapped in try/except so missing features degrade gracefully.
+- Namespace scoping follows an if/else split on `ctx.namespace != 'default'`, emitting two nearly identical SQL branches — one filtering `id LIKE 'agents/{namespace}/%'`, the other excluding `agents/%` globally.
+- Each fetch helper returns a list of dicts built by `_row_to_dict`, which normalizes raw SQLite tuples into a uniform shape (`id`, `content`, `source_file`, `tags`, `created_at`, `fitness_score`, `importance`, `pinned`).
+- Auto-saved tool logs are consistently excluded by checking `source_file NOT LIKE 'sessions/auto-%'` or `startswith('sessions/auto-')` across count, fetch, and formatting helpers.

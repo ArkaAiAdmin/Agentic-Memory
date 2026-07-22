@@ -1,0 +1,38 @@
+schema_version: 1
+module_path: background_workers/cron_kg_ops
+title: Knowledge Graph & Memory Maintenance Cron Jobs
+scope:
+- cron/cron_crdt_sync.py
+- cron/cron_sync.py
+- cron/cron_detect_vec_drift.py
+- cron/cron_concept_drift.py
+- cron/cron_resolve_contradictions.py
+- cron/cron_review_beliefs.py
+- cron/cron_cross_session_learn.py
+- cron/cron_semantic_clusters.py
+- cron/cron_skill_extraction.py
+- cron/cron_skill_decay.py
+- cron/cron_pinned_decay.py
+- cron/cron_revalidate_entailments.py
+- cron/cron_kg_backfill.py
+- cron/cron_kg_backfill_monitor.py
+- cron/cron_kg_analytics.py
+source_files:
+- cron/cron_crdt_sync.py
+- cron/cron_sync.py
+- cron/cron_detect_vec_drift.py
+- cron/cron_concept_drift.py
+- cron/cron_resolve_contradictions.py
+- cron/cron_review_beliefs.py
+- cron/cron_cross_session_learn.py
+- cron/cron_semantic_clusters.py
+- cron/cron_skill_extraction.py
+- cron/cron_skill_decay.py
+- cron/cron_pinned_decay.py
+- cron/cron_revalidate_entailments.py
+- cron/cron_kg_backfill.py
+- cron/cron_kg_backfill_monitor.py
+- cron/cron_kg_analytics.py
+depends_on: []
+related_to:
+- path: background_workers/cron_scheduler_runtime

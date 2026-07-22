@@ -1,0 +1,4 @@
+- Every database method opens its own connection via `_connect()` inside a `with` block and uses parameterized `?` placeholders — no raw string interpolation into SQL.
+- Row-to-dict conversion goes through the shared `_row_to_dict` helper so callers always receive plain dicts rather than `sqlite3.Row` objects.
+- Cross-deployment reads (seat counting, audit-log sync) open the target `memory.db` read-only with the `file:<path>?mode=ro` URI form and wrap the call in try/except to treat missing tables or I/O errors as best-effort.
+- Migrations are pure numbered `.sql` files discovered at runtime from `migrations/`, paired with matching `.down.sql` counterparts, and applied in ascending order until `PRAGMA user_version` matches the latest.

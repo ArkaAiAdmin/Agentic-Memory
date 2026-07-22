@@ -1,0 +1,4 @@
+- Optional heavy dependencies (Authlib SSO, authorizer, audit, config_drift_policy, save.pipeline, file_lock) are imported inside the function body that needs them so the module can be imported even when those features are disabled.
+- Every request handler wraps its body in a bare `try/except Exception` that logs a warning and returns a JSON `{"error": ...}` 500 response, never letting exceptions escape to the HTTP server.
+- Long-running background threads (mDNS advertiser/browser, TOML poller) expose `start()`/`stop()` methods that manage a `threading.Event` stop flag, a daemon `threading.Thread`, and a socket handle, with `stop()` joining the thread with a timeout.
+- Per-process mutable state used by multiple threads (rate-limit buckets, TOML mtime cache, subscriber list) is guarded by a module-level `threading.Lock` and exposed through accessor functions rather than public class attributes.

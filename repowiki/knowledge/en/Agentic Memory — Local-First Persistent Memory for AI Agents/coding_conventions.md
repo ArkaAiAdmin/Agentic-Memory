@@ -1,0 +1,4 @@
+- Optional heavy dependencies are imported lazily through `infra/_lazy_imports.py` and gated behind feature flags rather than hard-required in `pyproject.toml`.
+- Cross-process SQLite writes are serialized via flock-backed saga primitives in `infra/` instead of relying on SQLite's single-writer limit alone.
+- CLI entry points are registered once in `[project.scripts]` of `pyproject.toml` and routed through `cli.py`, which re-exports relocated implementations via the `cli_entrypoints` shim.
+- Documentation artifacts (AGENTS.md, MCP surface, schema, config) are regenerated from source ASTs via scripts under `scripts/` and invoked through `make update-*` targets rather than hand-edited.

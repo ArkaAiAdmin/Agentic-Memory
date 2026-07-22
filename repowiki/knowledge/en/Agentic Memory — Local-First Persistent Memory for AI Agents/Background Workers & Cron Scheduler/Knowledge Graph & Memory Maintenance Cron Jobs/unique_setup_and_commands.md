@@ -1,0 +1,1 @@
+Each script is invoked directly by crontab as `python cron_<job>.py` (no shared runner); most accept `--dry-run` plus a `--log-file` path where they append one JSON-per-line record under `<memory_dir>/<job>-cron.log`. DB path defaults to `MEMORY_DB_PATH` env var, falling back to `GLOBAL_MEM_DIR/memory.db` resolved via `infra.infrastructure.resolve_active_memory_dir()`.

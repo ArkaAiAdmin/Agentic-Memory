@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: sdk_package
+title: Agentic Memory Python SDK
+scope:
+- agentic_memory/
+source_files:
+- agentic_memory/
+depends_on: []
+related_to:
+- path: knowledge_graph/extraction_schema
+- path: search_index/search_orchestrator_and_support
+- path: search_index/search_pipeline

@@ -1,0 +1,25 @@
+schema_version: 1
+module_path: background_workers/cron_scheduler_runtime
+title: Consolidated Cron Scheduler & Task-Queue Enqueue Layer
+scope:
+- cron/scheduler.py
+- cron/jobs.py
+- cron/cron_runs.py
+- cron/enqueue_task.py
+- cron/manage_task_timeouts.py
+- cron/monitor_task_queue.py
+source_files:
+- cron/scheduler.py
+- cron/jobs.py
+- cron/cron_runs.py
+- cron/enqueue_task.py
+- cron/manage_task_timeouts.py
+- cron/monitor_task_queue.py
+depends_on: []
+related_to:
+- path: background_workers/background_workers
+- path: background_workers/cron_health_observability
+- path: background_workers/cron_kg_ops
+- path: background_workers/cron_maintenance_cleanup
+- path: background_workers/cron_retention_policy
+- path: background_workers/cron_training_learning

@@ -1,0 +1,6 @@
+- Every up migration has a sibling `.down.sql` file placed immediately after it, even if the down side is empty or only a comment.
+- Migrations use `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` so they can be re-run safely on databases that already contain the objects.
+- New features are introduced as a pair of migrations: one adding the new `_append` table (for CRDT ops) and a later one redirecting writes to it while keeping the legacy table for backward compatibility.
+- Schema changes are accompanied by a matching `CHECK` constraint listing allowed values (e.g. `action IN ('read','write','delete','admin','export')`, `effect IN ('allow','deny')`) rather than relying on application-side validation.
+- Multi-tenant isolation is rolled out by first adding a nullable `tenant_id TEXT DEFAULT 'default'` column, then a follow-up migration making it `NOT NULL` and backfilling existing rows.
+- Marker-only migrations exist solely to bump `SCHEMA_VERSION` without touching DDL; they consist of a header comment explaining why and a trivial `SELECT 1;` body.

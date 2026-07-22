@@ -1,0 +1,5 @@
+- All SQL queries use parameterised placeholders (`?`) — no f-string interpolation into SQL strings — except for dynamically built `IN (...)` placeholder lists in gdpr.py.
+- Database access is wrapped in try/except blocks that log at debug/warning level and return safe defaults (empty list, False, None) so missing pre-migration tables never crash callers.
+- Optional native dependencies (`pyxmlsec`, `lxml`, `defusedxml`, `tomli`) are imported inside functions with explicit ImportError handling rather than at module top, keeping the package importable without native wheels.
+- Time values are serialized as ISO-8601 UTC strings via a shared `_now()` helper returning `time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())`.
+- Authorization decisions follow a fail-closed contract: `mcp_authorize` denies on missing principal/DB/exception unless `MEMORY_AUTH_MODE=open`, and `check_permission` returns False as the default branch.

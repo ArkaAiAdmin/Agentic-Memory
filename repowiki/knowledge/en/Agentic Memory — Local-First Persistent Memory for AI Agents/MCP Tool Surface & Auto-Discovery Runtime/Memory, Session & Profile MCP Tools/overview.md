@@ -1,0 +1,1 @@
+MCP tool handlers for CRUD on persistent memory notes, session decision-thread lifecycle, and opt-in user profiling.

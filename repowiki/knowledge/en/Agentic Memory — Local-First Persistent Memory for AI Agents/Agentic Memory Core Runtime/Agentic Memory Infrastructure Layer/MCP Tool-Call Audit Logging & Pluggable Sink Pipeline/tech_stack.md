@@ -1,0 +1,1 @@
+Python stdlib `threading` + `queue` for the producer/consumer pipelines; `requests` for the HTTP sink; optional TOML config via `infra.config._read_toml`; OWASP A09-001 secret redaction driven by regex key/value matching.

@@ -1,0 +1,1 @@
+MCP tool wrappers that expose knowledge-graph queries, graph traversal, fact search, and hybrid FTS5+semantic memory search to the agent runtime.

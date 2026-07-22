@@ -1,0 +1,15 @@
+schema_version: 1
+module_path: hooks_plugins
+title: OpenCode Plugin & Memory Hook Runtime
+scope:
+- hooks/
+- plugin/
+- reasoning/
+- skills/
+source_files:
+- hooks/
+- plugin/
+- reasoning/
+- skills/
+depends_on: []
+related_to: []

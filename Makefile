@@ -1,6 +1,6 @@
 .PHONY: test test-quick test-file test-clean test-results update-agents-md help
 .PHONY: lint typecheck
-.PHONY: update-docs update-architecture update-mcp-tools update-schema update-config update-readme
+.PHONY: update-docs update-architecture update-mcp-tools update-schema update-config update-readme update-repowiki
 
 PYTHON := ./venv/bin/python
 
@@ -75,8 +75,11 @@ update-agents-md: ## Regenerate AUTO-GEN sections in AGENTS.md + docs/_meta.json
 # Run these when the relevant source of truth changes.
 # Always run `make update-docs` after significant code changes.
 
-update-docs: update-agents-md update-architecture update-mcp-tools update-readme update-mcp-surface ## Regenerate all docs (run before every commit)
+update-docs: update-agents-md update-architecture update-mcp-tools update-readme update-mcp-surface update-repowiki ## Regenerate all docs (run before every commit)
 	@echo "All docs regenerated."
+
+update-repowiki: ## Verify and sync RepoWiki catalog & knowledge maps
+	$(PYTHON) scripts/verify_repowiki.py
 
 update-mcp-surface: ## Regenerate AUTO-GEN spans in docs/MCP_SURFACE.md (schema version) — run after any migration
 	$(PYTHON) scripts/doc_drift_check.py --fix >/dev/null 2>&1 || true

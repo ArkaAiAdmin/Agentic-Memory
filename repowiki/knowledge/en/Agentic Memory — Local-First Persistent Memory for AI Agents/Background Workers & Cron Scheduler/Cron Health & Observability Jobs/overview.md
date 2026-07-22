@@ -1,0 +1,1 @@
+One-shot cron wrappers that probe system health, pipeline liveness, config drift, fleet policy posture, and daemon/watchdog status, writing structured logs and alerts.

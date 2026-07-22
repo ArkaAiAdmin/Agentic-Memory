@@ -1,0 +1,1 @@
+Python MCP server built on `mcp.server.fastmcp.FastMCP`; dashboard is a separate Streamlit app launched via `streamlit run`; metrics endpoint is a standalone HTTP server exposing Prometheus `/metrics`; SQLite with WAL mode and optional CQRS write-journal (`journal.db`).

@@ -1,0 +1,5 @@
+- Every I/O path (DB flush, HTTP emit, file append, dead-letter write) is wrapped in try/except that logs and never re-raises, so the audit pipeline can never break a tool call.
+- Background workers follow a fixed shape: a module-level `*_THREAD` guarded by a lock, started lazily via an `_ensure_*` idempotent helper, and shut down via a `threading.Event` + `atexit.register`.
+- Bounded queues with `maxsize=10_000` are used everywhere (`_AUDIT_QUEUE`, `_SINK_QUEUE`) and `put_nowait` is paired with a DEBUG log + dead-letter fallback on `queue.Full`.
+- Secret redaction via `redact_audit_value` / `REDACTED_MASK` is applied both before serializing args into the local DB and again at the sink dispatcher for defense-in-depth.
+- Heavy dependencies (`open_db`, `CloudStateStore`, `requests`, TOML config) are imported inside functions rather than at module top to avoid circular imports and cold-start cost.

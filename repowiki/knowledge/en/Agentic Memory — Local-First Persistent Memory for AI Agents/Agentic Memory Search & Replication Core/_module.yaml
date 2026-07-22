@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: search_index
+title: Agentic Memory Search & Replication Core
+scope:
+- search/
+- crdt/
+- coordination/
+source_files:
+- search/
+- crdt/
+- coordination/
+depends_on: []
+related_to: []

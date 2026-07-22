@@ -1,0 +1,15 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/shared_memory_state
+title: Shared-Memory IPC & Process Scope Resolution
+scope:
+- infra/shared_memory_state.py
+- infra/memory_common.py
+- infra/memory_config.py
+- infra/scope.py
+source_files:
+- infra/shared_memory_state.py
+- infra/memory_common.py
+- infra/memory_config.py
+- infra/scope.py
+depends_on: []
+related_to: []

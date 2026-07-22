@@ -1,0 +1,1 @@
+Backward-compat shims and the context-monitor entrypoint that persists session checkpoints, compaction summaries, and integrity checks for long-running agentic sessions.

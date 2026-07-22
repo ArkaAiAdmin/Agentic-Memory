@@ -1,0 +1,5 @@
+- Heavy or optional dependencies (`infra._lazy_imports`, `memory_delete`, `mcp_*`, `agent_context`) are imported inside method bodies rather than at module top, keeping cold-start imports minimal.
+- External MCP/infra calls that may return either a JSON string or a dict are normalized with a uniform `isinstance(raw, str) -> json.loads(...) else raw` pattern before being mapped onto typed dataclasses.
+- Database access goes through `utils.get_db_connection` / `utils.safe_close_db` wrapped in `try/finally` blocks, and tenant scoping is applied by appending `tenant_id = ?` clauses to every query.
+- Optional framework integrations under `integrations/` are guarded by `try/except ImportError` (or lazy loader functions returning `None`) so the core package remains importable without LangChain or CrewAI installed.
+- CLI commands follow a single `argparse` dispatcher in `main()`: subparsers define arguments, then a flat `if args.cmd == ...` chain instantiates the appropriate domain class and prints results via the shared `_json` helper.

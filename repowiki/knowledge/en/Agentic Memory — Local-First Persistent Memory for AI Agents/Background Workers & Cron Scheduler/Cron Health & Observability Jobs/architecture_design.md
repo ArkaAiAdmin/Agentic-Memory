@@ -1,0 +1,10 @@
+Flat collection of independent one-shot Python scripts under `cron/`, each a self-contained entry point invoked by crontab. Every script follows the same shape: set CWD to repo root, prepend parent dir on `sys.path`, resolve `memory.db` via `resolve_active_memory_dir()` (overridable with `MEMORY_DB_PATH`), acquire an exclusive flock via `_flock.acquire_lock_or_exit(<script_name>)` to prevent concurrent runs, then call into domain modules (`infra.*`, `background.*`, `mcp_*`, `memory_integrity`, `self_directed`) for the actual work.
+
+Responsibilities split by file:
+- `cron_health_check.py` — composite orchestrator running index integrity, KG orphans, circuit breaker, auto-save health, semantic-search probe, task-queue stuck-task reset, and disk-space checks; writes `memory/.health_status.json` and fires `infra.alert` on criticals.
+- `cron_pipeline_health.py` — end-to-end queue probe: enqueues a high-priority sentinel task, polls until completion (with soft/hard deadline and worker-liveness extension), counts failures/pending depth, watches journal backlog, and attempts to restart the background_worker via launchd or direct spawn.
+- `cron_heartbeat.py` / `cron_integrity_check.py` / `cron_retry_dead_tasks.py` / `cron_sync_usage.py` — thin wrappers around `self_directed.run_heartbeat`, `memory_integrity.check_index_integrity`, dead-task re-enqueue logic, and MCP usage sync respectively.
+- `cron_watchdog.py` / `cron_daemon_watchdog.py` — process-level watchdogs: the former scans `ps` for long-running `cron_*.py` processes and dumps stacks via `py-spy`; the latter monitors the auto-save daemon's flock/PID and relaunches it.
+- `cron_check_config_drift.py` / `cron_policy_hash_status.py` — drift surveillance against `infra.config_drift` and peer-policy divergence via `mcp_maintenance.memory_maintenance`, persisting JSON artifacts under `memory/`.
+
+Dependency direction is strictly inward: these scripts depend on `infra/`, `background/`, `memory_integrity`, `mcp_*`, and `coordination` packages but are never imported by them. Each script is idempotent and safe to run concurrently with other cron jobs thanks to per-script flock names.

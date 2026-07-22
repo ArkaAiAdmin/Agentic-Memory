@@ -1,0 +1,9 @@
+Each file is an independent executable entry point (shebang + `if __name__ == "__main__"`) invoked by crontab; there is no shared runner or package — scripts bootstrap their own import path by prepending the repo root (`sys.path.insert(0, _parent)`), then call into sibling modules under `infra/`, `memory_*`, and `background/`.
+
+- Concurrency control: every script begins with `_flock.acquire_lock_or_exit("cron_<name>")` so two instances never run concurrently against the same memory directory.
+- DB access pattern: most scripts resolve the active DB via `resolve_active_memory_dir()` / `get_memory_paths()` / `get_db_path()`, open it with `PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=30000`, and use `safe_close_db` for teardown.
+- Two styles of work:
+  - Self-contained tasks (backup, purge expired, purge auto-saves, reap stale tasks, log retention, rewrite links) implement a single `do_*`/`cleanup_*` function plus a `main()` CLI dispatcher.
+  - Orchestrated pipelines (`cron_compact.py`) act as a supervisor that spawns sibling scripts (`tier_migration.py`, `cron_consolidate.py`, `rebuild_index.py`, `backfill_all.py`, `rebuild_vec_index.py`, `kg_dedup.py`, `cross_session_learn.py`, `embedding_recompute.py`) via `subprocess.check_output` using a resolved `PYTHON` interpreter, then runs `PRAGMA integrity_check` + `foreign_key_check` afterward.
+- Cron integration: `cron_backup.py` additionally provides `--install-cron` / `--uninstall-cron` / `--cron-status` subcommands that read/write the user's crontab through the `crontab` CLI, tagging entries with a `CRON_MARKER` comment.
+- Dependency direction is one-way: this module depends on `infra.*`, `memory_*`, and `background.*`; nothing in those packages imports back into `cron/`.

@@ -1,0 +1,31 @@
+schema_version: 1
+module_path: mcp_tools/core_runtime
+title: MCP Tool Surface & Core Runtime
+scope:
+- mcp_tools.py
+- mcp_verbs.py
+- mcp_sdk.py
+- mcp_common.py
+- mcp_async.py
+- mcp_agent.py
+- mcp_coordination.py
+- mcp_crdt.py
+- mcp_ctr_drift.py
+source_files:
+- mcp_tools.py
+- mcp_verbs.py
+- mcp_sdk.py
+- mcp_common.py
+- mcp_async.py
+- mcp_agent.py
+- mcp_coordination.py
+- mcp_crdt.py
+- mcp_ctr_drift.py
+depends_on: []
+related_to:
+- path: cli_entrypoints/server_and_api
+- path: mcp_tools/knowledge_graph
+- path: mcp_tools/maintenance_admin
+- path: mcp_tools/memory_and_session
+- path: mcp_tools/quality_safety
+- path: mcp_tools/sharing_collab

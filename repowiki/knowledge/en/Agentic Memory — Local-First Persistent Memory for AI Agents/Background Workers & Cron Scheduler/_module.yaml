@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: background_workers
+title: Background Workers & Cron Scheduler
+scope:
+- background/
+- cron/
+source_files:
+- background/
+- cron/
+depends_on: []
+related_to: []

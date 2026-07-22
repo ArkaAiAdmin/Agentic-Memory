@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: lessons_notes
+title: Audit Notes & Conference Submissions
+scope:
+- notes/
+- submissions/
+source_files:
+- notes/
+- submissions/
+depends_on: []
+related_to: []

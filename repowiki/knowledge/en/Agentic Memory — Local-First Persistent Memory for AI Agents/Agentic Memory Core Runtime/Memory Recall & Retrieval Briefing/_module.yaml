@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: core_runtime/recall_retrieval
+title: Memory Recall & Retrieval Briefing
+scope:
+- recall/
+source_files:
+- recall/
+depends_on: []
+related_to: []

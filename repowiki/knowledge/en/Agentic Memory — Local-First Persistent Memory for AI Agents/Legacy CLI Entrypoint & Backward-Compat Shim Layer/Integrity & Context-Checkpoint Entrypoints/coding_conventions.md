@@ -1,0 +1,4 @@
+- External dependencies are imported lazily inside function bodies (e.g. `from infra._lazy_imports import save_memory_auto`) rather than at module top, so the shim modules stay lightweight when only used as re-exporters.
+- Disk persistence uses a two-step pattern: acquire an exclusive `fcntl.flock` on a sibling `.flock` file, then write via `atomic_write` (temp file + `os.replace`) so crashes never leave truncated state.
+- Hook entry points return a small dict of status fields (`saved`, `note_id`, `elapsed_min`, `tool_call_count`, …) instead of raising, and callers wrap DB saves in try/except with `logger.warning` fallbacks so failures never break the host process.
+- Tool-name matching supports both bare names and `agentic-memory_*` namespaced variants through a `_tool_matches` helper that strips the prefix before lookup.

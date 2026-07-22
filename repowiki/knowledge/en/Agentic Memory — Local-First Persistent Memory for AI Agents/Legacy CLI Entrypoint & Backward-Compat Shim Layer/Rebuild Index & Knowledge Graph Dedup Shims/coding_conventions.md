@@ -1,0 +1,2 @@
+- Compatibility shim modules expose their target package via a `__getattr__` proxy plus `install_shim(__name__, _real)` so callers see the original module's attributes transparently.
+- Heavy or optional dependencies (`infra.db.AnyConnection`, `hashlib`) are imported inside functions or guarded by `TYPE_CHECKING` blocks rather than at top-of-file, keeping startup fast when consolidation is disabled.

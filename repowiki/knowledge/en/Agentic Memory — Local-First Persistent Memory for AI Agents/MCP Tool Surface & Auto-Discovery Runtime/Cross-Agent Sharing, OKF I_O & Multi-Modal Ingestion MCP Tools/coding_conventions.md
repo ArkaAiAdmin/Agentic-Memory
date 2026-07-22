@@ -1,0 +1,5 @@
+- Every public function is registered as an MCP tool by stacking `@mcp.tool()` above `@with_audit("<tool_name>")`, so the audit name is a stable string literal matching the function name.
+- Feature-gated tools check a module-level flag (e.g. `memory_sharing.MULTI_AGENT_ENABLED`) at the top of the body and return `json.dumps({"enabled": False})` when disabled, rather than raising.
+- Backend packages are imported lazily inside the function body (`import memory_sharing as ma`, `import okf_export as oe`, etc.) instead of at module top, keeping optional features cold.
+- Errors are returned uniformly via `_err(ErrorCode.<CODE>, "human message")` and successes via `json.dumps(result, indent=2, default=str)`, never by raising exceptions to the caller.
+- Destructive operations enforce explicit user confirmation through boolean flags (S6): `overwrite=True` requires `confirm=True`, returning `INVALID_PARAMS` otherwise.

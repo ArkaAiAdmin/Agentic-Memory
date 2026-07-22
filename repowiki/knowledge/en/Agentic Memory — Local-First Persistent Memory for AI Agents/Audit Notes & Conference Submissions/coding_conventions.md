@@ -1,0 +1,2 @@
+- Audit findings are numbered sequentially (1..38) and grouped into priority buckets (P0 correctness bugs → P3 backlog), each entry citing the exact source file and line range where the issue was observed.
+- Submission documents follow a fixed Markdown heading schema (Title / Authors / Abstract / Keywords / Submission Type / Track / Venue Notes / Paper References) to keep metadata machine-parseable.

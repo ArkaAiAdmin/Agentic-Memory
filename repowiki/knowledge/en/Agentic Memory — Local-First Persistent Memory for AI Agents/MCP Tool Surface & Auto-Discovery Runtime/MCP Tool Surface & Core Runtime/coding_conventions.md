@@ -1,0 +1,5 @@
+- Every public tool is declared as `@mcp.tool()` stacked above `@with_audit("memory_<verb>")`, giving uniform MCP registration plus audit tagging.
+- Each verb follows the same shape: resolve DB path via `_resolve_db_path()` / `_resolve_memory_dir()`, run an RBAC check with `_check_authorization(action, resource)` returning early on denial, wrap the body in try/except that returns `_wrap_db_error(verb_name, e)`.
+- Errors are returned as structured envelopes via `_err(ErrorCode.<CODE>, message)` rather than raising exceptions, so callers always get a serializable string result.
+- Domain-specific imports (`from search.orchestrator import ...`, `from infra._lazy_imports import save_memory_journal`, `from config import get_config`) are deferred inside the function body to avoid top-level circular imports across the flat module layout.
+- Agent identity is resolved lazily from `agent_context.get_agent()` with ImportError/Exception fallback to environment defaults, keeping the tools runnable without the agent framework installed.

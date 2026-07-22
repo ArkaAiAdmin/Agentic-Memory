@@ -1,0 +1,6 @@
+- Schema creation is idempotent: every module exposes an `_ensure_*_schema(conn)` helper that runs `CREATE TABLE IF NOT EXISTS` plus indexes/triggers before any write.
+- Indexing functions are idempotent by design: they `DELETE FROM <table> WHERE memory_id = ?` before inserting new rows, so re-indexing replaces rather than appends.
+- Heavy model imports (`infra.colbert_encoder`, `infra.splade_encoder`, `sentence_transformers.CrossEncoder`, `infra.reranker`) are performed lazily inside the function body to avoid cold-start cost and circular imports.
+- Rerankers mutate the 7th element (`r[6] = final_score`) of each result tuple exactly once, sort the top-k head by the updated score, and concatenate the untouched tail — preserving the caller's list contract.
+- Blend weights are read through `get_search_config()` / `get_config()` at call time rather than baked in, allowing runtime toggles like `reranker_disabled`, `ce_deep_enabled`, and `late_interaction`.
+- Fast-path guards skip expensive computation early: simple queries (≤1 meaningful word), few candidates (≤5), short queries (<3 tokens), empty indices, or unavailable models return the input list unchanged.

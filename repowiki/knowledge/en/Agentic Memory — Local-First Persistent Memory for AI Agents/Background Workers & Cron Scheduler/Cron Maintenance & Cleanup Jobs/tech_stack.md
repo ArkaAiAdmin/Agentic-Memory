@@ -1,0 +1,1 @@
+Pure Python 3 with stdlib sqlite3 (WAL mode, backup API, PRAGMA integrity/foreign_key checks); external `gzip` subprocess for compressed daily snapshots; system `crontab` CLI for job lifecycle management; flock-based process-level locking via the local `_flock` module.

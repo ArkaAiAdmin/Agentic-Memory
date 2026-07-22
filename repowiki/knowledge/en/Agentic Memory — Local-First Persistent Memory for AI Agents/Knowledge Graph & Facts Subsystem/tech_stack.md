@@ -1,0 +1,1 @@
+SQLite with FTS5 indexing, spaCy for NER, optional LLM providers for extraction and contradiction resolution, and a custom CRDT implementation for offline-first multi-agent sync.

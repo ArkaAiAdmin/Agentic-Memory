@@ -1,0 +1,31 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/utilities
+title: Infrastructure Utilities & Cross-Cutting Concerns
+scope:
+- infra/config.py
+- infra/hash_utils.py
+- infra/safe_call.py
+- infra/pinned_decay.py
+- infra/frontmatter.py
+- infra/policy_hash_diff.py
+- infra/policy_hash_fetcher.py
+- infra/quality_gates.py
+- infra/rate_limiter.py
+- infra/log.py
+- infra/tenant_query.py
+- infra/saga.py
+source_files:
+- infra/config.py
+- infra/hash_utils.py
+- infra/safe_call.py
+- infra/pinned_decay.py
+- infra/frontmatter.py
+- infra/policy_hash_diff.py
+- infra/policy_hash_fetcher.py
+- infra/quality_gates.py
+- infra/rate_limiter.py
+- infra/log.py
+- infra/tenant_query.py
+- infra/saga.py
+depends_on: []
+related_to: []

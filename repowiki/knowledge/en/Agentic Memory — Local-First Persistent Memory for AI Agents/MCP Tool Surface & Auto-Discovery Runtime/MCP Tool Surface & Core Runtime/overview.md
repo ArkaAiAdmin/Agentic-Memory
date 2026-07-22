@@ -1,0 +1,1 @@
+Registers the agent-facing MCP tool surface (17 verbs plus admin/coordination/CRDT/CTR-drift helpers) and provides the auto-discovery runtime that bootstraps all mcp_*.py modules.

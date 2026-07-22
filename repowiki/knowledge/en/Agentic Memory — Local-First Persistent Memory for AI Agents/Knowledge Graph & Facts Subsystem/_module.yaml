@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: knowledge_graph
+title: Knowledge Graph & Facts Subsystem
+scope:
+- kg/
+- knowledge_graph/
+- fact/
+source_files:
+- kg/
+- knowledge_graph/
+- fact/
+depends_on: []
+related_to: []

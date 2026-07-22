@@ -1,0 +1,6 @@
+- Schema changes are expressed as raw SQL strings (`_KG_SCHEMA_SQL`, `_KG_FTS5_DDL`) executed via `conn.executescript`, with `ALTER TABLE ... ADD COLUMN` guards driven by `PRAGMA table_info` to migrate existing databases in-place.
+- Optional heavy dependencies (spaCy, LLM client, config) are imported inside functions via `from infra._lazy_imports import get_config` / `import spacy` rather than at module top, so the package stays importable without those extras installed.
+- Entity deduplication follows a fixed precedence chain — fingerprint match → exact normalized name/type → exact alias → Jaccard ≥ 0.85 fuzzy match (which records the new spelling as an alias) — before falling through to INSERT.
+- Edge writes use a SELECT-then-INSERT-or-UPDATE pattern wrapped in `try/except sqlite3.IntegrityError` to handle concurrent writers inserting the same current edge between the read and write.
+- Extraction results are cached in-process by `sha256(content)[:16]` using a shared dict plus a `deque(maxlen=1000)` LRU protected by a single `threading.Lock`, with reads taking the lock only to update recency.
+- All database mutations catch exceptions and log warnings instead of raising, so a failed schema migration, FTS5 backfill, or stats write cannot break the caller's save path.

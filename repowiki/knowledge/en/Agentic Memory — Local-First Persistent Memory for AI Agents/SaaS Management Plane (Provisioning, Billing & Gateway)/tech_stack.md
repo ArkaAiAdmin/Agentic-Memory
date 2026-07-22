@@ -1,0 +1,1 @@
+SQLite via stdlib `sqlite3` with `PRAGMA foreign_keys = ON` and `user_version` for migration tracking; HTTP proxying via stdlib `urllib.request` (no web framework); Stripe integration is metadata-only (plan IDs / price IDs stored in `plans`).

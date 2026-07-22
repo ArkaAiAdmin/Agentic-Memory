@@ -1,0 +1,1 @@
+Python stdlib `fcntl.flock` for cross-process locks; SQLite (via `sqlite_write_queue`) for ARC ghost persistence; JSON files with `atomic_write` for peer-policy cache; optional `redis` and `psycopg2` backends gated behind `MEMORY_LOCK_ENGINE=redis|postgres`.

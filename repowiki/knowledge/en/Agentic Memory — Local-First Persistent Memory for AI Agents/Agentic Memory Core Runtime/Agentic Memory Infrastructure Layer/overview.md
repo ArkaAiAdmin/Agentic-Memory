@@ -1,0 +1,1 @@
+Provides the cross-cutting runtime foundation — bootstrap, config drift enforcement, persistence, search, auth/RBAC, audit, metrics, sync, and services — that all memory pipelines consume.

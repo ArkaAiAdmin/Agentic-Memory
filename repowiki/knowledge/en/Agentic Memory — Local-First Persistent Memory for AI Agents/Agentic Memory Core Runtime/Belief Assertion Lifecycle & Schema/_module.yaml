@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: core_runtime/belief_lifecycle
+title: Belief Assertion Lifecycle & Schema
+scope:
+- belief/
+source_files:
+- belief/
+depends_on: []
+related_to: []

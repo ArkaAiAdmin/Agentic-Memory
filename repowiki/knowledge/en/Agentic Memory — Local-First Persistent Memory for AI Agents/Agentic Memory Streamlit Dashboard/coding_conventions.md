@@ -1,0 +1,6 @@
+- Every tab is a standalone `tab_<name>.py` file exposing a single `render_<name>()` function; there are no cross-tab imports — composition happens at the top-level Streamlit entry point.
+- All database reads go through the shared helpers in `dashboard/__init__.py` (`get_conn`, `query`, `try_count`, `table`) which open the DB in `mode=ro` and decorate expensive calls with `@st.cache_resource` / `@st.cache_data(ttl=...)`.
+- User-facing HTML is built via `st.html(...)` using pre-defined CSS classes from the module-level `CSS` string (e.g. `.metric-card`, `.health-check`, `.badge-ok`) rather than inline style blocks.
+- API-bound methods in `ApiClient` follow a uniform try/except pattern: attempt the HTTP call, re-raise `_AuthError` on 401/403, otherwise fall back to a read-only local SQLite query only when `_local_fallback_allowed()` returns True.
+- Health checks return a list of dicts with keys `{name, status, detail, fixable?, fix_label?}` where `status ∈ {ok, warning, error, info}`, and scoring is computed centrally by `_compute_health_checks`.
+- Environment-driven configuration uses explicit env vars (`MEMORY_API_BASE`, `MEMORY_API_TOKEN`, `MEMORY_DIR`, `DASHBOARD_ALLOW_LOCAL_FALLBACK`) resolved at runtime rather than config files.

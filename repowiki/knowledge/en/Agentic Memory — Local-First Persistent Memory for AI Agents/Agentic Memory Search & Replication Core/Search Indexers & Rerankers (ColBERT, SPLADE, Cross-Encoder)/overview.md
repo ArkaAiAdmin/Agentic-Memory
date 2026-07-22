@@ -1,0 +1,1 @@
+Implements the indexing backends (QW5 chunking, ColBERT token vectors, SPLADE sparse vectors) and reranking stages (cross-encoder, late-interaction, answer-level snippet scoring, ColBERT MaxSim) for the search pipeline.

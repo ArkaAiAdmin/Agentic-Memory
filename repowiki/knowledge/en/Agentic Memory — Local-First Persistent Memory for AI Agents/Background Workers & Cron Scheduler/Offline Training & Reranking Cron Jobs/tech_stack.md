@@ -1,0 +1,1 @@
+NumPy for hand-rolled SGD; LightGBM (`lambdarank` objective) for the LTR model; optional scikit-learn LogisticRegression/AUC with pure-Python fallbacks; sentence-transformers CrossEncoder for answer-rerank precomputation; SQLite as the single source of truth for all training data.

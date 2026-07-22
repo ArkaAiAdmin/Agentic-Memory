@@ -1,0 +1,1 @@
+Defines the belief_assertions table schema and manages its full lifecycle — creation, status transitions, evidence-chain staleness detection, and review scheduling for agent-held beliefs.

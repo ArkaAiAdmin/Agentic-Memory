@@ -1,0 +1,3 @@
+- Cross-package symbols are imported inside functions via `from infra._lazy_imports import X` to avoid circular imports at module load time.
+- Each child package's `__init__.py` acts as a thin re-export shim (often using `__getattr__`) rather than importing implementation modules eagerly.
+- Public APIs are declared explicitly in `__all__` and documented in the package docstring; private helpers stay in submodules.

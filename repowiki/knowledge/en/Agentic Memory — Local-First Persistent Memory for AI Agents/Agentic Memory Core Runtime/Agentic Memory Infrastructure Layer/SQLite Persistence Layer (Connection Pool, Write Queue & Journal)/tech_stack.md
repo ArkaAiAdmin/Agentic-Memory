@@ -1,0 +1,1 @@
+Pure Python + `sqlite3` with WAL mode (`PRAGMA journal_mode=WAL`, `wal_autocheckpoint=500`, `synchronous=NORMAL`, `busy_timeout=30000`, optional `mmap_size` via `MEMORY_SQLITE_MMAP_SIZE`). Cross-process serialisation uses an application-layer flock via `infra.lock_manager` (not raw `fcntl.flock`), configurable off with `MEMORY_DB_FLOCK=0`.

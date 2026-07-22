@@ -1,0 +1,1 @@
+In-process counters and audit-log aggregation for Agentic Memory, a standalone Prometheus exporter HTTP server, per-phase error tracking, and multi-channel alert delivery (Slack/email/Pushover).

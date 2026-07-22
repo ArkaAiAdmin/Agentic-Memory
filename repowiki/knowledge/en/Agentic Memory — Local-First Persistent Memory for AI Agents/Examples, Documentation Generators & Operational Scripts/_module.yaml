@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: examples_and_scripts
+title: Examples, Documentation Generators & Operational Scripts
+scope:
+- examples/
+- _scripts/
+- scripts/
+source_files:
+- examples/
+- _scripts/
+- scripts/
+depends_on: []
+related_to: []

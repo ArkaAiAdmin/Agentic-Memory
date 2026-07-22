@@ -1,0 +1,6 @@
+The subsystem is split into three sibling packages, each owning one layer of the data pipeline:
+- `knowledge_graph/` owns the KG schema (`kg_schema.py`), entity/relation extraction from notes (`kg_extract.py`, `ner_spacy.py`), and search/indexing against the `kg_entities`/`kg_edges` tables.
+- `kg/` owns pure-Python graph algorithms (traversal, PageRank, betweenness, Louvain communities) plus consistency tools (contradiction detection/resolution, entity deduplication via exact+embedding similarity), CRDT-based replication (`kg_crdt.py`), and temporal resolution over edges.
+- `fact/` owns the layered fact extraction pipeline (regex → LLM), fact cleaning, temporal supersession chains, and FTS-backed search over the `kg_facts` table.
+
+All three packages share a single SQLite database; they are wired together by the top-level `agentic_memory` package which imports lazily from each subpackage at runtime. Cross-package boundaries are explicit: `kg/` and `fact/` call into `knowledge_graph.kg_db` for persistence, while `kg/temporal_resolver.py` and `fact/fact_temporal.py` coordinate temporal invalidation across the two stores. Each package re-exports its public API through its `__init__.py` so callers can use flat imports like `from kg import detect_contradictions` or `from knowledge_graph import graph_search`.

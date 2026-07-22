@@ -1,0 +1,1 @@
+Single-process cron scheduler that drives ~40 periodic jobs via a declarative registry, enqueues them into the background worker queue, and persists execution history in SQLite.

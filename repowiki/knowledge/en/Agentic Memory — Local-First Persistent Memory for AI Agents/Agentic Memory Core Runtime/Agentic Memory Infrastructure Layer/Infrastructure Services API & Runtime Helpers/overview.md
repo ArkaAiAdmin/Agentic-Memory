@@ -1,0 +1,1 @@
+Provides the threaded REST/WebSocket server, mDNS peer discovery, MCP per-agent singleton guard, and memory.toml hot-reload watcher that form the runtime surface of Agentic Memory.

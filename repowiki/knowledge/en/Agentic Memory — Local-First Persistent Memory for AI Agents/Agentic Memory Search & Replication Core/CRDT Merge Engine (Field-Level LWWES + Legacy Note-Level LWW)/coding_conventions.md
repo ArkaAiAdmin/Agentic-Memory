@@ -1,0 +1,6 @@
+- Version-vector operations (`dominates`, `concurrent`, `merge_vectors` / `_vv_dominates`, `_vv_join`) are duplicated in both modules but kept local to avoid import cycles between `crdt_merge.py` and `crdt_field.py`.
+- Database access always goes through `infra._lazy_imports.open_db(db_path, timeout=10.0, tenant_id=...)` with the tenant ID resolved from `MEMORY_CRON_TENANT_ID` / `MEMORY_TENANT_ID` env vars or the literal `'default'`, and `PRAGMA foreign_keys=ON` is issued immediately after opening.
+- Every mutating path wraps its SQLite work in a `Saga(name=..., steps=[SagaStep(...)])` with a matching `_undo_*` closure that restores captured pre-state rows, so partial failures never leave the DB inconsistent.
+- Remote content is scanned for prompt injection via `save_pipeline._scan_for_injection_or_skip` before any DB mutation, with `SaveValidationError` caught and returned as `{applied=False, rejected=True}` rather than raising.
+- Successful merges write the merged markdown body to disk through `infra.memory_common.safe_atomic_write`, falling back best-effort on I/O errors so the .md file stays consistent with the DB source of truth.
+- Back-compat fallbacks are gated by runtime schema probes (e.g. `SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_field_crdt' LIMIT 1`) rather than hard-coded version constants.

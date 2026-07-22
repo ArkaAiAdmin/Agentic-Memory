@@ -1,0 +1,1 @@
+Detects contradictions between memory notes, auto-resolves them (deterministic or LLM-gated), merges duplicate KG entities via exact and embedding similarity, and provides causal CRDT-based entity/edge replication for offline-first multi-agent sync.

@@ -1,0 +1,19 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/cache_locking
+title: Cache & Locking Infrastructure
+scope:
+- infra/cache.py
+- infra/arc_cache.py
+- infra/policy_hash_cache.py
+- infra/file_lock.py
+- infra/dist_lock.py
+- infra/lock_manager.py
+source_files:
+- infra/cache.py
+- infra/arc_cache.py
+- infra/policy_hash_cache.py
+- infra/file_lock.py
+- infra/dist_lock.py
+- infra/lock_manager.py
+depends_on: []
+related_to: []

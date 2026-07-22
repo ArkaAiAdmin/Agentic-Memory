@@ -1,0 +1,2 @@
+- Each shim module imports the real target once at the top and re-exports it via `from <new_location> import *` or explicit aliases, never duplicating implementation.
+- Shim modules issue deprecation warnings (via `warnings.warn`) when imported, pointing callers to the new import path.

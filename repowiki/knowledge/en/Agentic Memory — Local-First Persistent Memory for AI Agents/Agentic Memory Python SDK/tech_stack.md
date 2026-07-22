@@ -1,0 +1,1 @@
+SQLite-backed storage using FTS5 full-text search and a vector index table (`memory_vec_keys`, `memory_chunks`); hybrid search combines BM25 with vector similarity and optional cross-encoder reranking; adaptive retention uses Ebbinghaus-style forget curves; integration extras `langchain` and `crewai` are opt-in via `pip install agentic-memory[langchain|crewai|all]`.

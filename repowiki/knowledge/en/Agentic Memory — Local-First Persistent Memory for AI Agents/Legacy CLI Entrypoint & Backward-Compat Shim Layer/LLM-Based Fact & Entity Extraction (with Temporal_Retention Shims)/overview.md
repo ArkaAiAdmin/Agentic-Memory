@@ -1,0 +1,1 @@
+Opt-in local LLM extraction of structured facts and entities from memory content, with a provider abstraction over HuggingFace/Ollama/llama.cpp plus backward-compat shims for temporal and retention modules.

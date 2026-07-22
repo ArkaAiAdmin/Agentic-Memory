@@ -1,0 +1,1 @@
+Zero-dependency stdlib-only HTTP server (`http.server.ThreadingHTTPServer`), raw UDP multicast sockets for mDNS, OS `flock` for cross-process mutual exclusion, and a polling-based filesystem watcher (no `inotify`/`watchdog`). Optional Authlib JWT verification is imported lazily only when present.

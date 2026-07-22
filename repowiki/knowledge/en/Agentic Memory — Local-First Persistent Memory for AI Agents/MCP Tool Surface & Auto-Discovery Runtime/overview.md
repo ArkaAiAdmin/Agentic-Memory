@@ -1,0 +1,1 @@
+Agentic-memory's MCP tool registry that auto-discovers every mcp_*.py module, registers their @mcp.tool() handlers, and re-exports memory_* functions as a flat public surface.

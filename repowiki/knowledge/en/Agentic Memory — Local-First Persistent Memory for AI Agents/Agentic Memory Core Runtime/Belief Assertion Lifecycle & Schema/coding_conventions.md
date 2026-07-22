@@ -1,0 +1,5 @@
+- Every public function takes a database handle as the first positional argument typed as `AnyConnection` from `infra.db`, never owning or creating connections itself.
+- Database access uses raw SQLite parameterized queries with `?` placeholders through `conn.execute(...).fetchone()/fetchall()`, avoiding any ORM or query builder.
+- JSON columns (`evidence_chain`) are always stored as `json.dumps`-serialized strings and deserialized back to Python lists on read, with `if row[7] else []` fallbacks guarding against NULL.
+- Status transitions validate against a local literal set (`{'active', 'retracted', 'deprecated', 'unconfirmed'}`) and log a warning before returning False on invalid input.
+- Schema bootstrapping is idempotent: `ensure_beliefs_schema` runs `CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS` via `executescript`, safe to call on every connection open.

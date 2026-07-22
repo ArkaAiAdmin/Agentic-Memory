@@ -1,0 +1,1 @@
+Three cooperating Python packages that together provide a SQLite-backed knowledge graph and temporal fact store: schema/extract/search (knowledge_graph/), graph algorithms/consistency/CRDT (kg/), and multi-layer fact extraction with temporal semantics (fact/).

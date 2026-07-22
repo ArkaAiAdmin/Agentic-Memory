@@ -1,0 +1,1 @@
+Implements the canonical 14-phase search pipeline (retrieval, fusion, KG traversal, contradiction resolution, post-processing, synthesis) and a LightGBM LambdaMART LTR stage that owns final ranking.

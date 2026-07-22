@@ -1,0 +1,1 @@
+Human-authored scratchpad for the 2026-06-24 technical audit of agentic-memory and draft submission materials for the DEBS/OPODIS 2026 conference.

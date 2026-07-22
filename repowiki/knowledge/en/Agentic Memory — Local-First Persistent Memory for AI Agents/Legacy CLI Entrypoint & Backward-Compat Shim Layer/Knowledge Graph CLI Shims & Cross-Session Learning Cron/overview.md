@@ -1,0 +1,1 @@
+Backward-compat shim modules for relocated knowledge-graph and fact packages, plus a standalone cron entrypoint that scans recent session notes to auto-extract reusable lessons.

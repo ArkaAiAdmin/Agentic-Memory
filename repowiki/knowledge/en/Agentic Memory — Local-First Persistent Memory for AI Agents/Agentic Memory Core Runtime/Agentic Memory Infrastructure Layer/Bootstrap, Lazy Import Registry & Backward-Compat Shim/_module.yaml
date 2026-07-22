@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/bootstrap_and_shim
+title: Bootstrap, Lazy Import Registry & Backward-Compat Shim
+scope:
+- infra/_bootstrap_path.py
+- infra/_lazy_imports.py
+- infra/_shim.py
+source_files:
+- infra/_bootstrap_path.py
+- infra/_lazy_imports.py
+- infra/_shim.py
+depends_on: []
+related_to: []

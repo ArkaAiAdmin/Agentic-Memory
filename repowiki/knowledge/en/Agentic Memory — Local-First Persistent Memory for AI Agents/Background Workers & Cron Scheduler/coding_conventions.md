@@ -1,0 +1,3 @@
+- Every periodic job is a standalone `cron_<name>.py` script registered in `scheduler.py`'s declarative registry and invoked only through `enqueue_task.enqueue_task(...)` — never called directly from outside cron.
+- Cron scripts and the background daemon share imports from `background.jobs` / `background.background_queue` instead of importing each other, keeping producers and consumers decoupled.
+- All persistent state (queue rows, execution history, drift caches) lives in the single `cron/memory.db` SQLite file with WAL mode, accessed through the shared `jobs.py` helpers.

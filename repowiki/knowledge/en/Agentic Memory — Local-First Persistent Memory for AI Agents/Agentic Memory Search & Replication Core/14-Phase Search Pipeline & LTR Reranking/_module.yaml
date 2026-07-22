@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: search_index/search_pipeline
+title: 14-Phase Search Pipeline & LTR Reranking
+scope:
+- search/phases/
+- search/ltr/
+source_files:
+- search/phases/
+- search/ltr/
+depends_on: []
+related_to:
+- path: sdk_package

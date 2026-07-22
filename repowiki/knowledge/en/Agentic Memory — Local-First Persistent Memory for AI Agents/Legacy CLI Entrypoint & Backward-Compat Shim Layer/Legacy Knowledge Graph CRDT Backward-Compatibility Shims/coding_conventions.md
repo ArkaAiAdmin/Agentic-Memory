@@ -1,0 +1,2 @@
+- Every shim file follows the same three-part template: comment header naming the real package, lazy `__getattr__`/`__dir__` for attribute forwarding, and a `sys.modules[__name__]` guard that installs the runtime shim when the module is loaded as a top-level script.
+- The actual implementation reference is kept in a private `_real` variable and accessed exclusively through `getattr(_real, name)` inside `__getattr__`, keeping the shim transparent to callers.

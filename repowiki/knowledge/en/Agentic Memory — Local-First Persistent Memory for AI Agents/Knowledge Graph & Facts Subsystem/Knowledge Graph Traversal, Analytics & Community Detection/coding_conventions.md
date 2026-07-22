@@ -1,0 +1,4 @@
+- Every public function accepts an `conn: AnyConnection` parameter and queries the `kg_edges` table with the same inactive-edge filter `WHERE invalid_at IS NULL OR invalid_at = ''`.
+- Analytics/community functions follow a compute-then-persist split: a `compute_*` function returns a `{entity_id: score}` dict while a matching `update_*` / `write_*` function loops over results and issues per-row `UPDATE kg_entities SET ... WHERE id = ?` statements.
+- Results are bulk-fetched via `IN (?)` placeholders built from collected IDs to avoid N+1 queries when resolving entity metadata after a traversal or analytics pass.
+- Each module uses `from __future__ import annotations` plus a `TYPE_CHECKING` block to keep the runtime dependency on `infra.db.AnyConnection` out of the import graph.

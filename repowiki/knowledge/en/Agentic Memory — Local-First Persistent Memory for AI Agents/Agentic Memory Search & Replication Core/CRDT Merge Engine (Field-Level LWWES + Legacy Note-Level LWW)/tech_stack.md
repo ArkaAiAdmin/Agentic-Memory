@@ -1,0 +1,1 @@
+SQLite-backed CRDT using JSON-encoded version vectors and a custom logical clock; persistence via raw `sqlite3.execute` statements rather than an ORM; convergence guaranteed by the standard LWW-Element-Set pattern over per-field registers.
