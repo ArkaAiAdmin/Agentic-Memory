@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -91,7 +92,8 @@ def _record_drift_event(
 
     import numpy as _np
 
-    alarm_id = f"drift_{int(time_mod.time())}"
+    # M29 fix: use uuid4 to avoid collision when multiple drifts detected in the same second
+    alarm_id = f"drift_{uuid.uuid4().hex[:12]}"
     detected_at_iso = time_mod.strftime("%Y-%m-%dT%H:%M:%SZ", time_mod.gmtime())
     # The `drifted_dimensions` column stores the centroid (not a list
     # of dim deltas).  Downstream read code parses it as a numpy
@@ -106,15 +108,17 @@ def _record_drift_event(
         (alarm_id, round(drift, 4), centroid_json, time_mod.time()),
     )
 
-    # Severity tier for the per-memory alarms.
+    # L22 fix: unify alarm_level with return dict logic (same thresholds)
     if is_baseline:
         alarm_level = "info"
     elif drift >= 2.0 * threshold:
         alarm_level = "critical"
     elif drift >= 1.5 * threshold:
         alarm_level = "warning"
-    else:
+    elif drift >= threshold:
         alarm_level = "info"
+    else:
+        alarm_level = ""
 
     # Top-5 dimensions that drifted the most.
     top_idxs = sorted(
@@ -268,15 +272,8 @@ def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15, tenant_
             "alarm_id": alarm_id,
             "n_embedded": len(vectors),
             "n_alarms_written": n_alarms_written,
-            "alarm_level": (
-                "critical"
-                if drift >= 2.0 * threshold
-                else "warning"
-                if drift >= 1.5 * threshold
-                else "info"
-                if drift >= threshold
-                else ""
-            ),
+            # L22 fix: use pre-computed alarm_level instead of duplicating threshold logic
+            "alarm_level": alarm_level,
         }
     finally:
         safe_close_db(conn)

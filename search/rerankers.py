@@ -40,75 +40,14 @@ logger = logging.getLogger(__name__)
 
 _mps_warned = False
 
+# M10 fix: trimmed to ≤2-char function words only.  Longer entries
+# like "about", "any", "some", "all" and pronouns can be meaningful
+# in tech queries and should not be stripped before CE scoring.
 _CE_STOPWORDS = frozenset(
     {
-        "a",
-        "an",
-        "and",
-        "are",
-        "as",
-        "at",
-        "be",
-        "by",
-        "for",
-        "from",
-        "has",
-        "have",
-        "in",
-        "is",
-        "it",
-        "its",
-        "of",
-        "on",
-        "or",
-        "that",
-        "the",
-        "this",
-        "to",
-        "was",
-        "were",
-        "will",
-        "with",
-        "i",
-        "you",
-        "we",
-        "they",
-        "he",
-        "she",
-        "what",
-        "which",
-        "who",
-        "whom",
-        "how",
-        "do",
-        "does",
-        "did",
-        "can",
-        "could",
-        "would",
-        "should",
-        "may",
-        "might",
-        "must",
-        "shall",
-        "will",
-        "about",
-        "if",
-        "then",
-        "so",
-        "than",
-        "but",
-        "not",
-        "no",
-        "any",
-        "some",
-        "all",
-        "my",
-        "your",
-        "our",
-        "their",
-        "his",
-        "her",
+        "a", "an", "as", "at", "be", "by", "do", "go", "he",
+        "if", "in", "is", "it", "me", "my", "no", "of", "on",
+        "or", "so", "to", "up", "us", "we",
     }
 )
 _CROSS_ENCODER_BLEND = 0.6
@@ -635,7 +574,7 @@ def _apply_ce_chunk_rerank(
                 ce_reranked = []
                 for r, ce_score in zip(ce_candidates, cached_scores[:len(ce_candidates)]):
                     final_score = float(r[6]) if r[6] is not None else 0.0
-                    ce_norm = max(0.0, min(1.0, (ce_score + 10.0) / 20.0))
+                    ce_norm = max(0.0, min(1.0, (max(-20.0, min(20.0, ce_score)) + 20.0) / 40.0))
                     adjusted = final_score * (1.0 - blend) + ce_norm * blend
                     new_r = list(r)
                     new_r[6] = adjusted
@@ -653,14 +592,15 @@ def _apply_ce_chunk_rerank(
     _t0 = _t.time()
     all_pairs = []
     chunk_counts = []  # how many chunks per session
+    # M14 fix: compute query_word_set once outside the loop
+    query_word_set = set(w.lower() for w in query.split() if w.lower() not in _CE_STOPWORDS)
+    if not query_word_set:
+        query_word_set = set(w.lower() for w in query.split())
     for r in ce_candidates:
         content = r[1] or ""
         chunks = _chunk_text(content)
         if len(chunks) > 2:
             # Filter chunks based on query word overlap to reduce CrossEncoder workload
-            query_word_set = set(w.lower() for w in query.split() if w.lower() not in _CE_STOPWORDS)
-            if not query_word_set:
-                query_word_set = set(w.lower() for w in query.split())
             
             scored_chunks = []
             for chunk in chunks:
@@ -709,8 +649,8 @@ def _apply_ce_chunk_rerank(
     ce_reranked = []
     for r, ce_score in zip(ce_candidates, ce_scores):
         final_score = float(r[6]) if r[6] is not None else 0.0
-        # Normalize CE score to [0, 1] range (ms-marco scores are roughly [-10, 10])
-        ce_norm = max(0.0, min(1.0, (ce_score + 10.0) / 20.0))
+        # M11 fix: widen logit clipping from [-10,10] to [-20,20] to preserve signal
+        ce_norm = max(0.0, min(1.0, (max(-20.0, min(20.0, ce_score)) + 20.0) / 40.0))
         adjusted = final_score * (1.0 - blend) + ce_norm * blend
         new_r = list(r)
         new_r[6] = adjusted
@@ -843,7 +783,8 @@ def _apply_weak_ce_rerank(
             pairs = [(query, (d or "")[:512]) for d in docs]
             raw = model.predict(pairs, show_progress_bar=False, batch_size=64)
             ce_scores = [float(x) for x in raw]
-            ce_norm = [max(0.0, min(1.0, (s + 10.0) / 20.0)) for s in ce_scores]
+            # M11 fix: widen logit clipping from [-10,10] to [-20,20] to preserve signal
+            ce_norm = [max(0.0, min(1.0, (max(-20.0, min(20.0, s)) + 20.0) / 40.0)) for s in ce_scores]
         except Exception as e:  # pragma: no cover - model present but scored badly
             logger.debug("weak CE model scoring failed (%s); hand-rolled fallback", e)
             ce_norm = [_cross_encoder_score(query, d) for d in docs]
@@ -986,7 +927,7 @@ def _apply_combined_ce_rerank(
         docs = [(query, (scored_results[i][1] or "")[:512]) for i in range(weak_k)]
         try:
             raw_w = model_w.predict(docs, show_progress_bar=False, batch_size=64)
-            ce_norm_w = [max(0.0, min(1.0, (float(x) + 10.0) / 20.0)) for x in raw_w]
+            ce_norm_w = [max(0.0, min(1.0, (max(-20.0, min(20.0, float(x))) + 20.0) / 40.0)) for x in raw_w]
         except Exception as e:  # pragma: no cover - model present but failed
             logger.debug("combined weak CE model failed (%s); hand-rolled", e)
             ce_norm_w = None
@@ -1050,7 +991,7 @@ def _apply_combined_ce_rerank(
         sess = raw_scores[idx : idx + chunk_counts[j]]
         idx += chunk_counts[j]
         best = float(max(sess)) if len(sess) > 0 else 0.0
-        ce_norm_map[i] = max(0.0, min(1.0, (best + 10.0) / 20.0))
+        ce_norm_map[i] = max(0.0, min(1.0, (max(-20.0, min(20.0, best)) + 20.0) / 40.0))
 
     # SINGLE write: additive interpolation for below-p80 candidates only.
     for i in ce_candidates:

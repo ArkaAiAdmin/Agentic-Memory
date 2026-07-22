@@ -33,7 +33,7 @@ _BB2_HISTORY_MAX = 20
 _BB2_TURNS: list = []
 _BB2_LOCK = threading.Lock()
 _BB2_PRONOUNS = frozenset(
-    {"it", "its", "that", "this", "these", "those", "they", "them", "their", "the"}
+    {"it", "its", "that", "this", "these", "those", "they", "them", "their"}
 )
 _BB2_REF_PHRASES = (
     "previous one",
@@ -327,10 +327,10 @@ def _bb2_is_reference_query(query: str) -> bool:
     if not tokens:
         return False
     if len(tokens) <= 4:
-        for t in tokens:
-            t_clean = t.strip(".,?!:;()[]\"'")
-            if t_clean in _BB2_PRONOUNS:
-                return True
+        # M17 fix: require ≥2 pronoun tokens to avoid false positives on "the"
+        pronoun_count = sum(1 for t in tokens if t.strip(".,?!:;()[]\"'") in _BB2_PRONOUNS)
+        if pronoun_count >= 2:
+            return True
     for phrase in _BB2_REF_PHRASES:
         if phrase in q:
             return True

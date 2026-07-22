@@ -15,6 +15,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Module-level compiled regex for 2nd-hop domain-phrase extraction
+# (M7 fix: compiled once instead of recompiled per inner-loop iteration).
+_HOP2_PATTERN = re.compile(
+    r"\b(?:[a-zA-Z0-9-]+\s+){1,3}"
+    r"(?:microservices?|servers?|databases?|pipelines?|"
+    r"protocols?|services?|workers?|clusters?)\b"
+    r"|\bPort\s+\d+\b",
+    re.IGNORECASE,
+)
+
 # Stop words for content-based entity extraction — common words that
 # aren't useful as KG entity names.  Sized for tech-content domain:
 # includes standard English stop words plus programming/doc terms.
@@ -312,14 +322,7 @@ def _text_multi_hop_traversal(
                         if sub_id not in seen_ids and sub_id not in extra_mids:
                             extra_mids.append(sub_id)
                         # 2nd hop: extract domain-typed phrases and search
-                        hop2_pattern = re.compile(
-                            r"\b(?:[a-zA-Z0-9-]+\s+){1,3}"
-                            r"(?:microservices?|servers?|databases?|pipelines?|"
-                            r"protocols?|services?|workers?|clusters?)\b"
-                            r"|\bPort\s+\d+\b",
-                            re.IGNORECASE,
-                        )
-                        for m in hop2_pattern.finditer(sub_cnt):
+                        for m in _HOP2_PATTERN.finditer(sub_cnt):
                             ph = m.group(0).strip()
                             if not ph:
                                 continue
@@ -400,11 +403,11 @@ def _phase_ten_kg_boost(
             if "/" in mid:
                 slug = mid.split("/", 1)[1]
                 entity_tokens.add(slug.lower())
-                for word in re.findall(r"[a-z0-9]+", slug.lower()):
+                for word in re.findall(r"\b[a-z0-9]+\b", slug.lower()):
                     if len(word) > 2:
                         entity_tokens.add(word)
             if content:
-                for word in re.findall(r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*", content[:3000]):
+                for word in re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", content[:3000]):
                     if len(word) > 3:
                         entity_tokens.add(word.lower())
                 for word in re.findall(r"[a-z0-9]{4,}", content[:3000].lower()):

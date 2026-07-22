@@ -33,11 +33,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Default budget thresholds (ms)
-_BUDGET_SKIP_COLBERT = 300
-_BUDGET_SKIP_ANSWER_RERANK = 200
-_BUDGET_SKIP_CHUNK_CE = 100
-_BUDGET_SKIP_CE = 50
+# Default budget thresholds (ms) — elapsed time above which a stage is skipped.
+_BUDGET_THRESHOLD_COLBERT = 300
+_BUDGET_THRESHOLD_ANSWER_RERANK = 200
+_BUDGET_THRESHOLD_CHUNK_CE = 100
+_BUDGET_THRESHOLD_CE = 50
 
 
 @dataclass

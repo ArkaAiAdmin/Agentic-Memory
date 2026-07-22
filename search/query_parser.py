@@ -589,7 +589,12 @@ _QUERY_TYPE_MULTIHOP_RE = re.compile(
     re.IGNORECASE,
 )
 _QUERY_TYPE_CODE_RE = re.compile(
-    "\\b(function|class|method|import|return|def |var |let |const |\\.py|\\.js|\\.ts|\\.go|\\.rs|error|exception|stacktrace|syntax|compile|build|test|spec|fixture)\\b",
+    "\\b(function|class|method|import|return|def |var |let |const |\\.py|\\.js|\\.ts|\\.go|\\.rs|error|exception|stacktrace|syntax|compile|build)\\b",
+    re.IGNORECASE,
+)
+# M16 fix: separate word-bounded patterns for generic terms to reduce false positives
+_QUERY_TYPE_CODE_BOUNDED_RE = re.compile(
+    "\\b(testing|unit.test|test.case|spec|fixture)\\b",
     re.IGNORECASE,
 )
 _QUERY_TYPE_FACTUAL_RE = re.compile(
@@ -600,8 +605,9 @@ _QUERY_TYPE_FACTUAL_RE = re.compile(
 # Inference queries: "Would X likely Y?", "Does X have Y?", "Is X considered Y?"
 # These require finding sessions about a specific entity AND related concepts.
 # The entity name must appear in matching sessions (AND anchor).
+# L11 fix: deduplicated alternants (play×2, study×2 removed).
 _QUERY_TYPE_INFERENCE_RE = re.compile(
-    "\\b(would|might|could|does|do|is|are|was|were)\\b.*\\b(likely|probably|considered|interested|have|has|be|been|enjoy|like|prefer|choose|pursue|collect|play|read|watch|listen|cook|eat|drink|visit|go|travel|live|work|study|practice|play|run|swim|hike|camp|paint|draw|write|sing|dance|play|drive|ride|fly|sail|climb|build|make|create|design|plan|organize|manage|lead|teach|learn|study|research|explore|discover|invent|innovate)\\b",
+    "\\b(would|might|could|does|do|is|are|was|were)\\b.*\\b(likely|probably|considered|interested|have|has|be|been|enjoy|like|prefer|choose|pursue|collect|play|read|watch|listen|cook|eat|drink|visit|go|travel|live|work|study|practice|run|swim|hike|camp|paint|draw|write|sing|dance|drive|ride|fly|sail|climb|build|make|create|design|plan|organize|manage|lead|teach|learn|research|explore|discover|invent|innovate)\\b",
     re.IGNORECASE,
 )
 
@@ -1077,11 +1083,15 @@ def _did_you_mean(query: str, synonym_map: dict) -> list:
     words = query.lower().split()
     expansions = []
     for i, w in enumerate(words):
+        if len(expansions) >= 3:
+            break
         clean = w.strip(".,;:!?()[]{}\"'`")
         syns = synonym_map.get(clean)
         if not syns:
             continue
         for syn in syns[:3]:
+            if len(expansions) >= 3:
+                break
             new_query = " ".join(words[:i] + [syn] + words[i + 1 :])
             expansions.append(new_query)
     return expansions[:3]
@@ -1175,7 +1185,10 @@ def _detect_query_type(query: str) -> str:
     """
     if not query:
         return "general"
-    if _QUERY_TYPE_CODE_RE.search(query):
+    # M16 fix: check inference before code to avoid false positives on "test"/"spec"
+    if _QUERY_TYPE_INFERENCE_RE.search(query):
+        return "inference"
+    if _QUERY_TYPE_CODE_RE.search(query) or _QUERY_TYPE_CODE_BOUNDED_RE.search(query):
         return "code"
     if _QUERY_TYPE_TEMPORAL_RE.search(query):
         return "temporal"

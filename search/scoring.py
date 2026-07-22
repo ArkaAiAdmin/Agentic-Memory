@@ -138,6 +138,7 @@ def _get_strong_bm25_threshold() -> float:
 
 
 _STRONG_BM25_THRESHOLD = None  # lazy: computed on first access
+_STRONG_BM25_THRESHOLD_LOCK = threading.RLock()
 
 
 def _normalize_bm25_ranks(results: list) -> list:
@@ -189,10 +190,11 @@ def _sp_lazy(name: str, default: object = None) -> object:
     up the flag there, falling back to ``default`` if it's not set
     (e.g. during testing or before the config singleton is initialized).
     """
-    sp = sys.modules.get("search_pipeline")
-    if sp is None:
+    try:
+        import search_pipeline as sp
+        return getattr(sp, name, default)
+    except ImportError:
         return default
-    return getattr(sp, name, default)
 
 
 def _get_rerank_half_life_days() -> float:
@@ -481,8 +483,11 @@ def _strong_match_float(rows):
     if not rows:
         return rows
     strong, rest = [], []
+    # M9 fix: double-checked locking for thread-safe lazy init
     if _STRONG_BM25_THRESHOLD is None:
-        _STRONG_BM25_THRESHOLD = _get_strong_bm25_threshold()
+        with _STRONG_BM25_THRESHOLD_LOCK:
+            if _STRONG_BM25_THRESHOLD is None:
+                _STRONG_BM25_THRESHOLD = _get_strong_bm25_threshold()
     for r in rows:
         try:
             _r = float(r[5]) if len(r) > 5 else 0.0  # raw fts5 rank
@@ -567,20 +572,32 @@ def _compute_final_score(ctx) -> float:
     # six-channel weights stay authoritative.  The only legitimate override
     # is an explicit ScoreContext.recency_weight of exactly 0.0, which
     # suppresses recency entirely; any other value is ignored.
-    # Use local defaults instead of re-fetching from config per key.
-    # weights already contains the merged dict; avoid 5x _get_rerank_weights() calls.
-    _defaults = {"bm25": 0.40, "fitness": 0.20, "importance": 0.15, "pinned": 0.10, "recency": 0.10, "tag_match": 0.05}
-    _recency_weight = float(weights.get("recency", _defaults["recency"]))
+    # M12 fix: use _RERANK_WEIGHTS as single source of truth (no duplicate _defaults dict).
+    _recency_weight = float(weights.get("recency", _RERANK_WEIGHTS["recency"]))
     _ctx_rw = getattr(ctx, "recency_weight", None)
     if _ctx_rw is not None and float(_ctx_rw) == 0.0:
         _recency_weight = 0.0
+    # M13 fix: when recency is zeroed, redistribute its weight proportionally
+    # across the other non-pinned channels so total weight stays at 1.0.
+    _bm25_w = float(weights.get("bm25", _RERANK_WEIGHTS["bm25"]))
+    _fitness_w = float(weights.get("fitness", _RERANK_WEIGHTS["fitness"]))
+    _importance_w = float(weights.get("importance", _RERANK_WEIGHTS["importance"]))
+    _pinned_w = float(weights.get("pinned", _RERANK_WEIGHTS["pinned"]))
+    _tag_w = float(weights.get("tag_match", _RERANK_WEIGHTS["tag_match"]))
+    if _recency_weight == 0.0:
+        _non_pinned_sum = _bm25_w + _fitness_w + _importance_w + _tag_w
+        if _non_pinned_sum > 0:
+            _scale = (1.0 - _pinned_w) / _non_pinned_sum
+            _bm25_w *= _scale
+            _fitness_w *= _scale
+            _importance_w *= _scale
+            _tag_w *= _scale
     raw = (
-        float(weights.get("bm25", _defaults["bm25"])) * bm25_score
-        + float(weights.get("fitness", _defaults["fitness"])) * fitness_score
-        + float(weights.get("importance", _defaults["importance"]))
-        * importance_normalized
-        + float(weights.get("pinned", _defaults["pinned"])) * pinned_bonus
-        + float(weights.get("tag_match", _defaults["tag_match"])) * tag_match
+        _bm25_w * bm25_score
+        + _fitness_w * fitness_score
+        + _importance_w * importance_normalized
+        + _pinned_w * pinned_bonus
+        + _tag_w * tag_match
         + _recency_weight * recency_score
     )
     # Neural retention blend: memories.score (from neural_forget) is a
@@ -715,13 +732,11 @@ def get_ctr_weights(db_path: Any) -> Optional[dict[str, float]]:
 
         db = connection_pool.get(str(db_path), timeout=5.0)
         try:
-            tables = {
-                row[0]
-                for row in db.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                ).fetchall()
-            }
-            if "memory_ctr_feedback" not in tables:
+            # L6 fix: use PRAGMA table_info instead of full sqlite_master scan
+            _has_ctr = db.execute(
+                "SELECT 1 FROM PRAGMA table_info('memory_ctr_feedback') LIMIT 1"
+            ).fetchone()
+            if not _has_ctr:
                 with _CTR_WEIGHTS_CACHE_LOCK:
                     _CTR_WEIGHTS_CACHE = (time.time(), None, ctr_enabled, db_path_str, st_ino)
                 return None

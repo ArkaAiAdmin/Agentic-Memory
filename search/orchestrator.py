@@ -1,7 +1,3 @@
-from __future__ import annotations
-
-import os
-
 """14-phase hybrid search orchestrator for agentic-memory.
 
 Pipeline phases (executed in order):
@@ -28,6 +24,10 @@ No single phase failure kills the search.
 Thread safety: uses module-level ``_db_columns_cache`` (Lock) and
 ``_phase_latencies`` (Lock) for cross-call shared state.
 """
+
+from __future__ import annotations
+
+import os
 
 import logging
 import re
@@ -226,6 +226,7 @@ _db_columns_cache_lock = threading.Lock()
 # Backward-compatible phase latency tracking (pre-error_counter API).
 _phase_latencies: dict[str, float] = {}
 _phase_latencies_lock = threading.Lock()
+_phase_latencies_local = threading.local()  # per-call latency dict for concurrent safety
 
 
 @dataclass
@@ -681,6 +682,9 @@ def _temporal_compare(
     compare timestamps. This is a post-retrieval enrichment that adds
     temporal comparison data to the result set.
     """
+    # M6 fix: cache config at function entry, not inside loops
+    from search.config import get_search_config
+    _temporal_compare_boost_cached = get_search_config().temporal_compare_boost
     import re as _re
 
     # Detect temporal comparison patterns
@@ -716,7 +720,7 @@ def _temporal_compare(
             rows = db.execute(
                 "SELECT m.id, m.observed_at FROM memories_fts fts "
                 "JOIN tenant_memories m ON m.id = "
-                "(SELECT id FROM memories WHERE rowid = fts.rowid) "
+                "(SELECT id FROM tenant_memories WHERE rowid = fts.rowid) "
                 "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
                 f"AND m.category = 'sessions' {repo_filter} "
                 "ORDER BY m.observed_at DESC LIMIT 1",
@@ -729,8 +733,8 @@ def _temporal_compare(
                     if r[0] == recent_id:
                         old_score = float(r[6]) if r[6] is not None else 0.0
                         results[i] = list(r)
-                        from search.config import get_search_config
-                        _tc_boost = get_search_config().temporal_compare_boost
+                        # M6 fix: cache config at function entry, not inside loop
+                        _tc_boost = _temporal_compare_boost_cached
                         results[i][6] = old_score * _tc_boost
                         results[i] = tuple(results[i])
                         break
@@ -774,16 +778,6 @@ def _cache_store_result(cache_key: str, result: dict, db_path: Path | str | None
         if item.get("id")
     ]
     cache_put(cache_key, result, max_size=SEARCH_CACHE_MAX)
-    # FIX 1: also mirror the result into the module-level _search_cache dict
-    # that the Phase 2 read path inspects, so identical queries register a
-    # cache hit. cache_put writes to the same dict, but we mirror it
-    # explicitly to keep the inline read path independent of infra.cache
-    # internals (TTL/eviction/MAX are applied identically here).
-    with _search_cache_lock:
-        _search_cache[cache_key] = (time.time(), result)
-        _search_cache.move_to_end(cache_key)
-        while len(_search_cache) > SEARCH_CACHE_MAX:
-            _search_cache.popitem(last=False)
     if note_ids:
         try:
             register_cache_note_ids(cache_key, note_ids)
@@ -914,8 +908,9 @@ def search_memories(
             "query_id": uuid.uuid4().hex,
         }
 
-    # Reset per-call phase latency accumulator so results are not
-    # polluted by stale entries from prior invocations.
+    # M8 fix: per-call latency dict via threading.local() so concurrent
+    # searches don't overwrite each other's phase timings.
+    _phase_latencies_local.latencies = {}
     with _phase_latencies_lock:
         _phase_latencies.clear()
     _phase_reset()
@@ -1443,7 +1438,8 @@ def search_memories(
                             for row in db.execute(
                                 "SELECT id FROM tenant_memories "
                                 "WHERE (valid_from IS NULL OR valid_from = '' OR valid_from <= ?) "
-                                "AND (valid_to IS NULL OR valid_to = '' OR valid_to > ?)",
+                                "AND (valid_to IS NULL OR valid_to = '' OR valid_to > ?)"
+                                " LIMIT 10000",
                                 (as_of_iso, as_of_iso),
                             ).fetchall()
                         }
@@ -1452,7 +1448,8 @@ def search_memories(
                             row[0]
                             for row in db.execute(
                                 "SELECT id FROM tenant_memories "
-                                "WHERE valid_to IS NULL OR valid_to = '' OR valid_to >= ?",
+                                "WHERE valid_to IS NULL OR valid_to = '' OR valid_to >= ?"
+                                " LIMIT 10000",
                                 (as_of_iso,),
                             ).fetchall()
                         }
@@ -1461,8 +1458,17 @@ def search_memories(
                         row[0]
                         for row in db.execute(
                             "SELECT id FROM tenant_memories WHERE valid_to IS NULL OR valid_to = ''"
+                            " LIMIT 10000"
                         ).fetchall()
                     }
+                if not valid_ids:
+                    return _build_empty_result_with_hint(
+                        cache_key=cache_key,
+                        query=f"{query} (after temporal filter)",
+                        db_path=db_path,
+                        hint=None,
+                        related_facts=related_facts if include_facts else None,
+                    )
                 results = [r for r in results if r[0] in valid_ids]
                 if not results:
                     return _build_empty_result_with_hint(
@@ -1474,7 +1480,6 @@ def search_memories(
                     )
 
         # Phase 9: Chunk enhancement + session clustering
-        # fact_lookup and fts modes skip Phases 9-11 (chunk enhancement,
         # KG boost, CE reranking) — these add noise on keyword-specific
         # queries and cost seconds per search. FTS5 rank is the final rank.
         if mode not in ("fact_lookup", "fts"):
@@ -1617,16 +1622,17 @@ def search_memories(
             _entity, _ = _extract_inference_entity(query)
             if _entity and results_to_display:
                 _entity_lower = _entity.lower()
+                # M6 fix: cache config at function entry, not inside loop
+                from search.config import get_search_config
+                _entity_boost = get_search_config().entity_boost_factor
                 for _idx, _rd in enumerate(results_to_display):
                     _content = (_rd[1] or "").lower() if len(_rd) > 1 else ""
                     if _entity_lower in _content:
                         # Boost final_score (index 6) by entity_boost_factor
                         _old_score = _rd[6] if len(_rd) > 6 else 0
                         if _old_score is not None:
-                            from search.config import get_search_config
-                            _boost = get_search_config().entity_boost_factor
                             _new_list = list(_rd)
-                            _new_list[6] = _old_score * _boost
+                            _new_list[6] = _old_score * _entity_boost
                             results_to_display[_idx] = tuple(_new_list)
                 # Re-sort by final_score descending after boost
                 results_to_display.sort(key=lambda x: x[6] if x[6] is not None else 0, reverse=True)
@@ -1839,8 +1845,9 @@ def search_memories(
         _phase_errs = _phase_counts()
         if _phase_errs.get("total_count"):
             result["phase_errors"] = _phase_errs
-        if _phase_latencies:
-            result["phase_latencies"] = dict(_phase_latencies)
+        _call_latencies = getattr(_phase_latencies_local, "latencies", {})
+        if _call_latencies:
+            result["phase_latencies"] = dict(_call_latencies)
         _qtype = _detect_query_type(query)
         _record_search_telemetry(
             db=db,
@@ -1852,7 +1859,7 @@ def search_memories(
         _record_search_phase_latencies(
             db=db,
             query_id=result["query_id"],
-            phase_latencies=dict(_phase_latencies),
+            phase_latencies=dict(_call_latencies),
         )
         return result
     except Exception as e:
@@ -1875,5 +1882,10 @@ def search_memories(
 def _record_phase_latency(name: str, start_time: float) -> None:
     """Record elapsed wall-clock latency for *name* into _phase_latencies."""
     elapsed_ms = (time.time() - start_time) * 1000.0
+    # Write to per-call dict (thread-safe via thread isolation)
+    call_lat = getattr(_phase_latencies_local, "latencies", None)
+    if call_lat is not None:
+        call_lat[name] = elapsed_ms
+    # Also write to shared dict for backward compat (test_observability.py)
     with _phase_latencies_lock:
         _phase_latencies[name] = elapsed_ms

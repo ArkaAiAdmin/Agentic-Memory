@@ -104,6 +104,14 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                 if v > 0:
                     project_baselines[proj.lower()] = v
 
+            # M27 fix: only extract numbers from lines that contain aggregation keywords
+            # to avoid false positives from dates, IDs, or other numeric text
+            has_agg_context = any(
+                kw in content_line_lower
+                for kw in ("total", "sum", "combined", "headcount", "net", "overall", "final", "users", "employees", "engineers", "staff", "team")
+            )
+            if not has_agg_context:
+                continue
             matches = _NUM_RE.findall(content_line)
             for num_str, suffix in matches:
                 v = parse_numeric_val(num_str, suffix)

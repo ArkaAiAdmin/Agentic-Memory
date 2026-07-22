@@ -23,7 +23,7 @@ _CTR_FEEDBACK_ACTION_MAP = {
 
 def record_ctr_feedback_db(
     db_path: str | Path,
-    id: str,
+    memory_id: str,
     query_id: str,
     action: str = "returned",
     returned_at: Optional[float] = None,
@@ -50,7 +50,7 @@ def record_ctr_feedback_db(
 
     Args:
         db_path: Path to the memory SQLite database.
-        id: Memory id; maps to the ``memory_ctr_feedback.id`` column and to
+        memory_id: Memory id; maps to the ``memory_ctr_feedback.id`` column and to
             ``memory_search_interaction.memory_id``.
         query_id: Search query correlation id.
         action: One of ``returned`` / ``clicked`` / ``dismissed`` (legacy) or
@@ -82,7 +82,7 @@ def record_ctr_feedback_db(
             "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(query_id, memory_id, action) "
             "DO UPDATE SET ts=excluded.ts, rank=excluded.rank, query_type=coalesce(excluded.query_type, memory_search_interaction.query_type)",
-            (query_id, id, mapped_action, tenant_id, None, query_type),
+            (query_id, memory_id, mapped_action, tenant_id, None, query_type),
         )
         conn.commit()
         # Correlate the click/dismiss signal onto the matching impression row
@@ -95,13 +95,13 @@ def record_ctr_feedback_db(
                     conn.execute(
                         "UPDATE memory_ctr_feedback SET clicked_at=? "
                         "WHERE query_id=? AND id=?",
-                        (_now, query_id, id),
+                        (_now, query_id, memory_id),
                     )
                 else:
                     conn.execute(
                         "UPDATE memory_ctr_feedback SET dismissed_at=? "
                         "WHERE query_id=? AND id=?",
-                        (_now, query_id, id),
+                        (_now, query_id, memory_id),
                     )
                 conn.commit()
             except Exception as _ctr_exc:

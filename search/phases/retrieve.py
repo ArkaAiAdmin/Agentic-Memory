@@ -44,10 +44,15 @@ def _fts_search(
         _params = ()
     _order = "m.observed_at DESC" if recency_order else "fts.rank"
     params = (fts_query,) + tag_filter_params + _params
+    # M5 fix: select 13 columns matching the canonical tuple shape
+    # (id, content, source_file, tags, created, rank, fitness, importance,
+    #  pinned, last_accessed, metadata, access_count, score).
+    # Removed m.supersedes — accessed defensively at r[13] but always None
+    # for FTS results; canonical 13-col form already handles it.
     res = db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
         f"             {'m.fitness_score, m.importance, m.pinned' if has_fitness else 'NULL, NULL, NULL'}, m.last_accessed, m.metadata, m.access_count,\n"
-        "             m.score, m.supersedes\n"
+        "             m.score\n"
         "      FROM memories_fts fts\n"
         "      JOIN tenant_memories m ON m.id = fts.id\n"
         f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
@@ -61,7 +66,7 @@ def _fts_search(
         res = db.execute(
             f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
             f"             {'m.fitness_score, m.importance, m.pinned' if has_fitness else 'NULL, NULL, NULL'}, m.last_accessed, m.metadata, m.access_count,\n"
-            "             m.score, m.supersedes\n"
+            "             m.score\n"
             "      FROM memories_fts fts\n"
             "      JOIN tenant_memories m ON m.id = fts.id\n"
             f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter_fallback}\n"
@@ -308,7 +313,7 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None) -> l
     for pred in _ENTAILMENT_PREDICATES:
         # Support both with and without internal underscores in the user query.
         readable = pred.replace("_", " ")
-        if readable in q_lower or (pred == "is_a" and re.search(r"\bis\b", q_lower)):
+        if readable in q_lower:
             matched_predicate = pred
             break
     if matched_predicate is None:
@@ -326,9 +331,15 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None) -> l
     ]
     entity_term = max(entity_candidates, key=len) if entity_candidates else query
     # Collapse multi-word entity into a single LIKE token set.
+    # M20 fix: escape % and _ in user-controlled tokens to prevent
+    # unintended LIKE wildcard expansion.
     tokens = re.findall(r"[A-Za-z][A-Za-z\-_/]+", entity_term)
-    filtered_tokens = [t for t in tokens if len(t) > 2]
-    like_pattern = "%" + "%".join(filtered_tokens) + "%" if filtered_tokens else "%" + entity_term + "%"
+    filtered_tokens = [
+        t.replace("%", "\\%").replace("_", "\\_")
+        for t in tokens
+        if len(t) > 2
+    ]
+    like_pattern = "%" + "%".join(filtered_tokens) + "%" if filtered_tokens else "%" + entity_term.replace("%", "\\%").replace("_", "\\_") + "%"
     _pooled_conn = None
     if conn is None:
         try:
@@ -348,7 +359,7 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None) -> l
                                    'part_of','has_part','located_in','subclass_of')
               AND kf.belief_status = 'active'
               AND kf.is_entailed = 1
-              AND (kf.subject LIKE ? OR kf.object LIKE ?)
+              AND (kf.subject LIKE ? ESCAPE '\\' OR kf.object LIKE ? ESCAPE '\\')
             LIMIT ?
             """,
             (like_pattern, like_pattern, limit),

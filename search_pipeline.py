@@ -103,6 +103,9 @@ __all__ = [
     "_QUERY_TYPE_MULTIHOP_RE",
     "_QUERY_TYPE_CODE_RE",
     "_QUERY_TYPE_FACTUAL_RE",
+    "_parse_search_query",
+    "_escape_fts_query",
+    "_escape_phrase",
     # rerankers (source-of-truth: search/rerankers.py)
     "_tokenize_for_ce",
     "_cross_encoder_score",

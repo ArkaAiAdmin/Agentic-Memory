@@ -58,18 +58,22 @@ def _record_search_telemetry(
         # so a later click/dismiss (record_ctr_feedback_db) can stamp the
         # same row and compute_channel_weights learns the real signal.
         # ON CONFLICT preserves clicked_at/dismissed_at across re-impressions.
+        # M25 fix: batch all CTR feedback inserts with executemany().
+        _ctr_params = []
         for _r in result_items:
             _rid = _r.get("id") if isinstance(_r, dict) else None
             if not _rid:
                 continue
-            db.execute(
+            _ctr_params.append((query_id, _rid, _now, _ranking))
+        if _ctr_params:
+            db.executemany(
                 "INSERT INTO memory_ctr_feedback "
                 "(query_id, id, returned_at, source, ranking_params) "
                 "VALUES (?, ?, ?, 'search', ?) "
                 "ON CONFLICT(query_id, id) DO UPDATE SET "
                 "returned_at=excluded.returned_at, "
                 "ranking_params=excluded.ranking_params",
-                (query_id, _rid, _now, _ranking),
+                _ctr_params,
             )
         db.commit()
     except Exception as e:
@@ -81,14 +85,20 @@ def _record_search_telemetry(
             tenant_id = _tenant_row[0] if _tenant_row else "default"
         except Exception:
             tenant_id = "default"
+        # M25 fix: batch search_interaction inserts with executemany().
+        _interaction_params = []
         for i, r in enumerate(result_items):
-            db.execute(
+            _interaction_params.append(
+                (query_id, r.get("id"), tenant_id, i + 1, query_type or "general")
+            )
+        if _interaction_params:
+            db.executemany(
                 "INSERT INTO memory_search_interaction "
                 "(query_id, memory_id, action, tenant_id, rank, query_type) "
                 "VALUES (?, ?, 'impression', ?, ?, ?) "
                 "ON CONFLICT(query_id, memory_id, action) "
                 "DO UPDATE SET ts=excluded.ts, rank=excluded.rank, query_type=coalesce(excluded.query_type, memory_search_interaction.query_type)",
-                (query_id, r.get("id"), tenant_id, i + 1, query_type or "general"),
+                _interaction_params,
             )
         db.commit()
     except Exception as e:
@@ -97,8 +107,15 @@ def _record_search_telemetry(
     try:
         from adaptive_retention import record_access
 
+        # M25 fix: batch adaptive retention inserts with executemany().
+        _retention_params = []
         for r in result_items:
-            record_access(db, r.get("id", ""), source="search")
+            _retention_params.append((r.get("id", ""), "search"))
+        if _retention_params:
+            db.executemany(
+                "INSERT OR IGNORE INTO memory_access_log (memory_id, source) VALUES (?, ?)",
+                _retention_params,
+            )
         db.commit()
     except Exception as e:
         _phase_inc("search.telemetry.adaptive_retention", e)

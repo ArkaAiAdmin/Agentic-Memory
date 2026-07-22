@@ -221,12 +221,20 @@ def _load_jaccard_map(items: list, query: str) -> dict:
 
 # -- Per-item factor computations (mirror search.scoring exactly) ------------
 
+_concept_factor_cache: dict[tuple[str, str], float] = {}
+
 
 def _concept_factor(item: dict, query: str, concept_map: dict[str, set[int]]) -> float:
     if not concept_map or not query:
         return 1.0
+    note_id = item.get("id", "")
+    cache_key = (note_id, query)
+    cached = _concept_factor_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    # M19 fix: use Unicode-aware regex to avoid dropping non-ASCII query tokens
     q_tokens = {
-        t.lower() for t in re.findall(r"\b[a-z][a-z\-]+\b", query.lower()) if len(t) >= 3
+        t.lower() for t in re.findall(r"\b\w[\w\-]+\b", query.lower(), re.UNICODE) if len(t) >= 3
     }
     note_id = item.get("id")
     source_file = item.get("source_file")
@@ -254,7 +262,10 @@ def _concept_factor(item: dict, query: str, concept_map: dict[str, set[int]]) ->
     # Cap mirrors _apply_concept_boost: the final boosted score is
     # min(boosted, _MAX_BOOST * final_score), so for a positive score the
     # relative factor applied is min(boosted, _MAX_BOOST).
-    return min(boosted, _MAX_BOOST)
+    result = min(boosted, _MAX_BOOST)
+    if len(_concept_factor_cache) < 4096:
+        _concept_factor_cache[cache_key] = result
+    return result
 
 
 def _centrality_factor(item: dict, centrality_map: dict[int, float]) -> float:

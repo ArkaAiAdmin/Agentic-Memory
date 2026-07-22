@@ -233,24 +233,8 @@ def _qw5_chunk_content(content: str) -> list:
         pos = m.end()
     if pos < len(content):
         spans.append((pos, len(content)))
-    if not spans:
-        logger.warning(
-            "No sentence boundaries found; falling back to word-boundary-aware hard split at %d chars",
-            _QW5_CHUNK_MAX_SIZE,
-        )
-        i = 0
-        while i < len(content):
-            end = min(i + _QW5_CHUNK_MAX_SIZE, len(content))
-            if end < len(content):
-                last_space = content.rfind(" ", i, end)
-                if last_space > i + _QW5_CHUNK_MAX_SIZE // 2:
-                    end = last_space
-                chunk_text = content[i:end] + "..."
-            else:
-                chunk_text = content[i:end]
-            chunks.append((i, end, chunk_text))
-            i = end
-        return chunks
+    # M28 fix: removed dead fallback — for non-empty content, at least one
+    # span is always appended (pos=0, len(content)>0 → condition is true).
     cursor = 0
     while cursor < len(spans):
         cur_start, cur_end = spans[cursor]
