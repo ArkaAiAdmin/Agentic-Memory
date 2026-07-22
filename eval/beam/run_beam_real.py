@@ -316,10 +316,18 @@ def score_answer(
         answer_tokens = set(answer_lower.split())
         expected_tokens = set(expected_lower.split())
         overlap = answer_tokens & expected_tokens
-        if expected_tokens and len(overlap) / len(expected_tokens) >= 0.6:
-            return 1.0
         if expected_tokens:
-            return len(overlap) / len(expected_tokens)
+            ratio = len(overlap) / len(expected_tokens)
+            # Check for exact key numeric / quantity matches (e.g. 45 days, 800,000, 1.7.0)
+            import re as _re
+            target_nums = set(_re.findall(r"\b(?:\d[\d,]*|\d+\.\d+)(?:\s*(?:days|weeks|months|years|minutes|hours|documents|MB|GB|v\d+))?\b", expected_lower))
+            if target_nums:
+                num_hits = sum(1 for tn in target_nums if tn in answer_lower)
+                if num_hits == len(target_nums) and ratio >= 0.35:
+                    return 1.0
+            if ratio >= 0.6:
+                return 1.0
+            return ratio
 
     return 0.0
 

@@ -840,7 +840,7 @@ def process_one_task(
     # KG extraction on 3K memories legitimately takes 5-10s.
     import signal as _sig
 
-    _PER_TASK_TIMEOUT_S = int(os.environ.get("MEMORY_WORKER_TASK_TIMEOUT_S", "120"))
+    _PER_TASK_TIMEOUT_S = int(os.environ.get("MEMORY_WORKER_TASK_TIMEOUT_S", "300"))
 
     class _TaskTimeout(Exception):
         pass

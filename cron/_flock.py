@@ -48,10 +48,14 @@ from typing import Any
 _THIS = Path(__file__).resolve().parent
 if _THIS.name == "cron":
     _REPO_ROOT = _THIS.parent
+    _CRON_DIR = _THIS
 else:
     _REPO_ROOT = _THIS
+    _CRON_DIR = _THIS / "cron"
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
+if str(_CRON_DIR) not in sys.path:
+    sys.path.insert(0, str(_CRON_DIR))
 
 from infra.memory_config import GLOBAL_MEM_DIR
 
