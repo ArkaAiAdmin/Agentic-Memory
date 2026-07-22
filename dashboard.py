@@ -95,6 +95,8 @@ render_sidebar()
 
 # Billing tab is always available (useful for local testing of billing flows).
 # In production, plan enforcement in the gateway gates actual usage.
+has_cloud = True
+
 if has_cloud:
     actual_tabs = _dk.TABS[:-1] + ["Billing"] + [_dk.TABS[-1]]
     (
