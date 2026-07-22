@@ -13,11 +13,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Common functional state patterns (e.g. location, employer, role, preference)
+# Common functional state patterns (category -> regex)
 _STATE_PATTERNS = [
-    re.compile(r"\b(moved to|living in|lives in|resides in|location is|relocated to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", re.IGNORECASE),
-    re.compile(r"\b(works at|working at|employed by|joined|job at|role as)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", re.IGNORECASE),
-    re.compile(r"\b(favorite|prefers|preference for)\s+([a-z\s]+)", re.IGNORECASE),
+    ("location", re.compile(r"\b(moved to|living in|lives in|resides in|location is|relocated to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", re.IGNORECASE)),
+    ("employer", re.compile(r"\b(works at|working at|employed by|joined|job at|role as)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", re.IGNORECASE)),
+    ("preference", re.compile(r"\b(favorite|prefers|preference for)\s+([a-z\s]+)", re.IGNORECASE)),
 ]
 
 
@@ -36,9 +36,9 @@ def resolve_candidate_contradictions(candidates: list[tuple]) -> list[tuple]:
         return candidates
 
     annotated = []
-    seen_states: dict[str, tuple[str, str, float]] = {}  # key -> (item_id, obj_val, timestamp)
+    seen_states: dict[str, tuple[str, str, float, int]] = {}  # cat -> (item_id, obj_val, timestamp, list_index)
 
-    for item in candidates:
+    for idx, item in enumerate(candidates):
         if not isinstance(item, (list, tuple)) or len(item) < 2:
             annotated.append(item)
             continue
@@ -50,28 +50,29 @@ def resolve_candidate_contradictions(candidates: list[tuple]) -> list[tuple]:
         score = float(item_list[6]) if len(item_list) > 6 and item_list[6] is not None else 0.0
 
         # Check for state patterns
-        detected_conflict = False
-        for pat in _STATE_PATTERNS:
+        for cat, pat in _STATE_PATTERNS:
             match = pat.search(content)
             if match:
-                pred_key = match.group(1).lower()
                 obj_val = match.group(2).strip()
 
-                if pred_key in seen_states:
-                    prev_id, prev_val, prev_ts = seen_states[pred_key]
+                if cat in seen_states:
+                    prev_id, prev_val, prev_ts, prev_idx = seen_states[cat]
                     if prev_val.lower() != obj_val.lower():
                         # Conflict detected between prev_val and obj_val
                         if ts > prev_ts:
-                            # Current item is newer -> supersedes previous
-                            logger.debug("CRGE: item %s (%s) supersedes %s (%s)", item_id, obj_val, prev_id, prev_val)
-                            seen_states[pred_key] = (item_id, obj_val, ts)
+                            # Current item is newer -> demote the older item
+                            logger.debug("CRGE: item %s (%s) supersedes older item %s (%s)", item_id, obj_val, prev_id, prev_val)
+                            seen_states[cat] = (item_id, obj_val, ts, idx)
+                            if prev_idx < len(annotated):
+                                old_item = list(annotated[prev_idx])
+                                old_item[6] = float(old_item[6]) * 0.05
+                                annotated[prev_idx] = tuple(old_item)
                         else:
-                            # Current item is older -> demote score
+                            # Current item is older -> demote current score
                             score *= 0.05
                             item_list[6] = score
-                            detected_conflict = True
                 else:
-                    seen_states[pred_key] = (item_id, obj_val, ts)
+                    seen_states[cat] = (item_id, obj_val, ts, idx)
                 break
 
         annotated.append(tuple(item_list))
