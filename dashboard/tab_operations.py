@@ -1071,5 +1071,3 @@ def _render_search_profiler() -> None:
     )
 
     st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Migrations directory not found")
