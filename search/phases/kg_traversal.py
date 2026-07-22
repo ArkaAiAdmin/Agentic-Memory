@@ -543,6 +543,38 @@ def _phase_ten_multi_hop_kg(
                 if existing is None or existing < weight_float:
                     hop2_entities[rid] = weight_float
 
+        # Round 4: traverse 3-hop edges → 3-hop result entities.
+        hop3_entities: dict[int, float] = {}
+        if hop2_entities:
+            hop2_ids = list(hop2_entities.keys())
+            hp2 = ",".join("?" * len(hop2_ids))
+            not_in_ids_3 = list(query_entity_ids) + list(hop1_entities.keys()) + hop2_ids
+            not_in_ph_3 = ",".join("?" * len(not_in_ids_3))
+            hop3_params = tuple(hop2_ids) * 4 + tuple(not_in_ids_3) + (limit * 2,)
+            try:
+                hop3_rows = db.execute(
+                    f"SELECT DISTINCT "
+                    f"  CASE WHEN ed.source_id IN ({hp2}) THEN ed.target_id ELSE ed.source_id END AS result_id, "
+                    f"  ed.weight, "
+                    f"  3 AS hop_distance "
+                    f"FROM kg_edges ed "
+                    f"WHERE (ed.source_id IN ({hp2}) OR ed.target_id IN ({hp2})) "
+                    f"AND ed.invalid_at IS NULL "
+                    f"AND CASE WHEN ed.source_id IN ({hp2}) THEN ed.target_id ELSE ed.source_id END "
+                    f"  NOT IN ({not_in_ph_3}) "
+                    f"LIMIT ?",
+                    hop3_params,
+                ).fetchall()
+                for row in hop3_rows:
+                    rid = row[0] if not isinstance(row, sqlite3.Row) else row["result_id"]
+                    weight = row[1] if not isinstance(row, sqlite3.Row) else row["weight"]
+                    weight_float = float(weight) if weight is not None else 1.0
+                    existing = hop3_entities.get(rid)
+                    if existing is None or existing < weight_float:
+                        hop3_entities[rid] = weight_float
+            except sqlite3.Error:
+                pass
+
         # Collect all result entity IDs with their hop paths.
         all_result_entities: dict[int, tuple[float, int]] = {}
         # 1-hop: entities directly connected to query entities.
@@ -556,6 +588,14 @@ def _phase_ten_multi_hop_kg(
                 score *= 0.85
             if existing_score is None or score > existing_score[0]:
                 all_result_entities[eid] = (score, 2)
+        # 3-hop: entities three steps away.
+        for eid, weight in hop3_entities.items():
+            existing_score = all_result_entities.get(eid)
+            score = 0.55
+            if weight < 0.5:
+                score *= 0.85
+            if existing_score is None or score > existing_score[0]:
+                all_result_entities[eid] = (score, 3)
 
         if not all_result_entities:
             return results
