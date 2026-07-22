@@ -185,6 +185,7 @@ def run(
 
     if resume and (target_out_path and target_out_path.exists() or checkpoint_path and checkpoint_path.exists()):
         read_path = target_out_path if target_out_path and target_out_path.exists() else checkpoint_path
+        assert read_path is not None
         try:
             with open(read_path, "r", encoding="utf-8") as f:
                 prev_report = json.load(f)
@@ -226,7 +227,7 @@ def run(
     # Warm up embedding model synchronously so it's ready before queries start
     try:
         from sentence_transformers import SentenceTransformer
-        _emb_model = SentenceTransformer("BAAI/bge-base-en-v1.5")
+        _emb_model = SentenceTransformer("BAAI/bge-m3")
         print(f"Embedding model loaded: {type(_emb_model).__name__}")
         from infra._lazy_imports import get_embedding_search
         es = get_embedding_search()
