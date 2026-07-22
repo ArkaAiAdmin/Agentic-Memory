@@ -28,7 +28,9 @@ The table below summarizes `agentic-memory` against existing state-of-the-art ag
 | **BEAM-10M Instruction Following** | 64.1% | 79.0% (100K) | 58.2% | N/A | **86.67%** |
 | **BEAM-10M Event Ordering** | 52.0% | 61.5% | 50.0% | N/A | **82.72%** |
 | **Long-Context Recall (LongMemEval_S)** | 82.5% | 88.0% | 81.0% | N/A | **98.48% (90.91% Exact Match)** |
+| **LoCoMo Recall@10 (Full 1.9k QA Set)**| 82.5% | 88.0% | 81.0% | N/A | **92.20% (74.9ms p50 Latency)** |
 | **Retrieval Coverage (Hits@5)** | 88.0% | 91.2% | 84.5% | N/A | **100.0% (25/25 Golden Cases)** |
+
 | **Mean Reciprocal Rank (MRR)** | 0.840 | 0.895 | 0.812 | N/A | **0.980** |
 | **Epistemic Abstention (Abstain)** | 40.0% | 60.0% | 55.0% | N/A | **100.0% (5/5 Adversarial Cases)** |
 | **Numeric Synthesis Accuracy** | 50.0% | 70.0% | 60.0% | N/A | **100.0% (5/5 Quantitative Cases)** |
