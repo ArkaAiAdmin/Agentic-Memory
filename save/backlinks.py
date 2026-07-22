@@ -44,6 +44,7 @@ def _auto_fts_backlinks(db, note_id: str, content: str, max_links: int = 3) -> N
         seen = set()
         for term in search_terms[:5]:
             try:
+                safe_term = '"' + term.replace('"', '""') + '"'
                 rows = db.execute(
                     """SELECT m.id
                        FROM memories_fts fts
@@ -53,7 +54,7 @@ def _auto_fts_backlinks(db, note_id: str, content: str, max_links: int = 3) -> N
                        AND m.deleted_at IS NULL
                        ORDER BY rank
                        LIMIT ?""",
-                    (term, note_id, max_links),
+                    (safe_term, note_id, max_links),
                 ).fetchall()
                 for (rid,) in rows:
                     if rid not in seen:

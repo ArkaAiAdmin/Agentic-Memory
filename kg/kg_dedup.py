@@ -135,9 +135,10 @@ def merge_entities(
 def dedup_entities(conn: AnyConnection, dry_run: bool = False) -> dict:
     """Find and merge duplicate KG entities by exact name+type match.
 
-    Strategy: group by (name, entity_type), keep the one with highest
-    id (newest), merge mentions from all duplicates into it, redirect
-    all edges to the kept entity, delete the stale rows.
+    Strategy: group by (name, entity_type), keep the entity with
+    highest mentions (tie-break: lowest id), merge mentions from all
+    duplicates into it, redirect all edges to the kept entity, delete
+    the stale rows.
 
     Returns: {"groups_found": N, "entities_merged": N, "edges_redirected": N}
     """

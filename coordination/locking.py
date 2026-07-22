@@ -42,22 +42,23 @@ class FencingLock(NamedTuple):
 
 
 def _ensure_lock_version_column(conn: sqlite3.Connection) -> None:
-    """Add lock_version column to file_locks if missing (soft migration).
-
-    Called on every public function entry. The SELECT probe is fast,
-    and the ALTER TABLE is a one-time DDL that raises OperationalError
-    if the column already exists (caught silently).
-    """
+    """Add lock_version and tenant_id columns to file_locks if missing (soft migration)."""
     try:
         conn.execute("SELECT lock_version FROM file_locks LIMIT 1")
-        return
     except sqlite3.OperationalError:
-        pass
+        try:
+            conn.execute("ALTER TABLE file_locks ADD COLUMN lock_version INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
     try:
-        conn.execute("ALTER TABLE file_locks ADD COLUMN lock_version INTEGER NOT NULL DEFAULT 0")
-        conn.commit()
+        conn.execute("SELECT tenant_id FROM file_locks LIMIT 1")
     except sqlite3.OperationalError:
-        pass
+        try:
+            conn.execute("ALTER TABLE file_locks ADD COLUMN tenant_id TEXT DEFAULT 'default'")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
 
 def _begin_immediate(conn: sqlite3.Connection) -> None:
@@ -68,15 +69,15 @@ def _begin_immediate(conn: sqlite3.Connection) -> None:
         pass
 
 
-def acquire_lock(conn: sqlite3.Connection, file_path: str, agent_id: str, ttl: int = DEFAULT_LOCK_TTL) -> bool:
+def acquire_lock(conn: sqlite3.Connection, file_path: str, agent_id: str, ttl: int = DEFAULT_LOCK_TTL, tenant_id: str = "default") -> bool:
     """Acquire exclusive lock on a file. Returns True if acquired.
 
     Legacy interface — returns bool only. Prefer acquire_lock_fenced.
     """
-    return acquire_lock_fenced(conn, file_path, agent_id, ttl).acquired
+    return acquire_lock_fenced(conn, file_path, agent_id, ttl, tenant_id).acquired
 
 
-def acquire_lock_fenced(conn: sqlite3.Connection, file_path: str, agent_id: str, ttl: int = DEFAULT_LOCK_TTL) -> FencingLock:
+def acquire_lock_fenced(conn: sqlite3.Connection, file_path: str, agent_id: str, ttl: int = DEFAULT_LOCK_TTL, tenant_id: str = "default") -> FencingLock:
     """Acquire exclusive lock with fencing token. Returns FencingLock.
 
     Uses BEGIN IMMEDIATE to prevent TOCTOU races between check and insert.
@@ -96,8 +97,8 @@ def acquire_lock_fenced(conn: sqlite3.Connection, file_path: str, agent_id: str,
         if holder == agent_id:
             new_version = version + 1
             conn.execute(
-                "UPDATE file_locks SET locked_at=?, expires_at=?, lock_version=? WHERE file_path=?",
-                (now, expires_at, new_version, file_path),
+                "UPDATE file_locks SET locked_at=?, expires_at=?, lock_version=?, tenant_id=? WHERE file_path=?",
+                (now, expires_at, new_version, tenant_id, file_path),
             )
             conn.commit()
             return FencingLock(True, new_version, agent_id, expires_at)
@@ -105,8 +106,8 @@ def acquire_lock_fenced(conn: sqlite3.Connection, file_path: str, agent_id: str,
         if exp and exp < now:
             new_version = version + 1
             conn.execute(
-                "UPDATE file_locks SET locked_by=?, locked_at=?, expires_at=?, lock_version=? WHERE file_path=?",
-                (agent_id, now, expires_at, new_version, file_path),
+                "UPDATE file_locks SET locked_by=?, locked_at=?, expires_at=?, lock_version=?, tenant_id=? WHERE file_path=?",
+                (agent_id, now, expires_at, new_version, tenant_id, file_path),
             )
             conn.commit()
             logger.info("Lock takeover: %s stole %s on %s (version %d)", agent_id, holder, file_path, new_version)
@@ -117,8 +118,8 @@ def acquire_lock_fenced(conn: sqlite3.Connection, file_path: str, agent_id: str,
             return FencingLock(False, version, holder, exp)
 
     conn.execute(
-        "INSERT INTO file_locks (file_path, locked_by, locked_at, expires_at, lock_version) VALUES (?, ?, ?, ?, 1)",
-        (file_path, agent_id, now, expires_at),
+        "INSERT INTO file_locks (file_path, locked_by, locked_at, expires_at, lock_version, tenant_id) VALUES (?, ?, ?, ?, 1, ?)",
+        (file_path, agent_id, now, expires_at, tenant_id),
     )
     conn.commit()
     return FencingLock(True, 1, agent_id, expires_at)

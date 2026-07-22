@@ -570,7 +570,7 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
             # skipped because of the file-presence filter in
             # ``_get_applied_migrations``), bump once more to the
             # cap.  This is idempotent.
-            if SCHEMA_VERSION > highest_applied if applied else False:
+            if not broke_for_deferred and (SCHEMA_VERSION > (highest_applied if applied else 0)):
                 conn.execute(
                     "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
                     (SCHEMA_VERSION, json.dumps(checksums)),

@@ -68,8 +68,10 @@ def get_stored_model_config() -> dict:
 
 
 def save_model_config(config: dict):
-    """Save the current model config as the vec index metadata."""
-    VEC_META_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    """Save the current model config as the vec index metadata atomically."""
+    tmp = VEC_META_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    os.replace(tmp, VEC_META_FILE)
 
 
 def check_and_rebuild(force: bool = False, dry_run: bool = False) -> dict:
@@ -105,13 +107,6 @@ def check_and_rebuild(force: bool = False, dry_run: bool = False) -> dict:
     # Model changed — rebuild
     if not dry_run:
         import subprocess
-        # 2026-06-29 fix: venv lookup chain. Hardcoded
-        # `GLOBAL_MEM_DIR.parent / "venv" / "bin" / "python"` only works
-        # on the user's local install; on CI the project lives at
-        # /home/runner/work/.../ and the venv is right next to it. Try
-        # the project-root venv, then `.venv`, then fall back to
-        # sys.executable (always works because we ARE the venv python
-        # when running inside a test).
         from infra.memory_config import install_root
 
         _project_root = Path(install_root()) if not os.environ.get(
@@ -147,12 +142,10 @@ def check_and_rebuild(force: bool = False, dry_run: bool = False) -> dict:
                 "details": f"Model changed but rebuild failed: {result.stderr[:200]}",
             }
     else:
-        if not dry_run:
-            save_model_config(current)
         return {
             "changed": True,
             "rebuilt": False,
-            "details": f"Model changed: {stored.get('model', 'unknown')} → {current.get('model')} (dry run)" if dry_run else f"Model changed: {stored.get('model', 'unknown')} → {current.get('model')}",
+            "details": f"Model changed: {stored.get('model', 'unknown')} → {current.get('model')} (dry run)",
         }
 
 

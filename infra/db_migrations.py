@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 
 import json
+import re
 import sqlite3
 
 logger = logging.getLogger(__name__)
@@ -93,19 +94,30 @@ def _migrate_memory_embeddings(conn) -> None:
 def _migrate_memory_audit_log(conn) -> None:
     """Create the memory_audit_log table if absent (Sprint 4 / P0 #4)."""
     conn.execute(
-        "\n        CREATE TABLE IF NOT EXISTS memory_audit_log (\n"
-        "            id              INTEGER PRIMARY KEY AUTOINCREMENT,\n"
-        "            ts              REAL    NOT NULL,\n"
-        "            tool            TEXT    NOT NULL,\n"
-        "            args            TEXT,\n"
-        "            results_count   INTEGER,\n"
-        "            top1_id         TEXT,\n"
-        "            latency_ms      REAL    NOT NULL,\n"
-        "            error           TEXT,\n"
-        "            request_id      TEXT\n"
-        "        )\n"
-        "        "
+        """
+        CREATE TABLE IF NOT EXISTS memory_audit_log (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts              REAL    NOT NULL,
+            tool            TEXT    NOT NULL,
+            args            TEXT,
+            results_count   INTEGER,
+            top1_id         TEXT,
+            latency_ms      REAL    NOT NULL,
+            error           TEXT,
+            request_id      TEXT,
+            tenant_id       TEXT DEFAULT 'default',
+            principal_id    TEXT
+        )
+        """
     )
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(memory_audit_log)").fetchall()}
+        if "tenant_id" not in cols:
+            conn.execute("ALTER TABLE memory_audit_log ADD COLUMN tenant_id TEXT DEFAULT 'default'")
+        if "principal_id" not in cols:
+            conn.execute("ALTER TABLE memory_audit_log ADD COLUMN principal_id TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_audit_log_tool_ts ON memory_audit_log(tool, ts)"
     )
@@ -144,6 +156,18 @@ def _migrate_memory_vec_idx(conn) -> None:
 
 def _migrate_ensure_columns(conn, existing_cols: set) -> None:
     """Idempotently add missing columns to the memories table."""
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_identifier(name: str) -> str:
+    """Validate identifier string to prevent SQL injection in DDL templates (M24)."""
+    if not _IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    return name
+
+
+def _migrate_ensure_memories_columns(conn) -> None:
+    """Idempotently add new columns to the memories table if missing."""
     desired = (
         ("valid_from", "TEXT"),
         ("valid_to", "TEXT"),
@@ -161,8 +185,9 @@ def _migrate_ensure_columns(conn, existing_cols: set) -> None:
     for col_name, col_type in desired:
         if col_name not in existing_cols:
             try:
-                conn.execute(f"ALTER TABLE memories ADD COLUMN {col_name} {col_type}")
-            except sqlite3.OperationalError:
+                safe_col = _validate_identifier(col_name)
+                conn.execute(f"ALTER TABLE memories ADD COLUMN {safe_col} {col_type}")
+            except (sqlite3.OperationalError, ValueError):
                 pass
 
 
@@ -730,7 +755,8 @@ def _ensure_kg_facts_fts(conn) -> None:
             " VALUES (new.id, new.subject, new.predicate, new.object, new.context); END"
         )
     except Exception as exc:
-        logger.warning("_ensure_kg_facts_fts failed: %s", exc)
+        logger.error("_ensure_kg_facts_fts trigger creation failed: %s", exc)
+        setattr(conn, "_fts_trigger_error", str(exc))
 
 
 def _migrate_kg_tables(conn) -> None:
@@ -917,6 +943,7 @@ def run_schema_setup(conn: AnyConnection) -> None:
     try:
         row = conn.execute("SELECT version FROM schema_version WHERE id=1").fetchone()
         if row is not None and row[0] >= SCHEMA_VERSION:
+            _migrate_memory_audit_log(conn)
             return
     except sqlite3.OperationalError:
         pass
@@ -1065,7 +1092,13 @@ def run_schema_setup(conn: AnyConnection) -> None:
             _stable_snapshot = None
 
         try:
-            _run_sql_migrations(conn)  # type: ignore[arg-type]
+            db_path = getattr(conn, "_db_path", None) or getattr(conn, "name", None)
+            if db_path and isinstance(db_path, (str, Path)) and str(db_path) != ":memory:":
+                from infra.db_path_flock import db_path_flock
+                with db_path_flock(Path(db_path)):
+                    _run_sql_migrations(conn)  # type: ignore[arg-type]
+            else:
+                _run_sql_migrations(conn)  # type: ignore[arg-type]
         finally:
             if _stable_snapshot is not None:
                 try:

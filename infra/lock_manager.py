@@ -104,7 +104,9 @@ class SQLiteLockManager(LockManager):
 
     def acquire_lock(self, lock_name: str, holder_id: str, ttl_seconds: int = 60) -> Tuple[bool, str]:
         try:
-            with self._get_conn() as conn:
+            conn = self._get_conn()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
                 now = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 row = conn.execute(
                     "SELECT holder_id, expires_at, lease_token FROM system_locks WHERE lock_key = ?",
@@ -114,6 +116,8 @@ class SQLiteLockManager(LockManager):
                 if row:
                     _, expires_at, token = row
                     if now <= expires_at:
+                        conn.rollback()
+                        conn.close()
                         return False, ""  # Lock is active and held by someone else
 
                 token = str(uuid.uuid4())
@@ -127,7 +131,16 @@ class SQLiteLockManager(LockManager):
                     "VALUES (?, ?, ?, ?, ?)",
                     (lock_name, holder_id, now, expires, token),
                 )
+                conn.commit()
+                conn.close()
                 return True, token
+            except Exception:
+                try:
+                    conn.rollback()
+                    conn.close()
+                except Exception:
+                    pass
+                raise
         except sqlite3.OperationalError as exc:
             logger.warning("SQLiteLockManager.acquire_lock failed: %s", exc)
             return False, ""

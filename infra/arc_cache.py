@@ -315,9 +315,8 @@ class ARCCache:
     def get_stats(self) -> dict:
         """Return a dict of ARC stats: eviction_pressure, ghost_hit_rate,
         total_ghosts, ghost_count, recent_total, last_recent_at,
-        last_eviction_at. The latter is duplicated with total_ghosts for
-        backwards compatibility with the original standalone-CLI print
-        format.
+        last_eviction_at. Note: arc_stats aggregates global metrics across
+        all tenants.
         """
         stats: dict = {}
         for row in self.db.execute("SELECT key, value FROM arc_stats").fetchall():

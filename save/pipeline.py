@@ -1016,8 +1016,8 @@ def _validate_save_params(
     title_slug: str,
     tags: Optional[list[str] | str],
 ) -> tuple[list[str], str]:
-    if not isinstance(content, str):
-        raise SaveValidationError(ErrorCode.INVALID_PARAMS, "content must be a string.")
+    if not isinstance(content, str) or not content.strip():
+        raise SaveValidationError(ErrorCode.INVALID_PARAMS, "content must be a non-empty string.")
     from infra._lazy_imports import get_config
 
     max_content = get_config().save_max_content_bytes
@@ -2026,7 +2026,8 @@ def _materialize_journal_once(
                 _mark_both(journal_path, entry["id"])
                 logger.info("materialize_journal_entry: mark_applied + hooks_completed %s (id=%d)", note_id_out, entry["id"])
             except Exception as _ma_exc:
-                logger.warning("materialize_journal_entry: mark_applied/hooks failed for %s: %s", note_id_out, _ma_exc)
+                logger.error("materialize_journal_entry: mark_applied/hooks failed for %s: %s", note_id_out, _ma_exc)
+                raise
             return str(note_id_out)
         except Exception:
             _save_errored = True
@@ -2300,7 +2301,6 @@ def _save_memory_core(
         )
 
         _file_path_str = str(file_path)
-        acquire_db_path_flock(db_path_obj)
         _coordination_acquire_lock(_file_path_str, db_path_obj)
         _coordination_update_activity(_file_path_str, "writing", tenant_id, db_path_obj)
         try:
@@ -2313,7 +2313,6 @@ def _save_memory_core(
         except Exception:
             _coordination_release_lock(_file_path_str, db_path_obj)
             _coordination_clear_activity(_file_path_str, tenant_id, db_path_obj)
-            release_db_path_flock(db_path_obj)
             raise
         # P0-1 fix (2026-06-22): the previous version of this function never
         # called safe_close_db on the saga-path conn, so the pool's depth
@@ -2485,57 +2484,93 @@ def memory_supersede_db(
 
         if conn is not None:
             db = conn
-            features = _detect_schema_features(db_path, conn=db)
-            if not features["has_temporal"]:
-                return (False, "memory schema does not have temporal columns")
-            old_row = db.execute(
-                "SELECT id FROM tenant_memories WHERE id = ?", (old_id,)
-            ).fetchone()
-            if not old_row:
-                return (False, f"old_id '{old_id}' not found")
-            new_row = db.execute(
-                "SELECT id FROM tenant_memories WHERE id = ?", (new_id,)
-            ).fetchone()
-            if not new_row:
-                return (False, f"new_id '{new_id}' not found")
-            old_content = db.execute(
-                "SELECT content FROM tenant_memories WHERE id = ?", (old_id,)
-            ).fetchone()
-            db.execute(
-                """UPDATE tenant_memories
-                   SET valid_to = ?, superseded_by = ?, updated_at = ?
-                   WHERE id = ?""",
-                (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
-            )
-            _record_revision_log(
-                db, old_id, "supersede", rationale=rationale,
-                old_content=old_content[0] if old_content else None,
-                metadata_json=json.dumps({"superseded_by": new_id}),
-            )
-            # Step 4d: clean up CRDT field state for the superseded memory
+            in_txn = getattr(db, "in_transaction", False)
+            if in_txn:
+                if not getattr(db, "_cmd_queue", None):
+                    db.execute("SAVEPOINT sp_supersede")
+            else:
+                if not getattr(db, "_cmd_queue", None):
+                    db.execute("BEGIN IMMEDIATE")
             try:
-                from crdt.crdt_field import crdt_field_delete_note
-                crdt_field_delete_note(db, old_id)
-            except Exception as _crdt_cleanup_exc:
-                logger.debug("CRDT cleanup on supersede failed for %s: %s", old_id, _crdt_cleanup_exc)
-            # Store rationale in metadata if provided
-            if rationale:
+                features = _detect_schema_features(db_path, conn=db)
+                if not features["has_temporal"]:
+                    if in_txn and not getattr(db, "_cmd_queue", None):
+                        db.execute("ROLLBACK TO SAVEPOINT sp_supersede; RELEASE SAVEPOINT sp_supersede")
+                    elif not getattr(db, "_cmd_queue", None):
+                        db.rollback()
+                    return (False, "memory schema does not have temporal columns")
+                old_row = db.execute(
+                    "SELECT id FROM tenant_memories WHERE id = ?", (old_id,)
+                ).fetchone()
+                if not old_row:
+                    if in_txn and not getattr(db, "_cmd_queue", None):
+                        db.execute("ROLLBACK TO SAVEPOINT sp_supersede; RELEASE SAVEPOINT sp_supersede")
+                    elif not getattr(db, "_cmd_queue", None):
+                        db.rollback()
+                    return (False, f"old_id '{old_id}' not found")
+                new_row = db.execute(
+                    "SELECT id FROM tenant_memories WHERE id = ?", (new_id,)
+                ).fetchone()
+                if not new_row:
+                    if in_txn and not getattr(db, "_cmd_queue", None):
+                        db.execute("ROLLBACK TO SAVEPOINT sp_supersede; RELEASE SAVEPOINT sp_supersede")
+                    elif not getattr(db, "_cmd_queue", None):
+                        db.rollback()
+                    return (False, f"new_id '{new_id}' not found")
+                old_content = db.execute(
+                    "SELECT content FROM tenant_memories WHERE id = ?", (old_id,)
+                ).fetchone()
+                db.execute(
+                    """UPDATE tenant_memories
+                       SET valid_to = ?, superseded_by = ?, updated_at = ?
+                       WHERE id = ?""",
+                    (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
+                )
+                _record_revision_log(
+                    db, old_id, "supersede", rationale=rationale,
+                    old_content=old_content[0] if old_content else None,
+                    metadata_json=json.dumps({"superseded_by": new_id}),
+                )
+                # Step 4d: clean up CRDT field state for the superseded memory
                 try:
-                    meta_row = db.execute(
-                        "SELECT metadata FROM tenant_memories WHERE id = ?", (old_id,)
-                    ).fetchone()
-                    if meta_row and meta_row[0]:
-                        meta = json.loads(meta_row[0])
-                    else:
-                        meta = {}
-                    meta["supersession_rationale"] = rationale
-                    db.execute(
-                        "UPDATE tenant_memories SET metadata = ? WHERE id = ?",
-                        (json.dumps(meta), old_id),
-                    )
-                except Exception as _supersede_meta_exc:
-                    logger.warning("supersession metadata update failed for %s: %s", old_id, _supersede_meta_exc)
-            return (True, None)
+                    from crdt.crdt_field import crdt_field_delete_note
+                    crdt_field_delete_note(db, old_id)
+                except Exception as _crdt_cleanup_exc:
+                    logger.debug("CRDT cleanup on supersede failed for %s: %s", old_id, _crdt_cleanup_exc)
+                # Store rationale in metadata if provided
+                if rationale:
+                    try:
+                        meta_row = db.execute(
+                            "SELECT metadata FROM tenant_memories WHERE id = ?", (old_id,)
+                        ).fetchone()
+                        if meta_row and meta_row[0]:
+                            meta = json.loads(meta_row[0])
+                        else:
+                            meta = {}
+                        meta["supersession_rationale"] = rationale
+                        db.execute(
+                            "UPDATE tenant_memories SET metadata = ? WHERE id = ?",
+                            (json.dumps(meta), old_id),
+                        )
+                    except Exception as _supersede_meta_exc:
+                        logger.warning("supersession metadata update failed for %s: %s", old_id, _supersede_meta_exc)
+                if in_txn and not getattr(db, "_cmd_queue", None):
+                    db.execute("RELEASE SAVEPOINT sp_supersede")
+                elif not getattr(db, "_cmd_queue", None):
+                    db.commit()
+                return (True, None)
+            except Exception as sp_exc:
+                if in_txn and not getattr(db, "_cmd_queue", None):
+                    try:
+                        db.execute("ROLLBACK TO SAVEPOINT sp_supersede; RELEASE SAVEPOINT sp_supersede")
+                    except Exception:
+                        pass
+                elif not getattr(db, "_cmd_queue", None):
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+                raise sp_exc
         else:
             with open_db(db_path, timeout=30.0) as db:
                 features = _detect_schema_features(db_path, conn=db)
@@ -2623,17 +2658,12 @@ def reinforce_memories_db(db_path: Path, ids: list[str], delta: float) -> int:
 
         with open_db(db_path, timeout=30.0) as db:
             for mid in ids:
-                row = db.execute(
-                    "SELECT success_score FROM tenant_memories WHERE id=?", (mid,)
-                ).fetchone()
-                if row:
-                    old_score = row[0] or 0.0
-                    new_score = max(-3.0, min(5.0, old_score + delta))
-                    db.execute(
-                        "UPDATE tenant_memories SET success_score = ? WHERE id = ?",
-                        (new_score, mid),
-                    )
-                    hits += 1
+                cur = db.execute(
+                    "UPDATE tenant_memories SET success_score = MAX(-3.0, MIN(5.0, COALESCE(success_score, 0.0) + ?)) WHERE id = ?",
+                    (delta, mid),
+                )
+                if cur.rowcount > 0:
+                    hits += cur.rowcount
     except Exception as e:
         logger.error("reinforce_memories_db: %s", e)
     # Recalculate fitness scores for the touched ids
@@ -2702,20 +2732,14 @@ def patch_memory(
             # Append additions
             additions = additions or []
             if additions:
+                for seg in additions:
+                    if _scan_for_injection_or_skip(seg):
+                        return _err(ErrorCode.INVALID_PARAMS, "patch addition contained invalid instruction injection content")
                 body = body.rstrip() + "\n\n" + "\n\n".join(additions) + "\n"
 
             new_content = frontmatter + body
 
-            # Update the DB row with new content
-            now_iso = datetime.now(timezone.utc).isoformat()
-            cur = db.execute(
-                "UPDATE tenant_memories SET content = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
-                (new_content, now_iso, note_id),
-            )
-            if cur.rowcount == 0:
-                return _err(ErrorCode.NOT_FOUND, f"note '{note_id}' vanished during patch")
-
-            # Append to metadata.patch_history
+            # Build updated metadata.patch_history
             meta = {}
             if metadata_json:
                 try:
@@ -2733,11 +2757,14 @@ def patch_memory(
                 patch_history = []
             patch_history.append(patch_entry)
             meta["patch_history"] = patch_history
-            cur2 = db.execute(
-                "UPDATE tenant_memories SET metadata = ? WHERE id = ? AND deleted_at IS NULL",
-                (json.dumps(meta), note_id),
+
+            # M4: Update content and metadata in ONE statement to avoid double FTS trigger re-index
+            now_iso = datetime.now(timezone.utc).isoformat()
+            cur = db.execute(
+                "UPDATE tenant_memories SET content = ?, metadata = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+                (new_content, json.dumps(meta), now_iso, note_id),
             )
-            if cur2.rowcount == 0:
+            if cur.rowcount == 0:
                 return _err(ErrorCode.NOT_FOUND, f"note '{note_id}' vanished during patch")
 
             # Record in revision log

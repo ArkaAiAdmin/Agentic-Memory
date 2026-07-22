@@ -10,7 +10,7 @@
 -- SQLite doesn't support ALTER ADD COLUMN with constraints, so recreate the table.
 
 -- Step 1: Create new table with fingerprint column
-CREATE TABLE kg_entities_new (
+CREATE TABLE IF NOT EXISTS kg_entities_new (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     name         TEXT    NOT NULL,
     entity_type  TEXT,

@@ -61,6 +61,7 @@ logger = logging.getLogger(__name__)
 # its WAL/SHM sidecars) exceeds this, the enqueue/init guards prune applied
 # entries or refuse new enqueues to prevent unbounded growth
 # (OWASP LLM10-001). Configurable module constant.
+# L2: Note: journal size checks in enqueue/init are a best-effort TOCTOU optimization.
 JOURNAL_MAX_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
 
 # W5: threshold (seconds) after which an entry stuck in 'processing' is
@@ -158,7 +159,10 @@ def _get_journal_conn(journal_path: Path, timeout: float = 10.0) -> sqlite3.Conn
         new_conn: sqlite3.Connection = sqlite3.connect(str(journal_path), timeout=timeout)
         new_conn.execute("PRAGMA journal_mode=WAL")
         new_conn.execute("PRAGMA busy_timeout=30000")
-        new_conn.execute("PRAGMA synchronous=NORMAL")
+        sync_mode = os.environ.get("MEMORY_JOURNAL_SYNCHRONOUS", "NORMAL").upper()
+        if sync_mode not in ("OFF", "NORMAL", "FULL", "EXTRA"):
+            sync_mode = "NORMAL"
+        new_conn.execute(f"PRAGMA synchronous={sync_mode}")
         new_conn.row_factory = sqlite3.Row
         _local.conns[key] = new_conn
         conn = new_conn
@@ -456,6 +460,7 @@ def dequeue_pending_for_worker(
     *,
     worker_id: int = 0,
     n_workers: int = 1,
+    tenant_id: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """Claim a sharded slice of pending entries for a specific worker.
 
@@ -470,16 +475,29 @@ def dequeue_pending_for_worker(
         raise ValueError(f"worker_id {worker_id} out of range [0, {n_workers})")
     conn = _get_journal_conn(journal_path)
     conn.execute("BEGIN IMMEDIATE")
-    rows = conn.execute(
-        "SELECT id, note_id, agent_id, category, title_slug, content, "
-        "tags, pinned, is_global, importance, tenant_id, "
-        "epistemic_source, belief_status, asserting_agent_id, fact_type, "
-        "defer_expensive, context, status, created_at "
-        "FROM write_journal WHERE status='pending' "
-        "AND (id % ?) = ? "
-        "ORDER BY id LIMIT ?",
-        (n_workers, worker_id, batch_size),
-    ).fetchall()
+    if tenant_id:
+        sql = (
+            "SELECT id, note_id, agent_id, category, title_slug, content, "
+            "tags, pinned, is_global, importance, tenant_id, "
+            "epistemic_source, belief_status, asserting_agent_id, fact_type, "
+            "defer_expensive, context, status, created_at "
+            "FROM write_journal WHERE status='pending' AND tenant_id = ? "
+            "AND (id % ?) = ? "
+            "ORDER BY id LIMIT ?"
+        )
+        params = (tenant_id, n_workers, worker_id, batch_size)
+    else:
+        sql = (
+            "SELECT id, note_id, agent_id, category, title_slug, content, "
+            "tags, pinned, is_global, importance, tenant_id, "
+            "epistemic_source, belief_status, asserting_agent_id, fact_type, "
+            "defer_expensive, context, status, created_at "
+            "FROM write_journal WHERE status='pending' "
+            "AND (id % ?) = ? "
+            "ORDER BY id LIMIT ?"
+        )
+        params = (n_workers, worker_id, batch_size)
+    rows = conn.execute(sql, params).fetchall()
     if rows:
         ids = [r["id"] for r in rows]
         placeholders = ",".join("?" * len(ids))

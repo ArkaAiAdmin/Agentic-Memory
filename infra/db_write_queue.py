@@ -7,7 +7,9 @@ lock contention and database locks in concurrent multithreaded workflows.
 
 from __future__ import annotations
 
+import atexit
 import concurrent.futures
+import itertools
 import logging
 import os
 import queue
@@ -125,24 +127,31 @@ class ProxyCursorObject:
 
 
 class ProxyConnection:
-    def __init__(self, cmd_queue: queue.Queue, resp_queue: queue.Queue) -> None:
+    def __init__(self, cmd_queue: queue.Queue, resp_queue: queue.Queue, session_id: Optional[int] = None) -> None:
         self._cmd_queue = cmd_queue
         self._resp_queue = resp_queue
+        self._session_id = session_id
         self.row_factory: Optional[Any] = None
         self._closed = False
+        self._in_txn = False
 
     def cursor(self) -> ProxyCursorObject:
         return ProxyCursorObject(self)
 
     @property
     def in_transaction(self) -> bool:
-        return True
+        return self._in_txn
 
-    def execute(self, sql: str, params: Any = ()) -> ProxyCursor:
+    def _check_dead(self) -> None:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
+        if self._session_id is not None and self._session_id in sqlite_write_queue._dead_sessions:
+            raise sqlite3.OperationalError("write session timed out; transaction rolled back")
+
+    def execute(self, sql: str, params: Any = ()) -> ProxyCursor:
+        self._check_dead()
         if sql.strip().upper().startswith("BEGIN"):
-            # The write queue session is already in a transaction (started with BEGIN IMMEDIATE)
+            self._in_txn = True
             return ProxyCursor(None, [], None, None)
         self._cmd_queue.put(("execute", (sql, params)))
         timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "120.0"))
@@ -152,6 +161,7 @@ class ProxyConnection:
             raise sqlite3.OperationalError("Write queue response timeout")
         if status == "error":
             raise res
+        self._in_txn = True
         lastrowid, rowcount, fetchall_data, description = res
         if self.row_factory:
             dummy_conn = sqlite3.connect(":memory:")
@@ -166,8 +176,7 @@ class ProxyConnection:
         return ProxyCursor(description, fetchall_data, lastrowid, rowcount)
 
     def executemany(self, sql: str, params_seq: Any) -> ProxyCursor:
-        if self._closed:
-            raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
+        self._check_dead()
         self._cmd_queue.put(("executemany", (sql, list(params_seq))))
         timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
         try:
@@ -176,12 +185,17 @@ class ProxyConnection:
             raise sqlite3.OperationalError("Write queue response timeout")
         if status == "error":
             raise res
+        self._in_txn = True
         lastrowid, rowcount, _, description = res
         return ProxyCursor(description, [], lastrowid, rowcount)
 
     def executescript(self, sql_script: str) -> ProxyConnection:
-        if self._closed:
-            raise sqlite3.ProgrammingError("Cannot operate on a closed connection.")
+        """Execute a raw SQL script over the write queue.
+
+        NOTE (H21): executescript() in SQLite implicitly issues COMMIT before
+        executing script statements. Take care when calling on an active session.
+        """
+        self._check_dead()
         self._cmd_queue.put(("executescript", sql_script))
         timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
         try:
@@ -190,11 +204,13 @@ class ProxyConnection:
             raise sqlite3.OperationalError("Write queue response timeout")
         if status == "error":
             raise res
+        self._in_txn = True
         return self
 
     def commit(self) -> None:
         if self._closed:
             return
+        self._check_dead()
         self._cmd_queue.put(("commit", None))
         timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
         try:
@@ -203,10 +219,12 @@ class ProxyConnection:
             raise sqlite3.OperationalError("Write queue response timeout")
         if status == "error":
             raise res
+        self._in_txn = False
 
     def rollback(self) -> None:
         if self._closed:
             return
+        self._check_dead()
         self._cmd_queue.put(("rollback", None))
         timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
         try:
@@ -215,12 +233,19 @@ class ProxyConnection:
             raise sqlite3.OperationalError("Write queue response timeout")
         if status == "error":
             raise res
+        self._in_txn = False
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        self._in_txn = False
         self._cmd_queue.put(("close", None))
+        timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "10.0"))
+        try:
+            self._resp_queue.get(timeout=timeout)
+        except Exception:
+            pass
         try:
             self._resp_queue.get(timeout=5.0)
         except Exception:
@@ -259,9 +284,12 @@ class SQLiteWriteQueue:
         )
         self._thread.start()
         self._sessions: dict[int, dict] = {}
+        self._dead_sessions: set[int] = set()
+        self._session_counter = itertools.count(1)
         self._sessions_lock = threading.Lock()
         self._pending_futures: set[concurrent.futures.Future] = set()
         self._pending_lock = threading.Lock()
+        self._path_conns: dict[Path, sqlite3.Connection] = {}
 
     def _get_or_create_session_conn(self, session_id: int, db_path: Path) -> sqlite3.Connection:
         with self._sessions_lock:
@@ -296,14 +324,28 @@ class SQLiteWriteQueue:
                 self._sessions[session_id] = {"conn": conn, "db_path": db_path}
             return self._sessions[session_id]["conn"]
 
-    def _close_session(self, session_id: int) -> None:
+    def _get_reusable_conn(self, db_path: Path) -> sqlite3.Connection:
+        if db_path not in self._path_conns:
+            conn = sqlite3.connect(str(db_path), timeout=30.0)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=30000")
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("PRAGMA wal_autocheckpoint=500")
+            self._path_conns[db_path] = conn
+        return self._path_conns[db_path]
+
+    def _close_session(self, session_id: int, action: str = "rollback") -> None:
         with self._sessions_lock:
+            self._dead_sessions.add(session_id)
             session = self._sessions.pop(session_id, None)
             if session is not None:
                 try:
                     conn = session["conn"]
                     try:
-                        conn.commit()
+                        if action == "commit":
+                            conn.commit()
+                        else:
+                            conn.rollback()
                     except Exception:
                         try:
                             conn.rollback()
@@ -318,9 +360,11 @@ class SQLiteWriteQueue:
         cmd_queue: queue.Queue = queue.Queue()
         resp_queue: queue.Queue = queue.Queue()
         future: concurrent.futures.Future = concurrent.futures.Future()
+        with self._sessions_lock:
+            session_id = next(self._session_counter)
         with self._pending_lock:
             self._pending_futures.add(future)
-        self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue), future))
+        self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue, session_id), future))
         # Configurable timeout via environment variable (default 60s)
         session_timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_SESSION_TIMEOUT", "60.0"))
         try:
@@ -328,7 +372,7 @@ class SQLiteWriteQueue:
         finally:
             with self._pending_lock:
                 self._pending_futures.discard(future)
-        return ProxyConnection(cmd_queue, resp_queue)
+        return ProxyConnection(cmd_queue, resp_queue, session_id=session_id)
 
     def enqueue_write(
         self,
@@ -382,8 +426,11 @@ class SQLiteWriteQueue:
                 from infra.db_path_flock import db_path_flock
 
                 if task_type == "session":
-                    cmd_queue, resp_queue = payload
-                    session_id = id(cmd_queue)
+                    if len(payload) == 3:
+                        cmd_queue, resp_queue, session_id = payload
+                    else:
+                        cmd_queue, resp_queue = payload
+                        session_id = id(cmd_queue)
                     with db_path_flock(db_path):
                         conn = self._get_or_create_session_conn(session_id, db_path)
                     try:

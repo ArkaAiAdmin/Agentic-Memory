@@ -388,7 +388,7 @@ def quality_stats(conn: AnyConnection) -> dict:
 
     try:
         rows = conn.execute(
-            "SELECT content FROM memories WHERE deleted_at IS NULL"
+            "SELECT content FROM tenant_memories WHERE deleted_at IS NULL LIMIT 10000"
         ).fetchall()
 
         total = len(rows)

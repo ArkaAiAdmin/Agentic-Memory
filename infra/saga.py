@@ -132,7 +132,7 @@ def recover_incomplete_sagas(conn: AnyConnection) -> int:
             "WHERE s.status = 'intent' "
             "AND NOT EXISTS ("
             "  SELECT 1 FROM saga_log t "
-            "  WHERE t.saga_id = s.saga_id AND t.status IN ('done', 'undone')"
+            "  WHERE t.saga_id = s.saga_id AND t.step_idx = s.step_idx AND t.status IN ('done', 'undone')"
             ")"
         ).fetchall()
     except Exception as e:
@@ -150,9 +150,6 @@ def recover_incomplete_sagas(conn: AnyConnection) -> int:
                 (saga_id,),
             ).fetchall()
         except Exception:
-            continue
-
-        if not completed:
             continue
 
         logger.warning(

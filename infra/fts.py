@@ -43,20 +43,13 @@ def cleanup_fts5_orphans(conn: AnyConnection) -> int:
     Returns the number of orphaned entries removed.
     """
     try:
-        orphaned = conn.execute(
-            "\n            SELECT fts.rowid FROM memories_fts fts\n"
-            "            LEFT JOIN memories m ON m.rowid = fts.rowid\n"
-            "            WHERE m.id IS NULL OR m.deleted_at IS NOT NULL\n"
-            "        "
-        ).fetchall()
-        if not orphaned:
-            return 0
-        conn.executemany(
-            "DELETE FROM memories_fts WHERE rowid = ?",
-            [(rowid,) for (rowid,) in orphaned],
+        cur = conn.execute(
+            "DELETE FROM memories_fts WHERE rowid IN ("
+            "SELECT fts.rowid FROM memories_fts fts LEFT JOIN memories m ON fts.rowid = m.rowid WHERE m.rowid IS NULL OR m.deleted_at IS NOT NULL"
+            ")"
         )
         conn.commit()
-        return len(orphaned)
+        return cur.rowcount
     except Exception as exc:
         logger.warning("FTS5 orphan cleanup failed: %s", exc)
         return 0
