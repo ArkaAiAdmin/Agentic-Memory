@@ -116,11 +116,33 @@ class ApiClient:
     def list_memories(
         self, limit: int = 50, offset: int = 0
     ) -> list[dict]:
-        result = self._get("/api/v1/memories", params={"limit": limit, "offset": offset})
-        return result.get("memories", [])
+        try:
+            result = self._get("/api/v1/memories", params={"limit": limit, "offset": offset})
+            return result.get("memories", [])
+        except Exception as exc:
+            _classified = _classify(exc)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                q_res = self.query(
+                    "SELECT * FROM memories WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    [limit, offset],
+                )
+                return q_res.get("results", [])
+            raise
 
     def get_memory(self, note_id: str) -> dict:
-        return self._get(f"/api/v1/memories/{note_id}")
+        try:
+            return self._get(f"/api/v1/memories/{note_id}")
+        except Exception as exc:
+            _classified = _classify(exc)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                q_res = self.query("SELECT * FROM memories WHERE id = ?", [note_id])
+                rows = q_res.get("results", [])
+                return rows[0] if rows else {}
+            raise
 
     def create_memory(
         self,
@@ -181,8 +203,20 @@ class ApiClient:
         data: dict[str, Any] = {"query": query, "limit": limit, "rerank": rerank}
         if tags:
             data["tags"] = tags
-        result = self._post("/api/v1/memories/search", data=data)
-        return result.get("results", [])
+        try:
+            result = self._post("/api/v1/memories/search", data=data)
+            return result.get("results", [])
+        except Exception as exc:
+            _classified = _classify(exc)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                q_res = self.query(
+                    "SELECT * FROM memories WHERE content LIKE ? AND deleted_at IS NULL LIMIT ?",
+                    [f"%{query}%", limit],
+                )
+                return q_res.get("results", [])
+            raise
 
     def clear_memories(self) -> dict:
         return self._post("/api/v1/memories/clear")
@@ -190,17 +224,48 @@ class ApiClient:
     # ── Stats ─────────────────────────────────────────────────────────────
 
     def stats(self) -> dict:
-        return self._get("/api/v1/memories/stats")
+        try:
+            return self._get("/api/v1/memories/stats")
+        except Exception as exc:
+            _classified = _classify(exc)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                return {
+                    "total_memories": _try_count_api("memories"),
+                    "entities": _try_count_api("kg_entities"),
+                    "facts": _try_count_api("kg_facts"),
+                    "edges": _try_count_api("kg_edges"),
+                }
+            raise
 
     # ── Knowledge Graph ───────────────────────────────────────────────────
 
     def kg_nodes(self, limit: int = 100) -> list[dict]:
-        result = self._get("/api/v1/kg/nodes", params={"limit": limit})
-        return result.get("nodes", [])
+        try:
+            result = self._get("/api/v1/kg/nodes", params={"limit": limit})
+            return result.get("nodes", [])
+        except Exception as exc:
+            _classified = _classify(exc)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                res = self.query("SELECT * FROM kg_entities LIMIT ?", [limit])
+                return res.get("results", [])
+            raise
 
     def kg_edges(self, limit: int = 100) -> list[dict]:
-        result = self._get("/api/v1/kg/edges", params={"limit": limit})
-        return result.get("edges", [])
+        try:
+            result = self._get("/api/v1/kg/edges", params={"limit": limit})
+            return result.get("edges", [])
+        except Exception as exc:
+            _classified = _classify(exc)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                res = self.query("SELECT * FROM kg_edges LIMIT ?", [limit])
+                return res.get("results", [])
+            raise
 
     # ── Maintenance ───────────────────────────────────────────────────────
 
@@ -216,13 +281,39 @@ class ApiClient:
     # ── Query (generic read-only) ─────────────────────────────────────────
 
     def query(self, sql: str, params: list | None = None) -> dict:
-        return self._post("/api/v1/query", data={"sql": sql, "params": params or []})
+        try:
+            return self._post("/api/v1/query", data={"sql": sql, "params": params or []})
+        except Exception as exc:
+            _classified = _classify(exc)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                conn = _get_db()
+                try:
+                    conn.row_factory = sqlite3.Row
+                    cur = conn.execute(sql, params or [])
+                    rows = cur.fetchall()
+                    return {"results": [dict(r) for r in rows]}
+                except Exception as db_exc:
+                    logger.warning("Local SQLite query fallback failed: %s", db_exc)
+                    return {"results": []}
+                finally:
+                    conn.close()
+            raise
 
     # ── Categories ─────────────────────────────────────────────────────────
 
     def categories(self) -> list[str]:
-        result = self._get("/api/v1/memories/categories")
-        return result.get("categories", [])
+        try:
+            result = self._get("/api/v1/memories/categories")
+            return result.get("categories", [])
+        except Exception as exc:
+            _classified = _classify(exc)
+            if isinstance(_classified, _AuthError):
+                raise _classified
+            if _local_fallback_allowed():
+                return _list_column("memories", "category")
+            raise
 
     # ── RBAC ───────────────────────────────────────────────────────────────
 
