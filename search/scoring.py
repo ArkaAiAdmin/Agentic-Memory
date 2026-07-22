@@ -603,6 +603,7 @@ def _compute_final_score(ctx) -> float:
 # Cached exploration mode (resolved once, not per-search)
 _EXPLORATION_MODE = None
 _EXPLORATION_MODE_RESOLVED = False
+_exploration_lock = threading.Lock()
 
 def _apply_exploration(cached_stats) -> Optional[dict]:
     global _EXPLORATION_MODE, _EXPLORATION_MODE_RESOLVED
@@ -612,14 +613,16 @@ def _apply_exploration(cached_stats) -> Optional[dict]:
         return None
     alphas, betas, expected = cached_stats
     if not _EXPLORATION_MODE_RESOLVED:
-        try:
-            from config import get_config
-            cfg = get_config()
-            _EXPLORATION_MODE = os.environ.get("MEMORY_EXPLORATION_MODE", getattr(cfg, "exploration_mode", "off")).lower()
-        except Exception as e:
-            logger.warning("Unhandled exception in _apply_exploration: %s", e)
-            _EXPLORATION_MODE = os.environ.get("MEMORY_EXPLORATION_MODE", "off").lower()
-        _EXPLORATION_MODE_RESOLVED = True
+        with _exploration_lock:
+            if not _EXPLORATION_MODE_RESOLVED:
+                try:
+                    from config import get_config
+                    cfg = get_config()
+                    _EXPLORATION_MODE = os.environ.get("MEMORY_EXPLORATION_MODE", getattr(cfg, "exploration_mode", "off")).lower()
+                except Exception as e:
+                    logger.warning("Unhandled exception in _apply_exploration: %s", e)
+                    _EXPLORATION_MODE = os.environ.get("MEMORY_EXPLORATION_MODE", "off").lower()
+                _EXPLORATION_MODE_RESOLVED = True
     mode = _EXPLORATION_MODE
 
     if mode == "thompson":

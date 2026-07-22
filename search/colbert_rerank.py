@@ -129,6 +129,25 @@ def colbert_rerank(
         return candidates
     query_time_ms = (time.time() - t0) * 1000
 
+    # Batch-fetch all ColBERT tokens in a single query (avoids N+1)
+    _valid_items = [item for item in candidates if isinstance(item, (list, tuple)) and len(item) >= 7]
+    _all_ids = [item[0] for item in _valid_items]
+    _token_map: dict = {}
+    if _all_ids:
+        try:
+            _placeholders = ",".join("?" * len(_all_ids))
+            _rows = conn.execute(
+                f"SELECT memory_id, vec FROM colbert_tokens WHERE memory_id IN ({_placeholders})",
+                _all_ids,
+            ).fetchall()
+            from collections import defaultdict
+            _grouped: dict = defaultdict(list)
+            for _mid, _blob in _rows:
+                _grouped[_mid].append(_blob_to_vec(_blob) if isinstance(_blob, bytes) else _blob)
+            _token_map = dict(_grouped)
+        except Exception as e:
+            logger.debug("colbert_rerank: batch token fetch failed: %s", e)
+
     # Score each candidate
     results = []
     for item in candidates:
@@ -137,13 +156,9 @@ def colbert_rerank(
             continue
         memory_id = item[0]
         try:
-            rows = conn.execute(
-                "SELECT vec FROM colbert_tokens WHERE memory_id = ?",
-                (memory_id,),
-            ).fetchall()
-            if not rows:
-                # No ColBERT tokens — use neutral score
-                blended = item[6]  # Keep original final_score
+            doc_vecs = _token_map.get(memory_id, [])
+            if not doc_vecs:
+                # No ColBERT tokens — keep original score
                 results.append(item)
                 continue
             doc_vecs = [_blob_to_vec(r[0]) if isinstance(r[0], bytes) else r[0] for r in rows]

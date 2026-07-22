@@ -25,8 +25,8 @@ phase increments its error counter (via ``infra.error_counter``) and
 the pipeline falls through to the next phase with degraded results.
 No single phase failure kills the search.
 
-Thread safety: uses module-level ``_db_columns_cache`` (RLock) and
-``_phase_latencies`` (RLock) for cross-call shared state.
+Thread safety: uses module-level ``_db_columns_cache`` (Lock) and
+``_phase_latencies`` (Lock) for cross-call shared state.
 """
 
 import logging
@@ -561,12 +561,6 @@ def _rerank_results(
                     new_out.append(item)
             out = new_out
 
-    try:
-        from search.phases.contradiction_engine import resolve_candidate_contradictions
-        out = resolve_candidate_contradictions(out)
-    except Exception as exc:
-        logger.debug("Contradiction engine pass skipped: %s", exc)
-
     out = sorted(
         out,
         key=_rank_key,
@@ -580,6 +574,7 @@ def _counting_phase(
     results: list,
     query: str,
     limit: int,
+    repo_filter: str = "",
 ) -> list:
     """Counting phase: for 'how many times/how often' queries, count
     distinct values across all matching sessions.
@@ -620,7 +615,7 @@ def _counting_phase(
                 "JOIN tenant_memories m ON m.id = "
                 "(SELECT id FROM memories WHERE rowid = fts.rowid) "
                 "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
-                "AND m.category = 'sessions'",
+                f"AND m.category = 'sessions' {repo_filter}",
                 (f'"{safe_kw}"',)
             ).fetchall()
 
@@ -677,6 +672,7 @@ def _temporal_compare(
     results: list,
     query: str,
     limit: int,
+    repo_filter: str = "",
 ) -> list:
     """Phase 10.5: Temporal comparison for ordering/counting queries.
 
@@ -722,7 +718,7 @@ def _temporal_compare(
                 "JOIN tenant_memories m ON m.id = "
                 "(SELECT id FROM memories WHERE rowid = fts.rowid) "
                 "WHERE memories_fts MATCH ? AND m.deleted_at IS NULL "
-                "AND m.category = 'sessions' "
+                f"AND m.category = 'sessions' {repo_filter} "
                 "ORDER BY m.observed_at DESC LIMIT 1",
                 (f'"{safe_kw}"',)
             ).fetchall()
@@ -1129,8 +1125,8 @@ def search_memories(
                     repo_filter = f" AND (m.source_file LIKE 'agents/{_safe_ns}/%' ESCAPE '\\' OR m.source_file NOT LIKE 'agents/%')"
                 else:
                     repo_filter = f" AND m.source_file LIKE 'agents/{_safe_ns}/%' ESCAPE '\\'"
-        except (ImportError, AttributeError):
-            pass
+        except (ImportError, AttributeError, ValueError) as _ns_exc:
+            logger.debug("Namespace filtering disabled: %s", _ns_exc)
         # Sprint 2: memory_source filter (agent / auto_save / import)
         if memory_source is not None:
             source_map = {
@@ -1537,7 +1533,7 @@ def search_memories(
         if mode not in ("fact_lookup", "fts"):
             _t0_tc = time.time()
             try:
-                results = _temporal_compare(db, results, query, limit)
+                results = _temporal_compare(db, results, query, limit, repo_filter=repo_filter)
             except Exception as _tc_exc:
                 _phase_inc("search.temporal_compare", _tc_exc)
                 logger.debug("temporal_compare failed (degraded): %s", _tc_exc)
@@ -1548,7 +1544,7 @@ def search_memories(
         if mode not in ("fact_lookup", "fts"):
             _t0_cnt = time.time()
             try:
-                results = _counting_phase(db, results, query, limit)
+                results = _counting_phase(db, results, query, limit, repo_filter=repo_filter)
             except Exception as _cnt_exc:
                 _phase_inc("search.counting", _cnt_exc)
                 logger.debug("counting phase failed (degraded): %s", _cnt_exc)
@@ -1621,7 +1617,7 @@ def search_memories(
             _entity, _ = _extract_inference_entity(query)
             if _entity and results_to_display:
                 _entity_lower = _entity.lower()
-                for _rd in results_to_display:
+                for _idx, _rd in enumerate(results_to_display):
                     _content = (_rd[1] or "").lower() if len(_rd) > 1 else ""
                     if _entity_lower in _content:
                         # Boost final_score (index 6) by entity_boost_factor
@@ -1631,7 +1627,7 @@ def search_memories(
                             _boost = get_search_config().entity_boost_factor
                             _new_list = list(_rd)
                             _new_list[6] = _old_score * _boost
-                            results_to_display[results_to_display.index(_rd)] = tuple(_new_list)  # type: ignore[index]
+                            results_to_display[_idx] = tuple(_new_list)
                 # Re-sort by final_score descending after boost
                 results_to_display.sort(key=lambda x: x[6] if x[6] is not None else 0, reverse=True)
 

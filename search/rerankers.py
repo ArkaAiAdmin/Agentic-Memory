@@ -259,7 +259,7 @@ def _apply_cross_encoder_rerank(
         ce_scores = [_cross_encoder_score(query, d) for d in docs]
     reranked = []
     for r, ce in zip(head, ce_scores):
-        final_score = r[6]
+        final_score = float(r[6]) if len(r) > 6 and r[6] is not None else 0.0
         ce_clamped = max(0.0, min(1.0, float(ce)))
         adjusted = final_score * (1.0 - blend) + ce_clamped * blend
         new_r = list(r)

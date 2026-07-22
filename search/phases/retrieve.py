@@ -18,41 +18,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _get_prefilter_config() -> tuple[bool, int]:
-    cfg = get_search_config()
-    return cfg.embedding_prefilter_enabled, cfg.embedding_prefilter_k
-
-
-def _prefilter_ids(
-    db: AnyConnection,
-    normalized_query: str,
-    db_path: Path,
-    limit: int,
-) -> set[str]:
-    """Return a set of memory ids pre-selected by ANN embedding similarity.
-
-    Uses the embedding index as a cheap ANN shortlist before the more
-    expensive FTS+ColBERT+vector phases.  Returns an empty set when:
-    - prefilter is disabled in config
-    - the embedding model/index is unavailable
-    - the ANN lookup returns no hits above threshold
-    """
-    enabled, k = _get_prefilter_config()
-    if not enabled:
-        return set()
-    try:
-        from infra._lazy_imports import get_embedding_search
-
-        es = get_embedding_search()
-        hits = es.search(normalized_query, db_path, limit=k, category="")
-        if not isinstance(hits, list) or not hits:
-            return set()
-        return {hit["id"] for hit in hits if hit.get("id")}
-    except Exception as exc:
-        logger.debug("embedding prefilter skipped: %s", exc)
-        return set()
-
-
 def _get_embedding_score_threshold() -> float:
     return get_search_config().embedding_score_threshold
 

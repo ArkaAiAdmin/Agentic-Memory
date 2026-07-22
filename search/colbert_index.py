@@ -57,12 +57,11 @@ def index_memory_colbert(
 
     Returns the number of token rows inserted.
     """
-    from infra.colbert_encoder import encode_tokens
+    from infra.colbert_encoder import encode_tokens, _get_colbert_model
     from search.chunk_index import _qw5_chunk_content
 
-    tokens_result = encode_tokens("")
-    if tokens_result is None:
-        # Model not available — skip silently
+    _cm, _ct, _cp = _get_colbert_model()
+    if _cm is None:
         return 0
 
     chunk_tuples = _qw5_chunk_content(content)
@@ -107,11 +106,11 @@ def index_memory_colbert_batch(
 
     Returns the total number of token rows inserted.
     """
-    from infra.colbert_encoder import encode_tokens_batch
+    from infra.colbert_encoder import encode_tokens_batch, _get_colbert_model
     from search.chunk_index import _qw5_chunk_content
 
-    probe = encode_tokens_batch([""])
-    if probe is None or probe[0] is None:
+    _cm, _ct, _cp = _get_colbert_model()
+    if _cm is None:
         return 0
 
     total = 0

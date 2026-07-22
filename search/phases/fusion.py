@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -18,13 +19,15 @@ if TYPE_CHECKING:
 # Invalidated when db_path changes or after 60 seconds.
 _corpus_size_cache: dict[str, tuple[float, int]] = {}
 _CORPUS_CACHE_TTL = 60.0
+_corpus_cache_lock = threading.Lock()
 
 logger = logging.getLogger(__name__)
 
 
 def clear_fusion_caches() -> None:
     """Clear corpus size cache."""
-    _corpus_size_cache.clear()
+    with _corpus_cache_lock:
+        _corpus_size_cache.clear()
 
 
 
@@ -116,18 +119,19 @@ def _hybrid_fusion(
         _corpus_size = 1000  # default
         try:
             if db is not None:
-                if _cache_key in _corpus_size_cache:
-                    _cached_ts, _cached_size = _corpus_size_cache[_cache_key]
-                    if _now - _cached_ts < _CORPUS_CACHE_TTL:
-                        _corpus_size = _cached_size
+                with _corpus_cache_lock:
+                    if _cache_key in _corpus_size_cache:
+                        _cached_ts, _cached_size = _corpus_size_cache[_cache_key]
+                        if _now - _cached_ts < _CORPUS_CACHE_TTL:
+                            _corpus_size = _cached_size
+                        else:
+                            _row = db.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
+                            _corpus_size = _row[0] if _row else 1000
+                            _corpus_size_cache[_cache_key] = (_now, _corpus_size)
                     else:
                         _row = db.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
                         _corpus_size = _row[0] if _row else 1000
                         _corpus_size_cache[_cache_key] = (_now, _corpus_size)
-                else:
-                    _row = db.execute("SELECT COUNT(*) FROM tenant_memories WHERE deleted_at IS NULL").fetchone()
-                    _corpus_size = _row[0] if _row else 1000
-                    _corpus_size_cache[_cache_key] = (_now, _corpus_size)
         except Exception:
             _corpus_size = 1000
         from search.config import get_search_config

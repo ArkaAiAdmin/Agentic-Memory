@@ -304,7 +304,7 @@ def _text_multi_hop_traversal(
             for p in props:
                 try:
                     sub_rows = db.execute(
-                        "SELECT id, content FROM tenant_memories WHERE content LIKE ? AND deleted_at IS NULL",
+                        "SELECT id, content FROM tenant_memories WHERE content LIKE ? AND deleted_at IS NULL LIMIT 20",
                         (f"%{p}%",),
                     ).fetchall()
                     for s_row in sub_rows:
@@ -328,7 +328,7 @@ def _text_multi_hop_traversal(
                             search_term = " ".join(words[-2:]) if len(words) >= 2 else clean_ph
                             if len(search_term) > 3:
                                 hop2_rows = db.execute(
-                                    "SELECT id FROM tenant_memories WHERE content LIKE ? AND deleted_at IS NULL",
+                                    "SELECT id FROM tenant_memories WHERE content LIKE ? AND deleted_at IS NULL LIMIT 20",
                                     (f"%{search_term}%",),
                                 ).fetchall()
                                 for h2 in hop2_rows:
