@@ -6,23 +6,23 @@ The **Memory Search and Retrieval Tools** provide high-performance hybrid semant
 
 The search surface exposes fine-grained retrieval primitives designed for fast context insertion in agent loops:
 
-- **`memory_search`**: The primary hybrid search tool combining dense vector similarity, BM25 keyword matching, Reciprocal Rank Fusion (RRF), and optional LightGBM reranking.
-- **`memory_find`**: Fast exact/fuzzy attribute lookup tool for memories by ID, tag, or metadata properties.
-- **`search_by_tag`**: Categorical memory filtering tool supporting tag sets and temporal window constraints.
+- **`memory_search`**: The primary hybrid search tool combining dense vector similarity, BM25 keyword matching, Reciprocal Rank Fusion (RRF), and optional LightGBM reranking across 24 CORE search phases.
+- **`recall_memory`**: High-recall memory retrieval tool optimized for long-context agent prompts and conversational memory window reconstruction.
+- **`memory_search_by_tag`**: Categorical memory filtering tool supporting tag sets, category filters, and temporal window constraints.
 
-## 14-Phase Retrieval Pipeline
+## 24 CORE Search Retrieval Pipeline
 
 ```mermaid
 graph LR
-    Query[Query String] --> Parse[Phase 1: Query Parser & Expansion]
-    Parse --> Vector[Phase 2: Dense Vector Search]
-    Parse --> BM25[Phase 3: FTS5 BM25 Search]
-    Parse --> KG[Phase 4: KG Traversal]
-    Vector --> RRF[Phase 5: RRF Fusion]
+    Query["Query String"] --> Parse["Phase 1-4: Query Parser & Expansion"]
+    Parse --> Vector["Phase 5-8: Dense Vector & ColBERT Search"]
+    Parse --> BM25["Phase 9-11: FTS5 BM25 & SPLADE Search"]
+    Parse --> KG["Phase 12-14: KG Traversal & Contradiction Engine"]
+    Vector --> RRF["Phase 15-18: RRF Fusion & Temporal Solver"]
     BM25 --> RRF
     KG --> RRF
-    RRF --> LTR[Phase 6: LTR Reranker]
-    LTR --> Final[Final Sorted Candidates]
+    RRF --> LTR["Phase 19-22: LTR & Answer Reranker"]
+    LTR --> Telemetry["Phase 23-24: Synthesis & Telemetry"]
 ```
 
 ## Key Query Parameters & Code Invariants

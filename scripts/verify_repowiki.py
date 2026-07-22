@@ -81,6 +81,33 @@ def verify_repowiki():
             except Exception as e:
                 errors.append(f"Invalid yaml in {my}: {e}")
 
+    # Check 5: Catalog title -> .md file existence assertion
+    if os.path.exists(meta_path) and os.path.exists(content_dir):
+        cat_names = {c['id']: c.get('name') for c in catalogs}
+        all_md_basenames = {os.path.splitext(os.path.basename(p))[0]: p for p in all_md}
+        for item in items:
+            title = item.get('title')
+            cat_name = cat_names.get(item.get('catalog_id'))
+            if title not in all_md_basenames and cat_name not in all_md_basenames:
+                errors.append(f"Catalog item title '{title}' / catalog name '{cat_name}' has no matching .md file")
+
+    # Check 6: Core map invariant hard strings allowlist assertion
+    hard_strings = ['save_memory', 'include_global', 'memory_maintenance', '24']
+    target_rel_paths = [
+        'Core Concepts/Memory Architecture.md',
+        'API Reference/MCP Tools.md',
+    ]
+    for rel_p in target_rel_paths:
+        full_p = os.path.join(content_dir, rel_p)
+        if not os.path.exists(full_p):
+            errors.append(f"Core map page missing: {rel_p}")
+        else:
+            with open(full_p, 'r', encoding='utf-8', errors='ignore') as f:
+                c = f.read()
+            for hs in hard_strings:
+                if hs not in c:
+                    errors.append(f"Core map page '{rel_p}' missing required invariant term '{hs}'")
+
     # Report results
     if errors:
         print(f"❌ RepoWiki Verification FAILED with {len(errors)} error(s):")
@@ -88,8 +115,9 @@ def verify_repowiki():
             print(f" - {err}")
         return 1
     else:
-        print("✅ RepoWiki Verification PASSED! All 132 catalog items present, 0 failed pages, 0 Chinese artifacts.")
+        print("✅ RepoWiki Verification PASSED! All 132 catalog items present, 0 failed pages, 0 Chinese artifacts, 100% catalog-to-md mapping, and core invariant terms verified.")
         return 0
 
 if __name__ == '__main__':
     sys.exit(verify_repowiki())
+

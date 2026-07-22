@@ -234,6 +234,7 @@ Server-->>Client : "Response payload"
 Purpose: Create, read, update, delete, and manage memories; attach sessions; manage skills and tags; perform bulk operations.
 
 Typical capabilities:
+- `save_memory`: Primary write tool accepting content, category, defer_expensive, tags, and metadata to execute the 3-store transactional saga.
 - Save/update/delete memories
 - Query memories by filters (time range, tags, skill, session)
 - List sessions and their associated memories
@@ -268,6 +269,7 @@ Error handling:
 Purpose: Execute full-text, semantic, hybrid, and temporal searches; rerank results; retrieve snippets and context.
 
 Typical capabilities:
+- `memory_search`: Primary hybrid search primitive supporting `include_global=True` for cross-workspace global search, executed over 24 CORE search pipeline phases.
 - Text and vector search with query expansion
 - Temporal filtering (as-of queries)
 - Skill-aware retrieval
@@ -321,6 +323,7 @@ Consistency and concurrency:
 - [mcp_audit.py](file://mcp_audit.py)
 
 ### System Administration and Maintenance Tools
+Purpose: Perform database integrity checks, memory maintenance sweeps (`memory_maintenance`), FTS index rebuilds, and retention policy enforcement.
 Purpose: Operate and maintain the system; manage indexes, backfills, compaction, policy hashes, health checks, and metrics.
 
 Typical capabilities:

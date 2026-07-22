@@ -14,7 +14,7 @@ In local-first agentic environments, verifying memory mutations, vector drift, a
 
 | Component | Target File | Purpose |
 | :--- | :--- | :--- |
-| **Audit Logger** | [mcp_audit.py](file://mcp_audit.py) | Exposes `audit_memory_log` and execution metrics for debugging |
+| **Audit Logger** | [mcp_audit.py](file://mcp_audit.py) | Exposes `memory_audit` and execution metrics for debugging |
 | **Integrity Tester** | [memory_integrity.py](file://memory_integrity.py) | Performs deep cross-store validation (SQLite + Usearch + Markdown) |
 | **Tool Registry Inspection** | [tool_registry.py](file://tool_registry.py) | Inspects CORE vs ADMIN router registrations and schema definitions |
 
@@ -28,16 +28,16 @@ from save.pipeline import save_memory
 
 # Test dry-run save assertion
 result = save_memory(
-    text="Unit test memory payload",
+    content="Unit test memory payload",
+    category="test",
     tags=["test", "verification"],
-    dry_run=True,
     defer_expensive=True
 )
 assert result["status"] == "success"
 ```
 
 ### 2. MCP Audit & Execution Diagnostics
-The `audit_memory_log` MCP tool returns structural execution traces, identifying candidate score drops or reranker latencies:
+The `memory_audit` MCP tool returns structural execution traces, identifying candidate score drops or reranker latencies:
 
 ```json
 {
