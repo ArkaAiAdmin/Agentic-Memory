@@ -897,7 +897,21 @@ def _expand_query(query: str) -> str:
         return query
     phrases = re.findall('"([^"]*)"', query)
     bare = re.sub('"[^"]*"', " ", query)
-    bare_tokens = re.findall("[\\w@\\#\\.\\+\\-]+", bare, flags=re.UNICODE)
+    bare_tokens = re.findall(r"[\w@\#\.\+\-]+", bare, flags=re.UNICODE)
+
+    _MONTH_MAP = {
+        "january": "01", "february": "02", "march": "03", "april": "04",
+        "may": "05", "june": "06", "july": "07", "august": "08",
+        "september": "09", "october": "10", "november": "11", "december": "12",
+        "jan": "01", "feb": "02", "mar": "03", "apr": "04",
+        "jun": "06", "jul": "07", "aug": "08", "sep": "09", "oct": "10", "nov": "11", "dec": "12"
+    }
+    date_match = re.search(r"\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b\s+(\d{4})", query, re.IGNORECASE)
+    ym_token = None
+    if date_match:
+        m_num = _MONTH_MAP.get(date_match.group(1).lower())
+        if m_num:
+            ym_token = f'"{date_match.group(2)}-{m_num}"'
     if not bare_tokens and (not phrases):
         return query
     # Filter stop words from expansion — they waste FTS5 match budget
@@ -959,6 +973,8 @@ def _expand_query(query: str) -> str:
                     expanded_tokens.append(f'"{tok}"')
     out_parts = [f'"{p}"' for p in phrases if p.strip()]
     out_parts.extend(expanded_tokens)
+    if ym_token and ym_token not in out_parts:
+        out_parts.append(ym_token)
     # Always use OR for maximum recall. The custom eval uses OR-only
     # and gets 100% recall — AND on short queries kills recall by
     # requiring every term to match, which fails on conversational
