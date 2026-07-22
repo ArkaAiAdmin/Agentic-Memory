@@ -255,6 +255,7 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True, skip_backf
     # Setup database
     if db_path is None:
         db_path = _TEST_DB_PATH
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
     conn = _setup_db(db_path)
     _insert_memories(conn, memories)
     _insert_fts(conn, memories)

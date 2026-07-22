@@ -211,6 +211,7 @@ def run(
         cleanup = True
     else:
         cleanup = False
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
 
     # Check dependency health
     try:

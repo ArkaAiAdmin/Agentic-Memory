@@ -578,6 +578,7 @@ def calculate_accuracy(results: list[dict]) -> float:
 
 def create_test_db(db_path: Path) -> sqlite3.Connection:
     """Create a test database with the full agentic-memory schema."""
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
     from eval._fixtures import bootstrap_temp_db_clean
     bootstrap_temp_db_clean(db_path)
     conn = sqlite3.connect(str(db_path))

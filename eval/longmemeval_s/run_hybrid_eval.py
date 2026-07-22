@@ -179,6 +179,7 @@ def main():
     # Create temp DB
     tmpdir = tempfile.mkdtemp(prefix="hybrid_eval_")
     db_path = Path(tmpdir) / "memory.db"
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
     bootstrap_temp_db_clean(db_path)
 
     # Collect and seed sessions

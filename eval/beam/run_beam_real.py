@@ -380,6 +380,7 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
     db_path = RESULTS_DIR / "beam_real.db"
     if db_path.exists():
         db_path.unlink()
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
     bootstrap_temp_db_clean(db_path)
 
     # Ingest all conversations

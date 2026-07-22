@@ -30,8 +30,9 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # Bootstrap — mirrors eval/test_search_pipeline_unit.py convention
 # ---------------------------------------------------------------------------
-INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
-sys.path.insert(0, str(INSTALL_DIR))
+INSTALL_DIR = Path(__file__).resolve().parent.parent
+if str(INSTALL_DIR) not in sys.path:
+    sys.path.insert(0, str(INSTALL_DIR))
 
 from infra.memory_common import open_db  # noqa: E402
 from infra.infrastructure import GLOBAL_MEM_DIR  # noqa: E402
@@ -297,9 +298,9 @@ class RetrievalBenchmark:
 
     def _setup_db(self) -> Path:
         """Bootstrap a fresh temp DB and seed it with golden memories."""
-        self._tmpdir = Path(tempfile.mkdtemp(prefix="retrieval_bench_")
-                            )
+        self._tmpdir = Path(tempfile.mkdtemp(prefix="retrieval_bench_"))
         db_path = self._tmpdir / "memory.db"
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
         bootstrap_temp_db_clean(db_path)
         _seed_db(db_path, self._golden)
         return db_path

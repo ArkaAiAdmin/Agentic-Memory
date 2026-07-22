@@ -225,6 +225,7 @@ def evaluate(
     # Set up fresh DB
     tmpdir = Path(tempfile.mkdtemp(prefix="locomo_eval_"))
     db_path = tmpdir / "memory.db"
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
     bootstrap_temp_db_clean(db_path)
 
     # Ingest all conversations

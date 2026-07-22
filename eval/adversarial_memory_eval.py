@@ -10,6 +10,7 @@ Tests 4 core hard categories:
 
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -306,6 +307,7 @@ def run_adversarial_eval() -> dict:
     if db_path.exists():
         db_path.unlink()
 
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
     bootstrap_temp_db_clean(db_path)
     import sqlite3
     conn = sqlite3.connect(str(db_path))

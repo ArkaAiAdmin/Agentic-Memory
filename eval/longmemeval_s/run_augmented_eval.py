@@ -177,6 +177,7 @@ def main():
 
     tmpdir = tempfile.mkdtemp(prefix="aug_eval_")
     db_path = Path(tmpdir) / "memory.db"
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
     bootstrap_temp_db_clean(db_path)
 
     all_ids, all_sessions, all_dates = set(), {}, {}

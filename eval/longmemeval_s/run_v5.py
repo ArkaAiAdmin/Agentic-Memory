@@ -1,6 +1,6 @@
 """Eval v5: FTS + embedding RRF with bge-base, fast iteration."""
 from __future__ import annotations
-import json, hashlib, re, sqlite3, sys, tempfile, time
+import json, hashlib, os, re, sqlite3, sys, tempfile, time
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
@@ -31,6 +31,7 @@ def run():
 
     tmpdir = tempfile.mkdtemp()
     db_path = Path(tmpdir) / "memory.db"
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
     bootstrap_temp_db_clean(db_path)
 
     all_ids, all_sessions, all_dates = set(), {}, {}

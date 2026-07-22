@@ -181,6 +181,7 @@ def main():
     db_path = RESULTS_DIR / "qa_eval.db"
     if db_path.exists():
         db_path.unlink()
+    os.environ["MEMORY_DB_PATH"] = str(db_path)
     bootstrap_temp_db_clean(db_path)
 
     # Seed sessions
