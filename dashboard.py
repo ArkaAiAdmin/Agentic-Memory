@@ -6,6 +6,7 @@
 #     venv/bin/streamlit run dashboard.py
 import logging
 import os
+os.environ["DASHBOARD_ALLOW_LOCAL_FALLBACK"] = "1"
 
 import streamlit as st
 
