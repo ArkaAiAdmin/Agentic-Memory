@@ -59,22 +59,22 @@ class ApiClient:
         return f"{self.base_url}/{path.lstrip('/')}"
 
     def _get(self, path: str, params: dict | None = None) -> Any:
-        r = self._session.get(self._url(path), params=params, timeout=30)
+        r = self._session.get(self._url(path), params=params, timeout=0.5)
         r.raise_for_status()
         return r.json()
 
     def _post(self, path: str, data: dict | None = None) -> Any:
-        r = self._session.post(self._url(path), json=data, timeout=30)
+        r = self._session.post(self._url(path), json=data, timeout=0.5)
         r.raise_for_status()
         return r.json()
 
     def _put(self, path: str, data: dict | None = None) -> Any:
-        r = self._session.put(self._url(path), json=data, timeout=30)
+        r = self._session.put(self._url(path), json=data, timeout=0.5)
         r.raise_for_status()
         return r.json()
 
     def _delete(self, path: str) -> Any:
-        r = self._session.delete(self._url(path), timeout=30)
+        r = self._session.delete(self._url(path), timeout=0.5)
         r.raise_for_status()
         return r.json()
 
@@ -90,14 +90,14 @@ class ApiClient:
         r = self._session.post(
             self._url("/api/v1/auth/login"),
             json={"token": token},
-            timeout=30,
+            timeout=0.5,
         )
         r.raise_for_status()
         return r.json()
 
     def logout(self) -> dict:
         """Clear the session cookie."""
-        r = self._session.post(self._url("/api/v1/auth/logout"), json={}, timeout=30)
+        r = self._session.post(self._url("/api/v1/auth/logout"), json={}, timeout=0.5)
         r.raise_for_status()
         return r.json()
 
