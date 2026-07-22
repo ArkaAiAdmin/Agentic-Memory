@@ -30,21 +30,20 @@ def extract_session_findings(marker: dict) -> dict:
         return {"scanned": 0, "extracted": 0}
 
     from infra.infrastructure import resolve_active_memory_dir
-    import sqlite3
+    from infra.db import open_db
 
     db_path = resolve_active_memory_dir() / "memory.db"
     if not db_path.exists():
         return {"scanned": 0, "extracted": 0}
 
-    # Connect to the SQLite DB
-    conn = sqlite3.connect(str(db_path), timeout=10.0)
-    try:
+    # Connect via open_db (sets up tenant_memories TEMP VIEW + connection pool)
+    with open_db(db_path) as conn:
         # Convert first_tool_at to ISO8601 string
         cutoff_iso = datetime.fromtimestamp(first_tool_at, timezone.utc).isoformat()
         
         # Query memories modified in this session, excluding 'lessons' and deleted ones
         rows = conn.execute(
-            "SELECT id, content FROM memories WHERE updated_at >= ? "
+            "SELECT id, content FROM tenant_memories WHERE updated_at >= ? "
             "AND (category IS NULL OR category != 'lessons') AND deleted_at IS NULL",
             (cutoff_iso,)
         ).fetchall()
@@ -73,7 +72,7 @@ def extract_session_findings(marker: dict) -> dict:
                         if len(detail_clean) > 10:
                             # Verify if similar lesson already exists
                             dupe_check = conn.execute(
-                                "SELECT COUNT(*) FROM memories WHERE category='lessons' "
+                                "SELECT COUNT(*) FROM tenant_memories WHERE category='lessons' "
                                 "AND content LIKE ? AND deleted_at IS NULL",
                                 (f"%{detail_clean[:100]}%",)
                             ).fetchone()[0]
@@ -116,8 +115,3 @@ def extract_session_findings(marker: dict) -> dict:
                                 break # only one match per line
                                 
         return {"scanned": scanned_count, "extracted": extracted_count}
-    except Exception as e:
-        logger.warning("extract_session_findings failed: %s", e)
-        return {"error": str(e), "scanned": 0, "extracted": 0}
-    finally:
-        conn.close()
