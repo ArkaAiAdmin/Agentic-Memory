@@ -26,8 +26,10 @@ import memory_mcp  # noqa: E402
 if not hasattr(memory_mcp, "safety_wiring"):
     setattr(memory_mcp, "safety_wiring", False)
 
-from eval._fixtures import bootstrap_temp_db_clean  # noqa: E402
+from eval._fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes, set_benchmark_env  # noqa: E402
 from search.orchestrator import search_memories  # noqa: E402
+
+set_benchmark_env()
 
 
 def generate_adversarial_dataset() -> list[dict]:
@@ -327,6 +329,8 @@ def run_adversarial_eval() -> dict:
             )
         except Exception:
             pass
+        populate_eval_memory_indexes(conn, memory_id, content_str, category="sessions")
+
     conn.commit()
     conn.close()
 

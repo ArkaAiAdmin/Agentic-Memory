@@ -39,7 +39,10 @@ from metrics import compute_all_k
 from search.orchestrator import search_memories
 
 # Bootstrap a temp DB with the full schema
-from _fixtures import bootstrap_temp_db_clean
+from _fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes, set_benchmark_env
+
+set_benchmark_env()
+
 
 KS = (5, 10, 30, 50)
 
@@ -139,15 +142,14 @@ def _seed_sessions(db_path: Path, sessions: list[list[dict]], session_ids: list[
         # retrieve. Long sessions are split into turns; the most
         # relevant turn surfaces even when the rest of the session is noise.
         try:
-            from search.chunk_index import _qw5_index_chunks_for, _qw5_ensure_schema
-            _qw5_ensure_schema(conn)
             for sid, sess in zip(session_ids, sessions):
                 content = _join_turns(sess)
                 if content.strip():
-                    _qw5_index_chunks_for(conn, sid, content)
+                    populate_eval_memory_indexes(conn, sid, content, category="sessions")
             conn.commit()
         except Exception as _ck_e:
-            print(f"  chunk indexing skipped: {_ck_e}")
+            print(f"  indexing skipped: {_ck_e}")
+
     finally:
         conn.close()
 

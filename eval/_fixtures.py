@@ -67,3 +67,92 @@ def bootstrap_temp_db_clean(db_path: Path) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def set_benchmark_env() -> None:
+    """Set optimal environment variables for benchmark execution on CPU / macOS."""
+    import os
+
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+    os.environ["MEMORY_FAIL_ON_INTEGRITY_DRIFT"] = "0"
+
+
+def populate_eval_memory_indexes(
+    conn: sqlite3.Connection,
+    memory_id: str,
+    content: str,
+    category: str = "sessions",
+    tags: list[str] | None = None,
+) -> None:
+    """Index a memory row across chunk FTS, vector embedding, ColBERT, SPLADE, KG, and facts.
+
+    This ensures benchmark runs query the full 14-phase search orchestrator (dense + sparse + KG + reranker)
+    rather than falling back to BM25/FTS only.
+    """
+    if not content or not content.strip():
+        return
+
+    tags_list = tags or []
+
+    # 1. Chunk FTS indexing
+    try:
+        from search.chunk_index import _qw5_ensure_schema, _qw5_index_chunks_for
+
+        _qw5_ensure_schema(conn)
+        _qw5_index_chunks_for(conn, memory_id, content)
+    except Exception:
+        pass
+
+    # 2. Vector Embedding indexing
+    try:
+        from save.indexers import _index_embedding
+
+        _index_embedding(
+            conn,
+            memory_id,
+            content,
+            category=category,
+            tags=tags_list,
+            source_file=memory_id,
+        )
+    except Exception:
+        pass
+
+    # 3. ColBERT indexing
+    try:
+        from search.colbert_index import _ensure_colbert_schema, index_memory_colbert_batch
+
+        _ensure_colbert_schema(conn)
+        index_memory_colbert_batch(conn, [(memory_id, content)])
+    except Exception:
+        pass
+
+    # 4. SPLADE indexing
+    try:
+        from search.splade_index import _ensure_splade_schema, index_memory_splade_batch
+
+        _ensure_splade_schema(conn)
+        index_memory_splade_batch(conn, [(memory_id, content)])
+    except Exception:
+        pass
+
+    # 5. KG indexing
+    try:
+        from knowledge_graph import ensure_kg_schema, index_kg_for_memory
+
+        ensure_kg_schema(conn)
+        index_kg_for_memory(conn, memory_id, content)
+    except Exception:
+        pass
+
+    # 6. Facts indexing
+    try:
+        from fact import ensure_facts_schema, index_facts_for_memory
+
+        ensure_facts_schema(conn)
+        index_facts_for_memory(conn, memory_id, content)
+    except Exception:
+        pass
+

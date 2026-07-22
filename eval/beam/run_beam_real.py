@@ -33,6 +33,11 @@ import memory_mcp  # noqa: E402
 if not hasattr(memory_mcp, "safety_wiring"):
     setattr(memory_mcp, "safety_wiring", False)
 
+from eval._fixtures import populate_eval_memory_indexes, set_benchmark_env  # noqa: E402
+
+set_benchmark_env()
+
+
 
 # ---------------------------------------------------------------------------
 # Dataset loading
@@ -183,7 +188,15 @@ def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
                 )
             except Exception:
                 pass
+            populate_eval_memory_indexes(
+                conn,
+                memory_id,
+                chunk_with_meta,
+                category="sessions",
+                tags=[f"conv_{conv['conversation_id']}", conv["category"]],
+            )
             session_map[f"chunk_{idx:04d}"] = memory_id
+
         conn.commit()
     finally:
         conn.close()

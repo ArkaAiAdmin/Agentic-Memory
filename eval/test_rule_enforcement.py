@@ -333,3 +333,32 @@ def test_rule11_detects_drift(tmp_path: Path):
 
     drift = not (row[0] == crdt[0] == md_content)
     assert drift, "Rule 11: detector should have flagged the stale .md"
+
+
+# ---------------------------------------------------------------------------
+# Rule 25 — Benchmark Environment & Multi-Index Coverage
+# ---------------------------------------------------------------------------
+
+
+_BENCHMARK_EVAL_SCRIPTS = [
+    "eval/adversarial_memory_eval.py",
+    "eval/locomo_eval.py",
+    "eval/longmemeval_s/run_eval_main_pipeline.py",
+    "eval/beam/run_beam_real.py",
+]
+
+
+@pytest.mark.parametrize("script_path", _BENCHMARK_EVAL_SCRIPTS)
+def test_rule25_benchmark_env_and_indexing(script_path: str):
+    """Benchmark evaluation scripts must set benchmark env and invoke indexers."""
+    path = REPO_ROOT / script_path
+    if not path.exists():
+        pytest.skip(f"{script_path} not present")
+    src = _read(path)
+    assert "set_benchmark_env" in src or "KMP_DUPLICATE_LIB_OK" in src, (
+        f"Rule 25: {script_path} must call set_benchmark_env() or set optimal env vars"
+    )
+    assert "populate_eval_memory_indexes" in src or "_index_embedding" in src, (
+        f"Rule 25: {script_path} must invoke multi-index builders during dataset ingestion"
+    )
+

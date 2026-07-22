@@ -162,8 +162,8 @@ def _insert_memory(
         if rowid is not None:
             try:
                 db.execute(
-                    "INSERT OR REPLACE INTO memories_fts (rowid, content) VALUES (?, ?)",
-                    (rowid[0], content),
+                    "INSERT OR REPLACE INTO memories_fts(rowid, id, content, tags, category) VALUES (?, ?, ?, ?, ?)",
+                    (rowid[0], note_id, content, tags_str, cat),
                 )
             except Exception:
                 pass

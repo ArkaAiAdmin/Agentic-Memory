@@ -54,6 +54,7 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 > | 7  | 🔧 | bare-arg guard in `backfill/orchestrator.py::main` (rc=2) |
 > | 11 | 🔍 | `test_rule11_no_crdt_md_drift` + `test_rule11_detects_drift` |
 > | 24 | ⚙️ | pre-commit `update-docs-fresh` (fails on doc drift) |
+> | 25 | 🔍 | `test_rule25_benchmark_env_and_indexing` in `eval/test_rule_enforcement.py` |
 
 1. **All writes go through `save_memory` or `save_memory_journal`.** 🔍 Hooks, auto-save, MCP verbs, and CLI tools all delegate to one of these two entry points. A write that bypasses the saga cannot be rolled back. (`eval/test_rule_enforcement.py` scans verb/handler modules for raw INSERT/UPDATE/DELETE against content tables; saga internals + coordination/audit tables are exempt.) The operational KG-maintenance endpoints in `infra/api_server.py` (entity/edge delete, dedup, merge, prune, archive) are the one exempt surface because they perform coordinated multi-statement KG ops with no `save_memory` equivalent — but every raw content-table write there MUST be paired with the saga-aware cleanup helpers (`repair_kg_orphans` / `cleanup_memory_relations`), enforced by `test_rule1_operational_kg_uses_saga_cleanup`.
 2. **Connection pool is per-DB-path.** `connection_pool.get(str(db_path))` returns stale FD if the path doesn't exist; active connections cannot be evicted.
@@ -83,6 +84,8 @@ Do not treat the absence of a visible "self-edit" call as a gap — the save-tim
 22. **Ask with named options, not open questions.** Never ask "what should I do?" — give 2–4 concrete alternatives with tradeoffs. If the answer is already in an existing decision or doc, act.
 23. **Do not overanalyze — act.** When the task is clear, execute it directly and verify normally (run the checks you normally would), but do not overthink: do not enumerate every possible failure mode, re-derive state that git already reports, or run redundant confirmation passes after the user has said the work is verified. A stash/branch/working-tree question is answered by one `git` command, not a 10-minute investigation. If the user says "you are overthinking," stop immediately and just perform the requested action.
 24. **Run autogen docs before every commit.** ⚙️ Execute `make update-docs` (full pipeline: `update-agents-md` → `update-architecture` → `update-mcp-tools` → `update-readme` → `update-mcp-surface`) before committing any code change. This regenerates AGENTS.md, docs/_meta.json, docs/architecture.md, docs/reference/mcp-tools.md, README badges, and docs/MCP_SURFACE.md from live code. Never commit code without first running autogen — every commit must include the updated docs. The `update-docs-fresh` pre-commit hook fails if regenerated docs differ from the staged tree.
+25. **Benchmark Execution & Multi-Index Coverage.** 🔍 When executing benchmark evaluation scripts (`eval/adversarial_memory_eval.py`, `eval/locomo_eval.py`, `eval/longmemeval_s/run_eval_main_pipeline.py`, `eval/beam/run_beam_real.py`, `eval/retrieval_benchmark.py`), set optimal environment variables (`KMP_DUPLICATE_LIB_OK=TRUE`, `OMP_NUM_THREADS=1`, `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES`). Dataset ingestion MUST invoke `set_benchmark_env()` and multi-index builders (`populate_eval_memory_indexes`) so `search_memories()` evaluates the full 14-phase search orchestrator.
+
 
 ---
 

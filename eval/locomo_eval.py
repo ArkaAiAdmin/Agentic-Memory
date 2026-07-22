@@ -41,7 +41,10 @@ DOWNLOAD_URL = "https://raw.githubusercontent.com/snap-research/locomo/main/data
 sys.path.insert(0, str(REPO_ROOT))
 
 from infra.memory_common import open_db  # noqa: E402
-from _fixtures import bootstrap_temp_db_clean  # noqa: E402
+from _fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes, set_benchmark_env  # noqa: E402
+
+set_benchmark_env()
+
 
 CATEGORY_MAP = {
     1: "single-hop",
@@ -142,7 +145,9 @@ def ingest_conversation(
                 )
             except Exception:
                 pass
+            populate_eval_memory_indexes(db, mem_id, content, category="sessions")
             session_map[sk] = mem_id
+
         db.commit()
     return session_map
 
