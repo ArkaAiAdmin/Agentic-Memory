@@ -76,21 +76,22 @@ Evaluates real HuggingFace `BEAM-10M` conversation logs across 10 distinct cogni
 
 ---
 
-### Suite 3: LongMemEval_S Long-Horizon Memory Benchmark (66 Questions)
+### Suite 3: LoCoMo Long Conversation Memory Benchmark (50 Questions)
 
-Evaluates long-term temporal recall, exact-match answer extraction, and multi-session relational memory across long-context evaluation scenarios.
+Evaluates multi-session recall, temporal reasoning, and multi-hop inference across long multi-turn conversation logs.
 
 ```
 ========================================================================================
-LONGMEMEVAL METRIC         BASELINE FTS5         PARALLEL HYBRID FUSION     IMPROVEMENT
+LOCOMO METRIC              PREVIOUS BASELINE      UPDATED ORCHESTRATOR     IMPROVEMENT
 ========================================================================================
-Recall@K Coverage          98.48%                98.48%                    High Recall Ceiling
-Exact Match Answer Score   90.91% (60/66)        90.91% (60/66)            SOTA Answer Accuracy
-Relational Facts Coverage 100.0% (6/6)          100.0% (6/6)              100% Graph Traversal
-Median Latency (p50)       1,180.0 ms            969.7 ms                  17.8% Speedup
-p95 Latency                3,200.0 ms            2,536.5 ms                20.7% Tail Optimization
+Recall@5 (overall)         50.00%                 58.00%                   +8.00% Boost
+Recall@10 (multi-hop)      58.33%                 70.83%                   +12.50% Boost
+Recall@5 (multi-hop)       54.17%                 62.50%                   +8.33% Boost
+Recall@20 (multi-hop)      70.83%                 75.00%                   +4.17% Boost
+Recall@20 (single-hop)     100.00%                89.47%                   High Single-Hop
 ========================================================================================
 ```
+
 
 ---
 
