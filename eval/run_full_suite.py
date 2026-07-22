@@ -41,7 +41,7 @@ summary = {
 }
 failures = []
 results_file = HERE / "results" / "full_suite_results.txt"
-HERE.parent.mkdir(parents=True, exist_ok=True)
+results_file.parent.mkdir(parents=True, exist_ok=True)
 
 env = os.environ.copy()
 env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -87,30 +87,37 @@ def _parse_junit(junit_path: Path) -> dict:
         tree = ET.parse(junit_path)
     except ET.ParseError:
         return counts
-    for suite in tree.getroot().iter("testsuite"):
-        counts["passed"] += (
-            int(suite.get("tests", 0))
-            - int(suite.get("failures", 0))
-            - int(suite.get("errors", 0))
-            - int(suite.get("skipped", 0))
-        )
-        counts["failed"] += int(suite.get("failures", 0))
-        counts["errors"] += int(suite.get("errors", 0))
-        for tc in suite.iter("testcase"):
-            for child in tc:
-                tag = child.tag
-                if tag == "skipped":
-                    msg = child.get("message", "") or ""
-                    if "xfail" in msg.lower():
-                        counts["xfailed"] += 1
-                        counts["skipped"] -= 1
-                    else:
-                        counts["skipped"] += 1
-                elif tag == "failure":
-                    msg = ET.tostring(child, encoding="unicode")
-                    if "xpass" in msg.lower() or "XPASS" in msg:
-                        counts["xpassed"] += 1
-                        counts["failed"] -= 1
+    # H8 fix: use only the root <testsuite> to avoid double-counting
+    # nested testsuites (pytest emits an outer aggregate + inner per-file).
+    suite = tree.getroot()
+    if suite.tag != "testsuite":
+        # Root is <testsuites> wrapper — find the first child testsuite
+        suite = suite.find("testsuite")
+    if suite is None:
+        return counts
+    counts["passed"] += (
+        int(suite.get("tests", 0))
+        - int(suite.get("failures", 0))
+        - int(suite.get("errors", 0))
+        - int(suite.get("skipped", 0))
+    )
+    counts["failed"] += int(suite.get("failures", 0))
+    counts["errors"] += int(suite.get("errors", 0))
+    for tc in suite.iter("testcase"):
+        for child in tc:
+            tag = child.tag
+            if tag == "skipped":
+                msg = child.get("message", "") or ""
+                if "xfail" in msg.lower():
+                    counts["xfailed"] += 1
+                    counts["skipped"] -= 1
+                else:
+                    counts["skipped"] += 1
+            elif tag == "failure":
+                msg = ET.tostring(child, encoding="unicode")
+                if "xpass" in msg.lower() or "XPASS" in msg:
+                    counts["xpassed"] += 1
+                    counts["failed"] -= 1
     return counts
 
 
@@ -222,7 +229,9 @@ def run_one_test(f):
 
 # Run up to 3 tests concurrently
 with ThreadPoolExecutor(max_workers=3) as executor:
-    executor.map(run_one_test, test_files)
+    # M13 fix: consume the iterator to surface exceptions from workers
+    for _ in executor.map(run_one_test, test_files):
+        pass
 
 # Write results file
 with open(results_file, "w") as r:

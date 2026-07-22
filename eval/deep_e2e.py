@@ -43,7 +43,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Configuration
 # =====================================================================
 PROD_INSTALL = Path(__file__).resolve().parent.parent
-VENV_PY = PROD_INSTALL / "venv" / "bin" / "python"
+# H4 fix: use sys.executable with venv fallback chain
+VENV_PY = Path(sys.executable)
+if not VENV_PY.exists():
+    VENV_PY = PROD_INSTALL / ".venv" / "bin" / "python"
+    if not VENV_PY.exists():
+        VENV_PY = PROD_INSTALL / "venv" / "bin" / "python"
 PROD_DB = PROD_INSTALL / "memory" / "memory.db"
 PROD_MEM_DIR = PROD_INSTALL / "memory"
 

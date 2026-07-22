@@ -16,6 +16,7 @@ Output: eval/results/longmemeval-s-run.json
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 import sys
@@ -24,6 +25,8 @@ import unicodedata
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 EVAL_ROOT = Path(__file__).resolve().parent
 RESULTS_PATH = EVAL_ROOT / "results" / "longmemeval-s-run.json"
@@ -49,15 +52,24 @@ if not hasattr(memory_mcp, "safety_wiring"):
 def load_synthetic_dataset() -> list[dict]:
     """Load LongMemEval_S synthetic questions from JSONL file if available."""
     if DATASET_PATH.exists():
+        _REQUIRED_KEYS = {"question_id", "query", "answer", "sessions"}
         questions = []
         with open(DATASET_PATH, "r", encoding="utf-8") as f:
-            for line in f:
+            for line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if line:
                     try:
-                        questions.append(json.loads(line))
-                    except Exception:
-                        pass
+                        entry = json.loads(line)
+                        missing = _REQUIRED_KEYS - set(entry.keys())
+                        if missing:
+                            logger.warning(
+                                "JSONL line %d missing keys %s, skipping",
+                                line_num, missing,
+                            )
+                            continue
+                        questions.append(entry)
+                    except json.JSONDecodeError as e:
+                        logger.warning("JSONL line %d malformed (%s), skipping", line_num, e)
         if questions:
             return questions
     return SYNTHETIC
@@ -807,6 +819,18 @@ def main():
     latencies_ms: list[float] = []
     t_start = time.perf_counter()
 
+    # H7 fix: warmup — trigger embedding model loading before timed runs
+    if questions:
+        _warmup_db = run_dir / "_warmup.db"
+        bootstrap_db(_warmup_db)
+        insert_memory(_warmup_db, "warmup/1", "warmup query", ["warmup"], datetime.now(timezone.utc).isoformat())
+        try:
+            memory_mcp.search_memories(_warmup_db, "warmup", limit=1, hybrid=True, use_history=False)
+        except Exception:
+            pass
+        if _warmup_db.exists():
+            _warmup_db.unlink()
+
     for q in questions:
         qid = q["question_id"]
         query = q["query"]
@@ -1013,6 +1037,10 @@ def main():
     print(f"Wall time: {wall_time_s:.1f}s ({wall_time_s / n:.2f}s/item)")
     print(f"p50 / p95 latency: {p50:.1f}ms / {p95:.1f}ms")
     print(f"Wrote {RESULTS_PATH}")
+
+    # H14 fix: clean up temp DBs
+    import shutil
+    shutil.rmtree(run_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

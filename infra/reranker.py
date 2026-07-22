@@ -93,6 +93,7 @@ class Reranker:
         self._device: str = ""
         self._load_lock = threading.Lock()
         self._load_attempted = False
+        self._load_attempts = 0
         self._load_error: Optional[str] = None
 
     def is_loaded(self) -> bool:
@@ -190,34 +191,49 @@ class Reranker:
 
         Returns True on success, False otherwise. On False, score() will
         return None and the caller should fall back to the weak CE.
+
+        L2 fix: bounded retry — allows up to MEMORY_RERANKER_MAX_RETRIES
+        (default 3) attempts before permanently giving up.
         """
         if self.is_loaded():
             return True
         with self._load_lock:
             if self._load_attempted:
                 return self.is_loaded()
-            self._load_attempted = True
+            self._load_attempts += 1
+            max_attempts = int(os.environ.get("MEMORY_RERANKER_MAX_RETRIES", "3"))
+            if self._load_attempts > max_attempts:
+                self._load_attempted = True
+                return False
             import sys
 
             if not sys.modules[__name__].RERANKER_ENABLED:
                 self._load_error = "reranker disabled via MEMORY_RERANKER_DISABLED"
                 logger.info("Reranker: %s", self._load_error)
+                self._load_attempted = True
                 return False
             device = self._resolve_device()
             # Try MPS first, then CPU. (MPS is what Jina SIGSEGV'd on;
             # both new backends have been smoke-tested clean on MPS.)
             if self._load_qwen3(device):
+                self._load_attempted = True
                 return True
             if self._load_bge(device):
+                self._load_attempted = True
                 return True
             # If MPS load crashed both, try CPU as last resort.
             if device == "mps":
                 logger.info("Reranker: retrying on CPU after MPS failure")
                 if self._load_qwen3("cpu"):
+                    self._load_attempted = True
                     return True
                 if self._load_bge("cpu"):
+                    self._load_attempted = True
                     return True
             self._load_error = "all reranker backends failed to load"
+            # L2 fix: only permanently fail after exhausting retries
+            if self._load_attempts >= max_attempts:
+                self._load_attempted = True
             return False
 
     def _score_qwen3(self, query: str, docs: List[str]) -> Optional[List[float]]:
@@ -344,6 +360,16 @@ class Reranker:
                 return None
         if timeout is None or timeout <= 0:
             # In-process: fast path, no kill switch.
+            if self._backend == "qwen3":
+                return self._score_qwen3(query, docs)
+            if self._backend == "bge":
+                return self._score_bge(query, docs)
+            return None
+        # C7 fix: skip subprocess on CPU/CUDA where MPS-style hangs don't occur.
+        # Only use the child-process kill path on MPS (the only platform where
+        # torch forward passes can hang in a native kernel).
+        device = self._device or self._resolve_device()
+        if device != "mps":
             if self._backend == "qwen3":
                 return self._score_qwen3(query, docs)
             if self._backend == "bge":
@@ -480,6 +506,12 @@ def _score_with_timeout(
         if p.is_alive():
             p.kill()
             p.join(timeout=2)
+        # H1 fix: clean up Queue feeder thread after kill
+        try:
+            q.close()
+            q.join_thread()
+        except Exception:
+            pass
         logger.warning(
             "Reranker.score(%s) on %s timed out after %.1fs — killed child; "
             "falling back to weak CE. This is the 2026-06-19 MPS hang signature.",
@@ -507,6 +539,12 @@ def _score_with_timeout(
         return None
 
     kind = msg[0]
+    # H1 fix: clean up Queue feeder thread
+    try:
+        q.close()
+        q.join_thread()
+    except Exception:
+        pass
     if kind == "ok":
         return cast(list[float] | None, msg[1])
     if kind == "load_fail":

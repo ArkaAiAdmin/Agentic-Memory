@@ -34,11 +34,6 @@ os.environ.setdefault("MEMORY_AUTH_MODE", "open")
 _TEST_EMBEDDING = os.environ.get("MEMORY_TEST_EMBEDDING", "0") == "1"
 _TEST_MODEL_ID = "intfloat/e5-small-v2"
 
-if _TEST_EMBEDDING:
-    os.environ.setdefault("MEMORY_EMBEDDING_BACKEND", "sentence-transformers")
-    os.environ.setdefault("MEMORY_EMBEDDING_MODEL_ID", _TEST_MODEL_ID)
-    os.environ.setdefault("MEMORY_EMBEDDING_MODEL_REVISION", "")
-
 
 def _should_redirect(p) -> bool:
     p_str = str(p)
@@ -63,6 +58,17 @@ class PathRedirector(list):
             for v in values
         )
 
+    def __setitem__(self, index, value):
+        if _should_redirect(value):
+            value = WORKTREE_ROOT
+        super().__setitem__(index, value)
+
+    def __iadd__(self, values):
+        return super().__iadd__(
+            WORKTREE_ROOT if _should_redirect(v) else v
+            for v in values
+        )
+
 # Initialize PathRedirector with current sys.path redirected
 initial_paths = []
 for p in sys.path:
@@ -81,7 +87,7 @@ import time
 import faulthandler
 
 faulthandler.enable()
-faulthandler.dump_traceback_later(15, repeat=True)
+faulthandler.dump_traceback_later(15, repeat=False)
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
@@ -114,7 +120,9 @@ _ami_original_connect = _sqlite3.connect
 def _ami_patched_connect(*args, **kwargs):
     conn = _ami_original_connect(*args, **kwargs)
     try:
-        conn.create_function("tenant_id", 0, lambda: "default")
+        # M10 fix: make tenant_id configurable via env var
+        _tid = os.environ.get("TEST_TENANT_ID", "default")
+        conn.create_function("tenant_id", 0, lambda: _tid)
         # Only seed the view once `memories` already exists in this database.
         # The bootstrap/migration connection opens against an empty file and
         # builds the schema afterwards; seeding the view there would create a
@@ -144,7 +152,9 @@ def embedding_available() -> bool:
     try:
         from infra.embedding_search import get_embedding_search
         es = get_embedding_search()
-        return es.model is not None
+        # M11 fix: check _model_loaded flag instead of es.model to avoid
+        # race with background loader thread.
+        return es._model_loaded and es.model is not None
     except Exception:
         return False
 # NOTE: KMP_DUPLICATE_LIB_OK and OMP_NUM_THREADS stay at module level
@@ -199,8 +209,9 @@ def _cleanup_auto_save_daemon() -> None:
     except Exception:
         pass
 
-    deadline = time.time() + 5.0
+    # M14 fix: give each PID its own 5s deadline instead of sharing one
     for pid in killed:
+        deadline = time.time() + 5.0
         while time.time() < deadline:
             try:
                 os.kill(pid, 0)
@@ -294,6 +305,15 @@ def _test_session_env():
     for k, v in _TEST_ENV_VARS.items():
         _saved[k] = os.environ.get(k)
         os.environ[k] = v
+    # H12 fix: set embedding env vars in fixture with cleanup
+    if _TEST_EMBEDDING:
+        for k, v in {
+            "MEMORY_EMBEDDING_BACKEND": "sentence-transformers",
+            "MEMORY_EMBEDDING_MODEL_ID": _TEST_MODEL_ID,
+            "MEMORY_EMBEDDING_MODEL_REVISION": "",
+        }.items():
+            _saved[k] = os.environ.get(k)
+            os.environ.setdefault(k, v)
     yield
     for k, v in _saved.items():
         if v is None:
@@ -629,14 +649,16 @@ def clear_pool_between_tests():
     try:
         from infra.db import connection_pool
 
-        connection_pool.clear()
+        if connection_pool._pool:  # L7 fix: skip if pool is already empty
+            connection_pool.clear()
     except Exception:
         pass
     yield
     try:
         from infra.db import connection_pool
 
-        connection_pool.clear()
+        if connection_pool._pool:
+            connection_pool.clear()
     except Exception:
         pass
 
@@ -655,10 +677,12 @@ def reset_auto_save_state():
     same xdist worker, which can cause worker crashes when the daemon's
     background threads conflict with the test's own threads.
     """
+    # L7 fix: skip daemon cleanup if no daemon was ever started in this worker
+    if getattr(reset_auto_save_state, "_daemon_ever_started", False):
+        _cleanup_auto_save_daemon()
     try:
         from background.auto_save import _auto_save_reset_state, _AUTO_SAVE_STATE
 
-        _cleanup_auto_save_daemon()
         _auto_save_reset_state()
         _AUTO_SAVE_STATE["failure_times"] = []
         _AUTO_SAVE_STATE["circuit_open_until"] = 0.0
@@ -671,6 +695,7 @@ def reset_auto_save_state():
 
         _cleanup_auto_save_daemon()
         _auto_save_reset_state()
+        reset_auto_save_state._daemon_ever_started = True
     except Exception:
         pass
 

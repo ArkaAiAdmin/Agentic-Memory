@@ -24,7 +24,13 @@ import re
 import threading
 from typing import Any, Optional
 
-import torch
+# H2 fix: wrap torch import to handle CUDA/MPS init failures gracefully
+try:
+    import torch
+except Exception as _torch_exc:
+    import types
+    torch = types.ModuleType("torch")  # placeholder; encode will fail with clear error
+    logging.getLogger(__name__).warning("torch import failed (CUDA/MPS init?): %s", _torch_exc)
 
 logger = logging.getLogger(__name__)
 
@@ -79,47 +85,55 @@ def _get_splade_model():
     we stop trying, and even then callers fall back to the deterministic
     offline encoder (see ``_fallback_encode``) so the sparse stage is never
     dead.
+
+    C6 fix: model download happens OUTSIDE the lock to prevent system-wide
+    deadlock when HF Hub is slow.  Only the brief assignment of loaded
+    model/tokenizer to module globals happens inside the lock.
     """
     global _splade_model, _splade_tokenizer, _splade_load_attempted, _splade_failure_count
-    with _splade_lock:
-        if _splade_load_attempted and _splade_model is not None:
-            return _splade_model, _splade_tokenizer
-        # If we've already exhausted the bounded retry budget, stop trying.
-        if _splade_load_attempted and not _splade_retry_enabled():
-            return _splade_model, _splade_tokenizer
-        if _splade_load_attempted and _splade_failure_count >= _splade_max_failures:
-            if _splade_retry_enabled():
-                # Reset budget so a later call can retry (transient recovery).
-                _splade_failure_count = 0
-                _splade_load_attempted = False
-            return _splade_model, _splade_tokenizer
-
-        _splade_load_attempted = True
-        model_name = os.environ.get("MEMORY_SPLADE_MODEL", _DEFAULT_MODEL)
-        try:
-            from transformers import AutoModelForMaskedLM, AutoTokenizer
-            device = "mps" if torch.backends.mps.is_available() else "cpu"
-            local_only = os.environ.get("HF_HUB_OFFLINE") == "1" or "PYTEST_CURRENT_TEST" in os.environ
-            logger.info("Loading SPLADE model: %s on %s (local_only=%s)", model_name, device, local_only)
-            tok = AutoTokenizer.from_pretrained(model_name, local_files_only=local_only)
-            mdl = AutoModelForMaskedLM.from_pretrained(model_name, local_files_only=local_only).to(device)
-            mdl.eval()
-            _splade_model = mdl
-            _splade_tokenizer = tok
+    # Fast path: already loaded — no lock needed.
+    if _splade_load_attempted and _splade_model is not None:
+        return _splade_model, _splade_tokenizer
+    if _splade_load_attempted and not _splade_retry_enabled():
+        return _splade_model, _splade_tokenizer
+    if _splade_load_attempted and _splade_failure_count >= _splade_max_failures:
+        if _splade_retry_enabled():
             _splade_failure_count = 0
-            logger.info("SPLADE model loaded (vocab=%d, device=%s)", tok.vocab_size, device)
-            return _splade_model, _splade_tokenizer
-        except Exception as e:
-            _splade_failure_count += 1
-            logger.warning(
-                "Failed to load SPLADE model %s (attempt %d/%d): %s",
-                model_name, _splade_failure_count, _splade_max_failures, e,
-            )
-            if _splade_retry_enabled() and _splade_failure_count >= _splade_max_failures:
-                # Allow a future call to retry from scratch once the budget
-                # resets (transient/offline recovery).
-                _splade_load_attempted = False
-            return None, None
+            _splade_load_attempted = False
+        return _splade_model, _splade_tokenizer
+
+    # Download OUTSIDE the lock to avoid holding it during network I/O.
+    model_name = os.environ.get("MEMORY_SPLADE_MODEL", _DEFAULT_MODEL)
+    loaded_model = None
+    loaded_tokenizer = None
+    try:
+        from transformers import AutoModelForMaskedLM, AutoTokenizer
+        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        local_only = os.environ.get("HF_HUB_OFFLINE") == "1" or "PYTEST_CURRENT_TEST" in os.environ
+        logger.info("Loading SPLADE model: %s on %s (local_only=%s)", model_name, device, local_only)
+        tok = AutoTokenizer.from_pretrained(model_name, local_files_only=local_only)
+        mdl = AutoModelForMaskedLM.from_pretrained(model_name, local_files_only=local_only).to(device)
+        mdl.eval()
+        loaded_model = mdl
+        loaded_tokenizer = tok
+    except Exception as e:
+        _splade_failure_count += 1
+        logger.warning(
+            "Failed to load SPLADE model %s (attempt %d/%d): %s",
+            model_name, _splade_failure_count, _splade_max_failures, e,
+        )
+        if _splade_retry_enabled() and _splade_failure_count >= _splade_max_failures:
+            _splade_load_attempted = False
+        return None, None
+
+    # Assign INSIDE the lock (brief — just pointer writes).
+    with _splade_lock:
+        _splade_model = loaded_model
+        _splade_tokenizer = loaded_tokenizer
+        _splade_load_attempted = True
+        _splade_failure_count = 0
+    logger.info("SPLADE model loaded (vocab=%d, device=%s)", loaded_tokenizer.vocab_size, device)
+    return _splade_model, _splade_tokenizer
 
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")

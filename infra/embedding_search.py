@@ -22,6 +22,10 @@ from typing import Any, Optional, TYPE_CHECKING, cast
 
 from infra.memory_config import install_root
 
+# C1 fix: Set a default HuggingFace Hub download timeout so model loads
+# don't block indefinitely when HF Hub is unreachable or slow.
+os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "30")
+
 if TYPE_CHECKING:
     import numpy as np
 
@@ -316,6 +320,8 @@ class EmbeddingSearch:
         # Background thread was hanging; synchronous first-use is more reliable.
         self._model_loaded = False
         self._model_load_failed = False
+        self._model_load_attempts = 0
+        self._load_lock = threading.Lock()
 
     def _ensure_model(self) -> bool:
         """Try to load the embedding model if not yet loaded.
@@ -327,7 +333,9 @@ class EmbeddingSearch:
         """
         if self.model is not None and getattr(self, "np", None) is not None:
             return True
-        if not self._model_loaded and not self._model_load_failed:
+        with self._load_lock:
+            if self._model_loaded or self._model_load_failed:
+                return self.model is not None and getattr(self, "np", None) is not None
             self._load_model()
         return self.model is not None and getattr(self, "np", None) is not None
 
@@ -365,6 +373,12 @@ class EmbeddingSearch:
         return query_vec
 
     def _load_model(self, config=None) -> None:
+        # C1 fix: resolve local_files_only from env.  When set, all HF calls
+        # use local cache only — no network.  First attempt always tries
+        # local-only; on OSError/ValueError (model not cached) we retry
+        # without the flag so the model downloads.
+        _local_only = os.environ.get("HF_HUB_OFFLINE") == "1" or "PYTEST_CURRENT_TEST" in os.environ
+        backend = "auto"
         try:
             import numpy as np
 
@@ -379,7 +393,6 @@ class EmbeddingSearch:
                     logger.warning("_load_model: broad except swallowed: %s", _wp_exc)
                     cfg = None
 
-            backend = "auto"
             if cfg is not None:
                 resolved = getattr(cfg, "embedding_backend", "auto") or "auto"
                 if resolved.lower() not in ("", "auto", "model2vec", "sentence-transformers", "transformers"):
@@ -406,9 +419,10 @@ class EmbeddingSearch:
                 from huggingface_hub import snapshot_download
 
                 _disable_hf_progress_bars()
-                local_path = snapshot_download(
-                    repo_id=model_id,
-                    revision=model_revision if model_id == MODEL_ID else (model_revision or None),
+                rev_kw = model_revision if model_id == MODEL_ID else (model_revision or None)
+                # C1 fix: try local cache first
+                local_path = self._snapshot_download_with_fallback(
+                    model_id, rev_kw, _local_only
                 )
                 self.model = StaticModel.from_pretrained(local_path)
                 self.is_transformer = False
@@ -418,16 +432,10 @@ class EmbeddingSearch:
                 st_kwargs: dict[str, Any] = {"revision": model_revision or None}
                 if device:
                     st_kwargs["device"] = device
-                # Auto-detect: try MPS first, fall back to CPU on meta tensor errors
-                try:
-                    self.model = SentenceTransformer(model_id, **st_kwargs)
-                except Exception as _mps_err:
-                    if "meta tensor" in str(_mps_err).lower() or "Cannot copy" in str(_mps_err):
-                        logger.warning("MPS load failed (%s), falling back to CPU", _mps_err)
-                        st_kwargs["device"] = "cpu"
-                        self.model = SentenceTransformer(model_id, **st_kwargs)
-                    else:
-                        raise
+                # C1 fix: try local cache first, then fall back to download
+                self.model = self._load_sentence_transformer_with_fallback(
+                    model_id, st_kwargs, _local_only
+                )
                 self.model.dim = self.model.get_embedding_dimension()
                 self.is_transformer = True
                 self._model_revision = model_id  # sentence-transformers: model_id is the authority
@@ -436,8 +444,10 @@ class EmbeddingSearch:
                 model_kwargs: dict[str, Any] = {}
                 if model_revision:
                     model_kwargs["revision"] = model_revision
-                tokenizer = AutoTokenizer.from_pretrained(model_id, **model_kwargs)
-                model = AutoModel.from_pretrained(model_id, **model_kwargs)
+                # C1 fix: try local cache first
+                tokenizer, model = self._load_transformers_with_fallback(
+                    model_id, model_kwargs, _local_only
+                )
                 self.model = _TransformerModelWrapper(tokenizer, model)
                 self.is_transformer = True
                 self._model_revision = model_id  # transformers: model_id is the authority
@@ -447,31 +457,84 @@ class EmbeddingSearch:
                     from huggingface_hub import snapshot_download
 
                     _disable_hf_progress_bars()
-                    local_path = snapshot_download(
-                        repo_id=model_id,
-                        revision=model_revision if model_id == MODEL_ID else None,
+                    rev_kw = model_revision if model_id == MODEL_ID else None
+                    local_path = self._snapshot_download_with_fallback(
+                        model_id, rev_kw, _local_only
                     )
                     self.model = StaticModel.from_pretrained(local_path)
                     self.is_transformer = False
                 else:
                     try:
                         from sentence_transformers import SentenceTransformer
-                        self.model = SentenceTransformer(model_id)
+                        self.model = self._load_sentence_transformer_with_fallback(
+                            model_id, {}, _local_only
+                        )
                         self.model.dim = self.model.get_embedding_dimension()
                         self.is_transformer = True
                         self._model_revision = model_id  # sentence-transformers path: model_id is the authority
                     except ImportError:
                         from transformers import AutoTokenizer, AutoModel
-                        tokenizer = AutoTokenizer.from_pretrained(model_id)
-                        model = AutoModel.from_pretrained(model_id)
+                        tokenizer, model = self._load_transformers_with_fallback(
+                            model_id, {}, _local_only
+                        )
                         self.model = _TransformerModelWrapper(tokenizer, model)
                         self.is_transformer = True
                         self._model_revision = model_id  # transformers backstop: model_id is the authority
             self._model_loaded = True
         except Exception as e:
-            logger.error("Failed to load embedding model [%s]: %s", backend, e)
-            self._model_load_failed = True
+            # C3 fix: bounded retry — only permanently fail after max attempts
+            self._model_load_attempts += 1
+            max_attempts = int(os.environ.get("MEMORY_EMBEDDING_MAX_RETRIES", "3"))
+            if self._model_load_attempts >= max_attempts:
+                logger.error(
+                    "Embedding model load failed %d/%d times, giving up: %s",
+                    self._model_load_attempts, max_attempts, e,
+                )
+                self._model_load_failed = True
+            else:
+                logger.warning(
+                    "Embedding model load attempt %d/%d failed: %s",
+                    self._model_load_attempts, max_attempts, e,
+                )
             self.model = None
+
+    # -- C1 fix: local-first download helpers --------------------------------
+
+    def _snapshot_download_with_fallback(self, model_id, revision, local_only):
+        """Try local_files_only first; fall back to network download."""
+        from huggingface_hub import snapshot_download
+        if local_only:
+            try:
+                return snapshot_download(
+                    repo_id=model_id, revision=revision, local_files_only=True,
+                )
+            except (OSError, ValueError):
+                logger.info("Model %s not in local cache, downloading...", model_id)
+        return snapshot_download(repo_id=model_id, revision=revision)
+
+    def _load_sentence_transformer_with_fallback(self, model_id, st_kwargs, local_only):
+        """Try local_files_only first; fall back to network download."""
+        from sentence_transformers import SentenceTransformer
+        if local_only:
+            try:
+                return SentenceTransformer(model_id, local_files_only=True, **st_kwargs)
+            except (OSError, ValueError):
+                logger.info("SentenceTransformer %s not in local cache, downloading...", model_id)
+        return SentenceTransformer(model_id, **st_kwargs)
+
+    def _load_transformers_with_fallback(self, model_id, model_kwargs, local_only):
+        """Try local_files_only first; fall back to network download. Returns (tokenizer, model)."""
+        from transformers import AutoTokenizer, AutoModel
+        if local_only:
+            try:
+                tok = AutoTokenizer.from_pretrained(model_id, local_files_only=True, **model_kwargs)
+                mdl = AutoModel.from_pretrained(model_id, local_files_only=True, **model_kwargs)
+                return tok, mdl
+            except (OSError, ValueError):
+                logger.info("Transformers model %s not in local cache, downloading...", model_id)
+        tok = AutoTokenizer.from_pretrained(model_id, **model_kwargs)
+        mdl = AutoModel.from_pretrained(model_id, **model_kwargs)
+        return tok, mdl
 
     def wait_for_model(self, timeout_s: float = 60.0) -> bool:
         """Block until the model finishes loading or loading is declared failed.
@@ -479,8 +542,11 @@ class EmbeddingSearch:
         Returns True if the model is ready, False if loading failed or timed
         out.  Safe to call from tests and CLI entry points that require the
         model before proceeding.
+
+        Re-calls _ensure_model() on each iteration to support bounded retry:
+        if the first attempt failed but retries remain, the next poll will
+        re-trigger the load.
         """
-        self._ensure_model()
         import time
 
         deadline = time.monotonic() + timeout_s
@@ -489,7 +555,8 @@ class EmbeddingSearch:
                 return True
             if self._model_load_failed:
                 return False
-            time.sleep(0.05)
+            self._ensure_model()
+            time.sleep(0.1)
         return bool(self._model_loaded)
 
     def encode(self, texts) -> np.ndarray | None:
