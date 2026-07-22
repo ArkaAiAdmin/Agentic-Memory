@@ -69,15 +69,8 @@ def _fts_search(
     prefilter_ids: set[str] | None = None,
     recency_order: bool = False,
 ) -> list:
-    import sys
-    print(f"FTS_DEBUG: fts_query={fts_query!r} limit={limit} has_fitness={has_fitness} repo_filter={repo_filter!r} tag_filter_sql={tag_filter_sql!r} tag_filter_params={tag_filter_params!r} category={category!r}", file=sys.stderr)
-    try:
-        _cnt = db.execute("SELECT COUNT(*) FROM tenant_memories").fetchone()[0]
-        _tid = db.execute("SELECT tenant_id()").fetchone()[0]
-        print(f"FTS_DEBUG: tenant_memories count={_cnt} tenant_id()={_tid!r} db_id={id(db)}", file=sys.stderr)
-    except Exception as _e:
-        print(f"FTS_DEBUG: tenant_memories error={_e}", file=sys.stderr)
     _base_filter = repo_filter + tag_filter_sql
+
     if prefilter_ids:
         _id_list = ",".join("?" for _ in prefilter_ids)
         _base_filter = _base_filter + f" AND m.id IN ({_id_list})"

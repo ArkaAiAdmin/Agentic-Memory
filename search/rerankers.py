@@ -225,22 +225,10 @@ def _apply_cross_encoder_rerank(
     tail = scored_results[top_k:]
     blend = _get_cross_encoder_blend()
     docs = [r[1] or "" for r in head]
-    ce_scores: list = []
     if deep_rerank:
         try:
-            import torch
-            if torch.backends.mps.is_available() and not torch.cuda.is_available():
-                global _mps_warned
-                if not _mps_warned:
-                    logger.warning(
-                        "deep_rerank requested but only MPS backend is available; "
-                        "falling back to weak CE for this query."
-                    )
-                    _mps_warned = True
-        except ImportError:
-            pass
-        try:
             from infra._lazy_imports import get_config
+
             from infra.reranker import get_reranker, normalize_rerank_score
 
             reranker = get_reranker()

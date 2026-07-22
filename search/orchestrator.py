@@ -1316,8 +1316,6 @@ def search_memories(
                 related_facts = kg_future.result()
                 _record_phase_latency("search.kg_facts", _t0)
             else:
-                import sys
-                print(f"DEBUG hybrid else: fts_query={fts_query!r} tag_filter_params={tuple(_tag_filter_params)!r} category={category!r}", file=sys.stderr)
                 results = _fts_search(
                     db, fts_query, limit * 5 if _effective_rerank else limit, has_fitness,
                     repo_filter,
@@ -1326,9 +1324,8 @@ def search_memories(
                     category=category or None,
                     prefilter_ids=None,
                 )
-                import sys
-                print(f"DEBUG after _fts_search: len={len(results)} results={results}", file=sys.stderr)
                 _record_phase_latency("search.fts", _t0)
+
                 if include_facts:
                     _t0_kg = time.time()
                     related_facts = _search_kg_facts(

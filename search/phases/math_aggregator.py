@@ -15,9 +15,10 @@ logger = logging.getLogger(__name__)
 
 # Keywords triggering aggregation
 _AGG_PATTERNS = [
-    re.compile(r"\b(total|combined|sum|altogether|overall|combining)\b", re.IGNORECASE),
+    re.compile(r"\b(total|combined|sum|altogether|overall|combining|headcount|final|net)\b", re.IGNORECASE),
     re.compile(r"\bhow\s+many\s+.*in\s+(total|all)\b", re.IGNORECASE),
 ]
+
 
 # Regex for numbers (supports integers, decimals, commas e.g. 500,000 or 500k/300k)
 _NUM_RE = re.compile(r"\b(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k|m|b|million|billion|thousand)?\b", re.IGNORECASE)

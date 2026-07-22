@@ -136,30 +136,51 @@ def _hybrid_fusion(
             _sem_w = embedding_weight_override
         _chunk_fts_w = float(getattr(_sc, "hybrid_chunk_fts_weight", 0.8))
         _splade_w = float(getattr(_sc, "hybrid_splade_weight", 0.6))
-        _es_results = _es.search(normalized_query, db_path, limit=limit * _overfetch)
-        if not isinstance(_es_results, list):
-            _es_results = []
-        fts_ranked = [r[0] for r in results]
-        sem_ranked = [h.get("id") for h in _es_results if h.get("id")]
 
-        # Get chunk-level FTS hits and build their ranked parent ID list
-        chunk_hits = _search_chunks_enhanced(db, fts_query, limit=limit * 2)
-        merged_chunks = _merge_chunk_hits(chunk_hits)
+        fts_ranked = [r[0] for r in results]
+
+        def _do_vector() -> list:
+            try:
+                res = _es.search(normalized_query, db_path, limit=limit * _overfetch)
+                return res if isinstance(res, list) else []
+            except Exception:
+                return []
+
+        def _do_chunks() -> list:
+            try:
+                hits = _search_chunks_enhanced(db, fts_query, limit=limit * 2)
+                return _merge_chunk_hits(hits)
+            except Exception:
+                return []
+
+        def _do_splade() -> list:
+            try:
+                from infra.splade_encoder import encode_sparse
+                from search.splade_index import splade_search
+
+                query_sparse = encode_sparse(normalized_query)
+                if query_sparse:
+                    splade_results = splade_search(db, query_sparse, top_k=limit * _overfetch)
+                    return [mid for mid, _ in splade_results]
+            except Exception as _splade_exc:
+                logger.debug("SPLADE search skipped: %s", _splade_exc)
+            return []
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="hybrid-retrieval") as _tp:
+            fut_v = _tp.submit(_do_vector)
+            fut_c = _tp.submit(_do_chunks)
+            fut_s = _tp.submit(_do_splade)
+            _es_results = fut_v.result()
+            merged_chunks = fut_c.result()
+            splade_ranked = fut_s.result()
+
+        sem_ranked = [h.get("id") for h in _es_results if h.get("id")]
         if chunk_hits_out is not None:
             chunk_hits_out.append(merged_chunks)
         chunk_fts_ranked = [p_id for p_id, _, _, _, _ in merged_chunks]
 
-        # SPLADE sparse search (Phase 4)
-        splade_ranked = []
-        try:
-            from infra.splade_encoder import encode_sparse
-            from search.splade_index import splade_search
-            query_sparse = encode_sparse(normalized_query)
-            if query_sparse:
-                splade_results = splade_search(db, query_sparse, top_k=limit * _overfetch)
-                splade_ranked = [mid for mid, _ in splade_results]
-        except Exception as _splade_exc:
-            logger.debug("SPLADE search skipped: %s", _splade_exc)
 
         # Adaptive weighting: boost semantic for abstract/synonym queries
         # Check if FTS has few results (indicates vocabulary mismatch)
