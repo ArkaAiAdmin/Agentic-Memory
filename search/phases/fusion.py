@@ -254,11 +254,20 @@ def _hybrid_fusion(
             r_list[_RRF_FIELD_IDX] = -rrf_score * _rank_scale
             merged.append(tuple(r_list))
         for r in semantic_only:
+            hit_id = r[0]
+            rrf_score = rrf.get(hit_id, 0.0)
             r_list = list(r)
             while len(r_list) <= _RRF_FIELD_IDX:
                 r_list.append(None)
+            r_list[_RRF_FIELD_IDX] = -rrf_score * _rank_scale
             merged.append(tuple(r_list))
-        merged.sort(key=lambda x: x[_RRF_FIELD_IDX] if len(x) > _RRF_FIELD_IDX else x[5] if len(x) > 5 else 0)
+        merged.sort(
+            key=lambda x: (
+                x[_RRF_FIELD_IDX]
+                if len(x) > _RRF_FIELD_IDX and x[_RRF_FIELD_IDX] is not None
+                else (x[5] if len(x) > 5 and x[5] is not None else 0.0)
+            )
+        )
         return merged
     except Exception as e:
         _phase_inc("search.hybrid_fusion", e)

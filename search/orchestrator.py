@@ -418,6 +418,13 @@ def _rerank_results(
             )
         )
 
+    if budget.should_run("kg_boost", 50):
+        try:
+            scored = _phase_ten_kg_boost(db, scored, query)
+            scored = _phase_ten_multi_hop_kg(db, scored, query, limit=limit * 2)
+        except Exception as _kg_exc:
+            logger.debug("kg_boost / multi_hop_kg skipped: %s", _kg_exc)
+
     scored = _strong_match_float(scored)
     # PR1.2: CE reranking writes r[6] first (single monotonic CE stage),
     # selected by query type (weak default / chunk for long-multi-part /
@@ -504,9 +511,18 @@ def _rerank_results(
     # neutral until trained, and deliberately the last r[6] writer. Re-assert
     # the ranking order so any future in-place score mutation cannot leak into
     # result ordering.
+    is_fact_or_temp = bool(_FACT_LOOKUP_RE.search(query))
+    def _rank_key(r):
+        score = float(r[6]) if r[6] is not None else 0.0
+        ts = str(r[4]) if len(r) > 4 and r[4] is not None else ""
+        if is_fact_or_temp:
+            # Round score to group near-equal relevance scores, then use timestamp as tie-breaker
+            return (round(score, 2), ts)
+        return (score, ts)
+
     out = sorted(
         out,
-        key=lambda r: (float(r[6]) if r[6] is not None else 0.0),
+        key=_rank_key,
         reverse=True,
     )
     return out[:limit], _qweights
@@ -531,6 +547,7 @@ def _counting_phase(
         r"how\s+(many\s+times|often)",
         r"number\s+of\s+times",
         r"count\s+of",
+        r"how\s+many\s+(distinct|different)\s+values",
     ]
     is_count = any(_re.search(p, query, _re.IGNORECASE) for p in _COUNT_PATTERNS)
     if not is_count:
@@ -877,7 +894,30 @@ def search_memories(
         _bare_tokens = [w for w in _re.findall("[\\w@\\#\\.\\+\\-]+", normalized_query, flags=_re.UNICODE)
                         if w.lower() not in _STOP_WORDS and len(w) > 1]
         if _bare_tokens:
-            fts_query = " OR ".join(f'"{t}"' for t in _bare_tokens)
+            # Detect multi-word entities (consecutive non-stop-words) and
+            # use phrase matching for them. This prevents "volunteer hours"
+            # from matching "working hours" — the exact phrase must appear.
+            # "current" is not a formal stop word but is absent from BEAM
+            # content ("X is now Y" format), so exclude it from entities.
+            _fact_stop = _STOP_WORDS | {"current", "now", "what"}
+            _entities = []
+            _current = []
+            for t in _bare_tokens:
+                if t.lower() not in _fact_stop and len(t) > 1:
+                    _current.append(t)
+                else:
+                    if len(_current) >= 2:
+                        _entities.append(" ".join(_current))
+                    _current = []
+            if len(_current) >= 2:
+                _entities.append(" ".join(_current))
+
+            if _entities:
+                # Phrase match only — the entity name must appear exactly
+                fts_query = " OR ".join(f'"{e}"' for e in _entities)
+            else:
+                # Single-token queries: use OR
+                fts_query = " OR ".join(f'"{t}"' for t in _bare_tokens if len(t) > 1)
         else:
             fts_query = ""
         bare_text = " ".join(_bare_tokens)

@@ -85,23 +85,10 @@ def _fts_search(
     else:
         _params = ()
     _order = "m.observed_at DESC" if recency_order else "fts.rank"
-    if has_fitness:
-        params: tuple = (fts_query,) + tag_filter_params + _params
-        return db.execute(
-            f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
-            "                 m.fitness_score, m.importance, m.pinned, m.last_accessed, m.metadata, m.access_count,\n"
-            "                 m.score, m.supersedes\n"
-            "          FROM memories_fts fts\n"
-            "          JOIN tenant_memories m ON m.id = fts.id\n"
-            f"          WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter}\n"
-            f"          ORDER BY {_order}\n"
-            "          LIMIT ?",
-            (*params, limit * 2),
-        ).fetchall()
     params = (fts_query,) + tag_filter_params + _params
-    return db.execute(
+    res = db.execute(
         f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
-        "             NULL, NULL, NULL, m.last_accessed, m.metadata, m.access_count,\n"
+        f"             {'m.fitness_score, m.importance, m.pinned' if has_fitness else 'NULL, NULL, NULL'}, m.last_accessed, m.metadata, m.access_count,\n"
         "             m.score, m.supersedes\n"
         "      FROM memories_fts fts\n"
         "      JOIN tenant_memories m ON m.id = fts.id\n"
@@ -110,6 +97,21 @@ def _fts_search(
         "      LIMIT ?",
         (*params, limit * 2),
     ).fetchall()
+    if not res and tag_filter_sql:
+        _base_filter_fallback = repo_filter + (f" AND m.id IN ({','.join('?' for _ in prefilter_ids)})" if prefilter_ids else "")
+        _params_fallback = (fts_query,) + _params
+        res = db.execute(
+            f"SELECT m.id, m.content, m.source_file, m.tags, m.created_at, fts.rank,\n"
+            f"             {'m.fitness_score, m.importance, m.pinned' if has_fitness else 'NULL, NULL, NULL'}, m.last_accessed, m.metadata, m.access_count,\n"
+            "             m.score, m.supersedes\n"
+            "      FROM memories_fts fts\n"
+            "      JOIN tenant_memories m ON m.id = fts.id\n"
+            f"      WHERE memories_fts MATCH ? AND m.deleted_at IS NULL{_base_filter_fallback}\n"
+            f"      ORDER BY {_order}\n"
+            "      LIMIT ?",
+            (*_params_fallback, limit * 2),
+        ).fetchall()
+    return res
 
 
 def _fallback_embedding_search(

@@ -165,12 +165,13 @@ def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
         for idx, chunk in enumerate(chunks):
             memory_id = f"beam/conv{conv['conversation_id']}/chunk_{idx:04d}"
             timestamp = (datetime(2024, 1, 1) + timedelta(days=idx)).isoformat()
+            chunk_with_meta = f"[Session Date: {timestamp[:10]}]\n{chunk}"
             conn.execute(
                 """INSERT OR REPLACE INTO memories
                    (id, content, source_file, tags, created_at, updated_at,
                     observed_at, pinned, importance, category, tenant_id)
                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, 3, 'sessions', 'beam')""",
-                (memory_id, chunk, f"beam/conv{conv['conversation_id']}",
+                (memory_id, chunk_with_meta, f"beam/conv{conv['conversation_id']}",
                  json.dumps([f"conv_{conv['conversation_id']}", conv["category"]]),
                  timestamp, timestamp, timestamp),
             )
@@ -178,7 +179,7 @@ def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
             try:
                 conn.execute(
                     "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
-                    (memory_id, chunk),
+                    (memory_id, chunk_with_meta),
                 )
             except Exception:
                 pass
