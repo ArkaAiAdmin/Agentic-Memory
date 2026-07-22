@@ -783,10 +783,7 @@ def open_db(
     from infra.db_migrations import run_schema_setup
     from contextlib import nullcontext
 
-    # B-3 follow-up (2026-06-22): cross-process serialisation.  The
-    # flock is acquired on entry and released on exit.  When the
-    # env var ``MEMORY_DB_FLOCK=0``, ``db_path_flock()`` is a no-op.
-    from infra.db_path_flock import db_path_flock
+
 
     path = Path(path)
     if str(path) != ":memory:":
@@ -808,6 +805,14 @@ def open_db(
             if row_factory is not None:
                 conn.row_factory = row_factory
             run_schema_setup(conn)
+            # Run saga crash recovery once per process (per DB path).
+            try:
+                from infra.saga import recover_incomplete_sagas
+                n = recover_incomplete_sagas(conn)
+                if n:
+                    logger.info("saga recovery: recovered %d incomplete sagas", n)
+            except Exception:
+                pass  # non-fatal: saga_log table may not exist yet
             t_id = tenant_id or "default"
             try:
                 if isinstance(conn, sqlite3.Connection):
@@ -842,8 +847,9 @@ def open_db(
     if not write and not pooled:
         pooled = True
 
-    lock_ctx = db_path_flock(path) if write else nullcontext()
-    with lock_ctx:
+    # Write path returns above (line ~840); only read/pooled reaches here.
+    # db_path_flock is engaged per-command by the write queue for write sessions.
+    with nullcontext():
         if pooled:
             conn = connection_pool.get(str(path), timeout=timeout, tenant_id=tenant_id)
             original_row_factory = conn.row_factory

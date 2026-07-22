@@ -179,12 +179,28 @@ def dedup_entities(conn: AnyConnection, dry_run: bool = False) -> dict:
         keep_id = rows[0][0]
         delete_ids = [r[0] for r in rows[1:]]
 
-        for did in delete_ids:
-            result = merge_entities(conn, keep_id, did, dry_run=dry_run)
-            edges_redirected += result["edges_redirected"]
-            entities_merged += 1
+        # Wrap each group's merge loop in an explicit transaction for
+        # atomicity on raw connections.  Proxy connections (already in
+        # a session transaction) have BEGIN swallowed, so the guard
+        # skips the explicit BEGIN for them.
+        if not dry_run and not getattr(conn, "in_transaction", False):
+            conn.execute("BEGIN IMMEDIATE")
+        try:
+            for did in delete_ids:
+                result = merge_entities(conn, keep_id, did, dry_run=dry_run)
+                edges_redirected += result["edges_redirected"]
+                entities_merged += 1
+            if not dry_run and not getattr(conn, "in_transaction", False):
+                conn.commit()
+        except Exception:
+            if not dry_run and not getattr(conn, "in_transaction", False):
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            raise
 
-    if not dry_run:
+    if not dry_run and not getattr(conn, "in_transaction", False):
         conn.commit()
 
     return {
@@ -323,19 +339,29 @@ def dedup_entities_semantic(
     edges_redirected = 0
     merged_ids: set[int] = set()  # Prevent double-merge
 
-    for c in candidates:
-        keep_id = c["keep_id"]
-        merge_id = c["merge_id"]
-        # Skip if either was already merged in this pass
-        if keep_id in merged_ids or merge_id in merged_ids:
-            continue
-        result = merge_entities(conn, keep_id, merge_id, dry_run=dry_run)
-        edges_redirected += result["edges_redirected"]
-        entities_merged += 1
-        merged_ids.add(merge_id)
-
-    if not dry_run:
-        conn.commit()
+    if not dry_run and not getattr(conn, "in_transaction", False):
+        conn.execute("BEGIN IMMEDIATE")
+    try:
+        for c in candidates:
+            keep_id = c["keep_id"]
+            merge_id = c["merge_id"]
+            # Skip if either was already merged in this pass
+            if keep_id in merged_ids or merge_id in merged_ids:
+                continue
+            result = merge_entities(conn, keep_id, merge_id, dry_run=dry_run)
+            edges_redirected += result["edges_redirected"]
+            entities_merged += 1
+            merged_ids.add(merge_id)
+            merged_ids.add(keep_id)  # M27: also track keep_id
+        if not dry_run and not getattr(conn, "in_transaction", False):
+            conn.commit()
+    except Exception:
+        if not dry_run and not getattr(conn, "in_transaction", False):
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        raise
 
     return {
         "semantic_groups_found": len(candidates),

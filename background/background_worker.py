@@ -61,6 +61,51 @@ logger = logging.getLogger(__name__)
 # Graceful shutdown flag
 _shutdown = False
 
+# Shutdown grace period (seconds) — how long to wait for in-flight
+# tasks to finish before force-exiting.
+_SHUTDOWN_GRACE_S = int(os.environ.get("MEMORY_WORKER_SHUTDOWN_GRACE_S", "10"))
+
+# Event that the reconciler thread waits on during graceful shutdown.
+_RECONCILER_SHUTDOWN = threading.Event()
+
+
+def _cleanup_task_artifacts(task_type: str, payload: dict) -> None:
+    """Remove temporary directories created by a task (best-effort)."""
+    temp_dir = payload.get("temp_dir") or payload.get("working_dir")
+    if not temp_dir:
+        return
+    try:
+        import shutil
+        p = Path(temp_dir)
+        if p.exists():
+            shutil.rmtree(p, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _shutdown_force_exit() -> None:
+    """Force-exit after the grace period if the process is still alive."""
+    import sys
+    time.sleep(_SHUTDOWN_GRACE_S)
+    logger.warning("worker: grace period exhausted, force-exiting")
+    sys.exit(1)
+
+
+def _start_reconciler(
+    db_path: Path,
+    once: bool = False,
+    interval: int = 300,
+    max_tasks: int = 10000,
+) -> threading.Thread:
+    """Start the reconciler worker in a background thread (test helper)."""
+    t = threading.Thread(
+        target=run_worker,
+        kwargs=dict(db_path=db_path, once=once, interval=interval, max_tasks=max_tasks),
+        daemon=True,
+    )
+    t.start()
+    return t
+
 # Default batch size for the non-drain worker loop.  Each cron tick
 # processes up to this many tasks before sleeping for ``interval``
 # seconds again.  The previous behaviour was exactly 1 task per tick,
@@ -1010,8 +1055,11 @@ def run_worker(
         n_workers: Number of concurrent worker threads (default 1).
             Pass >1 to enable the threaded WorkerPool.
     """
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
+    # signal.signal only works in the main thread.
+    import threading as _threading
+    if _threading.current_thread() is _threading.main_thread():
+        signal.signal(signal.SIGTERM, _handle_signal)
+        signal.signal(signal.SIGINT, _handle_signal)
 
     logger.info(
         "worker: starting (db=%s, interval=%ds, once=%s, drain=%s, "

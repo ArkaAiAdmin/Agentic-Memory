@@ -485,9 +485,11 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
         except Exception:
             pass
         with conn:
+            deferred: set[int] = set()  # migrations with forward-ref failures
             for num, path in pending:
                 logger.info("Applying migration %03d: %s", num, path.name)
                 statements = _parse_sql_file(path)
+                broke_for_deferred = False
                 for stmt in statements:
                     try:
                         conn.execute(stmt)
@@ -521,14 +523,21 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                             re.search(rf"\b{re.escape(kw)}\b", msg)
                             for kw in ("no such table",)
                         ):
+                            # Forward-reference: a later migration likely
+                            # creates the missing object.  Defer this
+                            # migration and break — later migrations in
+                            # this same run likely depend on the same
+                            # missing object and will also fail.
+                            deferred.add(num)
                             logger.warning(
-                                "Migration %03d statement references object "
-                                "created by a later migration (%s); "
-                                "this is expected and will resolve on "
-                                "next startup.",
+                                "Migration %03d references object not yet "
+                                "created (forward-ref: %s); deferred — "
+                                "will retry on next startup.",
                                 num,
                                 e,
                             )
+                            broke_for_deferred = True
+                            break
                         else:
                             logger.error(
                                 "Migration %03d statement failed (non-idempotent): %s",
@@ -536,24 +545,32 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                                 e,
                             )
                             raise
+                if broke_for_deferred:
+                    # Skip remaining migrations in this run — they likely
+                    # depend on the same missing object.
+                    break
 
             # Build checksums for newly applied migrations, then write
-            # version + checksums to schema_version.
+            # version + checksums to schema_version.  Exclude deferred
+            # and unattempted migrations so they re-run on next startup.
+            applied = {num for num, _ in pending} - deferred
             checksums = _get_checksums(conn)
             for num, path in pending:
-                checksums[str(num)] = hashlib.sha256(path.read_bytes()).hexdigest()
+                if num not in deferred:
+                    checksums[str(num)] = hashlib.sha256(path.read_bytes()).hexdigest()
 
-            highest_applied = max(num for num, _ in pending)
-            conn.execute(
-                "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
-                (highest_applied, json.dumps(checksums)),
-            )
+            if applied:
+                highest_applied = max(applied)
+                conn.execute(
+                    "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
+                    (highest_applied, json.dumps(checksums)),
+                )
             # If the cap SCHEMA_VERSION is higher than the highest
             # applied migration in this run (e.g., a migration was
             # skipped because of the file-presence filter in
             # ``_get_applied_migrations``), bump once more to the
             # cap.  This is idempotent.
-            if SCHEMA_VERSION > highest_applied:
+            if SCHEMA_VERSION > highest_applied if applied else False:
                 conn.execute(
                     "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
                     (SCHEMA_VERSION, json.dumps(checksums)),

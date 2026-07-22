@@ -135,10 +135,13 @@ class InMemoryLock:
 
 
 class FileLock:
-    """POSIX flock-based lock, the default for single-host deploys.
+    """POSIX flock-based lock with per-thread mutual exclusion.
 
-    Per-process re-entrant: the same process can acquire the lock
-    multiple times without blocking (Linux flock is per-fd).
+    Per-thread re-entrant: the same thread can acquire the lock
+    multiple times without blocking (depth counting).  Different
+    threads within the same process are serialised: the second
+    thread blocks on a threading.Lock until the owner fully
+    releases.
 
     Cross-process serialisation: blocks until the file is unlocked
     by the holder, or the timeout expires.
@@ -154,47 +157,60 @@ class FileLock:
         self.name = f"file:{self.path}"
         self.timeout = timeout
         self._fd: int | None = None
-        self._lock = threading.Lock()
-        self._reentrant_count = 0
+        # _thread_lock serialises fd open + flock across threads.
+        self._thread_lock = threading.Lock()
+        # _owner_lock protects _owner and _depth.
+        self._owner_lock = threading.Lock()
+        self._owner: int | None = None
+        self._depth = 0
 
     def acquire(self, timeout: float | None = None) -> None:
         if timeout is None:
             timeout = self.timeout
-        with self._lock:
-            if self._fd is not None:
-                # Re-entrant in this process.
-                self._reentrant_count += 1
+        tid = threading.get_ident()
+        with self._owner_lock:
+            if self._owner == tid:
+                # Re-entrant: same thread, just bump depth.
+                self._depth += 1
                 return
+        # Different thread (or first acquisition): serialise on
+        # _thread_lock so concurrent fd/flock ops don't race.
+        with self._thread_lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            # Open in append mode so writes (if any) don't truncate.
-            self._fd = os.open(
+            fd = os.open(
                 str(self.path),
                 os.O_CREAT | os.O_RDWR | os.O_APPEND,
                 0o644,
             )
-        # Acquire flock outside the lock so we don't hold the
-        # threading lock during the (potentially long) blocking call.
-        start = time.monotonic()
-        while True:
-            try:
-                fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except (BlockingIOError, OSError):
-                elapsed = time.monotonic() - start
-                if elapsed >= timeout:
-                    os.close(self._fd)
-                    self._fd = None
-                    raise LockTimeout(f"could not acquire {self.name} in {timeout}s")
-                # Short backoff before retry.
-                time.sleep(0.05)
-        with self._lock:
-            self._reentrant_count = 1
+            start = time.monotonic()
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except (BlockingIOError, OSError):
+                    elapsed = time.monotonic() - start
+                    if elapsed >= timeout:
+                        os.close(fd)
+                        raise LockTimeout(
+                            f"could not acquire {self.name} in {timeout}s"
+                        )
+                    time.sleep(0.05)
+            self._fd = fd
+            with self._owner_lock:
+                self._owner = tid
+                self._depth = 1
 
     def release(self) -> None:
-        with self._lock:
-            if self._reentrant_count > 1:
-                self._reentrant_count -= 1
+        with self._owner_lock:
+            if self._owner is None:
                 return
+            self._depth -= 1
+            if self._depth > 0:
+                return
+            self._owner = None
+        # Depth reached 0: release the flock and close fd under
+        # _thread_lock so no concurrent acquire() races the fd.
+        with self._thread_lock:
             if self._fd is None:
                 return
             try:
@@ -204,7 +220,6 @@ class FileLock:
             finally:
                 os.close(self._fd)
                 self._fd = None
-                self._reentrant_count = 0
 
 
 # ---------------------------------------------------------------------------

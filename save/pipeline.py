@@ -2663,6 +2663,8 @@ def patch_memory(
     """
     if not additions and not deletions:
         return _err(ErrorCode.INVALID_PARAMS, "At least one of additions or deletions is required")
+    source_path = None
+    new_content = None
     try:
         from infra.db import open_db
         from infra.memory_common import safe_atomic_write
@@ -2706,14 +2708,12 @@ def patch_memory(
 
             # Update the DB row with new content
             now_iso = datetime.now(timezone.utc).isoformat()
-            db.execute(
-                "UPDATE tenant_memories SET content = ?, updated_at = ? WHERE id = ?",
+            cur = db.execute(
+                "UPDATE tenant_memories SET content = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
                 (new_content, now_iso, note_id),
             )
-
-            # Update the .md file if it exists
-            if source_path and source_path.exists():
-                safe_atomic_write(source_path, new_content, encoding="utf-8")
+            if cur.rowcount == 0:
+                return _err(ErrorCode.NOT_FOUND, f"note '{note_id}' vanished during patch")
 
             # Append to metadata.patch_history
             meta = {}
@@ -2733,10 +2733,12 @@ def patch_memory(
                 patch_history = []
             patch_history.append(patch_entry)
             meta["patch_history"] = patch_history
-            db.execute(
-                "UPDATE tenant_memories SET metadata = ? WHERE id = ?",
+            cur2 = db.execute(
+                "UPDATE tenant_memories SET metadata = ? WHERE id = ? AND deleted_at IS NULL",
                 (json.dumps(meta), note_id),
             )
+            if cur2.rowcount == 0:
+                return _err(ErrorCode.NOT_FOUND, f"note '{note_id}' vanished during patch")
 
             # Record in revision log
             _record_revision_log(
@@ -2744,6 +2746,16 @@ def patch_memory(
                 old_content=content, new_content=new_content,
                 metadata_json=json.dumps({"patch_entry": patch_entry}),
             )
+        # DB committed. File write happens AFTER the session exits so
+        # DB is the source of truth; on file failure, DB stays consistent.
+        if source_path and source_path.exists() and new_content is not None:
+            try:
+                safe_atomic_write(source_path, new_content, encoding="utf-8")
+            except Exception as file_exc:
+                logger.warning(
+                    "patch_memory: DB committed but file write failed for %s: %s",
+                    source_path, file_exc,
+                )
 
     except Exception as e:
         logger.exception("patch_memory failed for %s", note_id)

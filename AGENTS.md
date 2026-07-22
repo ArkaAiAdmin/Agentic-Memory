@@ -8,7 +8,7 @@ If you are an agent **using** the system (not maintaining it): read `AGENT_CONTR
 <!--AUTO-GEN:START key="what_this_system_is"-->
 - **Surface**: 24 CORE verbs + `memory_maintenance` router (92 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 49+ cron jobs
 - **Schema**: v73, ~89 tables
-- **Code**: ~145k LOC production, ~110k+ test LOC; see `docs/architecture.md`
+- **Code**: ~146k LOC production, ~110k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 

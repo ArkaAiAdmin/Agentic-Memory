@@ -124,58 +124,75 @@ class PathLockFd:
     """Holds a lock lease for the per-DB-path database lock.
 
     The lock is acquired dynamically using get_lock_manager().
-    Supports re-entrant nesting within the same process.
+    Per-thread re-entrant: a thread that already holds the lock can
+    acquire it again (depth counting).  Different threads within the
+    same process are serialised via an intra-process lock.
     """
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._lock = threading.Lock()
-        self._ref_count = 0
+        self._thread_lock = threading.Lock()
+        self._owner: int | None = None
+        self._depth = 0
         self._lease_token: str | None = None
 
     def acquire(self, timeout: float = 30.0) -> None:
-        """Acquire the lock. Per-process re-entrant.
+        """Acquire the lock. Per-thread re-entrant.
 
         Blocks by polling get_lock_manager() until the lock is acquired
         or *timeout* seconds elapse. Raises ``TimeoutError`` on timeout.
+        Different threads are serialised: a thread that doesn't own the
+        lock blocks on the intra-process lock until the owner fully
+        releases.
         """
-        with self._lock:
-            if self._ref_count == 0:
-                import os
-                import time
-                from infra.lock_manager import get_lock_manager
-                lm = get_lock_manager()
-                key = os.path.abspath(str(self.path))
-                deadline = time.monotonic() + timeout
-                backoff = 0.05
-                while True:
-                    success, token = lm.acquire_lock(key, "db-path-flock", ttl_seconds=300)
-                    if success:
-                        self._lease_token = token
-                        break
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError(
-                            f"Could not acquire db_path_flock for {self.path} within {timeout}s"
-                        )
-                    time.sleep(min(backoff, deadline - time.monotonic()))
-                    backoff = min(backoff * 2, 1.0)
-            self._ref_count += 1
+        tid = threading.get_ident()
+        with self._thread_lock:
+            if self._owner == tid:
+                # Re-entrant: same thread, just bump depth.
+                self._depth += 1
+                return
+            # Different thread or first acquisition.
+            import os
+            import time
+            from infra.lock_manager import get_lock_manager
+            lm = get_lock_manager()
+            key = os.path.abspath(str(self.path))
+            deadline = time.monotonic() + timeout
+            backoff = 0.05
+            while True:
+                success, token = lm.acquire_lock(key, "db-path-flock", ttl_seconds=300)
+                if success:
+                    self._lease_token = token
+                    break
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"Could not acquire db_path_flock for {self.path} within {timeout}s"
+                    )
+                time.sleep(min(backoff, deadline - time.monotonic()))
+                backoff = min(backoff * 2, 1.0)
+            self._owner = tid
+            self._depth = 1
 
     def release(self) -> None:
         """Release the lock lease when reference count reaches 0."""
-        with self._lock:
-            if self._ref_count > 0:
-                self._ref_count -= 1
-                if self._ref_count == 0 and self._lease_token is not None:
-                    import os
-                    from infra.lock_manager import get_lock_manager
-                    lm = get_lock_manager()
-                    key = os.path.abspath(str(self.path))
-                    try:
-                        lm.release_lock(key, self._lease_token)
-                    except Exception as e:
-                        logger.warning("db_path_flock release failed: %s", e)
-                    self._lease_token = None
+        with self._thread_lock:
+            if self._owner is None:
+                return
+            self._depth -= 1
+            if self._depth > 0:
+                return
+            # Depth reached 0: release the inter-process lease.
+            if self._lease_token is not None:
+                import os
+                from infra.lock_manager import get_lock_manager
+                lm = get_lock_manager()
+                key = os.path.abspath(str(self.path))
+                try:
+                    lm.release_lock(key, self._lease_token)
+                except Exception as e:
+                    logger.warning("db_path_flock release failed: %s", e)
+                self._lease_token = None
+            self._owner = None
 
 
 def is_db_path_flock_enabled() -> bool:

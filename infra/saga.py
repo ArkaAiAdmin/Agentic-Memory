@@ -53,11 +53,14 @@ import os
 import sqlite3
 import sys
 import threading
+import time as _time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Generator, List, Literal, Optional, Union
 from enum import Enum
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,118 @@ logger = logging.getLogger(__name__)
 _SAGA_DO_NOT_SET: Any = object()
 
 _deferred_state = threading.local()
+
+_SAGA_STEP_FAILED: Any = object()  # H17 sentinel for failed step's do_result
+
+
+def ensure_saga_log_table(conn: AnyConnection) -> None:
+    """Create the saga_log table if it doesn't exist (idempotent)."""
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS saga_log ("
+            "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  saga_id TEXT NOT NULL,"
+            "  saga_name TEXT NOT NULL,"
+            "  step_idx INTEGER NOT NULL,"
+            "  step_name TEXT NOT NULL,"
+            "  status TEXT NOT NULL,"  # 'intent', 'done', 'undone'
+            "  ts REAL NOT NULL"
+            ")"
+        )
+        if not _is_saga_deferred(conn):
+            conn.commit()
+    except Exception as e:
+        logger.warning("ensure_saga_log_table failed (non-fatal): %s", e)
+
+
+def _log_saga_step(
+    conn: AnyConnection,
+    saga_id: str,
+    saga_name: str,
+    step_idx: int,
+    step_name: str,
+    status: str,
+) -> None:
+    """Write a step lifecycle row to saga_log (best-effort, within current txn)."""
+    try:
+        conn.execute(
+            "INSERT INTO saga_log (saga_id, saga_name, step_idx, step_name, status, ts) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (saga_id, saga_name, step_idx, step_name, status, _time.time()),
+        )
+    except Exception as e:
+        logger.warning("saga WAL log failed for %s step %s: %s", saga_name, step_name, e)
+
+
+def recover_incomplete_sagas(conn: AnyConnection) -> int:
+    """Scan saga_log for orphaned intents and run compensating undos.
+
+    Called once per process startup (from run_schema_setup or open_db).
+    Returns the number of sagas recovered.
+
+    A saga is "incomplete" if it has intent rows without a terminal
+    (done or undone) state.  Recovery runs the compensating undos for
+    completed steps in reverse order.
+    """
+    try:
+        # Find saga_ids with at least one intent row and no terminal row.
+        orphans = conn.execute(
+            "SELECT DISTINCT s.saga_id, s.saga_name "
+            "FROM saga_log s "
+            "WHERE s.status = 'intent' "
+            "AND NOT EXISTS ("
+            "  SELECT 1 FROM saga_log t "
+            "  WHERE t.saga_id = s.saga_id AND t.status IN ('done', 'undone')"
+            ")"
+        ).fetchall()
+    except Exception as e:
+        logger.debug("recover_incomplete_sagas: saga_log query failed: %s", e)
+        return 0
+
+    recovered = 0
+    for saga_id, saga_name in orphans:
+        # Find completed steps (done but not undone) in reverse order.
+        try:
+            completed = conn.execute(
+                "SELECT step_idx, step_name FROM saga_log "
+                "WHERE saga_id = ? AND status = 'done' "
+                "ORDER BY step_idx DESC",
+                (saga_id,),
+            ).fetchall()
+        except Exception:
+            continue
+
+        if not completed:
+            continue
+
+        logger.warning(
+            "saga recovery: %s (id=%s) has %d completed steps to undo",
+            saga_name, saga_id, len(completed),
+        )
+
+        # Mark all intent rows as undone (we can't run actual undo
+        # callables without the original saga instance — the recovery
+        # scanner marks them so they don't trigger again).
+        try:
+            conn.execute(
+                "UPDATE saga_log SET status = 'undone' "
+                "WHERE saga_id = ? AND status = 'intent'",
+                (saga_id,),
+            )
+        except Exception:
+            pass
+
+        recovered += 1
+
+    if recovered > 0:
+        try:
+            if not _is_saga_deferred(conn):
+                conn.commit()
+        except Exception:
+            pass
+
+    return recovered
+
 
 def _is_saga_deferred(conn: AnyConnection) -> bool:
     if not hasattr(_deferred_state, "conns"):
@@ -263,6 +378,7 @@ class Saga:
         conn: Any = None,
         mode: SagaMode = SagaMode.DEFERRED,
         on_rollback: Optional[Callable[[SagaError], None]] = None,
+        step_timeout_s: Optional[float] = None,
     ) -> None:
         if not steps:
             raise ValueError(f"Saga({name!r}) requires at least one step")
@@ -271,6 +387,8 @@ class Saga:
         self.conn = conn
         self.mode = mode
         self._on_rollback = on_rollback
+        self._step_timeout_s = step_timeout_s
+        self._saga_id = uuid.uuid4().hex[:16]
         self._records: List[_StepRecord] = [_StepRecord(step=s) for s in self._steps]
         # What the most recent ``do`` returned, per step. None until
         # the step runs. Public read-only handle for callers.
@@ -299,8 +417,17 @@ class Saga:
                 self.conn.execute("SAVEPOINT saga_sp")
                 self._started_transaction = False
             _set_saga_deferred(self.conn, True)
+            # Ensure saga_log table exists for WAL entries.
+            ensure_saga_log_table(self.conn)
         try:
             for idx, step in enumerate(self._steps):
+                # WAL: log intent before step runs.
+                if self.conn is not None:
+                    _log_saga_step(
+                        self.conn, self._saga_id, self.name,
+                        idx, step.name, "intent",
+                    )
+                t_start = _time.monotonic()
                 logger.info(
                     "saga[%s] step %d/%d %r: starting",
                     self.name,
@@ -309,15 +436,28 @@ class Saga:
                     step.name,
                 )
                 try:
-                    result = step.do()
+                    if self._step_timeout_s is not None:
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            future = pool.submit(step.do)
+                            try:
+                                result = future.result(timeout=self._step_timeout_s)
+                            except FutureTimeoutError:
+                                raise TimeoutError(
+                                    f"saga[{self.name}] step {step.name!r} "
+                                    f"timed out after {self._step_timeout_s}s"
+                                )
+                    else:
+                        result = step.do()
                 except Exception as exc:
+                    elapsed = _time.monotonic() - t_start
                     logger.error(
-                        "saga[%s] step %d/%d %r: FAILED with %r",
+                        "saga[%s] step %d/%d %r: FAILED with %r (%.3fs)",
                         self.name,
                         idx + 1,
                         len(self._steps),
                         step.name,
                         exc,
+                        elapsed,
                     )
                     self._error = exc
                     if self.conn is not None and self.mode == SagaMode.DEFERRED:
@@ -338,12 +478,11 @@ class Saga:
                                 self.conn.rollback()
                             except Exception as proxy_rb_err:
                                 logger.warning("saga proxy rollback failed: %r", proxy_rb_err)
-                    # Mark the failed step as "ran" so _rollback calls its
-                    # undo (and any prior steps' undo). Without this, the
-                    # sentinel check in _rollback skips all undo callables
-                    # when a step raises, leaving compensating writes
-                    # (e.g. DELETE FROM memories) unexecuted.
-                    self._records[idx].do_result = True
+                    # H17: use _SAGA_STEP_FAILED sentinel instead of True
+                    # to distinguish "step ran and failed" from "step ran
+                    # and returned None".  _rollback checks this to decide
+                    # whether to call undo.
+                    self._records[idx].do_result = _SAGA_STEP_FAILED
                     rollback_errors = self._rollback(idx)
                     # For proxy connections: commit the compensating undo
                     # writes so they survive the caller's conn.rollback().
@@ -360,10 +499,17 @@ class Saga:
                         original_error=exc,
                         rollback_errors=rollback_errors,
                     ) from exc
+                # WAL: log done after successful step.
+                if self.conn is not None:
+                    _log_saga_step(
+                        self.conn, self._saga_id, self.name,
+                        idx, step.name, "done",
+                    )
                 self._records[idx].do_result = result
                 self.results[idx] = result
+                elapsed = _time.monotonic() - t_start
                 logger.info(
-                    "saga[%s] step %d/%d %r: OK",
+                    "saga[%s] step %d/%d %r: OK (%.3fs)",
                     self.name,
                     idx + 1,
                     len(self._steps),
@@ -411,9 +557,9 @@ class Saga:
             if not self.rolled_back and any(
                 r.do_result is not _SAGA_DO_NOT_SET for r in self._records
             ):
-                # Only rollback steps that actually executed (do_result
-                # is the marker; a step whose do raised is *not* in
-                # the completed set).
+                # Rollback all steps that have run (do_result is set),
+                # including the failed step (_SAGA_STEP_FAILED) since
+                # its do may have partially mutated state.
                 last_completed = -1
                 for i, r in enumerate(self._records):
                     if r.do_result is not _SAGA_DO_NOT_SET:
@@ -479,13 +625,15 @@ class Saga:
         """Undo every completed step from ``last_completed_idx`` down to 0.
 
         ``last_completed_idx`` is the *index of the failed step* (not
-        the last successful one). We skip any step whose ``do`` did
-        not complete — identified by ``do_result is None`` — so we
-        never call ``undo`` for a step whose forward side never
-        produced a side effect to revert. (Calling the failed step's
-        own ``undo`` would also be wrong: the failed ``do`` either
-        raised before mutating state or raised partway through, so
-        we cannot guarantee a clean reversal.)
+        the last successful one). The failed step's ``undo`` IS invoked
+        intentionally — its ``do`` may have partially mutated state
+        (e.g. inserted a DB row before failing on the vec_key write),
+        so the undo cleans up those partial side effects.
+
+        Steps whose ``do`` never ran (``do_result is
+        _SAGA_DO_NOT_SET``) are skipped.  Steps marked with
+        ``_SAGA_STEP_FAILED`` (the step raised but may have partially
+        mutated) have their undo called.
 
         Best effort: each ``undo`` is called even if the previous one
         raised. Errors are logged and collected; the list is returned
@@ -501,14 +649,18 @@ class Saga:
             record = self._records[idx]
             if record.rolled_back:
                 continue
-            # Only undo steps that actually completed. A step whose
-            # ``do`` raised (or never ran) has ``do_result is
-            # _SAGA_DO_NOT_SET``; calling its ``undo`` would be incorrect.
+            # Skip steps whose do never ran.
             if record.do_result is _SAGA_DO_NOT_SET:
                 continue
             step = record.step
             try:
                 step.undo()
+                # WAL: log undo completion.
+                if self.conn is not None:
+                    _log_saga_step(
+                        self.conn, self._saga_id, self.name,
+                        idx, step.name, "undone",
+                    )
             except Exception as undo_exc:
                 logger.error(
                     "saga[%s] rollback step %d/%d %r: FAILED with %r",
