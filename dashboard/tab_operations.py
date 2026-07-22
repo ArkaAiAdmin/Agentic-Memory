@@ -738,22 +738,15 @@ def _render_runbook() -> None:
         _worker_ok = False
         _worker_detail = ""
         try:
-            _c = _api()
-            if _c:
-                res = _c.query(
-                    "SELECT completed_at FROM task_queue "
-                    "WHERE status='completed' AND completed_at IS NOT NULL "
-                    "ORDER BY completed_at DESC LIMIT 1"
-                )
-                rows = res.get("results", [])
-                last_completed = rows[0].get("completed_at") if rows else None
+            res_df = _query_api(
+                "SELECT completed_at FROM task_queue "
+                "WHERE status='completed' AND completed_at IS NOT NULL "
+                "ORDER BY completed_at DESC LIMIT 1"
+            )
+            if res_df is not None and not res_df.empty:
+                last_completed = res_df.iloc[0]["completed_at"]
             else:
-                r = get_conn().execute(
-                    "SELECT completed_at FROM task_queue "
-                    "WHERE status='completed' AND completed_at IS NOT NULL "
-                    "ORDER BY completed_at DESC LIMIT 1"
-                ).fetchone()
-                last_completed = r[0] if r else None
+                last_completed = None
 
             if last_completed:
                 comp_dt = datetime.strptime(last_completed, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
@@ -839,21 +832,15 @@ def _render_runbook() -> None:
     # ── Section 2: Background worker down? ─────────────────────────────────
     with st.expander("\u2699\ufe0f Background worker down?", expanded=False):
         try:
-            _c = _api()
-            if _c:
-                res = _c.query(
-                    "SELECT completed_at FROM task_queue "
-                    "WHERE status='completed' AND completed_at IS NOT NULL "
-                    "ORDER BY completed_at DESC LIMIT 1"
-                )
-                last_task = res.get("results", [{}])[0] if res.get("results") else None
-                last_task = (last_task.get("completed_at"),) if last_task else None
+            res_df = _query_api(
+                "SELECT completed_at FROM task_queue "
+                "WHERE status='completed' AND completed_at IS NOT NULL "
+                "ORDER BY completed_at DESC LIMIT 1"
+            )
+            if res_df is not None and not res_df.empty:
+                last_task = (res_df.iloc[0]["completed_at"],)
             else:
-                last_task = get_conn().execute(
-                    "SELECT completed_at FROM task_queue "
-                    "WHERE status='completed' AND completed_at IS NOT NULL "
-                    "ORDER BY completed_at DESC LIMIT 1"
-                ).fetchone()
+                last_task = None
             if last_task and last_task[0]:
                 comp_dt = datetime.strptime(last_task[0], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
                 age_s = (datetime.now(timezone.utc) - comp_dt).total_seconds()
