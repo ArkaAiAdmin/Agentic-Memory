@@ -1591,6 +1591,12 @@ def search_memories(
                 # Re-sort by final_score descending after boost
                 results_to_display.sort(key=lambda x: x[6] if x[6] is not None else 0, reverse=True)
 
+        # Phase 11.8: Contradiction Resolution Graph Engine (CRGE)
+        if mode not in ("fact_lookup", "fts") and results_to_display:
+            from search.phases.contradiction_engine import resolve_candidate_contradictions
+            results_to_display = resolve_candidate_contradictions(results_to_display, query=query)
+            results_to_display.sort(key=lambda x: float(x[6]) if len(x) > 6 and x[6] is not None else 0.0, reverse=True)
+
         # Phase 12: Build output items
         result_items, output, backlinks_map = _build_result_items(
             db=db,

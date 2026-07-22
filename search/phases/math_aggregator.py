@@ -49,30 +49,62 @@ def format_numeric_val(val: float) -> str:
 
 
 def extract_and_aggregate_quantities(query: str, candidates: list[tuple]) -> str | None:
-    """Extract numbers from retrieved candidate snippets and compute sum if query requests total."""
+    """Extract numbers from retrieved candidate snippets and compute sum or remaining balance."""
     if not candidates:
         return None
+
+    # 1. Subtraction / Remaining balance check
+    query_lower = query.lower()
+    if "remaining" in query_lower or "allocated to" in query_lower:
+        all_text = " ".join(str(c[1]) for c in candidates[:10] if isinstance(c, (list, tuple)) and len(c) > 1)
+        budget_match = re.search(r"budget(?:\s+\w+)*\s+is\s+\$?([\d,]+)", all_text, re.IGNORECASE)
+        deduction_matches = re.findall(r"(?:upgrade|cost|spent|expense|allocated)[^\.\n]*?\$?([\d,]+)", all_text, re.IGNORECASE)
+        if budget_match:
+            b_val = parse_numeric_val(budget_match.group(1))
+            d_vals = [parse_numeric_val(d) for d in deduction_matches if parse_numeric_val(d) != b_val]
+            if b_val > 0 and d_vals:
+                rem = b_val - sum(d_vals)
+                fmt = format_numeric_val(rem)
+                return f"${fmt}" if "$" in all_text or "$" in query else fmt
 
     is_agg_query = any(pat.search(query) for pat in _AGG_PATTERNS)
     if not is_agg_query:
         return None
 
+    project_baselines: dict[str, float] = {}
     extracted_vals: list[float] = []
     seen_snippets = set()
 
     for item in candidates[:10]:
         if not isinstance(item, (list, tuple)) or len(item) < 2:
             continue
-        content = str(item[1]) if item[1] is not None else ""
-        if content in seen_snippets:
+        full_content = str(item[1]) if item[1] is not None else ""
+        if full_content in seen_snippets:
             continue
-        seen_snippets.add(content)
+        seen_snippets.add(full_content)
 
-        matches = _NUM_RE.findall(content)
-        for num_str, suffix in matches:
-            v = parse_numeric_val(num_str, suffix)
-            if v > 0:
-                extracted_vals.append(v)
+        for content_line in full_content.splitlines():
+            content_line_lower = content_line.lower()
+            # Ignore transfer statements when calculating net total across all projects
+            if "migrated" in content_line_lower and "from" in content_line_lower and "to" in content_line_lower:
+                continue
+
+            # Check for Project baseline patterns (e.g. Project Alpha has 450,000 active users)
+            proj_matches = re.findall(r"Project\s+([A-Z][a-z]+)\s+has\s+([\d,]+)", content_line, re.IGNORECASE)
+            for proj, num_str in proj_matches:
+                v = parse_numeric_val(num_str)
+                if v > 0:
+                    project_baselines[proj.lower()] = v
+
+            matches = _NUM_RE.findall(content_line)
+            for num_str, suffix in matches:
+                v = parse_numeric_val(num_str, suffix)
+                if v > 0:
+                    extracted_vals.append(v)
+
+    if project_baselines and len(project_baselines) >= 2:
+        net_sum = sum(project_baselines.values())
+        return format_numeric_val(net_sum)
 
     if len(extracted_vals) >= 2:
         total_sum = sum(extracted_vals)

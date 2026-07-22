@@ -137,6 +137,7 @@ _WORD_FORM_EXPANSIONS: dict[str, list[str]] = {
     'prioriti': ['prioritize', 'prioritizes', 'prioritized', 'prioritizing', 'priority', 'priorities'],
     'schedul': ['schedule', 'schedules', 'scheduled', 'scheduling', 'scheduler'],
     'config': ['config', 'configs', 'configuration', 'configurations', 'configure', 'configured'],
+    'live': ['live', 'lives', 'living', 'lived', 'reside', 'resides', 'resided', 'residing', 'stay', 'stayed', 'staying', 'move', 'moved', 'relocate', 'relocated'],
     'rebuild': ['rebuild', 'rebuilds', 'rebuilt', 'rebuilding'],
     'backup': ['backup', 'backups', 'backed', 'backing'],
     'restore': ['restore', 'restores', 'restored', 'restoring', 'restoration'],
