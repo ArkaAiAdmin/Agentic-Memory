@@ -48,7 +48,16 @@ def format_numeric_val(val: float) -> str:
     return f"{val:,.2f}"
 
 
-def extract_and_aggregate_quantities(query: str, candidates: list[tuple]) -> str | None:
+def _get_item_content(item) -> str:
+    if isinstance(item, dict):
+        return str(item.get("content", "") or item.get("text", ""))
+    elif isinstance(item, (list, tuple)) and len(item) > 1:
+        return str(item[1]) if item[1] is not None else ""
+    elif hasattr(item, "content"):
+        return str(getattr(item, "content", ""))
+    return str(item)
+
+def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None:
     """Extract numbers from retrieved candidate snippets and compute sum or remaining balance."""
     if not candidates:
         return None
@@ -56,7 +65,7 @@ def extract_and_aggregate_quantities(query: str, candidates: list[tuple]) -> str
     # 1. Subtraction / Remaining balance check
     query_lower = query.lower()
     if "remaining" in query_lower or "allocated to" in query_lower:
-        all_text = " ".join(str(c[1]) for c in candidates[:10] if isinstance(c, (list, tuple)) and len(c) > 1)
+        all_text = " ".join(_get_item_content(c) for c in candidates[:10])
         budget_match = re.search(r"budget(?:\s+\w+)*\s+is\s+\$?([\d,]+)", all_text, re.IGNORECASE)
         deduction_matches = re.findall(r"(?:upgrade|cost|spent|expense|allocated)[^\.\n]*?\$?([\d,]+)", all_text, re.IGNORECASE)
         if budget_match:
@@ -76,10 +85,8 @@ def extract_and_aggregate_quantities(query: str, candidates: list[tuple]) -> str
     seen_snippets = set()
 
     for item in candidates[:10]:
-        if not isinstance(item, (list, tuple)) or len(item) < 2:
-            continue
-        full_content = str(item[1]) if item[1] is not None else ""
-        if full_content in seen_snippets:
+        full_content = _get_item_content(item)
+        if not full_content or full_content in seen_snippets:
             continue
         seen_snippets.add(full_content)
 

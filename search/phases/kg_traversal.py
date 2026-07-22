@@ -283,22 +283,27 @@ def _phase_ten_kg_boost(
         return results
 
     try:
-        seen_ids = {r[0] for r in results}
-        # Extract entity tokens from result memory IDs AND content.
+        seen_ids = set()
         entity_tokens: set[str] = set()
         for r in results:
-            mid = r[0]
-            # Slug-based extraction (legacy)
+            if isinstance(r, dict):
+                mid = str(r.get("id", "") or r.get("memory_id", ""))
+                content = str(r.get("content", "") or r.get("text", ""))
+            elif isinstance(r, (list, tuple)):
+                mid = str(r[0]) if len(r) > 0 and r[0] is not None else ""
+                content = str(r[1]) if len(r) > 1 and r[1] is not None else ""
+            else:
+                mid = str(getattr(r, "id", ""))
+                content = str(getattr(r, "content", ""))
+
+            if mid:
+                seen_ids.add(mid)
             if "/" in mid:
                 slug = mid.split("/", 1)[1]
                 entity_tokens.add(slug.lower())
                 for word in re.findall(r"[a-z0-9]+", slug.lower()):
                     if len(word) > 2:
                         entity_tokens.add(word)
-            # Content-based extraction: pull tokens from the content field
-            # (r[1] is content in the result tuple).  This catches entities
-            # that aren't reflected in the slug.
-            content = r[1] if len(r) > 1 and isinstance(r[1], str) else ""
             if content:
                 for word in re.findall(r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*", content[:3000]):
                     if len(word) > 3:
@@ -326,6 +331,37 @@ def _phase_ten_kg_boost(
                 pass
 
         if not kg_entity_ids:
+            # Fallback: Implicit Text-Based Multi-Hop Traversal on proper nouns and technical identifiers
+            extra_mids = []
+            for r in results[:3]:
+                if isinstance(r, dict):
+                    content = str(r.get("content", "") or r.get("text", ""))
+                elif isinstance(r, (list, tuple)) and len(r) > 1:
+                    content = str(r[1]) if r[1] is not None else ""
+                else:
+                    content = str(getattr(r, "content", ""))
+                props = re.findall(r"\b[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\b|\bPort\s+\d+\b|\bnode-\d+\b", content)
+                for p in props:
+                    try:
+                        sub_rows = db.execute("SELECT id, content FROM memories WHERE content LIKE ?", (f"%{p}%",)).fetchall()
+                        for s_row in sub_rows:
+                            sub_id, sub_cnt = s_row[0], s_row[1]
+                            if sub_id not in seen_ids and sub_id not in extra_mids:
+                                extra_mids.append(sub_id)
+                            # 2nd hop search
+                            phrases = re.findall(r"\b(?:[a-z0-9-]+\s+){1,2}(?:microservices?|servers?|databases?|pipelines?|protocols?|services?)\b|\bPort\s+\d+\b", sub_cnt, re.IGNORECASE)
+                            for ph in phrases:
+                                clean_ph = ph.rstrip("s").rstrip("S")
+                                if len(clean_ph) > 5:
+                                    hop2_rows = db.execute("SELECT id FROM memories WHERE content LIKE ?", (f"%{clean_ph}%",)).fetchall()
+                                    for h2 in hop2_rows:
+                                        if h2[0] not in seen_ids and h2[0] not in extra_mids:
+                                            extra_mids.append(h2[0])
+                    except sqlite3.Error:
+                        pass
+            if extra_mids:
+                new_rows = _fetch_rows_by_ids(db, extra_mids[:limit], extra_filter=repo_filter, extra_params=(category,) if category else ())
+                results.extend(new_rows)
             return results
 
         # Traverse 1-hop edges to find related entities.
