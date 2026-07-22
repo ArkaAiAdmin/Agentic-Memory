@@ -168,20 +168,18 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
     else:
         cleanup = False
 
-    # Warm up embedding model so it's ready before queries start
+    # Warm up embedding model synchronously so it's ready before queries start
     try:
+        from sentence_transformers import SentenceTransformer
+        _emb_model = SentenceTransformer("BAAI/bge-base-en-v1.5")
+        print(f"Embedding model loaded: {type(_emb_model).__name__}")
+        # Inject into the lazy loader so search_memories finds it
         from infra._lazy_imports import get_embedding_search
         es = get_embedding_search()
-        import time as _time
-        for _ in range(120):
-            if es.model is not None:
-                print(f"Embedding model loaded: {type(es.model).__name__} dim={getattr(es.model, 'dim', '?')}")
-                break
-            _time.sleep(1)
-        else:
-            print("WARNING: Embedding model did not load in 120s")
+        es.model = _emb_model
     except Exception as e:
         print(f"WARNING: Embedding model warm-up failed: {e}")
+        _emb_model = None
 
     def _embed_and_store_batch(conn, sessions: list[tuple[str, str]], model) -> int:
         """Batch-compute and store embeddings for sessions."""
