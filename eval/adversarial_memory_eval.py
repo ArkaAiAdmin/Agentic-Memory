@@ -362,7 +362,7 @@ def run_adversarial_eval() -> dict:
         from search.phases.math_aggregator import extract_and_aggregate_quantities
         from search.phases.temporal_delta_solver import calculate_temporal_delta
 
-        m_res = extract_and_aggregate_quantities(qtext, [("m1", combined_text)])
+        m_res = extract_and_aggregate_quantities(qtext, results_list)
         if m_res:
             combined_text = f"[Calculated Total: {m_res}] " + combined_text
 

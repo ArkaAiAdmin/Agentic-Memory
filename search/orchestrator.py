@@ -122,6 +122,7 @@ from search.phases.retrieve import (
 from search.phases.kg_traversal import (
     _phase_ten_kg_boost,
     _phase_ten_multi_hop_kg,
+    _text_multi_hop_traversal,
 )
 from search.phases.session import _phase_nine_session_cluster, _SESSION_BOOST_FACTOR
 from search.phases.envelope import (
@@ -424,6 +425,10 @@ def _rerank_results(
             scored = _phase_ten_multi_hop_kg(db, scored, query, limit=limit * 2)
         except Exception as _kg_exc:
             logger.debug("kg_boost / multi_hop_kg skipped: %s", _kg_exc)
+        try:
+            scored = _text_multi_hop_traversal(db, scored, query, limit=limit * 2)
+        except Exception as _tmh_exc:
+            logger.debug("text_multi_hop skipped: %s", _tmh_exc)
 
     scored = _strong_match_float(scored)
     # PR1.2: CE reranking writes r[6] first (single monotonic CE stage),
@@ -1486,6 +1491,17 @@ def search_memories(
                 _phase_inc("search.multi_hop_kg", _mhkg_exc)
                 logger.warning("multi_hop_kg failed (degraded): %s", _mhkg_exc)
             _record_phase_latency("search.multi_hop_kg", _t0_mhkg)
+
+            # Text-based multi-hop traversal (no KG_ENABLED gate)
+            _t0_tmh = time.time()
+            try:
+                results = _text_multi_hop_traversal(
+                    db, results, normalized_query, limit, repo_filter, category=category or None,
+                )
+            except Exception as _tmh_exc:
+                _phase_inc("search.text_multi_hop", _tmh_exc)
+                logger.warning("text_multi_hop failed (degraded): %s", _tmh_exc)
+            _record_phase_latency("search.text_multi_hop", _t0_tmh)
 
         # Phase 10.5: Temporal comparison — for queries that ask "which changed
         # first/last" or "what was X when Y changed", find the most recent

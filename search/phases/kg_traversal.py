@@ -252,6 +252,105 @@ def _entity_name_to_memory_id(
     return found
 
 
+def _text_multi_hop_traversal(
+    db: "AnyConnection",
+    results: list,
+    query: str,
+    limit: int = 10,
+    repo_filter: str = "",
+    category: str | None = None,
+) -> list:
+    """Text-based multi-hop entity traversal — NO KG_ENABLED gate.
+
+    Scans top candidates for hyphenated identifiers, proper nouns, and
+    technical terms (e.g. ``Analytics-Core``, ``node-01``, ``Port 8443``).
+    For each, performs a 1-hop SQL LIKE search to discover linked memories,
+    then extracts domain-typed phrases (e.g. ``embedded analytics microservice``)
+    from those results for a 2nd-hop search.  Appends any newly found
+    memories to the result set.
+
+    This function is intentionally independent of the Knowledge Graph tables
+    so it works even when ``kg_entities`` / ``kg_edges`` are empty.
+    """
+    if not results:
+        return results
+
+    try:
+        seen_ids = set()
+        for r in results:
+            if isinstance(r, dict):
+                mid = str(r.get("id", "") or r.get("memory_id", ""))
+            elif isinstance(r, (list, tuple)) and len(r) > 0:
+                mid = str(r[0]) if r[0] is not None else ""
+            else:
+                mid = str(getattr(r, "id", ""))
+            if mid:
+                seen_ids.add(mid)
+
+        extra_mids: list[str] = []
+        for r in results[:5]:
+            if isinstance(r, dict):
+                content = str(r.get("content", "") or r.get("text", ""))
+            elif isinstance(r, (list, tuple)) and len(r) > 1:
+                content = str(r[1]) if r[1] is not None else ""
+            else:
+                content = str(getattr(r, "content", ""))
+
+            # Extract hyphenated identifiers, Port references, proper-noun sequences
+            props = re.findall(
+                r"\b[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\b|\bPort\s+\d+\b",
+                content,
+            )
+            for p in props:
+                try:
+                    sub_rows = db.execute(
+                        "SELECT id, content FROM memories WHERE content LIKE ?",
+                        (f"%{p}%",),
+                    ).fetchall()
+                    for s_row in sub_rows:
+                        sub_id, sub_cnt = s_row[0], s_row[1]
+                        if sub_id not in seen_ids and sub_id not in extra_mids:
+                            extra_mids.append(sub_id)
+                        # 2nd hop: extract domain-typed phrases and search
+                        hop2_pattern = re.compile(
+                            r"\b(?:[a-zA-Z0-9-]+\s+){1,3}"
+                            r"(?:microservices?|servers?|databases?|pipelines?|"
+                            r"protocols?|services?|workers?|clusters?)\b"
+                            r"|\bPort\s+\d+\b",
+                            re.IGNORECASE,
+                        )
+                        for m in hop2_pattern.finditer(sub_cnt):
+                            ph = m.group(0).strip()
+                            if not ph:
+                                continue
+                            clean_ph = ph.rstrip("s").rstrip("S")
+                            words = clean_ph.split()
+                            search_term = " ".join(words[-2:]) if len(words) >= 2 else clean_ph
+                            if len(search_term) > 3:
+                                hop2_rows = db.execute(
+                                    "SELECT id FROM memories WHERE content LIKE ?",
+                                    (f"%{search_term}%",),
+                                ).fetchall()
+                                for h2 in hop2_rows:
+                                    if h2[0] not in seen_ids and h2[0] not in extra_mids:
+                                        extra_mids.append(h2[0])
+                except sqlite3.Error:
+                    pass
+
+        if extra_mids:
+            new_rows = _fetch_rows_by_ids(
+                db, extra_mids[:limit],
+                table="memories",
+                extra_filter=repo_filter,
+                extra_params=(category,) if category else (),
+            )
+            results.extend(new_rows.values())
+    except Exception as exc:
+        logger.debug("_text_multi_hop_traversal failed: %s", exc)
+
+    return results
+
+
 def _phase_ten_kg_boost(
     db: AnyConnection,
     results: list,
@@ -331,37 +430,6 @@ def _phase_ten_kg_boost(
                 pass
 
         if not kg_entity_ids:
-            # Fallback: Implicit Text-Based Multi-Hop Traversal on proper nouns and technical identifiers
-            extra_mids = []
-            for r in results[:3]:
-                if isinstance(r, dict):
-                    content = str(r.get("content", "") or r.get("text", ""))
-                elif isinstance(r, (list, tuple)) and len(r) > 1:
-                    content = str(r[1]) if r[1] is not None else ""
-                else:
-                    content = str(getattr(r, "content", ""))
-                props = re.findall(r"\b[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\b|\bPort\s+\d+\b|\bnode-\d+\b", content)
-                for p in props:
-                    try:
-                        sub_rows = db.execute("SELECT id, content FROM memories WHERE content LIKE ?", (f"%{p}%",)).fetchall()
-                        for s_row in sub_rows:
-                            sub_id, sub_cnt = s_row[0], s_row[1]
-                            if sub_id not in seen_ids and sub_id not in extra_mids:
-                                extra_mids.append(sub_id)
-                            # 2nd hop search
-                            phrases = re.findall(r"\b(?:[a-z0-9-]+\s+){1,2}(?:microservices?|servers?|databases?|pipelines?|protocols?|services?)\b|\bPort\s+\d+\b", sub_cnt, re.IGNORECASE)
-                            for ph in phrases:
-                                clean_ph = ph.rstrip("s").rstrip("S")
-                                if len(clean_ph) > 5:
-                                    hop2_rows = db.execute("SELECT id FROM memories WHERE content LIKE ?", (f"%{clean_ph}%",)).fetchall()
-                                    for h2 in hop2_rows:
-                                        if h2[0] not in seen_ids and h2[0] not in extra_mids:
-                                            extra_mids.append(h2[0])
-                    except sqlite3.Error:
-                        pass
-            if extra_mids:
-                new_rows = _fetch_rows_by_ids(db, extra_mids[:limit], extra_filter=repo_filter, extra_params=(category,) if category else ())
-                results.extend(new_rows)
             return results
 
         # Traverse 1-hop edges to find related entities.
