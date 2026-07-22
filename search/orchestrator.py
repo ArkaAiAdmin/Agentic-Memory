@@ -56,7 +56,21 @@ _FACT_LOOKUP_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Regex to detect list, sequence, timeline, or enumeration queries for dynamic candidate pool scaling
+_LIST_ENUMERATION_RE = re.compile(
+    r"\b(list|sequence|order|steps|phases|items|events|timeline|progressed|chronological|reconstruct|mention\s+only|how\s+did)\b",
+    re.IGNORECASE,
+)
+
+# Regex to detect complex multi-hop, analytical, or audit queries for automatic deep cross-encoder reranking
+_COMPLEX_REASONING_RE = re.compile(
+    r"\b(compare|contrast|difference|relationship|why|how\s+does|explain|audit|financial|budget|reconstruct|timeline|multi-step|constraint|analyze|summarize\s+all)\b",
+    re.IGNORECASE,
+)
+
 from infra.cache import (
+
+
     _search_cache,
     _search_cache_lock,
     SEARCH_CACHE_MAX,
@@ -910,6 +924,15 @@ def search_memories(
     # Auto-detect fact-lookup queries (module-level regex, compiled once)
     if mode == "hybrid" and _FACT_LOOKUP_RE.search(query):
         mode = "fact_lookup"
+
+    # Dynamic candidate retrieval expansion for sequence/list queries
+    if _LIST_ENUMERATION_RE.search(query):
+        limit = max(limit, 30)
+
+    # Automatic Adaptive Tiered Retrieval: escalate to deep cross-encoder for complex reasoning/audit queries
+    if mode == "hybrid" and not light and _COMPLEX_REASONING_RE.search(query):
+        deep_rerank = True
+        rerank = True
 
     # Phase 1: Parse query
     _t0 = time.time()
