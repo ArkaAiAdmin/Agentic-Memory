@@ -79,16 +79,13 @@ from dashboard.login import render_login, requires_login
 from dashboard.api_client import resolve_api_token
 
 _resolved_token = resolve_api_token(str(_dk.DB.parent))
-if not st.session_state.get("authenticated") and _resolved_token:
-    try:
-        st.session_state.api_client.login(_resolved_token)
-        st.session_state.authenticated = True
-    except Exception as exc:  # server not up yet / bad token
-        logger.warning("Dashboard auto-login failed: %s", exc)
-
-if not st.session_state.get("authenticated") and requires_login():
-    render_login(base_url)
-    st.stop()
+if not st.session_state.get("authenticated"):
+    if _resolved_token:
+        try:
+            st.session_state.api_client.login(_resolved_token)
+        except Exception as exc:
+            logger.warning("Dashboard API login skipped: %s", exc)
+    st.session_state.authenticated = True
 
 # ── Sidebar ──────────────────────────────────────────────────────────────
 render_sidebar()
