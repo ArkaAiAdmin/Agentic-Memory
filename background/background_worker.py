@@ -788,6 +788,21 @@ def process_one_task(
     if not payload.get("script") and ttype in CRON_SCRIPT_MAP:
         payload = {**payload, "script": CRON_SCRIPT_MAP[ttype]}
         handler = HANDLERS.get("run_script")
+    elif not payload.get("script") and ttype.startswith("cron_"):
+        cand1 = Path(_REPO_ROOT) / "cron" / f"{ttype}.py"
+        cand2 = Path(_REPO_ROOT) / "cron" / f"{ttype[5:]}.py"
+        cand3 = Path(_REPO_ROOT) / f"{ttype[5:]}.py"
+        if cand1.exists():
+            payload = {**payload, "script": f"cron/{ttype}.py"}
+            handler = HANDLERS.get("run_script")
+        elif cand2.exists():
+            payload = {**payload, "script": f"cron/{ttype[5:]}.py"}
+            handler = HANDLERS.get("run_script")
+        elif cand3.exists():
+            payload = {**payload, "script": f"{ttype[5:]}.py"}
+            handler = HANDLERS.get("run_script")
+        else:
+            handler = HANDLERS.get(ttype)
     else:
         handler = HANDLERS.get(ttype)
 
