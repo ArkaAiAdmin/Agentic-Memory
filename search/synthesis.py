@@ -256,8 +256,37 @@ def _bb1_synthesize(
                 "end": e_off,
             }
         )
+    answer_text = "\n\n".join(answer_parts)
+    solver_answers = []
+    try:
+        from search.phases.math_aggregator import extract_and_aggregate_quantities
+        m_sum = extract_and_aggregate_quantities(query, results)
+        if m_sum:
+            solver_answers.append(f"Calculated Total: {m_sum}")
+    except Exception:
+        pass
+
+    try:
+        from search.phases.temporal_delta_solver import calculate_temporal_delta
+        t_delta = calculate_temporal_delta(query, results)
+        if t_delta:
+            solver_answers.append(f"Time Interval: {t_delta}")
+    except Exception:
+        pass
+
+    try:
+        from search.phases.attribute_extractor import extract_entity_attribute
+        attr_v = extract_entity_attribute(query, results)
+        if attr_v:
+            solver_answers.append(f"Attribute Value: {attr_v}")
+    except Exception:
+        pass
+
+    if solver_answers:
+        answer_text = " | ".join(solver_answers) + "\n\n" + answer_text
+
     return {
-        "answer": "\n\n".join(answer_parts),
+        "answer": answer_text,
         "sentences": sentences_out,
         "sources": sources_order,
         "skipped_low_relevance": skipped,
