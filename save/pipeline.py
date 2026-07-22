@@ -2451,7 +2451,7 @@ def _record_revision_log(
         return int(cur.lastrowid) if cur.lastrowid is not None else None
     except Exception as e:
         logger.warning("Failed to record revision log for %s/%s: %s", memory_id, revision_type, e)
-        raise
+        return None
 
 
 def memory_supersede_db(
@@ -2681,6 +2681,7 @@ def patch_memory(
     additions: list[str] | None = None,
     deletions: list[str] | None = None,
     rationale: str = "",
+    tenant_id: str | None = None,
 ) -> str:
     """In-place memory amendment: apply additions/deletions to an existing note.
 
@@ -2701,7 +2702,7 @@ def patch_memory(
 
         with open_db(db_path, timeout=30.0) as db:
             row = db.execute(
-                "SELECT content, metadata, source_file FROM tenant_memories WHERE id = ? AND deleted_at IS NULL",
+                "SELECT content, metadata, source_file FROM memories WHERE id = ? AND deleted_at IS NULL",
                 (note_id,),
             ).fetchone()
             if row is None:
@@ -2733,8 +2734,10 @@ def patch_memory(
             additions = additions or []
             if additions:
                 for seg in additions:
-                    if _scan_for_injection_or_skip(seg):
-                        return _err(ErrorCode.INVALID_PARAMS, "patch addition contained invalid instruction injection content")
+                    try:
+                        _scan_for_injection_or_skip(seg, category="patch", title_slug=note_id)
+                    except Exception as scan_err:
+                        return _err(ErrorCode.INVALID_PARAMS, f"patch addition contained invalid instruction injection content: {scan_err}")
                 body = body.rstrip() + "\n\n" + "\n\n".join(additions) + "\n"
 
             new_content = frontmatter + body
@@ -2761,7 +2764,7 @@ def patch_memory(
             # M4: Update content and metadata in ONE statement to avoid double FTS trigger re-index
             now_iso = datetime.now(timezone.utc).isoformat()
             cur = db.execute(
-                "UPDATE tenant_memories SET content = ?, metadata = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+                "UPDATE memories SET content = ?, metadata = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
                 (new_content, json.dumps(meta), now_iso, note_id),
             )
             if cur.rowcount == 0:

@@ -511,6 +511,7 @@ class Saga:
                     idx + 1,
                     len(self._steps),
                     step.name,
+                    elapsed,
                 )
         except SagaError:
             if self.conn is not None and self.mode == SagaMode.DEFERRED:

@@ -22,12 +22,12 @@ class TestPatchMemoryAtomicity(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name) / "memory.db"
         self.doc_dir = Path(self.temp_dir.name) / "docs"
-        self.doc_dir.mkdir(parents=True, exist_ok=True)
         self.env_patcher = mock.patch.dict(
             os.environ,
             {
                 "MEMORY_DB_PATH": str(self.db_path),
                 "MEMORY_DOCS_DIR": str(self.doc_dir),
+                "MEMORY_AUTH_MODE": "open",
             },
         )
         self.env_patcher.start()
@@ -50,26 +50,29 @@ class TestPatchMemoryAtomicity(unittest.TestCase):
         )
         self.assertTrue(bool(note_id), f"Save failed: {note_id}")
 
+        import json
         # Patch with additions and deletions; inject failure in safe_atomic_write
         with mock.patch("infra.memory_common.safe_atomic_write", side_effect=OSError("Disk write simulated failure")):
-            patch_res = patch_memory(
+            patch_raw = patch_memory(
+                self.db_path,
                 note_id=note_id,
                 additions=["New memory line 3"],
                 deletions=["Original memory line 2"],
                 tenant_id="tenant_a",
             )
-            self.assertTrue(patch_res.get("success"), f"Patch failed despite file error: {patch_res}")
+            self.assertEqual(patch_raw, note_id, f"Patch failed despite file error: {patch_raw}")
 
         # Check DB state was updated
         from infra.db import open_db
         with open_db(self.db_path) as db:
-            row = db.execute("SELECT content FROM tenant_memories WHERE id = ?", (note_id,)).fetchone()
+            row = db.execute("SELECT content FROM memories WHERE id = ?", (note_id,)).fetchone()
             self.assertIsNotNone(row)
             self.assertIn("New memory line 3", row[0])
             self.assertNotIn("Original memory line 2", row[0])
 
     def test_patch_memory_soft_deleted_note_fails(self):
         """Verify patch_memory fails if note was soft-deleted (deleted_at IS NOT NULL)."""
+        import json
         note_id = save_memory(
             content="Memory to delete then patch",
             category="lessons",
@@ -77,19 +80,21 @@ class TestPatchMemoryAtomicity(unittest.TestCase):
             tags=["test"],
             tenant_id="tenant_a",
         )
-        self.assertTrue(bool(note_id))
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("UPDATE memories SET deleted_at = '2026-07-23T00:00:00Z' WHERE id = ?", (note_id,))
+            conn.commit()
+        finally:
+            conn.close()
 
-        from infra.db import open_db
-        with open_db(self.db_path) as db:
-            db.execute("UPDATE tenant_memories SET deleted_at = '2026-07-23T00:00:00Z' WHERE id = ?", (note_id,))
-
-        patch_res = patch_memory(
+        patch_raw = patch_memory(
+            self.db_path,
             note_id=note_id,
             additions=["Extra line"],
             tenant_id="tenant_a",
         )
-        self.assertFalse(patch_res.get("success"))
-        self.assertEqual(patch_res.get("error_code"), ErrorCode.NOT_FOUND)
+        self.assertIn("Error [NOT_FOUND]", patch_raw)
 
 
 if __name__ == "__main__":

@@ -65,7 +65,10 @@ class TestSagaRecovery(unittest.TestCase):
 
     def test_recover_incomplete_sagas(self):
         """Verify recover_incomplete_sagas finds sagas with intent without terminal status."""
-        with open_db(self.db_path) as conn:
+        import sqlite3
+        conn = sqlite3.connect(self.db_path)
+        try:
+            ensure_saga_log_table(conn)
             now = time.time()
             conn.execute(
                 "INSERT INTO saga_log (saga_id, saga_name, step_idx, step_name, status, ts) "
@@ -84,7 +87,6 @@ class TestSagaRecovery(unittest.TestCase):
             )
             conn.commit()
 
-        with open_db(self.db_path) as conn:
             recovered_count = recover_incomplete_sagas(conn)
             self.assertEqual(recovered_count, 1)
 
@@ -93,6 +95,8 @@ class TestSagaRecovery(unittest.TestCase):
                 "SELECT status FROM saga_log WHERE saga_id = 'uncommitted_123' AND status = 'undone'"
             ).fetchall()
             self.assertGreaterEqual(len(undone_rows), 1)
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

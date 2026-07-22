@@ -44,8 +44,10 @@ class TestMigrationRunnerDefer(unittest.TestCase):
             "CREATE TABLE dependent_table (id INT PRIMARY KEY);"
         )
 
+        import sqlite3
         with mock.patch("infra.migration_runner.MIGRATIONS_DIR", mig_dir):
-            with open_db(self.db_path) as conn:
+            conn = sqlite3.connect(self.db_path)
+            try:
                 run_migrations(conn)
 
                 # Check schema_version table: 001 applied (version=1), 002 deferred (not version=2)
@@ -55,10 +57,13 @@ class TestMigrationRunnerDefer(unittest.TestCase):
 
                 # Now create non_existent_table manually and re-run migrations
                 conn.execute("CREATE TABLE non_existent_table (id INT PRIMARY KEY);")
+                conn.commit()
                 run_migrations(conn)
 
                 row_after = conn.execute("SELECT version FROM schema_version WHERE id=1").fetchone()
                 self.assertEqual(row_after[0], 2)
+            finally:
+                conn.close()
 
 
 if __name__ == "__main__":

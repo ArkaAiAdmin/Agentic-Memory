@@ -241,6 +241,9 @@ def _get_applied_migrations(conn: AnyConnection) -> set[int]:
         # available migrations are re-applied.
         if version <= 0:
             return set()
+        checksums = _get_checksums(conn)
+        if checksums:
+            return {int(k) for k in checksums.keys() if k.isdigit()}
         # Backward compat: old schema_version=4 means migrations 1-4
         # are already applied (they correspond to the old inline helpers).
         if version <= 4:
@@ -570,10 +573,12 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
             # skipped because of the file-presence filter in
             # ``_get_applied_migrations``), bump once more to the
             # cap.  This is idempotent.
-            if not broke_for_deferred and (SCHEMA_VERSION > (highest_applied if applied else 0)):
+            max_pending = max((num for num, _ in pending), default=SCHEMA_VERSION)
+            cap_version = min(SCHEMA_VERSION, max_pending)
+            if not broke_for_deferred and (cap_version > (highest_applied if applied else 0)):
                 conn.execute(
                     "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
-                    (SCHEMA_VERSION, json.dumps(checksums)),
+                    (cap_version, json.dumps(checksums)),
                 )
 
         # Post-migration hooks. Run AFTER the transaction commits so
