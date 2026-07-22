@@ -1,4 +1,4 @@
-"""Contradiction Resolution Graph Engine (CRGE).
+"""Phase 12: Contradiction Resolution Graph Engine (CRGE).
 
 Inspects retrieved memory candidates for state contradiction or supersession,
 resolves competing assertions by timeline timestamps, and decorates

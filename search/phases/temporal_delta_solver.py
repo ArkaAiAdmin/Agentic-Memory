@@ -1,4 +1,4 @@
-"""Temporal Date-Delta & Interval Solver for Agentic Memory.
+"""Phase 14: Answer Synthesis & Temporal Date-Delta Solver.
 
 Detects temporal interval queries (how many days/weeks/months passed between,
 time difference between, how long after), extracts ISO dates and timestamps

@@ -1,4 +1,4 @@
-"""Math Aggregator & Quantity Sum Solver for Agentic Memory.
+"""Phase 14: Answer Synthesis & Math Aggregator.
 
 Detects arithmetic aggregation intent in queries (total, combined, sum, altogether,
 how many ... in total), extracts numeric quantities associated with retrieved

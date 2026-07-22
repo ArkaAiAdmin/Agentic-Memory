@@ -1,4 +1,4 @@
-"""Entity Attribute Extractor for Agentic Memory.
+"""Phase 14: Answer Synthesis & Entity Attribute Extractor.
 
 Extracts clean entity attribute values (version, cost, price, port, ID, rate)
 from retrieved candidate snippets when asked targeted attribute questions.
