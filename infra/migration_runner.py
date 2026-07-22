@@ -524,20 +524,11 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                             logger.warning(
                                 "Migration %03d statement references object "
                                 "created by a later migration (%s); "
-                                "this is expected.",
+                                "this is expected and will resolve on "
+                                "next startup.",
                                 num,
                                 e,
                             )
-                        # NOTE: the "no such column" guard below is
-                        # UNREACHABLE in practice — SQLite's
-                        # "duplicate column" and "no such column"
-                        # errors are mutually exclusive for the same
-                        # statement. The first branch (line ~498)
-                        # already catches "duplicate column" via the
-                        # "duplicate column name" substring match.
-                        # Kept as no-op to document original intent.
-                        elif False:  # pragma: no cover
-                            pass
                         else:
                             logger.error(
                                 "Migration %03d statement failed (non-idempotent): %s",

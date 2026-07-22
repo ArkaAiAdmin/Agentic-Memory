@@ -657,6 +657,8 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str, conn=None) -> Non
     worker polls the task_queue table on its own schedule, so the memory
     row is guaranteed visible by the time the worker picks up the task.
     """
+    _bq_conn = None
+    _owns_conn = False
     try:
         from background.background_queue import init_task_queue, enqueue_task
         from infra._lazy_imports import get_config
@@ -669,6 +671,7 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str, conn=None) -> Non
         if _bq_conn is None:
             from infra.db_write_queue import sqlite_write_queue
             _bq_conn = sqlite_write_queue.start_session(db_path_obj)
+            _owns_conn = True
         init_task_queue(_bq_conn)
 
         def _check_enqueue(res, task_name):
@@ -718,8 +721,11 @@ def _enqueue_background_tasks(db_path_obj: Path, note_id: str, conn=None) -> Non
                 _check_enqueue(r5, "skill_enrichment")
         except Exception as _enqueue_exc:
             logger.debug("save_memory: Sprint3 task enqueue failed: %s", _enqueue_exc)
-
-        if conn is None:
-            _bq_conn.close()
     except Exception as _bqe:
         logger.debug("save_memory: background queue enqueue failed: %s", _bqe)
+    finally:
+        if _owns_conn and _bq_conn is not None:
+            try:
+                _bq_conn.close()
+            except Exception:
+                pass

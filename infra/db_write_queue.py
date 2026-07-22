@@ -260,6 +260,8 @@ class SQLiteWriteQueue:
         self._thread.start()
         self._sessions: dict[int, dict] = {}
         self._sessions_lock = threading.Lock()
+        self._pending_futures: set[concurrent.futures.Future] = set()
+        self._pending_lock = threading.Lock()
 
     def _get_or_create_session_conn(self, session_id: int, db_path: Path) -> sqlite3.Connection:
         with self._sessions_lock:
@@ -316,10 +318,16 @@ class SQLiteWriteQueue:
         cmd_queue: queue.Queue = queue.Queue()
         resp_queue: queue.Queue = queue.Queue()
         future: concurrent.futures.Future = concurrent.futures.Future()
+        with self._pending_lock:
+            self._pending_futures.add(future)
         self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue), future))
         # Configurable timeout via environment variable (default 60s)
         session_timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_SESSION_TIMEOUT", "60.0"))
-        future.result(timeout=session_timeout)
+        try:
+            future.result(timeout=session_timeout)
+        finally:
+            with self._pending_lock:
+                self._pending_futures.discard(future)
         return ProxyConnection(cmd_queue, resp_queue)
 
     def enqueue_write(
@@ -334,6 +342,8 @@ class SQLiteWriteQueue:
             Future resolving to (last_rowid, rowcount) tuple.
         """
         future: concurrent.futures.Future = concurrent.futures.Future()
+        with self._pending_lock:
+            self._pending_futures.add(future)
         self._queue.put((Path(db_path), "statement", (query, params), future))
         return future
 
@@ -352,6 +362,8 @@ class SQLiteWriteQueue:
             Future resolving to the callback's return value.
         """
         future: concurrent.futures.Future = concurrent.futures.Future()
+        with self._pending_lock:
+            self._pending_futures.add(future)
         self._queue.put((Path(db_path), "callback", callback, future))
         return future
 
@@ -382,7 +394,7 @@ class SQLiteWriteQueue:
 
                     idle_timeout_env = float(os.environ.get("MEMORY_WRITE_QUEUE_IDLE_S", "30.0"))
                     while True:
-                        timeout = idle_timeout_env if conn.in_transaction else 3600.0
+                        timeout = idle_timeout_env
                         try:
                             cmd = cmd_queue.get(timeout=timeout)
                         except queue.Empty:
@@ -528,17 +540,25 @@ class SQLiteWriteQueue:
                 if not future.done():
                     future.set_exception(e)
             finally:
+                with self._pending_lock:
+                    self._pending_futures.discard(future)
                 self._queue.task_done()
 
     def stop(self, timeout: float = 30.0) -> None:
         """Gracefully stop the background worker thread.
 
         Sets a shutdown flag so the main loop can break out after the
-        current task.  Drains any remaining tasks first so the sentinel
-        is processed next, then joins with a generous timeout for the
-        in-flight task to complete and release its flock/connection.
+        current task.  Cancels all pending futures, drains remaining tasks,
+        then joins with a generous timeout for the in-flight task to
+        complete and release its flock/connection.
         """
         self._shutdown.set()
+        # Cancel all pending futures so callers don't hang indefinitely
+        with self._pending_lock:
+            pending = list(self._pending_futures)
+        for f in pending:
+            if not f.done():
+                f.set_exception(RuntimeError("Write queue shutting down"))
         drained = 0
         while True:
             try:

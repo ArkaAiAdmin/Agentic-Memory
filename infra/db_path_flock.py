@@ -133,10 +133,11 @@ class PathLockFd:
         self._ref_count = 0
         self._lease_token: str | None = None
 
-    def acquire(self) -> None:
+    def acquire(self, timeout: float = 30.0) -> None:
         """Acquire the lock. Per-process re-entrant.
 
-        Blocks by polling get_lock_manager() until the lock is acquired.
+        Blocks by polling get_lock_manager() until the lock is acquired
+        or *timeout* seconds elapse. Raises ``TimeoutError`` on timeout.
         """
         with self._lock:
             if self._ref_count == 0:
@@ -145,12 +146,19 @@ class PathLockFd:
                 from infra.lock_manager import get_lock_manager
                 lm = get_lock_manager()
                 key = os.path.abspath(str(self.path))
+                deadline = time.monotonic() + timeout
+                backoff = 0.05
                 while True:
                     success, token = lm.acquire_lock(key, "db-path-flock", ttl_seconds=300)
                     if success:
                         self._lease_token = token
                         break
-                    time.sleep(0.05)
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            f"Could not acquire db_path_flock for {self.path} within {timeout}s"
+                        )
+                    time.sleep(min(backoff, deadline - time.monotonic()))
+                    backoff = min(backoff * 2, 1.0)
             self._ref_count += 1
 
     def release(self) -> None:

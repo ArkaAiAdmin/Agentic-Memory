@@ -420,7 +420,7 @@ def enqueue_write(
     # dead-lettered) rather than silently materialized into memory.db.
     content_hash = hashlib.sha256(req.content.encode("utf-8")).hexdigest()
     conn.execute(
-        """INSERT OR IGNORE INTO write_journal
+        """INSERT INTO write_journal
            (note_id, agent_id, category, title_slug, content, tags,
              pinned, is_global, importance, tenant_id,
              epistemic_source, belief_status, asserting_agent_id, fact_type,

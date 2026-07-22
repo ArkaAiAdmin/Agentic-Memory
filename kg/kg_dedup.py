@@ -71,10 +71,11 @@ def merge_entities(
             "UPDATE kg_entities SET mentions = ?, updated_at = datetime('now') WHERE id = ?",
             (total, keep_id),
         )
-        # Redirect source edges
+        # Redirect source edges (skip self-loops on merge entity — they're meaningless)
         for eid, target_id, relation in conn.execute(
-            "SELECT id, target_id, relation FROM kg_edges WHERE source_id = ?",
-            (merge_id,),
+            "SELECT id, target_id, relation FROM kg_edges "
+            "WHERE source_id = ? AND target_id != ?",
+            (merge_id, merge_id),
         ).fetchall():
             existing = conn.execute(
                 "SELECT id FROM kg_edges "
@@ -93,10 +94,11 @@ def merge_entities(
                     (keep_id, eid),
                 )
             edges_redirected += 1
-        # Redirect target edges
+        # Redirect target edges (skip self-loops on merge entity)
         for eid, source_id, relation in conn.execute(
-            "SELECT id, source_id, relation FROM kg_edges WHERE target_id = ?",
-            (merge_id,),
+            "SELECT id, source_id, relation FROM kg_edges "
+            "WHERE target_id = ? AND source_id != ?",
+            (merge_id, merge_id),
         ).fetchall():
             existing = conn.execute(
                 "SELECT id FROM kg_edges "

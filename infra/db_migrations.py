@@ -989,7 +989,6 @@ def run_schema_setup(conn: AnyConnection) -> None:
         _migrate_memory_vec_idx(conn)
         _migrate_kg_tables(conn)
         _migrate_kg_extraction_stats(conn)
-        _migrate_ensure_skill_columns(conn)
 
         try:
             from memory_sharing import _ensure_shared_table
@@ -1078,6 +1077,9 @@ def run_schema_setup(conn: AnyConnection) -> None:
 
         # Ensure memory_chunks FTS triggers AFTER migrations create the table.
         _migrate_ensure_chunks_table(conn)
+
+        # Ensure skill columns AFTER migrations create memory_skills (migration 007).
+        _migrate_ensure_skill_columns(conn)
 
         # ------------------------------------------------------------------
         # 3. Post-migration setup: FTS5, FK constraints, etc.
