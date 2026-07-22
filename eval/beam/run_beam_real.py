@@ -33,7 +33,12 @@ import memory_mcp  # noqa: E402
 if not hasattr(memory_mcp, "safety_wiring"):
     setattr(memory_mcp, "safety_wiring", False)
 
-from eval._fixtures import populate_eval_memory_indexes, set_benchmark_env  # noqa: E402
+from eval._fixtures import (  # noqa: E402
+    populate_eval_memory_indexes,
+    populate_eval_memory_indexes_batch,
+    set_benchmark_env,
+)
+
 
 set_benchmark_env()
 
@@ -167,17 +172,19 @@ def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
     conn = _get_db_connection(db_path)
     session_map = {}
     try:
+        batch_items = []
         for idx, chunk in enumerate(chunks):
             memory_id = f"beam/conv{conv['conversation_id']}/chunk_{idx:04d}"
             timestamp = (datetime(2024, 1, 1) + timedelta(days=idx)).isoformat()
             chunk_with_meta = f"[Session Date: {timestamp[:10]}]\n{chunk}"
+            tags_list = [f"conv_{conv['conversation_id']}", conv["category"]]
             conn.execute(
                 """INSERT OR REPLACE INTO memories
                    (id, content, source_file, tags, created_at, updated_at,
                     observed_at, pinned, importance, category, tenant_id)
                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, 3, 'sessions', 'beam')""",
                 (memory_id, chunk_with_meta, f"beam/conv{conv['conversation_id']}",
-                 json.dumps([f"conv_{conv['conversation_id']}", conv["category"]]),
+                 json.dumps(tags_list),
                  timestamp, timestamp, timestamp),
             )
             # FTS index
@@ -188,16 +195,12 @@ def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
                 )
             except Exception:
                 pass
-            populate_eval_memory_indexes(
-                conn,
-                memory_id,
-                chunk_with_meta,
-                category="sessions",
-                tags=[f"conv_{conv['conversation_id']}", conv["category"]],
-            )
+            batch_items.append((memory_id, chunk_with_meta, "sessions", tags_list))
             session_map[f"chunk_{idx:04d}"] = memory_id
 
+        populate_eval_memory_indexes_batch(conn, batch_items)
         conn.commit()
+
     finally:
         conn.close()
 
