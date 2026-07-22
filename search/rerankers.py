@@ -234,6 +234,7 @@ def _apply_cross_encoder_rerank(
     tail = scored_results[top_k:]
     blend = _get_cross_encoder_blend()
     docs = [r[1] or "" for r in head]
+    ce_scores: list[float] = []
     if deep_rerank:
         try:
             from infra._lazy_imports import get_config

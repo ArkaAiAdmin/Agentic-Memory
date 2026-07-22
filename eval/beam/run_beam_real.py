@@ -51,7 +51,8 @@ set_benchmark_env()
 # Dataset loading
 # ---------------------------------------------------------------------------
 
-BEAM_DATA_DIR = Path.home() / "Downloads"
+_env_beam_dir = os.environ.get("BEAM_DATA_DIR")
+BEAM_DATA_DIR = Path(_env_beam_dir) if _env_beam_dir else Path.home() / "Downloads"
 PART_FILES = [
     "10M-00000-of-00002.parquet",
     "10M-00001-of-00002.parquet",

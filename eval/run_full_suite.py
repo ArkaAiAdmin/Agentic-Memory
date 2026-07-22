@@ -14,11 +14,22 @@ import subprocess
 import tempfile
 import time
 import xml.etree.ElementTree as ET
+import sys
 from pathlib import Path
 HERE = Path(__file__).resolve().parent
-VENV_PYTHON = HERE.parent / ".venv" / "bin" / "python"
+if str(HERE.parent) not in sys.path:
+    sys.path.insert(0, str(HERE.parent))
+
+VENV_PYTHON = Path(sys.executable)
 if not VENV_PYTHON.exists():
-    VENV_PYTHON = HERE.parent / "venv" / "bin" / "python"
+    VENV_PYTHON = HERE.parent / ".venv" / "bin" / "python"
+    if not VENV_PYTHON.exists():
+        VENV_PYTHON = HERE.parent / "venv" / "bin" / "python"
+
+try:
+    from eval._fixtures import bootstrap_temp_db_clean
+except Exception:
+    bootstrap_temp_db_clean = None
 
 summary = {
     "passed": 0,
@@ -119,11 +130,11 @@ def run_one_test(f):
     ) as db_f:
         temp_db_path = Path(db_f.name)
 
-    try:
-        from eval._fixtures import bootstrap_temp_db_clean
-        bootstrap_temp_db_clean(temp_db_path)
-    except Exception:
-        pass
+    if bootstrap_temp_db_clean is not None:
+        try:
+            bootstrap_temp_db_clean(temp_db_path)
+        except Exception:
+            pass
 
     # Copy base env and set MEMORY_DB_PATH
     test_env = env.copy()

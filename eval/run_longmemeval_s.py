@@ -46,6 +46,23 @@ if not hasattr(memory_mcp, "safety_wiring"):
 # Varied across names, dates, places, preferences, food, hobbies, family.
 # -----------------------------------------------------------------------
 
+def load_synthetic_dataset() -> list[dict]:
+    """Load LongMemEval_S synthetic questions from JSONL file if available."""
+    if DATASET_PATH.exists():
+        questions = []
+        with open(DATASET_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        questions.append(json.loads(line))
+                    except Exception:
+                        pass
+        if questions:
+            return questions
+    return SYNTHETIC
+
+
 SYNTHETIC = [
     {
         "question_id": "s01",
@@ -763,12 +780,15 @@ def score_relational(top_ids: list[str], gold_ids: list[str]) -> tuple[float, in
 
 
 def main():
-    # Write synthetic dataset to disk for the record
-    DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(DATASET_PATH, "w") as f:
-        for entry in SYNTHETIC:
-            f.write(json.dumps({**entry, "source": "synthetic"}) + "\n")
-    print(f"Wrote {len(SYNTHETIC)} synthetic questions to {DATASET_PATH}")
+    questions = load_synthetic_dataset()
+    if not DATASET_PATH.exists():
+        DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(DATASET_PATH, "w", encoding="utf-8") as f:
+            for entry in questions:
+                f.write(json.dumps({**entry, "source": "synthetic"}) + "\n")
+        print(f"Wrote {len(questions)} synthetic questions to {DATASET_PATH}")
+    else:
+        print(f"Loaded {len(questions)} synthetic questions from {DATASET_PATH}")
 
     # Per-question fresh DB + run
     run_id = uuid.uuid4().hex[:8]
@@ -787,7 +807,7 @@ def main():
     latencies_ms: list[float] = []
     t_start = time.perf_counter()
 
-    for q in SYNTHETIC:
+    for q in questions:
         qid = q["question_id"]
         query = q["query"]
         answer = q["answer"]
@@ -904,7 +924,7 @@ def main():
         )
 
     wall_time_s = time.perf_counter() - t_start
-    n = len(SYNTHETIC)
+    n = len(questions)
     hybrid_score = hybrid_hits / n
     baseline_score = baseline_hits / n
     lift = hybrid_score - baseline_score
