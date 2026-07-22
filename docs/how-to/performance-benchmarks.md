@@ -96,28 +96,74 @@ Per-task timeout: 120 s (configurable via `MEMORY_WORKER_TASK_TIMEOUT_S`).
 
 ## Running your own benchmarks
 
-The benchmark scripts **exist in the repo** (the old "scripts are not yet included" note is stale). They require the project venv.
+The repository includes a complete suite of automated benchmarks covering latency, throughput, long-horizon retrieval, multi-agent concurrency, and adversarial resilience.
+
+### 1. LongMemEval_S Benchmark (Full 470 Questions & Synthetic 66-Question Runs)
 
 ```bash
-# Save latency across 100 / 1K / 10K corpora
-venv/bin/python eval/benchmarks/bench_save.py
+# Full official 470-question LongMemEval_S benchmark using main production search pipeline:
+PYTHONPATH=. ./venv/bin/python eval/longmemeval_s/run_eval_main_pipeline.py \
+    --input eval/longmemeval_s/longmemeval_s_cleaned.json \
+    --output eval/longmemeval_s/results/eval_main_pipeline_full.json
 
-# Search latency (FTS5 + hybrid) across 100 / 1K / 10K corpora
-venv/bin/python eval/benchmarks/bench_search.py
+# Synthetic 66-question LongMemEval_S benchmark run:
+PYTHONPATH=. ./venv/bin/python eval/run_longmemeval_s.py
+```
 
-# Full perf envelope (1K corpus, all component timings)
-#   --quick  = 1K only (smoke test, ~20 s)
-#   --sizes 1,10000 = custom corpus sizes
-MEMORY_USE_USEARCH=0 venv/bin/python eval/perf_envelope.py --quick
+### 2. LoCoMo Benchmark (Long Conversation Memory — 1,986 Questions)
 
-# To isolate the core write/search path from the LLM fact extractor and
-# drift-enforcement blocks, set:
+```bash
+# Optimized LoCoMo evaluation (10 long conversations, ~2,000 QA pairs):
+MEMORY_WRITE_QUEUE_TIMEOUT=120.0 MEMORY_LLM_EXTRACTION=false \
+PYTHONPATH=. ./venv/bin/python eval/locomo_eval.py --max-questions 50
+```
+
+### 3. BEAM Real Data Benchmark (BEAM-10M Dataset)
+
+```bash
+# Evaluate against real BEAM-10M HuggingFace dataset:
+PYTHONPATH=. ./venv/bin/python eval/beam/run_beam_real.py --max-conversations 5
+```
+
+### 4. Golden Retrieval Benchmark (25 Query Test Cases)
+
+```bash
+# Run hybrid vector + FTS5 retrieval benchmark:
+PYTHONPATH=. ./venv/bin/python eval/retrieval_benchmark.py
+```
+
+### 5. SOTA Multi-Agent Adversarial Suite (20 Edge Cases)
+
+```bash
+# Run 4-category adversarial resilience benchmark (Epistemic Abstention, Quantitative Synthesis, State Collision):
+PYTHONPATH=. ./venv/bin/python eval/adversarial_eval.py
+```
+
+### 6. CRDT Projection & 10M Scalability Benchmark
+
+```bash
+# Systems projection unit & integration tests (88 tests):
+PYTHONPATH=paper_pipeline ./venv/bin/python -m pytest paper_pipeline/test_pipeline.py paper_pipeline/test_adversarial.py -v
+
+# Formal CK-CRDT proof counterexample suite (36 tests):
+PYTHONPATH=paper_pipeline_2 ./venv/bin/python -m pytest paper_pipeline_2/test_adversarial.py -v
+
+# 10 Million operation scale throughput & memory benchmark:
+PYTHONPATH=paper_pipeline ./venv/bin/python paper_pipeline/benchmark.py
+```
+
+### Environment Flags for Maximum Throughput Benchmark Isolation
+
+```bash
+# Isolate core search & write path for benchmark reproducibility:
 export MEMORY_USE_USEARCH=0
 export MEMORY_LLM_EXTRACTION=0
+export MEMORY_WRITE_QUEUE_TIMEOUT=120.0
 export PYTEST_CURRENT_TEST=1   # disables config-drift enforcement
 ```
 
-Results are written to `eval/results/bench-save.json`, `eval/results/bench-search.json`, and `eval/results/perf-envelope.json`.
+Results are written to `eval/results/`, `paper_pipeline/`, and `eval/longmemeval_s/results/`.
+
 
 ## Verification
 

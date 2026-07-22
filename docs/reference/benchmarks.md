@@ -140,4 +140,62 @@ Cognee and Mem0 cells are from published baselines (Cognee 79% at 100K, Mem0 64.
 
 - **LongMemEval_S**: Each question's haystack (~48 sessions) is indexed into a fresh in-memory FTS5 DB. No production DB is touched. BM25 top-50 candidates are rescored by cross-encoder. The eval harness (`run_eval.py`) is independent of the prod search pipeline.
 - **LoCoMo**: Conversations are ingested as memory notes via the prod save path. Retrieval uses `search_memories` with FTS + embedding hybrid. Session-level recall: gold session must appear in top-k results.
-- **BEAM**: Synthetic long conversations with tracked state changes. Accuracy measures whether the system can recall the current value of tracked entities at different context lengths.
+---
+
+## Benchmark Execution Commands & Infrastructure
+
+All benchmark suites are fully automated and can be executed via the project virtual environment (`venv/`):
+
+### 1. LongMemEval_S Benchmark (470 Questions Full Run & 66-Question Run)
+
+```bash
+# Full official 470-question LongMemEval_S benchmark using main production search pipeline:
+PYTHONPATH=. ./venv/bin/python eval/longmemeval_s/run_eval_main_pipeline.py \
+    --input eval/longmemeval_s/longmemeval_s_cleaned.json \
+    --output eval/longmemeval_s/results/eval_main_pipeline_full.json
+
+# Synthetic 66-question LongMemEval_S benchmark run:
+PYTHONPATH=. ./venv/bin/python eval/run_longmemeval_s.py
+```
+
+### 2. LoCoMo Benchmark (Long Conversation Memory — 1,986 Questions)
+
+```bash
+# Optimized LoCoMo evaluation (10 long conversations, ~2,000 QA pairs):
+MEMORY_WRITE_QUEUE_TIMEOUT=120.0 MEMORY_LLM_EXTRACTION=false \
+PYTHONPATH=. ./venv/bin/python eval/locomo_eval.py --max-questions 50
+```
+
+### 3. BEAM Real Data Benchmark (BEAM-10M Dataset)
+
+```bash
+# Evaluate against real BEAM-10M HuggingFace dataset:
+PYTHONPATH=. ./venv/bin/python eval/beam/run_beam_real.py --max-conversations 5
+```
+
+### 4. Golden Retrieval Benchmark (25 Query Test Cases)
+
+```bash
+# Run hybrid vector + FTS5 retrieval benchmark:
+PYTHONPATH=. ./venv/bin/python eval/retrieval_benchmark.py
+```
+
+### 5. SOTA Multi-Agent Adversarial Suite (20 Edge Cases)
+
+```bash
+# Run 4-category adversarial resilience benchmark (Epistemic Abstention, Quantitative Synthesis, State Collision):
+PYTHONPATH=. ./venv/bin/python eval/adversarial_eval.py
+```
+
+### 6. CRDT Projection & 10M Scalability Benchmark
+
+```bash
+# Systems projection unit & integration tests (88 tests):
+PYTHONPATH=paper_pipeline ./venv/bin/python -m pytest paper_pipeline/test_pipeline.py paper_pipeline/test_adversarial.py -v
+
+# Formal CK-CRDT proof counterexample suite (36 tests):
+PYTHONPATH=paper_pipeline_2 ./venv/bin/python -m pytest paper_pipeline_2/test_adversarial.py -v
+
+# 10 Million operation scale throughput & memory benchmark:
+PYTHONPATH=paper_pipeline ./venv/bin/python paper_pipeline/benchmark.py
+```
