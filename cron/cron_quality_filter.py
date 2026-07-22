@@ -6,7 +6,8 @@ import sys
 import json
 from pathlib import Path
 os.environ.setdefault("MEMORY_QUALITY_GATES", "1")
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_repo_root)
 import os
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":

@@ -7,7 +7,8 @@ import sys
 import traceback
 
 os.environ.setdefault("MEMORY_ADAPTIVE_RETENTION", "1")
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_repo_root)
 import os
 
 _parent = os.path.dirname(os.path.abspath(__file__))

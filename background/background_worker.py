@@ -1128,9 +1128,12 @@ def run_worker(
                     for _ in range(interval):
                         if _shutdown:
                             break
-                        with open_db(db_path, timeout=5.0, pooled=True) as read_conn:
-                            if _check_high_priority_pending(read_conn):
-                                break
+                        try:
+                            with open_db(db_path, timeout=5.0, pooled=True) as check_conn:
+                                if _check_high_priority_pending(check_conn):
+                                    break
+                        except Exception:
+                            pass
                         time.sleep(1)
     finally:
         _proc_sig.alarm(0)
@@ -1224,7 +1227,7 @@ def main():
         else:
             db_path = resolve_active_memory_dir() / "memory.db"
 
-    interval = args.interval or int(os.environ.get("MEMORY_WORKER_INTERVAL", "300"))
+    interval = args.interval or int(os.environ.get("MEMORY_WORKER_INTERVAL", "5"))
 
     if args.max_tasks is not None:
         max_tasks = args.max_tasks

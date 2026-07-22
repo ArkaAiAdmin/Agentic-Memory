@@ -274,6 +274,10 @@ def dequeue_task(conn: AnyConnection,
         conn.execute("SAVEPOINT dequeue_sp")
         sp_open = True
     else:
+        try:
+            conn.execute("PRAGMA busy_timeout = 30000")
+        except Exception:
+            pass
         conn.execute("BEGIN IMMEDIATE")
         sp_open = False
     try:

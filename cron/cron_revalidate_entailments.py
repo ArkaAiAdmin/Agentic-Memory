@@ -22,7 +22,8 @@ import sys
 import time
 from pathlib import Path
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_repo_root)
 _parent = os.path.dirname(os.path.abspath(__file__))
 if _parent not in sys.path:
     sys.path.insert(0, _parent)

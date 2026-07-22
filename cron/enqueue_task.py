@@ -18,7 +18,8 @@ import sys
 import time
 import datetime as _dt
 from pathlib import Path
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_repo_root)
 _parent = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(_parent) == "cron":
     _parent = os.path.dirname(_parent)

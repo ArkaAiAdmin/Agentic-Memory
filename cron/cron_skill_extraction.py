@@ -181,7 +181,8 @@ def run_extraction(
 
 def main() -> None:
     os.environ.setdefault("MEMORY_DB_PATH", "")
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_repo_root)
     parser = argparse.ArgumentParser(
         description="Extract skills from procedural memories"
     )

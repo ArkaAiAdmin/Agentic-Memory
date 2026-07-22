@@ -22,9 +22,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_REPO_ROOT)
+sys.path.insert(0, _REPO_ROOT)
 
 from infra.log import setup_logging
 

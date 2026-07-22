@@ -13,7 +13,8 @@ from pathlib import Path
 # processes get these from the environment.  The setdefault calls
 # were removed because they silently override TOML values even
 # when running manually (see A2 fix, contradiction-report).
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_repo_root)
 import os
 
 _parent = os.path.dirname(os.path.abspath(__file__))

@@ -17,7 +17,8 @@ os.environ.setdefault("MEMORY_KNOWLEDGE_GRAPH", "1")
 # rather than failing at import time. Explicit fail-fast is available via
 # the --enforce-scope flag, which calls enforce() directly.
 os.environ.setdefault("MEMORY_CONFIG_DRIFT_SKIP_ENFORCEMENT", "1")
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(_repo_root)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logger = logging.getLogger(__name__)
