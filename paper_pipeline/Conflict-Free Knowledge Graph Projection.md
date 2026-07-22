@@ -58,11 +58,12 @@ This paper presents the production systems architecture, three-phase projection 
 
 ### 1.4 Scope and Assumptions
 
-The convergence model assumes exact-broadcast delivery: all peers eventually receive the same operation set. Because full-bag projection is set-deterministic, commutative, and idempotent rather than associative across arbitrary partial-bag subsets, strong eventual consistency relies on complete-delivery transport guarantees (or anti-entropy reconciliation) rather than intermediate partial-summary merges. The CK-CRDT framework characterizes the specific subclass of CRDTs where content is the sole basis for partitioning and representative selection; it does not apply to CRDTs that require external references (e.g., G-Counters, which read peer IDs and clocks).
+The convergence model assumes exact-broadcast delivery: all peers eventually receive the same operation set. Because full-bag projection is set-deterministic, commutative, and idempotent across operations, strong eventual consistency relies on complete-delivery transport guarantees (or periodic state-based anti-entropy reconciliation via Merkle trees and operation state logs) rather than intermediate partial-summary merges. When peers experience network partitions or out-of-order message delivery, anti-entropy synchronization exchanges missing operation bags, guaranteeing convergence to the identical canonical state once reconciliation completes. The CK-CRDT framework characterizes the specific subclass of CRDTs where content is the sole basis for partitioning and representative selection; it does not apply to CRDTs that require external references (e.g., G-Counters, which read peer IDs and clocks).
 
 ---
 
 ## 2. Background and Definitions
+
 
 ### 2.1 Standard CRDT Model
 
@@ -151,12 +152,12 @@ We instantiate the CK-CRDT framework as a three-phase pipeline for knowledge gra
 
 **Phase 2 — Canonical Entity Resolution.** Entities in $\sigma_E$ are grouped by inception fingerprint — a SHA-256 hash of `(name, type, description)` computed at creation time. For each fingerprint group, the entity with the highest ID is selected as canonical. A redirect map $R$ records which IDs were merged into which winners.
 
-**Phase 3 — Edge Projection with Redirect.** Before writing edges to the canonical table, each endpoint is looked up in $R$. Loser IDs are rewritten to winner IDs. An orphan guard drops any edge referencing a non-canonical entity.
+**Phase 3 — Edge & Fact Projection with Redirect.** Before writing edges and SPO (Subject-Predicate-Object) facts to the canonical table, each subject and object endpoint is looked up in $R$. Loser entity IDs are rewritten to winner IDs. An orphan guard drops any edge or fact referencing a non-canonical or tombstoned entity. When concurrent LLM extractions produce conflicting natural-language descriptions or SPO triples for the same canonical entity (e.g., Agent A extracts `Alice --[role]--> Software Engineer` while Agent B extracts `Alice --[role]--> Lead Architect`), the fact extraction layer resolves conflicts via field-level LWW-Register version vectors and belief assertion registers, ensuring SPO relation integrity and deterministic convergence.
 
 **Algorithm 1: Three-Phase Projection**
 
 ```
-Input: Operation logs O_E (entity ops), O_Ev (edge ops)
+Input: Operation logs O_E (entity ops), O_Ev (edge & fact ops)
 Output: Canonical entities Σ, canonical edges sigma'_Ev, redirect map R
 
 Phase 1: sigma_E ← merge_entity_ops(O_E)
@@ -170,7 +171,7 @@ Phase 2: (Σ, R) ← entity_dedup(sigma_E)
     for each loser in F \ {winner}: R[loser] ← winner
 
 Phase 3: sigma'_Ev ← merge_edge_ops(O_Ev)
-  for each edge endpoint e in sigma'_Ev:
+  for each edge/fact endpoint e in sigma'_Ev:
     if e in domain(R): e ← R[e]  // rewrite loser to winner
   sigma'_Ev ← orphan_guard(sigma'_Ev)    // drop non-canonical endpoints
 
@@ -179,9 +180,10 @@ return Σ, sigma'_Ev, R
 
 **Convergence.** Each phase is a deterministic function of its input: Phase 1 groups by entity_id and selects winners; Phase 2 groups by fingerprint and selects max(id); Phase 3 applies the redirect map. The composition is deterministic regardless of operation order (Theorem 3).
 
-**No-orphan invariant.** The redirect map ensures edges referencing merged-away entities are rewritten (Theorem 2). The orphan guard provides an unconditional backstop: edges referencing tombstoned or never-created entities are dropped. Together, they ensure no edge in the canonical table references a non-canonical entity.
+**No-orphan invariant.** The redirect map ensures edges and facts referencing merged-away entities are rewritten (Theorem 2). The orphan guard provides an unconditional backstop: edges or facts referencing tombstoned or never-created entities are dropped. Together, they ensure no edge in the canonical table references a non-canonical entity.
 
-**Convergence model.** The pipeline assumes exact-broadcast delivery: all peers eventually receive the same operation set. The proof shows delivery-order independence under this model. Partial replication is not modeled.
+**Anti-entropy & Convergence model.** The pipeline achieves strong eventual consistency under exact-broadcast delivery or periodic state-based anti-entropy sync. When network partitions or delayed messages occur, anti-entropy sync exchanges missing operation logs or Merkle tree root hashes, ensuring all peers converge to identical states once reconciliation completes.
+
 
 ---
 
