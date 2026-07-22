@@ -96,93 +96,33 @@ render_sidebar()
 # Billing tab is always available (useful for local testing of billing flows).
 # In production, plan enforcement in the gateway gates actual usage.
 has_cloud = True
+actual_tabs = _dk.TABS[:-1] + ["Billing"] + [_dk.TABS[-1]] if has_cloud else _dk.TABS
 
-if has_cloud:
-    # Insert Billing before Settings
-    actual_tabs = _dk.TABS[:-1] + ["Billing"] + [_dk.TABS[-1]]
-    (
-        dashboard_tab,
-        memories_tab,
-        knowledge_tab,
-        quality_tab,
-        operations_tab,
-        compliance_tab,
-        coordination_tab,
-        audit_tab,
-        billing_tab,
-        settings_tab,
-    ) = st.tabs(actual_tabs)
-else:
-    (
-        dashboard_tab,
-        memories_tab,
-        knowledge_tab,
-        quality_tab,
-        operations_tab,
-        compliance_tab,
-        coordination_tab,
-        audit_tab,
-        settings_tab,
-    ) = st.tabs(_dk.TABS)
-    billing_tab = None
+selected_tab = st.radio(
+    "Navigation",
+    actual_tabs,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="active_dashboard_tab_radio"
+)
 
-# ═══════════════════════════════════════════════════════════════════════════
-# DASHBOARD (Overview + Health + Activity + Command Palette)
-# ═══════════════════════════════════════════════════════════════════════════
-with dashboard_tab:
+if selected_tab == "Dashboard":
     render_dashboard()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# MEMORIES (Browse + Search + Edit + Create)
-# ═══════════════════════════════════════════════════════════════════════════
-with memories_tab:
+elif selected_tab == "Memories":
     render_memories()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# KNOWLEDGE (KG + Facts + Embeddings)
-# ═══════════════════════════════════════════════════════════════════════════
-with knowledge_tab:
+elif selected_tab == "Knowledge":
     render_knowledge()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# QUALITY (Quality Center + Staleness + Impact + Timeline + Merges + Sandbox + Gaps)
-# ═══════════════════════════════════════════════════════════════════════════
-with quality_tab:
+elif selected_tab == "Quality":
     render_quality()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# OPERATIONS (Cron + Backups + Multi-Agent + Runbook)
-# ═══════════════════════════════════════════════════════════════════════════
-with operations_tab:
+elif selected_tab == "Operations":
     render_operations()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# COMPLIANCE (RBAC + ACL + GDPR + Tenants + Policy + Audit Check)
-# ═══════════════════════════════════════════════════════════════════════════
-with compliance_tab:
+elif selected_tab == "Compliance":
     render_compliance()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# COORDINATION (Tasks + File Locks + Messaging + Project State)
-# ═══════════════════════════════════════════════════════════════════════════
-with coordination_tab:
+elif selected_tab == "Coordination":
     render_coordination()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# AUDIT (Full audit log + Performance)
-# ═══════════════════════════════════════════════════════════════════════════
-with audit_tab:
+elif selected_tab == "Audit":
     render_audit()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# BILLING (SaaS Subscription Tiers + Usage Metering)
-# ═══════════════════════════════════════════════════════════════════════════
-if billing_tab is not None:
-    with billing_tab:
-        render_billing()
-
-# ═══════════════════════════════════════════════════════════════════════════
-# SETTINGS (Feature Flags + System Info + Onboarding + Export)
-# ═══════════════════════════════════════════════════════════════════════════
-with settings_tab:
+elif selected_tab == "Billing":
+    render_billing()
+elif selected_tab == "Settings":
     render_settings()

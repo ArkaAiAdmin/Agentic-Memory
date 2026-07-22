@@ -135,17 +135,13 @@ def ingest_conversation(
                 (mem_id, content, source_file,
                  sample_id, sample_id, sample_id, sample_id),
             )
-            rowid = db.execute(
-                "SELECT rowid FROM memories WHERE id=?", (mem_id,)
-            ).fetchone()
-            if rowid is not None:
-                try:
-                    db.execute(
-                        "INSERT OR REPLACE INTO memories_fts (rowid, content) VALUES (?, ?)",
-                        (rowid[0], content),
-                    )
-                except Exception:
-                    pass
+            try:
+                db.execute(
+                    "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
+                    (mem_id, content),
+                )
+            except Exception:
+                pass
             session_map[sk] = mem_id
         db.commit()
     return session_map

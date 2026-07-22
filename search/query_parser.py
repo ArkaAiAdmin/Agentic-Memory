@@ -33,6 +33,34 @@ from infra.memory_common import connection_pool, safe_close_db
 
 logger = logging.getLogger(__name__)
 
+def decompose_compound_query(query: str) -> list[str]:
+    """Decompose compound queries (e.g. multi-session reasoning) into sub-queries.
+    
+    E.g. 'What brand of racket did John buy for his favorite sport?'
+    -> ['John favorite sport', 'John racket brand']
+    """
+    if not query:
+        return []
+    
+    q_lower = query.lower().strip()
+    
+    # Check for compound patterns (for his/her, and what, regarding the, during the)
+    patterns = [
+        r"(.+?)\s+(?:for|regarding|about|during)\s+(?:his|her|their|the)\s+(.+)",
+        r"(.+?)\s+and\s+(?:what|which|who|where|when|how)\s+(.+)",
+    ]
+    
+    for pat in patterns:
+        m = re.search(pat, q_lower)
+        if m:
+            part1 = m.group(1).strip()
+            part2 = m.group(2).strip()
+            if len(part1) > 5 and len(part2) > 5:
+                return [part1, part2]
+                
+    return []
+
+
 # Stop words: high-frequency words that waste FTS5 match budget on AND queries
 _STOP_WORDS = frozenset({
     'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',

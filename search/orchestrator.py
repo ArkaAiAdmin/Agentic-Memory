@@ -520,6 +520,28 @@ def _rerank_results(
             return (round(score, 2), ts)
         return (score, ts)
 
+    if out and len(out) > 1:
+        superseded_ids = set()
+        for item in out:
+            sup = item[12] if len(item) > 12 else None
+            if sup:
+                if isinstance(sup, (list, tuple, set)):
+                    superseded_ids.update(str(s) for s in sup)
+                else:
+                    superseded_ids.add(str(sup))
+        if superseded_ids:
+            new_out = []
+            for item in out:
+                item_id = str(item[0])
+                if item_id in superseded_ids:
+                    item_list = list(item)
+                    curr_score = float(item_list[6]) if item_list[6] is not None else 0.0
+                    item_list[6] = curr_score * 0.3
+                    new_out.append(tuple(item_list))
+                else:
+                    new_out.append(item)
+            out = new_out
+
     out = sorted(
         out,
         key=_rank_key,

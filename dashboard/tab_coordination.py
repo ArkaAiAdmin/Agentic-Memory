@@ -61,6 +61,13 @@ def _render_agents():
         "FROM agent_heartbeats ORDER BY last_heartbeat DESC"
     )
 
+    # Active Fencing Locks
+    if _table_exists_api("distributed_locks"):
+        locks = _query_api("SELECT lock_name, agent_id, fencing_token, expires_at FROM distributed_locks")
+        if locks:
+            st.markdown("#### \U0001f512 Active Fenced Locks")
+            st.dataframe(pd.DataFrame(locks), width="stretch", hide_index=True)
+
     # Agent activity from project_state
     activity = _query_api(
         "SELECT key, value, updated_by, updated_at FROM project_state "

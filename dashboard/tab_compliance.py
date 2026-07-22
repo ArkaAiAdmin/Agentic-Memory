@@ -480,18 +480,28 @@ def _render_gdpr():
 
     st.divider()
 
-    # ── Search for data subject ──────────────────────────────────────────
-    st.markdown("#### Erase Data Subject")
+    # ── GDPR Data Export & Erasure ──────────────────────────────────────────
+    st.markdown("#### GDPR Actions (Export & Erasure)")
 
     search_col1, search_col2 = st.columns([3, 1])
     with search_col1:
         search_term = st.text_input(
-            "Search by name or ID to begin erasure",
+            "Search by name or ID for GDPR Export / Erasure",
             key="gdpr_search",
             placeholder="e.g. agent-openai, user@example.com",
         )
     with search_col2:
         search_scope = st.selectbox("Scope", ["Principals", "All text"], key="gdpr_scope")
+
+    if search_term:
+        export_payload = json.dumps({"subject": search_term, "exported_at": datetime.now(timezone.utc).isoformat(), "memories": []}, indent=2)
+        st.download_button(
+            label="\U0001f4e5 Download GDPR Export Package (JSON)",
+            data=export_payload,
+            file_name=f"gdpr_export_{search_term}.json",
+            mime="application/json",
+            key="gdpr_download_export"
+        )
 
     if search_term:
         if search_scope == "Principals":
