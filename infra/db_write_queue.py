@@ -144,7 +144,7 @@ class ProxyConnection:
             # The write queue session is already in a transaction (started with BEGIN IMMEDIATE)
             return ProxyCursor(None, [], None, None)
         self._cmd_queue.put(("execute", (sql, params)))
-        timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
+        timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "120.0"))
         try:
             status, res = self._resp_queue.get(timeout=timeout)
         except queue.Empty:
