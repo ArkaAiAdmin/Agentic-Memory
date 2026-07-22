@@ -269,8 +269,18 @@ class SQLiteWriteQueue:
                 conn.execute("PRAGMA foreign_keys=ON")
                 conn.execute("PRAGMA wal_autocheckpoint=500")
                 # Run schema setup and create tenant_id function for CRDT support
-                from infra.db_migrations import run_schema_setup
-                run_schema_setup(conn)
+                for _retry in range(3):
+                    try:
+                        from infra.db_migrations import run_schema_setup
+                        run_schema_setup(conn)
+                        break
+                    except sqlite3.OperationalError as _oe:
+                        if "locked" in str(_oe).lower() and _retry < 2:
+                            time.sleep(0.1 * (2 ** _retry))
+                        else:
+                            break
+                    except Exception:
+                        break
                 t_id = os.environ.get("MEMORY_CRON_TENANT_ID") or os.environ.get("MEMORY_TENANT_ID") or "default"
                 try:
                     conn.create_function("tenant_id", 0, lambda: t_id)
@@ -403,7 +413,15 @@ class SQLiteWriteQueue:
                                 if action == "execute":
                                     sql, params = act_payload
                                     if not conn.in_transaction and not sql.strip().upper().startswith("BEGIN"):
-                                        conn.execute("BEGIN IMMEDIATE")
+                                        for _retry in range(5):
+                                            try:
+                                                conn.execute("BEGIN IMMEDIATE")
+                                                break
+                                            except sqlite3.OperationalError as _oe:
+                                                if "locked" in str(_oe).lower() and _retry < 4:
+                                                    time.sleep(0.05 * (2 ** _retry))
+                                                else:
+                                                    raise
                                     cursor = conn.execute(sql, params)
                                     res_rows = cursor.fetchall()
                                     resp_queue.put(
