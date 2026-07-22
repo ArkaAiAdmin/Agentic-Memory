@@ -16,6 +16,9 @@ import sys
 ADMIN_ROUTED_TOOLS = {
     "memory_recall_status",
     "memory_recall_trace",
+    "memory_recall_stats",
+    "memory_gdpr_erase",
+    "memory_pipeline_coverage",
 }
 
 

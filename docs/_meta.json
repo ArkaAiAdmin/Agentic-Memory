@@ -1,10 +1,10 @@
 {
   "schema_version": 73,
   "num_migrations": 74,
-  "num_core_tools": 23,
+  "num_core_tools": 24,
   "num_admin_tools": 92,
   "num_deprecated_tools": 3,
-  "num_total_tools": 118,
+  "num_total_tools": 119,
   "num_tests": 4431,
   "num_test_files": 353,
   "loc_production": 142208,

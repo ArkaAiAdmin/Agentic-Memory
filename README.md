@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-5,275\+-brightgreen)](#testing)
 [![Schema](https://img.shields.io/badge/schema-v73-orange.svg)](docs/reference/schema.md)
-[![MCP Tools](https://img.shields.io/badge/MCP-24%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
+[![MCP Tools](https://img.shields.io/badge/MCP-25%20CORE%20tools-purple.svg)](docs/reference/mcp-tools.md)
 [![CRDT Sync](https://img.shields.io/badge/CRDT-field--level%20LWWES-green.svg)](docs/concepts/multi-agent-sync.md)
 [![Temporal KG](https://img.shields.io/badge/Temporal-KG-brightgreen)](docs/concepts/temporal-kg.md)
 [![v1.1.0](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
@@ -29,7 +29,7 @@ graph TD
     B --> E[.md files - Git-ready]
     C --> F[Temporal Knowledge Graph]
     D --> G[CQRS + CRDT Multi-Agent Sync]
-    A --> H[24 MCP tools]
+    A --> H[25 MCP tools]
     A --> I[49 cron scripts -> 1 scheduler]
     A --> J[9 hooks]
     A --> K[Python SDK + TypeScript SDK + REST API]

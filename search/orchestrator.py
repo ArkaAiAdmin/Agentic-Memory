@@ -421,7 +421,7 @@ def _rerank_results(
 
     if budget.should_run("kg_boost", 50):
         try:
-            scored = _phase_ten_kg_boost(db, scored, query)
+            scored = _phase_ten_kg_boost(db, scored, query, limit=limit)
             scored = _phase_ten_multi_hop_kg(db, scored, query, limit=limit * 2)
         except Exception as _kg_exc:
             logger.debug("kg_boost / multi_hop_kg skipped: %s", _kg_exc)
@@ -1231,14 +1231,10 @@ def search_memories(
             hybrid = False
 
         elif mode == "semantic":
-            try:
-                from search import search_pipeline as _sp_mod
-                results = _sp_mod._fallback_embedding_search(  # type: ignore[attr-defined]
-                    db, normalized_query, db_path, limit * 5 if _effective_rerank else limit, repo_filter, category,
-                    tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
-                )
-            except ImportError:
-                results = []
+            results = _fallback_embedding_search(
+                db, normalized_query, db_path, limit * 5 if _effective_rerank else limit, repo_filter, category,
+                tag_filter_sql=_tag_filter_sql, tag_filter_params=tuple(_tag_filter_params),
+            )
             _record_phase_latency("search.embedding_fallback", _t0)
             if include_facts:
                 _t0_kg = time.time()
@@ -1457,7 +1453,6 @@ def search_memories(
                 db, results, fts_query, limit, include_invalid, repo_filter, category=category or None,
                 merged_chunks=_merged_chunks,
             )
-
             # Session-aware clustering
             _t0_sc = time.time()
             session_boost_ids: set = set()
