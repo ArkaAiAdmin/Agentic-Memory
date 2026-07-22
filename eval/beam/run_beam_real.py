@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -20,6 +21,8 @@ import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 EVAL_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = EVAL_ROOT.parent.parent
@@ -80,8 +83,8 @@ def load_beam_dataset() -> list[dict]:
             if pq_str:
                 try:
                     probing = ast.literal_eval(pq_str)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Failed to parse probing questions for conversation (non-fatal): %s", exc)
 
             conversations.append({
                 "conversation_id": cid,
@@ -193,8 +196,8 @@ def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
                     "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
                     (memory_id, chunk_with_meta),
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("FTS index insert failed for %s (non-fatal): %s", memory_id, exc)
             batch_items.append((memory_id, chunk_with_meta, "sessions", tags_list))
             session_map[f"chunk_{idx:04d}"] = memory_id
 
@@ -211,22 +214,24 @@ def ingest_conversation(db_path: Path, conv: dict) -> dict[str, str]:
 # Search and scoring
 # ---------------------------------------------------------------------------
 
-def run_search(db_path: Path, query: str, limit: int = 20) -> list[str]:
+def run_search(db_path: Path, query: str, limit: int = 30) -> list[str]:
     """Run hybrid search and return list of memory IDs in rank order."""
     from search.orchestrator import search_memories
 
     result = search_memories(
         db_path,
         query,
-        limit=limit,
+        limit=max(limit, 30),
         include_global=True,
         rerank=True,
+        deep_rerank=True,
         include_facts=False,
         safety_wiring=False,
         tenant_id="beam",
         category="sessions",
     )
     return [r["id"] for r in result.get("results", [])]
+
 
 
 def _check_indicator(answer_lower: str, indicator: str) -> bool:
@@ -443,24 +448,24 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
                     math_sum = extract_and_aggregate_quantities(question_text, candidates_tuple)
                     if math_sum:
                         combined_content = f"{math_sum} " + combined_content
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Math aggregator phase failed (non-fatal): %s", exc)
 
                 try:
                     from search.phases.temporal_delta_solver import calculate_temporal_delta
                     temp_delta = calculate_temporal_delta(question_text, candidates_tuple)
                     if temp_delta:
                         combined_content = f"{temp_delta} " + combined_content
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Temporal delta solver phase failed (non-fatal): %s", exc)
 
                 try:
                     from search.phases.attribute_extractor import extract_entity_attribute
                     attr_val = extract_entity_attribute(question_text, candidates_tuple)
                     if attr_val:
                         combined_content = f"{attr_val} " + combined_content
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Attribute extractor phase failed (non-fatal): %s", exc)
 
                 score = score_answer(
                     combined_content,

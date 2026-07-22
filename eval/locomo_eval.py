@@ -18,6 +18,10 @@ Usage:
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import json
 import os
 import shutil
@@ -44,6 +48,8 @@ from infra.memory_common import open_db  # noqa: E402
 from _fixtures import bootstrap_temp_db_clean, populate_eval_memory_indexes, set_benchmark_env  # noqa: E402
 
 set_benchmark_env()
+os.environ["MEMORY_WRITE_QUEUE_TIMEOUT"] = "120.0"
+os.environ["MEMORY_LLM_EXTRACTION"] = "false"
 
 
 CATEGORY_MAP = {
@@ -143,8 +149,8 @@ def ingest_conversation(
                     "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
                     (mem_id, content),
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("FTS index insert failed for %s (non-fatal): %s", mem_id, exc)
             populate_eval_memory_indexes(db, mem_id, content, category="sessions")
             session_map[sk] = mem_id
 
@@ -172,14 +178,14 @@ def extract_gold_sessions(qa: dict) -> set[str]:
 # Evaluation
 # ---------------------------------------------------------------------------
 
-def run_search(db_path: Path, query: str, limit: int = 20) -> list[str]:
+def run_search(db_path: Path, query: str, limit: int = 30) -> list[str]:
     """Run hybrid search and return list of memory IDs in rank order."""
     from search.orchestrator import search_memories
 
     result = search_memories(
         db_path,
         query,
-        limit=limit,
+        limit=max(limit, 30),
         include_global=True,
         rerank=True,
         include_facts=False,
@@ -188,6 +194,7 @@ def run_search(db_path: Path, query: str, limit: int = 20) -> list[str]:
         category="sessions",
     )
     return [r["id"] for r in result.get("results", [])]
+
 
 
 def evaluate(

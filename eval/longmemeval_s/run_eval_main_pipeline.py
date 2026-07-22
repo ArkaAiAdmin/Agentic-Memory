@@ -23,6 +23,9 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import logging
+
+logger = logging.getLogger(__name__)
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -74,8 +77,8 @@ def load_corpus(path: str, limit: int | None = None) -> list[dict]:
                         evaluable_questions.append(q)
                         if len(evaluable_questions) >= limit:
                             break
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Failed to parse JSON question object (non-fatal): %s", exc)
             else:
                 current_lines.append(line)
                 
@@ -135,8 +138,8 @@ def _seed_sessions(db_path: Path, sessions: list[list[dict]], session_ids: list[
         try:
             conn.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
             conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("FTS rebuild skipped (non-fatal): %s", exc)
         # Index chunks for every seeded session so the chunk-level
         # hybrid search path (wired into search_memories) has data to
         # retrieve. Long sessions are split into turns; the most
@@ -195,8 +198,8 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
             contents = [c for _, c in batch]
             try:
                 vecs = model.encode(contents, show_progress_bar=False, batch_size=batch_size)
-            except Exception:
-                # Fall back to individual encoding
+            except Exception as exc:
+                logger.debug("Batch encode failed, falling back to individual: %s", exc)
                 vecs = [model.encode([c])[0] for c in contents]
             for (mid, content), vec in zip(batch, vecs):
                 chash = hashlib.sha256(content.encode()).hexdigest()[:16]
@@ -240,8 +243,8 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
         try:
             conn.execute("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')")
             conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("FTS rebuild skipped for seeded sessions (non-fatal): %s", exc)
     finally:
         conn.close()
     print(f"Done seeding. DB size: {db_path.stat().st_size / 1024:.1f} KB")
@@ -293,8 +296,8 @@ def run(corpus: list[dict], limit: int | None = None, db_path: Path | None = Non
                     from datetime import datetime
                     dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
                     as_of_val = dt.timestamp()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Failed to parse question date for temporal filter (non-fatal): %s", exc)
 
             tenant_id = f"longmem_{qid}"
             result = search_memories(

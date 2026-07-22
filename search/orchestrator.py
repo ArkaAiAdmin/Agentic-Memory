@@ -1085,8 +1085,8 @@ def search_memories(
                 if db is not None:
                     try:
                         safe_close_db(db)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("safe_close_db failed on cache hit path (non-fatal): %s", exc)
                 return cached_result
             else:
                 _search_cache.pop(cache_key)
@@ -1132,9 +1132,6 @@ def search_memories(
         # memory_source='auto_save'. The constraint is appended to
         # repo_filter so both FTS and embedding fallback paths inherit it
         # through _fetch_rows_by_ids.
-        # Sprint 3: tags filter — JSON array exact match via LIKE.
-        # Parameterised to prevent SQL injection (was: f-string interpolation
-        # of user-supplied tag strings directly into the SQL clause).
         # Sprint 3: tags filter — JSON array exact match via LIKE.
         # Parameterised to prevent SQL injection (was: f-string interpolation
         # of user-supplied tag strings directly into the SQL clause).

@@ -47,7 +47,11 @@ def resolve_candidate_contradictions(candidates: list[tuple], query: str = "") -
             annotated.append(item)
             continue
 
-        item_list = list(item)
+        try:
+            item_list = list(item)
+        except (TypeError, ValueError):
+            annotated.append(item)
+            continue
         item_id = str(item_list[0])
         content = str(item_list[1]) if item_list[1] is not None else ""
         

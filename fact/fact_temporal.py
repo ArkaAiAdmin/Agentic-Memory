@@ -423,16 +423,18 @@ def _mark_fact_superseded(
                 "WHERE fact_id = ? AND belief_status = 'active'",
                 (fact_id,),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("belief_assertions table absent or update failed for fact %d (non-fatal): %s", fact_id, exc)
         _propagate_entailment_invalidation(conn, fact_id)
-        conn.execute("COMMIT")
+        if not in_tx:
+            conn.execute("COMMIT")
         return True
     except Exception:
-        try:
-            conn.execute("ROLLBACK")
-        except Exception:
-            pass
+        if not in_tx:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
         raise
 
 

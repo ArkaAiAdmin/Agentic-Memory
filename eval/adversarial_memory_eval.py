@@ -9,10 +9,13 @@ Tests 4 core hard categories:
 """
 
 import json
+import logging
 import re
 import sys
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 EVAL_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = EVAL_ROOT.parent
@@ -327,8 +330,8 @@ def run_adversarial_eval() -> dict:
                 "INSERT OR REPLACE INTO memories_fts (id, content) VALUES (?, ?)",
                 (memory_id, content_str)
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("FTS index insert failed for %s (non-fatal): %s", memory_id, exc)
         populate_eval_memory_indexes(conn, memory_id, content_str, category="sessions")
 
     conn.commit()

@@ -831,7 +831,6 @@ def _migrate_kg_tables(conn) -> None:
                     )
             except Exception:
                 logger.warning("Failed to backfill KG FTS during migration")
-                pass
         # B4 fix: removed inner conn.commit() for atomicity.
     except Exception as exc:
         logger.warning("_migrate_kg_tables failed: %s", exc)
@@ -969,8 +968,8 @@ def run_schema_setup(conn: AnyConnection) -> None:
     # Disable foreign keys before schema migration DDL transaction
     try:
         conn.execute("PRAGMA foreign_keys = OFF")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to disable foreign_keys pragma (non-fatal): %s", exc)
 
     with conn:
         # ------------------------------------------------------------------

@@ -48,10 +48,12 @@ cron/.drift_cron_*.json
 
 # Eval results and temp files (not source)
 eval/longmemeval_s/results/
+eval/longmemeval_s/run_eval_debug.py
 eval/real_memory_eval_results.json
 eval/prebuilt_db_path.txt
 SEARCH_SOTA_STATUS.md
 eval/results/
+eval/beam/results/
 
 # Plans and scratch (not source)
 plans/

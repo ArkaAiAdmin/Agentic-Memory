@@ -562,6 +562,7 @@ class SessionManager:
                     conn.execute("ROLLBACK")
                 except Exception:
                     pass
+            raise RuntimeError(f"start_session failed: {exc}") from exc
         finally:
             if conn:
                 from infra.db import safe_close_db
