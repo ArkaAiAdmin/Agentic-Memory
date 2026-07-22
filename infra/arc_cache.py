@@ -297,6 +297,21 @@ class ARCCache:
             cur.execute("DELETE FROM arc_ghosts WHERE evicted_at < ?", (cutoff,))
             return cur.rowcount or 0
 
+    def cleanup_stale_recents(self, max_age_days: int = 90) -> int:
+        """Delete ``recent:*`` entries older than ``max_age_days``.
+
+        Prevents unbounded growth of the ``arc_stats`` table from stale
+        recent-access timestamps for deleted or long-forgotten memories.
+        Returns the number of rows deleted.
+        """
+        cutoff = datetime.datetime.now().timestamp() - (max_age_days * 86400)
+        with self.transaction() as cur:
+            cur.execute(
+                "DELETE FROM arc_stats WHERE key LIKE 'recent:%' AND CAST(value AS REAL) < ?",
+                (cutoff,),
+            )
+            return cur.rowcount or 0
+
     def get_stats(self) -> dict:
         """Return a dict of ARC stats: eviction_pressure, ghost_hit_rate,
         total_ghosts, ghost_count, recent_total, last_recent_at,

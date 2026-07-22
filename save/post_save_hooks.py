@@ -87,6 +87,9 @@ def _enrich_context(db, note_id: str, content: str, category: str, tags: list):
 
         for term in search_terms[:5]:  # Limit to 5 terms to avoid slow queries
             try:
+                # Wrap term in double-quotes for FTS5 literal matching
+                # (prevents operator misinterpretation of words like NOT, NEAR)
+                safe_term = '"' + term.replace('"', '""') + '"'
                 rows = db.execute(
                     """SELECT fts.id, fts.content, fts.rank
                        FROM memories_fts fts
@@ -96,7 +99,7 @@ def _enrich_context(db, note_id: str, content: str, category: str, tags: list):
                        AND m.deleted_at IS NULL
                        ORDER BY fts.rank
                        LIMIT 5""",
-                    (term, note_id),
+                    (safe_term, note_id),
                 ).fetchall()
 
                 for row in rows:

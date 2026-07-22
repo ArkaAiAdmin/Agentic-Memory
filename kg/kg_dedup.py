@@ -261,6 +261,13 @@ def compute_semantic_merge_candidates(
         vectors = es.encode(names)
         if vectors is None or len(vectors) != len(names):
             continue
+        # Pre-fetch mention counts to avoid N+1 in pairwise loop
+        mention_map = {}
+        for eid in ids:
+            row = conn.execute(
+                "SELECT mentions FROM kg_entities WHERE id = ?", (eid,)
+            ).fetchone()
+            mention_map[eid] = (row[0] or 0) if row else 0
         # Pairwise cosine similarity (dot product — vectors are L2-normalized)
         sim_matrix = np.dot(vectors, vectors.T)
         # Find pairs above threshold (upper triangle only)
@@ -271,17 +278,8 @@ def compute_semantic_merge_candidates(
                 if sim >= threshold:
                     # Keep the entity with higher mention count or lower id
                     keep_idx, merge_idx = i, j
-                    keep_mentions = conn.execute(
-                        "SELECT mentions FROM kg_entities WHERE id = ?",
-                        (ids[keep_idx],),
-                    ).fetchone()
-                    merge_mentions = conn.execute(
-                        "SELECT mentions FROM kg_entities WHERE id = ?",
-                        (ids[merge_idx],),
-                    ).fetchone()
-                    if merge_mentions and keep_mentions:
-                        if (merge_mentions[0] or 0) > (keep_mentions[0] or 0):
-                            keep_idx, merge_idx = j, i
+                    if mention_map.get(ids[merge_idx], 0) > mention_map.get(ids[keep_idx], 0):
+                        keep_idx, merge_idx = j, i
                     candidates.append(
                         {
                             "keep_id": ids[keep_idx],
