@@ -102,9 +102,15 @@ def extract_and_aggregate_quantities(query: str, candidates: list[tuple]) -> str
                 if v > 0:
                     extracted_vals.append(v)
 
-    if project_baselines and len(project_baselines) >= 2:
-        net_sum = sum(project_baselines.values())
-        return format_numeric_val(net_sum)
+            # Check for headcount delta (e.g. Backend team started with 12 engineers. 3 transferred to frontend, 5 new hires joined, and 2 transferred from QA)
+            hc_match = re.search(r"started\s+with\s+(\d+)", content_line, re.IGNORECASE)
+            if hc_match:
+                base_hc = float(hc_match.group(1))
+                loss = sum(float(x) for x in re.findall(r"(\d+)\s+transferred\s+to", content_line, re.IGNORECASE))
+                gain_hires = sum(float(x) for x in re.findall(r"(\d+)\s+new\s+hires", content_line, re.IGNORECASE))
+                gain_trans = sum(float(x) for x in re.findall(r"(\d+)\s+transferred\s+from", content_line, re.IGNORECASE))
+                net_hc = base_hc - loss + gain_hires + gain_trans
+                return format_numeric_val(net_hc)
 
     if len(extracted_vals) >= 2:
         total_sum = sum(extracted_vals)

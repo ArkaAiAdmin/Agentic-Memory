@@ -31,7 +31,7 @@ from search.orchestrator import search_memories  # noqa: E402
 
 
 def generate_adversarial_dataset() -> list[dict]:
-    """Generate tough synthetic evaluation cases across 4 hard categories."""
+    """Generate 20 tough synthetic evaluation cases across 4 hard categories."""
     dataset = []
 
     # -----------------------------------------------------------------------
@@ -79,6 +79,18 @@ def generate_adversarial_dataset() -> list[dict]:
             "expected": "AlloyDB",
             "category": "state_collision",
         },
+        {
+            "id": "t1_q4",
+            "question": "What was my primary cloud provider choice in August 2024?",
+            "expected": "GCP",
+            "category": "state_collision",
+        },
+        {
+            "id": "t1_q5",
+            "question": "What primary language did I select for high-throughput stream processing in September 2024?",
+            "expected": "Rust",
+            "category": "state_collision",
+        },
     ]
 
     # -----------------------------------------------------------------------
@@ -92,6 +104,12 @@ def generate_adversarial_dataset() -> list[dict]:
         ("2024-02-05", "Charlie's project budget for Q1 is $45,000."),
         ("2024-02-06", "David approved a $15,000 hardware upgrade for Charlie's project."),
         ("2024-02-07", "The remaining Q1 budget for Charlie's project was allocated to cloud hosting."),
+        ("2024-02-08", "Frank mandated DuckDB for all embedded analytics microservices."),
+        ("2024-02-09", "Eve is designing the data reporting pipeline for service Analytics-Core."),
+        ("2024-02-10", "Analytics-Core is classified as an embedded analytics microservice."),
+        ("2024-02-11", "Internal staging server node-01 is configured to run on Port 8443."),
+        ("2024-02-12", "All microservices communicating over Port 8443 strictly require mTLS authentication."),
+        ("2024-02-13", "Grace is deploying the auth worker for node-01 staging server."),
     ]
 
     t2_questions = [
@@ -107,6 +125,24 @@ def generate_adversarial_dataset() -> list[dict]:
             "expected": "$30,000",
             "category": "4hop_graph_inference",
         },
+        {
+            "id": "t2_q3",
+            "question": "Which database engine must Eve use for Analytics-Core reporting pipeline?",
+            "expected": "DuckDB",
+            "category": "4hop_graph_inference",
+        },
+        {
+            "id": "t2_q4",
+            "question": "What authentication protocol must Grace configure for node-01 staging worker?",
+            "expected": "mTLS",
+            "category": "4hop_graph_inference",
+        },
+        {
+            "id": "t2_q5",
+            "question": "What allergy constraint must be respected when ordering food for Alice?",
+            "expected": "peanut",
+            "category": "4hop_graph_inference",
+        },
     ]
 
     # -----------------------------------------------------------------------
@@ -117,6 +153,8 @@ def generate_adversarial_dataset() -> list[dict]:
         ("2024-03-05", "I evaluated NVIDIA H100 GPU instances on AWS for $4.10 per hour."),
         ("2024-03-10", "I read a benchmark paper on RTX 4090 performance for LLM inference."),
         ("2024-03-15", "I discussed buying a Dell UltraSharp monitor for $850."),
+        ("2024-03-20", "Memcached cluster node-02 encountered an OutOfMemory error on May 15."),
+        ("2024-03-22", "Project Helios was fully implemented in Rust."),
     ]
 
     t3_questions = [
@@ -132,6 +170,24 @@ def generate_adversarial_dataset() -> list[dict]:
             "expected": "ABSTAIN",
             "category": "epistemic_abstention",
         },
+        {
+            "id": "t3_q3",
+            "question": "What error code was returned when the Redis cluster crashed on May 15?",
+            "expected": "ABSTAIN",
+            "category": "epistemic_abstention",
+        },
+        {
+            "id": "t3_q4",
+            "question": "Who approved the $500,000 acquisition of QuantumCorp in June 2024?",
+            "expected": "ABSTAIN",
+            "category": "epistemic_abstention",
+        },
+        {
+            "id": "t3_q5",
+            "question": "Which Java framework was selected for project Helios?",
+            "expected": "ABSTAIN",
+            "category": "epistemic_abstention",
+        },
     ]
 
     # -----------------------------------------------------------------------
@@ -142,6 +198,10 @@ def generate_adversarial_dataset() -> list[dict]:
         ("2024-04-05", "Project Beta has 250,000 active users."),
         ("2024-04-10", "Project Gamma has 180,000 active users."),
         ("2024-04-15", "We migrated 120,000 users from Project Alpha to Project Beta."),
+        ("2024-04-20", "Engineering infrastructure budget is $100,000."),
+        ("2024-04-22", "We spent $25,000 on Kubernetes clusters and $15,000 on database storage."),
+        ("2024-04-25", "We received a $10,000 cloud infrastructure credit from AWS."),
+        ("2024-04-28", "Backend team started with 12 engineers. 3 transferred to frontend, 5 new hires joined, and 2 transferred from QA."),
     ]
 
     t4_questions = [
@@ -149,6 +209,30 @@ def generate_adversarial_dataset() -> list[dict]:
             "id": "t4_q1",
             "question": "What is the total combined active user count across all three projects (Alpha, Beta, Gamma)?",
             "expected": "880,000",
+            "category": "multi_numeric_synthesis",
+        },
+        {
+            "id": "t4_q2",
+            "question": "What is the net remaining balance in the engineering infrastructure budget?",
+            "expected": "$70,000",
+            "category": "multi_numeric_synthesis",
+        },
+        {
+            "id": "t4_q3",
+            "question": "What is the final headcount of the backend team after all transfers and new hires?",
+            "expected": "16",
+            "category": "multi_numeric_synthesis",
+        },
+        {
+            "id": "t4_q4",
+            "question": "How much total money was spent on Kubernetes clusters and database storage combined?",
+            "expected": "$40,000",
+            "category": "multi_numeric_synthesis",
+        },
+        {
+            "id": "t4_q5",
+            "question": "What was the initial user count of Project Alpha before any migrations?",
+            "expected": "450,000",
             "category": "multi_numeric_synthesis",
         },
     ]

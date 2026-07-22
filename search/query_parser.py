@@ -518,6 +518,7 @@ _SYNONYM_MAP: dict[str, set[str]] = {
     "agent": {"assistant", "bot", "ai agent", "autonomous agent"},
     "memory": {"recall", "storage", "knowledge", "context", "notes"},
     "search": {"query", "lookup", "retrieve", "find", "recall"},
+    "headcount": {"engineers", "team size", "staff", "headcount", "employees", "members"},
     "recall": {"search", "retrieve", "memory", "lookup"},
     "knowledge": {"memory", "facts", "information", "context"},
     "crdt": {"conflict-free", "replicated", "sync", "merge", "convergent"},
