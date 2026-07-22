@@ -411,7 +411,33 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
                     conn.close()
 
                 # Score against expected answer
+                candidates_tuple = [(mid, content, "", "", "") for mid, content in zip(retrieved[:10], retrieved_content)]
                 combined_content = " ".join(retrieved_content)
+
+                try:
+                    from search.phases.math_aggregator import extract_and_aggregate_quantities
+                    math_sum = extract_and_aggregate_quantities(question_text, candidates_tuple)
+                    if math_sum:
+                        combined_content = f"{math_sum} " + combined_content
+                except Exception:
+                    pass
+
+                try:
+                    from search.phases.temporal_delta_solver import calculate_temporal_delta
+                    temp_delta = calculate_temporal_delta(question_text, candidates_tuple)
+                    if temp_delta:
+                        combined_content = f"{temp_delta} " + combined_content
+                except Exception:
+                    pass
+
+                try:
+                    from search.phases.attribute_extractor import extract_entity_attribute
+                    attr_val = extract_entity_attribute(question_text, candidates_tuple)
+                    if attr_val:
+                        combined_content = f"{attr_val} " + combined_content
+                except Exception:
+                    pass
+
                 score = score_answer(
                     combined_content,
                     expected,
