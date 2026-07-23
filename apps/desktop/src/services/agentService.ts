@@ -311,7 +311,7 @@ const DEFAULT_CONFIG: AgentServiceConfig = {
   model: "gpt-4o",
   maxTurns: 25,
   temperature: 0.7,
-  memoryDir: `${process.env.HOME ?? "/"}/.config/agentic-memory`,
+  memoryDir: `${(globalThis as any).process?.env?.HOME ?? (globalThis as any).process?.env?.USERPROFILE ?? "/"}/.config/agentic-memory`,
 };
 
 class AgentService {

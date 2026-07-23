@@ -1,11 +1,15 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useAgent } from "../../hooks/useAgent";
 import { useAppStore, type ChatMessage } from "../../stores/appStore";
-import { agentService } from "../../services/agentService";
 import { nanoid } from "nanoid";
 
 export function ChatPanel() {
-  const { chatMessages, isStreaming, addChatMessage, updateChatMessage, setStreaming } =
-    useAppStore();
+  const {
+    messages: chatMessages,
+    sendMessage,
+    isStreaming,
+    isInitialized,
+  } = useAgent();
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -17,102 +21,9 @@ export function ChatPanel() {
   const handleSend = async () => {
     if (!input.trim() || isStreaming) return;
 
-    const userMessage: ChatMessage = {
-      id: nanoid(),
-      role: "user",
-      content: input.trim(),
-      timestamp: Date.now(),
-    };
-
-    addChatMessage(userMessage);
     const prompt = input.trim();
     setInput("");
-    setStreaming(true);
-
-    // Create assistant message placeholder
-    const assistantId = nanoid();
-    addChatMessage({
-      id: assistantId,
-      role: "assistant",
-      content: "",
-      timestamp: Date.now(),
-    });
-
-    if (!agentService.isInitialized) {
-      try {
-        await agentService.initialize();
-      } catch (err) {
-        updateChatMessage(assistantId, {
-          content: `Failed to initialize agent: ${err instanceof Error ? err.message : String(err)}`,
-        });
-        setStreaming(false);
-        return;
-      }
-    }
-
-    let assistantContent = "";
-    let toolCalls: Array<{
-      name: string;
-      args: Record<string, unknown>;
-      result?: string;
-      status: "running" | "completed" | "error";
-    }> = [];
-
-    try {
-      for await (const event of agentService.sendMessage(prompt)) {
-        switch (event.type) {
-          case "text":
-            assistantContent += event.text;
-            updateChatMessage(assistantId, { content: assistantContent });
-            break;
-          case "tool_call":
-            toolCalls = [
-              ...toolCalls,
-              {
-                name: event.toolName,
-                args: event.args ?? {},
-                status: "running",
-              },
-            ];
-            updateChatMessage(assistantId, { toolCalls: [...toolCalls] });
-            break;
-          case "tool_result":
-            toolCalls = toolCalls.map((tc) =>
-              tc.name === event.toolName && tc.status === "running"
-                ? {
-                    ...tc,
-                    result:
-                      typeof event.result?.preview === "string"
-                        ? event.result.preview
-                        : JSON.stringify(event.result),
-                    status: event.result?.success === false ? "error" : "completed",
-                  }
-                : tc,
-            );
-            updateChatMessage(assistantId, { toolCalls: [...toolCalls] });
-            break;
-          case "error":
-            updateChatMessage(assistantId, {
-              content:
-                (assistantContent ? assistantContent + "\n\n" : "") +
-                `Error: ${event.error}`,
-            });
-            setStreaming(false);
-            return;
-          case "done":
-            setStreaming(false);
-            return;
-        }
-      }
-    } catch (err) {
-      updateChatMessage(assistantId, {
-        content:
-          (assistantContent ? assistantContent + "\n\n" : "") +
-          `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
-      });
-    } finally {
-      setStreaming(false);
-    }
+    await sendMessage(prompt);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -138,6 +49,9 @@ export function ChatPanel() {
         {isStreaming && (
           <span style={{ color: "#4caf50", marginLeft: 8 }}>● streaming</span>
         )}
+        {!isInitialized && !isStreaming && (
+          <span style={{ color: "#ff9800", marginLeft: 8 }}>● initializing</span>
+        )}
       </div>
 
       {/* Messages */}
@@ -162,7 +76,7 @@ export function ChatPanel() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Message the agent..."
-          disabled={isStreaming}
+          disabled={isStreaming || !isInitialized}
           style={{
             flex: 1,
             background: "#16213e",
@@ -179,7 +93,7 @@ export function ChatPanel() {
         />
         <button
           onClick={handleSend}
-          disabled={isStreaming || !input.trim()}
+          disabled={isStreaming || !input.trim() || !isInitialized}
           style={{
             background: isStreaming ? "#333" : "#4a9eff",
             border: "none",

@@ -83,7 +83,7 @@ export function TerminalPanel() {
 
     // Fit after a short delay to ensure container is sized
     requestAnimationFrame(() => {
-      fitAddon.fit();
+      try { fitAddon.fit(); } catch {}
     });
 
     const tab: TerminalTab = { id, ptyId: null, term, fitAddon };
