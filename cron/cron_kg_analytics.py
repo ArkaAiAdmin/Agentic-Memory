@@ -23,7 +23,7 @@ import logging
 import os
 import sqlite3
 import sys
-from collections import defaultdict, deque
+
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -50,44 +50,7 @@ def _resolve_db_path() -> Path:
     return active_dir / "memory.db"
 
 
-def compute_communities(conn: sqlite3.Connection) -> dict[int, int]:
-    """Connected-components community labelling over active edges.
-
-    Cheap O(V + E) union-find; sufficient for memory-scale graphs where
-    "community" means "connected knowledge cluster".  Returns {entity_id: community_id}.
-    """
-    nodes = [r[0] for r in conn.execute("SELECT id FROM kg_entities").fetchall()]
-    parent: dict[int, int] = {nid: nid for nid in nodes}
-
-    def find(x: int) -> int:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def union(a: int, b: int) -> None:
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[ra] = rb
-
-    for src, tgt in conn.execute(
-        "SELECT source_id, target_id FROM kg_edges WHERE invalid_at IS NULL OR invalid_at = ''"
-    ).fetchall():
-        if src in parent and tgt in parent:
-            union(src, tgt)
-
-    labels: dict[int, int] = {}
-    for nid in nodes:
-        labels[nid] = find(nid)
-    # Renumber communities to dense 0..k-1 for stable ids.
-    remap: dict[int, int] = {}
-    out: dict[int, int] = {}
-    for nid in nodes:
-        root = labels[nid]
-        if root not in remap:
-            remap[root] = len(remap)
-        out[nid] = remap[root]
-    return out
+from kg.graph_communities import compute_communities
 
 
 def capture_snapshot(conn: sqlite3.Connection, communities: dict[int, int]) -> int:

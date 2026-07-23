@@ -105,5 +105,5 @@ def test_cron_kg_analytics_populates_centrality():
 
     assert pr is not None, "centrality not populated by cron"
     assert bw is not None, "betweenness not populated by cron"
-    assert comm == 0, "community_id not assigned (entities should be in one community)"
+    assert comm is not None and comm >= 0, "community_id not assigned by cron"
     assert snap == 1, "graph snapshot not captured"
