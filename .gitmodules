@@ -4,3 +4,6 @@
 [submodule "eval/longmemeval_v2"]
 	path = eval/longmemeval_v2
 	url = https://github.com/ArkaAiAdmin/agentic-memory-longmemeval-v2.git
+[submodule "ide"]
+	path = ide
+	url = /Users/arka/.config/agentic-memory-ide
