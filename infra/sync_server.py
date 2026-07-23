@@ -93,7 +93,7 @@ SYNC_MAX_BODY_SIZE = int(os.environ.get("MEMORY_SYNC_MAX_BODY", str(10 * 1024 * 
 from infra.db import AnyConnection as _AnyConnection
 
 
-def _open_server_db(db_path: str, write: bool = True) -> _AnyConnection:
+def _open_server_db(db_path: str, write: bool = True, tenant_id: str = "default") -> _AnyConnection:
     """Open a SQLite connection for a sync-server request.
 
     When *write* is True (default), uses the project's write-queue
@@ -104,6 +104,7 @@ def _open_server_db(db_path: str, write: bool = True) -> _AnyConnection:
     The connection lifetime is the lifetime of the request — the
     caller must close it.
     """
+    from infra.tenant_query import install_tenant_context
     # Imported lazily to avoid a hard dependency on db.py at
     # import time (some test runners use sync_server without the
     # full DB stack).
@@ -115,7 +116,8 @@ def _open_server_db(db_path: str, write: bool = True) -> _AnyConnection:
         # between read-only sync requests (pull endpoints) and
         # MCP tool calls for the SQLiteWriteQueue thread.
         from infra.db import connection_pool
-        conn = connection_pool.get(Path(db_path), timeout=10.0)
+        conn = connection_pool.get(str(db_path), timeout=10.0)
+        install_tenant_context(conn, tenant_id)
         return conn
 
     from infra.db_write_queue import sqlite_write_queue
@@ -158,7 +160,9 @@ def _open_server_db(db_path: str, write: bool = True) -> _AnyConnection:
                     pass
 
         fallback.close = _flock_aware_close  # type: ignore[method-assign]
+        install_tenant_context(fallback, tenant_id)
         return fallback
+    install_tenant_context(conn, tenant_id)
     return conn
 
 
@@ -753,7 +757,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                                 or remote_agent,
                             )
                             winners = merge_field_updates([upd])
-                            _fconn = _open_server_db(self.db_path)
+                            _fconn = _open_server_db(self.db_path, tenant_id=self.server_tenant_id)
                             try:
                                 apply_field_updates_to_db(
                                     _fconn, winners, self.server_tenant_id
@@ -1069,7 +1073,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 pass
 
         try:
-            conn = _open_server_db(self.db_path)
+            conn = _open_server_db(self.db_path, tenant_id=self.server_tenant_id)
             try:
                 from skill_extractor import ensure_skill_schema
                 ensure_skill_schema(conn)
@@ -1211,7 +1215,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                 pass
 
         try:
-            conn = _open_server_db(self.db_path)
+            conn = _open_server_db(self.db_path, tenant_id=self.server_tenant_id)
             try:
                 params: tuple = (since,) if since is not None else (0.0,)
                 where = "WHERE last_seen > ?" if since is not None else ""
@@ -1276,7 +1280,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
         try:
             from crdt.crdt_merge import parse_version_vector, dominates, merge_vectors
 
-            conn = _open_server_db(self.db_path)
+            conn = _open_server_db(self.db_path, tenant_id=self.server_tenant_id)
             try:
                 applied = 0
                 skipped = 0

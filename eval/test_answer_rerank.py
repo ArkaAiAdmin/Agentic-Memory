@@ -93,15 +93,18 @@ class TestAnswerRerankCache:
         return conn
 
     def test_cache_hit(self, tmp_path):
+        import hashlib
         from search.answer_rerank import answer_rerank, _ensure_cache_schema
         conn = self._make_db(tmp_path)
         _ensure_cache_schema(conn)
 
-        # Pre-populate cache
+        # Pre-populate cache — use same hash as source (sha256 hex[:16])
+        query = "test query"
+        query_hash = hashlib.sha256(query.encode()).hexdigest()[:16]
         conn.execute(
             "INSERT INTO answer_rerank_cache (memory_id, query_hash, score, snippet, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("mem1", str(hash("test query")), 0.9, "cached snippet", time.time()),
+            ("mem1", query_hash, 0.9, "cached snippet", time.time()),
         )
         conn.commit()
 

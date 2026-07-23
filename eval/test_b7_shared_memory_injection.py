@@ -166,7 +166,7 @@ class TestImportSharedMemoryRollback(unittest.TestCase):
 
     def test_indexer_failure_rolls_back_memories_row(self) -> None:
         """If the indexer step fails, no memories row is committed."""
-        from infra.memory_common import connection_pool, open_db
+        from infra.memory_common import connection_pool
 
         db = _fresh_db()
         _seed_shared(db, "The user prefers dark mode in their IDE.")
@@ -184,7 +184,9 @@ class TestImportSharedMemoryRollback(unittest.TestCase):
         # The caller sees an error.
         self.assertIn("error", result, f"Expected error, got {result}")
         # But NO memories row is left behind — the rollback worked.
-        with open_db(db) as conn:
+        # Use a direct connection to avoid the write queue (which may
+        # be stalled by a previous test).
+        with sqlite3.connect(str(db)) as conn:
             rows = conn.execute(
                 "SELECT id FROM memories WHERE id LIKE 'imported:%'"
             ).fetchall()

@@ -13,6 +13,8 @@ import tempfile
 import time
 import urllib.request
 import urllib.error
+
+import pytest
 import unittest
 from pathlib import Path
 from typing import Tuple
@@ -169,6 +171,7 @@ class TestAPIServer(unittest.TestCase):
         self.assertEqual(captured.get("is_global"), False,
                          "is_global must default to False when omitted from the body")
 
+    @pytest.mark.timeout(90)
     def test_search_memories(self):
         # Add a record
         status, data = self._http_request("/api/v1/memories", "POST", {

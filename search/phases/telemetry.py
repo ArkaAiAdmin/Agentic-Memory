@@ -107,15 +107,10 @@ def _record_search_telemetry(
     try:
         from adaptive_retention import record_access
 
-        # M25 fix: batch adaptive retention inserts with executemany().
-        _retention_params = []
         for r in result_items:
-            _retention_params.append((r.get("id", ""), "search"))
-        if _retention_params:
-            db.executemany(
-                "INSERT OR IGNORE INTO memory_access_log (memory_id, source) VALUES (?, ?)",
-                _retention_params,
-            )
+            note_id = r.get("id", "")
+            if note_id:
+                record_access(db, note_id, "search")
         db.commit()
     except Exception as e:
         _phase_inc("search.telemetry.adaptive_retention", e)

@@ -246,10 +246,6 @@ class ProxyConnection:
             self._resp_queue.get(timeout=timeout)
         except Exception:
             pass
-        try:
-            self._resp_queue.get(timeout=5.0)
-        except Exception:
-            pass
 
     def __enter__(self) -> ProxyConnection:
         return self
@@ -439,7 +435,7 @@ class SQLiteWriteQueue:
                         future.set_exception(e)
                         continue
 
-                    idle_timeout_env = float(os.environ.get("MEMORY_WRITE_QUEUE_IDLE_S", "30.0"))
+                    idle_timeout_env = float(os.environ.get("MEMORY_WRITE_QUEUE_IDLE_S", "300.0"))
                     while True:
                         timeout = idle_timeout_env
                         try:

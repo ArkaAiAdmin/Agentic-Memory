@@ -310,9 +310,9 @@ def _get_handlers() -> dict:
         t = _tools()
         from session_manager import reconcile_audit as _reconcile_audit
         _MAINTENANCE_HANDLERS = {
-            MaintenanceOp.HEARTBEAT: lambda *, dry_run=False, **_: t[
+            MaintenanceOp.HEARTBEAT: lambda *, dry_run=False, tenant_id="", **_: t[
                 "memory_heartbeat"
-            ](dry_run=dry_run),
+            ](dry_run=dry_run, tenant_id=tenant_id),
             MaintenanceOp.TIER_STATS: lambda **_: t["memory_tier_stats"](),
             MaintenanceOp.TIER_MIGRATION: lambda *, dry_run=False, **_: t[
                 "memory_run_tier_migration"

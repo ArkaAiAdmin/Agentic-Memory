@@ -58,8 +58,18 @@ class TestAllRegression(unittest.TestCase):
                 ("memory_vec_keys", "memory_id"),
                 ("kg_facts", "source_memory"),
                 ("memory_field_crdt", "memory_id"),
+                ("memory_chunk_embeddings", "memory_id"),
             ]:
                 con.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM memories)")
+            # Clean up orphans referencing principals table
+            for table, col in [
+                ("role_bindings", "principal_id"),
+                ("acl_overrides", "principal_id"),
+            ]:
+                try:
+                    con.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM principals)")
+                except sqlite3.OperationalError:
+                    pass  # Table or column may not exist in older schemas
             con.commit()
         with sqlite3.connect(DB, timeout=30.0) as con:
             ver = con.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]

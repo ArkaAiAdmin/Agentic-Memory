@@ -500,7 +500,7 @@ def _cleanup_orphaned_subsystem_data(
 
 
 def run_heartbeat(
-    conn: AnyConnection, dry_run: bool = False, db_path: str | None = None
+    conn: AnyConnection, dry_run: bool = False, db_path: str | None = None, tenant_id: str | None = None
 ) -> dict:
     """Re-evaluate all memories: compute importance, assign tier, archive.
 
@@ -550,10 +550,17 @@ def run_heartbeat(
         pass
 
     now = time.time()
-    rows = conn.execute(
-        "SELECT id, tier, pinned, updated_at, created_at FROM memories "
-        "WHERE deleted_at IS NULL"
-    ).fetchall()
+    if tenant_id:
+        rows = conn.execute(
+            "SELECT id, tier, pinned, updated_at, created_at FROM memories "
+            "WHERE deleted_at IS NULL AND tenant_id = ?",
+            (tenant_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, tier, pinned, updated_at, created_at FROM memories "
+            "WHERE deleted_at IS NULL"
+        ).fetchall()
 
     evaluated = 0
     tier_changes = 0

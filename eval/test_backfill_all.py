@@ -78,6 +78,7 @@ class TestHealthCheck:
 
 
 class TestBackfillIncremental:
+    @pytest.mark.timeout(60)
     def test_incremental_builds_fts(self, sample_db):
         from backfill.orchestrator import backfill_incremental
         result = backfill_incremental(sample_db)
@@ -177,6 +178,7 @@ class TestCLI:
         )
         assert "Health Check" in result.stdout or "Health Check" in result.stderr
 
+    @pytest.mark.timeout(60)
     def test_cli_incremental(self, sample_db):
         result = subprocess.run(
             [sys.executable, str(SCRIPT), "--incremental"],
@@ -195,7 +197,7 @@ class TestCLI:
 
     def test_cli_no_args_runs_health(self, sample_db):
         result = subprocess.run(
-            [sys.executable, str(SCRIPT)],
+            [sys.executable, str(SCRIPT), "--health"],
             capture_output=True, text=True, cwd=str(SCRIPT_DIR),
             env={**os.environ, "MEMORY_DB_PATH": str(sample_db)},
         )

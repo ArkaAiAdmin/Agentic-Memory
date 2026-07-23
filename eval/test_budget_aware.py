@@ -113,7 +113,7 @@ class TestSearchBudget:
         import os
         os.environ.pop("MEMORY_SEARCH_COMPUTE_BUDGET_MS", None)
         budget = get_search_budget()
-        assert budget.budget_ms == 200.0  # Default warm latency target
+        assert budget.budget_ms == 10000.0  # Default 10s budget
 
     def test_env_var_invalid(self):
         from search.budget_aware import get_search_budget
@@ -121,7 +121,7 @@ class TestSearchBudget:
         os.environ["MEMORY_SEARCH_COMPUTE_BUDGET_MS"] = "not_a_number"
         try:
             budget = get_search_budget()
-            assert budget.budget_ms == 200.0  # Falls back to default
+            assert budget.budget_ms == 10000.0  # Falls back to default
         finally:
             del os.environ["MEMORY_SEARCH_COMPUTE_BUDGET_MS"]
 
@@ -130,9 +130,10 @@ class TestBudgetCascade:
     def test_tight_budget_skips_when_real_time_accumulates(self):
         from search.budget_aware import SearchBudget
         # Simulate a budget that expires partway through the pipeline
-        budget = SearchBudget(budget_ms=30, start_time=1000.0)
-        # FTS runs (elapsed = 0)
-        assert budget.should_run("fts", 5) is True
+        with mock.patch("time.time", return_value=1000.0):
+            budget = SearchBudget(budget_ms=30, start_time=1000.0)
+            # FTS runs (elapsed = 0)
+            assert budget.should_run("fts", 5) is True
         # Advance time by 40ms — exceeds 30ms budget
         with mock.patch("time.time", return_value=1000.04):
             assert budget.should_run("semantic", 50) is False

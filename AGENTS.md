@@ -6,9 +6,9 @@ If you are an agent **using** the system (not maintaining it): read `AGENT_CONTR
 
 ---
 <!--AUTO-GEN:START key="what_this_system_is"-->
-- **Surface**: 24 CORE verbs + `memory_maintenance` router (92 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 49+ cron jobs
-- **Schema**: v73, ~89 tables
-- **Code**: ~146k LOC production, ~110k+ test LOC; see `docs/architecture.md`
+- **Surface**: 24 CORE verbs + `memory_maintenance` router (92 ADMIN + 3 DEPRECATED behind router) + 7 lifecycle hooks + 54+ cron jobs
+- **Schema**: v73, ~90 tables
+- **Code**: ~147k LOC production, ~110k+ test LOC; see `docs/architecture.md`
 - **MCP Help**: `docs/MCP_SURFACE.md` — quick-reference for agents using MCP tools. See also [AGENT_QUICKSTART.md](file:///Users/arka/.config/agentic-memory/docs/AGENT_QUICKSTART.md).
 <!--AUTO-GEN:END key="what_this_system_is"-->
 
@@ -115,7 +115,7 @@ agentic-memory/
 ├── background/
 │   ├── auto_save.py   ← async inbox+daemon
 │   └── background_worker.py ← CQRS write-journal daemon
-├── cron/             ← 49+ scheduled jobs
+├── cron/             ← 54+ scheduled jobs
 ├── mcp_*.py (32 modules) ← MCP tool surface
 ├── memory/           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md
@@ -198,7 +198,7 @@ Each sub-agent's full playbook lives in `.opencode/agents/<name>.md`. Do not cal
 
 ---
 <!--AUTO-GEN:START key="current_state"-->
-- **Schema v73**: 74 migrations (100% down-coverage), ~89 tables.
+- **Schema v73**: 74 migrations (100% down-coverage), ~90 tables.
 - **MCP surface**: 24 CORE + 1 router (92 ADMIN + 3 DEPRECATED). See `docs/MCP_SURFACE.md`.
 - **Write path**: Saga transaction (DB + vec_key + .md) with flock locking, crash-consistent rollback. `defer_expensive=True` → <200ms.
 - **Read path**: 14-phase hybrid search (FTS5 BM25 + usearch vector + ColBERT + temporal decay + neural forget curve).

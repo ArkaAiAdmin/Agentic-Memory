@@ -350,10 +350,23 @@ def _backfill_empty_checksums(conn: AnyConnection) -> None:
     existing = _get_checksums(conn)
     if existing:
         return  # fail-closed: once checksums are present, never overwrite
+    # Read the recorded version so we only backfill checksums for
+    # migrations that are actually considered applied.  Without this
+    # cap, a legacy DB with version=4 would get checksums for ALL
+    # available migrations (e.g. 1-73), causing _get_applied_migrations
+    # to think every migration is already applied and skip the upgrade.
+    try:
+        row = conn.execute(
+            "SELECT version FROM schema_version WHERE id=1"
+        ).fetchone()
+        recorded_version = row[0] if row else 0
+    except sqlite3.OperationalError:
+        recorded_version = 0
     available = {num: path for num, path in _get_available_migrations()}
     new_checksums: dict[str, str] = {}
     for num, path in available.items():
-        new_checksums[str(num)] = hashlib.sha256(path.read_bytes()).hexdigest()
+        if num <= recorded_version:
+            new_checksums[str(num)] = hashlib.sha256(path.read_bytes()).hexdigest()
     if new_checksums:
         conn.execute(
             "UPDATE schema_version SET checksums = ? WHERE id = 1",

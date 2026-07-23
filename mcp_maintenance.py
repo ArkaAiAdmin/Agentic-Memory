@@ -51,19 +51,20 @@ import mcp_maintenance_policy_hash  # noqa: E402, F401 — admin_policy_hash (CO
 @mcp.tool()
 @with_audit("memory_heartbeat")
 @with_memory_connection
-def memory_heartbeat(conn, dry_run: bool = False) -> str:
+def memory_heartbeat(conn, dry_run: bool = False, tenant_id: str = "") -> str:
     """Run a heartbeat: re-evaluate all notes for importance, tier assignment, and archival.
 
     Computes importance from access patterns, success scores, and recency.
     Moves notes between hot/warm/cold tiers. Archives low-importance old notes.
     Requires MEMORY_SELF_DIRECTED=1.
+    When tenant_id is provided, scopes the evaluation to that tenant only.
     """
     from self_directed import SELF_DIRECTED_ENABLED, run_heartbeat as _heartbeat
 
     if not SELF_DIRECTED_ENABLED:
         return "Self-directed memory disabled. Set MEMORY_SELF_DIRECTED=1 to enable."
     try:
-        result = _heartbeat(conn, dry_run=dry_run)
+        result = _heartbeat(conn, dry_run=dry_run, tenant_id=tenant_id or None)
         prefix = "[DRY RUN] " if dry_run else ""
         return (
             f"{prefix}Heartbeat complete: {result['evaluated']} evaluated, "

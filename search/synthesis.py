@@ -327,9 +327,8 @@ def _bb2_is_reference_query(query: str) -> bool:
     if not tokens:
         return False
     if len(tokens) <= 4:
-        # M17 fix: require ≥2 pronoun tokens to avoid false positives on "the"
         pronoun_count = sum(1 for t in tokens if t.strip(".,?!:;()[]\"'") in _BB2_PRONOUNS)
-        if pronoun_count >= 2:
+        if pronoun_count >= 1:
             return True
     for phrase in _BB2_REF_PHRASES:
         if phrase in q:
