@@ -1196,46 +1196,6 @@ def run_worker(
 def main():
     import argparse
 
-    # H-fix (2026-06-22): acquire flock BEFORE arg parsing so two
-    # cron ticks that fire 5 minutes apart don't both run the worker
-    # concurrently. Without this, --drain mode would accumulate one
-    # worker per cron tick (32 workers seen in 90 minutes on a busy
-    # system, all racing on the same SQLite WAL).
-    try:
-        from cron._flock import acquire_lock_or_exit
-
-        acquire_lock_or_exit("background_worker")
-    except ImportError:
-        # Best-effort: if flock module isn't on path, fall back to
-        # a lightweight inline lock using fcntl directly.
-        # NOTE: do NOT re-import `from pathlib import Path` here —
-        # the import at module scope (line 43) already makes Path
-        # available. A local import makes `Path` a function-local
-        # name in the entire main(), which would then raise
-        # UnboundLocalError on the try-success path (when the cron
-        # flock module IS importable) at `Path(args.db)` on line 612+.
-        import fcntl
-
-        _lock_path = (
-            Path.home()
-            / ".config"
-            / "agentic-memory"
-            / "memory"
-            / "locks"
-            / "background_worker.lock"
-        )
-        _lock_path.parent.mkdir(parents=True, exist_ok=True)
-        _lock_fd = open(_lock_path, "w")
-        try:
-            fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            logger.info("background_worker: another instance holds the lock, exiting")
-            _lock_fd.close()
-            return 0
-        # Hold the fd alive for the lifetime of the worker
-        global _BACKGROUND_WORKER_LOCK_FD
-        _BACKGROUND_WORKER_LOCK_FD = _lock_fd
-
     parser = argparse.ArgumentParser(description="Agentic memory background worker")
     parser.add_argument("--once", action="store_true", help="Process one task and exit")
     parser.add_argument(
@@ -1261,6 +1221,43 @@ def main():
         "--workers", type=int, default=None, help="Number of worker threads (default 1)"
     )
     args = parser.parse_args()
+
+    # Acquire a mode-specific flock so persistent (--interval) and
+    # drain/once modes can coexist without contention.  --interval
+    # holds "background_worker_persistent" for its lifetime; --drain
+    # and --once hold "background_worker_drain" for one batch.  The
+    # cron scheduler runs --drain every 5 min; launchd runs --interval.
+    # With different lock scopes both paths work: no more silent no-op
+    # drain ticks or "database is locked" while the persistent worker
+    # processes a long task.
+    _lock_name = "background_worker_drain" if (args.drain or args.once) else "background_worker_persistent"
+    try:
+        from cron._flock import acquire_lock_or_exit
+
+        acquire_lock_or_exit(_lock_name)
+    except ImportError:
+        # Best-effort: if flock module isn't on path, fall back to
+        # a lightweight inline lock using fcntl directly.
+        import fcntl
+
+        _lock_path = (
+            Path.home()
+            / ".config"
+            / "agentic-memory"
+            / "memory"
+            / "locks"
+            / f"{_lock_name}.lock"
+        )
+        _lock_path.parent.mkdir(parents=True, exist_ok=True)
+        _lock_fd = open(_lock_path, "w")
+        try:
+            fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            logger.info("background_worker: another instance holds %s lock, exiting", _lock_name)
+            _lock_fd.close()
+            return 0
+        global _BACKGROUND_WORKER_LOCK_FD
+        _BACKGROUND_WORKER_LOCK_FD = _lock_fd
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"

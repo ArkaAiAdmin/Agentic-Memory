@@ -3,12 +3,18 @@
 # install_launchagent.sh — install the agentic-memory background worker
 # as a macOS launchd LaunchAgent.
 #
-# Why: the CQRS write-journal (journal.db) and task_queue are drained
-# by background_worker.py. The legacy liveness path was cron (a 5-min
-# scheduler job + a 15-min watchdog). If cron is disabled/not installed,
-# the worker never starts and the sentinel health check fails with
-# "sentinel task ... not completed". launchd keeps the worker alive
-# independently of cron: auto-restart on crash + start on login/boot.
+# Why: the task_queue is drained by background_worker.py. The cron
+# scheduler runs background_worker --drain every 5 min as the primary
+# path. The launchd agent provides an independent fallback: it also runs
+# --drain with a 300s throttle between invocations, so the queue keeps
+# draining even if the cron scheduler is temporarily down.
+#
+# Design: --drain mode uses the "background_worker_drain" lock (mode-
+# specific, separate from the cron scheduler's drain lock, so both paths
+# coexist without contention). The old --interval=N persistent mode was
+# removed because it held the background_worker flock permanently,
+# starving all cron drain ticks and blocking enqueue_task.py inserts
+# while a slow task was processing.
 #
 # Usage:
 #     bash cron/install_launchagent.sh           # install + load

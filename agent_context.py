@@ -116,6 +116,7 @@ def init_agent(
             "created_at": __import__("time").time(),
         }
     _AGENT_CONTEXT.current = ctx
+    _AGENT_CONTEXT.from_env = False
 
     # Best-effort persistent write for cross-agent discovery via sync.
     _persist_agent_registration(agent_id, ctx.display_name, parent_agent, ctx.namespace)
@@ -183,25 +184,29 @@ def get_agent() -> AgentContext:
     """
     try:
         val = getattr(_AGENT_CONTEXT, "current", None)
+        from_env = getattr(_AGENT_CONTEXT, "from_env", False)
         if isinstance(val, AgentContext):
-            # Staleness check: re-read env to detect identity changes
-            env_agent = os.environ.get("MEMORY_AGENT_ID", "").strip()
-            if env_agent and val.agent_id != env_agent:
-                ctx = AgentContext(agent_id=env_agent, namespace=env_agent)
-                _AGENT_CONTEXT.current = ctx
-                _AGENT_REGISTRY[ctx.agent_id] = {
-                    "display_name": ctx.agent_id,
-                    "parent_agent": None,
-                    "namespace": ctx.namespace,
-                    "created_at": __import__("time").time(),
-                }
-                return ctx
+            # Staleness check: re-read env to detect identity changes ONLY if context was set from env
+            if from_env:
+                env_agent = os.environ.get("MEMORY_AGENT_ID", "").strip()
+                if env_agent and val.agent_id != env_agent:
+                    ctx = AgentContext(agent_id=env_agent, namespace=env_agent)
+                    _AGENT_CONTEXT.current = ctx
+                    _AGENT_CONTEXT.from_env = True
+                    _AGENT_REGISTRY[ctx.agent_id] = {
+                        "display_name": ctx.agent_id,
+                        "parent_agent": None,
+                        "namespace": ctx.namespace,
+                        "created_at": __import__("time").time(),
+                    }
+                    return ctx
             return val
         raise AttributeError
     except AttributeError:
         env_agent = os.environ.get("MEMORY_AGENT_ID", "").strip()
         if env_agent:
             ctx = AgentContext(agent_id=env_agent, namespace=env_agent)
+            _AGENT_CONTEXT.from_env = True
         else:
             global _default_fallback_emitted
             if not _default_fallback_emitted:
@@ -211,6 +216,7 @@ def get_agent() -> AgentContext:
                 )
                 _default_fallback_emitted = True
             ctx = AgentContext(agent_id="default", namespace="default")
+            _AGENT_CONTEXT.from_env = False
         _AGENT_CONTEXT.current = ctx
         _AGENT_REGISTRY[ctx.agent_id] = {
             "display_name": ctx.agent_id,
@@ -225,6 +231,10 @@ def clear_agent() -> None:
     """Clear the current thread's agent context (reverts to default)."""
     try:
         del _AGENT_CONTEXT.current
+    except AttributeError:
+        pass
+    try:
+        del _AGENT_CONTEXT.from_env
     except AttributeError:
         pass
 

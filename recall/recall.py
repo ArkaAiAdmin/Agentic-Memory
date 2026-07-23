@@ -266,13 +266,29 @@ def session_recap(
     from infra.db import open_db
 
     try:
+        from agent_context import get_agent
+        ctx = get_agent()
+        namespace = ctx.namespace
+        if namespace != "default":
+            tier1_scope_clause = "(id LIKE ? OR id NOT LIKE 'agents/%')"
+            tier1_params = [f"agents/{namespace}/%"]
+            tier4_scope_clause = "source_file LIKE ? AND source_file NOT LIKE ?"
+            tier4_params = [f"agents/{namespace}/sessions/%", f"agents/{namespace}/sessions/auto-%"]
+        else:
+            tier1_scope_clause = "id NOT LIKE 'agents/%'"
+            tier1_params = []
+            tier4_scope_clause = "source_file LIKE 'sessions/%' AND source_file NOT LIKE 'sessions/auto-%'"
+            tier4_params = []
+
         with open_db(db_path_resolved, timeout=5.0, pooled=True, write=False) as conn:
             tier1_rows = conn.execute(
-                """SELECT id, content, source_file, created_at, pinned, importance
+                f"""SELECT id, content, source_file, created_at, pinned, importance
                    FROM memories
                    WHERE deleted_at IS NULL AND (pinned = 1 OR importance >= 4)
+                     AND {tier1_scope_clause}
                    ORDER BY created_at DESC
-                   LIMIT 5"""
+                   LIMIT 5""",
+                tier1_params,
             ).fetchall()
 
             tier2_rows = []
@@ -286,12 +302,13 @@ def session_recap(
 
             cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
             tier4_rows = conn.execute(
-                """SELECT id, content, source_file, created_at
+                f"""SELECT id, content, source_file, created_at
                    FROM memories
                    WHERE deleted_at IS NULL AND created_at > ?
+                     AND {tier4_scope_clause}
                    ORDER BY created_at DESC
                    LIMIT 10""",
-                (cutoff,),
+                [cutoff] + tier4_params,
             ).fetchall()
 
             if not tier1_rows and not tier2_rows and not tier4_rows:

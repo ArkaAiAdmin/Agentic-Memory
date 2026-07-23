@@ -131,38 +131,53 @@ def main() -> int:
 
     max_qs = args.max_queue_size
 
-    conn = sqlite_write_queue.start_session(db_path)
-    try:
-        debounced, debounce_reason = _check_debounce(
-            conn, args.task_type, args.debounce_seconds
-        )
-        if debounced:
-            print(f"skipped: debounce ({debounce_reason})")
-            return 0
+    import sqlite3 as _sqlite3
+    import time as _time
 
-        from background.background_queue import init_task_queue, enqueue_task
+    _last_exc = None
+    for _attempt in range(3):
+        _last_exc = None
+        try:
+            conn = sqlite_write_queue.start_session(db_path)
+            try:
+                debounced, debounce_reason = _check_debounce(
+                    conn, args.task_type, args.debounce_seconds
+                )
+                if debounced:
+                    print(f"skipped: debounce ({debounce_reason})")
+                    return 0
 
-        init_task_queue(conn)
-        task_id = enqueue_task(
-            conn,
-            args.task_type,
-            payload=payload,
-            priority=args.priority,
-            max_queue_size=max_qs,
-        )
-        if isinstance(task_id, dict):
-            print(
-                f"queued=False reason={task_id.get('reason','?')} "
-                f"pending={task_id.get('pending','?')}"
-            )
-            return 0
-        print(f"enqueued task_id={task_id} type={args.task_type}")
-        return 0
-    except Exception as exc:
-        print(f"Error enqueuing task: {exc}", file=sys.stderr)
+                from background.background_queue import init_task_queue, enqueue_task
+
+                init_task_queue(conn)
+                task_id = enqueue_task(
+                    conn,
+                    args.task_type,
+                    payload=payload,
+                    priority=args.priority,
+                    max_queue_size=max_qs,
+                )
+                if isinstance(task_id, dict):
+                    print(
+                        f"queued=False reason={task_id.get('reason','?')} "
+                        f"pending={task_id.get('pending','?')}"
+                    )
+                    return 0
+                print(f"enqueued task_id={task_id} type={args.task_type}")
+                return 0
+            except Exception as exc:
+                raise
+            finally:
+                conn.close()
+        except _sqlite3.OperationalError as _exc:
+            _last_exc = _exc
+            _wait = 1.0 * (2 ** _attempt)
+            print(f"DB locked (attempt {_attempt + 1}/3), retrying in {_wait:.0f}s: {_exc}", file=sys.stderr)
+            _time.sleep(_wait)
+    if _last_exc is not None:
+        print(f"Error enqueuing task after 3 retries: {_last_exc}", file=sys.stderr)
         return 1
-    finally:
-        conn.close()
+    return 1
 
 
 if __name__ == "__main__":

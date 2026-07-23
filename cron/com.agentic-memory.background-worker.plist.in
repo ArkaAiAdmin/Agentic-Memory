@@ -6,11 +6,15 @@
     <string>com.agentic-memory.background-worker</string>
 
     <!--
-      Long-lived background worker daemon for agentic-memory.
-      Keeps the CQRS write-journal (journal.db) drained and the
-      task_queue processed. launchd auto-restarts on crash and
-      starts it on login/boot — independent of cron, so the
-      pipeline stays alive even if cron is disabled.
+      Drain-mode background worker daemon for agentic-memory.
+      Runs background_worker.py in --drain mode (process up to 50 tasks
+      and exit), with launchd restarting it every 300 seconds.  The cron
+      scheduler also runs --drain every 5 min via a separate lock name
+      ("background_worker_drain"), so both paths coexist without contention.
+
+      Replaced the old --interval=N persistent mode which held the
+      background_worker flock permanently, starving all cron drain ticks
+      and blocking enqueue_task.py inserts while a slow task was processing.
 
       Installed by cron/install_launchagent.sh (fills __ROOT__).
     -->
@@ -19,46 +23,42 @@
     <array>
         <string>__VENV_PY__</string>
         <string>__ROOT__/background/background_worker.py</string>
-        <string>--interval=5</string>
+        <string>--drain</string>
+        <string>--max-tasks=50</string>
     </array>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>MEMORY_DB_PATH</key>
         <string>__DB_PATH__</string>
-        <key>MEMORY_LLM_EXTRACTION</key>
-        <string>0</string>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
         <key>PYTHONPATH</key>
         <string>__ROOT__</string>
     </dict>
 
-    <!-- Restart on crash; cap restart storms (10s between, 10 max/300s). -->
+    <!--
+      KeepAlive on successful exit: --drain processes up to max-tasks and
+      then exits 0.  ThrottleInterval=300 prevents busy-looping: launchd
+      waits 300s (5 min) before restarting, matching the cron scheduler's
+      --drain cadence.  On crash (non-zero exit) launchd retries faster
+      per the default ThrottleInterval.
+    -->
     <key>KeepAlive</key>
     <dict>
         <key>SuccessfulExit</key>
-        <false/>
+        <true/>
         <key>ThrottleInterval</key>
-        <integer>10</integer>
+        <integer>300</integer>
     </dict>
 
-    <!-- Start at login (and after a crash). OnDemand=false = keep running. -->
+    <!-- Start at login (and after a crash). -->
     <key>RunAtLoad</key>
     <true/>
-    <key>AbandonProcessGroup</key>
-    <false/>
 
     <key>StandardOutPath</key>
     <string>__LOG_DIR__/background_worker.launchd.log</string>
     <key>StandardErrorPath</key>
     <string>__LOG_DIR__/background_worker.launchd.log</string>
-
-    <!-- Don't let a wedged worker hold the CPU; soft limit. -->
-    <key>HardResourceLimits</key>
-    <dict>
-        <key>CPUTime</key>
-        <integer>0</integer>
-    </dict>
 </dict>
 </plist>

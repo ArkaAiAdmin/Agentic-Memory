@@ -29,16 +29,20 @@ REPO_ROOT = str(Path(__file__).resolve().parent.parent)
 
 JOBS: dict[str, dict] = {
     # ── Immediate tier: every 5 minutes ──────────────────────────────
-    # Primary + fallback coexistence with the launchd daemon: when launchd's
-    # persistent background_worker daemon is installed (cron/install_launchagent.sh,
-    # runs --interval=5), this cron-driven --drain tick exits 0 silently on
-    # flock contention (background/background_worker.py:1875 acquire_lock_or_exit
-    # + cron/_flock.py:135 sys.exit(0)). So the two never double-drain or race.
-    # Removing this entry would break singleton-cron installs that opt out of
-    # launchd (install_crontab.sh only). This is the intended two-mode design,
-    # not a workaround — see Step 1 + Step 8 rationale (commits 30209e565,
-    # 24f570688). The worker cannot enqueue itself, so a direct subprocess
-    # (not enqueue_task.py) is the only valid invocation here.
+    # Primary drain path for the task queue.  Runs
+    # ``background_worker --drain --max-tasks=50`` which acquires the
+    # ``background_worker_drain`` lock, processes up to 50 pending tasks,
+    # and exits.  The launchd daemon (cron/install_launchagent.sh) runs
+    # the same --drain mode on a 300s throttle as an independent
+    # fallback — because the lock names differ (``background_worker_drain``
+    # vs ``background_worker_persistent``), both paths coexist without
+    # contention.
+    #
+    # The old ``--interval=N`` persistent mode was removed because it held
+    # the ``background_worker`` flock permanently, starving all cron drain
+    # ticks and blocking ``enqueue_task.py`` inserts while a slow task was
+    # processing (see background/background_worker.py:main for the lock
+    # separation change).
     "background_worker": {
         "freq": "5m",
         "script": "background_worker.py",
