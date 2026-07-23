@@ -39,6 +39,7 @@ def _apply_post_rank_metadata(
     query: str,
     db_path: Any,
     as_of: Optional[float] = None,
+    tenant_id: Optional[str] = None,
 ) -> list:
     """Attach enrichment metadata and adjust scores for each result item.
 
@@ -56,10 +57,10 @@ def _apply_post_rank_metadata(
     if not items:
         return list(items)
     try:
-        concept_map = _load_concept_map(db_path)
-        centrality_map = _load_centrality_map(db_path)
+        concept_map = _load_concept_map(db_path, tenant_id=tenant_id)
+        centrality_map = _load_centrality_map(db_path, tenant_id=tenant_id)
         jaccard_map = _load_jaccard_map(items, query)
-        temporal_priors = _load_temporal_priors(db_path)
+        temporal_priors = _load_temporal_priors(db_path, tenant_id=tenant_id)
     except Exception as exc:  # pragma: no cover - best-effort envelope
         logger.warning("Enrichment metadata degraded to neutral (best-effort): %s", exc)
         concept_map, centrality_map, jaccard_map, temporal_priors = {}, {}, {}, {}
@@ -110,6 +111,7 @@ def compute_display_scores(
     query: str,
     db_path: Any,
     as_of: Optional[float] = None,
+    tenant_id: Optional[str] = None,
 ) -> dict:
     """Map ``{note_id: display_score}`` for raw candidate tuples.
 
@@ -141,7 +143,7 @@ def compute_display_scores(
     if not items:
         return {}
     try:
-        enriched = _apply_post_rank_metadata(items, query, db_path, as_of=as_of)
+        enriched = _apply_post_rank_metadata(items, query, db_path, as_of=as_of, tenant_id=tenant_id)
     except Exception as exc:  # pragma: no cover - best-effort
         logger.debug("compute_display_scores degraded: %s", exc)
         return {}
@@ -151,11 +153,11 @@ def compute_display_scores(
 # -- Table loaders (monkeypatchable in tests) -----------------------------
 
 
-def _load_concept_map(db_path: Any) -> dict[str, set[int]]:
+def _load_concept_map(db_path: Any, tenant_id: Optional[str] = None) -> dict[str, set[int]]:
     """Return ``{concept_note_id: set(entity_id)}`` for concept notes."""
     from infra._lazy_imports import connection_pool
 
-    db = connection_pool.get(str(db_path), timeout=5.0)
+    db = connection_pool.get(str(db_path), timeout=5.0, tenant_id=tenant_id)
     try:
         rows = db.execute(
             "SELECT id, metadata FROM memories WHERE category = 'concepts' AND deleted_at IS NULL"
@@ -179,11 +181,11 @@ def _load_concept_map(db_path: Any) -> dict[str, set[int]]:
     return concept_entities
 
 
-def _load_centrality_map(db_path: Any) -> dict[int, float]:
+def _load_centrality_map(db_path: Any, tenant_id: Optional[str] = None) -> dict[int, float]:
     """Return ``{entity_id: betweenness}`` for entities with centrality."""
     from infra._lazy_imports import connection_pool
 
-    db = connection_pool.get(str(db_path), timeout=5.0)
+    db = connection_pool.get(str(db_path), timeout=5.0, tenant_id=tenant_id)
     try:
         rows = db.execute(
             "SELECT id, betweenness FROM kg_entities WHERE betweenness IS NOT NULL"
@@ -350,11 +352,11 @@ DEFAULT_TEMPORAL_PRIORS = {
 }
 
 
-def _load_temporal_priors(db_path: Any) -> dict[str, float]:
+def _load_temporal_priors(db_path: Any, tenant_id: Optional[str] = None) -> dict[str, float]:
     """Return ``{category: half_life_days}`` from memory_temporal_priors."""
     from infra._lazy_imports import connection_pool
 
-    db = connection_pool.get(str(db_path), timeout=5.0)
+    db = connection_pool.get(str(db_path), timeout=5.0, tenant_id=tenant_id)
     try:
         rows = db.execute(
             "SELECT category, half_life_days FROM memory_temporal_priors"

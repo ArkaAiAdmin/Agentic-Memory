@@ -129,13 +129,13 @@ def test_varying_factors_never_reorder(monkeypatch: pytest.MonkeyPatch) -> None:
     output order is identical to the input order. This is the non-vacuous
     guard: if the envelope ever fed back into ordering, this would fail."""
 
-    def fake_concept_map(db_path):
+    def fake_concept_map(db_path, tenant_id=None):
         # Even-index concepts overlap note i's entities -> 1.20 boost;
         # odd-index concepts use a disjoint entity set -> 1.0. This
         # forces the per-item concept envelope to actually vary.
         return {f"concept-{i}": ({i} if i % 2 == 0 else {7777}) for i in range(20)}
 
-    def fake_centrality_map(db_path):
+    def fake_centrality_map(db_path, tenant_id=None):
         return {i: float(i) / 19.0 for i in range(20)}
 
     def fake_jaccard_map(items_, query):
@@ -184,10 +184,10 @@ def test_envelope_factors_equal_legacy_scoring_math(monkeypatch: pytest.MonkeyPa
     from search.scoring import _temporal_decay_factor
 
     # Neutralize DB-backed loaders so only DB-independent factors vary.
-    monkeypatch.setattr(E, "_load_concept_map", lambda db_path: {})
-    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_concept_map", lambda db_path, tenant_id=None: {})
+    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path, tenant_id=None: {})
     monkeypatch.setattr(E, "_load_jaccard_map", lambda items, query: {})
-    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path, tenant_id=None: {})
 
     # Single old note: created far in the past, never accessed.
     created = "2020-01-01T00:00:00+00:00"
@@ -223,10 +223,10 @@ def test_display_score_folds_factors_without_changing_order(monkeypatch: pytest.
     score the user sees reflects concept/centrality/surprise/temporal decay.
     """
     # Neutralize DB-backed loaders so only DB-independent factors vary.
-    monkeypatch.setattr(E, "_load_concept_map", lambda db_path: {})
-    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_concept_map", lambda db_path, tenant_id=None: {})
+    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path, tenant_id=None: {})
     monkeypatch.setattr(E, "_load_jaccard_map", lambda items, query: {})
-    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path, tenant_id=None: {})
 
     items = [
         {
@@ -267,10 +267,10 @@ def test_display_score_excludes_temporal_double_count(monkeypatch: pytest.Monkey
     _compute_final_score. If temporal_decay leaked in, an old note would be
     penalized twice. Assert the multiplier is exactly the three
     non-recency factors."""
-    monkeypatch.setattr(E, "_load_concept_map", lambda db_path: {})
-    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_concept_map", lambda db_path, tenant_id=None: {})
+    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path, tenant_id=None: {})
     monkeypatch.setattr(E, "_load_jaccard_map", lambda items, query: {})
-    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path, tenant_id=None: {})
     item = {
         "id": "note-000",
         "source_file": "/mem/n.md",
@@ -306,10 +306,10 @@ def test_display_score_drives_answer_rerank_baseline(monkeypatch: pytest.MonkeyP
     # Two candidates: equal final_score, but note-b gets a higher enriched
     # baseline via a fake concept map. Build items with concept_boost set
     # by monkeypatching the factor loader.
-    monkeypatch.setattr(E, "_load_concept_map", lambda db_path: {"note-b": {999}})
-    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_concept_map", lambda db_path, tenant_id=None: {"note-b": {999}})
+    monkeypatch.setattr(E, "_load_centrality_map", lambda db_path, tenant_id=None: {})
     monkeypatch.setattr(E, "_load_jaccard_map", lambda items, query: {})
-    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path: {})
+    monkeypatch.setattr(E, "_load_temporal_priors", lambda db_path, tenant_id=None: {})
 
     candidates = [
         ("note-a", "irrelevant content about cats", "f/a", "", "2024-01-01T00:00:00+00:00", 0.0, 0.9, 0.5, 3, 0),
@@ -349,7 +349,7 @@ def test_noisy_runner_random_perturbations(trial: int, monkeypatch: pytest.Monke
         monkeypatch.setattr(
             E,
             "_load_centrality_map",
-            lambda db_path: {i: rnd.random() for i in range(30)},
+            lambda db_path, tenant_id=None: {i: rnd.random() for i in range(30)},
         )
 
     n = rnd.randint(1, 25)

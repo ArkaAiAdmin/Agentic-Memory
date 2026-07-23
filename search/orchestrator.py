@@ -484,7 +484,7 @@ def _rerank_results(
             from search.answer_rerank import answer_rerank
             from search.enrichment import compute_display_scores
 
-            _display_scores = compute_display_scores(out, query, db_path, as_of=as_of)
+            _display_scores = compute_display_scores(out, query, db_path, as_of=as_of, tenant_id=tenant_id)
             out = answer_rerank(
                 db, query, out, db_path=db_path, display_scores=_display_scores
             )

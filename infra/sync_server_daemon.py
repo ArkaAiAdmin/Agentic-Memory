@@ -15,6 +15,7 @@ import argparse
 import os
 import signal
 import sys
+import time
 from pathlib import Path
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
@@ -73,7 +74,7 @@ def main() -> int:
     server.start()
     try:
         while not _stop["requested"]:
-            signal.pause() if hasattr(signal, "pause") else sys.exit(0)
+            time.sleep(1.0)
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
