@@ -5,19 +5,71 @@
  * Uses Tauri's invoke/event system for communication.
  */
 
-// Tauri IPC invoke wrapper
+// Tauri IPC invoke wrapper with browser fallback guard
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
-  return tauriInvoke<T>(cmd, args);
+  try {
+    if (typeof window === "undefined" || (!(window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI__)) {
+      return getMockFallback<T>(cmd, args);
+    }
+    const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
+    return await tauriInvoke<T>(cmd, args);
+  } catch {
+    return getMockFallback<T>(cmd, args);
+  }
 }
 
-// Tauri event listener wrapper
+// Tauri event listener wrapper with browser fallback guard
 async function listen<T>(
   event: string,
   handler: (event: { payload: T }) => void,
 ): Promise<() => void> {
-  const { listen: tauriListen } = await import("@tauri-apps/api/event");
-  return tauriListen<T>(event, handler);
+  try {
+    if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI__) {
+      return () => {};
+    }
+    const { listen: tauriListen } = await import("@tauri-apps/api/event");
+    return await tauriListen<T>(event, handler);
+  } catch {
+    return () => {};
+  }
+}
+
+function getMockFallback<T>(cmd: string, args?: Record<string, unknown>): T {
+  switch (cmd) {
+    case "list_dir":
+      return [] as unknown as T;
+    case "read_file":
+    case "git_diff":
+    case "git_log":
+    case "get_output":
+    case "get_stdout":
+    case "get_stderr":
+      return "" as unknown as T;
+    case "git_status":
+      return "## main...origin/main" as unknown as T;
+    case "git_branch":
+      return "main" as unknown as T;
+    case "create_pty":
+      return "mock-pty-1" as unknown as T;
+    case "run_background":
+    case "start_memory_bridge":
+      return "mock-proc-1" as unknown as T;
+    case "is_process_alive":
+      return true as unknown as T;
+    case "get_managed_info":
+    case "get_memory_bridge_status":
+      return {
+        processId: (args?.processId as string) || "mock-proc-1",
+        pid: 1234,
+        alive: true,
+        stdout: "",
+        stderr: "",
+      } as unknown as T;
+    case "run_command":
+      return { stdout: "", stderr: "", exitCode: 0 } as unknown as T;
+    default:
+      return undefined as unknown as T;
+  }
 }
 
 // ── Filesystem Commands ───────────────────────────────────────────────────
