@@ -1,0 +1,1 @@
+Pure Python with no external dependencies beyond the standard library (sqlite3, hashlib, urllib.request, concurrent.futures, tomllib/tomli for TOML parsing). Uses dataclasses for immutable config objects, context managers for saga orchestration, and SQLite TEMP VIEWs for tenant isolation.

@@ -1,0 +1,1 @@
+`make test` runs the full suite in `eval/`; `make test-safe` uses per-file subprocesses to avoid MPS/OpenMP crashes; `make update-docs` regenerates AGENTS.md, architecture, MCP surface, schema, config docs and README badges from source ASTs; `docker compose --profile all up` starts the mcp/sync/cron trio sharing `/data/memory.db`.

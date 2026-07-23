@@ -1,0 +1,1 @@
+Thin shim modules that re-export the real search-index implementations from infra/embedding_search, infra/fts, and infra/embedding_recompute for legacy import paths.

@@ -1,0 +1,1 @@
+SQLite (`memory.db`) as the shared durable queue and job-history store; Python `plist` launchd agent (`com.agentic-memory.background-worker.plist.in`) for the daemon process; shell installers (`install_crontab.sh`, `install_launchagent.sh`) bootstrap both sides.

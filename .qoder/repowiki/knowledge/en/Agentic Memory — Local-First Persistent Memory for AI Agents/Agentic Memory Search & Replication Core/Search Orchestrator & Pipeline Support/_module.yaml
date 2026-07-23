@@ -1,0 +1,19 @@
+schema_version: 1
+module_path: search_index/search_orchestrator_and_support
+title: Search Orchestrator & Pipeline Support
+scope:
+    - search/orchestrator.py
+    - search/query_parser.py
+    - search/scoring.py
+    - search/state.py
+    - search/config.py
+    - search/enrichment.py
+    - search/synthesis.py
+    - search/budget_aware.py
+    - search/drift.py
+    - search/feedback.py
+    - search/skill_lookup.py
+source_files: []
+depends_on: []
+related_to:
+    - path: sdk_package

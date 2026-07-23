@@ -1,0 +1,1 @@
+Pure Python 3.9+ stdlib only (no third-party runtime deps); test harness is `pytest`; paper PDFs are produced via `pandoc --pdf-engine=xelatex` from Markdown sources.

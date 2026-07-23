@@ -1,0 +1,1 @@
+Three bootstrap helpers that make project modules importable at startup, defer heavy imports to break cycles, and proxy relocated packages for backward compatibility.

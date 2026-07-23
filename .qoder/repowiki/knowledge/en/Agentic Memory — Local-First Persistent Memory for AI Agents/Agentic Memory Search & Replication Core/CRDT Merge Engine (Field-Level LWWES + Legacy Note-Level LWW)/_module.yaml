@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: search_index/crdt_merge
+title: CRDT Merge Engine (Field-Level LWWES + Legacy Note-Level LWW)
+scope:
+    - crdt/
+source_files: []
+depends_on: []
+related_to: []

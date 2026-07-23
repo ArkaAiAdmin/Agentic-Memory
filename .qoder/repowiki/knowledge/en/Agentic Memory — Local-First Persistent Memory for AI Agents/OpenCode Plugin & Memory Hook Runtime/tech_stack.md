@@ -1,0 +1,1 @@
+TypeScript plugin targeting `@opencode-ai/plugin` SDK; Python 3 subprocesses invoked through Node's `child_process.spawn`; SQLite (WAL mode) for coordination state; JSONL error logs and file-based circuit-breaker sentinel for inter-process resilience.

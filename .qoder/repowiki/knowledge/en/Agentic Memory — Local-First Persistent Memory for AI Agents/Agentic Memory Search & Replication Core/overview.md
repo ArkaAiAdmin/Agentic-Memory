@@ -1,0 +1,1 @@
+Wires a 14-phase hybrid search pipeline (ColBERT/SPLADE/FTS5 + LTR reranking) to a field-level CRDT merge engine and SQLite-backed multi-agent coordination primitives.

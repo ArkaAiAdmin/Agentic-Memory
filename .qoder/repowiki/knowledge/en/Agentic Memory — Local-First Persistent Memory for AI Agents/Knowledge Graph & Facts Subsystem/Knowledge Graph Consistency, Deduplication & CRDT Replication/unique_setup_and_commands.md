@@ -1,0 +1,1 @@
+`kg_dedup.py` is runnable as a standalone cron script: `python kg_dedup.py [db_path] [--semantic] [--threshold=0.92] [--dry-run]`; db path comes from `MEMORY_DB_PATH` env var, positional arg, or `resolve_active_memory_dir()/memory.db`. Semantic mode requires the embedding model to be loaded via `get_embedding_search()`.

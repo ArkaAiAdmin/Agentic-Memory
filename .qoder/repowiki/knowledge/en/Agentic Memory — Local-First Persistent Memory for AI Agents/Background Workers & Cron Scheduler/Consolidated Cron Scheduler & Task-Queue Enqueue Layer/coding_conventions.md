@@ -1,0 +1,5 @@
+- Every long-running job is registered in `jobs.py` as an `enqueue_task.py --task-type <name>` subprocess rather than running logic inline, so the persistent background worker owns locking, retries, and per-task timeouts.
+- Each job entry uses `offset_min` within its `freq` tier to stagger start times across the 5m/15m/30m/1h windows, preventing thundering herds on shared resources.
+- SQLite access follows a try/except/finally pattern that logs warnings but never raises, ensuring the scheduler stays resilient when the DB is locked or missing.
+- DB connections are opened with `PRAGMA busy_timeout` (and WAL where applicable) and closed in `finally` blocks, with `db_path` accepted as an optional parameter defaulting to `MEMORY_DB_PATH` or `resolve_active_memory_dir()`.
+- CLI helpers use `argparse` with a flat set of `--flag` switches and always return exit code 0 for health/monitoring scripts so cron does not trigger host mail alerts.

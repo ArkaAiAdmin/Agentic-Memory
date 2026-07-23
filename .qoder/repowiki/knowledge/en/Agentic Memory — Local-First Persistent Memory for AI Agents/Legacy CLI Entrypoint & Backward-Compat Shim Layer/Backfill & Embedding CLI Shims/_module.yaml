@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: cli_entrypoints/backfill_pipeline
+title: Backfill & Embedding CLI Shims
+scope:
+    - backfill_all.py
+    - backfill_orphans.py
+    - embedding_incremental.py
+source_files: []
+depends_on: []
+related_to: []

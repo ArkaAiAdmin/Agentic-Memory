@@ -1,0 +1,1 @@
+Long-lived daemon plus a single-process cron scheduler that enqueue work into a shared SQLite-backed task queue consumed by worker processes.

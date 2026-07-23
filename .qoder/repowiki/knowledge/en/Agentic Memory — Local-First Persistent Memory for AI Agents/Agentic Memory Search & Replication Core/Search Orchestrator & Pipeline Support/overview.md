@@ -1,0 +1,1 @@
+14-phase hybrid search orchestrator that parses queries, runs FTS5 BM25 + vector retrieval, fuses via RRF, reranks with CE/ColBERT/LTR, and emits a ranked envelope — backed by query parsing, scoring, budgeting, config, enrichment, synthesis, drift, feedback, and skill-lookup helpers.

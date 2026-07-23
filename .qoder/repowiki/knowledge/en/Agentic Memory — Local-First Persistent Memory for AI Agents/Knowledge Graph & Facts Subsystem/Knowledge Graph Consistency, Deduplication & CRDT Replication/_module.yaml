@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: knowledge_graph/consistency_dedup
+title: Knowledge Graph Consistency, Deduplication & CRDT Replication
+scope:
+    - kg/contradiction_detector.py
+    - kg/contradiction_resolver.py
+    - kg/kg_dedup.py
+    - kg/temporal_resolver.py
+    - kg/kg_crdt.py
+source_files: []
+depends_on: []
+related_to: []

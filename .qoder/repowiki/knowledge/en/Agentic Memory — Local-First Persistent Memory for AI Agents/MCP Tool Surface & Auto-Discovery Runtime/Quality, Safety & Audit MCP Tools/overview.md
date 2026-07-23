@@ -1,0 +1,1 @@
+MCP tool surface for memory quality gating, prompt-injection safety scanning, and audit/integrity/compliance inspection over the SQLite-backed memory store.

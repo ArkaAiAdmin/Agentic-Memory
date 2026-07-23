@@ -1,0 +1,1 @@
+SQLite FTS5 BM25 retrieval fused via Reciprocal Rank Fusion (k configurable); optional cross-encoder reranking, ColBERT MaxSim late-interaction, LambdaMART LTR, and a lightweight NumPy-based TemporalAttentionModel SSM gated by `temporal_ssm_enabled`. Config is a Pydantic `SearchConfig` built from the live `MemoryConfig` singleton.

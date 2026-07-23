@@ -1,0 +1,999 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: en-US
+branch: main
+nodes_managed: true
+exported_at: "2026-07-23T07:58:56Z"
+modules:
+    "":
+        dir_name: Agentic Memory — Local-First Persistent Memory for AI Agents
+        title: Agentic Memory — Local-First Persistent Memory for AI Agents
+        scope:
+            - README.md
+            - CONTRIBUTING.md
+            - .gitignore
+            - pyproject.toml
+            - setup.py
+            - requirements.txt
+            - Dockerfile
+            - docker-compose.yml
+            - Makefile
+            - mkdocs.yml
+            - ruff.toml
+            - setup.cfg
+            - _bootstrap_path.py
+            - _lazy_imports.py
+            - sitecustomize.py
+            - .dockerignore
+            - .gitattributes
+            - .mutmut
+            - .pre-commit-config.yaml
+            - AGENTS.md
+            - AGENT_CONTRACT.md
+            - AUDIT_REPORT_2026.md
+            - AUDIT_TASK_TRACKER.md
+            - AUDIT_VERIFICATION_2026-07-16.md
+            - CHANGELOG.md
+            - CITATION.cff
+            - CRDT_ALIGNMENT_AUDIT.md
+            - HARDENING_PLAN.md
+            - IMPLEMENTATION_PLAN.md
+            - LICENSE
+            - SDK_PLAN.md
+            - SECURITY.md
+            - WORKTREE_SUMMARY.md
+            - agent_context.py
+            - agent_init.py
+            - arc_cache.py
+            - audit.py
+            - mdns_discovery.py
+        source_files: []
+        children:
+            - background_workers
+            - cli_entrypoints
+            - cloud_sync
+            - core_runtime
+            - dashboard_ui
+            - docs_site
+            - eval_suite
+            - examples_and_scripts
+            - hooks_plugins
+            - knowledge_graph
+            - lessons_notes
+            - mcp_tools
+            - migrations
+            - paper_experiments
+            - sdk_package
+            - search_index
+        depends_on: []
+        related_to: []
+    background_workers:
+        dir_name: Background Workers & Cron Scheduler
+        title: Background Workers & Cron Scheduler
+        scope:
+            - background/
+            - cron/
+        source_files: []
+        children:
+            - background_workers/background_workers
+            - background_workers/cron_health_observability
+            - background_workers/cron_kg_ops
+            - background_workers/cron_maintenance_cleanup
+            - background_workers/cron_retention_policy
+            - background_workers/cron_scheduler_runtime
+            - background_workers/cron_training_learning
+        depends_on: []
+        related_to: []
+    background_workers/background_workers:
+        dir_name: Background Task Queue & Auto-Save Daemon
+        title: Background Task Queue & Auto-Save Daemon
+        scope:
+            - background/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: background_workers/cron_scheduler_runtime
+    background_workers/cron_health_observability:
+        dir_name: Cron Health & Observability Jobs
+        title: Cron Health & Observability Jobs
+        scope:
+            - cron/cron_health_check.py
+            - cron/cron_pipeline_health.py
+            - cron/cron_watchdog.py
+            - cron/cron_daemon_watchdog.py
+            - cron/cron_integrity_check.py
+            - cron/cron_check_config_drift.py
+            - cron/cron_policy_hash_status.py
+            - cron/cron_retry_dead_tasks.py
+            - cron/cron_heartbeat.py
+            - cron/cron_sync_usage.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: background_workers/cron_scheduler_runtime
+    background_workers/cron_kg_ops:
+        dir_name: Knowledge Graph & Memory Maintenance Cron Jobs
+        title: Knowledge Graph & Memory Maintenance Cron Jobs
+        scope:
+            - cron/cron_crdt_sync.py
+            - cron/cron_sync.py
+            - cron/cron_detect_vec_drift.py
+            - cron/cron_concept_drift.py
+            - cron/cron_resolve_contradictions.py
+            - cron/cron_review_beliefs.py
+            - cron/cron_cross_session_learn.py
+            - cron/cron_semantic_clusters.py
+            - cron/cron_skill_extraction.py
+            - cron/cron_skill_decay.py
+            - cron/cron_pinned_decay.py
+            - cron/cron_revalidate_entailments.py
+            - cron/cron_kg_backfill.py
+            - cron/cron_kg_backfill_monitor.py
+            - cron/cron_kg_analytics.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: background_workers/cron_scheduler_runtime
+    background_workers/cron_maintenance_cleanup:
+        dir_name: Cron Maintenance & Cleanup Jobs
+        title: Cron Maintenance & Cleanup Jobs
+        scope:
+            - cron/cron_backup.py
+            - cron/cron_backup_validate.py
+            - cron/cron_purge_expired.py
+            - cron/cron_purge_auto_saves.py
+            - cron/cron_reap_stale_tasks.py
+            - cron/cron_log_retention.py
+            - cron/cron_compact.py
+            - cron/cron_consolidate.py
+            - cron/cron_rebuild_fts.py
+            - cron/cron_rewrite_links.py
+            - cron/cleanup_auto_logs.py
+            - cron/cron_cleanup_auto_logs.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: background_workers/cron_scheduler_runtime
+    background_workers/cron_retention_policy:
+        dir_name: Scheduled Cron Jobs for Memory Lifecycle
+        title: Scheduled Cron Jobs for Memory Lifecycle
+        scope:
+            - cron/cron_retention_stats.py
+            - cron/cron_promote_drafts.py
+            - cron/cron_tier_migration.py
+            - cron/cron_auto_summarize.py
+            - cron/cron_auto_share.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: background_workers/cron_scheduler_runtime
+    background_workers/cron_scheduler_runtime:
+        dir_name: Consolidated Cron Scheduler & Task-Queue Enqueue Layer
+        title: Consolidated Cron Scheduler & Task-Queue Enqueue Layer
+        scope:
+            - cron/scheduler.py
+            - cron/jobs.py
+            - cron/cron_runs.py
+            - cron/enqueue_task.py
+            - cron/manage_task_timeouts.py
+            - cron/monitor_task_queue.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: background_workers/background_workers
+            - path: background_workers/cron_health_observability
+            - path: background_workers/cron_kg_ops
+            - path: background_workers/cron_maintenance_cleanup
+            - path: background_workers/cron_retention_policy
+            - path: background_workers/cron_training_learning
+    background_workers/cron_training_learning:
+        dir_name: Offline Training & Reranking Cron Jobs
+        title: Offline Training & Reranking Cron Jobs
+        scope:
+            - cron/cron_train_temporal_ssm.py
+            - cron/cron_train_ltr.py
+            - cron/cron_train_forget_model.py
+            - cron/cron_embedding_recompute.py
+            - cron/cron_tune_rewrites.py
+            - cron/cron_recompute_temporal_priors.py
+            - cron/cron_quality_filter.py
+            - cron/cron_answer_rerank.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: background_workers/cron_scheduler_runtime
+    cli_entrypoints:
+        dir_name: Legacy CLI Entrypoint & Backward-Compat Shim Layer
+        title: Legacy CLI Entrypoint & Backward-Compat Shim Layer
+        scope:
+            - cli.py
+            - adaptive_retention.py
+            - auto_save.py
+            - backfill_all.py
+            - backfill_orphans.py
+            - background_queue.py
+            - background_worker.py
+            - cache.py
+            - config.py
+            - consolidate_facts.py
+            - consolidation.py
+            - context_monitor.py
+            - contradiction_detector.py
+            - crdt_field.py
+            - crdt_merge.py
+            - cross_session_learn.py
+            - dashboard.py
+            - db.py
+            - db_migrations.py
+            - db_path_flock.py
+            - db_write_queue.py
+            - dist_lock.py
+            - embedding_incremental.py
+            - embedding_recompute.py
+            - embedding_search.py
+            - eval_judge.py
+            - fact_extraction.py
+            - fact_temporal.py
+            - file_lock.py
+            - frontmatter.py
+            - fts.py
+            - infrastructure.py
+            - kg_crdt.py
+            - kg_dedup.py
+            - kg_traversal.py
+            - llm_extraction.py
+            - llm_providers.py
+        source_files: []
+        children:
+            - cli_entrypoints/backfill_pipeline
+            - cli_entrypoints/background_tasks
+            - cli_entrypoints/concurrency_primitives
+            - cli_entrypoints/infra_shared
+            - cli_entrypoints/integrity_checks
+            - cli_entrypoints/knowledge_graph_core
+            - cli_entrypoints/knowledge_graph_ops
+            - cli_entrypoints/llm_extraction
+            - cli_entrypoints/persistence_layer
+            - cli_entrypoints/rebuild_index
+            - cli_entrypoints/search_index
+            - cli_entrypoints/server_and_api
+        depends_on: []
+        related_to: []
+    cli_entrypoints/backfill_pipeline:
+        dir_name: Backfill & Embedding CLI Shims
+        title: Backfill & Embedding CLI Shims
+        scope:
+            - backfill_all.py
+            - backfill_orphans.py
+            - embedding_incremental.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/background_tasks:
+        dir_name: Legacy Background Task Entry-Point Shims
+        title: Legacy Background Task Entry-Point Shims
+        scope:
+            - background_queue.py
+            - background_worker.py
+            - db_write_queue.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/concurrency_primitives:
+        dir_name: Legacy Concurrency Primitives Backward-Compat Shims
+        title: Legacy Concurrency Primitives Backward-Compat Shims
+        scope:
+            - cache.py
+            - dist_lock.py
+            - file_lock.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/infra_shared:
+        dir_name: Legacy CLI Entrypoint Shims
+        title: Legacy CLI Entrypoint Shims
+        scope:
+            - config.py
+            - infrastructure.py
+            - frontmatter.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/integrity_checks:
+        dir_name: Integrity & Context-Checkpoint Entrypoints
+        title: Integrity & Context-Checkpoint Entrypoints
+        scope:
+            - context_monitor.py
+            - contradiction_detector.py
+            - eval_judge.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/knowledge_graph_core:
+        dir_name: Legacy Knowledge Graph CRDT Backward-Compatibility Shims
+        title: Legacy Knowledge Graph CRDT Backward-Compatibility Shims
+        scope:
+            - kg_crdt.py
+            - crdt_field.py
+            - crdt_merge.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/knowledge_graph_ops:
+        dir_name: Knowledge Graph CLI Shims & Cross-Session Learning Cron
+        title: Knowledge Graph CLI Shims & Cross-Session Learning Cron
+        scope:
+            - kg_traversal.py
+            - cross_session_learn.py
+            - fact_extraction.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/llm_extraction:
+        dir_name: LLM-Based Fact & Entity Extraction (with Temporal_Retention Shims)
+        title: LLM-Based Fact & Entity Extraction (with Temporal/Retention Shims)
+        scope:
+            - llm_extraction.py
+            - fact_temporal.py
+            - adaptive_retention.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/persistence_layer:
+        dir_name: Persistence Layer Backward-Compatibility Shims
+        title: Persistence Layer Backward-Compatibility Shims
+        scope:
+            - db.py
+            - db_migrations.py
+            - db_path_flock.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/rebuild_index:
+        dir_name: Rebuild Index & Knowledge Graph Dedup Shims
+        title: Rebuild Index & Knowledge Graph Dedup Shims
+        scope:
+            - consolidation.py
+            - consolidate_facts.py
+            - kg_dedup.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/search_index:
+        dir_name: Search Index Backward-Compatibility Shims
+        title: Search Index Backward-Compatibility Shims
+        scope:
+            - embedding_search.py
+            - fts.py
+            - embedding_recompute.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cli_entrypoints/server_and_api:
+        dir_name: CLI Entrypoints, Streamlit Dashboard & LLM Provider Shim
+        title: CLI Entrypoints, Streamlit Dashboard & LLM Provider Shim
+        scope:
+            - cli.py
+            - dashboard.py
+            - llm_providers.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: mcp_tools/core_runtime
+    cloud_sync:
+        dir_name: SaaS Management Plane (Provisioning, Billing & Gateway)
+        title: SaaS Management Plane (Provisioning, Billing & Gateway)
+        scope:
+            - infra_cloud/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime:
+        dir_name: Agentic Memory Core Runtime
+        title: Agentic Memory Core Runtime
+        scope:
+            - infra/
+            - save/
+            - recall/
+            - belief/
+        source_files: []
+        children:
+            - core_runtime/belief_lifecycle
+            - core_runtime/infrastructure_layer
+            - core_runtime/recall_retrieval
+            - core_runtime/save_pipeline
+        depends_on: []
+        related_to: []
+    core_runtime/belief_lifecycle:
+        dir_name: Belief Assertion Lifecycle & Schema
+        title: Belief Assertion Lifecycle & Schema
+        scope:
+            - belief/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer:
+        dir_name: Agentic Memory Infrastructure Layer
+        title: Agentic Memory Infrastructure Layer
+        scope:
+            - infra/
+        source_files: []
+        children:
+            - core_runtime/infrastructure_layer/audit_logging
+            - core_runtime/infrastructure_layer/auth_rbac
+            - core_runtime/infrastructure_layer/bootstrap_and_shim
+            - core_runtime/infrastructure_layer/cache_locking
+            - core_runtime/infrastructure_layer/config_drift
+            - core_runtime/infrastructure_layer/database_persistence
+            - core_runtime/infrastructure_layer/metrics_monitoring
+            - core_runtime/infrastructure_layer/search_embedding
+            - core_runtime/infrastructure_layer/services_api
+            - core_runtime/infrastructure_layer/shared_memory_state
+            - core_runtime/infrastructure_layer/sync_distributed
+            - core_runtime/infrastructure_layer/utilities
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/audit_logging:
+        dir_name: MCP Tool-Call Audit Logging & Pluggable Sink Pipeline
+        title: MCP Tool-Call Audit Logging & Pluggable Sink Pipeline
+        scope:
+            - infra/audit.py
+            - infra/audit_sink.py
+            - infra/audit_sink_file.py
+            - infra/audit_sink_http.py
+            - infra/audit_sink_prom.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/auth_rbac:
+        dir_name: Authentication, SSO & RBAC Enforcement
+        title: Authentication, SSO & RBAC Enforcement
+        scope:
+            - infra/authlib_sso.py
+            - infra/authorizer.py
+            - infra/rbac.py
+            - infra/gdpr.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/bootstrap_and_shim:
+        dir_name: Bootstrap, Lazy Import Registry & Backward-Compat Shim
+        title: Bootstrap, Lazy Import Registry & Backward-Compat Shim
+        scope:
+            - infra/_bootstrap_path.py
+            - infra/_lazy_imports.py
+            - infra/_shim.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/cache_locking:
+        dir_name: Cache & Locking Infrastructure
+        title: Cache & Locking Infrastructure
+        scope:
+            - infra/cache.py
+            - infra/arc_cache.py
+            - infra/policy_hash_cache.py
+            - infra/file_lock.py
+            - infra/dist_lock.py
+            - infra/lock_manager.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/config_drift:
+        dir_name: Feature-Flag Drift Detection & Enforcement
+        title: Feature-Flag Drift Detection & Enforcement
+        scope:
+            - infra/config_drift.py
+            - infra/config_drift_audit.py
+            - infra/config_drift_escape.py
+            - infra/config_drift_policy.py
+            - infra/config_drift_runtime.py
+            - infra/config_drift_tier_patch.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/database_persistence:
+        dir_name: SQLite Persistence Layer (Connection Pool, Write Queue & Journal)
+        title: SQLite Persistence Layer (Connection Pool, Write Queue & Journal)
+        scope:
+            - infra/db.py
+            - infra/db_migrations.py
+            - infra/db_path_flock.py
+            - infra/db_write_queue.py
+            - infra/write_journal.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/metrics_monitoring:
+        dir_name: Metrics Collection, Prometheus Export & Alerting
+        title: Metrics Collection, Prometheus Export & Alerting
+        scope:
+            - infra/metrics.py
+            - infra/metrics_server.py
+            - infra/error_counter.py
+            - infra/alert.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/search_embedding:
+        dir_name: Embedding, Vector Index & Full-Text Search Infrastructure
+        title: Embedding, Vector Index & Full-Text Search Infrastructure
+        scope:
+            - infra/vector_store.py
+            - infra/colbert_encoder.py
+            - infra/splade_encoder.py
+            - infra/reranker.py
+            - infra/embedding_search.py
+            - infra/embedding_recompute.py
+            - infra/fts.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/services_api:
+        dir_name: Infrastructure Services API & Runtime Helpers
+        title: Infrastructure Services API & Runtime Helpers
+        scope:
+            - infra/api_server.py
+            - infra/mdns_discovery.py
+            - infra/mcp_singleton.py
+            - infra/toml_watch.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/shared_memory_state:
+        dir_name: Shared-Memory IPC & Process Scope Resolution
+        title: Shared-Memory IPC & Process Scope Resolution
+        scope:
+            - infra/shared_memory_state.py
+            - infra/memory_common.py
+            - infra/memory_config.py
+            - infra/scope.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/sync_distributed:
+        dir_name: CRDT Memory Sync Server, Client & Invariant Checker
+        title: CRDT Memory Sync Server, Client & Invariant Checker
+        scope:
+            - infra/sync_server.py
+            - infra/sync_client.py
+            - infra/sync_invariant.py
+            - infra/sync_check.py
+            - infra/sync_server_daemon.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/infrastructure_layer/utilities:
+        dir_name: Infrastructure Utilities & Cross-Cutting Concerns
+        title: Infrastructure Utilities & Cross-Cutting Concerns
+        scope:
+            - infra/config.py
+            - infra/hash_utils.py
+            - infra/safe_call.py
+            - infra/pinned_decay.py
+            - infra/frontmatter.py
+            - infra/policy_hash_diff.py
+            - infra/policy_hash_fetcher.py
+            - infra/quality_gates.py
+            - infra/rate_limiter.py
+            - infra/log.py
+            - infra/tenant_query.py
+            - infra/saga.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/recall_retrieval:
+        dir_name: Memory Recall & Retrieval Briefing
+        title: Memory Recall & Retrieval Briefing
+        scope:
+            - recall/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    core_runtime/save_pipeline:
+        dir_name: Memory Save Pipeline & Indexing Orchestrator
+        title: Memory Save Pipeline & Indexing Orchestrator
+        scope:
+            - save/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    dashboard_ui:
+        dir_name: Agentic Memory Streamlit Dashboard
+        title: Agentic Memory Streamlit Dashboard
+        scope:
+            - dashboard/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    docs_site:
+        dir_name: Public Documentation Site (MkDocs _ Diataxis)
+        title: Public Documentation Site (MkDocs / Diataxis)
+        scope:
+            - docs/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    eval_suite:
+        dir_name: Evaluation & Benchmarking Suite
+        title: Evaluation & Benchmarking Suite
+        scope:
+            - eval/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    examples_and_scripts:
+        dir_name: Examples, Documentation Generators & Operational Scripts
+        title: Examples, Documentation Generators & Operational Scripts
+        scope:
+            - examples/
+            - _scripts/
+            - scripts/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    hooks_plugins:
+        dir_name: OpenCode Plugin & Memory Hook Runtime
+        title: OpenCode Plugin & Memory Hook Runtime
+        scope:
+            - hooks/
+            - plugin/
+            - reasoning/
+            - skills/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    knowledge_graph:
+        dir_name: Knowledge Graph & Facts Subsystem
+        title: Knowledge Graph & Facts Subsystem
+        scope:
+            - kg/
+            - knowledge_graph/
+            - fact/
+        source_files: []
+        children:
+            - knowledge_graph/consistency_dedup
+            - knowledge_graph/extraction_schema
+            - knowledge_graph/facts_temporal
+            - knowledge_graph/graph_core
+        depends_on: []
+        related_to: []
+    knowledge_graph/consistency_dedup:
+        dir_name: Knowledge Graph Consistency, Deduplication & CRDT Replication
+        title: Knowledge Graph Consistency, Deduplication & CRDT Replication
+        scope:
+            - kg/contradiction_detector.py
+            - kg/contradiction_resolver.py
+            - kg/kg_dedup.py
+            - kg/temporal_resolver.py
+            - kg/kg_crdt.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    knowledge_graph/extraction_schema:
+        dir_name: Knowledge Graph Extraction & Schema Layer
+        title: Knowledge Graph Extraction & Schema Layer
+        scope:
+            - knowledge_graph/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: sdk_package
+    knowledge_graph/facts_temporal:
+        dir_name: Temporal Knowledge Graph Fact Layer (Supersession & Contradiction Resolution)
+        title: Temporal Knowledge Graph Fact Layer (Supersession & Contradiction Resolution)
+        scope:
+            - fact/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    knowledge_graph/graph_core:
+        dir_name: Knowledge Graph Traversal, Analytics & Community Detection
+        title: Knowledge Graph Traversal, Analytics & Community Detection
+        scope:
+            - kg/graph_analytics.py
+            - kg/graph_communities.py
+            - kg/kg_traversal.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    lessons_notes:
+        dir_name: Audit Notes & Conference Submissions
+        title: Audit Notes & Conference Submissions
+        scope:
+            - notes/
+            - submissions/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    mcp_tools:
+        dir_name: MCP Tool Surface & Auto-Discovery Runtime
+        title: MCP Tool Surface & Auto-Discovery Runtime
+        scope:
+            - mcp_agent.py
+            - mcp_async.py
+            - mcp_audit.py
+            - mcp_auth.py
+            - mcp_common.py
+            - mcp_coordination.py
+            - mcp_crdt.py
+            - mcp_ctr_drift.py
+            - mcp_dashboard.py
+            - mcp_health.py
+            - mcp_instance.py
+            - mcp_kg.py
+            - mcp_kg_traversal.py
+            - mcp_maintenance.py
+            - mcp_maintenance_ops.py
+            - mcp_maintenance_policy_hash.py
+            - mcp_memory.py
+            - mcp_metrics.py
+            - mcp_multi_modal.py
+            - mcp_okf.py
+            - mcp_profile.py
+            - mcp_quality.py
+            - mcp_rebuild.py
+            - mcp_retention.py
+            - mcp_safety.py
+            - mcp_sdk.py
+            - mcp_search.py
+            - mcp_session.py
+            - mcp_sharing.py
+            - mcp_summarization.py
+            - mcp_tools.py
+            - mcp_verbs.py
+        source_files: []
+        children:
+            - mcp_tools/core_runtime
+            - mcp_tools/knowledge_graph
+            - mcp_tools/maintenance_admin
+            - mcp_tools/memory_and_session
+            - mcp_tools/quality_safety
+            - mcp_tools/sharing_collab
+        depends_on: []
+        related_to: []
+    mcp_tools/core_runtime:
+        dir_name: MCP Tool Surface & Core Runtime
+        title: MCP Tool Surface & Core Runtime
+        scope:
+            - mcp_tools.py
+            - mcp_verbs.py
+            - mcp_sdk.py
+            - mcp_common.py
+            - mcp_async.py
+            - mcp_agent.py
+            - mcp_coordination.py
+            - mcp_crdt.py
+            - mcp_ctr_drift.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: cli_entrypoints/server_and_api
+            - path: mcp_tools/knowledge_graph
+            - path: mcp_tools/maintenance_admin
+            - path: mcp_tools/memory_and_session
+            - path: mcp_tools/quality_safety
+            - path: mcp_tools/sharing_collab
+    mcp_tools/knowledge_graph:
+        dir_name: Knowledge Graph & Search MCP Tools
+        title: Knowledge Graph & Search MCP Tools
+        scope:
+            - mcp_kg.py
+            - mcp_kg_traversal.py
+            - mcp_search.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: mcp_tools/core_runtime
+    mcp_tools/maintenance_admin:
+        dir_name: Maintenance & Admin MCP Tools
+        title: Maintenance & Admin MCP Tools
+        scope:
+            - mcp_maintenance.py
+            - mcp_maintenance_ops.py
+            - mcp_maintenance_policy_hash.py
+            - mcp_rebuild.py
+            - mcp_retention.py
+            - mcp_instance.py
+            - mcp_dashboard.py
+            - mcp_metrics.py
+            - mcp_health.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: mcp_tools/core_runtime
+    mcp_tools/memory_and_session:
+        dir_name: Memory, Session & Profile MCP Tools
+        title: Memory, Session & Profile MCP Tools
+        scope:
+            - mcp_memory.py
+            - mcp_session.py
+            - mcp_profile.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: mcp_tools/core_runtime
+    mcp_tools/quality_safety:
+        dir_name: Quality, Safety & Audit MCP Tools
+        title: Quality, Safety & Audit MCP Tools
+        scope:
+            - mcp_quality.py
+            - mcp_safety.py
+            - mcp_audit.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: mcp_tools/core_runtime
+    mcp_tools/sharing_collab:
+        dir_name: Cross-Agent Sharing, OKF I_O & Multi-Modal Ingestion MCP Tools
+        title: Cross-Agent Sharing, OKF I/O & Multi-Modal Ingestion MCP Tools
+        scope:
+            - mcp_sharing.py
+            - mcp_okf.py
+            - mcp_multi_modal.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: mcp_tools/core_runtime
+    migrations:
+        dir_name: SQLite Schema Migrations (000–073)
+        title: SQLite Schema Migrations (000–073)
+        scope:
+            - migrations/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    paper_experiments:
+        dir_name: Paper Artifacts & Reference Implementations
+        title: Paper Artifacts & Reference Implementations
+        scope:
+            - paper_pipeline/
+            - paper_pipeline_2/
+            - paper_pipeline_3/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    sdk_package:
+        dir_name: Agentic Memory Python SDK
+        title: Agentic Memory Python SDK
+        scope:
+            - agentic_memory/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: knowledge_graph/extraction_schema
+            - path: search_index/search_orchestrator_and_support
+            - path: search_index/search_pipeline
+    search_index:
+        dir_name: Agentic Memory Search & Replication Core
+        title: Agentic Memory Search & Replication Core
+        scope:
+            - search/
+            - crdt/
+            - coordination/
+        source_files: []
+        children:
+            - search_index/coordination
+            - search_index/crdt_merge
+            - search_index/indexers_and_rerankers
+            - search_index/search_orchestrator_and_support
+            - search_index/search_pipeline
+        depends_on: []
+        related_to: []
+    search_index/coordination:
+        dir_name: Multi-Agent Coordination Primitives
+        title: Multi-Agent Coordination Primitives
+        scope:
+            - coordination/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    search_index/crdt_merge:
+        dir_name: CRDT Merge Engine (Field-Level LWWES + Legacy Note-Level LWW)
+        title: CRDT Merge Engine (Field-Level LWWES + Legacy Note-Level LWW)
+        scope:
+            - crdt/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    search_index/indexers_and_rerankers:
+        dir_name: Search Indexers & Rerankers (ColBERT, SPLADE, Cross-Encoder)
+        title: Search Indexers & Rerankers (ColBERT, SPLADE, Cross-Encoder)
+        scope:
+            - search/chunk_index.py
+            - search/colbert_index.py
+            - search/splade_index.py
+            - search/rerankers.py
+            - search/answer_rerank.py
+            - search/colbert_rerank.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    search_index/search_orchestrator_and_support:
+        dir_name: Search Orchestrator & Pipeline Support
+        title: Search Orchestrator & Pipeline Support
+        scope:
+            - search/orchestrator.py
+            - search/query_parser.py
+            - search/scoring.py
+            - search/state.py
+            - search/config.py
+            - search/enrichment.py
+            - search/synthesis.py
+            - search/budget_aware.py
+            - search/drift.py
+            - search/feedback.py
+            - search/skill_lookup.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: sdk_package
+    search_index/search_pipeline:
+        dir_name: 14-Phase Search Pipeline & LTR Reranking
+        title: 14-Phase Search Pipeline & LTR Reranking
+        scope:
+            - search/phases/
+            - search/ltr/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: sdk_package

@@ -1,0 +1,1 @@
+pytest as the test engine (with custom markers `slow`, xfail/xpass tracking); SQLite with WAL mode and FTS5; optional sentence-transformers model `intfloat/e5-small-v2` activated via `MEMORY_TEST_EMBEDDING=1`; BEAM benchmark uses `memory_mcp` search API against synthetic conversations at 100K / 1M / 10M token scales.

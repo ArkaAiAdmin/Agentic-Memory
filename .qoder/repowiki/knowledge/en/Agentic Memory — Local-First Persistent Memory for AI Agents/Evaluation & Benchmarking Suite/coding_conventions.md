@@ -1,0 +1,5 @@
+- Each benchmark is a standalone script that bootstraps a temp SQLite DB via `_fixtures.bootstrap_temp_db_clean`, populates all index backends through `populate_eval_memory_indexes*`, then writes a JSON report into `eval/results/` rather than sharing state across runs.
+- Test files use the `temp_db_path` pytest fixture instead of calling `bootstrap_temp_db` inline, keeping DB lifecycle scoped to the test function.
+- Tests opt out of heavy features by setting `MEMORY_*` env vars (e.g. `MEMORY_WRITE_JOURNAL_ENABLED=0`, `MEMORY_FAIL_ON_INTEGRITY_DRIFT=0`, `MEMORY_LLM_EXTRACTION=0`) inside fixtures or per-test, never by patching module globals at import time.
+- Autouse fixtures in `conftest.py` reset shared mutable state (connection pool, auto-save circuit breaker, lazy config cache) around every test to prevent cross-test contamination.
+- Security/RBAC tests follow the three-fixture chain `closed_auth_env` → `mock_admin_principal` → `closed_auth_principal` / `ClosedClient` to exercise the real fail-closed authorization path without mocking the authorizer.

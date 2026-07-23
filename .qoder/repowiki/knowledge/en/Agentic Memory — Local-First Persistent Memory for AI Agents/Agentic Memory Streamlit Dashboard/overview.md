@@ -1,0 +1,1 @@
+Streamlit-based operator console providing a dark-themed, multi-tab UI for browsing memories, the knowledge graph, audit logs, compliance, coordination, billing, and system health of an agentic memory backend.

@@ -1,0 +1,6 @@
+- Expensive or optional submodules (rerankers, LTR, ColBERT, adaptive_retention, infra._lazy_imports) are imported inside the function body of the caller rather than at module top, keeping cold-start cost low.
+- Shared mutable caches (CTR weights, SSM model, column metadata, skill lookup) are guarded by module-level `threading.Lock`/`RLock` with double-checked initialization patterns and expose a `clear_*_caches()` reset helper.
+- Per-call transient state (phase latencies dict) lives on `threading.local()` so concurrent searches cannot overwrite each other's timings.
+- Each pipeline phase is wrapped in its own try/except that logs at debug level and falls through, incrementing an error counter via `infra.error_counter.increment` instead of raising.
+- Configuration is read through `get_search_config().field` (single pydantic source of truth) rather than ad-hoc `get_config()` calls scattered across getters.
+- Reranker gating uses `budget.should_run(stage_name, estimated_cost_ms)` against a per-call `SearchBudget` derived from `MEMORY_SEARCH_COMPUTE_BUDGET_MS`, with stage names recorded in `stages_run`/`stages_skipped`.

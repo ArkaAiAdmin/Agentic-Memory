@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: cli_entrypoints/llm_extraction
+title: LLM-Based Fact & Entity Extraction (with Temporal/Retention Shims)
+scope:
+    - llm_extraction.py
+    - fact_temporal.py
+    - adaptive_retention.py
+source_files: []
+depends_on: []
+related_to: []

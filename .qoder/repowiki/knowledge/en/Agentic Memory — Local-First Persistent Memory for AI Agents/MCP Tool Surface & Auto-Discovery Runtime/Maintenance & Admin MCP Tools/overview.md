@@ -1,0 +1,1 @@
+MCP tool surface for memory-system maintenance, rebuild, retention, dashboard/metrics server lifecycle, health probes, and drift-policy hash inspection.

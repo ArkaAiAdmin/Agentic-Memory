@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: migrations
+title: SQLite Schema Migrations (000–073)
+scope:
+    - migrations/
+source_files: []
+depends_on: []
+related_to: []

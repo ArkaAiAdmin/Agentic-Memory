@@ -1,0 +1,1 @@
+Thin backward-compatibility shim layer that re-exports the real persistence implementation from infra.db, infra.db_migrations, and infra.db_path_flock for legacy import paths.

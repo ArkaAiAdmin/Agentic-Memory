@@ -1,0 +1,4 @@
+- Every new capability lives in its own `mcp_<domain>.py` file whose top-level code has no arguments and relies on `@mcp.tool()` decorator side effects for registration.
+- Public tool entry points are named with the `memory_` prefix so the auto-discovery re-exporter can find and flatten them into `mcp_tools.__all__`.
+- Cross-cutting concerns (DB access, audit wrappers, error classification, path resolution) are imported from `mcp_common` rather than duplicated per domain.
+- Tool parameters use the shared `_validate_slug` validator from `mcp_common` instead of ad-hoc regex checks.

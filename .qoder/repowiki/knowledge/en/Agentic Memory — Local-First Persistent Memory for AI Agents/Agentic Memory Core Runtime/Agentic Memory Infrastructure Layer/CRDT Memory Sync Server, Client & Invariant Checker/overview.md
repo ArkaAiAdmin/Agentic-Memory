@@ -1,0 +1,1 @@
+HTTP-based peer-to-peer CRDT sync subsystem that serves change feeds and push endpoints, drives bidirectional pull/push against peers, and checks local subsystem consistency.

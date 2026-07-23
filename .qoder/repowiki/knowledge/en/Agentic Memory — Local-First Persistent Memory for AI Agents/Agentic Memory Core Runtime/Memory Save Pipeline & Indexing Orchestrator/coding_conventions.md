@@ -1,0 +1,5 @@
+- Optional third-party features are imported inside try/except ImportError blocks at module top level and stored in module-scoped variables (e.g. `_saga_save_memory`, `_get_config`, `parse_version_vector`) so the package remains importable when the dependency is absent.
+- Schema capability is detected once via PRAGMA `table_info(memories)` and cached in `_pragma_cache` keyed by `db_path`; callers pass the resulting `cols` set down to `_upsert_memory_row` instead of re-running PRAGMA.
+- Each indexer/backlink hook follows a uniform shape: accept `(db|conn, note_id, ...)` parameters, wrap the body in try/except, log a warning/debug on failure, and never propagate exceptions so one failing signal cannot abort the whole save transaction.
+- Public API surface is exposed through `save/__init__.py`'s PEP 562 `__getattr__` plus a `_LAZY_SAVE_NAMES` dict mapping attribute names to `(module, attr)` tuples, keeping heavy submodule imports deferred until first use.
+- CRDT-related helpers are gated by `_is_crdt_enabled()` / `_is_legacy_note_crdt_enabled()` checks before any DB access, and all CRDT writes are best-effort (exceptions caught and logged, never raised).

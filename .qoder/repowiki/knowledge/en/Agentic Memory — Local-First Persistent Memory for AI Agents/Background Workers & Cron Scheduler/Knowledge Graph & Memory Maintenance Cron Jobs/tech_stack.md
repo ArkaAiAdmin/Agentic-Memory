@@ -1,0 +1,1 @@
+Pure Python + sqlite3 with WAL mode; optional numpy for centroid/drift math; subprocess calls into sibling `venv/.venv/bin/python3.14` to invoke `backfill_all.py`; filesystem locking via the external `_flock` package.

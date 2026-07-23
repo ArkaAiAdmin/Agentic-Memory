@@ -1,0 +1,5 @@
+- Every script starts its `main()` by calling `_flock.acquire_lock_or_exit("cron_<script_name>")` to serialize concurrent invocations.
+- Scripts bootstrap imports by computing the repo root from `os.path.dirname(os.path.abspath(__file__))` and inserting it at `sys.path[0]` before importing `infra.*` / `memory_*` / `background.*`.
+- SQLite connections are opened with `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=30000`, and closed through `safe_close_db` rather than raw `.close()`.
+- Long-running or multi-step jobs wrap each step in `try/except` and either retry with exponential backoff (backup) or continue logging warnings while accumulating errors (auto-log cleanup).
+- CLI helpers print usage to stderr when `--help` / `-h` is detected and exit 0 without touching any state.

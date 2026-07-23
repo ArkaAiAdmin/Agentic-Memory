@@ -27,7 +27,7 @@ import logging
 import re
 import os
 from abc import ABC, abstractmethod
-from typing import cast
+from typing import Any, cast
 
 from search.config import get_search_config
 
@@ -877,7 +877,7 @@ def _apply_combined_ce_rerank(
     ms-marco 0.7) with EXACTLY ONE ``r[6]`` write per item.
 
     Baseline ran two sequential stages, each mutating ``r[6]``:
-      * stage 9b (weak):  r6 = raw * (1 - 0.6 + 0.6 * weak_ce)   [top limit*2]
+      * stage 9b (weak):  r6 = raw * (1 - 0.6) + weak_ce * 0.6   [top limit*2]
       * stage 9c (chunk): r6 = r6 * (1 - 0.7) + chunk_ce_norm * 0.7
                           [top limit*3, with a p80 pre-filter: items
                            >= p80 keep their weak-adjusted r6 untouched]
@@ -936,7 +936,7 @@ def _apply_combined_ce_rerank(
             ce = ce_norm_w[i]
         else:
             ce = _cross_encoder_score(query, scored_results[i][1] or "")
-        w6[i] = w6[i] * (1.0 - weak_blend + weak_blend * ce)
+        w6[i] = w6[i] * (1.0 - weak_blend) + ce * weak_blend
 
     # Final scores start at the weak-adjusted values; chunk only rewrites
     # the below-p80 candidates within the chunk window.

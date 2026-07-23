@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/metrics_monitoring
+title: Metrics Collection, Prometheus Export & Alerting
+scope:
+    - infra/metrics.py
+    - infra/metrics_server.py
+    - infra/error_counter.py
+    - infra/alert.py
+source_files: []
+depends_on: []
+related_to: []

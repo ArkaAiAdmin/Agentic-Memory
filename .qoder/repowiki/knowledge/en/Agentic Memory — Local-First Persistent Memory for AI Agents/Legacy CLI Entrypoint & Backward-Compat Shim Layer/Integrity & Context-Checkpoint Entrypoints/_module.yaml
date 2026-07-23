@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: cli_entrypoints/integrity_checks
+title: Integrity & Context-Checkpoint Entrypoints
+scope:
+    - context_monitor.py
+    - contradiction_detector.py
+    - eval_judge.py
+source_files: []
+depends_on: []
+related_to: []

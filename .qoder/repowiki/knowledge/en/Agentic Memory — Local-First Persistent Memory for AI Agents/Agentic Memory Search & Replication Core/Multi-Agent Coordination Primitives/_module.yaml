@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: search_index/coordination
+title: Multi-Agent Coordination Primitives
+scope:
+    - coordination/
+source_files: []
+depends_on: []
+related_to: []

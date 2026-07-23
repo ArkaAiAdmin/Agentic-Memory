@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/database_persistence
+title: SQLite Persistence Layer (Connection Pool, Write Queue & Journal)
+scope:
+    - infra/db.py
+    - infra/db_migrations.py
+    - infra/db_path_flock.py
+    - infra/db_write_queue.py
+    - infra/write_journal.py
+source_files: []
+depends_on: []
+related_to: []

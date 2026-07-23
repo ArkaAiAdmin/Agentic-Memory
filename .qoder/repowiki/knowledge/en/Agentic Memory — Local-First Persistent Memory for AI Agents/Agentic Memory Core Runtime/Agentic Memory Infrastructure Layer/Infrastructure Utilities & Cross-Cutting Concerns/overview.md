@@ -1,0 +1,1 @@
+Shared infrastructure utilities for configuration loading, saga-based crash-consistent multi-store writes, rate limiting, quality gates, tenant isolation, hashing, frontmatter parsing, and logging that are consumed across the agentic-memory codebase.

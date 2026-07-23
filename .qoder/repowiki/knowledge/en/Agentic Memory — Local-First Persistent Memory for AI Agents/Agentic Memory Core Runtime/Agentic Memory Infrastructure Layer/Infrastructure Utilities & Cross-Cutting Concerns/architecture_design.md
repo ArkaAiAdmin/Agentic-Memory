@@ -1,0 +1,8 @@
+This module is a flat collection of independent utility modules under `infra/`, each addressing a single cross-cutting concern with no internal sub-packages. Key architectural patterns:
+- `config.py` is the central configuration singleton: it parses `memory.toml` (via `tomllib` or `tomli` fallback), merges `MEMORY_*` environment variables with TOML values using `_resolve()`, and exposes a frozen nested `MemoryConfig` dataclass with legacy flat-key compatibility via `__getattr__`.
+- `saga.py` implements a context-manager-based saga pattern (`Saga`, `SagaStep`, `SagaError`) wrapping SQLite transactions, usearch vector index writes, and markdown file writes into atomic triple-store operations, with WAL-intent logging and recovery of incomplete sagas at startup.
+- `quality_gates.py`, `rate_limiter.py`, and `pinned_decay.py` are feature-gated utilities accessed through lazy attribute resolution (`make_lazy_getattr`) so they can be disabled without import-time cost.
+- `tenant_query.py` provides SQL rewriting helpers around a `tenant_memories` TEMP VIEW created per connection for multi-tenant isolation.
+- Small focused helpers: `safe_call.py` (exception-safe wrapper), `hash_utils.py` (MD5→uint64), `frontmatter.py` (YAML frontmatter parser), `policy_hash_diff.py` (recursive dict diff), `policy_hash_fetcher.py` (peer policy hash HTTP client).
+- Dependency direction is one-way: these utilities are imported by higher layers; they only import from `infra.memory_common` (for `make_lazy_getattr`) and standard library modules, never from sibling infra modules except where explicitly noted (e.g., `quality_gates` imports `infra.db.open_db`).
+- All modules use `from __future__ import annotations` and expose public APIs via `__all__` lists.

@@ -1,0 +1,2 @@
+- All three packages expose a flat public API through their `__init__.py` re-exporting selected symbols from sibling modules, so callers import `from coordination.locking import acquire_lock` rather than reaching into submodules.
+- Heavy or optional dependencies (e.g. `crdt.crdt_field`, `coordination.hooks`) are imported lazily inside functions to avoid circular imports between the three packages.

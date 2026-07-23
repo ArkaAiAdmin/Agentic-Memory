@@ -1,0 +1,3 @@
+- Top-level entry-point modules must `import infra._bootstrap_path` as their very first import (marked `# noqa: E402`) so `sys.path` is fixed before any other `memory_*` / `mcp_*` / `search_pipeline` import.
+- Cross-package symbols are never imported directly at module scope; instead callers go through `from infra._lazy_imports import <name>` and the actual `importlib.import_module` happens lazily inside `_lazy_imports.__getattr__`.
+- When a package is moved into a subpackage, a thin shim file is left behind that defines `__getattr__`/`__dir__` and calls `install_shim(__name__, _real)` guarded by `if __name__ in sys.modules:` rather than deleting the old path outright.

@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/search_embedding
+title: Embedding, Vector Index & Full-Text Search Infrastructure
+scope:
+    - infra/vector_store.py
+    - infra/colbert_encoder.py
+    - infra/splade_encoder.py
+    - infra/reranker.py
+    - infra/embedding_search.py
+    - infra/embedding_recompute.py
+    - infra/fts.py
+source_files: []
+depends_on: []
+related_to: []

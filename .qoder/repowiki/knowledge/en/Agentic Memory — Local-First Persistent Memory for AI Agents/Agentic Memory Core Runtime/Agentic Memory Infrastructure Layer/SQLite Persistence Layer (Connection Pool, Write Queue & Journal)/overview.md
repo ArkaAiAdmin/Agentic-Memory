@@ -1,0 +1,1 @@
+Provides the SQLite persistence stack: a thread-safe connection pool with WAL tuning, a single-writer background queue for serialised mutations, and a lock-free CQRS write-ahead journal for multi-agent writes.

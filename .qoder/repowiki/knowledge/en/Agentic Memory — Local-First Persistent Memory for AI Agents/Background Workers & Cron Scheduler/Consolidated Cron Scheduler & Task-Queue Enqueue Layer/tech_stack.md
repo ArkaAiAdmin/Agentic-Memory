@@ -1,0 +1,1 @@
+Pure Python stdlib (sqlite3, subprocess, argparse, json) plus the project's internal `infra.*` and `background.*` packages; no external cron library — relies on a single host crontab entry invoking `python cron/scheduler.py` every 5 minutes.

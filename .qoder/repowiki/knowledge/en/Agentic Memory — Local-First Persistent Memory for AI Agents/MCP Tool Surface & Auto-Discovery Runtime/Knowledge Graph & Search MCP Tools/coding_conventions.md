@@ -1,0 +1,5 @@
+- Every MCP tool is registered with `@mcp.tool()` stacked above `@with_audit("<tool_name>")`, and returns either a human-readable string or an `_err(ErrorCode.*, ...)` failure message.
+- Each tool performs a lazy `from knowledge_graph import KG_ENABLED` guard at the top of its body and short-circuits with a 'Knowledge graph disabled' message when the feature flag is off.
+- Database access follows a fixed pattern: resolve `target_base = _resolve_memory_dir()`, build `db_path = target_base / "memory.db"`, assert existence, then open via `open_db(db_path, row_factory=None)` or `write=False` inside a `with` block.
+- Optional heavy dependencies (RBAC authorizer, spaced repetition, embedding models, graph analytics submodules) are imported lazily inside the function body so missing packages do not raise at module load time.
+- Errors are surfaced uniformly through `_err(ErrorCode.DB_ERROR | INVALID_PARAMS | NOT_FOUND | RECALL_ERROR | SESSION_START_ERROR, msg)` rather than raising exceptions up to the caller.

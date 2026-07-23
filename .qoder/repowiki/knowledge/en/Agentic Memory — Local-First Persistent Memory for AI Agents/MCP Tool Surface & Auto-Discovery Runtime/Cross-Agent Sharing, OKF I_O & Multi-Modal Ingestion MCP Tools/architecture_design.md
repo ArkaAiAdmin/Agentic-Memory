@@ -1,0 +1,6 @@
+Three thin MCP-tool modules that each import a domain-specific backend package at call time and expose functions decorated with `@mcp.tool()` plus the shared `@with_audit` audit decorator:
+- `mcp_sharing.py` — gates every function on `memory_sharing.MULTI_AGENT_ENABLED`, delegates to `memory_sharing` (`share_memory`, `list_shared_memories`, `import_shared_memory`, `shared_pool_stats`, `auto_share_high_value`, `list_share_candidates`), and returns JSON or `_err(ErrorCode.SHARE_ERROR)`.
+- `mcp_okf.py` — wraps `okf_export` / `okf_import`; enforces S5 path containment by resolving `output_dir` against `infra.infrastructure.resolve_active_memory_dir()` before calling into `okf_export`; enforces S6 destructive-operation confirmation by rejecting `overwrite=True` unless `confirm=True`.
+- `mcp_multi_modal.py` — validates mutual exclusivity of `file_path` vs `url`, then calls `multi_modal.ingest_file` / `ingest_url` directly (no lazy import).
+
+Dependency direction is one-way: these files depend on `mcp_instance.mcp`, `mcp_common._err`/`ErrorCode`/`with_audit`, and the feature-specific backends (`memory_sharing`, `okf_export`, `okf_import`, `multi_modal`). They do not import from each other.

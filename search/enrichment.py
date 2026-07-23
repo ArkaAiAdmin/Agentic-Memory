@@ -97,20 +97,10 @@ def _apply_post_rank_metadata(
             * new_item["jaccard_surprise"]
         )
         new_item["display_score"] = _fs * _factors
-        # Enrichment boosts also influence final_score for ranking.
-        # The concept/centrality/jaccard signals are not visible to the CE
-        # reranker (ms-marco-MiniLM), so folding them into final_score ensures
-        # the ranking reflects KG structure, entity overlap, and neural-forget
-        # signals.  This was a deliberate choice — removing it regresses
-        # concept-heavy and entity-heavy queries.
-        new_item["final_score"] = _fs * _factors
-        # temporal_decay is also applied to final_score.  While recency is a
-        # channel in _compute_final_score, the two models differ: recency is a
-        # sigmoid over time-since-creation; temporal_decay is a half-life model.
-        # Applying both is mildly redundant but improves temporal query quality.
-        _td = new_item.get("temporal_decay", 1.0)
-        if _td and _td != 1.0:
-            new_item["final_score"] = new_item["final_score"] * _td
+        # Option A1 / RANK-FIRST LOCK: final_score is owned by the CE reranker
+        # and must NOT be mutated here.  enrichment only adds display_score and
+        # metadata fields — the rank-first contract guarantees that post-rank
+        # processing never changes the ranking order established by the CE.
         out.append(new_item)
     return out
 

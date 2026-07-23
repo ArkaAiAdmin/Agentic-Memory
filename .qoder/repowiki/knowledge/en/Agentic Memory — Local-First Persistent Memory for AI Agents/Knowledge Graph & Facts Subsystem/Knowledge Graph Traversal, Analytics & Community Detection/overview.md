@@ -1,0 +1,1 @@
+Pure-Python graph algorithms (shortest path, neighbors, pattern traversal, PageRank, betweenness centrality, connected components, Louvain) operating on the SQLite-backed kg_entities/kg_edges schema.

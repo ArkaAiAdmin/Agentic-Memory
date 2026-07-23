@@ -1,0 +1,8 @@
+Two independent concerns co-located under `infra/`:
+
+- `shared_memory_state.py` defines the single-process-writer / multi-reader contract. A 16KB `multiprocessing.shared_memory.SharedMemory` segment is laid out as a packed little-endian struct (`_FMT`, `_TAIL_FMT`) with a magic head/tail and XOR checksum so torn reads are detectable. `SharedMemoryState` exposes lifecycle (`create`/`attach`/`detach`/`unlink`), validation (`is_valid`, `_read_header`), hot-path circuit-breaker check (`is_circuit_open`), and full-state read/write. The module-level `get_default()` singleton plus `DEFAULT_NAME` / `SIZE` constants form the public boundary; callers never touch `struct` or offsets directly.
+- `memory_config.py` owns filesystem layout (project-root markers, `GLOBAL_MEM_DIR`, `install_root`, `get_memory_paths`) and logging/bootstrap helpers (`configure_logging`, `log_backup`, `validate_config`). It is imported by `memory_common.py` which re-exports its names for backward compatibility.
+- `scope.py` resolves the runtime `Scope` enum (`production | staging | development | test`) from `MEMORY_SCOPE`, `memory.toml [scope].name`, then heuristics (pytest in `sys.modules`, DB path vs `MEMORY_INSTALL_ROOT`).
+- `memory_common.py` is not part of this module's logic — it is a thin re-export shim that imports from `infra.memory_config` (and other infra modules) to preserve legacy import paths; it has no shared-memory code.
+
+Dependency direction: `memory_common.py` → `memory_config.py`; `scope.py` depends on `infra.config` only at call time (lazy import); `shared_memory_state.py` depends only on stdlib (`multiprocessing.shared_memory`, `struct`, `os`, `time`). No cross-imports between `shared_memory_state.py` and `scope.py` / `memory_config.py`.

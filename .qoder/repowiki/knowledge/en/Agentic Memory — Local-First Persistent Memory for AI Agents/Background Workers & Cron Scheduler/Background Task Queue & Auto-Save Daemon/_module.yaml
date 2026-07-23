@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: background_workers/background_workers
+title: Background Task Queue & Auto-Save Daemon
+scope:
+    - background/
+source_files: []
+depends_on: []
+related_to:
+    - path: background_workers/cron_scheduler_runtime

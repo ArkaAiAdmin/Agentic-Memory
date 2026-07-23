@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: cli_entrypoints/knowledge_graph_ops
+title: Knowledge Graph CLI Shims & Cross-Session Learning Cron
+scope:
+    - kg_traversal.py
+    - cross_session_learn.py
+    - fact_extraction.py
+source_files: []
+depends_on: []
+related_to: []

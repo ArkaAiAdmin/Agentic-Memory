@@ -1,0 +1,1 @@
+SQLite with native FTS5 virtual table (`kg_facts_fts`) using porter unicode61 tokenizer; temporal columns stored as REAL epoch seconds (not ISO TEXT, noted as a known schema inconsistency with `kg_edges`).

@@ -1,0 +1,1 @@
+Doc generators accept `--check` (exit 1 on drift) and `--stdout`; run from repo root as `python scripts/gen_config_doc.py`. The flock injector is invoked as `python _scripts/add_flock_to_crons.py`. Backfill scripts take an optional positional SQLite path (default `memory/memory.db`).

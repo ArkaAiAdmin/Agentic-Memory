@@ -1,0 +1,1 @@
+Pure Python stdlib + sqlite3; optional `py-spy` for stack traces; macOS `launchctl`/`launchd` for background-worker lifecycle; flock-based mutual exclusion via the vendored `_flock` module.

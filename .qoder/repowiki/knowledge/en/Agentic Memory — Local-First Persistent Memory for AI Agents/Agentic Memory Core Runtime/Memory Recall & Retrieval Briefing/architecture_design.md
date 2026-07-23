@@ -1,0 +1,5 @@
+Two-file package with one thin CLI wrapper:
+- `recall.py` is the core: three public entry points (`recall_context`, `format_briefing`, `session_recap`) compose several internal `_fetch_*` helpers that each run a focused SQL query against the local `memory.db` via `infra.db.connection_pool`. A namespace-aware filter (`agents/{namespace}/%`) scopes results to the current agent. The `relevant` section delegates to `search_pipeline.search_memories` through `infra._lazy_imports` so FTS5/semantic scoring lives in one place.
+- `search_memory.py` is a CLI shim (`__main__`) that resolves local + global DB paths via `infra.memory_config.get_memory_paths`, calls the canonical `search_pipeline.search_memories`, prints legacy-formatted output, and bumps `access_count` on matched rows.
+- `__init__.py` uses `__getattr__` / `__dir__` to re-export everything from `recall.recall`, making `from recall import <symbol>` transparent.
+Dependency direction is inward only: this module depends on `infra.*`, `agent_context`, `spaced_repetition`, `user_profile`, and `search_pipeline`; nothing inside this package is imported by those modules.

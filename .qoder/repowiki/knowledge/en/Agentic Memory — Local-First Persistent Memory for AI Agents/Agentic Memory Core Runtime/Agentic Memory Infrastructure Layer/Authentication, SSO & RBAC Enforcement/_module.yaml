@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/auth_rbac
+title: Authentication, SSO & RBAC Enforcement
+scope:
+    - infra/authlib_sso.py
+    - infra/authorizer.py
+    - infra/rbac.py
+    - infra/gdpr.py
+source_files: []
+depends_on: []
+related_to: []

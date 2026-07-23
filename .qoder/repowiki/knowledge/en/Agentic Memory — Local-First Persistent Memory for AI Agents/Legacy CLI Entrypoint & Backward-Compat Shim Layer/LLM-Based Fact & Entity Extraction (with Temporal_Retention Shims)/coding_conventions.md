@@ -1,0 +1,5 @@
+- Optional heavy dependencies (torch, transformers, infra config) are imported lazily inside functions rather than at module top, so the package remains importable without them.
+- Public entry points return empty collections (`[]`, `{}`) or `None` on failure instead of raising, letting callers fall back to regex extraction deterministically.
+- Configuration is resolved through a try/import of `infra._lazy_imports.get_config()` with an `os.environ` fallback and a hard-coded constant default, applied consistently across max_tokens, model_id, and idle-unload settings.
+- Provider-backed APIs expose both legacy and v2 names (`extract_facts_via_llm` vs `extract_facts_via_llm_v2`); the v2 function checks `get_provider()` first and falls back to the legacy path, enabling gradual migration.
+- Backward-compat shim files use `__getattr__`/`__dir__` delegation plus `install_shim(__name__, _real)` to transparently forward all attribute access to the real module under its new location.

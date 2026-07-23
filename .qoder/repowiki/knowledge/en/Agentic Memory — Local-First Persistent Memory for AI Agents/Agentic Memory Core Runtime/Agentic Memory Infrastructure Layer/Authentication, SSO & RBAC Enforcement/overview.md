@@ -1,0 +1,1 @@
+Implements OIDC/SAML 2.0 SSO, JWT signing/verification, token-to-principal resolution, and SQLite-backed RBAC with tenant scoping and GDPR right-to-be-forgotten erasure.

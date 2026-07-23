@@ -1,0 +1,4 @@
+- Pages follow the Diataxis genre taxonomy — new content goes under `concepts/`, `how-to/`, `reference/`, or `explanation/` rather than ad-hoc directories.
+- New pages must be registered in the `nav:` block of `mkdocs.yml` so they appear in the sidebar.
+- Authoring starts from one of the stub templates in `templates/` (`concept.md`, `explanation.md`, `how-to.md`, `reference.md`) to keep front-matter and structure consistent.
+- Build-time assets outside `docs/` (e.g. `docker/README.md`) are surfaced through an `on_pre_build`/`on_post_build` hook that symlinks them into `docs/` and cleans up after the build.

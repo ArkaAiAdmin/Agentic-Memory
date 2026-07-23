@@ -1,0 +1,1 @@
+Run directly as `python cross_session_learn.py [--dry-run] [--days=N]`; the database path defaults to `$MEMORY_DB_PATH` if set, otherwise `<active-memory-dir>/memory.db`. The other two files have no runtime behavior of their own — they only exist to keep older import paths working.

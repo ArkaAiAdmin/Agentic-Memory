@@ -1,0 +1,1 @@
+Top-level Python package that wires an MCP server, background cron scheduler, and sync daemon around a shared SQLite store plus optional knowledge-graph and temporal layers.

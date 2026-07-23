@@ -1,0 +1,1 @@
+Standalone cron-invoked Python scripts that perform periodic maintenance on the agentic-memory SQLite database and filesystem: backups, purges, compaction, log retention, FTS rebuild, link rewriting, and auto-save cleanup.

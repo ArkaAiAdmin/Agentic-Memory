@@ -1,0 +1,1 @@
+SQLite with FTS5 full-text search on `kg_entities(name, entity_type)` backed by triggers; optional spaCy `en_core_web_trf` model for NER augmentation (installed via `pip install agentic-memory[ner] && python -m spacy download en_core_web_trf`); LLM extraction is invoked lazily from `llm_extraction.extract_entities_via_llm` / `extract_facts_via_llm` when available.

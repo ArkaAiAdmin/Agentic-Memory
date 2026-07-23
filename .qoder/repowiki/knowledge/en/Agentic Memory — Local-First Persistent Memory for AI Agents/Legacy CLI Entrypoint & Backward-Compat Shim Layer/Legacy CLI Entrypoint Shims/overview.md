@@ -1,0 +1,1 @@
+Backward-compatibility shim modules that re-export the real `infra.*` implementations under legacy top-level package names for older CLI entrypoints.

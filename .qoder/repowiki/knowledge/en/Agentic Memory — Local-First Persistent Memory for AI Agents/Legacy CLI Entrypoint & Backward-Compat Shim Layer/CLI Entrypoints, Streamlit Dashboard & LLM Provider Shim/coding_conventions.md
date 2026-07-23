@@ -1,0 +1,4 @@
+- Each CLI command is exposed as a module-level `<name>_main()` function that parses `sys.argv[2:]` itself (via argparse) and either delegates to a sibling script through `_run()` or calls into `infra.*` directly.
+- Long-running or heavy operations are offloaded by spawning a new Python process with `subprocess.run([PYTHON, script_path], timeout=...)` instead of threading, keeping the dispatcher lightweight.
+- Optional feature branches wrap their imports in try/except and fall back to a safe default (e.g. `get_config()` returning defaults, `shutil.which('streamlit')` probing multiple locations, `importlib.metadata.version` catching missing installs).
+- Health-check results are emitted as structured dicts with a `severity` field (`ok|info|warning|failure`) and a `check` label, allowing both human-readable TTY output and machine-consumable JSON reports.

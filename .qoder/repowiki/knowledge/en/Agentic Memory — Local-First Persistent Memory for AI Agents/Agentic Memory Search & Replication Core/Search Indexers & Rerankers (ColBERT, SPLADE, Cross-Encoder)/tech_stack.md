@@ -1,0 +1,1 @@
+SQLite FTS5 with porter unicode61 tokenizer for chunk search; ColBERT-v2 token embeddings packed as little-endian float32 BLOBs via `struct.pack`; SPLADE-v3 sparse vocabulary-weight pairs; ms-marco-MiniLM-L-12-v2 CrossEncoder (sentence-transformers) for chunk-level reranking; optional deep reranker backed by Qwen3-Reranker-0.6B or BAAI/bge-reranker-v2-m3 via `infra.reranker`.

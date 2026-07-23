@@ -1,0 +1,1 @@
+Standalone, stdlib-only reference implementations and pytest suites that reproduce the three CRDT projection papers and their formal convergence proofs.

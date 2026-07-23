@@ -1,0 +1,1 @@
+Bridges the OpenCode agent harness to agentic-memory by dispatching tool/session lifecycle events into Python subprocess hooks that bootstrap, search, and persist session context.

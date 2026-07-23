@@ -1,0 +1,5 @@
+- Data shapes are declared as `@dataclass` objects (`EntityOp`, `EdgeOp`) carrying `version_vector: Dict[str,int]`, `agent_id`, and `timestamp` fields so they can be serialized to/from SQLite without external ORM dependencies.
+- Version-vector comparison always goes through the pure helpers `vv_dominates`, `vv_merge`, `_serialise_vv`, `_parse_vv` rather than ad-hoc dict comparisons, ensuring causal ordering is uniform across merge phases.
+- Field-level LWW resolution follows a fixed tiebreak chain: first compare via `vv_dominates`, then fall back to `(timestamp desc, agent_id asc)` total order when vectors are concurrent.
+- Entity identity fingerprinting is computed once at inception via `compute_fingerprint(name, entity_type, description)` using NFKC normalization, Cf/Cc/Co character stripping, lowercase+collapse-whitespace, then SHA-256; the value is treated immutable thereafter.
+- Tests are split by concern: `test_pipeline.py` covers deterministic convergence/unit behavior while `test_adversarial.py` encodes formal proof counterexamples as parameterized `Test*` classes, both runnable under plain `pytest`.

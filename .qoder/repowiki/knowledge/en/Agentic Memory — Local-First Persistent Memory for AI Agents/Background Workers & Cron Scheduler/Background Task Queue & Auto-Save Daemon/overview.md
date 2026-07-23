@@ -1,0 +1,1 @@
+SQLite-backed task queue and long-lived auto-save daemon that offload expensive indexing, KG maintenance, WAL checkpointing, and adaptive retention work from the hot path.

@@ -1,0 +1,6 @@
+- Handler functions follow the signature `(payload: dict, conn: AnyConnection, db_path: Path) -> str` and return a human-readable result string; unknown types fall through to `fail_task` with an 'unknown task type' message.
+- Expensive third-party imports (e.g. `kg.kg_dedup`, `reasoning.compile`, `save.indexers`) are performed lazily inside handler bodies rather than at module top, breaking circular imports and avoiding heavy model loads until a task actually runs.
+- Configuration values are resolved with a fixed precedence chain: environment variable → TOML via `infra._lazy_imports.get_config()` → hard-coded default, wrapped in try/except that falls back to the default on any import/config error.
+- Cross-process synchronization uses persistent lock files (flock) plus PID files, with stale-lock cleanup that probes the PID via `os.kill(pid, 0)` before attempting to acquire the lock.
+- At-least-once delivery is implemented by atomic rename of the inbox to a `.pending.{pid}` file before processing, then deleting the pending file only after successful DB commit; orphaned pending files are re-queued on daemon startup.
+- All database mutations go through `infra.db_write_queue.sqlite_write_queue.start_session` and use explicit `conn.commit()` / `conn.rollback()` around handler execution rather than relying on autocommit.

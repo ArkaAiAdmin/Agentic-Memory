@@ -1,0 +1,1 @@
+Top-level entry points that bootstrap the MCP server, orchestrate CLI subcommands (search, doctor, worker, sync, install-mcp), manage the Streamlit dashboard lifecycle, and re-export the real LLM provider registry.

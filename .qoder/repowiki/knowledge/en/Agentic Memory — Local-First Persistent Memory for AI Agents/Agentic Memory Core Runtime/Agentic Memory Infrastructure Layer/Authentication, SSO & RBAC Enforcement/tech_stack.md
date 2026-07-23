@@ -1,0 +1,1 @@
+OIDC/SAML via `joserfc` (JWT/JWK), `cryptography` (RSA keygen), `requests` (HTTP); SAML signature verification uses optional `pyxmlsec` + `lxml` (fail-closed when absent); XML parsing guarded by `defusedxml` with a DOCTYPE-stripped stdlib fallback; TOML config via `tomllib` / `tomli`.

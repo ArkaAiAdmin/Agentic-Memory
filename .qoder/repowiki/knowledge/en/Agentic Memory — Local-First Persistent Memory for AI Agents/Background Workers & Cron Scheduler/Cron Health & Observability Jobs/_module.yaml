@@ -1,0 +1,18 @@
+schema_version: 1
+module_path: background_workers/cron_health_observability
+title: Cron Health & Observability Jobs
+scope:
+    - cron/cron_health_check.py
+    - cron/cron_pipeline_health.py
+    - cron/cron_watchdog.py
+    - cron/cron_daemon_watchdog.py
+    - cron/cron_integrity_check.py
+    - cron/cron_check_config_drift.py
+    - cron/cron_policy_hash_status.py
+    - cron/cron_retry_dead_tasks.py
+    - cron/cron_heartbeat.py
+    - cron/cron_sync_usage.py
+source_files: []
+depends_on: []
+related_to:
+    - path: background_workers/cron_scheduler_runtime

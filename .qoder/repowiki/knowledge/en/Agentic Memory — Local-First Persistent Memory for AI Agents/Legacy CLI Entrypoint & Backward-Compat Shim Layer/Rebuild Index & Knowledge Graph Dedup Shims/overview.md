@@ -1,0 +1,1 @@
+Backward-compatibility shims that re-export the real consolidation and KG-dedup implementations from fact/ and kg/ packages, plus an in-process note deduplication module.

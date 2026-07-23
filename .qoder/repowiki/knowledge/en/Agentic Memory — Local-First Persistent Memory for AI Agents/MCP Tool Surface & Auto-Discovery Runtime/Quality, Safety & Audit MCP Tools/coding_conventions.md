@@ -1,0 +1,5 @@
+- Every exported function is registered as an MCP tool via `@mcp.tool()` and instrumented with `@with_audit("memory_<name>")` before the signature.
+- Optional heavy dependencies are imported lazily inside the function body (e.g. `from infra._lazy_imports import ...`, `import quality_gates as qg`) rather than at module top.
+- Errors are returned uniformly as `json.dumps(_err(ErrorCode.<CODE>, <message>))` after catching `Exception` and logging with `logger.exception(...)`.
+- Active memory directory is resolved once per call via `_resolve_memory_dir()`, then combined with `/ "memory.db"` to derive the DB path used by all downstream helpers.
+- Read-only DB access uses a `file:<path>?mode=ro` sqlite3 URI so concurrent reads do not contend with the auto-save writer's flock.

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: cloud_sync
+title: SaaS Management Plane (Provisioning, Billing & Gateway)
+scope:
+    - infra_cloud/
+source_files: []
+depends_on: []
+related_to: []

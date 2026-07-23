@@ -1,0 +1,3 @@
+- Shim modules use `__getattr__`/`__dir__` forwarding plus `infra._shim.install_shim(__name__, _real)` to transparently re-export a relocated package without changing caller imports.
+- Standalone scripts resolve the active memory directory via `resolve_active_memory_dir()` instead of hard-coding paths, and accept configuration through `sys.argv` flags parsed inline.
+- Database writes go through `save_pipeline.upsert_row` and the subsequent save-indexer functions rather than direct `INSERT` statements, keeping metadata (fitness_score, importance, file_mtimes) consistent with the canonical save path.

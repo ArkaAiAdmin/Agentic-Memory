@@ -1,0 +1,1 @@
+Detects configuration drift across env/TOML/default sources, classifies severity tiers, and enforces per-tier policies (warn/soft_block/hard_fail) with progressive escalation and time-bounded escape hatches.

@@ -1,0 +1,1 @@
+SQLite-backed memory store accessed through `infra.db_write_queue.sqlite_write_queue` with `PRAGMA busy_timeout = 30000`; lesson creation routes through the canonical `save_pipeline.upsert_row` + save-indexer pipeline rather than raw SQL inserts.

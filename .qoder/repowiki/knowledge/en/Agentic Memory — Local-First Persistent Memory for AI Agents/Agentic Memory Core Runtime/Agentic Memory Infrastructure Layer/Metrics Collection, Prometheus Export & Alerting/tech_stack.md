@@ -1,0 +1,1 @@
+Pure stdlib — no third-party deps. Prometheus exposition is hand-rolled text format (no prometheus_client); HTTP server is `http.server.HTTPServer`; alerts use `urllib.request` for Slack/Pushover and `smtplib` for email; SQLite via `sqlite3` through `infra.db.open_db`.

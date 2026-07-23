@@ -1,0 +1,1 @@
+Thin backward-compatibility shim layer that re-exports the real CRDT implementation from `kg.kg_crdt` and `crdt.*` so legacy import paths continue to resolve.

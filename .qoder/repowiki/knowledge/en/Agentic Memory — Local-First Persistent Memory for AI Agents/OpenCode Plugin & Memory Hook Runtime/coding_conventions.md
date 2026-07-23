@@ -1,0 +1,5 @@
+- Each Python hook follows a CLI pattern: read JSON from stdin, print structured text to stdout, wrap `main()` in try/except that routes exceptions through `_log_error.log_error` and exits 0 so the TS launcher never sees a non-zero code.
+- Cross-hook search results are de-duplicated via a per-process LRU dict (`_SEARCH_CACHE`) keyed by query string with configurable TTL, and a disk-backed `hook_cache.json` keyed by query hash and invalidated when the DB mtime changes.
+- Long-running or flaky operations use a dual circuit breaker: an in-process counter per label (threshold 4, 5 min cool-down) plus a file sentinel (`memory/.auto_save_circuit_sentinel`) carrying pid+status that the TS side checks before spawning.
+- Feature flags gate hook execution through `ECC_DISABLED_HOOKS` and `ECC_HOOK_PROFILE` (minimal/standard/strict), evaluated via `hookEnabled(id, required)` rather than ad-hoc env checks inside handlers.
+- Knowledge-compilation outputs are written as YAML-frontmatter Markdown files under `concepts/`, `principles/`, or `ontology/` next to the SQLite DB, with a corresponding row inserted into the `memories` table so the artifact stays searchable.

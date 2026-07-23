@@ -1,0 +1,1 @@
+Install with `pip install -e ".[docs]"`, preview locally with `mkdocs serve` (live reload on http://127.0.0.1:8000), build static output to `site/` via `mkdocs build --clean`, and deploy to GitHub Pages with `mkdocs gh-deploy`. Build runs with `strict: false` so maintainer-only links do not fail the pipeline.

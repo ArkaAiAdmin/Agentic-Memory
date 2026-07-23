@@ -1,0 +1,5 @@
+- Each script is a standalone executable with a `#!/usr/bin/env python3` shebang, a module-level docstring describing usage, and a `def main() -> int:` entry point raised via `raise SystemExit(main())` or `sys.exit(main())`.
+- Repo-relative paths are resolved by walking up from `Path(__file__).resolve()` rather than relying on CWD, so scripts work when invoked from arbitrary directories.
+- Generated documentation is wrapped between `<!-- AUTO-GEN-START -->` / `<!-- AUTO-GEN-END -->` markers produced by `_docgen_markers.assemble`, preserving hand-written sections outside the markers across regenerations.
+- Optional third-party parsers are imported lazily inside try/except blocks with a pure-Python fallback (e.g. `tomllib` → `tomli` → regex line parser in `gen_config_doc.py`).
+- CLI configuration is read exclusively from environment variables with typed defaults (e.g. `MEMORY_GUARD_RSS_MB`, `MEMORY_DB_PATH`) instead of argparse flags.

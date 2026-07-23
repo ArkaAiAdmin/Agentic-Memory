@@ -1,0 +1,5 @@
+- Every cron script wraps its work in `_flock.acquire_lock_or_exit('<unique_job_id>')` before touching any state, ensuring idempotent single-instance execution under crontab.
+- Feature toggles are enabled at import time via `os.environ.setdefault('MEMORY_*', '1')` so the job is a no-op when the corresponding feature flag is disabled.
+- Database path resolution follows the same precedence: explicit CLI arg → `MEMORY_DB_PATH` env → `resolve_active_memory_dir() / 'memory.db'`.
+- Long-running or complex logic is kept in sibling packages; cron files stay thin wrappers that only parse args, acquire locks, call into the implementation, and print a compact summary line.
+- Help-only invocations (`--help` / `-h`) are handled explicitly by printing usage to stderr and exiting 0, keeping the scripts usable as standalone docs.

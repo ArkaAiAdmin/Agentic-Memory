@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: core_runtime/infrastructure_layer/sync_distributed
+title: CRDT Memory Sync Server, Client & Invariant Checker
+scope:
+    - infra/sync_server.py
+    - infra/sync_client.py
+    - infra/sync_invariant.py
+    - infra/sync_check.py
+    - infra/sync_server_daemon.py
+source_files: []
+depends_on: []
+related_to: []

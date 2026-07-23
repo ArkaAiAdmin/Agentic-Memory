@@ -1,0 +1,4 @@
+- Heavy or optional dependencies are imported lazily through `infra._lazy_imports.__getattr__` rather than at module top level, breaking circular imports and avoiding cold-start cost.
+- MCP tools wrap their body with `@with_audit` (innermost) and `@with_memory_connection` to guarantee structured logging, rate limiting, and connection lifecycle management.
+- Backward-compat re-exports use the `_shim.py` pattern: define `__getattr__`/`__dir__` then call `install_shim(__name__, _real)` inside an `if __name__ in sys.modules:` guard.
+- Entry points begin with `import infra._bootstrap_path` to ensure `sys.path` is patched before any project module import.

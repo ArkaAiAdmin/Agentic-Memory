@@ -1,0 +1,39 @@
+schema_version: 1
+module_path: mcp_tools
+title: MCP Tool Surface & Auto-Discovery Runtime
+scope:
+    - mcp_agent.py
+    - mcp_async.py
+    - mcp_audit.py
+    - mcp_auth.py
+    - mcp_common.py
+    - mcp_coordination.py
+    - mcp_crdt.py
+    - mcp_ctr_drift.py
+    - mcp_dashboard.py
+    - mcp_health.py
+    - mcp_instance.py
+    - mcp_kg.py
+    - mcp_kg_traversal.py
+    - mcp_maintenance.py
+    - mcp_maintenance_ops.py
+    - mcp_maintenance_policy_hash.py
+    - mcp_memory.py
+    - mcp_metrics.py
+    - mcp_multi_modal.py
+    - mcp_okf.py
+    - mcp_profile.py
+    - mcp_quality.py
+    - mcp_rebuild.py
+    - mcp_retention.py
+    - mcp_safety.py
+    - mcp_sdk.py
+    - mcp_search.py
+    - mcp_session.py
+    - mcp_sharing.py
+    - mcp_summarization.py
+    - mcp_tools.py
+    - mcp_verbs.py
+source_files: []
+depends_on: []
+related_to: []

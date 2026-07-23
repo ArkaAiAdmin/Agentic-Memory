@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: search_index/indexers_and_rerankers
+title: Search Indexers & Rerankers (ColBERT, SPLADE, Cross-Encoder)
+scope:
+    - search/chunk_index.py
+    - search/colbert_index.py
+    - search/splade_index.py
+    - search/rerankers.py
+    - search/answer_rerank.py
+    - search/colbert_rerank.py
+source_files: []
+depends_on: []
+related_to: []

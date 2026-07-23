@@ -1,0 +1,1 @@
+Run standalone from the repo root: `venv/bin/python cron/cron_<job>.py [--db PATH] [--days N] [--dry-run] [--force] [--once] [--tenant ID]`. Many jobs are also callable programmatically via `memory_maintenance(operation="train_ltr|tune_rewrites|...")`. The embedding recomputer additionally requires `--once` to actually execute.

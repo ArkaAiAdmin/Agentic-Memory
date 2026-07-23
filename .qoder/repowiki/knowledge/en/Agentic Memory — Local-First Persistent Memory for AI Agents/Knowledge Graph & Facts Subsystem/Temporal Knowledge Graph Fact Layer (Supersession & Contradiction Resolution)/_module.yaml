@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: knowledge_graph/facts_temporal
+title: Temporal Knowledge Graph Fact Layer (Supersession & Contradiction Resolution)
+scope:
+    - fact/
+source_files: []
+depends_on: []
+related_to: []

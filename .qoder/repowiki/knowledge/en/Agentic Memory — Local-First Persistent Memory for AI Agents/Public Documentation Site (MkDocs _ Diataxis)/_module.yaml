@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: docs_site
+title: Public Documentation Site (MkDocs / Diataxis)
+scope:
+    - docs/
+source_files: []
+depends_on: []
+related_to: []

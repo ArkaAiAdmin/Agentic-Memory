@@ -1,0 +1,2 @@
+- Backward-compat shims delegate all attribute lookup to a sibling `infra.<name>` module using a `__getattr__` + `__dir__` pair rather than explicit re-exports.
+- Shims guard their delegation behind an `if __name__ in sys.modules:` block so they only install runtime hooks when executed directly.

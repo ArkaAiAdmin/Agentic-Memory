@@ -1,0 +1,2 @@
+- Each shim follows an identical template: comment header declaring the real location, import of `sys`/`types`/`infra.<name>`, a module-level `__getattr__`/`__dir__`, a `_ShimModule` class forwarding attribute ops, and runtime replacement of `sys.modules[__name__].__class__` with `_ShimModule`.
+- The `_real` attribute on `_ShimModule` is treated as protected — `__setattr__` whitelists only `_real` and `__class__`, and `__delattr__` raises `AttributeError` when deleting `_real`.

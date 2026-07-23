@@ -1,0 +1,17 @@
+schema_version: 1
+module_path: mcp_tools/maintenance_admin
+title: Maintenance & Admin MCP Tools
+scope:
+    - mcp_maintenance.py
+    - mcp_maintenance_ops.py
+    - mcp_maintenance_policy_hash.py
+    - mcp_rebuild.py
+    - mcp_retention.py
+    - mcp_instance.py
+    - mcp_dashboard.py
+    - mcp_metrics.py
+    - mcp_health.py
+source_files: []
+depends_on: []
+related_to:
+    - path: mcp_tools/core_runtime

@@ -1,0 +1,1 @@
+Material for MkDocs documentation site authored in Markdown, organized by the Diataxis framework and augmented with a build hook that symlinks docker/README.md into the docs tree.

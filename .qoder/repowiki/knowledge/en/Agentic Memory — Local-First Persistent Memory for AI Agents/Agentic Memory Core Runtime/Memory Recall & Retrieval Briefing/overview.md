@@ -1,0 +1,1 @@
+Assembles a structured, bounded recall briefing from multiple memory sources (pinned, recent, important, relevant) for agent cold-start and session continuity.

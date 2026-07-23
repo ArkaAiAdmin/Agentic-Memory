@@ -1,0 +1,5 @@
+- Every exported function is decorated with `@mcp.tool()` followed by `@with_audit("<tool_name>")`, so each call is both registered as an MCP tool and audited under a stable name.
+- Errors are returned as strings via `_err(ErrorCode.<CODE>, message)` rather than raising exceptions; callers never catch raised exceptions from these tools.
+- Optional subsystems (RBAC authorizer, coordination hooks, auto-save daemon state, user profile) are imported lazily inside the handler body and wrapped in try/except ImportError or broad except blocks so the tool degrades gracefully when the feature is absent.
+- DB-backed operations acquire a per-database lock via `infra.db_path_flock.db_path_flock(db_path)` around the critical section before mutating `memory.db`.
+- After any mutation that affects search/index/cache, handlers call `invalidate_cache_for_note(note_id)` or fall back to `_search_cache.clear()` inside a try/except that logs a warning instead of failing the tool.

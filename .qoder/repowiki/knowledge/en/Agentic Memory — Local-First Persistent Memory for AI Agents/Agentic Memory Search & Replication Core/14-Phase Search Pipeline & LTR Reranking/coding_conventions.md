@@ -1,0 +1,6 @@
+- Each phase file exposes exactly one top-level public function (e.g. `resolve_candidate_contradictions`, `extract_and_aggregate_quantities`, `calculate_temporal_delta`, `extract_entity_attribute`) and keeps internals private under `_` prefix.
+- All database access goes through the injected `AnyConnection` protocol (imported under `TYPE_CHECKING`) rather than direct sqlite3 usage, keeping phases DB-agnostic at import time.
+- External heavy dependencies (LightGBM, embedding search, SPLADE encoder, adaptive retention) are imported lazily inside functions so the pipeline can run without them installed; missing backends degrade gracefully instead of raising.
+- Every phase wraps its body in try/except and logs at debug/warning level while returning the original input unchanged on failure, making each phase a best-effort quality optimization rather than a hard precondition.
+- LTR features are extracted into a fixed-order dict keyed by `feature_names()` and materialized as a NumPy float32 matrix before calling `model.predict`, ensuring stable column alignment across runs.
+- Batch SQL operations use parameterized placeholders built from `len(ids)` lists and `executemany` inserts (CTR feedback, search interaction, adaptive retention) instead of per-row queries.

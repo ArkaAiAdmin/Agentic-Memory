@@ -1,0 +1,1 @@
+Local inference via `transformers` (`AutoModelForCausalLM`, `AutoTokenizer`) with `torch.float16` on MPS/CPU; default model `Qwen/Qwen2.5-1.5B-Instruct`. Provider abstraction layer (`fact.llm_providers`) supports Ollama, llama.cpp, and HuggingFace backends. Prompt-driven JSON extraction with regex-based repair heuristics.

@@ -1,0 +1,5 @@
+- Schema helpers are idempotent safety nets: every DDL uses `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` and column additions are guarded by `PRAGMA table_info(...)` existence checks before `ALTER TABLE ADD COLUMN`.
+- Cross-process write serialisation is applied uniformly by wrapping critical sections with `db_path_flock(db_path)` rather than relying solely on SQLite busy_timeout; the wrapper is enabled by default and opt-out is via `MEMORY_DB_FLOCK=0`.
+- Tenant isolation is implemented per-connection by registering a `tenant_id()` scalar function and creating a `tenant_memories` temp view, so existing queries need no rewrite.
+- Long-running operations use explicit transaction boundaries (`BEGIN IMMEDIATE` / `conn.commit()` / `conn.rollback()`) wrapped in try/except/finally blocks that always return the connection to the pool or close it, never raising out of `safe_close_db`.
+- Migration state is fast-gated by reading `schema_version.version >= SCHEMA_VERSION` instead of caching a Python-side set keyed by `id(conn)`, avoiding the recycled-id bug noted in the code comments.

@@ -1,0 +1,3 @@
+- Public entry points return `Optional[...]` and log warnings instead of raising when the shared-memory segment is missing or corrupted, letting callers fall back to the DB audit log.
+- Lazy imports of heavy dependencies (`multiprocessing.shared_memory`, `infra.config`) are done inside functions rather than at module top, keeping the package importable in minimal environments.
+- Module-level configuration constants (`MAGIC`, `VERSION`, `SIZE`, `DEFAULT_NAME`, `PROJECT_ROOT_MARKERS`, `GLOBAL_MEM_DIR`) are defined once and exported via `__all__` so consumers never hard-code values.

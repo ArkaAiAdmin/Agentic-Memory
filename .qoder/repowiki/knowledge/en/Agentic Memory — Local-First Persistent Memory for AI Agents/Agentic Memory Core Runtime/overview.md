@@ -1,0 +1,1 @@
+Wires the save pipeline, recall retrieval, and belief lifecycle on top of a shared infrastructure layer so write paths persist memories and read paths assemble bounded briefings.

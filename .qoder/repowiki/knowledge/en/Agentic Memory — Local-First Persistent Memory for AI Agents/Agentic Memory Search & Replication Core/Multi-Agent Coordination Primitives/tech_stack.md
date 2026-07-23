@@ -1,0 +1,1 @@
+Pure Python with `sqlite3` as the persistence layer; WAL journal mode enabled on every connection; no external coordination service — fencing tokens and heartbeats provide crash-safety over a single-file database.

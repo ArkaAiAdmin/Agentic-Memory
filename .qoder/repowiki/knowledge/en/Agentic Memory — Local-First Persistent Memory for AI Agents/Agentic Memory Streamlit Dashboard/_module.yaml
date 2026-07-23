@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: dashboard_ui
+title: Agentic Memory Streamlit Dashboard
+scope:
+    - dashboard/
+source_files: []
+depends_on: []
+related_to: []

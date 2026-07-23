@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: cli_entrypoints/infra_shared
+title: Legacy CLI Entrypoint Shims
+scope:
+    - config.py
+    - infrastructure.py
+    - frontmatter.py
+source_files: []
+depends_on: []
+related_to: []

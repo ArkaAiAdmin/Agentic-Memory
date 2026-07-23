@@ -1,0 +1,1 @@
+Python `multiprocessing.shared_memory` (falls back to `/tmp` on macOS) backed by a hand-packed `<IId...` struct layout with XOR checksum; scope resolution reads TOML via `infra.config._read_toml`.

@@ -1,0 +1,1 @@
+Backward-compatibility shim modules that re-export the real concurrency primitives (cache, distributed lock, file lock) from infra.* so legacy import paths continue to resolve.

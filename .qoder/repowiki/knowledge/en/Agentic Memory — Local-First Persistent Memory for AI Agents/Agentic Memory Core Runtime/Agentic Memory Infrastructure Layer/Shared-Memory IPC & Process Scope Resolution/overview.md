@@ -1,0 +1,1 @@
+Provides a fixed-layout shared-memory segment for lock-free daemon/CLI state sharing and an execution-scope resolver that drives config-drift policy enforcement.

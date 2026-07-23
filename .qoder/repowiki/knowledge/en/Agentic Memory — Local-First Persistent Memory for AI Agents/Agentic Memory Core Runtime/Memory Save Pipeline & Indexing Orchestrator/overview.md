@@ -1,0 +1,1 @@
+Orchestrates persistence of memories into SQLite (memories, backlinks, chunks, embeddings, KG) and runs post-save indexing hooks, with optional CRDT versioning and background task deferral.

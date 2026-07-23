@@ -1,0 +1,6 @@
+- Feature flags and thresholds are resolved lazily via `make_lazy_getattr` from `infra.memory_common`, accessing them through `sys.modules[__name__].X` inside functions rather than bare names, to avoid import-time dependency on config.
+- Configuration values follow a three-level precedence: `MEMORY_*` environment variable overrides TOML values which override dataclass defaults, all funneled through a shared `_resolve()` helper with type-specific parsers.
+- Best-effort error handling: database and filesystem operations wrap side effects in try/except that log warnings and continue, never raising — rollback and undo paths collect errors but never abort the caller.
+- SQLite interactions use `ensure_*_table` idempotent schema setup followed by parameterized queries, with deferred commits guarded by `_is_saga_deferred` to support transactional rollback.
+- Public APIs are declared via `__all__` lists and modules use `from __future__ import annotations` for forward-reference safety.
+- Thread safety is achieved via `threading.Lock` on shared mutable registries (RATE_LIMITERS, _deferred_state.conns) rather than global state mutation.

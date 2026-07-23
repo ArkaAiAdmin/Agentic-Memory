@@ -1,0 +1,6 @@
+- Each script sets `os.chdir(repo_root)` and prepends the parent directory on `sys.path` so imports resolve regardless of CWD when invoked from crontab.
+- Database path resolution always starts from `os.environ.get('MEMORY_DB_PATH')` before falling back to `resolve_active_memory_dir() / 'memory.db'`.
+- Concurrent-run protection is achieved by calling `_flock.acquire_lock_or_exit("cron_<script_name>")` at the top of `main()`.
+- Structured observability uses a local `_log_structured(level, event, **fields)` helper that emits a single JSON line via the configured logger.
+- Long-running sub-checks are wrapped in a SIGALRM-based `_with_timeout(seconds, fn)` decorator so a hung check degrades to a `critical` status instead of blocking the whole job.
+- Critical findings trigger both a human-readable alert string appended to `report['alerts']` and a call into `from infra.alert import alert(...)`.

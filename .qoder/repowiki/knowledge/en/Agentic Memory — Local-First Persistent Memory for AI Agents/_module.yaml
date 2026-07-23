@@ -1,0 +1,45 @@
+schema_version: 1
+module_path: ""
+title: Agentic Memory — Local-First Persistent Memory for AI Agents
+scope:
+    - README.md
+    - CONTRIBUTING.md
+    - .gitignore
+    - pyproject.toml
+    - setup.py
+    - requirements.txt
+    - Dockerfile
+    - docker-compose.yml
+    - Makefile
+    - mkdocs.yml
+    - ruff.toml
+    - setup.cfg
+    - _bootstrap_path.py
+    - _lazy_imports.py
+    - sitecustomize.py
+    - .dockerignore
+    - .gitattributes
+    - .mutmut
+    - .pre-commit-config.yaml
+    - AGENTS.md
+    - AGENT_CONTRACT.md
+    - AUDIT_REPORT_2026.md
+    - AUDIT_TASK_TRACKER.md
+    - AUDIT_VERIFICATION_2026-07-16.md
+    - CHANGELOG.md
+    - CITATION.cff
+    - CRDT_ALIGNMENT_AUDIT.md
+    - HARDENING_PLAN.md
+    - IMPLEMENTATION_PLAN.md
+    - LICENSE
+    - SDK_PLAN.md
+    - SECURITY.md
+    - WORKTREE_SUMMARY.md
+    - agent_context.py
+    - agent_init.py
+    - arc_cache.py
+    - audit.py
+    - mdns_discovery.py
+source_files: []
+depends_on: []
+related_to: []

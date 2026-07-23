@@ -1,0 +1,5 @@
+Three shim scripts at the repository root exist solely for import/exec compatibility after code was moved into sub-packages:
+- `backfill_all.py` delegates all attribute access to `backfill.orchestrator` via a custom `_ShimModule` class plus module-level `__getattr__`/`__dir__`, and when run as `__main__` forwards `sys.argv[0]` + `runpy.run_path` to `backfill/orchestrator.py`.
+- `backfill_orphans.py` mirrors the same pattern, forwarding to `backfill/backfill_orphans.py`.
+- `embedding_incremental.py` is a no-op stub that emits a `DeprecationWarning` pointing callers to `search/scoring.py` (the new Temporal SSM implementation) instead of importing anything.
+The dependency direction is one-way: these files depend on the relocated implementations; nothing in `backfill/` or `search/` depends back on them. They are not part of any package — they live loose at the workspace root so legacy import paths (`import backfill_all`, `import backfill_orphans`, `import embedding_incremental`) continue to resolve.

@@ -1,0 +1,1 @@
+Implements temporal KG semantics for the fact store: contradiction detection, supersession chains, entity-scoped propagation, stale-fact invalidation, and time-aware queries over kg_facts.

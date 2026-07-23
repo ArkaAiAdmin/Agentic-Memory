@@ -1,0 +1,1 @@
+Standalone cron entry points that periodically maintain the knowledge graph, detect drift, extract skills, reconcile contradictions, and sync peers against the SQLite memory database.

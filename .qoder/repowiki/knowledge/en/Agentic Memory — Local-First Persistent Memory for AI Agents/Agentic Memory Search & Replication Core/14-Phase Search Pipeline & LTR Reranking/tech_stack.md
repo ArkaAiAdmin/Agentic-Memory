@@ -1,0 +1,1 @@
+SQLite FTS5 for keyword search, an externally-provided embedding search backend (via `infra._lazy_imports.get_embedding_search`) for dense retrieval, SPLADE sparse expansion (`infra.splade_encoder`), reciprocal rank fusion for hybrid scoring, and a LightGBM LambdaMART model loaded from `models/ltr/model.txt` for the final LTR rerank.

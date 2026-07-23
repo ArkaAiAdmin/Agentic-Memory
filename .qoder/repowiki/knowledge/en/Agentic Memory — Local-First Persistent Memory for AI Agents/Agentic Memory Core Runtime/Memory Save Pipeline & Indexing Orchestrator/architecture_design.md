@@ -1,0 +1,11 @@
+The package is a decomposition of the former monolithic `save_pipeline.py` into focused submodules that are re-exported through two shim layers for backward compatibility:
+
+- `pipeline.py` — the canonical implementation file. It owns the top-level entry points (`save_memory`, `save_memory_journal`, `upsert_row`, `memory_supersede_db`, `reinforce_memories_db`, `patch_memory`, `revert_supersede`) plus the shared orchestration function `_update_memory_index_incremental`. This file also centralizes schema feature detection via `_detect_schema_features` backed by a per-process `_pragma_cache` keyed on `db_path`, and manages flock-based concurrency (`_acquire_lock`) over `.rebuild.lock`.
+- `indexers.py` — thin try/except wrappers around per-signal indexers: wiki-link backlinks, QW5 chunking, embedding cache, ColBERT/SPLADE sparse vectors, knowledge-graph entity/edge extraction, adaptive retention.
+- `backlinks.py` — auto-backlink generators: FTS5 content-overlap, embedding-space semantic edges in `kg_edges`, and multi-part series linking.
+- `post_save_hooks.py` — fitness-score recalculation, contextual enrichment, and background-task enqueueing.
+- `crdt_helpers.py` — legacy note-level CRDT bookkeeping helpers (`_crdt_agent_id`, `_is_crdt_enabled`, `_crdt_bump_version`) kept for v13 compat; the real source of truth is the per-field CRDT in `crdt_field.py`.
+- `cleanup.py` / `session_end_extractor.py` / `decision_extraction.py` — ancillary utilities invoked from the pipeline or cron paths.
+- `__init__.py` — lazy-loading shim using PEP 562 `__getattr__` plus a `_LAZY_SAVE_NAMES` registry so callers can do `from save import _index_chunks` without importing the heavy pipeline module.
+
+Dependency direction is one-way: submodules depend only on `infra.*`, `search_pipeline`, `knowledge_graph`, `background.background_queue`, and each other through the shims; nothing inside this package imports back into `save_pipeline.py` except the `__init__` re-exports. Optional dependencies (`infra.saga`, `config.get_config`, `crdt.crdt_merge`, `agent_context`) are guarded by try/except ImportError blocks tagged `FLAVOR_A` so the package loads even when those features are disabled.

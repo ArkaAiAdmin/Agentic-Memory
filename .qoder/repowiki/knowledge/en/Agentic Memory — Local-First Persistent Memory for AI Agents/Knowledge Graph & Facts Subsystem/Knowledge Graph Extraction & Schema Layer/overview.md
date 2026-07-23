@@ -1,0 +1,1 @@
+SQLite-backed knowledge graph that extracts entities and relations from memory notes via regex (with optional spaCy/LLM augmentation) and persists them as typed nodes and weighted edges.

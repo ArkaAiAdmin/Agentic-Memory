@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: cli_entrypoints/search_index
+title: Search Index Backward-Compatibility Shims
+scope:
+    - embedding_search.py
+    - fts.py
+    - embedding_recompute.py
+source_files: []
+depends_on: []
+related_to: []

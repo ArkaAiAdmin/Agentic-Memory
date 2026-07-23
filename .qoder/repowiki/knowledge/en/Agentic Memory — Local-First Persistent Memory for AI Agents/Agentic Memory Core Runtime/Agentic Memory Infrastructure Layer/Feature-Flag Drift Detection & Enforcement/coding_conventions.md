@@ -1,0 +1,5 @@
+- Every public data shape is a frozen dataclass with a `to_dict`/`to_jsonl` serializer that converts enums to `.value` strings before JSON emission.
+- Mutable global state (_active_policy, _active_hatch, _history, _FLAG_TIERS) is guarded by module-level locks or lazy-initialization flags and exposed via explicit reset helpers for tests.
+- External dependencies (toml parsing, TOML watching, scope resolution, atomic write) are imported lazily inside functions to keep import-time side effects optional and testable.
+- All user-facing errors are custom typed exceptions (`DriftEnforcementError`, `TierPatchResult.rejected`) carrying structured fields rather than plain strings.
+- Audit events are emitted through `append_audit_event` with a consistent schema (`timestamp`, `scope`, `decision`, `tier`, `flag`, `mode`, `policy_hash`) instead of ad-hoc logging.

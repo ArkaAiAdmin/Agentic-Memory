@@ -1,0 +1,1 @@
+SQLite-backed primitives for multi-agent coordination: fenced file locking, inter-agent messaging with dead-letter queues, per-project key-value state, and crash-recovery durability.

@@ -1,0 +1,2 @@
+- Every shim follows an identical template: import `types`, define a `_ShimModule(types.ModuleType)` that proxies `__getattr__`/`__setattr__`/`__delattr__`/`__dir__` to a `_real` attribute, then swap the current module's class and attach `_real` via `object.__setattr__`.
+- Public API exposure goes through module-level `__getattr__` and `__dir__` functions rather than explicit re-exports, keeping the shim body minimal and immune to future additions in the target package.

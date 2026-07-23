@@ -1,0 +1,1 @@
+Material for MkDocs (`mkdocs` + `mkdocs-material` + `pymdownx.*` plugins), invoked via `mkdocs serve` / `mkdocs build --clean` / `mkdocs gh-deploy`; Docker extras installed through the package's `[docs]` extra.
