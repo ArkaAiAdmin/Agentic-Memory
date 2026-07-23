@@ -142,9 +142,21 @@ export class MemoryBridgeClient {
       }
     }, 50);
 
-    // MCP handshake
-    await this.initialize();
-    this._started = true;
+    // MCP handshake with timeout
+    try {
+      await Promise.race([
+        this.initialize(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("MCP handshake timed out")), 10_000),
+        ),
+      ]);
+      this._started = true;
+    } catch (err) {
+      console.error("[MemoryBridge] Failed to initialize:", err);
+      this._started = false;
+      if (this.pollHandle) clearInterval(this.pollHandle);
+      throw err;
+    }
   }
 
   /**

@@ -43,6 +43,29 @@ export function useAgent() {
     async (content: string) => {
       if (isStreaming) return;
 
+      // Try to initialize if not already done
+      if (!agentService.isInitialized) {
+        try {
+          await agentService.initialize();
+        } catch (err) {
+          const userMsg: ChatMessage = {
+            id: nanoid(),
+            role: "user",
+            content,
+            timestamp: Date.now(),
+          };
+          addChatMessage(userMsg);
+          const assistantId = nanoid();
+          addChatMessage({
+            id: assistantId,
+            role: "assistant",
+            content: `Failed to initialize agent: ${err instanceof Error ? err.message : String(err)}`,
+            timestamp: Date.now(),
+          });
+          return;
+        }
+      }
+
       // Add user message
       const userMsg: ChatMessage = {
         id: nanoid(),
