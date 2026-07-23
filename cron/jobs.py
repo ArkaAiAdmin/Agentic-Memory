@@ -354,6 +354,21 @@ JOBS: dict[str, dict] = {
         "args": ["--task-type", "cron_train_temporal_ssm"],
         "timeout": 60,
     },
+    # ── Weekly orphans (INFRASTRUCTURE_AUDIT G2 — registered in code, never scheduled) ──
+    "answer_rerank": {
+        "freq": "1w",
+        "dow": 0,
+        "offset_min": 390,
+        "script": "cron/cron_answer_rerank.py",
+        "timeout": 600,
+    },
+    "recompute_temporal_priors": {
+        "freq": "1w",
+        "dow": 0,
+        "offset_min": 375,
+        "script": "cron/cron_recompute_temporal_priors.py",
+        "timeout": 120,
+    },
     "semantic_clusters": {
         "freq": "1w",
         "dow": 0,
@@ -389,6 +404,13 @@ JOBS: dict[str, dict] = {
         "script": "cron/enqueue_task.py",
         "args": ["--task-type", "cron_cross_session_learn"],
         "timeout": 300,
+    },
+    "tune_rewrites": {
+        "freq": "1w",
+        "dow": 1,
+        "offset_min": 315,
+        "script": "cron/cron_tune_rewrites.py",
+        "timeout": 600,
     },
     "quality_filter": {
         "freq": "1w",
@@ -464,5 +486,11 @@ JOBS: dict[str, dict] = {
         "script": "cron/enqueue_task.py",
         "args": ["--task-type", "cron_train_ltr"],
         "timeout": 60,
+    },
+    "review_beliefs": {
+        "freq": "1d",
+        "offset_min": 420,
+        "script": "cron/cron_review_beliefs.py",
+        "timeout": 300,
     },
 }
