@@ -374,9 +374,10 @@ class EmbeddingSearch:
 
     def _load_model(self, config=None) -> None:
         # C1 fix: resolve local_files_only from env.  When set, all HF calls
-        # use local cache only — no network.  First attempt always tries
-        # local-only; on OSError/ValueError (model not cached) we retry
-        # without the flag so the model downloads.
+        # use local cache only — no network.  Local cache is always tried
+        # first regardless; on OSError/ValueError (model not cached) we
+        # retry without the flag so the model downloads, unless local_only
+        # is True (pytest or HF_HUB_OFFLINE) in which case we fail fast.
         _local_only = os.environ.get("HF_HUB_OFFLINE") == "1" or "PYTEST_CURRENT_TEST" in os.environ
         backend = "auto"
         try:
@@ -503,35 +504,38 @@ class EmbeddingSearch:
     def _snapshot_download_with_fallback(self, model_id, revision, local_only):
         """Try local_files_only first; fall back to network download."""
         from huggingface_hub import snapshot_download
-        if local_only:
-            try:
-                return snapshot_download(
-                    repo_id=model_id, revision=revision, local_files_only=True,
-                )
-            except (OSError, ValueError):
-                logger.info("Model %s not in local cache, downloading...", model_id)
+        try:
+            return snapshot_download(
+                repo_id=model_id, revision=revision, local_files_only=True,
+            )
+        except (OSError, ValueError):
+            if local_only:
+                raise
+            logger.info("Model %s not in local cache, downloading...", model_id)
         return snapshot_download(repo_id=model_id, revision=revision)
 
     def _load_sentence_transformer_with_fallback(self, model_id, st_kwargs, local_only):
         """Try local_files_only first; fall back to network download."""
         from sentence_transformers import SentenceTransformer
-        if local_only:
-            try:
-                return SentenceTransformer(model_id, local_files_only=True, **st_kwargs)
-            except (OSError, ValueError):
-                logger.info("SentenceTransformer %s not in local cache, downloading...", model_id)
+        try:
+            return SentenceTransformer(model_id, local_files_only=True, **st_kwargs)
+        except (OSError, ValueError):
+            if local_only:
+                raise
+            logger.info("SentenceTransformer %s not in local cache, downloading...", model_id)
         return SentenceTransformer(model_id, **st_kwargs)
 
     def _load_transformers_with_fallback(self, model_id, model_kwargs, local_only):
         """Try local_files_only first; fall back to network download. Returns (tokenizer, model)."""
         from transformers import AutoTokenizer, AutoModel
-        if local_only:
-            try:
-                tok = AutoTokenizer.from_pretrained(model_id, local_files_only=True, **model_kwargs)
-                mdl = AutoModel.from_pretrained(model_id, local_files_only=True, **model_kwargs)
-                return tok, mdl
-            except (OSError, ValueError):
-                logger.info("Transformers model %s not in local cache, downloading...", model_id)
+        try:
+            tok = AutoTokenizer.from_pretrained(model_id, local_files_only=True, **model_kwargs)
+            mdl = AutoModel.from_pretrained(model_id, local_files_only=True, **model_kwargs)
+            return tok, mdl
+        except (OSError, ValueError):
+            if local_only:
+                raise
+            logger.info("Transformers model %s not in local cache, downloading...", model_id)
         tok = AutoTokenizer.from_pretrained(model_id, **model_kwargs)
         mdl = AutoModel.from_pretrained(model_id, **model_kwargs)
         return tok, mdl
