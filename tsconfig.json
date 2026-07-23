@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "paths": {
+      "@ami/shared": ["./packages/shared/src"],
+      "@ami/memory-bridge": ["./packages/memory-bridge/src"],
+      "@ami/llm": ["./packages/llm/src"],
+      "@ami/core": ["./packages/core/src"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "target"]
+}

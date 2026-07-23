@@ -1,0 +1,23 @@
+{
+  "name": "agentic-memory-ide",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Memory-First Agent IDE — agentic-memory is the kernel",
+  "scripts": {
+    "dev": "pnpm --filter @ami/desktop dev",
+    "build": "pnpm --filter @ami/desktop build",
+    "preview": "pnpm --filter @ami/desktop preview",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test && cargo test --workspace",
+    "clean": "pnpm -r clean"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.11.0",
+    "vitest": "^4.1.10"
+  }
+}
