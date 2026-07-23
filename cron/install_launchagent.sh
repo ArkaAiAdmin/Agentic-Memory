@@ -34,21 +34,32 @@ PLIST_NAME="com.agentic-memory.background-worker.plist"
 PLIST_SRC="$SCRIPT_DIR/$PLIST_NAME.in"
 PLIST_DST="$HOME/Library/LaunchAgents/$PLIST_NAME"
 
+# Read the sync token from memory.toml [api] token so worker subprocesses
+# can authenticate against the sync-opencode / sync-mimocode servers.
+SYNC_TOKEN="$(sed -n 's/^token *= *"\(.*\)"/\1/p' "$ROOT/memory.toml" | head -1)"
+if [ -z "$SYNC_TOKEN" ]; then
+    echo "WARNING: could not read token from $ROOT/memory.toml" >&2
+    echo "         Worker subprocesses will fail to authenticate against sync servers." >&2
+    SYNC_TOKEN="__UNSET__"
+fi
+
 # Serialize a path for safe embedding inside the plist XML.
 xml_escape() {
     printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
 render_plist() {
-    local venv_xml db_xml log_xml root_xml
+    local venv_xml db_xml log_xml root_xml token_xml
     venv_xml="$(xml_escape "$VENV_PY")"
     db_xml="$(xml_escape "$DB_PATH")"
     log_xml="$(xml_escape "$LOG_DIR")"
     root_xml="$(xml_escape "$ROOT")"
+    token_xml="$(xml_escape "$SYNC_TOKEN")"
     sed -e "s|__VENV_PY__|$venv_xml|g" \
         -e "s|__DB_PATH__|$db_xml|g" \
         -e "s|__LOG_DIR__|$log_xml|g" \
         -e "s|__ROOT__|$root_xml|g" \
+        -e "s|__SYNC_TOKEN__|$token_xml|g" \
         "$PLIST_SRC"
 }
 
