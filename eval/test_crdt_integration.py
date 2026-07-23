@@ -121,6 +121,10 @@ class TestCrdtBumpVersionNewNote(unittest.TestCase):
             (self.note_id,),
         )
         self.conn.commit()
+        # _crdt_bump_version reads/writes via the tenant_memories temp view
+        # (normally created by open_db). Create it here for the raw connection.
+        from infra.db import _setup_tenant_view
+        _setup_tenant_view(self.conn, "default")
         self.cols = {
             row[1]
             for row in self.conn.execute("PRAGMA table_info(memories)").fetchall()

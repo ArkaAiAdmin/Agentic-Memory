@@ -734,7 +734,7 @@ def get_ctr_weights(db_path: Any) -> Optional[dict[str, float]]:
         try:
             # L6 fix: use PRAGMA table_info instead of full sqlite_master scan
             _has_ctr = db.execute(
-                "SELECT 1 FROM PRAGMA table_info('memory_ctr_feedback') LIMIT 1"
+                "PRAGMA table_info('memory_ctr_feedback')"
             ).fetchone()
             if not _has_ctr:
                 with _CTR_WEIGHTS_CACHE_LOCK:

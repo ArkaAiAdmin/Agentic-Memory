@@ -252,7 +252,7 @@ class TestCronCrdtSyncBehavior(unittest.TestCase):
             )
             # cron_crdt_sync returns 1 when DB is missing, not sys.exit(1)
             self.assertEqual(result.returncode, 1)
-            self.assertIn("memory.db not found", result.stdout)
+            self.assertIn("memory.db not found", result.stdout + result.stderr)
 
     def test_no_peers_exits_0(self):
         """With no sync peers configured, exits 0 and prints a helpful message."""
@@ -277,7 +277,7 @@ class TestCronCrdtSyncBehavior(unittest.TestCase):
                 timeout=30,
             )
             self.assertEqual(result.returncode, 0)
-            self.assertIn("No sync peers", result.stdout)
+            self.assertIn("No sync peers", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

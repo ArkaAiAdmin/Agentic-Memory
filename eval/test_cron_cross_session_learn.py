@@ -11,6 +11,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
@@ -29,6 +30,8 @@ class TestCronCrossSessionLearn(unittest.TestCase):
         old_python = os.environ.get("MEMORY_PYTHON")
         os.environ["MEMORY_PYTHON"] = "/nonexistent/python"
         importlib.reload(cron_cross_session_learn)
+        # Patch acquire_lock_or_exit AFTER reload (reload re-imports it)
+        cron_cross_session_learn.acquire_lock_or_exit = lambda *a, **kw: None
         try:
             result = cron_cross_session_learn.main()
             self.assertNotEqual(result, 0)

@@ -75,19 +75,21 @@ class TestMainColdStart(unittest.TestCase):
         import shutil
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
+    @mock.patch("cron.cron_train_forget_model.acquire_lock_or_exit")
     @mock.patch("cron.cron_train_forget_model._db_path")
     @mock.patch("pathlib.Path.exists", return_value=False)
-    def test_no_db_returns_zero(self, mock_exists, mock_path):
+    def test_no_db_returns_zero(self, mock_exists, mock_path, mock_flock):
         mock_path.return_value = self.db_path
         from cron.cron_train_forget_model import main
 
         rc = main()
         self.assertEqual(rc, 0)
 
+    @mock.patch("cron.cron_train_forget_model.acquire_lock_or_exit")
     @mock.patch("cron.cron_train_forget_model._load_examples", return_value=[])
     @mock.patch("cron.cron_train_forget_model._db_path")
     @mock.patch("pathlib.Path.exists", return_value=True)
-    def test_cold_start_returns_zero(self, mock_exists, mock_path, mock_load):
+    def test_cold_start_returns_zero(self, mock_exists, mock_path, mock_load, mock_flock):
         mock_path.return_value = self.db_path
         from cron.cron_train_forget_model import main
 
@@ -113,9 +115,10 @@ class TestMainFullRun(unittest.TestCase):
     def _make_example(self, label=1.0):
         return (np.array([0.5, 0.3, 0.6, 0.7, 0.1], dtype=float), label)
 
+    @mock.patch("cron.cron_train_forget_model.acquire_lock_or_exit")
     @mock.patch("cron.cron_train_forget_model._db_path")
     @mock.patch("cron.cron_train_forget_model.logger")
-    def test_main_writes_weights_to_config(self, mock_logger, mock_db_path):
+    def test_main_writes_weights_to_config(self, mock_logger, mock_db_path, mock_flock):
         mock_db_path.return_value = self.db_path
         examples = [self._make_example(1.0) for _ in range(self._MIN)]
         with (

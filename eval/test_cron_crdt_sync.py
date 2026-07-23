@@ -12,6 +12,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # 2026-06-29 fix: resolve from the test file location, not the user's home
 # dir. On CI runners the ~/.config/agentic-memory install dir does not exist.
@@ -25,7 +26,8 @@ class TestCronCrdtSyncImports(unittest.TestCase):
 
         self.assertTrue(hasattr(cron_crdt_sync, "main"))
 
-    def test_main_returns_1_when_no_db(self):
+    @mock.patch("cron_crdt_sync.acquire_lock_or_exit")
+    def test_main_returns_1_when_no_db(self, mock_flock):
         from cron_crdt_sync import main
 
         old_env = os.environ.get("MEMORY_DB_PATH")

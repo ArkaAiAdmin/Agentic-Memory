@@ -139,6 +139,22 @@ def _ami_patched_connect(*args, **kwargs):
                 "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
                 "SELECT * FROM memories WHERE tenant_id = tenant_id()"
             )
+            # Add INSTEAD OF trigger so writes through the view work
+            # (SQLite views are not directly writable).
+            from infra.db import _MEMORIES_COLUMNS
+            cols = ", ".join(f"NEW.{c}" for c in _MEMORIES_COLUMNS)
+            col_list = ", ".join(_MEMORIES_COLUMNS)
+            try:
+                conn.execute("DROP TRIGGER IF EXISTS _tenant_memories_update")
+                conn.execute(
+                    f"CREATE TEMP TRIGGER _tenant_memories_update "
+                    f"INSTEAD OF UPDATE ON tenant_memories BEGIN "
+                    f"UPDATE memories SET "
+                    f"({col_list}) = (SELECT {cols}) "
+                    f"WHERE id = OLD.id; END"
+                )
+            except Exception:
+                pass
     except Exception:
         pass
     return conn

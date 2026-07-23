@@ -37,6 +37,48 @@ from infra.db_write_queue import ProxyConnection
 
 AnyConnection = Union[sqlite3.Connection, ProxyConnection]
 
+# Column list for the memories table (used by the INSTEAD OF UPDATE trigger
+# on the tenant_memories view).  Kept in sync with the migration schema.
+_MEMORIES_COLUMNS = (
+    "id", "content", "source_file", "tags", "created_at", "updated_at",
+    "observed_at", "pinned", "importance", "decay", "score", "supersedes",
+    "repo_id", "access_count", "success_score", "fitness_score",
+    "conflict_policy", "version_vector", "logical_clock",
+    "consolidation_state", "tenant_id", "valid_from", "valid_to",
+    "superseded_by", "last_accessed", "deleted_at", "deleted_by",
+    "context_prefix", "category", "tier", "importance_score", "metadata",
+    "data_subject_sub",
+)
+
+
+def _setup_tenant_view(conn: sqlite3.Connection, tenant_id: str) -> None:
+    """Register tenant_id() UDF and create the tenant_memories view.
+
+    Creates an INSTEAD OF UPDATE trigger so that helpers like
+    ``_crdt_bump_version`` and ``_enrich_context`` can write through
+    the view transparently (SQLite views are not directly writable).
+    """
+    try:
+        conn.create_function("tenant_id", 0, lambda: tenant_id)
+        conn.execute("DROP VIEW IF EXISTS tenant_memories")
+        conn.execute(
+            "CREATE TEMP VIEW tenant_memories AS "
+            "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+        )
+        # INSTEAD OF UPDATE trigger: redirect writes to the base table.
+        cols = ", ".join(f"NEW.{c}" for c in _MEMORIES_COLUMNS)
+        col_list = ", ".join(_MEMORIES_COLUMNS)
+        conn.execute(f"DROP TRIGGER IF EXISTS _tenant_memories_update")
+        conn.execute(
+            f"CREATE TEMP TRIGGER _tenant_memories_update "
+            f"INSTEAD OF UPDATE ON tenant_memories BEGIN "
+            f"UPDATE memories SET "
+            f"({col_list}) = (SELECT {cols}) "
+            f"WHERE id = OLD.id; END"
+        )
+    except Exception:
+        pass
+
 __all__ = [
     "connection_pool",
     "safe_close_db",
@@ -355,15 +397,7 @@ class _ConnectionPool:
                         # that relied on a previous tenant setting.
                         if tenant_id is not None:
                             t_id = tenant_id
-                            try:
-                                conn.create_function("tenant_id", 0, lambda: t_id)
-                                conn.execute("DROP VIEW IF EXISTS tenant_memories")
-                                conn.execute(
-                                    "CREATE TEMP VIEW tenant_memories AS "
-                                    "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-                                )
-                            except Exception:
-                                pass
+                            _setup_tenant_view(conn, t_id)
                         return conn
             # Reuse an idle connection from another thread holding the same path
             for other_key in list(self._pool):
@@ -398,15 +432,7 @@ class _ConnectionPool:
                     self._inodes[key] = self._inode_of(path)
                     self._lru.append(key)
                     t_id = tenant_id or "default"
-                    try:
-                        candidate.create_function("tenant_id", 0, lambda: t_id)
-                        candidate.execute("DROP VIEW IF EXISTS tenant_memories")
-                        candidate.execute(
-                            "CREATE TEMP VIEW tenant_memories AS "
-                            "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-                        )
-                    except Exception:
-                        pass
+                    _setup_tenant_view(candidate, t_id)
                     return candidate
             self._evict_lru()
             conn = sqlite3.connect(path, timeout=timeout)
@@ -456,15 +482,7 @@ class _ConnectionPool:
 
         # Bind tenant_id and configure view routing
         t_id = tenant_id or "default"
-        try:
-            conn.create_function("tenant_id", 0, lambda: t_id)
-            conn.execute("DROP VIEW IF EXISTS tenant_memories")
-            conn.execute(
-                "CREATE TEMP VIEW tenant_memories AS "
-                "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-            )
-        except Exception:
-            pass
+        _setup_tenant_view(conn, t_id)
 
         return conn
 
@@ -814,16 +832,7 @@ def open_db(
             except Exception:
                 pass  # non-fatal: saga_log table may not exist yet
             t_id = tenant_id or "default"
-            try:
-                if isinstance(conn, sqlite3.Connection):
-                    conn.create_function("tenant_id", 0, lambda: t_id)
-                conn.execute("DROP VIEW IF EXISTS tenant_memories")
-                conn.execute(
-                    "CREATE TEMP VIEW tenant_memories AS "
-                    "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-                )
-            except Exception:
-                pass
+            _setup_tenant_view(conn, t_id)
             yield conn
         except BaseException as exc:
             exc_info = exc
@@ -889,15 +898,7 @@ def open_db(
             run_schema_setup(conn)
             _maybe_checkpoint_on_startup(path)
             t_id = tenant_id or "default"
-            try:
-                conn.create_function("tenant_id", 0, lambda: t_id)
-                conn.execute("DROP VIEW IF EXISTS tenant_memories")
-                conn.execute(
-                    "CREATE TEMP VIEW tenant_memories AS "
-                    "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-                )
-            except Exception:
-                pass
+            _setup_tenant_view(conn, t_id)
             yield conn
         except BaseException as exc:
             exc_info = exc

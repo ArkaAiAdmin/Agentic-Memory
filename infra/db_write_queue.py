@@ -310,11 +310,8 @@ class SQLiteWriteQueue:
                         break
                 t_id = os.environ.get("MEMORY_CRON_TENANT_ID") or os.environ.get("MEMORY_TENANT_ID") or "default"
                 try:
-                    conn.create_function("tenant_id", 0, lambda: t_id)
-                    conn.execute(
-                        "CREATE TEMP VIEW IF NOT EXISTS tenant_memories AS "
-                        "SELECT * FROM memories WHERE tenant_id = tenant_id()"
-                    )
+                    from infra.db import _setup_tenant_view
+                    _setup_tenant_view(conn, t_id)
                 except Exception:
                     pass
                 self._sessions[session_id] = {"conn": conn, "db_path": db_path}
