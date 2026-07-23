@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "agentic-memory": {
+      "command": "/Users/arka/.config/agentic-memory/run-mcp-server.sh",
+      "env": {
+        "MEMORY_AGENT_ID": "qoder-harness"
+      }
+    }
+  }
+}

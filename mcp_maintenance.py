@@ -1140,6 +1140,14 @@ def memory_maintenance(
     operation extracts only the kwargs it needs. Unknown kwargs are
     silently ignored.
     """
+    # Unwrap nested kwargs dict produced by Pydantic schema generation.
+    # When the MCP client sends **kwargs, Pydantic may wrap them in a
+    # literal "kwargs" key: {"kwargs": {"agent_id": ...}} instead of
+    # {"agent_id": ...}.  Flatten so handler(**kwargs) works correctly.
+    if "kwargs" in kwargs and isinstance(kwargs["kwargs"], dict):
+        nested = kwargs.pop("kwargs")
+        kwargs.update(nested)
+
     unknown = {
         k: f"<{type(v).__name__}>" for k, v in kwargs.items() if not k.startswith("_")
     }
