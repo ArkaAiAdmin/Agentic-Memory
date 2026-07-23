@@ -1601,7 +1601,7 @@ def update_tier(
 
     with open_db(Path(_db), write=True) as conn:
         cur = conn.execute(
-            "UPDATE tenant_memories SET tier=? WHERE id=?", (tier, note_id)
+            "UPDATE memories SET tier=? WHERE id=? AND tenant_id = tenant_id()", (tier, note_id)
         )
         conn.commit()
         return (cur.rowcount or 0) > 0
@@ -2521,9 +2521,9 @@ def memory_supersede_db(
                     "SELECT content FROM tenant_memories WHERE id = ?", (old_id,)
                 ).fetchone()
                 db.execute(
-                    """UPDATE tenant_memories
+                    """UPDATE memories
                        SET valid_to = ?, superseded_by = ?, updated_at = ?
-                       WHERE id = ?""",
+                       WHERE id = ? AND tenant_id = tenant_id()""",
                     (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
                 )
                 _record_revision_log(
@@ -2549,7 +2549,7 @@ def memory_supersede_db(
                             meta = {}
                         meta["supersession_rationale"] = rationale
                         db.execute(
-                            "UPDATE tenant_memories SET metadata = ? WHERE id = ?",
+                            "UPDATE memories SET metadata = ? WHERE id = ? AND tenant_id = tenant_id()",
                             (json.dumps(meta), old_id),
                         )
                     except Exception as _supersede_meta_exc:
@@ -2597,9 +2597,9 @@ def memory_supersede_db(
                 db.execute("BEGIN IMMEDIATE")
                 try:
                     db.execute(
-                        """UPDATE tenant_memories
+                        """UPDATE memories
                            SET valid_to = ?, superseded_by = ?, updated_at = ?
-                           WHERE id = ?""",
+                           WHERE id = ? AND tenant_id = tenant_id()""",
                         (valid_to, new_id, datetime.now(timezone.utc).isoformat(), old_id),
                     )
                     _record_revision_log(
@@ -2617,7 +2617,7 @@ def memory_supersede_db(
                             meta = {}
                         meta["supersession_rationale"] = rationale
                         db.execute(
-                            "UPDATE tenant_memories SET metadata = ? WHERE id = ?",
+                            "UPDATE memories SET metadata = ? WHERE id = ? AND tenant_id = tenant_id()",
                             (json.dumps(meta), old_id),
                         )
                     db.execute("COMMIT")
@@ -2659,11 +2659,12 @@ def reinforce_memories_db(db_path: Path, ids: list[str], delta: float) -> int:
         with open_db(db_path, timeout=30.0) as db:
             for mid in ids:
                 cur = db.execute(
-                    "UPDATE tenant_memories SET success_score = MAX(-3.0, MIN(5.0, COALESCE(success_score, 0.0) + ?)) WHERE id = ?",
+                    "UPDATE memories SET success_score = MAX(-3.0, MIN(5.0, COALESCE(success_score, 0.0) + ?)) WHERE id = ? AND tenant_id = tenant_id()",
                     (delta, mid),
                 )
-                if cur.rowcount > 0:
-                    hits += cur.rowcount
+                rc = cur.rowcount
+                if rc is not None and rc > 0:
+                    hits += rc
     except Exception as e:
         logger.error("reinforce_memories_db: %s", e)
     # Recalculate fitness scores for the touched ids
@@ -2829,7 +2830,7 @@ def revert_supersede(
                 )
 
             db.execute(
-                "UPDATE tenant_memories SET valid_to = NULL, superseded_by = NULL, updated_at = ? WHERE id = ?",
+                "UPDATE memories SET valid_to = NULL, superseded_by = NULL, updated_at = ? WHERE id = ? AND tenant_id = tenant_id()",
                 (datetime.now(timezone.utc).isoformat(), note_id),
             )
 
