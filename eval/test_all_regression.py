@@ -97,6 +97,7 @@ class TestAllRegression(unittest.TestCase):
                 os.path.join(INSTALL_ROOT, "rebuild_vec_index.py"),
                 DB,
                 "--force",
+                "--subsystems=vec_idx",
             ],
             capture_output=True,
             text=True,

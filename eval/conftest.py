@@ -482,7 +482,7 @@ def ClosedClient(closed_auth_principal):
 
     db_path, principal_id, tenant_id = closed_auth_principal
 
-    client = MemoryClient(db_path=db_path, user_id=principal_id)
+    client = MemoryClient(db_path=db_path)
     yield client
     # agent_context + principal_id are restored by closed_auth_principal.
 
