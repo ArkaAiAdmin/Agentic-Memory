@@ -8,10 +8,7 @@
 
 -- === task_queue.status CHECK constraint ===
 -- SQLite allows CHECK constraints; we enforce the documented enum.
--- Wrap in a savepoint so the migration can continue if the constraint
--- already exists on upgraded DBs.
-SAVEPOINT add_status_check;
-CREATE TABLE IF NOT EXISTS task_queue_new (
+CREATE TABLE IF NOT EXISTS task_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_type TEXT NOT NULL,
     payload TEXT,
@@ -26,16 +23,9 @@ CREATE TABLE IF NOT EXISTS task_queue_new (
     max_attempts INTEGER NOT NULL DEFAULT 3,
     source_note_id TEXT
 );
-INSERT OR IGNORE INTO task_queue_new
-    SELECT id, task_type, payload, status, priority, created_at, started_at,
-           completed_at, error, attempts, max_attempts, source_note_id
-    FROM task_queue;
-DROP TABLE task_queue;
-ALTER TABLE task_queue_new RENAME TO task_queue;
 CREATE INDEX IF NOT EXISTS idx_task_queue_status ON task_queue(status);
 CREATE INDEX IF NOT EXISTS idx_task_queue_task_type ON task_queue(task_type);
 CREATE INDEX IF NOT EXISTS idx_task_queue_priority ON task_queue(priority DESC, created_at ASC);
-RELEASE SAVEPOINT add_status_check;
 
 -- === H7 fix: partial index for temporal validity filter ===
 -- search_pipeline.py:2409 does SELECT id FROM memories WHERE valid_to IS NULL

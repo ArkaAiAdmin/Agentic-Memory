@@ -305,6 +305,11 @@ class APIRequestHandler(BaseHTTPRequestHandler):
 
     def _resolve_ws_principal(self, raw_token: str) -> None:
         """Resolve principal from a WS bearer token and store on self."""
+        server_token = getattr(self.server, "token", "") or os.environ.get("MEMORY_API_TOKEN", "")
+        if server_token and raw_token == server_token:
+            self._principal_id = "legacy"
+            self._principal = None
+            return
         try:
             from infra.authorizer import resolve_principal
             principal = resolve_principal(
@@ -1874,6 +1879,10 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "Upgrade")
         self.send_header("Sec-WebSocket-Accept", accept)
         self.end_headers()
+        try:
+            self.wfile.flush()
+        except Exception:
+            pass
 
         sock = self.connection
         sock.settimeout(None)

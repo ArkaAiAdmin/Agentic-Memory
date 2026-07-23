@@ -162,7 +162,7 @@ def resolve_principal(
         from pathlib import Path
         from infra.db import open_db
 
-        with open_db(Path(db_path), timeout=5.0) as conn:
+        with open_db(Path(db_path), timeout=5.0, write=False) as conn:
             row = conn.execute(
                 "SELECT p.id, p.kind, p.tenant_id, p.display_name "
                 "FROM principals p "

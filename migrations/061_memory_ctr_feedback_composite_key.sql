@@ -13,6 +13,16 @@
 -- old table raises "no such table" — the migration runner treats that as an
 -- idempotent forward-reference and skips it. On an existing DB the old single-
 -- PK table is copied, dropped, and renamed into the new shape.
+CREATE TABLE IF NOT EXISTS memory_ctr_feedback (
+    query_id      TEXT NOT NULL,
+    id            TEXT NOT NULL,
+    returned_at   REAL NOT NULL,
+    clicked_at    REAL,
+    dismissed_at  REAL,
+    source        TEXT,
+    ranking_params TEXT,
+    PRIMARY KEY (query_id, id)
+);
 CREATE TABLE IF NOT EXISTS memory_ctr_feedback_new (
     query_id      TEXT NOT NULL,
     id            TEXT NOT NULL,
@@ -23,7 +33,7 @@ CREATE TABLE IF NOT EXISTS memory_ctr_feedback_new (
     ranking_params TEXT,
     PRIMARY KEY (query_id, id)
 );
-INSERT INTO memory_ctr_feedback_new (query_id, id, returned_at, clicked_at, dismissed_at, source, ranking_params)
+INSERT OR IGNORE INTO memory_ctr_feedback_new (query_id, id, returned_at, clicked_at, dismissed_at, source, ranking_params)
     SELECT COALESCE(query_id, '__unknown__'), id, returned_at, clicked_at, dismissed_at, source, ranking_params
     FROM memory_ctr_feedback;
 DROP TABLE IF EXISTS memory_ctr_feedback;
