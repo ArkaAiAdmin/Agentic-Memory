@@ -358,9 +358,10 @@ class TestCronDetectVecDrift(unittest.TestCase):
         import contextlib
 
         buf = io.StringIO()
-        with self.assertRaises(SystemExit):
-            with contextlib.redirect_stdout(buf):
-                self.mod.main(["--db-path", str(self.db_path)])
+        with unittest.mock.patch.object(self.mod, "acquire_lock_or_exit"):
+            with self.assertRaises(SystemExit):
+                with contextlib.redirect_stdout(buf):
+                    self.mod.main(["--db-path", str(self.db_path)])
         output = buf.getvalue()
         self.assertIn("memories=0", output)
 
@@ -375,6 +376,10 @@ class TestCronPurgeExpired(unittest.TestCase):
         import cron_purge_expired
 
         self.mod = cron_purge_expired
+        self._flock_patcher = unittest.mock.patch.object(
+            self.mod, "acquire_lock_or_exit"
+        )
+        self._flock_patcher.start()
         self.tmpdir = Path(tempfile.mkdtemp(prefix="cron_purge_"))
         self.db_path = self.tmpdir / "memory.db"
         self.conn = sqlite3.connect(str(self.db_path))
@@ -389,6 +394,7 @@ class TestCronPurgeExpired(unittest.TestCase):
         self.conn.commit()
 
     def tearDown(self):
+        self._flock_patcher.stop()
         self.conn.close()
         for f in self.tmpdir.glob("*"):
             f.unlink()
@@ -443,11 +449,18 @@ class TestCronHeartbeatBehavior(unittest.TestCase):
         import cron_heartbeat
 
         self.mod = cron_heartbeat
+        self._flock_patcher = unittest.mock.patch.object(
+            self.mod, "acquire_lock_or_exit"
+        )
+        self._flock_patcher.start()
         import contextlib
         import io
 
         self._io = io
         self._contextlib = contextlib
+
+    def tearDown(self):
+        self._flock_patcher.stop()
 
     def test_main_calls_heartbeat_and_prints(self):
         tmp = Path(tempfile.mkdtemp(prefix="cron_hb_test_"))
@@ -508,11 +521,18 @@ class TestCronQualityFilterBehavior(unittest.TestCase):
         import cron_quality_filter
 
         self.mod = cron_quality_filter
+        self._flock_patcher = unittest.mock.patch.object(
+            self.mod, "acquire_lock_or_exit"
+        )
+        self._flock_patcher.start()
         import contextlib
         import io
 
         self._io = io
         self._contextlib = contextlib
+
+    def tearDown(self):
+        self._flock_patcher.stop()
 
     def test_main_skips_when_disabled(self):
         with unittest.mock.patch.object(self.mod.qg, "QUALITY_GATES_ENABLED", False):
@@ -564,11 +584,18 @@ class TestCronAutoSummarizeBehavior(unittest.TestCase):
         import cron_auto_summarize
 
         self.mod = cron_auto_summarize
+        self._flock_patcher = unittest.mock.patch.object(
+            self.mod, "acquire_lock_or_exit"
+        )
+        self._flock_patcher.start()
         import contextlib
         import io
 
         self._io = io
         self._contextlib = contextlib
+
+    def tearDown(self):
+        self._flock_patcher.stop()
 
     def test_main_skips_when_disabled(self):
         with unittest.mock.patch.object(self.mod.sm, "SUMMARIZATION_ENABLED", False):
@@ -614,11 +641,18 @@ class TestCronIntegrityCheckBehavior(unittest.TestCase):
         import cron_integrity_check
 
         self.mod = cron_integrity_check
+        self._flock_patcher = unittest.mock.patch.object(
+            self.mod, "acquire_lock_or_exit"
+        )
+        self._flock_patcher.start()
         import contextlib
         import io
 
         self._io = io
         self._contextlib = contextlib
+
+    def tearDown(self):
+        self._flock_patcher.stop()
 
     def test_main_exits_on_missing_db(self):
         with unittest.mock.patch.dict(
@@ -705,11 +739,18 @@ class TestCronPinnedDecayBehavior(unittest.TestCase):
         import cron_pinned_decay
 
         self.mod = cron_pinned_decay
+        self._flock_patcher = unittest.mock.patch.object(
+            self.mod, "acquire_lock_or_exit"
+        )
+        self._flock_patcher.start()
         import contextlib
         import io
 
         self._io = io
         self._contextlib = contextlib
+
+    def tearDown(self):
+        self._flock_patcher.stop()
 
     def test_main_calls_pinned_main(self):
         with unittest.mock.patch.object(self.mod, "pinned_main") as mock_pinned:
@@ -739,11 +780,18 @@ class TestCronRewriteLinksBehavior(unittest.TestCase):
         import cron_rewrite_links
 
         self.mod = cron_rewrite_links
+        self._flock_patcher = unittest.mock.patch.object(
+            self.mod, "acquire_lock_or_exit"
+        )
+        self._flock_patcher.start()
         import contextlib
         import io
 
         self._io = io
         self._contextlib = contextlib
+
+    def tearDown(self):
+        self._flock_patcher.stop()
 
     def test_main_calls_rewrite_and_prints(self):
         with unittest.mock.patch.object(

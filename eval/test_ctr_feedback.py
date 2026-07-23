@@ -237,7 +237,7 @@ class TestRecordCTRFeedback:
         from search.orchestrator import record_ctr_feedback_db
 
         self._seed_impression(str(db_path), "q_test", "fb_001")
-        record_ctr_feedback_db(str(db_path), id="fb_001", query_id="q_test", action="returned")
+        record_ctr_feedback_db(str(db_path), memory_id="fb_001", query_id="q_test", action="returned")
 
         conn = sqlite3.connect(str(db_path))
         try:
@@ -261,7 +261,7 @@ class TestRecordCTRFeedback:
         from search.orchestrator import record_ctr_feedback_db
 
         self._seed_impression(str(db_path), "q_test", "fb_002")
-        record_ctr_feedback_db(str(db_path), id="fb_002", query_id="q_test", action="clicked")
+        record_ctr_feedback_db(str(db_path), memory_id="fb_002", query_id="q_test", action="clicked")
 
         conn = sqlite3.connect(str(db_path))
         try:
@@ -279,7 +279,7 @@ class TestRecordCTRFeedback:
         from search.orchestrator import record_ctr_feedback_db
 
         self._seed_impression(str(db_path), "q_test", "fb_003")
-        record_ctr_feedback_db(str(db_path), id="fb_003", query_id="q_test", action="dismissed")
+        record_ctr_feedback_db(str(db_path), memory_id="fb_003", query_id="q_test", action="dismissed")
 
         conn = sqlite3.connect(str(db_path))
         try:

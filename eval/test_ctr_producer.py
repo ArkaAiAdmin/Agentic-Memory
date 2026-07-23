@@ -166,8 +166,8 @@ def test_ctr_feedback_db_migrated_to_interaction(tmp_path):
 
     from search.orchestrator import record_ctr_feedback_db
 
-    record_ctr_feedback_db(str(db_path), id=memory_id, query_id=query_id, action="returned")
-    record_ctr_feedback_db(str(db_path), id=memory_id, query_id=query_id, action="clicked")
+    record_ctr_feedback_db(str(db_path), memory_id=memory_id, query_id=query_id, action="returned")
+    record_ctr_feedback_db(str(db_path), memory_id=memory_id, query_id=query_id, action="clicked")
 
     conn = sqlite3.connect(str(db_path))
     try:
