@@ -99,36 +99,61 @@ class TestDbPathFlockDefault(unittest.TestCase):
                         pass
 
     def test_two_threads_same_path_dont_deadlock(self) -> None:
-        """Two threads in the same process share the per-fd flock.
+        """Multiple threads serialize through PathLockFd without deadlock.
 
-        Linux's flock is per-fd: the same fd can be acquired
-        multiple times by the same process without blocking.
-        We exploit this so concurrent threads in the same
-        process can both enter the critical section.
+        The intra-process Condition in PathLockFd ensures threads take
+        turns.  We inject a mock lock manager so the test doesn't depend
+        on OS-level flock(2) behaviour across threads (unreliable on
+        macOS with different fds to the same file).
+
+        The mock patch is applied ONCE in the main thread (not per-worker)
+        to avoid a concurrent ``unittest.mock.patch`` race condition where
+        save/restore of the module attribute interleaves across threads
+        and leaves the global ``get_lock_manager`` pointing at a MagicMock.
         """
+        from infra.db_path_flock import _get_or_create_path_lock, reset_db_path_flock_state
+        from infra.lock_manager import clear_lock_manager_cache
+        from unittest.mock import MagicMock, patch
+
+        mock_lm = MagicMock()
+        mock_lm.acquire_lock.return_value = (True, "mock-token")
+        mock_lm.release_lock.return_value = True
+
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "memory.db"
-            results = []
-            errors = []
+            lock_fd = _get_or_create_path_lock(db)
+            results: list[tuple[str, str]] = []
+            errors: list[tuple[str, str]] = []
 
             def worker(tag: str) -> None:
                 try:
-                    with db_path_flock(db):
+                    lock_fd.acquire(timeout=10.0)
+                    try:
                         time.sleep(0.01)
                         results.append((tag, "ok"))
-                except Exception as exc:  # pragma: no cover
+                    finally:
+                        lock_fd.release()
+                except Exception as exc:
                     errors.append((tag, repr(exc)))
 
-            threads = [
-                threading.Thread(target=worker, args=(f"t{i}",)) for i in range(4)
-            ]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join(timeout=10.0)
+            # Patch applied once in main thread — safe from race.
+            with patch("infra.lock_manager.get_lock_manager", return_value=mock_lm):
+                try:
+                    threads = [
+                        threading.Thread(target=worker, args=(f"t{i}",)) for i in range(4)
+                    ]
+                    for t in threads:
+                        t.start()
+                    for t in threads:
+                        t.join(timeout=15.0)
 
-            self.assertEqual(errors, [])
-            self.assertEqual(len(results), 4)
+                    self.assertEqual(errors, [], f"Thread errors: {errors}")
+                    self.assertEqual(len(results), 4)
+                finally:
+                    reset_db_path_flock_state()
+                    # Ensure the global lock manager singleton is
+                    # recreated fresh for subsequent tests.
+                    clear_lock_manager_cache()
 
     def test_release_without_acquire_is_noop(self) -> None:
         """No prior acquire: release is a no-op (debug log, no crash)."""

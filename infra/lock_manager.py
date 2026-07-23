@@ -12,6 +12,7 @@ import hashlib
 import logging
 import os
 import sqlite3
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -220,6 +221,7 @@ class FlockLockManager(LockManager):
         self.base_path = str(base_path)
         self._lock_fds: dict[str, int] = {}
         self._lock_tokens: dict[str, str] = {}
+        self._mu = threading.Lock()  # protects _lock_fds / _lock_tokens
 
     def _lock_file(self, lock_name: str) -> str:
         if "/" in lock_name or os.path.isabs(lock_name):
@@ -233,16 +235,18 @@ class FlockLockManager(LockManager):
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             token = str(uuid.uuid4())
-            self._lock_fds[lock_name] = fd
-            self._lock_tokens[lock_name] = token
+            with self._mu:
+                self._lock_fds[lock_name] = fd
+                self._lock_tokens[lock_name] = token
             return True, token
         except (IOError, OSError):
             os.close(fd)
             return False, ""
 
     def release_lock(self, lock_name: str, lease_token: str) -> bool:
-        fd = self._lock_fds.pop(lock_name, None)
-        stored_token = self._lock_tokens.pop(lock_name, None)
+        with self._mu:
+            fd = self._lock_fds.pop(lock_name, None)
+            stored_token = self._lock_tokens.pop(lock_name, None)
         if fd is not None and stored_token == lease_token:
             try:
                 fcntl.flock(fd, fcntl.LOCK_UN)
