@@ -1,9 +1,0 @@
-{
-  "memory_type": "agentic_memory",
-  "memory_params": {
-    "top_k": 15,
-    "enable_facts": true,
-    "enable_bm25_boost": true,
-    "max_summary_chars": 8000
-  }
-}

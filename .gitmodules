@@ -1,0 +1,6 @@
+[submodule "paper_pipeline_3"]
+	path = paper_pipeline_3
+	url = https://github.com/ArkaAiAdmin/agentic-memory-paper-3.git
+[submodule "eval/longmemeval_v2"]
+	path = eval/longmemeval_v2
+	url = https://github.com/ArkaAiAdmin/agentic-memory-longmemeval-v2.git
