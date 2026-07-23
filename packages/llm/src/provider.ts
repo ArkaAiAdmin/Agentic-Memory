@@ -8,6 +8,9 @@
  *
  * Architecture:
  *   TypeScript (IDE) <--JSON-RPC--> Python (LiteLLM bridge) <--HTTP--> LLM APIs
+ *
+ * Process management is handled by the Rust backend via Tauri IPC.
+ * The TypeScript layer polls stdout/stderr and writes to stdin via IPC.
  */
 
 import type {
@@ -16,7 +19,6 @@ import type {
   ToolDefinition,
   Message,
 } from "@ami/shared";
-import type { ChildProcess } from "node:child_process";
 
 // ── Provider Interface ────────────────────────────────────────────────────
 
@@ -38,16 +40,98 @@ export interface LLMProvider {
 
   /** Maximum output tokens. */
   maxOutputTokens(): number;
+
+  /** Initialize the provider (no-op for HTTP providers, starts subprocess for bridge). */
+  start(): Promise<void>;
+
+  /** Shutdown the provider (no-op for HTTP providers, kills subprocess for bridge). */
+  stop(): Promise<void>;
 }
+
+export interface ProviderConfig {
+  type: "openai" | "anthropic" | "google" | "lmstudio" | "ollama" | "litellm";
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+}
+
+export { createProvider, providerRegistry, PROVIDER_DEFAULTS } from "./providers.js";
+export type { ProviderConfig as HttpProviderConfig } from "./providers.js";
+export {
+  OpenAIProvider,
+  AnthropicProvider,
+  GoogleProvider,
+  LMStudioProvider,
+  OllamaProvider,
+  LiteLLMProxyProvider,
+} from "./providers.js";
+
+// ── IPC Client ─────────────────────────────────────────────────────────────
+
+async function invokeCommand<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    if (typeof window === "undefined" || (!(window as any).__TAURI_INTERNALS__ && !(window as any).__TAURI__)) {
+      return getMockFallback<T>(cmd, args);
+    }
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await (invoke as <R>(command: string, payload?: Record<string, unknown>) => Promise<R>)<T>(cmd, args);
+  } catch {
+    return getMockFallback<T>(cmd, args);
+  }
+}
+
+function getMockFallback<T>(cmd: string, _args?: Record<string, unknown>): T {
+  switch (cmd) {
+    case "run_background":
+      return "mock-llm-proc" as unknown as T;
+    case "get_stdout":
+    case "get_stderr":
+      return "" as unknown as T;
+    case "is_process_alive":
+      return true as unknown as T;
+    case "write_process_stdin":
+      return undefined as unknown as T;
+    case "kill_process":
+      return undefined as unknown as T;
+    default:
+      return undefined as unknown as T;
+  }
+}
+
+const ipcProcess = {
+  runBackground: (command: string, cwd: string) => invokeCommand<string>("run_background", { command, cwd }),
+  getStdout: (processId: string) => invokeCommand<string>("get_stdout", { processId }),
+  getStderr: (processId: string) => invokeCommand<string>("get_stderr", { processId }),
+  isAlive: (processId: string) => invokeCommand<boolean>("is_process_alive", { processId }),
+  writeStdin: (processId: string, data: string) => invokeCommand<void>("write_process_stdin", { processId, data }),
+  kill: (processId: string) => invokeCommand<void>("kill_process", { processId }),
+};
+
+// ── Bridge Script Resolution ──────────────────────────────────────────────
+
+function getBridgeCommandSync(): string {
+  try {
+    const { fileURLToPath } = require("node:url");
+    const { dirname, join } = require("node:path");
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const scriptPath = join(__dirname, "../../scripts/litellm_bridge.py");
+    return `python3 "${scriptPath}"`;
+  } catch {
+    return "python3 -m agentic_memory.llm.litellm_bridge";
+  }
+}
+
+const BRIDGE_COMMAND = getBridgeCommandSync();
 
 // ── LiteLLM Bridge Provider ──────────────────────────────────────────────
 
 /**
  * LiteLLM subprocess bridge.
- * Spawns a Python process running LiteLLM and communicates via JSON-RPC.
+ * Spawns a Python process running LiteLLM via the Rust backend and
+ * communicates via JSON-RPC over stdin/stdout.
  */
 export class LiteLLMBridgeProvider implements LLMProvider {
-  private process: ChildProcess | null = null;
+  private processId: string | null = null;
   private requestId = 0;
   private pendingRequests = new Map<
     number,
@@ -57,6 +141,11 @@ export class LiteLLMBridgeProvider implements LLMProvider {
     }
   >();
   private buffer = "";
+  private pollHandle: ReturnType<typeof setInterval> | null = null;
+  private lastStdoutLen = 0;
+  private lastStderrLen = 0;
+  private _started = false;
+
   private modelLimits: Map<string, { context: number; output: number }> =
     new Map([
       ["gpt-4o", { context: 128000, output: 16384 }],
@@ -66,47 +155,92 @@ export class LiteLLMBridgeProvider implements LLMProvider {
       ["gemini-2.0-flash", { context: 1048576, output: 8192 }],
     ]);
 
+  get isRunning(): boolean {
+    return this._started;
+  }
+
   async start(): Promise<void> {
-    // Dynamic imports — Node.js APIs not available at bundle time in Vite
-    const { spawn } = await import("node:child_process");
-    const { resolve } = await import("node:path");
-    const { fileURLToPath } = await import("node:url");
+    if (this._started) return;
 
-    // The LiteLLM bridge script
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = resolve(__filename, "..");
-    const bridgeScript = resolve(__dirname, "../../../packages/llm/scripts/litellm_bridge.py");
+    const cwd =
+      (globalThis as any).process?.env?.HOME ??
+      (globalThis as any).process?.env?.USERPROFILE ??
+      "/";
 
-    const env: Record<string, string> = {};
-    try {
-      Object.assign(env, (globalThis as any).process.env);
-    } catch { /* browser context */ }
-    env.PYTHONUNBUFFERED = "1";
+    this.processId = await ipcProcess.runBackground(BRIDGE_COMMAND, cwd);
+    this.lastStdoutLen = 0;
+    this.lastStderrLen = 0;
 
-    this.process = spawn("python3", [bridgeScript], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env,
-    });
+    // Start polling stdout/stderr
+    this.pollHandle = setInterval(async () => {
+      if (!this.processId) return;
+      try {
+        const [stdout, stderr, alive] = await Promise.all([
+          ipcProcess.getStdout(this.processId),
+          ipcProcess.getStderr(this.processId),
+          ipcProcess.isAlive(this.processId),
+        ]);
 
-    this.process.stdout?.on("data", (chunk: Buffer | string) => {
-      this.handleStdout(chunk.toString("utf-8"));
-    });
+        const newStdout = stdout.slice(this.lastStdoutLen);
+        if (newStdout) {
+          this.handleStdout(newStdout);
+          this.lastStdoutLen = stdout.length;
+        }
 
-    this.process.stderr?.on("data", (chunk: Buffer | string) => {
-      console.error("[LiteLLM] stderr:", chunk.toString("utf-8").trim());
-    });
+        const newStderr = stderr.slice(this.lastStderrLen);
+        if (newStderr) {
+          console.error("[LiteLLM] stderr:", newStderr.trim());
+          this.lastStderrLen = stderr.length;
+        }
 
-    this.process.on("exit", (code: number | null) => {
-      console.warn(`[LiteLLM] Process exited with code ${code}`);
-      this.process = null;
-      this.rejectAllPending("Process exited");
+        if (!alive && this._started) {
+          console.warn("[LiteLLM] Process exited unexpectedly");
+          this._started = false;
+          this.rejectAllPending("Process exited");
+          if (this.pollHandle) clearInterval(this.pollHandle);
+        }
+      } catch {
+        // Polling errors are non-fatal
+      }
+    }, 50);
+
+    // Wait for the process to be ready (simple handshake)
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error("LiteLLM bridge failed to start within 10s"));
+      }, 10_000);
+
+      const checkReady = () => {
+        if (this._started) {
+          clearTimeout(timeout);
+          resolve(undefined);
+        } else {
+          setTimeout(checkReady, 100);
+        }
+      };
+      checkReady();
     });
   }
 
   async stop(): Promise<void> {
-    if (!this.process) return;
-    this.process.kill("SIGTERM");
-    this.process = null;
+    if (!this.processId) return;
+
+    if (this.pollHandle) {
+      clearInterval(this.pollHandle);
+      this.pollHandle = null;
+    }
+
+    try {
+      await ipcProcess.kill(this.processId);
+    } catch {
+      // Best-effort kill
+    }
+
+    this._started = false;
+    this.processId = null;
+    this.buffer = "";
+    this.lastStdoutLen = 0;
+    this.lastStderrLen = 0;
   }
 
   async *chat(params: ChatParams): AsyncIterable<ChatChunk> {
@@ -125,14 +259,12 @@ export class LiteLLMBridgeProvider implements LLMProvider {
       stream: true,
     });
 
-    // Response is an async iterable of chunks
     const resp = response as any;
     if (resp && typeof resp[Symbol.asyncIterator] === "function") {
       for await (const chunk of resp) {
         yield chunk as ChatChunk;
       }
     } else if (response) {
-      // Non-streaming fallback
       yield { type: "text", text: String(response) };
       yield { type: "done", reason: "stop" };
     }
@@ -151,7 +283,7 @@ export class LiteLLMBridgeProvider implements LLMProvider {
   }
 
   maxContextTokens(): number {
-    return 128000; // Default, overridden per-model
+    return 128000;
   }
 
   maxOutputTokens(): number {
@@ -165,7 +297,7 @@ export class LiteLLMBridgeProvider implements LLMProvider {
     params: Record<string, unknown>,
   ): Promise<unknown> {
     return new Promise((resolve, reject) => {
-      if (!this.process?.stdin) {
+      if (!this.processId) {
         reject(new Error("LiteLLM process not running"));
         return;
       }
@@ -181,19 +313,21 @@ export class LiteLLMBridgeProvider implements LLMProvider {
       this.pendingRequests.set(id, { resolve, reject });
 
       const line = JSON.stringify(request) + "\n";
-      this.process.stdin.write(line, (err: Error | null | undefined) => {
-        if (err) {
+
+      ipcProcess
+        .writeStdin(this.processId!, line)
+        .then(() => {
+          setTimeout(() => {
+            if (this.pendingRequests.has(id)) {
+              this.pendingRequests.delete(id);
+              reject(new Error(`Request ${id} (${method}) timed out`));
+            }
+          }, 120_000);
+        })
+        .catch((err: unknown) => {
           this.pendingRequests.delete(id);
           reject(err);
-        }
-      });
-
-      setTimeout(() => {
-        if (this.pendingRequests.has(id)) {
-          this.pendingRequests.delete(id);
-          reject(new Error(`Request ${id} (${method}) timed out`));
-        }
-      }, 120_000); // 2 minute timeout for LLM calls
+        });
     });
   }
 

@@ -20,6 +20,7 @@ import type {
   AgentInstance,
   SearchResult,
 } from "@ami/shared";
+import type { ProviderConfig } from "@ami/llm";
 
 // ── Chat Message ──────────────────────────────────────────────────────────
 
@@ -36,6 +37,14 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ── App Store ─────────────────────────────────────────────────────────────
 
 interface AppState {
@@ -50,6 +59,8 @@ interface AppState {
   activeSession: string | null;
   isStreaming: boolean;
   chatMessages: ChatMessage[];
+  chatSessions: ChatSession[];
+  activeChatSessionId: string | null;
   agents: AgentInstance[];
 
   // ── Memory ──────────────────────────────────────────────────────────
@@ -80,6 +91,12 @@ interface AppState {
   clearChat: () => void;
   setStreaming: (streaming: boolean) => void;
   setAgents: (agents: AgentInstance[]) => void;
+  createChatSession: (title?: string) => string;
+  switchChatSession: (sessionId: string) => void;
+  deleteChatSession: (sessionId: string) => void;
+  addChatMessageToSession: (sessionId: string, message: ChatMessage) => void;
+  updateChatSessionTitle: (sessionId: string, title: string) => void;
+  setActiveChatSession: (sessionId: string | null) => void;
 
   // Memory
   setRecentMemories: (memories: SearchResult[]) => void;
@@ -113,6 +130,8 @@ export const useAppStore = create<AppState>((set) => ({
   activeSession: null,
   isStreaming: false,
   chatMessages: [],
+  chatSessions: [],
+  activeChatSessionId: null,
   agents: [],
 
   recentMemories: [],
@@ -183,6 +202,74 @@ export const useAppStore = create<AppState>((set) => ({
     })),
 
   clearChat: () => set({ chatMessages: [] }),
+
+  createChatSession: (title) => {
+    const id = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const now = Date.now();
+    const count = useAppStore.getState().chatSessions.length;
+    const session: ChatSession = {
+      id,
+      title: title || `Chat ${count + 1}`,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    set((state) => {
+      const sessions = [...state.chatSessions, session];
+      return { chatSessions: sessions, activeChatSessionId: id, chatMessages: session.messages };
+    });
+    return id;
+  },
+
+  switchChatSession: (sessionId) =>
+    set((state) => {
+      const session = state.chatSessions.find((s) => s.id === sessionId);
+      return {
+        activeChatSessionId: sessionId,
+        chatMessages: session ? session.messages : [],
+      };
+    }),
+
+  deleteChatSession: (sessionId) =>
+    set((state) => {
+      const sessions = state.chatSessions.filter((s) => s.id !== sessionId);
+      let activeChatSessionId = state.activeChatSessionId;
+      let chatMessages: ChatMessage[] = [];
+      if (activeChatSessionId === sessionId) {
+        activeChatSessionId = sessions[0]?.id ?? null;
+        chatMessages = sessions[0]?.messages ?? [];
+      }
+      return { chatSessions: sessions, activeChatSessionId, chatMessages };
+    }),
+
+  addChatMessageToSession: (sessionId, message) =>
+    set((state) => ({
+      chatSessions: state.chatSessions.map((s) =>
+        s.id === sessionId
+          ? { ...s, messages: [...s.messages, message], updatedAt: Date.now() }
+          : s,
+      ),
+      chatMessages:
+        state.activeChatSessionId === sessionId
+          ? [...state.chatMessages, message]
+          : state.chatMessages,
+    })),
+
+  updateChatSessionTitle: (sessionId, title) =>
+    set((state) => ({
+      chatSessions: state.chatSessions.map((s) =>
+        s.id === sessionId ? { ...s, title, updatedAt: Date.now() } : s,
+      ),
+    })),
+
+  setActiveChatSession: (sessionId) =>
+    set((state) => {
+      const session = state.chatSessions.find((s) => s.id === sessionId);
+      return {
+        activeChatSessionId: sessionId,
+        chatMessages: session ? session.messages : [],
+      };
+    }),
 
   setStreaming: (streaming) => set({ isStreaming: streaming }),
 

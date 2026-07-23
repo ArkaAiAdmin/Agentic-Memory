@@ -27,6 +27,7 @@ pub fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             pty_manager: Mutex::new(ami_pty::PtyManager::new()),
             fs_watcher: Mutex::new(ami_fs_watcher::FsWatcher::new()),

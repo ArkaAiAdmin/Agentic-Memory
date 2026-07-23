@@ -115,6 +115,9 @@ importers:
       '@ami/shared':
         specifier: workspace:*
         version: link:../shared
+      '@tauri-apps/api':
+        specifier: ^2.5.0
+        version: 2.11.1
     devDependencies:
       '@types/node':
         specifier: ^26.1.1

@@ -10,7 +10,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@ami/shared": "workspace:*"
+    "@ami/shared": "workspace:*",
+    "@tauri-apps/api": "^2.5.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

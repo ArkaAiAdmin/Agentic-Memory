@@ -24,16 +24,17 @@ export function TitleBar({ onOpenProject }: { onOpenProject?: () => void }) {
         display: "flex",
         alignItems: "center",
         padding: "0 12px",
-        gap: 12,
+        gap: 10,
         userSelect: "none",
       }}
     >
-      {/* Window controls (Tauri handles these natively) */}
-      <div style={{ display: "flex", gap: 6 }}>
-        <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#ff5f57" }} />
-        <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#ffbd2e" }} />
-        <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#28c840" }} />
-      </div>
+      {/* App icon */}
+      <img
+        src="/cursor.svg"
+        alt=""
+        style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0 }}
+        draggable={false}
+      />
 
       {/* Project info */}
       <span style={{ fontWeight: 600, fontSize: 13 }}>{projectName}</span>

@@ -12,10 +12,11 @@ import { agentService } from "../services/agentService";
 import { nanoid } from "nanoid";
 import type { TurnEvent } from "@ami/shared";
 
-export function useAgent() {
+export function useAgent(sessionId = "default") {
   const {
     chatMessages,
     addChatMessage,
+    addChatMessageToSession,
     updateChatMessage,
     setStreaming,
     isStreaming,
@@ -73,16 +74,25 @@ export function useAgent() {
         content,
         timestamp: Date.now(),
       };
-      addChatMessage(userMsg);
+      if (sessionId === "default") {
+        addChatMessage(userMsg);
+      } else {
+        addChatMessageToSession(sessionId, userMsg);
+      }
 
       // Create assistant placeholder
       const assistantId = nanoid();
-      addChatMessage({
+      const assistantMsg: ChatMessage = {
         id: assistantId,
         role: "assistant",
         content: "",
         timestamp: Date.now(),
-      });
+      };
+      if (sessionId === "default") {
+        addChatMessage(assistantMsg);
+      } else {
+        addChatMessageToSession(sessionId, assistantMsg);
+      }
 
       setStreaming(true);
       abortRef.current = false;
@@ -92,7 +102,7 @@ export function useAgent() {
         const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 
         // Stream turn events from the conversation loop
-        for await (const event of agentService.sendMessage(content)) {
+        for await (const event of agentService.sendMessage(content, sessionId)) {
           if (abortRef.current) break;
 
           switch (event.type) {
@@ -103,7 +113,6 @@ export function useAgent() {
 
             case "tool_call":
               toolCalls.push({ name: event.toolName, args: event.args });
-              // Show tool call in the chat
               accumulated += `\n\n**Calling tool:** \`${event.toolName}\``;
               updateChatMessage(assistantId, { content: accumulated });
               break;
@@ -149,9 +158,9 @@ export function useAgent() {
   }, []);
 
   return {
-    sendMessage,
+    sendMessage: (content: string) => sendMessage(content),
     abort,
-    clearChat,
+    clearChat: () => sessionId === "default" ? useAppStore.getState().clearChat() : useAppStore.getState().deleteChatSession(sessionId),
     isStreaming,
     isInitialized: agentService.isInitialized,
     messages: chatMessages,

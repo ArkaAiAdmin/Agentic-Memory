@@ -12,7 +12,7 @@
  */
 
 import { memoryBridge } from "@ami/memory-bridge";
-import { LiteLLMBridgeProvider } from "@ami/llm";
+import { LiteLLMBridgeProvider, createProvider, type LLMProvider, type ProviderConfig } from "@ami/llm";
 import {
   ConversationLoop,
   ContextBuilder,
@@ -305,6 +305,7 @@ export interface AgentServiceConfig {
   maxTurns: number;
   temperature: number;
   memoryDir: string;
+  provider: ProviderConfig;
 }
 
 const DEFAULT_CONFIG: AgentServiceConfig = {
@@ -312,14 +313,15 @@ const DEFAULT_CONFIG: AgentServiceConfig = {
   maxTurns: 25,
   temperature: 0.7,
   memoryDir: `${(globalThis as any).process?.env?.HOME ?? (globalThis as any).process?.env?.USERPROFILE ?? "/"}/.config/agentic-memory`,
+  provider: { type: "openai" },
 };
 
 class AgentService {
-  private llm: LiteLLMBridgeProvider | null = null;
+  private llm: LLMProvider | null = null;
   private contextBuilder: ContextBuilder | null = null;
   private toolRegistry: ToolRegistry | null = null;
   private toolExecutor: ToolExecutor | null = null;
-  private conversationLoop: ConversationLoop | null = null;
+  private conversationLoops = new Map<string, ConversationLoop>();
   private _initialized = false;
   private config: AgentServiceConfig;
 
@@ -335,6 +337,30 @@ class AgentService {
     return memoryBridge.isRunning;
   }
 
+  getOrCreateLoop(sessionId: string): ConversationLoop {
+    let loop = this.conversationLoops.get(sessionId);
+    if (!loop) {
+      if (!this._initialized) {
+        throw new Error("Agent service not initialized. Call initialize() first.");
+      }
+      loop = new ConversationLoop(
+        {
+          model: this.config.model,
+          maxTurns: this.config.maxTurns,
+          temperature: this.config.temperature,
+        },
+        this.llm!,
+        this.contextBuilder!,
+        this.toolRegistry!,
+        this.toolExecutor!,
+        memoryBridge,
+        sessionId,
+      );
+      this.conversationLoops.set(sessionId, loop);
+    }
+    return loop;
+  }
+
   /**
    * Initialize the full agent stack.
    */
@@ -344,8 +370,8 @@ class AgentService {
     // 1. Start memory bridge
     await memoryBridge.start(this.config.memoryDir);
 
-    // 2. Start LLM bridge
-    this.llm = new LiteLLMBridgeProvider();
+    // 2. Start LLM provider
+    this.llm = createProvider(this.config.provider);
     await this.llm.start();
 
     // 3. Create context builder
@@ -361,20 +387,8 @@ class AgentService {
     // 5. Create tool executor
     this.toolExecutor = new ToolExecutor(this.toolRegistry, memoryBridge);
 
-    // 6. Create conversation loop
-    this.conversationLoop = new ConversationLoop(
-      {
-        model: this.config.model,
-        maxTurns: this.config.maxTurns,
-        temperature: this.config.temperature,
-      },
-      this.llm,
-      this.contextBuilder,
-      this.toolRegistry,
-      this.toolExecutor,
-      memoryBridge,
-      "default",
-    );
+    // 6. Create default conversation loop
+    this.getOrCreateLoop("default");
 
     this._initialized = true;
 
@@ -384,14 +398,16 @@ class AgentService {
 
   /**
    * Send a message and get an async iterable of turn events.
+   * @param sessionId - The conversation session to use. Defaults to "default".
    */
-  async *sendMessage(message: string): AsyncIterable<TurnEvent> {
-    if (!this.conversationLoop) {
+  async *sendMessage(message: string, sessionId = "default"): AsyncIterable<TurnEvent> {
+    if (!this._initialized) {
       yield { type: "error", error: "Agent not initialized. Call initialize() first." };
       return;
     }
 
-    yield* this.conversationLoop.turn(message);
+    const loop = this.getOrCreateLoop(sessionId);
+    yield* loop.turn(message);
   }
 
   /**

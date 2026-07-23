@@ -3,13 +3,17 @@ import { useAgent } from "../../hooks/useAgent";
 import { useAppStore, type ChatMessage } from "../../stores/appStore";
 import { nanoid } from "nanoid";
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  sessionId?: string;
+}
+
+export function ChatPanel({ sessionId = "default" }: ChatPanelProps) {
   const {
     messages: chatMessages,
     sendMessage,
     isStreaming,
     isInitialized,
-  } = useAgent();
+  } = useAgent(sessionId);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
