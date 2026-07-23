@@ -93,19 +93,32 @@ SYNC_MAX_BODY_SIZE = int(os.environ.get("MEMORY_SYNC_MAX_BODY", str(10 * 1024 * 
 from infra.db import AnyConnection as _AnyConnection
 
 
-def _open_server_db(db_path: str) -> _AnyConnection:
+def _open_server_db(db_path: str, write: bool = True) -> _AnyConnection:
     """Open a SQLite connection for a sync-server request.
 
-    Uses the project's standard pragmas (WAL, foreign keys, busy
-    timeout) and runs migrations on first open. The connection
-    lifetime is the lifetime of the request — the caller must
-    close it.
+    When *write* is True (default), uses the project's write-queue
+    session for serialized mutating access.  When *write* is False,
+    uses a read-only pooled connection that does NOT compete with
+    MCP tool calls for the single writer thread.
+
+    The connection lifetime is the lifetime of the request — the
+    caller must close it.
     """
     # Imported lazily to avoid a hard dependency on db.py at
     # import time (some test runners use sync_server without the
     # full DB stack).
-    from infra.db_write_queue import sqlite_write_queue
     from infra.db_migrations import run_schema_setup
+
+    if not write:
+        # Read-only path: use the connection pool instead of the
+        # write queue.  This eliminates in-process competition
+        # between read-only sync requests (pull endpoints) and
+        # MCP tool calls for the SQLiteWriteQueue thread.
+        from infra.db import connection_pool
+        conn = connection_pool.get(Path(db_path), timeout=10.0)
+        return conn
+
+    from infra.db_write_queue import sqlite_write_queue
 
     conn = sqlite_write_queue.start_session(Path(db_path))
     try:

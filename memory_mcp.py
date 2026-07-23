@@ -308,57 +308,20 @@ if __name__ == "__main__":
     except Exception as e:
         logger.info("sync server not started: %s", e)
 
-    # Phase 2: auto-start the CQRS write-journal reconciler when enabled.
+    # Phase 2: CQRS write-journal reconciler has been moved to a separate
+    # process (background/journal_reconciler.py) to eliminate in-process
+    # competition with MCP tool calls for the SQLiteWriteQueue thread.
+    # The reconciler is driven by a cron job every 5 minutes.
     try:
         from config import get_config
         _cfg = get_config()
         if getattr(_cfg, "write_journal", False):
-            from infra.write_journal import (
-                dequeue_pending,
-                reset_stuck_processing,
+            logger.info(
+                "write_journal: reconciler runs as separate process "
+                "(background/journal_reconciler.py)"
             )
-            from save.pipeline import materialize_journal_entry
-
-            _target_base = resolve_active_memory_dir()
-            _journal_path = _target_base / "journal.db"
-            # Stuck-entry self-heal: unstick entries from prior crashes.
-            if _journal_path.exists():
-                _unstuck = reset_stuck_processing(_journal_path)
-                if _unstuck:
-                    logger.info("write_journal: unstuck %d entries at startup", _unstuck)
-
-            _reconciler_shutdown = threading.Event()
-
-            def _reconcile_loop():
-                while not _reconciler_shutdown.is_set():
-                    try:
-                        reset_stuck_processing(_journal_path)
-                        entries = dequeue_pending(_journal_path, batch_size=10)
-                        if not entries:
-                            _reconciler_shutdown.wait(0.1)
-                            continue
-                        for entry in entries:
-                            if _reconciler_shutdown.is_set():
-                                break
-                            try:
-                                materialize_journal_entry(entry, _target_base, _journal_path)
-                            except Exception as exc:
-                                logger.exception(
-                                    "reconciler: entry %s failed: %s",
-                                    entry.get("note_id", "?"), exc,
-                                )
-                    except Exception as loop_exc:
-                        logger.error("reconciler loop error: %s", loop_exc)
-                        _reconciler_shutdown.wait(1.0)
-                logger.info("write_journal reconciler stopped")
-
-            _t = threading.Thread(
-                target=_reconcile_loop, daemon=True, name="journal-reconciler"
-            )
-            _t.start()
-            logger.info("write_journal reconciler: auto-started (journal=%s)", _journal_path)
     except Exception as e:
-        logger.warning("write_journal reconciler: auto-start skipped: %s", e)
+        logger.debug("write_journal config check skipped: %s", e)
 
     signal.signal(signal.SIGPIPE, signal.SIG_IGN)
     try:

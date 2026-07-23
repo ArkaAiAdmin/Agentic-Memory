@@ -129,6 +129,22 @@ def apply_safety_demoting(state: PipelineState) -> None:
         _phase_inc("search.safety_demoting", e)
         logger.warning("safety_demoting failed: %s", e)
 
+    # RANK-FIRST LOCK: restore final_score-descending order after
+    # safety demoting reorders by injection risk.  The CE reranker
+    # owns final ordering; safety demoting adjusts scores in place
+    # but must not change the relative rank order.
+    _ri_order = sorted(
+        range(len(state.result_items)),
+        key=lambda i: float(state.result_items[i].get("final_score") or 0.0),
+        reverse=True,
+    )
+    state.result_items = [state.result_items[i] for i in _ri_order]
+    _new_output = [state.output[0]]
+    for _ri in _ri_order:
+        _new_output.append(state.output[_ri + 1])
+    state.output = _new_output
+    state.results_to_display = [state.results_to_display[i] for i in _ri_order]
+
 
 def apply_quality_gates(state: PipelineState) -> None:
     """Phase 13.2: drop low-quality results via the quality_gates filter.
@@ -237,6 +253,17 @@ def apply_strong_match_boost(state: PipelineState) -> None:
         if disp_idx is not None:
             disp_row = state.results_to_display.pop(disp_idx)
             state.results_to_display.insert(0, disp_row)
+        # RANK-FIRST LOCK: restore final_score-descending order after
+        # strong-match boost moves items by FTS5 rank rather than by
+        # final_score.  The CE reranker owns ordering; strong-match is
+        # a pure score boost, not an ordering override.
+        state.result_items.sort(
+            key=lambda _ri: float(_ri.get("final_score") or 0.0),
+            reverse=True,
+        )
+        _new_order_ids = [ri["id"] for ri in state.result_items]
+        _rtd_by_id = {r[0]: r for r in state.results_to_display}
+        state.results_to_display = [_rtd_by_id[i] for i in _new_order_ids if i in _rtd_by_id]
         try:
             state.output = _format_search_results(
                 state.results_to_display,

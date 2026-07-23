@@ -49,6 +49,16 @@ JOBS: dict[str, dict] = {
         "args": ["--drain", "--max-tasks=50"],
         "timeout": 60,
     },
+    # Journal reconciler: drains the CQRS write-journal in a separate
+    # process (was previously an inline thread in the MCP server process,
+    # competing with MCP tool calls for the SQLiteWriteQueue thread).
+    "journal_reconciler": {
+        "freq": "5m",
+        "offset_min": 2,
+        "script": "background/journal_reconciler.py",
+        "args": ["--drain", "--max-entries=50"],
+        "timeout": 120,
+    },
     "pipeline_health": {
         "freq": "15m",
         "offset_min": 1,

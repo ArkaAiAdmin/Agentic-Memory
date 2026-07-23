@@ -228,7 +228,7 @@ def _record_last_accessed(db: AnyConnection | None, result_items: list) -> None:
             chunk = ids[i : i + _CHUNK_SIZE]
             placeholders = ",".join("?" for _ in chunk)
             db.execute(
-                f"UPDATE tenant_memories SET last_accessed = ? WHERE id IN ({placeholders})",
+                f"UPDATE memories SET last_accessed = ? WHERE id IN ({placeholders}) AND tenant_id = tenant_id()",
                 [now_iso] + chunk,
             )
         db.commit()

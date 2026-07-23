@@ -1138,31 +1138,46 @@ def _acquire_db_connection(
 
     Extracted from save_memory() (2026-06-22) so the orchestrator
     stays readable.
+
+    Retry logic (lock-contention fix): if the write queue is busy and
+    the session times out, wait briefly and retry once.  This avoids
+    failing the entire save when the queue is momentarily saturated
+    (e.g. a background worker task is in flight).
     """
-    try:
-        from infra.db_write_queue import sqlite_write_queue
-        conn = sqlite_write_queue.start_session(db_path_obj)
-        from infra.db_migrations import run_schema_setup
-        run_schema_setup(conn)
-        return conn
-    except Exception as e:
+    last_err: Exception | None = None
+    for _attempt in range(2):
         try:
-            audit.enqueue_audit(
-                db_path=str(db_path_obj),
-                tool="memory_save",
-                args={
-                    "category": category,
-                    "title_slug": title_slug,
-                    "error": str(e)[:200],
-                },
-                results_count=0,
-                top1_id=None,
-                latency_ms=(time.time() - start_time) * 1000.0,
-                error=str(e)[:500],
-            )
-        except Exception as audit_exc:
-            logger.warning("audit.enqueue_audit failed after DB error: %s", audit_exc)
-        raise SaveValidationError(ErrorCode.DB_ERROR, f"saving memory: {e}")
+            from infra.db_write_queue import sqlite_write_queue
+            conn = sqlite_write_queue.start_session(db_path_obj)
+            from infra.db_migrations import run_schema_setup
+            run_schema_setup(conn)
+            return conn
+        except Exception as e:
+            last_err = e
+            if _attempt == 0:
+                # First failure — wait briefly and retry.
+                time.sleep(0.5)
+                continue
+            # Second failure — give up and audit-log.
+            try:
+                audit.enqueue_audit(
+                    db_path=str(db_path_obj),
+                    tool="memory_save",
+                    args={
+                        "category": category,
+                        "title_slug": title_slug,
+                        "error": str(e)[:200],
+                    },
+                    results_count=0,
+                    top1_id=None,
+                    latency_ms=(time.time() - start_time) * 1000.0,
+                    error=str(e)[:500],
+                )
+            except Exception as audit_exc:
+                logger.warning("audit.enqueue_audit failed after DB error: %s", audit_exc)
+            raise SaveValidationError(ErrorCode.DB_ERROR, f"saving memory: {e}")
+    # Should not reach here, but satisfy the type checker.
+    raise SaveValidationError(ErrorCode.DB_ERROR, f"saving memory: {last_err}")
 
 
 def _resolve_save_paths(
@@ -2360,6 +2375,24 @@ def _save_memory_core(
                 data_subject_sub=_resolved_data_subject_sub,
             )
 
+            # W8-aligned fix (lock contention): close the saga's write-queue
+            # session BEFORE running post-save hooks.  The saga runs inside a
+            # sqlite_write_queue session that holds BEGIN IMMEDIATE (the SQLite
+            # write lock) on the worker thread for its whole lifetime.
+            # Post-save hooks (contradiction check, auto-backlink, CRDT
+            # projection, background-task enqueue) open their OWN connections.
+            # If those hooks ran while the saga session was still open, the
+            # hooks' connections would block on the write lock the worker
+            # still holds — contention and potential deadlock.  Closing the
+            # session first releases the write queue slot; the hooks then
+            # open fresh connections with no contention.
+            _saga_session_closed = False
+            try:
+                conn.close()
+                _saga_session_closed = True
+            except Exception as _close_exc:
+                logger.warning("conn.close() failed before post-save hooks: %s", _close_exc)
+
             deferred_writes = _run_post_save_hooks(
                 target_base,
                 db_path_obj,
@@ -2372,11 +2405,11 @@ def _save_memory_core(
                 is_global,
                 (safety_wiring and not defer_expensive),
                 _start_time,
-                conn=conn,
+                conn=None,
             )
-            _enqueue_background_tasks(db_path_obj, note_id, conn=conn)
+            _enqueue_background_tasks(db_path_obj, note_id, conn=None)
             if _is_crdt_enabled():
-                _project_sql_to_crdt(db_path_obj, note_id, conn=conn)
+                _project_sql_to_crdt(db_path_obj, note_id, conn=None)
 
             if (
                 original_category == "lessons"
@@ -2398,12 +2431,13 @@ def _save_memory_core(
             release_db_path_flock(db_path_obj)
             if conn is not None and _conn is None:
                 try:
-                    if _save_errored:
-                        try:
-                            conn.rollback()
-                        except Exception as _rb_err:
-                            logger.warning("save_memory: rollback failed: %s", _rb_err)
-                    conn.close()
+                    if not _saga_session_closed:
+                        if _save_errored:
+                            try:
+                                conn.rollback()
+                            except Exception as _rb_err:
+                                logger.warning("save_memory: rollback failed: %s", _rb_err)
+                        conn.close()
                     if not _save_errored and deferred_writes:
                         from infra.memory_common import safe_atomic_write
                         for filepath, filecontent in deferred_writes:

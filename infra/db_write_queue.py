@@ -154,7 +154,7 @@ class ProxyConnection:
             self._in_txn = True
             return ProxyCursor(None, [], None, None)
         self._cmd_queue.put(("execute", (sql, params)))
-        timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "120.0"))
+        timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", "30.0"))
         try:
             status, res = self._resp_queue.get(timeout=timeout)
         except queue.Empty:
@@ -366,7 +366,7 @@ class SQLiteWriteQueue:
             self._pending_futures.add(future)
         self._queue.put((Path(db_path), "session", (cmd_queue, resp_queue, session_id), future))
         # Configurable timeout via environment variable (default 60s)
-        session_timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_SESSION_TIMEOUT", "60.0"))
+        session_timeout = float(os.environ.get("MEMORY_WRITE_QUEUE_SESSION_TIMEOUT", "15.0"))
         try:
             future.result(timeout=session_timeout)
         finally:
