@@ -98,8 +98,14 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   // ── Initial State ───────────────────────────────────────────────────
-  projects: [],
-  activeProject: null,
+  projects: [
+    {
+      root: "/Users/arka/.config/agentic-memory",
+      name: "agentic-memory",
+      files: [],
+    },
+  ],
+  activeProject: "/Users/arka/.config/agentic-memory",
   openFiles: [],
   activeFile: null,
 
@@ -118,7 +124,7 @@ export const useAppStore = create<AppState>((set) => ({
   theme: "dark",
   sidebarOpen: true,
   memoryPanelOpen: false,
-  terminalOpen: true,
+  terminalOpen: false,
 
   // ── Workspace Actions ───────────────────────────────────────────────
   addProject: (project) =>

@@ -3,10 +3,35 @@ import { useAppStore } from "../stores/appStore";
 import type { FileEntry } from "@ami/shared";
 
 export function FileExplorer() {
-  const { projects, activeProject, openFile } = useAppStore();
+  const { projects, activeProject, openFile, addProject } = useAppStore();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const project = projects.find((p) => p.root === activeProject);
+
+  // Load files from filesystem if project has no files
+  useEffect(() => {
+    if (project && project.files.length === 0 && activeProject) {
+      const loadFiles = async () => {
+        try {
+          const { fs } = await import("../ipc/client");
+          const entries = await fs.listDir(activeProject);
+          const fileEntries: FileEntry[] = entries.map((e) => ({
+            path: `${activeProject}/${e.name}`,
+            name: e.name,
+            isDirectory: e.isDir,
+          }));
+          addProject({
+            root: activeProject,
+            name: project.name,
+            files: fileEntries,
+          });
+        } catch (err) {
+          console.error("Failed to load project files:", err);
+        }
+      };
+      loadFiles();
+    }
+  }, [project, activeProject, addProject]);
 
   const toggleExpand = (path: string) => {
     setExpanded((prev) => {

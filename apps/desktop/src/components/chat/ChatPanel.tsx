@@ -76,7 +76,7 @@ export function ChatPanel() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Message the agent..."
-          disabled={isStreaming || !isInitialized}
+          disabled={isStreaming}
           style={{
             flex: 1,
             background: "#16213e",
@@ -93,7 +93,7 @@ export function ChatPanel() {
         />
         <button
           onClick={handleSend}
-          disabled={isStreaming || !input.trim() || !isInitialized}
+          disabled={isStreaming || !input.trim()}
           style={{
             background: isStreaming ? "#333" : "#4a9eff",
             border: "none",
