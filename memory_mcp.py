@@ -264,14 +264,13 @@ import mcp_sharing  # noqa: E402,F401
 import mcp_health  # noqa: E402,F401
 import mcp_coordination  # noqa: E402,F401 — task management, file locking, messaging
 
-# Keep memory_maintenance (the router) visible; hide individual admin tools.
-for _admin_name in tool_registry.ADMIN_TOOLS:
-    if _admin_name == "memory_maintenance":
-        continue
+# Keep all admin tools visible — they are useful for IDE integration.
+# Only remove truly deprecated tools.
+for _admin_name in tool_registry.DEPRECATED:
     try:
         mcp.remove_tool(_admin_name)
     except Exception as e:
-        logger.warning("tool_registry vs registered-tools mismatch: cannot remove '%s' (%s)", _admin_name, e)
+        logger.debug("skip deprecated removal: %s (%s)", _admin_name, e)
 
 
 if __name__ == "__main__":
