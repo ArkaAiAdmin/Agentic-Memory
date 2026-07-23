@@ -48,29 +48,37 @@ class TestAllRegression(unittest.TestCase):
         # B24 fix: clean up orphans from background auto-save hooks and SDK
         # memory writes that don't cascade-deletes. The test creates memories
         # as part of its run; pre-cleaning ensures the FK check is meaningful.
-        with sqlite3.connect(DB, timeout=30.0) as con:
-            con.execute("PRAGMA foreign_keys=OFF")
-            for table, col in [
-                ("user_access_log", "note_id"),
-                ("user_profile_access_log", "note_id"),
-                ("memory_embeddings", "memory_id"),
-                ("memory_chunks", "parent_id"),
-                ("memory_vec_keys", "memory_id"),
-                ("kg_facts", "source_memory"),
-                ("memory_field_crdt", "memory_id"),
-                ("memory_chunk_embeddings", "memory_id"),
-            ]:
-                con.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM memories)")
-            # Clean up orphans referencing principals table
-            for table, col in [
-                ("role_bindings", "principal_id"),
-                ("acl_overrides", "principal_id"),
-            ]:
-                try:
-                    con.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM principals)")
-                except sqlite3.OperationalError:
-                    pass  # Table or column may not exist in older schemas
-            con.commit()
+        # Uses a short timeout so we don't hang if the DB is locked by the
+        # background worker / auto-save daemon.
+        try:
+            with sqlite3.connect(DB, timeout=5.0) as con:
+                con.execute("PRAGMA foreign_keys=OFF")
+                for table, col in [
+                    ("user_access_log", "note_id"),
+                    ("user_profile_access_log", "note_id"),
+                    ("memory_embeddings", "memory_id"),
+                    ("memory_chunks", "parent_id"),
+                    ("memory_vec_keys", "memory_id"),
+                    ("kg_facts", "source_memory"),
+                    ("memory_field_crdt", "memory_id"),
+                    ("memory_chunk_embeddings", "parent_id"),
+                ]:
+                    try:
+                        con.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM memories)")
+                    except sqlite3.OperationalError:
+                        pass  # Table or column may not exist in older schemas
+                # Clean up orphans referencing principals table
+                for table, col in [
+                    ("role_bindings", "principal_id"),
+                    ("acl_overrides", "principal_id"),
+                ]:
+                    try:
+                        con.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM principals)")
+                    except sqlite3.OperationalError:
+                        pass  # Table or column may not exist in older schemas
+                con.commit()
+        except sqlite3.OperationalError:
+            pass  # DB locked by background worker; FK check below will catch real issues
         with sqlite3.connect(DB, timeout=30.0) as con:
             ver = con.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
             self.assertTrue(ver >= 5, f"schema version {ver} < 5")
@@ -88,10 +96,12 @@ class TestAllRegression(unittest.TestCase):
                 sys.executable,
                 os.path.join(INSTALL_ROOT, "rebuild_vec_index.py"),
                 DB,
+                "--force",
             ],
             capture_output=True,
             text=True,
             env={**os.environ, "MEMORY_DB_PATH": DB},
+            timeout=90,
         )
         self.assertEqual(r.returncode, 0, f"rebuild failed: {r.stderr}")
         with sqlite3.connect(DB, timeout=30.0) as con:
@@ -242,19 +252,26 @@ class TestAllRegression(unittest.TestCase):
 
         # K
         section("K", "memory_integrity --deep: 0 critical")
-        with sqlite3.connect(DB, timeout=30.0) as con:
-            con.execute("PRAGMA foreign_keys=OFF")
-            for table, col in [
-                ("user_access_log", "note_id"),
-                ("user_profile_access_log", "note_id"),
-                ("memory_embeddings", "memory_id"),
-                ("memory_chunks", "parent_id"),
-                ("memory_vec_keys", "memory_id"),
-                ("kg_facts", "source_memory"),
-                ("memory_field_crdt", "memory_id"),
-            ]:
-                con.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM memories)")
-            con.commit()
+        try:
+            with sqlite3.connect(DB, timeout=5.0) as con:
+                con.execute("PRAGMA foreign_keys=OFF")
+                for table, col in [
+                    ("user_access_log", "note_id"),
+                    ("user_profile_access_log", "note_id"),
+                    ("memory_embeddings", "memory_id"),
+                    ("memory_chunks", "parent_id"),
+                    ("memory_vec_keys", "memory_id"),
+                    ("kg_facts", "source_memory"),
+                    ("memory_field_crdt", "memory_id"),
+                    ("memory_chunk_embeddings", "parent_id"),
+                ]:
+                    try:
+                        con.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM memories)")
+                    except sqlite3.OperationalError:
+                        pass
+                con.commit()
+        except sqlite3.OperationalError:
+            pass  # DB locked by background worker
         r = sp.run(
             [
                 sys.executable,

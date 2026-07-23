@@ -276,7 +276,7 @@ class TestConvergence(unittest.TestCase):
                 """
                 SELECT entity_id, agent_id, op, version_vector, name,
                        entity_type, description, timestamp
-                FROM kg_entity_crdt
+                FROM kg_entity_crdt_append
                 """
             ).fetchall()
             for row in rows:
@@ -320,7 +320,7 @@ class TestConvergence(unittest.TestCase):
                 """
                 SELECT entity_id, agent_id, op, version_vector, name,
                        entity_type, description, timestamp
-                FROM kg_entity_crdt
+                FROM kg_entity_crdt_append
                 """
             ).fetchall()
             for row in rows:
@@ -365,7 +365,7 @@ class TestConvergence(unittest.TestCase):
                 """
                 SELECT entity_id, agent_id, op, version_vector, name,
                        entity_type, description, timestamp
-                FROM kg_entity_crdt
+                FROM kg_entity_crdt_append
                 """
             ).fetchall()
             for row in rows:
