@@ -169,6 +169,18 @@ def db_path() -> Generator[Path, None, None]:
         yield p
     finally:
         clear_agent()
+        # Flush any pending audit entries for this test's DB
+        try:
+            from infra.audit import flush_audit
+            flush_audit(timeout=2.0)
+        except Exception:
+            pass
+        # Clear connection pool to prevent stale connections leaking to next test
+        try:
+            from infra._lazy_imports import connection_pool
+            connection_pool.clear()
+        except Exception:
+            pass
         p.unlink(missing_ok=True)
 
 
