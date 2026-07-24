@@ -45,7 +45,6 @@ CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updated_at);
 CREATE INDEX IF NOT EXISTS idx_memories_observed_at ON memories(observed_at);
 CREATE INDEX IF NOT EXISTS idx_memories_fitness_score ON memories(fitness_score);
 CREATE INDEX IF NOT EXISTS idx_memories_source_file ON memories(source_file);
-CREATE INDEX IF NOT EXISTS idx_backlinks_target_id ON backlinks(target_id);
 CREATE INDEX IF NOT EXISTS idx_memories_valid_to ON memories(valid_to);
 CREATE INDEX IF NOT EXISTS idx_memories_valid_from ON memories(valid_from);
 CREATE INDEX IF NOT EXISTS idx_memories_superseded_by ON memories(superseded_by);

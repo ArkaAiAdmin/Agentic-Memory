@@ -505,18 +505,11 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
             for num, path in pending:
                 logger.info("Applying migration %03d: %s", num, path.name)
                 statements = _parse_sql_file(path)
-                broke_for_deferred = False
+                migration_deferred = False
                 for stmt in statements:
                     try:
                         conn.execute(stmt)
                     except sqlite3.OperationalError as e:
-                        # INTENTIONAL: suppress expected errors for
-                        # idempotent migrations.  Migrations run in order
-                        # but some statements reference tables/columns
-                        # created by a LATER migration in the same
-                        # sequence (forward references).  These resolve
-                        # on a subsequent full pass.  Only non-idempotent
-                        # errors (syntax, constraint, type) are re-raised.
                         msg = str(e).lower()
                         if any(
                             re.search(rf"\b{re.escape(kw)}\b", msg)
@@ -537,23 +530,21 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                             )
                         elif any(
                             re.search(rf"\b{re.escape(kw)}\b", msg)
-                            for kw in ("no such table",)
+                            for kw in ("no such table", "no such column")
                         ):
-                            # Forward-reference: a later migration likely
-                            # creates the missing object.  Defer this
-                            # migration and break — later migrations in
-                            # this same run likely depend on the same
-                            # missing object and will also fail.
+                            # Forward-reference: the referenced table/column
+                            # is created by a later migration.  Skip THIS
+                            # statement only and continue with the rest of
+                            # the migration — later migrations in this run
+                            # likely create the missing object and must not
+                            # be skipped.
                             deferred.add(num)
+                            migration_deferred = True
                             logger.warning(
-                                "Migration %03d references object not yet "
-                                "created (forward-ref: %s); deferred — "
-                                "will retry on next startup.",
+                                "Migration %03d statement deferred (forward-ref: %s)",
                                 num,
                                 e,
                             )
-                            broke_for_deferred = True
-                            break
                         else:
                             logger.error(
                                 "Migration %03d statement failed (non-idempotent): %s",
@@ -561,10 +552,6 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                                 e,
                             )
                             raise
-                if broke_for_deferred:
-                    # Skip remaining migrations in this run — they likely
-                    # depend on the same missing object.
-                    break
 
             # Build checksums for newly applied migrations, then write
             # version + checksums to schema_version.  Exclude deferred
@@ -577,21 +564,18 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
 
             if applied:
                 highest_applied = max(applied)
+                # When there are deferred migrations (forward-ref errors),
+                # do NOT bump version past them — they need to be retried
+                # on next startup.  Only bump to the cap when ALL pending
+                # migrations succeeded.
+                if deferred:
+                    target_version = highest_applied
+                else:
+                    max_pending = max((num for num, _ in pending), default=SCHEMA_VERSION)
+                    target_version = min(SCHEMA_VERSION, max_pending)
                 conn.execute(
                     "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
-                    (highest_applied, json.dumps(checksums)),
-                )
-            # If the cap SCHEMA_VERSION is higher than the highest
-            # applied migration in this run (e.g., a migration was
-            # skipped because of the file-presence filter in
-            # ``_get_applied_migrations``), bump once more to the
-            # cap.  This is idempotent.
-            max_pending = max((num for num, _ in pending), default=SCHEMA_VERSION)
-            cap_version = min(SCHEMA_VERSION, max_pending)
-            if not broke_for_deferred and (cap_version > (highest_applied if applied else 0)):
-                conn.execute(
-                    "INSERT OR REPLACE INTO schema_version (id, version, checksums) VALUES (1, ?, ?)",
-                    (cap_version, json.dumps(checksums)),
+                    (target_version, json.dumps(checksums)),
                 )
 
         # Post-migration hooks. Run AFTER the transaction commits so

@@ -97,3 +97,107 @@ CREATE TRIGGER IF NOT EXISTS kg_entities_fts_au AFTER UPDATE ON kg_entities BEGI
 INSERT INTO kg_entities_fts(rowid, name, entity_type)
 SELECT id, name, entity_type FROM kg_entities
 WHERE NOT EXISTS (SELECT 1 FROM kg_entities_fts);
+
+-- === Backlinks (wiki-style bidirectional links) ===
+CREATE TABLE IF NOT EXISTS backlinks (
+    source_id TEXT,
+    target_id TEXT,
+    PRIMARY KEY (source_id, target_id)
+);
+
+-- === Shared memories (cross-agent pool) ===
+CREATE TABLE IF NOT EXISTS shared_memories (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    category TEXT,
+    tags TEXT,
+    shared_at REAL NOT NULL,
+    source_note_id TEXT,
+    metadata TEXT,
+    target_agent_id TEXT DEFAULT NULL,
+    shared_with TEXT DEFAULT NULL,
+    tenant_id TEXT NOT NULL DEFAULT 'default'
+);
+
+-- === User profile access log ===
+CREATE TABLE IF NOT EXISTS user_profile_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id TEXT NOT NULL,
+    source TEXT DEFAULT 'search',
+    category TEXT,
+    tags TEXT,
+    accessed_at REAL NOT NULL
+);
+
+-- === Search phase stats ===
+CREATE TABLE IF NOT EXISTS search_phase_stats (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_id    TEXT NOT NULL,
+    phase_name  TEXT NOT NULL,
+    latency_ms  REAL NOT NULL,
+    created_at  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_search_phase_stats_query ON search_phase_stats(query_id, created_at);
+
+-- === File modification times (incremental backfill tracking) ===
+CREATE TABLE IF NOT EXISTS file_mtimes (
+    path TEXT PRIMARY KEY,
+    mtime REAL NOT NULL,
+    content_hash TEXT NOT NULL
+);
+
+-- === User access log (adaptive retention) ===
+CREATE TABLE IF NOT EXISTS user_access_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id    TEXT    NOT NULL,
+    access_ts  REAL    NOT NULL,
+    source     TEXT    NOT NULL DEFAULT 'unknown'
+);
+CREATE INDEX IF NOT EXISTS idx_user_access_note ON user_access_log(note_id);
+
+-- === Dead letter messages (coordination) ===
+CREATE TABLE IF NOT EXISTS dead_letter_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_id INTEGER,
+    from_agent TEXT NOT NULL,
+    to_agent TEXT NOT NULL,
+    message_type TEXT NOT NULL,
+    payload TEXT,
+    status TEXT DEFAULT 'dead',
+    created_at REAL NOT NULL,
+    dead_lettered_at REAL NOT NULL,
+    reason TEXT
+);
+
+-- === Answer rerank cache ===
+CREATE TABLE IF NOT EXISTS answer_rerank_cache (
+    memory_id   TEXT NOT NULL,
+    query_hash  TEXT NOT NULL,
+    score       REAL NOT NULL,
+    snippet     TEXT NOT NULL,
+    created_at  REAL NOT NULL DEFAULT (unixepoch()),
+    UNIQUE (memory_id, query_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_arc_memory ON answer_rerank_cache(memory_id);
+
+-- === Review schedule (SM-2 spaced repetition) ===
+CREATE TABLE IF NOT EXISTS review_schedule (
+    memory_id TEXT PRIMARY KEY,
+    retrieval_count INTEGER DEFAULT 0,
+    interval_days REAL DEFAULT 1.0,
+    next_review TEXT NOT NULL,
+    last_reviewed TEXT,
+    ease_factor REAL DEFAULT 2.5
+);
+
+-- === Saga log (transaction audit trail) ===
+CREATE TABLE IF NOT EXISTS saga_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    saga_id TEXT NOT NULL,
+    saga_name TEXT NOT NULL,
+    step_idx INTEGER NOT NULL,
+    step_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    ts REAL NOT NULL
+);
