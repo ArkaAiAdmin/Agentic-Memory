@@ -131,15 +131,15 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 #   redirect (kg_entity_crdt / kg_edge_crdt → kg_*_crdt_append) so the
 #   pre-existing UNIQUE(entity_id) collision on re-projection stops
 #   rolling back materializations.
-SCHEMA_VERSION = 73
+# 2026-07-25: bumped to 74 — recreate two indexes silently destroyed by
+# table-recreation migrations (017 destroyed idx_backlinks_source_id,
+# 042 destroyed idx_memories_active partial index).
+SCHEMA_VERSION = 74
 
 # Schema is locked at the version above. Set to False when a new
 # migration is intentionally added, then back to True once the
 # new migration is committed.
-# 2026-07-20: migration 073 added (kg_crdt write-target redirect);
-# keeping SCHEMA_STABLE=True because the migration is a # bookkeeping
-# entry, not a schema change, so there is no risk of a half-applied DB.
-SCHEMA_STABLE = True
+SCHEMA_STABLE = True  # Set to False when adding new migrations
 
 
 
