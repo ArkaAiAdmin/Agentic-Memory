@@ -459,8 +459,7 @@ def closed_auth_principal(closed_auth_env, mock_admin_principal):
     # save-path tenant fallback resolves to the SAME tenant the principal is
     # bound to — otherwise tenant-scoped delete would refuse the row written by
     # this principal.
-    _agent_context.init_agent(agent_id=tenant_id, namespace=tenant_id)
-    _agent_context._AGENT_CONTEXT.principal_id = principal_id
+    _agent_context.init_agent(agent_id=tenant_id, namespace=tenant_id, principal_id=principal_id)
 
     yield db_path, principal_id, tenant_id
 

@@ -47,6 +47,7 @@ class AgentContext:
     display_name: str = ""
     parent_agent: Optional[str] = None
     namespace: str = ""
+    principal_id: Optional[str] = None
 
 
 @contextmanager
@@ -85,6 +86,7 @@ def init_agent(
     display_name: str = "",
     parent_agent: Optional[str] = None,
     namespace: str = "",
+    principal_id: Optional[str] = None,
 ) -> AgentContext:
     """Register and activate an agent context.
 
@@ -99,6 +101,7 @@ def init_agent(
     Args:
         agent_id: Globally unique agent identifier.
         display_name: Human-readable name (optional).
+        principal_id: RBAC principal ID (optional, defaults to agent_id).
         parent_agent: ID of the agent that spawned this one (optional).
         namespace: Override the default namespace derived from agent_id.
     """
@@ -107,6 +110,7 @@ def init_agent(
         display_name=display_name or agent_id,
         parent_agent=parent_agent,
         namespace=namespace or agent_id,
+        principal_id=principal_id or agent_id,
     )
     with _AGENT_LOCK:
         _AGENT_REGISTRY[agent_id] = {
@@ -247,7 +251,7 @@ def get_agent() -> AgentContext:
             if from_env:
                 env_agent = os.environ.get("MEMORY_AGENT_ID", "").strip()
                 if env_agent and val.agent_id != env_agent:
-                    ctx = AgentContext(agent_id=env_agent, namespace=env_agent)
+                    ctx = AgentContext(agent_id=env_agent, namespace=env_agent, principal_id=env_agent)
                     _AGENT_CONTEXT.current = ctx
                     _AGENT_CONTEXT.from_env = True
                     _AGENT_REGISTRY[ctx.agent_id] = {
@@ -262,7 +266,7 @@ def get_agent() -> AgentContext:
     except AttributeError:
         env_agent = os.environ.get("MEMORY_AGENT_ID", "").strip()
         if env_agent:
-            ctx = AgentContext(agent_id=env_agent, namespace=env_agent)
+            ctx = AgentContext(agent_id=env_agent, namespace=env_agent, principal_id=env_agent)
             _AGENT_CONTEXT.from_env = True
         else:
             global _default_fallback_emitted
