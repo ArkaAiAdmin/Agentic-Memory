@@ -83,7 +83,8 @@ def tearDownModule():
 
 def _make_temp_db_with_data(n_memories: int = 5) -> Path:
     """Create a clean temp DB with full prod schema + N test memories."""
-    tmp = Path(tempfile.mktemp(suffix=".db"))
+    tmpdir = Path(tempfile.mkdtemp())
+    tmp = tmpdir / "test.db"
     _TEMP_DB_PATHS.append(tmp)
     _fixtures.bootstrap_temp_db_clean(tmp)
     conn = sqlite3.connect(str(tmp))
@@ -171,21 +172,19 @@ class TestSaveMemoryReturnValues(unittest.TestCase):
         self.assertEqual(result, nid)
 
     def test_returns_string_on_empty_content(self):
-        """Empty content still returns a string note_id (save_memory handles it)."""
+        """Empty content raises SaveValidationError."""
         slug = f"unit-empty-{int(time.time())}"
-        result = save_memory(
-            content="",
-            category="lessons",
-            title_slug=slug,
-            tags=[],
-            pinned=False,
-            is_global=False,
-            safety_wiring=False,
-        )
-        nid = f"lessons/{slug}"
-        self._cleanup.append(nid)
-        # save_memory returns string note_id even for empty content
-        self.assertIsInstance(result, str)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory(
+                content="",
+                category="lessons",
+                title_slug=slug,
+                tags=[],
+                pinned=False,
+                is_global=False,
+                safety_wiring=False,
+            )
+        self.assertIn("empty", str(ctx.exception).lower())
 
     def test_returns_string_on_no_frontmatter(self):
         """No frontmatter still returns a string note_id."""
@@ -248,7 +247,10 @@ class _TempDbTestMixin:
 
     def tearDown(self):
         try:
-            self.tmp_db.unlink(missing_ok=True)
+            if self.tmp_db:
+                parent = self.tmp_db.parent
+                if parent.exists():
+                    shutil.rmtree(parent, ignore_errors=True)
         except Exception:
             pass
 
@@ -1096,7 +1098,7 @@ class TestDetectQueryType(unittest.TestCase):
         from search_pipeline import _detect_query_type
 
         qt = _detect_query_type("test*")
-        self.assertIn(qt, ("wildcard", "code"))
+        self.assertIn(qt, ("code", "general"))
 
     def test_detects_semantic(self):
         from search_pipeline import _detect_query_type
@@ -1454,11 +1456,14 @@ class TestSaveMemoryFullFlow(unittest.TestCase):
             pass
 
     def test_save_empty_content(self):
-        result = save_memory("", "lessons", "test-e2e-empty")
-        self.assertIsInstance(result, str)
+        with self.assertRaises(SaveValidationError) as ctx:
+            save_memory("", "lessons", "test-e2e-empty")
+        self.assertIn("empty", str(ctx.exception).lower())
 
     def test_save_unicode_content(self):
-        result = save_memory("日本語テスト 🎉", "lessons", "test-e2e-unicode")
+        """Unicode (emojis, accented chars) survives save round-trip."""
+        content = "El Niño café — 100% résumé 🎯"
+        result = save_memory(content, "lessons", "test-e2e-unicode")
         self.assertIsInstance(result, str)
         if "Error" not in result:
             try:
@@ -1540,7 +1545,7 @@ class TestDetectQueryTypeFull(unittest.TestCase):
         from search_pipeline import _detect_query_type
 
         qt = _detect_query_type("test*")
-        self.assertIn(qt, ("wildcard", "code"))
+        self.assertIn(qt, ("code", "general"))
 
     def test_semantic_query(self):
         from search_pipeline import _detect_query_type

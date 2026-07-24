@@ -17,6 +17,7 @@ not collide with the existing ``config.py`` (which exposes ``MemoryConfig``).
 
 from __future__ import annotations
 
+import datetime
 import logging
 import os
 import shutil
