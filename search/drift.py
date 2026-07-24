@@ -266,14 +266,20 @@ def check_concept_drift_db(db_path: str | Path, threshold: float = 0.15, tenant_
         )
         if was_written:
             conn.commit()
+        # Derive alarm_level from drift magnitude
+        if drift >= threshold * 2:
+            computed_level = "critical"
+        elif drift >= threshold:
+            computed_level = "warning"
+        else:
+            computed_level = "info"
         return {
             "drift_metric": round(drift, 4),
             "drifted_dimensions": drifted,
             "alarm_id": alarm_id,
             "n_embedded": len(vectors),
             "n_alarms_written": n_alarms_written,
-            # L22 fix: use pre-computed alarm_level instead of duplicating threshold logic
-            "alarm_level": alarm_level,
+            "alarm_level": computed_level,
         }
     finally:
         safe_close_db(conn)

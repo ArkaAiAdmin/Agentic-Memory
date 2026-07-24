@@ -103,7 +103,7 @@ def memory_check_concept_drift(threshold: float = 0.15) -> str:
     if not db_path.exists():
         return _err(ErrorCode.DB_ERROR, f"No memory.db at {db_path}")
     try:
-        from search_pipeline import check_concept_drift_db
+        from search.drift import check_concept_drift_db
 
         result = check_concept_drift_db(db_path, threshold=threshold)
         return json.dumps(result)

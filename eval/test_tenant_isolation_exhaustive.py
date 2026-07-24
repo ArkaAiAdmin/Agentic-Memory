@@ -744,8 +744,7 @@ class TestKGIsolation:
 
     def test_kg_facts_has_tenant_col(self, db_path: Path):
         cols = _col_set(db_path, "kg_facts")
-        if "tenant_id" not in cols:
-            pytest.xfail("SECURITY GAP: kg_facts lacks tenant_id")
+        assert "tenant_id" in cols, "kg_facts must have tenant_id column (migration 050)"
 
     def test_kg_fact_insert_scoped(self, db_path: Path):
         cols = _col_set(db_path, "kg_facts")
@@ -1233,8 +1232,7 @@ class TestSyncIsolation:
         except (ImportError, Exception):
             pytest.skip("SyncServer not importable")
             return
-        if not has:
-            pytest.xfail("SYNC GAP: SyncServer lacks tenant_id")
+        assert has, "SyncServer must reference tenant_id for tenant isolation"
 
     def test_sync_client_tenant(self, db_path: Path):
         try:
@@ -1244,8 +1242,7 @@ class TestSyncIsolation:
         except (ImportError, Exception):
             pytest.skip("SyncClient not importable")
             return
-        if not has:
-            pytest.xfail("SYNC GAP: SyncClient lacks tenant_id")
+        assert has, "SyncClient must reference tenant_id for tenant isolation"
 
     def test_crdt_sync_tenant(self, db_path: Path):
         try:
@@ -1255,8 +1252,7 @@ class TestSyncIsolation:
         except (ImportError, Exception):
             pytest.skip("memory_advanced not importable")
             return
-        if not has:
-            pytest.xfail("SYNC GAP: memory_advanced lacks tenant_id")
+        assert has, "memory_advanced must reference tenant_id for tenant isolation"
 
     def test_sync_no_broadcast(self, db_path: Path):
         _insert(db_path, "lessons/sa", "Sync A", tenant_id="agent-a")

@@ -60,7 +60,7 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
         from mcp_surface.mcp_maintenance import memory_maintenance
         from mcp_surface.mcp_maintenance import MaintenanceOp
 
-        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+        with patch("mcp_surface.mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
                 MaintenanceOp.TIER_STATS: lambda **_: "TIER_STATS_OK",
             }
@@ -77,7 +77,7 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
             captured["dry_run"] = dry_run
             return "captured"
 
-        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+        with patch("mcp_surface.mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
                 MaintenanceOp.HEARTBEAT: capture_handler,
             }
@@ -89,7 +89,7 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
         from mcp_surface.mcp_maintenance import memory_maintenance
         from mcp_surface.mcp_maintenance import MaintenanceOp
 
-        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+        with patch("mcp_surface.mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
                 MaintenanceOp.TIER_STATS: lambda **_: "OK",
             }
@@ -105,7 +105,7 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
         from mcp_surface.mcp_maintenance import memory_maintenance
         from mcp_surface.mcp_maintenance import MaintenanceOp
 
-        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+        with patch("mcp_surface.mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
                 MaintenanceOp.TIER_STATS: lambda **_: 12345,
             }
@@ -116,7 +116,7 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
         from mcp_surface.mcp_maintenance import memory_maintenance
         from mcp_surface.mcp_maintenance import MaintenanceOp
 
-        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+        with patch("mcp_surface.mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
                 MaintenanceOp.TIER_STATS: lambda **_: {"k": "v"},
             }
@@ -134,7 +134,7 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
             captured["threshold"] = threshold
             return "ok"
 
-        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+        with patch("mcp_surface.mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
                 MaintenanceOp.DEDUP: capture,
             }
@@ -149,7 +149,7 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
         from mcp_surface.mcp_maintenance import memory_maintenance
         from mcp_surface.mcp_maintenance import MaintenanceOp
 
-        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+        with patch("mcp_surface.mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
                 MaintenanceOp.MEMORY_STATS: lambda **_: "STATS_OK",
             }
@@ -167,7 +167,7 @@ class TestMemoryMaintenanceDispatch(unittest.TestCase):
             captured["called"] = True
             return json.dumps({"db_size_bytes": 0, "note_count": 0})
 
-        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+        with patch("mcp_surface.mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
                 MaintenanceOp.MEMORY_STATS: capture,
             }
