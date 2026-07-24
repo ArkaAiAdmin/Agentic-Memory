@@ -4,7 +4,12 @@
 -- _migrate_ensure_fts_triggers
 
 -- === Columns ===
--- Idempotent ALTER TABLE ADD COLUMN (skips if column exists)
+-- NOTE: On a fresh DB, migration 000 already creates the memories table
+-- with ALL these columns.  The ALTER TABLE ADD COLUMN statements below
+-- will produce "duplicate column name" warnings — this is expected and
+-- harmless.  The migration runner catches them as idempotent skips.
+-- On older DBs (pre-000) these statements add the missing columns.
+-- There is no SQLite equivalent of "ADD COLUMN IF NOT EXISTS".
 ALTER TABLE memories ADD COLUMN valid_from TEXT;
 ALTER TABLE memories ADD COLUMN valid_to TEXT;
 ALTER TABLE memories ADD COLUMN superseded_by TEXT;

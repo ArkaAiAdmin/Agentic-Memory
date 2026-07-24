@@ -1,3 +1,13 @@
 -- 064 down: extra_retry_count column is harmless on rollback.
--- SQLite < 3.35 has no DROP COLUMN; leaving it in place is additive.
--- No data loss: the column is simply unused after rollback.
+--
+-- SQLite < 3.35 has no DROP COLUMN, and the 12-step table-recreation
+-- pattern is not warranted for a single additive INTEGER column.
+-- After rollback the column remains in the schema but is never read
+-- by any code path — it is dead weight, not a data-loss risk.
+--
+-- If a clean removal is ever needed, use the 12-step pattern:
+--   CREATE TABLE task_queue_new (...without extra_retry_count...);
+--   INSERT INTO task_queue_new SELECT ... FROM task_queue;
+--   DROP TABLE task_queue;
+--   ALTER TABLE task_queue_new RENAME TO task_queue;
+--   (recreate indexes from migration 006)
