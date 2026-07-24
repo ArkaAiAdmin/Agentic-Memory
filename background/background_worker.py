@@ -1138,7 +1138,7 @@ def run_worker(
                         processed,
                     )
                     break
-                with open_db(db_path, timeout=30.0, write=True, pooled=True) as conn:
+                with open_db(db_path, timeout=30.0, write=False, pooled=True) as conn:
                     ok = process_one_task(conn, db_path, task_type=task_type)
                     if not ok:
                         break
@@ -1165,7 +1165,7 @@ def run_worker(
             while not _shutdown:
                 batch_processed = 0
                 while batch_processed < batch_size:
-                    with open_db(db_path, timeout=30.0, write=True, pooled=True) as conn:
+                    with open_db(db_path, timeout=30.0, write=False, pooled=True) as conn:
                         ok = process_one_task(conn, db_path, task_type=task_type)
                         if not ok:
                             break

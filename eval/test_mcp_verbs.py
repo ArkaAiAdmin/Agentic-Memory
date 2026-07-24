@@ -119,14 +119,14 @@ class TestVerbDeleteBehavior:
     """memory_delete: removes a note and returns confirmation."""
 
     def test_delete_returns_confirmation(self):
-        with mock.patch("mcp_memory.memory_delete") as md:
+        with mock.patch("mcp_surface.mcp_memory.memory_delete") as md:
             md.return_value = "Deleted: lessons/test-note"
             result = memory_delete(note_id="lessons/test-note")
             assert "Deleted" in result
             md.assert_called_once_with(note_id="lessons/test-note", hard=False)
 
     def test_delete_hard(self):
-        with mock.patch("mcp_memory.memory_delete") as md:
+        with mock.patch("mcp_surface.mcp_memory.memory_delete") as md:
             md.return_value = "Purged: lessons/test-note"
             result = memory_delete(note_id="lessons/test-note", hard=True, confirm=True)
             assert "Purged" in result
@@ -153,7 +153,7 @@ class TestVerbNoteBehavior:
             assert "note content" in result
 
     def test_note_delete(self):
-        with mock.patch("mcp_memory.memory_delete") as md:
+        with mock.patch("mcp_surface.mcp_memory.memory_delete") as md:
             md.return_value = "Deleted"
             result = memory_note(note_id="lessons/my-note", action="delete")
             assert "Deleted" in result
@@ -187,7 +187,7 @@ class TestVerbLearnBehavior:
     def test_learn_with_skill(self):
         with (
             mock.patch("save_pipeline.save_memory") as ms,
-            mock.patch("mcp_maintenance.memory_compile_skill") as mcs,
+            mock.patch("mcp_surface.mcp_maintenance.memory_compile_skill") as mcs,
         ):
             ms.return_value = "saved"
             mcs.return_value = "compiled"
@@ -200,8 +200,8 @@ class TestVerbAuditBehavior:
 
     def test_audit_returns_activity(self):
         with (
-            mock.patch("mcp_audit.memory_audit_query") as maq,
-            mock.patch("mcp_audit.memory_circuit_breaker_status") as mcb,
+            mock.patch("mcp_surface.mcp_audit.memory_audit_query") as maq,
+            mock.patch("mcp_surface.mcp_audit.memory_circuit_breaker_status") as mcb,
         ):
             maq.return_value = "audit"
             mcb.return_value = "cb ok"
@@ -215,11 +215,11 @@ class TestVerbOrganizeBehavior:
 
     def test_organize_safe_default(self):
         with (
-            mock.patch("mcp_rebuild.memory_compact") as mc,
-            mock.patch("mcp_maintenance.memory_consolidate") as mcs,
-            mock.patch("mcp_maintenance.memory_rewrite_links") as mrl,
-            mock.patch("mcp_rebuild.memory_backfill_all") as mba,
-            mock.patch("mcp_memory.memory_purge_expired") as mpe,
+            mock.patch("mcp_surface.mcp_rebuild.memory_compact") as mc,
+            mock.patch("mcp_surface.mcp_maintenance.memory_consolidate") as mcs,
+            mock.patch("mcp_surface.mcp_maintenance.memory_rewrite_links") as mrl,
+            mock.patch("mcp_surface.mcp_rebuild.memory_backfill_all") as mba,
+            mock.patch("mcp_surface.mcp_memory.memory_purge_expired") as mpe,
         ):
             mc.return_value = "compact ok"
             mcs.return_value = "consolidate ok"
@@ -232,7 +232,7 @@ class TestVerbOrganizeBehavior:
             assert "rewrite_links" in result
 
     def test_organize_target_compact(self):
-        with mock.patch("mcp_rebuild.memory_compact") as mc:
+        with mock.patch("mcp_surface.mcp_rebuild.memory_compact") as mc:
             mc.return_value = "compact ok"
             result = memory_organize(target="compact")
             assert "compact ok" in result
@@ -246,7 +246,7 @@ class TestVerbShareBehavior:
     """memory_share: shares notes with other agents."""
 
     def test_share_list(self):
-        with mock.patch("mcp_sharing.memory_shared_list") as msl:
+        with mock.patch("mcp_surface.mcp_sharing.memory_shared_list") as msl:
             msl.return_value = "shared items"
             result = memory_share(note_id="", action="list")
             assert "shared items" in result
@@ -261,8 +261,8 @@ class TestVerbGraphBehavior:
 
     def test_graph_stats(self):
         with (
-            mock.patch("mcp_kg.memory_facts_list") as mfl,
-            mock.patch("mcp_kg.memory_graph_stats") as mgs,
+            mock.patch("mcp_surface.mcp_kg.memory_facts_list") as mfl,
+            mock.patch("mcp_surface.mcp_kg.memory_graph_stats") as mgs,
         ):
             mfl.return_value = "facts"
             mgs.return_value = "stats"
@@ -279,7 +279,7 @@ class TestVerbProfileBehavior:
     """memory_profile: shows user/agent/system profile."""
 
     def test_profile_stats(self):
-        with mock.patch("mcp_profile.memory_profile_stats") as mps:
+        with mock.patch("mcp_surface.mcp_profile.memory_profile_stats") as mps:
             mps.return_value = "profile stats"
             result = memory_profile(action="stats")
             assert "profile stats" in result
@@ -293,7 +293,7 @@ class TestVerbSessionStartBehavior:
     """memory_session_start: returns session briefing."""
 
     def test_session_start_returns_briefing(self):
-        with mock.patch("mcp_search.memory_session_start") as mss:
+        with mock.patch("mcp_surface.mcp_search.memory_session_start") as mss:
             mss.return_value = "Session briefing data"
             result = memory_session_start(query="test")
             assert "Session" in result
@@ -304,7 +304,7 @@ class TestVerbAdvancedBehavior:
     """memory_advanced: pass-through to memory_maintenance."""
 
     def test_advanced_delegates_to_maintenance(self):
-        with mock.patch("mcp_maintenance.memory_maintenance") as mm:
+        with mock.patch("mcp_surface.mcp_maintenance.memory_maintenance") as mm:
             mm.return_value = "operation done"
             result = memory_advanced(operation="heartbeat", dry_run=True)
             assert "operation done" in result

@@ -307,7 +307,7 @@ class TestMemoryCrdtSyncTool(unittest.TestCase):
             os.environ.pop("MEMORY_CRDT_TRUSTED_PEERS", None)
         connection_pool.clear()
 
-    @mock.patch("mcp_crdt._resolve_memory_dir")
+    @mock.patch("mcp_surface.mcp_crdt._resolve_memory_dir")
     def test_sync_empty_notes(self, mock_resolve):
         mock_resolve.return_value = self.db_path.parent
         from mcp_surface.mcp_crdt import memory_crdt_sync
@@ -320,7 +320,7 @@ class TestMemoryCrdtSyncTool(unittest.TestCase):
         self.assertEqual(parsed["total"], 0)
         self.assertEqual(parsed["applied"], 0)
 
-    @mock.patch("mcp_crdt._resolve_memory_dir")
+    @mock.patch("mcp_surface.mcp_crdt._resolve_memory_dir")
     def test_sync_single_note(self, mock_resolve):
         mock_resolve.return_value = self.db_path.parent
         from mcp_surface.mcp_crdt import memory_crdt_sync
@@ -342,7 +342,7 @@ class TestMemoryCrdtSyncTool(unittest.TestCase):
         self.assertEqual(parsed["total"], 1)
         self.assertGreaterEqual(parsed["applied"], 0)
 
-    @mock.patch("mcp_crdt._resolve_memory_dir")
+    @mock.patch("mcp_surface.mcp_crdt._resolve_memory_dir")
     def test_sync_invalid_json_returns_error(self, mock_resolve):
         mock_resolve.return_value = self.db_path.parent
         from mcp_surface.mcp_crdt import memory_crdt_sync
