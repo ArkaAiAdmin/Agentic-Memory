@@ -121,6 +121,9 @@ def init_agent(
     # Best-effort persistent write for cross-agent discovery via sync.
     _persist_agent_registration(agent_id, ctx.display_name, parent_agent, ctx.namespace)
 
+    # Auto-register as RBAC principal so the agent can read/write memories.
+    _auto_register_rbac_principal(agent_id, ctx.display_name)
+
     logger.info("agent_context: activated %s (namespace=%s)", agent_id, ctx.namespace)
     return ctx
 
@@ -166,6 +169,60 @@ def _persist_agent_registration(
                 pass
     except Exception as exc:
         logger.warning("agent_context: failed to persist agent registration for %s: %s", agent_id, exc)
+
+
+def _auto_register_rbac_principal(agent_id: str, display_name: str) -> None:
+    """Auto-register agent as an RBAC principal with read+write permissions.
+
+    Best-effort: silently skips if RBAC tables don't exist yet or the
+    agent is already registered.  Called by init_agent() so every agent
+    that connects gets appropriate permissions without manual DB edits.
+    """
+    principal_id = agent_id.lower()
+    try:
+        from pathlib import Path as _Path
+        import sqlite3
+        from infra._lazy_imports import get_config as _get_config
+
+        cfg = _get_config()
+        db = _Path(str(cfg.db_path))
+        if not db.exists():
+            return
+        conn = sqlite3.connect(str(db), timeout=5)
+        try:
+            # Skip if principal already exists
+            existing = conn.execute(
+                "SELECT id FROM principals WHERE id = ?", (principal_id,)
+            ).fetchone()
+            if existing:
+                return
+
+            # Create principal
+            conn.execute(
+                "INSERT OR IGNORE INTO principals (id, kind, display_name, tenant_id, created_at, updated_at) "
+                "VALUES (?, 'agent', ?, 'default', datetime('now'), datetime('now'))",
+                (principal_id, display_name),
+            )
+
+            # Bind to memory read+write+delete roles (full agent permissions)
+            for role_id in ('role_memory_read', 'role_memory_write', 'role_memory_delete'):
+                conn.execute(
+                    "INSERT OR IGNORE INTO role_bindings (principal_id, role_id, granted_by) "
+                    "VALUES (?, ?, 'auto-register')",
+                    (principal_id, role_id),
+                )
+
+            conn.commit()
+            logger.info("agent_context: auto-registered RBAC principal '%s' with read+write", principal_id)
+        except sqlite3.OperationalError:
+            pass  # RBAC tables don't exist yet (pre-migration)
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.debug("agent_context: RBAC auto-register skipped for %s: %s", agent_id, exc)
 
 
 def get_agent() -> AgentContext:

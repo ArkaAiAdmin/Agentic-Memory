@@ -1902,6 +1902,17 @@ def _materialize_journal_once(
     """
     from infra.write_journal import mark_applied, materialize_security_scan
 
+    # Restore agent context from the journal entry so RBAC resolves the
+    # correct principal during materialization.  Without this, the
+    # thread-local agent context is empty and mcp_authorize denies access.
+    _entry_agent_id = entry.get("agent_id", "")
+    if _entry_agent_id:
+        try:
+            from agent_context import init_agent
+            init_agent(_entry_agent_id)
+        except Exception:
+            pass
+
     # Re-run the prompt-injection scan at materialization time. The enqueue
     # path already scanned, but the rule set can change while the entry sits
     # pending. Raises SaveValidationError -> caught by the caller and
@@ -2207,6 +2218,10 @@ def _save_memory_core(
                 principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
         except (ImportError, AttributeError):
             pass
+        # Normalize to lowercase — RBAC principals are stored lowercase
+        # but agent_context preserves the original case from MEMORY_AGENT_ID.
+        if principal_id:
+            principal_id = str(principal_id).lower()
         if not mcp_authorize(principal_id, "write", "memory", db_path):
             return _err(ErrorCode.AUTHORIZATION_DENIED, f"Not authorized for 'write' on 'memory'. Principal '{principal_id or 'anonymous'}' lacks the required role.")
     except Exception as auth_exc:

@@ -287,8 +287,12 @@ def resolve_tenant_for_principal(principal_id: str | None, db_path: str | None =
     if not principal_id:
         return "default"
     if db_path is None:
-        from memory_config import resolve_db_path
-        db_path = str(resolve_db_path())
+        try:
+            from infra.memory_config import get_memory_paths
+            _, local_mem, _ = get_memory_paths()
+            db_path = str(local_mem / "memory.db")
+        except Exception:
+            db_path = "memory/memory.db"
     try:
         from pathlib import Path
         from infra.db import open_db
