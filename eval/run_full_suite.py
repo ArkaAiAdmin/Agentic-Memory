@@ -46,6 +46,7 @@ results_file.parent.mkdir(parents=True, exist_ok=True)
 env = os.environ.copy()
 env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 env["OMP_NUM_THREADS"] = "1"
+env["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
 # Downgrade config drift enforcement so env-var overrides don't block
 # memory_mcp import in test subprocesses.
 env["MEMORY_FAIL_ON_INTEGRITY_DRIFT"] = "0"

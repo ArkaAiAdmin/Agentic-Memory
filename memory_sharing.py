@@ -397,8 +397,11 @@ def list_shared_memories(
                 conditions.append("category = ?")
                 params.append(category)
             if shared_with_me and current_agent:
+                # Include both directed shares (targeted at this agent)
+                # and undirected shares (target_agent_id IS NULL) which
+                # are visible to all agents in the pool.
                 conditions.append(
-                    "(target_agent_id = ? OR shared_with = ?)"
+                    "(target_agent_id = ? OR shared_with = ? OR (target_agent_id IS NULL AND shared_with IS NULL))"
                 )
                 params.extend([current_agent, current_agent])
             this_mod = sys.modules[__name__]

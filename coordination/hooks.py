@@ -421,14 +421,18 @@ def claim_pending_tasks(agent_id: str | None = None, project_id: str = "default"
         if project_id and project_id != "default":
             rows = conn.execute(
                 "SELECT id, task_type, description, created_by FROM shared_tasks "
-                "WHERE status='pending' AND project_id=? ORDER BY created_at ASC LIMIT ?",
-                (project_id, limit),
+                "WHERE status='pending' AND project_id=? "
+                "AND (assigned_to IS NULL OR assigned_to = ?) "
+                "ORDER BY created_at ASC LIMIT ?",
+                (project_id, agent_id, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT id, task_type, description, created_by FROM shared_tasks "
-                "WHERE status='pending' ORDER BY created_at ASC LIMIT ?",
-                (limit,),
+                "WHERE status='pending' "
+                "AND (assigned_to IS NULL OR assigned_to = ?) "
+                "ORDER BY created_at ASC LIMIT ?",
+                (agent_id, limit),
             ).fetchall()
 
         if not rows:

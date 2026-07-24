@@ -544,26 +544,27 @@ export function endSession(ctx: HookContext): Promise<void> {
 }
 
 export function injectSystemPrompt(ctx: HookContext): void {
-  // NOTE: A harness fires `experimental.chat.system.transform` before
-  // each LLM call (not just once at session start). Each call pushes
-  // whatever is currently in state.sessionContext / state.proactiveContext
-  // and then clears it so we don't inject stale context on the next turn.
-  // If a harness ever changes this to fire only once, proactive context
-  // would only be delivered on the very first LLM call.
+  // The OpenCode SDK fires `experimental.chat.system.transform` before
+  // each LLM call with `output.system: string[]`.  We push content
+  // directly into that array — the adapter.injectIntoSystemPrompt is
+  // a no-op placeholder; real injection goes through output.system.
+
+  const output = (ctx as any).output as { system?: string[] } | undefined
+  if (!output || !Array.isArray(output.system)) return
 
   // Agent contract: injected on every LLM call as a persistent reminder.
   const contract = loadAgentContract()
   if (contract) {
-    ctx.adapter.injectIntoSystemPrompt([contract])
+    output.system.push(contract)
   }
 
   const s = ctx.adapter.getState()
   if (s.sessionContext) {
-    ctx.adapter.injectIntoSystemPrompt([s.sessionContext])
+    output.system.push(s.sessionContext)
     s.sessionContext = ""
   }
   if (s.proactiveContext) {
-    ctx.adapter.injectIntoSystemPrompt([s.proactiveContext])
+    output.system.push(s.proactiveContext)
     s.proactiveContext = ""
   }
 }
