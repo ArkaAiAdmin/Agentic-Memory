@@ -7,7 +7,6 @@ G1 fix (2026-06-22): documentation about the
 ``check_contradictions`` vs ``detect_contradictions`` naming is in
 ``memory_check_contradictions`` below.
 """
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 
 

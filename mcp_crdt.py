@@ -4,7 +4,6 @@ CRDT sync subsystem MCP tools — crdt_sync, crdt_status.
 
 Extracted from mcp_maintenance.py to reduce module size.
 """
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 import sqlite3

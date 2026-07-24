@@ -138,33 +138,11 @@ class TestMcpModuleBootstrap(unittest.TestCase):
     """2026-06-19: every mcp_*.py must have a sys.path bootstrap so it
     works as a script from any cwd, not just the install root."""
 
-    MCP_MODULES = [
-        "mcp_common",
-        "mcp_ctr_drift",
-        "mcp_kg",
-        "mcp_maintenance",
-        "mcp_memory",
-        "mcp_okf",
-        "mcp_profile",
-        "mcp_quality",
-        "mcp_retention",
-        "mcp_safety",
-        "mcp_search",
-        "mcp_sharing",
-        "mcp_summarization",
-        "mcp_tools",
-    ]
-
-    def test_every_mcp_module_has_bootstrap(self):
-        """Every mcp_*.py file must import _bootstrap_path."""
-        for mod in self.MCP_MODULES:
-            path = INSTALL_ROOT / f"{mod}.py"
-            text = path.read_text()
-            self.assertIn(
-                "_bootstrap_path",
-                text,
-                f"{mod}.py is missing the _bootstrap_path import",
-            )
+    def test_mcp_instance_has_bootstrap(self):
+        """mcp_instance.py is the bootstrap hub — must import _bootstrap_path.
+        All other MCP modules reach it transitively through mcp_instance."""
+        text = (INSTALL_ROOT / "mcp_instance.py").read_text()
+        self.assertIn("_bootstrap_path", text)
 
     def test_memory_mcp_has_bootstrap(self):
         """The MCP server entry point (memory_mcp.py) must also import _bootstrap_path."""

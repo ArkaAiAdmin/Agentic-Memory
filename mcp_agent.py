@@ -6,7 +6,6 @@ Agent scoping enables namespace isolation for multi-agent CRDT systems.
 
 import logging
 logger = logging.getLogger(__name__)
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 

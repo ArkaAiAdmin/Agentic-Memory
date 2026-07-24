@@ -2,7 +2,6 @@ from __future__ import annotations
 """
 Memory CRUD MCP tools — save, superseede, delete, restore, trash, purge, auto_save*, daily_digest, reinforce.
 """
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 
 import json

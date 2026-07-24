@@ -4,7 +4,6 @@ Rebuild subsystem MCP tools — rebuild, backfill_all, compact.
 
 Extracted from mcp_maintenance.py to reduce module size.
 """
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 import os

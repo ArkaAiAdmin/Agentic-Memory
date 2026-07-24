@@ -7,7 +7,6 @@ import os
 import socket
 import time
 
-from mcp_common import _bootstrap_path  # noqa: F401
 from mcp_instance import mcp  # noqa: F401
 from infra.memory_common import configure_logging  # noqa: F401
 from infra.infrastructure import (  # noqa: F401

@@ -1,7 +1,6 @@
 """
 Summarization MCP tools — memory_summarize, memory_auto_summarize, memory_summarization_stats.
 """
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 
 

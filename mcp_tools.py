@@ -16,7 +16,6 @@ import sys
 from pathlib import Path as _Path
 
 # Must be imported first for bootstrap side effects
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 _tools_dir = _Path(__file__).parent
 _skip = {"mcp_tools", "mcp_instance"}

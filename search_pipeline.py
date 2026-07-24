@@ -4,6 +4,12 @@ Extracted from memory_mcp.py to separate search logic from the MCP server
 interface. Contains query expansion, reranking, cross-encoder scoring,
 chunk-based search, temporal decay, conversation history resolution,
 Graph-RAG expansion, and the main search_memories orchestrator.
+
+Asymmetry: this is the one root-level file kept as real code (not a shim).
+It has a custom _ProxyModule that double-hops _CTR_WEIGHTS_CACHE writes to
+search/scoring.py. Converting to install_shim would lose this forwarding.
+Other root-level files (arc_cache, audit, cache, ...) are pure backward-compat
+shims delegating to infra.* submodules.
 """
 
 import logging

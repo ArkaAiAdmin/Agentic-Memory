@@ -5,7 +5,6 @@ Exports memories to or imports from an Open Knowledge Format directory
 of markdown files with full YAML frontmatter, compatible with Obsidian,
 Foam, and other frontmatter-aware tools.
 """
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 from pathlib import Path
 

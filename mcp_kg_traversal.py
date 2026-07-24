@@ -1,7 +1,6 @@
 """
 Knowledge Graph Traversal MCP tools — memory_graph_shortest_path, memory_graph_traverse.
 """
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 from typing import List, Union
 

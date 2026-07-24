@@ -2,7 +2,6 @@ from __future__ import annotations
 """
 Search MCP tools — memory_search, memory_semantic_search, memory_recall_context, memory_session_start.
 """
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import os
 import sys

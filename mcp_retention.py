@@ -3,7 +3,6 @@ Adaptive retention MCP tools — memory_adaptive_retention, memory_retention_sta
 
 Also runs the surprise-based neural forget curve to decay scores.
 """
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 logger = logging.getLogger(__name__)
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 from typing import Any
 
 

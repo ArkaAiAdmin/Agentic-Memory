@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 
-from mcp_common import _bootstrap_path  # noqa: E402,F401
 
 import json
 import os
