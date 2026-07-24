@@ -79,8 +79,8 @@ def server_main() -> None:
             )
 
     os.environ.setdefault("MEMORY_DB_PATH", str(db_path))
-    import mcp_instance
-    import mcp_tools  # noqa: F401
+    import mcp_surface.mcp_instance
+    import mcp_surface.mcp_tools  # noqa: F401
     import memory_mcp  # noqa: F401
 
     # Start the optional CRDT sync server as a daemon thread.

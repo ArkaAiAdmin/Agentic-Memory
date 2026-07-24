@@ -385,7 +385,7 @@ class MemoryClient:
 
     def scan_injection(self, content: str) -> dict[str, Any]:
         """Scan content for prompt-injection patterns."""
-        from mcp_safety import memory_scan_injection
+        from mcp_surface.mcp_safety import memory_scan_injection
 
         raw = memory_scan_injection(content=content)
         if isinstance(raw, str):
@@ -401,7 +401,7 @@ class MemoryClient:
         self, content: str, top_n: int = 20
     ) -> builtins.list[dict[str, Any]]:
         """Check content for phrase-level contradictions."""
-        from mcp_safety import memory_check_contradictions
+        from mcp_surface.mcp_safety import memory_check_contradictions
 
         raw = memory_check_contradictions(content=content, top_n=top_n)
         items = json.loads(raw) if isinstance(raw, str) else raw
@@ -411,7 +411,7 @@ class MemoryClient:
 
     def get_user_profile(self) -> dict[str, Any]:
         """Get the user preference profile."""
-        from mcp_profile import memory_user_profile
+        from mcp_surface.mcp_profile import memory_user_profile
 
         raw = memory_user_profile()
         if isinstance(raw, str):
@@ -431,7 +431,7 @@ class MemoryClient:
         tags: str = "",
     ) -> None:
         """Record that a note was accessed (opt-in via MEMORY_USER_PROFILE=1)."""
-        from mcp_profile import memory_profile_access
+        from mcp_surface.mcp_profile import memory_profile_access
 
         memory_profile_access(
             note_id=note_id,
@@ -444,7 +444,7 @@ class MemoryClient:
 
     def check_integrity(self, deep: bool = False) -> IntegrityReport:
         """Run a health check on the memory DB."""
-        from mcp_audit import memory_check_integrity
+        from mcp_surface.mcp_audit import memory_check_integrity
 
         raw = memory_check_integrity(deep=deep)
         data = json.loads(raw) if isinstance(raw, str) else raw
@@ -464,7 +464,7 @@ class MemoryClient:
 
     def audit(self) -> dict[str, Any]:
         """Audit memory system health (SRMA metrics)."""
-        from mcp_audit import memory_audit
+        from mcp_surface.mcp_audit import memory_audit
 
         raw = memory_audit()
         if isinstance(raw, str):
@@ -480,7 +480,7 @@ class MemoryClient:
 
     def search_facts(self, query: str, limit: int = 10) -> builtins.list[Fact]:
         """Search extracted facts (SPO triples)."""
-        from mcp_kg import memory_facts_search
+        from mcp_surface.mcp_kg import memory_facts_search
 
         raw = memory_facts_search(query=query, limit=limit)
         if isinstance(raw, str):
@@ -548,7 +548,7 @@ class MemoryClient:
 
     def rebuild(self, scope: str = "active") -> str:
         """Rebuild the FTS5 index."""
-        from mcp_rebuild import memory_rebuild
+        from mcp_surface.mcp_rebuild import memory_rebuild
 
         return str(memory_rebuild(scope=scope))
 
@@ -556,7 +556,7 @@ class MemoryClient:
 
     def quality_filter(self, query: str, limit: int = 50) -> builtins.list[dict[str, Any]]:
         """Search with quality gates (validation + deduplication)."""
-        from mcp_quality import memory_quality_filter
+        from mcp_surface.mcp_quality import memory_quality_filter
 
         raw = memory_quality_filter(query=query, limit=limit)
         if isinstance(raw, str):
@@ -568,7 +568,7 @@ class MemoryClient:
 
     def quality_stats(self) -> dict[str, Any]:
         """Return quality gate statistics."""
-        from mcp_quality import memory_quality_stats
+        from mcp_surface.mcp_quality import memory_quality_stats
 
         raw = memory_quality_stats()
         if isinstance(raw, str):
@@ -605,7 +605,7 @@ class MemoryClient:
             summary = mc.summarize("notes/my-long-note")
             print(summary)
         """
-        from mcp_summarization import memory_summarize
+        from mcp_surface.mcp_summarization import memory_summarize
 
         return str(memory_summarize(note_id=note_id))
 
@@ -630,7 +630,7 @@ class MemoryClient:
             mc.adaptive_retention(dry_run=True)  # Preview only
             mc.adaptive_retention()  # Apply retention scores
         """
-        from mcp_retention import memory_adaptive_retention
+        from mcp_surface.mcp_retention import memory_adaptive_retention
 
         return str(memory_adaptive_retention(dry_run=dry_run))
 

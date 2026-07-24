@@ -185,7 +185,7 @@ class TestMemoryCircuitBreakerStatus(_CbTestBase):
     """memory_circuit_breaker_status admin tool."""
 
     def test_empty_db_returns_empty_list(self) -> None:
-        from mcp_audit import memory_circuit_breaker_status
+        from mcp_surface.mcp_audit import memory_circuit_breaker_status
 
         with self.temp_db():
             result = json.loads(memory_circuit_breaker_status())
@@ -196,7 +196,7 @@ class TestMemoryCircuitBreakerStatus(_CbTestBase):
         self.assertEqual(result["summary"]["close_count"], 0)
 
     def test_returns_events_newest_first(self) -> None:
-        from mcp_audit import memory_circuit_breaker_status
+        from mcp_surface.mcp_audit import memory_circuit_breaker_status
         from background.auto_save import _persist_circuit_state
 
         with self.temp_db():
@@ -220,7 +220,7 @@ class TestMemoryCircuitBreakerStatus(_CbTestBase):
         self.assertEqual(result["summary"]["close_count"], 1)
 
     def test_respects_limit(self) -> None:
-        from mcp_audit import memory_circuit_breaker_status
+        from mcp_surface.mcp_audit import memory_circuit_breaker_status
         from background.auto_save import _persist_circuit_state
 
         with self.temp_db():
@@ -239,7 +239,7 @@ class TestMemoryCircuitBreakerStatus(_CbTestBase):
 
     def test_respects_since_ts(self) -> None:
         import time
-        from mcp_audit import memory_circuit_breaker_status
+        from mcp_surface.mcp_audit import memory_circuit_breaker_status
         from background.auto_save import _persist_circuit_state
 
         # Insert two events with a known time gap.
@@ -260,7 +260,7 @@ class TestMemoryCircuitBreakerStatus(_CbTestBase):
 
     def test_only_returns_circuit_breaker_events(self) -> None:
         """The status tool should not surface unrelated audit log entries."""
-        from mcp_audit import memory_circuit_breaker_status
+        from mcp_surface.mcp_audit import memory_circuit_breaker_status
         from background.auto_save import _persist_circuit_state
 
         with self.temp_db():
@@ -282,8 +282,8 @@ class TestMemoryCircuitBreakerStatus(_CbTestBase):
         self.assertIn("auto_save_circuit_open", tools)
 
     def test_invalid_limit_rejected(self) -> None:
-        from mcp_audit import memory_circuit_breaker_status
-        from mcp_common import ErrorCode
+        from mcp_surface.mcp_audit import memory_circuit_breaker_status
+        from mcp_surface.mcp_common import ErrorCode
 
         with self.temp_db():
             result = memory_circuit_breaker_status(limit=0)

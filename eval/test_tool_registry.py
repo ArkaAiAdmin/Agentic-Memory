@@ -119,8 +119,8 @@ def test_all_admin_tools_reachable_via_router():
     value (e.g. memory_pinned_decay_check → pinned_decay); those are mapped
     explicitly below rather than via the naive "strip memory_" rule.
     """
-    from mcp_maintenance import MaintenanceOp
-    from mcp_maintenance_ops import MAINTENANCE_HANDLERS
+    from mcp_surface.mcp_maintenance import MaintenanceOp
+    from mcp_surface.mcp_maintenance_ops import MAINTENANCE_HANDLERS
 
     # ADMIN_TOOLS name → MaintenanceOp value (overrides naive prefix strip)
     _OP_ALIASES = {
@@ -155,8 +155,8 @@ def test_all_admin_tools_reachable_via_router():
 
 def test_pipeline_coverage_registered():
     """pipeline_coverage is a registered ADMIN op with a working handler."""
-    from mcp_maintenance import MaintenanceOp
-    from mcp_maintenance_ops import MAINTENANCE_HANDLERS
+    from mcp_surface.mcp_maintenance import MaintenanceOp
+    from mcp_surface.mcp_maintenance_ops import MAINTENANCE_HANDLERS
 
     assert "memory_pipeline_coverage" in tool_registry.ADMIN_TOOLS
     op_enum = MaintenanceOp("pipeline_coverage")

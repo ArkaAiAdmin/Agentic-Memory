@@ -116,7 +116,7 @@ agentic-memory/
 │   ├── auto_save.py   ← async inbox+daemon
 │   └── background_worker.py ← CQRS write-journal daemon
 ├── cron/             ← 54+ scheduled jobs
-├── mcp_*.py (32 modules) ← MCP tool surface
+├── mcp_*.py (0 modules) ← MCP tool surface
 ├── memory/           ← live store (gitignored)
 ├── docs/MCP_SURFACE.md
 └── eval/             ← 360 test files, 5269+ test functions

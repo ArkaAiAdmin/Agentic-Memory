@@ -16,7 +16,7 @@ import pytest
 
 # ── Import all verbs once ──────────────────────────────────────────────
 
-from mcp_verbs import (
+from mcp_surface.mcp_verbs import (
     memory_search,
     memory_save,
     memory_delete,
@@ -51,8 +51,8 @@ class TestVerbRegistration:
     """Each verb is registered on the MCP instance."""
 
     def test_all_verbs_registered_as_tools(self):
-        from mcp_instance import mcp
-        import mcp_verbs  # noqa: F401 — trigger registration
+        from mcp_surface.mcp_instance import mcp
+        import mcp_surface.mcp_verbs  # noqa: F401 — trigger registration
 
         import anyio
         tools = anyio.run(mcp.list_tools)
@@ -68,7 +68,7 @@ class TestVerbRegistration:
         assert not missing, f"Verbs not found on MCP surface: {missing}"
 
     def test_no_duplicate_registrations(self):
-        from mcp_instance import mcp
+        from mcp_surface.mcp_instance import mcp
 
         import anyio
         tools = anyio.run(mcp.list_tools)

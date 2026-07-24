@@ -12,7 +12,7 @@ from pathlib import Path
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
-from mcp_instance import mcp
+from mcp_surface.mcp_instance import mcp
 
 
 class TestMCPInstance(unittest.TestCase):
@@ -23,7 +23,7 @@ class TestMCPInstance(unittest.TestCase):
         self.assertEqual(mcp.name, "AgenticMemory")
 
     def test_mcp_is_singleton(self):
-        from mcp_instance import mcp as mcp2
+        from mcp_surface.mcp_instance import mcp as mcp2
 
         self.assertIs(mcp, mcp2)
 

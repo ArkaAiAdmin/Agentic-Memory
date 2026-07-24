@@ -289,7 +289,7 @@ class TestMCPListFederatedSkills(unittest.TestCase):
 
     def test_list_federated_skills_filtering(self):
         from skill_extractor import ensure_skill_schema
-        from mcp_maintenance import memory_list_federated_skills
+        from mcp_surface.mcp_maintenance import memory_list_federated_skills
 
         # Set up database file
         conn = sqlite3.connect(self.db_path)

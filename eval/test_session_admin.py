@@ -118,7 +118,7 @@ def _admin_env(tmp_path, monkeypatch):
 
 class TestSessionStats:
     def test_returns_total_and_by_status(self, _admin_env):
-        from mcp_maintenance import memory_maintenance
+        from mcp_surface.mcp_maintenance import memory_maintenance
 
         db = _admin_env
         mgr = SessionManager(db_path=db)
@@ -133,7 +133,7 @@ class TestSessionStats:
 
 class TestThreadStats:
     def test_returns_by_status(self, _admin_env):
-        from mcp_maintenance import memory_maintenance
+        from mcp_surface.mcp_maintenance import memory_maintenance
 
         db = _admin_env
         mgr = SessionManager(db_path=db)
@@ -156,7 +156,7 @@ class TestThreadStats:
 
 class TestCompactionStats:
     def test_returns_counts_and_zombies(self, _admin_env):
-        from mcp_maintenance import memory_maintenance
+        from mcp_surface.mcp_maintenance import memory_maintenance
 
         db = _admin_env
         mgr = SessionManager(db_path=db)
@@ -171,7 +171,7 @@ class TestCompactionStats:
 
 class TestListActiveThreads:
     def test_lists_threads(self, _admin_env):
-        from mcp_maintenance import memory_maintenance
+        from mcp_surface.mcp_maintenance import memory_maintenance
 
         db = _admin_env
         mgr = SessionManager(db_path=db)
@@ -183,7 +183,7 @@ class TestListActiveThreads:
         assert len(data["threads"]) >= 1
 
     def test_filters_by_status(self, _admin_env):
-        from mcp_maintenance import memory_maintenance
+        from mcp_surface.mcp_maintenance import memory_maintenance
 
         db = _admin_env
         mgr = SessionManager(db_path=db)
@@ -196,7 +196,7 @@ class TestListActiveThreads:
 
 class TestRecoverSession:
     def test_recovers_chain(self, _admin_env):
-        from mcp_maintenance import memory_maintenance
+        from mcp_surface.mcp_maintenance import memory_maintenance
 
         db = _admin_env
         mgr = SessionManager(db_path=db)

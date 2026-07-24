@@ -43,7 +43,7 @@ class TestPhaseLatencies:
 
 class TestMemoryStatsOp:
     def test_memory_stats_returns_json(self):
-        from mcp_maintenance_ops import _op_memory_stats
+        from mcp_surface.mcp_maintenance_ops import _op_memory_stats
 
         output = _op_memory_stats()
         data = json.loads(output)
@@ -56,14 +56,14 @@ class TestMemoryStatsOp:
         assert "feature_flags" in data
 
     def test_memory_stats_note_count_type(self):
-        from mcp_maintenance_ops import _op_memory_stats
+        from mcp_surface.mcp_maintenance_ops import _op_memory_stats
 
         output = _op_memory_stats()
         data = json.loads(output)
         assert isinstance(data["note_count"], int)
 
     def test_memory_stats_feature_flags_nonempty(self):
-        from mcp_maintenance_ops import _op_memory_stats
+        from mcp_surface.mcp_maintenance_ops import _op_memory_stats
 
         output = _op_memory_stats()
         data = json.loads(output)

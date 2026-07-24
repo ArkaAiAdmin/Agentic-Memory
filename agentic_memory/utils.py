@@ -52,7 +52,7 @@ def safe_close_db(conn: Any) -> None:
 def resolve_memory_dir() -> Path:
     """Resolve the memory directory path."""
     try:
-        from mcp_common import _resolve_memory_dir
+        from mcp_surface.mcp_common import _resolve_memory_dir
 
         return _resolve_memory_dir()
     except Exception as exc:

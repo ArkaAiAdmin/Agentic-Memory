@@ -335,7 +335,7 @@ def _compliance_gate() -> dict:
         sys_path = str(Path(__file__).resolve().parent.parent)
         if sys_path not in sys.path:
             sys.path.insert(0, sys_path)
-        from mcp_maintenance import memory_maintenance
+        from mcp_surface.mcp_maintenance import memory_maintenance
 
         result = memory_maintenance(operation="compliance_check", kwargs={})
         if isinstance(result, dict):

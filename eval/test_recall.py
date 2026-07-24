@@ -893,7 +893,7 @@ class TestMCPTools:
         conn.close()
 
         monkeypatch.setenv("MEMORY_DB_PATH", str(db_path))
-        from mcp_tools import memory_recall_stats
+        from mcp_surface.mcp_tools import memory_recall_stats
 
         result = memory_recall_stats(action="context")
 
@@ -916,7 +916,7 @@ class TestMCPTools:
 
         monkeypatch.setenv("MEMORY_DB_PATH", str(db_path))
 
-        from mcp_tools import memory_recall_stats
+        from mcp_surface.mcp_tools import memory_recall_stats
 
         result = memory_recall_stats(action="context", query="Python coding")
 
@@ -936,7 +936,7 @@ class TestMCPTools:
 
         monkeypatch.setenv("MEMORY_DB_PATH", str(db_path))
 
-        from mcp_tools import memory_session_start
+        from mcp_surface.mcp_tools import memory_session_start
 
         result = memory_session_start()
 

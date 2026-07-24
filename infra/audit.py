@@ -84,7 +84,10 @@ _redact_args = redact_audit_value
 # ``tenant_id`` when the caller does not supply them explicitly.
 
 
-def _resolve_audit_principal_and_tenant() -> tuple[str | None, str | None]:
+_AGENT_PRINCIPAL_CACHE: dict[tuple[str | None, str | None], tuple[str | None, str | None]] = {}
+
+
+def _resolve_audit_principal_and_tenant(db_path: str | None = None) -> tuple[str | None, str | None]:
     """Return ``(principal_id, tenant_id)`` from the current agent context.
 
     Falls back to ``(None, None)`` when no agent context is active (e.g.
@@ -98,14 +101,23 @@ def _resolve_audit_principal_and_tenant() -> tuple[str | None, str | None]:
         principal_id = getattr(ctx, "principal_id", None) or getattr(ctx, "agent_id", None)
     except (ImportError, Exception):
         pass
+
+    cache_key = (principal_id, db_path)
+    cached = _AGENT_PRINCIPAL_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
     tenant_id: str | None = None
     if principal_id:
         try:
             from infra.authorizer import resolve_tenant_for_principal
-            tenant_id = resolve_tenant_for_principal(principal_id)
+
+            tenant_id = resolve_tenant_for_principal(principal_id, db_path=db_path)
         except Exception:
             tenant_id = principal_id
-    return principal_id, tenant_id
+    result = (principal_id, tenant_id)
+    _AGENT_PRINCIPAL_CACHE[cache_key] = result
+    return result
 
 
 # Pending counter — incremented on enqueue, decremented after the
@@ -346,7 +358,7 @@ def enqueue_audit(
     # stay consistent).
     tenant_id = None
     if principal_id is None:
-        principal_id, tenant_id = _resolve_audit_principal_and_tenant()
+        principal_id, tenant_id = _resolve_audit_principal_and_tenant(db_path=db_path)
     row = {
         "ts": time.time(),
         "tool": tool,

@@ -93,10 +93,10 @@ def test_fts_orphans_cleanup():
         conn.close()
 
 # 6. Test mcp_maintenance_ops
-from mcp_maintenance_ops import MAINTENANCE_HANDLERS
+from mcp_surface.mcp_maintenance_ops import MAINTENANCE_HANDLERS
 
 def test_maintenance_handlers_registration():
-    from mcp_maintenance import MaintenanceOp
+    from mcp_surface.mcp_maintenance import MaintenanceOp
     assert MaintenanceOp.HEARTBEAT in MAINTENANCE_HANDLERS
     assert MaintenanceOp.DASHBOARD in MAINTENANCE_HANDLERS
     assert MaintenanceOp.METRICS_SERVER in MAINTENANCE_HANDLERS

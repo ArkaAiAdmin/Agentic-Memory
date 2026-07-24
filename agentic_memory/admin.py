@@ -60,7 +60,7 @@ class Admin:
         Returns:
             Dict with keys ``events`` (list) and ``summary``.
         """
-        from mcp_audit import memory_circuit_breaker_status as _cb
+        from mcp_surface.mcp_audit import memory_circuit_breaker_status as _cb
 
         raw = _cb(limit=limit, since_ts=since_ts)
         if isinstance(raw, str):

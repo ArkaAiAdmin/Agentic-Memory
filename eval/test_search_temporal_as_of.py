@@ -257,14 +257,14 @@ class TestMCPMemorySearchAsOf(unittest.TestCase):
     """Sprint 5: mcp_search.memory_search as_of parameter tests."""
 
     def test_signature_accepts_as_of(self) -> None:
-        from mcp_search import memory_search
+        from mcp_surface.mcp_search import memory_search
         sig = inspect.signature(memory_search)
         assert "as_of" in sig.parameters, "memory_search must accept as_of parameter"
         assert sig.parameters["as_of"].default is None, "as_of default must be None"
 
     def test_as_of_none_no_crash(self) -> None:
         """Calling memory_search with as_of=None must not crash."""
-        from mcp_search import memory_search
+        from mcp_surface.mcp_search import memory_search
         # Just verify the call doesn't raise — actual DB is not guaranteed present
         try:
             result = memory_search("test query", limit=1, as_of=None)

@@ -6,8 +6,8 @@ import threading
 from pathlib import Path
 
 import logging
-from mcp_instance import mcp  # noqa: E402 — shared instance, avoids circular import
-from mcp_common import _bootstrap_path  # noqa: E402,F401
+from mcp_surface.mcp_instance import mcp  # noqa: E402 — shared instance, avoids circular import
+from mcp_surface.mcp_common import _bootstrap_path  # noqa: E402,F401
 from infra.memory_common import (
     configure_logging,
 )  # noqa: E402
@@ -115,11 +115,11 @@ save_memory = save_memory
 
 # Backward-compat re-exports of all MCP tool functions.
 # Tests and external code import tool callables directly from memory_mcp.
-from mcp_audit import (  # noqa: E402,F401
+from mcp_surface.mcp_audit import (  # noqa: E402,F401
     memory_audit,
     memory_audit_query,
 )
-from mcp_memory import (  # noqa: E402,F401
+from mcp_surface.mcp_memory import (  # noqa: E402,F401
     memory_auto_save_hook,
     memory_auto_save_status,
     memory_daily_digest,
@@ -131,21 +131,21 @@ from mcp_memory import (  # noqa: E402,F401
     memory_supersede,
     memory_trash,
 )
-from mcp_maintenance import (  # noqa: E402,F401
+from mcp_surface.mcp_maintenance import (  # noqa: E402,F401
     memory_detect_contradictions,
     memory_pinned_decay_check,
     memory_review_schedule,
 )
-from mcp_search import (  # noqa: E402,F401
+from mcp_surface.mcp_search import (  # noqa: E402,F401
     memory_search,
 )
-from mcp_rebuild import (  # noqa: E402,F401
+from mcp_surface.mcp_rebuild import (  # noqa: E402,F401
     memory_compact,
 )
-from mcp_summarization import (  # noqa: E402,F401
+from mcp_surface.mcp_summarization import (  # noqa: E402,F401
     memory_summarize,
 )
-from mcp_retention import (  # noqa: E402,F401
+from mcp_surface.mcp_retention import (  # noqa: E402,F401
     memory_adaptive_retention,
 )
 
@@ -229,7 +229,7 @@ from infra.memory_common import safe_close_db  # noqa: E402,F401
 # ---------------------------------------------------------------------
 # Feature D: Async Pipeline (extracted to mcp_async.py)
 # ---------------------------------------------------------------------
-from mcp_async import (  # noqa: E402,F401
+from mcp_surface.mcp_async import (  # noqa: E402,F401
     async_memory_save,
     async_memory_search,
     async_memory_save_batch,
@@ -242,31 +242,31 @@ from mcp_async import (  # noqa: E402,F401
 import tool_registry  # noqa: E402
 
 # Phase A: explicitly import the verb surface so tool registration is intentional.
-import mcp_verbs  # noqa: E402, F401
+import mcp_surface.mcp_verbs  # noqa: E402, F401
 
 # Import additional MCP modules so their tools are registered before the
 # removal loop below — this prevents orphans appearing/disappearing
 # depending on the entry point.
-import mcp_agent  # noqa: E402,F401
-import mcp_async  # noqa: E402,F401
-import mcp_crdt  # noqa: E402,F401
-import mcp_ctr_drift  # noqa: E402,F401
-import mcp_dashboard  # noqa: E402,F401
-import mcp_kg  # noqa: E402, F401 — graph_insights/evolution (ADMIN_TOOLS)
-import mcp_kg_traversal  # noqa: E402,F401
-import mcp_maintenance  # noqa: E402, F401 — memory_maintenance + admin tools
-import mcp_maintenance_ops  # noqa: E402, F401
-import mcp_metrics  # noqa: E402,F401
-import mcp_multi_modal  # noqa: E402,F401
-import mcp_okf  # noqa: E402,F401
-import mcp_profile  # noqa: E402,F401
-import mcp_quality  # noqa: E402,F401
-import mcp_safety  # noqa: E402,F401
-import mcp_sdk  # noqa: E402,F401
-import mcp_session  # noqa: E402,F401
-import mcp_sharing  # noqa: E402,F401
-import mcp_health  # noqa: E402,F401
-import mcp_coordination  # noqa: E402,F401 — task management, file locking, messaging
+import mcp_surface.mcp_agent  # noqa: E402,F401
+import mcp_surface.mcp_async  # noqa: E402,F401
+import mcp_surface.mcp_crdt  # noqa: E402,F401
+import mcp_surface.mcp_ctr_drift  # noqa: E402,F401
+import mcp_surface.mcp_dashboard  # noqa: E402,F401
+import mcp_surface.mcp_kg  # noqa: E402, F401 — graph_insights/evolution (ADMIN_TOOLS)
+import mcp_surface.mcp_kg_traversal  # noqa: E402,F401
+import mcp_surface.mcp_maintenance  # noqa: E402, F401 — memory_maintenance + admin tools
+import mcp_surface.mcp_maintenance_ops  # noqa: E402, F401
+import mcp_surface.mcp_metrics  # noqa: E402,F401
+import mcp_surface.mcp_multi_modal  # noqa: E402,F401
+import mcp_surface.mcp_okf  # noqa: E402,F401
+import mcp_surface.mcp_profile  # noqa: E402,F401
+import mcp_surface.mcp_quality  # noqa: E402,F401
+import mcp_surface.mcp_safety  # noqa: E402,F401
+import mcp_surface.mcp_sdk  # noqa: E402,F401
+import mcp_surface.mcp_session  # noqa: E402,F401
+import mcp_surface.mcp_sharing  # noqa: E402,F401
+import mcp_surface.mcp_health  # noqa: E402,F401
+import mcp_surface.mcp_coordination  # noqa: E402,F401 — task management, file locking, messaging
 
 # Keep all admin tools visible — they are useful for IDE integration.
 # Only remove truly deprecated tools.

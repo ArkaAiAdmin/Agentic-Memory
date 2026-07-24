@@ -153,7 +153,7 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_list_unacknowledged(self):
-        from mcp_ctr_drift import memory_list_drift_alarms
+        from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
         with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             result = json.loads(memory_list_drift_alarms(acknowledged=False, limit=10))
@@ -162,7 +162,7 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
         self.assertEqual(result["acknowledged_now"], 0)
 
     def test_list_by_level(self):
-        from mcp_ctr_drift import memory_list_drift_alarms
+        from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
         with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             result = json.loads(
@@ -172,7 +172,7 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
         self.assertEqual(result["alarms"][0]["alarm_level"], "critical")
 
     def test_acknowledge_flow(self):
-        from mcp_ctr_drift import memory_list_drift_alarms
+        from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
         # Get IDs of unack alarms
         with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
@@ -193,7 +193,7 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
             self.assertEqual(a["notes"], "checked")
 
     def test_acknowledge_is_idempotent(self):
-        from mcp_ctr_drift import memory_list_drift_alarms
+        from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
         with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             r1 = json.loads(memory_list_drift_alarms(acknowledged=False, limit=10))
@@ -210,14 +210,14 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
             self.assertEqual(r3["acknowledged_now"], 0)
 
     def test_invalid_alarm_level(self):
-        from mcp_ctr_drift import memory_list_drift_alarms
+        from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
         with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             result = memory_list_drift_alarms(alarm_level="bogus")
         self.assertTrue(result.startswith("Error [INVALID_PARAMS]"))
 
     def test_invalid_limit(self):
-        from mcp_ctr_drift import memory_list_drift_alarms
+        from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
         with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             result = memory_list_drift_alarms(limit=0)

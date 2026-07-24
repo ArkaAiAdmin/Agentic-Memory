@@ -208,7 +208,7 @@ class TestMemoryReviewBeliefs:
         conn2.commit()
         conn2.close()
 
-        import mcp_verbs as _mv
+        import mcp_surface.mcp_verbs as _mv
         monkeypatch.setattr(_mv, "_resolve_db_path", lambda **kw: Path(db_path_str))
         result = _mv.memory_review_beliefs(min_confidence=0.5, older_than_days=365, limit=20)
         assert "No beliefs need review" not in result, f"unexpected: {result}"
@@ -223,7 +223,7 @@ class TestRationaleRequired:
         _ensure_memory(conn, "lessons/no-rationale", "# Test")
         conn.close()
 
-        from mcp_verbs import memory_note
+        from mcp_surface.mcp_verbs import memory_note
         result = memory_note(
             note_id="lessons/no-rationale", action="patch",
             additions=["\nadded"], rationale="",
@@ -236,7 +236,7 @@ class TestRationaleRequired:
         _ensure_memory(conn, "lessons/sup-nr-b", "# B")
         conn.close()
 
-        from mcp_verbs import memory_note
+        from mcp_surface.mcp_verbs import memory_note
         result = memory_note(
             note_id="lessons/sup-nr-a", action="supersede",
             title_slug="lessons/sup-nr-b", rationale="",

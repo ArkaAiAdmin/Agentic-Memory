@@ -100,7 +100,7 @@ class TemporalKG:
             List of :class:`Fact` dataclasses that match the query
             and are valid at the current time.
         """
-        from mcp_audit import memory_temporal_query
+        from mcp_surface.mcp_audit import memory_temporal_query
 
         raw = memory_temporal_query(
             operation="at_time",
@@ -135,7 +135,7 @@ class TemporalKG:
             List of dicts, each with keys ``old``, ``new``, ``reason``,
             ``contradiction_score``, and ``transaction_time``.
         """
-        from mcp_audit import memory_temporal_contradictions
+        from mcp_surface.mcp_audit import memory_temporal_contradictions
 
         raw = memory_temporal_contradictions(
             since_ts=since_ts,
@@ -166,7 +166,7 @@ class TemporalKG:
         Returns:
             List of :class:`Fact` dataclasses valid at *timestamp*.
         """
-        from mcp_audit import memory_temporal_query
+        from mcp_surface.mcp_audit import memory_temporal_query
 
         raw = memory_temporal_query(
             operation="at_time",
@@ -192,7 +192,7 @@ class TemporalKG:
             List of :class:`Fact` dataclasses changed since *timestamp*,
             ordered by most-recent change first.
         """
-        from mcp_audit import memory_temporal_query
+        from mcp_surface.mcp_audit import memory_temporal_query
 
         raw = memory_temporal_query(
             operation="changed_since",
@@ -219,7 +219,7 @@ class TemporalKG:
             List of :class:`Fact` dataclasses in chronological order.
             Empty if *fact_id* does not exist.
         """
-        from mcp_audit import memory_temporal_query
+        from mcp_surface.mcp_audit import memory_temporal_query
 
         raw = memory_temporal_query(
             operation="chain",

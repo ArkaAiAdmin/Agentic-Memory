@@ -214,7 +214,7 @@ class TestAuditQueryTool(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import memory_mcp
-        import mcp_tools
+        import mcp_surface.mcp_tools
 
         cls.memory_mcp = memory_mcp
         cls.mcp_tools = mcp_tools

@@ -627,7 +627,7 @@ class TestMemorySaveImportance(unittest.TestCase):
     """
 
     def test_memory_save_mcp_tool_has_importance(self):
-        from mcp_memory import memory_save
+        from mcp_surface.mcp_memory import memory_save
 
         import inspect
 

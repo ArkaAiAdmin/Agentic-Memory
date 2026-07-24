@@ -273,7 +273,7 @@ class TestACLOverrideMaintenanceOps:
 
     def test_set_acl_override_allow(self, db_path: Path):
         """set_acl_override with granted=True inserts an allow effect."""
-        from mcp_maintenance_ops import _op_set_acl_override
+        from mcp_surface.mcp_maintenance_ops import _op_set_acl_override
         import json as _json
 
         _create_principal(db_path, "maint-1")
@@ -300,7 +300,7 @@ class TestACLOverrideMaintenanceOps:
 
     def test_set_acl_override_deny(self, db_path: Path):
         """set_acl_override with granted=False inserts a deny effect."""
-        from mcp_maintenance_ops import _op_set_acl_override
+        from mcp_surface.mcp_maintenance_ops import _op_set_acl_override
         import json as _json
 
         _create_principal(db_path, "maint-2")
@@ -323,7 +323,7 @@ class TestACLOverrideMaintenanceOps:
 
     def test_set_acl_override_upserts(self, db_path: Path):
         """Setting the same override twice upserts (no duplicates)."""
-        from mcp_maintenance_ops import _op_set_acl_override
+        from mcp_surface.mcp_maintenance_ops import _op_set_acl_override
         import json as _json
 
         _create_principal(db_path, "maint-3")
@@ -351,7 +351,7 @@ class TestACLOverrideMaintenanceOps:
 
     def test_remove_acl_override(self, db_path: Path):
         """remove_acl_override deletes an existing override."""
-        from mcp_maintenance_ops import _op_set_acl_override, _op_remove_acl_override
+        from mcp_surface.mcp_maintenance_ops import _op_set_acl_override, _op_remove_acl_override
         import json as _json
 
         _create_principal(db_path, "maint-4")
@@ -382,7 +382,7 @@ class TestACLOverrideMaintenanceOps:
 
     def test_remove_acl_override_nonexistent(self, db_path: Path):
         """remove_acl_override on a missing override returns deleted=0."""
-        from mcp_maintenance_ops import _op_remove_acl_override
+        from mcp_surface.mcp_maintenance_ops import _op_remove_acl_override
         import json as _json
 
         _create_principal(db_path, "maint-5")

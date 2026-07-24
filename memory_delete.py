@@ -596,7 +596,7 @@ def _purge_markdown_file(note_id: str) -> None:
     and continue if it fails. Extracted 2026-06-22.
     """
     try:
-        from mcp_common import get_memory_paths
+        from mcp_surface.mcp_common import get_memory_paths
 
         paths = get_memory_paths()  # (project_root, local_mem, global_mem)
         memory_dir = paths[1] if len(paths) > 1 else paths[0] / "memory"

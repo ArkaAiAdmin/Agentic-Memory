@@ -310,7 +310,7 @@ class TestMemoryCrdtSyncTool(unittest.TestCase):
     @mock.patch("mcp_crdt._resolve_memory_dir")
     def test_sync_empty_notes(self, mock_resolve):
         mock_resolve.return_value = self.db_path.parent
-        from mcp_crdt import memory_crdt_sync
+        from mcp_surface.mcp_crdt import memory_crdt_sync
 
         result = memory_crdt_sync(
             agent_id="test-syncer",
@@ -323,7 +323,7 @@ class TestMemoryCrdtSyncTool(unittest.TestCase):
     @mock.patch("mcp_crdt._resolve_memory_dir")
     def test_sync_single_note(self, mock_resolve):
         mock_resolve.return_value = self.db_path.parent
-        from mcp_crdt import memory_crdt_sync
+        from mcp_surface.mcp_crdt import memory_crdt_sync
 
         remote_notes = {
             "lessons/synced-note": [
@@ -345,7 +345,7 @@ class TestMemoryCrdtSyncTool(unittest.TestCase):
     @mock.patch("mcp_crdt._resolve_memory_dir")
     def test_sync_invalid_json_returns_error(self, mock_resolve):
         mock_resolve.return_value = self.db_path.parent
-        from mcp_crdt import memory_crdt_sync
+        from mcp_surface.mcp_crdt import memory_crdt_sync
 
         result = memory_crdt_sync(
             agent_id="test-syncer",

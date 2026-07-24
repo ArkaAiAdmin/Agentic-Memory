@@ -226,7 +226,7 @@ class TestMCPToolAudit:
         # to the test database.
         monkeypatch.setenv("MEMORY_DB_PATH", str(db_path))
 
-        from mcp_tools import memory_save
+        from mcp_surface.mcp_tools import memory_save
 
         memory_save(
             content="Audit test note",
@@ -254,7 +254,7 @@ class TestMCPToolAudit:
         # to the test database.
         monkeypatch.setenv("MEMORY_DB_PATH", str(db_path))
 
-        from mcp_tools import memory_search
+        from mcp_surface.mcp_tools import memory_search
 
         # Drain the audit queue (which may hold rows from prior tests in
         # the same session) before running the action we want to verify.

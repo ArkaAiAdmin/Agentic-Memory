@@ -100,7 +100,7 @@ class SyncManager:
         if not peers:
             return {"peers": [], "sync_enabled": cfg.sync_enable_server}
 
-        from mcp_common import _resolve_memory_dir
+        from mcp_surface.mcp_common import _resolve_memory_dir
 
         target_base = _resolve_memory_dir()
         db_path = target_base / "memory.db"

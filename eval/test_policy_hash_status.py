@@ -26,7 +26,7 @@ class TestPolicyHashStatus(unittest.TestCase):
         self._rl_patcher.stop()
 
     def _call(self, **kwargs):
-        from mcp_maintenance import memory_maintenance
+        from mcp_surface.mcp_maintenance import memory_maintenance
         from infra.config_drift_policy import reset_policy_cache
         reset_policy_cache()
         return memory_maintenance("policy_hash_status", **kwargs)

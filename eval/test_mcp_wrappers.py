@@ -51,7 +51,7 @@ class TestMcpOkfWrapper(unittest.TestCase):
         # Point to an empty dir with no DB
         empty_dir = tempfile.mkdtemp(prefix="empty_")
         try:
-            from mcp_okf import memory_okf_export
+            from mcp_surface.mcp_okf import memory_okf_export
 
             result = memory_okf_export(output_dir=empty_dir)
             # Tool functions return strings (may be JSON or error text)
@@ -64,7 +64,7 @@ class TestMcpOkfWrapper(unittest.TestCase):
 
     def test_memory_okf_import_dir_not_found(self):
         """When input dir doesn't exist, returns an error string."""
-        from mcp_okf import memory_okf_import
+        from mcp_surface.mcp_okf import memory_okf_import
 
         result = memory_okf_import(input_dir="/nonexistent/path/xyz")
         self.assertIsInstance(result, str)
@@ -72,7 +72,7 @@ class TestMcpOkfWrapper(unittest.TestCase):
 
     def test_memory_okf_export_to_temp_dir(self):
         """Export with a real DB writes OKF files to output dir."""
-        from mcp_okf import memory_okf_export
+        from mcp_surface.mcp_okf import memory_okf_export
 
         output_dir = os.path.join(self.tmpdir, "okf_out")
         result_str = memory_okf_export(output_dir=output_dir)
@@ -97,7 +97,7 @@ class TestMcpProfileWrapper(unittest.TestCase):
 
     def test_memory_profile_stats(self):
         """memory_profile_stats returns a JSON-serializable dict."""
-        from mcp_profile import memory_profile_stats
+        from mcp_surface.mcp_profile import memory_profile_stats
 
         result = memory_profile_stats()
         # Result is a JSON string or dict
@@ -111,7 +111,7 @@ class TestMcpProfileWrapper(unittest.TestCase):
 class TestMcpQualityWrapper(unittest.TestCase):
     def test_memory_quality_stats(self):
         """memory_quality_stats returns a JSON-serializable dict."""
-        from mcp_quality import memory_quality_stats
+        from mcp_surface.mcp_quality import memory_quality_stats
 
         result = memory_quality_stats()
         if isinstance(result, str):
@@ -124,7 +124,7 @@ class TestMcpQualityWrapper(unittest.TestCase):
 class TestMcpSafetyWrapper(unittest.TestCase):
     def test_memory_scan_injection_clean(self):
         """memory_scan_injection on clean text returns safe result."""
-        from mcp_safety import memory_scan_injection
+        from mcp_surface.mcp_safety import memory_scan_injection
 
         result = memory_scan_injection(
             content="This is a normal memory about Python testing."
@@ -142,7 +142,7 @@ class TestMcpSafetyWrapper(unittest.TestCase):
 class TestMcpCtrDriftWrapper(unittest.TestCase):
     def test_memory_check_concept_drift(self):
         """memory_check_concept_drift returns a dict."""
-        from mcp_ctr_drift import memory_check_concept_drift
+        from mcp_surface.mcp_ctr_drift import memory_check_concept_drift
 
         result = memory_check_concept_drift()
         if isinstance(result, str):
@@ -155,7 +155,7 @@ class TestMcpCtrDriftWrapper(unittest.TestCase):
 class TestMcpRetentionWrapper(unittest.TestCase):
     def test_memory_retention_stats(self):
         """memory_retention_stats returns a dict."""
-        from mcp_retention import memory_retention_stats
+        from mcp_surface.mcp_retention import memory_retention_stats
 
         result = memory_retention_stats()
         if isinstance(result, str):

@@ -70,7 +70,7 @@ def main() -> int:
 
     acquire_lock_or_exit("cron_policy_hash_status")
 
-    from mcp_maintenance import memory_maintenance
+    from mcp_surface.mcp_maintenance import memory_maintenance
 
     raw = memory_maintenance(
         "policy_hash_status",

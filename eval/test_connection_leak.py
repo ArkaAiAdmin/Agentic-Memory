@@ -12,8 +12,8 @@ _TEST_DB = Path(_TEST_DIR) / "memory.db"
 os.environ["MEMORY_DB_PATH"] = str(_TEST_DB)
 
 from infra.db import connection_pool, open_db
-from mcp_audit import memory_audit_query
-from mcp_search import memory_session_start
+from mcp_surface.mcp_audit import memory_audit_query
+from mcp_surface.mcp_search import memory_session_start
 
 
 def setup_module():

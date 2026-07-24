@@ -393,7 +393,7 @@ class TestGraphInsightsAndCentrality(unittest.TestCase):
             from unittest import mock as _mock
             # Bypass RBAC authorization in the subprocess so the test
             # doesn't depend on a real memory.db for auth lookups.
-            import mcp_kg as _mcp_kg
+            import mcp_surface.mcp_kg as _mcp_kg
             _mcp_kg._check_authorization = lambda *a, **kw: None
 
             conn = sqlite3.connect(":memory:")
@@ -405,7 +405,7 @@ class TestGraphInsightsAndCentrality(unittest.TestCase):
             add_edge(conn, b, c)
             add_edge(conn, c, a)
 
-            from mcp_kg import memory_graph_insights
+            from mcp_surface.mcp_kg import memory_graph_insights
             output = memory_graph_insights(sample_size=5, include_bridge=False, conn=conn)
             assert "Graph Analytics Insights" in output, f"Missing title in output"
             assert "Density" in output, f"Missing Density in output"

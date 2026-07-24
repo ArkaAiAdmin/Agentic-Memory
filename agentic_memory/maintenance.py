@@ -283,7 +283,7 @@ class Maintenance:
         """
         conn = get_db_connection(self.db_path)
         try:
-            from mcp_common import run_db_migrations
+            from mcp_surface.mcp_common import run_db_migrations
 
             run_db_migrations(conn)
             conn.row_factory = sqlite3.Row
@@ -382,7 +382,7 @@ class Maintenance:
         Returns:
             The raw string result from the maintenance handler.
         """
-        from mcp_maintenance import memory_maintenance
+        from mcp_surface.mcp_maintenance import memory_maintenance
 
         try:
             result = memory_maintenance(operation=operation, **kwargs)

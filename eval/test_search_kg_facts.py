@@ -368,7 +368,7 @@ class TestMCPMemorySearchSignature(unittest.TestCase):
     """T10: MCP memory_search tool exposes include_facts and fact_limit."""
 
     def test_mcp_tool_signature_has_new_params(self):
-        from mcp_search import memory_search
+        from mcp_surface.mcp_search import memory_search
 
         # Unwrap decorators
         fn = memory_search

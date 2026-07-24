@@ -46,9 +46,9 @@ class TestProductionHardening(unittest.TestCase):
     # ------------------------------------------------------------------ #
     def test_memory_system_health_is_mcp_tool(self):
         code = """
-from mcp_health import memory_system_health
+from mcp_surface.mcp_health import memory_system_health
 # FastMCP registers @mcp.tool() decorated functions in the tool manager
-from mcp_instance import mcp
+from mcp_surface.mcp_instance import mcp
 tools = mcp._tool_manager._tools
 assert "memory_system_health" in tools, (
     f"memory_system_health not in MCP tools; available: {list(tools.keys())[:20]}"

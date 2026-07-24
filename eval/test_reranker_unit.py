@@ -282,7 +282,7 @@ class TestRecallContextDeepRerankParam(unittest.TestCase):
         default False so clients can opt in to the deep rerank and the
         default recall briefing stays bounded to <100ms."""
         import inspect
-        from mcp_search import memory_recall_stats
+        from mcp_surface.mcp_search import memory_recall_stats
 
         sig = inspect.signature(memory_recall_stats)
         self.assertIn("deep_rerank", sig.parameters)

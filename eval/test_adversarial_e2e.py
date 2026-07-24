@@ -28,7 +28,7 @@ sys.path.insert(0, str(INSTALL_DIR / "eval"))
 import memory_mcp
 import save_pipeline
 import search_pipeline
-import mcp_tools
+import mcp_surface.mcp_tools
 from infra.memory_common import (
     open_db,
     connection_pool,

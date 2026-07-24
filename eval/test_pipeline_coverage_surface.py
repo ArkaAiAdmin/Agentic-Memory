@@ -12,8 +12,8 @@ from pathlib import Path
 _WORKTREE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_WORKTREE))
 
-from mcp_maintenance import MaintenanceOp
-from mcp_maintenance_ops import MAINTENANCE_HANDLERS, _run_pipeline_health
+from mcp_surface.mcp_maintenance import MaintenanceOp
+from mcp_surface.mcp_maintenance_ops import MAINTENANCE_HANDLERS, _run_pipeline_health
 
 
 class TestPipelineCoverageSurface:

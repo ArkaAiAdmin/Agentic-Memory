@@ -209,8 +209,8 @@ class TestMemoryAutoShareMCPTool(unittest.TestCase):
     """The ``memory_auto_share`` MCP tool is registered and callable."""
 
     def test_tool_registered(self):
-        from mcp_instance import mcp
-        import mcp_sharing  # registers via @mcp.tool()
+        from mcp_surface.mcp_instance import mcp
+        import mcp_surface.mcp_sharing  # registers via @mcp.tool()
 
         # If memory_mcp was imported earlier in the test session, its
         # "hide admin tools" pass removed the tool from the registry.

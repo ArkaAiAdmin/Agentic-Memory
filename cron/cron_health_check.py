@@ -105,7 +105,7 @@ def _check_circuit_breaker() -> dict:
     try:
         # Lazy import to avoid startup cost
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        from mcp_audit import memory_circuit_breaker_status
+        from mcp_surface.mcp_audit import memory_circuit_breaker_status
 
         result = memory_circuit_breaker_status(limit=5)
         # Parse the result string

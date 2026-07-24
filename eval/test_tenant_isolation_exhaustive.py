@@ -1249,7 +1249,7 @@ class TestSyncIsolation:
 
     def test_crdt_sync_tenant(self, db_path: Path):
         try:
-            from mcp_verbs import memory_advanced
+            from mcp_surface.mcp_verbs import memory_advanced
             import inspect
             has = "tenant_id" in inspect.getsource(memory_advanced)
         except (ImportError, Exception):

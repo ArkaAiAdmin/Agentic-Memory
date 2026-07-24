@@ -1107,12 +1107,12 @@ class TestSecurityHealthCheck:
     # ---- S7: maintenance-surface confirmation gate (positive controls) ----
 
     def test_maintenance_requires_confirm_for_destructive_ops(self) -> None:
-        from mcp_maintenance import (
+        from mcp_surface.mcp_maintenance import (
             memory_maintenance,
             DESTRUCTIVE_MAINTENANCE_OPS,
             MaintenanceOp,
         )
-        from mcp_common import ErrorCode
+        from mcp_surface.mcp_common import ErrorCode
 
         # The constant must exist and enumerate the destructive ops.
         assert DESTRUCTIVE_MAINTENANCE_OPS, "DESTRUCTIVE_MAINTENANCE_OPS is empty"
@@ -1134,9 +1134,9 @@ class TestSecurityHealthCheck:
         assert ran == "AGENT_CLEAR_OK", ran
 
     def test_memory_advanced_covered_by_confirm_gate(self) -> None:
-        from mcp_maintenance import MaintenanceOp
-        from mcp_common import ErrorCode
-        from mcp_verbs import memory_advanced
+        from mcp_surface.mcp_maintenance import MaintenanceOp
+        from mcp_surface.mcp_common import ErrorCode
+        from mcp_surface.mcp_verbs import memory_advanced
 
         # memory_advanced delegates to memory_maintenance, so the same gate
         # applies. Without confirm -> refused.
@@ -1155,8 +1155,8 @@ class TestSecurityHealthCheck:
         assert ran == "OKF_EXPORT_OK", ran
 
     def test_crdt_sync_rejects_unauthenticated_remote_json(self) -> None:
-        from mcp_crdt import memory_crdt_sync
-        from mcp_common import ErrorCode
+        from mcp_surface.mcp_crdt import memory_crdt_sync
+        from mcp_surface.mcp_common import ErrorCode
 
         token = "test-sync-token-1234567890abcdef"
         with patch.dict(os.environ, {"MEMORY_SYNC_TOKEN": token,
@@ -1181,7 +1181,7 @@ class TestSecurityHealthCheck:
             assert m.called, "authorized crdt_sync must call crdt_sync_all"
 
     def test_crdt_sync_trusted_peer_allowlist(self) -> None:
-        from mcp_crdt import memory_crdt_sync
+        from mcp_surface.mcp_crdt import memory_crdt_sync
 
         with patch.dict(os.environ, {
                 "MEMORY_SYNC_TOKEN": "",
