@@ -303,7 +303,8 @@ def pull_from_peer(
                 ensure_field_crdt_schema,
                 TOMBSTONE,
             )
-            from infra.db import get_db_connection, safe_close_db
+            from infra.db import safe_close_db
+            from agentic_memory.utils import get_db_connection
 
             field_updates: list[FieldUpdate] = []
             for fc in field_crdt:
@@ -359,12 +360,12 @@ def pull_from_peer(
                 remote_vv_str=note.get("version_vector", "{}"),
                 remote_logical_clock=int(note.get("logical_clock", 0)),
             )
-        if r.get("applied"):
-            applied += 1
-        if r.get("conflict"):
-            conflict += 1
-        if r.get("rejected"):
-            rejected += 1
+            if r.get("applied"):
+                applied += 1
+            if r.get("conflict"):
+                conflict += 1
+            if r.get("rejected"):
+                rejected += 1
 
     duration = int((time.time() - start) * 1000)
     _log_sync_result(
