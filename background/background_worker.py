@@ -1187,8 +1187,11 @@ def run_worker(
         )
         os._exit(1)
 
-    _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
-    _proc_sig.alarm(_PROCESS_TIMEOUT_S)
+    # signal.signal only works in the main thread — skip when called
+    # from a worker thread (e.g. pytest runs run_worker in a thread).
+    if _threading.current_thread() is _threading.main_thread():
+        _proc_sig.signal(_proc_sig.SIGALRM, _process_killer)
+        _proc_sig.alarm(_PROCESS_TIMEOUT_S)
 
     try:
         if drain:
