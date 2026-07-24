@@ -575,6 +575,20 @@ class SQLiteWriteQueue:
                                 except Exception:
                                     pass
 
+            except TimeoutError as e:
+                # Flock timeout — another process holds the lock (e.g.
+                # journal reconciler).  Retry once after a brief pause
+                # instead of crashing the write queue thread.
+                logger.warning("SQLiteWriteQueue flock timeout (retrying): %s", e)
+                time.sleep(1.0)
+                try:
+                    from infra.db_path_flock import db_path_flock as _retry_flock
+                    with _retry_flock(db_path):
+                        pass  # just verify we can acquire
+                except Exception:
+                    logger.error("SQLiteWriteQueue flock retry also failed: %s", e)
+                    if not future.done():
+                        future.set_exception(e)
             except Exception as e:
                 logger.error("Fatal error in SQLiteWriteQueue run loop: %s", e)
                 if not future.done():

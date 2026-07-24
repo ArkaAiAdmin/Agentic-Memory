@@ -1131,19 +1131,27 @@ def _acquire_db_connection(
     category: str,
     title_slug: str,
     start_time: float,
+    *,
+    direct: bool = False,
 ) -> AnyConnection:
     """Acquire a write-serialized SQLite connection via the write queue.
-    Returns the connection on success, or a string error message if
-    acquisition failed (the message is already audit-logged).
 
-    Extracted from save_memory() (2026-06-22) so the orchestrator
-    stays readable.
+    When *direct=True*, bypasses the write queue and opens a plain
+    sqlite3.Connection.  Used by the journal reconciler which already
+    holds db_path_flock for serialization — going through the write
+    queue would deadlock (the queue thread tries to acquire the same
+    flock held by the caller).
 
-    Retry logic (lock-contention fix): if the write queue is busy and
-    the session times out, wait briefly and retry once.  This avoids
-    failing the entire save when the queue is momentarily saturated
-    (e.g. a background worker task is in flight).
+    Returns the connection on success, or raises SaveValidationError.
     """
+    if direct:
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(str(db_path_obj), timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        from infra.db_migrations import run_schema_setup
+        run_schema_setup(conn)
+        return conn
     last_err: Exception | None = None
     for _attempt in range(2):
         try:
@@ -1979,15 +1987,15 @@ def _materialize_journal_once(
     # critical section (same lock used by _save_memory_core's direct
     # path).  Cross-process serialization prevents two reconciler threads
     # racing through _check_already_materialized + _persist_via_saga
-    # simultaneously.  Re-entrant per-process, so _save_memory_core's
-    # outer acquire is safe when the reconciler runs inside the sagaxed
-    # write path.  Released in the finally block at the end of this
-    # function.
+    # simultaneously.  However, the materialization path now uses
+    # direct=True (bypasses the write queue) so acquiring db_path_flock
+    # here would deadlock: this process holds the flock → write queue
+    # thread in the MCP server tries to acquire same flock → blocks.
+    # The direct SQLite connection + WAL busy_timeout provides sufficient
+    # serialization for the single-reconciler case.
     from infra.db_path_flock import (
-        acquire_db_path_flock,
         release_db_path_flock,
     )
-    acquire_db_path_flock(_db_path_parsed)
     try:
         # Idempotent guard: if a peer reconciler already materialized this
         # note_id, skip the full saga and just mark the journal entry applied.
@@ -2002,8 +2010,13 @@ def _materialize_journal_once(
         _save_errored = False
         _saga_session_closed = False
         try:
+            # direct=True: the reconciler already holds db_path_flock
+            # for serialization.  Bypassing the write queue prevents the
+            # ABBA deadlock where the queue thread tries to acquire the
+            # same flock held by this caller.
             conn = _acquire_db_connection(
-                db_path_obj, req.category, req.title_slug, time.time()
+                db_path_obj, req.category, req.title_slug, time.time(),
+                direct=True,
             )
         except Exception:
             raise
@@ -2069,8 +2082,6 @@ def _materialize_journal_once(
                     conn.close()
                 except Exception as _close_exc:
                     logger.warning("conn.close() failed in journal materialization: %s", _close_exc)
-    finally:
-        release_db_path_flock(_db_path_parsed)
 
 
 def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn: Optional[AnyConnection] = None) -> None:
