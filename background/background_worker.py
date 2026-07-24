@@ -512,6 +512,54 @@ def _lazy_graph_snapshots(payload: dict, conn: AnyConnection, db_path: Path) -> 
     import json as _json
     import time as _time
 
+
+def _lazy_colbert_index(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    """Index ColBERT token embeddings for a memory.
+
+    Looks up the memory content from the DB, encodes via ColBERT-v2,
+    and stores per-token dense vectors in colbert_tokens.  Idempotent:
+    re-indexing replaces old rows.
+    """
+    from search.colbert_index import index_memory_colbert, _ensure_colbert_schema
+
+    _ensure_colbert_schema(conn)
+    memory_id = payload.get("memory_id", "")
+    if not memory_id:
+        return "colbert_index: skipped (no memory_id)"
+
+    row = conn.execute(
+        "SELECT content FROM memories WHERE id = ?", (memory_id,)
+    ).fetchone()
+    if not row or not row[0]:
+        return f"colbert_index: skipped (no content for {memory_id})"
+
+    n = index_memory_colbert(conn, memory_id, row[0])
+    return f"colbert_index: {n} token vectors for {memory_id}"
+
+
+def _lazy_splade_index(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    """Index SPLADE sparse vectors for a memory.
+
+    Looks up the memory content from the DB, encodes via SPLADE-v3,
+    and stores non-zero (vocab_id, weight) pairs in splade_tokens.
+    Idempotent: re-indexing replaces old rows.
+    """
+    from search.splade_index import index_memory_splade, _ensure_splade_schema
+
+    _ensure_splade_schema(conn)
+    memory_id = payload.get("memory_id", "")
+    if not memory_id:
+        return "splade_index: skipped (no memory_id)"
+
+    row = conn.execute(
+        "SELECT content FROM memories WHERE id = ?", (memory_id,)
+    ).fetchone()
+    if not row or not row[0]:
+        return f"splade_index: skipped (no content for {memory_id})"
+
+    n = index_memory_splade(conn, memory_id, row[0])
+    return f"splade_index: {n} sparse entries for {memory_id}"
+
     now = _time.time()
     row = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()
     entity_count = row[0] if row else 0
@@ -571,6 +619,8 @@ HANDLERS.update(
         "skill_enrichment": _lazy_skill_enrichment,
         "graph_communities": _lazy_graph_communities,
         "graph_snapshots": _lazy_graph_snapshots,
+        "colbert_index": _lazy_colbert_index,
+        "splade_index": _lazy_splade_index,
     }
 )
 
