@@ -146,13 +146,26 @@ def _bootstrap_db(p: Path) -> None:
         conn.close()
 
 
+_template_db: Path | None = None
+
+def _get_template_db() -> Path:
+    """Create a template DB once, reuse for all tests."""
+    global _template_db
+    if _template_db is not None and _template_db.exists():
+        return _template_db
+    _template_db = Path(tempfile.mktemp(suffix=".db", prefix="tenant_tpl_"))
+    _bootstrap_db(_template_db)
+    return _template_db
+
+
 @pytest.fixture
 def db_path() -> Generator[Path, None, None]:
-    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-    tmp.close()
-    p = Path(tmp.name)
+    # Copy template instead of copying 108MB prod DB per test
+    template = _get_template_db()
+    p = Path(tempfile.mktemp(suffix=".db", prefix="tenant_test_"))
+    import shutil
+    shutil.copy2(str(template), str(p))
     try:
-        _bootstrap_db(p)
         yield p
     finally:
         clear_agent()
