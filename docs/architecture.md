@@ -60,7 +60,7 @@ runs the following **14 phases** in order:
 ## Save Pipeline
 
 The canonical write path (`save_memory` → `_upsert_memory_row` +
-`_run_post_save_hooks`) runs the following **13 steps** in order:
+`_run_post_save_hooks`) runs the following **4 steps** in order:
 
 1. Lock acquire
 2. Compute tier + PRAGMA setup
@@ -122,7 +122,7 @@ agentic-memory/                    # Repo root
 ├── embedding_search.py             # Semantic search via model2vec
 ├── memory_common.py                # Shared utilities (connection pool, flock)
 ├── db.py                           # Connection pool with tenant routing
-├── migration_runner.py             # Schema migrations (current v73)
+├── migration_runner.py             # Schema migrations (current v74)
 └── ... (93 modules total)
 ```
 
@@ -140,13 +140,13 @@ agentic-memory/                    # Repo root
 | `background_worker.py` | Infra | Task queue worker (flock-protected) |
 | `embedding_search.py` | Search | model2vec semantic search |
 | `memory_injection.py` | Safety | Prompt injection detection |
-| `migration_runner.py` | Infra | Schema migrations (v73, 74 migrations) |
+| `migration_runner.py` | Infra | Schema migrations (v74, 75 migrations) |
 
 ## Surface: MCP tools, cron jobs, hooks
 
 - **116 MCP tools** (24 CORE + 92 ADMIN).
   Single source of truth: `tool_registry.py`.
-- **50 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
+- **54 cron scripts** in `cron/` — task queue, FTS rebuild, tier migration,
   kg backfill, integrity check, heartbeat, consolidation, etc.
   Cadence: `*/15 min`. Each cron acquires a `flock` before running.
 - **7 lifecycle hooks** in `hooks/` — session start/end,

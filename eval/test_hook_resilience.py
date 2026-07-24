@@ -141,7 +141,7 @@ class TestMcpModuleBootstrap(unittest.TestCase):
     def test_mcp_instance_has_bootstrap(self):
         """mcp_instance.py is the bootstrap hub — must import _bootstrap_path.
         All other MCP modules reach it transitively through mcp_instance."""
-        text = (INSTALL_ROOT / "mcp_instance.py").read_text()
+        text = (INSTALL_ROOT / "mcp_surface" / "mcp_instance.py").read_text()
         self.assertIn("_bootstrap_path", text)
 
     def test_memory_mcp_has_bootstrap(self):

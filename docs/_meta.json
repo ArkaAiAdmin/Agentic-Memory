@@ -1,21 +1,21 @@
 {
-  "schema_version": 73,
-  "num_migrations": 74,
+  "schema_version": 74,
+  "num_migrations": 75,
   "num_core_tools": 24,
   "num_admin_tools": 92,
   "num_deprecated_tools": 3,
   "num_total_tools": 119,
   "num_tests": 4431,
-  "num_test_files": 360,
-  "loc_production": 147008,
-  "loc_test": 110756,
-  "loc_total": 257764,
+  "num_test_files": 361,
+  "loc_production": 147050,
+  "loc_test": 111507,
+  "loc_total": 258557,
   "num_cron_scripts": 54,
-  "num_tables_visible": 100,
+  "num_tables_visible": 101,
   "num_hooks": 7,
   "num_agents_ported": 6,
   "last_verified": "2026-07-25",
-  "num_mcp_modules": 0,
+  "num_mcp_modules": 32,
   "num_test_functions": 5269,
   "provenance": {
     "what_this_system_is_auto_gen_key": "what_this_system_is",
@@ -30,6 +30,6 @@
     "truth_rank_2": "AGENTS.md AUTO-GEN sections (via agents_md_generator.py -> gen_doc_meta.py)",
     "truth_rank_3": "docs/MCP_SURFACE.md + docs/architecture.md (manual, cross-check via gen_schema_doc.py)",
     "last_meta_regenerated": "2026-07-25",
-    "num_total_tools_note": "113 = len(CORE_TOOLS) + len(ADMIN_TOOLS) = 21 + 92 (unique, DEPRECATED subset of ADMIN). num_total_tools=116 is deliberately larger: it counts the MCP router entry points + aliased/legacy names that are registered on the surface but live outside the tier lists (e.g. memory_maintenance router, memory_advanced alias, plus deprecated-replacement verbs). The two numbers measure different things; do NOT 'fix' num_total_tools to 113 \u2014 only reconcile if the registry's own counts drift, not the surface-exposure superset."
+    "num_total_tools_note": "119 = len(CORE_TOOLS) + len(ADMIN_TOOLS) + len(DEPRECATED) = 24 + 92 + 3. DEPRECATED tools are a separate tier, not a subset of ADMIN."
   }
 }

@@ -255,12 +255,12 @@ class TestSaveMemoryValidation(SavePipelineFixture, unittest.TestCase):
         self.assertEqual(result, f"lessons/{slug}")
 
     def test_empty_content_returns_string(self):
-        result, slug = self.save(content="")
-        self.assertIsInstance(result, str)
+        with self.assertRaises(SaveValidationError):
+            self.save(content="")
 
     def test_whitespace_only_content_returns_string(self):
-        result, slug = self.save(content="   \n\n  ")
-        self.assertIsInstance(result, str)
+        with self.assertRaises(SaveValidationError):
+            self.save(content="   \n\n  ")
 
     def test_oversized_content_returns_error(self):
         body = "x" * 51000
@@ -904,11 +904,8 @@ class TestIndexChunksDirectly(SavePipelineFixture, unittest.TestCase):
     """QW5 chunk indexing edge cases."""
 
     def test_empty_content_one_chunk(self):
-        result, slug = self.save(content="")
-        note_id = f"lessons/{slug}"
-        with open_db(self.db_path) as db:
-            n = _count(db, "memory_chunks", "parent_id=?", (note_id,))
-        self.assertEqual(n, 1, "Even empty content gets 1 chunk [(0, 0, '')]")
+        with self.assertRaises(SaveValidationError):
+            self.save(content="")
 
     def test_content_just_below_threshold(self):
         content = "A" * 1900

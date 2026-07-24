@@ -387,9 +387,16 @@ def quality_stats(conn: AnyConnection) -> dict:
         return {"enabled": False}
 
     try:
-        rows = conn.execute(
-            "SELECT content FROM tenant_memories WHERE deleted_at IS NULL LIMIT 10000"
-        ).fetchall()
+        try:
+            rows = conn.execute(
+                "SELECT content FROM tenant_memories WHERE deleted_at IS NULL LIMIT 10000"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # Fall back to memories table when tenant_memories TEMP VIEW
+            # is not available (e.g. bare test DBs without migrations).
+            rows = conn.execute(
+                "SELECT content FROM memories WHERE deleted_at IS NULL LIMIT 10000"
+            ).fetchall()
 
         total = len(rows)
         too_short = sum(

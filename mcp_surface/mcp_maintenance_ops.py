@@ -605,7 +605,7 @@ def _get_handlers() -> dict:
             MaintenanceOp.POLICY_HASH_STATUS: lambda *, peer_timeout_s=5.0, max_concurrent=4,
                                               cache_ttl_s=60.0, force_refresh=False,
                                               include_full_policy=False, since_ts=None, **_: (
-                __import__("mcp_maintenance_policy_hash", fromlist=["policy_hash_status"])
+                __import__("mcp_surface.mcp_maintenance_policy_hash", fromlist=["policy_hash_status"])
                 .policy_hash_status(
                     peer_timeout_s=peer_timeout_s,
                     max_concurrent=max_concurrent,

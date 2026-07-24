@@ -138,8 +138,10 @@ class TestTagMatch(unittest.TestCase):
             query="python", boost_pinned=False, recency_weight=0.0, now_ts=now,
         ))
         self.assertGreater(matched, unmatched)
-        # 0.05 weight on tag_match, all 1 query token matched → +0.05
-        self.assertAlmostEqual(matched - unmatched, 0.05, places=6)
+        # When recency_weight=0.0, non-pinned weights are redistributed:
+        # scale = (1.0 - 0.10) / (0.40 + 0.20 + 0.15 + 0.05) = 1.125
+        # effective tag_match = 0.05 * 1.125 = 0.05625
+        self.assertAlmostEqual(matched - unmatched, 0.05625, places=6)
 
     def test_partial_tag_match(self):
         now = time.time()
@@ -154,8 +156,9 @@ class TestTagMatch(unittest.TestCase):
             created="2020-01-01T00:00:00", tags_json='["java"]',
             query="python rust", boost_pinned=False, recency_weight=0.0, now_ts=now,
         ))
-        # 0.05 * (1 / 2) = 0.025
-        self.assertAlmostEqual(s - s_zero, 0.025, places=6)
+        # When recency_weight=0.0, effective tag_match = 0.05 * 1.125 = 0.05625
+        # 1/2 query tokens match → 0.05625 * 0.5 = 0.028125
+        self.assertAlmostEqual(s - s_zero, 0.028125, places=6)
 
 
 class TestBackwardCompat(unittest.TestCase):

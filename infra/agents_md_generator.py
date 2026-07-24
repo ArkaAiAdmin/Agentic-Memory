@@ -121,8 +121,12 @@ def get_meta_for_json() -> dict[str, Any]:
 
 
 def _count_mcp_modules() -> int:
-    """Return the number of mcp_*.py modules at repo root."""
-    return len(list(REPO.glob("mcp_*.py")))
+    """Return the number of mcp_*.py modules in mcp_surface/."""
+    mcp_dir = REPO / "mcp_surface"
+    if not mcp_dir.is_dir():
+        # Fallback: legacy root-level modules
+        return len(list(REPO.glob("mcp_*.py")))
+    return len(list(mcp_dir.glob("mcp_*.py")))
 
 
 def _parse_tool_registry() -> dict[str, Any]:
@@ -341,7 +345,7 @@ def gen_critical_path(data: dict[str, Any]) -> str:
         "│   ├── auto_save.py   ← async inbox+daemon",
         "│   └── background_worker.py ← CQRS write-journal daemon",
         f"├── cron/             ← {data['cron_job_count']}+ scheduled jobs",
-        f"├── mcp_*.py ({data['mcp_module_count']} modules) ← MCP tool surface",
+        f"├── mcp_surface/         ← {data['mcp_module_count']} MCP modules",
         "├── memory/           ← live store (gitignored)",
         "├── docs/MCP_SURFACE.md",
         f"└── eval/             ← {data['test_file_count']} test files, {data['test_function_count']}+ test functions",

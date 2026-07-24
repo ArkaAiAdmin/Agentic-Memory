@@ -125,25 +125,25 @@ def apply_safety_demoting(state: PipelineState) -> None:
             _new_output.append(state.output[_old_idx + 1])
         state.output = _new_output
         state.results_to_display = [state.results_to_display[_i] for _i in _new_order]
+
+        # RANK-FIRST LOCK: restore final_score-descending order after
+        # safety demoting reorders by injection risk.  The CE reranker
+        # owns final ordering; safety demoting adjusts scores in place
+        # but must not change the relative rank order.
+        _ri_order = sorted(
+            range(len(state.result_items)),
+            key=lambda i: float(state.result_items[i].get("final_score") or 0.0),
+            reverse=True,
+        )
+        state.result_items = [state.result_items[i] for i in _ri_order]
+        _new_output = [state.output[0]]
+        for _ri in _ri_order:
+            _new_output.append(state.output[_ri + 1])
+        state.output = _new_output
+        state.results_to_display = [state.results_to_display[i] for i in _ri_order]
     except Exception as e:
         _phase_inc("search.safety_demoting", e)
         logger.warning("safety_demoting failed: %s", e)
-
-    # RANK-FIRST LOCK: restore final_score-descending order after
-    # safety demoting reorders by injection risk.  The CE reranker
-    # owns final ordering; safety demoting adjusts scores in place
-    # but must not change the relative rank order.
-    _ri_order = sorted(
-        range(len(state.result_items)),
-        key=lambda i: float(state.result_items[i].get("final_score") or 0.0),
-        reverse=True,
-    )
-    state.result_items = [state.result_items[i] for i in _ri_order]
-    _new_output = [state.output[0]]
-    for _ri in _ri_order:
-        _new_output.append(state.output[_ri + 1])
-    state.output = _new_output
-    state.results_to_display = [state.results_to_display[i] for i in _ri_order]
 
 
 def apply_quality_gates(state: PipelineState) -> None:

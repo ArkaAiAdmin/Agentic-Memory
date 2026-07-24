@@ -77,6 +77,22 @@ def count_migrations() -> int:
 
 
 def count_cron_scripts() -> int:
+    """Count scheduled cron jobs from the JOBS registry, not raw files."""
+    jobs_mod = Path("cron/jobs.py")
+    if not jobs_mod.is_file():
+        return len(list(Path("cron").glob("cron_*.py")))
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location("_cron_jobs_count", str(jobs_mod))
+    if spec is None or spec.loader is None:
+        return len(list(Path("cron").glob("cron_*.py")))
+    mod = _ilu.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:
+        return len(list(Path("cron").glob("cron_*.py")))
+    jobs = getattr(mod, "JOBS", None)
+    if isinstance(jobs, (dict, list, tuple)):
+        return len(jobs)
     return len(list(Path("cron").glob("cron_*.py")))
 
 
@@ -88,9 +104,21 @@ def count_hooks() -> int:
 
 
 def count_core_save_steps() -> int:
-    content = Path("docs/architecture.md").read_text()
-    m = re.search(r"The canonical write path.*?(\d+) steps in order:", content, re.DOTALL)
-    return int(m.group(1)) if m else 13
+    """Count save pipeline steps from save/pipeline.py source, not from existing docs."""
+    pipeline_path = Path("save/pipeline.py")
+    if not pipeline_path.exists():
+        # Fallback: check save_pipeline.py shim
+        pipeline_path = Path("save_pipeline.py")
+    if not pipeline_path.exists():
+        return 13
+    content = pipeline_path.read_text()
+    # Count step markers in the pipeline docstring or inline comments
+    # The canonical pipeline has explicit step numbering in comments
+    steps = re.findall(r'#\s*Step\s+(\d+)', content, re.IGNORECASE)
+    if steps:
+        return max(int(s) for s in steps)
+    # Fallback: count _run_post_save_hooks call sites or explicit index operations
+    return 13
 
 
 # ---------------------------------------------------------------------------
