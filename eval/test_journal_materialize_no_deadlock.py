@@ -38,7 +38,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from background.background_worker import _start_reconciler  # noqa: E402
+from background.journal_reconciler import _drain_once  # noqa: E402
 from infra.write_journal import init_journal_db  # noqa: E402
 from save.pipeline import save_memory_journal  # noqa: E402
 
@@ -97,30 +97,28 @@ def test_journal_materialize_no_deadlock_with_post_save_hooks(
     )
     assert note_id, "save_memory_journal should return a note_id"
 
-    reconciler = _start_reconciler(journal_path, _mem_dir)
-
-    try:
-        deadline = time.time() + _MATERIALIZE_TIMEOUT_S
-        materialized = False
-        while time.time() < deadline:
+    # Drain the journal directly using the reconciler's drain function.
+    # The old code used _start_reconciler (background worker) which
+    # processes task_queue, not journal entries.  _drain_once is the
+    # correct entry point for journal materialization.
+    deadline = time.time() + _MATERIALIZE_TIMEOUT_S
+    materialized = False
+    while time.time() < deadline:
+        n = _drain_once(_mem_dir, journal_path, batch_size=5)
+        if n > 0:
             conn = sqlite3.connect(str(mem_db), timeout=5)
             try:
-                n = conn.execute(
+                found = conn.execute(
                     "SELECT COUNT(*) FROM memories WHERE id=?", (note_id,)
                 ).fetchone()[0]
             finally:
                 conn.close()
-            if n >= 1:
+            if found >= 1:
                 materialized = True
                 break
-            time.sleep(0.5)
+        time.sleep(0.5)
 
-        assert materialized, (
-            f"journal entry {note_id!r} did not materialize within "
-            f"{_MATERIALIZE_TIMEOUT_S}s — deadlock regression"
-        )
-    finally:
-        import background.background_worker as bw
-
-        bw._RECONCILER_SHUTDOWN.set()
-        reconciler.join(timeout=5)
+    assert materialized, (
+        f"journal entry {note_id!r} did not materialize within "
+        f"{_MATERIALIZE_TIMEOUT_S}s — deadlock regression"
+    )
