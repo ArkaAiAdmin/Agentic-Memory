@@ -11,6 +11,7 @@ from mcp_surface.mcp_common import _err, ErrorCode, logger, with_audit
 from mcp_surface.mcp_instance import mcp
 
 
+@mcp.tool()
 @with_audit("memory_share")
 def memory_share(note_id: str, agent_id: str, target_agent_id: str = "", shared_with: str = "") -> str:
     """Share a memory to the cross-agent shared pool.

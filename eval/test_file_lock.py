@@ -155,19 +155,20 @@ class TestSavePipelineAcquireLock(unittest.TestCase):
     """
 
     def test_strict_raises_on_contention(self):
-        """_acquire_lock must raise FileLockError when the lock is held."""
+        """_acquire_lock must raise FileLockError when the flock is held."""
         from save_pipeline import _acquire_lock
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             db_path.touch()
-            lock_path = db_path.parent / ".rebuild.lock"
-            # Hold the lock in a subprocess so stale-lock detection
-            # unambiguously sees a live foreign-PID holder.
+            # The lock manager uses <path>.flock as the actual lock file.
+            lock_path = db_path.parent / ".rebuild.lock.flock"
+            # Hold the flock in a subprocess on the SAME file the lock manager uses.
+            import fcntl as _fcntl
             script = (
-                "import fcntl, time, sys; "
-                "f = open(sys.argv[1], 'w'); "
-                "fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB); "
+                "import fcntl, os, time, sys; "
+                "fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR, 0o644); "
+                "fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB); "
                 "time.sleep(10)"
             )
             proc = subprocess.Popen(
@@ -186,6 +187,7 @@ class TestSavePipelineAcquireLock(unittest.TestCase):
             finally:
                 proc.terminate()
                 proc.wait()
+                lock_path.unlink(missing_ok=True)
 
     def test_returns_lock_file_on_success(self):
         """_acquire_lock must return the lock_file when no contention."""
