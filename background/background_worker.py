@@ -1055,6 +1055,20 @@ def run_worker(
         n_workers: Number of concurrent worker threads (default 1).
             Pass >1 to enable the threaded WorkerPool.
     """
+    import sqlite3 as _worker_sqlite3
+
+    def _worker_conn(path):
+        """Direct SQLite connection bypassing the write queue.
+
+        The worker is the single long-lived writer to memory.db.
+        Going through the write queue causes ABBA deadlocks: the
+        queue thread holds db_path_flock while the worker tries to
+        acquire it via open_db(write=True).
+        """
+        c = _worker_sqlite3.connect(str(path), timeout=30)
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA busy_timeout=30000")
+        return c
     # signal.signal only works in the main thread.
     import threading as _threading
     if _threading.current_thread() is _threading.main_thread():
@@ -1067,33 +1081,36 @@ def run_worker(
         db_path, interval, once, drain, max_tasks, n_workers,
     )
 
-    # Init phase — runs once with a temporary connection, then workers
-    # get their own connections via the write queue.
-    from infra.db import open_db
-    with open_db(db_path, timeout=30.0) as init_conn:
-        try:
-            init_task_queue(init_conn)
-        except Exception as e:
-            logger.error("worker: failed to init task queue: %s", e)
-            return
+    # Init phase — runs once with a direct connection (bypasses write
+    # queue to avoid flock contention on startup).
+    import sqlite3 as _sqlite3
+    init_conn = _sqlite3.connect(str(db_path), timeout=30)
+    init_conn.execute("PRAGMA journal_mode=WAL")
+    init_conn.execute("PRAGMA busy_timeout=30000")
+    try:
+        init_task_queue(init_conn)
+    except Exception as e:
+        logger.error("worker: failed to init task queue: %s", e)
+        init_conn.close()
+        return
 
-        _check_and_reconcile_vec_drift(init_conn, db_path)
+    _check_and_reconcile_vec_drift(init_conn, db_path)
 
-        try:
-            from background.corpus_budget_guard import run_corpus_budget_guard
+    try:
+        from background.corpus_budget_guard import run_corpus_budget_guard
+        guard_status = run_corpus_budget_guard(db_path, conn=init_conn)
+        if guard_status.get("compaction_enqueued"):
+            logger.info(
+                "worker: corpus budget exceeded (~%d tokens, budget %d) — "
+                "compaction enqueued",
+                guard_status.get("tokens", 0),
+                guard_status.get("budget", 0),
+            )
+    except Exception as _guard_exc:
+        logger.debug("worker: corpus budget guard failed: %s", _guard_exc)
 
-            guard_status = run_corpus_budget_guard(db_path, conn=init_conn)
-            if guard_status.get("compaction_enqueued"):
-                logger.info(
-                    "worker: corpus budget exceeded (~%d tokens, budget %d) — "
-                    "compaction enqueued",
-                    guard_status.get("tokens", 0),
-                    guard_status.get("budget", 0),
-                )
-        except Exception as _guard_exc:
-            logger.debug("worker: corpus budget guard failed: %s", _guard_exc)
-
-        _maybe_run_wal_checkpoint(init_conn, db_path)
+    _maybe_run_wal_checkpoint(init_conn, db_path)
+    init_conn.close()
 
     # Delegate to WorkerPool when n_workers > 1
     if n_workers > 1:
@@ -1138,7 +1155,10 @@ def run_worker(
                         processed,
                     )
                     break
-                with open_db(db_path, timeout=30.0, write=False, pooled=True) as conn:
+                conn = _sqlite3.connect(str(db_path), timeout=30)
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA busy_timeout=30000")
+                try:
                     ok = process_one_task(conn, db_path, task_type=task_type)
                     if not ok:
                         break
@@ -1165,7 +1185,7 @@ def run_worker(
             while not _shutdown:
                 batch_processed = 0
                 while batch_processed < batch_size:
-                    with open_db(db_path, timeout=30.0, write=False, pooled=True) as conn:
+                    conn = _worker_conn(db_path)
                         ok = process_one_task(conn, db_path, task_type=task_type)
                         if not ok:
                             break
@@ -1177,7 +1197,7 @@ def run_worker(
                         if _shutdown:
                             break
                         try:
-                            with open_db(db_path, timeout=5.0, pooled=True) as check_conn:
+                            check_conn = _worker_conn(db_path)
                                 if _check_high_priority_pending(check_conn):
                                     break
                         except Exception:
