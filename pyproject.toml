@@ -370,6 +370,7 @@ files = [
     "save/crdt_helpers.py",
     "save/decision_extraction.py",
     "save/indexers.py",
+    "save/pipeline.py",
     "save/post_save_hooks.py",
     "save_pipeline.py",
     "sdk.py",
