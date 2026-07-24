@@ -105,8 +105,10 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
                     project_baselines[proj.lower()] = v
 
             # M27 fix: only extract numbers from lines that contain aggregation keywords
-            # to avoid false positives from dates, IDs, or other numeric text
-            has_agg_context = any(
+            # to avoid false positives from dates, IDs, or other numeric text.
+            # When the query itself is an aggregation query, trust the query-level signal
+            # and extract numbers from all content lines.
+            has_agg_context = is_agg_query or any(
                 kw in content_line_lower
                 for kw in ("total", "sum", "combined", "headcount", "net", "overall", "final", "users", "employees", "engineers", "staff", "team")
             )

@@ -44,15 +44,13 @@ CREATE TABLE IF NOT EXISTS kg_edges (
     -- while kg_facts uses REAL epoch seconds.  Inconsistency preserved for
     -- backward compat; new columns should use TEXT ISO timestamps.
     valid_at TEXT,
-    invalid_at TEXT,
+    invalid_at TEXT
     -- M38: Replaced blanket UNIQUE(source_id, target_id, relation) with a
     -- partial index on current (non-invalidated) edges only. This allows
     -- temporal versioning: after invalidating an edge (setting invalid_at),
     -- a new version of the same (source, target, relation) can be inserted.
     -- The partial index prevents duplicate current edges while allowing
     -- historical versions to coexist.
-    valid_at TEXT,
-    invalid_at TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_edges_current
