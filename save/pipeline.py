@@ -2201,10 +2201,10 @@ def _save_memory_core(
         try:
             from agent_context import get_agent
             _rbac_ctx = get_agent()
-            principal_id = getattr(_rbac_ctx, "principal_id", None)
+            principal_id = getattr(_rbac_ctx, "principal_id", None) or getattr(_rbac_ctx, "agent_id", None)
             if not principal_id:
                 from agent_context import _AGENT_CONTEXT
-                principal_id = getattr(_AGENT_CONTEXT, "principal_id", None)
+                principal_id = getattr(_AGENT_CONTEXT, "principal_id", None) or os.environ.get("MEMORY_AGENT_ID")
         except (ImportError, AttributeError):
             pass
         if not mcp_authorize(principal_id, "write", "memory", db_path):

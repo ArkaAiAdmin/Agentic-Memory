@@ -48,6 +48,10 @@ _QUERY_EXPANSION_REVERSE = search_pipeline._QUERY_EXPANSION_REVERSE
 configure_logging()
 logger = logging.getLogger(__name__)
 
+# Default to open auth mode for local-first usage.  Power users who
+# deploy with a token / SSO can set MEMORY_AUTH_MODE=closed explicitly.
+os.environ.setdefault("MEMORY_AUTH_MODE", "open")
+
 # Initialize agent context from MEMORY_AGENT_ID so RBAC resolves the
 # correct principal instead of falling back to "default".
 try:
