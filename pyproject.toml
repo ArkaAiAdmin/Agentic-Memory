@@ -410,6 +410,9 @@ ignore_missing_imports = true
     "\\.venv/.*",
 ]
 
+[tool.ruff.lint]
+select = ["E722"]
+
 [tool.pytest.ini_options]
 testpaths = ["eval"]
 python_files = ["test_*.py"]
