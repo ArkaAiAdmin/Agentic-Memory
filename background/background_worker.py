@@ -1155,9 +1155,7 @@ def run_worker(
                         processed,
                     )
                     break
-                conn = _sqlite3.connect(str(db_path), timeout=30)
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA busy_timeout=30000")
+                conn = _worker_conn(db_path)
                 try:
                     ok = process_one_task(conn, db_path, task_type=task_type)
                     if not ok:
@@ -1172,6 +1170,8 @@ def run_worker(
                             max_tasks,
                             rate,
                         )
+                finally:
+                    conn.close()
             elapsed = time.time() - t_drain
             logger.info(
                 "worker: drain complete — processed %d tasks in %.1fs (%.1f tasks/sec)",
@@ -1186,10 +1186,13 @@ def run_worker(
                 batch_processed = 0
                 while batch_processed < batch_size:
                     conn = _worker_conn(db_path)
+                    try:
                         ok = process_one_task(conn, db_path, task_type=task_type)
                         if not ok:
                             break
                         batch_processed += 1
+                    finally:
+                        conn.close()
                 if once:
                     break
                 if batch_processed == 0:
@@ -1198,8 +1201,11 @@ def run_worker(
                             break
                         try:
                             check_conn = _worker_conn(db_path)
+                            try:
                                 if _check_high_priority_pending(check_conn):
                                     break
+                            finally:
+                                check_conn.close()
                         except Exception:
                             pass
                         time.sleep(1)
