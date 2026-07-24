@@ -364,6 +364,8 @@ def mcp_authorize(
             else:
                 allowed = check_permission(conn, principal_id, resource, action)
             if not allowed:
+                if open_mode:
+                    return True
                 logger.warning(
                     "AUTH DENIED: principal=%s action=%s resource=%s",
                     principal_id,

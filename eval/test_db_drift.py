@@ -69,7 +69,8 @@ def _make_bare_db(path: str) -> sqlite3.Connection:
             category      TEXT,
             tier          TEXT,
             importance_score REAL DEFAULT 0.5,
-            metadata      TEXT DEFAULT '{}'
+            metadata      TEXT DEFAULT '{}',
+            tenant_id     TEXT DEFAULT 'default'
         )
     """)
     conn.commit()

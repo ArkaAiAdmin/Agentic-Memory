@@ -1991,7 +1991,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     @property
     def cloud_store(self):
         from pathlib import Path
-        if not hasattr(self.server, "_cloud_store"):
+        if self.server._cloud_store is None:
             from infra_cloud.store import CloudStateStore
             db_path = Path(self.server.db_path).parent / "cloud_state.db"
             self.server._cloud_store = CloudStateStore(db_path)

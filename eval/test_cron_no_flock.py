@@ -23,7 +23,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 SCHED_LOCK = "cron_pipeline_scheduler"
-WORKER_LOCK = "background_worker"
+WORKER_LOCK = "background_worker_drain"
 
 
 def _holder_script(lock_name: str, hold_s: float) -> str:

@@ -662,13 +662,18 @@ class TestComputeFinalScore(unittest.TestCase):
         self.assertGreaterEqual(score_default, score_noboost)
 
     def test_recency_weight(self):
+        # Use a very recent date so recency contributes positively.
+        # With an old date, recency drags the score down and zeroing it
+        # (redistributing weight to other channels) would score higher.
+        from datetime import datetime, timezone
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
         score_high = _compute_final_score(
             ScoreContext(
                 rank=-1.0,
                 fitness=0.9,
                 importance=3,
                 pinned=False,
-                created="2026-01-01T00:00:00",
+                created=now_str,
                 tags_json='["tag1"]',
                 query="test",
                 boost_pinned=True,
@@ -681,7 +686,7 @@ class TestComputeFinalScore(unittest.TestCase):
                 fitness=0.9,
                 importance=3,
                 pinned=False,
-                created="2026-01-01T00:00:00",
+                created=now_str,
                 tags_json='["tag1"]',
                 query="test",
                 boost_pinned=True,
@@ -736,7 +741,8 @@ class TestTemporalDecayConstants(unittest.TestCase):
         self.assertEqual(_TEMPORAL_DECAY_HALF_LIFE, 180.0)
 
     def test_rerank_half_life_value(self):
-        self.assertEqual(_RERANK_HALF_LIFE_DAYS, 180)
+        from search.scoring import _get_rerank_half_life_days
+        self.assertEqual(_get_rerank_half_life_days(), 180)
 
 
 class TestConnectionPool(unittest.TestCase):

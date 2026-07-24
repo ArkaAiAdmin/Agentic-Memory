@@ -217,7 +217,7 @@ class TestAuditQueryTool(unittest.TestCase):
         import mcp_surface.mcp_tools
 
         cls.memory_mcp = memory_mcp
-        cls.mcp_tools = mcp_tools
+        cls.mcp_tools = mcp_surface.mcp_tools
 
     def setUp(self):
         self._saved_memory_db_path = os.environ.get("MEMORY_DB_PATH")
