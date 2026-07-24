@@ -786,6 +786,48 @@ def _cache_store_result(cache_key: str, result: dict, db_path: Path | str | None
 
 
 
+def _check_crdt_staleness(db: AnyConnection, result_items: list) -> None:
+    """Best-effort check: log when memories.content is stale vs memory_field_crdt.
+
+    Samples each result item's note_id and compares the ``content`` column
+    in ``memories`` to the winning CRDT field value.  A mismatch means a
+    remote CRDT merge updated ``memory_field_crdt`` but the SQL row was
+    not yet projected back.  This is log-only — no mutations are made.
+    """
+    if not result_items:
+        return
+    try:
+        note_ids = [item.get("id", "") for item in result_items if item.get("id")]
+        if not note_ids:
+            return
+        placeholders = ",".join("?" for _ in note_ids)
+        # Check if memory_field_crdt table exists
+        tables = {
+            r[0] for r in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='memory_field_crdt'"
+            ).fetchall()
+        }
+        if "memory_field_crdt" not in tables:
+            return
+        rows = db.execute(
+            f"SELECT m.id, m.content, c.value "
+            f"FROM memories m "
+            f"JOIN memory_field_crdt c ON c.memory_id = m.id AND c.field_name = 'content' "
+            f"WHERE m.id IN ({placeholders}) AND c.is_deleted = 0",
+            note_ids,
+        ).fetchall()
+        stale_count = sum(1 for r in rows if (r[1] or "") != (r[2] or ""))
+        if stale_count:
+            logger.warning(
+                "CRDT staleness: %d/%d search results have stale memories.content "
+                "vs memory_field_crdt.  Run project_crdt_to_sql to repair.",
+                stale_count,
+                len(rows),
+            )
+    except Exception as exc:
+        logger.debug("_check_crdt_staleness failed: %s", exc)
+
+
 def search_memories(
     db_path: Path,
     query: str,
@@ -1824,6 +1866,16 @@ def search_memories(
             except (ImportError, AttributeError):
                 pass
         _record_phase_latency("namespace_audit", _ns_audit_t0)
+
+        # CRDT staleness detection: sample a few results and check if
+        # memory_field_crdt has newer values than memories.content.
+        # This is a best-effort, log-only check — no mutations.
+        try:
+            from infra._lazy_imports import get_config as _crdt_chk_cfg
+            if getattr(_crdt_chk_cfg(), "crdt_enabled", False) and result_items:
+                _check_crdt_staleness(db, result_items[:5])
+        except Exception as _crdt_chk_exc:
+            logger.debug("CRDT staleness check skipped: %s", _crdt_chk_exc)
 
         result = _build_search_result_envelope(
             result_items=result_items,

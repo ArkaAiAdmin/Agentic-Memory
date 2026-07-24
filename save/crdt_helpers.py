@@ -109,14 +109,18 @@ def _crdt_bump_version(db, note_id: str, cols: set) -> None:
     """
     if not _is_crdt_enabled():
         return
-    if _is_legacy_note_crdt_enabled():
-        logger.warning(
-            "_crdt_bump_version called for %s — legacy note-level CRDT bump "
-            "is deprecated. Per-field CRDT (memory_field_crdt) is the "
-            "source of truth since v13. Set legacy_note_crdt = false in "
-            "memory.toml to silence.",
-            note_id,
-        )
+    # Per-field CRDT (memory_field_crdt) is the source of truth since v13.
+    # The note-level VV bump is redundant when the legacy path is off.
+    # Skip it unless legacy_note_crdt is explicitly enabled in config.
+    if not _is_legacy_note_crdt_enabled():
+        return
+    logger.warning(
+        "_crdt_bump_version called for %s — legacy note-level CRDT bump "
+        "is deprecated. Per-field CRDT (memory_field_crdt) is the "
+        "source of truth since v13. Set legacy_note_crdt = false in "
+        "memory.toml to silence.",
+        note_id,
+    )
     if not {"version_vector", "logical_clock"}.issubset(cols):
         return
     if parse_version_vector is None:

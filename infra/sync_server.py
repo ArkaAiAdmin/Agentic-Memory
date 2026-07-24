@@ -727,9 +727,36 @@ class _SyncHandler(BaseHTTPRequestHandler):
             # memory_field_crdt) rather than crdt_field_save, which would
             # collapse every field onto the note-level ``content`` column
             # and destroy the field discriminator.
+            #
+            # Consistency guard: verify the note actually exists in
+            # memories before applying field_crdt.  If crdt_sync_all
+            # rejected the note (e.g. conflict), field_crdt data
+            # should not be applied to a non-existent row.
             field_applied = 0
+            field_skipped = 0
             for note_id, field_entries in field_crdt_map.items():
                 if note_id in notes:
+                    # Verify note exists in memories before applying field_crdt
+                    try:
+                        _vconn = _open_server_db(self.db_path, write=False, tenant_id=self.server_tenant_id)
+                        try:
+                            _exists = _vconn.execute(
+                                "SELECT 1 FROM memories WHERE id = ? AND deleted_at IS NULL",
+                                (note_id,),
+                            ).fetchone()
+                        finally:
+                            _vconn.close()
+                        if not _exists:
+                            logger.warning(
+                                "sync_server: skipping field_crdt for %s — "
+                                "note not found in memories (crdt_sync_all may have rejected it)",
+                                note_id,
+                            )
+                            field_skipped += len(field_entries)
+                            continue
+                    except Exception as _vexc:
+                        logger.debug("field_crdt existence check skipped: %s", _vexc)
+
                     for field_entry in field_entries:
                         try:
                             from crdt.crdt_field import (
@@ -770,6 +797,7 @@ class _SyncHandler(BaseHTTPRequestHandler):
                             logger.warning("sync_server: field_crdt apply failed for %s: %s", note_id, field_exc)
 
             result["field_crdt_applied"] = field_applied
+            result["field_crdt_skipped"] = field_skipped
             self._json_response(result)
         except Exception as e:
             logger.error("sync_server: push merge failed: %s", e)

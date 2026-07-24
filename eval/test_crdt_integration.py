@@ -136,7 +136,8 @@ class TestCrdtBumpVersionNewNote(unittest.TestCase):
 
     @mock.patch.dict(
         os.environ,
-        {"MEMORY_AGENT_ID": "test-agent", "MEMORY_CRDT_ENABLED": "1"},
+        {"MEMORY_AGENT_ID": "test-agent", "MEMORY_CRDT_ENABLED": "1",
+         "MEMORY_LEGACY_NOTE_CRDT": "1"},
         clear=True,
     )
     def test_bump_from_empty(self):
@@ -154,7 +155,8 @@ class TestCrdtBumpVersionNewNote(unittest.TestCase):
 
     @mock.patch.dict(
         os.environ,
-        {"MEMORY_AGENT_ID": "test-agent", "MEMORY_CRDT_ENABLED": "1"},
+        {"MEMORY_AGENT_ID": "test-agent", "MEMORY_CRDT_ENABLED": "1",
+         "MEMORY_LEGACY_NOTE_CRDT": "1"},
         clear=True,
     )
     def test_bump_twice(self):
@@ -177,8 +179,10 @@ class TestCrdtThroughSavePipeline(unittest.TestCase):
     def setUp(self):
         self.orig_crdt = os.environ.get("MEMORY_CRDT_ENABLED")
         self.orig_agent = os.environ.get("MEMORY_AGENT_ID")
+        self.orig_legacy = os.environ.get("MEMORY_LEGACY_NOTE_CRDT")
         os.environ["MEMORY_CRDT_ENABLED"] = "1"
         os.environ["MEMORY_AGENT_ID"] = "test-save-agent"
+        os.environ["MEMORY_LEGACY_NOTE_CRDT"] = "1"
         self.orig_path = os.environ.get("MEMORY_DB_PATH")
         self.db_path = _fresh_db()
         os.environ["MEMORY_DB_PATH"] = str(self.db_path)
@@ -192,6 +196,10 @@ class TestCrdtThroughSavePipeline(unittest.TestCase):
             os.environ["MEMORY_AGENT_ID"] = self.orig_agent
         else:
             os.environ.pop("MEMORY_AGENT_ID", None)
+        if self.orig_legacy is not None:
+            os.environ["MEMORY_LEGACY_NOTE_CRDT"] = self.orig_legacy
+        else:
+            os.environ.pop("MEMORY_LEGACY_NOTE_CRDT", None)
         if self.orig_path is not None:
             os.environ["MEMORY_DB_PATH"] = self.orig_path
         else:

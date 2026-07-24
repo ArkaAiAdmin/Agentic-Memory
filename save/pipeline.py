@@ -2070,8 +2070,12 @@ def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn: Optional[AnyConn
     try:
         from crdt.crdt_field import project_sql_to_crdt as _proj
         from infra.db import open_db
+        from infra.tenant_query import install_tenant_context
 
         if conn is not None:
+            # Ensure the tenant_memories TEMP VIEW exists on raw connections
+            # (e.g. from background worker) — project_sql_to_crdt queries it.
+            install_tenant_context(conn)
             _proj(conn, note_id, _crdt_agent_id())
         else:
             with open_db(db_path_obj, timeout=5.0) as c:
