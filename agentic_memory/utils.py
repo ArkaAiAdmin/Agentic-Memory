@@ -39,26 +39,7 @@ def resolve_db_path(db_path: str | Path | None = None) -> Path:
         ) from exc
 
 
-def get_db_connection(db_path: str | Path, timeout: float = 10.0) -> Any:
-    """Get a connection from the pool for *db_path*.
-
-    Returns the connection object; the caller is responsible for
-    calling ``safe_close_db()`` when done (or using ``with_connection``).
-
-    Detects the current agent context and passes its tenant_id to the
-    pool so the tenant_memories TEMP VIEW filters correctly.
-    """
-    from infra._lazy_imports import connection_pool
-
-    tenant_id = "default"
-    try:
-        from agent_context import get_agent
-        ctx = get_agent()
-        if ctx and ctx.agent_id:
-            tenant_id = ctx.agent_id
-    except Exception:
-        pass
-    return connection_pool.get(str(db_path), timeout=timeout, tenant_id=tenant_id)
+from infra.db import get_db_connection  # noqa: F401 — re-export for backward compat
 
 
 def safe_close_db(conn: Any) -> None:

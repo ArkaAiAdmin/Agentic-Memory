@@ -755,6 +755,29 @@ def _maybe_checkpoint_on_startup(path: Path) -> None:
         pass
 
 
+def get_db_connection(db_path: str | Path, timeout: float = 10.0) -> Any:
+    """Get a connection from the pool for *db_path*.
+
+    Returns the connection object; the caller is responsible for
+    calling ``safe_close_db()`` when done.
+
+    Detects the current agent context and passes its tenant_id to the
+    pool so the tenant_memories TEMP VIEW filters correctly.
+    """
+    from infra._lazy_imports import connection_pool
+
+    tenant_id = "default"
+    try:
+        from agent_context import get_agent
+
+        ctx = get_agent()
+        if ctx and ctx.agent_id:
+            tenant_id = ctx.agent_id
+    except Exception:
+        pass
+    return connection_pool.get(str(db_path), timeout=timeout, tenant_id=tenant_id)
+
+
 def safe_close_db(conn: AnyConnection, *, should_commit: bool = True) -> None:
     """Commit or rollback, then close or return to pool. Never raises.
 

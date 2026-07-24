@@ -303,8 +303,7 @@ def pull_from_peer(
                 ensure_field_crdt_schema,
                 TOMBSTONE,
             )
-            from infra.db import safe_close_db
-            from agentic_memory.utils import get_db_connection
+            from infra.db import get_db_connection, safe_close_db
 
             field_updates: list[FieldUpdate] = []
             for fc in field_crdt:
