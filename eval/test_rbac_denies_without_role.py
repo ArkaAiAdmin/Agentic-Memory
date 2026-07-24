@@ -240,16 +240,12 @@ class TestRBACDeniesWithoutRole:
 
     def test_authorizer_module_importable(self, db_path: Path):
         """infra.authorizer module should be importable."""
-        try:
-            from infra.authorizer import Authorizer  # noqa: F401
-        except ImportError:
-            pytest.skip("infra.authorizer not yet implemented")
+        from infra.authorizer import Authorizer  # noqa: F401
 
     def test_authorizer_denies_no_role_read(self, db_path: Path):
         """Authorizer should deny memory:read for principal with no roles."""
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         _create_principal(db_path, "denied-rd")
         result = authorizer.check(
             principal_id="denied-rd",
@@ -263,8 +259,7 @@ class TestRBACDeniesWithoutRole:
     def test_authorizer_denies_no_role_write(self, db_path: Path):
         """Authorizer should deny memory:write for principal with no roles."""
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         _create_principal(db_path, "denied-wr")
         result = authorizer.check(
             principal_id="denied-wr",
@@ -276,8 +271,7 @@ class TestRBACDeniesWithoutRole:
     def test_authorizer_denies_no_role_delete(self, db_path: Path):
         """Authorizer should deny memory:delete for principal with no roles."""
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         _create_principal(db_path, "denied-dl")
         result = authorizer.check(
             principal_id="denied-dl",
@@ -289,8 +283,7 @@ class TestRBACDeniesWithoutRole:
     def test_authorizer_denies_no_role_admin(self, db_path: Path):
         """Authorizer should deny memory:admin for principal with no roles."""
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         _create_principal(db_path, "denied-ad")
         result = authorizer.check(
             principal_id="denied-ad",
@@ -302,8 +295,7 @@ class TestRBACDeniesWithoutRole:
     def test_authorizer_denies_no_role_ops_read(self, db_path: Path):
         """Authorizer should deny ops:read for principal with no roles."""
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         _create_principal(db_path, "denied-op")
         result = authorizer.check(
             principal_id="denied-op",
@@ -323,8 +315,7 @@ class TestRBACDeniesWithoutRole:
     def test_nonexistent_principal_denied(self, db_path: Path):
         """A principal that doesn't exist should be denied."""
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         result = authorizer.check(
             principal_id="nonexistent-principal-xyz",
             resource="memory",
@@ -335,8 +326,7 @@ class TestRBACDeniesWithoutRole:
     def test_empty_principal_id_denied(self, db_path: Path):
         """An empty principal_id should be denied."""
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         result = authorizer.check(
             principal_id="",
             resource="memory",

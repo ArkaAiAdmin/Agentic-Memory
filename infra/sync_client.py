@@ -398,6 +398,7 @@ def push_to_peer(
     local_agent_id: str,
     since: float = 0.0,
     limit: int = 200,
+    tenant_id: str = "default",
 ) -> dict:
     """Push local changes since ``since`` to a peer server.
 
@@ -409,6 +410,7 @@ def push_to_peer(
         local_agent_id: This agent's id (sent in the push payload).
         since: Unix epoch timestamp. Only push notes modified after this.
         limit: Maximum number of notes per push.
+        tenant_id: Tenant scope — only push notes belonging to this tenant.
 
     Returns:
         Dict with peer's response (applied/conflict/rejected/total) or error.
@@ -428,10 +430,11 @@ def push_to_peer(
                           version_vector
                    FROM memories
                    WHERE deleted_at IS NULL
+                     AND tenant_id = ?
                      AND CAST(strftime('%s', updated_at) AS INTEGER) > ?
                    ORDER BY updated_at ASC
                    LIMIT ?""",
-                (int(since), limit),
+                (tenant_id, int(since), limit),
             ).fetchall()
     except Exception as e:
         return {"error": f"Local query failed: {e}"}

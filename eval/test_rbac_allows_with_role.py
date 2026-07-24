@@ -270,8 +270,7 @@ class TestRBACAllowsWithRole:
 
     def test_authorizer_allows_read_with_role(self, db_path: Path):
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         _create_principal(db_path, "auth-rd-1")
         _grant_role(db_path, "auth-rd-1", "memory:read")
         result = authorizer.check(
@@ -283,8 +282,7 @@ class TestRBACAllowsWithRole:
 
     def test_authorizer_denies_write_with_read_only_role(self, db_path: Path):
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         _create_principal(db_path, "auth-rd-2")
         _grant_role(db_path, "auth-rd-2", "memory:read")
         result = authorizer.check(
@@ -296,8 +294,7 @@ class TestRBACAllowsWithRole:
 
     def test_authorizer_allows_write_with_write_role(self, db_path: Path):
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         _create_principal(db_path, "auth-wr-1")
         _grant_role(db_path, "auth-wr-1", "memory:write")
         result = authorizer.check(
@@ -309,8 +306,7 @@ class TestRBACAllowsWithRole:
 
     def test_authorizer_allows_admin_with_admin_role(self, db_path: Path):
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         _create_principal(db_path, "auth-ad-1")
         _grant_role(db_path, "auth-ad-1", "memory:admin")
         result = authorizer.check(
@@ -323,8 +319,7 @@ class TestRBACAllowsWithRole:
     def test_authorizer_lifecycle_allows_then_denies(self, db_path: Path):
         """Full lifecycle: grant → allow → revoke → deny."""
         authorizer = _get_authorizer(db_path)
-        if authorizer is None:
-            pytest.skip("infra.authorizer not yet implemented")
+        assert authorizer is not None, "infra.authorizer must be importable and functional"
         pid = "auth-lifecycle-1"
         _create_principal(db_path, pid)
         _grant_role(db_path, pid, "memory:read")

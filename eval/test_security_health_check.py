@@ -51,10 +51,10 @@ CONFIG_PY = REPO_ROOT / "infra" / "config.py"
 SAGA_PY = REPO_ROOT / "infra" / "saga.py"
 PIPELINE_PY = REPO_ROOT / "save" / "pipeline.py"
 WRITE_JOURNAL_PY = REPO_ROOT / "infra" / "write_journal.py"
-MCP_VERBS_PY = REPO_ROOT / "mcp_verbs.py"
-MCP_MEMORY_PY = REPO_ROOT / "mcp_memory.py"
-MCP_SEARCH_PY = REPO_ROOT / "mcp_search.py"
-MCP_SAFETY_PY = REPO_ROOT / "mcp_safety.py"
+MCP_VERBS_PY = REPO_ROOT / "mcp_surface" / "mcp_verbs.py"
+MCP_MEMORY_PY = REPO_ROOT / "mcp_surface" / "mcp_memory.py"
+MCP_SEARCH_PY = REPO_ROOT / "mcp_surface" / "mcp_search.py"
+MCP_SAFETY_PY = REPO_ROOT / "mcp_surface" / "mcp_safety.py"
 TOOL_COMPLETE_PY = REPO_ROOT / "background" / "tool_complete.py"
 AUTO_SAVE_PY = REPO_ROOT / "background" / "auto_save.py"
 INJECTION_PY = REPO_ROOT / "memory_injection.py"
@@ -347,7 +347,7 @@ def _scan_A01_broken_access_control() -> List[SecurityFinding]:
     findings: List[SecurityFinding] = []
     verbs_src = _read(MCP_VERBS_PY)
     sdk_src = _read(SDK_PY)
-    maintenance_src = _read(REPO_ROOT / "mcp_maintenance.py")
+    maintenance_src = _read(REPO_ROOT / "mcp_surface" / "mcp_maintenance.py")
 
     # A01-001: hard delete without a confirmation gate.
     if "hard=True" in verbs_src and "confirm" not in verbs_src:
@@ -392,7 +392,7 @@ def _scan_A01_broken_access_control() -> List[SecurityFinding]:
         and "confirm" in maintenance_src
         and bool(
             re.search(
-                r"DESTRUCTIVE_MAINTENANCE_OPS\s+and\s+not\s+.*confirm",
+                r"DESTRUCTIVE_MAINTENANCE_OPS.*and\s+not\s+.*confirm",
                 maintenance_src,
                 re.DOTALL,
             )
@@ -1126,7 +1126,7 @@ class TestSecurityHealthCheck:
         assert "confirm" in refused.lower(), refused
 
         # With confirm=True the op is dispatched (here to a stub handler).
-        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+        with patch("mcp_surface.mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
                 MaintenanceOp.AGENT_CLEAR: lambda **_: "AGENT_CLEAR_OK",
             }
@@ -1145,7 +1145,7 @@ class TestSecurityHealthCheck:
         assert "confirm" in refused.lower(), refused
 
         # With confirm + stub handler -> proceeds.
-        with patch("mcp_maintenance_ops._get_handlers") as mock_h:
+        with patch("mcp_surface.mcp_maintenance_ops._get_handlers") as mock_h:
             mock_h.return_value = {
                 MaintenanceOp.OKF_EXPORT: lambda **_: "OKF_EXPORT_OK",
             }
