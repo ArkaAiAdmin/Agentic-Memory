@@ -240,6 +240,11 @@ def memory_search(
 def memory_semantic_search(query: str, limit: int = 5) -> str:
     """Semantic search using embeddings alongside FTS5."""
 
+    # Clamp query length to prevent arg overflow / resource exhaustion
+    MAX_QUERY_LEN = 4096
+    if len(query) > MAX_QUERY_LEN:
+        query = query[:MAX_QUERY_LEN]
+
     script = GLOBAL_SCRIPTS_DIR / "embedding_search.py"
     if not script.exists():
         return _err(ErrorCode.NOT_FOUND, f"embedding_search.py not found at {script}")

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 """
 CRDT sync subsystem MCP tools — crdt_sync, crdt_status.
 
@@ -20,18 +21,40 @@ from mcp_surface.mcp_instance import mcp
 
 @mcp.tool()
 @with_audit("memory_crdt_sync")
-def memory_crdt_sync(agent_id: str, remote_notes_json: str) -> str:
+def memory_crdt_sync(agent_id: str, remote_notes_json: str, sync_token: str = "") -> str:
     """Bulk-sync notes from a remote agent using CRDT conflict resolution.
 
     Args:
         agent_id: Identifier for the sending agent.
         remote_notes_json: JSON dict mapping note_id to a 5-element list:
             [content, source_file, logical_clock, version_vector_str, sender_clock].
+        sync_token: Bearer token for authentication (optional).
 
     Returns JSON with applied/conflicted/rejected/total counts.
     """
     from crdt.crdt_merge import crdt_sync_all
     from save.crdt_helpers import _crdt_agent_id
+
+    # SEC-1: enforce trusted peer allowlist when configured.
+    # Also require sync_token when MEMORY_SYNC_TOKEN is set.
+    trusted = os.environ.get("MEMORY_CRDT_TRUSTED_PEERS", "").strip()
+    trusted_list = [p.strip() for p in trusted.split(",") if p.strip()]
+    expected_token = os.environ.get("MEMORY_SYNC_TOKEN", "").strip()
+
+    if trusted_list and agent_id not in trusted_list:
+        # Agent not in trusted list — require valid token
+        if not sync_token or (expected_token and sync_token != expected_token):
+            return _err(
+                ErrorCode.INVALID_PARAMS,
+                f"sync_token required: agent_id '{agent_id}' not in trusted peers",
+            )
+    elif expected_token and not trusted_list:
+        # Token required but no trusted peers configured — require token
+        if not sync_token or sync_token != expected_token:
+            return _err(
+                ErrorCode.INVALID_PARAMS,
+                f"sync_token required: agent_id '{agent_id}' not authenticated",
+            )
 
     target_base = _resolve_memory_dir()
     db_path = target_base / "memory.db"
