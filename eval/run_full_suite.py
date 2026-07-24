@@ -31,6 +31,31 @@ try:
 except Exception:
     bootstrap_temp_db_clean = None
 
+# ── Template DB cache ───────────────────────────────────────────────────────
+# Create one template DB with the full schema, then copy it for each test
+# file instead of running all 74 migrations per test.  This cuts ~2s per
+# test file down to ~0.05s (file copy vs migration runner).
+_template_db: Path | None = None
+
+def _get_template_db() -> Path:
+    """Return a cached template DB path, creating it on first call."""
+    global _template_db
+    if _template_db is not None and _template_db.exists():
+        return _template_db
+    _template_db = Path(tempfile.mktemp(suffix=".db", prefix="template_db_"))
+    if bootstrap_temp_db_clean is not None:
+        bootstrap_temp_db_clean(_template_db)
+    else:
+        conn = sqlite3.connect(str(_template_db))
+        conn.execute("PRAGMA journal_mode=WAL")
+        from infra.db_migrations import run_schema_setup
+        run_schema_setup(conn)
+        conn.commit()
+        conn.close()
+    return _template_db
+
+import sqlite3
+
 summary = {
     "passed": 0,
     "failed": 0,
@@ -133,16 +158,12 @@ def run_one_test(f):
         suffix=".xml", prefix="junit_", delete=False
     ) as jf:
         junit_path = Path(jf.name)
-    with tempfile.NamedTemporaryFile(
-        suffix=".db", prefix="test_db_", delete=False
-    ) as db_f:
-        temp_db_path = Path(db_f.name)
 
-    if bootstrap_temp_db_clean is not None:
-        try:
-            bootstrap_temp_db_clean(temp_db_path)
-        except Exception:
-            pass
+    # Copy template DB instead of running all migrations per test
+    template = _get_template_db()
+    temp_db_path = Path(tempfile.mktemp(suffix=".db", prefix="test_db_"))
+    import shutil
+    shutil.copy2(str(template), str(temp_db_path))
 
     # Copy base env and set MEMORY_DB_PATH
     test_env = env.copy()
@@ -228,8 +249,8 @@ def run_one_test(f):
 
         print(f"  {f.name} ... {status}", flush=True)
 
-# Run up to 3 tests concurrently
-with ThreadPoolExecutor(max_workers=3) as executor:
+# Run up to 6 tests concurrently (subprocess isolation prevents threading issues)
+with ThreadPoolExecutor(max_workers=6) as executor:
     # M13 fix: consume the iterator to surface exceptions from workers
     for _ in executor.map(run_one_test, test_files):
         pass
@@ -256,3 +277,9 @@ print(
 )
 print(f"Failures: {[n for n, _ in failures]}")
 print(f"Results saved to: {results_file}")
+
+# Cleanup template DB
+if _template_db and _template_db.exists():
+    _template_db.unlink(missing_ok=True)
+    Path(str(_template_db) + "-wal").unlink(missing_ok=True)
+    Path(str(_template_db) + "-shm").unlink(missing_ok=True)
