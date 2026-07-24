@@ -155,7 +155,7 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
     def test_list_unacknowledged(self):
         from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
-        with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
+        with patch("mcp_surface.mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             result = json.loads(memory_list_drift_alarms(acknowledged=False, limit=10))
         self.assertEqual(result["count"], 2)
         self.assertEqual(result["total_unacknowledged"], 2)
@@ -164,7 +164,7 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
     def test_list_by_level(self):
         from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
-        with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
+        with patch("mcp_surface.mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             result = json.loads(
                 memory_list_drift_alarms(alarm_level="critical", limit=10)
             )
@@ -175,7 +175,7 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
         from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
         # Get IDs of unack alarms
-        with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
+        with patch("mcp_surface.mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             r1 = json.loads(memory_list_drift_alarms(acknowledged=False, limit=10))
             ids = [a["id"] for a in r1["alarms"]]
             # Acknowledge all
@@ -195,7 +195,7 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
     def test_acknowledge_is_idempotent(self):
         from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
-        with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
+        with patch("mcp_surface.mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             r1 = json.loads(memory_list_drift_alarms(acknowledged=False, limit=10))
             ids = [a["id"] for a in r1["alarms"]]
             # First ack
@@ -212,17 +212,17 @@ class TestMemoryListDriftAlarms(unittest.TestCase):
     def test_invalid_alarm_level(self):
         from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
-        with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
+        with patch("mcp_surface.mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             result = memory_list_drift_alarms(alarm_level="bogus")
         self.assertTrue(result.startswith("Error [INVALID_PARAMS]"))
 
     def test_invalid_limit(self):
         from mcp_surface.mcp_ctr_drift import memory_list_drift_alarms
 
-        with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
+        with patch("mcp_surface.mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             result = memory_list_drift_alarms(limit=0)
         self.assertTrue(result.startswith("Error [INVALID_PARAMS]"))
-        with patch("mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
+        with patch("mcp_surface.mcp_ctr_drift._resolve_memory_dir", return_value=self.tmpdir):
             result = memory_list_drift_alarms(limit=1000)
         self.assertTrue(result.startswith("Error [INVALID_PARAMS]"))
 
