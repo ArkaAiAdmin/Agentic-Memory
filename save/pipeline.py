@@ -1993,95 +1993,76 @@ def _materialize_journal_once(
     # thread in the MCP server tries to acquire same flock → blocks.
     # The direct SQLite connection + WAL busy_timeout provides sufficient
     # serialization for the single-reconciler case.
-    from infra.db_path_flock import (
-        release_db_path_flock,
-    )
-    try:
-        # Idempotent guard: if a peer reconciler already materialized this
-        # note_id, skip the full saga and just mark the journal entry applied.
-        # Cross-process serialization is provided by the db_path_flock acquired
-        # above; this pre-check just avoids the expensive duplicate work.
-        if _check_already_materialized(_db_path_parsed, note_id, journal_path):
-            mark_applied(journal_path, entry["id"])
-            logger.info("materialize_journal_entry: %s already materialized, skipping", note_id)
-            return note_id
+    # Idempotent guard: if a peer reconciler already materialized this
+    # note_id, skip the full saga and just mark the journal entry applied.
+    if _check_already_materialized(_db_path_parsed, note_id, journal_path):
+        mark_applied(journal_path, entry["id"])
+        logger.info("materialize_journal_entry: %s already materialized, skipping", note_id)
+        return note_id
 
-        conn = None
-        _save_errored = False
-        _saga_session_closed = False
+    conn = None
+    _save_errored = False
+    _saga_session_closed = False
+    try:
+        # direct=True: bypasses the write queue.  The direct SQLite
+        # connection + WAL busy_timeout provides serialization.
+        conn = _acquire_db_connection(
+            db_path_obj, req.category, req.title_slug, time.time(),
+            direct=True,
+        )
+    except Exception:
+        raise
+    try:
+        note_id_out, conn = _persist_via_saga(
+            conn=conn, db_path_obj=_db_path_parsed,
+            category=req.category, title_slug=req.title_slug,
+            content=req.content, tags_list=tags_list, pinned=req.pinned,
+            now_iso=now_iso, is_global=req.is_global, metadata_json=metadata_json,
+            file_path=file_path, markdown_content=_markdown, importance=req.importance,
+            defer_expensive=req.defer_expensive, tenant_id=req.tenant_id,
+            epistemic_source=req.epistemic_source, belief_status=req.belief_status,
+            asserting_agent_id=req.asserting_agent_id, fact_type=req.fact_type,
+        )
+        # W8 (2026-07-19): close the saga's write-queue session BEFORE
+        # running post-save hooks.
         try:
-            # direct=True: the reconciler already holds db_path_flock
-            # for serialization.  Bypassing the write queue prevents the
-            # ABBA deadlock where the queue thread tries to acquire the
-            # same flock held by this caller.
-            conn = _acquire_db_connection(
-                db_path_obj, req.category, req.title_slug, time.time(),
-                direct=True,
-            )
-        except Exception:
+            conn.close()
+            _saga_session_closed = True
+        except Exception as _close_exc:
+            logger.warning("conn.close() failed before post-save hooks: %s", _close_exc)
+        _run_post_save_hooks(
+            target_mem, _db_path_parsed, note_id_out,
+            req.category, req.title_slug, req.content, req.tags or [],
+            req.pinned, req.is_global,
+            (req.safety_wiring and not req.defer_expensive),
+            time.time(), conn=None,
+        )
+        _enqueue_background_tasks(_db_path_parsed, note_id_out, conn=None)
+        if _is_crdt_enabled():
+            _project_sql_to_crdt(_db_path_parsed, note_id, conn=None)
+        logger.info("materialize_journal_entry: materialized %s", note_id_out)
+        try:
+            from infra.write_journal import mark_applied_and_hooks_completed as _mark_both
+            _mark_both(journal_path, entry["id"])
+            logger.info("materialize_journal_entry: mark_applied + hooks_completed %s (id=%d)", note_id_out, entry["id"])
+        except Exception as _ma_exc:
+            logger.error("materialize_journal_entry: mark_applied/hooks failed for %s: %s", note_id_out, _ma_exc)
             raise
-        try:
-            note_id_out, conn = _persist_via_saga(
-                conn=conn, db_path_obj=_db_path_parsed,
-                category=req.category, title_slug=req.title_slug,
-                content=req.content, tags_list=tags_list, pinned=req.pinned,
-                now_iso=now_iso, is_global=req.is_global, metadata_json=metadata_json,
-                file_path=file_path, markdown_content=_markdown, importance=req.importance,
-                defer_expensive=req.defer_expensive, tenant_id=req.tenant_id,
-                epistemic_source=req.epistemic_source, belief_status=req.belief_status,
-                asserting_agent_id=req.asserting_agent_id, fact_type=req.fact_type,
-            )
-            # W8 (2026-07-19): close the saga's write-queue session BEFORE
-            # running post-save hooks.  The saga runs inside a
-            # ``sqlite_write_queue`` session that holds ``BEGIN IMMEDIATE``
-            # (the SQLite write lock) on the worker thread for its whole
-            # lifetime.  Post-save hooks (contradiction check, auto-backlink,
-            # CRDT projection, background-task enqueue) open their OWN
-            # connections.  If those hooks ran while the saga session was
-            # still open, the hooks' connections would block on the write
-            # lock the worker still holds -> deadlock, and the journal entry
-            # would never materialize.  Closing the session first releases
-            # the lock; the hooks then open fresh connections with no
-            # contention.  Each hook already falls back to opening its own
-            # connection when ``conn is None``.
+        return str(note_id_out)
+    except Exception:
+        _save_errored = True
+        raise
+    finally:
+        if conn is not None and not _saga_session_closed:
             try:
+                if _save_errored:
+                    try:
+                        conn.rollback()
+                    except Exception as _rb_exc:
+                        logger.warning("rollback failed in journal materialization: %s", _rb_exc)
                 conn.close()
-                _saga_session_closed = True
             except Exception as _close_exc:
-                logger.warning("conn.close() failed before post-save hooks: %s", _close_exc)
-            _run_post_save_hooks(
-                target_mem, _db_path_parsed, note_id_out,
-                req.category, req.title_slug, req.content, req.tags or [],
-                req.pinned, req.is_global,
-                (req.safety_wiring and not req.defer_expensive),
-                time.time(), conn=None,
-            )
-            _enqueue_background_tasks(_db_path_parsed, note_id_out, conn=None)
-            if _is_crdt_enabled():
-                _project_sql_to_crdt(_db_path_parsed, note_id, conn=None)
-            logger.info("materialize_journal_entry: materialized %s", note_id_out)
-            try:
-                from infra.write_journal import mark_applied_and_hooks_completed as _mark_both
-                _mark_both(journal_path, entry["id"])
-                logger.info("materialize_journal_entry: mark_applied + hooks_completed %s (id=%d)", note_id_out, entry["id"])
-            except Exception as _ma_exc:
-                logger.error("materialize_journal_entry: mark_applied/hooks failed for %s: %s", note_id_out, _ma_exc)
-                raise
-            return str(note_id_out)
-        except Exception:
-            _save_errored = True
-            raise
-        finally:
-            if conn is not None and not _saga_session_closed:
-                try:
-                    if _save_errored:
-                        try:
-                            conn.rollback()
-                        except Exception as _rb_exc:
-                            logger.warning("rollback failed in journal materialization: %s", _rb_exc)
-                    conn.close()
-                except Exception as _close_exc:
-                    logger.warning("conn.close() failed in journal materialization: %s", _close_exc)
+                logger.warning("conn.close() failed in journal materialization: %s", _close_exc)
 
 
 def _project_sql_to_crdt(db_path_obj: Path, note_id: str, conn: Optional[AnyConnection] = None) -> None:
