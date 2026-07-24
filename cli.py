@@ -83,6 +83,16 @@ def server_main() -> None:
     import mcp_tools  # noqa: F401
     import memory_mcp  # noqa: F401
 
+    # Start the optional CRDT sync server as a daemon thread.
+    # Also started from memory_mcp.py:__main__ for direct python memory_mcp.py execution.
+    try:
+        from infra.sync_server import start_server_from_config
+        from infra.infrastructure import resolve_active_memory_dir
+
+        start_server_from_config(resolve_active_memory_dir() / "memory.db")
+    except Exception:
+        logger.info("sync server not started")
+
     signal.signal(signal.SIGPIPE, signal.SIG_IGN)
     try:
         mcp_instance.mcp.run()
