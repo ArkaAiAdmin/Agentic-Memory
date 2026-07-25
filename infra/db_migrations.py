@@ -156,7 +156,15 @@ def _migrate_memory_vec_idx(conn) -> None:
 
 
 def _migrate_ensure_columns(conn, existing_cols: set) -> None:
-    """Idempotently add missing columns to the memories table."""
+    """Idempotently add missing columns to the memories table.
+
+    Delegates to _migrate_ensure_memories_columns which handles the full
+    column list and validates identifiers.  This wrapper exists for
+    backward compatibility with callers that pass the existing_cols set.
+    """
+    _migrate_ensure_memories_columns(conn)
+
+
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 

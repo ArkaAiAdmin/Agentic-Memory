@@ -132,6 +132,10 @@ def _has_rbac_schema(db_path: Path) -> bool:
 class TestRBACACLOverride:
     """ACL overrides take precedence over role-based permissions."""
 
+    @pytest.fixture(autouse=True)
+    def _closed_auth(self, closed_auth_env):
+        pass
+
     def test_preconditions(self, db_path: Path):
         assert _has_rbac_schema(db_path), "RBAC tables missing"
 

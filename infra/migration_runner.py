@@ -143,6 +143,27 @@ SCHEMA_STABLE = True  # Set to False when adding new migrations
 
 
 
+# Regex to detect ALTER TABLE ... ADD COLUMN statements for pre-flight skip.
+_ADD_COLUMN_RE = re.compile(
+    r"^\s*ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)",
+    re.IGNORECASE,
+)
+
+
+def _column_exists(conn: "AnyConnection", table: str, column: str) -> bool:
+    """Check if a column already exists on a table (pre-flight for ADD COLUMN).
+
+    Returns True if the column exists, False if the table or column is absent.
+    Used to skip ALTER TABLE ADD COLUMN statements silently instead of
+    triggering and catching the 'duplicate column' OperationalError.
+    """
+    try:
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        return column in cols
+    except sqlite3.OperationalError:
+        return False
+
+
 def _parse_sql_file(path: Path) -> list[str]:
     """Parse a .sql file into a list of executable statements.
 
@@ -244,10 +265,16 @@ def _get_applied_migrations(conn: AnyConnection) -> set[int]:
         checksums = _get_checksums(conn)
         if checksums:
             return {int(k) for k in checksums.keys() if k.isdigit()}
-        # Backward compat: old schema_version=4 means migrations 1-4
-        # are already applied (they correspond to the old inline helpers).
+        # Backward compat: old schema_version=4 means the old Python
+        # inline helpers ran.  Previously we returned {1,2,3,4} to skip
+        # those migrations, but that caused problems when the tables
+        # they create were somehow missing (e.g. partial installs).
+        # Since ALL migrations 000-004 are idempotent (IF NOT EXISTS /
+        # ADD COLUMN with pre-flight skip), it is safe to re-run them.
+        # Return empty set so every migration is attempted; existing
+        # objects will be gracefully skipped.
         if version <= 4:
-            return {1, 2, 3, 4}
+            return set()
         # For version >= 5, the version itself IS the highest applied
         # migration number, but only the migrations that actually
         # exist on disk are considered applied.  This protects
@@ -362,6 +389,15 @@ def _backfill_empty_checksums(conn: AnyConnection) -> None:
         recorded_version = row[0] if row else 0
     except sqlite3.OperationalError:
         recorded_version = 0
+    # Legacy DBs (version <= 4): do NOT backfill checksums at all.
+    # The old Python migration system used version numbers 1-4 for inline
+    # helpers that created tables directly.  Checksumming the NEW SQL files
+    # (001-004) would mark them as applied even when their tables may not
+    # exist on a partially-migrated legacy DB.  Let _get_applied_migrations'
+    # legacy path ({1,2,3,4}) handle these — migration 000 and 001-004 are
+    # all IF NOT EXISTS and will gracefully no-op on tables that DO exist.
+    if recorded_version <= 4:
+        return
     available = {num: path for num, path in _get_available_migrations()}
     new_checksums: dict[str, str] = {}
     for num, path in available.items():
@@ -507,6 +543,16 @@ def run_migrations(conn: AnyConnection, dry_run: bool = False) -> None:
                 statements = _parse_sql_file(path)
                 migration_deferred = False
                 for stmt in statements:
+                    # Pre-flight: skip ALTER TABLE ADD COLUMN when the
+                    # column already exists.  This eliminates noisy
+                    # "duplicate column" warnings on fresh DBs where
+                    # migration 000 creates tables with all columns and
+                    # later migrations (005, 035, etc.) try to add them.
+                    add_col_match = _ADD_COLUMN_RE.match(stmt)
+                    if add_col_match:
+                        tbl, col = add_col_match.group(1), add_col_match.group(2)
+                        if _column_exists(conn, tbl, col):
+                            continue
                     try:
                         conn.execute(stmt)
                     except sqlite3.OperationalError as e:
@@ -629,9 +675,18 @@ def migrate_down(conn: AnyConnection, target_version: int, dry_run: bool = False
     # Build a map for quick lookup
     down_map = {num: path for num, path in down_migrations}
 
-    # Determine which migrations to roll back
+    # Determine which migrations to roll back.
+    # Use >= when target_version < 0 (roll back everything including base).
+    # Use > for all other cases, EXCEPT target_version == 0 where we also
+    # include migration 0 itself (the base schema) so a "rollback to 0"
+    # truly means "undo all migrations including the base tables".
     to_rollback = sorted(
-        [num for num in applied if num > target_version and num in down_map],
+        [
+            num
+            for num in applied
+            if (num > target_version or (target_version == 0 and num == 0))
+            and num in down_map
+        ],
         reverse=True,
     )
 

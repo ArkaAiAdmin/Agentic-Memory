@@ -138,6 +138,10 @@ def _has_principals_table(db_path: Path) -> bool:
 class TestRBACMultiTenant:
     """RBAC role bindings are scoped to tenants."""
 
+    @pytest.fixture(autouse=True)
+    def _closed_auth(self, closed_auth_env):
+        pass
+
     def test_preconditions(self, db_path: Path):
         assert _has_principals_table(db_path)
         assert _has_rbac_schema(db_path)

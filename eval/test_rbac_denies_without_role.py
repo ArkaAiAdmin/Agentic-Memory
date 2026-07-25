@@ -19,7 +19,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Generator
+from typing import Generator, cast
 
 import pytest
 
@@ -46,7 +46,7 @@ def _bootstrap_db(p: Path) -> None:
         db.execute("PRAGMA foreign_keys=ON")
         run_migrations(db)
         ensure_facts_schema(db)
-        seed_default_roles(db)
+        seed_default_roles(cast(sqlite3.Connection, db))
         db.commit()
 
 
@@ -145,6 +145,10 @@ def _has_principals_table(db_path: Path) -> bool:
 @pytest.mark.rbac
 class TestRBACDeniesWithoutRole:
     """A principal with no roles is denied all operations."""
+
+    @pytest.fixture(autouse=True)
+    def _closed_auth(self, closed_auth_env):
+        pass
 
     def test_principals_table_exists(self, db_path: Path):
         """Precondition: principals table must exist for RBAC to work."""

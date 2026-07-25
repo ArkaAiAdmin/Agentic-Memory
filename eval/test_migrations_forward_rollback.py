@@ -110,6 +110,7 @@ TABLES_BY_MIGRATION: dict[int, list[str]] = {
     71: ["agent_registry_crdt"],
     72: ["system_locks"],
     73: [],  # bookkeeping / checksum re-write
+    74: [],  # recreates destroyed indexes (additive only)
 }
 
 # Column checks: for migrations that add specific columns, verify a

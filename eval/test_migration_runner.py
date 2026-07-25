@@ -139,7 +139,14 @@ class TestGetAppliedMigrations(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_legacy_version_4_returns_1_to_4(self):
+    def test_legacy_version_4_returns_empty_set(self):
+        """Legacy DBs (version <= 4) return empty applied set.
+
+        All migrations 000-004 are idempotent (IF NOT EXISTS / ADD COLUMN
+        with pre-flight skip), so re-running them on a legacy DB is safe
+        and avoids the forward-ref failures that occurred when partially-
+        migrated legacy DBs skipped table-creating migrations.
+        """
         conn = _new_db()
         try:
             conn.executescript(
@@ -152,7 +159,7 @@ class TestGetAppliedMigrations(unittest.TestCase):
             )
             conn.commit()
             self.assertEqual(
-                migration_runner._get_applied_migrations(conn), {1, 2, 3, 4}
+                migration_runner._get_applied_migrations(conn), set()
             )
         finally:
             conn.close()
@@ -767,7 +774,10 @@ class TestDataPreservationOnRollback(unittest.TestCase):
             migration_runner.run_migrations(conn)
             self._insert_probe(conn)
             conn.commit()
-            migration_runner.migrate_down(conn, 0)
+            # Roll back to 1 (keeps base tables from migration 000);
+            # we're testing 018's rollback preserves data, not that a
+            # full teardown retains rows.
+            migration_runner.migrate_down(conn, 1)
             survivors = conn.execute(
                 "SELECT COUNT(*) FROM kg_facts WHERE subject = 'm1_probe_subject'"
             ).fetchone()[0]
@@ -789,7 +799,7 @@ class TestDataPreservationOnRollback(unittest.TestCase):
             migration_runner.run_migrations(conn)
             self._insert_probe(conn)
             conn.commit()
-            migration_runner.migrate_down(conn, 0)
+            migration_runner.migrate_down(conn, 1)
             survivors = conn.execute(
                 "SELECT COUNT(*) FROM kg_facts WHERE subject = 'm1_probe_subject'"
             ).fetchone()[0]
@@ -811,7 +821,7 @@ class TestDataPreservationOnRollback(unittest.TestCase):
             migration_runner.run_migrations(conn)
             self._insert_probe(conn)
             conn.commit()
-            migration_runner.migrate_down(conn, 0)
+            migration_runner.migrate_down(conn, 1)
             survivors = conn.execute(
                 "SELECT COUNT(*) FROM kg_facts WHERE subject = 'm1_probe_subject'"
             ).fetchone()[0]
