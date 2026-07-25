@@ -65,3 +65,5 @@ cron/audit_sink.jsonl
 .mimocode/.cron-lock
 dummy
 .playwright-mcp/
+.qoder/
+None
