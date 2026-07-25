@@ -301,6 +301,7 @@ def _rerank_results(
     as_of: float | None = None,
     budget: "Any | None" = None,
     use_history: bool = True,
+    tenant_id: str = "default",
 ) -> tuple[list, Optional[dict]]:
     """Phase 9 of search_memories: compute final scores and rerank.
 
@@ -1637,6 +1638,7 @@ def search_memories(
                     as_of=as_of,
                     budget=_search_budget,
                     use_history=use_history,
+                    tenant_id=tenant_id,
                 )
             except Exception as _rerank_exc:
                 _phase_inc("search.rerank", _rerank_exc)
