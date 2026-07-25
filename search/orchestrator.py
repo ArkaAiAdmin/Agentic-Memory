@@ -961,6 +961,10 @@ def search_memories(
     try:
         from infra._lazy_imports import connection_pool
         db = connection_pool.get(str(db_path), timeout=30.0, tenant_id=tenant_id)
+        # Set include_global flag so tenant_memories view returns all tenants
+        # when the caller requests cross-tenant search.
+        from infra.db import set_include_global
+        set_include_global(include_global)
     except Exception as exc:
         _phase_inc("search.orchestrator", exc)
         logger.warning("search_memories failed to obtain DB connection: %s", exc)
@@ -1925,6 +1929,9 @@ def search_memories(
             "output": _err(ErrorCode.DB_ERROR, f"Search failed: {e}"),
         }
     finally:
+        # Reset include_global flag to avoid leaking state across calls
+        from infra.db import set_include_global
+        set_include_global(False)
         if db is not None:
             try:
                 safe_close_db(db)

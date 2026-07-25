@@ -50,6 +50,21 @@ _MEMORIES_COLUMNS = (
     "data_subject_sub",
 )
 
+# Module-level flag for tenant_memories view: when True, the view returns
+# ALL memories (bypassing tenant filtering). Set via set_include_global().
+_include_global = False
+
+
+def set_include_global(enabled: bool) -> None:
+    """Set the global flag for the tenant_memories view.
+
+    When enabled=True, the view returns all memories regardless of tenant.
+    Must be called before executing queries that use tenant_memories.
+    Reset to False after the query completes.
+    """
+    global _include_global
+    _include_global = enabled
+
 
 def _setup_tenant_view(conn: sqlite3.Connection, tenant_id: str) -> None:
     """Register tenant_id() UDF and create the tenant_memories view.
@@ -57,13 +72,19 @@ def _setup_tenant_view(conn: sqlite3.Connection, tenant_id: str) -> None:
     Creates an INSTEAD OF UPDATE trigger so that helpers like
     ``_crdt_bump_version`` and ``_enrich_context`` can write through
     the view transparently (SQLite views are not directly writable).
+
+    The view respects ``set_include_global()``: when the global flag is
+    set, the view returns ALL memories (bypassing tenant filtering).
+    This allows ``include_global=True`` searches to see memories across
+    all tenants.
     """
     try:
         conn.create_function("tenant_id", 0, lambda: tenant_id)
+        conn.create_function("is_global", 0, lambda: int(_include_global))
         conn.execute("DROP VIEW IF EXISTS tenant_memories")
         conn.execute(
             "CREATE TEMP VIEW tenant_memories AS "
-            "SELECT * FROM memories WHERE tenant_id = tenant_id()"
+            "SELECT * FROM memories WHERE tenant_id = tenant_id() OR is_global() = 1"
         )
         # INSTEAD OF UPDATE trigger: redirect writes to the base table.
         cols = ", ".join(f"NEW.{c}" for c in _MEMORIES_COLUMNS)
