@@ -5,6 +5,9 @@
       "env": {
         "MEMORY_AGENT_ID": "qoder-harness"
       }
+    },
+    "sentient-os": {
+      "url": "https://mcp.sentient-os.ai/u_uh7zzkYRyf4oskZTxd-O/p_zeXeXYwd1ujM3BM8Qa9QJ3M-/mcp"
     }
   }
 }

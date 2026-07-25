@@ -1738,12 +1738,48 @@ class SyncServer:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_agent_sync_port(cfg, agent_id: str) -> int:
+    """Resolve the sync listen port for this agent from its peer entry.
+
+    Looks up the current agent's entry in ``[[sync.peers]]`` by matching
+    ``agent_id`` (case-insensitive). If found, extracts the port from the
+    peer's URL. Falls back to ``cfg.sync_listen_port`` (global default).
+
+    Priority: MEMORY_SYNC_LISTEN_PORT env var > peer entry > global default.
+    (The env var override is already handled by the config loader, so
+    ``cfg.sync_listen_port`` reflects it when set.)
+    """
+    import os
+    from urllib.parse import urlparse
+
+    # If env var is explicitly set, it takes highest priority (already in cfg)
+    if os.environ.get("MEMORY_SYNC_LISTEN_PORT"):
+        return cfg.sync_listen_port
+
+    # Look up this agent's peer entry to find its designated port
+    for peer in cfg.sync_peers:
+        peer_agent_id = ""
+        if isinstance(peer, dict):
+            peer_agent_id = peer.get("agent_id", "")
+        elif hasattr(peer, "agent_id"):
+            peer_agent_id = getattr(peer, "agent_id", "")
+        if peer_agent_id.upper() == agent_id.upper():
+            url = peer.get("url", "") if isinstance(peer, dict) else getattr(peer, "url", "")
+            parsed = urlparse(url)
+            if parsed.port:
+                return parsed.port
+            break
+
+    return cfg.sync_listen_port
+
+
 def start_server_from_config(db_path: str | Path) -> Optional[SyncServer]:
     """Create and start a SyncServer based on memory config.
 
-    Reads ``sync_enable_server``, ``sync_listen_host``, and
-    ``sync_listen_port`` from the global config singleton. Returns
-    ``None`` if sync is disabled.
+    Reads ``sync_enable_server``, ``sync_listen_host``, and resolves the
+    listen port per-agent from ``[[sync.peers]]`` entries (matched by
+    MEMORY_AGENT_ID). Falls back to ``sync_listen_port`` for agents
+    without a peer entry. Returns ``None`` if sync is disabled.
     """
     from infra._lazy_imports import get_config
 
@@ -1754,13 +1790,18 @@ def start_server_from_config(db_path: str | Path) -> Optional[SyncServer]:
     from save_pipeline import _crdt_agent_id
 
     agent_id = _crdt_agent_id()
+    port = _resolve_agent_sync_port(cfg, agent_id)
+
     server = SyncServer(
         db_path=str(db_path),
         agent_id=agent_id,
         host=cfg.sync_listen_host,
-        port=cfg.sync_listen_port,
+        port=port,
     )
     server.start()
+    logger.info(
+        "sync server started: agent=%s port=%d", agent_id, port
+    )
     return server
 
 

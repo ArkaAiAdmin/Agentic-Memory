@@ -123,19 +123,31 @@ idle_unload_seconds = 1800              # MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECO
 
 [sync]
 # Auto multi-agent sync via HTTP. Off by default.
+# Each agent resolves its own listen port from its [[sync.peers]] entry
+# (matched by MEMORY_AGENT_ID). listen_port is the fallback for unknown agents.
 enable_server = true                  # MEMORY_SYNC_ENABLE_SERVER — start HTTP sync server
 listen_host = "127.0.0.1"            # MEMORY_SYNC_LISTEN_HOST
-listen_port = 9877                    # MEMORY_SYNC_LISTEN_PORT
+listen_port = 9877                    # MEMORY_SYNC_LISTEN_PORT — fallback if agent has no peer entry
 
-[[sync.peers]]                        # MIMOCODE workspace (main DB, port 9877)
-name = "MIMOCODE"
+[[sync.peers]]                        # Qoder harness (primary DB, port 9877)
+name = "QODER"
 url = "http://127.0.0.1:9877"
-agent_id = "MIMOCODE"
+agent_id = "QODER-HARNESS"
 
-[[sync.peers]]                        # OPENCODE workspace (separate DB, port 9878)
+[[sync.peers]]                        # OPENCODE workspace (port 9878)
 name = "OPENCODE"
 url = "http://127.0.0.1:9878"
 agent_id = "OPENCODE"
+
+[[sync.peers]]                        # MIMOCODE workspace (port 9879)
+name = "MIMOCODE"
+url = "http://127.0.0.1:9879"
+agent_id = "MIMOCODE"
+
+[[sync.peers]]                        # Agentic Memory IDE (port 9880)
+name = "IDE"
+url = "http://127.0.0.1:9880"
+agent_id = "AGENTIC-MEMORY-IDE"
 
 [sync.schedule]
 interval_minutes = 5                  # MEMORY_SYNC_INTERVAL_MINUTES
