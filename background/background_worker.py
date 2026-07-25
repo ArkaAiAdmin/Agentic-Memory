@@ -506,20 +506,7 @@ def _lazy_graph_communities(payload: dict, conn: AnyConnection, db_path: Path) -
     return f"graph_communities ({algorithm}): {updated} entities assigned to communities"
 
 
-def _lazy_graph_snapshots(payload: dict, conn: AnyConnection, db_path: Path) -> str:
-    from kg.graph_analytics import compute_pagerank
-    from kg.graph_communities import connected_components
-    import json as _json
-    import time as _time
-
-
 def _lazy_colbert_index(payload: dict, conn: AnyConnection, db_path: Path) -> str:
-    """Index ColBERT token embeddings for a memory.
-
-    Looks up the memory content from the DB, encodes via ColBERT-v2,
-    and stores per-token dense vectors in colbert_tokens.  Idempotent:
-    re-indexing replaces old rows.
-    """
     from search.colbert_index import index_memory_colbert, _ensure_colbert_schema
 
     _ensure_colbert_schema(conn)
@@ -538,12 +525,6 @@ def _lazy_colbert_index(payload: dict, conn: AnyConnection, db_path: Path) -> st
 
 
 def _lazy_splade_index(payload: dict, conn: AnyConnection, db_path: Path) -> str:
-    """Index SPLADE sparse vectors for a memory.
-
-    Looks up the memory content from the DB, encodes via SPLADE-v3,
-    and stores non-zero (vocab_id, weight) pairs in splade_tokens.
-    Idempotent: re-indexing replaces old rows.
-    """
     from search.splade_index import index_memory_splade, _ensure_splade_schema
 
     _ensure_splade_schema(conn)
@@ -560,7 +541,13 @@ def _lazy_splade_index(payload: dict, conn: AnyConnection, db_path: Path) -> str
     n = index_memory_splade(conn, memory_id, row[0])
     return f"splade_index: {n} sparse entries for {memory_id}"
 
-    now = _time.time()
+
+def _lazy_graph_snapshots(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    import json as _json
+    from kg.graph_analytics import compute_pagerank
+    from kg.graph_communities import connected_components
+
+    now = time.time()
     row = conn.execute("SELECT COUNT(*) FROM kg_entities").fetchone()
     entity_count = row[0] if row else 0
     row2 = conn.execute(

@@ -870,6 +870,7 @@ class TestFindProjectRoot(unittest.TestCase):
 
     def test_finds_git_root(self):
         result = find_project_root(Path.cwd())
+        assert result is not None
         self.assertTrue(result.exists())
 
 
