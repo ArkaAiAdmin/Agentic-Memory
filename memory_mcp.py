@@ -325,8 +325,14 @@ if __name__ == "__main__":
     except Exception as e:
         logger.debug("write_journal config check skipped: %s", e)
 
+    logger.info("memory_mcp: step1 - signal setup")
     signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+    logger.info("memory_mcp: step2 - about to call mcp.run()")
     try:
         mcp.run()
+        logger.info("memory_mcp: step3 - mcp.run() returned normally")
     except (BrokenPipeError, OSError, EOFError):
-        pass  # parent closed stdio — expected during restart
+        logger.info("memory_mcp: mcp.run() exited with pipe/EOF error (expected during restart)")
+    except Exception as e:
+        logger.error("memory_mcp: mcp.run() failed: %s", e)
+    logger.info("memory_mcp: step4 - exiting")

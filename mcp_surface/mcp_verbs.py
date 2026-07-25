@@ -265,7 +265,7 @@ def memory_search(
         # "N. [note_id] category/title — content..."
         items = result.get("results", [])
         if items:
-            lines = [f"Search results for: '{query}'\n"]
+            lines = []
             for i, r in enumerate(items[:limit], 1):
                 note_id = r.get("id", "unknown")
                 cat = r.get("category", "")
@@ -273,9 +273,12 @@ def memory_search(
                 content_preview = (r.get("content", "") or "")[:120].replace("\n", " ")
                 lines.append(f"{i}. [{note_id}] {cat}/{src} — {content_preview}")
             output = "\n".join(lines)
+        elif not output.strip():
+            output = "No memories found."
 
         if len(output) > 4096:
             output = output[:4096] + f"\n\n[... {len(items)} total results]"
+
         return output
     except Exception as e:
         logger.exception("in memory_search verb")
