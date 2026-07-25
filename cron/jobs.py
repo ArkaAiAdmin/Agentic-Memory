@@ -153,6 +153,13 @@ JOBS: dict[str, dict] = {
         "args": ["--task-type", "cron_promote_drafts"],
         "timeout": 120,
     },
+    "repair_unindexed": {
+        "freq": "6h",
+        "offset_min": 30,
+        "script": "cron/cron_repair_unindexed.py",
+        "timeout": 120,
+        "description": "Re-enqueue indexing tasks for memories that lack embeddings/vec_keys",
+    },
     "purge_auto_saves": {
         "freq": "1d",
         "offset_min": 30,

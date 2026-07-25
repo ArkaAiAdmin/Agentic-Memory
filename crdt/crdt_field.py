@@ -141,46 +141,13 @@ class FieldUpdate:
 
 
 # ---------------------------------------------------------------------------
-# Vector-clock helpers (mirrors of crdt_merge.py; kept local so
-# this module has no import cycle).
+# Vector-clock helpers — canonical implementation in crdt.vv_utils.
+# Imported here to eliminate duplication (previously inlined to avoid
+# import cycles; the leaf module crdt.vv_utils has no such risk).
 # ---------------------------------------------------------------------------
-
-
-def _vv_dominates(a: dict[str, int], b: dict[str, int]) -> bool:
-    """Return True if vector clock ``a`` causally dominates ``b``.
-
-    a dominates b iff for every agent x, a[x] >= b[x], and there
-    exists at least one agent where a[x] > b[x].
-    """
-    keys = set(a) | set(b)
-    at_least_one_greater = False
-    for k in keys:
-        av = a.get(k, 0)
-        bv = b.get(k, 0)
-        if av < bv:
-            return False
-        if av > bv:
-            at_least_one_greater = True
-    return at_least_one_greater
-
-
-def _vv_concurrent(a: dict[str, int], b: dict[str, int]) -> bool:
-    """Return True if ``a`` and ``b`` are concurrent (neither dominates)."""
-    return not _vv_dominates(a, b) and not _vv_dominates(b, a)
-
-
-def _vv_join(*vvs: dict[str, int]) -> dict[str, int]:
-    """Compute the join (element-wise max) of multiple version vectors.
-
-    The join represents the causal history of all inputs — any replica
-    that has seen any of the inputs will have at least this state.
-    """
-    result: dict[str, int] = {}
-    for vv in vvs:
-        for k, v in vv.items():
-            if v > result.get(k, 0):
-                result[k] = v
-    return result
+from crdt.vv_utils import vv_dominates as _vv_dominates  # noqa: E402
+from crdt.vv_utils import vv_concurrent as _vv_concurrent  # noqa: E402
+from crdt.vv_utils import vv_join as _vv_join  # noqa: E402
 
 
 # Tombstone sentinel value for deleted CRDT fields.
@@ -598,16 +565,20 @@ def project_crdt_to_sql(
     fields = read_fields(conn, memory_id, tenant_id=mem_tid)
     if not fields:
         return set()
-    allowed = set(REPLICATED_FIELDS)
+    # Phase 6D: Fall back to 'memories' table if the TEMP VIEW
+    # 'tenant_memories' doesn't exist in this connection context.
+    _table = "tenant_memories"
+    try:
+        conn.execute("SELECT 1 FROM tenant_memories LIMIT 0")
+    except sqlite3.OperationalError:
+        _table = "memories"
     updated: set[str] = set()
     for field_name in REPLICATED_FIELDS:
-        if field_name not in allowed:
-            continue
         val = fields.get(field_name)
         if val is None:
             continue
         cur = conn.execute(
-            f"SELECT {field_name} FROM tenant_memories WHERE id=?", (memory_id,)
+            f"SELECT {field_name} FROM {_table} WHERE id=?", (memory_id,)
         )
         row = cur.fetchone()
         if row is None:
@@ -838,7 +809,27 @@ def crdt_field_save(
     with conn_context as conn:
         _write_conn = conn
         conn.execute("PRAGMA foreign_keys=ON")
+        # Multi-process safety: acquire write lock before any reads.
+        # This prevents interleaved read-modify-write cycles between
+        # concurrent CRDT saves (tombstone race, VV read-before-write).
+        _started_txn = False
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+            _started_txn = True
         ensure_field_crdt_schema(conn)
+
+        # WAL logging for crash recovery (Phase 2C).
+        # Log an intent row so recover_incomplete_sagas() can detect
+        # orphaned field-save operations and clean up.
+        import uuid as _uuid
+        _saga_id = f"crdt_field_{note_id}_{_uuid.uuid4().hex[:8]}"
+        try:
+            from infra.saga import ensure_saga_log_table, _log_saga_step
+            ensure_saga_log_table(conn)
+            _log_saga_step(conn, _saga_id, "crdt_field_save", 0, "crdt_write", "intent")
+        except Exception as _wal_exc:
+            logger.debug("crdt_field_save: WAL intent log failed (non-fatal): %s", _wal_exc)
+
         _tid_row = conn.execute(
             "SELECT tenant_id FROM memories WHERE id = ?", (note_id,)
         ).fetchone()
@@ -913,6 +904,13 @@ def crdt_field_save(
                 result["applied"] = True
                 result["fields_applied"] = [u.field_name for u in applied]
                 _finalize_crdt_save(db_path_obj, note_id, content, conn)
+                # WAL done + commit for multi-process safety
+                try:
+                    _log_saga_step(conn, _saga_id, "crdt_field_save", 0, "crdt_write", "done")
+                except Exception:
+                    pass
+                if _started_txn:
+                    conn.commit()
                 return result
 
             # Existing note. Decide if we use field-level LWWES or a
@@ -932,7 +930,7 @@ def crdt_field_save(
                     "fallback (may produce spurious conflicts)",
                     note_id,
                 )
-                return _fallback_to_note_level(
+                _fb_result = _fallback_to_note_level(
                     conn=conn,
                     note_id=note_id,
                     content=content,
@@ -945,6 +943,13 @@ def crdt_field_save(
                     now_iso=now_iso,
                     result=result,
                 )
+                try:
+                    _log_saga_step(conn, _saga_id, "crdt_field_save", 0, "crdt_write", "done")
+                except Exception:
+                    pass
+                if _started_txn:
+                    conn.commit()
+                return _fb_result
 
             # Causal order: incoming dominates existing, accept all
             # field updates.
@@ -956,6 +961,12 @@ def crdt_field_save(
                 result["applied"] = True
                 result["fields_applied"] = [u.field_name for u in applied]
                 _finalize_crdt_save(db_path_obj, note_id, content, conn)
+                try:
+                    _log_saga_step(conn, _saga_id, "crdt_field_save", 0, "crdt_write", "done")
+                except Exception:
+                    pass
+                if _started_txn:
+                    conn.commit()
                 return result
 
             # Existing dominates incoming: stale write.
@@ -967,6 +978,12 @@ def crdt_field_save(
                     existing_vv,
                     incoming_vv,
                 )
+                try:
+                    _log_saga_step(conn, _saga_id, "crdt_field_save", 0, "crdt_write", "done")
+                except Exception:
+                    pass
+                if _started_txn:
+                    conn.commit()
                 return result
 
             # Concurrent: field-level LWWES. Each field is merged
@@ -978,11 +995,27 @@ def crdt_field_save(
             result["fields_applied"] = [u.field_name for u in applied]
             if result["applied"]:
                 _finalize_crdt_save(db_path_obj, note_id, content, conn)
+            try:
+                _log_saga_step(conn, _saga_id, "crdt_field_save", 0, "crdt_write", "done")
+            except Exception:
+                pass
+            if _started_txn:
+                conn.commit()
             return result
         except Exception as e:
             logger.warning("crdt_field_save failed: %s", e)
             if _write_conn is not None and _pre_state is not None:
                 _restore_crdt_pre_state(_write_conn, note_id, _pre_state, db_path_obj)
+            # WAL undone + rollback for multi-process safety
+            try:
+                _log_saga_step(conn, _saga_id, "crdt_field_save", 0, "crdt_write", "undone")
+            except Exception:
+                pass
+            if _started_txn:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             raise
 
 

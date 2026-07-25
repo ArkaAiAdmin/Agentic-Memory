@@ -126,11 +126,13 @@ class TestFullRowRestore(unittest.TestCase):
             )
 
         def do_write_vec_key():
-            return None
+            # Simulate a downstream failure after the DB row was mutated.
+            # Phase 3B moved file-write to a non-fatal post-commit hook,
+            # so we fail in vec_key step to test the UPDATE rollback path.
+            raise RuntimeError("downstream failure")
 
         def do_write_file():
-            # Simulate a downstream failure after the DB row was mutated.
-            raise RuntimeError("downstream failure")
+            pass
 
         with self.assertRaises(Exception):
             saga_save_memory(

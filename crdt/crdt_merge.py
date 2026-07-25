@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 
 import json
 from typing import Optional
@@ -50,69 +51,45 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Vector clock utilities
+# Vector clock utilities — canonical implementation in crdt.vv_utils.
 # ---------------------------------------------------------------------------
+from crdt.vv_utils import (
+    vv_dominates as dominates,
+    vv_concurrent as concurrent,
+    merge_vectors,
+    parse_version_vector,
+)
 
 
-def parse_version_vector(raw: Optional[str]) -> dict[str, int]:
-    """Parse a version_vector JSON string into a dict.
+# ---------------------------------------------------------------------------
+# Phase 5A: Cached schema probe (avoids opening a second DB connection)
+# ---------------------------------------------------------------------------
+_schema_cache = threading.local()
 
-    Returns an empty dict if the value is None, empty, or unparseable.
+
+def _has_field_crdt_table(db_path: Path, tenant_id: str) -> bool:
+    """Check if memory_field_crdt table exists, caching the result per-process.
+
+    The table is never dropped in normal operation, so a process-lifetime
+    cache is safe. A process restart clears it naturally.
     """
-    if not raw:
-        return {}
+    cache_key = str(db_path)
+    if not hasattr(_schema_cache, "checked"):
+        _schema_cache.checked = {}
+    if cache_key in _schema_cache.checked:
+        return _schema_cache.checked[cache_key]
     try:
-        vv = json.loads(raw)
-        if isinstance(vv, dict):
-            return {k: int(v) for k, v in vv.items()}
-    except (json.JSONDecodeError, TypeError, ValueError):
-        pass
-    return {}
-
-
-def dominates(v1: dict[str, int], v2: dict[str, int]) -> bool:
-    """Return True if v1 strictly dominates v2 (v1 causally after v2).
-
-    v1 dominates v2 iff for every agent x, v1[x] >= v2[x], and there
-    exists at least one agent where v1[x] > v2[x].  Equal vectors are
-    concurrent — neither dominates.
-    """
-    all_keys = set(v1) | set(v2)
-    if not all_keys:
+        from infra._lazy_imports import open_db
+        with open_db(db_path, timeout=10.0, tenant_id=tenant_id) as probe:
+            probe.execute("PRAGMA foreign_keys=ON")
+            exists = probe.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='memory_field_crdt' LIMIT 1"
+            ).fetchone() is not None
+        _schema_cache.checked[cache_key] = exists
+        return exists
+    except Exception:
         return False
-    at_least_one_greater = False
-    for k in all_keys:
-        v1_val = v1.get(k, 0)
-        v2_val = v2.get(k, 0)
-        if v1_val < v2_val:
-            return False
-        if v1_val > v2_val:
-            at_least_one_greater = True
-    return at_least_one_greater
-
-
-def concurrent(v1: dict[str, int], v2: dict[str, int]) -> bool:
-    """Return True if v1 and v2 are concurrent (neither dominates)."""
-    # Both empty = same state, not concurrent.
-    if not v1 and not v2:
-        return False
-    return not dominates(v1, v2) and not dominates(v2, v1)
-
-
-def merge_vectors(
-    agent_id: str, local: dict[str, int], remote: dict[str, int]
-) -> dict[str, int]:
-    """Merge two version vectors by taking the max per entry.
-
-    Pure pointwise-max — idempotent and commutative.
-    The caller is responsible for bumping the local clock BEFORE or AFTER
-    calling merge_vectors, so that merge_vectors(x, x) == x.
-    """
-    merged = {}
-    all_keys = set(local) | set(remote)
-    for k in all_keys:
-        merged[k] = max(local.get(k, 0), remote.get(k, 0))
-    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -372,30 +349,10 @@ def crdt_save(
     # that the field-level path does not implement.
     #
     # 2026-06-22 (D6 fix): the previous ``SCHEMA_VERSION_HAVE_FIELD_CRDT
-    # = 13`` constant in this block was dead — the sqlite_master probe
-    # is what actually decides which path to take, and the constant
-    # was never referenced after definition.  Removed; if a future
-    # caller needs to query the migration version directly, they
-    # should import ``migration_runner.SCHEMA_VERSION`` rather than
-    # hardcoding the field-CRDT introduction version.
-    # Check if field-level CRDT table exists, but close the probe
-    # before delegating to crdt_field_save (which also uses open_db).
-    # Holding the probe's open_db context while calling crdt_field_save
-    # would deadlock the write queue (both need a session).
-    _has_table = False
-    try:
-        with open_db(db_path, timeout=10.0, tenant_id=_tid) as _probe:
-            _probe.execute("PRAGMA foreign_keys=ON")
-            _has_table = (
-                _probe.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' "
-                    "AND name='memory_field_crdt' LIMIT 1"
-                ).fetchone()
-                is not None
-            )
-    except Exception as e:
-        logger.warning("crdt_save failed: %s", e)
-        _has_table = False
+    # Phase 5A: Cache the schema probe to avoid opening a second connection
+    # on every crdt_save call. The table is never dropped in normal operation,
+    # and a process restart clears the cache.
+    _has_table = _has_field_crdt_table(db_path, _tid)
 
     if _has_table:
         # Field-level path is available. Delegate.

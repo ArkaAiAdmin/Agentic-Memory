@@ -110,32 +110,13 @@ def vv_increment(vv: dict[str, int], agent_id: str) -> dict[str, int]:
     return new_vv
 
 
-def vv_dominates(a: dict[str, int], b: dict[str, int]) -> bool:
-    """True if ``a`` dominates ``b`` (a is causally after b).
-
-    a dominates b iff for every agent, a's clock >= b's clock,
-    AND a has at least one strict greater.
-    Empty VVs never dominate (consistent with paper_pipeline/crdt_projection.py).
-    """
-    if not a or not b:
-        return False
-    a_at_least = all(a.get(agent, 0) >= b.get(agent, 0) for agent in set(a) | set(b))
-    a_strict = any(a.get(agent, 0) > b.get(agent, 0) for agent in set(a) | set(b))
-    return a_at_least and a_strict
-
-
-def vv_concurrent(a: dict[str, int], b: dict[str, int]) -> bool:
-    """True if ``a`` and ``b`` are concurrent (neither dominates)."""
-    return not vv_dominates(a, b) and not vv_dominates(b, a) and a != b
-
-
-def vv_merge(a: dict[str, int], b: dict[str, int]) -> dict[str, int]:
-    """Component-wise maximum of two version vectors."""
-    result = dict(a)
-    for agent, clock in b.items():
-        if clock > result.get(agent, 0):
-            result[agent] = clock
-    return result
+# ---------------------------------------------------------------------------
+# VV helpers — canonical implementation in crdt.vv_utils.
+# Imported here to replace local implementations and fix the empty-VV
+# convergence bug (previously: if not a or not b: return False).
+# ---------------------------------------------------------------------------
+from crdt.vv_utils import vv_dominates, vv_concurrent  # noqa: E402
+from crdt.vv_utils import vv_join as vv_merge  # noqa: E402
 
 
 def vv_sum(v: dict[str, int]) -> int:
@@ -148,19 +129,6 @@ def vv_sum(v: dict[str, int]) -> int:
 def _serialise_vv(v: dict[str, int]) -> str:
     """Deterministic serialisation for stable sorting (paper canonical form)."""
     return json.dumps(v, sort_keys=True, separators=(",", ":"))
-
-
-def _parse_vv(s: str) -> dict[str, int]:
-    """Deserialise a version vector from 'peer:count,...' format."""
-    result: dict[str, int] = {}
-    if not s or s == "{}":
-        return result
-    for item in s.split(","):
-        item = item.strip()
-        if ":" in item:
-            peer, _, count = item.partition(":")
-            result[peer] = int(count)
-    return result
 
 
 # ---------------------------------------------------------------------------

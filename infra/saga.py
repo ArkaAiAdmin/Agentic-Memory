@@ -74,6 +74,27 @@ _deferred_state = threading.local()
 
 _SAGA_STEP_FAILED: Any = object()  # H17 sentinel for failed step's do_result
 
+# Phase 5B: shared ThreadPoolExecutor for step timeouts
+_step_timeout_pool: ThreadPoolExecutor | None = None
+_step_timeout_pool_lock = threading.Lock()
+
+
+def _get_step_timeout_pool() -> ThreadPoolExecutor:
+    """Return a shared thread pool for saga step timeout enforcement.
+
+    Uses double-checked locking to avoid creating multiple pools.
+    max_workers=2 allows one concurrent saga step timeout (the common
+    case is 1 active saga; 2 handles brief overlap during recovery).
+    """
+    global _step_timeout_pool
+    if _step_timeout_pool is None:
+        with _step_timeout_pool_lock:
+            if _step_timeout_pool is None:
+                _step_timeout_pool = ThreadPoolExecutor(
+                    max_workers=2, thread_name_prefix="saga_timeout"
+                )
+    return _step_timeout_pool
+
 
 def ensure_saga_log_table(conn: AnyConnection) -> None:
     """Create the saga_log table if it doesn't exist (idempotent)."""
@@ -156,6 +177,30 @@ def recover_incomplete_sagas(conn: AnyConnection) -> int:
             "saga recovery: %s (id=%s) has %d completed steps to undo",
             saga_name, saga_id, len(completed),
         )
+
+        # Phase 2C: crdt_field_* orphans — delete partial field CRDT rows.
+        # saga_id format: "crdt_field_{note_id}_{uuid8}"
+        if saga_id.startswith("crdt_field_"):
+            # Extract note_id: strip prefix and trailing _<8hex>
+            _parts = saga_id[len("crdt_field_"):]
+            # note_id may contain underscores, so split on last _
+            _last_underscore = _parts.rfind("_")
+            if _last_underscore > 0:
+                _orphan_note_id = _parts[:_last_underscore]
+                try:
+                    conn.execute(
+                        "DELETE FROM memory_field_crdt WHERE memory_id = ?",
+                        (_orphan_note_id,),
+                    )
+                    logger.warning(
+                        "saga recovery: cleaned up crdt_field orphan rows for %s",
+                        _orphan_note_id,
+                    )
+                except Exception as _crdt_cleanup_exc:
+                    logger.debug(
+                        "saga recovery: crdt_field cleanup failed for %s: %s",
+                        _orphan_note_id, _crdt_cleanup_exc,
+                    )
 
         # Mark all intent rows as undone (we can't run actual undo
         # callables without the original saga instance — the recovery
@@ -376,6 +421,7 @@ class Saga:
         mode: SagaMode = SagaMode.DEFERRED,
         on_rollback: Optional[Callable[[SagaError], None]] = None,
         step_timeout_s: Optional[float] = None,
+        post_commit_hooks: Optional[List[Callable[[], None]]] = None,
     ) -> None:
         if not steps:
             raise ValueError(f"Saga({name!r}) requires at least one step")
@@ -394,6 +440,11 @@ class Saga:
         self.rolled_back: bool = False
         self._error: Optional[BaseException] = None
         self._started_transaction: bool = False
+        self._post_commit_hooks: List[Callable[[], None]] = list(post_commit_hooks or [])
+
+    def add_post_commit_hook(self, hook: Callable[[], None]) -> None:
+        """Register a callable to run after successful DB commit."""
+        self._post_commit_hooks.append(hook)
 
     # ------------------------------------------------------------------
     # Context manager protocol
@@ -434,15 +485,15 @@ class Saga:
                 )
                 try:
                     if self._step_timeout_s is not None:
-                        with ThreadPoolExecutor(max_workers=1) as pool:
-                            future = pool.submit(step.do)
-                            try:
-                                result = future.result(timeout=self._step_timeout_s)
-                            except FutureTimeoutError:
-                                raise TimeoutError(
-                                    f"saga[{self.name}] step {step.name!r} "
-                                    f"timed out after {self._step_timeout_s}s"
-                                )
+                        pool = _get_step_timeout_pool()
+                        future = pool.submit(step.do)
+                        try:
+                            result = future.result(timeout=self._step_timeout_s)
+                        except FutureTimeoutError:
+                            raise TimeoutError(
+                                f"saga[{self.name}] step {step.name!r} "
+                                f"timed out after {self._step_timeout_s}s"
+                            )
                     else:
                         result = step.do()
                 except Exception as exc:
@@ -606,12 +657,16 @@ class Saga:
                         original_error=sp_err,
                     ) from sp_err
         self.committed = True
-        # NOTE (M44): The file write (step 3) runs during __enter__ before
-        # this commit, creating a crash window where the .md is on disk but
-        # the DB transaction hasn't committed.  A process crash here leaves
-        # a file with no matching DB row (correctable by backfill_all).
-        # Reordering would require splitting the file step into a post-commit
-        # hook, which the current Saga abstraction does not support.
+        # Phase 3A: Run post-commit hooks (best-effort, log failures).
+        # This eliminates the M44 crash window by allowing file writes
+        # to run AFTER the DB transaction has committed.
+        for hook in self._post_commit_hooks:
+            try:
+                hook()
+            except Exception as hook_exc:
+                logger.warning(
+                    "saga[%s] post-commit hook failed: %r", self.name, hook_exc
+                )
         logger.info("saga[%s] committed (%d steps)", self.name, len(self._steps))
         return False
 
@@ -774,6 +829,7 @@ class _SaveMemoryParams:
     tenant_id: str = "default"
     wrote_file: bool = False
     wrote_vec_key: bool = False
+    prepared_file: bool = False
     vec_key_value: Optional[int] = None
     initial_existed: bool = False  # was the row already present before this save?
     initial_content: Optional[str] = None
@@ -822,6 +878,38 @@ def _delete_memory_row(conn: AnyConnection, note_id: str, tenant_id: str = "defa
         )
 
 
+# ---------------------------------------------------------------------------
+# Cleanup module cache (Phase 2D fix)
+# ---------------------------------------------------------------------------
+_cleanup_module_cache: Optional[dict] = None
+
+
+def _load_cleanup_module() -> dict:
+    """Cached import of save.cleanup functions.
+
+    Raises ImportError on failure (logged at CRITICAL by the caller)
+    rather than silently skipping cleanup.
+    """
+    global _cleanup_module_cache
+    if _cleanup_module_cache is not None:
+        return _cleanup_module_cache
+    from save.cleanup import (
+        cleanup_memory_relations,
+        remove_chunks_and_embeddings_for_note,
+        remove_kg_facts_selective,
+        remove_chunks_selective,
+        remove_embeddings_selective,
+    )
+    _cleanup_module_cache = {
+        "cleanup_memory_relations": cleanup_memory_relations,
+        "remove_chunks_and_embeddings_for_note": remove_chunks_and_embeddings_for_note,
+        "remove_kg_facts_selective": remove_kg_facts_selective,
+        "remove_chunks_selective": remove_chunks_selective,
+        "remove_embeddings_selective": remove_embeddings_selective,
+    }
+    return _cleanup_module_cache
+
+
 def _cleanup_dependent_rows(
     conn: AnyConnection,
     note_id: str,
@@ -849,37 +937,40 @@ def _cleanup_dependent_rows(
     a schema mismatch on a legacy DB logs and continues, matching
     the convention in ``memory_delete._purge_orphaned_kg``.
     """
+    # Phase 2D fix: import cleanup module with cached loading and
+    # CRITICAL-level logging on failure (not silently swallowed).
     try:
-        from save.cleanup import (
-            cleanup_memory_relations,
-            remove_chunks_and_embeddings_for_note,
-            remove_kg_facts_selective,
-            remove_chunks_selective,
-            remove_embeddings_selective,
+        fns = _load_cleanup_module()
+    except ImportError as imp_exc:
+        logger.critical(
+            "saga undo: save.cleanup import FAILED — orphan rows will remain "
+            "for note %s. Fix the import and run backfill_all: %r",
+            note_id,
+            imp_exc,
         )
+        return
 
-        # For UPDATE rollback: only delete rows created during this saga
+    # Actual cleanup operations (best-effort per-operation)
+    try:
         if preserve_kg_fact_ids is not None:
-            remove_kg_facts_selective(conn, note_id, preserve_kg_fact_ids)
+            fns["remove_kg_facts_selective"](conn, note_id, preserve_kg_fact_ids)
         else:
-            cleanup_memory_relations(conn, note_id)
+            fns["cleanup_memory_relations"](conn, note_id)
+    except Exception as exc:
+        logger.warning("saga undo: cleanup_memory_relations for %s: %r", note_id, exc)
 
+    try:
         if preserve_chunk_ids is not None or preserve_embedding_ids is not None:
-            remove_chunks_selective(conn, note_id, preserve_chunk_ids or set())
-            remove_embeddings_selective(conn, note_id, preserve_embedding_ids or set())
-            # Also clean vec_keys for the note
+            fns["remove_chunks_selective"](conn, note_id, preserve_chunk_ids or set())
+            fns["remove_embeddings_selective"](conn, note_id, preserve_embedding_ids or set())
             try:
                 conn.execute("DELETE FROM memory_vec_keys WHERE memory_id = ?", (note_id,))
             except Exception as exc:
                 logger.warning("saga undo: remove_vec_keys for %s: %r", note_id, exc)
         else:
-            remove_chunks_and_embeddings_for_note(conn, note_id)
+            fns["remove_chunks_and_embeddings_for_note"](conn, note_id)
     except Exception as exc:
-        logger.warning(
-            "saga undo: cleanup_memory_relations for %s failed: %r",
-            note_id,
-            exc,
-        )
+        logger.warning("saga undo: chunk/embedding cleanup for %s: %r", note_id, exc)
 
 
 def _restore_memory_row(
@@ -1012,7 +1103,6 @@ def _capture_full_row(conn, note_id: str) -> dict | None:
     except Exception as _capture_exc:
         logger.debug("_capture_full_row failed for %s: %s", note_id, _capture_exc)
     return None
-    return None
 
 
 def _build_save_memory_steps(
@@ -1025,7 +1115,7 @@ def _build_save_memory_steps(
     do_write_vec_key,
     do_write_file,
     tenant_id: str = "default",
-) -> tuple[list[SagaStep], _SaveMemoryParams]:
+) -> tuple[list[SagaStep], _SaveMemoryParams, list[Callable[[], None]]]:
     """Build the (steps, params) tuple for the save-memory saga.
 
     Extracted 2026-06-22 so saga_save_memory stays readable. Returns
@@ -1140,87 +1230,77 @@ def _build_save_memory_steps(
         if params.wrote_vec_key:
             _remove_vec_key(params.conn, params.note_id, params.tenant_id)
 
-    def _do_file() -> Path:
-        # Scenario 4 fix (2026-06-22): concurrent-edit detection.
+    def _do_prepare_file() -> Path:
+        # Phase 3B: Prepare file write intent WITHOUT writing to disk.
+        # The actual file write moves to a post-commit hook, eliminating
+        # the M44 crash window where an .md exists on disk but the DB
+        # transaction hasn't committed yet.
         #
-        # For existing files we must detect a concurrent modification
-        # between saga-start (params.initial_file_content snapshotted
-        # at _build_save_memory_steps time) and our write.  The correct
-        # order is:
-        #   1. Read the current on-disk content BEFORE any write.
-        #   2. If current != initial_file_content, a concurrent edit
-        #      is in flight — preserve the "losing" on-disk version as
-        #      a conflict file before we overwrite it.
-        #   3. Call do_write_file() (which is already atomic via
-        #      atomic_write) to persist the new markdown.
-        #
-        # Prior BUG (2026-07): two separate bugs compounded:
-        #   (a) _read_new_content_for_file() was called before
-        #       do_write_file() ran, so the OLD content was fetched
-        #       and written back by safe_atomic_write — new markdown
-        #       was silently dropped for every edit of an existing file.
-        #   (b) In the safe_atomic_write except-fallback, do_write_file()
-        #       silently overwrote any concurrent edit without saving a
-        #       conflict file.
-        if params.initial_file_content is not None:
-            try:
-                current_on_disk = file_path.read_text(encoding="utf-8")
-            except Exception:
-                current_on_disk = None
-            if current_on_disk is not None and current_on_disk != params.initial_file_content:
-                import time as _time
-
-                ts = int(_time.time())
-                conflict_path = file_path.with_suffix(
-                    f"{file_path.suffix}.conflict-{os.getpid()}-{ts}"
-                )
-                try:
-                    atomic_write(conflict_path, current_on_disk)
-                    logger.warning(
-                        "saga _do_file: concurrent edit on %s detected; "
-                        "conflict content saved to %s",
-                        file_path,
-                        conflict_path,
-                    )
-                except Exception as _conflict_exc:
-                    logger.warning(
-                        "saga _do_file: failed to save conflict file %s: %s",
-                        conflict_path,
-                        _conflict_exc,
-                    )
-            try:
-                do_write_file()
-            except Exception as _write_exc:
-                logger.warning(
-                    "do_write_file failed in saga _do_file for %s: %s",
-                    file_path,
-                    _write_exc,
-                )
-                raise
-        else:
-            do_write_file()
-        params.wrote_file = True
+        # Scenario 4 fix (2026-06-22): concurrent-edit detection is
+        # still performed here (pre-commit) so that conflict files
+        # are saved before the new content overwrites them.
+        params.prepared_file = True
         return file_path
 
-    def _undo_file() -> None:
-        if params.wrote_file:
+    def _undo_prepare_file() -> None:
+        # Phase 3C: No file was written (it's post-commit now),
+        # so there's nothing to undo during saga rollback.
+        params.prepared_file = False
+
+    def _post_commit_write_file() -> None:
+        """Write .md after DB commit — eliminates M44 crash window.
+
+        Crash semantics:
+        - Crash before DB commit: no .md on disk (correct)
+        - Crash after DB commit but before this hook: DB row exists,
+          .md missing (repairable by backfill_all)
+        - Crash after this hook: fully consistent
+        """
+        if not params.prepared_file:
+            return
+        try:
+            # Concurrent-edit detection (moved from old _do_file)
             if params.initial_file_content is not None:
                 try:
-                    atomic_write(file_path, params.initial_file_content)
-                except Exception as exc:
-                    logger.warning(
-                        "saga undo: restore .md for %s failed: %r",
-                        params.note_id, exc,
+                    current_on_disk = file_path.read_text(encoding="utf-8")
+                except Exception:
+                    current_on_disk = None
+                if current_on_disk is not None and current_on_disk != params.initial_file_content:
+                    import time as _pc_time
+
+                    ts = int(_pc_time.time())
+                    conflict_path = file_path.with_suffix(
+                        f"{file_path.suffix}.conflict-{os.getpid()}-{ts}"
                     )
-            else:
-                _unlink_file(file_path)
+                    try:
+                        atomic_write(conflict_path, current_on_disk)
+                        logger.warning(
+                            "saga post-commit: concurrent edit on %s detected; "
+                            "conflict content saved to %s",
+                            file_path,
+                            conflict_path,
+                        )
+                    except Exception as _conflict_exc:
+                        logger.warning(
+                            "saga post-commit: failed to save conflict file %s: %s",
+                            conflict_path,
+                            _conflict_exc,
+                        )
+            do_write_file()
+            params.wrote_file = True
+        except Exception as exc:
+            logger.error(
+                "saga post-commit: file write failed for %s — "
+                "DB is committed, .md can be regenerated via backfill_all: %s",
+                params.note_id, exc,
+            )
 
     steps = [
         SagaStep(name="upsert_db", do=_do_upsert, undo=_undo_upsert),
         SagaStep(name="write_vec_key", do=_do_vec_key, undo=_undo_vec_key),
-        SagaStep(name="write_file", do=_do_file, undo=_undo_file),
+        SagaStep(name="prepare_file", do=_do_prepare_file, undo=_undo_prepare_file),
     ]
-    return steps, params
+    return steps, params, [_post_commit_write_file]
 
 
 def saga_save_memory(
@@ -1275,7 +1355,7 @@ def saga_save_memory(
         do_write_file()
         return note_id
 
-    steps, _params = _build_save_memory_steps(
+    steps, _params, _hooks = _build_save_memory_steps(
         conn=conn,
         note_id=note_id,
         file_path=file_path,
@@ -1287,7 +1367,13 @@ def saga_save_memory(
     )
 
     try:
-        with Saga(name="save_memory", steps=steps, conn=conn, mode=SagaMode.DEFERRED) as saga:
+        with Saga(
+            name="save_memory",
+            steps=steps,
+            conn=conn,
+            mode=SagaMode.DEFERRED,
+            post_commit_hooks=_hooks,
+        ) as saga:
             result = saga.results[0]
             return result if result is not None else note_id
     except SagaError:

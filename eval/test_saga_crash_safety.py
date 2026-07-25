@@ -165,28 +165,33 @@ class TestSagaCrashSafety(unittest.TestCase):
             raise RuntimeError("simulated disk failure")
 
         try:
-            with self.assertRaises(Exception):
-                saga_save_memory(
-                    conn=saga_conn,
-                    note_id="lessons/crash",
-                    file_path="/nonexistent/path",
-                    markdown_content="hello",
-                    db_path=str(db),
-                    do_upsert_db=do_upsert_db,
-                    do_write_vec_key=do_write_vec_key,
-                    do_write_file=do_write_file,
-                )
+            # Phase 3B change: file write is now a post-commit hook.
+            # A file write failure no longer causes a saga rollback — the DB
+            # is the source of truth and the .md can be regenerated via
+            # backfill_all. The saga succeeds (DB committed), file write
+            # failure is logged but non-fatal.
+            result = saga_save_memory(
+                conn=saga_conn,
+                note_id="lessons/crash",
+                file_path="/nonexistent/path",
+                markdown_content="hello",
+                db_path=str(db),
+                do_upsert_db=do_upsert_db,
+                do_write_vec_key=do_write_vec_key,
+                do_write_file=do_write_file,
+            )
+            self.assertEqual(result, "lessons/crash")
         finally:
             saga_conn.close()
 
-        # Verify row was rolled back
+        # Verify row was committed (file write failure is non-fatal post-commit)
         with open_db(db) as conn:
             row = conn.execute(
                 "SELECT id FROM memories WHERE id = ?", ("lessons/crash",)
             ).fetchone()
-            self.assertIsNone(
+            self.assertIsNotNone(
                 row,
-                f"S5: row should be rolled back, but found {row}",
+                "S5: row should be committed (file write is post-commit, non-fatal)",
             )
 
 
