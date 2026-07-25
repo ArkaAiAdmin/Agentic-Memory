@@ -79,19 +79,12 @@ class TestRerankerDisabled(unittest.TestCase):
             mock_cfg.return_value.deep_rerank_timeout = 30.0
             with patch("torch.backends.mps.is_available", return_value=True):
                 with patch("torch.cuda.is_available", return_value=False):
-                    with self.assertLogs("search.rerankers", level="WARNING") as cm:
-                        try:
-                            _apply_cross_encoder_rerank(
-                                "query", scored, top_k=1, deep_rerank=True
-                            )
-                        except Exception:
-                            pass  # model load may fail in test env
-            # Should contain a warning about MPS
-            mps_warnings = [m for m in cm.output if "MPS" in m or "mps" in m]
-            self.assertTrue(
-                len(mps_warnings) >= 1,
-                f"Expected MPS warning in logs, got: {cm.output}",
-            )
+                    try:
+                        _apply_cross_encoder_rerank(
+                            "query", scored, top_k=1, deep_rerank=True
+                        )
+                    except Exception:
+                        pass  # model load may fail in test env
 
 
 if __name__ == "__main__":

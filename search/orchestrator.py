@@ -1332,7 +1332,9 @@ def search_memories(
             hybrid = False
 
         else:  # mode == "hybrid" (or fallback)
-            hybrid = True
+            # Respect caller's hybrid=False — they may want FTS-only
+            # within the hybrid mode path (e.g. to isolate query expansion).
+            pass
             # P0 fix #7: prefilter is disabled — ANN-shortlisted IDs are
             # almost all auto-save sessions that don't match the keyword
             # FTS query, causing empty results every time. The prefilter

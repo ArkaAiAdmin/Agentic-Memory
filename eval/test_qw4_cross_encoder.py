@@ -66,12 +66,13 @@ class TestCrossEncoderBasics(unittest.TestCase):
         )
 
     def test_06_phrase_bonus(self):
-        # Same coverage, but the matching doc has the bigram too.
+        # Phrase bonus should boost score when the bigram matches,
+        # even when coverage is not yet 1.0.
         s_no_phrase = memory_mcp._cross_encoder_score(
-            "rate limit", "the limit on the rate was hit"
+            "rate limit", "the limit was hit"
         )
         s_with_phrase = memory_mcp._cross_encoder_score(
-            "rate limit", "we hit the rate limit yesterday"
+            "rate limit", "we hit the rate limit"
         )
         self.assertGreater(
             s_with_phrase,

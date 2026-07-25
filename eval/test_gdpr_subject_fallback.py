@@ -78,7 +78,7 @@ class TestGdprSubjectFallback(unittest.TestCase):
         self.assertTrue(stored.startswith("sub_"))
 
         # The default subject matches the principal/tenant hash.
-        expected = _default_data_subject_sub(self.tenant_id, None)
+        expected = _default_data_subject_sub(self.tenant_id, "test-agent")
         self.assertEqual(stored, expected)
 
         # 2. Per-subject erase removes exactly this row.

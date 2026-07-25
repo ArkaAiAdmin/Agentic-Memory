@@ -72,21 +72,22 @@ class TestTemporalQueryAxes:
             conn.close()
 
     def test_boundary_inclusivity(self, tmp_path):
-        """invalid_at=200 included at as_of=200 (>= clause), excluded at 201."""
+        """Half-open interval [valid_at, invalid_at): invalid_at=200 excluded
+        at as_of=200, included at as_of=199.9."""
         db_path = tmp_path / "test.db"
         bootstrap_temp_db_clean(db_path)
         conn = sqlite3.connect(str(db_path))
         try:
             _insert_fact(conn)
-            # Boundary: invalid_at=200 >= 200 → included
-            rows = query_facts_at_time(conn, 200.0, time_axis="valid")
+            # Just before boundary: invalid_at=200 > 199.9 → included
+            rows = query_facts_at_time(conn, 199.9, time_axis="valid")
             assert len(rows) == 1, (
-                "Boundary inclusive: invalid_at=200 should be visible at as_of=200"
+                "Half-open: invalid_at=200 should be visible at as_of=199.9"
             )
-            # Just past boundary
-            rows = query_facts_at_time(conn, 201.0, time_axis="valid")
+            # At boundary: invalid_at=200 > 200 is false → excluded
+            rows = query_facts_at_time(conn, 200.0, time_axis="valid")
             assert len(rows) == 0, (
-                "Boundary exclusive: invalid_at=200 should NOT be visible at as_of=201"
+                "Half-open: invalid_at=200 should NOT be visible at as_of=200"
             )
         finally:
             conn.close()

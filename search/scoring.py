@@ -178,7 +178,7 @@ def _normalize_bm25_ranks(results: list) -> list:
         normalized.append(tuple(new_r))
     return normalized
 
-_CTR_WEIGHTS_CACHE: Optional[tuple[float, Any, bool]] = None
+_CTR_WEIGHTS_CACHE: Optional[tuple[float, Any, bool, str, int]] = None
 _CTR_WEIGHTS_CACHE_LOCK = threading.RLock()
 _CTR_WEIGHTS_TTL = 300  # 5 minutes
 
@@ -202,7 +202,7 @@ def _get_rerank_half_life_days() -> float:
     return get_search_config().rerank_half_life_days
 
 
-_RERANK_HALF_LIFE_DAYS = None  # lazy: computed on first access
+_RERANK_HALF_LIFE_DAYS = _get_rerank_half_life_days()
 
 
 def _reciprocal_rank_fusion(

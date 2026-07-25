@@ -196,7 +196,7 @@ class TestWiringInMcpTools:
 
     def test_record_success_called_on_results(self, tmp_db):
         """When search returns results, record_success is called for each."""
-        import mcp_surface.mcp_search
+        import mcp_surface.mcp_search as mcp_search
 
         mock_sr = MagicMock()
         with patch.object(mcp_search, "_SpacedRepetition", return_value=mock_sr):
@@ -209,7 +209,7 @@ class TestWiringInMcpTools:
 
     def test_record_failure_called_on_empty(self, tmp_db):
         """When search returns no results, record_failure is called."""
-        import mcp_surface.mcp_search
+        import mcp_surface.mcp_search as mcp_search
 
         mock_sr = MagicMock()
         with patch.object(mcp_search, "_SpacedRepetition", return_value=mock_sr):
@@ -219,7 +219,7 @@ class TestWiringInMcpTools:
 
     def test_sr_failure_doesnt_break_search(self, tmp_db):
         """If SpacedRepetition raises, the helper returns silently."""
-        import mcp_surface.mcp_search
+        import mcp_surface.mcp_search as mcp_search
 
         with patch.object(
             mcp_search, "_SpacedRepetition", side_effect=RuntimeError("db locked")
@@ -229,7 +229,7 @@ class TestWiringInMcpTools:
 
     def test_sr_import_failure_doesnt_break_search(self, tmp_db):
         """If SpacedRepetition import failed (_SpacedRepetition is None), helper is a no-op."""
-        import mcp_surface.mcp_search
+        import mcp_surface.mcp_search as mcp_search
 
         with patch.object(mcp_search, "_SpacedRepetition", None):
             # Should not raise
@@ -237,7 +237,7 @@ class TestWiringInMcpTools:
 
     def test_sr_close_failure_doesnt_break_search(self, tmp_db):
         """If sr.close() raises, it's swallowed."""
-        import mcp_surface.mcp_search
+        import mcp_surface.mcp_search as mcp_search
 
         mock_sr = MagicMock()
         mock_sr.close.side_effect = RuntimeError("close failed")

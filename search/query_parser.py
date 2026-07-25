@@ -607,7 +607,7 @@ _QUERY_TYPE_FACTUAL_RE = re.compile(
 # The entity name must appear in matching sessions (AND anchor).
 # L11 fix: deduplicated alternants (play×2, study×2 removed).
 _QUERY_TYPE_INFERENCE_RE = re.compile(
-    "\\b(would|might|could|does|do|is|are|was|were)\\b.*\\b(likely|probably|considered|interested|have|has|be|been|enjoy|like|prefer|choose|pursue|collect|play|read|watch|listen|cook|eat|drink|visit|go|travel|live|work|study|practice|run|swim|hike|camp|paint|draw|write|sing|dance|drive|ride|fly|sail|climb|build|make|create|design|plan|organize|manage|lead|teach|learn|research|explore|discover|invent|innovate)\\b",
+    "\\b(would|might|could)\\b.*\\b(likely|probably|prefer|enjoy|like|choose|pursue|collect|play|read|watch|listen|cook|eat|drink|visit|go|travel|live|work|study|practice|run|swim|hike|camp|paint|draw|write|sing|dance|drive|ride|fly|sail|climb|build|make|create|design|plan|organize|manage|lead|teach|learn|research|explore|discover|invent|innovate)\\b",
     re.IGNORECASE,
 )
 

@@ -59,7 +59,7 @@ class TestToolRegistry(unittest.TestCase):
 class TestMCPToolRegistration(unittest.TestCase):
     def test_all_core_tools_registered_as_mcp_functions(self):
         from tool_registry import CORE_TOOLS
-        import mcp_surface.mcp_tools
+        import mcp_surface.mcp_tools as mcp_tools
 
         for tool in CORE_TOOLS:
             self.assertTrue(
@@ -67,7 +67,7 @@ class TestMCPToolRegistration(unittest.TestCase):
             )
 
     def test_skill_tools_registered(self):
-        import mcp_surface.mcp_tools
+        import mcp_surface.mcp_tools as mcp_tools
 
         self.assertTrue(
             hasattr(mcp_tools, "memory_search"), "memory_search must be registered"

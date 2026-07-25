@@ -306,6 +306,7 @@ def _reasoning_expand(db_path: Path, query: str, limit: int = 5, conn=None) -> l
         "part_of",
         "has_part",
         "located_in",
+        "is",
     )
     # Normalize query lower-case for predicate detection.
     q_lower = query.lower()

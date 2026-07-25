@@ -141,7 +141,7 @@ class TestMaintenanceRun(unittest.TestCase):
     def setUp(self):
         self.db = _fresh_db()
 
-    @patch("mcp_maintenance.memory_maintenance")
+    @patch("mcp_surface.mcp_maintenance.memory_maintenance")
     def test_run_operation(self, mock_maint):
         from agentic_memory import Maintenance
 
@@ -150,7 +150,7 @@ class TestMaintenanceRun(unittest.TestCase):
         result = m.run("heartbeat")
         self.assertIsInstance(result, str)
 
-    @patch("mcp_maintenance.memory_maintenance")
+    @patch("mcp_surface.mcp_maintenance.memory_maintenance")
     def test_run_raises_on_failure(self, mock_maint):
         from agentic_memory import Maintenance
         from agentic_memory.exceptions import MaintenanceError

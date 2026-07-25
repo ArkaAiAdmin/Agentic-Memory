@@ -28,6 +28,7 @@ an MPS kernel that segfaults on unified-memory pointer math.
 from __future__ import annotations
 
 import logging
+import os
 
 __all__ = ["get_reranker", "reset_reranker_for_tests", "normalize_rerank_score"]
 
@@ -442,7 +443,8 @@ class _MpsWorkerPool:
             target=_mps_worker_loop,
             args=(reranker_dict, self._work_q, self._result_q),
             daemon=True,
-        )
+        )  # type: ignore[assignment]
+        assert self._process is not None
         self._process.start()
         # Wait for the child to signal it's ready (model loaded).
         try:
@@ -505,6 +507,7 @@ class _MpsWorkerPool:
                 if not self._spawn_worker(reranker_dict):
                     return None
             # Send work.
+            assert self._work_q is not None
             try:
                 self._work_q.put(("score", query, docs), timeout=5)
             except Exception:
@@ -512,6 +515,7 @@ class _MpsWorkerPool:
                 self._kill_worker()
                 return None
         # Wait for result with timeout.
+        assert self._result_q is not None
         try:
             msg = self._result_q.get(timeout=timeout)
         except Exception:

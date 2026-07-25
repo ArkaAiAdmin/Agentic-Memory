@@ -48,7 +48,7 @@ def _reset_config():
 def _import_tools():
     import importlib
 
-    return importlib.import_module("mcp_session")
+    return importlib.import_module("mcp_surface.mcp_session")
 
 
 # ---------------------------------------------------------------------------

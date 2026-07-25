@@ -9,6 +9,11 @@
         "--mcp"
       ],
       "enabled": true
+    },
+    "sentient-os": {
+      "type": "remote",
+      "url": "https://mcp.sentient-os.ai/u_uh7zzkYRyf4oskZTxd-O/p_zeXeXYwd1ujM3BM8Qa9QJ3M-/mcp",
+      "enabled": true
     }
   }
 }

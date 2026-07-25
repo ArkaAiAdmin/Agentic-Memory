@@ -157,7 +157,7 @@ class TestMemoryCompactCallsCheckpoint(unittest.TestCase):
     """memory_compact appends WAL checkpoint result to output."""
 
     @patch(
-        "mcp_rebuild._run_subprocess_output",
+        "mcp_surface.mcp_rebuild._run_subprocess_output",
         return_value=("mocked output", 0),
     )
     @patch(

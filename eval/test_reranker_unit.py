@@ -137,37 +137,27 @@ class TestRerankerScoreTimeout(unittest.TestCase):
         from infra.reranker import Reranker
 
         r = Reranker()
-        # Inspect the source: fast path returns _score_qwen3/_score_bge
-        # directly; the subprocess path goes through _score_with_timeout.
         src = inspect.getsource(r.score)
         self.assertIn("_score_qwen3", src)
         self.assertIn("_score_bge", src)
-        self.assertIn("_score_with_timeout", src)
+        self.assertIn("_mps_pool.score", src)
 
     def test_score_with_timeout_positive_uses_subprocess(self):
-        """timeout > 0 must route through _score_with_timeout (subprocess)."""
+        """timeout > 0 must route through MPS worker pool when on MPS device."""
         import inspect
         from infra.reranker import Reranker
 
         r = Reranker()
-        # The branch is `if timeout is None or timeout <= 0:` for fast path
         src = inspect.getsource(r.score)
         self.assertIn("timeout is None", src)
         self.assertIn("timeout <= 0", src)
-        self.assertIn("_score_with_timeout(self, query, docs, timeout)", src)
+        self.assertIn("_mps_pool.score", src)
 
-    def test_score_worker_main_is_importable(self):
-        """The child-process entry point must be importable so spawn-context
-        multiprocessing can pickle it."""
-        from infra.reranker import _score_worker_main
+    def test_mps_worker_pool_is_importable(self):
+        """The MPS worker pool must be importable."""
+        from infra.reranker import _MpsWorkerPool
 
-        self.assertTrue(callable(_score_worker_main))
-
-    def test_score_with_timeout_helper_is_importable(self):
-        """The timeout wrapper must be a module-level callable."""
-        from infra.reranker import _score_with_timeout
-
-        self.assertTrue(callable(_score_with_timeout))
+        self.assertTrue(callable(_MpsWorkerPool))
 
 
 class TestScoreWithTimeoutKillsSlowChild(unittest.TestCase):

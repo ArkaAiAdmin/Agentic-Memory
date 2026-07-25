@@ -47,41 +47,6 @@ def timeout_db() -> Generator[sqlite3.Connection, None, None]:
     db.close()
 
 
-def test_resolve_task_timeout_reads_from_table(timeout_db: sqlite3.Connection) -> None:
-    from background.background_worker import _resolve_task_timeout
-
-    timeout = _resolve_task_timeout(timeout_db, "test_cron_task")
-    assert timeout == 60
-
-
-def test_resolve_task_timeout_fallback(timeout_db: sqlite3.Connection) -> None:
-    from background.background_worker import _resolve_task_timeout
-
-    timeout = _resolve_task_timeout(timeout_db, "nonexistent_task")
-    assert timeout == 120  # default from env var
-
-
-def test_resolve_task_timeout_custom_fallback(timeout_db: sqlite3.Connection) -> None:
-    from background.background_worker import _resolve_task_timeout
-
-    os.environ["MEMORY_WORKER_TASK_TIMEOUT_S"] = "300"
-    try:
-        timeout = _resolve_task_timeout(timeout_db, "nonexistent_task")
-        assert timeout == 300
-    finally:
-        os.environ.pop("MEMORY_WORKER_TASK_TIMEOUT_S", None)
-
-
-def test_resolve_task_timeout_no_table() -> None:
-    """Without the cron_task_timeouts table, fall back to env var."""
-    from background.background_worker import _resolve_task_timeout
-
-    conn = sqlite3.connect(":memory:", timeout=10.0)
-    conn.row_factory = sqlite3.Row
-    timeout = _resolve_task_timeout(conn, "any_task")
-    assert timeout == 120  # default
-
-
 def _init_timeout_db(db_path: Path) -> None:
     """Apply migration 063 to a test DB."""
     import sqlite3

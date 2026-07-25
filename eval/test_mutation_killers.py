@@ -327,7 +327,7 @@ class TestSaveMemoryReturnsErrorDict(unittest.TestCase):
     def test_content_not_string(self):
         with self.assertRaises(SaveValidationError) as ctx:
             save_memory(123, "test", "note")
-        self.assertIn("content must be a", str(ctx.exception))
+        self.assertIn("content must be a non-empty string", str(ctx.exception))
 
     def test_content_too_large(self):
         with self.assertRaises(SaveValidationError) as ctx:

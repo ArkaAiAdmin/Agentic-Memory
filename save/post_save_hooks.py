@@ -468,17 +468,19 @@ def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60]
 
 
-def _hook_extract_skill(conn, note_id, content, category):
+def _hook_extract_skill(db_path_obj, conn, note_id, content, category):
     """Try to extract a skill tag for the just-saved note.
 
-    Requires a live ``conn`` — the auto-backlink pass owns commit
-    before this runs, so the connection is still open and on the
-    current transaction's view.  No-op if skill extraction is disabled
-    or fails.  P0 fix #5: pass ``category`` so the lower-threshold
-    detector can apply its per-category bias.
+    Opens its own connection when ``conn`` is None so skill extraction
+    still runs after the saga closes its transaction.
     """
     if conn is None:
-        return
+        try:
+            import sqlite3
+
+            conn = sqlite3.connect(str(db_path_obj))
+        except Exception:
+            return
     try:
         from skill_extractor import extract_skill_for_memory
 
@@ -634,7 +636,7 @@ def _run_post_save_hooks(
     if backlink_writes:
         deferred_writes.extend(backlink_writes)
     _hook_track_decisions(db_path_obj, note_id, content, category)
-    _hook_extract_skill(conn, note_id, content, category)
+    _hook_extract_skill(db_path_obj, conn, note_id, content, category)
     _hook_audit_save_success(
         db_path_obj,
         note_id,

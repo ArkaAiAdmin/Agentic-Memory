@@ -96,54 +96,61 @@ def _format_search_results(
 
 
 def apply_safety_demoting(state: PipelineState) -> None:
-    """Phase 13.1: apply injection-detection safety demoting to results."""
-    try:
-        import memory_injection
+     """Phase 13.1: apply injection-detection safety demoting to results."""
+     try:
+         import memory_injection
 
-        _rtd_by_id = {r[0]: r for r in state.results_to_display}
-        _demote_input = [
-            {
-                "id": item["id"],
-                "content": _rtd_by_id.get(item["id"], (None, ""))[1] or "",
-                "score": float(item.get("final_score") or 0.0),
-            }
-            for item in state.result_items
-        ]
-        _demoted = memory_injection.demote_results_by_injection(_demote_input)
-        _id_to_idx = {item["id"]: i for i, item in enumerate(state.result_items)}
-        _new_order = []
-        for _d in _demoted:
-            if _d["id"] in _id_to_idx:
-                _new_order.append(_id_to_idx[_d["id"]])
-        _seen = set(_new_order)
-        for _i in range(len(state.result_items)):
-            if _i not in _seen:
-                _new_order.append(_i)
-        state.result_items = [state.result_items[_i] for _i in _new_order]
-        _new_output = [state.output[0]]
-        for _old_idx in _new_order:
-            _new_output.append(state.output[_old_idx + 1])
-        state.output = _new_output
-        state.results_to_display = [state.results_to_display[_i] for _i in _new_order]
+         if not isinstance(state.result_items, list):
+             raise TypeError("result_items must be a list")
+         _rtd_by_id = {r[0]: r for r in state.results_to_display}
+         _demote_input = [
+             {
+                 "id": item["id"],
+                 "content": _rtd_by_id.get(item["id"], (None, ""))[1] or "",
+                 "score": float(item.get("final_score") or 0.0),
+             }
+             for item in state.result_items
+         ]
+         _demoted = memory_injection.demote_results_by_injection(_demote_input)
+         _id_to_idx = {item["id"]: i for i, item in enumerate(state.result_items)}
+         _new_order = []
+         for _d in _demoted:
+             if _d["id"] in _id_to_idx:
+                 _new_order.append(_id_to_idx[_d["id"]])
+         _seen = set(_new_order)
+         for _i in range(len(state.result_items)):
+             if _i not in _seen:
+                 _new_order.append(_i)
+         state.result_items = [state.result_items[_i] for _i in _new_order]
+         _new_output = [state.output[0]]
+         for _old_idx in _new_order:
+             _new_output.append(state.output[_old_idx + 1])
+         state.output = _new_output
+         state.results_to_display = [state.results_to_display[_i] for _i in _new_order]
+     except Exception as e:
+         _phase_inc("search.safety_demoting", e)
+         logger.warning("safety_demoting failed: %s", e)
+         return
 
-        # RANK-FIRST LOCK: restore final_score-descending order after
-        # safety demoting reorders by injection risk.  The CE reranker
-        # owns final ordering; safety demoting adjusts scores in place
-        # but must not change the relative rank order.
-        _ri_order = sorted(
-            range(len(state.result_items)),
-            key=lambda i: float(state.result_items[i].get("final_score") or 0.0),
-            reverse=True,
-        )
-        state.result_items = [state.result_items[i] for i in _ri_order]
-        _new_output = [state.output[0]]
-        for _ri in _ri_order:
-            _new_output.append(state.output[_ri + 1])
-        state.output = _new_output
-        state.results_to_display = [state.results_to_display[i] for i in _ri_order]
-    except Exception as e:
-        _phase_inc("search.safety_demoting", e)
-        logger.warning("safety_demoting failed: %s", e)
+     # RANK-FIRST LOCK: restore final_score-descending order after
+     # safety demoting reorders by injection risk.  The CE reranker
+     # owns final ordering; safety demoting adjusts scores in place
+     # but must not change the relative rank order.
+     try:
+         _ri_order = sorted(
+             range(len(state.result_items)),
+             key=lambda i: float(state.result_items[i].get("final_score") or 0.0),
+             reverse=True,
+         )
+         state.result_items = [state.result_items[i] for i in _ri_order]
+         _new_output = [state.output[0]]
+         for _ri in _ri_order:
+             _new_output.append(state.output[_ri + 1])
+         state.output = _new_output
+         state.results_to_display = [state.results_to_display[_ri] for _ri in _ri_order]
+     except Exception as e:
+         _phase_inc("search.safety_demoting_rank", e)
+         logger.warning("safety_demoting rank lock failed: %s", e)
 
 
 def apply_quality_gates(state: PipelineState) -> None:

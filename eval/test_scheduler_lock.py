@@ -145,5 +145,6 @@ def test_list_mode_works_without_db() -> None:
         cwd=str(REPO_ROOT),
     )
     assert result.returncode == 0
-    assert "Job" in result.stdout
-    assert "background_worker" in result.stdout
+    output = result.stdout + result.stderr
+    assert "Job" in output
+    assert "background_worker" in output

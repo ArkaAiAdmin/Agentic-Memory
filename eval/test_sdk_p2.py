@@ -259,7 +259,7 @@ class TestTemporalKGSearch(unittest.TestCase):
     def setUp(self):
         self.db = _fresh_db()
 
-    @patch("mcp_audit.memory_temporal_query")
+    @patch("mcp_surface.mcp_audit.memory_temporal_query")
     def test_search(self, mock_query):
         from agentic_memory import TemporalKG, Fact
 
@@ -281,7 +281,7 @@ class TestTemporalKGSearch(unittest.TestCase):
         self.assertIsInstance(results[0], Fact)
         self.assertEqual(results[0].subject, "Alice")
 
-    @patch("mcp_audit.memory_temporal_query")
+    @patch("mcp_surface.mcp_audit.memory_temporal_query")
     def test_search_empty(self, mock_query):
         from agentic_memory import TemporalKG
 
@@ -295,7 +295,7 @@ class TestTemporalKGContradictions(unittest.TestCase):
     def setUp(self):
         self.db = _fresh_db()
 
-    @patch("mcp_audit.memory_temporal_contradictions")
+    @patch("mcp_surface.mcp_audit.memory_temporal_contradictions")
     def test_contradictions(self, mock_contra):
         from agentic_memory import TemporalKG
 
@@ -315,7 +315,7 @@ class TestTemporalKGContradictions(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["reason"], "contradicted")
 
-    @patch("mcp_audit.memory_temporal_contradictions")
+    @patch("mcp_surface.mcp_audit.memory_temporal_contradictions")
     def test_contradictions_empty(self, mock_contra):
         from agentic_memory import TemporalKG
 
@@ -329,7 +329,7 @@ class TestTemporalKGQueryAtTime(unittest.TestCase):
     def setUp(self):
         self.db = _fresh_db()
 
-    @patch("mcp_audit.memory_temporal_query")
+    @patch("mcp_surface.mcp_audit.memory_temporal_query")
     def test_query_facts_at_time(self, mock_query):
         from agentic_memory import TemporalKG, Fact
 
@@ -356,7 +356,7 @@ class TestTemporalKGChangedSince(unittest.TestCase):
     def setUp(self):
         self.db = _fresh_db()
 
-    @patch("mcp_audit.memory_temporal_query")
+    @patch("mcp_surface.mcp_audit.memory_temporal_query")
     def test_changed_since(self, mock_query):
         from agentic_memory import TemporalKG, Fact
 
@@ -381,7 +381,7 @@ class TestTemporalKGSupersessionChain(unittest.TestCase):
     def setUp(self):
         self.db = _fresh_db()
 
-    @patch("mcp_audit.memory_temporal_query")
+    @patch("mcp_surface.mcp_audit.memory_temporal_query")
     def test_supersession_chain(self, mock_query):
         from agentic_memory import TemporalKG
 

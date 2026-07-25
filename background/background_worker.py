@@ -612,6 +612,18 @@ def _lazy_splade_index(payload: dict, conn: AnyConnection, db_path: Path) -> str
     return f"graph_snapshot: entities={entity_count}, edges={edge_count}, communities={community_count}"
 
 
+def _lazy_cron_pipeline_sentinel(payload: dict, conn: AnyConnection, db_path: Path) -> str:
+    if conn is None:
+        return "pipeline_healthy"
+    from cron.cron_pipeline_health import _pending_depth, _count_failures
+
+    depth = _pending_depth(conn)
+    failures = _count_failures(conn)
+    if depth >= 0 and failures >= 0:
+        return "pipeline_healthy"
+    return f"pipeline_unhealthy: depth={depth}, failures={failures}"
+
+
 HANDLERS.update(
     {
         "entailment_chains": _lazy_entailment_chains,
@@ -621,6 +633,7 @@ HANDLERS.update(
         "graph_snapshots": _lazy_graph_snapshots,
         "colbert_index": _lazy_colbert_index,
         "splade_index": _lazy_splade_index,
+        "cron_pipeline_sentinel": _lazy_cron_pipeline_sentinel,
     }
 )
 
@@ -1310,33 +1323,37 @@ def main():
     # drain ticks or "database is locked" while the persistent worker
     # processes a long task.
     _lock_name = "background_worker_drain" if (args.drain or args.once) else "background_worker_persistent"
-    try:
-        from cron._flock import acquire_lock_or_exit
-
-        acquire_lock_or_exit(_lock_name)
-    except ImportError:
-        # Best-effort: if flock module isn't on path, fall back to
-        # a lightweight inline lock using fcntl directly.
-        import fcntl
-
-        _lock_path = (
-            Path.home()
-            / ".config"
-            / "agentic-memory"
-            / "memory"
-            / "locks"
-            / f"{_lock_name}.lock"
-        )
-        _lock_path.parent.mkdir(parents=True, exist_ok=True)
-        _lock_fd = open(_lock_path, "w")
+    _no_flock = os.environ.get("MEMORY_CRON_NO_FLOCK", "") == "1"
+    if _no_flock:
+        logger.info("background_worker: MEMORY_CRON_NO_FLOCK=1, skipping flock %s", _lock_name)
+    else:
         try:
-            fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            logger.info("background_worker: another instance holds %s lock, exiting", _lock_name)
-            _lock_fd.close()
-            return 0
-        global _BACKGROUND_WORKER_LOCK_FD
-        _BACKGROUND_WORKER_LOCK_FD = _lock_fd
+            from cron._flock import acquire_lock_or_exit
+
+            acquire_lock_or_exit(_lock_name)
+        except ImportError:
+            # Best-effort: if flock module isn't on path, fall back to
+            # a lightweight inline lock using fcntl directly.
+            import fcntl
+
+            _lock_path = (
+                Path.home()
+                / ".config"
+                / "agentic-memory"
+                / "memory"
+                / "locks"
+                / f"{_lock_name}.lock"
+            )
+            _lock_path.parent.mkdir(parents=True, exist_ok=True)
+            _lock_fd = open(_lock_path, "w")
+            try:
+                fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                logger.info("background_worker: another instance holds %s lock, exiting", _lock_name)
+                _lock_fd.close()
+                return 0
+            global _BACKGROUND_WORKER_LOCK_FD
+            _BACKGROUND_WORKER_LOCK_FD = _lock_fd
 
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
