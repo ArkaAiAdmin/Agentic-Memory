@@ -469,6 +469,7 @@ class TestPostSaveHooksOrchestrator(unittest.TestCase):
 
         # No conn → no exception, no work
         _hook_extract_skill(
+            db_path_obj=None,
             conn=None,
             note_id="lessons/foo",
             content="hello",

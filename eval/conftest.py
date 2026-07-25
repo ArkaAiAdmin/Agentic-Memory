@@ -141,20 +141,41 @@ def _ami_patched_connect(*args, **kwargs):
             )
             # Add INSTEAD OF trigger so writes through the view work
             # (SQLite views are not directly writable).
-            from infra.db import _MEMORIES_COLUMNS
-            cols = ", ".join(f"NEW.{c}" for c in _MEMORIES_COLUMNS)
-            col_list = ", ".join(_MEMORIES_COLUMNS)
+            # B30 fix: dynamically resolve actual columns from the table
+            # instead of using _MEMORIES_COLUMNS directly, because
+            # _MEMORIES_COLUMNS may include columns (e.g. data_subject_sub)
+            # that are added by later numbered migrations and don't exist
+            # yet in a bare/mid-migration memories table.  Referencing a
+            # non-existent column in the trigger body causes FK-validation
+            # failures during DDL like `CREATE TABLE ... REFERENCES
+            # memories(id)` — see eval/test_db_drift.py cascade failure.
             try:
-                conn.execute("DROP TRIGGER IF EXISTS _tenant_memories_update")
-                conn.execute(
-                    f"CREATE TEMP TRIGGER _tenant_memories_update "
-                    f"INSTEAD OF UPDATE ON tenant_memories BEGIN "
-                    f"UPDATE memories SET "
-                    f"({col_list}) = (SELECT {cols}) "
-                    f"WHERE id = OLD.id; END"
-                )
+                existing_cols = {
+                    r[1]
+                    for r in conn.execute(
+                        "PRAGMA table_info(memories)"
+                    ).fetchall()
+                }
             except Exception:
-                pass
+                existing_cols = set()
+            from infra.db import _MEMORIES_COLUMNS
+            trigger_cols = [
+                c for c in _MEMORIES_COLUMNS if c in existing_cols
+            ]
+            if trigger_cols:
+                cols = ", ".join(f"NEW.{c}" for c in trigger_cols)
+                col_list = ", ".join(trigger_cols)
+                try:
+                    conn.execute("DROP TRIGGER IF EXISTS _tenant_memories_update")
+                    conn.execute(
+                        f"CREATE TEMP TRIGGER _tenant_memories_update "
+                        f"INSTEAD OF UPDATE ON tenant_memories BEGIN "
+                        f"UPDATE memories SET "
+                        f"({col_list}) = (SELECT {cols}) "
+                        f"WHERE id = OLD.id; END"
+                    )
+                except Exception:
+                    pass
     except Exception:
         pass
     return conn
@@ -711,6 +732,27 @@ def reset_auto_save_state():
         _cleanup_auto_save_daemon()
         _auto_save_reset_state()
         reset_auto_save_state._daemon_ever_started = True
+    except Exception:
+        pass
+    # Drain the write-queue singleton so a background-thread session
+    # from one test does not block the next test's open_db(write=True).
+    # The write queue's daemon thread holds session connections and
+    # processes cmd_queues sequentially; a stuck or slow session can
+    # starve the main queue and cause TimeoutError in start_session().
+    try:
+        from infra import db_write_queue
+
+        q = getattr(db_write_queue, "sqlite_write_queue", None)
+        if q is not None:
+            # Wait a short time for any inflight task, then stop+recreate.
+            import threading
+            if q._thread is not None and q._thread.is_alive():
+                try:
+                    q.stop(timeout=5.0)
+                except Exception:
+                    pass
+            # Recreate the singleton for the next test.
+            db_write_queue.sqlite_write_queue = db_write_queue.SQLiteWriteQueue()
     except Exception:
         pass
 

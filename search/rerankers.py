@@ -47,7 +47,7 @@ _CE_STOPWORDS = frozenset(
     {
         "a", "an", "as", "at", "be", "by", "do", "go", "he",
         "if", "in", "is", "it", "me", "my", "no", "of", "on",
-        "or", "so", "to", "up", "us", "we",
+        "or", "so", "the", "to", "up", "us", "we",
     }
 )
 _CROSS_ENCODER_BLEND = 0.6

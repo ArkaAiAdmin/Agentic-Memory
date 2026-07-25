@@ -17,6 +17,7 @@ import json
 import re
 import sqlite3
 
+from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Module-level set tracking which connection ids have had their schema
@@ -182,6 +183,10 @@ def _migrate_ensure_memories_columns(conn) -> None:
         ("metadata", "TEXT"),
         ("tenant_id", "TEXT DEFAULT 'default'"),
     )
+    try:
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(memories)").fetchall()}
+    except sqlite3.OperationalError:
+        return
     for col_name, col_type in desired:
         if col_name not in existing_cols:
             try:
@@ -378,6 +383,9 @@ def _migrate_add_fk_constraints(conn) -> None:
             """)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_backlinks_target_id ON backlinks(target_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_backlinks_source_id ON backlinks(source_id)"
             )
             conn.execute("INSERT INTO backlinks SELECT * FROM backlinks_backup")
             conn.execute("DROP TABLE backlinks_backup")
