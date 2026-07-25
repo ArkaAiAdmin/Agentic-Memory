@@ -359,6 +359,19 @@ def _test_session_env():
             os.environ[k] = v
 
 
+@pytest.fixture(autouse=True)
+def _clear_reranker_caches_between_tests():
+    """Reset reranker caches between tests to prevent cross-test pollution.
+
+    Only activates when the reranker module is already imported.
+    """
+    yield
+    import sys
+    if "search.rerankers" in sys.modules:
+        from search.rerankers import clear_reranker_caches
+        clear_reranker_caches()
+
+
 @pytest.fixture
 def temp_db_path(tmp_path):
     """Pytest fixture: yields a fully-bootstrapped temp DB path.
