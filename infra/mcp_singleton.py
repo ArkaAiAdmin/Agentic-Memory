@@ -31,8 +31,8 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_agent_id = os.environ.get("MEMORY_AGENT_ID", "").strip().lower()
-_MCP_LOCK_FILENAME = f".mcp_server.lock.{_agent_id}" if _agent_id else ".mcp_server.lock"
+_agent_id = ""
+_MCP_LOCK_FILENAME = ".mcp_server.lock"
 
 _lock_fd: Optional[io.TextIOWrapper] = None
 _lock_path: Optional[Path] = None
@@ -78,8 +78,9 @@ def _try_override_stale_lock() -> bool:
         _lock_fd = open(_lock_path, "w")
         got = acquire_flock_with_retry(
             _lock_fd,
-            max_attempts=3,
+            max_attempts=5,
             nonblocking=False,
+            initial_backoff=0.2,
             strict=True,
         )
         if got:
@@ -115,7 +116,10 @@ def acquire_mcp_singleton() -> bool:
     Returns True if this process is the sole MCP server (lock acquired).
     Returns False if another MCP server is already running (lock held).
     """
-    global _lock_fd, _lock_path
+    global _lock_fd, _lock_path, _agent_id, _MCP_LOCK_FILENAME
+
+    _agent_id = os.environ.get("MEMORY_AGENT_ID", "").strip().lower()
+    _MCP_LOCK_FILENAME = f".mcp_server.lock.{_agent_id}" if _agent_id else ".mcp_server.lock"
 
     memory_dir = _get_memory_dir()
     _lock_path = memory_dir / _MCP_LOCK_FILENAME
@@ -133,8 +137,9 @@ def acquire_mcp_singleton() -> bool:
 
         got = acquire_flock_with_retry(
             _lock_fd,
-            max_attempts=1,
+            max_attempts=3,
             nonblocking=True,
+            initial_backoff=0.3,
             strict=True,
         )
         if got:
@@ -163,16 +168,21 @@ def acquire_mcp_singleton() -> bool:
     if _lock_path is not None and _lock_path.exists():
         try:
             existing_pid_str = _lock_path.read_text().strip()
-            if existing_pid_str:
-                existing_pid = int(existing_pid_str)
-                if not _check_pid_alive(existing_pid):
-                    logger.info(
-                        "mcp_singleton: PID %s is dead — overriding stale lock",
-                        existing_pid,
-                    )
-                    return _try_override_stale_lock()
+            if not existing_pid_str:
+                # Empty lock file — previous process died before writing PID
+                logger.info("mcp_singleton: empty lock file — overriding stale lock")
+                return _try_override_stale_lock()
+            existing_pid = int(existing_pid_str)
+            if not _check_pid_alive(existing_pid):
+                logger.info(
+                    "mcp_singleton: PID %s is dead — overriding stale lock",
+                    existing_pid,
+                )
+                return _try_override_stale_lock()
         except (ValueError, OSError, Exception) as pid_exc:
-            logger.debug("mcp_singleton: PID check failed: %s", pid_exc)
+            # Can't parse PID — treat as stale
+            logger.info("mcp_singleton: PID parse failed (%s) — overriding stale lock", pid_exc)
+            return _try_override_stale_lock()
 
     return False
 

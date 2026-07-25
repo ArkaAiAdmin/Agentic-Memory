@@ -52,17 +52,6 @@ logger = logging.getLogger(__name__)
 # deploy with a token / SSO can set MEMORY_AUTH_MODE=closed explicitly.
 os.environ.setdefault("MEMORY_AUTH_MODE", "open")
 
-# Initialize agent context from MEMORY_AGENT_ID so RBAC resolves the
-# correct principal instead of falling back to "default".
-try:
-    from agent_context import init_agent
-    _agent_id = os.environ.get("MEMORY_AGENT_ID", "")
-    if _agent_id:
-        init_agent(_agent_id)
-        logger.info("memory_mcp: initialized agent context for %s", _agent_id)
-except Exception:
-    pass
-
 # Phase 4: configure per-tool rate limits from memory.toml [rate_limits].
 try:
     from infra.rate_limiter import configure_rate_limits
@@ -286,6 +275,16 @@ if __name__ == "__main__":
     _args, _ = _parser.parse_known_args()
     if _args.agent_id:
         os.environ["MEMORY_AGENT_ID"] = _args.agent_id
+
+    # Initialize agent context now that MEMORY_AGENT_ID is set.
+    try:
+        from agent_context import init_agent
+        _agent_id = os.environ.get("MEMORY_AGENT_ID", "")
+        if _agent_id:
+            init_agent(_agent_id)
+            logger.info("memory_mcp: initialized agent context for %s", _agent_id)
+    except Exception:
+        pass
 
     # Singleton guard: prevent duplicate MCP server instances on the same DB.
     try:
