@@ -143,7 +143,7 @@ def memory_search(
                 local_db,
                 expanded_query,
                 limit,
-                include_global=False,
+                include_global=include_global,
                 rerank=rerank,
                 boost_pinned=boost_pinned,
                 recency_weight=recency_weight,
