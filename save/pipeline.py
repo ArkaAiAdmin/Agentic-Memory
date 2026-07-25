@@ -2352,6 +2352,7 @@ def _save_memory_core(
         # will rollback instead.
         _save_errored = False
         deferred_writes = []
+        _saga_session_closed = False
         try:
             # Persist via the saga-wrapped write path.  The saga guarantees
             # crash-consistent rollback — on failure it raises and no partial
@@ -2397,7 +2398,6 @@ def _save_memory_core(
             # still holds — contention and potential deadlock.  Closing the
             # session first releases the write queue slot; the hooks then
             # open fresh connections with no contention.
-            _saga_session_closed = False
             try:
                 conn.close()
                 _saga_session_closed = True
