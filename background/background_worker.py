@@ -993,7 +993,7 @@ def process_one_task(
     finally:
         if _use_signal_timeout:
             _sig.alarm(0)
-        _sig.signal(_sig.SIGALRM, old_handler)
+            _sig.signal(_sig.SIGALRM, old_handler)
 
     return True
 

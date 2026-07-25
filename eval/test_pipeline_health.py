@@ -7,13 +7,25 @@ Tests:
   - pending depth
 """
 
+import sqlite3
 import tempfile
 from pathlib import Path
 
 import pytest
 
 from background.background_queue import init_task_queue, enqueue_task
-from infra.db_write_queue import sqlite_write_queue
+
+
+def _plain_conn(db_path: Path) -> sqlite3.Connection:
+    """Open a plain sqlite3 connection suitable for test fixtures.
+
+    Avoids the threaded SQLiteWriteQueue singleton which can timeout
+    under pytest's rapid fixture teardown/creation cycles.
+    """
+    conn = sqlite3.connect(str(db_path), timeout=10.0)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
 
 
 @pytest.fixture
@@ -27,7 +39,7 @@ def db_path() -> Path:
 
 @pytest.fixture
 def conn(db_path):
-    conn = sqlite_write_queue.start_session(db_path)
+    conn = _plain_conn(db_path)
     init_task_queue(conn)
     yield conn
     conn.close()
@@ -44,14 +56,14 @@ class TestPipelineHealth:
         assert result == "pipeline_healthy"
 
     def test_enqueue_and_process_sentinel(self, db_path):
-        conn = sqlite_write_queue.start_session(db_path)
+        conn = _plain_conn(db_path)
         init_task_queue(conn)
         task_id = enqueue_task(conn, "cron_pipeline_sentinel", payload={"_sentinel": True})
         assert isinstance(task_id, int)
         conn.close()
 
         from background.background_worker import process_one_task
-        conn2 = sqlite_write_queue.start_session(db_path)
+        conn2 = _plain_conn(db_path)
         ok = process_one_task(conn2, db_path)
         assert ok is True
         row = conn2.execute(
@@ -141,7 +153,7 @@ class TestJournalBacklogProbe:
         journal = tmp_path / "journal.db"
         init_journal_db(journal)
 
-        jconn = sqlite_write_queue.start_session(journal)
+        jconn = _plain_conn(journal)
         try:
             for _ in range(3):
                 jconn.execute(
@@ -165,10 +177,12 @@ class TestJournalBacklogProbe:
         from infra.write_journal import init_journal_db
 
         db = tmp_path / "memory.db"
-        init_task_queue(sqlite_write_queue.start_session(db))
+        _c = _plain_conn(db)
+        init_task_queue(_c)
+        _c.close()
         journal = tmp_path / "journal.db"
         init_journal_db(journal)
-        jconn = sqlite_write_queue.start_session(journal)
+        jconn = _plain_conn(journal)
         try:
             for _ in range(2):
                 jconn.execute(
@@ -279,7 +293,9 @@ class TestWorkerRecovery:
         import cron.cron_pipeline_health as cph
 
         db = tmp_path / "memory.db"
-        init_task_queue(sqlite_write_queue.start_session(db))
+        _c = _plain_conn(db)
+        init_task_queue(_c)
+        _c.close()
         monkeypatch.setenv("MEMORY_DB_PATH", str(db))
         monkeypatch.setenv("MEMORY_DB_FLOCK", "0")
 

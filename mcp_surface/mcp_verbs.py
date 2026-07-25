@@ -853,12 +853,19 @@ def memory_learn(
         cfg = get_config()
         _save_fn = save_memory_journal if cfg.write_journal else save_memory
 
+        # Auto-generate a slug from content when no skill_name is provided.
+        # The save pipeline rejects empty slugs with INVALID_SLUG.
+        import re as _re
+        _slug = skill_name.strip() if skill_name else ""
+        if not _slug:
+            _slug = _re.sub(r'[^a-z0-9]+', '-', content[:60].lower()).strip('-') or "learned"
+
         # Save the memory
         try:
             result = _save_fn(
                 content=content,
                 category=category,
-                title_slug=skill_name or "",
+                title_slug=_slug,
                 tags=tags or ["learned"],
                 importance=4,
             )

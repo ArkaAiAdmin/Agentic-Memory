@@ -229,9 +229,11 @@ def _worker_alive() -> bool:
             pass
 
     # Process scan fallback (covers non-launchd / manual invocations).
+    # Tightened match: only match actual worker invocations (--drain, --once,
+    # --interval), not editors or import-only processes.
     try:
         r = subprocess.run(
-            ["pgrep", "-f", "background_worker.py"],
+            ["pgrep", "-f", "background_worker.py.*(--drain|--interval|--once)"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -321,7 +323,7 @@ def main() -> int:
         # Self-heal: if the queue already shows a backlog, try to start the
         # worker before the (likely-failing) sentinel poll, so recovery runs
         # even if the poll times out below.
-        if pending > 0:
+        if pending > 0 or not _worker_alive():
             if _try_start_worker():
                 from infra.alert import alert
 
@@ -330,6 +332,8 @@ def main() -> int:
                     "Background worker restarted",
                     "Pipeline health check initiated worker restart",
                 )
+                # Give the spawned worker time to start and pick up the sentinel
+                time.sleep(3)
 
         try:
             _poll_sentinel(conn, task_id, timeout_s=30.0)

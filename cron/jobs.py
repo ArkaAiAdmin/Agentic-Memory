@@ -55,8 +55,8 @@ JOBS: dict[str, dict] = {
     "journal_reconciler": {
         "freq": "5m",
         "offset_min": 2,
-        "script": "background/journal_reconciler.py",
-        "args": ["--drain", "--max-entries=50"],
+        "script": "-m",
+        "args": ["background.journal_reconciler", "--drain", "--max-entries=50"],
         "timeout": 120,
     },
     "pipeline_health": {

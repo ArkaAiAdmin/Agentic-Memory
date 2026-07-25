@@ -113,11 +113,14 @@ def _run_job(name: str, job: dict, dry_run: bool = False) -> dict:
     env_extra = job.get("env", {})
     timeout = job.get("timeout", 300)
 
-    script_path = REPO_ROOT / script
-    if not script_path.exists():
-        return {"status": "failed", "error": f"Script not found: {script}"}
-
-    cmd = [sys.executable, str(script_path)] + args
+    # Support "-m" module invocation (e.g. script="-m", args=["background.journal_reconciler", ...])
+    if script == "-m":
+        cmd = [sys.executable, "-m"] + args
+    else:
+        script_path = REPO_ROOT / script
+        if not script_path.exists():
+            return {"status": "failed", "error": f"Script not found: {script}"}
+        cmd = [sys.executable, str(script_path)] + args
 
     if dry_run:
         return {"status": "dry_run", "command": " ".join(cmd)}
@@ -242,11 +245,19 @@ def main() -> int:
     list_mode = "--list" in args
     status_mode = "--status" in args
 
+    # Configure logging so --list / --status / dry-run output is visible.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        stream=sys.stderr,
+    )
+
     # Step 8 (cron-pipeline-no-flock): when the process-singleton lock is
     # skipped, overlapping scheduler instances are observable + recoverable
     # via the pipeline-coverage health check (cron_pipeline_health.py) instead
     # of being hard-gated by flock. Default behaviour keeps the lock.
-    _skip_sched_lock = no_flock or os.environ.get("MEMORY_CRON_NO_FLOCK", "") == "1"
+    # Read-only modes (--list, --status) skip the lock since they don't mutate.
+    _skip_sched_lock = no_flock or list_mode or status_mode or os.environ.get("MEMORY_CRON_NO_FLOCK", "") == "1"
     if _sched_lock is not None and not _skip_sched_lock:
         lock_wait_s = int(os.environ.get("MEMORY_SCHEDULER_LOCK_WAIT_S", "0"))
         if lock_wait_s > 0:

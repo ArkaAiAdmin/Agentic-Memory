@@ -90,7 +90,7 @@ def test_scheduler_default_respects_external_lock() -> None:
     """With a held scheduler lock, a default scheduler run is skipped."""
     holder = _spawn_holder(SCHED_LOCK)
     try:
-        res = _run_scheduler(["--list"])
+        res = _run_scheduler(["--dry-run"])
         assert res.returncode == 0
         assert _skipped(res.stdout + res.stderr), (
             f"expected scheduler to skip while lock held: {res.stdout}{res.stderr}"
@@ -133,7 +133,7 @@ def test_scheduler_env_no_flock_disabled_keeps_lock() -> None:
     """MEMORY_CRON_NO_FLOCK=0 keeps the default lock behaviour."""
     holder = _spawn_holder(SCHED_LOCK)
     try:
-        res = _run_scheduler(["--list"], {"MEMORY_CRON_NO_FLOCK": "0"})
+        res = _run_scheduler(["--dry-run"], {"MEMORY_CRON_NO_FLOCK": "0"})
         assert res.returncode == 0
         assert _skipped(res.stdout + res.stderr), (
             f"MEMORY_CRON_NO_FLOCK=0 must keep the lock: {res.stdout}{res.stderr}"
