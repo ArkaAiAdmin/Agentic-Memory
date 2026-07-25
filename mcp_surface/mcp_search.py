@@ -137,6 +137,7 @@ def memory_search(
     global_db = global_mem / "memory.db"
 
     local_results: dict[str, Any] = {"results": [], "count": 0, "output": ""}
+    logger.warning("MCP_SEARCH: query=%r include_global=%s tenant_id=%s", query, include_global, tenant_id)
     if local_db.exists():
         try:
             local_results = search_memories(

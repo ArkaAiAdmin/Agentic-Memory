@@ -182,9 +182,9 @@ def _wrap_db_error(verb_name: str, e: Exception) -> str:
 def memory_search(
     query: str,
     category: str = "",
-    limit: int = 10,
+    limit: int = 5,
     include_global: bool | None = None,
-    mode: str = "hybrid",
+    mode: str = "fts",
     tenant_id: str = "default",
     belief_status: str | None = None,
     epistemic_source: str | None = None,
@@ -243,6 +243,8 @@ def memory_search(
             mode=mode,
         )
         output = cast(str, result.get("output", str(result)))
+
+        # Append pending CQRS journal entries if available
         from config import get_config
         if getattr(get_config(), "write_journal", False):
             try:
@@ -258,6 +260,22 @@ def memory_search(
                 output = (output or "") + (
                     f"\n\nPending writes (not yet materialized — CQRS journal):\n{rows}"
                 )
+
+        # Format results to match TypeScript client parser expectations:
+        # "N. [note_id] category/title — content..."
+        items = result.get("results", [])
+        if items:
+            lines = [f"Search results for: '{query}'\n"]
+            for i, r in enumerate(items[:limit], 1):
+                note_id = r.get("id", "unknown")
+                cat = r.get("category", "")
+                src = r.get("source_file", "")
+                content_preview = (r.get("content", "") or "")[:120].replace("\n", " ")
+                lines.append(f"{i}. [{note_id}] {cat}/{src} — {content_preview}")
+            output = "\n".join(lines)
+
+        if len(output) > 4096:
+            output = output[:4096] + f"\n\n[... {len(items)} total results]"
         return output
     except Exception as e:
         logger.exception("in memory_search verb")
