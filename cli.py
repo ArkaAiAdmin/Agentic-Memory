@@ -79,7 +79,7 @@ def server_main() -> None:
             )
 
     os.environ.setdefault("MEMORY_DB_PATH", str(db_path))
-    import mcp_surface.mcp_instance
+    from mcp_surface.mcp_instance import mcp as _mcp_app
     import mcp_surface.mcp_tools  # noqa: F401
     import memory_mcp  # noqa: F401
 
@@ -95,7 +95,7 @@ def server_main() -> None:
 
     signal.signal(signal.SIGPIPE, signal.SIG_IGN)
     try:
-        mcp_instance.mcp.run()
+        _mcp_app.run()
     except (BrokenPipeError, OSError, EOFError):
         pass  # parent closed stdio — expected during restart
 
