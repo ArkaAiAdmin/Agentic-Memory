@@ -41,6 +41,7 @@ LEGACY_DEFAULTS = {
     "ce_chunk_blend": 0.7,
     "embedding_score_threshold": 0.25,
     "temporal_decay_weight": 0.15,
+    "search_compute_budget_ms": 200.0,
 }
 
 
@@ -118,6 +119,7 @@ class TestSearchConfigDefaults(unittest.TestCase):
             ce_chunk_blend = 0.4
             embedding_score_threshold = 0.05
             temporal_decay_weight = 0.01
+            search_compute_budget_ms = 200.0
 
         patcher = patch("infra._lazy_imports.get_config", return_value=_CustomConfig())
         patcher.start()
@@ -133,6 +135,7 @@ class TestSearchConfigDefaults(unittest.TestCase):
             self.assertEqual(cfg.ce_chunk_blend, 0.4)
             self.assertEqual(cfg.embedding_score_threshold, 0.05)
             self.assertEqual(cfg.temporal_decay_weight, 0.01)
+            self.assertEqual(cfg.search_compute_budget_ms, 200.0)
         finally:
             patcher.stop()
             _reset_cache()

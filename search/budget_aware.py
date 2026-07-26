@@ -87,19 +87,20 @@ class SearchBudget:
 
 
 def get_search_budget() -> SearchBudget:
-    """Create a SearchBudget from MEMORY_SEARCH_COMPUTE_BUDGET_MS env var.
+    """Create a SearchBudget from the typed ``SearchConfig``.
 
-    Default budget is 10s — must accommodate parse_query (~8s for semantic
-    expansion) plus CE reranking (~1s). Set to 0 for unlimited (legacy
-    behavior). Set MEMORY_SEARCH_COMPUTE_BUDGET_MS env var to override.
+    Reads ``search_compute_budget_ms`` via :func:`search.config.get_search_config`,
+    which resolves ``MEMORY_SEARCH_COMPUTE_BUDGET_MS`` env var, ``memory.toml``,
+    and the code default (200 ms). Set to 0 for unlimited (legacy behavior).
 
-    Returns a SearchBudget with budget_ms from env var or default.
+    Returns a SearchBudget with budget_ms from config.
     """
     try:
-        budget_str = os.environ.get("MEMORY_SEARCH_COMPUTE_BUDGET_MS", "10000")
-        budget_ms = float(budget_str)
-    except (ValueError, TypeError):
-        budget_ms = 10000.0
+        from search.config import get_search_config
+
+        budget_ms = float(get_search_config().search_compute_budget_ms)
+    except (ValueError, TypeError, ImportError):
+        budget_ms = 200.0
 
     return SearchBudget(budget_ms=budget_ms)
 

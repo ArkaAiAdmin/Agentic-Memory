@@ -65,6 +65,7 @@ class SearchConfig(BaseModel):
     inference_embedding_downweight: float = 0.3
     temporal_compare_boost: float = 1.1
     hybrid_sem_boost_threshold: int = 0  # 0 = disabled; set >0 to boost semantic when FTS < threshold
+    search_compute_budget_ms: float = 200.0
 
 
 def _coerce_float(value: Any, default: float) -> float:
@@ -147,6 +148,9 @@ def _build_search_config() -> SearchConfig:
         ),
         embedding_threshold_large=_coerce_float(
             getattr(cfg, "embedding_threshold_large", 0.20), 0.20
+        ),
+        search_compute_budget_ms=_coerce_float(
+            getattr(cfg, "search_compute_budget_ms", 200.0), 200.0
         ),
     )
 
