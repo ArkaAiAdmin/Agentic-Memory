@@ -10,29 +10,197 @@ Agentic Memory exposes **24 CORE + 92 ADMIN + 3 DEPRECATED = 119 total registere
 
 The 24 tools most agents use day-to-day. Each is a first-class MCP function; no grouping required.
 
+### `memory_search`
 
+Perform FTS5 (full-text) and semantic hybrid search across local and global memories.
 
+*(Source: `mcp_surface/mcp_search.py`)*
 
+---
 
+### `memory_save`
 
+Save a memory note to persistent offline storage and update the search index.
 
+*(Source: `mcp_surface/mcp_memory.py`)*
 
+---
 
+### `memory_delete`
 
+Soft-delete or hard-purge a memory note by ID.
 
+*(Source: `mcp_surface/mcp_memory.py`)*
 
+---
 
+### `memory_recall`
 
+Recall context for the current session or a named thread.
 
+*(Source: `mcp_surface/mcp_verbs.py`)*
 
+---
 
+### `memory_note`
 
+CRUD operations on a specific memory note.
 
+*(Source: `mcp_surface/mcp_verbs.py`)*
 
+---
 
+### `memory_learn`
 
+Save a lesson or compile a skill from content.
 
+*(Source: `mcp_surface/mcp_verbs.py`)*
 
+---
+
+### `memory_audit`
+
+Audit memory system health using SRMA-inspired metrics.
+
+*(Source: `mcp_surface/mcp_audit.py`)*
+
+---
+
+### `memory_organize`
+
+Run safe memory maintenance batch.
+
+*(Source: `mcp_surface/mcp_verbs.py`)*
+
+---
+
+### `memory_share`
+
+Share a memory to the cross-agent shared pool.
+
+*(Source: `mcp_surface/mcp_sharing.py`)*
+
+---
+
+### `memory_graph`
+
+Explore the knowledge graph.
+
+*(Source: `mcp_surface/mcp_verbs.py`)*
+
+---
+
+### `memory_profile`
+
+View user profile, agent scopes, ARC stats, and cached skills.
+
+*(Source: `mcp_surface/mcp_verbs.py`)*
+
+---
+
+### `memory_session_start`
+
+Retrieve the session startup briefing including recent stats, recall context, and spaced repetition review schedule.
+
+*(Source: `mcp_surface/mcp_search.py`)*
+
+---
+
+### `memory_list_revisions`
+
+List revision-log entries for a memory or across the store.
+
+*(Source: `mcp_surface/mcp_verbs.py`)*
+
+---
+
+### `memory_advanced`
+
+Power user escape hatch — pass through to any memory_maintenance operation.
+
+*(Source: `mcp_surface/mcp_verbs.py`)*
+
+---
+
+### `memory_review_beliefs`
+
+Review beliefs that may need agent attention — low confidence, old, or stale.
+
+*(Source: `mcp_surface/mcp_verbs.py`)*
+
+---
+
+### `memory_curate_autosave`
+
+Review auto-saved tool invocations and promote or discard them.
+
+*(Source: `mcp_surface/mcp_verbs.py`)*
+
+---
+
+### `memory_health_check`
+
+Unified health-check: returns a JSON dict summarising subsystem state.
+
+*(Source: `mcp_surface/mcp_maintenance.py`)*
+
+---
+
+### `memory_system_health`
+
+Comprehensive system health: green/yellow/red with actionable next steps.
+
+*(Source: `mcp_surface/mcp_health.py`)*
+
+---
+
+### `memory_recall_context`
+
+Assemble a structured memory recall briefing for agent cold-start or session continuity.
+
+*(Source: `mcp_surface/mcp_search.py`)*
+
+---
+
+### `memory_record_ctr_feedback`
+
+Record click-through rate feedback for a search result.
+
+*(Source: `mcp_surface/mcp_ctr_drift.py`)*
+
+---
+
+### `memory_list_skills`
+
+List extracted skills, ordered by hit_count desc.
+
+*(Source: `mcp_surface/mcp_maintenance.py`)*
+
+---
+
+### `memory_extract_skills`
+
+Manually trigger skill extraction.
+
+*(Source: `mcp_surface/mcp_maintenance.py`)*
+
+---
+
+### `memory_compile_skill`
+
+Compile a lesson note into a validated executable agent skill rule file in ~/.agents/skills/.
+
+*(Source: `mcp_surface/mcp_maintenance.py`)*
+
+---
+
+### `memory_coordinate`
+
+Multi-agent coordination tool for task management, file locking, and messaging.
+
+*(Source: `mcp_surface/mcp_coordination.py`)*
+
+---
 
 
 ## Admin Tools (92)
@@ -41,98 +209,98 @@ All admin operations go through the `memory_maintenance` grouped tool, dispatche
 
 | Tool | Purpose |
 |------|---------|
-| `memory_adaptive_retention` | *(no description)* |
-| `memory_admin_policy_hash` | *(no description)* |
-| `memory_agent_clear` | *(no description)* |
-| `memory_agent_init` | *(no description)* |
-| `memory_agent_list` | *(no description)* |
-| `memory_arc_reset` | *(no description)* |
-| `memory_arc_stats` | *(no description)* |
-| `memory_audit_query` | *(no description)* |
-| `memory_auto_save_daemon_metrics` | *(no description)* |
-| `memory_auto_save_hook` | *(no description)* |
-| `memory_auto_save_status` | *(no description)* |
-| `memory_auto_share` | *(no description)* |
-| `memory_auto_summarize` | *(no description)* |
-| `memory_backfill_all` | *(no description)* |
-| `memory_background_task_status` | *(no description)* |
-| `memory_callback` | *(no description)* |
-| `memory_check_concept_drift` | *(no description)* |
-| `memory_check_contradictions` | *(no description)* |
-| `memory_check_embedding_model` | *(no description)* |
-| `memory_check_integrity` | *(no description)* |
-| `memory_circuit_breaker_status` | *(no description)* |
-| `memory_compact` | *(no description)* |
-| `memory_compliance_check` | *(no description)* |
-| `memory_consolidate` | *(no description)* |
-| `memory_crdt_status` | *(no description)* |
-| `memory_crdt_sync` | *(no description)* |
-| `memory_daily_digest` | *(no description)* |
-| `memory_dashboard` | *(no description)* |
-| `memory_dedup` | *(no description)* |
-| `memory_detect_contradictions` | *(no description)* |
-| `memory_facts_list` | *(no description)* |
-| `memory_facts_search` | *(no description)* |
-| `memory_facts_stats` | *(no description)* |
-| `memory_gdpr_erase` | *(no description)* |
-| `memory_graph_evolution` | *(no description)* |
-| `memory_graph_insights` | *(no description)* |
-| `memory_graph_search` | *(no description)* |
-| `memory_graph_shortest_path` | *(no description)* |
-| `memory_graph_stats` | *(no description)* |
-| `memory_graph_traverse` | *(no description)* |
-| `memory_heartbeat` | *(no description)* |
-| `memory_incremental_update` | *(no description)* |
-| `memory_ingest` | *(no description)* |
-| `memory_list_drift_alarms` | *(no description)* |
-| `memory_list_federated_skills` | *(no description)* |
-| `memory_list_threads` | *(no description)* |
-| `memory_llm_unload` | *(no description)* |
-| `memory_login_url` | *(no description)* |
-| `memory_maintenance` | *(no description)* |
-| `memory_metrics_server` | *(no description)* |
-| `memory_okf_export` | *(no description)* |
-| `memory_okf_import` | *(no description)* |
-| `memory_pinned_decay_check` | *(no description)* |
-| `memory_pipeline_coverage` | *(no description)* |
-| `memory_profile_access` | *(no description)* |
-| `memory_profile_stats` | *(no description)* |
-| `memory_purge_auto_saves` | *(no description)* |
-| `memory_purge_expired` | *(no description)* |
-| `memory_quality_filter` | *(no description)* |
-| `memory_quality_stats` | *(no description)* |
-| `memory_rebuild` | *(no description)* |
-| `memory_recall_stats` | *(no description)* |
-| `memory_reinforce` | *(no description)* |
-| `memory_resolve_contradiction` | *(no description)* |
-| `memory_resolve_thread` | *(no description)* |
-| `memory_restore` | *(no description)* |
-| `memory_retention_stats` | *(no description)* |
-| `memory_review_schedule` | *(no description)* |
-| `memory_rewrite_links` | *(no description)* |
-| `memory_rotate_key` | *(no description)* |
-| `memory_run_tier_migration` | *(no description)* |
-| `memory_scan_injection` | *(no description)* |
-| `memory_sdk_demo` | *(no description)* |
-| `memory_semantic_search` | *(no description)* |
-| `memory_session_admin_stats` | *(no description)* |
-| `memory_shared_import` | *(no description)* |
-| `memory_shared_list` | *(no description)* |
-| `memory_shared_stats` | *(no description)* |
-| `memory_sso_idp_add` | *(no description)* |
-| `memory_sso_idp_list` | *(no description)* |
-| `memory_sso_sync_metadata` | *(no description)* |
-| `memory_strip_provenance` | *(no description)* |
-| `memory_summarization_stats` | *(no description)* |
-| `memory_summarize` | *(no description)* |
-| `memory_supersede` | *(no description)* |
-| `memory_temporal_contradictions` | *(no description)* |
-| `memory_temporal_query` | *(no description)* |
-| `memory_thread_context` | *(no description)* |
-| `memory_tier_stats` | *(no description)* |
-| `memory_trash` | *(no description)* |
-| `memory_user_profile` | *(no description)* |
-| `memory_whoami` | *(no description)* |
+| `memory_adaptive_retention` | Batch compute adaptive half-lives and neural forget curve scores. |
+| `memory_admin_policy_hash` | Return the local process's drift-policy hash. Used by fleet drift diff. |
+| `memory_agent_clear` | Clear the current agent context (revert to default namespace). |
+| `memory_agent_init` | Initialize a new agent context for memory scoping. |
+| `memory_agent_list` | List all registered agent contexts. |
+| `memory_arc_reset` | Clear the ARC cache: drop all ghost entries and reset stats. |
+| `memory_arc_stats` | Return ARC ghost-entry statistics, read live from arc_ghosts/arc_stats. |
+| `memory_audit_query` | Query the memory_audit_log table for observability. |
+| `memory_auto_save_daemon_metrics` | Get auto-save daemon metrics (buffer size, circuit state, inbox size, etc.). |
+| `memory_auto_save_hook` | Save one tool invocation as an auto-save session note. |
+| `memory_auto_save_status` | Count auto-save notes from the last 24h, 7d, and per-day breakdown. |
+| `memory_auto_share` | Scan high-importance memories and offer to share them with peers. |
+| `memory_auto_summarize` | Auto-summarize all long notes. Opt-in via MEMORY_SUMMARIZATION=1. |
+| `memory_backfill_all` | Universal memory index backfill orchestrator. |
+| `memory_background_task_status` | Query the status of deferred background tasks for a given memory_id. |
+| `memory_callback` | Exchange an SSO provider callback for a local JWT + principal. |
+| `memory_check_concept_drift` | Check for concept drift in the embedding space. |
+| `memory_check_contradictions` | Scan recent memories for phrase-mode contradictions against content. |
+| `memory_check_embedding_model` | Detect embedding model drift, auto-rebuild the vec index if the model changed. |
+| `memory_check_integrity` | Run a health check on the memory DB. |
+| `memory_circuit_breaker_status` | Return the most recent auto-save circuit-breaker events. |
+| `memory_compact` | Run tier migration + consolidation + rebuild + session archival. |
+| `memory_compliance_check` | Check whether AGENTS.md workflow rules were followed in this session. |
+| `memory_consolidate` | System 2 consolidation: dedup via SHA256 + n-gram Jaccard, detect contradictions, write compaction-proposal.md. |
+| `memory_crdt_status` | Return peer sync status: last sync time, error count, and pending |
+| `memory_crdt_sync` | Bulk-sync notes from a remote agent using CRDT conflict resolution. |
+| `memory_daily_digest` | Roll all auto-save notes for a given date into one daily note. |
+| `memory_dashboard` | Start, stop, or check the Streamlit dashboard server. |
+| `memory_dedup` | Find near-duplicate notes or suggest merges to collapse duplicate notes. |
+| `memory_detect_contradictions` | Run the contradiction detector over the corpus. |
+| `memory_facts_list` | List all extracted facts above a confidence threshold, ordered by confidence. |
+| `memory_facts_search` | Search extracted facts (SPO triples) matching the query. |
+| `memory_facts_stats` | Return statistics about extracted facts: total, locked, avg confidence, predicate distribution. |
+| `memory_gdpr_erase` | Cascading GDPR Right-to-Be-Forgotten erase for a data subject. |
+| `memory_graph_evolution` | Return knowledge graph changes since a given time window. |
+| `memory_graph_insights` | Return graph analytics insights: density, modularity, avg path length, bridge nodes. |
+| `memory_graph_search` | Search the knowledge graph for entities matching the query. |
+| `memory_graph_shortest_path` | Compute the shortest path of relations and entities between two nodes in the Knowledge Graph. |
+| `memory_graph_stats` | Return statistics about the knowledge graph: entity/edge counts, type distribution, most connected entities. |
+| `memory_graph_traverse` | Crawl the Knowledge Graph starting from a node, following a sequence of relation types. |
+| `memory_heartbeat` | Run a heartbeat: re-evaluate all notes for importance, tier assignment, and archival. |
+| `memory_incremental_update` | [DEPRECATED] Compute an SSM-encoder update for a memory whose content changed. |
+| `memory_ingest` | Ingest a file or web page URL into the memory system. |
+| `memory_list_drift_alarms` | List and acknowledge per-memory concept-drift alarms. |
+| `memory_list_federated_skills` | List skills with federated hit-vector stats across agents. |
+| `memory_list_threads` | List decision threads for a session. |
+| `memory_llm_unload` | Unload the LLM extraction model from memory, freeing GPU/MPS resources. |
+| `memory_login_url` | Build a provider login/authorization URL for an SSO flow. |
+| `memory_maintenance` | Run an administrative or maintenance operation on the memory system. |
+| `memory_metrics_server` | Start, stop, or check the Prometheus metrics exporter server. |
+| `memory_okf_export` | Export all memories to an OKF (Open Knowledge Format) directory. |
+| `memory_okf_import` | Import memories from an OKF (Open Knowledge Format) directory. |
+| `memory_pinned_decay_check` | Check pinned notes for drift and auto-unpin stale ones. |
+| `memory_pipeline_coverage` | Run cron/cron_pipeline_health.py and return its output. |
+| `memory_profile_access` | Record that a note was accessed. Opt-in via MEMORY_USER_PROFILE=1. |
+| `memory_profile_stats` | Return user profiling statistics. |
+| `memory_purge_auto_saves` | Delete all auto-saved tool-log entries from DB and disk. |
+| `memory_purge_expired` | Hard-delete all soft-deleted memories older than 30 days. Returns count. |
+| `memory_quality_filter` | Search and apply quality gates (validation + deduplication) to results. |
+| `memory_quality_stats` | Return quality gate statistics (note counts, content length distribution). |
+| `memory_rebuild` | Rebuild the SQLite FTS5 (full-text search) index from the source markdown files. |
+| `memory_recall_stats` | Assemble a structured memory recall briefing for agent cold-start or session continuity. |
+| `memory_reinforce` | Reinforce memory success scores based on outcome. |
+| `memory_resolve_contradiction` | Explicitly resolve a detected contradiction between two notes. |
+| `memory_resolve_thread` | Resolve or close a decision thread. |
+| `memory_restore` | Restore a soft-deleted memory note from the trash. |
+| `memory_retention_stats` | Return adaptive retention statistics. |
+| `memory_review_schedule` | Return SM-2 spaced-repetition stats. |
+| `memory_rewrite_links` | Scan all notes for wiki-style links that don't resolve, find the closest existing note, and rewrite. |
+| `memory_rotate_key` | Rotate the SSO signing key: revoke the current active key, mint a new one. |
+| `memory_run_tier_migration` | Run tier migration lifecycle: consolidate warm sessions, archive cold files. |
+| `memory_scan_injection` | Scan content for prompt-injection patterns. Returns risk assessment. |
+| `memory_sdk_demo` | Run an end-to-end SDK demo: save sample memories, search, and report stats. |
+| `memory_semantic_search` | Semantic search using embeddings alongside FTS5. |
+| `memory_session_admin_stats` | Retrieve database statistics on sessions, decision threads, or compaction logs. |
+| `memory_shared_import` | Import a shared memory into the target agent's workspace. |
+| `memory_shared_list` | List memories in the shared pool. Opt-in via MEMORY_MULTI_AGENT=1. |
+| `memory_shared_stats` | Return shared pool statistics. |
+| `memory_sso_idp_add` | Register a new SSO IdP in memory.toml under [memory.auth.sso.idps]. |
+| `memory_sso_idp_list` | List configured SSO identity providers. |
+| `memory_sso_sync_metadata` | Fetch and cache IdP metadata (SAML metadata XML or OIDC discovery doc). |
+| `memory_strip_provenance` | Strip a leading provenance HTML comment from content. |
+| `memory_summarization_stats` | Return summarization statistics. |
+| `memory_summarize` | Summarize a specific note using extractive TF-IDF summarization. |
+| `memory_supersede` | Mark an existing memory note as outdated and superseded by a newer memory. |
+| `memory_temporal_contradictions` | T3.6: list fact-level supersession events in a time window. |
+| `memory_temporal_query` | T4.5: time-aware queries on the fact-level knowledge graph. |
+| `memory_thread_context` | Return active decision threads and recent events for a session. |
+| `memory_tier_stats` | Return tier distribution and importance statistics for all memories. |
+| `memory_trash` | List soft-deleted memories, oldest first. Excludes 30-day-expired by default. |
+| `memory_user_profile` | Get the user preference profile from access history. |
+| `memory_whoami` | Introspect a locally-issued SSO JWT. Returns the principal claims. |
 
 ---
 *This file is generated by `scripts/gen_mcp_tools_doc.py`. Do not edit directly; run the script and review the diff.*

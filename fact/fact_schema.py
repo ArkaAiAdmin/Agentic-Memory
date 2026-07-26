@@ -43,69 +43,13 @@ def ensure_facts_schema(conn: AnyConnection) -> None:
     Idempotent: safe to call on every connection open. The CREATE
     statements use ``IF NOT EXISTS`` so re-running on a DB that
     already has the table is a no-op.
+
+    Column additions are handled by numbered migrations (009, 018, 025,
+    026, 034) — not by inline ALTER TABLE here (Hard Rule 4).  This
+    function only creates the base table and indexes.
     """
     # Base table + indexes (idempotent on all schema versions)
     conn.executescript(_FACTS_SCHEMA_SQL)
-    # B24: backfill entity FK columns on pre-migration DBs — must run BEFORE
-    # entity_id indexes so columns exist.
-    # T1.x (temporal-kg plan): backfill the v18 temporal columns on pre-migration
-    # DBs — also must run BEFORE the v18 indexes so columns exist.
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(kg_facts)").fetchall()}
-    if "subject_entity_id" not in cols:
-        conn.execute(
-            "ALTER TABLE kg_facts ADD COLUMN subject_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL"
-        )
-    if "object_entity_id" not in cols:
-        conn.execute(
-            "ALTER TABLE kg_facts ADD COLUMN object_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL"
-        )
-    # T1.x: v18 temporal columns. Each column is independent — if a
-    # pre-v18 DB has some but not others, only the missing ones are
-    # added. All columns are NULL-able so existing rows are unaffected.
-    if "event_time" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN event_time REAL")
-    if "event_time_granularity" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN event_time_granularity TEXT")
-    if "transaction_time" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN transaction_time REAL")
-    if "valid_at" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN valid_at REAL")
-    if "invalid_at" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN invalid_at REAL")
-    if "superseded_by" not in cols:
-        conn.execute(
-            "ALTER TABLE kg_facts ADD COLUMN superseded_by INTEGER "
-            "REFERENCES kg_facts(id) ON DELETE SET NULL"
-        )
-    if "supersedes" not in cols:
-        conn.execute(
-            "ALTER TABLE kg_facts ADD COLUMN supersedes INTEGER "
-            "REFERENCES kg_facts(id) ON DELETE SET NULL"
-        )
-    if "contradiction_score" not in cols:
-        conn.execute(
-            "ALTER TABLE kg_facts ADD COLUMN contradiction_score REAL DEFAULT 0.0"
-        )
-    if "invalidation_reason" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN invalidation_reason TEXT")
-    # B25+S1: belief-layer columns (Sprint 0 + 1).  These are idempotent
-    # via the ``if not in cols`` check — same pattern as the temporal
-    # columns above.  Fresh DBs get them here; existing DBs get them
-    # via migration 025 + 026.
-    if "belief_status" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN belief_status TEXT DEFAULT 'active'")
-    if "epistemic_source" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN epistemic_source TEXT DEFAULT 'agent'")
-    if "asserting_agent_id" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN asserting_agent_id TEXT")
-    if "evidence_chain" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN evidence_chain TEXT")
-    if "is_entailed" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN is_entailed BOOLEAN DEFAULT 0")
-    if "fact_type" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN fact_type TEXT DEFAULT 'observation'")
-    if "embedding" not in cols:
-        conn.execute("ALTER TABLE kg_facts ADD COLUMN embedding BLOB")
     # Ensure belief-layer indexes exist.
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_kg_facts_fact_type ON kg_facts(fact_type)"

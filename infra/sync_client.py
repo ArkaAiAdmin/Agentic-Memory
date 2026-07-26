@@ -33,6 +33,8 @@ import urllib.error
 from pathlib import Path
 from typing import Optional, cast
 
+from infra.ssrf import _ssrf_validate_url
+
 logger = logging.getLogger(__name__)
 
 # Default timeout for HTTP requests (seconds).
@@ -153,6 +155,7 @@ def _do_request(req: urllib.request.Request, timeout: int) -> Optional[dict]:
     """
     import urllib.error as _ue
 
+    _ssrf_validate_url(req.full_url)
     last_err: Optional[Exception] = None
     for attempt in range(_MAX_RETRIES):
         try:

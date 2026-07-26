@@ -12,6 +12,8 @@ import urllib.error
 import time
 from typing import Any, Dict, List, Optional
 
+from infra.ssrf import _ssrf_validate_url
+
 logger = logging.getLogger(__name__)
 
 from infra.sync_server import SYNC_AUTH_TOKEN
@@ -85,6 +87,7 @@ peer_directory = PeerDirectory()
 def send_gossip(target_url: str, local_agent_id: str, peers: List[Dict[str, Any]]) -> Optional[dict]:
     """POST local peer list to target peer's gossip endpoint."""
     url = f"{target_url.rstrip('/')}/sync/peers/gossip"
+    _ssrf_validate_url(url)
     payload = {
         "agent_id": local_agent_id,
         "peers": peers,

@@ -14,6 +14,8 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from infra.ssrf import _ssrf_validate_url
+
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,7 @@ def fetch_peer_policy_hash(
     sync_token: str = "",
 ) -> tuple[str, float, dict]:
     url = _peer_policy_url(peer_url)
+    _ssrf_validate_url(url)
     t0 = time.monotonic()
     try:
         req = urllib.request.Request(url, method="GET")

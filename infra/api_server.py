@@ -21,6 +21,8 @@ from urllib.parse import urlparse, parse_qs
 
 from agentic_memory.client import MemoryClient
 
+from infra.api_token import validate_api_token
+
 logger = logging.getLogger(__name__)
 
 # Config variables (from env with fallback to empty/defaults)
@@ -65,6 +67,18 @@ class APIRequestHandler(BaseHTTPRequestHandler):
     def _error(self, message: str, status_code: int) -> None:
         self._write_json({"error": message}, status_code)
 
+    def _cors_headers(self, origin: str) -> list[tuple[str, str]]:
+        """Return CORS header tuples for the given origin."""
+        headers = [
+            ("Access-Control-Allow-Headers", "Content-Type, Authorization"),
+            ("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"),
+        ]
+        if origin and (not API_CORS_ORIGINS or origin in API_CORS_ORIGINS):
+            headers.append(("Access-Control-Allow-Origin", origin))
+        elif not API_CORS_ORIGINS:
+            headers.append(("Access-Control-Allow-Origin", "*"))
+        return headers
+
     def _write_json(self, data: dict | list, status_code: int = 200) -> None:
         body = json.dumps(data).encode("utf-8")
         self.send_response(status_code)
@@ -77,12 +91,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         self._pending_cookies = []
         # CORS
         origin = self.headers.get("Origin", "")
-        if origin and (not API_CORS_ORIGINS or origin in API_CORS_ORIGINS):
-            self.send_header("Access-Control-Allow-Origin", origin)
-        elif not API_CORS_ORIGINS:
-            self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        for hdr, val in self._cors_headers(origin):
+            self.send_header(hdr, val)
         self.end_headers()
         self.wfile.write(body)
 
@@ -325,12 +335,8 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         """CORS preflight handling."""
         self.send_response(204)
         origin = self.headers.get("Origin", "")
-        if origin and (not API_CORS_ORIGINS or origin in API_CORS_ORIGINS):
-            self.send_header("Access-Control-Allow-Origin", origin)
-        elif not API_CORS_ORIGINS:
-            self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        for hdr, val in self._cors_headers(origin):
+            self.send_header(hdr, val)
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -2412,6 +2418,13 @@ class APIServer(ThreadingHTTPServer):
         self.port = port
         self.token = token
         self.insecure_loopback = insecure_loopback
+
+        if self.token and not validate_api_token(self.token):
+            logger.warning(
+                "api_server: API token does not meet minimum security requirements "
+                "(length >= 32, URL-safe chars). Replace MEMORY_API_TOKEN with a "
+                "strong random value for production."
+            )
 
         # Phase 2: per-IP sliding-window rate limit. Disabled when <= 0.
         # Configured via MEMORY_API_RATE_LIMIT (requests) and
