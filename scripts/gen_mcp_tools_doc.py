@@ -23,7 +23,7 @@ from _docgen_markers import assemble, extract_manual  # noqa: E402
 # ---------------------------------------------------------------------------
 
 ROOT = Path(__file__).resolve().parent.parent
-MCP_PATTERNS = ["mcp_*.py", "agentic_memory/*.py", "memory_mcp.py"]
+MCP_PATTERNS = ["mcp_*.py", "mcp_surface/mcp_*.py", "agentic_memory/*.py", "memory_mcp.py"]
 
 # ---------------------------------------------------------------------------
 # Tool extraction from source
@@ -34,7 +34,9 @@ def _find_tool_file(tool_name: str) -> tuple[Optional[Path], Optional[str], Opti
     """Search MCP files for a tool function definition.
 
     Returns (file_path, docstring, full_source) or (None, None, None).
+    Handles direct defs, aliases (foo = bar), and lambda router handlers.
     """
+    # 1. Direct def / async def
     for pattern in MCP_PATTERNS:
         for fpath in sorted(ROOT.glob(pattern)):
             try:
@@ -47,35 +49,87 @@ def _find_tool_file(tool_name: str) -> tuple[Optional[Path], Optional[str], Opti
                 idx = text.find(f"async def {tool_name}(")
             if idx == -1:
                 continue
-            # Find closing paren by tracking nesting
-            rest = text[idx:]
-            depth = 0
-            sig_end = idx
-            for ci, c in enumerate(rest):
-                if c == "(":
-                    depth += 1
-                elif c == ")":
-                    depth -= 1
-                    if depth == 0:
-                        sig_end = idx + ci + 1
-                        break
-            if depth != 0:
-                continue  # unbalanced parens, skip
-            # Extract docstring: handle -> return_type: and whitespace before """
-            after_sig = text[sig_end:]
-            doc_match = re.search(
-                r'(?::\s*(?:->\s*.+?)?\s*)?(?:"""|\'\'\')(.+?)(?:"""|\'\'\')',
-                after_sig,
+            doc = _extract_docstring_at(text, idx)
+            if doc is not None:
+                return fpath, doc, text
+            # Found def but no docstring
+            return fpath, "", text
+
+    # 2. Alias: <tool_name> = <other_name> — follow the assignment
+    for pattern in MCP_PATTERNS:
+        for fpath in sorted(ROOT.glob(pattern)):
+            try:
+                text = fpath.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            alias_pat = rf"^{tool_name}\s*=\s*(\w+)"
+            for m in re.finditer(alias_pat, text, re.MULTILINE):
+                target = m.group(1)
+                # Strip common wrapper suffix like _context
+                for candidate in (target, target.replace("_context", ""), target.replace("_stats", "")):
+                    res = _find_tool_file(candidate)
+                    if res[1]:
+                        return fpath, res[1], text
+                # If target itself had no docstring, return empty
+                if res[0]:
+                    return fpath, "", text
+
+    # 3. Lambda router handler: MaintenanceOp.NAME_UPPER: lambda ... -> <handler_func>(
+    upper = tool_name.upper().replace("MEMORY_", "", 1) if tool_name.startswith("memory_") else tool_name.upper()
+    # Handle recall_stats -> RECALL_STATS (not RECALL_STATS_STATS)
+    if upper.endswith("_STATS") and not upper.endswith("_STATS_STATS"):
+        upper = upper[:-5]
+    for pattern in MCP_PATTERNS:
+        for fpath in sorted(ROOT.glob(pattern)):
+            try:
+                text = fpath.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            # Match: MaintenanceOp.NAME: lambda ... -> _handler_func(...)
+            # or: MaintenanceOp.NAME: lambda ...: _handler_func(...)
+            m = re.search(
+                rf"MaintenanceOp\.{re.escape(upper)}\s*:\s*lambda.*?(?:->\s*)?(\w+)\(",
+                text,
                 re.DOTALL,
             )
-            if doc_match:
-                doc = doc_match.group(1).strip()
-                # Take first paragraph only
-                first_para = doc.split("\n\n")[0].strip()
-                return fpath, first_para, text
-            # No docstring found
-            return fpath, "", text
+            if m:
+                handler_name = m.group(1)
+                for candidate in (handler_name,):
+                    res = _find_tool_file(candidate)
+                    if res[1]:
+                        return fpath, res[1], text
+                if res[0]:
+                    return fpath, "", text
+
     return None, None, None
+
+
+def _extract_docstring_at(text: str, sig_idx: int) -> Optional[str]:
+    """Extract the first paragraph of a docstring immediately after a function sig."""
+    # Find closing paren by tracking nesting
+    rest = text[sig_idx:]
+    depth = 0
+    sig_end = sig_idx
+    for ci, c in enumerate(rest):
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                sig_end = sig_idx + ci + 1
+                break
+    if depth != 0:
+        return None
+    after_sig = text[sig_end:]
+    doc_match = re.search(
+        r'(?::\s*(?:->\s*.+?)?\s*)?(?:"""|\'\'\')(.+?)(?:"""|\'\'\')',
+        after_sig,
+        re.DOTALL,
+    )
+    if doc_match:
+        doc = doc_match.group(1).strip()
+        return doc.split("\n\n")[0].strip()
+    return None
 
 
 def _extract_params(tool_name: str, source: str) -> list[dict]:

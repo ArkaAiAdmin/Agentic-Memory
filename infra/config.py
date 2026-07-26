@@ -370,8 +370,18 @@ class WritePipelineConfig:
 class EmbeddingConfig:
     backend: str = "auto"
     model_id: str = "Potion-8M"
-    model_revision: str = ""
+    model_revision: str = "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a"
     idle_unload_seconds: int = 600
+
+
+def _validate_model_revision(revision: str) -> None:
+    """Ensure model_revision is either empty or a 40-char lowercase hex SHA."""
+    if not revision:
+        return
+    if not (len(revision) == 40 and all(c in "0123456789abcdef" for c in revision)):
+        raise ValueError(
+            f"model_revision must be a 40-char lowercase hex SHA or empty, got {revision!r}"
+        )
 
 
 @dataclass(frozen=True)
@@ -1101,6 +1111,7 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
             "MEMORY_LLM_EXTRACTION_IDLE_UNLOAD_SECONDS", "llm_extraction.idle_unload_seconds", 600, int, toml_data
         ),
     )
+    _validate_model_revision(embedding.model_revision)
 
     # ---- auto_save ----
     auto_save = AutoSaveConfig(

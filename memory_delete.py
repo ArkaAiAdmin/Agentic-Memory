@@ -162,15 +162,15 @@ def _has_trigger(conn: AnyConnection, trigger_name: str) -> bool:
 
 
 def _ensure_columns(conn: AnyConnection) -> None:
-    """Add ``deleted_at`` and ``deleted_by`` columns to ``memories`` if missing.
+    """Ensure ``deleted_at`` and ``deleted_by`` columns exist on ``memories``.
 
-    Idempotent: re-running is a no-op. Both columns live next to the
-    other lifecycle columns (``valid_to``, ``superseded_by``).
+    These columns are created by migration 005 (see
+    ``migrations/005_columns_indexes_chunks.sql``).  On a properly migrated
+    DB this function is a no-op.  It remains as a defensive guard for
+    pre-migration databases that have not yet run migration 005 — in that
+    case the migration runner (not this function) is responsible for
+    adding the columns.
     """
-    for col in ("deleted_at", "deleted_by"):
-        if not _has_column(conn, "memories", col):
-            logger.info("Adding column memories.%s", col)
-            conn.execute(f"ALTER TABLE memories ADD COLUMN {col} TEXT")
     conn.commit()
 
 

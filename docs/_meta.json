@@ -1,20 +1,20 @@
 {
-  "schema_version": 74,
-  "num_migrations": 75,
+  "schema_version": 75,
+  "num_migrations": 76,
   "num_core_tools": 24,
   "num_admin_tools": 92,
   "num_deprecated_tools": 3,
   "num_total_tools": 119,
   "num_tests": 4431,
   "num_test_files": 363,
-  "loc_production": 147663,
-  "loc_test": 112210,
-  "loc_total": 259873,
+  "loc_production": 147826,
+  "loc_test": 112233,
+  "loc_total": 260059,
   "num_cron_scripts": 55,
   "num_tables_visible": 101,
   "num_hooks": 7,
   "num_agents_ported": 6,
-  "last_verified": "2026-07-26",
+  "last_verified": "2026-07-27",
   "num_mcp_modules": 32,
   "num_test_functions": 5300,
   "provenance": {
@@ -29,7 +29,7 @@
     "truth_rank_1": "_meta.json (machine-enforced)",
     "truth_rank_2": "AGENTS.md AUTO-GEN sections (via agents_md_generator.py -> gen_doc_meta.py)",
     "truth_rank_3": "docs/MCP_SURFACE.md + docs/architecture.md (manual, cross-check via gen_schema_doc.py)",
-    "last_meta_regenerated": "2026-07-26",
+    "last_meta_regenerated": "2026-07-27",
     "num_total_tools_note": "119 = len(CORE_TOOLS) + len(ADMIN_TOOLS) + len(DEPRECATED) = 24 + 92 + 3. DEPRECATED tools are a separate tier, not a subset of ADMIN."
   }
 }

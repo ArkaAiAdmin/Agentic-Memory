@@ -12,6 +12,8 @@ import urllib.request
 from dataclasses import dataclass
 from email.mime.text import MIMEText
 
+from infra.ssrf import _ssrf_validate_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,6 +94,7 @@ def _alert_slack(webhook_url: str, severity: str, title: str, message: str) -> N
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+    _ssrf_validate_url(webhook_url)
     urllib.request.urlopen(req, timeout=10)
 
 
@@ -127,6 +130,7 @@ def _alert_pushover(user_key: str, api_token: str, severity: str, title: str, me
         data=data,
         method="POST",
     )
+    _ssrf_validate_url("https://api.pushover.net/1/messages.json")
     urllib.request.urlopen(req, timeout=10)
 
 

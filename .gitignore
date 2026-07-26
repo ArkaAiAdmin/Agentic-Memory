@@ -28,6 +28,11 @@ docs/docker_README.md
 # OS
 .DS_Store
 
+# Runtime artifacts — never commit
+.cron_model_lock/
+.drift_cron_*.json
+audit_search_pipeline.md
+
 .devfleet-worktrees/
 
 # opencode session logs

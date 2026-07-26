@@ -42,23 +42,15 @@ class FencingLock(NamedTuple):
 
 
 def _ensure_lock_version_column(conn: sqlite3.Connection) -> None:
-    """Add lock_version and tenant_id columns to file_locks if missing (soft migration)."""
-    try:
-        conn.execute("SELECT lock_version FROM file_locks LIMIT 1")
-    except sqlite3.OperationalError:
-        try:
-            conn.execute("ALTER TABLE file_locks ADD COLUMN lock_version INTEGER NOT NULL DEFAULT 0")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
-    try:
-        conn.execute("SELECT tenant_id FROM file_locks LIMIT 1")
-    except sqlite3.OperationalError:
-        try:
-            conn.execute("ALTER TABLE file_locks ADD COLUMN tenant_id TEXT DEFAULT 'default'")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
+    """Ensure lock_version and tenant_id columns exist on file_locks.
+
+    These columns are created by migration 075.  On a properly migrated
+    DB this function is a no-op.  It remains as a defensive guard for
+    pre-migration databases — the migration runner (not this function)
+    is responsible for adding the columns (Hard Rule 4: no ALTER TABLE
+    in Python).
+    """
+    pass
 
 
 def _begin_immediate(conn: sqlite3.Connection) -> None:

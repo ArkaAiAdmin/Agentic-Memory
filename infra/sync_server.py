@@ -58,6 +58,14 @@ SYNC_AUTH_TOKEN = (
     or os.environ.get("MEMORY_API_TOKEN", "").strip()
 )
 
+# A06-001 fix: opt-in hard-fail when MEMORY_SYNC_TOKEN_REQUIRED=1.
+# When enabled, the server refuses to start if SYNC_AUTH_TOKEN is
+# unset — even on loopback.  Default is OFF so local development
+# workflows keep working without a token.
+_TOKEN_REQUIRED = os.environ.get("MEMORY_SYNC_TOKEN_REQUIRED", "").lower() in (
+    "1", "true", "yes", "on",
+)
+
 # Y1 fix: configurable CORS allowlist.  Default = no CORS (empty list).
 # Set MEMORY_SYNC_CORS_ORIGINS="https://a.example,https://b.example"
 # to allow specific origins.  Never set "*" implicitly.
@@ -1630,6 +1638,21 @@ class SyncServer:
                 "env var or bind to 127.0.0.1.",
                 self.host,
             )
+        # A06-001 fix: opt-in hard-fail when MEMORY_SYNC_TOKEN_REQUIRED=1.
+        # When enabled, the server refuses to start if SYNC_AUTH_TOKEN is
+        # unset — even on loopback.  Default is OFF so local development
+        # workflows keep working without a token.
+        if _TOKEN_REQUIRED and not SYNC_AUTH_TOKEN:
+            logger.error(
+                "sync_server: MEMORY_SYNC_TOKEN_REQUIRED=1 is set but "
+                "MEMORY_SYNC_TOKEN is empty. Refusing to start. Set "
+                "MEMORY_SYNC_TOKEN to a strong random value (32+ bytes) "
+                "or unset MEMORY_SYNC_TOKEN_REQUIRED to allow tokenless "
+                "loopback operation.",
+            )
+            self._server.server_close()
+            self._server = None
+            return False
         # SEC-1 fix (2026-06-22): if no CORS origins are configured
         # and the server is bound to a non-loopback address, log a
         # warning so operators see it in their startup output.  We

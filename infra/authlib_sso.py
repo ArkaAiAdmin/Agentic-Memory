@@ -38,6 +38,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
+from infra.ssrf import _ssrf_validate_url
+
 try:
     import requests
 except ImportError:
@@ -364,6 +366,7 @@ def _select_jwk(jwks: Dict[str, Any], kid: Optional[str]) -> Dict[str, Any]:
 
 
 def fetch_jwks(jwks_url: str, timeout: float = 10.0) -> Dict[str, Any]:
+    _ssrf_validate_url(jwks_url)
     resp = requests.get(jwks_url, timeout=timeout)
     resp.raise_for_status()
     jwks: Dict[str, Any] = resp.json()
@@ -610,6 +613,7 @@ class IdPMetadataCache:
             cached = cls.get(conn, idp_id)
             if cached:
                 return cached
+        _ssrf_validate_url(metadata_url)
         resp = requests.get(metadata_url, timeout=timeout)
         resp.raise_for_status()
         xml_text = resp.text

@@ -163,13 +163,14 @@ def db_up() -> bool:
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Agentic Memory Prometheus exporter")
     p.add_argument("--port", type=int, default=9464, help="HTTP port (default: 9464)")
+    p.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
     args = p.parse_args()
 
     DB = resolve_active_memory_dir() / "memory.db"
     print(f"[metrics_server] DB: {DB}", file=sys.stderr)
-    print(f"[metrics_server] Listening on :{args.port}/metrics", file=sys.stderr)
+    print(f"[metrics_server] Listening on {args.host}:{args.port}/metrics", file=sys.stderr)
 
-    server = HTTPServer(("0.0.0.0", args.port), MetricsHandler)
+    server = HTTPServer((args.host, args.port), MetricsHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
