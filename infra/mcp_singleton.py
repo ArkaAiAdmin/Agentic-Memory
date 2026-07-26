@@ -26,6 +26,7 @@ import atexit
 import io
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -33,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 _agent_id = ""
 _MCP_LOCK_FILENAME = ".mcp_server.lock"
+
+_MAX_STALE_RETRIES = 4
+_STALE_RETRY_INITIAL_BACKOFF = 0.5
 
 _lock_fd: Optional[io.TextIOWrapper] = None
 _lock_path: Optional[Path] = None
@@ -81,8 +85,8 @@ def _check_pid_alive(pid: int) -> bool:
 def _try_override_stale_lock() -> bool:
     """Try to acquire the lock when the previous owner's PID is dead.
 
-    Uses a blocking acquire (up to 3 attempts) to avoid racing another
-    startup that also detected the stale PID at the same time.
+    Uses a blocking acquire with bounded retry (up to 5 attempts) to avoid
+    racing another startup that also detected the stale PID at the same time.
     """
     global _lock_fd, _lock_path
 
@@ -182,24 +186,58 @@ def acquire_mcp_singleton() -> bool:
             pass
     _lock_fd = None
 
-    if _lock_path is not None and _lock_path.exists():
+    # Retry loop for stale-lock override: when two instances start
+    # simultaneously and both detect a dead PID, the loser should not
+    # exit immediately — it retries with backoff, re-checking PID
+    # liveness each time in case the winner crashes during init.
+    for retry in range(1, _MAX_STALE_RETRIES + 1):
+        if _lock_path is None or not _lock_path.exists():
+            logger.info("mcp_singleton: lock file gone, overriding stale lock")
+            return _try_override_stale_lock()
+
         try:
             existing_pid_str = _lock_path.read_text().strip()
-            if not existing_pid_str:
-                # Empty lock file — previous process died before writing PID
-                logger.info("mcp_singleton: empty lock file — overriding stale lock")
-                return _try_override_stale_lock()
-            existing_pid = int(existing_pid_str)
-            if not _check_pid_alive(existing_pid):
-                logger.info(
-                    "mcp_singleton: PID %s is dead — overriding stale lock",
-                    existing_pid,
-                )
-                return _try_override_stale_lock()
-        except (ValueError, OSError, Exception) as pid_exc:
-            # Can't parse PID — treat as stale
-            logger.info("mcp_singleton: PID parse failed (%s) — overriding stale lock", pid_exc)
+        except OSError as pid_exc:
+            logger.info("mcp_singleton: cannot read lock file (%s) — overriding", pid_exc)
             return _try_override_stale_lock()
+
+        if not existing_pid_str:
+            # Empty lock file — previous process died before writing PID
+            logger.info("mcp_singleton: empty lock file — overriding stale lock (attempt %d)", retry)
+            return _try_override_stale_lock()
+
+        try:
+            existing_pid = int(existing_pid_str)
+        except ValueError:
+            logger.info("mcp_singleton: PID parse failed — overriding stale lock (attempt %d)", retry)
+            return _try_override_stale_lock()
+
+        if not _check_pid_alive(existing_pid):
+            logger.info(
+                "mcp_singleton: PID %s is dead — overriding stale lock (attempt %d)",
+                existing_pid,
+                retry,
+            )
+            return _try_override_stale_lock()
+
+        # PID is alive — another instance is running. If this is not our
+        # last retry, wait with exponential backoff and re-check.
+        if retry < _MAX_STALE_RETRIES:
+            backoff = min(_STALE_RETRY_INITIAL_BACKOFF * (2 ** (retry - 1)), 5.0)
+            logger.info(
+                "mcp_singleton: PID %s is alive, retrying stale override in %.1fs (attempt %d/%d)",
+                existing_pid,
+                backoff,
+                retry,
+                _MAX_STALE_RETRIES,
+            )
+            time.sleep(backoff)
+        else:
+            logger.info(
+                "mcp_singleton: PID %s is alive after %d attempts — giving up",
+                existing_pid,
+                _MAX_STALE_RETRIES,
+            )
 
     return False
 
