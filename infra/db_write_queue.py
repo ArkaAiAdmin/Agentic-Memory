@@ -7,7 +7,6 @@ lock contention and database locks in concurrent multithreaded workflows.
 
 from __future__ import annotations
 
-import atexit
 import concurrent.futures
 import itertools
 import logging
@@ -597,6 +596,28 @@ class SQLiteWriteQueue:
                 with self._pending_lock:
                     self._pending_futures.discard(future)
                 self._queue.task_done()
+
+    def restart(self, timeout: float = 5.0) -> None:
+        """Stop the current worker thread and start a fresh one in-place.
+
+        Preserves the same object identity so any existing references to
+        this queue (e.g. from other modules that imported the singleton)
+        remain valid and use the new worker thread immediately.
+        """
+        self.stop(timeout=timeout)
+        self._shutdown.clear()
+        self._queue = queue.Queue()
+        self._sessions.clear()
+        self._dead_sessions.clear()
+        self._session_counter = itertools.count(1)
+        self._pending_futures.clear()
+        self._path_conns.clear()
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            daemon=True,
+            name="SQLiteWriteQueueThread",
+        )
+        self._thread.start()
 
     def stop(self, timeout: float = 30.0) -> None:
         """Gracefully stop the background worker thread.

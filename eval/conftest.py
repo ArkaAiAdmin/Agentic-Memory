@@ -756,16 +756,17 @@ def reset_auto_save_state():
         from infra import db_write_queue
 
         q = getattr(db_write_queue, "sqlite_write_queue", None)
-        if q is not None:
-            # Wait a short time for any inflight task, then stop+recreate.
-            import threading
+        if q is not None and hasattr(q, "restart"):
+            try:
+                q.restart(timeout=5.0)
+            except Exception:
+                pass
+        elif q is not None and hasattr(q, "stop"):
             if q._thread is not None and q._thread.is_alive():
                 try:
                     q.stop(timeout=5.0)
                 except Exception:
                     pass
-            # Recreate the singleton for the next test.
-            db_write_queue.sqlite_write_queue = db_write_queue.SQLiteWriteQueue()
     except Exception:
         pass
 
