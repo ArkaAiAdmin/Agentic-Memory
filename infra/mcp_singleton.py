@@ -51,14 +51,31 @@ def _get_memory_dir() -> Path:
 
 
 def _check_pid_alive(pid: int) -> bool:
-    """Check if a PID is alive using os.kill(pid, 0)."""
+    """Check if a PID is alive AND not a zombie.
+
+    Uses os.kill(pid, 0) for the standard liveness check, PLUS
+    verifies the process is not a zombie (Z state). Zombie processes
+    pass os.kill(pid, 0) because their PID is still in the table,
+    but they are dead and their lock is stale.
+    """
     try:
         os.kill(pid, 0)
-        return True
     except OSError:
         return False
     except Exception:
         return False
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["ps", "-o", "state=", "-p", str(pid)],
+            capture_output=True, text=True, timeout=2,
+        )
+        state = result.stdout.strip()
+        if state == "Z" or state == "Z+":
+            return False
+    except Exception:
+        pass
+    return True
 
 
 def _try_override_stale_lock() -> bool:
