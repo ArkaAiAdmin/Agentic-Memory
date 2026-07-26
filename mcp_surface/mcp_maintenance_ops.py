@@ -751,7 +751,7 @@ def _run_pipeline_health(json_output: bool = False) -> str:
     """Run cron/cron_pipeline_health.py and return its output."""
     import subprocess, sys
     _script = str(
-        Path(__file__).resolve().parent / "cron" / "cron_pipeline_health.py"
+        Path(__file__).resolve().parent.parent / "cron" / "cron_pipeline_health.py"
     )
     try:
         _result = subprocess.run(
