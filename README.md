@@ -172,14 +172,14 @@ agentic-memory/
 ├── cron/                        # 47+ cron jobs + consolidated scheduler
 ├── hooks/                       # 6 lifecycle hooks
 ├── migrations/                  # 57 reversible migrations
-├── eval/                        # 4,766+ tests
+├── eval/                        # 362 test files, 5,294+ test functions
 ├── ts-sdk/                      # TypeScript SDK
 ├── mcp_*.py                     # 31 MCP modules
 ├── mcp_health.py                # System health MCP tool
 └── dashboard.py                 # Streamlit observability
 ```
 
-**Production stats:** ~110K LOC, 297 test files, 4,766+ test functions, schema v56, 57 reversible migrations, 17 CORE MCP tools, 1 consolidated scheduler, 6 lifecycle hooks.
+**Production stats:** ~147K LOC, 362 test files, 5,294+ test functions, schema v74, 150 reversible migrations, 7 CORE MCP tools, 1 consolidated scheduler, 7 lifecycle hooks.
 
 ---
 
@@ -323,7 +323,7 @@ pip install agentic-memory[all]         # Everything
 | **LangChain** | Yes | Yes | Yes | Yes |
 | **CrewAI** | Yes | Yes | Yes | No |
 | **OKF support** | Yes | No | No | No |
-| **Test coverage** | 4,766+ tests | ~500 | ~2,000 | ~300 |
+| **Test coverage** | 5,294+ tests | ~500 | ~2,000 | ~300 |
 | **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 
 ---
