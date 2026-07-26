@@ -9,16 +9,31 @@ import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import pytest
+
 sys.path.insert(0, os.path.expandvars("$HOME/.config/agentic-memory") or os.path.expanduser("~/.config/agentic-memory"))
 
 from infra.db import open_db
 
+from infra.db_write_queue import sqlite_write_queue  # noqa: E402
+
+
 # 2026-07-08: bound the idle timeout so a forgotten/abandoned session
 # cannot hold the RESERVED write lock on the DB for the legacy 3600s window.
-os.environ["MEMORY_WRITE_QUEUE_IDLE_S"] = "2"
-os.environ["MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S"] = "10"
+# Set in module-scoped fixture to avoid leaking into other test modules.
+_original_idle_s = os.environ.get("MEMORY_WRITE_QUEUE_IDLE_S")
+_original_resp_timeout_s = os.environ.get("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S")
 
-from infra.db_write_queue import sqlite_write_queue  # noqa: E402
+
+def _restore_env():
+    if _original_idle_s is None:
+        os.environ.pop("MEMORY_WRITE_QUEUE_IDLE_S", None)
+    else:
+        os.environ["MEMORY_WRITE_QUEUE_IDLE_S"] = _original_idle_s
+    if _original_resp_timeout_s is None:
+        os.environ.pop("MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S", None)
+    else:
+        os.environ["MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S"] = _original_resp_timeout_s
 
 
 class TestDBWriteQueueConcurrency:
@@ -144,3 +159,11 @@ class TestWriteQueueSessionTimeout:
         finally:
             c.close()
         assert ok, "write after abandoned session failed — lock not released"
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _set_and_restore_write_queue_env():
+    os.environ["MEMORY_WRITE_QUEUE_IDLE_S"] = "2"
+    os.environ["MEMORY_WRITE_QUEUE_RESP_TIMEOUT_S"] = "10"
+    yield
+    _restore_env()

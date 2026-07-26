@@ -285,6 +285,7 @@ class SQLiteWriteQueue:
         self._pending_futures: set[concurrent.futures.Future] = set()
         self._pending_lock = threading.Lock()
         self._path_conns: dict[Path, sqlite3.Connection] = {}
+        self._session_cmd_queues: dict[int, queue.Queue] = {}
 
     def _get_or_create_session_conn(self, session_id: int, db_path: Path) -> sqlite3.Connection:
         with self._sessions_lock:
@@ -423,20 +424,20 @@ class SQLiteWriteQueue:
                     else:
                         cmd_queue, resp_queue = payload
                         session_id = id(cmd_queue)
+                    self._session_cmd_queues[session_id] = cmd_queue
                     with db_path_flock(db_path):
                         conn = self._get_or_create_session_conn(session_id, db_path)
                     try:
                         future.set_result(True)
                     except Exception as e:
                         future.set_exception(e)
+                        self._session_cmd_queues.pop(session_id, None)
                         continue
 
                     idle_timeout_env = float(os.environ.get("MEMORY_WRITE_QUEUE_IDLE_S", "300.0"))
+                    idle_deadline = time.time() + idle_timeout_env
                     while True:
-                        timeout = idle_timeout_env
-                        try:
-                            cmd = cmd_queue.get(timeout=timeout)
-                        except queue.Empty:
+                        if self._shutdown.is_set():
                             with db_path_flock(db_path):
                                 if conn.in_transaction:
                                     try:
@@ -444,7 +445,25 @@ class SQLiteWriteQueue:
                                     except Exception:
                                         pass
                                 self._close_session(session_id)
+                            self._session_cmd_queues.pop(session_id, None)
                             break
+                        remaining = idle_deadline - time.time()
+                        if remaining <= 0:
+                            with db_path_flock(db_path):
+                                if conn.in_transaction:
+                                    try:
+                                        conn.rollback()
+                                    except Exception:
+                                        pass
+                                self._close_session(session_id)
+                            self._session_cmd_queues.pop(session_id, None)
+                            break
+                        try:
+                            cmd = cmd_queue.get(timeout=min(0.5, max(remaining, 0.1)))
+                        except queue.Empty:
+                            continue
+
+                        idle_deadline = time.time() + idle_timeout_env
 
                         if cmd is None:
                             with db_path_flock(db_path):
@@ -456,7 +475,11 @@ class SQLiteWriteQueue:
                                     except Exception:
                                         pass
                                 self._close_session(session_id)
-                                resp_queue.put(("success", None))
+                            self._session_cmd_queues.pop(session_id, None)
+                            try:
+                                resp_queue.put(("success", None), timeout=1.0)
+                            except Exception:
+                                pass
                             break
 
                         action, act_payload = cmd
@@ -609,9 +632,9 @@ class SQLiteWriteQueue:
         self._queue = queue.Queue()
         self._sessions.clear()
         self._dead_sessions.clear()
-        self._session_counter = itertools.count(1)
         self._pending_futures.clear()
         self._path_conns.clear()
+        self._session_cmd_queues.clear()
         self._thread = threading.Thread(
             target=self._run_loop,
             daemon=True,
@@ -646,6 +669,13 @@ class SQLiteWriteQueue:
             self._queue.put(None)
         except Exception:
             pass
+        # Forcefully interrupt any active sessions blocked on cmd_queue.get()
+        with self._sessions_lock:
+            for cmd_queue in list(self._session_cmd_queues.values()):
+                try:
+                    cmd_queue.put_nowait(None)
+                except Exception:
+                    pass
         self._thread.join(timeout=timeout)
 
 
