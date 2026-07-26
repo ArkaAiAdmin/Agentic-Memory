@@ -336,6 +336,7 @@ class SearchConfig:
     vec_rebuild_adaptive: bool = True
     ctr_data_window_days: int = 90
     exploration_mode: str = "off"
+    search_compute_budget_ms: float = 200.0
 
 
 @dataclass(frozen=True)
@@ -936,6 +937,9 @@ def _build_config_from_toml(toml_data: dict) -> MemoryConfig:
         ),
         exploration_mode=_b(
             "MEMORY_EXPLORATION_MODE", "search.exploration_mode", "off", str, toml_data
+        ),
+        search_compute_budget_ms=_b(
+            "MEMORY_SEARCH_COMPUTE_BUDGET_MS", "search.search_compute_budget_ms", 200.0, float, toml_data
         ),
     )
 

@@ -150,7 +150,7 @@ def _build_search_config() -> SearchConfig:
             getattr(cfg, "embedding_threshold_large", 0.20), 0.20
         ),
         search_compute_budget_ms=_coerce_float(
-            getattr(cfg, "search_compute_budget_ms", 200.0), 200.0
+            getattr(cfg.search, "search_compute_budget_ms", 200.0), 200.0
         ),
     )
 
