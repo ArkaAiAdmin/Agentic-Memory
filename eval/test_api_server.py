@@ -159,7 +159,7 @@ class TestAPIServer(unittest.TestCase):
             captured["is_global"] = kwargs.get("is_global")
             return "fake-note-id-" + str(kwargs.get("category", "x"))
 
-        MemoryClient.save = fake_save
+        MemoryClient.save = fake_save  # type: ignore[assignment]
         try:
             status, data = self._http_request("/api/v1/memories", "POST", {
                 "content": "default is_global regression check",
@@ -291,9 +291,20 @@ class TestAPIServer(unittest.TestCase):
         })
         self.assertEqual(status, 201)
         
-        # The outbox broadaster should query the outbox table and send to socket
-        broadcast_response = recv_ws_text()
-        event_obj = json.loads(broadcast_response)
+        # The outbox broadcaster polls memory_events every 200ms.
+        # Poll with retries to avoid timing races.
+        sock.settimeout(0.5)
+        broadcast_payload = ""
+        for _attempt in range(10):
+            try:
+                broadcast_payload = recv_ws_text()
+                if broadcast_payload:
+                    break
+            except _socket.timeout:
+                continue
+        self.assertTrue(broadcast_payload, "WS broadcast timed out after 5s")
+        sock.settimeout(None)
+        event_obj = json.loads(broadcast_payload)
         self.assertEqual(event_obj["event"], "memory_event")
         self.assertIn(event_obj["data"]["event_type"], ("memory_added", "memory_updated"))
         self.assertEqual(event_obj["data"]["payload"]["content"], "Broadcast test memory item")

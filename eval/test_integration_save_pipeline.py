@@ -31,6 +31,7 @@ INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
 
 
+from infra.db import AnyConnection
 from infra.memory_common import open_db, connection_pool
 from save_pipeline import (
     save_memory,
@@ -39,7 +40,7 @@ from save_pipeline import (
 )
 
 
-def _make_db(path: Path) -> sqlite3.Connection:
+def _make_db(path: Path) -> AnyConnection:
     db = sqlite3.connect(str(path))
     db.execute("PRAGMA journal_mode=WAL;")
     db.execute("PRAGMA foreign_keys=ON;")
@@ -47,7 +48,7 @@ def _make_db(path: Path) -> sqlite3.Connection:
     return db
 
 
-def _init_schema(db: sqlite3.Connection) -> None:
+def _init_schema(db: AnyConnection) -> None:
     db.execute("""
         CREATE TABLE IF NOT EXISTS memories (
             id            TEXT PRIMARY KEY,
@@ -136,13 +137,15 @@ def _init_schema(db: sqlite3.Connection) -> None:
     ensure_adaptive_schema(db)
 
 
-def _count(db: sqlite3.Connection, table: str, where: str = "1=1", params=()) -> int:
-    return db.execute(
+def _count(db: AnyConnection, table: str, where: str = "1=1", params=()) -> int:
+    row = db.execute(
         f"SELECT COUNT(*) FROM [{table}] WHERE {where}", params
-    ).fetchone()[0]
+    ).fetchone()
+    assert row is not None
+    return row[0]
 
 
-def _has_table(db: sqlite3.Connection, name: str) -> bool:
+def _has_table(db: AnyConnection, name: str) -> bool:
     return (
         db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,)
@@ -436,6 +439,7 @@ class TestSaveMemoryDBMemories(SavePipelineFixture, unittest.TestCase):
                 "SELECT content FROM memories WHERE id=?", (note_id,)
             ).fetchone()
         self.assertIsNotNone(row)
+        assert row is not None
         self.assertIn("UniqueContentMarker", row[0])
 
     def test_tags_stored_as_json(self):
@@ -445,6 +449,8 @@ class TestSaveMemoryDBMemories(SavePipelineFixture, unittest.TestCase):
             row = db.execute(
                 "SELECT tags FROM memories WHERE id=?", (note_id,)
             ).fetchone()
+        self.assertIsNotNone(row)
+        assert row is not None
         tags = json.loads(row[0])
         self.assertIn("tag1", tags)
         self.assertIn("tag2", tags)
@@ -456,6 +462,7 @@ class TestSaveMemoryDBMemories(SavePipelineFixture, unittest.TestCase):
             row = db.execute(
                 "SELECT category FROM memories WHERE id=?", (note_id,)
             ).fetchone()
+        assert row is not None
         self.assertEqual(row[0], "projects")
 
     def test_pinned_stored(self):
@@ -465,6 +472,7 @@ class TestSaveMemoryDBMemories(SavePipelineFixture, unittest.TestCase):
             row = db.execute(
                 "SELECT pinned FROM memories WHERE id=?", (note_id,)
             ).fetchone()
+        assert row is not None
         self.assertEqual(row[0], 1)
 
     def test_created_at_and_updated_at_set(self):
@@ -474,6 +482,7 @@ class TestSaveMemoryDBMemories(SavePipelineFixture, unittest.TestCase):
             row = db.execute(
                 "SELECT created_at, updated_at FROM memories WHERE id=?", (note_id,)
             ).fetchone()
+        assert row is not None
         self.assertIsNotNone(row[0])
         self.assertIsNotNone(row[1])
 
@@ -484,6 +493,7 @@ class TestSaveMemoryDBMemories(SavePipelineFixture, unittest.TestCase):
             row = db.execute(
                 "SELECT fitness_score FROM memories WHERE id=?", (note_id,)
             ).fetchone()
+        assert row is not None
         self.assertIsNotNone(row[0])
         self.assertGreaterEqual(row[0], 0.0)
         self.assertLessEqual(row[0], 1.0)
@@ -518,8 +528,9 @@ class TestSaveMemoryUpsert(SavePipelineFixture, unittest.TestCase):
             row = db.execute(
                 "SELECT content FROM memories WHERE id=?", (note_id,)
             ).fetchone()
-            emb_after = _count(db, "memory_embeddings", "memory_id=?", (note_id,))
-            chunks_after = _count(db, "memory_chunks", "parent_id=?", (note_id,))
+        assert row is not None
+        emb_after = _count(db, "memory_embeddings", "memory_id=?", (note_id,))
+        chunks_after = _count(db, "memory_chunks", "parent_id=?", (note_id,))
         self.assertIn("Updated", row[0])
         if embed_avail:
             self.assertEqual(emb_after, 1, "Upsert should not delete embedding")
@@ -617,6 +628,7 @@ class TestSaveSubsystemEmbeddings(SavePipelineFixture, unittest.TestCase):
                 (note_id,),
             ).fetchone()
         self.assertIsNotNone(row, "Embedding should exist")
+        assert row is not None
         self.assertGreater(len(row[0]), 0, "Embedding blob should not be empty")
         self.assertGreater(row[1], 0, "Embedding dim should be > 0")
 
@@ -636,6 +648,7 @@ class TestSaveSubsystemEmbeddings(SavePipelineFixture, unittest.TestCase):
             ).fetchone()
         self.assertIsNotNone(e1)
         self.assertIsNotNone(e2)
+        assert e1 is not None and e2 is not None
         self.assertNotEqual(e1[0], e2[0])
 
 
@@ -693,6 +706,8 @@ class TestSaveSubsystemFacts(SavePipelineFixture, unittest.TestCase):
         )
 
     def test_facts_have_confidence(self):
+        if os.environ.get("MEMORY_LLM_EXTRACTION", "1") == "0":
+            self.skipTest("MEMORY_LLM_EXTRACTION=0: no KG facts extracted")
         result, slug = self.save(
             content="Python is a programming language.",
         )
@@ -703,6 +718,7 @@ class TestSaveSubsystemFacts(SavePipelineFixture, unittest.TestCase):
                 (note_id,),
             ).fetchone()
         self.assertIsNotNone(row)
+        assert row is not None
         self.assertGreater(row[0], 0.0)
 
 
@@ -990,12 +1006,16 @@ class TestRecalculateFitnessScores(SavePipelineFixture, unittest.TestCase):
         with open_db(self.db_path) as db:
             s1 = db.execute(
                 "SELECT fitness_score FROM memories WHERE id=?", (note_id,)
-            ).fetchone()[0]
+            ).fetchone()
+        assert s1 is not None
+        s1 = s1[0]
         _recalculate_fitness_scores(self.db_path, memory_ids=[note_id])
         with open_db(self.db_path) as db:
             s2 = db.execute(
                 "SELECT fitness_score FROM memories WHERE id=?", (note_id,)
-            ).fetchone()[0]
+            ).fetchone()
+        assert s2 is not None
+        s2 = s2[0]
         self.assertAlmostEqual(s1, s2, places=10)
 
 
@@ -1151,7 +1171,9 @@ class TestSaveMemoryPinnedToggling(SavePipelineFixture, unittest.TestCase):
         with open_db(self.db_path) as db:
             p1 = db.execute(
                 "SELECT pinned FROM memories WHERE id=?", (f"lessons/{slug}",)
-            ).fetchone()[0]
+            ).fetchone()
+        assert p1 is not None
+        p1 = p1[0]
         self.assertEqual(p1, 1)
 
         r2 = save_memory(
@@ -1166,7 +1188,9 @@ class TestSaveMemoryPinnedToggling(SavePipelineFixture, unittest.TestCase):
         with open_db(self.db_path) as db:
             p2 = db.execute(
                 "SELECT pinned FROM memories WHERE id=?", (f"lessons/{slug}",)
-            ).fetchone()[0]
+            ).fetchone()
+        assert p2 is not None
+        p2 = p2[0]
         self.assertEqual(p2, 0)
 
 
@@ -1323,14 +1347,14 @@ class TestSaveMemoryLockOrder(SavePipelineFixture, unittest.TestCase):
             return original_pool_get(path, timeout=timeout)
 
         try:
-            sp._acquire_lock = mock_acquire_lock
-            connection_pool.get = mock_pool_get
+            sp._acquire_lock = mock_acquire_lock  # type: ignore[attr-defined]
+            connection_pool.get = mock_pool_get  # type: ignore[assignment]
             result, _slug = self.save(
                 content="CQRS no-flock test",
                 title_slug="cqrs-no-flock",
             )
         finally:
-            sp._acquire_lock = original_acquire_lock
+            sp._acquire_lock = original_acquire_lock  # type: ignore[attr-defined]
             connection_pool.get = original_pool_get
 
         lock_calls = [c for c in call_order if c[0] == "file_lock"]

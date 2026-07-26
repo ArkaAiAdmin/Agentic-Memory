@@ -43,8 +43,8 @@ class TestCrdtDominance(unittest.TestCase):
     def test_concurrent(self):
         self.assertTrue(concurrent({"a": 2, "b": 1}, {"a": 1, "b": 2}))
         self.assertFalse(concurrent({"a": 2}, {"a": 1}))
-        # Equal vectors are concurrent — neither dominates.
-        self.assertTrue(concurrent({"a": 1, "b": 1}, {"a": 1, "b": 1}))
+        # Equal vectors are NOT concurrent — they have identical causal history.
+        self.assertFalse(concurrent({"a": 1, "b": 1}, {"a": 1, "b": 1}))
         self.assertFalse(concurrent({}, {}))
 
 
