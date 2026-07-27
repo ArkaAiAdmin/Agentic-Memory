@@ -24,6 +24,7 @@ import sqlite3
 import sys
 import tempfile
 import logging
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 import time
@@ -123,15 +124,16 @@ def _seed_sessions(db_path: Path, sessions: list[list[dict]], session_ids: list[
             observed_at = (
                 _parse_haystack_date(session_dates[i])
                 if session_dates and i < len(session_dates)
-                else "datetime('now')"
+                else datetime.now(timezone.utc).isoformat()
             )
+            now = datetime.now(timezone.utc).isoformat()
             conn.execute(
                 """INSERT OR REPLACE INTO memories
                    (id, content, source_file, category, tags, created_at, updated_at,
-                    observed_at, pinned, importance, tenant_id)
-                   VALUES (?, ?, ?, 'sessions', '[]', datetime('now'), datetime('now'),
+                   observed_at, pinned, importance, tenant_id)
+                   VALUES (?, ?, ?, 'sessions', '[]', ?, ?,
                            ?, 0, 3, 'longmemeval')""",
-                (sid, content, f"longmemeval/{sid}", observed_at),
+                (sid, content, f"longmemeval/{sid}", observed_at, now, now, observed_at),
             )
         conn.commit()
         # Rebuild FTS index

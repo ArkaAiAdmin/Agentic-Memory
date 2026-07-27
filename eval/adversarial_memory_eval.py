@@ -340,7 +340,7 @@ def run_adversarial_eval() -> dict:
     conn.close()
 
     print("Ingestion complete. Warming up search encoders...")
-    _ = search_memories(db_path=db_path, query="warmup test", tenant_id=dataset["tenant_id"], category="sessions", limit=1)
+    _ = search_memories(db_path, query="warmup test", tenant_id=dataset["tenant_id"], category="sessions", limit=1)
     print("Warmup complete. Evaluating 4 hard tracks...\n")
 
     results = []

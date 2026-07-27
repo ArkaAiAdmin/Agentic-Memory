@@ -34,7 +34,30 @@ from infra.embedding_search import (
     _content_hash,
     chunk_memory,
 )
-from rebuild_vec_index import rebuild_vec_index, rebuild_chunk_vec_index
+
+
+def _rebuild_vec_index(db_path: str, force: bool = False):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "rebuild_vec_index", str(REPO_ROOT / "rebuild_vec_index.py")
+    )
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod.rebuild_vec_index(db_path, force=force)
+
+
+def _rebuild_chunk_vec_index(db_path: str, force: bool = False):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "rebuild_vec_index", str(REPO_ROOT / "rebuild_vec_index.py")
+    )
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod.rebuild_chunk_vec_index(db_path, force=force)
 
 
 def _build_corpus(size: int) -> list[dict]:
@@ -233,7 +256,7 @@ def run_bench(quick: bool = False) -> dict:
             # Rebuild memory-level ANN index
             t0 = time.time()
             try:
-                rebuild_vec_index(db_path, force=True)
+                _rebuild_vec_index(db_path, force=True)
             except Exception as e:
                 print(f"Warning: rebuild_vec_index failed for size={size}: {e}", file=sys.stderr)
             mem_idx_s = time.time() - t0
@@ -241,7 +264,7 @@ def run_bench(quick: bool = False) -> dict:
             # Rebuild chunk-level ANN index
             t0 = time.time()
             try:
-                rebuild_chunk_vec_index(db_path, force=True)
+                _rebuild_chunk_vec_index(db_path, force=True)
             except Exception as e:
                 print(f"Warning: rebuild_chunk_vec_index failed for size={size}: {e}", file=sys.stderr)
             chunk_idx_s = time.time() - t0

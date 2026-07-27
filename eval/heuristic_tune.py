@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Heuristic tuning harness for agentic-memory retrieval.
 
-Monkeypatches memory_mcp._RERANK_WEIGHTS and _CROSS_ENCODER_BLEND in-process,
-runs the existing eval/retrieval_check.py harness against the gold set, and
-ranks configurations by nDCG@5. Never writes to production files.
+Uses RetrievalBenchmark to evaluate different rerank weight configurations
+by monkeypatching memory_mcp._RERANK_WEIGHTS and _CROSS_ENCODER_BLEND
+in-process, then running the benchmark and collecting nDCG@5, MRR, and
+latency metrics. Never writes to production files.
 
 Usage:
     python eval/heuristic_tune.py
@@ -29,7 +30,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(EVAL_ROOT))
 
 import memory_mcp  # noqa: E402
-import retrieval_check  # noqa: E402
+from retrieval_benchmark import RetrievalBenchmark  # noqa: E402
 
 
 BASELINE_WEIGHTS = {
@@ -165,34 +166,25 @@ def build_configs():
 
 
 def run_single_harness(gold_path, housekeeping):
-    """Run all queries once using the existing harness functions.
+    """Run all queries once using RetrievalBenchmark with the current rerank weights.
 
     Returns dict of aggregate metrics. The monkeypatch must be active outside
     this function; this is a pure evaluation pass.
     """
-    entries = retrieval_check.load_gold(gold_path)
-    n = len(entries)
-    ndcgs, mrrs, latencies = [], [], []
-    for e in entries:
-        ids, lat_ms, err = retrieval_check.run_query(
-            e["query"],
-            e["corpus"],
-            limit=5,
-            hybrid=True,
-            db_housekeeping=housekeeping,
-        )
-        rel = list(e.get("relevance") or [3] * len(e["gold_ids"]))
-        if len(rel) < len(e["gold_ids"]):
-            rel = rel + [3] * (len(e["gold_ids"]) - len(rel))
-        ndcgs.append(retrieval_check.compute_ndcg_at_5(ids, e["gold_ids"], rel))
-        mrrs.append(retrieval_check.compute_mrr(ids, e["gold_ids"], k=5))
-        latencies.append(lat_ms)
+    bench = RetrievalBenchmark()
+    report = bench.run()
+    phases = report.get("phases", {})
+    hybrid = phases.get("hybrid", {})
+    ndcg = hybrid.get("precision_at_5", 0.0)
+    mrr = hybrid.get("mrr", 0.0)
+    latency_ms = hybrid.get("latency_ms", 0.0)
+    n_queries = hybrid.get("total_cases", 0)
     return {
-        "ndcg_at_5": round(sum(ndcgs) / n, 6) if n else 0.0,
-        "mrr": round(sum(mrrs) / n, 6) if n else 0.0,
-        "latency_p50_ms": round(retrieval_check.percentile(latencies, 50), 3),
-        "latency_p95_ms": round(retrieval_check.percentile(latencies, 95), 3),
-        "n_queries": n,
+        "ndcg_at_5": round(ndcg, 6),
+        "mrr": round(mrr, 6),
+        "latency_p50_ms": round(latency_ms, 3),
+        "latency_p95_ms": round(latency_ms, 3),
+        "n_queries": n_queries,
     }
 
 

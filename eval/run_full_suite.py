@@ -10,6 +10,7 @@ stable across pytest output format changes.
 """
 
 import os
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -49,12 +50,12 @@ def _get_template_db() -> Path:
         conn = sqlite3.connect(str(_template_db))
         conn.execute("PRAGMA journal_mode=WAL")
         from infra.db_migrations import run_schema_setup
+        from fact import ensure_facts_schema
         run_schema_setup(conn)
+        ensure_facts_schema(conn)
         conn.commit()
         conn.close()
     return _template_db
-
-import sqlite3
 
 summary = {
     "passed": 0,

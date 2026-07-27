@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Pre-build an eval DB with full indexes for golden set."""
-import json, os, sqlite3, sys, time, tempfile
+import json, os, sqlite3, sys, tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 INSTALL_DIR = Path(__file__).resolve().parent.parent
@@ -42,7 +43,7 @@ for mem in memories:
     content = mem.get("content", "")
     tags = json.dumps(mem.get("tags", []))
     source_file = nid
-    created = time.time()
+    created = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT OR IGNORE INTO memories (id, content, source_file, tags, created_at) VALUES (?, ?, ?, ?, ?)",
         (nid, content, source_file, tags, created),

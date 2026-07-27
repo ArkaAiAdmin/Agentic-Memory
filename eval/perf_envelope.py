@@ -33,6 +33,7 @@ import sqlite3
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -44,7 +45,7 @@ from typing import Any, Callable
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PERF_ROOT = Path("/tmp/perf_envelope_test")
+PERF_ROOT = Path(tempfile.gettempdir()) / "perf_envelope_test"
 RESULTS_PATH = REPO_ROOT / "eval" / "results" / "perf-envelope.json"
 VENV_PY = REPO_ROOT / "venv" / "bin" / "python"
 REBUILD_SCRIPT = REPO_ROOT / "rebuild_index.py"

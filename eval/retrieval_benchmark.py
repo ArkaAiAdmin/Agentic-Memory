@@ -35,7 +35,8 @@ if str(INSTALL_DIR) not in sys.path:
     sys.path.insert(0, str(INSTALL_DIR))
 
 from infra.memory_common import open_db  # noqa: E402
-from infra.infrastructure import GLOBAL_MEM_DIR  # noqa: E402
+from infra.memory_config import get_memory_paths  # noqa: E402
+_, _, GLOBAL_MEM_DIR = get_memory_paths()
 from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 
 # ---------------------------------------------------------------------------

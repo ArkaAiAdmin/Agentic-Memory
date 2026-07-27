@@ -112,58 +112,11 @@ def _backfill_indexes(conn: sqlite3.Connection, db_path: Path) -> None:
     rows = conn.execute(
         "SELECT id, content FROM memories WHERE content IS NOT NULL AND content != ''"
     ).fetchall()
-    total = len(rows)
-    if total == 0:
-        return
-
-    print(f"  Backfilling {total} memories...")
-
-    # Phase 1: Chunks
-    print("  Indexing chunks...")
-    from search.chunk_index import _qw5_ensure_schema, _qw5_index_chunks_for
-    _qw5_ensure_schema(conn)
-    for i, (mid, content) in enumerate(rows):
-        _qw5_index_chunks_for(conn, mid, content)
-        if (i + 1) % 5000 == 0:
-            conn.commit()
-    conn.commit()
-
-    # Phase 2: FTS on chunks
-    print("  Rebuilding chunk FTS...")
-    conn.execute("INSERT INTO memory_chunks_fts(memory_chunks_fts) VALUES('rebuild')")
-    conn.commit()
-
-    # Phase 3: Embeddings
-    print("  Indexing embeddings...")
-    from save.indexers import _index_embedding
-    for i, (mid, content) in enumerate(rows):
-        _index_embedding(conn, mid, content, category="", tags=[], source_file=mid)
-        if (i + 1) % 5000 == 0:
-            conn.commit()
-    conn.commit()
-
-    # Phase 4: ColBERT
-    print("  Indexing ColBERT tokens...")
-    from search.colbert_index import _ensure_colbert_schema, index_memory_colbert_batch
-    _ensure_colbert_schema(conn)
-    batch_size = 64
-    for start in range(0, total, batch_size):
-        batch = [(mid, content) for mid, content in rows[start:start + batch_size]]
-        index_memory_colbert_batch(conn, batch)
-        conn.commit()
-
-    # Phase 5: SPLADE
-    print("  Indexing SPLADE tokens...")
-    from search.splade_index import _ensure_splade_schema, index_memory_splade_batch
-    _ensure_splade_schema(conn)
-    for start in range(0, total, batch_size):
-        batch = [(mid, content) for mid, content in rows[start:start + batch_size]]
-        index_memory_splade_batch(conn, batch)
-        conn.commit()
-
-    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    conn.commit()
-    print("  Backfill complete")
+    items: list[tuple[str, str, str, list[str] | None]] = [
+        (mid, content, "", []) for mid, content in rows
+    ]
+    from _fixtures import populate_eval_memory_indexes_batch
+    populate_eval_memory_indexes_batch(conn, items, use_llm_facts=False)
 
 
 def _compute_recall_at_k(retrieved: list[str], expected: list[str], k: int = 10) -> float:
@@ -423,8 +376,6 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True, skip_backf
             "mrr_at_5": round(avg_mrr_5, 4),
             "ndcg_at_10": round(avg_ndcg, 4),
             "hit_rate": round(avg_hit_rate, 4),
-            "mrr": round(avg_mrr, 4),
-            "ndcg_at_10": round(avg_ndcg, 4),
             "p95_cold_latency_ms": round(p95_cold, 1),
             "p95_warm_latency_ms": round(p95_warm, 1),
         },

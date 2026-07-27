@@ -69,12 +69,6 @@ def main():
                 if isinstance(s, list):
                     # s is a list of turns: [{"role": ..., "content": ..., "has_answer": ...}]
                     content = "\n".join(t.get("content", "") for t in s if isinstance(t, dict))
-                    # Use first turn's has_answer to identify gold sessions
-                    session_id = None
-                    for t in s:
-                        if isinstance(t, dict) and t.get("has_answer"):
-                            # Try to find a session ID from the turns
-                            break
                     # We need a stable ID - use the session index within this question
                     # Actually, we need to match by haystack_session_ids
                 elif isinstance(s, dict):
