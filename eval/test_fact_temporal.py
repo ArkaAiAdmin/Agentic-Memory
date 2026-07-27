@@ -892,7 +892,9 @@ class TestTemporalFactClause:
         clause, params = ft._temporal_fact_clause(None)
         assert "f.invalid_at IS NULL" in clause
         assert "f.superseded_by IS NULL" in clause
-        assert params == []
+        assert "f.valid_at <= ?" in clause
+        assert len(params) == 1
+        assert isinstance(params[0], float)
 
     def test_as_of_epoch(self):
         clause, params = ft._temporal_fact_clause(1700000000.0)

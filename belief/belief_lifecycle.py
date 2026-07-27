@@ -331,7 +331,7 @@ def get_beliefs_due_for_review(
         "ba.epistemic_source, ba.certainty_tier, ba.last_reviewed_at, ba.review_count, "
         "kf.subject, kf.predicate, kf.object "
         "FROM belief_assertions ba LEFT JOIN kg_facts kf ON kf.id = ba.fact_id "
-        "WHERE ba.belief_status = 'active' AND ba.confidence < ? "
+        "WHERE ba.belief_status = 'active' AND ba.confidence <= ? "
         "AND (ba.last_reviewed_at IS NULL OR ba.last_reviewed_at < ?) "
         "ORDER BY ba.confidence ASC, ba.last_reviewed_at ASC LIMIT ?",
         (min_confidence, cutoff, limit),

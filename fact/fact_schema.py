@@ -27,6 +27,25 @@ CREATE TABLE IF NOT EXISTS kg_facts (
     mention_count INTEGER DEFAULT 1,
     source_memory TEXT,
     context TEXT,
+    subject_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+    object_entity_id INTEGER REFERENCES kg_entities(id) ON DELETE SET NULL,
+    event_time REAL,
+    event_time_granularity TEXT,
+    transaction_time REAL,
+    valid_at REAL,
+    invalid_at REAL,
+    superseded_by INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL,
+    supersedes INTEGER REFERENCES kg_facts(id) ON DELETE SET NULL,
+    contradiction_score REAL DEFAULT 0.0,
+    invalidation_reason TEXT,
+    belief_status TEXT DEFAULT 'active',
+    epistemic_source TEXT DEFAULT 'agent',
+    asserting_agent_id TEXT,
+    evidence_chain TEXT,
+    embedding BLOB,
+    fact_type TEXT DEFAULT 'observation',
+    is_entailed BOOLEAN DEFAULT 0,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     UNIQUE(subject, predicate, object)
 );
 
@@ -44,39 +63,31 @@ def ensure_facts_schema(conn: AnyConnection) -> None:
     statements use ``IF NOT EXISTS`` so re-running on a DB that
     already has the table is a no-op.
 
-    Column additions are handled by numbered migrations (009, 018, 025,
-    026, 034) — not by inline ALTER TABLE here (Hard Rule 4).  This
-    function only creates the base table and indexes.
+    The base schema includes all columns from the migration chain
+    (009, 018, 019, 025, 026, 034, 050) so fresh DBs are fully
+    functional without running the migration chain. Existing migrated
+    DBs are unaffected — migrations hit ``IF NOT EXISTS`` / see the
+    columns already exist and skip them.
     """
-    # Base table + indexes (idempotent on all schema versions)
     conn.executescript(_FACTS_SCHEMA_SQL)
-    # Ensure belief-layer indexes exist.
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_kg_facts_fact_type ON kg_facts(fact_type)"
-    )
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_fact_type ON kg_facts(fact_type)")
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_kg_facts_belief_status ON kg_facts(belief_status)"
-    )
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_belief_status ON kg_facts(belief_status)")
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_kg_facts_epistemic_source ON kg_facts(epistemic_source)"
-    )
-    # Now entity_id and temporal indexes are safe to create.
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_epistemic_source ON kg_facts(epistemic_source)")
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_kg_facts_subject_entity ON kg_facts(subject_entity_id)"
-    )
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_subject_entity ON kg_facts(subject_entity_id)")
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_kg_facts_object_entity ON kg_facts(object_entity_id)"
-    )
-    # T1.x: v18 temporal indexes.
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_object_entity ON kg_facts(object_entity_id)")
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_kg_facts_validity ON kg_facts(valid_at, invalid_at)"
-    )
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_validity ON kg_facts(valid_at, invalid_at)")
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_kg_facts_superseded_by ON kg_facts(superseded_by)"
-    )
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_superseded_by ON kg_facts(superseded_by)")
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_kg_facts_event_time ON kg_facts(event_time)"
-    )
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_event_time ON kg_facts(event_time)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_kg_facts_tenant ON kg_facts(tenant_id)")
     # T20 (2026-06-23): kg_facts FTS5 index. Brings kg_facts in line with
     # the other 3 text-searchable tables (memories, memory_chunks,
     # kg_entities) which all have FTS5 + 3 sync triggers. The FTS is

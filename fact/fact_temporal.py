@@ -989,7 +989,12 @@ def _temporal_fact_clause(as_of: "float | None") -> "tuple[str, list]":
             "AND (f.invalid_at IS NULL OR f.invalid_at > ?) ",
             [as_of, as_of],
         )
-    return " AND f.invalid_at IS NULL AND f.superseded_by IS NULL", []
+    now = time.time()
+    return (
+        " AND (f.valid_at IS NULL OR f.valid_at <= ?) "
+        "AND f.invalid_at IS NULL AND f.superseded_by IS NULL",
+        [now],
+    )
 
 
 def query_facts_at_time(

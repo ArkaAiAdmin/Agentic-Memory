@@ -46,6 +46,7 @@ def conn():
     c.execute("CREATE TABLE IF NOT EXISTS kg_entities (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)")
     ensure_facts_schema(c)
     ensure_beliefs_schema(c)
+
     yield c
     c.close()
 

@@ -25,18 +25,22 @@ ADMIN_ROUTED_TOOLS = {
 def extract_mcp_tools_from_files() -> set[str]:
     """Extract all @mcp.tool() function names from mcp_*.py files."""
     tools = set()
-    for mcp_file in Path(".").glob("mcp_*.py"):
-        if mcp_file.name == "mcp_maintenance_ops.py":
-            continue  # This file doesn't define @mcp tools
-        content = mcp_file.read_text(encoding="utf-8")
-        # Match @mcp.tool() followed by any number of decorators, then def function_name(
-        # The pattern handles:
-        # @mcp.tool()
-        # @other_decorator
-        # def function_name(
-        pattern = r"@mcp\.tool\(\)(?:\s*\n\s*@\w+(?:\([^)]*\))?)*\s*\n\s*def\s+(\w+)\s*\("
-        for match in re.finditer(pattern, content):
-            tools.add(match.group(1))
+    search_dirs = [Path("."), Path("mcp_surface")]
+    for search_dir in search_dirs:
+        if not search_dir.is_dir():
+            continue
+        for mcp_file in search_dir.glob("mcp_*.py"):
+            if mcp_file.name == "mcp_maintenance_ops.py":
+                continue  # This file doesn't define @mcp tools
+            content = mcp_file.read_text(encoding="utf-8")
+            # Match @mcp.tool() followed by any number of decorators, then def function_name(
+            # The pattern handles:
+            # @mcp.tool()
+            # @other_decorator
+            # def function_name(
+            pattern = r"@mcp\.tool\(\)(?:\s*\n\s*@\w+(?:\([^)]*\))?)*\s*\n\s*def\s+(\w+)\s*\("
+            for match in re.finditer(pattern, content):
+                tools.add(match.group(1))
     return tools
 
 

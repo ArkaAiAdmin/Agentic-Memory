@@ -16,6 +16,9 @@ Providers
 - ``LlamaCppProvider``: HTTP API to a local llama.cpp ``server``
   binary. Same JSON schema as Ollama's ``/completion`` endpoint.
   Use when you want to run a specific GGUF model without Ollama.
+- ``OpenAICompatibleProvider``: HTTP client for any OpenAI-compatible
+  local server (LM Studio, llama.cpp OpenAI-compat mode, vLLM, TGI).
+  Uses the ``/v1/chat/completions`` endpoint.
 - ``HuggingFaceProvider``: in-process transformers (the original
   implementation). Requires ``transformers`` + ``torch``. Best when
   you already have the deps installed and want to avoid a separate
@@ -24,7 +27,7 @@ Providers
 Configuration
 --------------
 - ``MEMORY_LLM_PROVIDER`` (default: ``huggingface``): which provider
-  to use. One of ``ollama``, ``llama_cpp``, ``huggingface``.
+  to use. One of ``ollama``, ``llama_cpp``, ``openai_compatible``, ``huggingface``.
 - ``MEMORY_OLLAMA_HOST`` (default: ``http://localhost:11434``):
   Ollama server URL.
 - ``MEMORY_LLAMA_CPP_HOST`` (default: ``http://localhost:8080``):
@@ -623,7 +626,7 @@ def get_provider() -> Optional[BaseLLMProvider]:
     The selection logic:
       1. If MEMORY_LLM_PROVIDER is set, try that provider first.
       2. If that provider is not available, walk the fallback chain
-         (ollama -> llama_cpp -> huggingface) until one works.
+         (ollama -> llama_cpp -> openai_compatible -> huggingface) until one works.
       3. If all providers fail, return None — callers should fall
          back to regex-only extraction.
 

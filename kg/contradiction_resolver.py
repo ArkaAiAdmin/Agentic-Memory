@@ -169,8 +169,12 @@ def _apply_resolution(
             logger.warning("Unhandled exception in _apply_resolution: %s", e)
             return {"action": "error", "error": f"save merged note failed: {e}", "source": note_a, "target": note_b}
 
-        memory_supersede_db(db_path, note_a, merged_id, valid_to=now_iso, rationale="merged", conn=conn)
-        memory_supersede_db(db_path, note_b, merged_id, valid_to=now_iso, rationale="merged", conn=conn)
+        ok_a, err_a = memory_supersede_db(db_path, note_a, merged_id, valid_to=now_iso, rationale="merged", conn=conn)
+        if not ok_a:
+            return {"action": "error", "error": f"supersede {note_a} failed: {err_a}", "source": note_a, "target": note_b}
+        ok_b, err_b = memory_supersede_db(db_path, note_b, merged_id, valid_to=now_iso, rationale="merged", conn=conn)
+        if not ok_b:
+            return {"action": "error", "error": f"supersede {note_b} failed: {err_b}", "source": note_a, "target": note_b}
         return {
             "action": "merged",
             "merged_note_id": merged_id,
