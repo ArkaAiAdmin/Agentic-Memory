@@ -217,13 +217,18 @@ _EXCLUDE_DIRS = {
     ".opencode",
     ".github",
     "ts-sdk",
+    "paper_pipeline",
+    "paper_pipeline_2",
+    "paper_pipeline_3",
+    "scratch",
+    "examples",
 }
 
 
 def _compute_test_loc() -> int:
-    """Approximate test LOC by summing Python file lines."""
+    """Approximate test LOC by summing all Python files under eval/."""
     total = 0
-    for f in (REPO / "eval").glob("test_*.py"):
+    for f in (REPO / "eval").rglob("*.py"):
         try:
             total += f.read_text(encoding="utf-8", errors="replace").count("\n")
         except OSError:
