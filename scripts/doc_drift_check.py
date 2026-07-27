@@ -297,7 +297,7 @@ def regenerate_mcp_surface_md() -> list[str]:
 
     header_span = (
         f"<!--AUTO-GEN:START key=\"mcp_surface_schema_header\"-->\n"
-        f"> Last updated: 2026-07-16. Schema v{schema_version}. Multi-tenant isolation enforced.\n"
+        f"> Last updated: 2026-07-27. Schema v{schema_version}. Multi-tenant isolation enforced.\n"
         f"<!--AUTO-GEN:END key=\"mcp_surface_schema_header\"-->"
     )
     version_span = (

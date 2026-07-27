@@ -13,30 +13,51 @@ Every agent interacting with this system is bound by the **Memory Contract**:
 
 ---
 
-## 2. Core Verbs & Escape Hatch Reference
+## 2. Core Verbs & Escape Hatches Reference
 
-The agent-facing surface is composed of **17 core verbs** and **1 escape hatch**:
+The agent-facing surface is composed of **24 core verbs**, plus **2 escape hatches** to admin operations.
 
 ### Core Verbs (Thin wrappers with sensible defaults)
-* `memory_search(query, limit=15, mode="hybrid")`: Unified keyword FTS5 + semantic vector search.
-* `memory_save(content, category, title_slug, tags=None, pinned=False)`: Core save pipeline. Raises `SaveValidationError` on invalid params.
-* `memory_delete(note_id)`: Marks a memory as soft-deleted.
-* `memory_recall(query, limit=5)`: Fast query-based context matching.
-* `memory_note(note_id)`: Fetches a single note's full text and metadata.
-* `memory_learn(content, category="lessons", tags=None)`: Fast-path memory save with automated slug generation.
-* `memory_audit(action="summary", limit=20)`: View recent operations log to track memory evolution.
-* `memory_organize(target="safe_default")`: Executes batch maintenance tasks (compact, consolidate, link rewrite).
-* `memory_share(note_id, share_with)`: Share notes between agents or tenants.
-* `memory_graph(action="stats")`: Inspect the entity-relationship knowledge graph.
-* `memory_profile(action="stats")`: Look up cached skills and active agent profiles.
-* `memory_session_start(query="")`: Retrieve the workspace briefing and startup context.
-* `memory_review_beliefs(action="due")`: View beliefs scheduled for reinforcement/decay review.
-* `memory_curate_autosave(action="list")`: List, apply, or purge deferred/inbox auto-saves.
-* `memory_health_check()`: Diagnostic summary of DB, index, background worker, and schema.
-* `memory_system_health()`: Comprehensive green/yellow/red health check with actionable next steps.
 
-### Escape Hatch
-* `memory_advanced(operation, kwargs)`: Pass-through router to run any administrative/maintenance operation directly.
+**Save & Recall:**
+* `memory_save(content, category, title_slug, tags=None, pinned=False, importance=3)`: Core save pipeline.
+* `memory_delete(note_id, hard=False)`: Soft-delete a memory.
+* `memory_restore(note_id)`: Restore a soft-deleted memory.
+* `memory_supersede(old_id, new_id)`: Mark a note as outdated and superseded by another.
+* `memory_learn(content, as_skill=False, skill_name="", category="lessons")`: Save a lesson or compile a skill.
+* `memory_recall(query, session_id)`: Fast context matching for session continuity.
+* `memory_note(note_id, action="read")`: Read/update/delete/patch/supersede a single note.
+* `memory_session_start(query="")`: Retrieve the workspace briefing and startup context.
+
+**Search & Discovery:**
+* `memory_search(query, limit=5, mode="hybrid", category="")`: Unified FTS5 + semantic + KG search.
+* `memory_recall_context(query, limit=15, deep_rerank=False)`: Structured briefing for agent cold-start.
+* `memory_graph(query, action="explore")`: Explore the knowledge graph.
+* `memory_facts_search(query, limit=10)`: Search extracted SPO facts.
+
+**Agent Self-Editing:**
+* `memory_list_skills(limit=50)`: List extracted skills.
+* `memory_extract_skills(memory_id, dry_run)`: Manually trigger skill extraction.
+* `memory_compile_skill(lesson_slug, skill_name, primary_triggers)`: Compile a lesson into a reusable skill.
+
+**Multi-Agent:**
+* `memory_share(note_id, action="list")`: Share memories between agents or view the shared pool.
+* `memory_coordinate(action="get_project_state")`: Task management, file locking, and agent messaging.
+
+**Audit & Health:**
+* `memory_audit(hours=24, limit=20)`: Review recent activity and errors.
+* `memory_health_check()`: Diagnostic summary of DB, index, worker, and schema.
+* `memory_system_health()`: Green/yellow/red health check with actionable next steps.
+* `memory_profile(action="stats")`: Agent scopes, cached skills, ARC stats.
+* `memory_review_beliefs(min_confidence=0.5)`: Review low-confidence or stale beliefs.
+
+**Feedback & Maintenance:**
+* `memory_record_ctr_feedback(id, query_id, action="returned")`: Record click-through rate feedback on search results.
+* `memory_organize(target="safe_default")`: Run a safe maintenance batch (compact + consolidate + rewrite_links).
+
+### Escape Hatches
+* `memory_maintenance(operation="...", **kwargs)`: Run any admin operation (92 admin tools).
+* `memory_advanced(operation="...", **kwargs)`: Alias for `memory_maintenance`.
 
 ---
 
@@ -70,7 +91,7 @@ graph TD
 If background tasks (e.g. index backfilling, embedding calculations) seem delayed, run:
 ```bash
 # Check overall health and schema version
-memory_advanced(operation="health_check")
+memory_health_check()
 ```
 Or view the logs at `~/.config/agentic-memory/memory/worker.log`.
 
@@ -85,8 +106,8 @@ memory_organize(target="safe_default")
 If you receive database connection errors or suspect corruption:
 ```bash
 # Perform deep sqlite integrity check
-memory_advanced(operation="check_integrity", kwargs='{"deep": true}')
+memory_maintenance(operation="check_integrity", deep=true)
 
 # Rebuild all spatial and FTS indexes from scratch
-memory_advanced(operation="backfill_all", kwargs='{"backfill_mode": "rebuild"}')
+memory_maintenance(operation="backfill_all", backfill_mode="rebuild")
 ```

@@ -5,7 +5,7 @@
 
 > **One-stop quick reference for any agent that uses the agentic-memory MCP tools.**
 <!--AUTO-GEN:START key="mcp_surface_schema_header"-->
-> Last updated: 2026-07-16. Schema v75. Multi-tenant isolation enforced.
+> Last updated: 2026-07-27. Schema v75. Multi-tenant isolation enforced.
 <!--AUTO-GEN:END key="mcp_surface_schema_header"-->
 
 ---
@@ -143,7 +143,7 @@ Search memories by semantic + FTS5 hybrid search.
 | Param | Type | Required | Default | Notes |
 |-------|------|----------|---------|-------|
 | query | str | Yes | — | Natural-language search query |
-| limit | int | No | 10 | Max results |
+| limit | int | No | 5 | Max results |
 | category | str | No | "" | Filter to category: lessons, decisions, projects, preferences, sessions |
 | include_global | bool | No | True | Include global memories |
 | mode | str | No | "hybrid" | hybrid, semantic, fts, facts, graph |
@@ -151,6 +151,7 @@ Search memories by semantic + FTS5 hybrid search.
 | epistemic_source | str | No | null | For facts mode: agent, auto_save, hook, import, cron |
 | fact_type | str | No | null | For facts mode: observation, agent_inference, external_stated, hypothesis, derived |
 | memory_source | str | No | null | Filter by source: agent, auto_save, import |
+| shared_with_me | bool | No | False | Also include shared memories from other agents |
 | tenant_id | str | No | "default" | Tenant ID |
 
 **When to use:** This is the primary recall tool. Default for any memory lookup.
@@ -170,8 +171,9 @@ Save a memory note with sensible defaults.
 | pinned | bool | No | False | Pin to hot tier |
 | importance | int | No | 3 | 1-5 |
 | is_global | bool | No | False | Save to global memory |
+| safety_wiring | bool | No | True | Skip prompt-injection scanning when False |
 
-**When to use:** After any learning, decision, or event worth remembering. Use `pinned=True` for high-importance permanent notes.
+**When to use:** After any learning, decision, or event worth remembering. Use `pinned=True` for high-importance permanent notes. Set `safety_wiring=False` for structured content with section headers that may trigger false positives.
 
 ---
 

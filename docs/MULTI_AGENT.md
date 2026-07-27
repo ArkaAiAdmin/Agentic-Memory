@@ -26,6 +26,10 @@ This single tool does four things depending on `action=`:
 | `"import"` | Pull a shared memory into your own DB | `note_id` (shared ID) + `share_with` (your agent ID) |
 | `"stats"` | Overview: how many shared, by whom, categories | *(none)* |
 
+**Tip:** `share_with` is the target agent's `MEMORY_AGENT_ID`. The pool is
+scoped per target — a memory shared with `MIMOCODE` won't appear for
+`OPENCODE` unless shared with both.
+
 **Examples:**
 
 ```python
@@ -41,10 +45,6 @@ memory_share(note_id="decisions/cache-strategy", share_with="OPENCODE", action="
 # Check sharing stats
 memory_share(action="stats")
 ```
-
-**Tip:** `share_with` is the target agent's `MEMORY_AGENT_ID`. The pool is
-scoped per target — a memory shared with `MIMOCODE` won't appear for
-`OPENCODE` unless shared with both.
 
 ### `memory_search(shared_with_me=True)`
 
@@ -74,6 +74,46 @@ the shared context is there from the first turn.
 Confirms your `MEMORY_AGENT_ID`, namespace, and scoped DB. Use this when you
 need to verify which agent identity you're operating under, or to discover
 which partner agents exist in the shared pool.
+
+### `memory_coordinate` — Multi-Agent Task & File Coordination
+
+Manages shared tasks, file locking, and inter-agent messaging. This is the
+coordination primitive for agents working on the same project.
+
+| `action` | What it does | Required params |
+|----------|-------------|-----------------|
+| `"create_task"` | Create a new task | `task_type`, `description`, `assigned_to` |
+| `"claim_task"` | Reserve a task for this agent | `task_id` |
+| `"update_task_status"` | Update task status (the primary ack) | `task_id`, `status` |
+| `"release_task"` | Release a task back to the pool | `task_id` |
+| `"complete_task"` | Mark task done, share result | `task_id` |
+| `"list_tasks"` | List tasks for a project | `project_id`, `status` |
+| `"lock_file"` | Acquire exclusive lock on a file | `file_path` |
+| `"unlock_file"` | Release file lock | `file_path` |
+| `"check_lock"` | Check if a file is locked | `file_path` |
+| `"send_message"` | Send message to another agent | `to_agent`, `message_type`, `payload` |
+| `"read_messages"` | Read pending messages | *(none)* |
+| `"get_project_state"` | See what others are doing (default) | `project_id` |
+| `"update_project_state"` | Share what you're doing | `project_id`, `key`, `value` |
+
+**Coordination model:** Messages are notifications. Task status transitions
+are the acknowledgement — when Agent B reads a message and calls
+`update_task_status`, that IS the ack. No separate ack channel needed.
+
+```python
+# Create a task and claim it
+memory_coordinate(action="create_task", task_type="refactor", description="Extract auth module", assigned_to="OPENCODE")
+memory_coordinate(action="claim_task", task_id=1)
+
+# Lock a file before editing
+memory_coordinate(action="lock_file", file_path="infra/auth.py")
+
+# Message another agent
+memory_coordinate(action="send_message", to_agent="MIMOCODE", message_type="info", payload="Auth refactor started")
+
+# Check project state
+memory_coordinate(action="get_project_state", project_id="default")
+```
 
 ## When to Share
 
