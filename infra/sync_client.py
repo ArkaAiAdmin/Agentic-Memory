@@ -155,7 +155,7 @@ def _do_request(req: urllib.request.Request, timeout: int) -> Optional[dict]:
     """
     import urllib.error as _ue
 
-    _ssrf_validate_url(req.full_url)
+    _ssrf_validate_url(req.full_url, allowed_hosts=frozenset({"127.0.0.1", "localhost"}))
     last_err: Optional[Exception] = None
     for attempt in range(_MAX_RETRIES):
         try:

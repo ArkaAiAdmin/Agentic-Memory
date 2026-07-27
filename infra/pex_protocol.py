@@ -87,7 +87,7 @@ peer_directory = PeerDirectory()
 def send_gossip(target_url: str, local_agent_id: str, peers: List[Dict[str, Any]]) -> Optional[dict]:
     """POST local peer list to target peer's gossip endpoint."""
     url = f"{target_url.rstrip('/')}/sync/peers/gossip"
-    _ssrf_validate_url(url)
+    _ssrf_validate_url(url, allowed_hosts=frozenset({"127.0.0.1", "localhost"}))
     payload = {
         "agent_id": local_agent_id,
         "peers": peers,

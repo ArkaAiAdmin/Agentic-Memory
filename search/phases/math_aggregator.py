@@ -68,7 +68,7 @@ def extract_and_aggregate_quantities(query: str, candidates: list) -> str | None
     if "remaining" in query_lower or "allocated to" in query_lower:
         all_text = " ".join(_get_item_content(c) for c in candidates[:10])
         budget_match = re.search(r"budget(?:\s+\w+)*\s+is\s+\$?([\d,]+)", all_text, re.IGNORECASE)
-        deduction_matches = re.findall(r"(?:upgrade|cost|spent|expense|allocated)[^\.\n]*?\$?([\d,]+)", all_text, re.IGNORECASE)
+        deduction_matches = re.findall(r"(?:upgrade|cost|spent|expense|allocated)[^\.\n]*\$?([\d,]+)", all_text, re.IGNORECASE)
         if budget_match:
             b_val = parse_numeric_val(budget_match.group(1))
             d_vals = [parse_numeric_val(d) for d in deduction_matches if parse_numeric_val(d) != b_val]
