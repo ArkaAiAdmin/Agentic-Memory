@@ -48,20 +48,23 @@ def memory_dashboard(action: str = "status", port: int = 8501) -> str:
                       (SELECT COUNT(*) FROM memory_audit_log),
                       (SELECT COUNT(*) FROM memory_audit_log WHERE error IS NOT NULL)
                 """).fetchone()
-                stats = {
-                    "notes_total": row[0],
-                    "pinned_notes": row[1],
-                    "embeddings": row[2],
-                    "entities": row[3],
-                    "facts": row[4],
-                    "chunks": row[5],
-                    "ctr_events": row[6],
-                    "drift_events": row[7],
-                    "audit_calls": row[8],
-                    "audit_errors": row[9],
-                    "db_size_bytes": db_path.stat().st_size,
-                    "db_path": str(db_path),
-                }
+                if row is None:
+                    stats = {"error": "dashboard query returned no row", "ok": False}
+                else:
+                    stats = {
+                        "notes_total": row[0],
+                        "pinned_notes": row[1],
+                        "embeddings": row[2],
+                        "entities": row[3],
+                        "facts": row[4],
+                        "chunks": row[5],
+                        "ctr_events": row[6],
+                        "drift_events": row[7],
+                        "audit_calls": row[8],
+                        "audit_errors": row[9],
+                        "db_size_bytes": db_path.stat().st_size,
+                        "db_path": str(db_path),
+                    }
         except (sqlite3.DatabaseError, OSError) as e:
             # Dashboard status is best-effort telemetry — a corrupt
             # or locked DB must not break the action path. Surface
@@ -80,7 +83,7 @@ def memory_dashboard(action: str = "status", port: int = 8501) -> str:
                     "stats": stats,
                 }
             )
-        script = Path(__file__).parent / "dashboard.py"
+        script = Path(__file__).resolve().parent.parent / "dashboard.py"
         if not script.exists():
             return _err(ErrorCode.NOT_FOUND, f"dashboard.py not found at {script}")
         try:
