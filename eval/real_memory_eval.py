@@ -305,15 +305,17 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True, skip_backf
                     break
             if as_of is None:
                 m = re.search(r'(?:July|2026).*?(\d{1,2})', query)
+                if m:
+                    as_of = int(m.group(1))
+                    # Interpret as day-of-month within the most recent July/2026
+                    # for temporal scoring purposes
 
         # Cold latency (first call after warmup)
+        retrieved, latency = _search_single(str(db_path), query, limit=50, as_of=as_of)
         if i == 0:
-            retrieved, latency = _search_single(str(db_path), query, limit=50, as_of=as_of)
             results["cold_latencies"].append(latency)
         else:
-            retrieved, latency = _search_single(str(db_path), query, limit=50, as_of=as_of)
-
-        results["warm_latencies"].append(latency)
+            results["warm_latencies"].append(latency)
 
         recall_5 = _compute_recall_at_k(retrieved, expected, k=5)
         recall_10 = _compute_recall_at_k(retrieved, expected, k=10)

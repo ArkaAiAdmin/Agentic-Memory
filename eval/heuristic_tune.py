@@ -175,7 +175,7 @@ def run_single_harness(gold_path, housekeeping):
     report = bench.run()
     phases = report.get("phases", {})
     hybrid = phases.get("hybrid", {})
-    ndcg = hybrid.get("precision_at_5", 0.0)
+    ndcg = hybrid.get("ndcg_at_5", 0.0)
     mrr = hybrid.get("mrr", 0.0)
     latency_ms = hybrid.get("latency_ms", 0.0)
     n_queries = hybrid.get("total_cases", 0)

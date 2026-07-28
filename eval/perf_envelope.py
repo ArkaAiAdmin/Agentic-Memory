@@ -298,7 +298,7 @@ def measure_semantic_search(vocab: list[str], n: int, db_path: Path) -> Measurem
 
 def measure_save(db_path: Path, n: int) -> Measurement:
     """Simulate memory_save: INSERT 1 row + write file."""
-    random.Random(SEED + 2)
+    # Removed dead random.Random(SEED + 2) call
     counter = 0
 
     def _one() -> int:

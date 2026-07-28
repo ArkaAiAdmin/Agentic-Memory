@@ -51,7 +51,7 @@ for mem in memories:
 conn.commit()
 print(f"Inserted {len(memories)} memories")
 
-conn.execute('INSERT INTO memories_fts(memories_fts) VALUES("rebuild")')
+conn.execute('INSERT INTO memories_fts(memories_fts) VALUES(\'rebuild\')')
 conn.commit()
 print("FTS built")
 
@@ -65,7 +65,7 @@ for i, (mid, content) in enumerate(rows):
     _qw5_index_chunks_for(conn, mid, content)
     if (i+1) % 100 == 0: conn.commit()
 conn.commit()
-conn.execute('INSERT INTO memory_chunks_fts(memory_chunks_fts) VALUES("rebuild")')
+conn.execute('INSERT INTO memory_chunks_fts(memory_chunks_fts) VALUES(\'rebuild\')')
 conn.commit()
 print("done")
 

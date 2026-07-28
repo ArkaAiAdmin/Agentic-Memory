@@ -146,6 +146,7 @@ def _parse_junit(junit_path: Path) -> dict:
                 if "xpass" in msg.lower() or "XPASS" in msg:
                     counts["xpassed"] += 1
                     counts["failed"] -= 1
+                    counts["passed"] += 1
     return counts
 
 

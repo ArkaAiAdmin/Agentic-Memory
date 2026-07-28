@@ -283,7 +283,7 @@ def run(
                 observed_at = (
                     _parse_haystack_date(dates[i])
                     if dates and i < len(dates)
-                    else "datetime('now')"
+                    else datetime.now(timezone.utc).isoformat()
                 )
                 conn.execute(
                     """INSERT OR REPLACE INTO memories

@@ -184,6 +184,11 @@ def _ami_patched_connect(*args, **kwargs):
 _sqlite3.connect = _ami_patched_connect
 
 
+def pytest_unconfigure(config):
+    """Restore the global sqlite3.connect monkey-patch on session exit."""
+    _sqlite3.connect = _ami_original_connect
+
+
 def embedding_available() -> bool:
     """Check if the embedding model (model2vec) is loaded and usable."""
     try:

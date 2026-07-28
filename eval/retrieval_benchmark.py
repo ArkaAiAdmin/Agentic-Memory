@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 import time
@@ -173,7 +174,8 @@ def _insert_memory(
 
 
 def _seed_db(db_path: Path, golden: _GOLDEN_SET) -> None:
-    """Insert all memories from *golden* into *db_path*."""
+    """Insert all memories from *golden* into *db_path* and build all indexes."""
+    items: list[tuple[str, str, str, list[str] | None]] = []
     for mem in golden.get("memories", []):
         _insert_memory(
             db_path=db_path,
@@ -182,6 +184,16 @@ def _seed_db(db_path: Path, golden: _GOLDEN_SET) -> None:
             tags=mem.get("tags", []),
             content=mem.get("content", ""),
         )
+        items.append((mem["note_id"], mem.get("content", ""), "", None))
+    if items:
+        from _fixtures import populate_eval_memory_indexes_batch
+
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        try:
+            conn.execute("PRAGMA busy_timeout = 30000")
+            populate_eval_memory_indexes_batch(conn, items, use_llm_facts=False)
+        finally:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +420,24 @@ class RetrievalBenchmark:
     # Public API
     # ------------------------------------------------------------------
 
+    def _warmup_models(self) -> None:
+        """Pre-load embedding and reranker models so cold-start
+        latency doesn't contaminate the timed measurements."""
+        try:
+            from infra.embedding_search import get_embedding_search
+
+            es = get_embedding_search()
+            if es.model is not None:
+                es.model.encode(["warmup"])
+        except Exception:
+            pass
+        try:
+            from search.rerankers import _get_ce_chunk_model
+
+            _get_ce_chunk_model()
+        except Exception:
+            pass
+
     def run(self) -> dict:
         """Execute the benchmark and return the full report dict.
 
@@ -418,6 +448,9 @@ class RetrievalBenchmark:
         """
         db_path = self._setup_db()
         try:
+            # Warm up embedding and reranker models so cold-start
+            # latency doesn't contaminate the timed measurements.
+            self._warmup_models()
             phases: dict[str, _PhaseRunResult] = {
                 "fts": _PhaseRunResult(name="fts"),
                 "hybrid": _PhaseRunResult(name="hybrid"),
