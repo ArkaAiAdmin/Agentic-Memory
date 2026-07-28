@@ -211,7 +211,8 @@ class TestAPIServerConfig:
         """_write_json should set CORS headers."""
         from infra.api_server import APIRequestHandler
         import inspect
-        source = inspect.getsource(APIRequestHandler._write_json)
+        source = inspect.getsource(APIRequestHandler._write_json) + inspect.getsource(APIRequestHandler._cors_headers)
         assert "Access-Control-Allow-Origin" in source
         assert "Access-Control-Allow-Headers" in source
         assert "Access-Control-Allow-Methods" in source
+
