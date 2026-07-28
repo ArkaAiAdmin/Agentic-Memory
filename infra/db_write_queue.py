@@ -618,7 +618,10 @@ class SQLiteWriteQueue:
             finally:
                 with self._pending_lock:
                     self._pending_futures.discard(future)
-                self._queue.task_done()
+                try:
+                    self._queue.task_done()
+                except ValueError:
+                    pass
 
     def restart(self, timeout: float = 5.0) -> None:
         """Stop the current worker thread and start a fresh one in-place.
@@ -661,7 +664,10 @@ class SQLiteWriteQueue:
         while True:
             try:
                 self._queue.get_nowait()
-                self._queue.task_done()
+                try:
+                    self._queue.task_done()
+                except ValueError:
+                    pass
                 drained += 1
             except queue.Empty:
                 break

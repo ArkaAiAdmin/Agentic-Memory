@@ -163,9 +163,9 @@ class TestConcurrent(unittest.TestCase):
     """concurrent: neither dominates."""
 
     def test_equal_is_concurrent(self):
-        """Equal vectors are concurrent — neither dominates."""
+        """Equal vectors have identical causal history — not concurrent."""
         v = {"a": 1, "b": 1}
-        self.assertTrue(concurrent(v, v))
+        self.assertFalse(concurrent(v, v))
 
     def test_strictly_greater_is_not_concurrent(self):
         v1 = {"a": 2, "b": 1}

@@ -63,7 +63,9 @@ def _ssrf_validate_host(hostname: str, allowed_hosts: frozenset[str] | None = No
     """Validate a host: optional allowlist, then resolve + reject private IPs."""
     if not hostname:
         raise ValueError("SSRF guard: missing host")
-    if allowed_hosts and hostname.lower() not in allowed_hosts:
+    if allowed_hosts:
+        if hostname.lower() in allowed_hosts:
+            return
         raise ValueError(f"SSRF guard: host {hostname!r} not in allowlist {sorted(allowed_hosts)}")
     for ip in _resolve_ip(hostname):
         _ssrf_block_private(ip)

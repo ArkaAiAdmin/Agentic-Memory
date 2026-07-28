@@ -39,9 +39,15 @@ import os
 import threading
 
 import json
-from typing import Optional
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
+from crdt.vv_utils import (
+    vv_dominates as dominates,
+    vv_concurrent as concurrent,
+    merge_vectors,
+    parse_version_vector,
+)
 
 if TYPE_CHECKING:
     from infra.db import AnyConnection

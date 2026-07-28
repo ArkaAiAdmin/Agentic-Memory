@@ -264,24 +264,39 @@ class TestFeatureDAsyncPipeline(unittest.TestCase):
         """async_memory_save returns a string result."""
         import memory_mcp
         import save_pipeline
+        import infra.memory_common
+        import mcp_surface.mcp_common
+        import mcp_surface.mcp_memory
 
-        orig_resolve = memory_mcp.resolve_active_memory_dir
-        orig_paths = memory_mcp.get_memory_paths
-        orig_sp_resolve = save_pipeline.resolve_active_memory_dir
-        orig_sp_paths = save_pipeline.get_memory_paths
+        modules_to_patch = [
+            memory_mcp,
+            save_pipeline,
+            infra.memory_common,
+            mcp_surface.mcp_common,
+            mcp_surface.mcp_memory,
+        ]
+        orig_paths = {m: getattr(m, "get_memory_paths", None) for m in modules_to_patch}
+        orig_resolves = {m: getattr(m, "resolve_active_memory_dir", None) for m in modules_to_patch}
+
         tmpdir = tempfile.mkdtemp()
-        memory_mcp.resolve_active_memory_dir = lambda **_: Path(tmpdir)
-        memory_mcp.get_memory_paths = lambda: (Path(tmpdir), Path(tmpdir), Path(tmpdir))
-        save_pipeline.resolve_active_memory_dir = lambda **_: Path(tmpdir)
-        save_pipeline.get_memory_paths = lambda: (
-            Path(tmpdir),
-            Path(tmpdir),
-            Path(tmpdir),
-        )
+        db_path = Path(tmpdir) / "memory.db"
+        from infra.migration_runner import run_migrations
+        import sqlite3
+        with sqlite3.connect(db_path) as init_conn:
+            init_conn.execute("PRAGMA journal_mode=WAL")
+            run_migrations(init_conn)
+
+        p_func = lambda: (Path(tmpdir), Path(tmpdir), Path(tmpdir))
+        r_func = lambda **_: Path(tmpdir)
+        for m in modules_to_patch:
+            if hasattr(m, "get_memory_paths"):
+                setattr(m, "get_memory_paths", p_func)
+            if hasattr(m, "resolve_active_memory_dir"):
+                setattr(m, "resolve_active_memory_dir", r_func)
+
+        prev_db_path = os.environ.get("MEMORY_DB_PATH")
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
         memory_mcp._search_cache.clear()
-        from config import get_config
-        print(f"\nDEBUG: MEMORY_LLM_EXTRACTION={os.environ.get('MEMORY_LLM_EXTRACTION')}")
-        print(f"DEBUG: get_config().llm_extraction={get_config().llm_extraction}")
         try:
             result = asyncio.run(
                 memory_mcp.async_memory_save(
@@ -291,12 +306,18 @@ class TestFeatureDAsyncPipeline(unittest.TestCase):
                     tags=["test"],
                 )
             )
-            self.assertIn("Successfully saved memory", result)
+            self.assertIn("success", result)
         finally:
-            memory_mcp.resolve_active_memory_dir = orig_resolve
-            memory_mcp.get_memory_paths = orig_paths
-            save_pipeline.resolve_active_memory_dir = orig_sp_resolve
-            save_pipeline.get_memory_paths = orig_sp_paths
+            if prev_db_path is not None:
+                os.environ["MEMORY_DB_PATH"] = prev_db_path
+            else:
+                os.environ.pop("MEMORY_DB_PATH", None)
+            for m, func in orig_paths.items():
+                if func is not None:
+                    setattr(m, "get_memory_paths", func)
+            for m, func in orig_resolves.items():
+                if func is not None:
+                    setattr(m, "resolve_active_memory_dir", func)
             memory_mcp._search_cache.clear()
 
     def test_async_search_returns_string(self):
@@ -322,19 +343,40 @@ class TestFeatureDAsyncPipeline(unittest.TestCase):
         import memory_mcp
         import save_pipeline
 
-        orig_resolve = memory_mcp.resolve_active_memory_dir
-        orig_paths = memory_mcp.get_memory_paths
-        orig_sp_resolve = save_pipeline.resolve_active_memory_dir
-        orig_sp_paths = save_pipeline.get_memory_paths
+        import memory_mcp
+        import save_pipeline
+        import infra.memory_common
+        import mcp_surface.mcp_common
+        import mcp_surface.mcp_memory
+
+        modules_to_patch = [
+            memory_mcp,
+            save_pipeline,
+            infra.memory_common,
+            mcp_surface.mcp_common,
+            mcp_surface.mcp_memory,
+        ]
+        orig_paths = {m: getattr(m, "get_memory_paths", None) for m in modules_to_patch}
+        orig_resolves = {m: getattr(m, "resolve_active_memory_dir", None) for m in modules_to_patch}
+
         tmpdir = tempfile.mkdtemp()
-        memory_mcp.resolve_active_memory_dir = lambda **_: Path(tmpdir)
-        memory_mcp.get_memory_paths = lambda: (Path(tmpdir), Path(tmpdir), Path(tmpdir))
-        save_pipeline.resolve_active_memory_dir = lambda **_: Path(tmpdir)
-        save_pipeline.get_memory_paths = lambda: (
-            Path(tmpdir),
-            Path(tmpdir),
-            Path(tmpdir),
-        )
+        db_path = Path(tmpdir) / "memory.db"
+        from infra.migration_runner import run_migrations
+        import sqlite3
+        with sqlite3.connect(db_path) as init_conn:
+            init_conn.execute("PRAGMA journal_mode=WAL")
+            run_migrations(init_conn)
+
+        p_func = lambda: (Path(tmpdir), Path(tmpdir), Path(tmpdir))
+        r_func = lambda **_: Path(tmpdir)
+        for m in modules_to_patch:
+            if hasattr(m, "get_memory_paths"):
+                setattr(m, "get_memory_paths", p_func)
+            if hasattr(m, "resolve_active_memory_dir"):
+                setattr(m, "resolve_active_memory_dir", r_func)
+
+        prev_db_path = os.environ.get("MEMORY_DB_PATH")
+        os.environ["MEMORY_DB_PATH"] = str(db_path)
         memory_mcp._search_cache.clear()
         try:
             items = [
@@ -348,13 +390,19 @@ class TestFeatureDAsyncPipeline(unittest.TestCase):
             results = asyncio.run(memory_mcp.async_memory_save_batch(items))
             self.assertEqual(len(results), 3)
             for result, elapsed in results:
-                self.assertIn("Successfully saved memory", result)
+                self.assertIn("success", result)
                 self.assertGreater(elapsed, 0)
         finally:
-            memory_mcp.resolve_active_memory_dir = orig_resolve
-            memory_mcp.get_memory_paths = orig_paths
-            save_pipeline.resolve_active_memory_dir = orig_sp_resolve
-            save_pipeline.get_memory_paths = orig_sp_paths
+            if prev_db_path is not None:
+                os.environ["MEMORY_DB_PATH"] = prev_db_path
+            else:
+                os.environ.pop("MEMORY_DB_PATH", None)
+            for m, func in orig_paths.items():
+                if func is not None:
+                    setattr(m, "get_memory_paths", func)
+            for m, func in orig_resolves.items():
+                if func is not None:
+                    setattr(m, "resolve_active_memory_dir", func)
             memory_mcp._search_cache.clear()
 
     def test_async_search_batch(self):

@@ -88,6 +88,8 @@ def _make_db():
             locked_by TEXT NOT NULL,
             locked_at REAL,
             expires_at REAL,
+            lock_version INTEGER DEFAULT 0,
+            tenant_id TEXT DEFAULT 'default',
             UNIQUE(file_path)
         );
     """)
