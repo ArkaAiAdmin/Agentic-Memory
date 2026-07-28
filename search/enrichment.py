@@ -3,15 +3,16 @@
 Enrichment runs after the Cross-Encoder (CE) reranking stage and attaches
 KG/semantic signals that the CE model cannot see.  The four enrichment
 factors -- concept boost, centrality boost, Jaccard-surprise penalty, and
-temporal decay -- are multiplied into ``final_score`` so the ranking itself
-reflects these signals, not just the display envelope.
+temporal decay -- fold into ``display_score`` so the user-visible score
+reflects these signals, while ``final_score`` stays locked to the CE ranking
+per the RANK-FIRST LOCK design.
 
 This is a deliberate engineering choice: the CE reranker (ms-marco-MiniLM)
 operates on raw text similarity and has no access to knowledge-graph
-structure, entity overlap, or neural-forget curves.  Folding enrichment
-into final_score ensures concept-heavy and entity-heavy queries rank
-correctly.  Removing this multiplication regresses those query types.
+structure, entity overlap, or neural-forget curves.  Enrichment signals are
+exposed in the display envelope without perturbing the CE ranking order.
 
+``final_score`` is immutable post-CE and is not mutated by enrichment.
 ``display_score`` is the user-visible enriched score and is always computed.
 ``final_score`` is mutated to influence ranking.  Both are available in the
 result envelope for downstream consumers.

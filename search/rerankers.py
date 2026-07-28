@@ -384,19 +384,15 @@ def _apply_late_interaction_rerank(
     for i, r in enumerate(head):
         content = r[1]
         final_score = r[6]
-        # Use pre-computed query ngrams AND pre-computed content ngrams
         if q_ngrams and content:
             c_tokens = content_tokens[i]
             c_ng = content_ngrams[i]
-            li_score, li_avg_dist = _late_interaction_score_batch(q_ngrams, c_tokens, c_ng)
+            li_score, _ = _late_interaction_score_batch(q_ngrams, c_tokens, c_ng)
         else:
             li_score = 0.0
-            li_avg_dist = float(len(content_tokens[i]))
         adjusted = final_score * (1.0 - blend) + li_score * blend
         new_r = list(r)
         new_r[6] = adjusted
-        if len(new_r) > 13:
-            new_r[13] = li_avg_dist
         reranked.append(tuple(new_r))
     reranked.sort(key=lambda x: x[6], reverse=True)
     return reranked + tail

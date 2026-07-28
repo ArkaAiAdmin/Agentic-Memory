@@ -95,7 +95,6 @@ from search.query_parser import (
     _extract_inference_entity,
 )
 from search.rerankers import (
-    _apply_cross_encoder_rerank,
     _apply_single_ce_rerank,
     _apply_late_interaction_rerank,
     _select_ce_mode,
@@ -629,9 +628,9 @@ def _counting_phase(
             for (content,) in rows:
                 # Match various "is now" patterns
                 for pattern in [
-                    rf"{_re.escape(kw)}\s+(?:\w+\s+)?is\s+now\s+(\S+(?:\s+\S+)??)(?:\.|;|\n)",
-                    rf"{_re.escape(kw)}\s+was\s+(\S+(?:\s+\S+)??)(?:\.|;|\n)",
-                    rf"changed\s+to\s+(\S+(?:\s+\S+)??)(?:\.|;|\n)",
+                    rf"{_re.escape(kw)}\s+(?:\w+\s+)?is\s+now\s+(\S+(?:\s+\S+)?)(?:\.|;|\n)",
+                    rf"{_re.escape(kw)}\s+was\s+(\S+(?:\s+\S+)?)(?:\.|;|\n)",
+                    rf"changed\s+to\s+(\S+(?:\s+\S+)?)(?:\.|;|\n)",
                 ]:
                     for m in _re.finditer(pattern, content, _re.IGNORECASE):
                         val = m.group(1).strip().rstrip('.')
@@ -1497,7 +1496,7 @@ def search_memories(
                             row[0]
                             for row in db.execute(
                                 "SELECT id FROM tenant_memories "
-                                "WHERE valid_to IS NULL OR valid_to = '' OR valid_to >= ?"
+                                "WHERE valid_to IS NULL OR valid_to = '' OR valid_to > ?"
                                 " LIMIT 10000",
                                 (as_of_iso,),
                             ).fetchall()
@@ -1613,7 +1612,6 @@ def search_memories(
                     -r[5], None, None, None,
                     r[9] if len(r) > 9 else None,
                     r[10] if len(r) > 10 else None,
-                    r[11] if len(r) > 11 else 1,
                     None,
                 )
                 for r in results
@@ -1659,7 +1657,16 @@ def search_memories(
                         for r in results
                     ]
                 else:
-                    results_to_display = list(results)
+                    results_to_display = [
+                        (
+                            r[0], r[1], r[2], r[3], r[4], r[5],
+                            -r[5], None, None, None,
+                            r[9] if len(r) > 9 else None,
+                            r[10] if len(r) > 10 else None,
+                            None,
+                        )
+                        for r in results
+                    ]
             _record_phase_latency("rerank", _t0)
 
         # Phase 11.5: Entity-presence boost for inference queries.
@@ -1681,9 +1688,9 @@ def search_memories(
                         # Boost final_score (index 6) by entity_boost_factor
                         _old_score = _rd[6] if len(_rd) > 6 else 0
                         if _old_score is not None:
-                            _new_list = list(_rd)
-                            _new_list[6] = _old_score * _entity_boost
-                            results_to_display[_idx] = tuple(_new_list)
+                            _boosted = list(_rd[:7])
+                            _boosted[6] = _old_score * _entity_boost
+                            results_to_display[_idx] = tuple(_boosted) + tuple(_rd[7:])
                 # Re-sort by final_score descending after boost
                 results_to_display.sort(key=lambda x: x[6] if x[6] is not None else 0, reverse=True)
 
@@ -1797,29 +1804,33 @@ def search_memories(
                             tuple(_new_ids),
                         ).fetchall()
                         if _swm_extra:
-                            results_to_display = list(results_to_display) + list(_swm_extra)
-                            # FIX 7: also surface shared items in result_items so
-                            # the public count/results stay consistent with
-                            # raw_results. Build canonical display rows and reuse
-                            # the standard result_item builder.
+                            # Shape each shared memory row to the canonical
+                            # 13-element tuple: (id, content, source_file,
+                            # tags, created, rank, final_score, fitness,
+                            # importance, pinned, last_accessed, metadata,
+                            # supersedes). No access_count in canonical shape.
                             _swm_display_rows = []
                             for _r in _swm_extra:
                                 try:
                                     (
                                         _sid, _content, _sf, _tags, _created,
                                         _imp, _cat, _fit, _la, _meta,
-                                        _rank, _fs, _ac, _ad,
-                                    ) = _r
+                                    ) = _r[:10]
                                 except ValueError:
                                     continue
                                 _swm_display_rows.append(
                                     (
                                         _sid, _content, _sf, _tags, _created,
-                                        0.0, 0.0, _fit, _imp, 0, _la, _meta,
-                                        _ac, _ad,
+                                        0.0, 0.0, _fit, _imp, 0,
+                                        _la, _meta,
+                                        None,
                                     )
                                 )
                             if _swm_display_rows:
+                                results_to_display = (
+                                    list(results_to_display)
+                                    + _swm_display_rows
+                                )
                                 try:
                                     _swm_items, _, _ = _build_result_items(
                                         db=db,

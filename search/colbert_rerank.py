@@ -161,7 +161,6 @@ def colbert_rerank(
                 # No ColBERT tokens — keep original score
                 results.append(item)
                 continue
-            doc_vecs = [_blob_to_vec(r[0]) if isinstance(r[0], bytes) else r[0] for r in rows]
             raw_score = maxsim_score(query_vecs, doc_vecs)
             # Normalize to [0, 1] range (MaxSim is unbounded)
             norm_score = min(1.0, raw_score / max(1.0, len(query_vecs)))

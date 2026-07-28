@@ -326,7 +326,7 @@ def _text_multi_hop_traversal(
                             ph = m.group(0).strip()
                             if not ph:
                                 continue
-                            clean_ph = ph.rstrip("s").rstrip("S")
+                            clean_ph = ph[:-1] if ph.endswith(("s", "S")) and len(ph) > 2 else ph
                             words = clean_ph.split()
                             search_term = " ".join(words[-2:]) if len(words) >= 2 else clean_ph
                             if len(search_term) > 3:
@@ -729,7 +729,7 @@ def _phase_ten_multi_hop_kg(
             ename = entity_names.get(eid, "")
             if not ename:
                 continue
-            matches = _entity_name_to_memory_id(db, ename, set())
+            matches = _entity_name_to_memory_id(db, ename, seen_ids)
             for mid in matches:
                 new_memory_scores.append((mid, score))
 

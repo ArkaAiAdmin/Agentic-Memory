@@ -71,11 +71,17 @@ def extract_session_findings(marker: dict) -> dict:
                         detail_clean = re.sub(r"[#*_`]+$", "", detail).strip()
                         if len(detail_clean) > 10:
                             # Verify if similar lesson already exists
-                            dupe_check = conn.execute(
-                                "SELECT COUNT(*) FROM tenant_memories WHERE category='lessons' "
-                                "AND content LIKE ? AND deleted_at IS NULL",
-                                (f"%{detail_clean[:100]}%",)
-                            ).fetchone()[0]
+                            dupe_check = (
+                                conn.execute(
+                                    "SELECT COUNT(*) FROM tenant_memories WHERE category='lessons' "
+                                    "AND content LIKE ? AND deleted_at IS NULL",
+                                    (f"%{detail_clean[:100]}%",)
+                                ).fetchone()
+                            )
+                            if dupe_check is not None:
+                                dupe_count = dupe_check[0]
+                            else:
+                                dupe_count = 0
                             
                             if dupe_check == 0:
                                 # Save finding as lesson memory note
