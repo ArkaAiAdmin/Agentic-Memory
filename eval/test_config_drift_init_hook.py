@@ -24,7 +24,8 @@ def _run_in_subprocess(env_overrides: dict) -> subprocess.CompletedProcess:
     variables so test-setup drift (from conftest fixtures) doesn't leak
     into the subprocess.
     """
-    import tempfile, shutil
+    import tempfile
+    import shutil
     tmp_root = tempfile.mkdtemp()
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),

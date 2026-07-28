@@ -18,7 +18,6 @@ import sqlite3
 from pathlib import Path
 
 from memory_mcp import search_memories
-from infra.memory_common import get_memory_paths
 
 pytestmark = pytest.mark.slow
 

@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 import search.scoring as scoring
 from infra.rate_limiter import RATE_LIMITERS, configure_rate_limits, check_rate_limit, get_retry_after
 from infra.memory_common import rate_limit_check
-from infra.infrastructure import _err, ErrorCode
 
 
 class TestReadPathRemediation(unittest.TestCase):
@@ -100,8 +99,6 @@ class TestReadPathRemediation(unittest.TestCase):
 
     def test_pool_background_revalidation(self):
         """Verify the pool reval thread evicts connections with mismatched inodes."""
-        import time
-        import sqlite3
         from infra.db import _ConnectionPool
 
         import tempfile
@@ -152,7 +149,6 @@ class TestReadPathRemediation(unittest.TestCase):
 
     def test_usearch_contradiction_detector(self):
         """Verify that the usearch index is used and successfully finds contradictions."""
-        import numpy as np
         from kg.contradiction_detector import detect_contradictions_semantic
         
         # We can construct a mock database in a temporary directory

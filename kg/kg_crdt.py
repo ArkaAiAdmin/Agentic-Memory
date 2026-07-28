@@ -115,8 +115,7 @@ def vv_increment(vv: dict[str, int], agent_id: str) -> dict[str, int]:
 # Imported here to replace local implementations and fix the empty-VV
 # convergence bug (previously: if not a or not b: return False).
 # ---------------------------------------------------------------------------
-from crdt.vv_utils import vv_dominates, vv_concurrent  # noqa: E402
-from crdt.vv_utils import vv_join as vv_merge  # noqa: E402
+from crdt.vv_utils import vv_dominates  # noqa: E402
 
 
 def vv_sum(v: dict[str, int]) -> int:

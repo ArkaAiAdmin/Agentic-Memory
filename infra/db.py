@@ -89,7 +89,7 @@ def _setup_tenant_view(conn: Any, tenant_id: str) -> None:
         # INSTEAD OF UPDATE trigger: redirect writes to the base table.
         cols = ", ".join(f"NEW.{c}" for c in _MEMORIES_COLUMNS)
         col_list = ", ".join(_MEMORIES_COLUMNS)
-        conn.execute(f"DROP TRIGGER IF EXISTS _tenant_memories_update")
+        conn.execute("DROP TRIGGER IF EXISTS _tenant_memories_update")
         conn.execute(
             f"CREATE TEMP TRIGGER _tenant_memories_update "
             f"INSTEAD OF UPDATE ON tenant_memories BEGIN "

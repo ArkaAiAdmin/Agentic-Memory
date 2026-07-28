@@ -84,7 +84,7 @@ class TestGDPREraseCertificate:
         assert len(result["certificate_hash"]) == 64  # SHA-256 hex
 
     def test_certificate_hash_changes_with_content(self, db_path: Path):
-        from infra.gdpr import gdpr_erase, _sign_certificate, DeletionCertificate
+        from infra.gdpr import gdpr_erase
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute(

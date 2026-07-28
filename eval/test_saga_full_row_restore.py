@@ -15,7 +15,6 @@ Two gaps are locked here:
    A malformed raise would mask the real commit failure.
 """
 
-import os
 import sys
 import sqlite3
 import tempfile

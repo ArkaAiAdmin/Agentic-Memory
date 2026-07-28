@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
-import tempfile
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -283,7 +282,7 @@ def main():
         print()
 
     # Per-type breakdown
-    print(f"\nPer-type F1@10:")
+    print("\nPer-type F1@10:")
     for qt in sorted(per_type):
         vals = per_type[qt]["f1@10"]
         n = len(vals)

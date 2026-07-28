@@ -98,7 +98,6 @@ def _build_corpus(size: int) -> list[dict]:
 def _populate_db(db_path: str, corpus: list[dict]):
     import sqlite3
     from infra.db_migrations import run_schema_setup
-    from search_pipeline import _qw5_index_chunks_for
 
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")

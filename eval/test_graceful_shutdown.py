@@ -5,13 +5,10 @@ Step 3 of the Cron Pipeline Maturity plan:
   _cleanup_task_artifacts, and the _SHUTDOWN_GRACE_S constant.
 """
 
-import os
 import signal
 import threading
 import time
-from pathlib import Path
 
-import pytest
 
 import background.background_worker as _bw
 

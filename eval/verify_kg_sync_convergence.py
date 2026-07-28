@@ -13,14 +13,12 @@ from pathlib import Path
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from infra.db import open_db
 from infra.sync_server import SyncServer
 from infra.sync_client import sync_kg_with_peer
 from kg.kg_crdt import (
     record_entity_add,
     record_edge_add,
     project_crdt_to_entities,
-    compute_entity_crdt_state,
     ensure_kg_crdt_schema,
 )
 

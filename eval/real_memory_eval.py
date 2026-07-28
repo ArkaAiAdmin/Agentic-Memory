@@ -21,7 +21,6 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
 
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
@@ -297,7 +296,9 @@ def run_evaluation(db_path: Path | None = None, verbose: bool = True, skip_backf
         as_of = None
         tc_cat = tc.get("category", "")
         if tc_cat == "temporal":
-            import calendar, re, time as _time
+            import calendar
+            import re
+            import time as _time
             for eid in tc.get("expected", []):
                 m = re.search(r'(\d{4})-(\d{2})-(\d{2})', eid)
                 if m:

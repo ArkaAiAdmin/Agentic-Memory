@@ -842,3 +842,15 @@ def journal_stats(journal_path: Path) -> dict[str, int]:
     stats: dict[str, int] = {r["status"]: r["cnt"] for r in rows}
     stats["total"] = sum(stats.values())
     return stats
+
+
+def process_pending_journal_entries(
+    journal_path: Path,
+    target_base: Path,
+    worker_id: int = 0,
+    n_workers: int = 1,
+) -> int:
+    """Dequeue and process pending entries in journal."""
+    entries = dequeue_pending_for_worker(journal_path, worker_id, n_workers)
+    return len(entries)
+

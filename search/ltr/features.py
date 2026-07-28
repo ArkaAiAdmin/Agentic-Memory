@@ -15,7 +15,7 @@ import json
 import math
 import re
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from infra.db import AnyConnection

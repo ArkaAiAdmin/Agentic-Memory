@@ -6,7 +6,6 @@ import subprocess
 import sys
 import signal
 from pathlib import Path
-from contextlib import closing
 
 from mcp_surface.mcp_instance import mcp
 from mcp_surface.mcp_common import _err, ErrorCode, with_audit, _resolve_memory_dir

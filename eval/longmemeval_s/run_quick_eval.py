@@ -3,7 +3,11 @@
 Measures pure FTS recall to isolate the impact of OR queries + BM25 normalization.
 """
 from __future__ import annotations
-import json, sqlite3, sys, tempfile, time
+import json
+import sqlite3
+import sys
+import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
@@ -172,10 +176,10 @@ def main():
 
     print(f"\n{'='*60}")
     print(f"FTS-only eval: {len(evaluable)} questions, {wall:.1f}s ({wall/len(evaluable):.2f}s/q)")
-    print(f"\nMacro metrics:")
+    print("\nMacro metrics:")
     for k, v in sorted(agg.items()):
         print(f"  {k}: {v:.4f}")
-    print(f"\nPer-type breakdown:")
+    print("\nPer-type breakdown:")
     for qt in sorted(by_type):
         r10 = mean(by_type[qt]["recall_any@10"])
         r50 = mean(by_type[qt]["recall_any@50"])

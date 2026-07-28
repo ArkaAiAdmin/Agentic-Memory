@@ -594,7 +594,7 @@ def test_known_issues():
     path_054 = MIGRATIONS_DIR / "054_seed_default_principal_roles.sql"
     content_054 = path_054.read_text()
     for tbl in ["roles", "policies", "role_bindings", "principals"]:
-        if f"INSERT" in content_054 and tbl in content_054.lower():
+        if "INSERT" in content_054 and tbl in content_054.lower():
             ok(f"Migration 054 seeds {tbl} (created in 043/045 - OK)")
 
 

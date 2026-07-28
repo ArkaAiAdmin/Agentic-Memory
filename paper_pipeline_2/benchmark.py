@@ -11,7 +11,6 @@ Measures: orphans produced, timing, convergence, information loss.
 
 import hashlib
 import json
-import sqlite3
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -417,7 +416,7 @@ def scenario_tombstone_concurrency():
                                  {f"agent_{j}": j + 1},
                                  f"tomb_{i}", "type", "", "",
                                  float(i * 10 + j)))
-        eops.append(EntityOp(eid, f"agent_0", "remove",
+        eops.append(EntityOp(eid, "agent_0", "remove",
                              {"agent_0": 10},
                              f"tomb_{i}", "type", "", "",
                              float(i * 10 + 10)))

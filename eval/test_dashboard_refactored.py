@@ -457,7 +457,6 @@ class TestSharedHelpersIntegration(_ut.TestCase):
 # Cleanup
 # =========================================================================
 import atexit as _atexit
-import os as _os
 
 
 @_atexit.register

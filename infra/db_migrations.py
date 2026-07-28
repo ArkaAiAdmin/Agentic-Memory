@@ -730,7 +730,7 @@ def _migrate_ensure_chunks_table(conn) -> None:
                 "            "
             )
         # B4 fix: removed inner conn.commit() for atomicity.
-    except Exception as e:
+    except Exception:
         import traceback
 
         logger.warning("_migrate_ensure_chunks_table failed: %s", traceback.format_exc())

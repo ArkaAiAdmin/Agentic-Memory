@@ -822,7 +822,6 @@ def _rebuild_index_body(source_dir, db_path, source, lock_file):
                     logger.debug("rebuild_index: cannot unlink tmp db: %s", exc)
             raise
         # Update file_mtimes table
-        import time
 
         rel_path_str = str(note["rel_path"])
         if rel_path_str in file_mtimes_map:

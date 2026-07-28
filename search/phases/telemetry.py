@@ -6,7 +6,7 @@ import json
 import logging
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 from infra.error_counter import increment as _phase_inc
 

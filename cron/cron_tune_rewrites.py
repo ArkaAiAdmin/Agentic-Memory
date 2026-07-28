@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 try:
     from infra.tenant_query import install_tenant_context
@@ -218,7 +217,6 @@ def tune_weights(
 
     Returns {query_type: {"weights": {...}, "auc": ..., "n": ..., "status": ...}}
     """
-    from search.query_parser import _detect_query_type
 
     # Get all interactions from memory_search_interaction
     cutoff = time.time() - (days * 86400)

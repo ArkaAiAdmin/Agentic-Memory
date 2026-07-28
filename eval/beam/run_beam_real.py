@@ -18,9 +18,8 @@ import re
 import sqlite3
 import sys
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,6 @@ if not hasattr(memory_mcp, "safety_wiring"):
     setattr(memory_mcp, "safety_wiring", False)
 
 from eval._fixtures import (  # noqa: E402
-    populate_eval_memory_indexes,
     populate_eval_memory_indexes_batch,
     set_benchmark_env,
 )
@@ -249,7 +247,6 @@ def _check_indicator(answer_lower: str, indicator: str) -> bool:
         return True
 
     # Extract key numeric values and check they appear
-    import re
     nums = re.findall(r'[\d,]+\.?\d*', ind_lower)
     if nums:
         nums_found = all(n.replace(',', '') in answer_lower.replace(',', '') for n in nums)
@@ -513,7 +510,7 @@ def run_beam_real_eval(max_conversations: int = None) -> dict:
     print(f"BEAM Real Data Results ({len(results)} questions)")
     print(f"{'='*60}")
     print(f"Overall accuracy: {overall_accuracy:.4f}")
-    print(f"\nPer-type accuracy:")
+    print("\nPer-type accuracy:")
     for t, acc in sorted(type_accuracy.items()):
         n = len(per_type[t])
         print(f"  {t}: {acc:.4f} ({n} questions)")

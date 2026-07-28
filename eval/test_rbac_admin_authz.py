@@ -13,7 +13,6 @@ DB-resolution plumbing.
 Run:
     ~/.config/agentic-memory/venv/bin/python -m unittest eval.test_rbac_admin_authz -v
 """
-import os
 import sys
 import unittest
 from pathlib import Path

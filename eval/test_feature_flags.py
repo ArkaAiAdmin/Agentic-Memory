@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 
-import pytest
 
 from config import get_feature_flags, log_feature_flags_at_startup, reset_config
 

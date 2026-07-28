@@ -8,7 +8,6 @@ access_count history. Writes fitted half-lives to memory_temporal_priors.
 from __future__ import annotations
 
 import argparse
-import logging
 import math
 import os
 try:

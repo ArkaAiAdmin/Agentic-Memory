@@ -11,9 +11,8 @@ Architecture:
 
 import json
 import sys
-import os
 import traceback
-from typing import Any, Optional
+from typing import Any
 
 # LiteLLM import — graceful degradation if not installed
 try:

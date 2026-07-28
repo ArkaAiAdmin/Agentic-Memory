@@ -1,10 +1,8 @@
 import os
 os.environ["HF_HUB_OFFLINE"] = "1"
 
-import pytest
 import sqlite3
 import time
-from pathlib import Path
 from search.orchestrator import search_memories
 from save.pipeline import save_memory
 

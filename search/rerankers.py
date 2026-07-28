@@ -27,7 +27,7 @@ import logging
 import re
 import os
 from abc import ABC, abstractmethod
-from typing import Any, cast
+from typing import Any
 
 from search.config import get_search_config
 

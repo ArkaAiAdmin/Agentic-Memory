@@ -55,7 +55,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 from crdt.vv_utils import (
     vv_dominates as dominates,
-    vv_concurrent as concurrent,
     merge_vectors,
     parse_version_vector,
 )

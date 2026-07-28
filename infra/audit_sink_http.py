@@ -27,11 +27,9 @@ import json
 import logging
 import threading
 import time
-from typing import Any
 
 import requests
 
-from infra.audit_sink import AuditSink
 
 logger = logging.getLogger(__name__)
 

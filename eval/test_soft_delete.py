@@ -24,7 +24,6 @@ import shutil
 import sqlite3
 import sys
 import tempfile
-import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

@@ -14,7 +14,6 @@ Verifies:
 import os
 import sys
 import sqlite3
-import json
 import time
 
 sys.path.insert(0, str(os.environ.get("MEMORY_INSTALL_ROOT", os.path.expanduser("~/.config/agentic-memory"))))

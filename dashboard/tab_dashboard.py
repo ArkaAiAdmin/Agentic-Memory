@@ -6,16 +6,14 @@ import json
 import logging
 from collections import Counter
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 import dashboard
 from dashboard import (
-    DARK, _auto_refresh, _compute_health_score, _fmt_date, _get_schema_version,
+    DARK, _auto_refresh, _compute_health_score, _get_schema_version,
     _run_health_checks, get_conn, query, try_count,
 )
 from dashboard.api_client import _api, _query_api
@@ -71,7 +69,8 @@ def _execute_quick_action(action: str):
     elif action == "rebuild_fts":
         with st.spinner("Rebuilding FTS5 index..."):
             try:
-                import subprocess, sys
+                import subprocess
+                import sys
                 result = subprocess.run(
                     [sys.executable, str(ROOT / "cron" / "cron_rebuild_fts.py")],
                     capture_output=True, text=True, timeout=120,
@@ -87,7 +86,8 @@ def _execute_quick_action(action: str):
     elif action == "rebuild_embeddings":
         with st.spinner("Rebuilding embeddings..."):
             try:
-                import subprocess, sys
+                import subprocess
+                import sys
                 result = subprocess.run(
                     [sys.executable, str(ROOT / "cron" / "cron_embedding_recompute.py")],
                     capture_output=True, text=True, timeout=300,
@@ -127,7 +127,8 @@ def _execute_quick_action(action: str):
     elif action == "backfill":
         with st.spinner("Running backfill..."):
             try:
-                import subprocess, sys
+                import subprocess
+                import sys
                 result = subprocess.run(
                     [sys.executable, str(ROOT / "backfill_all.py")],
                     capture_output=True, text=True, timeout=600,
@@ -193,7 +194,8 @@ def _execute_fix(check_name: str):
     if check_name == "FTS5 Index":
         with st.spinner("Rebuilding FTS5 index..."):
             try:
-                import subprocess, sys
+                import subprocess
+                import sys
                 result = subprocess.run(
                     [sys.executable, str(ROOT / "cron" / "cron_rebuild_fts.py")],
                     capture_output=True, text=True, timeout=120,
@@ -210,7 +212,8 @@ def _execute_fix(check_name: str):
     elif check_name == "Vec Index":
         with st.spinner("Rebuilding embeddings..."):
             try:
-                import subprocess, sys
+                import subprocess
+                import sys
                 result = subprocess.run(
                     [sys.executable, str(ROOT / "cron" / "cron_embedding_recompute.py")],
                     capture_output=True, text=True, timeout=300,
@@ -227,7 +230,8 @@ def _execute_fix(check_name: str):
     elif check_name == "Knowledge Graph":
         with st.spinner("Running backfill..."):
             try:
-                import subprocess, sys
+                import subprocess
+                import sys
                 result = subprocess.run(
                     [sys.executable, str(ROOT / "backfill_all.py")],
                     capture_output=True, text=True, timeout=600,

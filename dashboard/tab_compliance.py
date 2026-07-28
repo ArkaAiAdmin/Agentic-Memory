@@ -9,14 +9,13 @@ import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 import dashboard
-from dashboard import DARK, get_conn, query, table, try_count
+from dashboard import DARK, query, try_count
 
 logger = logging.getLogger(__name__)
 ROOT = dashboard._REPO_ROOT
@@ -672,7 +671,7 @@ def _scan_subject_data(subject: str):
     sample_memories = []
     mem_df = _query_api(
         "SELECT id, content, category, data_subject_sub FROM memories "
-        f"WHERE data_subject_sub = ? LIMIT 5",
+        "WHERE data_subject_sub = ? LIMIT 5",
         [subject],
     )
     if mem_df is not None and not mem_df.empty:
@@ -682,7 +681,7 @@ def _scan_subject_data(subject: str):
     sample_entities = []
     ent_df = _query_api(
         "SELECT name, entity_type, mentions FROM kg_entities "
-        f"WHERE name LIKE ? LIMIT 5",
+        "WHERE name LIKE ? LIMIT 5",
         [f"%{subject}%"],
     )
     if ent_df is not None and not ent_df.empty:

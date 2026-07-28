@@ -8,10 +8,8 @@ Covers:
 
 from __future__ import annotations
 
-import math
 from unittest import mock
 
-import pytest
 
 
 class TestAdaptiveOverfetch:

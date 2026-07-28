@@ -6,7 +6,7 @@ import logging
 import sqlite3
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from infra.error_counter import increment as _phase_inc
 from search.scoring import _reciprocal_rank_fusion

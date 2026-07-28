@@ -5,12 +5,11 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
-import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from search.config import get_search_config
-from search.phases._db_utils import _fetch_rows_by_ids, _get_memories_columns
+from search.phases._db_utils import _fetch_rows_by_ids
 
 if TYPE_CHECKING:
     from infra.db import AnyConnection

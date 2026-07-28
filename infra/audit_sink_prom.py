@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import threading
 
-from infra.audit_sink import AuditSink
 
 logger = logging.getLogger(__name__)
 

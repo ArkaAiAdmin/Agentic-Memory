@@ -9,8 +9,6 @@ import time
 import pytest
 
 from background.background_queue import (
-    RejectPolicy,
-    cleanup_old_tasks,
     complete_task,
     dequeue_task,
     enqueue_task,

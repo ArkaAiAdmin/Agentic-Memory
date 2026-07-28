@@ -74,7 +74,6 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
     run_cloud_migrations(cloud_db)
 
     # Set Stripe env vars before server starts so the server thread sees them
-    import os
     os.environ["STRIPE_SECRET_KEY"] = "sk_test_fake"
     os.environ["STRIPE_PRICE_PRO"] = "price_pro_test"
     os.environ["STRIPE_PRICE_ENTERPRISE"] = "price_ent_test"

@@ -34,7 +34,6 @@ __all__ = ["get_reranker", "reset_reranker_for_tests", "normalize_rerank_score"]
 
 import multiprocessing as mp
 import threading
-import time
 from typing import TYPE_CHECKING, Any, List, Optional, cast
 
 if TYPE_CHECKING:

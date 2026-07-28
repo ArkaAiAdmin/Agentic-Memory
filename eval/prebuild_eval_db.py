@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Pre-build an eval DB with full indexes for golden set."""
-import json, os, sqlite3, sys, tempfile
+import json
+import os
+import sqlite3
+import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 

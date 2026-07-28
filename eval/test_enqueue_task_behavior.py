@@ -315,7 +315,6 @@ class TestWorkerRunScriptHandler(TestCase):
 
     def test_run_script_fails_on_missing_script(self) -> None:
         """Explicit script path that doesn't exist fails the task."""
-        from background.background_worker import HANDLERS
         from infra.memory_common import connection_pool
         from background.background_queue import init_task_queue, enqueue_task
 

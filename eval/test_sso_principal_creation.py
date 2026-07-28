@@ -17,7 +17,6 @@ All tests use a temp-file SQLite DB bootstrapped with the prod schema
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 import tempfile
@@ -32,7 +31,6 @@ INSTALL_DIR = os.environ.get(
 )
 sys.path.insert(0, str(INSTALL_DIR))
 
-import infra.memory_common as memory_common  # noqa: E402
 from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 
 
@@ -374,10 +372,10 @@ class TestCallbackPrincipalIntegration(unittest.TestCase):
     def test_saml_callback_creates_principal(self):
         """SAML callback -> parse -> principal creation."""
         from infra.authlib_sso import (
-            SsoProviderConfig, SsoSession, SsoIdentity,
-            resolve_or_create_principal, resolve_principal_by_external_sub,
+            SsoProviderConfig, SsoSession, resolve_or_create_principal, resolve_principal_by_external_sub,
         )
-        import base64, sqlite3
+        import base64
+        import sqlite3
 
         saml_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <saml2p:Response xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol"

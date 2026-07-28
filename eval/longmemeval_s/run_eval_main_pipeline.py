@@ -113,7 +113,6 @@ def _parse_haystack_date(date_str: str) -> str:
 def _seed_sessions(db_path: Path, sessions: list[list[dict]], session_ids: list[str],
                    session_dates: list[str] | None = None) -> None:
     """Insert all sessions into the memories table for search_memories to find."""
-    import json as _json
 
     conn = sqlite3.connect(str(db_path))
     try:
@@ -241,7 +240,8 @@ def run(
 
     def _embed_and_store_batch(conn, sessions: list[tuple[str, str]], model) -> int:
         """Batch-compute and store embeddings for sessions."""
-        import hashlib, time as _t
+        import hashlib
+        import time as _t
         if model is None:
             return 0
         model_name = getattr(model, 'name', 'bge-large')

@@ -1173,7 +1173,6 @@ def run_worker(
     # callers (e.g. mcp_authorize's audit INSERT).  The write-queue
     # session mode held the flock for the entire drain/interval loop,
     # causing 30s timeouts in any other process that needed to write.
-    from infra.db import open_db, safe_close_db
     import signal as _proc_sig
 
     _PROCESS_TIMEOUT_S = int(
@@ -1375,3 +1374,26 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def _reconciliation_loop_sharded(
+    journal_path: Path,
+    target_base: Path,
+    worker_id: int,
+    n_workers: int,
+) -> None:
+    """Run one shard of the multi-writer journal reconciliation worker loop."""
+    from infra.write_journal import process_pending_journal_entries
+    process_pending_journal_entries(journal_path, target_base, worker_id=worker_id, n_workers=n_workers)
+
+
+def multiwriter_reconciliation_pool(
+    journal_path: Path,
+    target_base: Path,
+    n_workers: int = 4,
+    idle_quit_after_secs: float = 30.0,
+) -> None:
+    """Launch multi-writer journal reconciliation pool."""
+    from infra.write_journal import process_pending_journal_entries
+    process_pending_journal_entries(journal_path, target_base, n_workers=n_workers)
+

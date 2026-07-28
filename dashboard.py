@@ -10,8 +10,7 @@ os.environ["DASHBOARD_ALLOW_LOCAL_FALLBACK"] = "1"
 
 import streamlit as st
 
-import dashboard  # noqa: E402
-from dashboard import CSS, TABS, resolve_db
+from dashboard import CSS, resolve_db
 from dashboard.sidebar import render_sidebar
 from dashboard.tab_dashboard import render_dashboard
 from dashboard.tab_memories import render_memories
@@ -76,7 +75,6 @@ if "api_client" not in st.session_state:
 # When no static API token is configured, the operator must sign in to obtain
 # a JWT session cookie. Operators who set MEMORY_API_TOKEN (or have a persisted
 # .api_token) get auto-signed-in on startup; otherwise the login page is shown.
-from dashboard.login import render_login, requires_login
 from dashboard.api_client import resolve_api_token
 
 _resolved_token = resolve_api_token(str(_dk.DB.parent))

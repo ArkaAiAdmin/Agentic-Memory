@@ -12,9 +12,6 @@ Usage:
     python3 ~/.config/agentic-memory/agent_init.py [task_keywords...]
 """
 import sys
-import os
-import json
-import sqlite3
 from pathlib import Path
 
 # Add agentic-memory to path for imports
@@ -114,11 +111,14 @@ def show_memory_stats(project_root: Path):
                 with open_db(path, timeout=5.0, pooled=True, write=False) as db:
                     cursor = db.cursor()
                     cursor.execute("SELECT COUNT(*) FROM memories")
-                    count = cursor.fetchone()[0]
+                    row = cursor.fetchone()
+                    count = row[0] if row else 0
                     cursor.execute("SELECT COUNT(*) FROM memories WHERE repo_id IS NULL")
-                    global_count = cursor.fetchone()[0]
+                    row_g = cursor.fetchone()
+                    global_count = row_g[0] if row_g else 0
                     cursor.execute("SELECT COUNT(*) FROM memories WHERE pinned = 1")
-                    pinned_count = cursor.fetchone()[0]
+                    row_p = cursor.fetchone()
+                    pinned_count = row_p[0] if row_p else 0
                 
                 if label == "Local":
                     print(f"  {label}: {count} memories ({global_count} global, {pinned_count} pinned)")

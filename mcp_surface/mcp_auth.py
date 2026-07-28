@@ -21,9 +21,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sqlite3
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from mcp_surface.mcp_instance import mcp
 
@@ -70,7 +69,6 @@ from infra.authlib_sso import (
     KeyManager,
     SsoConfigError,
     SsoError,
-    SsoIdentity,
     SsoProviderConfig,
     SsoSession,
     resolve_or_create_principal,

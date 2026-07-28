@@ -5,15 +5,12 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 import dashboard
-from dashboard import DARK, get_conn, query, table, try_count
 from dashboard.api_client import (
     _api,
     _query_api,

@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from typing import Any, Optional
+from typing import Optional
 
 # H2 fix: wrap torch import to handle CUDA/MPS init failures gracefully
 try:

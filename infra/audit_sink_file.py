@@ -13,7 +13,6 @@ import logging
 import os
 import threading
 
-from infra.audit_sink import AuditSink
 
 logger = logging.getLogger(__name__)
 

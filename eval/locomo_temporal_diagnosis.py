@@ -24,7 +24,6 @@ sys.path.insert(0, str(EVAL_ROOT))
 
 from locomo_eval import (
     ensure_dataset, ingest_conversation, extract_gold_sessions,
-    session_to_memory_id, CATEGORY_MAP, K_VALUES,
 )
 from _fixtures import bootstrap_temp_db_clean
 from search.orchestrator import search_memories
@@ -132,7 +131,7 @@ def run_diagnosis():
 
     # Summary
     print(f"\n{'='*70}")
-    print(f"TEMPORAL-REASONING DIAGNOSIS")
+    print("TEMPORAL-REASONING DIAGNOSIS")
     print(f"{'='*70}")
     print(f"Total temporal questions: {len(temporal_questions)}")
     print(f"Recall@{k}: {len(successes)}/{len(temporal_questions)} = {len(successes)/len(temporal_questions):.4f}")
@@ -140,7 +139,7 @@ def run_diagnosis():
 
     # Failure analysis
     if failures:
-        print(f"\n--- FAILURE ANALYSIS ---")
+        print("\n--- FAILURE ANALYSIS ---")
 
         # Categorize failure modes
         no_results = [f for f in failures if f["n_results"] == 0]
@@ -166,7 +165,7 @@ def run_diagnosis():
 
         # Show gold-missing failures
         if gold_missing_entirely:
-            print(f"\n--- GOLD MISSING FROM RETRIEVAL ---")
+            print("\n--- GOLD MISSING FROM RETRIEVAL ---")
             for f in gold_missing_entirely[:5]:
                 print(f"\n  Q: {f['question']}")
                 print(f"  Answer: {f['answer']}")
@@ -177,7 +176,7 @@ def run_diagnosis():
     all_latencies = [f["latency_ms"] for f in failures + successes]
     if all_latencies:
         all_latencies.sort()
-        print(f"\n--- LATENCY ---")
+        print("\n--- LATENCY ---")
         print(f"  Mean: {sum(all_latencies)/len(all_latencies):.1f}ms")
         print(f"  p50: {all_latencies[len(all_latencies)//2]:.1f}ms")
         print(f"  p95: {all_latencies[int(len(all_latencies)*0.95)]:.1f}ms")

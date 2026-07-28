@@ -165,7 +165,7 @@ def main() -> int:
                     return 0
                 print(f"enqueued task_id={task_id} type={args.task_type}")
                 return 0
-            except Exception as exc:
+            except Exception:
                 raise
             finally:
                 conn.close()

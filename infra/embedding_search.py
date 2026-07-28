@@ -417,7 +417,6 @@ class EmbeddingSearch:
 
             if backend == "model2vec":
                 from model2vec import StaticModel
-                from huggingface_hub import snapshot_download
 
                 _disable_hf_progress_bars()
                 rev_kw = model_revision if model_id == MODEL_ID else (model_revision or None)
@@ -441,7 +440,6 @@ class EmbeddingSearch:
                 self.is_transformer = True
                 self._model_revision = model_id  # sentence-transformers: model_id is the authority
             elif backend == "transformers":
-                from transformers import AutoTokenizer, AutoModel
                 model_kwargs: dict[str, Any] = {}
                 if model_revision:
                     model_kwargs["revision"] = model_revision
@@ -455,7 +453,6 @@ class EmbeddingSearch:
             else:
                 if "potion" in model_id or "model2vec" in model_id:
                     from model2vec import StaticModel
-                    from huggingface_hub import snapshot_download
 
                     _disable_hf_progress_bars()
                     rev_kw = model_revision if model_id == MODEL_ID else None
@@ -474,7 +471,6 @@ class EmbeddingSearch:
                         self.is_transformer = True
                         self._model_revision = model_id  # sentence-transformers path: model_id is the authority
                     except ImportError:
-                        from transformers import AutoTokenizer, AutoModel
                         tokenizer, model = self._load_transformers_with_fallback(
                             model_id, {}, _local_only
                         )

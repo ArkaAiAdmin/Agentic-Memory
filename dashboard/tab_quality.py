@@ -3,28 +3,21 @@
 from __future__ import annotations
 
 import difflib
-import json
 import logging
 import os
-import sys
-from collections import Counter, defaultdict
-from datetime import datetime, timezone
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 import dashboard
-from dashboard import DARK, get_conn, query, table, try_count
+from dashboard import DARK, get_conn
 from dashboard.api_client import (
     _api,
     _query_api,
     _try_count_api,
     _table_exists_api,
-    _list_column_api,
-    _get_conn_api,
 )
 
 logger = logging.getLogger(__name__)
@@ -552,7 +545,7 @@ def _render_search_sandbox():
                     f"<div style='color:#9ca3af;font-size:0.72rem;margin-top:4px;'>{(r.get('content') or '')[:150]}</div>"
                     f"</div>"
                 )
-                if st.button(f"\U0001f44d Useful", key=f"sandbox_up_{i}"):
+                if st.button("\U0001f44d Useful", key=f"sandbox_up_{i}"):
                     try:
                         from search.feedback import record_ctr_feedback_db
                         record_ctr_feedback_db(str(dashboard.DB), id=r.get("id", ""), query_id=f"sandbox_{query_text}", action="clicked")
@@ -633,7 +626,7 @@ def _render_gap_detector():
                 f"<span style='color:#8b5cf6;font-size:0.65rem;margin-left:auto;'>co-occur: {count}</span>"
                 f"</div>"
             )
-            if st.button(f"\U0001f517 Create Edge", key=f"gap_edge_{i}", use_container_width=False):
+            if st.button("\U0001f517 Create Edge", key=f"gap_edge_{i}", use_container_width=False):
                 try:
                     _c = _api()
                     if entities is None:
@@ -744,7 +737,8 @@ def _opt_compact():
 def _opt_rebuild_fts():
     with st.spinner("Rebuilding FTS5 index..."):
         try:
-            import subprocess, sys
+            import subprocess
+            import sys
             result = subprocess.run(
                 [sys.executable, str(ROOT / "cron" / "cron_rebuild_fts.py")],
                 capture_output=True, text=True, timeout=120,
@@ -761,7 +755,8 @@ def _opt_rebuild_fts():
 def _opt_rebuild_embeddings():
     with st.spinner("Rebuilding embeddings..."):
         try:
-            import subprocess, sys
+            import subprocess
+            import sys
             result = subprocess.run(
                 [sys.executable, str(ROOT / "cron" / "cron_embedding_recompute.py")],
                 capture_output=True, text=True, timeout=300,
@@ -806,7 +801,8 @@ def _opt_archive_stale():
 def _opt_backfill():
     with st.spinner("Running backfill..."):
         try:
-            import subprocess, sys
+            import subprocess
+            import sys
             result = subprocess.run(
                 [sys.executable, str(ROOT / "backfill_all.py")],
                 capture_output=True, text=True, timeout=600,

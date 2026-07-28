@@ -749,7 +749,8 @@ class _MaintenanceHandlersProxy:
 
 def _run_pipeline_health(json_output: bool = False) -> str:
     """Run cron/cron_pipeline_health.py and return its output."""
-    import subprocess, sys
+    import subprocess
+    import sys
     _script = str(
         Path(__file__).resolve().parent.parent / "cron" / "cron_pipeline_health.py"
     )
@@ -1237,7 +1238,7 @@ def _op_search_phase_stats(
 
         # Fetch error counts from the in-memory error counter.
         try:
-            from infra.error_counter import get_all as _ec_get_all, get_counts as _ec_get_counts
+            from infra.error_counter import get_counts as _ec_get_counts
 
             ec_since: float | None = since_ts
             ec_until: float | None = until_ts

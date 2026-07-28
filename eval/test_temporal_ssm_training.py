@@ -4,7 +4,6 @@ Run:  venv/bin/python -m pytest eval/test_temporal_ssm_training.py -q
 (Repo uses a subprocess-per-file runner; this file is self-contained.)
 """
 
-import os
 import sqlite3
 import tempfile
 import unittest
@@ -50,7 +49,7 @@ def _scratch_db(path: Path):
         conn.execute("INSERT INTO memory_ctr_feedback VALUES (?,?,?,?)",
                      (f"n{i}", iso if clicked else None, None if clicked else iso, iso))
     conn.execute("INSERT INTO audit_log VALUES (1,'memory_search',?)",
-                 (f'{{"query":"alpha beta"}}',))
+                 ('{"query":"alpha beta"}',))
     conn.commit()
     return conn
 

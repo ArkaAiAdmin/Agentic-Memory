@@ -10,8 +10,6 @@ All tests use the same fallback schema / helpers so cases stay readable.
 from __future__ import annotations
 
 import sqlite3
-import tempfile
-import pathlib
 import pytest
 from typing import Any, Dict, cast
 

@@ -41,7 +41,6 @@ def main() -> int:
     print(f"MCP usage sync: {result}")
 
     # 2. Measure storage and audit log size for each active deployment
-    import time
     import sqlite3 as _sqlite3
     deps = store.list_deployments()
     for dep in deps:

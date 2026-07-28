@@ -14,7 +14,6 @@ import os
 import sqlite3
 import subprocess
 import sys
-import time
 from collections.abc import Generator
 from pathlib import Path
 
@@ -163,7 +162,6 @@ def test_migration_063_up_down(tmp_path: Path) -> None:
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
 
-    from infra.migration_runner import run_migrations
 
     migration_dir = REPO_ROOT / "migrations"
     up = (migration_dir / "063_cron_task_timeout_policy.sql").read_text()

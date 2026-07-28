@@ -27,7 +27,7 @@ import re
 import time
 import warnings
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from infra.frontmatter import _coerce  # noqa: F401
 # Re-exports from the 6 new modules (one canonical home, multiple import paths)

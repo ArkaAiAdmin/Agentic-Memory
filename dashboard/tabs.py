@@ -16,7 +16,7 @@ import sqlite3
 import subprocess
 import sys
 from collections import Counter
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from math import log2
 from pathlib import Path
 
@@ -37,7 +37,6 @@ from dashboard import (
     _get_schema_version,
     _live_health,
     _render_memory_content,
-    _table_status,
     get_conn,
     query,
     table,
@@ -2010,7 +2009,6 @@ def render_multi_agent():
     partner_shared = 0
     partner_rows = []
     try:
-        from pathlib import Path as _Path
 
         _partner_db = dashboard.DB.parent / dashboard.DB.name.replace("memory.db", "memory-agent-b.db")
         if _partner_db.exists():

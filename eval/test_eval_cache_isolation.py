@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
-import pytest
 from pathlib import Path
 
 from infra.cache import clear_all_caches, _search_cache

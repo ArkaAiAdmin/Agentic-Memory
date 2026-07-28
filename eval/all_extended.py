@@ -13,8 +13,6 @@ os.environ["MEMORY_DB_PATH"] = f"{INSTALL_ROOT}/memory/memory.db"
 DB = os.environ["MEMORY_DB_PATH"]
 
 import config as cfg
-import infra.db_migrations
-import infra.migration_runner  # type: ignore
 from pathlib import Path
 import subprocess as sp
 

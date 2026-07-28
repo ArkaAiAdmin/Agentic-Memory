@@ -6,7 +6,6 @@ import os
 import sys
 import sqlite3
 
-import pytest
 
 sys.path.insert(0, os.path.expanduser("~/.config/agentic-memory"))
 

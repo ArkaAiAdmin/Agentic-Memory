@@ -6,7 +6,6 @@ content from sync calls, closing the bypass where remote peer content
 entered the system without passing through _scan_for_injection_or_skip.
 """
 
-import json
 import sys
 import tempfile
 import unittest

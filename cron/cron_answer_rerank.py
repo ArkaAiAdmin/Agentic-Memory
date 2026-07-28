@@ -12,7 +12,6 @@ Also cleans up stale cache entries older than 7 days.
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 try:
     from infra.tenant_query import install_tenant_context

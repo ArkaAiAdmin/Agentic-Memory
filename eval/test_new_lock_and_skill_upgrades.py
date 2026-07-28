@@ -16,7 +16,6 @@ INSTALL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL))
 
 from infra.lock_manager import (
-    get_lock_manager,
     SQLiteLockManager,
     clear_lock_manager_cache,
 )

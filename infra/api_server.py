@@ -88,7 +88,7 @@ class APIRequestHandler(BaseHTTPRequestHandler):
         # line is emitted first and the response stays well-formed).
         for _ck in getattr(self, "_pending_cookies", []) or []:
             self.send_header("Set-Cookie", _ck)
-        self._pending_cookies = []
+        self._pending_cookies: list[str] = []
         # CORS
         origin = self.headers.get("Origin", "")
         for hdr, val in self._cors_headers(origin):
@@ -2183,7 +2183,6 @@ class APIRequestHandler(BaseHTTPRequestHandler):
           - "self_hosted":  skips DB provisioning (user manages their own DB)
         """
         import uuid
-        import os
         try:
             body = self._read_json_body() or {}
             email = body.get("email", "").strip()

@@ -22,16 +22,14 @@ _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from coordination.locking import acquire_lock, release_lock, check_lock, list_locks
+from coordination.locking import acquire_lock, release_lock, check_lock
 from coordination.messaging import (
     send_message, read_messages, broadcast_message,
-    get_pending_count, cleanup_old_messages,
+    cleanup_old_messages,
 )
 from coordination.project_state import set_state, get_state, delete_state
 from coordination.durability import (
-    ensure_durability_tables, record_coordination_event,
-    update_heartbeat, check_agent_alive, get_safety_report,
-    run_durability_maintenance, cleanup_old_audit_entries,
+    ensure_durability_tables, update_heartbeat, check_agent_alive, run_durability_maintenance, cleanup_old_audit_entries,
 )
 
 

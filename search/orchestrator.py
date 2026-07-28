@@ -630,7 +630,7 @@ def _counting_phase(
                 for pattern in [
                     rf"{_re.escape(kw)}\s+(?:\w+\s+)?is\s+now\s+(\S+(?:\s+\S+)?)(?:\.|;|\n)",
                     rf"{_re.escape(kw)}\s+was\s+(\S+(?:\s+\S+)?)(?:\.|;|\n)",
-                    rf"changed\s+to\s+(\S+(?:\s+\S+)?)(?:\.|;|\n)",
+                    r"changed\s+to\s+(\S+(?:\s+\S+)?)(?:\.|;|\n)",
                 ]:
                     for m in _re.finditer(pattern, content, _re.IGNORECASE):
                         val = m.group(1).strip().rstrip('.')

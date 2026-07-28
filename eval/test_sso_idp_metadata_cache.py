@@ -15,7 +15,6 @@ migration 047 — sso_idp_cache table).
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 import tempfile
@@ -30,7 +29,6 @@ INSTALL_DIR = os.environ.get(
 )
 sys.path.insert(0, str(INSTALL_DIR))
 
-import infra.memory_common as memory_common  # noqa: E402
 from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 
 
@@ -255,7 +253,7 @@ class TestSsoSessionOIDC(unittest.TestCase):
     @patch("infra.authlib_sso.requests.post")
     def test_parse_callback_with_code_exchange(self, mock_post):
         """OIDC callback with 'code' triggers token exchange."""
-        from infra.authlib_sso import SsoSession, SsoAuthError
+        from infra.authlib_sso import SsoSession
 
         # Generate a valid id_token signed by a synthetic IdP key
         from joserfc.jwk import import_key
@@ -326,7 +324,7 @@ class TestSsoSessionOIDC(unittest.TestCase):
 
     def test_parse_callback_with_direct_id_token(self):
         """OIDC callback with direct id_token (no code exchange)."""
-        from infra.authlib_sso import SsoSession, SsoAuthError
+        from infra.authlib_sso import SsoSession
         from joserfc.jwk import import_key
         from joserfc import jwt as jose_jwt
         from cryptography.hazmat.primitives.asymmetric import rsa

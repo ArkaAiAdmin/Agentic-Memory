@@ -836,7 +836,7 @@ def run_beam_evaluation(scale: str = "100K", seed: int = 42) -> dict[str, Any]:
     print(f"Avg Latency: {avg_latency:.2f}ms")
 
     if BASELINES.get("Cognee", {}).get(scale):
-        print(f"\nBaseline Comparison:")
+        print("\nBaseline Comparison:")
         print(f"  Cognee at {scale}: {BASELINES['Cognee'][scale]:.2%}")
         print(f"  Our Accuracy: {accuracy:.2%}")
         print(f"  Difference: {accuracy - BASELINES['Cognee'][scale]:+.2%}")

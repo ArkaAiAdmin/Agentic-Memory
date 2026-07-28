@@ -13,12 +13,9 @@ boundary conditions. Categories:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
-import tempfile
 import time
-from typing import Any, Dict, cast
 
 import pytest
 
@@ -723,7 +720,7 @@ class TestMixedOperations:
         count = 0
         for perm in permutations(ops):
             result = merge_edge_ops(list(perm))
-            assert result == reference, f"Edge merge not commutative for permutation"
+            assert result == reference, "Edge merge not commutative for permutation"
             count += 1
         assert count == 120
 

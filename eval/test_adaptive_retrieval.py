@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-import pytest
 from search.orchestrator import _COMPLEX_REASONING_RE, _LIST_ENUMERATION_RE
 
 

@@ -53,7 +53,6 @@ def _measure(note: dict, db_path: str) -> float:
 
 
 def run_bench(quick: bool = False) -> dict:
-    from infra.memory_common import GLOBAL_MEM_DIR
     import shutil
 
     results: dict = {}

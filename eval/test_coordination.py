@@ -11,7 +11,6 @@ Tests cover:
 """
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import sys
@@ -19,7 +18,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
@@ -39,7 +38,6 @@ from coordination.project_state import (
 from coordination.durability import (
     ensure_durability_tables, record_coordination_event, update_heartbeat,
     check_agent_alive, get_alive_agents, cleanup_stale_agents,
-    release_stale_locks, abandon_stale_tasks, cleanup_old_messages as cleanup_old_msgs,
     run_durability_maintenance, get_coordination_audit, get_safety_report,
 )
 

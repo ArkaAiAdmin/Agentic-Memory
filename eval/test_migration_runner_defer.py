@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Regression tests for migration_runner suppressed-error deferral (C13)."""
 
-import os
 import sys
 import tempfile
 import unittest
@@ -11,7 +10,6 @@ from unittest import mock
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
-from infra.db import open_db
 from infra.migration_runner import run_migrations
 
 

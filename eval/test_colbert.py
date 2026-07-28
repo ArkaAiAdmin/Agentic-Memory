@@ -9,10 +9,7 @@ Covers:
 
 from __future__ import annotations
 
-import math
 import sqlite3
-import struct
-import time
 
 import pytest
 

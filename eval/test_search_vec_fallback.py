@@ -11,16 +11,13 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))

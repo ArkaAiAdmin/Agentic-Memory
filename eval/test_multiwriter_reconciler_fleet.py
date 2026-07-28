@@ -20,7 +20,6 @@ import sqlite3
 import subprocess
 import sys
 import time
-import unittest
 from pathlib import Path
 
 import pytest

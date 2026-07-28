@@ -20,8 +20,6 @@ Usage:
 import argparse
 import json
 import sys
-import sqlite3
-from contextlib import closing
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 

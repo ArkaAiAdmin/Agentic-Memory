@@ -25,11 +25,9 @@ logger = logging.getLogger(__name__)
 import json
 import os
 import shutil
-import sqlite3
 import sys
 import tempfile
 import time
-from collections import defaultdict
 from pathlib import Path
 
 # ---------------------------------------------------------------------------

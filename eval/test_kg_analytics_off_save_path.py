@@ -9,13 +9,11 @@ Verifies:
 
 from __future__ import annotations
 
-import importlib
 import sqlite3
 import tempfile
 from pathlib import Path
 from unittest import mock
 
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_VERSION = 72

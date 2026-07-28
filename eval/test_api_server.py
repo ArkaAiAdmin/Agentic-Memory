@@ -2,8 +2,6 @@
 """Integration tests for the REST and WebSocket API server.
 """
 
-import base64
-import hashlib
 import json
 import os
 import socket as _socket

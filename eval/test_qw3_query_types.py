@@ -24,7 +24,7 @@ from __future__ import annotations
 import sys
 import time
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 INSTALL = Path.home() / ".config" / "agentic-memory"

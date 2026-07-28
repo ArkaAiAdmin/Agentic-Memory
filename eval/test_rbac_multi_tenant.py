@@ -14,7 +14,6 @@ import os
 import sqlite3
 import sys
 import tempfile
-import time
 from pathlib import Path
 from typing import Generator
 

@@ -18,7 +18,6 @@ import sys
 import tempfile
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import patch, MagicMock
 
 sys.path.insert(
     0,
@@ -237,7 +236,6 @@ class TestFactTypeSentinel(TestCase):
     def test_explicit_fact_type_survives_llm_extraction(self) -> None:
         """Non-default fact_type choices must survive past used_llm wiring."""
         from fact import fact_extract as fe
-        from unittest.mock import patch
         if not hasattr(fe, "index_facts_for_memory"):
             self.skipTest("index_facts_for_memory not found")
         # Verify the function no longer uses 'observation' as a sentinel.

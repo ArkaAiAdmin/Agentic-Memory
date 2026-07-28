@@ -9,7 +9,6 @@ import time
 import pytest
 
 from background.cron_model_lock import (
-    MAX_CRON_RUNTIME_S,
     _STALE_THRESHOLD_S,
     _get_lock_dir,
     cleanup_stale_locks,

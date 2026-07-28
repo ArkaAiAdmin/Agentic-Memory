@@ -27,7 +27,6 @@ INSTALL_DIR = os.environ.get(
 )
 sys.path.insert(0, str(INSTALL_DIR))
 
-import infra.memory_common as memory_common  # noqa: E402
 from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 
 
@@ -427,7 +426,8 @@ class TestVerifyOidcIdToken(unittest.TestCase):
 
     def test_jwt_unverified_header_parses(self):
         from infra.authlib_sso import _jwt_unverified_header
-        import base64, json
+        import base64
+        import json
 
         header = {"alg": "RS256", "kid": "test-kid", "typ": "JWT"}
         header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).rstrip(b"=").decode()

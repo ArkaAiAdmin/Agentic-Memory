@@ -10,7 +10,6 @@ Verifies:
     (no cross-tenant escalation via body injection).
 """
 
-import os
 import sys
 import tempfile
 import types

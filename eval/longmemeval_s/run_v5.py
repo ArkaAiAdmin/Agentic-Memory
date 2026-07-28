@@ -1,6 +1,13 @@
 """Eval v5: FTS + embedding RRF with bge-base, fast iteration."""
 from __future__ import annotations
-import json, hashlib, os, re, sqlite3, sys, tempfile, time
+import json
+import hashlib
+import os
+import re
+import sqlite3
+import sys
+import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
@@ -195,15 +202,15 @@ def run():
 
     print(f"\n{'=' * 60}")
     print(f"Eval: {len(evaluable)}q in {wall:.1f}s ({wall / len(evaluable):.2f}s/q)")
-    print(f"\nFTS-only:")
+    print("\nFTS-only:")
     for k, v in sorted(fts_agg.items()):
         print(f"  {k}: {v:.4f}")
-    print(f"\nFTS + embedding RRF:")
+    print("\nFTS + embedding RRF:")
     for k, v in sorted(rrf_agg.items()):
         print(f"  {k}: {v:.4f}")
 
     # Delta
-    print(f"\nDelta (RRF - FTS):")
+    print("\nDelta (RRF - FTS):")
     for k in sorted(rrf_agg):
         if k in fts_agg:
             delta = rrf_agg[k] - fts_agg[k]

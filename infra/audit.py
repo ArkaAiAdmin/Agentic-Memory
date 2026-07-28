@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 # Centralized in infra/audit_sink so the local log AND external sinks share
 # one redaction implementation. Re-exported here to keep call-site imports
 # stable.
-from infra.audit_sink import redact_audit_value, REDACTED_MASK
+from infra.audit_sink import redact_audit_value
 
 # Backwards-compatible alias (kept so any in-repo caller still works).
 _redact_args = redact_audit_value

@@ -146,8 +146,6 @@ class FieldUpdate:
 # import cycles; the leaf module crdt.vv_utils has no such risk).
 # ---------------------------------------------------------------------------
 from crdt.vv_utils import vv_dominates as _vv_dominates  # noqa: E402
-from crdt.vv_utils import vv_concurrent as _vv_concurrent  # noqa: E402
-from crdt.vv_utils import vv_join as _vv_join  # noqa: E402
 
 
 # Tombstone sentinel value for deleted CRDT fields.

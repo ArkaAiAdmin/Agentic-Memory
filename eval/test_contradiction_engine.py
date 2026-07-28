@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from search.phases.contradiction_engine import resolve_candidate_contradictions, _STATE_PATTERNS
+from search.phases.contradiction_engine import resolve_candidate_contradictions
 
 
 def _make_candidate(candidate_id, content, timestamp="", score=1.0):

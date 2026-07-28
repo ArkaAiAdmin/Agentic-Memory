@@ -9,10 +9,9 @@ import json
 import logging
 import os
 import time
-from typing import Any
 
 from mcp_surface.mcp_instance import mcp
-from mcp_surface.mcp_common import _err, ErrorCode, with_audit, _resolve_memory_dir
+from mcp_surface.mcp_common import _err, ErrorCode, with_audit
 
 logger = logging.getLogger(__name__)
 

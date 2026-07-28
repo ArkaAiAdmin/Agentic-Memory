@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest import mock
 
-import pytest
 
 from infra.rate_limiter import (
     TokenBucket,

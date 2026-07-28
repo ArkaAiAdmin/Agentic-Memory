@@ -2,7 +2,6 @@
 import os
 import signal
 import sys
-import threading
 from pathlib import Path
 
 import logging

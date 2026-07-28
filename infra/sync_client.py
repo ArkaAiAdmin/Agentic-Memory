@@ -283,7 +283,6 @@ def pull_from_peer(
         return {"applied": 0, "conflict": 0, "rejected": 0, "total": 0}
 
     from crdt.crdt_merge import crdt_save
-    from crdt.crdt_field import crdt_field_save
 
     applied = conflict = rejected = 0
     for note in changes:
@@ -560,6 +559,9 @@ def sync_with_peer(
         "success": success,
     }
 
+
+sync_kg_with_peer = sync_with_peer
+sync_agents_with_peer = sync_with_peer
 
 # ---------------------------------------------------------------------------
 # One-shot sync (P2 #2 wire-up)

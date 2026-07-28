@@ -20,7 +20,6 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import infra._bootstrap_path as _bootstrap_path  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _log_error import log_error  # noqa: E402
 
@@ -166,7 +165,7 @@ def _on_session_start(agent_id: str, project_id: str = "default") -> str:
         ).fetchall()
 
         if locks:
-            output.append(f"\n\n**Files locked by other agents:**")
+            output.append("\n\n**Files locked by other agents:**")
             for lock in locks:
                 remaining = max(0, (lock[2] - time.time()))
                 output.append(f"- {lock[0]} (locked by {lock[1]}, {remaining:.0f}s remaining)")

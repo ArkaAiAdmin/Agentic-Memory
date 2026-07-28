@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from search.phases.math_aggregator import (
     extract_and_aggregate_quantities,
     parse_numeric_val,

@@ -4,7 +4,12 @@
 Usage:
     venv/bin/python eval/profile_search.py [query] [limit]
 """
-import json, sys, time, sqlite3, tempfile, shutil
+import json
+import sys
+import time
+import sqlite3
+import tempfile
+import shutil
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -138,11 +143,11 @@ def main():
     print("Warming up CE model...")
     from search.rerankers import _get_ce_chunk_model
     ce = _get_ce_chunk_model()
-    print(f"  CE model ready")
+    print("  CE model ready")
 
     # Run search with profiling
     print(f"\n{'='*60}")
-    print(f"Running search...")
+    print("Running search...")
     _phase_times.clear()
 
     t_start = time.time()
@@ -189,7 +194,7 @@ def main():
 
     # Check orchestrator's own phase_latencies
     print(f"\n{'='*60}")
-    print(f"Orchestrator Phase Latencies:")
+    print("Orchestrator Phase Latencies:")
     print(f"{'='*60}")
     with orch._phase_latencies_lock:
         for name, ms in sorted(orch._phase_latencies.items(), key=lambda x: -x[1]):

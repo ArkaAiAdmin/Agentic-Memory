@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import struct
 import time
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

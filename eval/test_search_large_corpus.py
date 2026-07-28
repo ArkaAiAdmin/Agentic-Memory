@@ -17,7 +17,6 @@ import logging
 import sqlite3
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 

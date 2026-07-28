@@ -13,7 +13,6 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parent.parent
 sys_path_inserted = str(REPO) in __import__("sys").path
@@ -78,7 +77,7 @@ class TestKGSelfEditingE2E:
             _insert_memory(conn, "mem-2", "Alice is an executive chef at Le Bernardin", now)
 
             result2 = index_facts_for_memory(conn, "mem-2", "Alice is an executive chef at Le Bernardin")
-            assert result2["facts"] > 0, f"Expected facts from contradicting memory"
+            assert result2["facts"] > 0, "Expected facts from contradicting memory"
 
             # Step 3: Verify no orphan edges
             orphans = conn.execute(
@@ -288,7 +287,7 @@ class TestKGSelfEditingE2E:
             ).fetchall()
             assert len(rows) > 0, "Expected kg_facts with source_memory"
             for row in rows:
-                assert row[0] != "", f"Empty source_memory in kg_facts"
+                assert row[0] != "", "Empty source_memory in kg_facts"
         finally:
             conn.close()
             if os.path.exists(db_path):

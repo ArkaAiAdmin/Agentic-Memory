@@ -13,12 +13,10 @@ and then drive the cron as a subprocess.
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import sys
 import tempfile
-import fcntl
 from pathlib import Path
 from unittest import TestCase
 

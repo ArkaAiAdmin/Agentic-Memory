@@ -720,7 +720,6 @@ class _SyncHandler(BaseHTTPRequestHandler):
 
         try:
             from crdt.crdt_merge import crdt_sync_all
-            from crdt.crdt_field import crdt_field_save
 
             notes, field_crdt_map = self._normalize_notes(remote_notes)
             result = crdt_sync_all(

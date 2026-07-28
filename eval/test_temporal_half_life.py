@@ -1,10 +1,7 @@
 import sqlite3
 import time
 import math
-import pytest
-from pathlib import Path
-from cron.cron_recompute_temporal_priors import fit_half_life, DEFAULT_TEMPORAL_PRIORS
-from search.scoring import _temporal_decay_factor
+from cron.cron_recompute_temporal_priors import fit_half_life
 from search.enrichment import _apply_post_rank_metadata
 
 def test_fit_half_life_insufficient_data():

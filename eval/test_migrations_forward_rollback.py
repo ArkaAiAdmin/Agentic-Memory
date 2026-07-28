@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -21,11 +20,7 @@ PROJ = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJ))
 
 from infra.migration_runner import (
-    MIGRATIONS_DIR,
     SCHEMA_VERSION,
-    _get_available_migrations,
-    _get_down_migrations,
-    _parse_sql_file,
     run_migrations,
     migrate_down,
 )

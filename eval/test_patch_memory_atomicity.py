@@ -12,7 +12,6 @@ INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))
 
 from save.pipeline import patch_memory, save_memory
-from infra.infrastructure import ErrorCode
 
 
 class TestPatchMemoryAtomicity(unittest.TestCase):
@@ -50,7 +49,6 @@ class TestPatchMemoryAtomicity(unittest.TestCase):
         )
         self.assertTrue(bool(note_id), f"Save failed: {note_id}")
 
-        import json
         # Patch with additions and deletions; inject failure in safe_atomic_write
         with mock.patch("infra.memory_common.safe_atomic_write", side_effect=OSError("Disk write simulated failure")):
             patch_raw = patch_memory(
@@ -72,7 +70,6 @@ class TestPatchMemoryAtomicity(unittest.TestCase):
 
     def test_patch_memory_soft_deleted_note_fails(self):
         """Verify patch_memory fails if note was soft-deleted (deleted_at IS NOT NULL)."""
-        import json
         note_id = save_memory(
             content="Memory to delete then patch",
             category="lessons",

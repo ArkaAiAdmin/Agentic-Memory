@@ -11,7 +11,6 @@ import os
 import subprocess
 import sys
 import time
-import threading
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -70,7 +69,7 @@ BENCHMARKS = [
            "--input eval/longmemeval_s/longmemeval_s_cleaned.json --output eval/longmemeval_s/results/eval_AB.json --variant AB --limit 50",
            timeout=1800, desc="LongMemEval V2 variant AB: both"),
     _bench("longmemeval-v4", "longmemeval_s/run_full_eval_v4.py",
-           f"eval/longmemeval_s/longmemeval_s_cleaned.json 50",
+           "eval/longmemeval_s/longmemeval_s_cleaned.json 50",
            timeout=3600, desc="LongMemEval V4: full pipeline with bge-base"),
 ]
 
@@ -212,7 +211,7 @@ def main():
     total_start = time.monotonic()
 
     print(f"{'=' * 70}")
-    print(f"  AGENTIC-MEMORY BENCHMARKS")
+    print("  AGENTIC-MEMORY BENCHMARKS")
     print(f"  Sequential runner — {len(selected)} benchmark(s)")
     print(f"  Python: {VENV_PYTHON}")
     print(f"  Quick mode: {'YES' if args.quick else 'no'}")
@@ -244,7 +243,7 @@ def main():
 
     # ── Summary ──────────────────────────────────────────────────────────
     print(f"\n\n{'=' * 70}")
-    print(f"  SUMMARY")
+    print("  SUMMARY")
     print(f"{'=' * 70}")
     passed = [r for r in results if r["returncode"] == 0 and not r["killed"]]
     failed = [r for r in results if r["returncode"] != 0 or r["killed"]]
@@ -259,13 +258,13 @@ def main():
 
     # ── Metrics report ───────────────────────────────────────────────────
     print(f"\n{'=' * 70}")
-    print(f"  SEARCH & RETRIEVAL METRICS REPORT")
+    print("  SEARCH & RETRIEVAL METRICS REPORT")
     print(f"{'=' * 70}")
     metrics = _collect_metrics()
 
     if "search" in metrics:
         s = metrics["search"].get("results", {})
-        print(f"\n  ── Search Latency (bench-search) ──")
+        print("\n  ── Search Latency (bench-search) ──")
         for sz, data in sorted(s.items()):
             lat = data.get("latency_ms", {})
             def _f(v, default="?"):
@@ -277,7 +276,7 @@ def main():
 
     if "save" in metrics:
         s = metrics["save"].get("results", {})
-        print(f"\n  ── Save Latency (bench-save) ──")
+        print("\n  ── Save Latency (bench-save) ──")
         for sz, data in sorted(s.items()):
             lat = data.get("latency_ms", {})
             def _f(v, default="?"):
@@ -289,7 +288,7 @@ def main():
 
     if "retrieval" in metrics:
         r = metrics["retrieval"]
-        print(f"\n  ── Retrieval Metrics (retrieval_benchmark) ──")
+        print("\n  ── Retrieval Metrics (retrieval_benchmark) ──")
         phases = r.get("phases", {})
         for phase, data in sorted(phases.items()):
             p = data.get("precision_at_5", "?")
@@ -301,19 +300,19 @@ def main():
 
     if "embedding" in metrics:
         e = metrics["embedding"]
-        print(f"\n  ── Embedding Performance (embedding_benchmark) ──")
+        print("\n  ── Embedding Performance (embedding_benchmark) ──")
         for k in ("embedding_speed", "memory_index_build_s", "chunk_index_build_s"):
             if k in e:
                 print(f"    {k}: {e[k]}")
         search_recall = e.get("search_recall", {})
         if search_recall:
-            print(f"    search_recall (ANN vs brute-force):")
+            print("    search_recall (ANN vs brute-force):")
             for sz, v in sorted(search_recall.items()):
                 print(f"      corpus={sz:>6}  recall={v}")
 
     if "adversarial" in metrics:
         a = metrics["adversarial"]
-        print(f"\n  ── Adversarial Eval ──")
+        print("\n  ── Adversarial Eval ──")
         print(f"    overall_accuracy: {a.get('overall_accuracy', '?')}")
         print(f"    avg_latency_ms:   {a.get('avg_latency_ms', '?')}")
         cat_acc = a.get("category_accuracy", {})
@@ -322,7 +321,7 @@ def main():
 
     if "longmemeval" in metrics:
         lm = metrics["longmemeval"]
-        print(f"\n  ── LongMemEval_S ──")
+        print("\n  ── LongMemEval_S ──")
         print(f"    hybrid_score:          {lm.get('hybrid_score', '?')}")
         print(f"    baseline_fts5_score:   {lm.get('baseline_ft5_score', lm.get('baseline_fts5_score', '?'))}")
         print(f"    hybrid_recall_at_k:    {lm.get('hybrid_recall_at_k', '?')}")
@@ -335,7 +334,7 @@ def main():
 
     if "locomo" in metrics:
         lc = metrics["locomo"]
-        print(f"\n  ── LoCoMo Eval (50 questions) ──")
+        print("\n  ── LoCoMo Eval (50 questions) ──")
         for k in sorted(lc.keys()):
             if k != "detailed":
                 print(f"    {k}: {lc[k]}")

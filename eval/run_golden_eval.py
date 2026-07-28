@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Standalone golden eval — runs directly against a pre-built DB."""
-import json, os, sys, time
+import json
+import os
+import sys
+import time
 from pathlib import Path
 
 INSTALL_DIR = Path(__file__).resolve().parent.parent
@@ -58,7 +61,8 @@ for i, tc in enumerate(test_cases):
 
     as_of = None
     if cat == "temporal":
-        import re, calendar
+        import re
+        import calendar
         for eid in expected:
             m = re.search(r'(\d{4})-(\d{2})-(\d{2})', eid)
             if m:

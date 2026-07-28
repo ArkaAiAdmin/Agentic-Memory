@@ -30,7 +30,6 @@ os.environ.setdefault("MEMORY_AUTH_MODE", "open")
 from save.pipeline import save_memory, _default_data_subject_sub  # noqa: E402
 from infra.gdpr import gdpr_erase  # noqa: E402
 from infra.db_migrations import run_schema_setup  # noqa: E402
-from infra.memory_common import open_db  # noqa: E402
 import sqlite3  # noqa: E402
 
 

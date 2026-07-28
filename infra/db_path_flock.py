@@ -96,7 +96,7 @@ import contextlib
 import os
 import threading
 from pathlib import Path
-from typing import IO, Optional, Protocol
+from typing import Protocol
 
 
 class _SupportsClose(Protocol):

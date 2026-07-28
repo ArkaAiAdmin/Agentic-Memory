@@ -370,7 +370,7 @@ def main() -> int:
         return 0
 
     if not rpo_met:
-        print(f"FAIL: RPO breach — newest backup is too old")
+        print("FAIL: RPO breach — newest backup is too old")
         from infra.alert import alert
 
         alert(

@@ -164,7 +164,6 @@ class TestSavePipelineAcquireLock(unittest.TestCase):
             # The lock manager uses <path>.flock as the actual lock file.
             lock_path = db_path.parent / ".rebuild.lock.flock"
             # Hold the flock in a subprocess on the SAME file the lock manager uses.
-            import fcntl as _fcntl
             script = (
                 "import fcntl, os, time, sys; "
                 "fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR, 0o644); "

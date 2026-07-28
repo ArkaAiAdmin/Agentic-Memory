@@ -51,7 +51,6 @@ from infra.memory_common import (
     GLOBAL_MEM_DIR,
     configure_logging,
 )
-from infra.infrastructure import GLOBAL_MEM_DIR as PROD_GLOBAL
 
 _test_dir = tempfile.mkdtemp(prefix="test_mutation_killers_prod_")
 PROD_DB = Path(_test_dir) / "memory.db"

@@ -2,21 +2,16 @@
 """Audit tab — Full audit log, performance metrics, error drill-down, export."""
 from __future__ import annotations
 
-import csv
-import io
-import json
 import logging
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-import dashboard
 from dashboard import DARK
-from dashboard.api_client import _api, _query_api
+from dashboard.api_client import _api
 
 logger = logging.getLogger(__name__)
 

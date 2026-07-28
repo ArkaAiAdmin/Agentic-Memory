@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Regression tests for saga durability, WAL intent/done logging, crash recovery, and step timeouts (C9, M21, M23, L6)."""
 
-import os
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest import mock
 
 INSTALL_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(INSTALL_DIR))

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import gzip
-import json
 import logging
 import os
 import sqlite3
@@ -22,11 +21,7 @@ import streamlit as st
 import dashboard
 from dashboard import (
     DARK,
-    _fmt_date,
     get_conn,
-    query,
-    try_count,
-    table,
 )
 from dashboard.api_client import (
     _api,

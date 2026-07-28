@@ -580,7 +580,8 @@ def _seed_scenario_1(conn: AnyConnection) -> None:
 
 
 if __name__ == "__main__":
-    import tempfile, pathlib
+    import tempfile
+    import pathlib
 
     schema = """
     CREATE TABLE kg_entity_crdt (

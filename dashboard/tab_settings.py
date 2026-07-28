@@ -5,16 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import platform
-from collections import Counter
 from datetime import datetime, timezone
-from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 import tomllib
 
 import dashboard
-from dashboard import DARK, _get_schema_version, get_conn, query, try_count
+from dashboard import _get_schema_version
 from dashboard.api_client import _query_api, _try_count_api, _table_exists_api
 
 logger = logging.getLogger(__name__)

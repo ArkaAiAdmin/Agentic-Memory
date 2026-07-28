@@ -8,10 +8,8 @@ Subprocess-isolated per Hard Rule 20.
 """
 from __future__ import annotations
 
-import fcntl
 import os
 import subprocess
-import sys
 import tempfile
 import time
 import unittest

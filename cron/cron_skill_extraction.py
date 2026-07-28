@@ -39,7 +39,6 @@ if os.path.basename(_parent) == "cron":
 sys.path.insert(0, _parent)
 
 
-from infra.memory_common import safe_close_db
 from infra.infrastructure import resolve_active_memory_dir
 try:
     from infra.tenant_query import install_tenant_context

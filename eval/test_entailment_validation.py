@@ -13,14 +13,13 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Generator, Optional
+from typing import Generator
 
 sys.path.insert(0, str(os.environ.get("MEMORY_INSTALL_ROOT", os.path.expanduser("~/.config/agentic-memory"))))
 from infra.memory_config import install_root
 sys.path.insert(0, str(install_root()))
 
 import pytest
-from save_pipeline import save_memory
 
 
 def _bootstrap_db(p: Path) -> None:

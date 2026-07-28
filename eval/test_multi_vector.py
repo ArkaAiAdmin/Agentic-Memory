@@ -8,7 +8,6 @@ Max-Sim aggregation of chunk scores to parent memory IDs.
 import sys
 import sqlite3
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -21,7 +20,7 @@ from infra.embedding_search import (
     _chunk_content_hash,
     get_embedding_search,
 )
-from infra.migration_runner import run_migrations, SCHEMA_VERSION
+from infra.migration_runner import run_migrations
 from rebuild_vec_index import rebuild_chunk_vec_index
 
 

@@ -200,7 +200,6 @@ def log_backup(db_path: Path, keep: int = 3) -> None:
     Only the `keep` most recent backups (default 3) are retained; older
     ones are deleted. Best-effort — logs and continues on error.
     """
-    import datetime
 
     db_path = Path(db_path)
     if not db_path.exists():

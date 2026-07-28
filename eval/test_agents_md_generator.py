@@ -14,7 +14,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import unittest
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))

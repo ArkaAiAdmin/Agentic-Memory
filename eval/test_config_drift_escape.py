@@ -18,7 +18,8 @@ if not VENV_PYTHON.exists():
 
 
 def _run(code: str) -> subprocess.CompletedProcess:
-    import tempfile, shutil
+    import tempfile
+    import shutil
     tmp_root = tempfile.mkdtemp()
     env = {k: v for k, v in os.environ.items() if not k.startswith("MEMORY_")}
     env["PYTHONPATH"] = str(WORKTREE)

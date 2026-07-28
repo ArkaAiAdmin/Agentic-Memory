@@ -8,7 +8,6 @@ Run:
 import json
 import queue
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -118,7 +117,6 @@ class TestDispatchDeadLetter:
                 pass
 
         import infra.audit_sink as mod
-        from infra.audit_sink import record_dead_letter
 
         dead_letter_path = tmp_path / "audit_sink_dead_letter.jsonl"
         old_sinks = mod._SINKS

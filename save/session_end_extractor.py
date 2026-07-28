@@ -3,12 +3,11 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timezone
-from pathlib import Path
 from uuid import uuid4
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from infra.db import AnyConnection
+    pass
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,6 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest import mock
 
 INSTALL_DIR = Path.home() / ".config" / "agentic-memory"
 sys.path.insert(0, str(INSTALL_DIR))
