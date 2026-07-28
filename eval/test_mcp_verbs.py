@@ -5,6 +5,7 @@ the MCP surface, delegates to the correct function under normal
 conditions, and returns a well-formed error when the delegate fails.
 """
 
+import json
 import sys
 from pathlib import Path
 from unittest import mock
@@ -106,13 +107,26 @@ class TestVerbSearchBehavior:
 class TestVerbSaveBehavior:
     """memory_save: persists content and returns success."""
 
-    def test_save_returns_success(self):
+    def test_save_returns_json_with_note_id(self):
         with mock.patch("save_pipeline.save_memory") as ms:
-            ms.return_value = "Successfully saved memory: memory/lessons/test.md"
+            ms.return_value = "lessons/test-slug"
             with mock.patch("save_pipeline.save_memory_journal") as msj:
-                msj.return_value = "Successfully saved memory: memory/lessons/test.md"
+                msj.return_value = "lessons/test-slug"
                 result = memory_save(content="x", category="lessons")
-                assert "Successfully saved" in result
+                parsed = json.loads(result)
+                assert parsed["note_id"] == "lessons/test-slug"
+                assert parsed["status"] == "success"
+
+    def test_save_validation_error_returns_json_error(self):
+        from infra.infrastructure import ErrorCode
+        from save_pipeline import SaveValidationError
+        with mock.patch("save_pipeline.save_memory") as ms:
+            ms.side_effect = SaveValidationError(ErrorCode.INVALID_PARAMS, "bad validation")
+            result = memory_save(content="x", category="lessons")
+            parsed = json.loads(result)
+            assert parsed["note_id"] == ""
+            assert parsed["status"] == "error"
+            assert "bad validation" in parsed["message"]
 
 
 class TestVerbDeleteBehavior:

@@ -372,9 +372,9 @@ def memory_save(
                 safety_wiring=safety_wiring,
                 defer_expensive=True,
             )
-            return str(result)
+            return json.dumps({"note_id": result, "status": "success"})
         except SaveValidationError as e:
-            return str(e)
+            return json.dumps({"note_id": "", "status": "error", "message": str(e)})
     except Exception as e:
         logger.exception("in memory_save verb")
         return _wrap_db_error("memory_save", e)

@@ -173,9 +173,7 @@ def memory_save(
                 tenant_id=tenant_id,
                 defer_expensive=True,
             )
-            # save_memory_journal returns the note_id (or an _err
-            # envelope string on hard failure).  Preserve that semantics.
-            return str(result)
+            return json.dumps({"note_id": result, "status": "success"})
         result = save_memory(
             content=content,
             category=category,
@@ -209,7 +207,8 @@ def memory_save(
     # transaction. Now KG facts are written atomically with the rest
     # of the save, and the indexer is the single source of truth.
     prefix = "global" if is_global else "memory"
-    return f"Successfully saved memory: {prefix}/{category}/{title_slug}.md (Index updated incrementally)."
+    note_id = f"{prefix}/{category}/{title_slug}.md"
+    return json.dumps({"note_id": note_id, "status": "success", "message": f"Successfully saved memory: {note_id} (Index updated incrementally)."})
 
 
 @mcp.tool()
