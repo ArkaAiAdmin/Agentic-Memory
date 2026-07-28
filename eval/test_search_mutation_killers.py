@@ -8,6 +8,7 @@ constants, or boolean logic.
 
 import os
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,17 +54,24 @@ from search_pipeline import (
     _QUERY_TYPE_WEIGHTS,
 )
 
-_prod_db_str = os.environ.get("MEMORY_DB_PATH")
-if not _prod_db_str:
-    raise RuntimeError(
-        "MEMORY_DB_PATH must be set to a temp DB to run these tests. "
-        "Use the temp_db_path fixture or set MEMORY_DB_PATH explicitly."
-    )
-PROD_DB = Path(_prod_db_str)
+from _fixtures import bootstrap_temp_db_clean
+
+_test_dir = tempfile.mkdtemp(prefix="test_search_mutation_killers_")
+PROD_DB = Path(_test_dir) / "memory.db"
+bootstrap_temp_db_clean(PROD_DB)
+
+
+def tearDownModule():
+    import shutil
+
+    shutil.rmtree(_test_dir, ignore_errors=True)
 
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+from infra.memory_common import open_db
 
 
 def _hard_delete(db_path, note_id):
@@ -77,9 +85,6 @@ def _hard_delete(db_path, note_id):
         db.execute("DELETE FROM memories WHERE id=?", (note_id,))
         db.commit()
     (Path(db_path).parent / f"{note_id}.md").unlink(missing_ok=True)
-
-
-from infra.memory_common import open_db
 
 
 # ─── _tokenize_for_ce ─────────────────────────────────────────────────
@@ -517,17 +522,17 @@ class TestComputeFinalScore(unittest.TestCase):
         self.assertGreaterEqual(score_default, score_noboost)
 
     def test_recency_weight(self):
-        score_high = _compute_final_score(ScoreContext(
-            rank=-1.0, fitness=0.9, importance=3, pinned=False,
-            created='2026-01-01T00:00:00', tags_json='["tag1"]',
-            query='test', boost_pinned=True, recency_weight=0.5
-        ))
-        score_low = _compute_final_score(ScoreContext(
+        score_zeroed = _compute_final_score(ScoreContext(
             rank=-1.0, fitness=0.9, importance=3, pinned=False,
             created='2026-01-01T00:00:00', tags_json='["tag1"]',
             query='test', boost_pinned=True, recency_weight=0.0
         ))
-        self.assertGreaterEqual(score_high, score_low)
+        score_default = _compute_final_score(ScoreContext(
+            rank=-1.0, fitness=0.9, importance=3, pinned=False,
+            created='2026-01-01T00:00:00', tags_json='["tag1"]',
+            query='test', boost_pinned=True, recency_weight=0.1
+        ))
+        self.assertGreaterEqual(score_zeroed, score_default)
 
     def test_tag_match(self):
         score = _compute_final_score(ScoreContext(

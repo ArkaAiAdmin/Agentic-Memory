@@ -210,6 +210,7 @@ class TestMemoryAutoShareMCPTool(unittest.TestCase):
 
     def test_tool_registered(self):
         from mcp_surface.mcp_instance import mcp
+        import mcp_surface.mcp_sharing as mcp_sharing
 
         # If memory_mcp was imported earlier in the test session, its
         # "hide admin tools" pass removed the tool from the registry.

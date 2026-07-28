@@ -157,6 +157,7 @@ class TestSearchPrecisionFixes(unittest.TestCase):
         db_path = Path(tmpdir) / "memory.db"
         
         conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS memories (
                 id TEXT PRIMARY KEY,
@@ -185,15 +186,14 @@ class TestSearchPrecisionFixes(unittest.TestCase):
         conn.close()
         
         with mock.patch("infra.infrastructure.resolve_active_memory_dir", return_value=Path(tmpdir)):
+            extracted_saves = []
             def mock_save_memory_auto(content, category, title_slug, tags, pinned, importance, safety_wiring):
-                conn_test = sqlite3.connect(str(db_path))
-                conn_test.execute(
-                    "INSERT INTO memories (id, content, category, importance, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
-                    (f"lessons/{title_slug}", content, category, importance)
-                )
-                conn_test.commit()
-                conn_test.close()
+                extracted_saves.append({
+                    "content": content,
+                    "category": category,
+                    "title_slug": title_slug,
+                    "importance": importance,
+                })
                 return f"lessons/{title_slug}"
 
             with mock.patch("save.pipeline.save_memory_auto", side_effect=mock_save_memory_auto):
@@ -201,14 +201,10 @@ class TestSearchPrecisionFixes(unittest.TestCase):
                 res = extract_session_findings(marker)
                 self.assertEqual(res.get("extracted"), 1)
                 
-                conn = sqlite3.connect(str(db_path))
-                rows = conn.execute(
-                    "SELECT id, content, category, importance FROM memories WHERE category='lessons'"
-                ).fetchall()
-                self.assertEqual(len(rows), 1)
-                self.assertEqual(rows[0][3], 3)
-                self.assertIn("Fixed: resolved the double sigmoid bug", rows[0][1])
-                conn.close()
+                self.assertEqual(len(extracted_saves), 1)
+                self.assertIn("Fixed: resolved the double sigmoid bug", extracted_saves[0]["content"])
+                self.assertEqual(extracted_saves[0]["category"], "lessons")
+                self.assertEqual(extracted_saves[0]["importance"], 3)
 
     def test_extraction_skips_duplicate_findings(self):
         """Already-extracted findings are not duplicated."""
@@ -216,6 +212,7 @@ class TestSearchPrecisionFixes(unittest.TestCase):
         db_path = Path(tmpdir) / "memory.db"
         
         conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS memories (
                 id TEXT PRIMARY KEY,
@@ -250,7 +247,8 @@ class TestSearchPrecisionFixes(unittest.TestCase):
         
         with mock.patch("infra.infrastructure.resolve_active_memory_dir", return_value=Path(tmpdir)):
             def mock_save_memory_auto(content, category, title_slug, tags, pinned, importance, safety_wiring):
-                conn_test = sqlite3.connect(str(db_path))
+                conn_test = sqlite3.connect(str(db_path), check_same_thread=False)
+                conn_test.execute("PRAGMA journal_mode=WAL")
                 conn_test.execute(
                     "INSERT INTO memories (id, content, category, importance, created_at, updated_at) "
                     "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",

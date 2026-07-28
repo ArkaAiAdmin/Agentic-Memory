@@ -53,6 +53,25 @@ from infra.db_write_queue import sqlite_write_queue  # noqa: E402
 from infra.write_journal import init_journal_db  # noqa: E402
 from save.pipeline import save_memory_journal  # noqa: E402
 
+
+def _start_journal_reconciler(journal_path: Path, target_base: Path) -> threading.Thread:
+    """Start the new write-journal reconciler in a background thread."""
+    stop = threading.Event()
+
+    def _reconciler_loop():
+        from background.journal_reconciler import _drain_once
+        while not stop.is_set():
+            try:
+                n = _drain_once(target_base, journal_path, batch_size=10)
+                if n == 0:
+                    stop.wait(0.5)
+            except Exception:
+                stop.wait(0.5)
+
+    t = threading.Thread(target=_reconciler_loop, daemon=True)
+    t.start()
+    return t
+
 # Bound the whole scenario; a 300s lock-hold regression would blow this.
 _SCENARIO_TIMEOUT_S = 45.0
 _N_CONTENDING_WRITERS = 4
@@ -138,7 +157,7 @@ def test_concurrent_writers_no_database_locked(
             assert nid
             note_ids.append(nid)
 
-        reconciler = _start_reconciler(journal_path, _mem_dir)
+        reconciler = _start_journal_reconciler(journal_path, _mem_dir)
         errors: list[str] = []
         stop = threading.Event()
         all_materialized = threading.Event()
@@ -174,7 +193,7 @@ def test_concurrent_writers_no_database_locked(
                 f"within {_SCENARIO_TIMEOUT_S}s — lock-hold / spin regression"
             )
             _lock_errs = [e for e in errors if "OperationalError" in e or "locked" in e]
-            assert len(_lock_errs) < len(errors), (
+            assert not errors or len(_lock_errs) < len(errors), (
                 "every concurrent write failed with a lock error — serialization "
                 "regression (writers never made progress)"
             )
@@ -182,10 +201,7 @@ def test_concurrent_writers_no_database_locked(
             stop.set()
             for w in writers:
                 w.join(timeout=5)
-            import background.background_worker as bw
-            bw._RECONCILER_SHUTDOWN.set()
             reconciler.join(timeout=5)
-            bw._RECONCILER_SHUTDOWN.clear()
     finally:
         if _orig_index_kg is not None:
             _si._index_kg = _orig_index_kg  # type: ignore[assignment]

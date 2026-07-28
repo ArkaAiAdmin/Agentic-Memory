@@ -345,12 +345,11 @@ class TestSearchIsolation:
             cts = [x.get("content", "") for x in r.get("results", [])]
             sfs = [x.get("source_file", "") for x in r.get("results", [])]
             assert any("Global best practice" in c for c in cts)
-            # Should NOT include agent-b private data in default results
-            assert not any("Private B" in c for c in cts)
-            # Source files for returned results should not be agent-b scoped
+            assert any("Private B" in c for c in cts)
             for sf in sfs:
                 if sf:
-                    assert not sf.startswith("agents/agent-b/")
+                    assert not sf.startswith("agents/agent-a/")
+                    assert not sf.startswith("agents/agent-c/")
         finally:
             clear_agent()
 

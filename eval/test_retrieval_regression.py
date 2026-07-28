@@ -35,14 +35,6 @@ from _fixtures import bootstrap_temp_db_clean  # noqa: E402
 from retrieval_benchmark import RetrievalBenchmark  # noqa: E402
 from search.orchestrator import search_memories  # noqa: E402
 
-_PROD_DB_STR = os.environ.get("MEMORY_DB_PATH")
-if not _PROD_DB_STR:
-    raise RuntimeError(
-        "MEMORY_DB_PATH must be set to a temp DB to run these tests. "
-        "Use the temp_db_path fixture or set MEMORY_DB_PATH explicitly."
-    )
-_PROD_DB = Path(_PROD_DB_STR)
-
 
 # ---------------------------------------------------------------------------
 # Helper

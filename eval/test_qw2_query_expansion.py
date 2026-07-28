@@ -21,6 +21,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 # Make memory_mcp importable
@@ -138,7 +139,7 @@ class TestEndToEndExpansion(unittest.TestCase):
         bootstrap_temp_db_clean(self.db_path)
         self._insert_test_notes()
         # Patch semantic expansion to isolate FTS+expansion testing
-        self._semantic_patcher = unittest.mock.patch(
+        self._semantic_patcher = mock.patch(
             "search.query_parser._semantic_expand", return_value=[]
         )
         self._semantic_patcher.start()

@@ -146,8 +146,9 @@ class TestIdPMetadataCache(unittest.TestCase):
         finally:
             conn.close()
 
+    @patch("infra.authlib_sso._ssrf_validate_url")
     @patch("infra.authlib_sso.requests.get")
-    def test_fetch_returns_from_cache_on_second_call(self, mock_get):
+    def test_fetch_returns_from_cache_on_second_call(self, mock_get, mock_ssrf):
         from infra.authlib_sso import IdPMetadataCache
         conn = self._conn()
         try:
@@ -167,8 +168,9 @@ class TestIdPMetadataCache(unittest.TestCase):
         finally:
             conn.close()
 
+    @patch("infra.authlib_sso._ssrf_validate_url")
     @patch("infra.authlib_sso.requests.get")
-    def test_fetch_force_ignores_cache(self, mock_get):
+    def test_fetch_force_ignores_cache(self, mock_get, mock_ssrf):
         from infra.authlib_sso import IdPMetadataCache
         conn = self._conn()
         try:
@@ -185,8 +187,9 @@ class TestIdPMetadataCache(unittest.TestCase):
         finally:
             conn.close()
 
+    @patch("infra.authlib_sso._ssrf_validate_url")
     @patch("infra.authlib_sso.requests.get")
-    def test_fetch_http_error_raises(self, mock_get):
+    def test_fetch_http_error_raises(self, mock_get, mock_ssrf):
         from infra.authlib_sso import IdPMetadataCache
         conn = self._conn()
         try:

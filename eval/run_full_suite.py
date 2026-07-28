@@ -174,6 +174,32 @@ def run_one_test(f):
     test_env["AGENTIC_MEMORY_DIR"] = str(temp_db_path.parent)
     test_env["PYTHONPATH"] = str(HERE.parent)
 
+    # Pre-flight: check if any tests match the marker filter.
+    # If 0 match but the file has tests, they are all slow-marked.
+    _collect_result = subprocess.run(
+        [
+            str(VENV_PYTHON),
+            "-m",
+            "pytest",
+            str(f),
+            "-p",
+            "no:xdist",
+            "-m",
+            "not slow",
+            "--collect-only",
+            "-q",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=test_env,
+    )
+    _collect_output = _collect_result.stdout + _collect_result.stderr
+    _all_slow = (
+        _collect_result.returncode == 5
+        and ("deselected" in _collect_output or "0 tests" in _collect_output)
+    )
+
     try:
         result = subprocess.run(
             [
@@ -231,6 +257,8 @@ def run_one_test(f):
     if is_segfault:
         status = "SEGFAULT"
         ff = (ff or 0) + 1
+    elif _all_slow:
+        status = f"SKIP (all slow) ({dur:.1f}s)"
     elif result.returncode == 5 and pp == 0 and ff == 0:  # type: ignore[attr-defined]
         status = f"EMPTY ({dur:.1f}s)"
     elif ff == 0 and result.returncode == 0:  # type: ignore[attr-defined]
@@ -239,7 +267,7 @@ def run_one_test(f):
         status = f"FAIL ({ff}f {ee}e) {dur:.1f}s"
 
     with lock:
-        if status.startswith("OK") or status.startswith("EMPTY"):
+        if status.startswith("OK") or status.startswith("EMPTY") or status.startswith("SKIP"):
             passed_names.append(f.name)
         else:
             failed_names.append(f.name)

@@ -116,11 +116,6 @@ def test_api_endpoints_checkout_and_webhook(test_dirs):
     store.create_deployment("dep_b", "cust_b", "tenant_b", api_base=f"http://127.0.0.1:{port}")
 
     # Set Stripe env vars and fix placeholder price IDs so checkout can proceed
-    import os
-    os.environ["STRIPE_SECRET_KEY"] = "sk_test_fake"
-    os.environ["STRIPE_PRICE_PRO"] = "price_pro_test"
-    os.environ["STRIPE_PRICE_ENTERPRISE"] = "price_ent_test"
-    
     base_url = f"http://127.0.0.1:{port}"
     
     try:

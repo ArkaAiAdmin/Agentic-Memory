@@ -341,16 +341,16 @@ class TestSagaRollbackCleansOrphans(_KgTestBase):
                 _injected["kg_facts"] = True
                 _injected["backlinks"] = True
 
-            steps, _params = _build_save_memory_steps(
+            steps, _params, _hooks = _build_save_memory_steps(
                 conn=conn,
                 note_id="lessons/foo",
                 file_path=self.tmp / "lessons" / "foo.md",
                 db_path=self.db_path,
                 do_upsert_db=do_upsert_db,
-                do_write_vec_key=lambda: 1,
-                do_write_file=lambda: (_ for _ in ()).throw(
+                do_write_vec_key=lambda: (_ for _ in ()).throw(
                     RuntimeError("simulated failure")
                 ),
+                do_write_file=lambda: None,
             )
             with self.assertRaises(SagaError):
                 with Saga(name="test_undo_insert", steps=steps):
@@ -395,16 +395,16 @@ class TestSagaRollbackCleansOrphans(_KgTestBase):
         self._seed_backlink("lessons/foo", "lessons/bar")
 
         with open_db(self.db_path) as conn:
-            steps, _params = _build_save_memory_steps(
+            steps, _params, _hooks = _build_save_memory_steps(
                 conn=conn,
                 note_id="lessons/foo",
                 file_path=self.tmp / "lessons" / "foo.md",
                 db_path=self.db_path,
                 do_upsert_db=lambda: None,
-                do_write_vec_key=lambda: 1,
-                do_write_file=lambda: (_ for _ in ()).throw(
+                do_write_vec_key=lambda: (_ for _ in ()).throw(
                     RuntimeError("simulated failure")
                 ),
+                do_write_file=lambda: None,
             )
             with self.assertRaises(SagaError):
                 with Saga(name="test_undo_update", steps=steps):

@@ -528,9 +528,9 @@ class TestSaveMemoryUpsert(SavePipelineFixture, unittest.TestCase):
             row = db.execute(
                 "SELECT content FROM memories WHERE id=?", (note_id,)
             ).fetchone()
+            emb_after = _count(db, "memory_embeddings", "memory_id=?", (note_id,))
+            chunks_after = _count(db, "memory_chunks", "parent_id=?", (note_id,))
         assert row is not None
-        emb_after = _count(db, "memory_embeddings", "memory_id=?", (note_id,))
-        chunks_after = _count(db, "memory_chunks", "parent_id=?", (note_id,))
         self.assertIn("Updated", row[0])
         if embed_avail:
             self.assertEqual(emb_after, 1, "Upsert should not delete embedding")

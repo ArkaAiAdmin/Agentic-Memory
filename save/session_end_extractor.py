@@ -82,7 +82,7 @@ def extract_session_findings(marker: dict) -> dict:
                             else:
                                 dupe_count = 0
                             
-                            if dupe_check == 0:
+                            if dupe_count == 0:
                                 # Save finding as lesson memory note
                                 title = f"{prefix.capitalize()}: {detail_clean[:60]}"
                                 if len(detail_clean) > 60:

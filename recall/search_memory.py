@@ -62,6 +62,7 @@ def search_memories(
     min_local_results=3,
     silent=False,
     include_invalid=True,
+    light=False,
 ):
     """Search local (+ optionally global) memory and print formatted results.
 
@@ -93,6 +94,7 @@ def search_memories(
         rerank=True,
         boost_pinned=True,
         include_invalid=include_invalid,
+        light=light,
     )
     if local_result.get("results"):
         all_items.extend(_tag(local_result["results"], "local"))
@@ -111,6 +113,7 @@ def search_memories(
             rerank=True,
             boost_pinned=True,
             include_invalid=include_invalid,
+            light=light,
         )
         if global_result.get("results"):
             all_items.extend(_tag(global_result["results"], "global"))

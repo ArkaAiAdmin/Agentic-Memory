@@ -34,21 +34,20 @@ class FileLockError(RuntimeError):
 
 
 def _try_flock(lock_file, nonblocking: bool) -> bool:
-    """Single flock attempt using the pluggable LockManager.
+    """Single flock attempt using raw fcntl on the provided file descriptor.
 
-    Uses os.path.abspath(lock_file.name) as the lock key.
+    Uses the lock_file's actual fileno() so concurrent holders of the same
+    file (including raw fcntl.flock callers in tests) are detected.
     """
-    if lock_file is None or not hasattr(lock_file, "name"):
+    if lock_file is None or not hasattr(lock_file, "fileno"):
         return False
-    import os
-    from infra.lock_manager import get_lock_manager
-    lm = get_lock_manager()
-    key = os.path.abspath(lock_file.name)
-    success, token = lm.acquire_lock(key, "file-lock", ttl_seconds=300)
-    if success:
-        setattr(lock_file, "_lease_token", token)
+    import fcntl
+    try:
+        flags = fcntl.LOCK_EX | (fcntl.LOCK_NB if nonblocking else 0)
+        fcntl.flock(lock_file.fileno(), flags)
         return True
-    return False
+    except (IOError, OSError):
+        return False
 
 
 def _is_stale_lock(lock_path) -> bool:
@@ -140,23 +139,17 @@ def acquire_flock_with_retry(
 
 
 def release_flock(lock_file) -> bool:
-    """Best-effort lock release + file close using pluggable LockManager.
+    """Best-effort lock release + file close using raw fcntl on the file descriptor.
 
     Safe to call on a lock that was never acquired (it just no-ops).
     """
     if lock_file is None:
         return False
-    token = getattr(lock_file, "_lease_token", None)
-    if token:
-        import os
-        from infra.lock_manager import get_lock_manager
-        lm = get_lock_manager()
-        key = os.path.abspath(lock_file.name)
-        try:
-            lm.release_lock(key, token)
-        except Exception as e:
-            logger.warning("release_flock lock manager release failed: %s", e)
-        setattr(lock_file, "_lease_token", None)
+    try:
+        import fcntl
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    except (IOError, OSError) as e:
+        logger.debug("release_flock unlock failed: %s", e)
     try:
         lock_file.close()
     except Exception as e:
